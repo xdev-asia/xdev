@@ -1,0 +1,20 @@
+[package]
+name = "xdev-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "xdev_desktop"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+xdev-core.workspace = true
+
+[lints]
+workspace = true

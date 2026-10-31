@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "apps/desktop/src-tauri"]
 # The desktop crate's build script needs the built frontend, so plain
 # `cargo test` stays on the core crates.
 default-members = [
