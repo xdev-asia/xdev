@@ -1,0 +1,28 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+# The desktop crate's build script needs the built frontend, so plain
+# `cargo test` stays on the core crates.
+default-members = [
+    "crates/xdev-core",
+    "crates/xdev-vault",
+    "crates/xdev-store",
+    "crates/xdev-git",
+    "crates/xdev-export",
+    "crates/xdev-mcp",
+    "crates/xdev-ai",
+    "crates/xdev-api",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/xdev-asia/xdev"
+publish = false
+
+[workspace.dependencies]
+xdev-core = { path = "crates/xdev-core" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
