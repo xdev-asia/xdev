@@ -3,11 +3,13 @@
 
 mod data_dir;
 mod error;
+mod links;
 mod review;
 mod sync;
 
 pub use data_dir::{APP_ID, data_dir};
 pub use error::CoreError;
+pub use links::{BrokenLink, DocLink, backlinks, broken_links};
 pub use review::{
     Change, Origin, Written, approve, default_message, history, list_changes, read_base,
     read_version, reject,
@@ -16,7 +18,10 @@ pub use sync::{DocEntry, Skip, index_path, search, sync_vault};
 // Runtimes open these directly; re-exporting keeps core their only dependency.
 pub use xdev_git::{ChangeKind, Commit, GitError, Repo};
 pub use xdev_store::{SearchHit, Store, StoreError};
-pub use xdev_vault::{Vault, VaultError, VaultWatcher, content_hash};
+pub use xdev_vault::{
+    Frontmatter, Link, LinkKind, Resolver, Target, Vault, VaultError, VaultWatcher, content_hash,
+    parse_frontmatter, parse_links,
+};
 
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")

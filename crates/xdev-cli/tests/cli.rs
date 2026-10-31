@@ -98,6 +98,25 @@ fn changes_outside_repo_fails_with_no_repo() {
 }
 
 #[test]
+fn check_prints_broken_links_and_fails() {
+    let (vault, data) = (vault(), TempDir::new().unwrap());
+    let dir = vault.path().to_str().unwrap();
+    let out = xdev(data.path(), &["check", dir]);
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(stdout(&out), "");
+
+    fs::write(
+        vault.path().join("sub/b.md"),
+        "[[a]] [[nope]] [x](../gone.md)",
+    )
+    .unwrap();
+    let out = xdev(data.path(), &["check", dir]);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert_eq!(stdout(&out), "sub/b.md\tnope\nsub/b.md\t../gone.md\n");
+    assert!(out.stderr.is_empty());
+}
+
+#[test]
 fn search_missing_dir_fails_with_not_found() {
     let data = TempDir::new().unwrap();
     let missing = data.path().join("no-such-vault");

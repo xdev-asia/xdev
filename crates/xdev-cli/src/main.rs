@@ -3,8 +3,8 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use xdev_core::{
-    ChangeKind, CoreError, Repo, Store, Vault, Written, data_dir, index_path, list_changes, search,
-    sync_vault,
+    ChangeKind, CoreError, Repo, Store, Vault, Written, broken_links, data_dir, index_path,
+    list_changes, search, sync_vault,
 };
 
 #[derive(Parser)]
@@ -27,11 +27,22 @@ enum Command {
     },
     /// Print `kind<TAB>path` for each doc that differs from git `HEAD`.
     Changes { dir: PathBuf },
+    /// Index a folder, then print `path<TAB>target` for each broken link;
+    /// exits 1 when there is any.
+    Check { dir: PathBuf },
+}
+
+/// What a command that ran to the end reports through the exit code.
+enum Outcome {
+    Ok,
+    /// The command worked and found problems, already printed.
+    Found,
 }
 
 fn main() -> ExitCode {
     match run(Cli::parse().command) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(Outcome::Ok) => ExitCode::SUCCESS,
+        Ok(Outcome::Found) => ExitCode::from(1),
         // Codes, not prose, so scripts can match on them.
         Err(code) => {
             eprintln!("error: {code}");
@@ -40,7 +51,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(command: Command) -> Result<(), &'static str> {
+fn run(command: Command) -> Result<Outcome, &'static str> {
     let data_dir = data_dir().ok_or("io")?;
     let open = |dir: &PathBuf| -> Result<(Vault, Store), CoreError> {
         let vault = Vault::open(dir)?;
@@ -79,6 +90,17 @@ fn run(command: Command) -> Result<(), &'static str> {
                 println!("{kind}\t{}", change.path);
             }
         }
+        Command::Check { dir } => {
+            let (vault, mut store) = open(&dir).map_err(|e| e.code())?;
+            sync_vault(&vault, &mut store).map_err(|e| e.code())?;
+            let broken = broken_links(&vault, &store).map_err(|e| e.code())?;
+            for link in &broken {
+                println!("{}\t{}", link.from, link.target);
+            }
+            if !broken.is_empty() {
+                return Ok(Outcome::Found);
+            }
+        }
     }
-    Ok(())
+    Ok(Outcome::Ok)
 }
