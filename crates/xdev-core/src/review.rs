@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Component, Path};
 
-use xdev_git::{ChangeKind, Repo};
+use xdev_git::{ChangeKind, Commit, Repo};
 use xdev_vault::{Vault, VaultError, content_hash, is_doc_path};
 
 use crate::CoreError;
@@ -101,6 +101,12 @@ pub fn read_base(repo: &Repo, path: &str) -> Result<Option<String>, CoreError> {
 pub fn read_version(repo: &Repo, path: &str, id: &str) -> Result<Option<String>, CoreError> {
     check_doc(path)?;
     to_text(path, repo.show(id, path)?)
+}
+
+/// Commits that touched the doc, newest first.
+pub fn history(repo: &Repo, path: &str, limit: usize) -> Result<Vec<Commit>, CoreError> {
+    check_doc(path)?;
+    Ok(repo.log(path, limit)?)
 }
 
 /// English on purpose: history is shared with other people and tools.

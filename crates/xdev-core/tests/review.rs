@@ -5,7 +5,7 @@ use std::process::Command;
 use tempfile::TempDir;
 use xdev_core::{
     Change, ChangeKind, CoreError, GitError, Origin, Repo, Vault, Written, approve,
-    default_message, list_changes, read_base, read_version, reject,
+    default_message, history, list_changes, read_base, read_version, reject,
 };
 use xdev_vault::content_hash;
 
@@ -236,6 +236,22 @@ fn read_version_and_errors() {
     // Reading through git must not reach past the vault folder.
     assert_eq!(
         read_base(&repo, "../x.md").unwrap_err().code(),
+        "outside_vault"
+    );
+}
+
+#[test]
+fn history_newest_first_and_stays_in_vault() {
+    let (dir, _vault, repo) = setup();
+    write(dir.path(), "a.md", "a2");
+    git(dir.path(), &["commit", "-q", "-am", "two"]);
+
+    let log = history(&repo, "a.md", 50).unwrap();
+    let messages: Vec<&str> = log.iter().map(|c| c.message.as_str()).collect();
+    assert_eq!(messages, ["two", "init"]);
+    assert_eq!(history(&repo, "a.md", 1).unwrap().len(), 1);
+    assert_eq!(
+        history(&repo, "../x.md", 50).unwrap_err().code(),
         "outside_vault"
     );
 }
