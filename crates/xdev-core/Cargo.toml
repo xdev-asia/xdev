@@ -6,5 +6,15 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+xdev-store.workspace = true
+xdev-vault.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
+
 [lints]
 workspace = true
