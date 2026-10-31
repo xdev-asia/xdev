@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createMockApi, DEMO_SEED } from "./mockApi";
+import { toApiError } from "./api";
+import { createMockApi, defaultMessage, DEMO_SEED } from "./mockApi";
 
 const seed = {
   "README.md": "# Hello\n\nWelcome to the vault.\n",
@@ -94,5 +95,129 @@ describe("mock api", () => {
     expect(docs.length).toBeGreaterThanOrEqual(5);
     expect(docs.some((d) => d.path.split("/").length > 2)).toBe(true);
     expect((await api.search("tai lieu kien truc", 5))[0]?.title).toBe("Tài liệu kiến trúc");
+  });
+});
+
+describe("mock vcs", () => {
+  it("lists app and outside changes", async () => {
+    const api = await opened();
+    expect(await api.vcsState()).toEqual({ status: "ok" });
+    expect(await api.listChanges()).toEqual([]);
+    await api.writeDoc("README.md", "# Mine\n");
+    api.__editOutside("docs/kien-truc.md", "# Theirs\n");
+    api.__editOutside("docs/xss.md", null);
+    await api.writeDoc("docs/new.md", "# New\n");
+    // Sorted by code unit, like the Rust side, so upper case comes first.
+    expect(await api.listChanges()).toEqual([
+      { path: "README.md", kind: "modified", origin: "app" },
+      { path: "docs/kien-truc.md", kind: "modified", origin: "outside" },
+      { path: "docs/new.md", kind: "added", origin: "app" },
+      { path: "docs/xss.md", kind: "deleted", origin: "outside" },
+    ]);
+    // Another program touching a file xDev wrote takes it over.
+    api.__editOutside("README.md", "# Theirs now\n");
+    expect((await api.listChanges()).find((c) => c.path === "README.md")?.origin).toBe("outside");
+  });
+
+  it("approve commits and clears", async () => {
+    const api = await opened();
+    await api.writeDoc("README.md", "# Mine\n");
+    api.__editOutside("docs/kien-truc.md", "# Theirs\n");
+    const id = await api.approve(["README.md"], "Reword the intro");
+    expect(id).toMatch(/^[0-9a-f]{40}$/);
+    expect(await api.listChanges()).toEqual([{ path: "docs/kien-truc.md", kind: "modified", origin: "outside" }]);
+    expect(await api.readBase("README.md")).toBe("# Mine\n");
+    const [latest] = await api.history("README.md", 50);
+    expect(latest).toMatchObject({ id, author: "You", message: "Reword the intro" });
+    expect(latest.time).toBeGreaterThan(0);
+    // Stale or crafted paths are ignored.
+    expect(await api.approve(["README.md", "zzz.md", "../etc.md"], "")).toBeNull();
+  });
+
+  it("approve with empty message uses default", async () => {
+    const api = await opened();
+    await api.writeDoc("README.md", "# Mine\n");
+    await api.approve(["README.md"], "  \n ");
+    expect((await api.history("README.md", 1))[0].message).toBe("Update README.md");
+    await api.writeDoc("a.md", "a");
+    await api.writeDoc("b.md", "b");
+    await api.approve(["a.md", "b.md"], "");
+    expect((await api.history("a.md", 1))[0].message).toBe("Update 2 docs");
+  });
+
+  it("reject restores modified and deletes added", async () => {
+    const api = await opened();
+    api.__editOutside("README.md", "# Theirs\n");
+    await api.writeDoc("docs/new.md", "# New\n");
+    api.__editOutside("docs/xss.md", null);
+    // Skips the echoes of the edits above, which arrive one path at a time.
+    const seen = new Promise<string[]>((resolve) => void api.onVaultChanged((p) => p.length > 1 && resolve(p)));
+    await api.reject(["README.md", "docs/new.md", "docs/xss.md"]);
+    expect(await api.readDoc("README.md")).toBe(seed["README.md"]);
+    expect(await api.readDoc("docs/xss.md")).toBe(seed["docs/xss.md"]);
+    await expect(api.readDoc("docs/new.md")).rejects.toEqual({ code: "not_found" });
+    expect(await api.listChanges()).toEqual([]);
+    expect((await seen).sort()).toEqual(["README.md", "docs/new.md", "docs/xss.md"].sort());
+  });
+
+  it("history newest first and readVersion", async () => {
+    const api = await opened();
+    await api.writeDoc("README.md", "v2");
+    await api.approve(["README.md"], "two");
+    await api.writeDoc("docs/kien-truc.md", "other doc");
+    await api.approve(["docs/kien-truc.md"], "unrelated");
+    await api.writeDoc("README.md", "v3");
+    await api.approve(["README.md"], "three\n\nbody");
+    const log = await api.history("README.md", 50);
+    expect(log.map((c) => c.message)).toEqual(["three", "two", "Import docs"]);
+    expect(await api.history("README.md", 1)).toHaveLength(1);
+    expect(await api.readVersion("README.md", log[1].id)).toBe("v2");
+    expect(await api.readVersion("README.md", log[2].id.slice(0, 7))).toBe(seed["README.md"]);
+    expect(await api.readVersion("docs/new.md", log[0].id)).toBeNull();
+    await expect(api.readVersion("README.md", "--output=x")).rejects.toMatchObject({ code: "git" });
+    await expect(api.readVersion("README.md", "HEAD")).rejects.toMatchObject({ code: "git" });
+  });
+
+  it("restoreVersion creates a pending app change", async () => {
+    const api = await opened();
+    await api.writeDoc("README.md", "v2");
+    await api.approve(["README.md"], "two");
+    const first = (await api.history("README.md", 50)).at(-1)!;
+    await api.restoreVersion("README.md", first.id);
+    expect(await api.readDoc("README.md")).toBe(seed["README.md"]);
+    expect(await api.listChanges()).toEqual([{ path: "README.md", kind: "modified", origin: "app" }]);
+    await expect(api.restoreVersion("docs/new.md", first.id)).rejects.toEqual({ code: "not_found" });
+  });
+
+  it("no repo rejects list with no_repo, initRepo makes all docs added", async () => {
+    const api = createMockApi(seed, { repo: false });
+    await expect(api.vcsState()).rejects.toEqual({ code: "no_vault" });
+    await api.openVault("/vault");
+    expect(await api.vcsState()).toEqual({ status: "no_repo" });
+    await expect(api.listChanges()).rejects.toEqual({ code: "no_repo" });
+    await expect(api.history("README.md", 50)).rejects.toEqual({ code: "no_repo" });
+    await api.initRepo();
+    expect(await api.vcsState()).toEqual({ status: "ok" });
+    const changes = await api.listChanges();
+    expect(changes.map((c) => c.path)).toEqual(Object.keys(seed).sort());
+    expect(changes.every((c) => c.kind === "added" && c.origin === "outside")).toBe(true);
+    expect(await api.history("README.md", 50)).toEqual([]);
+    expect(await api.readBase("README.md")).toBeNull();
+    expect(await api.approve(["README.md"], "")).toMatch(/^[0-9a-f]{40}$/);
+    expect((await api.history("README.md", 50))[0].message).toBe("Add README.md");
+  });
+
+  it("toApiError keeps git codes", () => {
+    for (const code of ["no_git", "no_repo", "git", "git_identity"] as const) {
+      expect(toApiError({ code, detail: "x" })).toEqual({ code, detail: "x" });
+    }
+    expect(toApiError("boom")).toEqual({ code: "io", detail: "boom" });
+    expect(toApiError({ code: "nope" })).toMatchObject({ code: "io" });
+  });
+
+  it("default message rules", () => {
+    expect(defaultMessage([{ path: "n.md", kind: "added", origin: "app" }])).toBe("Add n.md");
+    expect(defaultMessage([{ path: "a.md", kind: "modified", origin: "app" }])).toBe("Update a.md");
+    expect(defaultMessage([{ path: "b.md", kind: "deleted", origin: "outside" }])).toBe("Delete b.md");
   });
 });
