@@ -128,3 +128,47 @@ fn search_missing_dir_fails_with_not_found() {
     );
     assert!(out.stdout.is_empty());
 }
+
+#[test]
+fn export_check_then_write() {
+    let (vault, data) = (vault(), TempDir::new().unwrap());
+    let out_dir = TempDir::new().unwrap();
+    let dir = vault.path().to_str().unwrap();
+    let out = out_dir.path().to_str().unwrap();
+    fs::write(
+        vault.path().join("a.md"),
+        "---\nagents: true\n---\n# A\nBody",
+    )
+    .unwrap();
+
+    let res = xdev(data.path(), &["export", dir, "--out", out, "--check"]);
+    assert_eq!(res.status.code(), Some(1), "{res:?}");
+    assert_eq!(
+        stdout(&res),
+        "new\tAGENTS.md\nnew\tCLAUDE.md\nnew\tGEMINI.md\n"
+    );
+    assert!(!out_dir.path().join("AGENTS.md").exists());
+
+    let res = xdev(data.path(), &["export", dir, "--out", out]);
+    assert!(res.status.success(), "{res:?}");
+    assert!(out_dir.path().join("AGENTS.md").is_file());
+
+    let res = xdev(data.path(), &["export", dir, "--out", out, "--check"]);
+    assert!(res.status.success(), "{res:?}");
+    assert_eq!(
+        stdout(&res),
+        "unchanged\tAGENTS.md\nunchanged\tCLAUDE.md\nunchanged\tGEMINI.md\n"
+    );
+
+    // A hand-written file is never overwritten, and --check flags it.
+    fs::write(out_dir.path().join("CLAUDE.md"), "mine\n").unwrap();
+    let res = xdev(data.path(), &["export", dir, "--out", out]);
+    assert!(res.status.success(), "{res:?}");
+    assert!(stdout(&res).contains("foreign\tCLAUDE.md\n"));
+    assert_eq!(
+        fs::read_to_string(out_dir.path().join("CLAUDE.md")).unwrap(),
+        "mine\n"
+    );
+    let res = xdev(data.path(), &["export", dir, "--out", out, "--check"]);
+    assert_eq!(res.status.code(), Some(1));
+}

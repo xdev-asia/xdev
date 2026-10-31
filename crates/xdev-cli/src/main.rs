@@ -3,8 +3,8 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use xdev_core::{
-    ChangeKind, CoreError, Repo, Store, Vault, Written, broken_links, data_dir, index_path,
-    list_changes, search, sync_vault,
+    ChangeKind, CoreError, FileStatus, Repo, Store, Vault, Written, broken_links, data_dir,
+    export_plan, export_root, export_write, index_path, list_changes, search, sync_vault,
 };
 
 #[derive(Parser)]
@@ -30,6 +30,17 @@ enum Command {
     /// Index a folder, then print `path<TAB>target` for each broken link;
     /// exits 1 when there is any.
     Check { dir: PathBuf },
+    /// Write AGENTS.md, CLAUDE.md, GEMINI.md and the Cursor rule from the
+    /// docs marked for agents; prints `status<TAB>path` per file.
+    Export {
+        dir: PathBuf,
+        /// Folder to write into; default is the git repo root, else `dir`.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Write nothing; exit 1 when any file is new, changed or foreign.
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 /// What a command that ran to the end reports through the exit code.
@@ -99,6 +110,41 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
             }
             if !broken.is_empty() {
                 return Ok(Outcome::Found);
+            }
+        }
+        Command::Export { dir, out, check } => {
+            let vault = Vault::open(&dir).map_err(|e| e.code())?;
+            let root = match out {
+                // Canonical like the vault root, so the doc paths inside
+                // the files can be made relative to it.
+                Some(out) => std::fs::canonicalize(&out).unwrap_or(out),
+                None => export_root(&vault).map_err(|e| e.code())?,
+            };
+            let plan = export_plan(&vault, &root).map_err(|e| e.code())?;
+            for file in &plan.files {
+                let status = match file.status {
+                    FileStatus::New => "new",
+                    FileStatus::Changed => "changed",
+                    FileStatus::Unchanged => "unchanged",
+                    FileStatus::Foreign => "foreign",
+                };
+                println!("{status}	{}", file.path);
+            }
+            let pending: Vec<(String, String)> = plan
+                .files
+                .iter()
+                .filter(|f| matches!(f.status, FileStatus::New | FileStatus::Changed))
+                .map(|f| (f.path.clone(), f.hash.clone()))
+                .collect();
+            if check {
+                let foreign = plan.files.iter().any(|f| f.status == FileStatus::Foreign);
+                if foreign || !pending.is_empty() {
+                    return Ok(Outcome::Found);
+                }
+            } else {
+                // Same guard as the app, against a doc saved between the
+                // plan and the write.
+                export_write(&vault, &root, &pending).map_err(|e| e.code())?;
             }
         }
     }

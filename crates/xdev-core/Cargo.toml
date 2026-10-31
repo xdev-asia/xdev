@@ -10,6 +10,7 @@ publish.workspace = true
 dirs.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+xdev-export.workspace = true
 xdev-git.workspace = true
 xdev-store.workspace = true
 xdev-vault.workspace = true

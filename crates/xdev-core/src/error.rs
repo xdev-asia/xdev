@@ -1,3 +1,4 @@
+use xdev_export::ExportError;
 use xdev_git::GitError;
 use xdev_store::StoreError;
 use xdev_vault::VaultError;
@@ -10,6 +11,8 @@ pub enum CoreError {
     Store(#[from] StoreError),
     #[error(transparent)]
     Git(#[from] GitError),
+    #[error(transparent)]
+    Export(#[from] ExportError),
 }
 
 impl CoreError {
@@ -20,6 +23,7 @@ impl CoreError {
             CoreError::Vault(e) => e.code(),
             CoreError::Store(_) => "io",
             CoreError::Git(e) => e.code(),
+            CoreError::Export(e) => e.code(),
         }
     }
 }
