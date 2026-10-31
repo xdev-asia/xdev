@@ -122,6 +122,21 @@ fn status_from_canonical_path() {
 }
 
 #[test]
+fn root_of_subfolder_vault() {
+    let dir = repo_dir();
+    let top = fs::canonicalize(dir.path()).unwrap();
+    write(dir.path(), "docs/sub/a.md", "a");
+    for vault in [
+        dir.path().join("docs/sub"),
+        fs::canonicalize(dir.path().join("docs/sub")).unwrap(),
+        dir.path().to_path_buf(),
+    ] {
+        let root = Repo::discover(&vault).unwrap().root();
+        assert_eq!(fs::canonicalize(&root).unwrap(), top, "{vault:?}");
+    }
+}
+
+#[test]
 fn status_staged_then_deleted_is_not_listed() {
     let dir = repo_dir();
     write(dir.path(), "n.md", "n");

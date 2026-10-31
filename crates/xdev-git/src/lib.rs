@@ -92,4 +92,14 @@ impl Repo {
         run::run(dir, &["init", "-q"], None)?;
         Repo::discover(dir)
     }
+
+    /// The repo's top folder. Derived from the prefix, so it keeps the form of
+    /// the vault path the caller gave and needs no extra git run.
+    pub fn root(&self) -> PathBuf {
+        let mut root = self.workdir.clone();
+        for _ in self.prefix.split('/').filter(|s| !s.is_empty()) {
+            root.pop();
+        }
+        root
+    }
 }
