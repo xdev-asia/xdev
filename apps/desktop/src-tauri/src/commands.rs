@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Emitter, Manager, State};
-use xdev_core::{CoreError, DocEntry, SearchHit};
+use xdev_core::{Change, Commit, CoreError, DocEntry, SearchHit};
 
 use crate::session::Shared;
 use crate::settings;
@@ -106,6 +106,84 @@ pub fn search(
     limit: usize,
 ) -> Result<Vec<SearchHit>, CmdError> {
     state.session.with(|s| s.search(&query, limit))
+}
+
+#[derive(serde::Serialize)]
+pub struct VcsState {
+    status: &'static str,
+}
+
+#[tauri::command(async)]
+pub fn vcs_state(state: State<'_, AppState>) -> Result<VcsState, CmdError> {
+    Ok(VcsState {
+        status: state.session.vcs_state()?,
+    })
+}
+
+#[tauri::command(async)]
+pub fn init_repo(state: State<'_, AppState>) -> Result<(), CmdError> {
+    state.session.init_repo()
+}
+
+#[tauri::command(async)]
+pub fn list_changes(state: State<'_, AppState>) -> Result<Vec<Change>, CmdError> {
+    let r = state.session.review()?;
+    Ok(xdev_core::list_changes(&r.vault, &r.repo, &r.written)?)
+}
+
+#[tauri::command(async)]
+pub fn read_base(state: State<'_, AppState>, path: String) -> Result<Option<String>, CmdError> {
+    let r = state.session.review()?;
+    Ok(xdev_core::read_base(&r.repo, &path)?)
+}
+
+#[tauri::command(async)]
+pub fn approve(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    message: String,
+) -> Result<Option<String>, CmdError> {
+    let r = state.session.review()?;
+    let id = xdev_core::approve(&r.vault, &r.repo, &r.written, &paths, &message)?;
+    state.session.forget(&r, &paths);
+    Ok(id)
+}
+
+#[tauri::command(async)]
+pub fn reject(state: State<'_, AppState>, paths: Vec<String>) -> Result<(), CmdError> {
+    let r = state.session.review()?;
+    xdev_core::reject(&r.vault, &r.repo, &r.written, &paths)?;
+    state.session.forget(&r, &paths);
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn history(
+    state: State<'_, AppState>,
+    path: String,
+    limit: usize,
+) -> Result<Vec<Commit>, CmdError> {
+    let r = state.session.review()?;
+    Ok(xdev_core::history(&r.repo, &path, limit)?)
+}
+
+#[tauri::command(async)]
+pub fn read_version(
+    state: State<'_, AppState>,
+    path: String,
+    id: String,
+) -> Result<Option<String>, CmdError> {
+    let r = state.session.review()?;
+    Ok(xdev_core::read_version(&r.repo, &path, &id)?)
+}
+
+#[tauri::command(async)]
+pub fn restore_version(
+    state: State<'_, AppState>,
+    path: String,
+    id: String,
+) -> Result<(), CmdError> {
+    state.session.restore_version(&path, &id)
 }
 
 fn settings_path(app: &AppHandle) -> Option<PathBuf> {
