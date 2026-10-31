@@ -24,6 +24,7 @@ publish = false
 
 [workspace.dependencies]
 xdev-core = { path = "crates/xdev-core" }
+xdev-git = { path = "crates/xdev-git" }
 xdev-store = { path = "crates/xdev-store" }
 xdev-vault = { path = "crates/xdev-vault" }
 

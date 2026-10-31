@@ -1,3 +1,4 @@
+use xdev_git::GitError;
 use xdev_store::StoreError;
 use xdev_vault::VaultError;
 
@@ -7,6 +8,8 @@ pub enum CoreError {
     Vault(#[from] VaultError),
     #[error(transparent)]
     Store(#[from] StoreError),
+    #[error(transparent)]
+    Git(#[from] GitError),
 }
 
 impl CoreError {
@@ -16,6 +19,7 @@ impl CoreError {
         match self {
             CoreError::Vault(e) => e.code(),
             CoreError::Store(_) => "io",
+            CoreError::Git(e) => e.code(),
         }
     }
 }
