@@ -1,0 +1,233 @@
+{
+  "_doc": "Shared spec for the link parsers and resolvers (Rust: xdev-vault, TS: apps/desktop/src/doc/links.ts). Links are listed in order of appearance; `resolved` is a vault path or null.",
+  "docs": [
+    "Café.md",
+    "README.md",
+    "a/note.md",
+    "adr/0002 sqlite.md",
+    "arch/plan.md",
+    "arch/store.md",
+    "b/note.md",
+    "notes/plan.md",
+    "notes/sub/deep.md",
+    "notes/sub/note.md"
+  ],
+  "cases": [
+    {
+      "name": "wiki by name and path",
+      "from": "README.md",
+      "content": "See [[store]] and [[arch/store]] and [[store.md|the store]].\n",
+      "links": [
+        {
+          "kind": "wiki",
+          "target": "store",
+          "resolved": "arch/store.md"
+        },
+        {
+          "kind": "wiki",
+          "target": "arch/store",
+          "resolved": "arch/store.md"
+        },
+        {
+          "kind": "wiki",
+          "target": "store.md",
+          "resolved": "arch/store.md"
+        }
+      ]
+    },
+    {
+      "name": "anchor, label and embed",
+      "from": "README.md",
+      "content": "[[store#Why|why]] ![[store]]\n",
+      "links": [
+        {
+          "kind": "wiki",
+          "target": "store",
+          "resolved": "arch/store.md"
+        },
+        {
+          "kind": "wiki",
+          "target": "store",
+          "resolved": "arch/store.md"
+        }
+      ]
+    },
+    {
+      "name": "ambiguous name: shortest path",
+      "from": "notes/sub/deep.md",
+      "content": "[[plan#Goals]]\n",
+      "links": [
+        {
+          "kind": "wiki",
+          "target": "plan",
+          "resolved": "arch/plan.md"
+        }
+      ]
+    },
+    {
+      "name": "ambiguous name: same folder wins",
+      "from": "notes/sub/deep.md",
+      "content": "[[note]]\n",
+      "links": [
+        {
+          "kind": "wiki",
+          "target": "note",
+          "resolved": "notes/sub/note.md"
+        }
+      ]
+    },
+    {
+      "name": "ambiguous name: equal length, first by path",
+      "from": "README.md",
+      "content": "[[note]]\n",
+      "links": [
+        {
+          "kind": "wiki",
+          "target": "note",
+          "resolved": "a/note.md"
+        }
+      ]
+    },
+    {
+      "name": "case-insensitive fallback",
+      "from": "notes/plan.md",
+      "content": "[[readme]] [[café]] [[README]]\n",
+      "links": [
+        {
+          "kind": "wiki",
+          "target": "readme",
+          "resolved": "README.md"
+        },
+        {
+          "kind": "wiki",
+          "target": "café",
+          "resolved": "Café.md"
+        },
+        {
+          "kind": "wiki",
+          "target": "README",
+          "resolved": "README.md"
+        }
+      ]
+    },
+    {
+      "name": "spaces, trimming, leading slash",
+      "from": "README.md",
+      "content": "[[0002 sqlite]] [[ store ]] [[/notes/plan]]\n",
+      "links": [
+        {
+          "kind": "wiki",
+          "target": "0002 sqlite",
+          "resolved": "adr/0002 sqlite.md"
+        },
+        {
+          "kind": "wiki",
+          "target": "store",
+          "resolved": "arch/store.md"
+        },
+        {
+          "kind": "wiki",
+          "target": "/notes/plan",
+          "resolved": "notes/plan.md"
+        }
+      ]
+    },
+    {
+      "name": "missing and empty",
+      "from": "README.md",
+      "content": "[[nope]] [[ ]] [[]] [[#only-anchor]]\n",
+      "links": [
+        {
+          "kind": "wiki",
+          "target": "nope",
+          "resolved": null
+        }
+      ]
+    },
+    {
+      "name": "markdown links",
+      "from": "notes/sub/deep.md",
+      "content": "[up](../plan.md) [abs](/arch/store.md) [enc](../../adr/0002%20sqlite.md#why) [t](../plan.md \"Title\") [case](../PLAN.md)\n",
+      "links": [
+        {
+          "kind": "md",
+          "target": "../plan.md",
+          "resolved": "notes/plan.md"
+        },
+        {
+          "kind": "md",
+          "target": "/arch/store.md",
+          "resolved": "arch/store.md"
+        },
+        {
+          "kind": "md",
+          "target": "../../adr/0002 sqlite.md",
+          "resolved": "adr/0002 sqlite.md"
+        },
+        {
+          "kind": "md",
+          "target": "../plan.md",
+          "resolved": "notes/plan.md"
+        },
+        {
+          "kind": "md",
+          "target": "../PLAN.md",
+          "resolved": "notes/plan.md"
+        }
+      ]
+    },
+    {
+      "name": "markdown links that are skipped or broken",
+      "from": "notes/sub/deep.md",
+      "content": "[ext](https://x.dev/a.md) [mail](mailto:a@b.c) [proto](//x.dev/a.md) [frag](#top) ![pic](../plan.md) [txt](../plan.txt) [out](../../../etc.md) [gone](gone.md?x=1)\n",
+      "links": [
+        {
+          "kind": "md",
+          "target": "../../../etc.md",
+          "resolved": null
+        },
+        {
+          "kind": "md",
+          "target": "gone.md",
+          "resolved": null
+        }
+      ]
+    },
+    {
+      "name": "code is not parsed",
+      "from": "README.md",
+      "content": "```\n[[store]]\n```\nInline `[[store]]` and [[README]]\n~~~\n[a](README.md)\n~~~\n",
+      "links": [
+        {
+          "kind": "wiki",
+          "target": "README",
+          "resolved": "README.md"
+        }
+      ]
+    },
+    {
+      "name": "frontmatter is not parsed",
+      "from": "README.md",
+      "content": "---\nsee: \"[[store]]\"\n---\n[[README]]\n",
+      "links": [
+        {
+          "kind": "wiki",
+          "target": "README",
+          "resolved": "README.md"
+        }
+      ]
+    },
+    {
+      "name": "self link is kept by the parser",
+      "from": "notes/plan.md",
+      "content": "[[plan]]\n",
+      "links": [
+        {
+          "kind": "wiki",
+          "target": "plan",
+          "resolved": "notes/plan.md"
+        }
+      ]
+    }
+  ]
+}

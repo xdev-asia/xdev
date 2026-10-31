@@ -1,0 +1,157 @@
+{
+  "_doc": "Shared spec for the frontmatter parsers (Rust: xdev-vault, TS: apps/desktop/src/doc/frontmatter.ts). Every case uses the path in `path`.",
+  "path": "notes/plan.md",
+  "cases": [
+    {
+      "name": "no frontmatter",
+      "input": "# Hello\n\ntext\n",
+      "body": "# Hello\n\ntext\n",
+      "title": "Hello",
+      "agents": [],
+      "tags": []
+    },
+    {
+      "name": "basic keys",
+      "input": "---\ntitle: Store design\nagents: true\ntags: [arch, db]\n---\n# Heading\n",
+      "body": "# Heading\n",
+      "title": "Store design",
+      "agents": [
+        "agents"
+      ],
+      "tags": [
+        "arch",
+        "db"
+      ]
+    },
+    {
+      "name": "block lists",
+      "input": "---\nagents:\n  - cursor\n  - claude\ntags:\n  - x\n---\nbody\n",
+      "body": "body\n",
+      "title": "plan",
+      "agents": [
+        "claude",
+        "cursor"
+      ],
+      "tags": [
+        "x"
+      ]
+    },
+    {
+      "name": "agents false",
+      "input": "---\nagents: false\n---\n# T\n",
+      "body": "# T\n",
+      "title": "T",
+      "agents": [],
+      "tags": []
+    },
+    {
+      "name": "agents single name",
+      "input": "---\nagents: claude\n---\n",
+      "body": "",
+      "title": "plan",
+      "agents": [
+        "claude"
+      ],
+      "tags": []
+    },
+    {
+      "name": "unknown and duplicate targets",
+      "input": "---\nagents: [claude, foo, claude, AGENTS, gemini]\n---\n",
+      "body": "",
+      "title": "plan",
+      "agents": [
+        "claude",
+        "gemini"
+      ],
+      "tags": []
+    },
+    {
+      "name": "not closed",
+      "input": "---\ntitle: X\n# Real\n",
+      "body": "---\ntitle: X\n# Real\n",
+      "title": "Real",
+      "agents": [],
+      "tags": []
+    },
+    {
+      "name": "comment is not a title",
+      "input": "---\n# comment\ntitle: 'Quoted: yes'\n---\n",
+      "body": "",
+      "title": "Quoted: yes",
+      "agents": [],
+      "tags": []
+    },
+    {
+      "name": "crlf",
+      "input": "---\r\ntitle: Win\r\nagents: true\r\n---\r\n# H\r\n",
+      "body": "# H\r\n",
+      "title": "Win",
+      "agents": [
+        "agents"
+      ],
+      "tags": []
+    },
+    {
+      "name": "bom",
+      "input": "﻿---\ntags: solo\n---\n# B\n",
+      "body": "# B\n",
+      "title": "B",
+      "agents": [],
+      "tags": [
+        "solo"
+      ]
+    },
+    {
+      "name": "not at start",
+      "input": "\n---\ntitle: X\n---\n",
+      "body": "\n---\ntitle: X\n---\n",
+      "title": "plan",
+      "agents": [],
+      "tags": []
+    },
+    {
+      "name": "empty title falls back",
+      "input": "---\ntitle: \"\"\n---\n# H\n",
+      "body": "# H\n",
+      "title": "H",
+      "agents": [],
+      "tags": []
+    },
+    {
+      "name": "closing at end of input",
+      "input": "---\nagents: true\n---",
+      "body": "",
+      "title": "plan",
+      "agents": [
+        "agents"
+      ],
+      "tags": []
+    },
+    {
+      "name": "inline comment",
+      "input": "---\nagents: true # for AGENTS.md\ntitle: A # B\n---\n",
+      "body": "",
+      "title": "A",
+      "agents": [
+        "agents"
+      ],
+      "tags": []
+    },
+    {
+      "name": "unknown keys and junk ignored",
+      "input": "---\ntype: arch\nnot a pair\n  - stray\ncovers: crates/**\n---\n# Kept\n",
+      "body": "# Kept\n",
+      "title": "Kept",
+      "agents": [],
+      "tags": []
+    },
+    {
+      "name": "heading in code fence is not a title",
+      "input": "---\ntags: []\n---\n```sh\n# install\n```\n# Real title\n",
+      "body": "```sh\n# install\n```\n# Real title\n",
+      "title": "Real title",
+      "agents": [],
+      "tags": []
+    }
+  ]
+}
