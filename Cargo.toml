@@ -24,12 +24,16 @@ publish = false
 
 [workspace.dependencies]
 xdev-core = { path = "crates/xdev-core" }
+xdev-store = { path = "crates/xdev-store" }
 xdev-vault = { path = "crates/xdev-vault" }
 
 blake3 = "1.8.7"
 ignore = "0.4.34"
 # 0.7 is the newest stable line; it re-exports the `notify` it was built against.
 notify-debouncer-full = "0.7.0"
+# Bundled SQLite ships FTS5 and behaves the same on every OS.
+rusqlite = { version = "0.41.1", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
 tempfile = "3.27.0"
 thiserror = "2.0.21"
 
