@@ -726,3 +726,210 @@ button:disabled {
   justify-content: flex-end;
   gap: var(--x-space-2);
 }
+
+/* Preview and links */
+
+.doc-agents {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x-space-1);
+  font-size: 0.85em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.doc-agents:has(input:disabled) {
+  color: var(--x-color-muted);
+  cursor: not-allowed;
+}
+
+.docbody-edit {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.preview {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--x-space-4) var(--x-space-8) var(--x-space-8);
+  line-height: 1.6;
+}
+
+.preview-props {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--x-space-1) var(--x-space-4);
+  margin: 0 0 var(--x-space-4);
+  padding: var(--x-space-3);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-md);
+  background: var(--x-color-bg);
+  font-size: 0.85em;
+}
+
+.preview-props dt {
+  color: var(--x-color-muted);
+}
+
+.preview-props dd {
+  margin: 0;
+}
+
+.preview-body {
+  max-width: 760px;
+  overflow-wrap: anywhere;
+}
+
+.preview-body h1,
+.preview-body h2,
+.preview-body h3,
+.preview-body h4 {
+  margin: var(--x-space-6) 0 var(--x-space-2);
+  line-height: 1.3;
+}
+
+.preview-body h1 {
+  font-size: 1.6em;
+}
+
+.preview-body h2 {
+  padding-bottom: var(--x-space-1);
+  border-bottom: 1px solid var(--x-color-line);
+  font-size: 1.3em;
+}
+
+.preview-body h3 {
+  font-size: 1.1em;
+}
+
+.preview-body > :first-child {
+  margin-top: 0;
+}
+
+.preview-body p,
+.preview-body ul,
+.preview-body ol,
+.preview-body pre,
+.preview-body blockquote,
+.preview-body table {
+  margin: 0 0 var(--x-space-3);
+}
+
+.preview-body code {
+  padding: 0 var(--x-space-1);
+  border-radius: var(--x-radius-sm);
+  font-family: var(--x-font-mono);
+  font-size: 0.9em;
+  background: var(--x-color-code-bg);
+}
+
+.preview-body pre {
+  overflow-x: auto;
+  padding: var(--x-space-3);
+  border-radius: var(--x-radius-md);
+  background: var(--x-color-code-bg);
+}
+
+.preview-body pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.preview-body blockquote {
+  padding-left: var(--x-space-3);
+  border-left: 3px solid var(--x-color-line);
+  color: var(--x-color-muted);
+}
+
+.preview-body table {
+  border-collapse: collapse;
+}
+
+.preview-body th,
+.preview-body td {
+  padding: var(--x-space-1) var(--x-space-2);
+  border: 1px solid var(--x-color-line);
+}
+
+.preview-body hr {
+  border: 0;
+  border-top: 1px solid var(--x-color-line);
+}
+
+.preview-body a[data-doc] {
+  color: var(--x-color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Visible as broken so a missing doc is noticed, not silently ignored. */
+.preview-body a[data-broken] {
+  color: var(--x-color-warn);
+  text-decoration: underline dashed;
+  cursor: not-allowed;
+}
+
+/* External links are shown, not followed: the URL is in the tooltip. */
+.preview-body a[data-external] {
+  color: var(--x-color-accent);
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+.md-image {
+  padding: 0 var(--x-space-1);
+  border: 1px dashed var(--x-color-line);
+  border-radius: var(--x-radius-sm);
+  color: var(--x-color-muted);
+  font-style: italic;
+}
+
+.backlinks {
+  flex: none;
+  max-height: 30%;
+  overflow-y: auto;
+  padding: var(--x-space-3) var(--x-space-4);
+  border-top: 1px solid var(--x-color-line);
+  background: var(--x-color-bg);
+}
+
+.backlinks .pane-head {
+  padding-bottom: var(--x-space-1);
+}
+
+.backlinks-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-1);
+  margin: 0;
+  padding: 0 var(--x-space-1);
+  list-style: none;
+}
+
+.backlink {
+  display: flex;
+  align-items: baseline;
+  gap: var(--x-space-2);
+  padding: var(--x-space-1) var(--x-space-2);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-sm);
+  background: var(--x-color-surface);
+  cursor: pointer;
+}
+
+.backlink:hover {
+  background: var(--x-color-surface-2);
+}
+
+.backlink-title {
+  color: var(--x-color-accent);
+}
+
+.backlink-path {
+  font-family: var(--x-font-mono);
+  font-size: 0.75em;
+  color: var(--x-color-muted);
+}

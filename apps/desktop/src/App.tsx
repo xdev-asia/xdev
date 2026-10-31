@@ -1,18 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { api, toApiError, type ApiError, type Change, type DocEntry, type SearchHit } from "./api";
 import { countLabel, rejectPrompt } from "./changes/changes";
 import { useChanges, type Problem } from "./changes/useChanges";
+import { Backlinks } from "./components/Backlinks";
 import { ChangesPanel, ChangeView } from "./components/ChangesPanel";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ConflictBanner } from "./components/ConflictBanner";
 import { Editor } from "./components/Editor";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { LanguageSwitch } from "./components/LanguageSwitch";
+import { Preview } from "./components/Preview";
 import { resultId, RESULTS_ID, SearchPanel } from "./components/SearchPanel";
 import { Sidebar } from "./components/Sidebar";
 import { Welcome } from "./components/Welcome";
 import { isDirty } from "./doc/docState";
+import { agentsEditable, parseFrontmatter, setAgents } from "./doc/frontmatter";
 import { useDoc } from "./doc/useDoc";
 import { useI18n } from "./i18n";
 
@@ -78,6 +81,8 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
   // The doc whose history is shown; opening another doc closes the panel without extra bookkeeping.
   const [historyFor, setHistoryFor] = useState<string | null>(null);
   const [docs, setDocs] = useState(props.vault.docs);
+  // One choice for the whole session, so moving between docs keeps reading (or editing) mode.
+  const [mode, setMode] = useState<"edit" | "preview">("edit");
   const [revision, setRevision] = useState(0);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
@@ -209,6 +214,10 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
   const prompt = rejecting && rejecting.length > 0 ? rejectPrompt(rejecting) : null;
   const entry = docs.find((d) => d.path === state.path);
   const dirty = isDirty(state);
+  const docPaths = useMemo(() => docs.map((d) => d.path), [docs]);
+  const forAgents = useMemo(() => parseFrontmatter(state.draft).fm.agents.length > 0, [state.draft]);
+  const agentsLocked = !agentsEditable(state.draft);
+  const readOnly = state.status === "error" && !dirty;
   const tracked = review.status === "ok";
   const historyPath = tracked && historyFor === state.path && state.status !== "loading" ? historyFor : null;
   const historyOpen = historyPath !== null;
@@ -323,6 +332,24 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
                   <span className="doc-path">{state.path}</span>
                 </div>
                 <div className="doc-actions">
+                  <div className="segmented" role="group" aria-label={t("doc.mode.label")}>
+                    <button type="button" aria-pressed={mode === "edit"} onClick={() => setMode("edit")}>
+                      {t("doc.mode.edit")}
+                    </button>
+                    <button type="button" aria-pressed={mode === "preview"} onClick={() => setMode("preview")}>
+                      {t("doc.mode.preview")}
+                    </button>
+                  </div>
+                  {/* A hand-written target list cannot be toggled without losing it, so it is only shown. */}
+                  <label className="doc-agents" title={agentsLocked ? t("doc.agentsList") : undefined}>
+                    <input
+                      type="checkbox"
+                      checked={forAgents}
+                      disabled={agentsLocked || readOnly || state.status === "loading"}
+                      onChange={(e) => doc.edit(setAgents(state.draft, e.target.checked))}
+                    />
+                    {t("doc.agents")}
+                  </label>
                   <span className="doc-status" data-dirty={dirty || undefined} aria-live="polite">
                     {saveLabel}
                   </span>
@@ -362,14 +389,21 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
                     />
                   )}
                   <div className="docbody" hidden={historyOpen}>
-                    {/* Remounting per doc keeps undo history from leaking between files. */}
-                    <Editor
-                      key={state.path}
-                      value={state.draft}
-                      onChange={doc.edit}
-                      onSave={doc.save}
-                      readOnly={state.status === "error" && !dirty}
-                    />
+                    {mode === "preview" && (
+                      <Preview path={state.path} content={state.draft} docs={docPaths} onOpen={openDoc} />
+                    )}
+                    {/* Hidden in preview rather than unmounted, so undo history survives a look at the preview. */}
+                    <div className="docbody-edit" hidden={mode === "preview"}>
+                      {/* Remounting per doc keeps undo history from leaking between files. */}
+                      <Editor
+                        key={state.path}
+                        value={state.draft}
+                        onChange={doc.edit}
+                        onSave={doc.save}
+                        readOnly={readOnly}
+                      />
+                    </div>
+                    <Backlinks api={api} path={state.path} revision={revision} onOpen={openDoc} />
                   </div>
                 </>
               )}

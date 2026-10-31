@@ -89,5 +89,20 @@
   "error.no_repo": "Thư mục này chưa được theo dõi bằng Git.",
   "error.git": "Git báo lỗi.",
   "error.git_identity": "Git chưa biết bạn là ai. Hãy chạy hai lệnh sau trong terminal rồi thử lại:",
-  "error.stale": "Tài liệu đã thay đổi sau lần xem trước này. Hãy xem lại bản mới rồi ghi lại."
+  "error.stale": "Tài liệu đã thay đổi sau lần xem trước này. Hãy xem lại bản mới rồi ghi lại.",
+  "doc.mode.label": "Chế độ xem",
+  "doc.mode.edit": "Sửa",
+  "doc.mode.preview": "Xem trước",
+  "doc.agents": "Dành cho agent",
+  "doc.agentsList": "Tài liệu này tự liệt kê agent trong frontmatter. Hãy sửa dòng agents để thay đổi.",
+  "preview.title": "Tiêu đề",
+  "preview.agents": "Agent",
+  "preview.tags": "Thẻ",
+  "target.agents": "AGENTS.md",
+  "target.claude": "Claude",
+  "target.gemini": "Gemini",
+  "target.cursor": "Cursor",
+  "backlinks.label": "Tài liệu liên kết tới đây",
+  "backlinks.title": "Được liên kết từ ({count})",
+  "backlinks.empty": "Chưa có tài liệu nào liên kết tới đây."
 }

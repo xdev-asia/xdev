@@ -89,5 +89,20 @@
   "error.no_repo": "This folder is not tracked with git yet.",
   "error.git": "Git reported an error.",
   "error.git_identity": "Git does not know who you are yet. Run these two commands in a terminal, then try again:",
-  "error.stale": "The docs changed after this preview. Check the new preview, then write again."
+  "error.stale": "The docs changed after this preview. Check the new preview, then write again.",
+  "doc.mode.label": "View",
+  "doc.mode.edit": "Edit",
+  "doc.mode.preview": "Preview",
+  "doc.agents": "For agents",
+  "doc.agentsList": "This doc lists its agents by hand in the frontmatter. Edit the agents line to change them.",
+  "preview.title": "Title",
+  "preview.agents": "Agents",
+  "preview.tags": "Tags",
+  "target.agents": "AGENTS.md",
+  "target.claude": "Claude",
+  "target.gemini": "Gemini",
+  "target.cursor": "Cursor",
+  "backlinks.label": "Docs linking here",
+  "backlinks.title": "Linked from ({count})",
+  "backlinks.empty": "No other doc links here yet."
 }
