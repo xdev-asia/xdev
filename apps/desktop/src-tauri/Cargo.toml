@@ -13,8 +13,14 @@ name = "xdev_desktop"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+serde.workspace = true
+serde_json.workspace = true
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2.8.4"
 xdev-core.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true
