@@ -1,0 +1,10 @@
+id = "adr"
+version = "0.1.0"
+engines = { xdev-api = "^0.1" }
+requires = ["docs"]
+permissions = ["docs:read", "docs:write", "ai:invoke"]
+
+[[nav]]
+key = "adr"
+label = "Decisions"
+to = "/adr"

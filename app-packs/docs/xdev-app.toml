@@ -1,0 +1,9 @@
+id = "docs"
+version = "0.1.0"
+engines = { xdev-api = "^0.1" }
+permissions = ["docs:read", "docs:write", "search:query", "ai:invoke"]
+
+[[nav]]
+key = "docs"
+label = "Docs"
+to = "/docs"
