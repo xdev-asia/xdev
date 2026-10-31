@@ -2,7 +2,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use xdev_core::{CoreError, Store, Vault, data_dir, index_path, search, sync_vault};
+use xdev_core::{
+    ChangeKind, CoreError, Repo, Store, Vault, Written, data_dir, index_path, list_changes, search,
+    sync_vault,
+};
 
 #[derive(Parser)]
 #[command(name = "xdev", version = xdev_core::version(), about = "Local-first project knowledge for humans and AI agents")]
@@ -22,6 +25,8 @@ enum Command {
         #[arg(long, default_value_t = 20)]
         limit: usize,
     },
+    /// Print `kind<TAB>path` for each doc that differs from git `HEAD`.
+    Changes { dir: PathBuf },
 }
 
 fn main() -> ExitCode {
@@ -57,6 +62,21 @@ fn run(command: Command) -> Result<(), &'static str> {
             sync_vault(&vault, &mut store).map_err(|e| e.code())?;
             for hit in search(&store, &query, limit).map_err(|e| e.code())? {
                 println!("{}\t{}", hit.path, hit.title);
+            }
+        }
+        Command::Changes { dir } => {
+            let vault = Vault::open(&dir).map_err(|e| e.code())?;
+            let repo = Repo::discover(vault.root()).map_err(|e| e.code())?;
+            // A fresh process has written nothing, so every change is
+            // `outside`; only the kind is printed.
+            let changes = list_changes(&vault, &repo, &Written::new()).map_err(|e| e.code())?;
+            for change in changes {
+                let kind = match change.kind {
+                    ChangeKind::Added => "added",
+                    ChangeKind::Modified => "modified",
+                    ChangeKind::Deleted => "deleted",
+                };
+                println!("{kind}\t{}", change.path);
             }
         }
     }

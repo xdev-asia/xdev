@@ -52,6 +52,51 @@ fn search_prints_hits() {
     assert_eq!(stdout(&out), "");
 }
 
+/// Runs setup commands in the test repo.
+fn git(dir: &Path, args: &[&str]) {
+    let out = Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .expect("run git");
+    assert!(out.status.success(), "git {args:?}: {out:?}");
+}
+
+#[test]
+fn changes_prints_kind_and_path() {
+    let (vault, data) = (vault(), TempDir::new().unwrap());
+    let dir = vault.path();
+    git(dir, &["init", "-q"]);
+    // Local identity and no autocrlf, so the developer's global config
+    // plays no part.
+    for (key, value) in [
+        ("user.name", "Test User"),
+        ("user.email", "test@example.com"),
+        ("commit.gpgsign", "false"),
+        ("core.autocrlf", "false"),
+    ] {
+        git(dir, &["config", key, value]);
+    }
+    git(dir, &["add", "-A"]);
+    git(dir, &["commit", "-q", "-m", "init"]);
+    fs::write(dir.join("a.md"), "changed").unwrap();
+
+    let out = xdev(data.path(), &["changes", dir.to_str().unwrap()]);
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(stdout(&out), "modified\ta.md\n");
+}
+
+#[test]
+fn changes_outside_repo_fails_with_no_repo() {
+    let (vault, data) = (vault(), TempDir::new().unwrap());
+    let out = xdev(data.path(), &["changes", vault.path().to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr).trim(),
+        "error: no_repo"
+    );
+}
+
 #[test]
 fn search_missing_dir_fails_with_not_found() {
     let data = TempDir::new().unwrap();
