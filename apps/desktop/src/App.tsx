@@ -3,6 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { api, toApiError, type ApiError, type Change, type DocEntry, type SearchHit } from "./api";
 import { countLabel, rejectPrompt } from "./changes/changes";
 import { useChanges, type Problem } from "./changes/useChanges";
+import { AgentContext } from "./components/AgentContext";
 import { Backlinks } from "./components/Backlinks";
 import { ChangesPanel, ChangeView } from "./components/ChangesPanel";
 import { ConfirmDialog } from "./components/ConfirmDialog";
@@ -80,6 +81,8 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
   const [rejecting, setRejecting] = useState<Change[] | null>(null);
   // The doc whose history is shown; opening another doc closes the panel without extra bookkeeping.
   const [historyFor, setHistoryFor] = useState<string | null>(null);
+  // Takes over the main area; opening a doc or a change goes back to it.
+  const [agentsOpen, setAgentsOpen] = useState(false);
   const [docs, setDocs] = useState(props.vault.docs);
   // One choice for the whole session, so moving between docs keeps reading (or editing) mode.
   const [mode, setMode] = useState<"edit" | "preview">("edit");
@@ -181,7 +184,18 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
 
   function openDoc(path: string) {
     setSelected(null);
+    setAgentsOpen(false);
     doc.open(path);
+  }
+
+  function selectChange(path: string | null) {
+    setAgentsOpen(false);
+    setSelected(path);
+  }
+
+  function toggleAgents() {
+    setSelected(null);
+    setAgentsOpen((open) => !open);
   }
 
   async function approve(paths: string[]) {
@@ -255,6 +269,9 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
           />
         </div>
         <div className="topbar-actions">
+          <button type="button" className="btn-secondary" aria-pressed={agentsOpen} onClick={toggleAgents}>
+            {agentsOpen ? t("agents.close") : t("agents.open")}
+          </button>
           <button
             type="button"
             className="btn-secondary"
@@ -298,7 +315,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
                 selected={change?.path ?? null}
                 message={message}
                 onMessage={setMessage}
-                onSelect={setSelected}
+                onSelect={selectChange}
                 onApprove={(paths) => void approve(paths)}
                 onReject={setRejecting}
               />
@@ -307,6 +324,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
         )}
       </aside>
       <main className="main">
+        {agentsOpen && <AgentContext api={api} revision={revision} flush={doc.flush} onOpenDoc={openDoc} />}
         {change && (
           <ChangeView
             key={change.path}
@@ -317,11 +335,11 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
             onApprove={() => void approve([change.path])}
             onReject={() => setRejecting([change])}
             onOpenDoc={() => openDoc(change.path)}
-            onClose={() => setSelected(null)}
+            onClose={() => selectChange(null)}
           />
         )}
         {/* Hidden rather than unmounted, so the editor keeps its undo history while a diff is shown. */}
-        <div className="docview" hidden={change !== null}>
+        <div className="docview" hidden={change !== null || agentsOpen}>
           {state.path === null ? (
             <p className="placeholder">{t("editor.placeholder", { shortcut: SHORTCUT })}</p>
           ) : (
