@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { api, toApiError, type ApiError, type Change, type DocEntry, type SearchHit } from "./api";
 import { countLabel, rejectPrompt } from "./changes/changes";
-import { useChanges } from "./changes/useChanges";
+import { useChanges, type Problem } from "./changes/useChanges";
 import { ChangesPanel, ChangeView } from "./components/ChangesPanel";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ConflictBanner } from "./components/ConflictBanner";
 import { Editor } from "./components/Editor";
+import { HistoryPanel } from "./components/HistoryPanel";
 import { LanguageSwitch } from "./components/LanguageSwitch";
 import { resultId, RESULTS_ID, SearchPanel } from "./components/SearchPanel";
 import { Sidebar } from "./components/Sidebar";
@@ -74,6 +75,8 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [rejecting, setRejecting] = useState<Change[] | null>(null);
+  // The doc whose history is shown; opening another doc closes the panel without extra bookkeeping.
+  const [historyFor, setHistoryFor] = useState<string | null>(null);
   const [docs, setDocs] = useState(props.vault.docs);
   const [revision, setRevision] = useState(0);
   const [query, setQuery] = useState("");
@@ -188,10 +191,27 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
     if ((await review.reject(targets.map((c) => c.path))) && deletesOpenDoc) doc.close();
   }
 
+  async function restore(path: string, id: string): Promise<Problem | null> {
+    // An autosave landing after the restore would overwrite it with the old draft.
+    if (!(await doc.flush())) return { code: "unsaved" };
+    try {
+      await api.restoreVersion(path, id);
+    } catch (e) {
+      return toApiError(e);
+    }
+    setHistoryFor(null);
+    doc.open(path);
+    review.refresh();
+    return null;
+  }
+
   const change = review.changes.find((c) => c.path === selected) ?? null;
   const prompt = rejecting && rejecting.length > 0 ? rejectPrompt(rejecting) : null;
   const entry = docs.find((d) => d.path === state.path);
   const dirty = isDirty(state);
+  const tracked = review.status === "ok";
+  const historyPath = tracked && historyFor === state.path && state.status !== "loading" ? historyFor : null;
+  const historyOpen = historyPath !== null;
   const saveLabel =
     state.status === "loading"
       ? t("editor.loading")
@@ -302,9 +322,22 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
                   <h1 className="doc-title">{entry?.title ?? folderName(state.path)}</h1>
                   <span className="doc-path">{state.path}</span>
                 </div>
-                <span className="doc-status" data-dirty={dirty || undefined} aria-live="polite">
-                  {saveLabel}
-                </span>
+                <div className="doc-actions">
+                  <span className="doc-status" data-dirty={dirty || undefined} aria-live="polite">
+                    {saveLabel}
+                  </span>
+                  {tracked && (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      aria-pressed={historyOpen}
+                      disabled={state.status === "loading"}
+                      onClick={() => setHistoryFor(historyOpen ? null : state.path)}
+                    >
+                      {historyOpen ? t("history.close") : t("history.open")}
+                    </button>
+                  )}
+                </div>
               </div>
               {state.status === "conflict" && (
                 <ConflictBanner onReload={() => doc.resolve("reload")} onKeep={() => doc.resolve("keep")} />
@@ -317,14 +350,28 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
               {state.status === "loading" ? (
                 <p className="placeholder">{t("editor.loading")}</p>
               ) : (
-                // Remounting per doc keeps undo history from leaking between files.
-                <Editor
-                  key={state.path}
-                  value={state.draft}
-                  onChange={doc.edit}
-                  onSave={doc.save}
-                  readOnly={state.status === "error" && !dirty}
-                />
+                <>
+                  {historyPath !== null && (
+                    <HistoryPanel
+                      key={historyPath}
+                      api={api}
+                      path={historyPath}
+                      current={state.draft}
+                      revision={review.revision}
+                      onRestore={(id) => restore(historyPath, id)}
+                    />
+                  )}
+                  <div className="docbody" hidden={historyOpen}>
+                    {/* Remounting per doc keeps undo history from leaking between files. */}
+                    <Editor
+                      key={state.path}
+                      value={state.draft}
+                      onChange={doc.edit}
+                      onSave={doc.save}
+                      readOnly={state.status === "error" && !dirty}
+                    />
+                  </div>
+                </>
               )}
             </>
           )}

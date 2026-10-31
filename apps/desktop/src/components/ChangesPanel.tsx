@@ -9,7 +9,7 @@ import { DiffView } from "./DiffView";
 // Shell commands, so they stay in English whatever the UI language.
 const IDENTITY_COMMANDS = 'git config --global user.name "Your Name"\ngit config --global user.email you@example.com';
 
-const COMPACT = { padding: "var(--x-space-1) var(--x-space-3)" };
+export const COMPACT = { padding: "var(--x-space-1) var(--x-space-3)" };
 
 export function ProblemNote(props: { problem: Problem }): JSX.Element {
   const { t } = useI18n();

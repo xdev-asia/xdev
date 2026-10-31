@@ -18,6 +18,19 @@ export function rejectPrompt(changes: Change[]): Message {
   return { key: "changes.reject.discardMany", vars: { count: changes.length } };
 }
 
+const MINUTE = 60;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+// Coarse on purpose: the list answers "how long ago", the commit id answers "exactly when".
+export function relativeTime(nowSec: number, timeSec: number): Message {
+  const ago = nowSec - timeSec;
+  if (ago < MINUTE) return { key: "time.justNow" };
+  if (ago < HOUR) return { key: "time.min", vars: { n: Math.floor(ago / MINUTE) } };
+  if (ago < DAY) return { key: "time.hour", vars: { n: Math.floor(ago / HOUR) } };
+  return { key: "time.day", vars: { n: Math.floor(ago / DAY) } };
+}
+
 // Code-unit order, the same as the Rust side, so the list does not jump when it refreshes.
 export function sortChanges(changes: Change[]): Change[] {
   return [...changes].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
