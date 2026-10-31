@@ -35,6 +35,9 @@ pub fn run() {
             commands::history,
             commands::read_version,
             commands::restore_version,
+            commands::backlinks,
+            commands::export_plan,
+            commands::export_write,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start xDev");

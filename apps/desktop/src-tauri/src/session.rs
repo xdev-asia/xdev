@@ -3,8 +3,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
 use xdev_core::{
-    CoreError, DocEntry, Repo, SearchHit, Store, Vault, VaultError, VaultWatcher, Written,
-    content_hash, index_path, read_version, search, sync_vault,
+    CoreError, DocEntry, DocLink, Repo, SearchHit, Store, Vault, VaultError, VaultWatcher, Written,
+    backlinks, content_hash, index_path, read_version, search, sync_vault,
 };
 
 use crate::commands::CmdError;
@@ -47,6 +47,21 @@ impl Session {
 
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>, CoreError> {
         search(&self.store, query, limit)
+    }
+
+    pub fn backlinks(&self, path: &str) -> Result<Vec<DocLink>, CoreError> {
+        backlinks(&self.vault, &self.store, path)
+    }
+
+    pub fn vault_root(&self) -> PathBuf {
+        self.vault.root().to_path_buf()
+    }
+
+    /// Generated files that land inside the vault (vault = repo root) are
+    /// the app's own writes, so review shows them as such.
+    pub fn note_written(&mut self, path: &str, content: &str) {
+        self.written
+            .insert(path.to_owned(), content_hash(content.as_bytes()));
     }
 }
 

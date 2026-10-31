@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Emitter, Manager, State};
-use xdev_core::{Change, Commit, CoreError, DocEntry, SearchHit};
+use xdev_core::{Change, Commit, CoreError, DocEntry, DocLink, ExportPlan, SearchHit, Vault};
 
 use crate::session::Shared;
 use crate::settings;
@@ -184,6 +184,56 @@ pub fn restore_version(
     id: String,
 ) -> Result<(), CmdError> {
     state.session.restore_version(&path, &id)
+}
+
+#[tauri::command(async)]
+pub fn backlinks(state: State<'_, AppState>, path: String) -> Result<Vec<DocLink>, CmdError> {
+    state.session.with(|s| s.backlinks(&path))
+}
+
+/// Outside the session lock: reading every doc and asking git for the repo
+/// root must not stall typing.
+fn export_vault(state: &AppState) -> Result<(Vault, PathBuf), CmdError> {
+    let root = state.session.with(|s| Ok(s.vault_root()))?;
+    let vault = Vault::open(&root).map_err(CoreError::from)?;
+    let out = xdev_core::export_root(&vault)?;
+    Ok((vault, out))
+}
+
+#[tauri::command(async)]
+pub fn export_plan(state: State<'_, AppState>) -> Result<ExportPlan, CmdError> {
+    let (vault, root) = export_vault(&state)?;
+    Ok(xdev_core::export_plan(&vault, &root)?)
+}
+
+#[derive(serde::Deserialize)]
+pub struct Expected {
+    path: String,
+    hash: String,
+}
+
+#[tauri::command(async)]
+pub fn export_write(
+    state: State<'_, AppState>,
+    expected: Vec<Expected>,
+) -> Result<Vec<String>, CmdError> {
+    let (vault, root) = export_vault(&state)?;
+    let expected: Vec<(String, String)> = expected.into_iter().map(|e| (e.path, e.hash)).collect();
+    let written = xdev_core::export_write(&vault, &root, &expected)?;
+    if root == vault.root() {
+        let docs: Vec<(String, String)> = written
+            .iter()
+            .filter(|p| xdev_core::is_doc_path(p))
+            .filter_map(|p| Some((p.clone(), vault.read(p).ok()?)))
+            .collect();
+        state.session.with(|s| {
+            for (path, content) in &docs {
+                s.note_written(path, content);
+            }
+            Ok(())
+        })?;
+    }
+    Ok(written)
 }
 
 fn settings_path(app: &AppHandle) -> Option<PathBuf> {

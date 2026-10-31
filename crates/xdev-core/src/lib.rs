@@ -23,7 +23,7 @@ pub use xdev_git::{ChangeKind, Commit, GitError, Repo};
 pub use xdev_store::{SearchHit, Store, StoreError};
 pub use xdev_vault::{
     Frontmatter, Link, LinkKind, Resolver, Target, Vault, VaultError, VaultWatcher, content_hash,
-    parse_frontmatter, parse_links,
+    is_doc_path, parse_frontmatter, parse_links,
 };
 
 pub fn version() -> &'static str {
