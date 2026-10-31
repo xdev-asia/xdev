@@ -1,4 +1,9 @@
-import type { Api, ApiError, Change, ChangeKind, Commit, DocEntry, SearchHit } from "./api";
+import type { Api, ApiError, Change, ChangeKind, Commit, DocEntry, DocLink, ExportPlan, SearchHit } from "./api";
+import { extractTitle, parseFrontmatter } from "./doc/frontmatter";
+import { createResolver, parseLinks } from "./doc/links";
+import { estimateTokens, type ExportDoc, planExport } from "./mockExport";
+
+export { EXPORT_MARKER } from "./mockExport";
 
 const MAX_DOC_BYTES = 5 * 1024 * 1024;
 // Simulates the watcher's debounce so the UI sees its own writes echoed back, as with Tauri.
@@ -14,13 +19,17 @@ export const DEMO_SEED: Record<string, string> = {
     "# xDev handbook",
     "",
     "Project knowledge for the xDev team. Start with the architecture notes,",
-    "then read the decisions log before changing a crate boundary.",
+    "then read the [[decisions|decisions log]] before changing a crate boundary.",
     "",
-    "- `docs/` holds the living docs.",
+    "- `docs/` holds the living docs; new here? Read [Getting started](docs/guides/getting-started.md).",
     "- `notes/` holds meeting notes in English and Vietnamese.",
     "",
   ].join("\n"),
   "docs/architecture/tai-lieu-kien-truc.md": [
+    "---",
+    "agents: true",
+    "tags: [kiến-trúc, core]",
+    "---",
     "# Tài liệu kiến trúc",
     "",
     "Hệ thống gồm ba lớp: vault đọc và ghi tệp Markdown, store giữ chỉ mục SQLite,",
@@ -31,8 +40,13 @@ export const DEMO_SEED: Record<string, string> = {
     "- Tệp trên ổ đĩa luôn là nguồn sự thật.",
     "- Chỉ mục có thể xoá và dựng lại bất cứ lúc nào.",
     "",
+    "Các quyết định chi tiết nằm trong [[decisions]].",
+    "",
   ].join("\n"),
   "docs/architecture/decisions.md": [
+    "---",
+    "agents: [claude]",
+    "---",
     "# Architecture decisions",
     "",
     "## 001: SQLite FTS5 for search",
@@ -42,6 +56,10 @@ export const DEMO_SEED: Record<string, string> = {
     "",
   ].join("\n"),
   "docs/guides/getting-started.md": [
+    "---",
+    "title: Getting started with xDev",
+    "agents: true",
+    "---",
     "# Getting started",
     "",
     "Install the toolchain, then run `pnpm install` and `pnpm --filter desktop dev`.",
@@ -53,6 +71,7 @@ export const DEMO_SEED: Record<string, string> = {
     "",
     "- Hoàn thành bản M0: mở thư mục, sửa tài liệu, tìm kiếm.",
     "- Việc tiếp theo: liên kết giữa các tài liệu và xuất cho AI agent.",
+    "- Xem lại [[tai-lieu-kien-truc]] và [[lo-trinh]] trước buổi sau.",
     "",
   ].join("\n"),
   "notes/scratch.md": "Quick notes without a heading.\n\nThe title falls back to the file name.\n",
@@ -65,9 +84,9 @@ export const DEMO_OUTSIDE_EDIT = [
   "# xDev handbook",
   "",
   "Project knowledge for the xDev team. Start with the architecture notes,",
-  "then read the decisions log before changing a crate boundary.",
+  "then read the [[decisions|decisions log]] before changing a crate boundary.",
   "",
-  "- `docs/` holds the living docs.",
+  "- `docs/` holds the living docs; new here? Read [Getting started](docs/guides/getting-started.md).",
   "- `notes/` holds meeting notes in English and Vietnamese.",
   "- `reviews/` holds approved design reviews.",
   "",
@@ -97,13 +116,6 @@ type MockCommit = Commit & { tree: Map<string, string> };
 // Mirrors the Rust vault: no `..` segments and nothing absolute (POSIX, UNC or drive letter).
 function isOutside(path: string): boolean {
   return path.startsWith("/") || path.startsWith("\\") || /^[a-zA-Z]:/.test(path) || path.split(/[/\\]/).includes("..");
-}
-
-function titleOf(path: string, content: string): string {
-  const heading = content.split("\n").find((line) => line.startsWith("# "));
-  if (heading) return heading.slice(2).trim();
-  const name = path.slice(path.lastIndexOf("/") + 1);
-  return name.endsWith(".md") ? name.slice(0, -3) : name;
 }
 
 function skipReason(content: string): DocEntry["skipped"] {
@@ -192,8 +204,15 @@ export type MockApi = Api & {
   __editOutside(path: string, content: string | null): void;
 };
 
-export function createMockApi(seed: Record<string, string>, options: { repo?: boolean } = {}): MockApi {
+type MockOptions = {
+  repo?: boolean;
+  // Files already at the export root (e.g. a hand-written CLAUDE.md), kept apart from the docs.
+  exported?: Record<string, string>;
+};
+
+export function createMockApi(seed: Record<string, string>, options: MockOptions = {}): MockApi {
   const files = new Map(Object.entries(seed));
+  const exported = new Map(Object.entries(options.exported ?? {}));
   const listeners = new Set<(paths: string[]) => void>();
   let open = false;
   let last: string | null = null;
@@ -259,7 +278,7 @@ export function createMockApi(seed: Record<string, string>, options: { repo?: bo
         const skipped = skipReason(content);
         return {
           path,
-          title: skipped ? titleOf(path, "") : titleOf(path, content),
+          title: extractTitle(path, skipped ? "" : content),
           size: new TextEncoder().encode(content).length,
           skipped,
         };
@@ -270,6 +289,26 @@ export function createMockApi(seed: Record<string, string>, options: { repo?: bo
     if (!open) return "no_vault";
     if (isOutside(path)) return "outside_vault";
     return null;
+  }
+
+  function readable(): DocEntry[] {
+    return entries().filter((doc) => doc.skipped === null);
+  }
+
+  async function plan(): Promise<ExportPlan> {
+    const docs: ExportDoc[] = readable().map(({ path, title }) => {
+      const { fm, body } = parseFrontmatter(files.get(path)!);
+      return { source: path, title, targets: fm.agents, body };
+    });
+    const marked = docs.filter((doc) => doc.targets.length > 0);
+    const planned = await planExport(marked, (path) => exported.get(path) ?? null);
+    const agents = planned.find((file) => file.path === "AGENTS.md");
+    return {
+      root: last ?? "",
+      files: planned,
+      docs: marked.map(({ source, title, targets }) => ({ path: source, title, targets })),
+      tokens: agents ? estimateTokens(agents.new) : 0,
+    };
   }
 
   const api: MockApi = {
@@ -385,6 +424,32 @@ export function createMockApi(seed: Record<string, string>, options: { repo?: bo
       const content = await api.readVersion(path, id);
       if (content === null) return reject("not_found");
       await api.writeDoc(path, content);
+    },
+    async backlinks(path) {
+      const bad = guard(path);
+      if (bad) return reject(bad);
+      const resolve = createResolver(entries().map((doc) => doc.path));
+      const found: DocLink[] = [];
+      for (const doc of readable()) {
+        if (doc.path === path) continue;
+        const links = parseLinks(files.get(doc.path)!);
+        if (links.some((link) => resolve(link, doc.path) === path)) found.push({ path: doc.path, title: doc.title });
+      }
+      return found;
+    },
+    async exportPlan() {
+      return open ? plan() : reject("no_vault");
+    },
+    async exportWrite(expected) {
+      if (!open) return reject("no_vault");
+      const writable = (await plan()).files.filter((file) => file.status === "new" || file.status === "changed");
+      const key = (file: { path: string; hash: string }) => `${file.path}\n${file.hash}`;
+      const want = expected.map(key).sort();
+      const have = writable.map(key).sort();
+      // What gets written must be exactly what the user previewed.
+      if (want.length !== have.length || want.some((k, i) => k !== have[i])) return reject("stale");
+      for (const file of writable) exported.set(file.path, file.new);
+      return writable.map((file) => file.path);
     },
     __editOutside(path, content) {
       if (content === null) files.delete(path);

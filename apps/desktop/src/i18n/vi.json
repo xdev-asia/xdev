@@ -88,5 +88,6 @@
   "error.no_git": "Chưa cài Git hoặc Git không có trong PATH.",
   "error.no_repo": "Thư mục này chưa được theo dõi bằng Git.",
   "error.git": "Git báo lỗi.",
-  "error.git_identity": "Git chưa biết bạn là ai. Hãy chạy hai lệnh sau trong terminal rồi thử lại:"
+  "error.git_identity": "Git chưa biết bạn là ai. Hãy chạy hai lệnh sau trong terminal rồi thử lại:",
+  "error.stale": "Tài liệu đã thay đổi sau lần xem trước này. Hãy xem lại bản mới rồi ghi lại."
 }

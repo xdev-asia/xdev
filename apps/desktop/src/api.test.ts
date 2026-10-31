@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { toApiError } from "./api";
-import { createMockApi, defaultMessage, DEMO_SEED } from "./mockApi";
+import { createMockApi, defaultMessage, DEMO_SEED, EXPORT_MARKER } from "./mockApi";
 
 const seed = {
   "README.md": "# Hello\n\nWelcome to the vault.\n",
@@ -219,5 +219,124 @@ describe("mock vcs", () => {
     expect(defaultMessage([{ path: "n.md", kind: "added", origin: "app" }])).toBe("Add n.md");
     expect(defaultMessage([{ path: "a.md", kind: "modified", origin: "app" }])).toBe("Update a.md");
     expect(defaultMessage([{ path: "b.md", kind: "deleted", origin: "outside" }])).toBe("Delete b.md");
+  });
+});
+
+describe("mock links and export", () => {
+  const vault = {
+    "README.md": "# Home\n\nSee [[store]] and [[store]] and [[README]].\n",
+    "arch/store.md": "---\ntitle: Store design\nagents: true\n---\n# Store\n\nIntro.\n\n## Tables\n",
+    "notes/a.md": "[back](../arch/store.md) [[nope]]\n",
+    "notes/claude.md": "---\nagents: [claude]\n---\nClaude only\n",
+  };
+
+  it("backlinks are unique, sorted, without the doc itself", async () => {
+    const api = await opened(vault);
+    expect(await api.backlinks("arch/store.md")).toEqual([
+      { path: "README.md", title: "Home" },
+      { path: "notes/a.md", title: "a" },
+    ]);
+    expect(await api.backlinks("README.md")).toEqual([]);
+    await expect(createMockApi(vault).backlinks("README.md")).rejects.toEqual({ code: "no_vault" });
+  });
+
+  it("titles come from frontmatter", async () => {
+    const docs = await (await opened(vault)).listDocs();
+    expect(docs.find((d) => d.path === "arch/store.md")?.title).toBe("Store design");
+  });
+
+  it("exportPlan lists marked docs and renders the files", async () => {
+    const api = await opened(vault);
+    const plan = await api.exportPlan();
+    expect(plan.root).toBe("/vault");
+    expect(plan.docs).toEqual([
+      { path: "arch/store.md", title: "Store design", targets: ["agents"] },
+      { path: "notes/claude.md", title: "claude", targets: ["claude"] },
+    ]);
+    expect(plan.files.map((f) => [f.path, f.status])).toEqual([
+      ["AGENTS.md", "new"],
+      ["CLAUDE.md", "new"],
+      ["GEMINI.md", "new"],
+    ]);
+    const agents = plan.files[0];
+    expect(agents.old).toBeNull();
+    expect(agents.new).toBe(
+      `${EXPORT_MARKER}\n# Agent guide\n\n## Store design\n_Source: \`arch/store.md\`_\n\nIntro.\n\n### Tables\n`,
+    );
+    expect(plan.files[1].new).toBe(
+      `${EXPORT_MARKER}\n# Claude Code guide\n\n@AGENTS.md\n\n## claude\n_Source: \`notes/claude.md\`_\n\nClaude only\n`,
+    );
+    expect(plan.files[2].new).toBe(`${EXPORT_MARKER}\n# Gemini guide\n\n@AGENTS.md\n`);
+    expect(plan.tokens).toBe(Math.ceil(agents.new.length / 4));
+    expect(agents.hash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("exportPlan renders a Cursor rule only when asked", async () => {
+    const api = await opened({ "c.md": "---\nagents: cursor\n---\n# C\n" });
+    const plan = await api.exportPlan();
+    expect(plan.files.map((f) => f.path)).toEqual([".cursor/rules/xdev.mdc"]);
+    expect(plan.files[0].new.startsWith("---\ndescription: ")).toBe(true);
+    expect(plan.tokens).toBe(0);
+  });
+
+  it("exportPlan with nothing marked is empty", async () => {
+    const plan = await (await opened()).exportPlan();
+    expect(plan).toMatchObject({ files: [], docs: [], tokens: 0 });
+  });
+
+  it("exportWrite writes what was previewed, then reports unchanged", async () => {
+    const api = await opened(vault);
+    const plan = await api.exportPlan();
+    const expected = plan.files.map(({ path, hash }) => ({ path, hash }));
+    expect(await api.exportWrite(expected)).toEqual(["AGENTS.md", "CLAUDE.md", "GEMINI.md"]);
+    const after = await api.exportPlan();
+    expect(after.files.every((f) => f.status === "unchanged")).toBe(true);
+    expect(after.files[0].old).toBe(after.files[0].new);
+  });
+
+  it("exportWrite rejects a stale expectation and writes nothing", async () => {
+    const api = await opened(vault);
+    const plan = await api.exportPlan();
+    const expected = plan.files.map(({ path, hash }) => ({ path, hash }));
+    await expect(api.exportWrite([{ ...expected[0], hash: "0".repeat(64) }, ...expected.slice(1)])).rejects.toEqual({
+      code: "stale",
+    });
+    await expect(api.exportWrite(expected.slice(1))).rejects.toEqual({ code: "stale" });
+    await api.writeDoc("arch/store.md", "---\nagents: true\n---\n# Store\n\nChanged.\n");
+    await expect(api.exportWrite(expected)).rejects.toEqual({ code: "stale" });
+    expect((await api.exportPlan()).files.every((f) => f.status === "new")).toBe(true);
+  });
+
+  it("a hand-written file is foreign and never written", async () => {
+    const api = createMockApi(vault, { exported: { "CLAUDE.md": "# My own rules\n" } });
+    await api.openVault("/vault");
+    const plan = await api.exportPlan();
+    expect(plan.files[1]).toMatchObject({ path: "CLAUDE.md", status: "foreign", old: "# My own rules\n" });
+    const expected = plan.files.filter((f) => f.status === "new").map(({ path, hash }) => ({ path, hash }));
+    expect(await api.exportWrite(expected)).toEqual(["AGENTS.md", "GEMINI.md"]);
+    expect((await api.exportPlan()).files[1].old).toBe("# My own rules\n");
+  });
+
+  it("a generated file that differs is changed", async () => {
+    const api = createMockApi(vault, { exported: { "GEMINI.md": `${EXPORT_MARKER}\n# Old\n` } });
+    await api.openVault("/vault");
+    expect((await api.exportPlan()).files[2].status).toBe("changed");
+  });
+
+  it("demo seed shows links and an export", async () => {
+    const api = await opened(DEMO_SEED);
+    const backlinks = await api.backlinks("docs/architecture/tai-lieu-kien-truc.md");
+    expect(backlinks.map((l) => l.path)).toEqual(["notes/2026/hop-giao-ban.md"]);
+    expect((await api.backlinks("docs/architecture/decisions.md")).map((l) => l.path)).toEqual([
+      "README.md",
+      "docs/architecture/tai-lieu-kien-truc.md",
+    ]);
+    const plan = await api.exportPlan();
+    expect(plan.files.map((f) => f.path)).toEqual(["AGENTS.md", "CLAUDE.md", "GEMINI.md"]);
+    expect(plan.docs.map((d) => d.title)).toContain("Tài liệu kiến trúc");
+  });
+
+  it("toApiError keeps stale", () => {
+    expect(toApiError({ code: "stale" })).toEqual({ code: "stale" });
   });
 });

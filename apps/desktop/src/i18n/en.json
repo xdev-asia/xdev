@@ -88,5 +88,6 @@
   "error.no_git": "Git is not installed or not on PATH.",
   "error.no_repo": "This folder is not tracked with git yet.",
   "error.git": "Git reported an error.",
-  "error.git_identity": "Git does not know who you are yet. Run these two commands in a terminal, then try again:"
+  "error.git_identity": "Git does not know who you are yet. Run these two commands in a terminal, then try again:",
+  "error.stale": "The docs changed after this preview. Check the new preview, then write again."
 }

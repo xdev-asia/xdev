@@ -1,9 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import type { Target } from "./doc/frontmatter";
 import { createMockApi, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 
 export { createMockApi };
+export type { Target };
 
 export type DocEntry = { path: string; title: string; size: number; skipped: null | "too_large" | "not_utf8" };
 export type SearchHit = { path: string; title: string; snippet: string };
@@ -18,7 +20,8 @@ export type ApiError = {
     | "no_git"
     | "no_repo"
     | "git"
-    | "git_identity";
+    | "git_identity"
+    | "stale";
   detail?: string;
 };
 export type VcsState = { status: "ok" | "no_repo" | "no_git" };
@@ -26,6 +29,17 @@ export type ChangeKind = "added" | "modified" | "deleted";
 export type Change = { path: string; kind: ChangeKind; origin: "app" | "outside" };
 // `time` is unix seconds, `message` the subject line.
 export type Commit = { id: string; author: string; time: number; message: string };
+export type DocLink = { path: string; title: string };
+export type ExportStatus = "new" | "changed" | "unchanged" | "foreign";
+// `path` is relative to the export root with "/" separators; `old` is null when the file does not exist yet.
+export type ExportFile = { path: string; status: ExportStatus; old: string | null; new: string; hash: string };
+export type ExportPlan = {
+  root: string;
+  files: ExportFile[];
+  docs: { path: string; title: string; targets: Target[] }[];
+  tokens: number;
+};
+export type Expected = { path: string; hash: string };
 
 export interface Api {
   pickFolder(): Promise<string | null>;
@@ -45,6 +59,10 @@ export interface Api {
   history(path: string, limit: number): Promise<Commit[]>;
   readVersion(path: string, id: string): Promise<string | null>;
   restoreVersion(path: string, id: string): Promise<void>;
+  backlinks(path: string): Promise<DocLink[]>;
+  exportPlan(): Promise<ExportPlan>;
+  // Rejects with `stale` when the files to write no longer match `expected`.
+  exportWrite(expected: Expected[]): Promise<string[]>;
 }
 
 export const ERROR_CODES: readonly ApiError["code"][] = [
@@ -58,6 +76,7 @@ export const ERROR_CODES: readonly ApiError["code"][] = [
   "no_repo",
   "git",
   "git_identity",
+  "stale",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -91,6 +110,9 @@ const tauriApi: Api = {
   history: (path, limit) => call("history", { path, limit }),
   readVersion: (path, id) => call("read_version", { path, id }),
   restoreVersion: (path, id) => call("restore_version", { path, id }),
+  backlinks: (path) => call("backlinks", { path }),
+  exportPlan: () => call("export_plan"),
+  exportWrite: (expected) => call("export_write", { expected }),
 };
 
 function browserApi(): Api {
