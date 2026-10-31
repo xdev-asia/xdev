@@ -2,7 +2,7 @@
 //! and the editor never disagree on a title or a link.
 
 use serde_json::Value;
-use xdev_vault::{extract_title, parse_frontmatter};
+use xdev_vault::{LinkKind, Resolver, extract_title, parse_frontmatter, parse_links};
 
 const FRONTMATTER: &str = include_str!("../../../fixtures/frontmatter.json");
 
@@ -36,5 +36,44 @@ fn frontmatter_fixtures() {
             "case {name}: agents"
         );
         assert_eq!(fm.tags, strings(&case["tags"]), "case {name}: tags");
+    }
+}
+
+const LINKS: &str = include_str!("../../../fixtures/links.json");
+
+#[test]
+fn link_fixtures() {
+    let spec: Value = serde_json::from_str(LINKS).unwrap();
+    let resolver = Resolver::new(strings(&spec["docs"]));
+    for case in spec["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let from = case["from"].as_str().unwrap();
+        let links = parse_links(case["content"].as_str().unwrap());
+        let got: Vec<(&str, &str, Option<String>)> = links
+            .iter()
+            .map(|l| {
+                (
+                    l.kind.as_str(),
+                    l.target.as_str(),
+                    resolver.resolve(l, from),
+                )
+            })
+            .collect();
+        let want: Vec<(&str, &str, Option<String>)> = case["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| {
+                (
+                    l["kind"].as_str().unwrap(),
+                    l["target"].as_str().unwrap(),
+                    l["resolved"].as_str().map(str::to_owned),
+                )
+            })
+            .collect();
+        assert_eq!(got, want, "case {name}");
+        for link in &links {
+            assert_eq!(LinkKind::parse(link.kind.as_str()), Some(link.kind));
+        }
     }
 }

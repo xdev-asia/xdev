@@ -1,6 +1,7 @@
 //! Reads and writes Markdown files, parses frontmatter, watches the vault and hashes content.
 
 mod frontmatter;
+mod links;
 mod path;
 mod title;
 mod watch;
@@ -14,6 +15,7 @@ use std::time::UNIX_EPOCH;
 use ignore::WalkBuilder;
 
 pub use frontmatter::{Frontmatter, Target, parse_frontmatter};
+pub use links::{Link, LinkKind, Resolver, parse_links};
 pub use title::extract_title;
 pub use watch::VaultWatcher;
 
