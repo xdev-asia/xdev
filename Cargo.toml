@@ -12,6 +12,7 @@ default-members = [
     "crates/xdev-mcp",
     "crates/xdev-ai",
     "crates/xdev-api",
+    "crates/xdev-cli",
 ]
 
 [workspace.package]
