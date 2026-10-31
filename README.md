@@ -1,5 +1,7 @@
 # xDev
 
+[![CI](https://github.com/xdev-asia/xdev/actions/workflows/ci.yml/badge.svg)](https://github.com/xdev-asia/xdev/actions/workflows/ci.yml)
+
 Local-first project knowledge for humans and AI agents.
 
 Your Markdown files stay the source of truth. xDev indexes them, flags docs that went stale after code changed, exports agent context (AGENTS.md, CLAUDE.md, GEMINI.md, Cursor rules), and serves them over MCP.
