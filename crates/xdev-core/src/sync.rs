@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use xdev_store::{SearchHit, Store, StoredDoc};
-use xdev_vault::{MAX_DOC_BYTES, Vault, VaultError, content_hash, extract_title};
+use xdev_store::{SearchHit, Store, StoredDoc, StoredLink};
+use xdev_vault::{MAX_DOC_BYTES, Vault, VaultError, content_hash, extract_title, parse_links};
 
 use crate::CoreError;
 
@@ -86,8 +86,16 @@ pub fn sync_vault(vault: &Vault, store: &mut Store) -> Result<Vec<DocEntry>, Cor
             size: meta.size,
             mtime_ms: meta.mtime_ms,
         };
-        // The store skips the full-text rewrite when the hash is unchanged.
-        store.upsert(&doc, &content)?;
+        let links: Vec<StoredLink> = parse_links(&content)
+            .into_iter()
+            .map(|l| StoredLink {
+                kind: l.kind.as_str().to_owned(),
+                target: l.target,
+            })
+            .collect();
+        // The store skips the full-text and links rewrite when the hash is
+        // unchanged.
+        store.upsert(&doc, &content, &links)?;
         indexed.insert(doc.path.clone());
         entries.push(DocEntry {
             path: doc.path,

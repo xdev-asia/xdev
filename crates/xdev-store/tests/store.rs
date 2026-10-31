@@ -1,5 +1,5 @@
 use tempfile::TempDir;
-use xdev_store::{Store, StoredDoc, fts_query};
+use xdev_store::{Store, StoredDoc, StoredLink, fts_query};
 
 fn doc(path: &str, title: &str, hash: &str) -> StoredDoc {
     StoredDoc {
@@ -24,10 +24,10 @@ fn hit_paths(store: &Store, query: &str) -> Vec<String> {
 fn upsert_then_search_finds_doc() {
     let mut store = Store::open_in_memory().unwrap();
     store
-        .upsert(&doc("a.md", "Alpha", "h1"), "the quick brown fox")
+        .upsert(&doc("a.md", "Alpha", "h1"), "the quick brown fox", &[])
         .unwrap();
     store
-        .upsert(&doc("b.md", "Beta", "h2"), "lazy dog")
+        .upsert(&doc("b.md", "Beta", "h2"), "lazy dog", &[])
         .unwrap();
     let hits = store.search("quick", 20).unwrap();
     assert_eq!(hits.len(), 1);
@@ -50,8 +50,12 @@ fn upsert_then_search_finds_doc() {
 #[test]
 fn upsert_replaces_previous_body() {
     let mut store = Store::open_in_memory().unwrap();
-    store.upsert(&doc("a.md", "A", "h1"), "old words").unwrap();
-    store.upsert(&doc("a.md", "A", "h2"), "new words").unwrap();
+    store
+        .upsert(&doc("a.md", "A", "h1"), "old words", &[])
+        .unwrap();
+    store
+        .upsert(&doc("a.md", "A", "h2"), "new words", &[])
+        .unwrap();
     assert!(hit_paths(&store, "old").is_empty());
     assert_eq!(hit_paths(&store, "new"), ["a.md"]);
     assert_eq!(store.docs().unwrap().len(), 1);
@@ -61,10 +65,10 @@ fn upsert_replaces_previous_body() {
 #[test]
 fn upsert_with_same_hash_updates_metadata() {
     let mut store = Store::open_in_memory().unwrap();
-    store.upsert(&doc("a.md", "A", "h1"), "body").unwrap();
+    store.upsert(&doc("a.md", "A", "h1"), "body", &[]).unwrap();
     let mut moved = doc("a.md", "A", "h1");
     moved.mtime_ms = 2_000;
-    store.upsert(&moved, "body").unwrap();
+    store.upsert(&moved, "body", &[]).unwrap();
     assert_eq!(store.docs().unwrap(), [moved]);
     assert_eq!(hit_paths(&store, "body"), ["a.md"]);
 }
@@ -72,7 +76,9 @@ fn upsert_with_same_hash_updates_metadata() {
 #[test]
 fn delete_removes_from_search() {
     let mut store = Store::open_in_memory().unwrap();
-    store.upsert(&doc("a.md", "A", "h1"), "needle").unwrap();
+    store
+        .upsert(&doc("a.md", "A", "h1"), "needle", &[])
+        .unwrap();
     store.delete("a.md").unwrap();
     store.delete("missing.md").unwrap();
     assert!(hit_paths(&store, "needle").is_empty());
@@ -83,7 +89,7 @@ fn delete_removes_from_search() {
 fn search_ignores_diacritics() {
     let mut store = Store::open_in_memory().unwrap();
     store
-        .upsert(&doc("vi.md", "Tài liệu", "h"), "Kiến trúc hệ thống")
+        .upsert(&doc("vi.md", "Tài liệu", "h"), "Kiến trúc hệ thống", &[])
         .unwrap();
     assert_eq!(hit_paths(&store, "tai lieu"), ["vi.md"]);
     assert_eq!(hit_paths(&store, "KIEN TRUC"), ["vi.md"]);
@@ -94,7 +100,7 @@ fn search_ignores_diacritics() {
 fn search_is_prefix_match() {
     let mut store = Store::open_in_memory().unwrap();
     store
-        .upsert(&doc("a.md", "A", "h"), "software architecture notes")
+        .upsert(&doc("a.md", "A", "h"), "software architecture notes", &[])
         .unwrap();
     assert_eq!(hit_paths(&store, "arch"), ["a.md"]);
     // Terms are combined with AND.
@@ -109,10 +115,11 @@ fn search_orders_by_relevance() {
         .upsert(
             &doc("weak.md", "W", "h1"),
             "rust and many other words here to dilute",
+            &[],
         )
         .unwrap();
     store
-        .upsert(&doc("strong.md", "Rust", "h2"), "rust rust rust")
+        .upsert(&doc("strong.md", "Rust", "h2"), "rust rust rust", &[])
         .unwrap();
     assert_eq!(hit_paths(&store, "rust"), ["strong.md", "weak.md"]);
     assert_eq!(store.search("rust", 1).unwrap().len(), 1);
@@ -122,7 +129,7 @@ fn search_orders_by_relevance() {
 fn search_survives_fts_syntax() {
     let mut store = Store::open_in_memory().unwrap();
     store
-        .upsert(&doc("a.md", "A", "h"), "foo bar AND near x")
+        .upsert(&doc("a.md", "A", "h"), "foo bar AND near x", &[])
         .unwrap();
     for q in [
         "\"", "AND", "foo*bar", "-x", "NEAR(", "", "   ", "a:b", "(", "*", "^x", "'",
@@ -139,6 +146,7 @@ fn snippet_is_html_escaped() {
         .upsert(
             &doc("x.md", "X", "h"),
             "<img onerror=x> kiến trúc & \"quotes\" 'single'",
+            &[],
         )
         .unwrap();
     let hits = store.search("kien", 20).unwrap();
@@ -158,7 +166,9 @@ fn reopen_keeps_data() {
     let path = dir.path().join("nested/vault/index.db");
     {
         let mut store = Store::open(&path).unwrap();
-        store.upsert(&doc("a.md", "A", "h"), "persisted").unwrap();
+        store
+            .upsert(&doc("a.md", "A", "h"), "persisted", &[])
+            .unwrap();
     }
     let store = Store::open(&path).unwrap();
     assert_eq!(hit_paths(&store, "persisted"), ["a.md"]);
@@ -183,6 +193,7 @@ fn search_folds_d_with_stroke() {
         .upsert(
             &doc("a.md", "Đà Nẵng", "h1"),
             "Mở đầu dài dòng. Con đường ven biển rất đẹp.",
+            &[],
         )
         .unwrap();
     assert_eq!(hit_paths(&store, "da nang"), ["a.md"]);
@@ -203,7 +214,7 @@ fn search_folds_d_with_stroke() {
 fn snippet_marks_cut_text_with_ellipsis() {
     let mut store = Store::open_in_memory().unwrap();
     let body = format!("{} đích {}", "mở ".repeat(30), "cuối ".repeat(30));
-    store.upsert(&doc("a.md", "A", "h1"), &body).unwrap();
+    store.upsert(&doc("a.md", "A", "h1"), &body, &[]).unwrap();
     let snippet = &store.search("dich", 20).unwrap()[0].snippet;
     assert!(
         snippet.starts_with('…') && snippet.ends_with('…'),
@@ -233,6 +244,70 @@ fn reopening_an_old_index_rebuilds_it() {
     // Rows indexed without folding are dropped, so the next sync re-reads them.
     let mut store = Store::open(&db).unwrap();
     assert!(store.docs().unwrap().is_empty());
-    store.upsert(&doc("a.md", "A", "h1"), "đường").unwrap();
+    store.upsert(&doc("a.md", "A", "h1"), "đường", &[]).unwrap();
     assert_eq!(hit_paths(&store, "duong"), ["a.md"]);
+}
+
+#[test]
+fn index_without_links_is_rebuilt() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("index.db");
+    {
+        let mut store = Store::open(&db).unwrap();
+        store.upsert(&doc("a.md", "A", "h1"), "body", &[]).unwrap();
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch("DROP TABLE links; PRAGMA user_version = 2;")
+            .unwrap();
+    }
+    // Docs indexed before links existed have none stored, so they must be
+    // read again.
+    let store = Store::open(&db).unwrap();
+    assert!(store.docs().unwrap().is_empty());
+    assert!(store.links().unwrap().is_empty());
+}
+
+fn link(kind: &str, target: &str) -> StoredLink {
+    StoredLink {
+        kind: kind.to_owned(),
+        target: target.to_owned(),
+    }
+}
+
+#[test]
+fn links_follow_upsert_and_delete() {
+    let mut store = Store::open_in_memory().unwrap();
+    let first = [link("wiki", "b"), link("md", "../c.md")];
+    store.upsert(&doc("a.md", "A", "h1"), "x", &first).unwrap();
+    store
+        .upsert(&doc("0.md", "Z", "h0"), "x", &[link("wiki", "a")])
+        .unwrap();
+    let expected = vec![
+        ("0.md".to_owned(), link("wiki", "a")),
+        ("a.md".to_owned(), first[0].clone()),
+        ("a.md".to_owned(), first[1].clone()),
+    ];
+    assert_eq!(store.links().unwrap(), expected);
+
+    // Same hash means same text, so the stored links stand.
+    store
+        .upsert(&doc("a.md", "A", "h1"), "x", &[link("wiki", "other")])
+        .unwrap();
+    assert_eq!(store.links().unwrap(), expected);
+
+    store
+        .upsert(&doc("a.md", "A", "h2"), "y", &[link("wiki", "new")])
+        .unwrap();
+    assert_eq!(
+        store.links().unwrap(),
+        [
+            ("0.md".to_owned(), link("wiki", "a")),
+            ("a.md".to_owned(), link("wiki", "new")),
+        ]
+    );
+
+    store.delete("a.md").unwrap();
+    assert_eq!(
+        store.links().unwrap(),
+        [("0.md".to_owned(), link("wiki", "a"))]
+    );
 }

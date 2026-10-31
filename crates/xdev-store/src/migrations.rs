@@ -27,6 +27,18 @@ const MIGRATIONS: &[&str] = &[
        title, body, title_raw UNINDEXED, body_raw UNINDEXED,
        tokenize='unicode61 remove_diacritics 2'
      ); -- rowid = docs.id",
+    // 3: each doc's links in order of appearance, kept raw because what they
+    // resolve to depends on the other docs. Clearing `docs` makes the next
+    // sync re-read every file, so every doc gets its links.
+    "CREATE TABLE links (
+       doc_id INTEGER NOT NULL,
+       pos INTEGER NOT NULL,
+       kind TEXT NOT NULL,
+       target TEXT NOT NULL,
+       PRIMARY KEY (doc_id, pos)
+     ); -- doc_id = docs.id
+     DELETE FROM docs_fts;
+     DELETE FROM docs;",
 ];
 
 pub(crate) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {

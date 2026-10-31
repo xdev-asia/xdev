@@ -39,6 +39,13 @@ pub struct StoredDoc {
     pub mtime_ms: i64,
 }
 
+/// A link as the doc wrote it; `kind` is `"wiki"` or `"md"`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredLink {
+    pub kind: String,
+    pub target: String,
+}
+
 /// `snippet` is HTML-escaped except for `<mark>` tags around hits.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SearchHit {
@@ -92,7 +99,14 @@ impl Store {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
-    pub fn upsert(&mut self, doc: &StoredDoc, body: &str) -> Result<(), StoreError> {
+    /// `links` replace the stored ones only when the hash changed, like the
+    /// full-text row.
+    pub fn upsert(
+        &mut self,
+        doc: &StoredDoc,
+        body: &str,
+        links: &[StoredLink],
+    ) -> Result<(), StoreError> {
         let tx = self.conn.transaction()?;
         let old_hash: Option<String> = tx
             .query_row(
@@ -130,6 +144,12 @@ impl Store {
                  VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![id, fold(&title), fold(&body), title, body],
             )?;
+            tx.execute("DELETE FROM links WHERE doc_id = ?1", [id])?;
+            let mut insert = tx
+                .prepare("INSERT INTO links (doc_id, pos, kind, target) VALUES (?1, ?2, ?3, ?4)")?;
+            for (pos, link) in links.iter().enumerate() {
+                insert.execute(params![id, pos as i64, link.kind, link.target])?;
+            }
         }
         tx.commit()?;
         Ok(())
@@ -146,10 +166,29 @@ impl Store {
             .optional()?;
         if let Some(id) = id {
             tx.execute("DELETE FROM docs_fts WHERE rowid = ?1", [id])?;
+            tx.execute("DELETE FROM links WHERE doc_id = ?1", [id])?;
             tx.execute("DELETE FROM docs WHERE id = ?1", [id])?;
         }
         tx.commit()?;
         Ok(())
+    }
+
+    /// `(source path, link)`, sorted by path, then by position in the doc.
+    pub fn links(&self) -> Result<Vec<(String, StoredLink)>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT d.path, l.kind, l.target FROM links l JOIN docs d ON d.id = l.doc_id
+             WHERE d.org_id = ?1 AND d.workspace_id = ?2 ORDER BY d.path, l.pos",
+        )?;
+        let rows = stmt.query_map(params![ORG_ID, WORKSPACE_ID], |r| {
+            Ok((
+                r.get(0)?,
+                StoredLink {
+                    kind: r.get(1)?,
+                    target: r.get(2)?,
+                },
+            ))
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// Best match first. Input is plain words, never FTS5 syntax.
