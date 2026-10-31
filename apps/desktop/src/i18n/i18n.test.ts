@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ERROR_CODES } from "../api";
 import en from "./en.json";
 import vi from "./vi.json";
 import { detectLocale, translate } from "./index";
@@ -32,8 +33,7 @@ describe("i18n", () => {
   });
 
   it("every error code and skip reason is translated", () => {
-    const codes = ["not_found", "outside_vault", "no_vault", "io", "not_utf8", "too_large"];
-    for (const code of codes) expect(en).toHaveProperty(`error.${code}`);
+    for (const code of ERROR_CODES) expect(en).toHaveProperty(`error.${code}`);
     for (const reason of ["too_large", "not_utf8"]) expect(en).toHaveProperty(`skip.${reason}`);
   });
 });

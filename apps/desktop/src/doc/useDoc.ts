@@ -9,6 +9,9 @@ export function useDoc(api: Api): {
   open(path: string): void;
   edit(c: string): void;
   save(): void;
+  // Resolves to false when edits are still unsaved (conflict or failed write), so callers can stop.
+  flush(): Promise<boolean>;
+  close(): void;
   resolve(choice: "reload" | "keep"): void;
 } {
   const [state, setState] = useState(initialDocState);
@@ -73,6 +76,19 @@ export function useDoc(api: Api): {
     [dispatch, saveNow],
   );
 
+  const flush = useCallback(async () => {
+    await saveNow();
+    return !isDirty(ref.current);
+  }, [saveNow]);
+
+  const close = useCallback(() => {
+    clearTimeout(timer.current);
+    // Drops any load still in flight, which would otherwise reopen the doc.
+    loadSeq.current++;
+    lastWrite.current = null;
+    dispatch({ type: "closed" });
+  }, [dispatch]);
+
   const resolve = useCallback(
     (choice: "reload" | "keep") => {
       dispatch({ type: choice === "reload" ? "resolveReload" : "resolveKeepMine" });
@@ -121,6 +137,8 @@ export function useDoc(api: Api): {
     open: (path) => void open(path),
     edit,
     save: () => void saveNow(),
+    flush,
+    close,
     resolve,
   };
 }

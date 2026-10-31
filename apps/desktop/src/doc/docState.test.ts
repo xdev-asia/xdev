@@ -98,4 +98,8 @@ describe("docReducer", () => {
     );
     expect(s).toMatchObject({ status: "conflict", diskVersion: "disk2" });
   });
+
+  it("closed drops the doc", () => {
+    expect(run(loaded, { type: "edited", content: "v2" }, { type: "closed" })).toEqual(initialDocState);
+  });
 });

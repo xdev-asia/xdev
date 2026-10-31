@@ -18,7 +18,8 @@ export type DocAction =
   | { type: "failed"; code: ApiError["code"] }
   | { type: "externalChange"; content: string }
   | { type: "resolveReload" }
-  | { type: "resolveKeepMine" };
+  | { type: "resolveKeepMine" }
+  | { type: "closed" };
 
 export const initialDocState: DocState = { path: null, saved: "", draft: "", status: "idle" };
 
@@ -66,5 +67,7 @@ export function docReducer(s: DocState, a: DocAction): DocState {
       if (s.status !== "conflict") return s;
       // Treating the disk version as the base keeps the draft dirty, so the next save overwrites the disk.
       return { ...s, saved: s.diskVersion ?? s.saved, status: "idle", diskVersion: undefined };
+    case "closed":
+      return initialDocState;
   }
 }

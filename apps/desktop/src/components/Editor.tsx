@@ -9,7 +9,7 @@ import type { JSX } from "react";
 import { useI18n } from "../i18n";
 
 // Only CSS variables, so the editor follows the app's light/dark tokens with no separate dark theme.
-const theme = EditorView.theme({
+export const theme = EditorView.theme({
   "&": {
     height: "100%",
     color: "var(--x-color-ink)",
@@ -69,7 +69,7 @@ const theme = EditorView.theme({
 });
 
 // Replaces CodeMirror's fallback highlighter, whose fixed colors are unreadable on the dark tokens.
-const highlight = HighlightStyle.define([
+export const highlight = HighlightStyle.define([
   { tag: tags.heading, fontWeight: "700", color: "var(--x-color-ink)" },
   { tag: tags.heading1, fontSize: "1.4em" },
   { tag: tags.heading2, fontSize: "1.2em" },

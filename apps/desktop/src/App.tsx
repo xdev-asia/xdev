@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { api, toApiError, type ApiError, type DocEntry, type SearchHit } from "./api";
+import { api, toApiError, type ApiError, type Change, type DocEntry, type SearchHit } from "./api";
+import { countLabel, rejectPrompt } from "./changes/changes";
+import { useChanges } from "./changes/useChanges";
+import { ChangesPanel, ChangeView } from "./components/ChangesPanel";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ConflictBanner } from "./components/ConflictBanner";
 import { Editor } from "./components/Editor";
 import { LanguageSwitch } from "./components/LanguageSwitch";
@@ -65,6 +69,11 @@ export function App() {
 function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
   const { t } = useI18n();
   const doc = useDoc(api);
+  const review = useChanges(api, doc.flush);
+  const [tab, setTab] = useState<"docs" | "changes">("docs");
+  const [selected, setSelected] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+  const [rejecting, setRejecting] = useState<Change[] | null>(null);
   const [docs, setDocs] = useState(props.vault.docs);
   const [revision, setRevision] = useState(0);
   const [query, setQuery] = useState("");
@@ -136,6 +145,13 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  useEffect(() => {
+    // Approved or rejected (here or in a terminal): there is nothing left to diff, so back to the doc.
+    if (selected !== null && review.status === "ok" && !review.changes.some((c) => c.path === selected)) {
+      setSelected(null);
+    }
+  }, [selected, review.status, review.changes]);
+
   function onSearchKey(e: ReactKeyboardEvent<HTMLInputElement>) {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
@@ -143,7 +159,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
       setActive((i) => Math.min(Math.max(i + step, 0), Math.max(hits.length - 1, 0)));
     } else if (e.key === "Enter" && hits[active]) {
       e.preventDefault();
-      doc.open(hits[active].path);
+      openDoc(hits[active].path);
     } else if (e.key === "Escape") {
       setQuery("");
     }
@@ -155,6 +171,25 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
     void props.onChangeFolder();
   }
 
+  function openDoc(path: string) {
+    setSelected(null);
+    doc.open(path);
+  }
+
+  async function approve(paths: string[]) {
+    if (await review.approve(paths, message)) setMessage("");
+  }
+
+  async function confirmReject() {
+    const targets = rejecting ?? [];
+    setRejecting(null);
+    // Rejecting an added file deletes it; an editor left open on it would recreate it on the next save.
+    const deletesOpenDoc = targets.some((c) => c.kind === "added" && c.path === state.path);
+    if ((await review.reject(targets.map((c) => c.path))) && deletesOpenDoc) doc.close();
+  }
+
+  const change = review.changes.find((c) => c.path === selected) ?? null;
+  const prompt = rejecting && rejecting.length > 0 ? rejectPrompt(rejecting) : null;
   const entry = docs.find((d) => d.path === state.path);
   const dirty = isDirty(state);
   const saveLabel =
@@ -210,49 +245,99 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
             searching={searching}
             error={searchError}
             activeIndex={active}
-            onOpen={doc.open}
+            onOpen={openDoc}
           />
         ) : (
-          <Sidebar docs={docs} activePath={state.path} onOpen={doc.open} />
-        )}
-      </aside>
-      <main className="main">
-        {state.path === null ? (
-          <p className="placeholder">{t("editor.placeholder", { shortcut: SHORTCUT })}</p>
-        ) : (
           <>
-            <div className="doc-head">
-              <div className="doc-titles">
-                <h1 className="doc-title">{entry?.title ?? folderName(state.path)}</h1>
-                <span className="doc-path">{state.path}</span>
+            <div className="sidebar-tabs">
+              <div className="segmented" role="tablist" aria-label={t("tabs.label")}>
+                <button type="button" role="tab" aria-selected={tab === "docs"} onClick={() => setTab("docs")}>
+                  {t("tabs.docs")}
+                </button>
+                <button type="button" role="tab" aria-selected={tab === "changes"} onClick={() => setTab("changes")}>
+                  {review.status === "ok"
+                    ? t("tabs.changesCount", { count: countLabel(review.changes.length) })
+                    : t("tabs.changes")}
+                </button>
               </div>
-              <span className="doc-status" data-dirty={dirty || undefined} aria-live="polite">
-                {saveLabel}
-              </span>
             </div>
-            {state.status === "conflict" && (
-              <ConflictBanner onReload={() => doc.resolve("reload")} onKeep={() => doc.resolve("keep")} />
-            )}
-            {state.status === "error" && state.error && (
-              <div className="banner banner-warn" role="alert">
-                <span className="banner-text">{t(`error.${state.error}`)}</span>
-              </div>
-            )}
-            {state.status === "loading" ? (
-              <p className="placeholder">{t("editor.loading")}</p>
+            {tab === "docs" ? (
+              <Sidebar docs={docs} activePath={change ? null : state.path} onOpen={openDoc} />
             ) : (
-              // Remounting per doc keeps undo history from leaking between files.
-              <Editor
-                key={state.path}
-                value={state.draft}
-                onChange={doc.edit}
-                onSave={doc.save}
-                readOnly={state.status === "error" && !dirty}
+              <ChangesPanel
+                review={review}
+                selected={change?.path ?? null}
+                message={message}
+                onMessage={setMessage}
+                onSelect={setSelected}
+                onApprove={(paths) => void approve(paths)}
+                onReject={setRejecting}
               />
             )}
           </>
         )}
+      </aside>
+      <main className="main">
+        {change && (
+          <ChangeView
+            key={change.path}
+            api={api}
+            change={change}
+            revision={review.revision}
+            busy={review.busy}
+            onApprove={() => void approve([change.path])}
+            onReject={() => setRejecting([change])}
+            onOpenDoc={() => openDoc(change.path)}
+            onClose={() => setSelected(null)}
+          />
+        )}
+        {/* Hidden rather than unmounted, so the editor keeps its undo history while a diff is shown. */}
+        <div className="docview" hidden={change !== null}>
+          {state.path === null ? (
+            <p className="placeholder">{t("editor.placeholder", { shortcut: SHORTCUT })}</p>
+          ) : (
+            <>
+              <div className="doc-head">
+                <div className="doc-titles">
+                  <h1 className="doc-title">{entry?.title ?? folderName(state.path)}</h1>
+                  <span className="doc-path">{state.path}</span>
+                </div>
+                <span className="doc-status" data-dirty={dirty || undefined} aria-live="polite">
+                  {saveLabel}
+                </span>
+              </div>
+              {state.status === "conflict" && (
+                <ConflictBanner onReload={() => doc.resolve("reload")} onKeep={() => doc.resolve("keep")} />
+              )}
+              {state.status === "error" && state.error && (
+                <div className="banner banner-warn" role="alert">
+                  <span className="banner-text">{t(`error.${state.error}`)}</span>
+                </div>
+              )}
+              {state.status === "loading" ? (
+                <p className="placeholder">{t("editor.loading")}</p>
+              ) : (
+                // Remounting per doc keeps undo history from leaking between files.
+                <Editor
+                  key={state.path}
+                  value={state.draft}
+                  onChange={doc.edit}
+                  onSave={doc.save}
+                  readOnly={state.status === "error" && !dirty}
+                />
+              )}
+            </>
+          )}
+        </div>
       </main>
+      <ConfirmDialog
+        open={prompt !== null}
+        title={prompt ? t(prompt.key, prompt.vars) : ""}
+        body={t("changes.reject.body")}
+        confirmLabel={t("changes.reject")}
+        onConfirm={() => void confirmReject()}
+        onCancel={() => setRejecting(null)}
+      />
     </div>
   );
 }
