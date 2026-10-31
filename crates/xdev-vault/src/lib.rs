@@ -182,12 +182,29 @@ impl Vault {
         result.map_err(|e| path::io_error(rel, e))
     }
 
+    pub fn remove(&self, rel: &str) -> Result<(), VaultError> {
+        if !path::is_md(Path::new(rel)) {
+            return Err(VaultError::OutsideVault(rel.to_owned()));
+        }
+        self.resolve(rel)?;
+        // `resolve` follows a symlink to check where it points; removing the
+        // name itself deletes the link, never the file behind it.
+        let target = self.root.join(rel);
+        fs::remove_file(&target).map_err(|e| path::io_error(rel, e))
+    }
+
     pub fn watch(
         &self,
         on_change: impl Fn(Vec<String>) + Send + 'static,
     ) -> Result<VaultWatcher, VaultError> {
         watch::start(self.root.clone(), on_change)
     }
+}
+
+/// Whether a vault-relative path is a doc `list` would show, leaving
+/// `.gitignore` aside.
+pub fn is_doc_path(rel: &str) -> bool {
+    path::is_md(Path::new(rel)) && !path::in_builtin_dir(rel)
 }
 
 pub fn content_hash(bytes: &[u8]) -> String {

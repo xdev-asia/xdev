@@ -3,7 +3,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
-use xdev_vault::{MAX_DOC_BYTES, Vault, VaultError, content_hash, extract_title};
+use xdev_vault::{MAX_DOC_BYTES, Vault, VaultError, content_hash, extract_title, is_doc_path};
 
 fn vault_with(files: &[(&str, &str)]) -> (TempDir, Vault) {
     let dir = TempDir::new().unwrap();
@@ -126,6 +126,57 @@ fn write_rejects_non_md() {
     assert!(vault.write("x.txt", "x").is_err());
     assert!(vault.write("x", "x").is_err());
     assert!(!dir.path().join("x.txt").exists());
+}
+
+#[test]
+fn remove_deletes_file() {
+    let (dir, vault) = vault_with(&[("a/b.md", "b"), ("c.md", "c")]);
+    vault.remove("a/b.md").unwrap();
+    assert!(!dir.path().join("a/b.md").exists());
+    assert_eq!(paths(&vault), ["c.md"]);
+}
+
+#[test]
+fn remove_rejects_outside_and_non_md() {
+    let outside = TempDir::new().unwrap();
+    let (dir, vault) = vault_with(&[("a.txt", "t")]);
+    fs::write(outside.path().join("x.md"), "x").unwrap();
+    let escape = format!(
+        "../{}/x.md",
+        outside.path().file_name().unwrap().to_str().unwrap()
+    );
+    for rel in ["../x.md", escape.as_str(), "a.txt"] {
+        assert!(
+            matches!(vault.remove(rel), Err(VaultError::OutsideVault(_))),
+            "{rel}"
+        );
+    }
+    assert!(dir.path().join("a.txt").exists());
+    assert!(outside.path().join("x.md").exists());
+}
+
+#[test]
+fn remove_missing_is_not_found() {
+    let (_dir, vault) = vault_with(&[]);
+    assert!(matches!(
+        vault.remove("nope.md"),
+        Err(VaultError::NotFound(_))
+    ));
+    assert!(matches!(
+        vault.remove("no/such/dir.md"),
+        Err(VaultError::NotFound(_))
+    ));
+}
+
+#[test]
+fn doc_path_is_md_outside_builtin_dirs() {
+    assert!(is_doc_path("a.md"));
+    assert!(is_doc_path("docs/A.MD"));
+    assert!(is_doc_path(".github/x.md"));
+    assert!(!is_doc_path("notes.txt"));
+    assert!(!is_doc_path("node_modules/x.md"));
+    assert!(!is_doc_path("a/target/x.md"));
+    assert!(!is_doc_path(".xdev/x.md"));
 }
 
 #[test]
