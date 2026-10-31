@@ -1,7 +1,14 @@
-/// The first `# ` heading, else the file name without its extension.
+use crate::frontmatter::parse_frontmatter;
+
+/// Frontmatter `title`, else the first `# ` heading of the body, else the
+/// file name without its extension.
 pub fn extract_title(rel: &str, content: &str) -> String {
+    let (fm, body) = parse_frontmatter(content);
+    if let Some(title) = fm.title {
+        return title;
+    }
     let mut in_fence = false;
-    for line in content.trim_start_matches('\u{feff}').lines() {
+    for line in body.lines() {
         let line = line.trim_start();
         // `# ` inside a code block is usually a shell comment, not a title.
         if line.starts_with("```") || line.starts_with("~~~") {
