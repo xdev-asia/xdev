@@ -7,11 +7,55 @@ pub(crate) const MARK_CLOSE: char = '\u{E001}';
 /// whitespace-separated term becomes a quoted prefix phrase, and terms are
 /// ANDed.
 pub fn fts_query(input: &str) -> Option<String> {
-    let terms: Vec<String> = input
+    let terms: Vec<String> = fold(input)
         .split_whitespace()
         .map(|t| format!("\"{}\"*", t.replace('"', "\"\"")))
         .collect();
     (!terms.is_empty()).then(|| terms.join(" "))
+}
+
+/// `remove_diacritics` strips combining marks, but `đ` is a letter of its own
+/// with no decomposition, so "duong" would miss "đường". Swapping one char for
+/// one char keeps positions aligned with the original for `restore_snippet`.
+pub(crate) fn fold(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            'đ' => 'd',
+            'Đ' => 'D',
+            c => c,
+        })
+        .collect()
+}
+
+/// `snippet()` runs on the folded column; this puts the doc's own letters
+/// back. The ellipses are added here because only here is the window's
+/// position in the full text known.
+pub(crate) fn restore_snippet(snippet: &str, folded: &str, raw: &str) -> String {
+    let plain: String = snippet
+        .chars()
+        .filter(|&c| c != MARK_OPEN && c != MARK_CLOSE)
+        .collect();
+    let Some(byte_start) = folded.find(&plain) else {
+        return snippet.to_owned();
+    };
+    let start = folded[..byte_start].chars().count();
+    let end = start + plain.chars().count();
+    let mut original = raw.chars().skip(start);
+    let mut out = String::with_capacity(snippet.len() + 8);
+    if start > 0 {
+        out.push('…');
+    }
+    for c in snippet.chars() {
+        if c == MARK_OPEN || c == MARK_CLOSE {
+            out.push(c);
+        } else {
+            out.push(original.next().unwrap_or(c));
+        }
+    }
+    if end < raw.chars().count() {
+        out.push('…');
+    }
+    out
 }
 
 /// Escapes the snippet text, then turns the markers into `<mark>` tags. The

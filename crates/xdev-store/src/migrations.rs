@@ -19,6 +19,14 @@ const MIGRATIONS: &[&str] = &[
        title, body,
        tokenize='unicode61 remove_diacritics 2'
      ); -- rowid = docs.id",
+    // 2: index folded text (see `query::fold`) and keep the original for
+    // snippets. Clearing `docs` makes the next sync re-read every file.
+    "DROP TABLE docs_fts;
+     DELETE FROM docs;
+     CREATE VIRTUAL TABLE docs_fts USING fts5(
+       title, body, title_raw UNINDEXED, body_raw UNINDEXED,
+       tokenize='unicode61 remove_diacritics 2'
+     ); -- rowid = docs.id",
 ];
 
 pub(crate) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {

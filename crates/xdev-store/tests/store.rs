@@ -175,3 +175,64 @@ fn fts_query_quotes_terms() {
     assert_eq!(fts_query(""), None);
     assert_eq!(fts_query(" \t\n"), None);
 }
+
+#[test]
+fn search_folds_d_with_stroke() {
+    let mut store = Store::open_in_memory().unwrap();
+    store
+        .upsert(
+            &doc("a.md", "Đà Nẵng", "h1"),
+            "Mở đầu dài dòng. Con đường ven biển rất đẹp.",
+        )
+        .unwrap();
+    assert_eq!(hit_paths(&store, "da nang"), ["a.md"]);
+    assert_eq!(hit_paths(&store, "ĐƯỜNG"), ["a.md"]);
+    let hits = store.search("duong", 20).unwrap();
+    // The snippet shows the doc's own letters, not the folded index text.
+    assert_eq!(
+        hits[0].snippet,
+        "Mở đầu dài dòng. Con <mark>đường</mark> ven biển rất đẹp."
+    );
+    assert_eq!(
+        store.search("nang", 20).unwrap()[0].snippet,
+        "Đà <mark>Nẵng</mark>"
+    );
+}
+
+#[test]
+fn snippet_marks_cut_text_with_ellipsis() {
+    let mut store = Store::open_in_memory().unwrap();
+    let body = format!("{} đích {}", "mở ".repeat(30), "cuối ".repeat(30));
+    store.upsert(&doc("a.md", "A", "h1"), &body).unwrap();
+    let snippet = &store.search("dich", 20).unwrap()[0].snippet;
+    assert!(
+        snippet.starts_with('…') && snippet.ends_with('…'),
+        "{snippet}"
+    );
+    assert!(snippet.contains("<mark>đích</mark>"), "{snippet}");
+}
+
+#[test]
+fn reopening_an_old_index_rebuilds_it() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("index.db");
+    {
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE docs (id INTEGER PRIMARY KEY, org_id TEXT NOT NULL DEFAULT 'local',
+               workspace_id TEXT NOT NULL DEFAULT 'local', path TEXT NOT NULL, title TEXT NOT NULL,
+               hash TEXT NOT NULL, size INTEGER NOT NULL, mtime_ms INTEGER NOT NULL,
+               UNIQUE (org_id, workspace_id, path));
+             CREATE VIRTUAL TABLE docs_fts USING fts5(title, body, tokenize='unicode61 remove_diacritics 2');
+             INSERT INTO docs (id, path, title, hash, size, mtime_ms) VALUES (1, 'a.md', 'A', 'h1', 1, 1);
+             INSERT INTO docs_fts (rowid, title, body) VALUES (1, 'A', 'đường');
+             PRAGMA user_version = 1;",
+        )
+        .unwrap();
+    }
+    // Rows indexed without folding are dropped, so the next sync re-reads them.
+    let mut store = Store::open(&db).unwrap();
+    assert!(store.docs().unwrap().is_empty());
+    store.upsert(&doc("a.md", "A", "h1"), "đường").unwrap();
+    assert_eq!(hit_paths(&store, "duong"), ["a.md"]);
+}

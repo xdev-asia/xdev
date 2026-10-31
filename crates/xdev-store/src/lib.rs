@@ -10,7 +10,7 @@ use std::time::Duration;
 use rusqlite::{Connection, OptionalExtension, params};
 
 pub use query::fts_query;
-use query::{MARK_CLOSE, MARK_OPEN, render_snippet, strip_markers};
+use query::{MARK_CLOSE, MARK_OPEN, fold, render_snippet, restore_snippet, strip_markers};
 
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -123,9 +123,12 @@ impl Store {
         // metadata changed, so the full-text row is left alone.
         if old_hash.as_deref() != Some(doc.hash.as_str()) {
             tx.execute("DELETE FROM docs_fts WHERE rowid = ?1", [id])?;
+            let title = strip_markers(&doc.title);
+            let body = strip_markers(body);
             tx.execute(
-                "INSERT INTO docs_fts (rowid, title, body) VALUES (?1, ?2, ?3)",
-                params![id, strip_markers(&doc.title), strip_markers(body)],
+                "INSERT INTO docs_fts (rowid, title, body, title_raw, body_raw)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, fold(&title), fold(&body), title, body],
             )?;
         }
         tx.commit()?;
@@ -156,8 +159,9 @@ impl Store {
         };
         let mut stmt = self.conn.prepare(
             "SELECT d.path, d.title,
-                    snippet(docs_fts, 1, ?3, ?4, '…', ?5),
-                    snippet(docs_fts, 0, ?3, ?4, '…', ?5)
+                    snippet(docs_fts, 1, ?3, ?4, '', ?5),
+                    snippet(docs_fts, 0, ?3, ?4, '', ?5),
+                    docs_fts.body_raw, docs_fts.title_raw
              FROM docs_fts JOIN docs d ON d.id = docs_fts.rowid
              WHERE docs_fts MATCH ?1 AND d.org_id = ?6 AND d.workspace_id = ?7
              ORDER BY bm25(docs_fts)
@@ -179,11 +183,14 @@ impl Store {
                 let title: String = r.get(3)?;
                 // A title-only match gives a body snippet without any hit,
                 // so the title is shown instead.
-                let raw = if !body.contains(MARK_OPEN) && title.contains(MARK_OPEN) {
-                    title
-                } else {
-                    body
-                };
+                let (snippet, raw_column) =
+                    if !body.contains(MARK_OPEN) && title.contains(MARK_OPEN) {
+                        (title, 5)
+                    } else {
+                        (body, 4)
+                    };
+                let original: String = r.get(raw_column)?;
+                let raw = restore_snippet(&snippet, &fold(&original), &original);
                 Ok(SearchHit {
                     path: r.get(0)?,
                     title: r.get(1)?,
