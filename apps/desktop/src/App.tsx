@@ -16,7 +16,7 @@ import { AccountsView } from "./components/AccountsView";
 import { ActivityBar } from "./components/ActivityBar";
 import { AgentContext } from "./components/AgentContext";
 import { Backlinks } from "./components/Backlinks";
-import { ChangesPanel, ChangeView } from "./components/ChangesPanel";
+import { ChangesPanel, ChangeView, ICON, Icon } from "./components/ChangesPanel";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ConflictBanner } from "./components/ConflictBanner";
 import { CreateVaultDialog } from "./components/CreateVaultDialog";
@@ -539,7 +539,12 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
           />
         )}
         {app === "changes" && !change && review.status === "ok" && (
-          <p className="placeholder">{t("changes.empty.main")}</p>
+          <div className="placeholder changes-empty">
+            <span className="changes-empty-icon">
+              <Icon d={ICON.check} size={28} />
+            </span>
+            <p>{t("changes.empty.main")}</p>
+          </div>
         )}
         {/* Hidden rather than unmounted, so the editor keeps its undo history while a diff is shown. */}
         <div className="docview" hidden={app !== "docs"}>
