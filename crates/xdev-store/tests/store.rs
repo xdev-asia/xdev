@@ -256,8 +256,10 @@ fn index_without_links_is_rebuilt() {
         let mut store = Store::open(&db).unwrap();
         store.upsert(&doc("a.md", "A", "h1"), "body", &[]).unwrap();
         let conn = rusqlite::Connection::open(&db).unwrap();
-        conn.execute_batch("DROP TABLE links; DROP TABLE chunks; DROP TABLE ai_writes; PRAGMA user_version = 2;")
-            .unwrap();
+        conn.execute_batch(
+            "DROP TABLE links; DROP TABLE chunks; DROP TABLE ai_writes; PRAGMA user_version = 2;",
+        )
+        .unwrap();
     }
     // Docs indexed before links existed have none stored, so they must be
     // read again.

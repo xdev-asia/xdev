@@ -173,8 +173,9 @@ impl Store {
                 insert.execute(params![id, pos as i64, link.kind, link.target])?;
             }
         }
-        context::sync_chunks(&tx, &doc.path, &doc.title, body)?;
+        let removed = context::sync_chunks(&tx, &doc.path, &doc.title, body)?;
         tx.commit()?;
+        self.removed_chunks += removed;
         Ok(())
     }
 

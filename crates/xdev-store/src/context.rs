@@ -17,11 +17,21 @@ pub struct Section {
 }
 
 pub fn split_sections(title: &str, body: &str) -> Vec<Section> {
+    let lines = body.lines().collect::<Vec<_>>();
+    let start = if lines.first() == Some(&"---") {
+        lines
+            .iter()
+            .skip(1)
+            .position(|line| *line == "---")
+            .map_or(0, |i| i + 2)
+    } else {
+        0
+    };
     let mut out = Vec::new();
     let mut headings = vec![title.to_owned()];
     let mut text = String::new();
     let mut fence: Option<char> = None;
-    for line in body.lines() {
+    for line in lines.into_iter().skip(start) {
         let trimmed = line.trim_start();
         if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
             let marker = trimmed.chars().next().unwrap();
@@ -94,8 +104,13 @@ pub(crate) fn sync_chunks(
     path: &str,
     title: &str,
     body: &str,
-) -> Result<(), StoreError> {
+) -> Result<usize, StoreError> {
     let sections = split_sections(title, body);
+    let removed: i64 = tx.query_row(
+        "SELECT count(*) FROM chunks WHERE doc_path = ?1 AND ordinal >= ?2",
+        params![path, sections.len() as i64],
+        |r| r.get(0),
+    )?;
     // Reuse by content rather than ordinal so inserting a heading preserves later vectors.
     let mut stmt = tx.prepare(
         "SELECT hash, model, dim, vector FROM chunks WHERE doc_path = ?1 AND vector IS NOT NULL",
@@ -118,7 +133,7 @@ pub(crate) fn sync_chunks(
         let (model, dim, vector) = old.get(&hash).cloned().unwrap_or_default();
         tx.execute("INSERT INTO chunks (doc_path, ordinal, heading, text, hash, model, dim, vector) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)", params![path, section.ordinal as i64, section.heading, section.text, hash, model, dim, vector])?;
     }
-    Ok(())
+    Ok(removed as usize)
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -258,8 +273,10 @@ impl Store {
                     }
                     if let Some(bytes) = &chunk.vector {
                         let vector = bytes
-                            .chunks_exact(4)
-                            .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+                            .as_chunks::<4>()
+                            .0
+                            .iter()
+                            .map(|b| f32::from_le_bytes(*b))
                             .collect::<Vec<_>>();
                         if bytes.len() % 4 == 0
                             && vector.len() == vectors[0].len()
