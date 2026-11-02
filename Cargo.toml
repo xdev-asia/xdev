@@ -14,6 +14,7 @@ default-members = [
     "crates/xdev-api",
     "crates/xdev-policy",
     "crates/xdev-agent",
+    "crates/xdev-pty",
     "crates/xdev-cli",
 ]
 
@@ -32,6 +33,7 @@ xdev-export = { path = "crates/xdev-export" }
 xdev-git = { path = "crates/xdev-git" }
 xdev-mcp = { path = "crates/xdev-mcp" }
 xdev-policy = { path = "crates/xdev-policy" }
+xdev-pty = { path = "crates/xdev-pty" }
 xdev-store = { path = "crates/xdev-store" }
 xdev-vault = { path = "crates/xdev-vault" }
 
@@ -41,6 +43,8 @@ ignore = "0.4.34"
 keyring = { version = "4.2.0", default-features = false, features = ["v1"] }
 # 0.7 is the newest stable line; it re-exports the `notify` it was built against.
 notify-debouncer-full = "0.7.0"
+# Pseudo consoles on every OS (ConPTY on Windows); pinned, its API moves between minors.
+portable-pty = "=0.9.0"
 # Bundled SQLite ships FTS5 and behaves the same on every OS.
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
