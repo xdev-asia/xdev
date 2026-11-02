@@ -16,6 +16,8 @@
   "vault.empty.title": "No folder open",
   "vault.empty.hint": "Documents, Changes and Agent context work on a folder of Markdown files. Create one, or open a folder you already have.",
   "vault.empty.failed": "Could not open {path}.",
+  "vault.empty.openBody": "Pick a folder of Markdown files you already have. Its files are opened as they are.",
+  "vault.empty.createBody": "Start a new docs folder with a Getting started doc you can edit.",
   "vault.starter.file": "Getting started.md",
   "vault.starter.content": "# Getting started\n\nThis folder holds your project docs as plain Markdown files. Edit this one or add more with any editor; xDev keeps a search index on this computer.\n\nEvery edit shows up under Changes. Approve it there to save it to the folder's history.\n",
   "search.label": "Search documents",

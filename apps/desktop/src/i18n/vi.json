@@ -16,6 +16,8 @@
   "vault.empty.title": "Chưa mở thư mục nào",
   "vault.empty.hint": "Tài liệu, Thay đổi và Ngữ cảnh agent làm việc trên một thư mục tệp Markdown. Hãy tạo thư mục mới hoặc mở thư mục bạn đã có.",
   "vault.empty.failed": "Không mở được {path}.",
+  "vault.empty.openBody": "Chọn một thư mục tệp Markdown bạn đã có. Các tệp được mở nguyên trạng.",
+  "vault.empty.createBody": "Tạo thư mục tài liệu mới, kèm sẵn một tài liệu Bắt đầu để bạn sửa.",
   "vault.starter.file": "Bắt đầu.md",
   "vault.starter.content": "# Bắt đầu\n\nThư mục này chứa tài liệu dự án dưới dạng tệp Markdown thường. Sửa tệp này hoặc thêm tệp mới bằng trình soạn thảo bất kỳ; xDev giữ chỉ mục tìm kiếm trên máy này.\n\nMọi chỉnh sửa hiện ở mục Thay đổi. Duyệt ở đó để lưu vào lịch sử của thư mục.\n",
   "search.label": "Tìm tài liệu",

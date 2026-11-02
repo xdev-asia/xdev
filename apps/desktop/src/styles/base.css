@@ -10,6 +10,7 @@ body {
   color: var(--x-color-ink);
   font-family: var(--x-font-body);
   font-size: 14px;
+  -webkit-font-smoothing: antialiased;
 }
 
 button {
@@ -28,8 +29,17 @@ button:disabled {
 }
 
 :focus-visible {
-  outline: 2px solid var(--x-color-accent);
+  outline: 2px solid var(--x-color-signal);
   outline-offset: 2px;
+}
+
+kbd {
+  padding: 1px var(--x-space-1);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-sm);
+  font-family: var(--x-font-mono);
+  font-size: 11px;
+  color: var(--x-color-muted);
 }
 
 .app-boot {
@@ -39,16 +49,24 @@ button:disabled {
 
 .error-text {
   margin: 0;
-  color: var(--x-color-warn);
+  color: var(--x-color-danger);
 }
 
 .btn-secondary {
-  background: var(--x-color-surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--x-space-2);
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 0 var(--x-space-3);
   border: 1px solid var(--x-color-line);
   border-radius: var(--x-radius-md);
-  padding: var(--x-space-1) var(--x-space-3);
-  cursor: pointer;
+  background: transparent;
+  font-weight: 600;
+  font-size: 13px;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .btn-secondary:hover:not(:disabled) {
@@ -57,39 +75,49 @@ button:disabled {
 
 .segmented {
   display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 3px;
   border: 1px solid var(--x-color-line);
-  border-radius: var(--x-radius-md);
-  overflow: hidden;
+  border-radius: 10px;
   background: var(--x-color-surface);
 }
 
 .segmented button {
+  min-height: 26px;
+  padding: 0 var(--x-space-3);
   border: 0;
+  border-radius: 7px;
   background: transparent;
-  padding: var(--x-space-1) var(--x-space-2);
-  font-size: 0.85em;
+  font-size: 12px;
   font-weight: 600;
   color: var(--x-color-muted);
   cursor: pointer;
 }
 
-.segmented button[aria-pressed="true"] {
-  background: var(--x-color-accent-soft);
-  color: var(--x-color-accent);
+.segmented button:hover:not([aria-pressed="true"]) {
+  color: var(--x-color-ink);
+  background: var(--x-color-surface-2);
 }
 
+.segmented button[aria-pressed="true"] {
+  background: var(--x-color-accent);
+  color: var(--x-color-on-accent);
+}
 
 .dialog {
   max-width: 440px;
   padding: var(--x-space-6);
   color: var(--x-color-ink);
-  background: var(--x-color-surface);
+  background: var(--x-color-panel);
   border: 1px solid var(--x-color-line);
-  border-radius: var(--x-radius-lg);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px color-mix(in srgb, var(--x-color-bg) 60%, transparent);
 }
 
 .dialog::backdrop {
-  background: color-mix(in srgb, var(--x-color-ink) 35%, transparent);
+  background: color-mix(in srgb, var(--x-color-bg) 70%, transparent);
+  backdrop-filter: blur(2px);
 }
 
 .vault-dialog-head {
@@ -101,19 +129,21 @@ button:disabled {
 
 .dialog-title {
   margin: 0 0 var(--x-space-2);
-  font-size: 1.1em;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
 
 .dialog-body {
   margin: 0 0 var(--x-space-6);
   color: var(--x-color-muted);
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: var(--x-space-2);
 }
-
