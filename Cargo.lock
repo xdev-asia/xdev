@@ -6101,6 +6101,7 @@ dependencies = [
 name = "xdev-policy"
 version = "0.3.0"
 dependencies = [
+ "blake3",
  "serde",
  "serde_json",
  "tempfile",

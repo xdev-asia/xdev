@@ -187,3 +187,27 @@ fn invalid_audit_returns_parse_error() {
     fs::write(dir.path().join("audit.jsonl"), "invalid\n").unwrap();
     assert_eq!(read_audit(dir.path()).unwrap_err().code(), "policy_invalid");
 }
+
+#[test]
+fn launch_agent_asks_first_then_allows_approved() {
+    let action = |perm: &str| Action::LaunchAgent {
+        profile: "claude".into(),
+        program: "claude".into(),
+        args: vec![],
+        permissions: perm.into(),
+    };
+    let mut p = Policy::default();
+    assert!(matches!(p.check(&action("ask")), Verdict::Ask { .. }));
+    p.approved_agents
+        .push(agent_fingerprint("claude", &[], "ask"));
+    assert_eq!(p.check(&action("ask")), Verdict::Allow);
+    p.approved_agents
+        .push(agent_fingerprint("claude", &[], "skip"));
+    assert!(matches!(p.check(&action("skip")), Verdict::Ask { .. }));
+}
+
+#[test]
+fn old_policy_file_loads() {
+    let p: Policy = serde_json::from_str(r#"{"merge":"ask"}"#).unwrap();
+    assert!(p.approved_agents.is_empty());
+}

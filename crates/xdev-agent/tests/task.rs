@@ -146,7 +146,7 @@ impl Gate for StubGate {
             Action::SpawnAgent { .. } => self.spawn.clone(),
             Action::RunCommand { .. } => self.command.clone(),
             Action::Merge { .. } => self.merge.clone(),
-            Action::Delete { .. } => Verdict::Deny {
+            Action::Delete { .. } | Action::LaunchAgent { .. } => Verdict::Deny {
                 reason: "not used".into(),
             },
         }
