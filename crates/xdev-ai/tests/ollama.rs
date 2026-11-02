@@ -73,6 +73,11 @@ fn embeds_an_input_array() {
 
 #[test]
 fn http_errors_include_status() {
+    let (client, handle) = server(302, "redirect");
+    let error = client.models().unwrap_err();
+    assert_eq!(error.code(), "ollama_error");
+    assert!(error.to_string().contains("302"));
+    handle.join().unwrap();
     let (client, handle) = server(503, "unavailable");
     let error = client.models().unwrap_err();
     assert_eq!(error.code(), "ollama_error");

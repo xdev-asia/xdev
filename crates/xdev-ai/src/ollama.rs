@@ -23,6 +23,7 @@ impl Ollama {
             .timeout_connect(Some(Duration::from_secs(2)))
             .timeout_global(Some(Duration::from_secs(30)))
             .max_redirects(0)
+            .http_status_as_error(false)
             .proxy(None)
             .build()
             .into()
@@ -81,6 +82,9 @@ fn http_error(error: ureq::Error) -> AiError {
 fn decode<T: serde::de::DeserializeOwned>(
     mut response: ureq::http::Response<ureq::Body>,
 ) -> Result<T, AiError> {
+    if !response.status().is_success() {
+        return Err(AiError::OllamaError(response.status().as_u16()));
+    }
     let text = response
         .body_mut()
         .with_config()
