@@ -9,9 +9,9 @@ use xdev_policy::{Audited, Policy, Verdict};
 use crate::Outcome;
 
 /// Long enough for a real change; a hung agent still ends.
-const RUN_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+pub(crate) const RUN_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 /// Exit code when the gate stopped a step, apart from errors (1).
-const GATED: u8 = 3;
+pub(crate) const GATED: u8 = 3;
 
 #[derive(Subcommand)]
 pub enum TaskCommand {

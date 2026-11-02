@@ -2,6 +2,7 @@ mod accounts;
 mod ai;
 mod context;
 mod mcp;
+mod squad;
 mod task;
 
 use std::path::PathBuf;
@@ -89,6 +90,11 @@ enum Command {
         #[command(subcommand)]
         command: task::TaskCommand,
     },
+    /// A team of agents, one per seat, working one task together.
+    Squad {
+        #[command(subcommand)]
+        command: squad::SquadCommand,
+    },
 }
 
 /// What a command that ran to the end reports through the exit code.
@@ -125,6 +131,7 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         Command::Accounts { command } => return accounts::run(command, &data_dir),
         Command::Quota { json } => return accounts::run_quota(json, &data_dir),
         Command::Task { command } => return task::run(command, &data_dir),
+        Command::Squad { command } => return squad::run(command, &data_dir),
         Command::Mcp { dir } => {
             let dir = dir.unwrap_or_else(|| {
                 let docs = PathBuf::from("docs");
