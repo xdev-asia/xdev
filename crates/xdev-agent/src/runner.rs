@@ -25,6 +25,8 @@ pub struct RunRequest {
     /// The session to continue instead of starting a new one.
     pub resume: Option<String>,
     pub tools: Vec<String>,
+    /// The CLI's default when `None`.
+    pub model: Option<String>,
     /// Set to kill the agent; the runner then returns `Stopped`.
     pub cancel: Cancel,
 }
@@ -143,6 +145,9 @@ impl Runner for ClaudeRunner {
         if let Some(id) = &req.resume {
             cmd.args(["--resume", id]);
         }
+        if let Some(model) = &req.model {
+            cmd.args(["--model", model]);
+        }
         // Last, because the option takes every value up to the next flag.
         if !req.tools.is_empty() {
             cmd.arg("--allowedTools").args(&req.tools);
@@ -209,11 +214,14 @@ impl Runner for CodexRunner {
             Some(id) => {
                 cmd.args(["resume", "--json", "--skip-git-repo-check", "-c"])
                     .arg(format!("sandbox_mode={sandbox}"))
+                    .args(model_args(req))
                     .arg("--")
                     .arg(id);
             }
             None => {
-                cmd.args(["--json", "--skip-git-repo-check", "-s", sandbox, "-C"])
+                cmd.args(["--json", "--skip-git-repo-check", "-s", sandbox])
+                    .args(model_args(req))
+                    .arg("-C")
                     .arg(&req.worktree)
                     .arg("--");
             }
@@ -322,6 +330,14 @@ pub fn parse_codex_jsonl(out: &str) -> Result<RunOutcome, AgentError> {
         outcome.is_error = true;
     }
     Ok(outcome)
+}
+
+/// Codex takes `-m` both new and on `exec resume`.
+fn model_args(req: &RunRequest) -> Vec<&str> {
+    match &req.model {
+        Some(model) => vec!["-m", model],
+        None => Vec::new(),
+    }
 }
 
 fn is_batch(program: &Path) -> bool {

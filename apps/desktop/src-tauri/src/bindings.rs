@@ -39,6 +39,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     SquadItem::export_all(cfg)?;
     SquadView::export_all(cfg)?;
     xdev_agent::Seat::export_all(cfg)?;
+    xdev_agent::Routing::export_all(cfg)?;
     UpdateInfo::export_all(cfg)?;
     Ok(())
 }

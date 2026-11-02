@@ -8,8 +8,8 @@ use std::path::Path;
 use serde::Serialize;
 use tauri::State;
 use xdev_agent::{
-    AgentError, Event, QuotaCheck, Role, Runner, RunnerFor, Seat, Squad, SquadDeps, SquadRun,
-    SquadStore,
+    AgentError, Event, QuotaCheck, Role, Routing, Runner, RunnerFor, Seat, Squad, SquadDeps,
+    SquadRun, SquadStore,
 };
 use xdev_ai::{QuotaState, Registry};
 
@@ -68,6 +68,7 @@ pub struct SquadView {
 /// Seat agents and quotas for the person's registered accounts.
 struct Registered {
     reg: Registry,
+    routing: Routing,
 }
 
 impl RunnerFor for Registered {
@@ -82,6 +83,11 @@ impl RunnerFor for Registered {
             .and_then(|e| serde_json::to_value(e.provider).ok())
             .and_then(|v| v.as_str().map(str::to_owned))
             .unwrap_or_default()
+    }
+
+    fn model(&self, account: &str, role: Role, prompt: &str) -> Option<String> {
+        self.routing
+            .pick(role.as_str(), &self.provider(account), prompt)
     }
 }
 
@@ -99,6 +105,7 @@ impl QuotaCheck for Registered {
 fn registered(data: &Path) -> Result<Registered, CmdError> {
     Ok(Registered {
         reg: Registry::load(data)?,
+        routing: Routing::load(data)?,
     })
 }
 

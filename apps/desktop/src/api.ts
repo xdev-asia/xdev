@@ -16,6 +16,8 @@ import type {
   LoginStart,
   Provider,
   Quota,
+  RouteRule,
+  Routing,
   SearchHit,
   Seat,
   Seen,
@@ -54,6 +56,8 @@ export type {
   LoginStart,
   Provider,
   Quota,
+  RouteRule,
+  Routing,
   ContextUse,
   Escalation,
   Role,
@@ -147,6 +151,9 @@ export interface Api {
   addAccount(name: string, provider: Provider, dir?: string): Promise<Account>;
   loginAccount(name: string): Promise<LoginStart>;
   removeAccount(name: string): Promise<void>;
+  // The first rule that matches a turn picks its model.
+  routing(): Promise<Routing>;
+  setRouting(routing: Routing): Promise<void>;
   tasksContext(): Promise<TasksContext>;
   // Newest first.
   tasks(): Promise<Task[]>;
@@ -286,6 +293,8 @@ const tauriApi: Api = {
   addAccount: (name, provider, dir) => call("account_add", { name, provider, dir: dir ?? null }),
   loginAccount: (name) => call("account_login", { name }),
   removeAccount: (name) => call("account_remove", { name }),
+  routing: () => call("routing_get"),
+  setRouting: (routing) => call("routing_set", { routing }),
   tasksContext: () => call("tasks_context"),
   tasks: () => call("tasks_list"),
   task: (id) => call("task_get", { id }),

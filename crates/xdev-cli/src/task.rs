@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use clap::Subcommand;
 use xdev_agent::{
-    AgentError, ClaudeRunner, CodexRunner, RunOptions, Runner, Task, TaskState, TaskStore,
+    AgentError, ClaudeRunner, CodexRunner, Routing, RunOptions, Runner, Task, TaskState, TaskStore,
 };
 use xdev_ai::{Provider, Registry};
 use xdev_policy::{Audited, Policy, Verdict};
@@ -87,6 +87,7 @@ pub fn run(
                 account,
                 tools: tools.into_iter().filter(|t| !t.is_empty()).collect(),
                 test: test.map(|t| t.split_whitespace().map(str::to_owned).collect()),
+                model: routed(data_dir, &store, &id, &*runner)?,
             };
             store.run_task(&id, &*runner, &gate, &opts)
         }
@@ -94,6 +95,7 @@ pub fn run(
             let runner = runner(data_dir, account.as_deref())?;
             let opts = RunOptions {
                 account,
+                model: routed(data_dir, &store, &id, &*runner)?,
                 ..RunOptions::default()
             };
             store.resume_task(&id, &*runner, &gate, &opts)
@@ -139,6 +141,18 @@ pub fn run(
         }
         Err(e) => Err(e.code()),
     }
+}
+
+/// The person's routing rules judge a task on its goal, also when resumed.
+fn routed(
+    data_dir: &Path,
+    store: &TaskStore,
+    id: &str,
+    runner: &dyn Runner,
+) -> Result<Option<String>, &'static str> {
+    let goal = store.load(id).map_err(code)?.goal;
+    let routing = Routing::load(data_dir).map_err(code)?;
+    Ok(routing.pick("task", runner.provider(), &goal))
 }
 
 /// Claude Code with the person's own config when no account is named;

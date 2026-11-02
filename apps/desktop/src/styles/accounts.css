@@ -99,3 +99,17 @@
 .account-command p { margin: 0; }
 .account-command .commands { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--x-color-signal); }
 .account-command button { justify-self: start; }
+
+/* Model routing rules */
+.routing { display: grid; gap: var(--x-space-3); margin: var(--x-space-4) var(--x-space-6); padding: var(--x-space-4); background: var(--x-color-panel); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-md); }
+.routing-hint, .routing-empty { margin: 0; color: var(--x-color-muted); }
+.routing-rules { display: grid; gap: var(--x-space-2); }
+.routing-rule { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--x-space-3); padding: var(--x-space-3); background: var(--x-color-bg); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); }
+.routing-rule label { display: grid; gap: var(--x-space-1); font-size: 12px; color: var(--x-color-muted); }
+.routing-rule input, .routing-rule select { padding: var(--x-space-2); font: inherit; font-size: 13px; color: var(--x-color-ink); background: var(--x-color-panel); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); }
+.routing-rule input[type="number"] { width: 10ch; }
+.routing-model { flex: 1 1 14ch; }
+.routing-model input { font-family: var(--x-font-mono); }
+.routing-index { align-self: center; min-width: 2ch; font-family: var(--x-font-mono); color: var(--x-color-muted); }
+.routing-actions, .routing-footer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-space-2); }
+.routing-saved { color: var(--x-color-muted); }

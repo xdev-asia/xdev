@@ -6,6 +6,7 @@ mod flow;
 mod id;
 mod process;
 mod prompts;
+mod route;
 mod runner;
 mod squad;
 mod squad_run;
@@ -18,6 +19,7 @@ use xdev_git::GitError;
 use xdev_policy::Verdict;
 
 pub use flow::RunOptions;
+pub use route::{RouteRule, Routing};
 pub use runner::{
     Cancel, ClaudeRunner, CodexRunner, ContextUse, RunOutcome, RunRequest, Runner,
     parse_claude_json, parse_codex_jsonl,

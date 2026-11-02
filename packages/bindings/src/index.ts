@@ -31,6 +31,8 @@ export type { QuotaState } from "./QuotaState";
 export type { QuotaWindow } from "./QuotaWindow";
 export type { Reason } from "./Reason";
 export type { Role } from "./Role";
+export type { RouteRule } from "./RouteRule";
+export type { Routing } from "./Routing";
 export type { RunRecord } from "./RunRecord";
 export type { SearchHit } from "./SearchHit";
 export type { Seat } from "./Seat";
