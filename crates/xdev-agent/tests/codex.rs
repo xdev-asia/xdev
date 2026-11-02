@@ -159,6 +159,15 @@ fn setup(events: &str) -> Setup {
     }
 }
 
+/// The prompt as the fake saw it: a batch file gets it on one line, other
+/// systems keep the newline.
+const PROMPT: &str = if cfg!(windows) {
+    "Fix the bug then stop"
+} else {
+    "Fix the bug
+then stop"
+};
+
 fn read(path: PathBuf) -> String {
     fs::read_to_string(path).unwrap().trim().to_owned()
 }
@@ -182,11 +191,10 @@ fn new_run_parses_the_stream_and_reads_context() {
             "result": "ok", "context": [17077, 475000],
         })
     );
-    // The batch file gets the prompt on one line.
     assert_eq!(
         args(&s),
         format!(
-            "exec --json --skip-git-repo-check -s workspace-write -C {} -- Fix the bug then stop",
+            "exec --json --skip-git-repo-check -s workspace-write -C {} -- {PROMPT}",
             s.worktree.display()
         )
     );
@@ -210,7 +218,7 @@ fn resume_passes_sandbox_as_config_and_read_only_tools() {
     assert_eq!(
         args(&s),
         format!(
-            "exec resume --json --skip-git-repo-check -c sandbox_mode=read-only -- {THREAD} Fix the bug then stop"
+            "exec resume --json --skip-git-repo-check -c sandbox_mode=read-only -- {THREAD} {PROMPT}"
         )
     );
     assert_eq!(
