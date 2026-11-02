@@ -12,7 +12,7 @@ use clap::{Parser, Subcommand};
 use xdev_core::{
     ChangeKind, CoreError, DocState, FileStatus, GitError, Repo, Store, Vault, Written, ai_writes,
     broken_links, data_dir, export_plan, export_root, export_write, index_path, list_changes,
-    parse_frontmatter, search, stale_docs, sync_vault,
+    local_dir, move_indexes, parse_frontmatter, search, stale_docs, sync_vault,
 };
 
 #[derive(Parser)]
@@ -122,17 +122,19 @@ fn main() -> ExitCode {
 
 fn run(command: Command) -> Result<Outcome, &'static str> {
     let data_dir = data_dir().ok_or("io")?;
+    let local_dir = local_dir().ok_or("io")?;
+    move_indexes(&data_dir, &local_dir);
     let open = |dir: &PathBuf| -> Result<(Vault, Store), CoreError> {
         let vault = Vault::open(dir)?;
-        let store = Store::open(&index_path(&data_dir, &vault))?;
+        let store = Store::open(&index_path(&local_dir, &vault))?;
         Ok((vault, store))
     };
     match command {
         Command::Ai { command } => return ai::run(command, &data_dir),
         Command::Accounts { command } => return accounts::run(command, &data_dir),
         Command::Quota { json } => return accounts::run_quota(json, &data_dir),
-        Command::Task { command } => return task::run(command, &data_dir),
-        Command::Squad { command } => return squad::run(command, &data_dir),
+        Command::Task { command } => return task::run(command, &data_dir, &local_dir),
+        Command::Squad { command } => return squad::run(command, &data_dir, &local_dir),
         Command::Mcp { dir } => {
             let dir = dir.unwrap_or_else(|| {
                 let docs = PathBuf::from("docs");

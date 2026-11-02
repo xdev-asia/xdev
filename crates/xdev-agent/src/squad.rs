@@ -431,16 +431,28 @@ pub(crate) struct RunLock {
 }
 
 /// Squads under `<data_dir>/squads/<id>/`. Their tasks are ordinary tasks
-/// in the [`TaskStore`] of the same data dir.
+/// in the [`TaskStore`] of the same data and local dirs.
 #[derive(Debug, Clone)]
 pub struct SquadStore {
     pub data_dir: PathBuf,
+    pub local_dir: PathBuf,
 }
 
 impl SquadStore {
+    /// Squads, task records and worktrees in one dir.
     pub fn new(data_dir: impl Into<PathBuf>) -> SquadStore {
+        let data_dir = data_dir.into();
+        SquadStore {
+            local_dir: data_dir.clone(),
+            data_dir,
+        }
+    }
+
+    /// Like [`TaskStore::with_local`]: its tasks' worktrees go in `local_dir`.
+    pub fn with_local(data_dir: impl Into<PathBuf>, local_dir: impl Into<PathBuf>) -> SquadStore {
         SquadStore {
             data_dir: data_dir.into(),
+            local_dir: local_dir.into(),
         }
     }
 
@@ -449,7 +461,7 @@ impl SquadStore {
     }
 
     pub(crate) fn tasks(&self) -> TaskStore {
-        TaskStore::new(&self.data_dir)
+        TaskStore::with_local(&self.data_dir, &self.local_dir)
     }
 
     /// A new squad for the repo; roles missing from `accounts` are vacant.

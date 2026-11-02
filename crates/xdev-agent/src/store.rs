@@ -37,22 +37,36 @@ impl Drop for LiveGuard {
     }
 }
 
-/// Task records under `<data_dir>/tasks/<id>/task.json`, worktrees under
-/// `<data_dir>/worktrees/<id>`.
+/// Task records under `<data_dir>/tasks/<id>/task.json`, worktrees of new
+/// tasks under `<local_dir>/worktrees/<id>`. A task keeps the worktree path
+/// it was made with, so moving the local dir never strands one.
 #[derive(Debug, Clone)]
 pub struct TaskStore {
     pub data_dir: PathBuf,
+    pub local_dir: PathBuf,
 }
 
 impl TaskStore {
+    /// Records and worktrees in one dir.
     pub fn new(data_dir: impl Into<PathBuf>) -> TaskStore {
+        let data_dir = data_dir.into();
+        TaskStore {
+            local_dir: data_dir.clone(),
+            data_dir,
+        }
+    }
+
+    /// Records in `data_dir`, worktrees in `local_dir`, where a roaming
+    /// profile does not sync them.
+    pub fn with_local(data_dir: impl Into<PathBuf>, local_dir: impl Into<PathBuf>) -> TaskStore {
         TaskStore {
             data_dir: data_dir.into(),
+            local_dir: local_dir.into(),
         }
     }
 
     pub fn worktree_path(&self, id: &str) -> PathBuf {
-        self.data_dir.join("worktrees").join(id)
+        self.local_dir.join("worktrees").join(id)
     }
 
     fn task_dir(&self, id: &str) -> PathBuf {

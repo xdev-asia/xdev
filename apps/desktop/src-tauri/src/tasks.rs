@@ -11,7 +11,7 @@ use xdev_ai::{AiError, Provider, Registry};
 use xdev_core::Repo;
 use xdev_policy::{Audited, Policy, PolicyError, Verdict};
 
-use crate::accounts::data_dir;
+use crate::accounts::{data_dir, local_dir};
 use crate::commands::{AppState, CmdError};
 
 /// Same as the CLI: long enough for a real change; a hung agent still ends.
@@ -93,7 +93,7 @@ pub(crate) fn gate(data: &Path) -> Result<Audited<Policy>, CmdError> {
 }
 
 fn store(state: &AppState) -> Result<TaskStore, CmdError> {
-    Ok(TaskStore::new(data_dir(state)?))
+    Ok(TaskStore::with_local(data_dir(state)?, local_dir(state)?))
 }
 
 #[tauri::command(async)]
@@ -142,7 +142,7 @@ pub fn task_run(
         tools: Vec::new(),
         test: test_command(test.as_deref()),
     };
-    Ok(TaskStore::new(data).run_task(&id, &*runner, &gate, &opts)?)
+    Ok(store(&state)?.run_task(&id, &*runner, &gate, &opts)?)
 }
 
 #[tauri::command(async)]
@@ -158,14 +158,13 @@ pub fn task_resume(
         account,
         ..RunOptions::default()
     };
-    Ok(TaskStore::new(data).resume_task(&id, &*runner, &gate, &opts)?)
+    Ok(store(&state)?.resume_task(&id, &*runner, &gate, &opts)?)
 }
 
 #[tauri::command(async)]
 pub fn task_approve(state: State<'_, AppState>, id: String) -> Result<Task, CmdError> {
-    let data = data_dir(&state)?;
-    let gate = gate(data)?;
-    Ok(TaskStore::new(data).approve_task(&id, &gate)?)
+    let gate = gate(data_dir(&state)?)?;
+    Ok(store(&state)?.approve_task(&id, &gate)?)
 }
 
 #[tauri::command(async)]

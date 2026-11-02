@@ -51,6 +51,7 @@ pub struct Changed {
 pub struct AppState {
     pub session: Shared,
     pub data_dir: Option<PathBuf>,
+    pub local_dir: Option<PathBuf>,
 }
 
 #[tauri::command(async)]
@@ -59,14 +60,11 @@ pub fn open_vault(
     state: State<'_, AppState>,
     path: String,
 ) -> Result<Vec<DocEntry>, CmdError> {
-    let data_dir = state.data_dir.as_deref().ok_or(CmdError {
-        code: "io",
-        detail: Some("no data dir".into()),
-    })?;
+    let local_dir = crate::accounts::local_dir(&state)?;
     let emitter = app.clone();
     let entries = state
         .session
-        .open(data_dir, Path::new(&path), move |paths| {
+        .open(local_dir, Path::new(&path), move |paths| {
             // Fails only once the app is shutting down; nobody is listening.
             let _ = emitter.emit(CHANGED_EVENT, Changed { paths });
         })?;

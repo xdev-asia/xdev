@@ -24,9 +24,10 @@ pub struct DocEntry {
     pub skipped: Option<Skip>,
 }
 
-/// Kept outside the vault so the user's folder stays clean.
-pub fn index_path(data_dir: &Path, vault: &Vault) -> PathBuf {
-    data_dir.join("vaults").join(vault.id()).join("index.db")
+/// Kept outside the vault so the user's folder stays clean. Under the local
+/// dir: an index is rebuilt from the vault, so it has no reason to roam.
+pub fn index_path(local_dir: &Path, vault: &Vault) -> PathBuf {
+    local_dir.join("vaults").join(vault.id()).join("index.db")
 }
 
 /// Brings the index in line with the files on disk and returns every listed

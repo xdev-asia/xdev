@@ -74,8 +74,12 @@ pub enum SquadCommand {
     Remove { id: String },
 }
 
-pub fn run(command: SquadCommand, data_dir: &Path) -> Result<Outcome, &'static str> {
-    let store = SquadStore::new(data_dir);
+pub fn run(
+    command: SquadCommand,
+    data_dir: &Path,
+    local_dir: &Path,
+) -> Result<Outcome, &'static str> {
+    let store = SquadStore::with_local(data_dir, local_dir);
     let reg = Registry::load(data_dir).map_err(|e| e.code())?;
     let known = |account: &str| -> Result<(), &'static str> {
         reg.get(account)

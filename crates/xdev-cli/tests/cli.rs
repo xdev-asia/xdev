@@ -7,6 +7,7 @@ use tempfile::TempDir;
 fn xdev(data_dir: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_xdev"))
         .env("XDEV_DATA_DIR", data_dir)
+        .env_remove("XDEV_LOCAL_DIR")
         .args(args)
         .output()
         .expect("run xdev")
@@ -34,6 +35,26 @@ fn index_counts_docs() {
     // The index lives under the data dir, not in the vault.
     assert!(data.path().join("vaults").is_dir());
     assert!(!vault.path().join(".xdev").exists());
+}
+
+#[test]
+fn index_moves_to_the_local_dir() {
+    let (vault, data, local) = (vault(), TempDir::new().unwrap(), TempDir::new().unwrap());
+    let dir = vault.path().to_str().unwrap();
+    let out = xdev(data.path(), &["index", dir]);
+    assert!(out.status.success(), "{out:?}");
+
+    // A later run with a separate local dir takes the old index with it.
+    let local = local.path().join("local");
+    let out = Command::new(env!("CARGO_BIN_EXE_xdev"))
+        .env("XDEV_DATA_DIR", data.path())
+        .env("XDEV_LOCAL_DIR", &local)
+        .args(["search", dir, "tai lieu"])
+        .output()
+        .unwrap();
+    assert_eq!(stdout(&out), "a.md\tTài liệu\n");
+    assert!(local.join("vaults").is_dir());
+    assert!(!data.path().join("vaults").exists());
 }
 
 #[test]
