@@ -16,6 +16,8 @@ use crate::{AgentError, ContextUse, TaskState, TaskStore, TestResult, now, tail}
 const SQUAD_FILE: &str = "squad.json";
 const EVENTS: &str = "events.jsonl";
 const LOCK: &str = "run.lock";
+const LOCK_TRIES: u32 = 10;
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_millis(20);
 /// Its presence asks the process driving the run to stop.
 pub(crate) const STOP: &str = "stop";
 /// Steers sent while another process drives the run.
@@ -573,7 +575,8 @@ impl SquadStore {
     /// A process is driving the squad's run right now.
     pub fn is_running(&self, id: &str) -> Result<bool, AgentError> {
         self.load(id)?;
-        Ok(self.lock(id)?.is_none())
+        // One try: a moment's false "running" only shows in a status.
+        Ok(self.lock_with(id, 1)?.is_none())
     }
 
     /// The latest run, if any. A run left unfinished by a process that is
@@ -631,20 +634,32 @@ impl SquadStore {
 
     /// `None` when another run holds the squad.
     pub(crate) fn lock(&self, id: &str) -> Result<Option<RunLock>, AgentError> {
+        self.lock_with(id, LOCK_TRIES)
+    }
+
+    fn lock_with(&self, id: &str, tries: u32) -> Result<Option<RunLock>, AgentError> {
         let file = OpenOptions::new()
             .create(true)
             .truncate(false)
             .write(true)
             .open(self.dir(id).join(LOCK))?;
-        match file.try_lock() {
-            Ok(()) => {
-                // No run is going, so a stop request left behind is for none.
-                let _ = fs::remove_file(self.dir(id).join(STOP));
-                Ok(Some(RunLock { _file: file }))
+        // A child forked by any thread shares the lock until it execs, so a
+        // lock just released can look held for a moment on Unix.
+        for attempt in 0..tries {
+            match file.try_lock() {
+                Ok(()) => {
+                    // No run is going, so a stop request left behind is for none.
+                    let _ = fs::remove_file(self.dir(id).join(STOP));
+                    return Ok(Some(RunLock { _file: file }));
+                }
+                Err(TryLockError::WouldBlock) if attempt + 1 < tries => {
+                    std::thread::sleep(LOCK_WAIT)
+                }
+                Err(TryLockError::WouldBlock) => {}
+                Err(TryLockError::Error(e)) => return Err(e.into()),
             }
-            Err(TryLockError::WouldBlock) => Ok(None),
-            Err(TryLockError::Error(e)) => Err(e.into()),
         }
+        Ok(None)
     }
 
     pub(crate) fn latest_run(&self, id: &str) -> Result<Option<SquadRun>, AgentError> {
@@ -735,6 +750,37 @@ fn pretty<T: Serialize>(value: &T) -> Result<String, AgentError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_released_lock_is_free_while_other_threads_start_processes() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let data = tempfile::tempdir().unwrap();
+        let store = SquadStore::new(data.path());
+        fs::create_dir_all(store.dir("s")).unwrap();
+        let done = Arc::new(AtomicBool::new(false));
+        let spawners: Vec<_> = (0..4)
+            .map(|_| {
+                let done = Arc::clone(&done);
+                std::thread::spawn(move || {
+                    while !done.load(Ordering::Relaxed) {
+                        let _ = std::process::Command::new("git").arg("--version").output();
+                    }
+                })
+            })
+            .collect();
+        let mut busy = 0;
+        for _ in 0..300 {
+            let lock = store.lock("s").unwrap();
+            busy += usize::from(lock.is_none());
+            drop(lock);
+        }
+        done.store(true, Ordering::Relaxed);
+        for s in spawners {
+            s.join().unwrap();
+        }
+        assert_eq!(busy, 0, "a free lock was reported busy");
+    }
 
     #[test]
     fn roles_parse_from_their_names() {
