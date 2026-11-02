@@ -238,8 +238,8 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
     setAgentsOpen((open) => !open);
   }
 
-  async function approve(paths: string[]) {
-    if (await review.approve(paths, message)) setMessage("");
+  async function approve(changes: Change[]) {
+    if (await review.approve(changes, message)) setMessage("");
   }
 
   async function confirmReject() {
@@ -247,7 +247,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
     setRejecting(null);
     // Rejecting an added file deletes it; an editor left open on it would recreate it on the next save.
     const deletesOpenDoc = targets.some((c) => c.kind === "added" && c.path === state.path);
-    if ((await review.reject(targets.map((c) => c.path))) && deletesOpenDoc) doc.close();
+    if ((await review.reject(targets)) && deletesOpenDoc) doc.close();
   }
 
   async function restore(path: string, id: string): Promise<Problem | null> {
@@ -356,7 +356,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
                 message={message}
                 onMessage={setMessage}
                 onSelect={selectChange}
-                onApprove={(paths) => void approve(paths)}
+                onApprove={(changes) => void approve(changes)}
                 onReject={setRejecting}
               />
             )}
@@ -380,7 +380,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
             change={change}
             revision={review.revision}
             busy={review.busy}
-            onApprove={() => void approve([change.path])}
+            onApprove={() => void approve([change])}
             onReject={() => setRejecting([change])}
             onOpenDoc={() => openDoc(change.path)}
             onClose={() => selectChange(null)}

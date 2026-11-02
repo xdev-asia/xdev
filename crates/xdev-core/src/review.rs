@@ -18,13 +18,22 @@ pub enum Origin {
     Ai,
 }
 
-/// `note` is the agent's summary, only for `Ai`.
+/// `note` is the agent's summary, only for `Ai`. `hash` is the content on
+/// disk, `None` for a deletion.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Change {
     pub path: String,
     pub kind: ChangeKind,
     pub origin: Origin,
     pub note: Option<String>,
+    pub hash: Option<String>,
+}
+
+/// A pending change as the person last saw it, from `Change`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub struct Seen {
+    pub path: String,
+    pub hash: Option<String>,
 }
 
 /// Path to the content hash of xDev's last write to it.
@@ -72,6 +81,7 @@ pub fn list_changes(
                 kind: s.kind,
                 origin,
                 note,
+                hash: disk,
             }
         })
         .collect())
@@ -84,10 +94,10 @@ pub fn approve(
     repo: &Repo,
     written: &Written,
     ai: &AiWrites,
-    paths: &[String],
+    seen: &[Seen],
     message: &str,
 ) -> Result<Option<String>, CoreError> {
-    let selected = pending_among(vault, repo, written, ai, paths)?;
+    let selected = pending_among(vault, repo, written, ai, seen)?;
     if selected.is_empty() {
         return Ok(None);
     }
@@ -106,10 +116,10 @@ pub fn reject(
     repo: &Repo,
     written: &Written,
     ai: &AiWrites,
-    paths: &[String],
+    seen: &[Seen],
 ) -> Result<(), CoreError> {
     let (added, tracked): (Vec<Change>, Vec<Change>) =
-        pending_among(vault, repo, written, ai, paths)?
+        pending_among(vault, repo, written, ai, seen)?
             .into_iter()
             .partition(|c| c.kind == ChangeKind::Added);
     repo.restore(&tracked.into_iter().map(|c| c.path).collect::<Vec<_>>())?;
@@ -164,15 +174,23 @@ pub fn propose_update(
         .ok_or_else(|| VaultError::OutsideVault(path.to_owned()))?;
     check_doc(&path)?;
 
-    // Git's view rather than a byte compare, so line-ending conversion is
-    // not an edit. Folders on Windows and macOS ignore case, so a new `A.md`
-    // may be the person's pending deletion of `a.md`.
+    // Folders on Windows and macOS ignore case, so a new `A.md` may be the
+    // person's pending deletion of `a.md`.
+    let lower = path.to_lowercase();
     let pending = repo
         .status()?
         .iter()
-        .any(|s| s.path.eq_ignore_ascii_case(&path));
-    let clean = !pending && full.exists() == repo.head_content(&path)?.is_some();
+        .any(|s| s.path.to_lowercase() == lower);
+    let before = read_if_exists(&full);
+    // Git's status alone is not enough: `--skip-worktree` or
+    // `--assume-unchanged` hide a person's edit from it.
+    let clean = !pending && same_text(&before, &repo.head_content(&path)?);
     if !clean && !is_own_proposal(vault, store, &path)? {
+        return Err(CoreError::Conflict);
+    }
+    // Narrows the window for an edit saved while git ran; the app is another
+    // process, so there is no lock to share.
+    if read_if_exists(&full) != before {
         return Err(CoreError::Conflict);
     }
 
@@ -221,21 +239,55 @@ pub fn default_message(changes: &[Change]) -> String {
 }
 
 /// Only paths that are pending right now: a stale UI list or a crafted call
-/// must not commit or delete anything else.
+/// must not commit or delete anything else. A doc whose text changed since
+/// the person saw it (an agent proposing again, an editor saving) fails the
+/// whole call with `Changed`: its new text was never reviewed.
 fn pending_among(
     vault: &Vault,
     repo: &Repo,
     written: &Written,
     ai: &AiWrites,
-    paths: &[String],
+    seen: &[Seen],
 ) -> Result<Vec<Change>, CoreError> {
-    if paths.is_empty() {
+    if seen.is_empty() {
         return Ok(Vec::new());
     }
-    Ok(list_changes(vault, repo, written, ai)?
-        .into_iter()
-        .filter(|c| paths.contains(&c.path))
-        .collect())
+    let mut picked = Vec::new();
+    for change in list_changes(vault, repo, written, ai)? {
+        let Some(s) = seen.iter().find(|s| s.path == change.path) else {
+            continue;
+        };
+        if s.hash != change.hash {
+            return Err(CoreError::Changed);
+        }
+        picked.push(change);
+    }
+    Ok(picked)
+}
+
+/// `None` when absent; `Some(None)` when present but unreadable, which never
+/// counts as clean.
+fn read_if_exists(full: &Path) -> Option<Option<Vec<u8>>> {
+    full.exists().then(|| std::fs::read(full).ok())
+}
+
+/// Line endings aside, so a checkout with `core.autocrlf` is still clean.
+fn same_text(disk: &Option<Option<Vec<u8>>>, head: &Option<Vec<u8>>) -> bool {
+    match (disk, head) {
+        (None, None) => true,
+        (Some(Some(d)), Some(h)) => d == h || crlf_to_lf(d) == crlf_to_lf(h),
+        _ => false,
+    }
+}
+
+fn crlf_to_lf(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    for (i, &b) in bytes.iter().enumerate() {
+        if !(b == b'\r' && bytes.get(i + 1) == Some(&b'\n')) {
+            out.push(b);
+        }
+    }
+    out
 }
 
 fn is_own_proposal(vault: &Vault, store: &Store, path: &str) -> Result<bool, CoreError> {
@@ -271,4 +323,21 @@ fn to_text(path: &str, bytes: Option<Vec<u8>>) -> Result<Option<String>, CoreErr
     bytes
         .map(|b| String::from_utf8(b).map_err(|_| VaultError::NotUtf8(path.to_owned()).into()))
         .transpose()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::same_text;
+
+    #[test]
+    fn same_text_ignores_line_endings_only() {
+        let disk = |b: &[u8]| Some(Some(b.to_vec()));
+        assert!(same_text(&disk(b"a\r\nb\r\n"), &Some(b"a\nb\n".to_vec())));
+        assert!(same_text(&None, &None));
+        assert!(!same_text(&disk(b"a\r\nc\r\n"), &Some(b"a\nb\n".to_vec())));
+        assert!(!same_text(&disk(b"a"), &None));
+        assert!(!same_text(&None, &Some(b"a".to_vec())));
+        // Present but unreadable is never clean.
+        assert!(!same_text(&Some(None), &Some(b"a".to_vec())));
+    }
 }

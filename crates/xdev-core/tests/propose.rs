@@ -4,7 +4,7 @@ use std::process::Command;
 
 use tempfile::TempDir;
 use xdev_core::{
-    AiWrite, AiWrites, Change, ChangeKind, CoreError, Origin, Repo, Store, Vault, Written,
+    AiWrite, AiWrites, Change, ChangeKind, CoreError, Origin, Repo, Seen, Store, Vault, Written,
     ai_writes, approve, content_hash, forget_ai_writes, list_changes, propose_update, reject,
     search,
 };
@@ -53,8 +53,13 @@ fn docs(dir: &TempDir) -> std::path::PathBuf {
     dir.path().join("docs")
 }
 
+/// Without hashes, so a case reads as a table.
 fn changes(vault: &Vault, repo: &Repo, store: &Store, written: &Written) -> Vec<Change> {
-    list_changes(vault, repo, written, &ai_writes(store).unwrap()).unwrap()
+    list_changes(vault, repo, written, &ai_writes(store).unwrap())
+        .unwrap()
+        .into_iter()
+        .map(|c| Change { hash: None, ..c })
+        .collect()
 }
 
 fn change(path: &str, kind: ChangeKind, origin: Origin, note: Option<&str>) -> Change {
@@ -63,6 +68,7 @@ fn change(path: &str, kind: ChangeKind, origin: Origin, note: Option<&str>) -> C
         kind,
         origin,
         note: note.map(str::to_owned),
+        hash: None,
     }
 }
 
@@ -81,6 +87,16 @@ fn row(path: &str, content: &str) -> (String, String) {
 
 fn paths(list: &[&str]) -> Vec<String> {
     list.iter().map(|p| (*p).to_owned()).collect()
+}
+
+/// What the review list shows right now, before the call under test.
+fn seen(dir: &TempDir, list: &[&str]) -> Vec<Seen> {
+    list.iter()
+        .map(|p| Seen {
+            path: (*p).to_owned(),
+            hash: fs::read(docs(dir).join(p)).ok().map(|b| content_hash(&b)),
+        })
+        .collect()
 }
 
 #[test]
@@ -188,6 +204,27 @@ fn propose_refuses_pending_human_edit() {
         "c1 and mine"
     );
     assert_eq!(rows(&store), [row("c.md", "c1")]);
+}
+
+#[test]
+fn propose_refuses_edit_hidden_from_git_status() {
+    let (dir, vault, repo, mut store) = setup();
+    git(
+        dir.path(),
+        &["update-index", "--skip-worktree", "docs/a.md"],
+    );
+    git(
+        dir.path(),
+        &["update-index", "--assume-unchanged", "docs/b.md"],
+    );
+    write(&docs(&dir), "a.md", "person");
+    write(&docs(&dir), "b.md", "person");
+    for path in ["a.md", "b.md"] {
+        let err = propose_update(&vault, &repo, &mut store, path, "agent", None).unwrap_err();
+        assert_eq!(err.code(), "conflict", "{path}");
+        assert_eq!(fs::read_to_string(docs(&dir).join(path)).unwrap(), "person");
+    }
+    assert!(rows(&store).is_empty());
 }
 
 /// Windows and macOS folders ignore case, so `A.md` is the person's `a.md`.
@@ -303,9 +340,16 @@ fn approve_then_forget_clears_rows() {
     );
 
     let selected = paths(&["a.md"]);
-    approve(&vault, &repo, &written, &snapshot, &selected, "")
-        .unwrap()
-        .expect("a commit");
+    approve(
+        &vault,
+        &repo,
+        &written,
+        &snapshot,
+        &seen(&dir, &["a.md"]),
+        "",
+    )
+    .unwrap()
+    .expect("a commit");
     assert_eq!(
         git(dir.path(), &["log", "-1", "--format=%s"]).trim(),
         "Update a.md"
@@ -317,7 +361,14 @@ fn approve_then_forget_clears_rows() {
 
     let selected = paths(&["a.md", "b.md"]);
     let snapshot = ai_writes(&store).unwrap();
-    reject(&vault, &repo, &written, &snapshot, &selected).unwrap();
+    reject(
+        &vault,
+        &repo,
+        &written,
+        &snapshot,
+        &seen(&dir, &["a.md", "b.md"]),
+    )
+    .unwrap();
     forget_ai_writes(&mut store, &snapshot, &selected).unwrap();
     assert!(rows(&store).is_empty());
     assert_eq!(fs::read_to_string(docs(&dir).join("a.md")).unwrap(), "a2");

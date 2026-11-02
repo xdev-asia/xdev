@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toApiError } from "./api";
+import { toApiError, type Api, type Change, type Seen } from "./api";
 import { setVerified } from "./doc/frontmatter";
 import {
   coverMatcher,
@@ -16,6 +16,18 @@ const seed = {
   "docs/kien-truc.md": "# Tài liệu kiến trúc\n\nHệ thống gồm ba lớp.\n",
   "docs/xss.md": "# Unsafe\n\n<img onerror=x> kiến trúc & more\n",
 };
+
+// The rows the review list shows for `paths`, as the UI sends them back; a path
+// that is not pending goes as a deletion, like a stale or crafted call.
+async function seenOf(api: Api, paths: string[]): Promise<Seen[]> {
+  const changes = await api.listChanges();
+  return paths.map((path) => changes.find((c) => c.path === path) ?? { path, hash: null });
+}
+
+// Hashes left out, so a case reads as a table.
+function plain(changes: Change[]): Omit<Change, "hash">[] {
+  return changes.map(({ hash: _, ...rest }) => rest);
+}
 
 async function opened(files: Record<string, string> = seed) {
   const api = createMockApi(files);
@@ -111,13 +123,13 @@ describe("mock vcs", () => {
   it("lists app and outside changes", async () => {
     const api = await opened();
     expect(await api.vcsState()).toEqual({ status: "ok" });
-    expect(await api.listChanges()).toEqual([]);
+    expect(plain(await api.listChanges())).toEqual([]);
     await api.writeDoc("README.md", "# Mine\n");
     api.__editOutside("docs/kien-truc.md", "# Theirs\n");
     api.__editOutside("docs/xss.md", null);
     await api.writeDoc("docs/new.md", "# New\n");
     // Sorted by code unit, like the Rust side, so upper case comes first.
-    expect(await api.listChanges()).toEqual([
+    expect(plain(await api.listChanges())).toEqual([
       { path: "README.md", kind: "modified", origin: "app", note: null },
       { path: "docs/kien-truc.md", kind: "modified", origin: "outside", note: null },
       { path: "docs/new.md", kind: "added", origin: "app", note: null },
@@ -132,25 +144,37 @@ describe("mock vcs", () => {
     const api = await opened();
     await api.writeDoc("README.md", "# Mine\n");
     api.__editOutside("docs/kien-truc.md", "# Theirs\n");
-    const id = await api.approve(["README.md"], "Reword the intro");
+    const id = await api.approve(await seenOf(api, ["README.md"]), "Reword the intro");
     expect(id).toMatch(/^[0-9a-f]{40}$/);
-    expect(await api.listChanges()).toEqual([{ path: "docs/kien-truc.md", kind: "modified", origin: "outside", note: null }]);
+    expect(plain(await api.listChanges())).toEqual([{ path: "docs/kien-truc.md", kind: "modified", origin: "outside", note: null }]);
     expect(await api.readBase("README.md")).toBe("# Mine\n");
     const [latest] = await api.history("README.md", 50);
     expect(latest).toMatchObject({ id, author: "You", message: "Reword the intro" });
     expect(latest.time).toBeGreaterThan(0);
     // Stale or crafted paths are ignored.
-    expect(await api.approve(["README.md", "zzz.md", "../etc.md"], "")).toBeNull();
+    expect(await api.approve(await seenOf(api, ["README.md", "zzz.md", "../etc.md"]), "")).toBeNull();
+  });
+
+  it("approve and reject refuse text edited after it was seen", async () => {
+    const api = await opened();
+    await api.writeDoc("README.md", "# Mine\n");
+    const looked = await seenOf(api, ["README.md"]);
+    // An agent proposes again while the person reads the diff.
+    api.__editOutside("README.md", "# Theirs\n");
+    await expect(api.approve(looked, "")).rejects.toEqual({ code: "changed" });
+    await expect(api.reject(looked)).rejects.toEqual({ code: "changed" });
+    expect(await api.readDoc("README.md")).toBe("# Theirs\n");
+    expect(await api.history("README.md", 50)).toHaveLength(1);
   });
 
   it("approve with empty message uses default", async () => {
     const api = await opened();
     await api.writeDoc("README.md", "# Mine\n");
-    await api.approve(["README.md"], "  \n ");
+    await api.approve(await seenOf(api, ["README.md"]), "  \n ");
     expect((await api.history("README.md", 1))[0].message).toBe("Update README.md");
     await api.writeDoc("a.md", "a");
     await api.writeDoc("b.md", "b");
-    await api.approve(["a.md", "b.md"], "");
+    await api.approve(await seenOf(api, ["a.md", "b.md"]), "");
     expect((await api.history("a.md", 1))[0].message).toBe("Update 2 docs");
   });
 
@@ -161,22 +185,22 @@ describe("mock vcs", () => {
     api.__editOutside("docs/xss.md", null);
     // Skips the echoes of the edits above, which arrive one path at a time.
     const seen = new Promise<string[]>((resolve) => void api.onVaultChanged((p) => p.length > 1 && resolve(p)));
-    await api.reject(["README.md", "docs/new.md", "docs/xss.md"]);
+    await api.reject(await seenOf(api, ["README.md", "docs/new.md", "docs/xss.md"]));
     expect(await api.readDoc("README.md")).toBe(seed["README.md"]);
     expect(await api.readDoc("docs/xss.md")).toBe(seed["docs/xss.md"]);
     await expect(api.readDoc("docs/new.md")).rejects.toEqual({ code: "not_found" });
-    expect(await api.listChanges()).toEqual([]);
+    expect(plain(await api.listChanges())).toEqual([]);
     expect((await seen).sort()).toEqual(["README.md", "docs/new.md", "docs/xss.md"].sort());
   });
 
   it("history newest first and readVersion", async () => {
     const api = await opened();
     await api.writeDoc("README.md", "v2");
-    await api.approve(["README.md"], "two");
+    await api.approve(await seenOf(api, ["README.md"]), "two");
     await api.writeDoc("docs/kien-truc.md", "other doc");
-    await api.approve(["docs/kien-truc.md"], "unrelated");
+    await api.approve(await seenOf(api, ["docs/kien-truc.md"]), "unrelated");
     await api.writeDoc("README.md", "v3");
-    await api.approve(["README.md"], "three\n\nbody");
+    await api.approve(await seenOf(api, ["README.md"]), "three\n\nbody");
     const log = await api.history("README.md", 50);
     expect(log.map((c) => c.message)).toEqual(["three", "two", "Import docs"]);
     expect(await api.history("README.md", 1)).toHaveLength(1);
@@ -190,11 +214,11 @@ describe("mock vcs", () => {
   it("restoreVersion creates a pending app change", async () => {
     const api = await opened();
     await api.writeDoc("README.md", "v2");
-    await api.approve(["README.md"], "two");
+    await api.approve(await seenOf(api, ["README.md"]), "two");
     const first = (await api.history("README.md", 50)).at(-1)!;
     await api.restoreVersion("README.md", first.id);
     expect(await api.readDoc("README.md")).toBe(seed["README.md"]);
-    expect(await api.listChanges()).toEqual([{ path: "README.md", kind: "modified", origin: "app", note: null }]);
+    expect(plain(await api.listChanges())).toEqual([{ path: "README.md", kind: "modified", origin: "app", note: null }]);
     await expect(api.restoreVersion("docs/new.md", first.id)).rejects.toEqual({ code: "not_found" });
   });
 
@@ -212,7 +236,7 @@ describe("mock vcs", () => {
     expect(changes.every((c) => c.kind === "added" && c.origin === "outside")).toBe(true);
     expect(await api.history("README.md", 50)).toEqual([]);
     expect(await api.readBase("README.md")).toBeNull();
-    expect(await api.approve(["README.md"], "")).toMatch(/^[0-9a-f]{40}$/);
+    expect(await api.approve(await seenOf(api, ["README.md"]), "")).toMatch(/^[0-9a-f]{40}$/);
     expect((await api.history("README.md", 50))[0].message).toBe("Add README.md");
   });
 
@@ -225,9 +249,9 @@ describe("mock vcs", () => {
   });
 
   it("default message rules", () => {
-    expect(defaultMessage([{ path: "n.md", kind: "added", origin: "app", note: null }])).toBe("Add n.md");
-    expect(defaultMessage([{ path: "a.md", kind: "modified", origin: "app", note: null }])).toBe("Update a.md");
-    expect(defaultMessage([{ path: "b.md", kind: "deleted", origin: "outside", note: null }])).toBe("Delete b.md");
+    expect(defaultMessage([{ path: "n.md", kind: "added", origin: "app", note: null, hash: null }])).toBe("Add n.md");
+    expect(defaultMessage([{ path: "a.md", kind: "modified", origin: "app", note: null, hash: null }])).toBe("Update a.md");
+    expect(defaultMessage([{ path: "b.md", kind: "deleted", origin: "outside", note: null, hash: null }])).toBe("Delete b.md");
   });
 });
 
@@ -471,16 +495,16 @@ describe("mock ai proposals", () => {
     const api = await opened();
     api.__propose("README.md", "# Proposed\n", "Shorter intro.");
     api.__propose("docs/new.md", "# New\n", null);
-    expect(await api.listChanges()).toEqual([
+    expect(plain(await api.listChanges())).toEqual([
       { path: "README.md", kind: "modified", origin: "ai", note: "Shorter intro." },
       { path: "docs/new.md", kind: "added", origin: "ai", note: null },
     ]);
     // The agent may revise its own proposal.
     api.__propose("README.md", "# Proposed again\n", "Second try.");
     expect((await api.listChanges())[0]).toMatchObject({ origin: "ai", note: "Second try." });
-    await api.approve(["README.md"], "");
-    await api.reject(["docs/new.md"]);
-    expect(await api.listChanges()).toEqual([]);
+    await api.approve(await seenOf(api, ["README.md"]), "");
+    await api.reject(await seenOf(api, ["docs/new.md"]));
+    expect(plain(await api.listChanges())).toEqual([]);
   });
 
   it("refuses over a person's pending edit and without git", async () => {
@@ -497,7 +521,7 @@ describe("mock ai proposals", () => {
     const api = await opened();
     api.__propose("README.md", "# Same\n", "note");
     await api.writeDoc("README.md", "# Same\n");
-    expect(await api.listChanges()).toEqual([{ path: "README.md", kind: "modified", origin: "app", note: null }]);
+    expect(plain(await api.listChanges())).toEqual([{ path: "README.md", kind: "modified", origin: "app", note: null }]);
   });
 
   it("toApiError keeps conflict", () => {

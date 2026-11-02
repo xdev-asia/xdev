@@ -49,7 +49,7 @@ describe("ChangesPanel", () => {
   });
 
   it("other origins carry no note", () => {
-    const outside: Change = { path: "README.md", kind: "modified", origin: "outside", note: null };
+    const outside: Change = { path: "README.md", kind: "modified", origin: "outside", note: null, hash: null };
     const html = renderToStaticMarkup(
       <I18nProvider>
         <ChangesPanel

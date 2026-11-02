@@ -144,21 +144,25 @@ pub fn read_base(state: State<'_, AppState>, path: String) -> Result<Option<Stri
 #[tauri::command(async)]
 pub fn approve(
     state: State<'_, AppState>,
-    paths: Vec<String>,
+    changes: Vec<xdev_core::Seen>,
     message: String,
 ) -> Result<Option<String>, CmdError> {
     let r = state.session.review()?;
-    let id = xdev_core::approve(&r.vault, &r.repo, &r.written, &r.ai, &paths, &message)?;
-    state.session.forget(&r, &paths);
+    let id = xdev_core::approve(&r.vault, &r.repo, &r.written, &r.ai, &changes, &message)?;
+    state.session.forget(&r, &seen_paths(&changes));
     Ok(id)
 }
 
 #[tauri::command(async)]
-pub fn reject(state: State<'_, AppState>, paths: Vec<String>) -> Result<(), CmdError> {
+pub fn reject(state: State<'_, AppState>, changes: Vec<xdev_core::Seen>) -> Result<(), CmdError> {
     let r = state.session.review()?;
-    xdev_core::reject(&r.vault, &r.repo, &r.written, &r.ai, &paths)?;
-    state.session.forget(&r, &paths);
+    xdev_core::reject(&r.vault, &r.repo, &r.written, &r.ai, &changes)?;
+    state.session.forget(&r, &seen_paths(&changes));
     Ok(())
+}
+
+fn seen_paths(changes: &[xdev_core::Seen]) -> Vec<String> {
+    changes.iter().map(|c| c.path.clone()).collect()
 }
 
 #[tauri::command(async)]

@@ -2,6 +2,7 @@ import type {
   Api,
   ApiError,
   Change,
+  Seen,
   ChangeKind,
   Commit,
   DocEntry,
@@ -206,6 +207,13 @@ export function defaultMessage(changes: Change[]): string {
   return `${verb[kind]} ${path}`;
 }
 
+// Stands in for the core's content hash; only equality matters to the UI.
+function mockHash(content: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < content.length; i++) h = Math.imul(h ^ content.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
 function newCommitId(): string {
   return [...crypto.getRandomValues(new Uint8Array(20))].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -396,17 +404,25 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       const kind: ChangeKind = then === undefined ? "added" : disk === undefined ? "deleted" : "modified";
       const proposal = proposed.get(path);
       // The app's own write wins when an agent proposed the same text.
-      if (kind !== "deleted" && written.get(path) === disk) changes.push({ path, kind, origin: "app", note: null });
+      const hash = disk === undefined ? null : mockHash(disk);
+      if (kind !== "deleted" && written.get(path) === disk) changes.push({ path, kind, origin: "app", note: null, hash });
       else if (kind !== "deleted" && proposal !== undefined && proposal.content === disk)
-        changes.push({ path, kind, origin: "ai", note: proposal.note });
-      else changes.push({ path, kind, origin: "outside", note: null });
+        changes.push({ path, kind, origin: "ai", note: proposal.note, hash });
+      else changes.push({ path, kind, origin: "outside", note: null, hash });
     }
     return changes.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   }
 
-  // Stale or crafted paths are ignored, as in the Rust core.
-  function selected(paths: string[]): Change[] {
-    return pending().filter((c) => paths.includes(c.path));
+  // Stale or crafted paths are ignored, and text edited since it was seen fails the call, as in the Rust core.
+  function selected(seen: Seen[]): Change[] | "changed" {
+    const picked: Change[] = [];
+    for (const change of pending()) {
+      const s = seen.find((x) => x.path === change.path);
+      if (s === undefined) continue;
+      if (s.hash !== change.hash) return "changed";
+      picked.push(change);
+    }
+    return picked;
   }
 
   function vcsGuard(path?: string): ApiError["code"] | null {
@@ -553,10 +569,11 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       const bad = vcsGuard(path);
       return bad ? reject(bad) : (headTree().get(path) ?? null);
     },
-    async approve(paths, message) {
+    async approve(seen, message) {
       const bad = vcsGuard();
       if (bad) return reject(bad);
-      const chosen = selected(paths);
+      const chosen = selected(seen);
+      if (chosen === "changed") return reject(chosen);
       if (chosen.length === 0) return null;
       const tree = new Map(headTree());
       for (const { path, kind } of chosen) {
@@ -568,10 +585,11 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       const touched = chosen.map((c) => c.path);
       return commit(tree, message.trim() || defaultMessage(chosen), touched);
     },
-    async reject(paths) {
+    async reject(seen) {
       const bad = vcsGuard();
       if (bad) return reject(bad);
-      const chosen = selected(paths);
+      const chosen = selected(seen);
+      if (chosen === "changed") return reject(chosen);
       const head = headTree();
       for (const { path, kind } of chosen) {
         if (kind === "added") files.delete(path);

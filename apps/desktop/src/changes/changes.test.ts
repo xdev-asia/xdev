@@ -3,9 +3,9 @@ import type { Change } from "../api";
 import en from "../i18n/en.json";
 import { countLabel, rejectPrompt, relativeTime, sortChanges } from "./changes";
 
-const added: Change = { path: "notes/new.md", kind: "added", origin: "app", note: null };
-const modified: Change = { path: "README.md", kind: "modified", origin: "outside", note: null };
-const deleted: Change = { path: "docs/old.md", kind: "deleted", origin: "outside", note: null };
+const added: Change = { path: "notes/new.md", kind: "added", origin: "app", note: null, hash: null };
+const modified: Change = { path: "README.md", kind: "modified", origin: "outside", note: null, hash: null };
+const deleted: Change = { path: "docs/old.md", kind: "deleted", origin: "outside", note: null, hash: null };
 
 describe("changes helpers", () => {
   it("rejectPrompt asks to delete a single added file", () => {

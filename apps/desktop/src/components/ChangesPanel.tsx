@@ -54,7 +54,7 @@ export function ChangesPanel(props: {
   message: string;
   onMessage(message: string): void;
   onSelect(path: string): void;
-  onApprove(paths: string[]): void;
+  onApprove(changes: Change[]): void;
   onReject(changes: Change[]): void;
 }): JSX.Element {
   const { t } = useI18n();
@@ -96,7 +96,7 @@ export function ChangesPanel(props: {
               type="button"
               style={COMPACT}
               disabled={busy}
-              onClick={() => props.onApprove(changes.map((c) => c.path))}
+              onClick={() => props.onApprove(changes)}
             >
               {t("changes.approveAll")}
             </Button>
@@ -110,7 +110,7 @@ export function ChangesPanel(props: {
                   <ChangeNote change={change} className="change-note-list" />
                 </button>
                 <div className="change-actions">
-                  <button type="button" className="btn-secondary" disabled={busy} onClick={() => props.onApprove([change.path])}>
+                  <button type="button" className="btn-secondary" disabled={busy} onClick={() => props.onApprove([change])}>
                     {t("changes.approve")}
                   </button>
                   <button type="button" className="btn-secondary" disabled={busy} onClick={() => props.onReject([change])}>

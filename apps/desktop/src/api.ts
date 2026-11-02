@@ -22,13 +22,23 @@ export type ApiError = {
     | "git"
     | "git_identity"
     | "stale"
-    | "conflict";
+    | "conflict"
+    | "changed";
   detail?: string;
 };
 export type VcsState = { status: "ok" | "no_repo" | "no_git" };
 export type ChangeKind = "added" | "modified" | "deleted";
 // `note` is the summary an agent gave with an `ai` change; null for the other origins.
-export type Change = { path: string; kind: ChangeKind; origin: "app" | "outside" | "ai"; note: string | null };
+// `hash` is the text on disk (null when deleted); approve and reject send it back so
+// the core can refuse a change edited after the person looked at it.
+export type Change = {
+  path: string;
+  kind: ChangeKind;
+  origin: "app" | "outside" | "ai";
+  note: string | null;
+  hash: string | null;
+};
+export type Seen = Pick<Change, "path" | "hash">;
 // `time` is unix seconds, `message` the subject line.
 export type Commit = { id: string; author: string; time: number; message: string };
 // `none`: the doc declares no `covers`, so there is nothing to check.
@@ -69,8 +79,8 @@ export interface Api {
   initRepo(): Promise<void>;
   listChanges(): Promise<Change[]>;
   readBase(path: string): Promise<string | null>;
-  approve(paths: string[], message: string): Promise<string | null>;
-  reject(paths: string[]): Promise<void>;
+  approve(changes: Seen[], message: string): Promise<string | null>;
+  reject(changes: Seen[]): Promise<void>;
   history(path: string, limit: number): Promise<Commit[]>;
   readVersion(path: string, id: string): Promise<string | null>;
   restoreVersion(path: string, id: string): Promise<void>;
@@ -81,6 +91,10 @@ export interface Api {
   // Reads the saved file, so it follows saves rather than the draft.
   docFreshness(path: string): Promise<Freshness>;
   staleDocs(): Promise<StaleDoc[]>;
+}
+
+function seen({ path, hash }: Seen): Seen {
+  return { path, hash };
 }
 
 export const ERROR_CODES: readonly ApiError["code"][] = [
@@ -96,6 +110,7 @@ export const ERROR_CODES: readonly ApiError["code"][] = [
   "git_identity",
   "stale",
   "conflict",
+  "changed",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -124,8 +139,8 @@ const tauriApi: Api = {
   initRepo: () => call("init_repo"),
   listChanges: () => call("list_changes"),
   readBase: (path) => call("read_base", { path }),
-  approve: (paths, message) => call("approve", { paths, message }),
-  reject: (paths) => call("reject", { paths }),
+  approve: (changes, message) => call("approve", { changes: changes.map(seen), message }),
+  reject: (changes) => call("reject", { changes: changes.map(seen) }),
   history: (path, limit) => call("history", { path, limit }),
   readVersion: (path, id) => call("read_version", { path, id }),
   restoreVersion: (path, id) => call("restore_version", { path, id }),

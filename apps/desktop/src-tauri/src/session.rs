@@ -385,6 +385,18 @@ mod tests {
         (data, root, shared)
     }
 
+    /// Every pending change, as the review list shows it now.
+    fn seen(r: &Review) -> Vec<xdev_core::Seen> {
+        xdev_core::list_changes(&r.vault, &r.repo, &r.written, &r.ai)
+            .unwrap()
+            .into_iter()
+            .map(|c| xdev_core::Seen {
+                path: c.path,
+                hash: c.hash,
+            })
+            .collect()
+    }
+
     fn changes(shared: &Shared) -> Vec<(String, &'static str)> {
         let r = shared.review().unwrap();
         xdev_core::list_changes(&r.vault, &r.repo, &r.written, &r.ai)
@@ -445,7 +457,7 @@ mod tests {
         shared.with(|s| s.write("a.md", "a2")).unwrap();
         let r = shared.review().unwrap();
         let paths = vec!["a.md".to_owned()];
-        let id = xdev_core::approve(&r.vault, &r.repo, &r.written, &r.ai, &paths, "")
+        let id = xdev_core::approve(&r.vault, &r.repo, &r.written, &r.ai, &seen(&r), "")
             .unwrap()
             .expect("a commit");
         shared.forget(&r, &paths);
@@ -486,7 +498,7 @@ mod tests {
 
         let r = shared.review().unwrap();
         let paths = vec!["a.md".to_owned(), "n.md".to_owned()];
-        xdev_core::approve(&r.vault, &r.repo, &r.written, &r.ai, &paths, "")
+        xdev_core::approve(&r.vault, &r.repo, &r.written, &r.ai, &seen(&r), "")
             .unwrap()
             .expect("a commit");
         // Proposed between the commit and the cleanup: its row must survive.

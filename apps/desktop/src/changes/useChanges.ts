@@ -16,8 +16,8 @@ export type Changes = {
   revision: number;
   refresh(): void;
   init(): Promise<void>;
-  approve(paths: string[], message: string): Promise<boolean>;
-  reject(paths: string[]): Promise<boolean>;
+  approve(changes: Change[], message: string): Promise<boolean>;
+  reject(changes: Change[]): Promise<boolean>;
   clearError(): void;
 };
 
@@ -104,8 +104,8 @@ export function useChanges(api: Api, flush: () => Promise<boolean>): Changes {
     revision,
     refresh: () => void load(),
     init: async () => void (await run(() => api.initRepo(), false)),
-    approve: (paths, message) => run(() => api.approve(paths, message), true),
-    reject: (paths) => run(() => api.reject(paths), true),
+    approve: (changes, message) => run(() => api.approve(changes, message), true),
+    reject: (changes) => run(() => api.reject(changes), true),
     clearError: () => setError(undefined),
   };
 }

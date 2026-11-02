@@ -99,6 +99,7 @@
   "error.git_identity": "Git chưa biết bạn là ai. Hãy chạy hai lệnh sau trong terminal rồi thử lại:",
   "error.stale": "Tài liệu đã thay đổi sau lần xem trước này. Hãy xem lại bản mới rồi ghi lại.",
   "error.conflict": "Tài liệu đang có thay đổi chưa duyệt không phải của agent. Hãy duyệt trước rồi thử lại.",
+  "error.changed": "Một thay đổi vừa bị sửa sau khi bạn xem. Hãy xem lại nội dung mới rồi thử lại.",
   "doc.mode.label": "Chế độ xem",
   "doc.mode.edit": "Sửa",
   "doc.mode.preview": "Xem trước",

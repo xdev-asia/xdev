@@ -99,6 +99,7 @@
   "error.git_identity": "Git does not know who you are yet. Run these two commands in a terminal, then try again:",
   "error.stale": "The docs changed after this preview. Check the new preview, then write again.",
   "error.conflict": "This doc has a pending edit that is not the agent's. Review it first, then try again.",
+  "error.changed": "A change was edited after you looked at it. Look at the new text, then try again.",
   "doc.mode.label": "View",
   "doc.mode.edit": "Edit",
   "doc.mode.preview": "Preview",

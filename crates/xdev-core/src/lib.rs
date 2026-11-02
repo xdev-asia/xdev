@@ -15,7 +15,7 @@ pub use export::{ExportPlan, ExportedDoc, export_plan, export_root, export_write
 pub use freshness::{DocState, FRESHNESS_COMMITS, Freshness, StaleDoc, freshness, stale_docs};
 pub use links::{BrokenLink, DocLink, backlinks, broken_links};
 pub use review::{
-    AiWrites, Change, Origin, Written, ai_writes, approve, default_message, forget_ai_writes,
+    AiWrites, Change, Origin, Seen, Written, ai_writes, approve, default_message, forget_ai_writes,
     history, list_changes, propose_update, read_base, read_version, reject,
 };
 pub use sync::{DocEntry, Skip, index_path, search, sync_vault};
