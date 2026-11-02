@@ -1112,10 +1112,10 @@ button:disabled {
 .account-bar { height: var(--x-space-2); margin-top: var(--x-space-2); background: var(--x-color-surface-2); border-radius: var(--x-radius-sm); overflow: hidden; }
 .account-fill { height: 100%; background: var(--x-color-accent); }
 .account-fill[data-state="reserve"] { background: var(--x-color-warn); }
-.account-fill[data-state="full"] { background: var(--x-color-danger, var(--x-color-warn)); }
+.account-fill[data-state="full"] { background: var(--x-color-danger); }
 .account-state[data-state="ok"] { color: var(--x-color-accent); }
 .account-state[data-state="reserve"] { color: var(--x-color-warn); }
-.account-state[data-state="full"] { color: var(--x-color-danger, var(--x-color-warn)); }
+.account-state[data-state="full"] { color: var(--x-color-danger); }
 .account-add, .account-command { margin: var(--x-space-4) var(--x-space-6); }
 .account-add label { display: flex; align-items: center; gap: var(--x-space-2); }
 .account-add input { padding: var(--x-space-2); color: var(--x-color-ink); background: var(--x-color-bg); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); }

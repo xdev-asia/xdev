@@ -1,4 +1,4 @@
-﻿import { Button } from "@xdev/ui";
+import { Button } from "@xdev/ui";
 import { useEffect, useState } from "react";
 import { toApiError, type Account, type Accounts, type Api, type ApiError, type Quota } from "../api";
 import { useI18n } from "../i18n";
@@ -119,7 +119,7 @@ export function AccountsView({ api }: { api: Api }) {
         const label = ["five_hour", "seven_day"].includes(window.key) ? t(`accounts.window.${window.key}`) : window.key;
         const percent = window.utilization;
         return <div className="account-window" key={window.key}>
-          <div className="account-row"><span>{label}</span><span>{percent === null ? t("accounts.unknownPercent") : t("accounts.percent", { percent })}</span><span className="doc-path">{resetText(window.resetsAt)}</span></div>
+          <div className="account-row"><span>{label}</span><span>{percent === null ? t("accounts.unknownPercent") : t("accounts.percent", { percent: Math.round(percent) })}</span><span className="doc-path">{resetText(window.resetsAt)}</span></div>
           <div className="account-bar" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent === null ? undefined : Math.min(100, Math.max(0, percent))}>
             <div className="account-fill" data-state={state} style={{ width: `${percent === null ? 0 : Math.min(100, Math.max(0, percent))}%` }} />
           </div>
