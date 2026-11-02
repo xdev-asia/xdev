@@ -18,6 +18,12 @@ const ICONS: Record<AppId, JSX.Element> = {
       <path d="M6 8v8M18 10c0 4-4 4-10 6.5" />
     </>
   ),
+  tasks: (
+    <>
+      <path d="M10 6h10M10 12h10M10 18h10" />
+      <path d="m4 6 1.5 1.5L8 5M4 12l1.5 1.5L8 11M4 18l1.5 1.5L8 17" />
+    </>
+  ),
   agents: (
     <>
       <rect x="5" y="8" width="14" height="11" rx="2" />
