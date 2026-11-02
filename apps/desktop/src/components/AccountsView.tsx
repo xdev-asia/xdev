@@ -1,6 +1,6 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useState } from "react";
-import { toApiError, type Account, type Accounts, type Api, type ApiError, type Quota } from "../api";
+import { PROVIDERS, toApiError, type Account, type Accounts, type Api, type ApiError, type Provider, type Quota } from "../api";
 import { useI18n } from "../i18n";
 import { COMPACT, ProblemNote } from "./ChangesPanel";
 
@@ -11,6 +11,7 @@ export function AccountsView({ api }: { api: Api }) {
   const [problem, setProblem] = useState<ApiError>();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
+  const [provider, setProvider] = useState<Provider>("claude");
   const [removing, setRemoving] = useState<string | null>(null);
   const [command, setCommand] = useState<string>();
   const [copy, setCopy] = useState<"copied" | "copyFailed">();
@@ -95,9 +96,10 @@ export function AccountsView({ api }: { api: Api }) {
       return;
     }
     await run(async () => {
-      const account = await api.addAccount(name);
+      const account = await api.addAccount(name, provider);
       setAdding(false);
       setName("");
+      setProvider("claude");
       setRevision(n => n + 1);
       await login(account.name);
     });
@@ -107,17 +109,23 @@ export function AccountsView({ api }: { api: Api }) {
     const minutes = Math.max(0, Math.ceil((Date.parse(resetsAt) - Date.now()) / 60_000));
     return t("accounts.resets", { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
   }
+  function asOfText(asOf: string) {
+    const time = Date.parse(asOf);
+    return t("accounts.asOf", { time: Number.isFinite(time) ? new Date(time).toLocaleString() : asOf });
+  }
   function card(account: Account) {
     const quota = quotas.find(q => q.name === account.name);
     const state = quota?.state ?? "unknown";
     return <section className="account-card" key={account.name} aria-label={account.name}>
       <div className="account-row">
         <h2>{account.name}</h2>
+        <span className="badge account-provider" data-provider={account.provider}>{t(`accounts.provider.${account.provider}`)}</span>
         <span className="badge" data-state={account.status.state}>{t(`accounts.status.${account.status.state}`)}</span>
         <span className="badge account-state" data-state={state}>{t(`accounts.state.${state}`)}</span>
       </div>
       <p className="doc-path">{[account.status.email, account.status.plan, account.status.org].filter(Boolean).join(" · ")}</p>
       {state === "unknown" && <p>{t(`accounts.reason.${quota?.reason ?? "unavailable"}`)}</p>}
+      {quota?.asOf && <p className="doc-path account-as-of">{asOfText(quota.asOf)}</p>}
       {quota?.windows.map(window => {
         const label = ["five_hour", "seven_day"].includes(window.key) ? t(`accounts.window.${window.key}`) : window.key;
         const percent = window.utilization;
@@ -150,6 +158,9 @@ export function AccountsView({ api }: { api: Api }) {
     {problem && <ProblemNote problem={problem} />}
     {adding && <form className="account-row account-add" onSubmit={async e => { e.preventDefault(); await add(); }}>
       <label>{t("accounts.name")}<input value={name} onChange={e => setName(e.target.value)} disabled={busy} autoFocus /></label>
+      <label>{t("accounts.providerLabel")}<select value={provider} onChange={e => setProvider(e.target.value as Provider)} disabled={busy}>
+        {PROVIDERS.map(p => <option key={p} value={p}>{t(`accounts.provider.${p}`)}</option>)}
+      </select></label>
       <Button type="submit" style={COMPACT} disabled={busy}>{t("accounts.addLogin")}</Button>
       <Button type="button" style={COMPACT} disabled={busy} onClick={() => setAdding(false)}>{t("accounts.cancel")}</Button>
     </form>}

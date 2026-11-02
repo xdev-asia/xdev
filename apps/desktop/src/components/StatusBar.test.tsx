@@ -8,7 +8,7 @@ import { roomiest, StatusBar } from "./StatusBar";
 
 function account(name: string, state: Quota["state"], ...use: (number | null)[]): Quota {
   const keys = ["five_hour", "seven_day"];
-  return { name, state, reason: null, windows: use.map((utilization, i) => ({ key: keys[i], utilization, resetsAt: null })) };
+  return { name, state, reason: null, windows: use.map((utilization, i) => ({ key: keys[i], utilization, resetsAt: null })), asOf: null };
 }
 
 function render(props: { staleCount?: number; changeCount?: number | null; quota?: Quota[] | null; noVault?: boolean }): string {

@@ -27,6 +27,8 @@ export type ApiError = {
     | "bad_name"
     | "exists"
     | "no_claude"
+    | "no_codex"
+    | "unknown_provider"
     | "bad_registry"
     | "bad_reserve"
     | "bad_path"
@@ -88,17 +90,21 @@ export type ExportPlan = {
 export type Expected = { path: string; hash: string };
 
 export type AccountStatus = {
-  state: "logged_in" | "logged_out" | "no_claude" | "error";
+  state: "logged_in" | "logged_out" | "no_claude" | "no_codex" | "error";
   email: string | null; plan: string | null; org: string | null;
 };
-export type Account = { name: string; provider: "claude"; dir: string; status: AccountStatus };
+export type Provider = "claude" | "codex";
+export const PROVIDERS: readonly Provider[] = ["claude", "codex"];
+export type Account = { name: string; provider: Provider; dir: string; status: AccountStatus };
 export type Accounts = { reservePercent: number; accounts: Account[] };
 export type QuotaWindow = { key: string; utilization: number | null; resetsAt: string | null };
 export type Quota = {
   name: string;
   state: "ok" | "reserve" | "full" | "unknown";
-  reason: "no_credentials" | "expired" | "unavailable" | "logged_out" | "no_claude" | null;
+  reason: "no_credentials" | "expired" | "unavailable" | "logged_out" | "no_claude" | "no_codex" | "no_sessions" | null;
   windows: QuotaWindow[];
+  // Codex limits come from its newest session file, so they are only as fresh as that; null for Claude.
+  asOf: string | null;
 };
 export type LoginStart = { opened: boolean; command: string };
 
@@ -139,7 +145,7 @@ export type FileDiff = { old: string | null; new: string | null };
 export interface Api {
   accounts(): Promise<Accounts>;
   quota(): Promise<Quota[]>;
-  addAccount(name: string): Promise<Account>;
+  addAccount(name: string, provider: Provider): Promise<Account>;
   loginAccount(name: string): Promise<LoginStart>;
   removeAccount(name: string): Promise<void>;
   tasksContext(): Promise<TasksContext>;
@@ -212,6 +218,8 @@ export const ERROR_CODES: readonly ApiError["code"][] = [
   "bad_name",
   "exists",
   "no_claude",
+  "no_codex",
+  "unknown_provider",
   "bad_registry",
   "bad_reserve",
   "bad_path",
@@ -244,7 +252,7 @@ function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 const tauriApi: Api = {
   accounts: () => call("accounts_list"),
   quota: () => call("accounts_quota"),
-  addAccount: (name) => call("account_add", { name }),
+  addAccount: (name, provider) => call("account_add", { name, provider }),
   loginAccount: (name) => call("account_login", { name }),
   removeAccount: (name) => call("account_remove", { name }),
   tasksContext: () => call("tasks_context"),
