@@ -1,19 +1,98 @@
 .accounts-view { overflow: auto; height: 100%; }
-.account-list { display: grid; gap: var(--x-space-4); padding: var(--x-space-4) var(--x-space-6); }
-.account-card { padding: var(--x-space-4); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-md); background: var(--x-color-surface); }
-.account-card h2 { margin: 0; font-size: inherit; }
+.accounts-view .doc-title { display: flex; align-items: center; gap: var(--x-space-2); }
+.account-count { padding: 0 var(--x-space-2); font-family: var(--x-font-mono); font-size: 0.7em; font-weight: 600; line-height: 1.6; color: var(--x-color-muted); background: var(--x-color-surface-2); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-lg); }
+.account-section-title { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--x-color-muted); }
 .account-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-space-3); }
-.account-window { margin: var(--x-space-4) 0; }
-.account-bar { height: var(--x-space-2); margin-top: var(--x-space-2); background: var(--x-color-surface-2); border-radius: var(--x-radius-sm); overflow: hidden; }
+
+/* Reset counts */
+.account-resets { display: grid; gap: var(--x-space-3); margin: var(--x-space-4) var(--x-space-6) 0; padding: var(--x-space-4); background: var(--x-color-panel); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-md); }
+.account-buckets { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--x-space-3); margin: 0; padding: 0; list-style: none; }
+.account-bucket { display: grid; gap: var(--x-space-1); padding: var(--x-space-3); background: var(--x-color-surface); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); }
+.account-bucket[data-bucket="soon"][data-some="true"] { border-color: var(--x-color-signal); background: var(--x-color-signal-soft); }
+.account-bucket-count { font-family: var(--x-font-mono); font-size: 1.6em; font-weight: 700; line-height: 1.1; color: var(--x-color-ink); }
+.account-bucket[data-some="false"] .account-bucket-count { color: var(--x-color-muted); }
+.account-bucket[data-bucket="soon"][data-some="true"] .account-bucket-count { color: var(--x-color-signal); }
+.account-bucket-label { font-size: 0.8em; color: var(--x-color-muted); }
+.account-next { margin: 0; font-size: 0.9em; color: var(--x-color-muted); }
+
+/* Search, filters, layout */
+.account-toolbar { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-space-3); margin-top: var(--x-space-4); padding: var(--x-space-3) var(--x-space-6); background: var(--x-color-bg); border-top: 1px solid var(--x-color-line); border-bottom: 1px solid var(--x-color-line); }
+.account-search { flex: 1 1 200px; min-width: 0; padding: var(--x-space-2) var(--x-space-3); font: inherit; color: var(--x-color-ink); background: var(--x-color-surface); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); }
+.account-search:focus { outline: none; border-color: var(--x-color-signal); }
+.account-chips { display: flex; flex-wrap: wrap; gap: var(--x-space-1); }
+.account-chip { display: inline-flex; align-items: center; gap: var(--x-space-2); padding: var(--x-space-1) var(--x-space-3); font: inherit; font-size: 0.85em; color: var(--x-color-muted); background: var(--x-color-surface); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-lg); cursor: pointer; }
+.account-chip:hover { color: var(--x-color-ink); background: var(--x-color-surface-2); }
+.account-chip[aria-pressed="true"] { color: var(--x-color-on-accent); background: var(--x-color-accent); border-color: var(--x-color-accent); }
+.account-chip-count { font-family: var(--x-font-mono); font-size: 0.9em; opacity: 0.8; }
+.account-layout { margin-left: auto; }
+.account-showing { margin: var(--x-space-2) var(--x-space-6) 0; }
+
+/* Cards */
+.account-list { display: flex; flex-wrap: wrap; gap: var(--x-space-4); padding: var(--x-space-4) var(--x-space-6); }
+.account-card { flex: 1 1 320px; min-width: 0; display: grid; align-content: start; gap: var(--x-space-2); padding: var(--x-space-4); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-md); background: var(--x-color-surface); }
+.account-card p { margin: 0; }
+.account-card h2 { margin: 0; font-size: inherit; font-family: var(--x-font-mono); }
+.account-card-head .account-state { margin-left: auto; }
+.account-reason { font-size: 0.9em; color: var(--x-color-muted); }
+.account-window { margin: var(--x-space-2) 0 0; }
+.account-window-label { font-size: 0.85em; color: var(--x-color-muted); }
+.account-percent { font-family: var(--x-font-mono); font-weight: 600; }
+.account-actions { margin-top: var(--x-space-2); }
+.account-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--x-color-muted); }
+.account-dot[data-state="ok"] { background: var(--x-color-ok); }
+.account-dot[data-state="reserve"] { background: var(--x-color-warn); }
+.account-dot[data-state="full"] { background: var(--x-color-danger); }
+
+/* Bars */
+.account-bar { position: relative; height: var(--x-space-2); margin-top: var(--x-space-2); background: var(--x-color-surface-2); border-radius: var(--x-radius-sm); overflow: hidden; }
 .account-fill { height: 100%; background: var(--x-color-accent); }
 .account-fill[data-state="reserve"] { background: var(--x-color-warn); }
 .account-fill[data-state="full"] { background: var(--x-color-danger); }
-.account-state[data-state="ok"] { color: var(--x-color-accent); }
-.account-state[data-state="reserve"] { color: var(--x-color-warn); }
-.account-state[data-state="full"] { color: var(--x-color-danger); }
-.account-add, .account-command { margin: var(--x-space-4) var(--x-space-6); }
-.account-add label { display: flex; align-items: center; gap: var(--x-space-2); }
-.account-add input { padding: var(--x-space-2); color: var(--x-color-ink); background: var(--x-color-bg); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); }
-.account-confirm { margin-top: var(--x-space-3); }
-.account-command .commands { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Where the reserve begins. */
+.account-limit { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--x-color-ink); opacity: 0.45; }
 
+/* States */
+.account-state { border: 1px solid transparent; }
+.account-state[data-state="ok"] { color: var(--x-color-ok); background: color-mix(in srgb, var(--x-color-ok) 14%, transparent); }
+.account-state[data-state="reserve"] { color: var(--x-color-warn); background: var(--x-color-warn-soft); border-color: var(--x-color-warn-line); }
+.account-state[data-state="full"] { color: var(--x-color-danger); background: var(--x-color-danger-soft); }
+.account-provider { font-family: var(--x-font-mono); }
+
+/* Table */
+.account-table { display: grid; margin: var(--x-space-3) var(--x-space-6) var(--x-space-6); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-md); overflow: hidden; }
+.account-tr { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.8fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 0.9fr) auto; align-items: center; gap: var(--x-space-3); padding: var(--x-space-2) var(--x-space-3); background: var(--x-color-surface); border-top: 1px solid var(--x-color-line); }
+.account-tr:first-child { border-top: none; }
+.account-tr:hover:not(.account-th) { background: var(--x-color-surface-2); }
+.account-th { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--x-color-muted); background: var(--x-color-panel); }
+.account-tr-confirm { grid-template-columns: 1fr; background: var(--x-color-warn-soft); }
+.account-tr-confirm .account-confirm { margin: 0; }
+.account-cell-name { display: flex; align-items: center; gap: var(--x-space-2); min-width: 0; }
+.account-name-text { display: grid; min-width: 0; }
+.account-name-text strong { font-family: var(--x-font-mono); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-name-text .doc-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-cell-bar { min-width: 0; }
+.account-cell-bar .account-row { gap: var(--x-space-2); flex-wrap: nowrap; }
+.account-cell-bar .doc-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-cell-bar .account-bar { margin-top: var(--x-space-1); height: 6px; }
+.account-cell-actions { display: flex; justify-content: flex-end; gap: var(--x-space-2); }
+.account-remove:hover:not(:disabled) { color: var(--x-color-danger); border-color: var(--x-color-danger); }
+@media (max-width: 1100px) {
+  .account-tr { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto; }
+  .account-tr > :nth-child(2), .account-tr > :nth-child(5) { display: none; }
+  .account-tr-confirm > :nth-child(1) { display: block; }
+}
+
+.account-nomatch { display: grid; justify-items: center; gap: var(--x-space-3); margin: var(--x-space-4) var(--x-space-6); padding: var(--x-space-6); color: var(--x-color-muted); border: 1px dashed var(--x-color-line); border-radius: var(--x-radius-md); }
+.account-nomatch p { margin: 0; }
+
+/* Add form and login command */
+.account-add, .account-command { margin: var(--x-space-4) var(--x-space-6); padding: var(--x-space-4); background: var(--x-color-panel); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-md); }
+.account-add label { display: flex; align-items: center; gap: var(--x-space-2); color: var(--x-color-muted); }
+.account-add input, .account-add select { padding: var(--x-space-2); font: inherit; color: var(--x-color-ink); background: var(--x-color-bg); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); }
+.account-add input { font-family: var(--x-font-mono); }
+.account-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-space-2); margin-top: var(--x-space-3); }
+.account-confirm p { flex-basis: 100%; margin: 0; }
+.account-command { display: grid; gap: var(--x-space-2); }
+.account-command p { margin: 0; }
+.account-command .commands { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--x-color-signal); }
+.account-command button { justify-self: start; }
