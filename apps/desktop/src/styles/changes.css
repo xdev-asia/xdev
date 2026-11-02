@@ -1,5 +1,9 @@
 /* Review */
 
+.x-icon {
+  flex: none;
+}
+
 .pane .banner {
   margin: 0 0 var(--x-space-2);
 }
@@ -12,6 +16,7 @@
   font-family: var(--x-font-mono);
   font-size: 0.85em;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   background: var(--x-color-code-bg);
   border-radius: var(--x-radius-sm);
 }
@@ -28,6 +33,39 @@
   margin: 0;
 }
 
+/* Sidebar list */
+
+.changes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x-space-2);
+  padding: var(--x-space-3) var(--x-space-2) var(--x-space-3);
+}
+
+.changes-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--x-color-ink);
+}
+
+.changes-count {
+  flex: none;
+  padding: 2px var(--x-space-2);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--x-color-muted);
+  background: var(--x-color-surface-2);
+}
+
+.changes-count[data-pending] {
+  color: var(--x-color-warn);
+  background: var(--x-color-warn-soft);
+  box-shadow: inset 0 0 0 1px var(--x-color-warn-line);
+}
+
 .approve-all {
   display: flex;
   flex-wrap: wrap;
@@ -38,6 +76,29 @@
 /* Own row, so the placeholder is readable in a narrow sidebar. */
 .approve-all .field {
   flex-basis: 100%;
+}
+
+.approve-all .changes-approve-all,
+.approve-all .changes-reject-all {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+.changes-approve-all,
+.changes-reject-all {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x-space-2);
+  white-space: nowrap;
+}
+
+.changes-reject-all {
+  color: var(--x-color-danger);
+  border-color: color-mix(in srgb, var(--x-color-danger) 45%, transparent);
+}
+
+.changes-reject-all:hover:not(:disabled) {
+  background: var(--x-color-danger-soft);
 }
 
 .field {
@@ -57,35 +118,46 @@
 }
 
 .changelist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 var(--x-space-2) var(--x-space-3);
 }
 
 .change {
   display: flex;
-  flex-direction: column;
-  gap: var(--x-space-1);
-  padding: var(--x-space-2);
-  border-radius: var(--x-radius-sm);
+  align-items: flex-start;
+  gap: var(--x-space-2);
+  padding: var(--x-space-2) var(--x-space-2) var(--x-space-2) var(--x-space-3);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-md);
+  background: var(--x-color-surface);
 }
 
 .change:hover {
-  background: var(--x-color-surface-2);
+  border-color: color-mix(in srgb, var(--x-color-signal) 40%, var(--x-color-line));
 }
 
 .change[aria-current="true"] {
-  background: var(--x-color-accent-soft);
+  border-color: var(--x-color-signal);
+  background: var(--x-color-signal-soft);
+  box-shadow: inset 3px 0 0 var(--x-color-signal);
 }
 
 .change-open {
   display: flex;
+  flex: 1;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--x-space-1);
+  min-width: 0;
   padding: 0;
   border: 0;
   background: transparent;
+  color: inherit;
+  font: inherit;
   text-align: left;
   cursor: pointer;
 }
@@ -96,21 +168,49 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--x-font-mono);
-  font-size: 0.9em;
+  font-size: 12px;
+  color: var(--x-color-ink);
 }
 
 .change[aria-current="true"] .change-path {
-  color: var(--x-color-accent);
+  color: var(--x-color-signal);
   font-weight: 600;
 }
 
 .change-actions {
   display: flex;
-  gap: var(--x-space-2);
+  flex: none;
+  gap: var(--x-space-1);
 }
 
-.change-actions .btn-secondary {
-  font-size: 0.85em;
+.change-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-sm);
+  background: var(--x-color-surface);
+  cursor: pointer;
+}
+
+.change-act[data-act="approve"] {
+  color: var(--x-color-ok);
+}
+
+.change-act[data-act="reject"] {
+  color: var(--x-color-danger);
+}
+
+.change-act:hover:not(:disabled) {
+  background: var(--x-color-surface-2);
+}
+
+.change-act:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .badges {
@@ -120,11 +220,11 @@
 }
 
 .badge {
-  padding: 0 var(--x-space-2);
-  border-radius: var(--x-radius-sm);
-  font-size: 0.75em;
+  padding: 1px var(--x-space-2);
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 600;
-  line-height: 1.6;
+  line-height: 1.5;
   white-space: nowrap;
   color: var(--x-color-muted);
   background: var(--x-color-surface-2);
@@ -136,31 +236,179 @@
 }
 
 .badge[data-kind="modified"] {
-  color: var(--x-color-accent);
-  background: var(--x-color-accent-soft);
+  color: var(--x-color-signal);
+  background: var(--x-color-signal-soft);
 }
 
 .badge[data-kind="deleted"] {
-  color: var(--x-color-warn);
-  background: var(--x-color-warn-soft);
+  color: var(--x-color-danger);
+  background: var(--x-color-danger-soft);
 }
 
-/* Outlined so it does not read as the "modified" badge next to it, which shares the accent. */
+/* Outlined, so origin does not read as another kind badge. */
+.badge[data-origin="app"],
+.badge[data-origin="outside"] {
+  color: var(--x-color-muted);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--x-color-line);
+}
+
 .badge[data-origin="ai"] {
-  color: var(--x-color-accent);
-  background: var(--x-color-accent-soft);
-  box-shadow: inset 0 0 0 1px var(--x-color-accent);
+  color: var(--x-color-signal);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--x-color-signal);
 }
 
 .change-note-list {
-  font-size: 0.85em;
+  font-size: 12px;
   color: var(--x-color-muted);
   overflow-wrap: anywhere;
 }
 
 .diff-note {
-  margin: var(--x-space-3) var(--x-space-6) 0;
+  margin: 0;
   color: var(--x-color-muted);
+}
+
+/* One change, in the editor area */
+
+.changeview {
+  min-width: 0;
+}
+
+.change-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x-space-3);
+  padding: 14px var(--x-space-6);
+  border-bottom: 1px solid var(--x-color-line);
+  background: var(--x-color-panel);
+}
+
+.change-titles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+  min-width: 0;
+}
+
+.change-title {
+  margin: 0;
+  font-family: var(--x-font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--x-color-ink);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.change-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+}
+
+.change-head-actions .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x-space-2);
+}
+
+.change-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--x-space-3);
+  min-height: 0;
+  overflow: auto;
+  padding: var(--x-space-4) var(--x-space-6);
+}
+
+.change-body .banner {
+  margin: 0;
+}
+
+.change-note.diff-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--x-space-2);
+  padding: var(--x-space-3);
+  border: 1px solid color-mix(in srgb, var(--x-color-signal) 45%, transparent);
+  border-radius: var(--x-radius-md);
+  background: var(--x-color-signal-soft);
+  color: var(--x-color-ink);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.change-note.diff-note .x-icon {
+  color: var(--x-color-signal);
+}
+
+/* A diff framed as a card */
+
+.diff-card {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-lg);
+  background: var(--x-color-surface);
+}
+
+.diff-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x-space-2);
+  padding: var(--x-space-2) var(--x-space-4);
+  border-bottom: 1px solid var(--x-color-line);
+  background: var(--x-color-panel);
+  font-family: var(--x-font-mono);
+  font-size: 12px;
+}
+
+.diff-card-path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--x-color-muted);
+}
+
+.diff-stats {
+  display: inline-flex;
+  gap: var(--x-space-2);
+  font-weight: 600;
+}
+
+.diff-added {
+  color: var(--x-color-ok);
+}
+
+.diff-removed {
+  color: var(--x-color-danger);
+}
+
+/* Read by screen readers in place of the +N / −M glyphs. */
+.diff-stats-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.diff-card .editor {
+  min-height: 0;
 }
 
 /* History */
@@ -176,18 +424,33 @@
   display: flex;
   flex: 1;
   min-height: 0;
+  min-width: 0;
 }
 
 .history-side {
   flex: none;
   width: 280px;
+  max-width: 40%;
   overflow-y: auto;
-  padding: var(--x-space-3) var(--x-space-2);
+  padding: var(--x-space-3);
   border-right: 1px solid var(--x-color-line);
-  background: var(--x-color-bg);
+  background: var(--x-color-panel);
+}
+
+.history-title {
+  display: flex;
+  align-items: center;
+  gap: var(--x-space-2);
+  margin: 0 0 var(--x-space-3);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--x-color-ink);
 }
 
 .history-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
   list-style: none;
   margin: 0;
   padding: 0;
@@ -198,20 +461,24 @@
   flex-direction: column;
   gap: var(--x-space-1);
   width: 100%;
-  padding: var(--x-space-2);
-  border: 0;
-  border-radius: var(--x-radius-sm);
-  background: transparent;
+  padding: var(--x-space-2) var(--x-space-3);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-md);
+  background: var(--x-color-surface);
+  color: inherit;
+  font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
 .history-item:hover {
-  background: var(--x-color-surface-2);
+  border-color: color-mix(in srgb, var(--x-color-signal) 40%, var(--x-color-line));
 }
 
 .history-item[aria-current="true"] {
-  background: var(--x-color-accent-soft);
+  border-color: var(--x-color-signal);
+  background: var(--x-color-signal-soft);
+  box-shadow: inset 3px 0 0 var(--x-color-signal);
 }
 
 .history-message {
@@ -219,7 +486,6 @@
 }
 
 .history-item[aria-current="true"] .history-message {
-  color: var(--x-color-accent);
   font-weight: 600;
 }
 
@@ -227,12 +493,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--x-space-2);
-  font-size: 0.8em;
+  font-size: 12px;
   color: var(--x-color-muted);
 }
 
 .history-id {
   font-family: var(--x-font-mono);
+  color: var(--x-color-signal);
 }
 
 .history-main {
@@ -245,10 +512,25 @@
 
 .history-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--x-space-4);
-  padding: var(--x-space-3) var(--x-space-6) 0;
+  padding: var(--x-space-3) var(--x-space-6);
+  border-bottom: 1px solid var(--x-color-line);
   font-weight: 600;
 }
 
+.history-main > .banner {
+  margin: var(--x-space-3) var(--x-space-6) 0;
+}
+
+.history-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--x-space-3);
+  min-height: 0;
+  overflow: auto;
+  padding: var(--x-space-4) var(--x-space-6);
+}
