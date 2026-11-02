@@ -807,6 +807,13 @@ button:disabled {
   background: color-mix(in srgb, var(--x-color-ink) 35%, transparent);
 }
 
+.vault-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--x-space-3);
+}
+
 .dialog-title {
   margin: 0 0 var(--x-space-2);
   font-size: 1.1em;

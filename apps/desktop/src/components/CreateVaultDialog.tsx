@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import type { JSX } from "react";
 import type { ApiError } from "../api";
 import { useI18n } from "../i18n";
+import { LanguageSwitch } from "./LanguageSwitch";
 
 export function CreateVaultDialog(props: {
   open: boolean;
@@ -41,9 +42,13 @@ export function CreateVaultDialog(props: {
           if (!empty && !props.busy) props.onCreate();
         }}
       >
-        <h2 id="vault-dialog-title" className="dialog-title">
-          {t("vault.create.title")}
-        </h2>
+        {/* The dialog is modal, so the top bar's switch cannot be reached while it is open. */}
+        <div className="vault-dialog-head">
+          <h2 id="vault-dialog-title" className="dialog-title">
+            {t("vault.create.title")}
+          </h2>
+          <LanguageSwitch />
+        </div>
         <p className="dialog-body">{t("vault.create.body")}</p>
         <label className="vault-dialog-path">
           <span>{t("vault.create.path")}</span>

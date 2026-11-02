@@ -11,7 +11,7 @@ import { VaultEmpty } from "./NoVaultView";
 vi.mock("react", async (original) => ({ ...(await original<typeof import("react")>()), useRef: () => ({ current: null }), useEffect: () => {} }));
 vi.mock("../i18n", async (original) => ({
   ...(await original<typeof import("../i18n")>()),
-  useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }),
+  useI18n: () => ({ locale: "en", setLocale: () => {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }),
 }));
 
 type Node = ReactElement<Record<string, any>>;
@@ -42,6 +42,10 @@ describe("CreateVaultDialog", () => {
     expect(html).toContain('value="C:\\Users\\a\\Documents\\xDev"');
     expect(html).toContain("Choose another place");
     expect(html).toContain("Not now");
+  });
+
+  it("offers the language switch, since the top bar is behind the modal", () => {
+    expect(dialog().html).toContain(`aria-label="${en["language.label"]}"`);
   });
 
   it("creates on submit, but not with an empty path or while busy", () => {
