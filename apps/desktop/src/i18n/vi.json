@@ -55,6 +55,8 @@
   "changes.kind.deleted": "Đã xoá",
   "changes.origin.app": "Sửa trong xDev",
   "changes.origin.outside": "Sửa bên ngoài",
+  "changes.origin.ai": "AI đề xuất",
+  "changes.note": "Ghi chú của agent: {note}",
   "changes.unsaved": "Tài liệu đang mở còn chỗ sửa chưa lưu được. Hãy xử lý trước.",
   "changes.reject.discardOne": "Bỏ các thay đổi trong {path}?",
   "changes.reject.discardMany": "Bỏ thay đổi trong {count} tài liệu?",
@@ -146,5 +148,12 @@
   "agents.tooLarge": "AGENTS.md lớn hơn 32 KiB. Một số agent có thể ngừng đọc sau 32 KiB nên phần cuối có thể bị bỏ qua.",
   "agents.write": "Ghi tệp ({count})",
   "agents.writing": "Đang ghi…",
-  "agents.written": "Đã ghi {count} tệp"
+  "agents.written": "Đã ghi {count} tệp",
+  "connect.title": "Kết nối agent",
+  "connect.hint": "Agent có thể đọc trực tiếp các tài liệu này và đề xuất chỉnh sửa; đề xuất sẽ chờ bạn duyệt trong mục Thay đổi.",
+  "connect.command": "Claude Code",
+  "connect.config": "Ứng dụng MCP khác (cấu hình JSON)",
+  "connect.copy": "Sao chép",
+  "connect.copied": "Đã sao chép",
+  "connect.copyFailed": "Không sao chép được. Hãy chọn đoạn văn bản và tự sao chép."
 }

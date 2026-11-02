@@ -364,7 +364,15 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
         )}
       </aside>
       <main className="main">
-        {agentsOpen && <AgentContext api={api} revision={revision} flush={doc.flush} onOpenDoc={openDoc} />}
+        {agentsOpen && (
+          <AgentContext
+            api={api}
+            revision={revision}
+            flush={doc.flush}
+            vaultPath={props.vault.path}
+            onOpenDoc={openDoc}
+          />
+        )}
         {change && (
           <ChangeView
             key={change.path}

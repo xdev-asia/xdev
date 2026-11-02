@@ -55,6 +55,8 @@
   "changes.kind.deleted": "Deleted",
   "changes.origin.app": "Edited in xDev",
   "changes.origin.outside": "Edited outside",
+  "changes.origin.ai": "Proposed by AI",
+  "changes.note": "Agent's note: {note}",
   "changes.unsaved": "The open document has edits that could not be saved. Resolve them first.",
   "changes.reject.discardOne": "Discard changes to {path}?",
   "changes.reject.discardMany": "Discard changes to {count} docs?",
@@ -146,5 +148,12 @@
   "agents.tooLarge": "AGENTS.md is larger than 32 KiB. Some agents may stop reading after 32 KiB, so the end could be ignored.",
   "agents.write": "Write files ({count})",
   "agents.writing": "Writing…",
-  "agents.written": "Wrote {count} files"
+  "agents.written": "Wrote {count} files",
+  "connect.title": "Connect an agent",
+  "connect.hint": "Agents can read these docs live and propose edits, which wait in Changes for your review.",
+  "connect.command": "Claude Code",
+  "connect.config": "Other MCP clients (JSON config)",
+  "connect.copy": "Copy",
+  "connect.copied": "Copied",
+  "connect.copyFailed": "Could not copy. Select the text and copy it by hand."
 }

@@ -653,6 +653,19 @@ button:disabled {
   background: var(--x-color-warn-soft);
 }
 
+/* Outlined so it does not read as the "modified" badge next to it, which shares the accent. */
+.badge[data-origin="ai"] {
+  color: var(--x-color-accent);
+  background: var(--x-color-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--x-color-accent);
+}
+
+.change-note-list {
+  font-size: 0.85em;
+  color: var(--x-color-muted);
+  overflow-wrap: anywhere;
+}
+
 .diff-note {
   margin: var(--x-space-3) var(--x-space-6) 0;
   color: var(--x-color-muted);
@@ -1012,6 +1025,56 @@ button:disabled {
 .agentctx-file code {
   font-family: var(--x-font-mono);
   font-size: 0.85em;
+}
+
+.connect-agent {
+  flex: none;
+  padding: var(--x-space-3) var(--x-space-6);
+  border-bottom: 1px solid var(--x-color-line);
+}
+
+.connect-agent .pane-head {
+  padding: 0 0 var(--x-space-1);
+}
+
+.connect-hint {
+  margin: 0 0 var(--x-space-2);
+  color: var(--x-color-muted);
+}
+
+.connect-snippets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--x-space-3);
+}
+
+.connect-snippet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-1);
+  min-width: 0;
+}
+
+.connect-snippet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x-space-2);
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+.connect-snippet .commands {
+  user-select: text;
+}
+
+.connect-status {
+  font-size: 0.8em;
+  color: var(--x-color-muted);
+}
+
+.connect-status[data-copy="failed"] {
+  color: var(--x-color-warn);
 }
 
 .agentctx-docs-head {

@@ -33,9 +33,19 @@ export function ChangeBadges(props: { change: Change }): JSX.Element {
       <span className="badge" data-kind={props.change.kind}>
         {t(`changes.kind.${props.change.kind}`)}
       </span>
-      <span className="badge">{t(`changes.origin.${props.change.origin}`)}</span>
+      <span className="badge" data-origin={props.change.origin}>
+        {t(`changes.origin.${props.change.origin}`)}
+      </span>
     </span>
   );
+}
+
+// The agent's own summary of an `ai` change, so the reviewer knows what it meant to do.
+export function ChangeNote(props: { change: Change; className: string }): JSX.Element | null {
+  const { t } = useI18n();
+  const { note } = props.change;
+  if (!note) return null;
+  return <span className={`change-note ${props.className}`}>{t("changes.note", { note })}</span>;
 }
 
 export function ChangesPanel(props: {
@@ -97,6 +107,7 @@ export function ChangesPanel(props: {
                 <button type="button" className="change-open" title={change.path} onClick={() => props.onSelect(change.path)}>
                   <span className="change-path">{change.path}</span>
                   <ChangeBadges change={change} />
+                  <ChangeNote change={change} className="change-note-list" />
                 </button>
                 <div className="change-actions">
                   <button type="button" className="btn-secondary" disabled={busy} onClick={() => props.onApprove([change.path])}>
@@ -175,6 +186,7 @@ export function ChangeView(props: {
           </button>
         </div>
       </div>
+      <ChangeNote change={change} className="diff-note" />
       {problem && <ProblemNote problem={problem} />}
       {loaded === undefined ? (
         !problem && <p className="placeholder">{t("diff.loading")}</p>

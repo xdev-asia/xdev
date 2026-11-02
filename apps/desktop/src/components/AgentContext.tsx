@@ -6,6 +6,7 @@ import type { Problem } from "../changes/useChanges";
 import { docsFor, expectedOf, overLimit } from "../export/plan";
 import { useI18n } from "../i18n";
 import { COMPACT, ProblemNote } from "./ChangesPanel";
+import { ConnectAgent } from "./ConnectAgent";
 import { DiffView } from "./DiffView";
 
 // What the agent files would look like if written now, compared with what is on disk.
@@ -15,6 +16,8 @@ export function AgentContext(props: {
   revision: number;
   // The plan is built from disk, so unsaved edits are written first.
   flush(): Promise<boolean>;
+  // Agents can also read the vault live over MCP; this is the folder they are pointed at.
+  vaultPath: string;
   onOpenDoc(path: string): void;
 }): JSX.Element {
   const { t } = useI18n();
@@ -80,6 +83,7 @@ export function AgentContext(props: {
           </Button>
         </div>
       </div>
+      <ConnectAgent vaultPath={props.vaultPath} />
       {problem && <ProblemNote problem={problem} />}
       {plan === undefined ? (
         !problem && <p className="placeholder">{t("agents.loading")}</p>
