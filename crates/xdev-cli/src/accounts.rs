@@ -5,8 +5,8 @@ use std::thread;
 use clap::Subcommand;
 use serde::Serialize;
 use xdev_ai::{
-    AccountEntry, AccountStatus, AiError, Quota, Registry, account_dir, claude_command, pick,
-    quota, status,
+    AccountEntry, AccountStatus, AiError, Provider, Quota, Registry, account_dir, pick, quota,
+    status,
 };
 
 use crate::Outcome;
@@ -19,18 +19,26 @@ pub enum AccountsCommand {
     /// data dir and sign it in.
     Add {
         name: String,
-        /// An existing Claude Code config folder; registered only.
+        /// `claude` or `codex`.
+        #[arg(long, default_value = "claude")]
+        provider: String,
+        /// An existing Claude Code or Codex config folder; registered only.
         #[arg(long)]
         dir: Option<PathBuf>,
     },
-    /// Run `claude auth login` for an account; exits with its code.
+    /// Run `claude auth login` or `codex login` for an account; exits with
+    /// its code.
     Login { name: String },
     /// Unregister an account. Its folder and credentials stay.
     Remove { name: String },
     /// Set the percent of each account kept for the person, 0 to 90.
     Reserve { percent: u32 },
     /// Print the signed-in account with the most room; exits 1 when none.
-    Pick,
+    Pick {
+        /// Only consider accounts of this provider.
+        #[arg(long)]
+        provider: Option<String>,
+    },
 }
 
 pub fn run(command: AccountsCommand, data_dir: &Path) -> Result<Outcome, &'static str> {
@@ -41,24 +49,32 @@ pub fn run(command: AccountsCommand, data_dir: &Path) -> Result<Outcome, &'stati
                 let state = text(&status.state);
                 let email = status.email.as_deref().unwrap_or("-");
                 let plan = status.plan.as_deref().unwrap_or("-");
-                println!("{}\tclaude\t{state}\t{email}\t{plan}", entry.name);
+                let provider = entry.provider.as_str();
+                println!("{}\t{provider}\t{state}\t{email}\t{plan}", entry.name);
             }
         }
         AccountsCommand::Add {
             name,
+            provider,
             dir: Some(dir),
         } => {
+            let provider = Provider::parse(&provider).map_err(code)?;
             // Stored absolute so the registry means the same from any folder.
             let dir = std::path::absolute(&dir).map_err(|_| "io")?;
-            reg.add(&name, dir).map_err(code)?;
+            reg.add(&name, provider, dir).map_err(code)?;
             reg.save(data_dir).map_err(code)?;
         }
-        AccountsCommand::Add { name, dir: None } => {
+        AccountsCommand::Add {
+            name,
+            provider,
+            dir: None,
+        } => {
+            let provider = Provider::parse(&provider).map_err(code)?;
             let dir = account_dir(data_dir, &name);
-            let entry = reg.add(&name, dir.clone()).map_err(code)?.clone();
+            let entry = reg.add(&name, provider, dir.clone()).map_err(code)?.clone();
             // Checked before anything is written, so a failed add leaves no
             // half-made account behind.
-            claude_command().map_err(code)?;
+            provider.command().map_err(code)?;
             fs::create_dir_all(&dir).map_err(|_| "io")?;
             reg.save(data_dir).map_err(code)?;
             return login(&entry);
@@ -81,12 +97,17 @@ pub fn run(command: AccountsCommand, data_dir: &Path) -> Result<Outcome, &'stati
             reg.set_reserve(percent).map_err(code)?;
             reg.save(data_dir).map_err(code)?;
         }
-        AccountsCommand::Pick => {
+        AccountsCommand::Pick { provider } => {
+            let provider = provider
+                .as_deref()
+                .map(Provider::parse)
+                .transpose()
+                .map_err(code)?;
             let quotas: Vec<_> = quotas(&reg)
                 .into_iter()
-                .map(|(_, status, quota)| (status, quota))
+                .map(|(entry, status, quota)| (entry.provider, status, quota))
                 .collect();
-            match pick(&quotas) {
+            match pick(&quotas, provider) {
                 Some(name) => println!("{name}"),
                 None => return Ok(Outcome::Found),
             }
@@ -98,21 +119,33 @@ pub fn run(command: AccountsCommand, data_dir: &Path) -> Result<Outcome, &'stati
 /// `xdev quota`: one line per account, or the desktop's `Quota[]` as JSON.
 pub fn run_quota(json: bool, data_dir: &Path) -> Result<Outcome, &'static str> {
     let reg = Registry::load(data_dir).map_err(code)?;
-    let quotas: Vec<Quota> = quotas(&reg).into_iter().map(|(_, _, q)| q).collect();
+    let quotas: Vec<(Provider, Quota)> = quotas(&reg)
+        .into_iter()
+        .map(|(entry, _, q)| (entry.provider, q))
+        .collect();
     if json {
+        let quotas: Vec<&Quota> = quotas.iter().map(|(_, q)| q).collect();
         println!(
             "{}",
             serde_json::to_string_pretty(&quotas).map_err(|_| "io")?
         );
         return Ok(Outcome::Ok);
     }
-    for quota in &quotas {
-        let mut line = format!("{}\t{}", quota.name, text(&quota.state));
+    for (provider, quota) in &quotas {
+        let mut line = format!(
+            "{}\t{}\t{}",
+            quota.name,
+            provider.as_str(),
+            text(&quota.state)
+        );
         for window in &quota.windows {
             match window.utilization {
                 Some(percent) => line.push_str(&format!("\t{}={percent}", window.key)),
                 None => line.push_str(&format!("\t{}=-", window.key)),
             }
+        }
+        if let Some(as_of) = &quota.as_of {
+            line.push_str(&format!("\tas_of={as_of}"));
         }
         let reason = quota.reason.as_ref().map_or("-".to_owned(), text);
         println!("{line}\t{reason}");
@@ -121,16 +154,18 @@ pub fn run_quota(json: bool, data_dir: &Path) -> Result<Outcome, &'static str> {
 }
 
 fn login(entry: &AccountEntry) -> Result<Outcome, &'static str> {
-    let status = claude_command()
+    let status = entry
+        .provider
+        .command()
         .map_err(code)?
-        .args(["auth", "login"])
-        .env("CLAUDE_CONFIG_DIR", &entry.dir)
+        .args(entry.provider.login_args())
+        .env(entry.provider.home_var(), &entry.dir)
         .status()
         .map_err(|_| "io")?;
     if status.success() {
         return Ok(Outcome::Ok);
     }
-    // Claude Code has already said what went wrong; only pass its code on.
+    // The CLI has already said what went wrong; only pass its code on.
     let code = status
         .code()
         .and_then(|c| u8::try_from(c).ok())

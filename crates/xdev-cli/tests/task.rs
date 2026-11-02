@@ -41,6 +41,7 @@ impl Env {
         git(&repo, &["commit", "-q", "-m", "init"]);
         let env = Env { tmp };
         fake_claude(&env.tmp.path().join("bin"));
+        fake_codex(&env.tmp.path().join("bin"));
         env
     }
 
@@ -57,11 +58,18 @@ impl Env {
         self.tmp.path().join("bin").join(name)
     }
 
+    fn codex(&self) -> PathBuf {
+        let name = if cfg!(windows) { "codex.cmd" } else { "codex" };
+        self.tmp.path().join("bin").join(name)
+    }
+
     fn xdev(&self, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_xdev"))
             .env("XDEV_DATA_DIR", self.tmp.path().join("data dir"))
             .env("XDEV_CLAUDE_BIN", self.claude())
+            .env("XDEV_CODEX_BIN", self.codex())
             .env_remove("CLAUDE_CONFIG_DIR")
+            .env_remove("CODEX_HOME")
             .args(args)
             .output()
             .expect("run xdev")
@@ -87,6 +95,35 @@ fn fake_claude(dir: &Path) {
         let path = dir.join("claude");
         let script =
             format!("#!/bin/sh\nprintf 'from fake\\n' > agent.txt\nprintf '%s\\n' '{json}'\n");
+        fs::write(&path, script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+}
+
+/// Writes `codex.txt` in its working folder and prints a short
+/// `codex exec --json` stream.
+fn fake_codex(dir: &Path) {
+    fs::create_dir_all(dir).unwrap();
+    let events = [
+        r#"{"type":"thread.started","thread_id":"thread-1"}"#,
+        r#"{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"done"}}"#,
+        r#"{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":2}}"#,
+    ];
+    if cfg!(windows) {
+        let lines: String = events.iter().map(|e| format!("echo {e}\r\n")).collect();
+        let script = format!("@echo off\r\necho from codex> codex.txt\r\n{lines}exit /b 0\r\n");
+        fs::write(dir.join("codex.cmd"), script).unwrap();
+    } else {
+        let path = dir.join("codex");
+        let lines: String = events
+            .iter()
+            .map(|e| format!("printf '%s\\n' '{e}'\n"))
+            .collect();
+        let script = format!("#!/bin/sh\nprintf 'from codex\\n' > codex.txt\n{lines}");
         fs::write(&path, script).unwrap();
         #[cfg(unix)]
         {
@@ -247,4 +284,33 @@ fn a_broken_policy_stops_every_step() {
         String::from_utf8_lossy(&out.stderr),
         "error: policy_invalid\n"
     );
+}
+
+#[test]
+fn a_codex_account_runs_codex() {
+    let env = Env::new();
+    let home = env.tmp.path().join("codex home");
+    fs::create_dir(&home).unwrap();
+    let out = env.xdev(&[
+        "accounts",
+        "add",
+        "cx",
+        "--provider",
+        "codex",
+        "--dir",
+        home.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "{out:?}");
+    let id = env.new_task();
+
+    let out = env.xdev(&["task", "run", &id, "--account", "cx"]);
+    assert!(out.status.success(), "{out:?}");
+    let text = stdout(&out);
+    assert!(text.contains("state\treview\n"), "{text}");
+    assert!(text.contains("file\t1\t0\tcodex.txt\n"), "{text}");
+    assert!(text.contains("\tthread-1\t-\tok\n"), "{text}");
+
+    let audit = fs::read_to_string(env.tmp.path().join("data dir").join("audit.jsonl")).unwrap();
+    let first: Value = serde_json::from_str(audit.lines().next().unwrap()).unwrap();
+    assert_eq!(first["action"]["provider"], "codex");
 }

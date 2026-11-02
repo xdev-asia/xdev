@@ -72,12 +72,13 @@ enum Command {
     /// Serve a folder to AI agents over MCP on stdin/stdout; default
     /// `./docs` when it is a folder, else the current folder.
     Mcp { dir: Option<PathBuf> },
-    /// Claude Code accounts on this machine.
+    /// Claude Code and Codex accounts on this machine.
     Accounts {
         #[command(subcommand)]
         command: accounts::AccountsCommand,
     },
-    /// Print `name<TAB>state<TAB>window=percent...<TAB>reason` per account.
+    /// Print `name<TAB>provider<TAB>state<TAB>window=percent...[<TAB>as_of=time]<TAB>reason`
+    /// per account.
     Quota {
         /// Print the accounts' quota as a JSON array instead.
         #[arg(long)]
