@@ -15,6 +15,8 @@ export class PtyClient {
   private unacked = 0;
   private size: [number, number] | null = null;
   private readonly encoder = new TextEncoder();
+  private started: Promise<unknown> = Promise.resolve();
+  private disposed = false;
 
   constructor(
     private readonly api: Api,
@@ -26,19 +28,38 @@ export class PtyClient {
     profileId: PtyProfile,
     cols: number,
     rows: number,
-    write: (bytes: Uint8Array) => void,
+    write: (bytes: Uint8Array, rendered: () => void) => void,
   ): Promise<PtyInfo> {
-    const info = await this.api.ptySpawn(this.id, cwd, profileId, cols, rows, (bytes) => {
-      write(bytes);
-      this.unacked += bytes.length;
-      while (this.unacked >= ACK_BYTES) {
-        this.unacked -= ACK_BYTES;
-        // A failed ack means the pty is gone; its exit event says so.
-        void this.api.ptyAck(this.id, ACK_BYTES).catch(() => {});
-      }
-    });
+    const run = this.spawn(cwd, profileId, cols, rows, write);
+    this.started = run.catch(() => {});
+    return run;
+  }
+
+  private async spawn(
+    cwd: string,
+    profileId: PtyProfile,
+    cols: number,
+    rows: number,
+    write: (bytes: Uint8Array, rendered: () => void) => void,
+  ): Promise<PtyInfo> {
+    // A view that mounts and unmounts in one tick (StrictMode in dev) never starts a pty.
+    await Promise.resolve();
+    if (this.disposed) throw new Error("disposed");
+    const info = await this.api.ptySpawn(this.id, cwd, profileId, cols, rows, (bytes) =>
+      // Acked once the terminal has drawn it, so a slow view pauses the pty.
+      write(bytes, () => this.rendered(bytes.length)),
+    );
     this.size = [cols, rows];
     return info;
+  }
+
+  private rendered(length: number): void {
+    this.unacked += length;
+    while (this.unacked >= ACK_BYTES) {
+      this.unacked -= ACK_BYTES;
+      // A failed ack means the pty is gone; its exit event says so.
+      void this.api.ptyAck(this.id, ACK_BYTES).catch(() => {});
+    }
   }
 
   input(text: string): Promise<void> {
@@ -51,7 +72,9 @@ export class PtyClient {
     await this.api.ptyResize(this.id, cols, rows);
   }
 
-  dispose(): void {
-    void this.api.ptyKill(this.id);
+  /** Kills the pty, after a spawn still in flight has landed. */
+  dispose(): Promise<void> {
+    this.disposed = true;
+    return this.started.then(() => this.api.ptyKill(this.id)).catch(() => {});
   }
 }

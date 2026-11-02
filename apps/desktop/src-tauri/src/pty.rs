@@ -222,7 +222,8 @@ pub fn pty_ack(ptys: State<'_, Ptys>, id: String, n: usize) -> Result<(), CmdErr
     ptys.with(&id, |s| s.ack(n))
 }
 
-#[tauri::command]
+// Off the main thread: ending a process tree waits on taskkill and the console.
+#[tauri::command(async)]
 pub fn pty_kill(ptys: State<'_, Ptys>, id: String) {
     // Dropping the session kills it; an unknown id has already ended.
     let session = ptys.map().remove(&id);

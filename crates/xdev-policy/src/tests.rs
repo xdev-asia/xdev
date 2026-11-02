@@ -211,3 +211,8 @@ fn old_policy_file_loads() {
     let p: Policy = serde_json::from_str(r#"{"merge":"ask"}"#).unwrap();
     assert!(p.approved_agents.is_empty());
 }
+
+#[test]
+fn source_stays_text_so_diffs_of_the_gate_are_readable() {
+    assert!(!include_bytes!("lib.rs").contains(&0));
+}
