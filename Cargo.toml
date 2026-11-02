@@ -41,6 +41,8 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
+# One blocking HTTPS call; rustls with its bundled roots, no async runtime.
+ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

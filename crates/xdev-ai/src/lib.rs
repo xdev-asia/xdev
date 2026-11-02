@@ -1,8 +1,12 @@
 //! AI providers: API key, CLI subprocess and Ollama.
 
 mod accounts;
+mod claude;
+mod quota;
 
 pub use accounts::{AccountEntry, Provider, Registry, account_dir, valid_name};
+pub use claude::{AccountStatus, StatusState, claude_command, login_command, status};
+pub use quota::{Quota, QuotaState, QuotaWindow, Reason, classify, pick, quota};
 
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
