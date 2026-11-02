@@ -222,3 +222,39 @@ fn head_id_before_and_after_first_commit() {
     let head = commit_all(dir.path(), "A");
     assert_eq!(repo.head_id().unwrap(), Some(head));
 }
+
+/// Run by `pathspec_env_is_ignored` in a child process with the pathspec
+/// variables set; the workspace forbids the `unsafe` that `set_var` needs.
+#[test]
+#[ignore]
+fn pathspec_env_child() {
+    let (dir, a) = fixture();
+    write(dir.path(), "src/sub/y.rs", "y2");
+    commit_all(dir.path(), "B");
+    let repo = vault_repo(dir.path());
+    let (_, total) = repo.commits_since(&a, &covers(&["src/*"]), 20).unwrap();
+    assert_eq!(total, 0, "glob: `*` must not cross a folder");
+    let (_, total) = repo.commits_since(&a, &covers(&["SRC"]), 20).unwrap();
+    assert_eq!(total, 0, "case must count");
+}
+
+#[test]
+fn pathspec_env_is_ignored() {
+    for vars in [
+        &[("GIT_ICASE_PATHSPECS", "1"), ("GIT_NOGLOB_PATHSPECS", "1")][..],
+        &[("GIT_GLOB_PATHSPECS", "1")],
+        &[("GIT_GLOB_PATHSPECS", "1"), ("GIT_NOGLOB_PATHSPECS", "1")],
+    ] {
+        let out = Command::new(std::env::current_exe().unwrap())
+            .args(["--ignored", "--exact", "pathspec_env_child"])
+            .envs(vars.iter().copied())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success() && stdout.contains("1 passed"),
+            "{vars:?}: {stdout}{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}

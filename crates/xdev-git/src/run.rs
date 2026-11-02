@@ -79,6 +79,11 @@ fn spawn(
         // Paths are file names, not patterns: `[a].md` must not also match
         // `a.md`, and a leading `:` must not be read as pathspec magic.
         .env("GIT_LITERAL_PATHSPECS", if literal { "1" } else { "0" })
+        // Pathspec meaning is chosen by the caller alone; these would turn
+        // globs off, on or case-blind behind its back.
+        .env_remove("GIT_ICASE_PATHSPECS")
+        .env_remove("GIT_NOGLOB_PATHSPECS")
+        .env_remove("GIT_GLOB_PATHSPECS")
         // Set when xDev itself is started from a git hook; they would point
         // every call at another repo or index.
         .env_remove("GIT_DIR")
