@@ -630,7 +630,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
         vault={{ name: folderName(props.vault.path), docCount: docs.length, staleCount: staleDocs.length, changeCount }}
         quota={quota}
         update={update.state}
-        onInstallUpdate={update.install}
+        onRestartUpdate={update.restart}
         onOpen={openApp}
       />
       <ConfirmDialog

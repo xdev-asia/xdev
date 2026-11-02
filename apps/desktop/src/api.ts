@@ -133,10 +133,13 @@ export type ErrorCode =
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export interface Api {
-  // `null` when this is the newest release.
-  checkUpdate(): Promise<UpdateInfo | null>;
+  // The downloaded update waiting for a restart, if any; Rust checks and downloads on its own.
+  updateStatus(): Promise<UpdateInfo | null>;
+  onUpdateReady(cb: (update: UpdateInfo) => void): Promise<() => void>;
   // Restarts the app once installed, so it resolves only when there was nothing to install.
-  installUpdate(): Promise<void>;
+  restartToUpdate(): Promise<void>;
+  // An OS notification; the text comes from here so it follows the UI language.
+  notifyUpdate(title: string, body: string): Promise<void>;
   accounts(): Promise<Accounts>;
   quota(): Promise<Quota[]>;
   addAccount(name: string, provider: Provider): Promise<Account>;
@@ -272,8 +275,10 @@ function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 }
 
 const tauriApi: Api = {
-  checkUpdate: () => call("update_check"),
-  installUpdate: () => call("update_install"),
+  updateStatus: () => call("update_status"),
+  onUpdateReady: (cb) => listen<UpdateInfo>("update-ready", (e) => cb(e.payload)),
+  restartToUpdate: () => call("update_restart"),
+  notifyUpdate: (title, body) => call("update_notify", { title, body }),
   accounts: () => call("accounts_list"),
   quota: () => call("accounts_quota"),
   addAccount: (name, provider) => call("account_add", { name, provider }),

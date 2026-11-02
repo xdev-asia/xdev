@@ -535,8 +535,10 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     }),
     async accounts() { return structuredClone({ reservePercent: 30, accounts }); },
     async quota() { return structuredClone(quotas); },
-    async checkUpdate() { return null; },
-    async installUpdate() {},
+    async updateStatus() { return null; },
+    async onUpdateReady() { return () => {}; },
+    async restartToUpdate() {},
+    async notifyUpdate() {},
     async addAccount(name, provider) {
       if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(name)) return reject("bad_name");
       if (accounts.some(a => a.name === name)) return reject("exists");

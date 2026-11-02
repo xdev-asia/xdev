@@ -81,11 +81,11 @@ describe("StatusBar", () => {
     expect(markup).toContain("claude-2 · 5h 5%");
   });
 
-  it("offers a found update, and shows progress and failure", () => {
+  it("offers a restart for a downloaded update, and shows progress and failure", () => {
     const update: Update = { version: "0.3.0", notes: null, status: "ready" };
     expect(render({})).not.toContain("Update");
-    expect(render({ update })).toContain("Update to 0.3.0");
-    expect(render({ update: { ...update, status: "installing" } })).toMatch(/<span class="statusbar-end">Updating…</);
+    expect(render({ update })).toMatch(/<button[^>]*>Restart to update to 0.3.0</);
+    expect(render({ update: { ...update, status: "restarting" } })).toMatch(/<span class="statusbar-end">Updating…</);
     expect(render({ update: { ...update, status: "failed" } })).toContain("Update failed, try again");
   });
 

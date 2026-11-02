@@ -66,12 +66,12 @@ function VaultItems(props: { vault: VaultStatus; onOpen(app: AppId): void }): JS
   );
 }
 
-function UpdateItem(props: { update: Update; onInstall(): void }): JSX.Element {
+function UpdateItem(props: { update: Update; onRestart(): void }): JSX.Element {
   const { t } = useI18n();
   const { update } = props;
-  if (update.status === "installing") return <span className="statusbar-end">{t("status.updating")}</span>;
+  if (update.status === "restarting") return <span className="statusbar-end">{t("status.updating")}</span>;
   return (
-    <button type="button" className="statusbar-end" title={update.notes ?? undefined} onClick={props.onInstall}>
+    <button type="button" className="statusbar-end" title={update.notes ?? undefined} onClick={props.onRestart}>
       {update.status === "failed" ? t("status.updateFailed") : t("status.update", { version: update.version })}
     </button>
   );
@@ -81,14 +81,14 @@ export function StatusBar(props: {
   vault: VaultStatus | null;
   quota: Quota[] | null;
   update?: Update | null;
-  onInstallUpdate?(): void;
+  onRestartUpdate?(): void;
   onOpen(app: AppId): void;
 }): JSX.Element {
   const { t } = useI18n();
   return (
     <footer className="statusbar" aria-label={t("status.label")}>
       {props.vault ? <VaultItems vault={props.vault} onOpen={props.onOpen} /> : <span>{t("status.noVault")}</span>}
-      {props.update && <UpdateItem update={props.update} onInstall={() => props.onInstallUpdate?.()} />}
+      {props.update && <UpdateItem update={props.update} onRestart={() => props.onRestartUpdate?.()} />}
       {props.quota !== null && props.quota.length > 0 && <AccountItem quota={props.quota} onOpen={props.onOpen} />}
     </footer>
   );
