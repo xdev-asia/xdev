@@ -1,50 +1,65 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Api } from "../api";
+import { useI18n } from "../i18n";
 
-const RECHECK_MS = 6 * 3_600_000;
+export type Update = { version: string; notes: string | null; status: "ready" | "restarting" | "failed" };
 
-export type Update = { version: string; notes: string | null; status: "ready" | "installing" | "failed" };
-
-export type UpdateStep = { kind: "found"; version: string; notes: string | null } | { kind: "none" } | { kind: "installing" } | { kind: "failed" };
+export type UpdateStep = { kind: "ready"; version: string; notes: string | null } | { kind: "restarting" } | { kind: "failed" } | { kind: "none" };
 
 export function nextUpdate(current: Update | null, step: UpdateStep): Update | null {
   switch (step.kind) {
-    case "found":
-      // A later check must not reset an install that is already running.
-      return current?.status === "installing" ? current : { version: step.version, notes: step.notes, status: "ready" };
-    case "none":
-      return current?.status === "installing" ? current : null;
-    case "installing":
-      return current && { ...current, status: "installing" };
+    case "ready":
+      // A newer download must not hide an install that is already running.
+      return current?.status === "restarting" ? current : { version: step.version, notes: step.notes, status: "ready" };
+    case "restarting":
+      return current && { ...current, status: "restarting" };
     case "failed":
       return current && { ...current, status: "failed" };
+    case "none":
+      return null;
   }
 }
 
-/** A newer signed release, if any. Check failures (offline, no release yet) show nothing. */
-export function useUpdate(api: Api): { state: Update | null; install(): void } {
+// Module scope so a vault switch, which remounts the view, does not notify again.
+const notified = new Set<string>();
+
+/** True the first time this session sees `version`. */
+export function firstSeen(seen: Set<string>, version: string): boolean {
+  if (seen.has(version)) return false;
+  seen.add(version);
+  return true;
+}
+
+/** An update Rust has downloaded in the background. The person is told once and restarts when they choose. */
+export function useUpdate(api: Api): { state: Update | null; restart(): void } {
+  const { t } = useI18n();
   const [state, setState] = useState<Update | null>(null);
   useEffect(() => {
     let stale = false;
-    const check = () =>
-      api.checkUpdate().then(
-        (found) => !stale && setState((s) => nextUpdate(s, found ? { kind: "found", ...found } : { kind: "none" })),
-        () => {},
-      );
-    void check();
-    const timer = setInterval(check, RECHECK_MS);
+    let off: (() => void) | undefined;
+    const ready = (found: { version: string; notes: string | null }) => {
+      if (stale) return;
+      setState((s) => nextUpdate(s, { kind: "ready", ...found }));
+      if (firstSeen(notified, found.version)) {
+        const vars = { version: found.version };
+        void api.notifyUpdate(t("status.updateReadyTitle", vars), t("status.updateReadyBody", vars)).catch(() => {});
+      }
+    };
+    // Listens first so a download finishing in between is not missed.
+    void api.onUpdateReady(ready).then((unlisten) => (stale ? unlisten() : (off = unlisten)));
+    api.updateStatus().then((found) => found && ready(found), () => {});
     return () => {
       stale = true;
-      clearInterval(timer);
+      off?.();
     };
-  }, [api]);
-  const install = useCallback(() => {
-    setState((s) => nextUpdate(s, { kind: "installing" }));
-    // Success restarts the app; resolving means the release was gone by then.
-    api.installUpdate().then(
-      () => setState(null),
+  }, [api, t]);
+  const restart = useCallback(() => {
+    setState((s) => nextUpdate(s, { kind: "restarting" }));
+    // Success restarts the app; resolving means nothing was pending any more.
+    api.restartToUpdate().then(
+      () => setState((s) => nextUpdate(s, { kind: "none" })),
       () => setState((s) => nextUpdate(s, { kind: "failed" })),
     );
   }, [api]);
-  return { state, install };
+  return { state, restart };
 }

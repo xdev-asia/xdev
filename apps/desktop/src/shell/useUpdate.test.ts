@@ -1,28 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { nextUpdate, type Update } from "./useUpdate";
+import { firstSeen, nextUpdate, type Update } from "./useUpdate";
 
 const ready: Update = { version: "0.3.0", notes: null, status: "ready" };
 
 describe("nextUpdate", () => {
-  it("a found release is ready to install", () => {
-    expect(nextUpdate(null, { kind: "found", version: "0.3.0", notes: "Fixes" })).toEqual({ version: "0.3.0", notes: "Fixes", status: "ready" });
+  it("a downloaded release is ready to restart into", () => {
+    expect(nextUpdate(null, { kind: "ready", version: "0.3.0", notes: "Fixes" })).toEqual({ version: "0.3.0", notes: "Fixes", status: "ready" });
   });
 
-  it("a later check does not interrupt an install", () => {
-    const installing = nextUpdate(ready, { kind: "installing" });
-    expect(installing?.status).toBe("installing");
-    expect(nextUpdate(installing, { kind: "found", version: "0.3.1", notes: null })).toBe(installing);
-    expect(nextUpdate(installing, { kind: "none" })).toBe(installing);
+  it("ready, notified once, restarting, then failed", () => {
+    const seen = new Set<string>();
+    const shown = nextUpdate(null, { kind: "ready", version: "0.3.0", notes: null });
+    expect(firstSeen(seen, "0.3.0")).toBe(true);
+    // The same version again, from the event and from `updateStatus`, is not announced twice.
+    expect(firstSeen(seen, "0.3.0")).toBe(false);
+    const restarting = nextUpdate(shown, { kind: "restarting" });
+    expect(restarting?.status).toBe("restarting");
+    expect(nextUpdate(restarting, { kind: "failed" })).toEqual({ ...ready, status: "failed" });
+    expect(firstSeen(seen, "0.3.1")).toBe(true);
   });
 
-  it("a failed install can be tried again", () => {
-    const failed = nextUpdate(nextUpdate(ready, { kind: "installing" }), { kind: "failed" });
-    expect(failed).toEqual({ ...ready, status: "failed" });
-    expect(nextUpdate(failed, { kind: "found", version: "0.3.0", notes: null })?.status).toBe("ready");
+  it("a newer download does not interrupt a restart", () => {
+    const restarting = nextUpdate(ready, { kind: "restarting" });
+    expect(nextUpdate(restarting, { kind: "ready", version: "0.3.1", notes: null })).toBe(restarting);
   });
 
-  it("nothing to install clears the item", () => {
+  it("a failed restart can be tried again, and a newer download replaces it", () => {
+    const failed = nextUpdate(nextUpdate(ready, { kind: "restarting" }), { kind: "failed" });
+    expect(nextUpdate(failed, { kind: "ready", version: "0.3.1", notes: null })).toEqual({ ...ready, version: "0.3.1" });
+  });
+
+  it("nothing pending clears the item", () => {
     expect(nextUpdate(ready, { kind: "none" })).toBeNull();
-    expect(nextUpdate(null, { kind: "installing" })).toBeNull();
+    expect(nextUpdate(null, { kind: "restarting" })).toBeNull();
   });
 });

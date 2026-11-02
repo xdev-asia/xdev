@@ -26,6 +26,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
+        .manage(updater::Pending::default())
+        .setup(|app| {
+            updater::start(app.handle().clone());
+            Ok(())
+        })
         .manage(AppState {
             session: Default::default(),
             data_dir,
@@ -33,8 +39,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_version,
-            updater::update_check,
-            updater::update_install,
+            updater::update_status,
+            updater::update_restart,
+            updater::update_notify,
             commands::open_vault,
             commands::last_vault,
             commands::vault_setup,
@@ -86,8 +93,13 @@ pub fn run() {
             squads::squad_stop,
             squads::squad_events,
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to start xDev");
+        .build(tauri::generate_context!())
+        .expect("failed to start xDev")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                updater::install_pending(app);
+            }
+        });
 }
 
 #[cfg(test)]

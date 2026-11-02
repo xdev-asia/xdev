@@ -13,9 +13,12 @@ That key is separate from Apple and Microsoft code-signing certificates.
 
 ## Decision
 
-- Updates use `tauri-plugin-updater`, driven from Rust commands
-  (`update_check`, `update_install`), which relaunch with
-  `AppHandle::restart`. The webview gets no updater permission and no extra
+- Updates use `tauri-plugin-updater`, driven from Rust: it checks at start
+  and every 6 hours, downloads a new release in the background and emits
+  `update-ready`; the UI shows one OS notification (`tauri-plugin-notification`)
+  and a status-bar button that calls `update_restart`, and an update not
+  installed by then installs when the app quits, so running agents are never
+  cut off. The webview gets no updater or notification permission and no extra
   JS package. Bundles are built with `createUpdaterArtifacts`, so each
   installer gets a `.sig`.
 - The updater keypair is generated on the owner's machine
