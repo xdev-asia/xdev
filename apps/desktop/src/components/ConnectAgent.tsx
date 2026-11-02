@@ -4,15 +4,23 @@ import { useI18n } from "../i18n";
 
 type Copy = "idle" | "copied" | "failed";
 
-// Shell and JSON, so they stay in English whatever the UI language.
-export function mcpCommand(vaultPath: string): string | null {
-  if (vaultPath.includes("'")) return null;
-  const path = /^[A-Za-z0-9_./:\\-]+$/.test(vaultPath) ? vaultPath : `'${vaultPath}'`;
-  return `claude mcp add xdev -- xdev mcp ${path}`;
+// Double quotes are the one quoting cmd, PowerShell and POSIX shells all read the same way,
+// as long as nothing inside them is expanded; such paths get no command.
+function shellArg(value: string): string | null {
+  if (/^[A-Za-z0-9_./:\\-]+$/.test(value)) return value;
+  return /["$`%!]/.test(value) ? null : `"${value}"`;
 }
 
-export function mcpConfig(vaultPath: string): string {
-  return JSON.stringify({ mcpServers: { xdev: { command: "xdev", args: ["mcp", vaultPath] } } }, null, 2);
+// Shell and JSON, so they stay in English whatever the UI language.
+// `cli` is the CLI's absolute path when it ships beside the app, else the bare name on PATH.
+export function mcpCommand(vaultPath: string, cli = "xdev"): string | null {
+  const exe = shellArg(cli);
+  const path = shellArg(vaultPath);
+  return exe === null || path === null ? null : `claude mcp add xdev -- ${exe} mcp ${path}`;
+}
+
+export function mcpConfig(vaultPath: string, cli = "xdev"): string {
+  return JSON.stringify({ mcpServers: { xdev: { command: cli, args: ["mcp", vaultPath] } } }, null, 2);
 }
 
 function Snippet(props: { id: string; label: string; text: string }): JSX.Element {
@@ -50,22 +58,24 @@ function Snippet(props: { id: string; label: string; text: string }): JSX.Elemen
 }
 
 // How to point an MCP client at this vault; `xdev mcp` serves the docs and takes proposed edits.
-export function ConnectAgent(props: { vaultPath: string }): JSX.Element {
+export function ConnectAgent(props: { vaultPath: string; cliPath?: string | null }): JSX.Element {
   const { t } = useI18n();
-  const command = mcpCommand(props.vaultPath);
+  const cli = props.cliPath ?? "xdev";
+  const command = mcpCommand(props.vaultPath, cli);
   return (
     <section className="connect-agent" aria-labelledby="connect-agent-title">
       <div className="pane-head">
         <span id="connect-agent-title">{t("connect.title")}</span>
       </div>
       <p className="connect-hint">{t("connect.hint")}</p>
+      {props.cliPath === null && <p className="connect-hint">{t("connect.cliMissing")}</p>}
       <div className="connect-snippets">
         {command === null ? (
           <p className="connect-hint">{t("connect.commandUnsafe")}</p>
         ) : (
           <Snippet id="connect-command" label={t("connect.command")} text={command} />
         )}
-        <Snippet id="connect-config" label={t("connect.config")} text={mcpConfig(props.vaultPath)} />
+        <Snippet id="connect-config" label={t("connect.config")} text={mcpConfig(props.vaultPath, cli)} />
       </div>
     </section>
   );

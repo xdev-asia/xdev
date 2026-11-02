@@ -28,6 +28,19 @@ export function AgentContext(props: {
   const [written, setWritten] = useState<number>();
   const [writing, setWriting] = useState(false);
   const [reloads, setReloads] = useState(0);
+  // Undefined until asked; null when the CLI is not beside the app.
+  const [cliPath, setCliPath] = useState<string | null>();
+
+  useEffect(() => {
+    let stale = false;
+    api.cliPath().then(
+      (path) => !stale && setCliPath(path),
+      () => !stale && setCliPath(null),
+    );
+    return () => {
+      stale = true;
+    };
+  }, [api]);
 
   useEffect(() => {
     let stale = false;
@@ -83,7 +96,7 @@ export function AgentContext(props: {
           </Button>
         </div>
       </div>
-      <ConnectAgent vaultPath={props.vaultPath} />
+      <ConnectAgent vaultPath={props.vaultPath} cliPath={cliPath} />
       {problem && <ProblemNote problem={problem} />}
       {plan === undefined ? (
         !problem && <p className="placeholder">{t("agents.loading")}</p>
