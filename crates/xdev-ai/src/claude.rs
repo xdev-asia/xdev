@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::AiError;
+use crate::process::{kill_tree, own_group};
 use crate::quota::{QuotaWindow, Reason};
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(15);
@@ -114,6 +115,7 @@ pub(crate) fn status(dir: &Path) -> AccountStatus {
 }
 
 fn stdout_within(mut cmd: Command, timeout: Duration) -> io::Result<Vec<u8>> {
+    own_group(&mut cmd);
     let mut child = cmd.spawn()?;
     let stdout = child.stdout.take().expect("stdout is piped");
     let (tx, rx) = mpsc::channel();
@@ -130,6 +132,7 @@ fn stdout_within(mut cmd: Command, timeout: Duration) -> io::Result<Vec<u8>> {
             read
         }
         Err(_) => {
+            kill_tree(child.id());
             let _ = child.kill();
             let _ = child.wait();
             Err(io::ErrorKind::TimedOut.into())

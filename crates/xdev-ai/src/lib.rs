@@ -4,6 +4,7 @@ mod accounts;
 mod claude;
 mod codex;
 pub mod ollama;
+pub mod process;
 mod quota;
 pub mod secrets;
 

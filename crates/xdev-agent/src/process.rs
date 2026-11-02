@@ -4,6 +4,8 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use xdev_ai::process::{kill_tree, own_group};
+
 use crate::Cancel;
 
 const POLL: Duration = Duration::from_millis(50);
@@ -31,9 +33,7 @@ pub(crate) fn capture(
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    // Its own group, so a kill reaches what the agent started too.
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    own_group(&mut cmd);
     let mut child = cmd.spawn()?;
     // Each pipe on its own thread, so a full pipe cannot stall the child.
     let stdout = read_on_thread(child.stdout.take());
@@ -62,33 +62,6 @@ pub(crate) fn capture(
         timed_out,
         cancelled,
     })
-}
-
-/// Agent CLIs start through shims (`claude.cmd`, `node`), so killing only
-/// the child would leave the real agent editing the worktree after a stop.
-/// Must run while the child is still alive: Windows finds the tree by
-/// parent id.
-fn kill_tree(pid: u32) {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // A GUI app must not flash a console window.
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let _ = Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .creation_flags(CREATE_NO_WINDOW)
-            .status();
-    }
-    #[cfg(unix)]
-    {
-        let _ = Command::new("kill")
-            .args(["-KILL", "--", &format!("-{pid}")])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
 }
 
 fn read_on_thread(pipe: Option<impl Read + Send + 'static>) -> Receiver<Vec<u8>> {

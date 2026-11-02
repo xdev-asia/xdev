@@ -11,6 +11,7 @@ use serde_json::Value;
 
 use crate::AiError;
 use crate::claude::{AccountStatus, StatusState, find_cli};
+use crate::process::{kill_tree, own_group};
 use crate::quota::QuotaWindow;
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(15);
@@ -52,6 +53,7 @@ pub(crate) fn status(dir: &Path) -> AccountStatus {
 }
 
 fn exit_within(mut cmd: Command, timeout: Duration) -> io::Result<ExitStatus> {
+    own_group(&mut cmd);
     let mut child = cmd.spawn()?;
     let deadline = Instant::now() + timeout;
     loop {
@@ -59,6 +61,7 @@ fn exit_within(mut cmd: Command, timeout: Duration) -> io::Result<ExitStatus> {
             return Ok(exit);
         }
         if Instant::now() >= deadline {
+            kill_tree(child.id());
             let _ = child.kill();
             let _ = child.wait();
             return Err(io::ErrorKind::TimedOut.into());
