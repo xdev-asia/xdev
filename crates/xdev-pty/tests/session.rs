@@ -181,6 +181,15 @@ fn exit_code_reported() {
 }
 
 #[test]
+fn last_output_arrives_after_exit() {
+    let run = sh("echo xdev-tail");
+    run.exit.recv_timeout(DEADLINE).unwrap();
+    run.wait_for("xdev-tail");
+    // Killing an exited session must not touch its (reusable) pid.
+    run.session.kill();
+}
+
+#[test]
 fn kill_reaches_grandchild() {
     let run = if cfg!(windows) {
         powershell(

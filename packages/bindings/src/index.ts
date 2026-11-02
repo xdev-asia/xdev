@@ -27,6 +27,8 @@ export type { Models } from "./Models";
 export type { Origin } from "./Origin";
 export type { PlannedFile } from "./PlannedFile";
 export type { Provider } from "./Provider";
+export type { PtyExit } from "./PtyExit";
+export type { PtyInfo } from "./PtyInfo";
 export type { Quota } from "./Quota";
 export type { QuotaState } from "./QuotaState";
 export type { QuotaWindow } from "./QuotaWindow";
