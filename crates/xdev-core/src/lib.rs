@@ -15,14 +15,14 @@ pub use export::{ExportPlan, ExportedDoc, export_plan, export_root, export_write
 pub use freshness::{DocState, FRESHNESS_COMMITS, Freshness, StaleDoc, freshness, stale_docs};
 pub use links::{BrokenLink, DocLink, backlinks, broken_links};
 pub use review::{
-    Change, Origin, Written, approve, default_message, history, list_changes, read_base,
-    read_version, reject,
+    AiWrites, Change, Origin, Written, ai_writes, approve, default_message, forget_ai_writes,
+    history, list_changes, propose_update, read_base, read_version, reject,
 };
 pub use sync::{DocEntry, Skip, index_path, search, sync_vault};
 // Runtimes open these directly; re-exporting keeps core their only dependency.
 pub use xdev_export::{FileStatus, PlannedFile};
 pub use xdev_git::{ChangeKind, Commit, GitError, Repo};
-pub use xdev_store::{SearchHit, Store, StoreError};
+pub use xdev_store::{AiWrite, SearchHit, Store, StoreError};
 pub use xdev_vault::{
     Frontmatter, Link, LinkKind, Resolver, Target, Vault, VaultError, VaultWatcher, content_hash,
     is_doc_path, parse_frontmatter, parse_links,

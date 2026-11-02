@@ -4,7 +4,7 @@ use std::process::Command;
 
 use tempfile::TempDir;
 use xdev_core::{
-    Change, ChangeKind, CoreError, GitError, Origin, Repo, Vault, Written, approve,
+    AiWrites, Change, ChangeKind, CoreError, GitError, Origin, Repo, Vault, Written, approve,
     default_message, history, list_changes, read_base, read_version, reject,
 };
 use xdev_vault::content_hash;
@@ -52,6 +52,7 @@ fn change(path: &str, kind: ChangeKind, origin: Origin) -> Change {
         path: path.to_owned(),
         kind,
         origin,
+        note: None,
     }
 }
 
@@ -71,7 +72,7 @@ fn list_changes_labels_origin() {
     written.insert("a.md".into(), content_hash(b"mine"));
     write(dir.path(), "b.md", "theirs");
     assert_eq!(
-        list_changes(&vault, &repo, &written).unwrap(),
+        list_changes(&vault, &repo, &written, &AiWrites::new()).unwrap(),
         [
             change("a.md", ChangeKind::Modified, Origin::App),
             change("b.md", ChangeKind::Modified, Origin::Outside),
@@ -80,14 +81,14 @@ fn list_changes_labels_origin() {
 
     write(dir.path(), "a.md", "edited again");
     assert_eq!(
-        list_changes(&vault, &repo, &written).unwrap()[0],
+        list_changes(&vault, &repo, &written, &AiWrites::new()).unwrap()[0],
         change("a.md", ChangeKind::Modified, Origin::Outside)
     );
 
     // A deleted file has nothing to compare, even if xDev wrote it last.
     fs::remove_file(dir.path().join("a.md")).unwrap();
     assert_eq!(
-        list_changes(&vault, &repo, &written).unwrap()[0],
+        list_changes(&vault, &repo, &written, &AiWrites::new()).unwrap()[0],
         change("a.md", ChangeKind::Deleted, Origin::Outside)
     );
 }
@@ -99,7 +100,7 @@ fn list_changes_only_docs() {
     write(dir.path(), "node_modules/x.md", "x");
     write(dir.path(), "n.md", "n");
     assert_eq!(
-        list_changes(&vault, &repo, &Written::new()).unwrap(),
+        list_changes(&vault, &repo, &Written::new(), &AiWrites::new()).unwrap(),
         [change("n.md", ChangeKind::Added, Origin::Outside)]
     );
 }
@@ -115,6 +116,7 @@ fn approve_ignores_paths_not_pending() {
         &vault,
         &repo,
         &written,
+        &AiWrites::new(),
         &paths(&["a.md", "zzz.md", "../etc.md", "notes.txt", "b.md"]),
         "",
     )
@@ -126,11 +128,18 @@ fn approve_ignores_paths_not_pending() {
         "a.md\n"
     );
     assert!(matches!(
-        approve(&vault, &repo, &written, &paths(&["zzz.md"]), ""),
+        approve(
+            &vault,
+            &repo,
+            &written,
+            &AiWrites::new(),
+            &paths(&["zzz.md"]),
+            ""
+        ),
         Ok(None)
     ));
     assert!(matches!(
-        approve(&vault, &repo, &written, &[], "m"),
+        approve(&vault, &repo, &written, &AiWrites::new(), &[], "m"),
         Ok(None)
     ));
 }
@@ -139,15 +148,29 @@ fn approve_ignores_paths_not_pending() {
 fn approve_uses_default_message() {
     let (dir, vault, repo) = setup();
     write(dir.path(), "a.md", "a2");
-    approve(&vault, &repo, &Written::new(), &paths(&["a.md"]), "")
-        .unwrap()
-        .unwrap();
+    approve(
+        &vault,
+        &repo,
+        &Written::new(),
+        &AiWrites::new(),
+        &paths(&["a.md"]),
+        "",
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(subject(dir.path()), "Update a.md");
 
     write(dir.path(), "a.md", "a3");
-    approve(&vault, &repo, &Written::new(), &paths(&["a.md"]), " \n\t")
-        .unwrap()
-        .unwrap();
+    approve(
+        &vault,
+        &repo,
+        &Written::new(),
+        &AiWrites::new(),
+        &paths(&["a.md"]),
+        " \n\t",
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(subject(dir.path()), "Update a.md");
 
     write(dir.path(), "a.md", "a4");
@@ -155,6 +178,7 @@ fn approve_uses_default_message() {
         &vault,
         &repo,
         &Written::new(),
+        &AiWrites::new(),
         &paths(&["a.md"]),
         "Own words",
     )
@@ -176,6 +200,7 @@ fn reject_restores_and_deletes() {
         &vault,
         &repo,
         &Written::new(),
+        &AiWrites::new(),
         &paths(&["a.md", "n.md", "b.md", "zzz.md"]),
     )
     .unwrap();
@@ -183,7 +208,7 @@ fn reject_restores_and_deletes() {
     assert_eq!(fs::read_to_string(dir.path().join("b.md")).unwrap(), "b");
     assert!(!dir.path().join("n.md").exists());
     assert_eq!(
-        list_changes(&vault, &repo, &Written::new()).unwrap(),
+        list_changes(&vault, &repo, &Written::new(), &AiWrites::new()).unwrap(),
         [change("keep.md", ChangeKind::Added, Origin::Outside)]
     );
     assert_eq!(git(dir.path(), &["diff", "--cached", "--name-only"]), "");
@@ -269,5 +294,8 @@ fn git_error_codes_pass_through() {
 #[test]
 fn change_serializes_like_the_ui_contract() {
     let json = serde_json::to_string(&change("a.md", ChangeKind::Added, Origin::App)).unwrap();
-    assert_eq!(json, r#"{"path":"a.md","kind":"added","origin":"app"}"#);
+    assert_eq!(
+        json,
+        r#"{"path":"a.md","kind":"added","origin":"app","note":null}"#
+    );
 }

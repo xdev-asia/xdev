@@ -128,7 +128,9 @@ pub fn init_repo(state: State<'_, AppState>) -> Result<(), CmdError> {
 #[tauri::command(async)]
 pub fn list_changes(state: State<'_, AppState>) -> Result<Vec<Change>, CmdError> {
     let r = state.session.review()?;
-    Ok(xdev_core::list_changes(&r.vault, &r.repo, &r.written)?)
+    Ok(xdev_core::list_changes(
+        &r.vault, &r.repo, &r.written, &r.ai,
+    )?)
 }
 
 #[tauri::command(async)]
@@ -144,7 +146,7 @@ pub fn approve(
     message: String,
 ) -> Result<Option<String>, CmdError> {
     let r = state.session.review()?;
-    let id = xdev_core::approve(&r.vault, &r.repo, &r.written, &paths, &message)?;
+    let id = xdev_core::approve(&r.vault, &r.repo, &r.written, &r.ai, &paths, &message)?;
     state.session.forget(&r, &paths);
     Ok(id)
 }
@@ -152,7 +154,7 @@ pub fn approve(
 #[tauri::command(async)]
 pub fn reject(state: State<'_, AppState>, paths: Vec<String>) -> Result<(), CmdError> {
     let r = state.session.review()?;
-    xdev_core::reject(&r.vault, &r.repo, &r.written, &paths)?;
+    xdev_core::reject(&r.vault, &r.repo, &r.written, &r.ai, &paths)?;
     state.session.forget(&r, &paths);
     Ok(())
 }

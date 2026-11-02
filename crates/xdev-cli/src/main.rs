@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use xdev_core::{
-    ChangeKind, CoreError, DocState, FileStatus, GitError, Repo, Store, Vault, Written,
+    ChangeKind, CoreError, DocState, FileStatus, GitError, Repo, Store, Vault, Written, ai_writes,
     broken_links, data_dir, export_plan, export_root, export_write, index_path, list_changes,
     parse_frontmatter, search, stale_docs, sync_vault,
 };
@@ -89,11 +89,13 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
             }
         }
         Command::Changes { dir } => {
-            let vault = Vault::open(&dir).map_err(|e| e.code())?;
+            let (vault, store) = open(&dir).map_err(|e| e.code())?;
             let repo = Repo::discover(vault.root()).map_err(|e| e.code())?;
-            // A fresh process has written nothing, so every change is
-            // `outside`; only the kind is printed.
-            let changes = list_changes(&vault, &repo, &Written::new()).map_err(|e| e.code())?;
+            // A fresh process has written nothing, so no change is `app`;
+            // only the kind is printed.
+            let ai = ai_writes(&store).map_err(|e| e.code())?;
+            let changes =
+                list_changes(&vault, &repo, &Written::new(), &ai).map_err(|e| e.code())?;
             for change in changes {
                 let kind = match change.kind {
                     ChangeKind::Added => "added",

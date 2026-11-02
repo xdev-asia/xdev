@@ -3,8 +3,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
 use xdev_core::{
-    CoreError, DocEntry, DocLink, Repo, SearchHit, Store, Vault, VaultError, VaultWatcher, Written,
-    backlinks, content_hash, index_path, read_version, search, sync_vault,
+    AiWrites, CoreError, DocEntry, DocLink, Repo, SearchHit, Store, Vault, VaultError,
+    VaultWatcher, Written, ai_writes, backlinks, content_hash, forget_ai_writes, index_path,
+    read_version, search, sync_vault,
 };
 
 use crate::commands::CmdError;
@@ -71,6 +72,9 @@ pub struct Review {
     pub vault: Vault,
     pub repo: Repo,
     pub written: Written,
+    /// Read from the index on each snapshot: `xdev mcp` records proposals
+    /// from another process.
+    pub ai: AiWrites,
     generation: u64,
 }
 
@@ -127,13 +131,14 @@ impl Shared {
 
     /// Fails with `no_repo` / `no_git` until there is a repo to work with.
     pub fn review(&self) -> Result<Review, CmdError> {
-        let (root, repo, written, generation) = {
+        let (root, repo, written, ai, generation) = {
             let current = self.lock();
             let s = current.as_ref().ok_or_else(CmdError::no_vault)?;
             (
                 s.vault.root().to_path_buf(),
                 s.repo.clone(),
                 s.written.clone(),
+                ai_writes(&s.store)?,
                 s.generation,
             )
         };
@@ -149,6 +154,7 @@ impl Shared {
             vault: Vault::open(&root).map_err(CoreError::from)?,
             repo,
             written,
+            ai,
             generation,
         })
     }
@@ -175,8 +181,9 @@ impl Shared {
         Ok(())
     }
 
-    /// Approved or rejected docs no longer hold xDev's last write. A path
-    /// written again since the snapshot keeps its new entry.
+    /// Approved or rejected docs no longer hold xDev's last write nor an
+    /// agent's proposal. A path written or proposed again since the snapshot
+    /// keeps its new entry.
     pub fn forget(&self, review: &Review, paths: &[String]) {
         let mut current = self.lock();
         let Some(s) = current
@@ -190,6 +197,10 @@ impl Shared {
                 s.written.remove(path);
             }
         }
+        // The commit or restore already happened, so failing the command now
+        // would misreport it; a row left behind only labels a file that
+        // holds exactly the agent's text.
+        let _ = forget_ai_writes(&mut s.store, &review.ai, paths);
     }
 
     /// Goes through `Session::write`, so the restored text is reviewed like
@@ -363,13 +374,14 @@ mod tests {
 
     fn changes(shared: &Shared) -> Vec<(String, &'static str)> {
         let r = shared.review().unwrap();
-        xdev_core::list_changes(&r.vault, &r.repo, &r.written)
+        xdev_core::list_changes(&r.vault, &r.repo, &r.written, &r.ai)
             .unwrap()
             .into_iter()
             .map(|c| {
                 let origin = match c.origin {
                     xdev_core::Origin::App => "app",
                     xdev_core::Origin::Outside => "outside",
+                    xdev_core::Origin::Ai => "ai",
                 };
                 (c.path, origin)
             })
@@ -420,7 +432,7 @@ mod tests {
         shared.with(|s| s.write("a.md", "a2")).unwrap();
         let r = shared.review().unwrap();
         let paths = vec!["a.md".to_owned()];
-        let id = xdev_core::approve(&r.vault, &r.repo, &r.written, &paths, "")
+        let id = xdev_core::approve(&r.vault, &r.repo, &r.written, &r.ai, &paths, "")
             .unwrap()
             .expect("a commit");
         shared.forget(&r, &paths);
@@ -446,6 +458,39 @@ mod tests {
         shared.with(|s| s.write("a.md", "a3")).unwrap();
         shared.forget(&r, &["a.md".to_owned()]);
         assert_eq!(changes(&shared), [("a.md".to_owned(), "app")]);
+    }
+
+    #[test]
+    fn agent_proposal_is_ai_until_approved() {
+        let (data, root, shared) = repo_session();
+        // `xdev mcp` runs in its own process, with its own connection to the
+        // index.
+        let vault = Vault::open(root.path()).unwrap();
+        let repo = Repo::discover(vault.root()).unwrap();
+        let mut cli = Store::open(&index_path(data.path(), &vault)).unwrap();
+        xdev_core::propose_update(&vault, &repo, &mut cli, "a.md", "a2", Some("why")).unwrap();
+        assert_eq!(changes(&shared), [("a.md".to_owned(), "ai")]);
+
+        let r = shared.review().unwrap();
+        let paths = vec!["a.md".to_owned(), "n.md".to_owned()];
+        xdev_core::approve(&r.vault, &r.repo, &r.written, &r.ai, &paths, "")
+            .unwrap()
+            .expect("a commit");
+        // Proposed between the commit and the cleanup: its row must survive.
+        xdev_core::propose_update(&vault, &repo, &mut cli, "n.md", "n", None).unwrap();
+        shared.forget(&r, &paths);
+        assert_eq!(changes(&shared), [("n.md".to_owned(), "ai")]);
+        let left: Vec<String> = cli
+            .ai_writes()
+            .unwrap()
+            .into_iter()
+            .map(|w| w.path)
+            .collect();
+        assert_eq!(left, ["n.md"]);
+        assert_eq!(
+            git(root.path(), &["show", "--name-only", "--format=", "HEAD"]),
+            "a.md\n"
+        );
     }
 
     #[test]

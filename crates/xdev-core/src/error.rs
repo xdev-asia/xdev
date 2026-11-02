@@ -13,6 +13,8 @@ pub enum CoreError {
     Git(#[from] GitError),
     #[error(transparent)]
     Export(#[from] ExportError),
+    #[error("pending edits that are not the agent's own")]
+    Conflict,
 }
 
 impl CoreError {
@@ -24,6 +26,7 @@ impl CoreError {
             CoreError::Store(_) => "io",
             CoreError::Git(e) => e.code(),
             CoreError::Export(e) => e.code(),
+            CoreError::Conflict => "conflict",
         }
     }
 }
