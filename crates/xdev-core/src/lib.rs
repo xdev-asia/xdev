@@ -4,6 +4,7 @@
 mod data_dir;
 mod error;
 mod export;
+mod freshness;
 mod links;
 mod review;
 mod sync;
@@ -11,6 +12,7 @@ mod sync;
 pub use data_dir::{APP_ID, data_dir};
 pub use error::CoreError;
 pub use export::{ExportPlan, ExportedDoc, export_plan, export_root, export_write};
+pub use freshness::{DocState, FRESHNESS_COMMITS, Freshness, StaleDoc, freshness, stale_docs};
 pub use links::{BrokenLink, DocLink, backlinks, broken_links};
 pub use review::{
     Change, Origin, Written, approve, default_message, history, list_changes, read_base,
