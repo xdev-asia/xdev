@@ -10,11 +10,13 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 
 use crate::AiError;
-use crate::claude::{AccountStatus, StatusState, find_cli};
+use crate::claude::{AccountStatus, StatusState, find_cli, stdout_within};
 use crate::process::{kill_tree, own_group};
 use crate::quota::QuotaWindow;
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(15);
+/// `codex debug models` carries each model's prompts: hundreds of KiB.
+const MODELS_MAX: u64 = 16 << 20;
 /// Sessions with no rate-limit line (an API-key run, a crash before the
 /// first turn) are skipped, but only this many: an old file says little.
 const MAX_FILES: usize = 10;
@@ -25,6 +27,42 @@ const SEVEN_DAYS: u64 = 10_080;
 /// npm's `codex.cmd`.
 pub fn codex_command() -> Result<Command, AiError> {
     find_cli("XDEV_CODEX_BIN", "codex", AiError::NoCodex)
+}
+
+/// The slugs `codex debug models` offers for picking, in its order; the ones
+/// it marks hidden are left out.
+pub fn codex_models() -> Result<Vec<String>, AiError> {
+    let mut cmd = codex_command()?;
+    cmd.args(["debug", "models"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    Ok(parse_models(&stdout_within(
+        cmd,
+        STATUS_TIMEOUT,
+        MODELS_MAX,
+    )?))
+}
+
+pub(crate) fn parse_models(out: &[u8]) -> Vec<String> {
+    let Ok(catalog) = serde_json::from_slice::<Value>(out) else {
+        return Vec::new();
+    };
+    catalog
+        .get("models")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|m| m.get("visibility").and_then(Value::as_str) != Some("hide"))
+        .filter_map(|m| m.get("slug").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Sign-in state from the exit code of `codex login status`; 0.165 prints
@@ -256,6 +294,13 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn models_skip_hidden_ones() {
+        let out = br#"{"models":[{"slug":"gpt-a","visibility":"list"},{"slug":"gpt-b","visibility":"hide"},{"slug":"gpt-c"}]}"#;
+        assert_eq!(parse_models(out), ["gpt-a", "gpt-c"]);
+        assert!(parse_models(b"not json").is_empty());
+    }
 
     #[test]
     fn rfc3339_formats_utc() {

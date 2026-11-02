@@ -202,7 +202,7 @@
   "routing.maxPrompt": "Prompt tối đa (ký tự)",
   "routing.anyLength": "Mọi độ dài",
   "routing.model": "Model",
-  "routing.modelHint": "haiku, sonnet, gpt-5-mini…",
+  "routing.modelHint": "Chọn hoặc gõ tên model",
   "routing.any": "Bất kỳ",
   "routing.task": "Task đơn",
   "routing.up": "Lên",

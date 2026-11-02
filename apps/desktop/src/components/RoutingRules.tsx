@@ -1,6 +1,6 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useState } from "react";
-import { PROVIDERS, toApiError, type Api, type ApiError, type RouteRule } from "../api";
+import { PROVIDERS, toApiError, type Api, type ApiError, type Models, type RouteRule } from "../api";
 import { useI18n } from "../i18n";
 import { COMPACT, ProblemNote } from "./ChangesPanel";
 import { ROLES } from "./SquadsView";
@@ -9,16 +9,31 @@ import { ROLES } from "./SquadsView";
 const RULE_ROLES: readonly string[] = [...ROLES, "task"];
 const BLANK: RouteRule = { role: null, provider: null, maxPrompt: null, model: "" };
 
+/** What the rule's provider offers; a rule for any provider gets both lists. */
+function choices(models: Models | undefined, provider: string | null): string[] {
+  if (!models) return [];
+  if (provider === "claude") return models.claude;
+  if (provider === "codex") return models.codex;
+  return [...models.claude, ...models.codex];
+}
+
 export function RoutingRules({ api }: { api: Api }) {
   const { t } = useI18n();
   const [rules, setRules] = useState<RouteRule[]>();
   const [problem, setProblem] = useState<ApiError>();
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [models, setModels] = useState<Models>();
 
   useEffect(() => {
     let disposed = false;
     api.routing().then(r => { if (!disposed) setRules(r.rules); }, e => { if (!disposed) setProblem(toApiError(e)); });
+    return () => { disposed = true; };
+  }, [api]);
+  // Asking the CLIs is slow and optional: without a list the field still takes a typed name.
+  useEffect(() => {
+    let disposed = false;
+    api.models().then(m => { if (!disposed) setModels(m); }, () => {});
     return () => { disposed = true; };
   }, [api]);
 
@@ -65,7 +80,9 @@ export function RoutingRules({ api }: { api: Api }) {
       </select></label>
       <label>{t("routing.maxPrompt")}<input type="number" min={1} value={rule.maxPrompt ?? ""} placeholder={t("routing.anyLength")} disabled={busy}
         onChange={e => { const n = Number.parseInt(e.target.value, 10); change(index, { maxPrompt: Number.isFinite(n) && n > 0 ? n : null }); }} /></label>
-      <label className="routing-model">{t("routing.model")}<input value={rule.model} placeholder={t("routing.modelHint")} disabled={busy} spellCheck={false} onChange={e => change(index, { model: e.target.value })} /></label>
+      <label className="routing-model">{t("routing.model")}<input value={rule.model} placeholder={t("routing.modelHint")} disabled={busy} spellCheck={false}
+        list={`routing-models-${index}`} onChange={e => change(index, { model: e.target.value })} /></label>
+      <datalist id={`routing-models-${index}`}>{choices(models, rule.provider).map(m => <option key={m} value={m} />)}</datalist>
       <div className="routing-actions">
         <button type="button" className="btn-secondary" disabled={busy || index === 0} aria-label={t("routing.upLabel", { n: index + 1 })} onClick={() => moveUp(index)}>{t("routing.up")}</button>
         <button type="button" className="btn-secondary" disabled={busy} aria-label={t("routing.removeLabel", { n: index + 1 })} onClick={() => edit((rules ?? []).filter((_, i) => i !== index))}>{t("routing.remove")}</button>

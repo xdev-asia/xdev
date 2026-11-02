@@ -11,8 +11,8 @@ pub mod secrets;
 pub use accounts::{
     AccountEntry, Provider, Registry, account_dir, login_command, status, valid_name,
 };
-pub use claude::{AccountStatus, StatusState, claude_command};
-pub use codex::{codex_command, codex_context, codex_home};
+pub use claude::{AccountStatus, StatusState, claude_command, claude_models};
+pub use codex::{codex_command, codex_context, codex_home, codex_models};
 pub use quota::{Quota, QuotaState, QuotaWindow, Reason, classify, pick, quota};
 
 pub const NAME: &str = env!("CARGO_PKG_NAME");

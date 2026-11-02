@@ -568,6 +568,9 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       if (next.rules.some(r => !r.model.trim())) return reject("empty_text");
       routing = structuredClone(next);
     },
+    async models() {
+      return { claude: ["fable", "opus", "sonnet"], codex: ["gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-luna"] };
+    },
     async pickFolder() {
       return DEMO_ROOT;
     },

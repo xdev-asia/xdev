@@ -28,7 +28,7 @@ const tick = async () => { for (let i = 0; i < 10; i++) await Promise.resolve();
 async function harness(api = createMockApi({})) {
   const draw = () => { hooks.cursor = 0; return RoutingRules({ api }); };
   draw();
-  hooks.effects[0]();
+  hooks.effects.forEach(effect => effect());
   await tick();
   const html = () => renderToStaticMarkup(draw());
   const button = (text: string) => nodes(draw()).find(n => (n.props["aria-label"] === text || n.props.children === text) && n.props.onClick)!;
@@ -45,6 +45,25 @@ it("loads the saved rules", async () => {
   expect(html).toContain('value="haiku"');
   expect(view.field(1, "select").props.value).toBe("review");
   expect(view.field(1, "select", 1).props.value).toBe("claude");
+});
+
+it("offers the models of the rule's provider", async () => {
+  const view = await harness();
+  const options = (n: number) => nodes(view.draw()).filter(x => x.type === "datalist")[n - 1].props.children.map((o: Node) => o.props.value);
+  expect(view.field(1, "input", 1).props.list).toBe("routing-models-0");
+  expect(options(1)).toEqual(["fable", "opus", "sonnet"]);
+  view.button("Add rule").props.onClick();
+  expect(options(2)).toEqual(["fable", "opus", "sonnet", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-luna"]);
+  view.field(2, "select", 1).props.onChange({ target: { value: "codex" } });
+  expect(options(2)).toEqual(["gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-luna"]);
+});
+
+it("still takes a typed model when the CLIs cannot be asked", async () => {
+  const api = createMockApi({}); api.models = () => Promise.reject({ code: "io" });
+  const view = await harness(api);
+  expect(view.html()).not.toContain('role="alert"');
+  view.field(1, "input", 1).props.onChange({ target: { value: "claude-fable-5-1" } });
+  expect(view.field(1, "input", 1).props.value).toBe("claude-fable-5-1");
 });
 
 it("does not save a rule without a model", async () => {

@@ -7,7 +7,7 @@ use std::path::Path;
 
 use ts_rs::{Config, TS};
 
-use crate::accounts::{Account, Accounts, LoginStart};
+use crate::accounts::{Account, Accounts, LoginStart, Models};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
 use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
@@ -40,6 +40,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     SquadView::export_all(cfg)?;
     xdev_agent::Seat::export_all(cfg)?;
     xdev_agent::Routing::export_all(cfg)?;
+    Models::export_all(cfg)?;
     UpdateInfo::export_all(cfg)?;
     Ok(())
 }
