@@ -294,6 +294,23 @@ button:disabled {
   color: var(--x-color-warn);
 }
 
+.docitem-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--x-space-2);
+  min-width: 0;
+}
+
+.docitem-stale {
+  flex: none;
+  padding: 0 var(--x-space-1);
+  border-radius: var(--x-radius-sm);
+  font-size: 0.75em;
+  font-weight: 600;
+  color: var(--x-color-warn);
+  background: var(--x-color-warn-soft);
+}
+
 .result {
   display: flex;
   flex-direction: column;
@@ -421,6 +438,40 @@ button:disabled {
   display: flex;
   gap: var(--x-space-2);
   flex: none;
+}
+
+/* The commit list makes the banner tall, so the button stays at the top next to the message. */
+.freshness-banner {
+  align-items: flex-start;
+}
+
+.freshness-commits {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-1);
+  max-height: 160px;
+  overflow-y: auto;
+  margin: var(--x-space-1) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85em;
+}
+
+.freshness-commit {
+  display: flex;
+  align-items: baseline;
+  gap: var(--x-space-2);
+}
+
+.freshness-subject {
+  overflow-wrap: anywhere;
+}
+
+.freshness-time,
+.freshness-total {
+  flex: none;
+  font-size: 0.85em;
+  color: var(--x-color-muted);
 }
 
 .editor {

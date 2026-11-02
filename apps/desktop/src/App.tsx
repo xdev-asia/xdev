@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { api, toApiError, type ApiError, type Change, type DocEntry, type SearchHit } from "./api";
+import {
+  api,
+  toApiError,
+  type ApiError,
+  type Change,
+  type DocEntry,
+  type Freshness,
+  type SearchHit,
+  type StaleDoc,
+} from "./api";
 import { countLabel, rejectPrompt } from "./changes/changes";
 import { useChanges, type Problem } from "./changes/useChanges";
 import { AgentContext } from "./components/AgentContext";
@@ -9,6 +18,7 @@ import { ChangesPanel, ChangeView } from "./components/ChangesPanel";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ConflictBanner } from "./components/ConflictBanner";
 import { Editor } from "./components/Editor";
+import { FreshnessBanner } from "./components/FreshnessBanner";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { LanguageSwitch } from "./components/LanguageSwitch";
 import { Preview } from "./components/Preview";
@@ -16,7 +26,7 @@ import { resultId, RESULTS_ID, SearchPanel } from "./components/SearchPanel";
 import { Sidebar } from "./components/Sidebar";
 import { Welcome } from "./components/Welcome";
 import { isDirty } from "./doc/docState";
-import { agentsEditable, parseFrontmatter, setAgents } from "./doc/frontmatter";
+import { agentsEditable, parseFrontmatter, setAgents, setVerified } from "./doc/frontmatter";
 import { useDoc } from "./doc/useDoc";
 import { useI18n } from "./i18n";
 
@@ -93,8 +103,38 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
   const [searchError, setSearchError] = useState<ApiError["code"]>();
   const [active, setActive] = useState(0);
   const searchInput = useRef<HTMLInputElement>(null);
+  // Tagged with its path, so a slow answer for the previous doc is never shown on the next one.
+  const [freshness, setFreshness] = useState<{ path: string; value: Freshness; now: number }>();
+  const [staleDocs, setStaleDocs] = useState<StaleDoc[]>([]);
   const { state } = doc;
   const searchOpen = query.trim() !== "";
+  const loading = state.status === "loading";
+
+  useEffect(() => {
+    const path = state.path;
+    if (path === null || loading) return;
+    let stale = false;
+    api.docFreshness(path).then(
+      (value) => !stale && setFreshness({ path, value, now: Math.floor(Date.now() / 1000) }),
+      // A doc that cannot be checked just shows no banner; the editor already reports read errors.
+      () => !stale && setFreshness(undefined),
+    );
+    return () => {
+      stale = true;
+    };
+    // `state.saved` covers open and save; the revisions cover commits and edits made elsewhere.
+  }, [state.path, state.saved, loading, revision, review.revision]);
+
+  useEffect(() => {
+    let stale = false;
+    api.staleDocs().then(
+      (found) => !stale && setStaleDocs(found),
+      () => !stale && setStaleDocs([]),
+    );
+    return () => {
+      stale = true;
+    };
+  }, [revision, review.revision]);
 
   useEffect(() => {
     let off: (() => void) | undefined;
@@ -308,7 +348,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
               </div>
             </div>
             {tab === "docs" ? (
-              <Sidebar docs={docs} activePath={change ? null : state.path} onOpen={openDoc} />
+              <Sidebar docs={docs} activePath={change ? null : state.path} stale={staleDocs} onOpen={openDoc} />
             ) : (
               <ChangesPanel
                 review={review}
@@ -391,6 +431,15 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
                 <div className="banner banner-warn" role="alert">
                   <span className="banner-text">{t(`error.${state.error}`)}</span>
                 </div>
+              )}
+              {freshness?.path === state.path && !loading && (
+                <FreshnessBanner
+                  freshness={freshness.value}
+                  draft={state.draft}
+                  now={freshness.now}
+                  disabled={readOnly || state.status === "conflict"}
+                  onMarkVerified={(head) => doc.edit(setVerified(state.draft, head))}
+                />
               )}
               {state.status === "loading" ? (
                 <p className="placeholder">{t("editor.loading")}</p>
