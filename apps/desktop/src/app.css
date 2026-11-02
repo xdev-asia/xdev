@@ -1121,3 +1121,16 @@ button:disabled {
 .account-add input { padding: var(--x-space-2); color: var(--x-color-ink); background: var(--x-color-bg); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); }
 .account-confirm { margin-top: var(--x-space-3); }
 .account-command .commands { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Workbench */
+.activitybar { display: flex; flex-direction: column; align-items: center; gap: var(--x-space-1); padding: var(--x-space-2); background: var(--x-color-bg); border-right: 1px solid var(--x-color-line); }
+.activity { position: relative; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; color: var(--x-color-muted); background: none; border: none; border-radius: var(--x-radius-md); cursor: pointer; }
+.activity:hover { background: var(--x-color-surface-2); }
+.activity[aria-current="page"] { color: var(--x-color-accent); background: var(--x-color-accent-soft); }
+.activity[aria-current="page"]::before { content: ""; position: absolute; top: var(--x-space-1); bottom: var(--x-space-1); left: calc(-1 * var(--x-space-2)); width: 3px; background: var(--x-color-accent); border-radius: var(--x-radius-sm); }
+.activity svg { width: 20px; height: 20px; }
+.activity-badge { position: absolute; top: 0; right: 0; min-width: 16px; padding: 0 var(--x-space-1); font-size: 10px; line-height: 16px; text-align: center; color: var(--x-color-on-accent); background: var(--x-color-accent); border-radius: var(--x-radius-md); }
+.statusbar { display: flex; align-items: center; gap: var(--x-space-4); min-width: 0; padding: var(--x-space-1) var(--x-space-4); font-size: 12px; color: var(--x-color-muted); background: var(--x-color-bg); border-top: 1px solid var(--x-color-line); white-space: nowrap; overflow: hidden; }
+.statusbar button { padding: 0; font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+.statusbar button:hover { color: var(--x-color-ink); text-decoration: underline; }
+.statusbar-end { margin-left: auto; }

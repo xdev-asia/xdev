@@ -196,5 +196,18 @@
   "error.exists": "An account with this name already exists.",
   "error.no_claude": "Claude Code was not found. Install it and try again.",
   "error.bad_registry": "The accounts registry cannot be read. Check accounts.json before trying again.",
-  "error.bad_reserve": "Reserve must be a whole number from 0 to 90."
+  "error.bad_reserve": "Reserve must be a whole number from 0 to 90.",
+  "apps.label": "Apps",
+  "apps.docs": "Documents",
+  "apps.changes": "Changes",
+  "apps.changesCount": "Changes, {count} pending",
+  "apps.agents": "Agent context",
+  "apps.accounts": "Accounts",
+  "status.label": "Status",
+  "status.stale": "{count} need review",
+  "status.changes": "{count} pending",
+  "status.untracked": "Not tracked by git",
+  "status.account": "{name} · 5h {percent}%",
+  "status.accountNoWindow": "{name}",
+  "status.noRoom": "No account with room"
 }
