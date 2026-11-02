@@ -17,7 +17,12 @@ import type {
   Provider,
   Quota,
   SearchHit,
+  Seat,
   Seen,
+  Event as SquadEvent,
+  Squad,
+  SquadItem,
+  SquadView,
   StaleDoc,
   Task,
   TasksContext,
@@ -48,9 +53,21 @@ export type {
   LoginStart,
   Provider,
   Quota,
+  ContextUse,
+  Escalation,
+  Role,
   SearchHit,
+  Seat,
+  SeatState,
+  SeatStatus,
   Seen,
+  Squad,
+  SquadItem,
+  SquadRun,
+  SquadStatus,
+  SquadView,
   StaleDoc,
+  Step,
   Task,
   TasksContext,
   TaskState,
@@ -58,7 +75,7 @@ export type {
   VcsState,
 } from "@xdev/bindings";
 // The UI's names for generated types.
-export type { FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
+export type { Event as SquadEvent, FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
 
 // Types do not exist at run time, so the provider menu needs its own list.
 export const PROVIDERS: readonly Provider[] = ["claude", "codex"];
@@ -100,7 +117,16 @@ export type ErrorCode =
   | "runner"
   | "timeout"
   | "policy_invalid"
-  | "binary";
+  | "binary"
+  | "stopped"
+  | "seat_vacant"
+  | "unknown_account"
+  | "busy"
+  | "bad_role"
+  | "empty_name"
+  | "no_run"
+  | "not_waiting"
+  | "empty_text";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export interface Api {
@@ -123,6 +149,24 @@ export interface Api {
   discardTask(id: string): Promise<Task>;
   // Rejects with `binary` for a file that is not text.
   taskFileDiff(id: string, path: string): Promise<FileDiff>;
+  // Newest first.
+  squads(): Promise<SquadItem[]>;
+  squad(id: string): Promise<SquadView>;
+  // A seat with a null or blank account is vacant; `test` is split on whitespace.
+  newSquad(name: string, repo: string, seats: Seat[], test: string | null): Promise<Squad>;
+  // Rejects with `busy` while a run is going.
+  setSeat(id: string, role: string, account: string | null): Promise<SquadView>;
+  removeSquad(id: string): Promise<void>;
+  // These resolve when the run is done, waits for the person or is stopped, which can take an
+  // hour; meanwhile `squad()` shows it running. Steer resolves at once while a seat is working.
+  runSquad(id: string, goal: string): Promise<SquadView>;
+  answerSquad(id: string, escalation: string, text: string): Promise<SquadView>;
+  steerSquad(id: string, role: string, text: string): Promise<SquadView>;
+  resumeSquad(id: string): Promise<SquadView>;
+  // Works while another call is running the squad; that call then resolves as stopped.
+  stopSquad(id: string): Promise<SquadView>;
+  // Oldest first.
+  squadEvents(id: string): Promise<SquadEvent[]>;
   pickFolder(): Promise<string | null>;
   openVault(path: string): Promise<DocEntry[]>;
   lastVault(): Promise<string | null>;
@@ -198,6 +242,15 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "timeout",
   "policy_invalid",
   "binary",
+  "stopped",
+  "seat_vacant",
+  "unknown_account",
+  "busy",
+  "bad_role",
+  "empty_name",
+  "no_run",
+  "not_waiting",
+  "empty_text",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -225,6 +278,17 @@ const tauriApi: Api = {
   approveTask: (id) => call("task_approve", { id }),
   discardTask: (id) => call("task_discard", { id }),
   taskFileDiff: (id, path) => call("task_file_diff", { id, path }),
+  squads: () => call("squads_list"),
+  squad: (id) => call("squad_get", { id }),
+  newSquad: (name, repo, seats, test) => call("squad_new", { name, repo, seats, test }),
+  setSeat: (id, role, account) => call("squad_set_seat", { id, role, account }),
+  removeSquad: (id) => call("squad_remove", { id }),
+  runSquad: (id, goal) => call("squad_run", { id, goal }),
+  answerSquad: (id, escalation, text) => call("squad_answer", { id, escalation, text }),
+  steerSquad: (id, role, text) => call("squad_steer", { id, role, text }),
+  resumeSquad: (id) => call("squad_resume", { id }),
+  stopSquad: (id) => call("squad_stop", { id }),
+  squadEvents: (id) => call("squad_events", { id }),
   async pickFolder() {
     const picked = await open({ directory: true });
     return typeof picked === "string" ? picked : null;

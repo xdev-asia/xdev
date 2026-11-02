@@ -1,7 +1,7 @@
 //! Coding-agent tasks for the Tasks view. A run waits on `claude` or `codex`
 //! for up to an hour, so every call runs off the UI thread.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -59,12 +59,6 @@ pub struct FileDiff {
     new: Option<String>,
 }
 
-/// Loaded on every call, so an edit to the policy file applies to the next
-/// step without restarting the app.
-fn gate(data: &Path) -> Result<Audited<Policy>, CmdError> {
-    Ok(Audited::new(Policy::load(data)?, data))
-}
-
 /// Claude Code with the person's own config when no account is named;
 /// otherwise the runner of that account's provider.
 fn runner(data: &Path, account: Option<&str>) -> Result<Box<dyn Runner>, CmdError> {
@@ -76,7 +70,11 @@ fn runner(data: &Path, account: Option<&str>) -> Result<Box<dyn Runner>, CmdErro
         }
         None => (Provider::Claude, None),
     };
-    Ok(match provider {
+    Ok(provider_runner(provider, account_dir))
+}
+
+pub(crate) fn provider_runner(provider: Provider, account_dir: Option<PathBuf>) -> Box<dyn Runner> {
+    match provider {
         Provider::Claude => Box::new(ClaudeRunner {
             account_dir,
             timeout: RUN_TIMEOUT,
@@ -85,7 +83,13 @@ fn runner(data: &Path, account: Option<&str>) -> Result<Box<dyn Runner>, CmdErro
             account_dir,
             timeout: RUN_TIMEOUT,
         }),
-    })
+    }
+}
+
+/// Loaded on every call, so an edit to the policy file applies to the next
+/// step without restarting the app.
+pub(crate) fn gate(data: &Path) -> Result<Audited<Policy>, CmdError> {
+    Ok(Audited::new(Policy::load(data)?, data))
 }
 
 fn store(state: &AppState) -> Result<TaskStore, CmdError> {

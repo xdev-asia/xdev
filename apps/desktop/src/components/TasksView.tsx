@@ -31,12 +31,13 @@ function firstLine(goal: string): string {
   return goal.split("\n")[0];
 }
 
-export function TasksView({ api }: { api: Api }): JSX.Element {
+// `initial` picks a task to show first, e.g. one a squad worked on.
+export function TasksView({ api, initial }: { api: Api; initial?: string }): JSX.Element {
   const { t } = useI18n();
   const [tasks, setTasks] = useState<Task[]>();
   const [context, setContext] = useState<TasksContext>();
   const [accounts, setAccounts] = useState<string[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(initial ?? null);
   const [problem, setProblem] = useState<ApiError>();
   const [creating, setCreating] = useState(false);
   const [goal, setGoal] = useState("");

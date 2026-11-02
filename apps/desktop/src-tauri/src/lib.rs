@@ -4,6 +4,7 @@ mod bindings;
 mod commands;
 mod session;
 mod settings;
+mod squads;
 mod tasks;
 
 use commands::AppState;
@@ -63,6 +64,17 @@ pub fn run() {
             tasks::task_approve,
             tasks::task_discard,
             tasks::task_file_diff,
+            squads::squads_list,
+            squads::squad_get,
+            squads::squad_new,
+            squads::squad_set_seat,
+            squads::squad_remove,
+            squads::squad_run,
+            squads::squad_answer,
+            squads::squad_steer,
+            squads::squad_resume,
+            squads::squad_stop,
+            squads::squad_events,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start xDev");

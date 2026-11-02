@@ -9,6 +9,7 @@ use ts_rs::{Config, TS};
 
 use crate::accounts::{Account, Accounts, LoginStart};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
+use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
 
 /// Each type's dependencies are written with it, so only the roots are here.
@@ -34,6 +35,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     TasksContext::export_all(cfg)?;
     FileDiff::export_all(cfg)?;
     xdev_agent::Task::export_all(cfg)?;
+    SquadItem::export_all(cfg)?;
+    SquadView::export_all(cfg)?;
+    xdev_agent::Seat::export_all(cfg)?;
     Ok(())
 }
 

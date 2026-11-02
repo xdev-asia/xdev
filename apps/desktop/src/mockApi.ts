@@ -17,6 +17,7 @@ import type {
 import { extractTitle, parseFrontmatter } from "./doc/frontmatter";
 import { createResolver, parseLinks } from "./doc/links";
 import { estimateTokens, type ExportDoc, planExport } from "./mockExport";
+import { createMockSquads } from "./mockSquads";
 import { createMockTasks } from "./mockTasks";
 
 export { EXPORT_MARKER } from "./mockExport";
@@ -525,6 +526,11 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockTasks({
       defaultRepo: repo ? DEMO_ROOT : null,
       accountNames: () => accounts.map((a) => a.name),
+      runDelayMs: options.runDelayMs,
+    }),
+    ...createMockSquads({
+      defaultRepo: repo ? DEMO_ROOT : null,
+      accounts: () => accounts,
       runDelayMs: options.runDelayMs,
     }),
     async accounts() { return structuredClone({ reservePercent: 30, accounts }); },

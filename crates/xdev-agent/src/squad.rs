@@ -24,6 +24,7 @@ const INBOX: &str = "inbox.jsonl";
 pub(crate) const TEXT_MAX: usize = 400;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
     Lead,
@@ -62,6 +63,7 @@ impl FromStr for Role {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Seat {
     pub role: Role,
@@ -72,6 +74,7 @@ pub struct Seat {
 /// A team of agents for one repo, kept in
 /// `<data_dir>/squads/<id>/squad.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Squad {
     pub id: String,
@@ -100,6 +103,7 @@ impl Squad {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Step {
     Plan,
@@ -132,6 +136,7 @@ impl Step {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum SeatStatus {
     Idle,
@@ -158,6 +163,7 @@ impl SeatStatus {
 
 /// Why a seat needs the person.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Wait {
     /// The account is into the person's reserve, or full.
@@ -191,6 +197,7 @@ impl Wait {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SeatState {
     pub state: SeatStatus,
@@ -220,6 +227,9 @@ impl SeatState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+// The export module already has a `Target` in the bindings.
+#[cfg_attr(feature = "ts", ts(rename = "EscalationTarget"))]
 #[serde(rename_all = "snake_case")]
 pub enum Target {
     Lead,
@@ -227,6 +237,7 @@ pub enum Target {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Escalation {
     /// `e1`, `e2`... within the run.
@@ -274,6 +285,7 @@ pub(crate) enum TurnKind {
 /// One goal worked by a squad, kept in
 /// `<data_dir>/squads/<id>/runs/<task id>.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SquadRun {
     pub squad: String,
@@ -293,6 +305,7 @@ pub struct SquadRun {
     pub violations: u32,
     /// Stopped by the person, or found dead; it goes on only when asked.
     pub stopped: bool,
+    #[cfg_attr(feature = "ts", ts(skip))]
     pub(crate) turns: Vec<Turn>,
     pub started: u64,
     pub ended: Option<u64>,
@@ -372,11 +385,13 @@ impl SquadRun {
 /// What a squad did, one line of `events.jsonl`. Text is at most
 /// [`TEXT_MAX`] bytes and never holds a secret.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Event {
     pub at: u64,
     pub kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub role: Option<Role>,
     pub text: String,
 }
