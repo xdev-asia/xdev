@@ -1,5 +1,5 @@
 {
-  "_doc": "Shared spec for the frontmatter parsers (Rust: xdev-vault, TS: apps/desktop/src/doc/frontmatter.ts). Every case uses the path in `path`.",
+  "_doc": "Shared spec for the frontmatter parsers (Rust: xdev-vault, TS: apps/desktop/src/doc/frontmatter.ts). Every case uses the path in `path`. Missing `covers` means [], missing `verified` and `type` mean null.",
   "path": "notes/plan.md",
   "cases": [
     {
@@ -138,12 +138,16 @@
       "tags": []
     },
     {
-      "name": "unknown keys and junk ignored",
+      "name": "junk ignored, type and covers read",
       "input": "---\ntype: arch\nnot a pair\n  - stray\ncovers: crates/**\n---\n# Kept\n",
       "body": "# Kept\n",
       "title": "Kept",
       "agents": [],
-      "tags": []
+      "tags": [],
+      "covers": [
+        "crates/**"
+      ],
+      "type": "arch"
     },
     {
       "name": "heading in code fence is not a title",
@@ -152,6 +156,69 @@
       "title": "Real title",
       "agents": [],
       "tags": []
+    },
+    {
+      "name": "covers block list is cleaned",
+      "input": "---\ntype: adr\ncovers:\n  - ./crates/xdev-store/**\n  - /apps/desktop/src-tauri/src/session.rs\n  - crates/xdev-store/**\n  - ../outside\n  - a/../b\n  - \"  \"\nverified: 3F2A9C1\n---\n# Store\n",
+      "body": "# Store\n",
+      "title": "Store",
+      "agents": [],
+      "tags": [],
+      "covers": [
+        "crates/xdev-store/**",
+        "apps/desktop/src-tauri/src/session.rs"
+      ],
+      "verified": "3f2a9c1",
+      "type": "adr"
+    },
+    {
+      "name": "covers inline list, verified not a commit id",
+      "input": "---\ncovers: [src/*.rs, src/*.rs, 'docs/a b.md']\nverified: main\n---\n",
+      "body": "",
+      "title": "plan",
+      "agents": [],
+      "tags": [],
+      "covers": [
+        "src/*.rs",
+        "docs/a b.md"
+      ],
+      "verified": null,
+      "type": null
+    },
+    {
+      "name": "covers single value, empty type",
+      "input": "---\ncovers: crates\\x # windows path kept as is\ntype: \"  \"\nverified: abc\n---\n",
+      "body": "",
+      "title": "plan",
+      "agents": [],
+      "tags": [],
+      "covers": [
+        "crates\\x"
+      ],
+      "verified": null,
+      "type": null
+    },
+    {
+      "name": "verified full id, quoted",
+      "input": "---\nverified: \"0123456789ABCDEF0123456789abcdef01234567\"\n---\n",
+      "body": "",
+      "title": "plan",
+      "agents": [],
+      "tags": [],
+      "covers": [],
+      "verified": "0123456789abcdef0123456789abcdef01234567",
+      "type": null
+    },
+    {
+      "name": "verified too long",
+      "input": "---\nverified: 0123456789abcdef0123456789abcdef012345678\ntype: spec\n---\n",
+      "body": "",
+      "title": "plan",
+      "agents": [],
+      "tags": [],
+      "covers": [],
+      "verified": null,
+      "type": "spec"
     }
   ]
 }
