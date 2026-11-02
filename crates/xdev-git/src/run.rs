@@ -17,7 +17,16 @@ pub(crate) fn run(
     args: &[&str],
     stdin: Option<&[u8]>,
 ) -> Result<Vec<u8>, GitError> {
-    let out = spawn(workdir, args, stdin)?;
+    checked(args, spawn(workdir, args, stdin, true)?)
+}
+
+/// Like `run`, but pathspecs keep their magic. Only for callers that write
+/// the magic themselves, such as `:(top,glob)` in front of every entry.
+pub(crate) fn run_magic(workdir: &Path, args: &[&str]) -> Result<Vec<u8>, GitError> {
+    checked(args, spawn(workdir, args, None, false)?)
+}
+
+fn checked(args: &[&str], out: Output) -> Result<Vec<u8>, GitError> {
     if out.status != Some(0) {
         return Err(GitError::Failed {
             args: args.join(" "),
@@ -35,7 +44,7 @@ pub(crate) fn run_status(
     args: &[&str],
     stdin: Option<&[u8]>,
 ) -> Result<(Option<i32>, Vec<u8>), GitError> {
-    let out = spawn(workdir, args, stdin)?;
+    let out = spawn(workdir, args, stdin, true)?;
     Ok((out.status, out.stdout))
 }
 
@@ -45,7 +54,12 @@ struct Output {
     stderr: Vec<u8>,
 }
 
-fn spawn(workdir: &Path, args: &[&str], stdin: Option<&[u8]>) -> Result<Output, GitError> {
+fn spawn(
+    workdir: &Path,
+    args: &[&str],
+    stdin: Option<&[u8]>,
+    literal: bool,
+) -> Result<Output, GitError> {
     // Otherwise a missing folder fails the spawn with `NotFound` on Unix,
     // which would read as "git is not installed".
     if !workdir.is_dir() {
@@ -64,7 +78,7 @@ fn spawn(workdir: &Path, args: &[&str], stdin: Option<&[u8]>) -> Result<Output, 
         .env("GIT_OPTIONAL_LOCKS", "0")
         // Paths are file names, not patterns: `[a].md` must not also match
         // `a.md`, and a leading `:` must not be read as pathspec magic.
-        .env("GIT_LITERAL_PATHSPECS", "1")
+        .env("GIT_LITERAL_PATHSPECS", if literal { "1" } else { "0" })
         // Set when xDev itself is started from a git hook; they would point
         // every call at another repo or index.
         .env_remove("GIT_DIR")

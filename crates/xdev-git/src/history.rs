@@ -39,32 +39,14 @@ impl Repo {
         let limit = format!("-n{limit}");
         let out = run::run(
             &self.workdir,
-            &[
-                "log",
-                &limit,
-                "--format=%H%x1f%an%x1f%at%x1f%s%x1e",
-                "--",
-                path,
-            ],
+            &["log", &limit, LOG_FORMAT, "--", path],
             None,
         )?;
-        let out = String::from_utf8_lossy(&out);
-        Ok(out
-            .split('\x1e')
-            .filter_map(|record| {
-                let mut fields = record.trim_start_matches('\n').splitn(4, '\x1f');
-                Some(Commit {
-                    id: fields.next().filter(|id| !id.is_empty())?.to_owned(),
-                    author: fields.next()?.to_owned(),
-                    time: fields.next()?.parse().ok()?,
-                    message: fields.next()?.to_owned(),
-                })
-            })
-            .collect())
+        Ok(parse_log(&out))
     }
 
     /// The `HEAD` commit id, or `None` before the first commit.
-    fn head(&self) -> Result<Option<String>, GitError> {
+    pub(crate) fn head(&self) -> Result<Option<String>, GitError> {
         let (status, out) = run::run_status(
             &self.workdir,
             &["rev-parse", "--verify", "-q", "HEAD^{commit}"],
@@ -94,6 +76,24 @@ impl Repo {
             None,
         )?))
     }
+}
+
+pub(crate) const LOG_FORMAT: &str = "--format=%H%x1f%an%x1f%at%x1f%s%x1e";
+
+/// Parses `git log` output written with `LOG_FORMAT`.
+pub(crate) fn parse_log(out: &[u8]) -> Vec<Commit> {
+    String::from_utf8_lossy(out)
+        .split('\x1e')
+        .filter_map(|record| {
+            let mut fields = record.trim_start_matches('\n').splitn(4, '\x1f');
+            Some(Commit {
+                id: fields.next().filter(|id| !id.is_empty())?.to_owned(),
+                author: fields.next()?.to_owned(),
+                time: fields.next()?.parse().ok()?,
+                message: fields.next()?.to_owned(),
+            })
+        })
+        .collect()
 }
 
 fn is_commit_id(id: &str) -> bool {

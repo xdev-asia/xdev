@@ -3,6 +3,7 @@
 
 mod commit;
 mod history;
+mod range;
 mod run;
 mod status;
 
