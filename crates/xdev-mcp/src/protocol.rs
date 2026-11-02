@@ -9,6 +9,8 @@ use serde_json::{Map, Value, json};
 
 use crate::{Docs, SUPPORTED, tools};
 
+const MAX_MESSAGE_BYTES: usize = 16 * 1024 * 1024;
+
 const PARSE_ERROR: i64 = -32700;
 const INVALID_REQUEST: i64 = -32600;
 const METHOD_NOT_FOUND: i64 = -32601;
@@ -53,19 +55,50 @@ pub fn serve(
     loop {
         line.clear();
         // A failing stdin means the client is gone; like EOF, there is no one left to answer.
-        match input.read_until(b'\n', &mut line) {
-            Ok(0) | Err(_) => return Ok(()),
-            Ok(_) => {}
-        }
-        let message = line.trim_ascii();
-        if message.is_empty() {
-            continue;
-        }
-        if let Some(reply) = server.handle(message) {
+        let oversized = match read_line(&mut input, &mut line, MAX_MESSAGE_BYTES) {
+            Ok(Some(oversized)) => oversized,
+            Ok(None) | Err(_) => return Ok(()),
+        };
+        let reply = if oversized {
+            Some(invalid(Value::Null, "message exceeds 16 MiB"))
+        } else {
+            let message = line.trim_ascii();
+            if message.is_empty() {
+                continue;
+            }
+            server.handle(message)
+        };
+        if let Some(reply) = reply {
             let mut bytes = serde_json::to_vec(&reply).map_err(std::io::Error::other)?;
             bytes.push(b'\n');
             output.write_all(&bytes)?;
             output.flush()?;
+        }
+    }
+}
+
+fn read_line(
+    input: &mut impl BufRead,
+    line: &mut Vec<u8>,
+    limit: usize,
+) -> std::io::Result<Option<bool>> {
+    let mut oversized = false;
+    loop {
+        let available = input.fill_buf()?;
+        if available.is_empty() {
+            return Ok((oversized || !line.is_empty()).then_some(oversized));
+        }
+        let newline = available.iter().position(|&byte| byte == b'\n');
+        let count = newline.unwrap_or(available.len());
+        // Keep draining an oversized line without retaining its remainder.
+        if !oversized {
+            let keep = count.min(limit - line.len());
+            line.extend_from_slice(&available[..keep]);
+            oversized = keep < count;
+        }
+        input.consume(count + usize::from(newline.is_some()));
+        if newline.is_some() {
+            return Ok(Some(oversized));
         }
     }
 }
@@ -249,4 +282,29 @@ fn error(id: Value, e: RpcError) -> Value {
         body["data"] = data;
     }
     json!({"jsonrpc": "2.0", "id": id, "error": body})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_line;
+    use std::io::BufReader;
+
+    #[test]
+    fn bounded_reader_handles_chunk_boundaries() {
+        for capacity in [1, 3, 8, 64] {
+            let mut input =
+                BufReader::with_capacity(capacity, &b"123456789012345\n12345678\n123456789"[..]);
+            let mut line = Vec::new();
+            assert_eq!(read_line(&mut input, &mut line, 8).unwrap(), Some(true));
+            assert_eq!(line, b"12345678");
+            line.clear();
+            assert_eq!(read_line(&mut input, &mut line, 8).unwrap(), Some(false));
+            assert_eq!(line, b"12345678");
+            line.clear();
+            assert_eq!(read_line(&mut input, &mut line, 8).unwrap(), Some(true));
+            assert_eq!(line, b"12345678");
+            line.clear();
+            assert_eq!(read_line(&mut input, &mut line, 8).unwrap(), None);
+        }
+    }
 }

@@ -641,3 +641,32 @@ fn modern_request_missing_fields_is_invalid_params() {
         assert_eq!(error_code(&reply), -32602);
     }
 }
+
+#[test]
+fn oversized_line_recovers_at_next_message() {
+    let mut input = vec![b'x'; 16 * 1024 * 1024 + 1];
+    input.extend_from_slice(b"\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n");
+    let (replies, _) = run_bytes(&mut Fake::default(), &input);
+    assert_eq!(replies.len(), 2);
+    assert_eq!(replies[0]["jsonrpc"], "2.0");
+    assert_eq!(replies[0]["id"], Value::Null);
+    assert_eq!(replies[0]["error"]["code"], -32600);
+    assert_eq!(replies[1], json!({"jsonrpc":"2.0","id":1,"result":{}}));
+}
+
+#[test]
+fn message_exactly_at_limit_is_accepted() {
+    let mut input = br#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#.to_vec();
+    input.resize(16 * 1024 * 1024, b' ');
+    input.push(b'\n');
+    let (replies, _) = run_bytes(&mut Fake::default(), &input);
+    assert_eq!(replies, vec![json!({"jsonrpc":"2.0","id":1,"result":{}})]);
+}
+
+#[test]
+fn oversized_line_at_eof_finishes_cleanly() {
+    let input = vec![b'x'; 16 * 1024 * 1024 + 1];
+    let (replies, _) = run_bytes(&mut Fake::default(), &input);
+    assert_eq!(replies.len(), 1);
+    assert_eq!(replies[0]["error"]["code"], -32600);
+}
