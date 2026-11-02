@@ -8,6 +8,7 @@ mod tools;
 use serde::Serialize;
 
 pub use protocol::serve;
+pub use xdev_store::ContextPack;
 
 /// Protocol versions this server speaks, newest first. `2026-07-28` is the
 /// per-request (`_meta`) era; the others are the `initialize` handshake era.
@@ -50,6 +51,7 @@ pub struct ToolError {
 /// The vault as the tools see it.
 pub trait Docs {
     fn vault_name(&self) -> String;
+    fn context_pack(&mut self, query: &str, budget: usize) -> Result<ContextPack, ToolError>;
     fn search(&mut self, query: &str, limit: usize) -> Result<Vec<Hit>, ToolError>;
     fn get(&mut self, path: &str) -> Result<Doc, ToolError>;
     fn list(&mut self, doc_type: Option<&str>) -> Result<Vec<DocInfo>, ToolError>;
