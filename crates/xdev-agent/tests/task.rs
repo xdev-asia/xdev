@@ -113,6 +113,7 @@ impl Runner for FakeRunner {
             cost_usd: Some(0.25),
             is_error: false,
             result: "Wrote agent.txt".into(),
+            context: None,
         })
     }
 }

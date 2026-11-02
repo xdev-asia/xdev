@@ -26,6 +26,16 @@ pub struct RunOutcome {
     /// The agent ran to the end but reported failure.
     pub is_error: bool,
     pub result: String,
+    /// How full the session's context window was after the run, when the
+    /// agent reports it.
+    pub context: Option<ContextUse>,
+}
+
+/// Tokens, not characters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContextUse {
+    pub used: u64,
+    pub window: u64,
 }
 
 /// The only thing orchestration knows about an agent, so another runner,
@@ -141,6 +151,7 @@ pub fn parse_claude_json(out: &str) -> Result<RunOutcome, AgentError> {
             .and_then(Value::as_bool)
             .unwrap_or(false),
         result: text("result").unwrap_or_default(),
+        context: None,
     })
 }
 
@@ -168,6 +179,7 @@ mod tests {
                 cost_usd: Some(0.0421),
                 is_error: false,
                 result: "Done.".into(),
+                context: None,
             }
         );
     }
@@ -181,6 +193,7 @@ mod tests {
                 cost_usd: None,
                 is_error: false,
                 result: String::new(),
+                context: None,
             }
         );
     }
