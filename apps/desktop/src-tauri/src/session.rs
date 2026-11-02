@@ -167,6 +167,19 @@ impl Shared {
         }
     }
 
+    /// Freshness reads docs without a repo too: their `covers` are then
+    /// `unknown` rather than an error.
+    pub fn freshness_source(&self) -> Result<(Vault, Option<Repo>), CmdError> {
+        match self.review() {
+            Ok(r) => Ok((r.vault, Some(r.repo))),
+            Err(e) if e.code == "no_repo" || e.code == "no_git" => {
+                let (root, _) = self.root()?;
+                Ok((Vault::open(&root).map_err(CoreError::from)?, None))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// A vault already inside a repo is left alone: a nested repo would hide
     /// its docs from the outer one.
     pub fn init_repo(&self) -> Result<(), CmdError> {

@@ -36,6 +36,8 @@ pub fn run() {
             commands::read_version,
             commands::restore_version,
             commands::backlinks,
+            commands::doc_freshness,
+            commands::stale_docs,
             commands::export_plan,
             commands::export_write,
         ])

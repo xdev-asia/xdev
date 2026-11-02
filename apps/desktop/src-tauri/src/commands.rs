@@ -4,7 +4,9 @@
 use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Emitter, Manager, State};
-use xdev_core::{Change, Commit, CoreError, DocEntry, DocLink, ExportPlan, SearchHit, Vault};
+use xdev_core::{
+    Change, Commit, CoreError, DocEntry, DocLink, ExportPlan, Freshness, SearchHit, StaleDoc, Vault,
+};
 
 use crate::session::Shared;
 use crate::settings;
@@ -193,6 +195,18 @@ pub fn backlinks(state: State<'_, AppState>, path: String) -> Result<Vec<DocLink
     state.session.with(|s| s.backlinks(&path))
 }
 
+#[tauri::command(async)]
+pub fn doc_freshness(state: State<'_, AppState>, path: String) -> Result<Freshness, CmdError> {
+    let (vault, repo) = state.session.freshness_source()?;
+    Ok(xdev_core::freshness(&vault, repo.as_ref(), &path)?)
+}
+
+#[tauri::command(async)]
+pub fn stale_docs(state: State<'_, AppState>) -> Result<Vec<StaleDoc>, CmdError> {
+    let (vault, repo) = state.session.freshness_source()?;
+    Ok(xdev_core::stale_docs(&vault, repo.as_ref())?)
+}
+
 /// Outside the session lock: reading every doc and asking git for the repo
 /// root must not stall typing.
 fn export_vault(state: &AppState) -> Result<(Vault, PathBuf), CmdError> {
@@ -289,5 +303,39 @@ mod tests {
 
         let json = serde_json::to_value(CmdError::no_vault()).unwrap();
         assert_eq!(json, serde_json::json!({ "code": "no_vault" }));
+    }
+
+    #[test]
+    fn freshness_serializes_like_the_ui_expects() {
+        let freshness = Freshness {
+            state: xdev_core::DocState::Stale,
+            covers: vec!["src/auth".into()],
+            verified: Some("abc1234".into()),
+            head: None,
+            commits: vec![Commit {
+                id: "f00d".into(),
+                author: "A".into(),
+                time: 1,
+                message: "m".into(),
+            }],
+            count: 3,
+        };
+        assert_eq!(
+            serde_json::to_value(freshness).unwrap(),
+            serde_json::json!({
+                "state": "stale", "covers": ["src/auth"], "verified": "abc1234", "head": null,
+                "commits": [{ "id": "f00d", "author": "A", "time": 1, "message": "m" }], "count": 3
+            })
+        );
+        let stale = StaleDoc {
+            path: "a.md".into(),
+            title: "A".into(),
+            state: xdev_core::DocState::Unverified,
+            count: 0,
+        };
+        assert_eq!(
+            serde_json::to_value(stale).unwrap(),
+            serde_json::json!({ "path": "a.md", "title": "A", "state": "unverified", "count": 0 })
+        );
     }
 }
