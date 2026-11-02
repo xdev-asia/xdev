@@ -7,7 +7,7 @@ import en from "../i18n/en.json";
 import viDict from "../i18n/vi.json";
 import { AccountsView } from "./AccountsView";
 
-const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
+const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[], deps: [] as unknown[][] }));
 vi.mock("react", async (original) => ({
   ...await original<typeof import("react")>(),
   useState: (initial: unknown) => {
@@ -15,7 +15,7 @@ vi.mock("react", async (original) => ({
     if (!(index in hooks.values)) hooks.values[index] = initial;
     return [hooks.values[index], (value: unknown) => { hooks.values[index] = typeof value === "function" ? value(hooks.values[index]) : value; }];
   },
-  useEffect: (effect: () => void) => { hooks.effects.push(effect); },
+  useEffect: (effect: () => void, deps: unknown[]) => { hooks.effects.push(effect); hooks.deps.push(deps); },
 }));
 vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
@@ -33,7 +33,7 @@ function harness(api = createMockApi({})) {
   const button = (text: string) => nodes(draw()).find(n => n.props.children === text && n.props.onClick)!;
   return { api, draw, html, button };
 }
-beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; });
+beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.deps = []; });
 
 it("renders bars, reset text and state badges", async () => {
   const view = harness(); view.draw();
@@ -110,6 +110,22 @@ it("polls only status after login, stops after five minutes and on close", async
     expect(accounts).toHaveBeenCalledTimes(count);
     if (typeof stopPoll === "function") stopPoll();
     expect(vi.getTimerCount()).toBe(0);
+  } finally { vi.useRealTimers(); }
+});
+it("reloads quota as soon as polling sees the login finish", async () => {
+  vi.useFakeTimers();
+  try {
+    const view = harness(); view.draw(); const stopLoad = hooks.effects[0](); await tick();
+    if (typeof stopLoad === "function") stopLoad();
+    const signedIn = await view.api.accounts();
+    vi.spyOn(view.api, "accounts").mockResolvedValue({ ...signedIn, accounts: signedIn.accounts.map(a => ({ ...a, status: { ...a.status, state: "logged_in" as const } })) });
+    await view.button("Log in").props.onClick();
+    view.draw(); const loadDeps = hooks.deps.at(-2); const stopPoll = hooks.effects.at(-1)!();
+    await vi.advanceTimersByTimeAsync(3_000);
+    if (typeof stopPoll === "function") stopPoll();
+    view.draw();
+    // Changed deps are what make React rerun the load effect, which fetches quota.
+    expect(hooks.deps.at(-2)).not.toEqual(loadDeps);
   } finally { vi.useRealTimers(); }
 });
 it("keeps null and extra windows visible without inventing a percent", async () => {

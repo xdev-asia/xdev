@@ -61,6 +61,9 @@ export function AccountsView({ api }: { api: Api }) {
         setAccounts(next);
         const remaining = pending.filter(([name]) => next.accounts.some(a => a.name === name && a.status.state !== "logged_in"));
         if (remaining.length !== Object.keys(polling).length) setPolling(Object.fromEntries(remaining));
+        // A fresh sign-in has usage to show now, not at the next five-minute refresh. Done by the
+        // load effect because setPolling above disposes this one before a reply could land.
+        if (remaining.length < pending.length) setRevision(n => n + 1);
       }, e => { if (!disposed) setProblem(toApiError(e)); }).finally(() => { loading = false; });
     }, 3_000);
     return () => {
