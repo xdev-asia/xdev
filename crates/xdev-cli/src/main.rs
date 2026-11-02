@@ -1,4 +1,5 @@
 mod accounts;
+mod ai;
 mod mcp;
 mod task;
 
@@ -21,6 +22,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// API keys and local Ollama models.
+    Ai {
+        #[command(subcommand)]
+        command: ai::AiCommand,
+    },
     /// Index every Markdown file in a folder.
     Index { dir: PathBuf },
     /// Index a folder, then print `path<TAB>title` for each match.
@@ -99,6 +105,7 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         Ok((vault, store))
     };
     match command {
+        Command::Ai { command } => return ai::run(command, &data_dir),
         Command::Accounts { command } => return accounts::run(command, &data_dir),
         Command::Quota { json } => return accounts::run_quota(json, &data_dir),
         Command::Task { command } => return task::run(command, &data_dir),
