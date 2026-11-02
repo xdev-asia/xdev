@@ -12,6 +12,7 @@ import "./styles/agents.css";
 import "./styles/accounts.css";
 import "./styles/tasks.css";
 import "./styles/squads.css";
+import "./styles/terminal.css";
 
 const style = document.createElement("style");
 style.textContent = tokensCss();

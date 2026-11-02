@@ -1,0 +1,140 @@
+import { Button } from "@xdev/ui";
+import { useEffect, useState } from "react";
+import type { JSX } from "react";
+import { PTY_PROFILES, toApiError, type Api, type ApiError, type PtyProfile } from "../api";
+import { COMPACT } from "../components/ChangesPanel";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { useI18n } from "../i18n";
+import { Terminal } from "./Terminal";
+
+type Run = { id: string; cwd: string; profile: PtyProfile; approved: boolean };
+
+let serial = 0;
+const nextId = () => `term-${Date.now()}-${++serial}`;
+
+/** The Terminal app: pick a folder and a profile, then a shell or an agent runs in it. */
+export function TerminalView({ api }: { api: Api }): JSX.Element {
+  const { t } = useI18n();
+  const [cwd, setCwd] = useState<string | null>(null);
+  const [profile, setProfile] = useState<PtyProfile>("shell");
+  const [run, setRun] = useState<Run | null>(null);
+  const [exit, setExit] = useState<{ id: string; code: number | null } | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [asking, setAsking] = useState<{ run: Run; reason: string } | null>(null);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let gone = false;
+    void api.onPtyExit((e) => setExit(e)).then((off) => (gone ? off() : (unlisten = off)));
+    return () => {
+      gone = true;
+      unlisten?.();
+    };
+  }, [api]);
+
+  const start = (next: Run) => {
+    setError(null);
+    setExit(null);
+    setRun(next);
+  };
+
+  const failed = (failedRun: Run, e: ApiError) => {
+    setRun(null);
+    // Approval is asked once per start; a second refusal is shown as is.
+    if (e.code === "needs_approval" && !failedRun.approved) {
+      setAsking({ run: failedRun, reason: e.detail ?? "" });
+      return;
+    }
+    setError(e);
+  };
+
+  const approve = async () => {
+    if (!asking) return;
+    const again = { ...asking.run, id: nextId(), approved: true };
+    setAsking(null);
+    try {
+      await api.ptyApprove(again.profile);
+      start(again);
+    } catch (e) {
+      setError(toApiError(e));
+    }
+  };
+
+  const exited = run && exit?.id === run.id ? exit : null;
+
+  return (
+    <div className="terminal-view">
+      <div className="terminal-toolbar">
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => void api.pickFolder().then((dir) => dir && setCwd(dir), (e) => setError(toApiError(e)))}
+        >
+          {t("terminal.pickFolder")}
+        </button>
+        <span className="terminal-folder" title={cwd ?? undefined}>
+          {cwd ?? t("terminal.noFolder")}
+        </span>
+        <label className="terminal-profile">
+          <span>{t("terminal.profile")}</span>
+          <select value={profile} onChange={(e) => setProfile(e.target.value as PtyProfile)}>
+            {PTY_PROFILES.map((p) => (
+              <option key={p} value={p}>
+                {t(`terminal.profile.${p}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+        {run ? (
+          <button type="button" className="btn-secondary" onClick={() => setRun(null)}>
+            {t("terminal.stop")}
+          </button>
+        ) : (
+          <Button
+            style={COMPACT}
+            disabled={!cwd}
+            onClick={() => cwd && start({ id: nextId(), cwd, profile, approved: false })}
+          >
+            {t("terminal.start")}
+          </Button>
+        )}
+        {exited && (
+          <span className="terminal-exit" role="status">
+            {exited.code === null ? t("terminal.exitedUnknown") : t("terminal.exited", { code: exited.code })}
+          </span>
+        )}
+      </div>
+      {error && (
+        <div className="banner banner-warn" role="alert">
+          <div className="banner-text">
+            <span>{t(`error.${error.code}`)}</span>
+            {error.detail && <pre className="commands">{error.detail}</pre>}
+          </div>
+        </div>
+      )}
+      {run ? (
+        <Terminal
+          key={run.id}
+          api={api}
+          id={run.id}
+          cwd={run.cwd}
+          profile={run.profile}
+          onStarted={() => {}}
+          onError={(e) => failed(run, e)}
+        />
+      ) : (
+        <p className="pane-empty terminal-empty">{t("terminal.empty")}</p>
+      )}
+      <ConfirmDialog
+        open={asking !== null}
+        title={t("terminal.approve.title")}
+        body={
+          asking ? t("terminal.approve.body", { profile: t(`terminal.profile.${asking.run.profile}`), reason: asking.reason }) : ""
+        }
+        confirmLabel={t("terminal.approve.confirm")}
+        onConfirm={() => void approve()}
+        onCancel={() => setAsking(null)}
+      />
+    </div>
+  );
+}

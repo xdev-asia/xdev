@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
@@ -16,6 +16,8 @@ import type {
   LoginStart,
   Models,
   Provider,
+  PtyExit,
+  PtyInfo,
   Quota,
   RouteRule,
   Routing,
@@ -35,6 +37,7 @@ import type {
   VcsState,
 } from "@xdev/bindings";
 import type { Target } from "./doc/frontmatter";
+import { toBytes } from "./terminal/ptyClient";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 
 export { createMockApi };
@@ -57,6 +60,8 @@ export type {
   LoginStart,
   Models,
   Provider,
+  PtyExit,
+  PtyInfo,
   Quota,
   RouteRule,
   Routing,
@@ -87,6 +92,10 @@ export type { Event as SquadEvent, FileStatus as ExportStatus, PlannedFile as Ex
 
 // Types do not exist at run time, so the provider menu needs its own list.
 export const PROVIDERS: readonly Provider[] = ["claude", "codex"];
+
+// What a terminal tab can start; Rust maps each id to a program (`xdev_agent::launch`).
+export type PtyProfile = "shell" | "claude" | "codex";
+export const PTY_PROFILES: readonly PtyProfile[] = ["shell", "claude", "codex"];
 
 // Rust builds `CmdError.code` from each crate's `code()` as a plain string, so the codes the UI
 // knows how to translate are listed here by hand.
@@ -135,7 +144,13 @@ export type ErrorCode =
   | "no_run"
   | "not_waiting"
   | "empty_text"
-  | "update";
+  | "update"
+  | "pty_exists"
+  | "pty_unknown"
+  | "pty_spawn"
+  | "pty_resize"
+  | "bad_arg"
+  | "unknown_profile";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export interface Api {
@@ -223,6 +238,17 @@ export interface Api {
   // Reads the saved file, so it follows saves rather than the draft.
   docFreshness(path: string): Promise<Freshness>;
   staleDocs(): Promise<StaleDoc[]>;
+  // A terminal per tab. Output arrives on `onData` until the tab calls `ptyKill`; an agent profile
+  // rejects with `needs_approval` / `denied` until `ptyApprove` records it in the policy.
+  ptySpawn(id: string, cwd: string, profileId: PtyProfile, cols: number, rows: number, onData: (bytes: Uint8Array) => void): Promise<PtyInfo>;
+  ptyApprove(profileId: PtyProfile): Promise<void>;
+  ptyWrite(id: string, data: Uint8Array): Promise<void>;
+  ptyResize(id: string, cols: number, rows: number): Promise<void>;
+  // Output is paused once 4 MB are unacknowledged.
+  ptyAck(id: string, n: number): Promise<void>;
+  // An unknown id has already ended, so this never rejects.
+  ptyKill(id: string): Promise<void>;
+  onPtyExit(cb: (exit: PtyExit) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -275,6 +301,12 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "not_waiting",
   "empty_text",
   "update",
+  "pty_exists",
+  "pty_unknown",
+  "pty_spawn",
+  "pty_resize",
+  "bad_arg",
+  "unknown_profile",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -350,6 +382,18 @@ const tauriApi: Api = {
   exportWrite: (expected) => call("export_write", { expected }),
   docFreshness: (path) => call("doc_freshness", { path }),
   staleDocs: () => call("stale_docs"),
+  ptySpawn(id, cwd, profileId, cols, rows, onData) {
+    // Rust sends raw bytes, which arrive as an ArrayBuffer.
+    const out = new Channel<ArrayBuffer | number[]>();
+    out.onmessage = (msg) => onData(toBytes(msg));
+    return call("pty_spawn", { id, cwd, profileId, cols, rows, out });
+  },
+  ptyApprove: (profileId) => call("pty_approve", { profileId }),
+  ptyWrite: (id, data) => call("pty_write", { id, data: [...data] }),
+  ptyResize: (id, cols, rows) => call("pty_resize", { id, cols, rows }),
+  ptyAck: (id, n) => call("pty_ack", { id, n }),
+  ptyKill: (id) => call("pty_kill", { id }),
+  onPtyExit: (cb) => listen<PtyExit>("pty://exit", (e) => cb(e.payload)),
 };
 
 function browserApi(): Api {
