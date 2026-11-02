@@ -356,15 +356,18 @@ type MockOptions = {
 };
 
 export function createMockApi(seed: Record<string, string>, options: MockOptions = {}): MockApi {
-  const accounts: Account[] = ["claude-2", "claude-3", "old"].map((name) => ({
+  const accounts: Account[] = ["claude-2", "claude-3", "old"].map((name): Account => ({
     name, provider: "claude", dir: `/demo/accounts/${name}`,
     status: { state: name === "old" ? "logged_out" : "logged_in", email: name === "old" ? null : `${name}@example.com`, plan: name === "old" ? null : "Max", org: null },
   }));
+  accounts.push({ name: "codex-1", provider: "codex", dir: "/demo/accounts/codex-1", status: { state: "logged_in", email: null, plan: null, org: null } });
   const reset = new Date(Date.now() + 130 * 60_000).toISOString();
+  const asOf = new Date(Date.now() - 20 * 60_000).toISOString();
   const quotas: Quota[] = [
-    { name: "claude-2", state: "ok", reason: null, windows: [{ key: "five_hour", utilization: 12, resetsAt: reset }, { key: "seven_day", utilization: 40, resetsAt: reset }] },
-    { name: "claude-3", state: "reserve", reason: null, windows: [{ key: "five_hour", utilization: 75, resetsAt: reset }] },
-    { name: "old", state: "unknown", reason: "logged_out", windows: [] },
+    { name: "claude-2", state: "ok", reason: null, windows: [{ key: "five_hour", utilization: 12, resetsAt: reset }, { key: "seven_day", utilization: 40, resetsAt: reset }], asOf: null },
+    { name: "claude-3", state: "reserve", reason: null, windows: [{ key: "five_hour", utilization: 75, resetsAt: reset }], asOf: null },
+    { name: "old", state: "unknown", reason: "logged_out", windows: [], asOf: null },
+    { name: "codex-1", state: "ok", reason: null, windows: [{ key: "five_hour", utilization: 37, resetsAt: reset }, { key: "seven_day", utilization: 21, resetsAt: reset }], asOf },
   ];
   const files = new Map(Object.entries(seed));
   const exported = new Map(Object.entries(options.exported ?? {}));
@@ -526,18 +529,20 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     }),
     async accounts() { return structuredClone({ reservePercent: 30, accounts }); },
     async quota() { return structuredClone(quotas); },
-    async addAccount(name) {
+    async addAccount(name, provider) {
       if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(name)) return reject("bad_name");
       if (accounts.some(a => a.name === name)) return reject("exists");
-      const account: Account = { name, provider: "claude", dir: `/demo/accounts/${name}`, status: { state: "logged_out", email: null, plan: null, org: null } };
+      if (provider !== "claude" && provider !== "codex") return reject("unknown_provider");
+      const account: Account = { name, provider, dir: `/demo/accounts/${name}`, status: { state: "logged_out", email: null, plan: null, org: null } };
       accounts.push(account);
-      quotas.push({ name, state: "unknown", reason: "logged_out", windows: [] });
+      quotas.push({ name, state: "unknown", reason: "logged_out", windows: [], asOf: null });
       return structuredClone(account);
     },
     async loginAccount(name) {
       const account = accounts.find(a => a.name === name);
       if (!account) return reject("not_found");
-      return { opened: false, command: `CLAUDE_CONFIG_DIR='${account.dir}' claude auth login` };
+      const command = account.provider === "codex" ? `CODEX_HOME='${account.dir}' codex login` : `CLAUDE_CONFIG_DIR='${account.dir}' claude auth login`;
+      return { opened: false, command };
     },
     async removeAccount(name) {
       const index = accounts.findIndex(a => a.name === name);

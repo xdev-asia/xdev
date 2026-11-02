@@ -1,13 +1,13 @@
-//! Coding-agent tasks for the Tasks view. A run waits on `claude` for up to
-//! an hour, so every call runs off the UI thread.
+//! Coding-agent tasks for the Tasks view. A run waits on `claude` or `codex`
+//! for up to an hour, so every call runs off the UI thread.
 
 use std::path::Path;
 use std::time::Duration;
 
 use serde::Serialize;
 use tauri::State;
-use xdev_agent::{AgentError, ClaudeRunner, RunOptions, Task, TaskStore};
-use xdev_ai::{AiError, Registry};
+use xdev_agent::{AgentError, ClaudeRunner, CodexRunner, RunOptions, Runner, Task, TaskStore};
+use xdev_ai::{AiError, Provider, Registry};
 use xdev_core::Repo;
 use xdev_policy::{Audited, Policy, PolicyError, Verdict};
 
@@ -65,17 +65,26 @@ fn gate(data: &Path) -> Result<Audited<Policy>, CmdError> {
     Ok(Audited::new(Policy::load(data)?, data))
 }
 
-fn runner(data: &Path, account: Option<&str>) -> Result<ClaudeRunner, CmdError> {
-    let account_dir = match account {
+/// Claude Code with the person's own config when no account is named;
+/// otherwise the runner of that account's provider.
+fn runner(data: &Path, account: Option<&str>) -> Result<Box<dyn Runner>, CmdError> {
+    let (provider, account_dir) = match account {
         Some(name) => {
             let registry = Registry::load(data)?;
-            Some(registry.get(name).ok_or(AiError::NotFound)?.dir.clone())
+            let entry = registry.get(name).ok_or(AiError::NotFound)?;
+            (entry.provider, Some(entry.dir.clone()))
         }
-        None => None,
+        None => (Provider::Claude, None),
     };
-    Ok(ClaudeRunner {
-        account_dir,
-        timeout: RUN_TIMEOUT,
+    Ok(match provider {
+        Provider::Claude => Box::new(ClaudeRunner {
+            account_dir,
+            timeout: RUN_TIMEOUT,
+        }),
+        Provider::Codex => Box::new(CodexRunner {
+            account_dir,
+            timeout: RUN_TIMEOUT,
+        }),
     })
 }
 
@@ -129,7 +138,7 @@ pub fn task_run(
         tools: Vec::new(),
         test: test_command(test.as_deref()),
     };
-    Ok(TaskStore::new(data).run_task(&id, &runner, &gate, &opts)?)
+    Ok(TaskStore::new(data).run_task(&id, &*runner, &gate, &opts)?)
 }
 
 #[tauri::command(async)]
@@ -145,7 +154,7 @@ pub fn task_resume(
         account,
         ..RunOptions::default()
     };
-    Ok(TaskStore::new(data).resume_task(&id, &runner, &gate, &opts)?)
+    Ok(TaskStore::new(data).resume_task(&id, &*runner, &gate, &opts)?)
 }
 
 #[tauri::command(async)]
@@ -387,6 +396,28 @@ mod tests {
         assert_eq!(
             file_diff(&store, &fresh.id, "kept.txt").unwrap_err().code,
             "bad_state"
+        );
+    }
+
+    #[test]
+    fn the_runner_follows_the_account_provider() {
+        let data = tempfile::TempDir::new().unwrap();
+        let mut registry = Registry::load(data.path()).unwrap();
+        registry
+            .add("cx", Provider::Codex, data.path().join("cx"))
+            .unwrap();
+        registry
+            .add("cl", Provider::Claude, data.path().join("cl"))
+            .unwrap();
+        registry.save(data.path()).unwrap();
+
+        let provider = |account| runner(data.path(), account).unwrap().provider().to_owned();
+        assert_eq!(provider(Some("cx")), "codex");
+        assert_eq!(provider(Some("cl")), "claude");
+        assert_eq!(provider(None), "claude");
+        assert_eq!(
+            runner(data.path(), Some("nope")).err().unwrap().code,
+            "not_found"
         );
     }
 }

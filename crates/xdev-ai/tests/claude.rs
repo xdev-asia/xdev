@@ -293,7 +293,7 @@ fn usage_ok_orders_windows_and_keeps_nulls() {
     assert_eq!(
         got,
         json!({
-            "name": "acct", "state": "ok", "reason": null,
+            "name": "acct", "state": "ok", "reason": null, "asOf": null,
             "windows": [
                 { "key": "five_hour", "utilization": 12.0, "resetsAt": "2026-11-02T10:00:00Z" },
                 { "key": "seven_day", "utilization": 40.5, "resetsAt": "2026-11-08T00:00:00Z" },

@@ -11,6 +11,7 @@ use tempfile::TempDir;
 struct Env {
     tmp: TempDir,
     claude: PathBuf,
+    codex: PathBuf,
     usage_url: String,
 }
 
@@ -20,9 +21,11 @@ impl Env {
     fn new() -> Env {
         let tmp = TempDir::new().unwrap();
         let claude = fake_claude(&tmp.path().join("bin"));
+        let codex = fake_codex(&tmp.path().join("bin"));
         Env {
             tmp,
             claude,
+            codex,
             usage_url: "http://127.0.0.1:9/api/oauth/usage".into(),
         }
     }
@@ -35,8 +38,10 @@ impl Env {
         Command::new(env!("CARGO_BIN_EXE_xdev"))
             .env("XDEV_DATA_DIR", self.data())
             .env("XDEV_CLAUDE_BIN", &self.claude)
+            .env("XDEV_CODEX_BIN", &self.codex)
             .env("XDEV_CLAUDE_USAGE_URL", &self.usage_url)
             .env_remove("CLAUDE_CONFIG_DIR")
+            .env_remove("CODEX_HOME")
             .args(args)
             .output()
             .expect("run xdev")
@@ -79,6 +84,42 @@ fn fake_claude(dir: &Path) -> PathBuf {
         }
         path
     }
+}
+
+/// A fake `codex`: `login` signs the folder in by making a `signed-in`
+/// file, `login status` exits 0 only when it is there.
+fn fake_codex(dir: &Path) -> PathBuf {
+    fs::create_dir_all(dir).unwrap();
+    if cfg!(windows) {
+        let path = dir.join("codex.cmd");
+        let script = "@echo off\r\nif \"%2\"==\"status\" goto status\r\necho.> \"%CODEX_HOME%\\signed-in\"\r\nexit /b 0\r\n:status\r\nif exist \"%CODEX_HOME%\\signed-in\" exit /b 0\r\nexit /b 1\r\n";
+        fs::write(&path, script).unwrap();
+        path
+    } else {
+        let path = dir.join("codex");
+        let script = "#!/bin/sh\nif [ \"$2\" = status ]; then [ -f \"$CODEX_HOME/signed-in\" ]; exit $?; fi\n: > \"$CODEX_HOME/signed-in\"\n";
+        fs::write(&path, script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        path
+    }
+}
+
+/// One Codex session file whose last `token_count` event carries limits.
+fn codex_session(home: &Path, five_hour: f64, resets_at: u64) {
+    let dir = home.join("sessions").join("2026").join("11").join("02");
+    fs::create_dir_all(&dir).unwrap();
+    let line = format!(
+        r#"{{"timestamp":"2026-11-02T08:01:30.000Z","type":"event_msg","payload":{{"type":"token_count","info":null,"rate_limits":{{"primary":{{"used_percent":{five_hour},"window_minutes":300,"resets_at":{resets_at}}},"secondary":{{"used_percent":20.0,"window_minutes":10080,"resets_at":{resets_at}}},"plan_type":"plus"}}}}}}"#
+    );
+    fs::write(
+        dir.join("rollout-2026-11-02T08-00-00-t1.jsonl"),
+        line + "\n",
+    )
+    .unwrap();
 }
 
 fn stdout(out: &Output) -> String {
@@ -218,12 +259,15 @@ fn quota_json_and_pick_without_usable_account() {
     assert_eq!(
         json,
         serde_json::json!([
-            { "name": "a", "state": "unknown", "reason": "no_credentials", "windows": [] }
+            {
+                "name": "a", "state": "unknown", "reason": "no_credentials",
+                "windows": [], "asOf": null,
+            }
         ])
     );
 
     let out = env.xdev(&["quota"]);
-    assert_eq!(stdout(&out), "a\tunknown\tno_credentials\n");
+    assert_eq!(stdout(&out), "a\tclaude\tunknown\tno_credentials\n");
 
     let out = env.xdev(&["accounts", "pick"]);
     assert_eq!(out.status.code(), Some(1));
@@ -280,7 +324,7 @@ fn quota_text_and_pick() {
     let out = env.xdev(&["quota"]);
     assert_eq!(
         stdout(&out),
-        "a\tok\tfive_hour=12\tseven_day=40.5\tseven_day_opus=-\t-\n"
+        "a\tclaude\tok\tfive_hour=12\tseven_day=40.5\tseven_day_opus=-\t-\n"
     );
     let out = env.xdev(&["accounts", "pick"]);
     assert!(out.status.success(), "{out:?}");
@@ -289,7 +333,7 @@ fn quota_text_and_pick() {
     // 40.5% is in a 60% reserve.
     env.xdev(&["accounts", "reserve", "60"]);
     let out = env.xdev(&["quota"]);
-    assert!(stdout(&out).starts_with("a\treserve\t"), "{out:?}");
+    assert!(stdout(&out).starts_with("a\tclaude\treserve\t"), "{out:?}");
     assert_eq!(env.xdev(&["accounts", "pick"]).status.code(), Some(1));
 }
 
@@ -324,4 +368,102 @@ fn login_runs_claude_for_the_account() {
     let out = env.xdev(&["accounts", "login", "n"]);
     assert!(out.status.success(), "{out:?}");
     assert!(dir.join("status.json").is_file());
+}
+
+#[test]
+fn codex_account_add_login_list_and_quota() {
+    let env = Env::new();
+    let out = env.xdev(&["accounts", "add", "codex-1", "--provider", "codex"]);
+    assert!(out.status.success(), "{out:?}");
+    let home = env.data().join("accounts").join("codex-1");
+    assert!(home.join("signed-in").is_file(), "login did not run");
+
+    let out = env.xdev(&["accounts", "list"]);
+    assert_eq!(stdout(&out), "codex-1\tcodex\tlogged_in\t-\t-\n");
+
+    let out = env.xdev(&["quota"]);
+    assert_eq!(
+        stdout(&out),
+        "codex-1\tcodex\tunknown\tno_sessions\n",
+        "{out:?}"
+    );
+
+    // Resets far ahead, so the windows still count.
+    codex_session(&home, 30.0, 4_102_444_800);
+    let out = env.xdev(&["quota"]);
+    assert_eq!(
+        stdout(&out),
+        "codex-1\tcodex\tok\tfive_hour=30\tseven_day=20\tas_of=2026-11-02T08:01:30.000Z\t-\n"
+    );
+    let out = env.xdev(&["quota", "--json"]);
+    let json: Value = serde_json::from_str(&stdout(&out)).unwrap();
+    assert_eq!(json[0]["asOf"], "2026-11-02T08:01:30.000Z");
+}
+
+#[test]
+fn codex_login_and_signed_out_dir() {
+    let env = Env::new();
+    let dir = env.tmp.path().join("codex home");
+    fs::create_dir(&dir).unwrap();
+    let out = env.xdev(&[
+        "accounts",
+        "add",
+        "c",
+        "--provider",
+        "codex",
+        "--dir",
+        dir.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "{out:?}");
+    let out = env.xdev(&["accounts", "list"]);
+    assert_eq!(stdout(&out), "c\tcodex\tlogged_out\t-\t-\n");
+
+    let out = env.xdev(&["accounts", "login", "c"]);
+    assert!(out.status.success(), "{out:?}");
+    assert!(dir.join("signed-in").is_file());
+    let out = env.xdev(&["accounts", "list"]);
+    assert_eq!(stdout(&out), "c\tcodex\tlogged_in\t-\t-\n");
+}
+
+#[test]
+fn add_with_unknown_provider_or_without_codex() {
+    let mut env = Env::new();
+    let out = env.xdev(&["accounts", "add", "g", "--provider", "gemini"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(stderr(&out), "error: unknown_provider\n");
+
+    env.codex = env.tmp.path().join("missing");
+    let out = env.xdev(&["accounts", "add", "c", "--provider", "codex"]);
+    assert_eq!(stderr(&out), "error: no_codex\n");
+    assert!(!env.data().join("accounts").exists());
+    assert!(!env.data().join("accounts.json").exists());
+}
+
+#[test]
+fn pick_by_provider() {
+    let mut env = Env::new();
+    env.usage_url = serve(r#"{"five_hour":{"utilization":50,"resets_at":null}}"#);
+    let dir = env.signed_in("a");
+    let expires = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        + 3_600_000;
+    fs::write(
+        dir.join(".credentials.json"),
+        format!(r#"{{"claudeAiOauth":{{"accessToken":"test-only","expiresAt":{expires}}}}}"#),
+    )
+    .unwrap();
+    env.xdev(&["accounts", "add", "a", "--dir", dir.to_str().unwrap()]);
+    env.xdev(&["accounts", "add", "c", "--provider", "codex"]);
+    codex_session(&env.data().join("accounts").join("c"), 10.0, 4_102_444_800);
+
+    // The Codex account has more room.
+    assert_eq!(stdout(&env.xdev(&["accounts", "pick"])), "c\n");
+    let out = env.xdev(&["accounts", "pick", "--provider", "claude"]);
+    assert_eq!(stdout(&out), "a\n");
+    let out = env.xdev(&["accounts", "pick", "--provider", "codex"]);
+    assert_eq!(stdout(&out), "c\n");
+    let out = env.xdev(&["accounts", "pick", "--provider", "gemini"]);
+    assert_eq!(stderr(&out), "error: unknown_provider\n");
 }

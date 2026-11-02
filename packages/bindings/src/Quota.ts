@@ -3,4 +3,9 @@ import type { QuotaState } from "./QuotaState";
 import type { QuotaWindow } from "./QuotaWindow";
 import type { Reason } from "./Reason";
 
-export type Quota = { name: string, state: QuotaState, reason: Reason | null, windows: Array<QuotaWindow>, };
+export type Quota = { name: string, state: QuotaState, reason: Reason | null, windows: Array<QuotaWindow>, 
+/**
+ * When the numbers were read, for sources that are not live (Codex's
+ * come from its last session); `None` means now.
+ */
+asOf: string | null, };

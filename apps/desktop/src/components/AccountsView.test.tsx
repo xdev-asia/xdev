@@ -132,7 +132,7 @@ it("reloads quota as soon as polling sees the login finish", async () => {
 });
 it("keeps null and extra windows visible without inventing a percent", async () => {
   const api = createMockApi({});
-  vi.spyOn(api, "quota").mockResolvedValue([{ name: "claude-2", state: "unknown", reason: null, windows: [{ key: "seven_day_opus", utilization: null, resetsAt: null }] }]);
+  vi.spyOn(api, "quota").mockResolvedValue([{ name: "claude-2", state: "unknown", reason: null, windows: [{ key: "seven_day_opus", utilization: null, resetsAt: null }], asOf: null }]);
   const view = harness(api); view.draw(); const cleanup = hooks.effects[0](); await tick();
   expect(view.html()).toContain("seven_day_opus");
   expect(view.html()).toContain("Reset time unknown");
@@ -149,4 +149,44 @@ it("adds an account before starting login and hides commands when a console open
   expect((await view.api.accounts()).accounts.some(a => a.name === "new-account")).toBe(true);
   expect(login).toHaveBeenCalledWith("new-account");
   expect(view.html()).not.toContain("claude auth login");
+  expect((await view.api.accounts()).accounts.find(a => a.name === "new-account")!.provider).toBe("claude");
+});
+
+it("shows a Codex card with its provider and how fresh its quota is", async () => {
+  const view = harness(); view.draw();
+  const cleanup = hooks.effects[0](); await tick();
+  const asOf = (await view.api.quota()).find(q => q.name === "codex-1")!.asOf!;
+  const card = nodes(view.draw()).find(n => n.type === "section" && n.props["aria-label"] === "codex-1")!;
+  const html = renderToStaticMarkup(card);
+  expect(html).toContain('data-provider="codex"');
+  expect(html).toContain(">Codex<");
+  expect(html).toContain(translate("en", "accounts.asOf", { time: new Date(asOf).toLocaleString() }));
+  expect(html).toContain('aria-valuenow="37"');
+  // Claude quota is live, so its cards carry no "as of" note.
+  const claude = renderToStaticMarkup(nodes(view.draw()).find(n => n.type === "section" && n.props["aria-label"] === "claude-2")!);
+  expect(claude).toContain('data-provider="claude"');
+  expect(claude).not.toContain("account-as-of");
+  if (typeof cleanup === "function") cleanup();
+});
+
+it("explains a Codex account without sessions", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "quota").mockResolvedValue([{ name: "codex-1", state: "unknown", reason: "no_sessions", windows: [], asOf: null }]);
+  const view = harness(api); view.draw(); const cleanup = hooks.effects[0](); await tick();
+  expect(view.html()).toContain(translate("en", "accounts.reason.no_sessions"));
+  if (typeof cleanup === "function") cleanup();
+});
+
+it("adds a Codex account with the chosen provider", async () => {
+  const view = harness();
+  const login = vi.spyOn(view.api, "loginAccount");
+  view.button("Add account").props.onClick();
+  const options = nodes(view.draw()).filter(n => n.type === "option").map(n => [n.props.value, n.props.children]);
+  expect(options).toEqual([["claude", "Claude Code"], ["codex", "Codex"]]);
+  nodes(view.draw()).find(n => n.type === "input")!.props.onChange({ target: { value: "cx" } });
+  nodes(view.draw()).find(n => n.type === "select")!.props.onChange({ target: { value: "codex" } });
+  await nodes(view.draw()).find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} });
+  expect((await view.api.accounts()).accounts.find(a => a.name === "cx")!.provider).toBe("codex");
+  expect(login).toHaveBeenCalledWith("cx");
+  expect(view.html()).toContain("CODEX_HOME=");
 });

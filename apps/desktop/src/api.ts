@@ -14,6 +14,7 @@ import type {
   FileDiff,
   Freshness,
   LoginStart,
+  Provider,
   Quota,
   SearchHit,
   Seen,
@@ -45,6 +46,7 @@ export type {
   FileDiff,
   Freshness,
   LoginStart,
+  Provider,
   Quota,
   SearchHit,
   Seen,
@@ -57,6 +59,9 @@ export type {
 } from "@xdev/bindings";
 // The UI's names for generated types.
 export type { FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
+
+// Types do not exist at run time, so the provider menu needs its own list.
+export const PROVIDERS: readonly Provider[] = ["claude", "codex"];
 
 // Rust builds `CmdError.code` from each crate's `code()` as a plain string, so the codes the UI
 // knows how to translate are listed here by hand.
@@ -77,6 +82,8 @@ export type ErrorCode =
   | "bad_name"
   | "exists"
   | "no_claude"
+  | "no_codex"
+  | "unknown_provider"
   | "bad_registry"
   | "bad_reserve"
   | "bad_path"
@@ -99,7 +106,7 @@ export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 export interface Api {
   accounts(): Promise<Accounts>;
   quota(): Promise<Quota[]>;
-  addAccount(name: string): Promise<Account>;
+  addAccount(name: string, provider: Provider): Promise<Account>;
   loginAccount(name: string): Promise<LoginStart>;
   removeAccount(name: string): Promise<void>;
   tasksContext(): Promise<TasksContext>;
@@ -172,6 +179,10 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "bad_name",
   "exists",
   "no_claude",
+  "no_codex",
+  "unknown_provider",
+  "no_codex",
+  "unknown_provider",
   "bad_registry",
   "bad_reserve",
   "bad_path",
@@ -204,7 +215,7 @@ function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 const tauriApi: Api = {
   accounts: () => call("accounts_list"),
   quota: () => call("accounts_quota"),
-  addAccount: (name) => call("account_add", { name }),
+  addAccount: (name, provider) => call("account_add", { name, provider }),
   loginAccount: (name) => call("account_login", { name }),
   removeAccount: (name) => call("account_remove", { name }),
   tasksContext: () => call("tasks_context"),

@@ -1,11 +1,13 @@
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
 use crate::AiError;
+use crate::claude::AccountStatus;
 
 const FILE: &str = "accounts.json";
 const VERSION: u32 = 1;
@@ -17,6 +19,48 @@ const MAX_RESERVE: u8 = 90;
 #[serde(rename_all = "lowercase")]
 pub enum Provider {
     Claude,
+    Codex,
+}
+
+impl Provider {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Provider::Claude => "claude",
+            Provider::Codex => "codex",
+        }
+    }
+
+    pub fn parse(text: &str) -> Result<Provider, AiError> {
+        match text {
+            "claude" => Ok(Provider::Claude),
+            "codex" => Ok(Provider::Codex),
+            _ => Err(AiError::UnknownProvider),
+        }
+    }
+
+    /// The provider's CLI, or `no_claude` / `no_codex`.
+    pub fn command(self) -> Result<Command, AiError> {
+        match self {
+            Provider::Claude => crate::claude::claude_command(),
+            Provider::Codex => crate::codex::codex_command(),
+        }
+    }
+
+    /// The variable that points the CLI at the account's folder.
+    pub fn home_var(self) -> &'static str {
+        match self {
+            Provider::Claude => "CLAUDE_CONFIG_DIR",
+            Provider::Codex => "CODEX_HOME",
+        }
+    }
+
+    /// The CLI arguments that sign an account in.
+    pub fn login_args(self) -> &'static [&'static str] {
+        match self {
+            Provider::Claude => &["auth", "login"],
+            Provider::Codex => &["login"],
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,7 +112,7 @@ impl Registry {
             accounts: Vec::with_capacity(disk.accounts.len()),
         };
         for entry in disk.accounts {
-            reg.add(&entry.name, entry.dir)
+            reg.add(&entry.name, entry.provider, entry.dir)
                 .map_err(|_| AiError::BadRegistry)?;
         }
         Ok(reg)
@@ -86,7 +130,12 @@ impl Registry {
         Ok(())
     }
 
-    pub fn add(&mut self, name: &str, dir: PathBuf) -> Result<&AccountEntry, AiError> {
+    pub fn add(
+        &mut self,
+        name: &str,
+        provider: Provider,
+        dir: PathBuf,
+    ) -> Result<&AccountEntry, AiError> {
         if !valid_name(name) {
             return Err(AiError::BadName);
         }
@@ -95,7 +144,7 @@ impl Registry {
         }
         self.accounts.push(AccountEntry {
             name: name.to_owned(),
-            provider: Provider::Claude,
+            provider,
             dir,
         });
         Ok(self.accounts.last().expect("just pushed"))
@@ -125,7 +174,28 @@ impl Registry {
     }
 }
 
-/// Where a new account's Claude Code config folder goes.
+/// Sign-in state from the account's own CLI. Never fails: a missing CLI is
+/// `no_claude` / `no_codex`, anything else unexpected is `error`.
+pub fn status(entry: &AccountEntry) -> AccountStatus {
+    match entry.provider {
+        Provider::Claude => crate::claude::status(&entry.dir),
+        Provider::Codex => crate::codex::status(&entry.dir),
+    }
+}
+
+/// The command that signs an account in, in the platform shell's own syntax.
+pub fn login_command(provider: Provider, dir: &Path, windows: bool) -> String {
+    let dir = dir.to_string_lossy();
+    let var = provider.home_var();
+    let run = format!("{} {}", provider.as_str(), provider.login_args().join(" "));
+    if windows {
+        format!("$env:{var}='{}'; {run}", dir.replace('\'', "''"))
+    } else {
+        format!("{var}='{}' {run}", dir.replace('\'', r"'\''"))
+    }
+}
+
+/// Where a new account's folder (`CLAUDE_CONFIG_DIR` or `CODEX_HOME`) goes.
 pub fn account_dir(data_dir: &Path, name: &str) -> PathBuf {
     data_dir.join("accounts").join(name)
 }

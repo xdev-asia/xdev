@@ -1,5 +1,6 @@
-//! Agent accounts for the Accounts view. Every call may spawn `claude` or hit
-//! the network, so all of them run off the UI thread.
+//! Agent accounts for the Accounts view. Every call may spawn `claude` or
+//! `codex`, hit the network or read session files, so all of them run off
+//! the UI thread.
 
 use std::path::{Path, PathBuf};
 
@@ -59,8 +60,9 @@ fn account(entry: &AccountEntry) -> Account {
     }
 }
 
-/// One thread per account: each one waits on a `claude` process and an HTTP
-/// call, and waiting for them in turn would make the view slow per account.
+/// One thread per account: each one waits on a CLI process and an HTTP call
+/// or a file walk, and waiting for them in turn would make the view slow per
+/// account.
 fn each<T: Send>(entries: &[AccountEntry], f: impl Fn(&AccountEntry) -> T + Sync) -> Vec<T> {
     std::thread::scope(|s| {
         let handles: Vec<_> = entries.iter().map(|e| s.spawn(|| f(e))).collect();
@@ -90,14 +92,19 @@ pub fn accounts_quota(state: State<'_, AppState>) -> Result<Vec<Quota>, CmdError
 }
 
 #[tauri::command(async)]
-pub fn account_add(state: State<'_, AppState>, name: String) -> Result<Account, CmdError> {
+pub fn account_add(
+    state: State<'_, AppState>,
+    name: String,
+    provider: String,
+) -> Result<Account, CmdError> {
+    let provider = Provider::parse(&provider)?;
     let data = data_dir(&state)?;
     let mut registry = Registry::load(data)?;
     let dir = xdev_ai::account_dir(data, &name);
-    let entry = registry.add(&name, dir)?.clone();
+    let entry = registry.add(&name, provider, dir)?.clone();
     // Checked before anything is written, so a failed add leaves no
     // half-made account behind.
-    xdev_ai::claude_command()?;
+    provider.command()?;
     std::fs::create_dir_all(&entry.dir).map_err(AiError::from)?;
     registry.save(data)?;
     Ok(account(&entry))
@@ -116,7 +123,7 @@ pub fn account_remove(state: State<'_, AppState>, name: String) -> Result<(), Cm
 pub fn account_login(state: State<'_, AppState>, name: String) -> Result<LoginStart, CmdError> {
     let registry = Registry::load(data_dir(&state)?)?;
     let entry = registry.get(&name).ok_or(AiError::NotFound)?;
-    let command = xdev_ai::login_command(&entry.dir, cfg!(windows));
+    let command = xdev_ai::login_command(entry.provider, &entry.dir, cfg!(windows));
     Ok(LoginStart {
         opened: open_login(entry)?,
         command,
@@ -130,11 +137,13 @@ fn open_login(entry: &AccountEntry) -> Result<bool, CmdError> {
     use std::os::windows::process::CommandExt;
     const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
 
-    let claude = xdev_ai::claude_command()?;
-    let program = claude.get_program().to_string_lossy().into_owned();
+    let provider = entry.provider;
+    let cli = provider.command()?;
+    let program = cli.get_program().to_string_lossy().into_owned();
+    let args = provider.login_args().join(" ");
     std::process::Command::new("cmd.exe")
-        .raw_arg(format!("/c \"\"{program}\" auth login & pause\""))
-        .env("CLAUDE_CONFIG_DIR", &entry.dir)
+        .raw_arg(format!("/c \"\"{program}\" {args} & pause\""))
+        .env(provider.home_var(), &entry.dir)
         .creation_flags(CREATE_NEW_CONSOLE)
         .spawn()
         .map_err(AiError::from)?;
@@ -156,23 +165,39 @@ mod tests {
     fn accounts_serialize_like_the_ui_expects() {
         let accounts = Accounts {
             reserve_percent: 30,
-            accounts: vec![Account {
-                name: "a".into(),
-                provider: Provider::Claude,
-                dir: PathBuf::from("d"),
-                status: AccountStatus {
-                    state: StatusState::LoggedOut,
-                    email: None,
-                    plan: None,
-                    org: None,
+            accounts: vec![
+                Account {
+                    name: "a".into(),
+                    provider: Provider::Claude,
+                    dir: PathBuf::from("d"),
+                    status: AccountStatus {
+                        state: StatusState::LoggedOut,
+                        email: None,
+                        plan: None,
+                        org: None,
+                    },
                 },
-            }],
+                Account {
+                    name: "c".into(),
+                    provider: Provider::Codex,
+                    dir: PathBuf::from("e"),
+                    status: AccountStatus {
+                        state: StatusState::NoCodex,
+                        email: None,
+                        plan: None,
+                        org: None,
+                    },
+                },
+            ],
         };
         assert_eq!(
             serde_json::to_value(accounts).unwrap(),
             serde_json::json!({ "reservePercent": 30, "accounts": [{
                 "name": "a", "provider": "claude", "dir": "d",
                 "status": { "state": "logged_out", "email": null, "plan": null, "org": null }
+            }, {
+                "name": "c", "provider": "codex", "dir": "e",
+                "status": { "state": "no_codex", "email": null, "plan": null, "org": null }
             }] })
         );
         let login = LoginStart {
@@ -189,5 +214,8 @@ mod tests {
     fn ai_errors_keep_their_code() {
         assert_eq!(CmdError::from(AiError::Exists).code, "exists");
         assert_eq!(CmdError::from(AiError::NoClaude).code, "no_claude");
+        assert_eq!(CmdError::from(AiError::NoCodex).code, "no_codex");
+        let unknown = Provider::parse("gemini").unwrap_err();
+        assert_eq!(CmdError::from(unknown).code, "unknown_provider");
     }
 }

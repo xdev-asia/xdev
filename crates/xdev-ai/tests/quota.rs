@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use xdev_ai::{
-    AccountStatus, Quota, QuotaState, QuotaWindow, StatusState, classify, login_command, pick,
+    AccountStatus, Provider, Quota, QuotaState, QuotaWindow, StatusState, classify, login_command,
+    pick,
 };
 
 fn windows(values: &[Option<f64>]) -> Vec<QuotaWindow> {
@@ -41,7 +42,22 @@ fn classify_edges() {
     }
 }
 
-fn account(name: &str, state: StatusState, quota: QuotaState, top: f64) -> (AccountStatus, Quota) {
+fn account(
+    name: &str,
+    state: StatusState,
+    quota: QuotaState,
+    top: f64,
+) -> (Provider, AccountStatus, Quota) {
+    with_provider(Provider::Claude, name, state, quota, top)
+}
+
+fn with_provider(
+    provider: Provider,
+    name: &str,
+    state: StatusState,
+    quota: QuotaState,
+    top: f64,
+) -> (Provider, AccountStatus, Quota) {
     let status = AccountStatus {
         state,
         email: None,
@@ -53,8 +69,9 @@ fn account(name: &str, state: StatusState, quota: QuotaState, top: f64) -> (Acco
         state: quota,
         reason: None,
         windows: windows(&[Some(top / 2.0), Some(top)]),
+        as_of: None,
     };
-    (status, quota)
+    (provider, status, quota)
 }
 
 #[test]
@@ -69,22 +86,51 @@ fn pick_skips_unusable_and_breaks_ties_by_name() {
         account("m-tie", S::LoggedIn, Q::Ok, 40.0),
         account("d-busy", S::LoggedIn, Q::Ok, 60.0),
     ];
-    assert_eq!(pick(&quotas).as_deref(), Some("m-tie"));
-    assert_eq!(pick(&quotas[..3]), None);
-    assert_eq!(pick(&[]), None);
+    assert_eq!(pick(&quotas, None).as_deref(), Some("m-tie"));
+    assert_eq!(pick(&quotas[..3], None), None);
+    assert_eq!(pick(&[], None), None);
+}
+
+#[test]
+fn pick_filters_by_provider() {
+    use QuotaState as Q;
+    use StatusState as S;
+    let quotas = vec![
+        with_provider(Provider::Claude, "claude-busy", S::LoggedIn, Q::Ok, 60.0),
+        with_provider(Provider::Codex, "codex-idle", S::LoggedIn, Q::Ok, 5.0),
+        with_provider(Provider::Codex, "codex-out", S::LoggedOut, Q::Ok, 1.0),
+    ];
+    assert_eq!(pick(&quotas, None).as_deref(), Some("codex-idle"));
+    assert_eq!(
+        pick(&quotas, Some(Provider::Claude)).as_deref(),
+        Some("claude-busy")
+    );
+    assert_eq!(
+        pick(&quotas, Some(Provider::Codex)).as_deref(),
+        Some("codex-idle")
+    );
+    assert_eq!(pick(&quotas[2..], Some(Provider::Codex)), None);
 }
 
 #[test]
 fn login_command_quotes_for_each_shell() {
     let dir = Path::new("C:\\Users\\Me Too\\it's");
     assert_eq!(
-        login_command(dir, true),
+        login_command(Provider::Claude, dir, true),
         "$env:CLAUDE_CONFIG_DIR='C:\\Users\\Me Too\\it''s'; claude auth login"
+    );
+    assert_eq!(
+        login_command(Provider::Codex, dir, true),
+        "$env:CODEX_HOME='C:\\Users\\Me Too\\it''s'; codex login"
     );
     let dir = Path::new("/home/me too/it's");
     assert_eq!(
-        login_command(dir, false),
+        login_command(Provider::Claude, dir, false),
         "CLAUDE_CONFIG_DIR='/home/me too/it'\\''s' claude auth login"
+    );
+    assert_eq!(
+        login_command(Provider::Codex, dir, false),
+        "CODEX_HOME='/home/me too/it'\\''s' codex login"
     );
 }
 
@@ -99,12 +145,14 @@ fn serializes_like_the_ts_contract() {
             utilization: Some(12.5),
             resets_at: Some("2026-11-02T10:00:00Z".into()),
         }],
+        as_of: Some("2026-11-02T09:00:00Z".into()),
     };
     let json = serde_json::to_value(&quota).unwrap();
     assert_eq!(
         json,
         serde_json::json!({
             "name": "a", "state": "unknown", "reason": "no_credentials",
+            "asOf": "2026-11-02T09:00:00Z",
             "windows": [{ "key": "five_hour", "utilization": 12.5, "resetsAt": "2026-11-02T10:00:00Z" }]
         })
     );

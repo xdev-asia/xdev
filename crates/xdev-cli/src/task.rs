@@ -2,8 +2,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use clap::Subcommand;
-use xdev_agent::{AgentError, ClaudeRunner, RunOptions, Task, TaskState, TaskStore};
-use xdev_ai::Registry;
+use xdev_agent::{
+    AgentError, ClaudeRunner, CodexRunner, RunOptions, Runner, Task, TaskState, TaskStore,
+};
+use xdev_ai::{Provider, Registry};
 use xdev_policy::{Audited, Policy, Verdict};
 
 use crate::Outcome;
@@ -22,7 +24,7 @@ pub enum TaskCommand {
     /// Exits 3 with `ask` or `deny` and a reason when the policy stops it.
     Run {
         id: String,
-        /// A registered Claude Code account; default is your own config.
+        /// A registered account; default is your own Claude Code config.
         #[arg(long)]
         account: Option<String>,
         /// Test command run in the worktree afterwards, split on whitespace.
@@ -82,7 +84,7 @@ pub fn run(command: TaskCommand, data_dir: &Path) -> Result<Outcome, &'static st
                 tools: tools.into_iter().filter(|t| !t.is_empty()).collect(),
                 test: test.map(|t| t.split_whitespace().map(str::to_owned).collect()),
             };
-            store.run_task(&id, &runner, &gate, &opts)
+            store.run_task(&id, &*runner, &gate, &opts)
         }
         TaskCommand::Resume { id, account } => {
             let runner = runner(data_dir, account.as_deref())?;
@@ -90,7 +92,7 @@ pub fn run(command: TaskCommand, data_dir: &Path) -> Result<Outcome, &'static st
                 account,
                 ..RunOptions::default()
             };
-            store.resume_task(&id, &runner, &gate, &opts)
+            store.resume_task(&id, &*runner, &gate, &opts)
         }
         TaskCommand::Show { id, json } => {
             let task = store.load(&id).map_err(code)?;
@@ -135,17 +137,26 @@ pub fn run(command: TaskCommand, data_dir: &Path) -> Result<Outcome, &'static st
     }
 }
 
-fn runner(data_dir: &Path, account: Option<&str>) -> Result<ClaudeRunner, &'static str> {
-    let account_dir = match account {
+/// Claude Code with the person's own config when no account is named;
+/// otherwise the runner of that account's provider.
+fn runner(data_dir: &Path, account: Option<&str>) -> Result<Box<dyn Runner>, &'static str> {
+    let (provider, account_dir) = match account {
         Some(name) => {
             let reg = Registry::load(data_dir).map_err(|e| e.code())?;
-            Some(reg.get(name).ok_or("not_found")?.dir.clone())
+            let entry = reg.get(name).ok_or("not_found")?;
+            (entry.provider, Some(entry.dir.clone()))
         }
-        None => None,
+        None => (Provider::Claude, None),
     };
-    Ok(ClaudeRunner {
-        account_dir,
-        timeout: RUN_TIMEOUT,
+    Ok(match provider {
+        Provider::Claude => Box::new(ClaudeRunner {
+            account_dir,
+            timeout: RUN_TIMEOUT,
+        }),
+        Provider::Codex => Box::new(CodexRunner {
+            account_dir,
+            timeout: RUN_TIMEOUT,
+        }),
     })
 }
 
