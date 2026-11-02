@@ -2,6 +2,7 @@ import type {
   Api,
   Account,
   Quota,
+  Routing,
   ApiError,
   Change,
   Seen,
@@ -362,6 +363,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     status: { state: name === "old" ? "logged_out" : "logged_in", email: name === "old" ? null : `${name}@example.com`, plan: name === "old" ? null : "Max", org: null },
   }));
   accounts.push({ name: "codex-1", provider: "codex", dir: "/demo/accounts/codex-1", status: { state: "logged_in", email: null, plan: null, org: null } });
+  let routing: Routing = { rules: [{ role: "review", provider: "claude", maxPrompt: null, model: "haiku" }] };
   const reset = new Date(Date.now() + 130 * 60_000).toISOString();
   const asOf = new Date(Date.now() - 20 * 60_000).toISOString();
   const quotas: Quota[] = [
@@ -560,6 +562,11 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       if (index === -1) return reject("not_found");
       accounts.splice(index, 1);
       quotas.splice(quotas.findIndex(q => q.name === name), 1);
+    },
+    async routing() { return structuredClone(routing); },
+    async setRouting(next) {
+      if (next.rules.some(r => !r.model.trim())) return reject("empty_text");
+      routing = structuredClone(next);
     },
     async pickFolder() {
       return DEMO_ROOT;

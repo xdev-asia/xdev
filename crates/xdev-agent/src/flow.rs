@@ -27,6 +27,8 @@ pub struct RunOptions {
     pub tools: Vec<String>,
     /// Program and arguments, run in the worktree after the agent.
     pub test: Option<Vec<String>>,
+    /// The CLI's default when `None`.
+    pub model: Option<String>,
 }
 
 impl TaskStore {
@@ -163,6 +165,7 @@ impl TaskStore {
             prompt,
             resume,
             tools,
+            model: opts.model.clone(),
             cancel: Cancel::new(),
         };
         let result = runner.run(&req);

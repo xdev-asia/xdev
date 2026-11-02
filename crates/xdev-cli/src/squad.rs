@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use clap::Subcommand;
 use serde::Serialize;
 use xdev_agent::{
-    AgentError, Event, QuotaCheck, Role, Runner, RunnerFor, Squad, SquadDeps, SquadRun, SquadStore,
-    Target,
+    AgentError, Event, QuotaCheck, Role, Routing, Runner, RunnerFor, Squad, SquadDeps, SquadRun,
+    SquadStore, Target,
 };
 use xdev_ai::{QuotaState, Registry, quota, status};
 use xdev_policy::{Audited, Policy, Verdict};
@@ -203,8 +203,12 @@ fn drive(
 ) -> Result<Result<SquadRun, AgentError>, &'static str> {
     // The person's policy file decides; every verdict lands in the audit log.
     let gate = Audited::new(Policy::load(data_dir).map_err(|e| e.code())?, data_dir);
+    let routing = Routing::load(data_dir).map_err(|e| e.code())?;
     let deps = SquadDeps {
-        runners: &Runners { reg },
+        runners: &Runners {
+            reg,
+            routing: &routing,
+        },
         gate: &gate,
         quota: &Quotas { reg },
         on_event: &print_event,
@@ -215,6 +219,7 @@ fn drive(
 /// Seat agents for registered accounts.
 struct Runners<'a> {
     reg: &'a Registry,
+    routing: &'a Routing,
 }
 
 impl RunnerFor for Runners<'_> {
@@ -229,6 +234,11 @@ impl RunnerFor for Runners<'_> {
             .and_then(|e| serde_json::to_value(e.provider).ok())
             .and_then(|v| v.as_str().map(str::to_owned))
             .unwrap_or_default()
+    }
+
+    fn model(&self, account: &str, role: Role, prompt: &str) -> Option<String> {
+        self.routing
+            .pick(role.as_str(), &self.provider(account), prompt)
     }
 }
 

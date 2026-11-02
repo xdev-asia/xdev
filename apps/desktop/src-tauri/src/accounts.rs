@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tauri::State;
+use xdev_agent::Routing;
 use xdev_ai::{AccountEntry, AccountStatus, AiError, Provider, Quota, Registry};
 
 use crate::commands::{AppState, CmdError};
@@ -146,6 +147,18 @@ pub fn account_remove(state: State<'_, AppState>, name: String) -> Result<(), Cm
     let mut registry = Registry::load(data)?;
     registry.remove(&name)?;
     registry.save(data)?;
+    Ok(())
+}
+
+/// The person's rules for which model a turn runs on.
+#[tauri::command(async)]
+pub fn routing_get(state: State<'_, AppState>) -> Result<Routing, CmdError> {
+    Ok(Routing::load(data_dir(&state)?)?)
+}
+
+#[tauri::command(async)]
+pub fn routing_set(state: State<'_, AppState>, routing: Routing) -> Result<(), CmdError> {
+    routing.save(data_dir(&state)?)?;
     Ok(())
 }
 

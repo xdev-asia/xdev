@@ -35,6 +35,11 @@ pub trait RunnerFor {
     fn provider(&self, _account: &str) -> String {
         "claude".to_owned()
     }
+
+    /// The model the seat's turn runs on; `None` is the CLI's default.
+    fn model(&self, _account: &str, _role: Role, _prompt: &str) -> Option<String> {
+        None
+    }
 }
 
 /// Checked before every agent a seat starts.
@@ -357,6 +362,7 @@ impl<'a> Driver<'a> {
         };
 
         let prompt = self.prompt(&turn)?;
+        let model = self.deps.runners.model(&account, role, &prompt);
         let seat = self.run.seat_mut(role);
         seat.state = SeatStatus::Working;
         seat.wait = None;
@@ -377,6 +383,7 @@ impl<'a> Driver<'a> {
             prompt,
             resume,
             tools,
+            model,
             cancel: self.cancel.clone(),
         });
         let record = self.task.runs.last_mut().expect("a run was pushed");

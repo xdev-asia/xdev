@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { PROVIDERS, toApiError, type Account, type Accounts, type Api, type ApiError, type Provider, type Quota } from "../api";
 import { useI18n } from "../i18n";
 import { COMPACT, ProblemNote } from "./ChangesPanel";
+import { RoutingRules } from "./RoutingRules";
 
 type State = Quota["state"];
 type Filter = "all" | State;
@@ -347,5 +348,6 @@ export function AccountsView({ api }: { api: Api }) {
       {copy && <span role="status">{t(`connect.${copy}`)}</span>}
     </div>}
     {accounts === undefined ? !problem && <p className="placeholder">{t("accounts.loading")}</p> : accounts.accounts.length === 0 ? <div className="placeholder"><p>{t("accounts.empty")}</p><Button type="button" style={COMPACT} onClick={() => openForm(false)}>{t("accounts.add")}</Button></div> : <>{resets()}{toolbar()}{list()}</>}
+    <RoutingRules api={api} />
   </div>;
 }

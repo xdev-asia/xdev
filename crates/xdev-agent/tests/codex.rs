@@ -38,6 +38,7 @@ fn child_codex_run() {
             .filter(|t| !t.is_empty())
             .map(str::to_owned)
             .collect(),
+        model: std::env::var("XDEV_TEST_MODEL").ok(),
         cancel: Cancel::new(),
     };
     let result = match runner.run(&req) {
@@ -63,7 +64,12 @@ fn child(envs: &[(&str, OsString)]) -> Value {
         "--nocapture",
         "--test-threads=1",
     ]);
-    for v in ["XDEV_CODEX_BIN", "XDEV_TEST_RESUME", "XDEV_TEST_TOOLS"] {
+    for v in [
+        "XDEV_CODEX_BIN",
+        "XDEV_TEST_RESUME",
+        "XDEV_TEST_TOOLS",
+        "XDEV_TEST_MODEL",
+    ] {
         cmd.env_remove(v);
     }
     cmd.envs(envs.iter().map(|(k, v)| (k, v)));
@@ -219,6 +225,25 @@ fn resume_passes_sandbox_as_config_and_read_only_tools() {
         args(&s),
         format!(
             "exec resume --json --skip-git-repo-check -c sandbox_mode=read-only -- {THREAD} {PROMPT}"
+        )
+    );
+
+    // A routed model goes in before `--` on both paths.
+    envs.push(("XDEV_TEST_MODEL", "gpt-mini".into()));
+    child(&envs);
+    assert_eq!(
+        args(&s),
+        format!(
+            "exec resume --json --skip-git-repo-check -c sandbox_mode=read-only -m gpt-mini -- {THREAD} {PROMPT}"
+        )
+    );
+    envs.retain(|(k, _)| *k != "XDEV_TEST_RESUME");
+    child(&envs);
+    assert_eq!(
+        args(&s),
+        format!(
+            "exec --json --skip-git-repo-check -s read-only -m gpt-mini -C {} -- {PROMPT}",
+            s.worktree.display()
         )
     );
     assert_eq!(

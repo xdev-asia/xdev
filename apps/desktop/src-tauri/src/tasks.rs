@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use serde::Serialize;
 use tauri::State;
-use xdev_agent::{AgentError, ClaudeRunner, CodexRunner, RunOptions, Runner, Task, TaskStore};
+use xdev_agent::{
+    AgentError, ClaudeRunner, CodexRunner, Routing, RunOptions, Runner, Task, TaskStore,
+};
 use xdev_ai::{AiError, Provider, Registry};
 use xdev_core::Repo;
 use xdev_policy::{Audited, Policy, PolicyError, Verdict};
@@ -137,12 +139,14 @@ pub fn task_run(
     let data = data_dir(&state)?;
     let gate = gate(data)?;
     let runner = runner(data, account.as_deref())?;
+    let store = store(&state)?;
     let opts = RunOptions {
         account,
         tools: Vec::new(),
         test: test_command(test.as_deref()),
+        model: routed(data, &store, &id, &*runner)?,
     };
-    Ok(store(&state)?.run_task(&id, &*runner, &gate, &opts)?)
+    Ok(store.run_task(&id, &*runner, &gate, &opts)?)
 }
 
 #[tauri::command(async)]
@@ -154,11 +158,24 @@ pub fn task_resume(
     let data = data_dir(&state)?;
     let gate = gate(data)?;
     let runner = runner(data, account.as_deref())?;
+    let store = store(&state)?;
     let opts = RunOptions {
         account,
+        model: routed(data, &store, &id, &*runner)?,
         ..RunOptions::default()
     };
-    Ok(store(&state)?.resume_task(&id, &*runner, &gate, &opts)?)
+    Ok(store.resume_task(&id, &*runner, &gate, &opts)?)
+}
+
+/// The person's routing rules judge a task on its goal, also when resumed.
+fn routed(
+    data: &Path,
+    store: &TaskStore,
+    id: &str,
+    runner: &dyn Runner,
+) -> Result<Option<String>, CmdError> {
+    let goal = store.load(id)?.goal;
+    Ok(Routing::load(data)?.pick("task", runner.provider(), &goal))
 }
 
 #[tauri::command(async)]

@@ -568,9 +568,12 @@ it("routes account calls through Tauri and normalizes their errors", async () =>
     const { api } = await import("./api");
     const { invoke } = await import("@tauri-apps/api/core");
     await api.accounts(); await api.quota(); await api.addAccount("new", "codex"); await api.loginAccount("new"); await api.removeAccount("new");
+    const routing = { rules: [{ role: "review", provider: null, maxPrompt: 800, model: "haiku" }] };
+    await api.routing(); await api.setRouting(routing);
     expect(vi.mocked(invoke).mock.calls).toEqual([
       ["accounts_list", undefined], ["accounts_quota", undefined],
       ["account_add", { name: "new", provider: "codex", dir: null }], ["account_login", { name: "new" }], ["account_remove", { name: "new" }],
+      ["routing_get", undefined], ["routing_set", { routing }],
     ]);
     vi.mocked(invoke).mockRejectedValueOnce({ code: "bad_registry" });
     await expect(api.accounts()).rejects.toEqual({ code: "bad_registry" });

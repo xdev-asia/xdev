@@ -164,6 +164,10 @@ impl RunnerFor for Fakes {
             script: Rc::clone(&self.script),
         }))
     }
+
+    fn model(&self, _account: &str, role: Role, _prompt: &str) -> Option<String> {
+        (role == Role::Review).then(|| "haiku".to_owned())
+    }
 }
 
 /// Writes `<account>.txt` when it may write files, like an agent would.
@@ -299,6 +303,8 @@ fn full_squad_plans_implements_tests_and_reviews() {
     assert!(!review.tools.iter().any(|t| t == "Edit"));
     assert!(review.prompt.contains("dev.txt"));
     assert!(review.prompt.contains("`git --version` exited 0"));
+    assert_eq!(review.model.as_deref(), Some("haiku"));
+    assert_eq!(lead.model, None);
     assert!(env.gate.seen.borrow().iter().any(|a| matches!(
         a,
         Action::SpawnAgent { account: Some(a), .. } if a == "dev"
