@@ -50,6 +50,7 @@ impl GitError {
 
 /// Compared with `HEAD`: not in `HEAD` is added, not on disk is deleted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum ChangeKind {
     Added,

@@ -21,6 +21,7 @@ pub use store::TaskStore;
 pub const DEFAULT_TOOLS: [&str; 5] = ["Read", "Edit", "Write", "Grep", "Glob"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Task {
     pub id: String,
     pub goal: String,
@@ -46,6 +47,7 @@ impl Task {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskState {
     Ready,
@@ -72,6 +74,7 @@ impl TaskState {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunRecord {
     pub started: u64,
     pub ended: Option<u64>,
@@ -83,6 +86,7 @@ pub struct RunRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Evidence {
     pub base: String,
     pub head: String,
@@ -92,6 +96,7 @@ pub struct Evidence {
 
 /// `None` counts are a binary file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FileChange {
     pub path: String,
     pub added: Option<u64>,
@@ -99,6 +104,7 @@ pub struct FileChange {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct TestResult {
     pub command: Vec<String>,
     /// `None` when the command was killed or could not start.
@@ -107,6 +113,7 @@ pub struct TestResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Approval {
     pub at: u64,
     pub merge_commit: String,

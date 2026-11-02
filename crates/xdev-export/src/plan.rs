@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::render::{MARKER, OutFile};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum FileStatus {
     New,
@@ -15,6 +16,7 @@ pub enum FileStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PlannedFile {
     pub path: String,
     pub status: FileStatus,

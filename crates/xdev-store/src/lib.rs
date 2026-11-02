@@ -48,6 +48,7 @@ pub struct StoredLink {
 
 /// `snippet` is HTML-escaped except for `<mark>` tags around hits.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SearchHit {
     pub path: String,
     pub title: String,

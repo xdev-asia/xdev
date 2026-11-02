@@ -24,6 +24,7 @@ const LOCAL_PREFIX: &str = "http://127.0.0.1:";
 const MAX_BODY: u64 = 1 << 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum StatusState {
     LoggedIn,
@@ -33,6 +34,7 @@ pub enum StatusState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct AccountStatus {
     pub state: StatusState,

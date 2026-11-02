@@ -4,6 +4,7 @@ use crate::accounts::AccountEntry;
 use crate::claude::{self, AccountStatus, StatusState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum QuotaState {
     Ok,
@@ -14,6 +15,7 @@ pub enum QuotaState {
 
 /// Why a quota is `unknown`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Reason {
     NoCredentials,
@@ -24,6 +26,7 @@ pub enum Reason {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct QuotaWindow {
     pub key: String,
@@ -33,6 +36,7 @@ pub struct QuotaWindow {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Quota {
     pub name: String,

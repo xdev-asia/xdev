@@ -8,6 +8,7 @@ use crate::CoreError;
 
 /// A doc marked for agents; `path` is vault-relative so the UI can open it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ExportedDoc {
     pub path: String,
     pub title: String,
@@ -15,6 +16,7 @@ pub struct ExportedDoc {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ExportPlan {
     /// For display only.
     pub root: String,

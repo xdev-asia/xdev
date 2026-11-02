@@ -6,11 +6,15 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+ts = ["dep:ts-rs"]
+
 [dependencies]
 keyring.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+ts-rs = { workspace = true, optional = true }
 ureq.workspace = true
 
 [dev-dependencies]

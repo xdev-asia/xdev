@@ -11,6 +11,7 @@ use crate::{CoreError, sync_vault};
 /// Who last changed a pending file. `App` is kept in memory only, so after a
 /// restart the app's own edits are `Outside`; `Ai` rows live in the index.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum Origin {
     App,
@@ -21,6 +22,7 @@ pub enum Origin {
 /// `note` is the agent's summary, only for `Ai`. `hash` is the content on
 /// disk, `None` for a deletion.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Change {
     pub path: String,
     pub kind: ChangeKind,
@@ -31,6 +33,7 @@ pub struct Change {
 
 /// A pending change as the person last saw it, from `Change`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Seen {
     pub path: String,
     pub hash: Option<String>,
