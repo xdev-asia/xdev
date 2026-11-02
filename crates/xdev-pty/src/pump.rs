@@ -214,7 +214,7 @@ mod tests {
             })
         });
         let paused = settle(&total);
-        assert!(paused >= WINDOW && paused <= WINDOW + 64 * 1024, "{paused}");
+        assert!((WINDOW..=WINDOW + 64 * 1024).contains(&paused), "{paused}");
         flow.ack(paused);
         handle.join().unwrap();
         assert_eq!(total.load(Ordering::SeqCst), 5 * 1024 * 1024);

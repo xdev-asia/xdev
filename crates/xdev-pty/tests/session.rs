@@ -29,10 +29,10 @@ impl Run {
             let out = out.clone();
             let answer = answer.clone();
             move |bytes: Vec<u8>| {
-                if bytes.windows(4).any(|w| w == b"\x1b[6n") {
-                    if let Some(s) = answer.lock().unwrap().as_ref() {
-                        s.write(b"\x1b[1;1R".to_vec());
-                    }
+                if bytes.windows(4).any(|w| w == b"\x1b[6n")
+                    && let Some(s) = answer.lock().unwrap().as_ref()
+                {
+                    s.write(b"\x1b[1;1R".to_vec());
                 }
                 out.lock().unwrap().extend(bytes);
             }
