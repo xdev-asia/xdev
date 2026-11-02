@@ -14,7 +14,9 @@ export function detectLocale(lang: string | undefined): Locale {
 }
 
 export function translate(locale: Locale, key: string, vars?: Vars): string {
-  const template = dictionaries[locale][key];
+  const dict = dictionaries[locale];
+  // English needs a singular form ("1 doc"); Vietnamese has none, so its `.one` keys just repeat the plain text.
+  const template = (vars?.count === 1 ? dict[`${key}.one`] : undefined) ?? dict[key];
   if (template === undefined) return key;
   return template.replace(/\{(\w+)\}/g, (match, name: string) => (vars && name in vars ? String(vars[name]) : match));
 }

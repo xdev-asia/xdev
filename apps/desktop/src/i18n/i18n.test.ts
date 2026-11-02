@@ -28,6 +28,18 @@ describe("i18n", () => {
     expect(translate("vi", "search.count", { count: 3 })).toContain("3");
   });
 
+  it("translate uses the singular form for a count of one", () => {
+    expect(translate("en", "sidebar.count", { count: 1 })).toBe("1 doc");
+    expect(translate("en", "sidebar.count", { count: 2 })).toBe("2 docs");
+    expect(translate("en", "sidebar.count", { count: 0 })).toBe("0 docs");
+    for (const key of Object.keys(en).filter((k) => k.endsWith(".one"))) {
+      const base = key.slice(0, -4) as keyof typeof en;
+      expect(en, key).toHaveProperty([base]);
+      expect(en[key as keyof typeof en], key).toContain("{count}");
+      expect(vi[key as keyof typeof vi], key).toBe(vi[base]);
+    }
+  });
+
   it("translate returns the key when missing", () => {
     expect(translate("vi", "nope.missing")).toBe("nope.missing");
   });
