@@ -192,6 +192,9 @@ importers:
       '@tauri-apps/plugin-dialog':
         specifier: ^2.8.4
         version: 2.8.4
+      '@xdev/bindings':
+        specifier: workspace:*
+        version: link:../../packages/bindings
       '@xdev/ui':
         specifier: workspace:*
         version: link:../../packages/ui

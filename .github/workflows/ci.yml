@@ -44,3 +44,12 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+
+      # The generated files are the same on every OS, so one is enough.
+      # Intent-to-add makes a newly generated file show in the diff too.
+      - name: Check packages/bindings matches the Rust types
+        if: matrix.os == 'windows-latest'
+        run: |
+          cargo test -p xdev-desktop export_bindings
+          git add --intent-to-add packages/bindings
+          git diff --exit-code packages/bindings

@@ -6,6 +6,7 @@ use xdev_vault::{Link, LinkKind, Resolver, Vault};
 use crate::CoreError;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DocLink {
     pub path: String,
     pub title: String,

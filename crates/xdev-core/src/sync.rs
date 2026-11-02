@@ -8,6 +8,7 @@ use crate::CoreError;
 
 /// Why a listed file is not indexed. Serialized as the UI's `skipped` value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Skip {
     TooLarge,
@@ -15,6 +16,7 @@ pub enum Skip {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DocEntry {
     pub path: String,
     pub title: String,

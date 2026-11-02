@@ -7,6 +7,7 @@ use crate::CoreError;
 pub const FRESHNESS_COMMITS: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum DocState {
     /// The doc declares no `covers`.
@@ -21,6 +22,7 @@ pub enum DocState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Freshness {
     pub state: DocState,
     pub covers: Vec<String>,
@@ -34,6 +36,7 @@ pub struct Freshness {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct StaleDoc {
     pub path: String,
     pub title: String,

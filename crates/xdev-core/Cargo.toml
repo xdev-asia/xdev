@@ -6,10 +6,14 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+ts = ["dep:ts-rs", "xdev-export/ts", "xdev-git/ts", "xdev-store/ts"]
+
 [dependencies]
 dirs.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+ts-rs = { workspace = true, optional = true }
 xdev-export.workspace = true
 xdev-git.workspace = true
 xdev-store.workspace = true

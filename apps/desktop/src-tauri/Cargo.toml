@@ -24,6 +24,11 @@ xdev-policy.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+ts-rs.workspace = true
+# Only the test that writes `packages/bindings` needs the TypeScript derives.
+xdev-agent = { workspace = true, features = ["ts"] }
+xdev-ai = { workspace = true, features = ["ts"] }
+xdev-core = { workspace = true, features = ["ts"] }
 
 [lints]
 workspace = true

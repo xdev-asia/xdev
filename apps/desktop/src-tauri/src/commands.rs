@@ -15,9 +15,11 @@ pub const CHANGED_EVENT: &str = "vault://changed";
 
 /// The UI translates `code`; `detail` is only for logs and bug reports.
 #[derive(Debug, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CmdError {
     pub code: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub detail: Option<String>,
 }
 
@@ -39,8 +41,10 @@ impl From<CoreError> for CmdError {
     }
 }
 
+/// The payload of `CHANGED_EVENT`.
 #[derive(Clone, serde::Serialize)]
-struct Changed {
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "VaultChanged"))]
+pub struct Changed {
     paths: Vec<String>,
 }
 
@@ -84,6 +88,7 @@ pub fn last_vault(app: AppHandle) -> Option<String> {
 }
 
 #[derive(Debug, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct VaultSetup {
     prompt: bool,
@@ -197,7 +202,10 @@ pub fn search(
 }
 
 #[derive(serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct VcsState {
+    /// The values `Shared::vcs_state` returns.
+    #[cfg_attr(test, ts(type = r#""ok" | "no_repo" | "no_git""#))]
     status: &'static str,
 }
 
@@ -313,6 +321,7 @@ pub fn export_plan(state: State<'_, AppState>) -> Result<ExportPlan, CmdError> {
 }
 
 #[derive(serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Expected {
     path: String,
     hash: String,

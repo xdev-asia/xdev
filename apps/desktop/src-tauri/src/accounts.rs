@@ -19,6 +19,7 @@ impl From<AiError> for CmdError {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Account {
     name: String,
@@ -28,6 +29,7 @@ pub struct Account {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Accounts {
     reserve_percent: u8,
@@ -35,6 +37,7 @@ pub struct Accounts {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct LoginStart {
     opened: bool,
     command: String,

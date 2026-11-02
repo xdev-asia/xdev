@@ -1,6 +1,7 @@
 /// Same names and order as the vault's frontmatter targets. Kept separate so
 /// this crate stays pure rendering with no dependency on the vault.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum Target {
     Agents,

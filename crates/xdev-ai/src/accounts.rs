@@ -13,6 +13,7 @@ const DEFAULT_RESERVE: u8 = 30;
 const MAX_RESERVE: u8 = 90;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum Provider {
     Claude,

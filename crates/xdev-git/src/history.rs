@@ -1,6 +1,7 @@
 use crate::{GitError, Repo, run};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Commit {
     pub id: String,
     pub author: String,

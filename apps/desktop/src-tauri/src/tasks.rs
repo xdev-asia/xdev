@@ -42,6 +42,7 @@ impl From<PolicyError> for CmdError {
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct TasksContext {
     /// The open vault's repo root, offered as the repo for a new task.
@@ -52,6 +53,7 @@ pub struct TasksContext {
 
 /// A file at the evidence's base and head commits; `None` where it is absent.
 #[derive(Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct FileDiff {
     old: Option<String>,
     new: Option<String>,

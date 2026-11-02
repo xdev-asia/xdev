@@ -19,6 +19,7 @@
     "@lezer/highlight": "^1.2.5",
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-dialog": "^2.8.4",
+    "@xdev/bindings": "workspace:*",
     "@xdev/ui": "workspace:*",
     "codemirror": "^6.0.2",
     "markdown-it": "14.3.3",
