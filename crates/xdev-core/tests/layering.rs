@@ -17,5 +17,5 @@ fn core_does_not_depend_on_tauri() {
 
 #[test]
 fn version_is_workspace_version() {
-    assert_eq!(xdev_core::version(), "0.1.0");
+    assert_eq!(xdev_core::version(), env!("CARGO_PKG_VERSION"));
 }

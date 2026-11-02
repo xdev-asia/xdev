@@ -7,5 +7,8 @@ fn prints_version() {
         .output()
         .expect("run xdev");
     assert!(out.status.success());
-    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "xdev 0.1.0");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        concat!("xdev ", env!("CARGO_PKG_VERSION"))
+    );
 }
