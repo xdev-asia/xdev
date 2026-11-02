@@ -2,6 +2,7 @@ mod accounts;
 mod commands;
 mod session;
 mod settings;
+mod tasks;
 
 use commands::AppState;
 
@@ -51,6 +52,15 @@ pub fn run() {
             accounts::account_add,
             accounts::account_login,
             accounts::account_remove,
+            tasks::tasks_context,
+            tasks::tasks_list,
+            tasks::task_get,
+            tasks::task_new,
+            tasks::task_run,
+            tasks::task_resume,
+            tasks::task_approve,
+            tasks::task_discard,
+            tasks::task_file_diff,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start xDev");

@@ -17,8 +17,10 @@ serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2.8.4"
+xdev-agent.workspace = true
 xdev-ai.workspace = true
 xdev-core.workspace = true
+xdev-policy.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

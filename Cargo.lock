@@ -5630,8 +5630,10 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tempfile",
+ "xdev-agent",
  "xdev-ai",
  "xdev-core",
+ "xdev-policy",
 ]
 
 [[package]]

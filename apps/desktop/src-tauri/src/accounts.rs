@@ -40,7 +40,7 @@ pub struct LoginStart {
     command: String,
 }
 
-fn data_dir(state: &AppState) -> Result<&Path, CmdError> {
+pub(crate) fn data_dir(state: &AppState) -> Result<&Path, CmdError> {
     state.data_dir.as_deref().ok_or(CmdError {
         code: "io",
         detail: Some("no data dir".into()),
