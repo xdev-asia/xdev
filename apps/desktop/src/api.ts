@@ -23,7 +23,12 @@ export type ApiError = {
     | "git_identity"
     | "stale"
     | "conflict"
-    | "changed";
+    | "changed"
+    | "bad_name"
+    | "exists"
+    | "no_claude"
+    | "bad_registry"
+    | "bad_reserve";
   detail?: string;
 };
 export type VcsState = { status: "ok" | "no_repo" | "no_git" };
@@ -66,7 +71,27 @@ export type ExportPlan = {
 };
 export type Expected = { path: string; hash: string };
 
+export type AccountStatus = {
+  state: "logged_in" | "logged_out" | "no_claude" | "error";
+  email: string | null; plan: string | null; org: string | null;
+};
+export type Account = { name: string; provider: "claude"; dir: string; status: AccountStatus };
+export type Accounts = { reservePercent: number; accounts: Account[] };
+export type QuotaWindow = { key: string; utilization: number | null; resetsAt: string | null };
+export type Quota = {
+  name: string;
+  state: "ok" | "reserve" | "full" | "unknown";
+  reason: "no_credentials" | "expired" | "unavailable" | "logged_out" | "no_claude" | null;
+  windows: QuotaWindow[];
+};
+export type LoginStart = { opened: boolean; command: string };
+
 export interface Api {
+  accounts(): Promise<Accounts>;
+  quota(): Promise<Quota[]>;
+  addAccount(name: string): Promise<Account>;
+  loginAccount(name: string): Promise<LoginStart>;
+  removeAccount(name: string): Promise<void>;
   pickFolder(): Promise<string | null>;
   openVault(path: string): Promise<DocEntry[]>;
   lastVault(): Promise<string | null>;
@@ -111,6 +136,11 @@ export const ERROR_CODES: readonly ApiError["code"][] = [
   "stale",
   "conflict",
   "changed",
+  "bad_name",
+  "exists",
+  "no_claude",
+  "bad_registry",
+  "bad_reserve",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -124,6 +154,11 @@ function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 }
 
 const tauriApi: Api = {
+  accounts: () => call("accounts_list"),
+  quota: () => call("accounts_quota"),
+  addAccount: (name) => call("account_add", { name }),
+  loginAccount: (name) => call("account_login", { name }),
+  removeAccount: (name) => call("account_remove", { name }),
   async pickFolder() {
     const picked = await open({ directory: true });
     return typeof picked === "string" ? picked : null;

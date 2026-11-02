@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { toApiError, type Api, type Change, type Seen } from "./api";
 import { setVerified } from "./doc/frontmatter";
 import {
@@ -527,4 +527,45 @@ describe("mock ai proposals", () => {
   it("toApiError keeps conflict", () => {
     expect(toApiError({ code: "conflict", detail: "x" })).toEqual({ code: "conflict", detail: "x" });
   });
+});
+
+
+describe("accounts mock contract", () => {
+  it("provides quota samples independently of a vault", async () => {
+    const api = createMockApi({});
+    expect((await api.accounts()).reservePercent).toBe(30);
+    expect((await api.quota()).map(q => [q.name, q.state])).toEqual([["claude-2", "ok"], ["claude-3", "reserve"], ["old", "unknown"]]);
+    expect((await api.quota())[0].windows.map(w => w.utilization)).toEqual([12, 40]);
+  });
+  it("validates, adds, logs in and unregisters", async () => {
+    const api = createMockApi({});
+    for (const name of ["", "A b", "-a", "a\n", "a".repeat(33)]) await expect(api.addAccount(name)).rejects.toEqual({ code: "bad_name" });
+    await expect(api.addAccount("old")).rejects.toEqual({ code: "exists" });
+    const added = await api.addAccount("new-1");
+    expect(added.status.state).toBe("logged_out");
+    expect((await api.loginAccount(added.name)).command).toContain(added.dir);
+    await api.removeAccount(added.name);
+    await expect(api.loginAccount(added.name)).rejects.toEqual({ code: "not_found" });
+    await expect(api.removeAccount(added.name)).rejects.toEqual({ code: "not_found" });
+  });
+  it("preserves account error codes", () => {
+    for (const code of ["bad_name", "exists", "not_found", "no_claude", "bad_registry", "bad_reserve"]) expect(toApiError({ code })).toEqual({ code });
+  });
+});
+
+it("routes account calls through Tauri and normalizes their errors", async () => {
+  vi.resetModules();
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    await api.accounts(); await api.quota(); await api.addAccount("new"); await api.loginAccount("new"); await api.removeAccount("new");
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["accounts_list", undefined], ["accounts_quota", undefined],
+      ["account_add", { name: "new" }], ["account_login", { name: "new" }], ["account_remove", { name: "new" }],
+    ]);
+    vi.mocked(invoke).mockRejectedValueOnce({ code: "bad_registry" });
+    await expect(api.accounts()).rejects.toEqual({ code: "bad_registry" });
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
 });
