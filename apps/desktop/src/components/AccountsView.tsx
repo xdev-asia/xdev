@@ -141,10 +141,10 @@ export function AccountsView({ api }: { api: Api }) {
   }
   return <div className="accounts-view">
     <div className="agentctx-head">
-      <div className="doc-titles"><h1 className="doc-title">{t("accounts.title")}</h1>{accounts && <span className="doc-path">{t("accounts.reserve", { percent: accounts.reservePercent })}</span>}</div>
+      <div className="doc-titles"><h1 className="doc-title">{t("accounts.title")}</h1>{accounts && <span className="doc-subtitle">{t("accounts.reserve", { percent: accounts.reservePercent })}</span>}</div>
       <div className="doc-actions">
-        <Button type="button" style={COMPACT} disabled={busy} onClick={() => { setProblem(undefined); setRevision(n => n + 1); }}>{t("accounts.refresh")}</Button>
-        <Button type="button" style={COMPACT} disabled={busy} onClick={() => setAdding(true)}>{t("accounts.add")}</Button>
+        <button type="button" className="btn-secondary" disabled={busy} onClick={() => { setProblem(undefined); setRevision(n => n + 1); }}>{t("accounts.refresh")}</button>
+        {accounts?.accounts.length !== 0 && <Button type="button" style={COMPACT} disabled={busy} onClick={() => setAdding(true)}>{t("accounts.add")}</Button>}
       </div>
     </div>
     {problem && <ProblemNote problem={problem} />}

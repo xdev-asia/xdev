@@ -43,6 +43,7 @@ it("renders bars, reset text and state badges", async () => {
   expect(html).toContain("resets in 2 h 10 min");
   expect(html).toContain('data-state="reserve"');
   expect(html).toContain('data-state="logged_out"');
+  expect(html).toContain('<span class="doc-subtitle">Keeps 30% of each account for you</span>');
   if (typeof cleanup === "function") cleanup();
 });
 it("rejects an invalid inline name before calling the API", async () => {
@@ -70,6 +71,7 @@ it("shows the empty state", async () => {
   const api = createMockApi({}); for (const a of (await api.accounts()).accounts) await api.removeAccount(a.name);
   const view = harness(api); view.draw(); const cleanup = hooks.effects[0](); await tick();
   expect(view.html()).toContain("No accounts yet");
+  expect(view.html().match(/Add account/g)).toHaveLength(1);
   if (typeof cleanup === "function") cleanup();
 });
 describe("account translations", () => {

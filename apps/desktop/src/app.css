@@ -440,6 +440,11 @@ button:disabled {
   color: var(--x-color-muted);
 }
 
+.doc-subtitle {
+  font-size: 0.8em;
+  color: var(--x-color-muted);
+}
+
 .doc-status {
   flex: none;
   padding: var(--x-space-1) var(--x-space-2);
