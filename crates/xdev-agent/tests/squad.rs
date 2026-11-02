@@ -440,10 +440,8 @@ fn the_lead_passes_a_question_to_the_person() {
     let dev = env.seen("dev");
     assert!(dev[1].prompt.contains("Yes, drop it."));
     assert!(dev[1].prompt.contains("the person"));
-    assert!(matches!(
-        env.store.answer(&squad.id, "e1", "again", &env.deps()),
-        Err(AgentError::NoRun)
-    ));
+    let again = env.store.answer(&squad.id, "e1", "again", &env.deps());
+    assert!(matches!(again, Err(AgentError::NoRun)), "{again:?}");
 }
 
 #[test]
