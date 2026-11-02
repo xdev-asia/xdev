@@ -48,6 +48,12 @@ const MIGRATIONS: &[&str] = &[
        note TEXT,
        time_ms INTEGER NOT NULL
      );",
+    "CREATE TABLE chunks (
+       doc_path TEXT NOT NULL, ordinal INTEGER NOT NULL,
+       heading TEXT NOT NULL, text TEXT NOT NULL, hash TEXT NOT NULL,
+       model TEXT, dim INTEGER, vector BLOB,
+       PRIMARY KEY (doc_path, ordinal)
+     );",
 ];
 
 pub(crate) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {

@@ -80,7 +80,7 @@ fn migration_keeps_docs() {
         let mut store = Store::open(&db).unwrap();
         store.upsert(&doc, "body", &[]).unwrap();
         let conn = rusqlite::Connection::open(&db).unwrap();
-        conn.execute_batch("DROP TABLE ai_writes; PRAGMA user_version = 3;")
+        conn.execute_batch("DROP TABLE chunks; DROP TABLE ai_writes; PRAGMA user_version = 3;")
             .unwrap();
     }
     let store = Store::open(&db).unwrap();
@@ -90,5 +90,5 @@ fn migration_keeps_docs() {
     let version: i64 = conn
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 4);
+    assert_eq!(version, 5);
 }

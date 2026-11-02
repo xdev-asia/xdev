@@ -1,6 +1,8 @@
 //! SQLite storage: metadata, FTS5 and sqlite-vec indexes, migrations.
 
+mod context;
 mod migrations;
+pub use context::{ContextPack, ContextSection, EmbedStats, Embedder, Section, split_sections};
 mod query;
 
 use std::fs;
@@ -24,6 +26,8 @@ const SNIPPET_TOKENS: i64 = 12;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
+    #[error("{0}")]
+    Embedding(String),
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
     #[error(transparent)]
@@ -65,6 +69,7 @@ pub struct AiWrite {
 
 pub struct Store {
     conn: Connection,
+    removed_chunks: usize,
 }
 
 impl Store {
@@ -81,13 +86,21 @@ impl Store {
         // worth the risk of losing the last writes on power loss.
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         migrations::migrate(&mut conn)?;
-        Ok(Store { conn })
+        context::backfill_chunks(&mut conn)?;
+        Ok(Store {
+            conn,
+            removed_chunks: 0,
+        })
     }
 
     pub fn open_in_memory() -> Result<Store, StoreError> {
         let mut conn = Connection::open_in_memory()?;
         migrations::migrate(&mut conn)?;
-        Ok(Store { conn })
+        context::backfill_chunks(&mut conn)?;
+        Ok(Store {
+            conn,
+            removed_chunks: 0,
+        })
     }
 
     /// Sorted by path.
@@ -160,6 +173,7 @@ impl Store {
                 insert.execute(params![id, pos as i64, link.kind, link.target])?;
             }
         }
+        context::sync_chunks(&tx, &doc.path, &doc.title, body)?;
         tx.commit()?;
         Ok(())
     }
@@ -173,12 +187,14 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?;
+        let removed = tx.execute("DELETE FROM chunks WHERE doc_path = ?1", [path])?;
         if let Some(id) = id {
             tx.execute("DELETE FROM docs_fts WHERE rowid = ?1", [id])?;
             tx.execute("DELETE FROM links WHERE doc_id = ?1", [id])?;
             tx.execute("DELETE FROM docs WHERE id = ?1", [id])?;
         }
         tx.commit()?;
+        self.removed_chunks += removed;
         Ok(())
     }
 
