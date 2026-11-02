@@ -1,4 +1,4 @@
-use xdev_git::{Commit, Repo};
+use xdev_git::{Commit, GitError, Repo};
 use xdev_vault::{Vault, extract_title, parse_frontmatter};
 
 use crate::CoreError;
@@ -15,7 +15,8 @@ pub enum DocState {
     Stale,
     /// `covers` without a usable `verified`.
     Unverified,
-    /// No git, or `verified` is not a commit in the repo (a shallow clone).
+    /// No git, `verified` is not a commit in the repo (a shallow clone), or
+    /// git fails on this doc's commits.
     Unknown,
 }
 
@@ -108,7 +109,15 @@ fn check(
     let Some(since) = repo.resolve_commit(verified)? else {
         return Ok((DocState::Unknown, Vec::new(), 0));
     };
-    let (commits, count) = repo.commits_since(&since, covers, limit)?;
+    // A failure tied to this doc's range or covers must not hide every other
+    // doc; one that means git is unusable still propagates.
+    let (commits, count) = match repo.commits_since(&since, covers, limit) {
+        Ok(found) => found,
+        Err(GitError::Failed { .. } | GitError::BadId(_)) => {
+            return Ok((DocState::Unknown, Vec::new(), 0));
+        }
+        Err(e) => return Err(e.into()),
+    };
     let state = if count > 0 {
         DocState::Stale
     } else {

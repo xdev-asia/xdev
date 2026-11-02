@@ -320,6 +320,52 @@ fn stale_docs_lists_only_problem_docs() {
 }
 
 #[test]
+fn git_failing_for_one_doc_makes_only_that_doc_unknown() {
+    let (dir, first) = setup();
+    write(dir.path(), "src/x.rs", "x2");
+    let lost = commit_all(dir.path(), "lost");
+    write(dir.path(), "src/x.rs", "x3");
+    let kept = commit_all(dir.path(), "kept");
+    write(dir.path(), "src/x.rs", "x4");
+    commit_all(dir.path(), "after");
+    write(dir.path(), "docs/a.md", &doc("src", Some(&first), "A"));
+    write(dir.path(), "docs/b.md", &doc("src", Some(&kept), "B"));
+    // Walking from HEAD back to `first` now fails; back to `kept` does not.
+    let object = dir
+        .path()
+        .join(".git/objects")
+        .join(&lost[..2])
+        .join(&lost[2..]);
+    let mut perms = fs::metadata(&object).unwrap().permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
+    perms.set_readonly(false);
+    fs::set_permissions(&object, perms).unwrap();
+    fs::remove_file(&object).unwrap();
+    let (vault, repo) = open(dir.path());
+
+    let got = freshness(&vault, repo.as_ref(), "a.md").unwrap();
+    assert_eq!((got.state, got.count), (DocState::Unknown, 0));
+    assert!(got.commits.is_empty());
+    assert_eq!(
+        stale_docs(&vault, repo.as_ref()).unwrap(),
+        [
+            StaleDoc {
+                path: "a.md".to_owned(),
+                title: "A".to_owned(),
+                state: DocState::Unknown,
+                count: 0,
+            },
+            StaleDoc {
+                path: "b.md".to_owned(),
+                title: "B".to_owned(),
+                state: DocState::Stale,
+                count: 1,
+            },
+        ]
+    );
+}
+
+#[test]
 fn states_serialize_lowercase() {
     let states = [
         DocState::None,
