@@ -30,6 +30,7 @@ import { resultId, RESULTS_ID, SearchPanel } from "./components/SearchPanel";
 import { NewDocForm } from "./components/NewDocForm";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
+import { TasksView } from "./components/TasksView";
 import { isDirty } from "./doc/docState";
 import { agentsEditable, parseFrontmatter, setAgents, setVerified } from "./doc/frontmatter";
 import { useDoc } from "./doc/useDoc";
@@ -483,6 +484,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
         )}
       </aside>
       <main className="main">
+        {app === "tasks" && <TasksView api={api} />}
         {app === "accounts" && <AccountsView api={api} />}
         {app === "agents" && (
           <AgentContext
