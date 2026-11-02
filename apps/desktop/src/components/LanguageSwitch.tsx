@@ -6,19 +6,18 @@ const LOCALES: Locale[] = ["en", "vi"];
 export function LanguageSwitch(): JSX.Element {
   const { locale, setLocale, t } = useI18n();
   return (
-    <div className="segmented" role="group" aria-label={t("language.label")}>
+    <select
+      className="lang-select"
+      aria-label={t("language.label")}
+      title={t("language.label")}
+      value={locale}
+      onChange={(e) => setLocale(e.target.value as Locale)}
+    >
       {LOCALES.map((l) => (
-        <button
-          key={l}
-          type="button"
-          aria-pressed={locale === l}
-          title={t(`language.${l}`)}
-          lang={l}
-          onClick={() => setLocale(l)}
-        >
-          {t(`language.short.${l}`)}
-        </button>
+        <option key={l} value={l} lang={l}>
+          {t(`language.${l}`)}
+        </option>
       ))}
-    </div>
+    </select>
   );
 }
