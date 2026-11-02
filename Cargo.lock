@@ -4994,8 +4994,10 @@ name = "xdev-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "serde",
  "serde_json",
  "tempfile",
+ "xdev-ai",
  "xdev-core",
  "xdev-mcp",
 ]

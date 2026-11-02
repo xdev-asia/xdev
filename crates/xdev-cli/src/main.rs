@@ -1,3 +1,4 @@
+mod accounts;
 mod mcp;
 
 use std::path::PathBuf;
@@ -48,6 +49,17 @@ enum Command {
     /// Serve a folder to AI agents over MCP on stdin/stdout; default
     /// `./docs` when it is a folder, else the current folder.
     Mcp { dir: Option<PathBuf> },
+    /// Claude Code accounts on this machine.
+    Accounts {
+        #[command(subcommand)]
+        command: accounts::AccountsCommand,
+    },
+    /// Print `name<TAB>state<TAB>window=percent...<TAB>reason` per account.
+    Quota {
+        /// Print the accounts' quota as a JSON array instead.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// What a command that ran to the end reports through the exit code.
@@ -55,12 +67,15 @@ enum Outcome {
     Ok,
     /// The command worked and found problems, already printed.
     Found,
+    /// A child process's own exit code, passed on.
+    Exit(u8),
 }
 
 fn main() -> ExitCode {
     match run(Cli::parse().command) {
         Ok(Outcome::Ok) => ExitCode::SUCCESS,
         Ok(Outcome::Found) => ExitCode::from(1),
+        Ok(Outcome::Exit(code)) => ExitCode::from(code),
         // Codes, not prose, so scripts can match on them.
         Err(code) => {
             eprintln!("error: {code}");
@@ -77,6 +92,8 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         Ok((vault, store))
     };
     match command {
+        Command::Accounts { command } => return accounts::run(command, &data_dir),
+        Command::Quota { json } => return accounts::run_quota(json, &data_dir),
         Command::Mcp { dir } => {
             let dir = dir.unwrap_or_else(|| {
                 let docs = PathBuf::from("docs");
