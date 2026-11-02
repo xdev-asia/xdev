@@ -23,6 +23,7 @@ xdev-agent.workspace = true
 xdev-ai.workspace = true
 xdev-core.workspace = true
 xdev-policy.workspace = true
+xdev-pty.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

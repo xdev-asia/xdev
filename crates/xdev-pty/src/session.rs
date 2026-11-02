@@ -54,6 +54,7 @@ pub struct Session {
     input: mpsc::Sender<Vec<u8>>,
     flow: Arc<Flow>,
     stop: Arc<AtomicBool>,
+    exited: Arc<AtomicBool>,
 }
 
 impl Session {
@@ -94,10 +95,15 @@ impl Session {
         });
         let pid = child.process_id();
         let killer = child.clone_killer();
-        thread::spawn(move || {
-            let code = child.wait().ok().map(|s| s.exit_code() as i32);
-            on_exit(code);
-        });
+        let exited = Arc::new(AtomicBool::new(false));
+        {
+            let exited = exited.clone();
+            thread::spawn(move || {
+                let code = child.wait().ok().map(|s| s.exit_code() as i32);
+                exited.store(true, Ordering::SeqCst);
+                on_exit(code);
+            });
+        }
         Ok(Session {
             master: Mutex::new(pair.master),
             killer: Mutex::new(killer),
@@ -105,6 +111,7 @@ impl Session {
             input,
             flow,
             stop,
+            exited,
         })
     }
 
@@ -128,7 +135,8 @@ impl Session {
     }
 
     pub fn kill(&self) {
-        if self.stop.swap(true, Ordering::SeqCst) {
+        // After the child has exited its pid may belong to someone else.
+        if self.stop.swap(true, Ordering::SeqCst) || self.exited.load(Ordering::SeqCst) {
             return;
         }
         // The tree first: Windows finds it by parent id, which needs the

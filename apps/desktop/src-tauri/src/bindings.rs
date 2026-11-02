@@ -9,6 +9,7 @@ use ts_rs::{Config, TS};
 
 use crate::accounts::{Account, Accounts, LoginStart, Models};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
+use crate::pty::{PtyExit, PtyInfo};
 use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
 use crate::updater::UpdateInfo;
@@ -42,6 +43,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_agent::Routing::export_all(cfg)?;
     Models::export_all(cfg)?;
     UpdateInfo::export_all(cfg)?;
+    PtyInfo::export_all(cfg)?;
+    PtyExit::export_all(cfg)?;
     Ok(())
 }
 

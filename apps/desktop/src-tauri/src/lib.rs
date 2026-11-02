@@ -2,6 +2,7 @@ mod accounts;
 #[cfg(test)]
 mod bindings;
 mod commands;
+mod pty;
 mod session;
 mod settings;
 mod squads;
@@ -9,6 +10,7 @@ mod tasks;
 mod updater;
 
 use commands::AppState;
+use tauri::Manager;
 
 #[tauri::command]
 fn app_version() -> String {
@@ -28,6 +30,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .manage(updater::Pending::default())
+        .manage(pty::Ptys::default())
         .setup(|app| {
             updater::start(app.handle().clone());
             Ok(())
@@ -95,11 +98,18 @@ pub fn run() {
             squads::squad_resume,
             squads::squad_stop,
             squads::squad_events,
+            pty::pty_spawn,
+            pty::pty_approve,
+            pty::pty_write,
+            pty::pty_resize,
+            pty::pty_ack,
+            pty::pty_kill,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
+                app.state::<pty::Ptys>().kill_all();
                 updater::install_pending(app);
             }
         });
