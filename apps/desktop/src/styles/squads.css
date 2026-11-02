@@ -1,0 +1,65 @@
+.squads-view .tasks-body { grid-template-columns: minmax(200px, 1fr) 3fr; }
+.squad-item-text { display: grid; min-width: 0; }
+.squad-page { display: flex; min-height: 0; overflow: hidden; }
+.squad-main { flex: 1; min-width: 0; display: grid; align-content: start; gap: var(--x-space-4); padding: var(--x-space-4) var(--x-space-6); overflow: auto; }
+.squad-goal { margin: 0; white-space: pre-wrap; color: var(--x-color-muted); }
+.squad-goal-form input { flex: 1; min-width: 12em; padding: var(--x-space-2); font: inherit; color: var(--x-color-ink); background: var(--x-color-bg); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); }
+.squad-goal-form { flex: 1; }
+.squad-chip { padding: var(--x-space-1) var(--x-space-3); font-size: 0.85em; color: var(--x-color-muted); background: var(--x-color-surface-2); border-radius: var(--x-radius-lg); }
+.squad-chip[data-kind="active"] { color: var(--x-color-accent); background: var(--x-color-accent-soft); }
+.squad-chip[data-some="true"] { color: var(--x-color-danger); background: var(--x-color-danger-soft); }
+.squad-state[data-state="running"], .squad-state[data-state="working"] { color: var(--x-color-accent); background: var(--x-color-accent-soft); }
+.squad-state[data-state="waiting"], .squad-state[data-state="needs_you"], .squad-state[data-state="stopped"] { color: var(--x-color-warn); background: var(--x-color-warn-soft); }
+.squad-state[data-state="done"] { color: var(--x-color-ok); background: var(--x-color-ok-soft); }
+.squad-card { display: grid; gap: var(--x-space-3); padding: var(--x-space-4); background: var(--x-color-surface); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-lg); }
+.squad-card-title { margin: 0; font-size: 0.8em; letter-spacing: 0.06em; text-transform: uppercase; color: var(--x-color-muted); }
+.squad-tree { display: grid; grid-template-columns: 1fr 1fr; grid-template-areas: "lead lead" "implement review" "tests ."; gap: var(--x-space-6) var(--x-space-4); justify-items: center; }
+.squad-tree-lead { grid-area: lead; }
+.squad-tree-implement { grid-area: implement; }
+.squad-tree-review { grid-area: review; }
+.squad-tree-tests { grid-area: tests; }
+/* Cells span their column so a connector can meet the column centre; the seat stays centred. */
+.squad-tree > div { position: relative; display: flex; justify-content: center; justify-self: stretch; }
+.squad-tree-lead::after, .squad-tree-implement::before, .squad-tree-review::before { content: ""; position: absolute; left: 50%; height: calc(var(--x-space-6) / 2); border-left: 1px solid var(--x-color-line); }
+.squad-tree-lead::after { top: 100%; }
+.squad-tree-implement::before, .squad-tree-review::before { bottom: 100%; }
+.squad-tree-implement::after, .squad-tree-review::after { content: ""; position: absolute; top: calc(var(--x-space-6) / -2); border-top: 1px solid var(--x-color-line); }
+.squad-tree-implement::after { left: 50%; right: calc(var(--x-space-4) / -2); }
+.squad-tree-review::after { left: calc(var(--x-space-4) / -2); right: 50%; }
+.squad-tree-tests::before { content: ""; position: absolute; left: 50%; bottom: 100%; height: var(--x-space-6); border-left: 1px solid var(--x-color-line); }
+.squad-seat { display: flex; align-items: center; gap: var(--x-space-3); padding: var(--x-space-2) var(--x-space-3); font: inherit; text-align: left; color: var(--x-color-ink); background: var(--x-color-bg); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-md); cursor: pointer; }
+.squad-seat:hover { background: var(--x-color-surface-2); }
+.squad-seat[aria-pressed="true"] { border-color: var(--x-color-accent); }
+.squad-seat[data-state="vacant"], .squad-seat[data-state="skipped"] { color: var(--x-color-muted); border-style: dashed; }
+.squad-seat-text { display: grid; gap: var(--x-space-1); }
+.squad-seat-role { display: flex; align-items: center; gap: var(--x-space-2); font-weight: 600; }
+.squad-seat-line { font-size: 0.85em; color: var(--x-color-muted); }
+.squad-seat[data-state="needs_you"] .squad-seat-line { color: var(--x-color-warn); }
+.squad-ring { flex: none; }
+.squad-ring-track { fill: none; stroke: var(--x-color-line); stroke-width: 3; }
+.squad-ring-used { fill: none; stroke: var(--x-color-accent); stroke-width: 3; stroke-linecap: round; }
+.squad-ring[data-level="warn"] .squad-ring-used { stroke: var(--x-color-warn); }
+.squad-ring[data-level="danger"] .squad-ring-used { stroke: var(--x-color-danger); }
+.squad-ring-mark { font-family: var(--x-font-mono); font-size: 13px; font-weight: 700; fill: var(--x-color-ink); }
+.squad-dot { width: 8px; height: 8px; border-radius: var(--x-radius-sm); background: var(--x-color-muted); }
+.squad-dot[data-state="working"] { background: var(--x-color-accent); }
+.squad-dot[data-state="needs_you"] { background: var(--x-color-warn); }
+.squad-dot[data-state="done"] { background: var(--x-color-ok); }
+.squad-dot[data-state="vacant"], .squad-dot[data-state="skipped"] { background: var(--x-color-line); }
+.squad-list { display: grid; gap: var(--x-space-2); margin: 0; padding: 0; list-style: none; }
+.squad-escalation { display: grid; gap: var(--x-space-1); padding: var(--x-space-3); background: var(--x-color-bg); border-radius: var(--x-radius-md); }
+.squad-escalation[data-open="true"] { border-left: 3px solid var(--x-color-warn); }
+.squad-question { margin: 0; white-space: pre-wrap; }
+.squad-answer { flex: 1; min-width: 10em; padding: var(--x-space-2); font: inherit; color: var(--x-color-ink); background: var(--x-color-bg); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); }
+.squad-event { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--x-space-2); }
+.squad-event-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; color: var(--x-color-muted); }
+.squad-sheet { flex: none; width: 320px; display: grid; align-content: start; gap: var(--x-space-3); padding: var(--x-space-4); overflow: auto; background: var(--x-color-surface); border-left: 1px solid var(--x-color-line); }
+.squad-sheet h3, .squad-sheet h4 { margin: 0; }
+.squad-sheet h4 { font-size: 0.9em; color: var(--x-color-muted); }
+.squad-sheet-close { margin-left: auto; }
+.squad-sheet .task-facts { margin: 0; }
+.squad-sheet-form { margin: 0; padding: 0; background: none; border: none; }
+.squad-sheet-form select { padding: var(--x-space-2); font: inherit; color: var(--x-color-ink); background: var(--x-color-bg); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); }
+.squad-seat-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--x-space-3); }
+.squad-seat-fields select { padding: var(--x-space-2); font: inherit; color: var(--x-color-ink); background: var(--x-color-bg); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); }
+

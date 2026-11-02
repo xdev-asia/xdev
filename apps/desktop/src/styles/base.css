@@ -1,0 +1,119 @@
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--x-color-bg);
+  color: var(--x-color-ink);
+  font-family: var(--x-font-body);
+  font-size: 14px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Layout classes set `display`, which would otherwise beat the attribute. */
+[hidden] {
+  display: none !important;
+}
+
+:focus-visible {
+  outline: 2px solid var(--x-color-accent);
+  outline-offset: 2px;
+}
+
+.app-boot {
+  height: 100%;
+  background: var(--x-color-bg);
+}
+
+.error-text {
+  margin: 0;
+  color: var(--x-color-warn);
+}
+
+.btn-secondary {
+  background: var(--x-color-surface);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-md);
+  padding: var(--x-space-1) var(--x-space-3);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--x-color-surface-2);
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-md);
+  overflow: hidden;
+  background: var(--x-color-surface);
+}
+
+.segmented button {
+  border: 0;
+  background: transparent;
+  padding: var(--x-space-1) var(--x-space-2);
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--x-color-muted);
+  cursor: pointer;
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--x-color-accent-soft);
+  color: var(--x-color-accent);
+}
+
+
+.dialog {
+  max-width: 440px;
+  padding: var(--x-space-6);
+  color: var(--x-color-ink);
+  background: var(--x-color-surface);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-lg);
+}
+
+.dialog::backdrop {
+  background: color-mix(in srgb, var(--x-color-ink) 35%, transparent);
+}
+
+.vault-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--x-space-3);
+}
+
+.dialog-title {
+  margin: 0 0 var(--x-space-2);
+  font-size: 1.1em;
+  overflow-wrap: anywhere;
+}
+
+.dialog-body {
+  margin: 0 0 var(--x-space-6);
+  color: var(--x-color-muted);
+  line-height: 1.5;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--x-space-2);
+}
+
