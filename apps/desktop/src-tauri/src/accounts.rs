@@ -51,6 +51,13 @@ pub(crate) fn data_dir(state: &AppState) -> Result<&Path, CmdError> {
     })
 }
 
+pub(crate) fn local_dir(state: &AppState) -> Result<&Path, CmdError> {
+    state.local_dir.as_deref().ok_or(CmdError {
+        code: "io",
+        detail: Some("no local dir".into()),
+    })
+}
+
 fn account(entry: &AccountEntry) -> Account {
     Account {
         name: entry.name.clone(),

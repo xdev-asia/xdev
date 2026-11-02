@@ -190,6 +190,24 @@ fn new_task_makes_branch_and_worktree() {
 }
 
 #[test]
+fn worktrees_go_in_the_local_dir_and_records_in_the_data_dir() {
+    let mut env = Env::new();
+    let local = TempDir::with_prefix("xdev local ").unwrap();
+    env.store = TaskStore::with_local(env.data.path(), local.path());
+    let task = env.new_task();
+    assert_eq!(task.worktree, local.path().join("worktrees").join(&task.id));
+    assert!(task.worktree.join("README.md").is_file());
+    let record = env.data.path().join("tasks").join(&task.id);
+    assert!(record.join("task.json").is_file());
+    assert!(!env.data.path().join("worktrees").exists());
+    assert!(!local.path().join("tasks").exists());
+
+    // The recorded path wins, so a task made before a move keeps its worktree.
+    let elsewhere = TaskStore::new(env.data.path());
+    assert_eq!(elsewhere.load(&task.id).unwrap().worktree, task.worktree);
+}
+
+#[test]
 fn new_task_from_a_subfolder_uses_the_repo_root() {
     let env = Env::new();
     fs::create_dir(env.repo.path().join("sub")).unwrap();

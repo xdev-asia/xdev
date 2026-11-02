@@ -15,13 +15,19 @@ fn app_version() -> String {
 }
 
 pub fn run() {
+    // Resolved by core, not Tauri, so they honour `XDEV_DATA_DIR` and
+    // `XDEV_LOCAL_DIR` exactly like the CLI and both share one index.
+    let data_dir = xdev_core::data_dir();
+    let local_dir = xdev_core::local_dir();
+    if let (Some(data), Some(local)) = (&data_dir, &local_dir) {
+        xdev_core::move_indexes(data, local);
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             session: Default::default(),
-            // Resolved by core, not Tauri, so it honours `XDEV_DATA_DIR`
-            // exactly like the CLI and both share one index.
-            data_dir: xdev_core::data_dir(),
+            data_dir,
+            local_dir,
         })
         .invoke_handler(tauri::generate_handler![
             app_version,

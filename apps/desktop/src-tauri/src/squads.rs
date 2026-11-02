@@ -13,7 +13,7 @@ use xdev_agent::{
 };
 use xdev_ai::{QuotaState, Registry};
 
-use crate::accounts::data_dir;
+use crate::accounts::{data_dir, local_dir};
 use crate::commands::{AppState, CmdError};
 use crate::tasks::{gate, provider_runner};
 
@@ -109,8 +109,11 @@ fn known(data: &Path, account: &str) -> Result<(), CmdError> {
     }
 }
 
-fn list(data: &Path) -> Result<Vec<SquadItem>, CmdError> {
-    let store = SquadStore::new(data);
+fn squads(state: &AppState) -> Result<SquadStore, CmdError> {
+    Ok(SquadStore::with_local(data_dir(state)?, local_dir(state)?))
+}
+
+fn list(store: &SquadStore) -> Result<Vec<SquadItem>, CmdError> {
     let mut items = Vec::new();
     for squad in store.list()? {
         let run = store.current_run(&squad.id)?;
@@ -122,8 +125,7 @@ fn list(data: &Path) -> Result<Vec<SquadItem>, CmdError> {
     Ok(items)
 }
 
-fn view(data: &Path, id: &str) -> Result<SquadView, CmdError> {
-    let store = SquadStore::new(data);
+fn view(store: &SquadStore, id: &str) -> Result<SquadView, CmdError> {
     let squad = store.load(id)?;
     let run = store.current_run(id)?;
     let mut events = store.events(id)?;
@@ -139,7 +141,7 @@ fn view(data: &Path, id: &str) -> Result<SquadView, CmdError> {
 }
 
 fn create(
-    data: &Path,
+    store: &SquadStore,
     name: &str,
     repo: &str,
     seats: &[Seat],
@@ -150,15 +152,15 @@ fn create(
         if let Some(account) = seat.account.as_deref().map(str::trim)
             && !account.is_empty()
         {
-            known(data, account)?;
+            known(&store.data_dir, account)?;
             accounts.push((seat.role, account.to_owned()));
         }
     }
-    Ok(SquadStore::new(data).create(name, Path::new(repo), &accounts, test_command(test))?)
+    Ok(store.create(name, Path::new(repo), &accounts, test_command(test))?)
 }
 
 fn set_seat(
-    data: &Path,
+    store: &SquadStore,
     id: &str,
     role: &str,
     account: Option<&str>,
@@ -166,22 +168,22 @@ fn set_seat(
     let role: Role = role.parse()?;
     let account = account.map(str::trim).filter(|a| !a.is_empty());
     if let Some(account) = account {
-        known(data, account)?;
+        known(&store.data_dir, account)?;
     }
-    SquadStore::new(data).set_seat(id, role, account)?;
-    view(data, id)
+    store.set_seat(id, role, account)?;
+    view(store, id)
 }
 
 /// Runs `go` with the person's gate and the given agents and quotas until
 /// the run is done, waits for the person, or is stopped.
 fn drive(
-    data: &Path,
+    store: &SquadStore,
     runners: &dyn RunnerFor,
     quota: &dyn QuotaCheck,
     id: &str,
     go: impl FnOnce(&SquadStore, &SquadDeps) -> Result<SquadRun, AgentError>,
 ) -> Result<SquadView, CmdError> {
-    let gate = gate(data)?;
+    let gate = gate(&store.data_dir)?;
     // The view polls the store; nothing listens for events as they happen.
     let deps = SquadDeps {
         runners,
@@ -189,22 +191,22 @@ fn drive(
         quota,
         on_event: &|_| {},
     };
-    go(&SquadStore::new(data), &deps)?;
-    view(data, id)
+    go(store, &deps)?;
+    view(store, id)
 }
 
 fn drive_registered(
-    data: &Path,
+    store: &SquadStore,
     id: &str,
     go: impl FnOnce(&SquadStore, &SquadDeps) -> Result<SquadRun, AgentError>,
 ) -> Result<SquadView, CmdError> {
-    let accounts = registered(data)?;
-    drive(data, &accounts, &accounts, id, go)
+    let accounts = registered(&store.data_dir)?;
+    drive(store, &accounts, &accounts, id, go)
 }
 
-fn stop(data: &Path, id: &str) -> Result<SquadView, CmdError> {
-    SquadStore::new(data).stop(id)?;
-    view(data, id)
+fn stop(store: &SquadStore, id: &str) -> Result<SquadView, CmdError> {
+    store.stop(id)?;
+    view(store, id)
 }
 
 /// Split on whitespace like the CLI's `--test`; blank means no test.
@@ -215,12 +217,12 @@ fn test_command(test: Option<&str>) -> Option<Vec<String>> {
 
 #[tauri::command(async)]
 pub fn squads_list(state: State<'_, AppState>) -> Result<Vec<SquadItem>, CmdError> {
-    list(data_dir(&state)?)
+    list(&squads(&state)?)
 }
 
 #[tauri::command(async)]
 pub fn squad_get(state: State<'_, AppState>, id: String) -> Result<SquadView, CmdError> {
-    view(data_dir(&state)?, &id)
+    view(&squads(&state)?, &id)
 }
 
 #[tauri::command(async)]
@@ -231,7 +233,7 @@ pub fn squad_new(
     seats: Vec<Seat>,
     test: Option<String>,
 ) -> Result<Squad, CmdError> {
-    create(data_dir(&state)?, &name, &repo, &seats, test.as_deref())
+    create(&squads(&state)?, &name, &repo, &seats, test.as_deref())
 }
 
 #[tauri::command(async)]
@@ -241,12 +243,12 @@ pub fn squad_set_seat(
     role: String,
     account: Option<String>,
 ) -> Result<SquadView, CmdError> {
-    set_seat(data_dir(&state)?, &id, &role, account.as_deref())
+    set_seat(&squads(&state)?, &id, &role, account.as_deref())
 }
 
 #[tauri::command(async)]
 pub fn squad_remove(state: State<'_, AppState>, id: String) -> Result<(), CmdError> {
-    Ok(SquadStore::new(data_dir(&state)?).remove(&id)?)
+    Ok(squads(&state)?.remove(&id)?)
 }
 
 #[tauri::command(async)]
@@ -255,7 +257,7 @@ pub fn squad_run(
     id: String,
     goal: String,
 ) -> Result<SquadView, CmdError> {
-    drive_registered(data_dir(&state)?, &id, |s, d| s.run(&id, &goal, d))
+    drive_registered(&squads(&state)?, &id, |s, d| s.run(&id, &goal, d))
 }
 
 #[tauri::command(async)]
@@ -265,7 +267,7 @@ pub fn squad_answer(
     escalation: String,
     text: String,
 ) -> Result<SquadView, CmdError> {
-    drive_registered(data_dir(&state)?, &id, |s, d| {
+    drive_registered(&squads(&state)?, &id, |s, d| {
         s.answer(&id, &escalation, &text, d)
     })
 }
@@ -278,22 +280,22 @@ pub fn squad_steer(
     text: String,
 ) -> Result<SquadView, CmdError> {
     let role: Role = role.parse()?;
-    drive_registered(data_dir(&state)?, &id, |s, d| s.steer(&id, role, &text, d))
+    drive_registered(&squads(&state)?, &id, |s, d| s.steer(&id, role, &text, d))
 }
 
 #[tauri::command(async)]
 pub fn squad_resume(state: State<'_, AppState>, id: String) -> Result<SquadView, CmdError> {
-    drive_registered(data_dir(&state)?, &id, |s, d| s.resume(&id, d))
+    drive_registered(&squads(&state)?, &id, |s, d| s.resume(&id, d))
 }
 
 #[tauri::command(async)]
 pub fn squad_stop(state: State<'_, AppState>, id: String) -> Result<SquadView, CmdError> {
-    stop(data_dir(&state)?, &id)
+    stop(&squads(&state)?, &id)
 }
 
 #[tauri::command(async)]
 pub fn squad_events(state: State<'_, AppState>, id: String) -> Result<Vec<Event>, CmdError> {
-    Ok(SquadStore::new(data_dir(&state)?).events(&id)?)
+    Ok(squads(&state)?.events(&id)?)
 }
 
 #[cfg(test)]
@@ -440,7 +442,7 @@ mod tests {
     #[test]
     fn a_squad_runs_to_review_with_fake_agents() {
         let (repo, data) = env();
-        let d = data.path();
+        let d = &SquadStore::new(data.path());
         let squad = create(
             d,
             " Feature squad ",
@@ -470,21 +472,18 @@ mod tests {
                 window: 200_000
             })
         );
-        let task = TaskStore::new(d).load(&run.task).unwrap();
+        let task = TaskStore::new(&d.data_dir).load(&run.task).unwrap();
         assert_eq!(task.state, TaskState::Review);
         assert!(shown.events.iter().any(|e| e.kind == "done"));
         assert_eq!(shown.events.len(), shown.event_count.min(RECENT));
-        assert_eq!(
-            SquadStore::new(d).events(&squad.id).unwrap().len(),
-            shown.event_count
-        );
+        assert_eq!(d.events(&squad.id).unwrap().len(), shown.event_count);
         assert_eq!(list(d).unwrap()[0].status, SquadStatus::Done);
     }
 
     #[test]
     fn a_question_for_the_person_waits_for_their_answer() {
         let (repo, data) = env();
-        let d = data.path();
+        let d = &SquadStore::new(data.path());
         // No lead, so the implementer's question goes straight to the person.
         let squad = create(
             d,
@@ -564,7 +563,7 @@ mod tests {
     #[test]
     fn stop_reaches_a_run_going_on_another_thread() {
         let (repo, data) = env();
-        let d = data.path().to_owned();
+        let d = SquadStore::new(data.path());
         let squad = create(
             &d,
             "Team",
@@ -604,7 +603,7 @@ mod tests {
             run.seats[&Role::Implement].session.as_deref(),
             Some("s-dev")
         );
-        let task = TaskStore::new(&d).load(&run.task).unwrap();
+        let task = TaskStore::new(&d.data_dir).load(&run.task).unwrap();
         assert_eq!(task.state, TaskState::Paused);
         assert!(ended.events.iter().any(|e| e.kind == "stop"));
 
@@ -619,7 +618,7 @@ mod tests {
     #[test]
     fn seats_and_accounts_are_checked() {
         let (repo, data) = env();
-        let d = data.path();
+        let d = &SquadStore::new(data.path());
         let repo = repo.path().display().to_string();
         let unknown = create(d, "T", &repo, &seats(&[(Role::Implement, "ghost")]), None);
         assert_eq!(unknown.unwrap_err().code, "unknown_account");
@@ -660,7 +659,7 @@ mod tests {
     #[test]
     fn views_serialize_like_the_ui_expects() {
         let (repo, data) = env();
-        let d = data.path();
+        let d = &SquadStore::new(data.path());
         let squad = create(
             d,
             "T",

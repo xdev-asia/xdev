@@ -62,8 +62,12 @@ pub enum TaskCommand {
     Discard { id: String },
 }
 
-pub fn run(command: TaskCommand, data_dir: &Path) -> Result<Outcome, &'static str> {
-    let store = TaskStore::new(data_dir);
+pub fn run(
+    command: TaskCommand,
+    data_dir: &Path,
+    local_dir: &Path,
+) -> Result<Outcome, &'static str> {
+    let store = TaskStore::with_local(data_dir, local_dir);
     // The person's policy file decides; every verdict lands in the audit log.
     let gate = Audited::new(Policy::load(data_dir).map_err(|e| e.code())?, data_dir);
     let result = match command {

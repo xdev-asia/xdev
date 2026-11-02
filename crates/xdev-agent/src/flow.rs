@@ -48,7 +48,7 @@ impl TaskStore {
             id = new_id(goal, SystemTime::now());
         }
         let worktree = self.worktree_path(&id);
-        fs::create_dir_all(self.data_dir.join("worktrees"))?;
+        fs::create_dir_all(self.local_dir.join("worktrees"))?;
         let branch = format!("xdev/task-{id}");
         repo.add_worktree(&worktree, &branch, &base)?;
 

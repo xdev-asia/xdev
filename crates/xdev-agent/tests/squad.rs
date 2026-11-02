@@ -313,6 +313,21 @@ fn full_squad_plans_implements_tests_and_reviews() {
 }
 
 #[test]
+fn squad_tasks_put_worktrees_in_the_local_dir() {
+    let mut env = Env::new();
+    let local = TempDir::with_prefix("xdev local ").unwrap();
+    env.store = SquadStore::with_local(env.data.path(), local.path());
+    let squad = env.squad(&[DEV]);
+    let run = env.run(&squad).unwrap();
+
+    let task = env.tasks().load(&run.task).unwrap();
+    assert_eq!(task.worktree, local.path().join("worktrees").join(&task.id));
+    assert!(task.worktree.join("dev.txt").is_file());
+    assert!(env.data.path().join("squads").join(&squad.id).is_dir());
+    assert!(!env.data.path().join("worktrees").exists());
+}
+
+#[test]
 fn vacant_lead_tests_and_review_are_skipped() {
     let env = Env::new();
     let squad = env.squad(&[DEV]);

@@ -2,6 +2,7 @@
 
 Status: accepted. Code: `xdev-agent`.
 Date: 2026-11-02
+Amended by 0012 for where worktrees live.
 
 ## Context
 

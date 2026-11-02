@@ -98,7 +98,7 @@ impl Shared {
     /// open leaves the previous vault usable.
     pub fn open(
         &self,
-        data_dir: &Path,
+        local_dir: &Path,
         path: &Path,
         on_changed: impl Fn(Vec<String>) + Send + 'static,
     ) -> Result<Vec<DocEntry>, CoreError> {
@@ -106,7 +106,7 @@ impl Shared {
         let generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
 
         let vault = Vault::open(path)?;
-        let store = Store::open(&index_path(data_dir, &vault))?;
+        let store = Store::open(&index_path(local_dir, &vault))?;
         // Weak: the session owns the watcher, so a strong handle would keep
         // the session alive through its own callback.
         let slot = Arc::downgrade(&self.0);
