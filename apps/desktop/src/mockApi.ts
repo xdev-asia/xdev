@@ -539,11 +539,12 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     async onUpdateReady() { return () => {}; },
     async restartToUpdate() {},
     async notifyUpdate() {},
-    async addAccount(name, provider) {
+    async addAccount(name, provider, dir) {
       if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(name)) return reject("bad_name");
       if (accounts.some(a => a.name === name)) return reject("exists");
       if (provider !== "claude" && provider !== "codex") return reject("unknown_provider");
-      const account: Account = { name, provider, dir: `/demo/accounts/${name}`, status: { state: "logged_out", email: null, plan: null, org: null } };
+      // An imported folder is the demo of a hive account that is already signed in.
+      const account: Account = { name, provider, dir: dir ?? `/demo/accounts/${name}`, status: { state: dir ? "logged_in" : "logged_out", email: null, plan: null, org: null } };
       accounts.push(account);
       quotas.push({ name, state: "unknown", reason: "logged_out", windows: [], asOf: null });
       return structuredClone(account);

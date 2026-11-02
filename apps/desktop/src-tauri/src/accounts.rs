@@ -103,16 +103,39 @@ pub fn account_add(
     state: State<'_, AppState>,
     name: String,
     provider: String,
+    dir: Option<PathBuf>,
 ) -> Result<Account, CmdError> {
     let provider = Provider::parse(&provider)?;
     let data = data_dir(&state)?;
     let mut registry = Registry::load(data)?;
+    if let Some(dir) = dir {
+        return import(data, &mut registry, &name, provider, &dir);
+    }
     let dir = xdev_ai::account_dir(data, &name);
     let entry = registry.add(&name, provider, dir)?.clone();
     // Checked before anything is written, so a failed add leaves no
     // half-made account behind.
     provider.command()?;
     std::fs::create_dir_all(&entry.dir).map_err(AiError::from)?;
+    registry.save(data)?;
+    Ok(account(&entry))
+}
+
+/// Registers a Claude Code or Codex config folder that already exists, such
+/// as a hive account. Its sign-in is used as is; nothing is copied or made.
+fn import(
+    data: &Path,
+    registry: &mut Registry,
+    name: &str,
+    provider: Provider,
+    dir: &Path,
+) -> Result<Account, CmdError> {
+    if !dir.is_dir() {
+        return Err(AiError::NotFound.into());
+    }
+    // Stored absolute so the registry means the same from any folder.
+    let dir = std::path::absolute(dir).map_err(AiError::from)?;
+    let entry = registry.add(name, provider, dir)?.clone();
     registry.save(data)?;
     Ok(account(&entry))
 }
@@ -215,6 +238,33 @@ mod tests {
             serde_json::to_value(login).unwrap(),
             serde_json::json!({ "opened": false, "command": "c" })
         );
+    }
+
+    #[test]
+    fn import_registers_an_existing_folder_without_touching_it() {
+        let data = tempfile::tempdir().unwrap();
+        let hive = tempfile::tempdir().unwrap();
+        let mut registry = Registry::load(data.path()).unwrap();
+        let missing = hive.path().join("missing");
+        let Err(err) = import(data.path(), &mut registry, "h", Provider::Claude, &missing) else {
+            panic!("a missing folder was registered");
+        };
+        assert_eq!(err.code, "not_found");
+        assert!(!missing.exists());
+
+        import(
+            data.path(),
+            &mut registry,
+            "h",
+            Provider::Codex,
+            hive.path(),
+        )
+        .unwrap();
+        let saved = Registry::load(data.path()).unwrap();
+        assert_eq!(saved.accounts.len(), 1);
+        assert_eq!(saved.accounts[0].dir, hive.path());
+        assert_eq!(saved.accounts[0].provider, Provider::Codex);
+        assert!(!xdev_ai::account_dir(data.path(), "h").exists());
     }
 
     #[test]

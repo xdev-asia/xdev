@@ -570,7 +570,7 @@ it("routes account calls through Tauri and normalizes their errors", async () =>
     await api.accounts(); await api.quota(); await api.addAccount("new", "codex"); await api.loginAccount("new"); await api.removeAccount("new");
     expect(vi.mocked(invoke).mock.calls).toEqual([
       ["accounts_list", undefined], ["accounts_quota", undefined],
-      ["account_add", { name: "new", provider: "codex" }], ["account_login", { name: "new" }], ["account_remove", { name: "new" }],
+      ["account_add", { name: "new", provider: "codex", dir: null }], ["account_login", { name: "new" }], ["account_remove", { name: "new" }],
     ]);
     vi.mocked(invoke).mockRejectedValueOnce({ code: "bad_registry" });
     await expect(api.accounts()).rejects.toEqual({ code: "bad_registry" });

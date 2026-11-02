@@ -90,6 +90,9 @@
 .account-add label { display: flex; align-items: center; gap: var(--x-space-2); color: var(--x-color-muted); }
 .account-add input, .account-add select { padding: var(--x-space-2); font: inherit; color: var(--x-color-ink); background: var(--x-color-bg); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); }
 .account-add input { font-family: var(--x-font-mono); }
+.account-add-hint { flex-basis: 100%; margin: 0; color: var(--x-color-muted); }
+.account-add-folder { flex: 1 1 100%; }
+.account-add-folder input { flex: 1; min-width: 0; }
 .account-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-space-2); margin-top: var(--x-space-3); }
 .account-confirm p { flex-basis: 100%; margin: 0; }
 .account-command { display: grid; gap: var(--x-space-2); }
