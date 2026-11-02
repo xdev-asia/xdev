@@ -219,6 +219,67 @@
       "covers": [],
       "verified": null,
       "type": "spec"
+    },
+    {
+      "name": "list items not indented",
+      "input": "---\ncovers:\n- src\nagents:\n- cursor\n-\n- claude\n---\n",
+      "body": "",
+      "title": "plan",
+      "agents": [
+        "claude",
+        "cursor"
+      ],
+      "tags": [],
+      "covers": [
+        "src"
+      ]
+    },
+    {
+      "name": "comment after an empty value",
+      "input": "---\ncovers: # comment\n  - src/** # here too\n  - # only a comment\ntype: # comment\n---\n",
+      "body": "",
+      "title": "plan",
+      "agents": [],
+      "tags": [],
+      "covers": [
+        "src/**"
+      ],
+      "type": null
+    },
+    {
+      "name": "verified quoted with spaces",
+      "input": "---\nverified: \" abcd \"\n---\n",
+      "body": "",
+      "title": "plan",
+      "agents": [],
+      "tags": [],
+      "verified": null
+    },
+    {
+      "name": "plain line ends a list",
+      "input": "---\ncovers:\n  - a\n# a comment does not\n  - c\nfoo\n  - b\n---\n",
+      "body": "",
+      "title": "plan",
+      "agents": [],
+      "tags": [],
+      "covers": [
+        "a",
+        "c"
+      ]
+    },
+    {
+      "name": "covers lose every leading slash and dot-slash, any dotdot segment",
+      "input": "---\ncovers:\n  - //etc\n  - ././/a/b\n  - /./c\n  - ..\\x\n  - a\\..\\b\n  - x/..\\y\n  - d\\e\n  - ./\n---\n",
+      "body": "",
+      "title": "plan",
+      "agents": [],
+      "tags": [],
+      "covers": [
+        "etc",
+        "a/b",
+        "c",
+        "d\\e"
+      ]
     }
   ]
 }

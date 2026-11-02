@@ -17,7 +17,7 @@ const EMPTY: Frontmatter = { title: null, agents: [], tags: [], covers: [], veri
 const COMMIT_ID = /^[0-9a-f]{4,40}$/i;
 const BOM = "﻿";
 const KEY_LINE = /^([A-Za-z_][\w-]*):(?:[ \t]+(.*))?$/;
-const ITEM_LINE = /^[ \t]*-[ \t]+(.*)$/;
+const ITEM_LINE = /^[ \t]*-(?:[ \t]+(.*))?$/;
 
 type Value = { kind: "text"; text: string; quoted: boolean } | { kind: "list"; items: string[] };
 
@@ -59,9 +59,9 @@ function unquote(s: string): string | null {
   return null;
 }
 
-// YAML comments need whitespace before `#`, so `a#b` stays one value.
+// A YAML comment starts the value or follows whitespace, so `a#b` stays one value.
 function cutComment(s: string): string {
-  const at = s.search(/[ \t]#/);
+  const at = s.search(/(^|[ \t])#/);
   return (at === -1 ? s : s.slice(0, at)).trim();
 }
 
@@ -91,11 +91,14 @@ function parseValue(raw: string): Value {
   return { kind: "text", text, quoted };
 }
 
-// Key → value; a key with an empty value collects the `- item` lines below it.
+// Key → value; a key with an empty value collects the `- item` lines below it,
+// up to the next line at the left edge that is not an item.
 function readBlock(lines: Line[]): Map<string, Value> {
   const values = new Map<string, Value>();
   let listKey: string | null = null;
   for (const { text } of lines) {
+    const trimmed = text.trim();
+    if (trimmed === "" || trimmed.startsWith("#")) continue;
     const key = KEY_LINE.exec(text);
     if (key) {
       const raw = key[2] ?? "";
@@ -111,8 +114,10 @@ function readBlock(lines: Line[]): Map<string, Value> {
     const item = ITEM_LINE.exec(text);
     const list = listKey === null ? undefined : values.get(listKey);
     if (item && list?.kind === "list") {
-      const value = scalar(item[1]).text;
+      const value = scalar(item[1] ?? "").text;
       if (value !== "") list.items.push(value);
+    } else if (!/^[ \t]/.test(text)) {
+      listKey = null;
     }
   }
   return values;
@@ -139,21 +144,21 @@ function toText(value: Value | undefined): string | null {
   return text === "" ? null : text;
 }
 
-// Entries that could climb out of the repo are dropped rather than trusted.
+// Entries that could climb out of the repo, by `/` or a Windows-style `\`, are dropped rather than trusted.
 function toCovers(value: Value | undefined): string[] {
   const covers: string[] = [];
   for (const item of toList(value)) {
-    const trimmed = item.trim();
-    const entry = trimmed.startsWith("./") ? trimmed.slice(2) : trimmed.startsWith("/") ? trimmed.slice(1) : trimmed;
-    if (entry === "" || entry.split("/").includes("..") || covers.includes(entry)) continue;
+    const entry = item.trim().replace(/^(?:\.?\/)+/, "");
+    if (entry === "" || entry.split(/[/\\]/).includes("..") || covers.includes(entry)) continue;
     covers.push(entry);
   }
   return covers;
 }
 
+// Not trimmed: spaces inside quotes are part of the value, and a space is not hex.
 function toVerified(value: Value | undefined): string | null {
-  const id = toText(value);
-  return id !== null && COMMIT_ID.test(id) ? id.toLowerCase() : null;
+  if (value?.kind !== "text") return null;
+  return COMMIT_ID.test(value.text) ? value.text.toLowerCase() : null;
 }
 
 export function parseFrontmatter(content: string): { fm: Frontmatter; body: string; raw: string | null } {

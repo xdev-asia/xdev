@@ -98,10 +98,13 @@ fn parse_block(block: &str) -> Frontmatter {
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        if line.starts_with(char::is_whitespace) {
-            let item = trimmed
-                .strip_prefix('-')
-                .filter(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace));
+        let item = trimmed
+            .strip_prefix('-')
+            .filter(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace));
+        let indented = line.starts_with(char::is_whitespace);
+        // YAML allows `- item` at the key's own indent, so an unindented item
+        // still belongs to the open list.
+        if indented || (open.is_some() && item.is_some()) {
             if let (Some(key), Some(item)) = (open, item)
                 && let Some(Value::List(items)) = &mut values[key as usize]
             {
@@ -170,17 +173,17 @@ fn list(value: Option<Value>) -> Vec<String> {
     }
 }
 
-/// Entries are relative to the repo root, so a leading `/` or `./` is noise;
-/// a `..` segment would reach outside the repo and is dropped.
+/// Entries are relative to the repo root, so leading `/` and `./` are noise;
+/// a `..` segment would reach outside the repo and is dropped, split on `\`
+/// too so a Windows-style `..\x` cannot slip through.
 fn parse_covers(items: Vec<String>) -> Vec<String> {
     let mut covers: Vec<String> = Vec::new();
     for item in items {
-        let item = item.trim();
-        let item = item
-            .strip_prefix("./")
-            .or_else(|| item.strip_prefix('/'))
-            .unwrap_or(item);
-        if item.is_empty() || item.split('/').any(|seg| seg == "..") {
+        let mut item = item.trim();
+        while let Some(rest) = item.strip_prefix("./").or_else(|| item.strip_prefix('/')) {
+            item = rest;
+        }
+        if item.is_empty() || item.split(['/', '\\']).any(|seg| seg == "..") {
             continue;
         }
         if !covers.iter().any(|c| c == item) {
