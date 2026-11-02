@@ -46,8 +46,14 @@ export function useUpdate(api: Api): { state: Update | null; restart(): void } {
       }
     };
     // Listens first so a download finishing in between is not missed.
-    void api.onUpdateReady(ready).then((unlisten) => (stale ? unlisten() : (off = unlisten)));
-    api.updateStatus().then((found) => found && ready(found), () => {});
+    void api
+      .onUpdateReady(ready)
+      .then((unlisten) => {
+        if (stale) return unlisten();
+        off = unlisten;
+        return api.updateStatus().then((found) => found && ready(found));
+      })
+      .catch(() => {});
     return () => {
       stale = true;
       off?.();
