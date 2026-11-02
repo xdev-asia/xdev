@@ -3,5 +3,7 @@
 //! behind.
 
 mod pump;
+mod session;
 
 pub use pump::{COALESCE, Flow, READ_CHUNK, WINDOW};
+pub use session::{PtyError, Session, SpawnSpec};

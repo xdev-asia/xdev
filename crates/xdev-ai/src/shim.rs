@@ -36,6 +36,19 @@ pub fn argv(program: &Path, args: &[String]) -> Result<Vec<OsString>, ShimError>
         v.extend(args.iter().map(OsString::from));
         return Ok(v);
     }
+    // `/s` strips exactly the outer pair of quotes, leaving the line as built.
+    Ok(["cmd.exe", "/d", "/s", "/c"]
+        .map(OsString::from)
+        .into_iter()
+        .chain([OsString::from(format!("\"{}\"", line(program, args)?))])
+        .collect())
+}
+
+/// The line `cmd.exe` runs for a batch file: the program and each arg
+/// quoted where `cmd` would otherwise split or redirect. Terminals pass it
+/// through a variable instead of `argv`, because the pseudo console
+/// re-quotes `argv` (tested by `batch_shim_gets_args_whole` in `xdev-pty`).
+pub fn line(program: &Path, args: &[String]) -> Result<String, ShimError> {
     if let Some(bad) = args
         .iter()
         .find(|a| a.contains(['"', '%', '!', '\r', '\n']))
@@ -48,12 +61,7 @@ pub fn argv(program: &Path, args: &[String]) -> Result<Vec<OsString>, ShimError>
         line.push(' ');
         line.push_str(&quote(arg));
     }
-    // `/s` strips exactly the outer pair of quotes, leaving the line as built.
-    Ok(["cmd.exe", "/d", "/s", "/c"]
-        .map(OsString::from)
-        .into_iter()
-        .chain([OsString::from(format!("\"{line}\""))])
-        .collect())
+    Ok(line)
 }
 
 fn quote(arg: &str) -> String {

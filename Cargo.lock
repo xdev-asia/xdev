@@ -6211,6 +6211,7 @@ name = "xdev-pty"
 version = "0.3.0"
 dependencies = [
  "portable-pty",
+ "tempfile",
  "thiserror 2.0.21",
  "xdev-ai",
 ]
