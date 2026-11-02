@@ -4,6 +4,7 @@
 
 mod flow;
 mod id;
+mod launch;
 mod process;
 mod prompts;
 mod route;
@@ -19,6 +20,7 @@ use xdev_git::GitError;
 use xdev_policy::Verdict;
 
 pub use flow::RunOptions;
+pub use launch::{Launch, LaunchError, launch, launch_with};
 pub use route::{RouteRule, Routing};
 pub use runner::{
     Cancel, ClaudeRunner, CodexRunner, ContextUse, RunOutcome, RunRequest, Runner,
