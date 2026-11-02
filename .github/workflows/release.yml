@@ -12,8 +12,10 @@ on:
 permissions:
   contents: read
 
+# A queued run in the same group replaces the pending one, so a manual test
+# build must not share a group with pushes or it drops a release.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
