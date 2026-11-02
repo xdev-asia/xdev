@@ -5,8 +5,10 @@ import { useI18n } from "../i18n";
 type Copy = "idle" | "copied" | "failed";
 
 // Shell and JSON, so they stay in English whatever the UI language.
-export function mcpCommand(vaultPath: string): string {
-  return `claude mcp add xdev -- xdev mcp "${vaultPath}"`;
+export function mcpCommand(vaultPath: string): string | null {
+  if (vaultPath.includes("'")) return null;
+  const path = /^[A-Za-z0-9_./:\\-]+$/.test(vaultPath) ? vaultPath : `'${vaultPath}'`;
+  return `claude mcp add xdev -- xdev mcp ${path}`;
 }
 
 export function mcpConfig(vaultPath: string): string {
@@ -50,6 +52,7 @@ function Snippet(props: { id: string; label: string; text: string }): JSX.Elemen
 // How to point an MCP client at this vault; `xdev mcp` serves the docs and takes proposed edits.
 export function ConnectAgent(props: { vaultPath: string }): JSX.Element {
   const { t } = useI18n();
+  const command = mcpCommand(props.vaultPath);
   return (
     <section className="connect-agent" aria-labelledby="connect-agent-title">
       <div className="pane-head">
@@ -57,7 +60,11 @@ export function ConnectAgent(props: { vaultPath: string }): JSX.Element {
       </div>
       <p className="connect-hint">{t("connect.hint")}</p>
       <div className="connect-snippets">
-        <Snippet id="connect-command" label={t("connect.command")} text={mcpCommand(props.vaultPath)} />
+        {command === null ? (
+          <p className="connect-hint">{t("connect.commandUnsafe")}</p>
+        ) : (
+          <Snippet id="connect-command" label={t("connect.command")} text={command} />
+        )}
         <Snippet id="connect-config" label={t("connect.config")} text={mcpConfig(props.vaultPath)} />
       </div>
     </section>

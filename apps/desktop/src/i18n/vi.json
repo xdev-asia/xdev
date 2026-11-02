@@ -152,6 +152,7 @@
   "agents.written": "Đã ghi {count} tệp",
   "connect.title": "Kết nối agent",
   "connect.hint": "Agent có thể đọc trực tiếp các tài liệu này và đề xuất chỉnh sửa; đề xuất sẽ chờ bạn duyệt trong mục Thay đổi.",
+  "connect.commandUnsafe": "Dùng cấu hình JSON cho đường dẫn chứa dấu nháy đơn.",
   "connect.command": "Claude Code",
   "connect.config": "Ứng dụng MCP khác (cấu hình JSON)",
   "connect.copy": "Sao chép",
