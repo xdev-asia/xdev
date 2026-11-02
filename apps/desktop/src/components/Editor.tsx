@@ -87,7 +87,13 @@ export const highlight = HighlightStyle.define([
   { tag: [tags.processingInstruction, tags.meta, tags.contentSeparator, tags.list], color: "var(--x-color-muted)" },
 ]);
 
-export function Editor(props: { value: string; onChange(v: string): void; onSave(): void; readOnly?: boolean }): JSX.Element {
+export function Editor(props: {
+  value: string;
+  onChange(v: string): void;
+  onSave(): void;
+  readOnly?: boolean;
+  autoFocus?: boolean;
+}): JSX.Element {
   const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -121,6 +127,10 @@ export function Editor(props: { value: string; onChange(v: string): void; onSave
       }),
     });
     view.current = v;
+    if (latest.current.autoFocus) {
+      v.dispatch({ selection: { anchor: v.state.doc.length } });
+      v.focus();
+    }
     return () => {
       v.destroy();
       view.current = null;

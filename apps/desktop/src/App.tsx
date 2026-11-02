@@ -175,6 +175,8 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
   const [staleDocs, setStaleDocs] = useState<StaleDoc[]>([]);
   // Open while the sidebar shows the new-doc form.
   const [newDoc, setNewDoc] = useState<{ busy: boolean; error?: ApiError["code"] } | null>(null);
+  // A doc just created from its title gets the cursor, so typing goes straight below the heading.
+  const [typeInto, setTypeInto] = useState<string | null>(null);
   const { state } = doc;
   const searchOpen = query.trim() !== "";
   const quota = useQuota(api, app === "accounts");
@@ -301,6 +303,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
   }
 
   function openDoc(path: string) {
+    setTypeInto(null);
     setSelected(null);
     setApp("docs");
     doc.open(path);
@@ -329,7 +332,9 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
     // The watcher skips the app's own writes, so the list and the change count are refreshed here.
     api.listDocs().then(setDocs, () => undefined);
     review.refresh();
+    setMode("edit");
     openDoc(path);
+    setTypeInto(path);
   }
 
   function selectChange(path: string | null) {
@@ -594,6 +599,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
                         onChange={doc.edit}
                         onSave={doc.save}
                         readOnly={readOnly}
+                        autoFocus={state.path === typeInto}
                       />
                     </div>
                     <Backlinks api={api} path={state.path} revision={revision} onOpen={openDoc} />
