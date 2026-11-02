@@ -25,7 +25,7 @@ describe("PtyClient", () => {
     const api = createMockApi({});
     const ack = vi.spyOn(api, "ptyAck");
     const client = new PtyClient(api, "t2");
-    await client.start("/demo", "shell", 80, 24, () => {});
+    await client.start("/demo", "shell", 80, 24, (_b, rendered) => rendered());
     await client.input("x".repeat(600 * 1024));
     expect(ack.mock.calls).toEqual([
       ["t2", 262144],
@@ -59,7 +59,47 @@ describe("PtyClient", () => {
     const kill = vi.spyOn(api, "ptyKill");
     const client = new PtyClient(api, "t5");
     await client.start("/demo", "shell", 80, 24, () => {});
-    client.dispose();
+    await client.dispose();
     expect(kill).toHaveBeenCalledWith("t5");
+  });
+
+  it("acks only what the terminal has rendered", async () => {
+    const api = createMockApi({});
+    const ack = vi.spyOn(api, "ptyAck");
+    const client = new PtyClient(api, "t6");
+    const pending: (() => void)[] = [];
+    await client.start("/demo", "shell", 80, 24, (_b, rendered) => pending.push(rendered));
+    await client.input("x".repeat(600 * 1024));
+    expect(ack).not.toHaveBeenCalled();
+    pending.forEach((rendered) => rendered());
+    expect(ack).toHaveBeenCalledTimes(2);
+    await client.dispose();
+  });
+
+  it("a stop during spawn kills the pty once the spawn is done", async () => {
+    const api = createMockApi({});
+    let finish: () => void = () => {};
+    const spawn = api.ptySpawn.bind(api);
+    vi.spyOn(api, "ptySpawn").mockImplementation((...args) => new Promise((ok) => { finish = () => ok(spawn(...args)); }));
+    const kill = vi.spyOn(api, "ptyKill");
+    const client = new PtyClient(api, "t7");
+    const started = client.start("/demo", "shell", 80, 24, () => {});
+    await Promise.resolve();
+    const stopped = client.dispose();
+    expect(kill).not.toHaveBeenCalled();
+    finish();
+    await started;
+    await stopped;
+    expect(kill).toHaveBeenCalledWith("t7");
+  });
+
+  it("a client disposed in the same tick never spawns", async () => {
+    const api = createMockApi({});
+    const spawn = vi.spyOn(api, "ptySpawn");
+    const client = new PtyClient(api, "t8");
+    const started = client.start("/demo", "shell", 80, 24, () => {});
+    await client.dispose();
+    await expect(started).rejects.toThrow("disposed");
+    expect(spawn).not.toHaveBeenCalled();
   });
 });

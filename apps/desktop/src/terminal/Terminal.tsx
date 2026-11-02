@@ -69,7 +69,7 @@ export function Terminal(props: {
     let alive = true;
     term.onData((text) => void client.input(text).catch(() => {}));
     term.onResize(({ cols, rows }) => void client.resize(cols, rows).catch(() => {}));
-    client.start(props.cwd, props.profile, term.cols, term.rows, (bytes) => term.write(bytes)).then(
+    client.start(props.cwd, props.profile, term.cols, term.rows, (bytes, rendered) => term.write(bytes, rendered)).then(
       (info) => {
         if (!alive) return;
         handlers.current.onStarted(info);
@@ -83,7 +83,7 @@ export function Terminal(props: {
     return () => {
       alive = false;
       observer.disconnect();
-      client.dispose();
+      void client.dispose();
       search.current = null;
       term.dispose();
     };
