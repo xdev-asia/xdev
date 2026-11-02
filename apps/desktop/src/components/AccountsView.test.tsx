@@ -190,3 +190,25 @@ it("adds a Codex account with the chosen provider", async () => {
   expect(login).toHaveBeenCalledWith("cx");
   expect(view.html()).toContain("CODEX_HOME=");
 });
+it("imports an existing folder, names it after the folder and skips the login", async () => {
+  const view = harness(); view.draw(); const cleanup = hooks.effects[0](); await tick();
+  const hive = String.raw`C:\Users\a\.xdev-hive\accounts\codex-3`;
+  vi.spyOn(view.api, "pickFolder").mockResolvedValue(hive);
+  const add = vi.spyOn(view.api, "addAccount"); const login = vi.spyOn(view.api, "loginAccount");
+  view.button("Import folder").props.onClick();
+  expect(view.html()).toContain(en["accounts.importHint"]);
+  await view.button("Browse…").props.onClick(); await tick();
+  await nodes(view.draw()).find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} }); await tick();
+  expect(add).toHaveBeenCalledWith("codex-3", "codex", hive);
+  expect(login).not.toHaveBeenCalled();
+  expect(view.html()).not.toContain(en["accounts.importHint"]);
+  if (typeof cleanup === "function") cleanup();
+});
+it("asks for a folder before importing", async () => {
+  const view = harness(); const add = vi.spyOn(view.api, "addAccount");
+  view.button("Import folder").props.onClick();
+  nodes(view.draw()).filter(n => n.type === "input")[1].props.onChange({ target: { value: "h" } });
+  await nodes(view.draw()).find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} });
+  expect(view.html()).toContain(translate("en", "error.not_found"));
+  expect(add).not.toHaveBeenCalled();
+});

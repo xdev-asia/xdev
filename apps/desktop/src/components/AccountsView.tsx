@@ -33,6 +33,8 @@ export function AccountsView({ api }: { api: Api }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [provider, setProvider] = useState<Provider>("claude");
+  // null adds a new account; a string imports that existing folder.
+  const [folder, setFolder] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [command, setCommand] = useState<string>();
   const [copy, setCopy] = useState<"copied" | "copyFailed">();
@@ -115,18 +117,42 @@ export function AccountsView({ api }: { api: Api }) {
       setBusy(false);
     }
   }
+  function openForm(importing: boolean) {
+    setProblem(undefined);
+    setFolder(importing ? "" : null);
+    setAdding(true);
+  }
+  function closeForm() {
+    setAdding(false);
+    setName("");
+    setProvider("claude");
+    setFolder(null);
+  }
+  async function browse() {
+    const picked = await api.pickFolder();
+    if (!picked) return;
+    setFolder(picked);
+    // A hive folder is named like the account (`claude-2`, `codex-3`).
+    const base = picked.split(/[\\/]/).filter(Boolean).pop() ?? "";
+    if (!name) setName(base.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+/, "").slice(0, 32));
+    if (base.toLowerCase().startsWith("codex")) setProvider("codex");
+  }
   async function add() {
     if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(name)) {
       setProblem({ code: "bad_name" });
       return;
     }
+    const dir = folder?.trim();
+    if (folder !== null && !dir) {
+      setProblem({ code: "not_found" });
+      return;
+    }
     await run(async () => {
-      const account = await api.addAccount(name, provider);
-      setAdding(false);
-      setName("");
-      setProvider("claude");
+      const account = await api.addAccount(name, provider, dir);
+      closeForm();
       setRevision(n => n + 1);
-      await login(account.name);
+      // An imported folder keeps its own sign-in.
+      if (!dir) await login(account.name);
     });
   }
   function resetText(resetsAt: string | null) {
@@ -297,23 +323,29 @@ export function AccountsView({ api }: { api: Api }) {
       <div className="doc-titles"><h1 className="doc-title">{t("accounts.title")}{accounts && accounts.accounts.length > 0 && <span className="account-count">{accounts.accounts.length}</span>}</h1>{accounts && <span className="doc-subtitle">{t("accounts.reserve", { percent: accounts.reservePercent })}</span>}</div>
       <div className="doc-actions">
         <button type="button" className="btn-secondary" disabled={busy} onClick={() => { setProblem(undefined); setRevision(n => n + 1); }}>{t("accounts.refresh")}</button>
-        {accounts?.accounts.length !== 0 && <Button type="button" style={COMPACT} disabled={busy} onClick={() => setAdding(true)}>{t("accounts.add")}</Button>}
+        <button type="button" className="btn-secondary" disabled={busy} onClick={() => openForm(true)}>{t("accounts.import")}</button>
+        {accounts?.accounts.length !== 0 && <Button type="button" style={COMPACT} disabled={busy} onClick={() => openForm(false)}>{t("accounts.add")}</Button>}
       </div>
     </div>
     {problem && <ProblemNote problem={problem} />}
     {adding && <form className="account-row account-add" onSubmit={async e => { e.preventDefault(); await add(); }}>
-      <label>{t("accounts.name")}<input value={name} onChange={e => setName(e.target.value)} disabled={busy} autoFocus /></label>
+      {folder !== null && <>
+        <p className="account-add-hint">{t("accounts.importHint")}</p>
+        <label className="account-add-folder">{t("accounts.folder")}<input value={folder} onChange={e => setFolder(e.target.value)} disabled={busy} autoFocus spellCheck={false} />
+          <button type="button" className="btn-secondary" disabled={busy} onClick={() => run(browse)}>{t("accounts.browse")}</button></label>
+      </>}
+      <label>{t("accounts.name")}<input value={name} onChange={e => setName(e.target.value)} disabled={busy} autoFocus={folder === null} /></label>
       <label>{t("accounts.providerLabel")}<select value={provider} onChange={e => setProvider(e.target.value as Provider)} disabled={busy}>
         {PROVIDERS.map(p => <option key={p} value={p}>{t(`accounts.provider.${p}`)}</option>)}
       </select></label>
-      <Button type="submit" style={COMPACT} disabled={busy}>{t("accounts.addLogin")}</Button>
-      <Button type="button" style={COMPACT} disabled={busy} onClick={() => setAdding(false)}>{t("accounts.cancel")}</Button>
+      <Button type="submit" style={COMPACT} disabled={busy}>{t(folder === null ? "accounts.addLogin" : "accounts.importSubmit")}</Button>
+      <Button type="button" style={COMPACT} disabled={busy} onClick={closeForm}>{t("accounts.cancel")}</Button>
     </form>}
     {command && <div className="account-command">
       <p>{t("accounts.runCommand")}</p><pre className="commands">{command}</pre>
       <Button type="button" style={COMPACT} onClick={async () => { try { await navigator.clipboard.writeText(command); setCopy("copied"); } catch { setCopy("copyFailed"); } }}>{t("connect.copy")}</Button>
       {copy && <span role="status">{t(`connect.${copy}`)}</span>}
     </div>}
-    {accounts === undefined ? !problem && <p className="placeholder">{t("accounts.loading")}</p> : accounts.accounts.length === 0 ? <div className="placeholder"><p>{t("accounts.empty")}</p><Button type="button" style={COMPACT} onClick={() => setAdding(true)}>{t("accounts.add")}</Button></div> : <>{resets()}{toolbar()}{list()}</>}
+    {accounts === undefined ? !problem && <p className="placeholder">{t("accounts.loading")}</p> : accounts.accounts.length === 0 ? <div className="placeholder"><p>{t("accounts.empty")}</p><Button type="button" style={COMPACT} onClick={() => openForm(false)}>{t("accounts.add")}</Button></div> : <>{resets()}{toolbar()}{list()}</>}
   </div>;
 }

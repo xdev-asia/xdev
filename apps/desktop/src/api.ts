@@ -142,7 +142,9 @@ export interface Api {
   notifyUpdate(title: string, body: string): Promise<void>;
   accounts(): Promise<Accounts>;
   quota(): Promise<Quota[]>;
-  addAccount(name: string, provider: Provider): Promise<Account>;
+  // With `dir`, an existing config folder is registered as is (a hive
+  // account, say); without it a new folder is made for a login.
+  addAccount(name: string, provider: Provider, dir?: string): Promise<Account>;
   loginAccount(name: string): Promise<LoginStart>;
   removeAccount(name: string): Promise<void>;
   tasksContext(): Promise<TasksContext>;
@@ -281,7 +283,7 @@ const tauriApi: Api = {
   notifyUpdate: (title, body) => call("update_notify", { title, body }),
   accounts: () => call("accounts_list"),
   quota: () => call("accounts_quota"),
-  addAccount: (name, provider) => call("account_add", { name, provider }),
+  addAccount: (name, provider, dir) => call("account_add", { name, provider, dir: dir ?? null }),
   loginAccount: (name) => call("account_login", { name }),
   removeAccount: (name) => call("account_remove", { name }),
   tasksContext: () => call("tasks_context"),
