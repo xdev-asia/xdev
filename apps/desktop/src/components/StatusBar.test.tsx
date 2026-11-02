@@ -11,17 +11,16 @@ function account(name: string, state: Quota["state"], ...use: (number | null)[])
   return { name, state, reason: null, windows: use.map((utilization, i) => ({ key: keys[i], utilization, resetsAt: null })) };
 }
 
-function render(props: { staleCount?: number; changeCount?: number | null; quota?: Quota[] | null }): string {
+function render(props: { staleCount?: number; changeCount?: number | null; quota?: Quota[] | null; noVault?: boolean }): string {
+  const vault = {
+    name: "vault",
+    docCount: 4,
+    staleCount: props.staleCount ?? 0,
+    changeCount: "changeCount" in props ? props.changeCount : 0,
+  };
   return renderToStaticMarkup(
     <I18nProvider>
-      <StatusBar
-        vaultName="vault"
-        docCount={4}
-        staleCount={props.staleCount ?? 0}
-        changeCount={"changeCount" in props ? props.changeCount : 0}
-        quota={props.quota === undefined ? null : props.quota}
-        onOpen={() => {}}
-      />
+      <StatusBar vault={props.noVault ? null : vault} quota={props.quota === undefined ? null : props.quota} onOpen={() => {}} />
     </I18nProvider>,
   );
 }
@@ -72,6 +71,13 @@ describe("StatusBar", () => {
     expect(render({ quota: [account("claude-2", "ok")] })).toMatch(/>claude-2</);
     expect(render({ quota: [account("a", "reserve", 90)] })).toContain("No account with room");
     for (const quota of [[], null]) expect(render({ quota })).not.toContain("statusbar-end");
+  });
+
+  it("says no folder is open, and still shows the account", () => {
+    const markup = render({ noVault: true, quota: [account("claude-2", "ok", 5)] });
+    expect(markup).toContain("No folder open");
+    expect(markup).not.toContain("docs");
+    expect(markup).toContain("claude-2 · 5h 5%");
   });
 
   it("has every apps and status key in vi", () => {

@@ -19,46 +19,53 @@ import { Backlinks } from "./components/Backlinks";
 import { ChangesPanel, ChangeView } from "./components/ChangesPanel";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ConflictBanner } from "./components/ConflictBanner";
+import { CreateVaultDialog } from "./components/CreateVaultDialog";
 import { Editor } from "./components/Editor";
 import { FreshnessBanner } from "./components/FreshnessBanner";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { LanguageSwitch } from "./components/LanguageSwitch";
+import { NoVaultView, type VaultFailure } from "./components/NoVaultView";
 import { Preview } from "./components/Preview";
 import { resultId, RESULTS_ID, SearchPanel } from "./components/SearchPanel";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
-import { Welcome } from "./components/Welcome";
 import { isDirty } from "./doc/docState";
 import { agentsEditable, parseFrontmatter, setAgents, setVerified } from "./doc/frontmatter";
 import { useDoc } from "./doc/useDoc";
 import { useI18n } from "./i18n";
 import type { AppId } from "./shell/apps";
+import { setUpVault } from "./shell/setUpVault";
 import { useQuota } from "./shell/useQuota";
 
 const SEARCH_DEBOUNCE_MS = 150;
 const SEARCH_LIMIT = 50;
 const SHORTCUT = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K";
 
-type Vault = { path: string; docs: DocEntry[] };
+// `open` is a doc to show first, e.g. the starter doc of a folder just created.
+type Vault = { path: string; docs: DocEntry[]; open?: string };
 
 function folderName(path: string): string {
   return path.split(/[/\\]/).filter(Boolean).pop() ?? path;
 }
 
 export function App() {
+  const { t } = useI18n();
   const [booting, setBooting] = useState(true);
   const [vault, setVault] = useState<Vault | null>(null);
   const [opening, setOpening] = useState(false);
-  const [error, setError] = useState<ApiError["code"]>();
+  const [failure, setFailure] = useState<VaultFailure>();
+  const [defaultPath, setDefaultPath] = useState("");
+  // The create dialog: closed, or open with the path being edited and the last error.
+  const [creating, setCreating] = useState<{ path: string; error?: ApiError["code"] } | null>(null);
   const booted = useRef(false);
 
   const openVault = useCallback(async (path: string) => {
     setOpening(true);
-    setError(undefined);
     try {
       setVault({ path, docs: await api.openVault(path) });
+      setFailure(undefined);
     } catch (e) {
-      setError(toApiError(e).code);
+      setFailure({ path, code: toApiError(e).code });
     } finally {
       setOpening(false);
     }
@@ -73,17 +80,72 @@ export function App() {
     // StrictMode runs effects twice in dev; opening the vault twice would race.
     if (booted.current) return;
     booted.current = true;
-    api
-      .lastVault()
-      .then((path) => (path ? openVault(path) : undefined))
-      .catch(() => undefined)
-      .finally(() => setBooting(false));
+    void (async () => {
+      const path = await api.lastVault().catch(() => null);
+      if (path) await openVault(path);
+      const setup = await api.vaultSetup().catch(() => null);
+      if (setup) {
+        setDefaultPath(setup.defaultPath);
+        if (setup.prompt && !path) setCreating({ path: setup.defaultPath });
+      }
+      setBooting(false);
+    })();
   }, [openVault]);
 
+  async function create() {
+    if (!creating) return;
+    const path = creating.path.trim();
+    setOpening(true);
+    try {
+      const starter = { file: t("vault.starter.file"), content: t("vault.starter.content") };
+      const docs = await setUpVault(api, path, starter);
+      setCreating(null);
+      setFailure(undefined);
+      setVault({ path, docs, open: docs.some((d) => d.path === starter.file) ? starter.file : undefined });
+    } catch (e) {
+      setCreating({ path, error: toApiError(e).code });
+    } finally {
+      setOpening(false);
+    }
+  }
+
+  async function pickForCreate() {
+    const path = await api.pickFolder().catch(() => null);
+    if (path) setCreating({ path });
+  }
+
+  function cancelCreate() {
+    setCreating(null);
+    // Answering "not now" counts as answering: later launches without a folder skip the offer.
+    void api.dismissVaultPrompt().catch(() => undefined);
+  }
+
   if (booting) return <div className="app-boot" />;
-  if (!vault) return <Welcome onOpen={() => void pickAndOpen()} opening={opening} error={error} />;
-  // Keyed by path so switching folders starts with a clean editor and search state.
-  return <VaultView key={vault.path} vault={vault} onChangeFolder={pickAndOpen} />;
+  return (
+    <>
+      {vault ? (
+        // Keyed by path so switching folders starts with a clean editor and search state.
+        <VaultView key={vault.path} vault={vault} onChangeFolder={pickAndOpen} />
+      ) : (
+        <NoVaultView
+          failure={failure}
+          busy={opening}
+          onCreate={() => setCreating({ path: defaultPath })}
+          onOpen={() => void pickAndOpen()}
+        />
+      )}
+      <CreateVaultDialog
+        open={creating !== null}
+        path={creating?.path ?? ""}
+        busy={opening}
+        error={creating?.error}
+        onPath={(path) => setCreating({ path })}
+        onPick={() => void pickForCreate()}
+        onCreate={() => void create()}
+        onCancel={cancelCreate}
+      />
+    </>
+  );
 }
 
 function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
@@ -139,6 +201,11 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
       stale = true;
     };
   }, [revision, review.revision]);
+
+  useEffect(() => {
+    if (props.vault.open) doc.open(props.vault.open);
+    // Only on mount: the vault is fixed for this view's lifetime (it is keyed by path).
+  }, []);
 
   useEffect(() => {
     let off: (() => void) | undefined;
@@ -484,10 +551,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
         </div>
       </main>
       <StatusBar
-        vaultName={folderName(props.vault.path)}
-        docCount={docs.length}
-        staleCount={staleDocs.length}
-        changeCount={changeCount}
+        vault={{ name: folderName(props.vault.path), docCount: docs.length, staleCount: staleDocs.length, changeCount }}
         quota={quota}
         onOpen={openApp}
       />

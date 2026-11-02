@@ -368,6 +368,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
   const listeners = new Set<(paths: string[]) => void>();
   let open = false;
   let last: string | null = null;
+  let prompted = false;
   let repo = options.repo ?? true;
   let snapshotted = false;
   // Oldest first; the last one is HEAD.
@@ -542,12 +543,24 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     async openVault(path) {
       open = true;
       last = path;
+      prompted = true;
       if (repo && !snapshotted) seedCommits();
       snapshotted = true;
       return entries();
     },
     async lastVault() {
       return last;
+    },
+    async vaultSetup() {
+      return { prompt: !prompted && last === null, defaultPath: "/demo/Documents/xDev" };
+    },
+    async dismissVaultPrompt() {
+      prompted = true;
+    },
+    async createVault(_path, file, content) {
+      if (!/^[^/\\]+\.md$/.test(file)) return reject("bad_path");
+      // One in-memory folder: the starter only lands when it is empty, like a fresh folder on disk.
+      if (files.size === 0) files.set(file, content);
     },
     async listDocs() {
       return open ? entries() : reject("no_vault");

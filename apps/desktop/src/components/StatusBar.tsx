@@ -34,32 +34,42 @@ function AccountItem(props: { quota: Quota[]; onOpen(app: AppId): void }): JSX.E
   );
 }
 
-export function StatusBar(props: {
-  vaultName: string;
+export type VaultStatus = {
+  name: string;
   docCount: number;
   staleCount: number;
   /** `null` when the folder is not tracked by git; `undefined` while that is not known yet. */
   changeCount: number | null | undefined;
-  quota: Quota[] | null;
-  onOpen(app: AppId): void;
-}): JSX.Element {
+};
+
+function VaultItems(props: { vault: VaultStatus; onOpen(app: AppId): void }): JSX.Element {
+  const { t } = useI18n();
+  const { vault } = props;
+  return (
+    <>
+      <span>{vault.name}</span>
+      <span>{t("sidebar.count", { count: vault.docCount })}</span>
+      {vault.staleCount > 0 && (
+        <button type="button" onClick={() => props.onOpen("docs")}>
+          {t("status.stale", { count: vault.staleCount })}
+        </button>
+      )}
+      {vault.changeCount === null ? (
+        <span>{t("status.untracked")}</span>
+      ) : vault.changeCount === undefined ? null : (
+        <button type="button" onClick={() => props.onOpen("changes")}>
+          {t("status.changes", { count: vault.changeCount })}
+        </button>
+      )}
+    </>
+  );
+}
+
+export function StatusBar(props: { vault: VaultStatus | null; quota: Quota[] | null; onOpen(app: AppId): void }): JSX.Element {
   const { t } = useI18n();
   return (
     <footer className="statusbar" aria-label={t("status.label")}>
-      <span>{props.vaultName}</span>
-      <span>{t("sidebar.count", { count: props.docCount })}</span>
-      {props.staleCount > 0 && (
-        <button type="button" onClick={() => props.onOpen("docs")}>
-          {t("status.stale", { count: props.staleCount })}
-        </button>
-      )}
-      {props.changeCount === null ? (
-        <span>{t("status.untracked")}</span>
-      ) : props.changeCount === undefined ? null : (
-        <button type="button" onClick={() => props.onOpen("changes")}>
-          {t("status.changes", { count: props.changeCount })}
-        </button>
-      )}
+      {props.vault ? <VaultItems vault={props.vault} onOpen={props.onOpen} /> : <span>{t("status.noVault")}</span>}
       {props.quota !== null && props.quota.length > 0 && <AccountItem quota={props.quota} onOpen={props.onOpen} />}
     </footer>
   );

@@ -28,9 +28,11 @@ export type ApiError = {
     | "exists"
     | "no_claude"
     | "bad_registry"
-    | "bad_reserve";
+    | "bad_reserve"
+    | "bad_path";
   detail?: string;
 };
+export type VaultSetup = { prompt: boolean; defaultPath: string };
 export type VcsState = { status: "ok" | "no_repo" | "no_git" };
 export type ChangeKind = "added" | "modified" | "deleted";
 // `note` is the summary an agent gave with an `ai` change; null for the other origins.
@@ -95,6 +97,11 @@ export interface Api {
   pickFolder(): Promise<string | null>;
   openVault(path: string): Promise<DocEntry[]>;
   lastVault(): Promise<string | null>;
+  // `prompt` is true until the first-run offer has been answered or any folder opened.
+  vaultSetup(): Promise<VaultSetup>;
+  dismissVaultPrompt(): Promise<void>;
+  // Writes `file` only into a new or empty folder; does not open it.
+  createVault(path: string, file: string, content: string): Promise<void>;
   listDocs(): Promise<DocEntry[]>;
   readDoc(path: string): Promise<string>;
   writeDoc(path: string, content: string): Promise<void>;
@@ -141,6 +148,7 @@ export const ERROR_CODES: readonly ApiError["code"][] = [
   "no_claude",
   "bad_registry",
   "bad_reserve",
+  "bad_path",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -165,6 +173,9 @@ const tauriApi: Api = {
   },
   openVault: (path) => call("open_vault", { path }),
   lastVault: () => call("last_vault"),
+  vaultSetup: () => call("vault_setup"),
+  dismissVaultPrompt: () => call("dismiss_vault_prompt"),
+  createVault: (path, file, content) => call("create_vault", { path, file, content }),
   listDocs: () => call("list_docs"),
   readDoc: (path) => call("read_doc", { path }),
   writeDoc: (path, content) => call("write_doc", { path, content }),
