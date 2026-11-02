@@ -17,6 +17,7 @@ import type {
 import { extractTitle, parseFrontmatter } from "./doc/frontmatter";
 import { createResolver, parseLinks } from "./doc/links";
 import { estimateTokens, type ExportDoc, planExport } from "./mockExport";
+import { createMockTasks } from "./mockTasks";
 
 export { EXPORT_MARKER } from "./mockExport";
 
@@ -350,6 +351,8 @@ type MockOptions = {
   exported?: Record<string, string>;
   // Committed after the imported docs, oldest first.
   commits?: SeedCommit[];
+  // How long a fake task run takes.
+  runDelayMs?: number;
 };
 
 export function createMockApi(seed: Record<string, string>, options: MockOptions = {}): MockApi {
@@ -516,6 +519,11 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
   }
 
   const api: MockApi = {
+    ...createMockTasks({
+      defaultRepo: repo ? DEMO_ROOT : null,
+      accountNames: () => accounts.map((a) => a.name),
+      runDelayMs: options.runDelayMs,
+    }),
     async accounts() { return structuredClone({ reservePercent: 30, accounts }); },
     async quota() { return structuredClone(quotas); },
     async addAccount(name) {

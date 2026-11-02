@@ -29,7 +29,21 @@ export type ApiError = {
     | "no_claude"
     | "bad_registry"
     | "bad_reserve"
-    | "bad_path";
+    | "bad_path"
+    | "no_commits"
+    | "empty_goal"
+    | "needs_approval"
+    | "denied"
+    | "dirty_repo"
+    | "merge_conflict"
+    | "bad_state"
+    | "detached"
+    | "no_session"
+    | "no_worktree"
+    | "runner"
+    | "timeout"
+    | "policy_invalid"
+    | "binary";
   detail?: string;
 };
 export type VaultSetup = { prompt: boolean; defaultPath: string };
@@ -88,12 +102,60 @@ export type Quota = {
 };
 export type LoginStart = { opened: boolean; command: string };
 
+// Tasks keep the agent crate's own snake_case record, the same JSON `xdev task show --json` prints.
+// Times are unix seconds.
+export type TaskState = "ready" | "running" | "paused" | "review" | "failed" | "merged" | "discarded";
+export type TaskRun = {
+  started: number;
+  ended: number | null;
+  session_id: string | null;
+  cost_usd: number | null;
+  is_error: boolean;
+  summary: string;
+};
+// Null counts are a binary file.
+export type TaskFile = { path: string; added: number | null; removed: number | null };
+// `exit` is null when the command was killed or could not start.
+export type TaskTest = { command: string[]; exit: number | null; output_tail: string };
+export type TaskEvidence = { base: string; head: string; files: TaskFile[]; test: TaskTest | null };
+export type Task = {
+  id: string;
+  goal: string;
+  repo: string;
+  base: string;
+  branch: string;
+  worktree: string;
+  state: TaskState;
+  runs: TaskRun[];
+  evidence: TaskEvidence | null;
+  approval: { at: number; merge_commit: string } | null;
+  created: number;
+};
+// `defaultRepo` is the open vault's git root; `policyPath` is where the person changes what the gate allows.
+export type TasksContext = { defaultRepo: string | null; policyPath: string | null };
+// A file at the evidence's base and head; null where it does not exist.
+export type FileDiff = { old: string | null; new: string | null };
+
 export interface Api {
   accounts(): Promise<Accounts>;
   quota(): Promise<Quota[]>;
   addAccount(name: string): Promise<Account>;
   loginAccount(name: string): Promise<LoginStart>;
   removeAccount(name: string): Promise<void>;
+  tasksContext(): Promise<TasksContext>;
+  // Newest first.
+  tasks(): Promise<Task[]>;
+  task(id: string): Promise<Task>;
+  newTask(repo: string, goal: string): Promise<Task>;
+  // Resolves when the agent and the test are done, which can take up to an hour; meanwhile
+  // `tasks()` reports the task as `running`. Rejects with `needs_approval` / `denied` when the
+  // policy stops it, the reason in `detail`. `test` is split on whitespace.
+  runTask(id: string, account: string | null, test: string | null): Promise<Task>;
+  resumeTask(id: string, account: string | null): Promise<Task>;
+  approveTask(id: string): Promise<Task>;
+  discardTask(id: string): Promise<Task>;
+  // Rejects with `binary` for a file that is not text.
+  taskFileDiff(id: string, path: string): Promise<FileDiff>;
   pickFolder(): Promise<string | null>;
   openVault(path: string): Promise<DocEntry[]>;
   lastVault(): Promise<string | null>;
@@ -153,6 +215,20 @@ export const ERROR_CODES: readonly ApiError["code"][] = [
   "bad_registry",
   "bad_reserve",
   "bad_path",
+  "no_commits",
+  "empty_goal",
+  "needs_approval",
+  "denied",
+  "dirty_repo",
+  "merge_conflict",
+  "bad_state",
+  "detached",
+  "no_session",
+  "no_worktree",
+  "runner",
+  "timeout",
+  "policy_invalid",
+  "binary",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -171,6 +247,15 @@ const tauriApi: Api = {
   addAccount: (name) => call("account_add", { name }),
   loginAccount: (name) => call("account_login", { name }),
   removeAccount: (name) => call("account_remove", { name }),
+  tasksContext: () => call("tasks_context"),
+  tasks: () => call("tasks_list"),
+  task: (id) => call("task_get", { id }),
+  newTask: (repo, goal) => call("task_new", { repo, goal }),
+  runTask: (id, account, test) => call("task_run", { id, account, test }),
+  resumeTask: (id, account) => call("task_resume", { id, account }),
+  approveTask: (id) => call("task_approve", { id }),
+  discardTask: (id) => call("task_discard", { id }),
+  taskFileDiff: (id, path) => call("task_file_diff", { id, path }),
   async pickFolder() {
     const picked = await open({ directory: true });
     return typeof picked === "string" ? picked : null;
@@ -205,7 +290,7 @@ const tauriApi: Api = {
 
 function browserApi(): Api {
   const params = new URLSearchParams(location.search);
-  const mock = createMockApi(DEMO_SEED, { repo: !params.has("norepo"), commits: DEMO_COMMITS });
+  const mock = createMockApi(DEMO_SEED, { repo: !params.has("norepo"), commits: DEMO_COMMITS, runDelayMs: 4000 });
   // Lets the preview simulate an AI agent or another editor from the devtools console.
   Object.assign(window, { xdevMock: mock });
   // The preview lands in the demo vault so the main layout is reachable without a dialog;
