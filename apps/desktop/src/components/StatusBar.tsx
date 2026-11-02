@@ -48,13 +48,13 @@ function VaultItems(props: { vault: VaultStatus; onOpen(app: AppId): void }): JS
   const { vault } = props;
   return (
     <>
-      <span>{vault.name}</span>
-      <span>{t("sidebar.count", { count: vault.docCount })}</span>
       {vault.staleCount > 0 && (
-        <button type="button" onClick={() => props.onOpen("docs")}>
+        <button type="button" className="statusbar-warn" onClick={() => props.onOpen("docs")}>
           {t("status.stale", { count: vault.staleCount })}
         </button>
       )}
+      <span className="statusbar-vault">{vault.name}</span>
+      <span>{t("sidebar.count", { count: vault.docCount })}</span>
       {vault.changeCount === null ? (
         <span>{t("status.untracked")}</span>
       ) : vault.changeCount === undefined ? null : (

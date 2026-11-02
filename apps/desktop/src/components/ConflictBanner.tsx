@@ -1,11 +1,13 @@
 import { Button } from "@xdev/ui";
 import type { JSX } from "react";
 import { useI18n } from "../i18n";
+import { WarnIcon } from "./FreshnessBanner";
 
 export function ConflictBanner(props: { onReload(): void; onKeep(): void }): JSX.Element {
   const { t } = useI18n();
   return (
     <div className="banner banner-warn" role="alert">
+      <WarnIcon />
       <div className="banner-text">
         <strong>{t("conflict.title")}</strong>
         <span>{t("conflict.body")}</span>
