@@ -13,6 +13,7 @@ default-members = [
     "crates/xdev-ai",
     "crates/xdev-api",
     "crates/xdev-policy",
+    "crates/xdev-agent",
     "crates/xdev-cli",
 ]
 
@@ -24,6 +25,7 @@ repository = "https://github.com/xdev-asia/xdev"
 publish = false
 
 [workspace.dependencies]
+xdev-agent = { path = "crates/xdev-agent" }
 xdev-ai = { path = "crates/xdev-ai" }
 xdev-core = { path = "crates/xdev-core" }
 xdev-export = { path = "crates/xdev-export" }
