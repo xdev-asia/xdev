@@ -23,7 +23,15 @@ Your Markdown files stay the source of truth. xDev indexes them, flags docs that
 
 ## Install
 
-Download the installer for Windows (`.msi` / `.exe`) or macOS (`.dmg`) from [Releases](https://github.com/xdev-asia/xdev/releases). Builds are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper will warn.
+Download from [Releases](https://github.com/xdev-asia/xdev/releases) or [xdev.asia](https://xdev.asia):
+
+| OS | Builds |
+|---|---|
+| Windows | x64 (`.exe`, `.msi`), ARM64 (`.exe`) |
+| macOS | Apple silicon, Intel (`.dmg`) |
+| Linux | x64, ARM64 (`.AppImage`, `.deb`) |
+
+The `xdev` CLI ships as a separate archive per target on the same page. Installers are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper will warn. Updates are signed: the app downloads them in the background and installs on the next start.
 
 ## Layout
 
