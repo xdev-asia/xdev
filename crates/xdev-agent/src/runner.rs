@@ -1,6 +1,10 @@
+use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use xdev_ai::{claude_command, codex_command, codex_context, codex_home};
 
@@ -21,7 +25,64 @@ pub struct RunRequest {
     /// The session to continue instead of starting a new one.
     pub resume: Option<String>,
     pub tools: Vec<String>,
+    /// Set to kill the agent; the runner then returns `Stopped`.
+    pub cancel: Cancel,
 }
+
+/// A stop request shared by clones. With a file, the file appearing counts
+/// too, so another process can stop a run it does not own.
+#[derive(Clone, Default)]
+pub struct Cancel {
+    flag: Arc<AtomicBool>,
+    file: Option<PathBuf>,
+}
+
+impl Cancel {
+    pub fn new() -> Cancel {
+        Cancel::default()
+    }
+
+    pub fn with_file(file: impl Into<PathBuf>) -> Cancel {
+        Cancel {
+            flag: Arc::default(),
+            file: Some(file.into()),
+        }
+    }
+
+    pub fn cancel(&self) {
+        self.flag.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        if self.flag.load(Ordering::SeqCst) {
+            return true;
+        }
+        let seen = self.file.as_ref().is_some_and(|f| f.exists());
+        if seen {
+            // Later checks need no file system call.
+            self.flag.store(true, Ordering::SeqCst);
+        }
+        seen
+    }
+}
+
+impl fmt::Debug for Cancel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Cancel")
+            .field("cancelled", &self.flag.load(Ordering::SeqCst))
+            .field("file", &self.file)
+            .finish()
+    }
+}
+
+/// Clones of one signal are equal; separate signals are not.
+impl PartialEq for Cancel {
+    fn eq(&self, other: &Cancel) -> bool {
+        Arc::ptr_eq(&self.flag, &other.flag)
+    }
+}
+
+impl Eq for Cancel {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunOutcome {
@@ -36,7 +97,8 @@ pub struct RunOutcome {
 }
 
 /// Tokens, not characters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ContextUse {
     pub used: u64,
     pub window: u64,
@@ -88,17 +150,21 @@ impl Runner for ClaudeRunner {
             cmd.env("CLAUDE_CONFIG_DIR", dir);
         }
 
-        let out = capture(cmd, self.timeout)?;
+        let out = capture(cmd, self.timeout, &req.cancel)?;
         let stdout = String::from_utf8_lossy(&out.stdout);
         let parsed = parse_claude_json(&stdout);
-        if out.timed_out {
+        if out.timed_out || out.cancelled {
             // Print mode writes its JSON only at the end, so a resumed
             // session is usually the only id known.
             let session_id = parsed
                 .ok()
                 .and_then(|p| p.session_id)
                 .or_else(|| req.resume.clone());
-            return Err(AgentError::Timeout { session_id });
+            return Err(if out.cancelled {
+                AgentError::Stopped { session_id }
+            } else {
+                AgentError::Timeout { session_id }
+            });
         }
         // The exit code alone is not trusted: an agent that failed still
         // prints its JSON, with `is_error` set.
@@ -157,17 +223,21 @@ impl Runner for CodexRunner {
             cmd.env("CODEX_HOME", dir);
         }
 
-        let out = capture(cmd, self.timeout)?;
+        let out = capture(cmd, self.timeout, &req.cancel)?;
         let stdout = String::from_utf8_lossy(&out.stdout);
         let parsed = parse_codex_jsonl(&stdout);
-        if out.timed_out {
+        if out.timed_out || out.cancelled {
             // The stream names the session first, so a killed run can
             // usually be resumed.
             let session_id = parsed
                 .ok()
                 .and_then(|p| p.session_id)
                 .or_else(|| req.resume.clone());
-            return Err(AgentError::Timeout { session_id });
+            return Err(if out.cancelled {
+                AgentError::Stopped { session_id }
+            } else {
+                AgentError::Timeout { session_id }
+            });
         }
         let stderr = String::from_utf8_lossy(&out.stderr);
         let stderr = tail(stderr.trim(), STDERR_TAIL);
@@ -363,6 +433,23 @@ mod tests {
         assert!(!is_batch(Path::new("claude.exe")));
         assert!(!is_batch(Path::new("claude")));
         assert_eq!(one_line("Fix it\r\n\r\n  then test\n"), "Fix it then test");
+    }
+
+    #[test]
+    fn cancel_is_shared_by_clones_and_seen_through_a_file() {
+        let a = Cancel::new();
+        let b = a.clone();
+        assert_eq!(a, b);
+        assert_ne!(a, Cancel::new());
+        b.cancel();
+        assert!(a.is_cancelled());
+
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("stop");
+        let c = Cancel::with_file(&file);
+        assert!(!c.is_cancelled());
+        std::fs::write(&file, "").unwrap();
+        assert!(c.is_cancelled());
     }
 
     #[test]

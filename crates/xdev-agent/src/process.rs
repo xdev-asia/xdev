@@ -4,6 +4,8 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::Cancel;
+
 const POLL: Duration = Duration::from_millis(50);
 /// After the child is gone, how long a grandchild that still holds a pipe
 /// may keep us.
@@ -14,12 +16,18 @@ pub(crate) struct Captured {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
     pub timed_out: bool,
+    /// Killed because `cancel` was set.
+    pub cancelled: bool,
 }
 
 /// Runs `cmd` with stdin closed and both pipes read, killing it at
-/// `timeout`. A timeout is not an error, so the caller can still read
-/// whatever it printed.
-pub(crate) fn capture(mut cmd: Command, timeout: Duration) -> io::Result<Captured> {
+/// `timeout` or once `cancel` is set. Neither is an error, so the caller can
+/// still read whatever it printed.
+pub(crate) fn capture(
+    mut cmd: Command,
+    timeout: Duration,
+    cancel: &Cancel,
+) -> io::Result<Captured> {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -29,14 +37,16 @@ pub(crate) fn capture(mut cmd: Command, timeout: Duration) -> io::Result<Capture
     let stderr = read_on_thread(child.stderr.take());
 
     let deadline = Instant::now() + timeout;
-    let (status, timed_out) = loop {
+    let (status, timed_out, cancelled) = loop {
         if let Some(status) = child.try_wait()? {
-            break (status.code(), false);
+            break (status.code(), false, false);
         }
-        if Instant::now() >= deadline {
+        let timed_out = Instant::now() >= deadline;
+        let cancelled = !timed_out && cancel.is_cancelled();
+        if timed_out || cancelled {
             let _ = child.kill();
             let _ = child.wait();
-            break (None, true);
+            break (None, timed_out, cancelled);
         }
         thread::sleep(POLL);
     };
@@ -46,6 +56,7 @@ pub(crate) fn capture(mut cmd: Command, timeout: Duration) -> io::Result<Capture
         stdout: stdout.recv_timeout(DRAIN).unwrap_or_default(),
         stderr: stderr.recv_timeout(DRAIN).unwrap_or_default(),
         timed_out,
+        cancelled,
     })
 }
 

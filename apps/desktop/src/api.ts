@@ -181,8 +181,6 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "no_claude",
   "no_codex",
   "unknown_provider",
-  "no_codex",
-  "unknown_provider",
   "bad_registry",
   "bad_reserve",
   "bad_path",

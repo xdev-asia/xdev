@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use tempfile::TempDir;
-use xdev_agent::{CodexRunner, RunRequest, Runner};
+use xdev_agent::{Cancel, CodexRunner, RunRequest, Runner};
 
 const EVENTS: &str = include_str!("fixtures/codex-exec.jsonl");
 const ROLLOUT: &str = include_str!("fixtures/codex-rollout.jsonl");
@@ -38,6 +38,7 @@ fn child_codex_run() {
             .filter(|t| !t.is_empty())
             .map(str::to_owned)
             .collect(),
+        cancel: Cancel::new(),
     };
     let result = match runner.run(&req) {
         Ok(out) => json!({
