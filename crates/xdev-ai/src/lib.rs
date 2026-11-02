@@ -3,6 +3,7 @@
 mod accounts;
 mod claude;
 mod quota;
+pub mod secrets;
 
 pub use accounts::{AccountEntry, Provider, Registry, account_dir, valid_name};
 pub use claude::{AccountStatus, StatusState, claude_command, login_command, status};
@@ -12,6 +13,16 @@ pub const NAME: &str = env!("CARGO_PKG_NAME");
 
 #[derive(Debug, thiserror::Error)]
 pub enum AiError {
+    #[error("unknown provider")]
+    UnknownProvider,
+    #[error("secret store unavailable")]
+    SecretStore,
+    #[error("Ollama is unreachable")]
+    OllamaUnreachable,
+    #[error("Ollama HTTP status {0}")]
+    OllamaError(u16),
+    #[error("invalid Ollama response")]
+    BadOllamaResponse,
     #[error("bad account name")]
     BadName,
     #[error("an account with this name exists")]
@@ -32,6 +43,10 @@ impl AiError {
     /// Stable code the UI and CLI translate.
     pub fn code(&self) -> &'static str {
         match self {
+            AiError::UnknownProvider => "unknown_provider",
+            AiError::SecretStore => "secret_store",
+            AiError::OllamaUnreachable => "ollama_unreachable",
+            AiError::OllamaError(_) | AiError::BadOllamaResponse => "ollama_error",
             AiError::BadName => "bad_name",
             AiError::Exists => "exists",
             AiError::NotFound => "not_found",

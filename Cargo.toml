@@ -38,6 +38,7 @@ xdev-vault = { path = "crates/xdev-vault" }
 blake3 = "1.8.7"
 dirs = "7.0.0"
 ignore = "0.4.34"
+keyring = { version = "4.2.0", default-features = false, features = ["v1"] }
 # 0.7 is the newest stable line; it re-exports the `notify` it was built against.
 notify-debouncer-full = "0.7.0"
 # Bundled SQLite ships FTS5 and behaves the same on every OS.
