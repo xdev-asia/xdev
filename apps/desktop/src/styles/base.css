@@ -105,6 +105,24 @@ kbd {
   color: var(--x-color-on-accent);
 }
 
+.lang-select {
+  flex: none;
+  min-height: 32px;
+  padding: 0 var(--x-space-3);
+  border: 1px solid var(--x-color-line);
+  border-radius: 10px;
+  background: var(--x-color-surface);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--x-color-ink);
+  cursor: pointer;
+}
+
+.lang-select:hover {
+  background: var(--x-color-surface-2);
+}
+
 .dialog {
   max-width: 440px;
   padding: var(--x-space-6);
