@@ -45,6 +45,12 @@ const ICONS: Record<AppId, JSX.Element> = {
       <path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" />
     </>
   ),
+  terminal: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="m7 9 3 3-3 3M13 15h4" />
+    </>
+  ),
 };
 
 export function ActivityBar(props: { active: AppId; changeCount: number | null; onSelect(app: AppId): void }): JSX.Element {

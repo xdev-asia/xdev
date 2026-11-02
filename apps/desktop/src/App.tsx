@@ -32,6 +32,7 @@ import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { SquadsView } from "./components/SquadsView";
 import { TasksView } from "./components/TasksView";
+import { TerminalView } from "./terminal/TerminalView";
 import { isDirty } from "./doc/docState";
 import { agentsEditable, parseFrontmatter, setAgents, setVerified } from "./doc/frontmatter";
 import { useDoc } from "./doc/useDoc";
@@ -546,6 +547,10 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
             <p>{t("changes.empty.main")}</p>
           </div>
         )}
+        {/* Hidden rather than unmounted, so a running terminal survives switching views. */}
+        <div className="terminalview" hidden={app !== "terminal"}>
+          <TerminalView api={api} />
+        </div>
         {/* Hidden rather than unmounted, so the editor keeps its undo history while a diff is shown. */}
         <div className="docview" hidden={app !== "docs"}>
           {state.path === null ? (

@@ -1,0 +1,17 @@
+.terminalview { height: 100%; min-height: 0; }
+.terminalview[hidden] { display: none; }
+.terminal-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.terminal-view > .banner { margin: var(--x-space-3) var(--x-space-4) 0; }
+.terminal-view .banner-text { display: grid; gap: var(--x-space-1); }
+.terminal-view .banner-text .commands { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.terminal-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-space-3); padding: var(--x-space-2) var(--x-space-4); background: var(--x-color-panel); border-bottom: 1px solid var(--x-color-line); }
+.terminal-folder { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--x-font-mono); font-size: 0.85em; color: var(--x-color-muted); }
+.terminal-profile { display: inline-flex; align-items: center; gap: var(--x-space-2); font-size: 0.85em; color: var(--x-color-muted); }
+.terminal-profile select { font: inherit; color: var(--x-color-ink); background: var(--x-color-surface); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-md); padding: 2px var(--x-space-2); }
+.terminal-exit { font-size: 0.85em; color: var(--x-color-muted); }
+.terminal-empty { padding: var(--x-space-6); }
+
+.terminal-pane { position: relative; flex: 1; min-height: 0; background: var(--x-color-surface); }
+.terminal-host { position: absolute; inset: var(--x-space-2); }
+.terminal-find { position: absolute; top: var(--x-space-2); right: var(--x-space-4); z-index: 5; width: 220px; padding: var(--x-space-1) var(--x-space-2); font: inherit; color: var(--x-color-ink); background: var(--x-color-panel); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-md); }
