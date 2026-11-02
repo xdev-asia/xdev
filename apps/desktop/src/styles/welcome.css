@@ -3,34 +3,103 @@
 .vault-empty {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--x-space-3);
-  max-width: 520px;
-  margin: auto;
-  padding: var(--x-space-8);
+  box-sizing: border-box;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: var(--x-space-8) var(--x-space-6);
+  overflow-y: auto;
+  text-align: center;
+  background:
+    radial-gradient(
+      ellipse 60% 45% at 50% 0%,
+      color-mix(in srgb, var(--x-color-accent) 14%, transparent),
+      transparent 70%
+    ),
+    var(--x-color-bg);
+}
+
+.vault-empty-logo {
+  width: 88px;
+  height: 88px;
+  margin-top: var(--x-space-6);
+  border-radius: 22px;
+  box-shadow: 0 0 48px color-mix(in srgb, var(--x-color-signal) 35%, transparent);
 }
 
 .vault-empty-title {
-  margin: 0;
-  font-size: 1.4em;
+  margin: var(--x-space-3) 0 0;
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
 .vault-empty-hint {
+  max-width: 520px;
   margin: 0;
   color: var(--x-color-muted);
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .vault-empty .error-text {
+  max-width: 520px;
+  margin: 0;
+  padding: var(--x-space-3) var(--x-space-4);
+  border: 1px solid color-mix(in srgb, var(--x-color-danger) 40%, transparent);
+  border-radius: var(--x-radius-lg);
+  background: var(--x-color-danger-soft);
   overflow-wrap: anywhere;
 }
 
 .vault-empty-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--x-space-2);
-  margin-top: var(--x-space-3);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--x-space-4);
+  width: 100%;
+  max-width: 600px;
+  margin-top: var(--x-space-6);
+  text-align: left;
 }
+
+.vault-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--x-space-3);
+  padding: var(--x-space-6);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-lg);
+  background: var(--x-color-panel);
+}
+
+.vault-empty-card:first-child {
+  border-color: color-mix(in srgb, var(--x-color-signal) 45%, var(--x-color-line));
+}
+
+.vault-empty-icon {
+  width: 40px;
+  height: 40px;
+  padding: var(--x-space-2);
+  box-sizing: border-box;
+  border-radius: 10px;
+  color: var(--x-color-signal);
+  background: var(--x-color-signal-soft);
+}
+
+.vault-empty-card-body {
+  flex: 1;
+  margin: 0;
+  color: var(--x-color-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Create-folder dialog */
 
 .vault-dialog {
   width: min(520px, calc(100vw - 2 * var(--x-space-6)));
@@ -38,22 +107,41 @@
   box-sizing: border-box;
 }
 
+.vault-dialog-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x-space-3);
+}
+
 .vault-dialog-path {
   display: flex;
   flex-direction: column;
-  gap: var(--x-space-1);
+  gap: 6px;
   margin-bottom: var(--x-space-2);
+  font-size: 12px;
   font-weight: 600;
+  color: var(--x-color-muted);
 }
 
 .vault-dialog-path input {
-  padding: var(--x-space-2);
-  font: inherit;
+  min-height: 36px;
+  box-sizing: border-box;
+  padding: var(--x-space-2) var(--x-space-3);
+  font-family: var(--x-font-mono);
+  font-size: 13px;
   font-weight: 400;
   color: var(--x-color-ink);
   background: var(--x-color-bg);
   border: 1px solid var(--x-color-line);
-  border-radius: var(--x-radius-sm);
+  border-radius: var(--x-radius-md);
+}
+
+.vault-dialog-path input:focus {
+  outline: none;
+  border-color: var(--x-color-signal);
+  box-shadow: 0 0 0 3px var(--x-color-signal-soft);
 }
 
 .vault-dialog .error-text {
@@ -64,4 +152,3 @@
 .vault-dialog .dialog-actions {
   margin-top: var(--x-space-6);
 }
-

@@ -41,6 +41,7 @@ import { docFileName, newDocContent } from "./shell/newDoc";
 import { setUpVault } from "./shell/setUpVault";
 import { useQuota } from "./shell/useQuota";
 import { useUpdate } from "./shell/useUpdate";
+import logo from "../../../docs/brand/xdev-icon-512.png";
 
 const SEARCH_DEBOUNCE_MS = 150;
 const SEARCH_LIMIT = 50;
@@ -411,13 +412,28 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
     <div className="app" data-panel={panelOpen ? undefined : "off"}>
       <header className="topbar">
         <div className="topbar-vault" title={t("vault.label", { path: props.vault.path })}>
+          <img className="topbar-logo" src={logo} alt="" />
           <span className="topbar-brand">{t("app.name")}</span>
-          <span className="topbar-sep" aria-hidden="true">
-            /
+          <span className="topbar-folder">
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            </svg>
+            <span className="topbar-name">{folderName(props.vault.path)}</span>
           </span>
-          <span className="topbar-name">{folderName(props.vault.path)}</span>
         </div>
         <div className="search">
+          <svg className="search-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
           <input
             ref={searchInput}
             type="search"
@@ -533,8 +549,8 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
             <>
               <div className="doc-head">
                 <div className="doc-titles">
-                  <h1 className="doc-title">{entry?.title ?? folderName(state.path)}</h1>
                   <span className="doc-path">{state.path}</span>
+                  <h1 className="doc-title">{entry?.title ?? folderName(state.path)}</h1>
                 </div>
                 <div className="doc-actions">
                   <div className="segmented" role="group" aria-label={t("doc.mode.label")}>
