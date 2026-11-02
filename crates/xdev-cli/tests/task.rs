@@ -199,3 +199,52 @@ fn run_approve_and_discard() {
     sorted.sort();
     assert_eq!(sorted, ["discarded", "merged"]);
 }
+
+#[test]
+fn the_policy_file_decides_and_every_verdict_is_audited() {
+    let env = Env::new();
+    let data = env.tmp.path().join("data dir");
+    fs::create_dir_all(&data).unwrap();
+    fs::write(
+        data.join("policy.json"),
+        r#"{"commands": ["git"], "merge": "deny"}"#,
+    )
+    .unwrap();
+    let id = env.new_task();
+
+    let out = env.xdev(&["task", "run", &id, "--test", "git status --short"]);
+    assert!(out.status.success(), "{out:?}");
+    let text = stdout(&out);
+    assert!(text.contains("state\treview\n"), "{text}");
+    assert!(text.contains("test\t0\tgit status --short\n"), "{text}");
+
+    let out = env.xdev(&["task", "approve", &id]);
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    assert!(stdout(&out).starts_with("deny\t"), "{out:?}");
+    assert_eq!(git(&env.repo(), &["log", "--oneline"]).lines().count(), 1);
+
+    let audit = fs::read_to_string(data.join("audit.jsonl")).unwrap();
+    let kinds: Vec<String> = audit
+        .lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap()["action"]["kind"].to_string())
+        .collect();
+    assert_eq!(
+        kinds,
+        [r#""spawn_agent""#, r#""run_command""#, r#""merge""#]
+    );
+}
+
+#[test]
+fn a_broken_policy_stops_every_step() {
+    let env = Env::new();
+    let data = env.tmp.path().join("data dir");
+    let id = env.new_task();
+    fs::write(data.join("policy.json"), r#"{"merge": "allow"}"#).unwrap();
+
+    let out = env.xdev(&["task", "run", &id]);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        "error: policy_invalid\n"
+    );
+}
