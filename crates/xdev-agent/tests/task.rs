@@ -267,6 +267,33 @@ fn run_commits_and_leaves_evidence_for_review() {
     assert_eq!(env.store.load(&task.id).unwrap(), task);
 }
 
+/// A `FakeRunner` that says it is Codex.
+struct CodexFake(FakeRunner);
+
+impl Runner for CodexFake {
+    fn run(&self, req: &RunRequest) -> Result<RunOutcome, AgentError> {
+        self.0.run(req)
+    }
+
+    fn provider(&self) -> &str {
+        "codex"
+    }
+}
+
+#[test]
+fn gate_sees_the_runners_provider() {
+    let env = Env::new();
+    let task = env.new_task();
+    let gate = StubGate::allow();
+    env.store
+        .run_task(&task.id, &CodexFake(FakeRunner::new()), &gate, &opts())
+        .unwrap();
+    assert!(matches!(
+        &gate.seen.borrow()[0],
+        Action::SpawnAgent { provider, .. } if provider == "codex"
+    ));
+}
+
 #[test]
 fn run_with_a_test_records_exit_and_output() {
     let env = Env::new();

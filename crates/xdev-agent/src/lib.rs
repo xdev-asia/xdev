@@ -14,7 +14,10 @@ use xdev_git::GitError;
 use xdev_policy::Verdict;
 
 pub use flow::RunOptions;
-pub use runner::{ClaudeRunner, ContextUse, RunOutcome, RunRequest, Runner, parse_claude_json};
+pub use runner::{
+    ClaudeRunner, CodexRunner, ContextUse, RunOutcome, RunRequest, Runner, parse_claude_json,
+    parse_codex_jsonl,
+};
 pub use store::TaskStore;
 
 /// Tools an agent gets when the caller names none: file work only.

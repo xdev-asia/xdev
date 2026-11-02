@@ -14,8 +14,6 @@ use crate::{
     Runner, Task, TaskState, TaskStore, TestResult, now, tail,
 };
 
-/// The only runner so far; the gate rules by provider.
-const PROVIDER: &str = "claude";
 const SUMMARY_TAIL: usize = 2000;
 const OUTPUT_TAIL: usize = 4000;
 /// A test suite that runs longer than this is treated as hung.
@@ -125,7 +123,7 @@ impl TaskStore {
             opts.tools.clone()
         };
         allow(gate.check(&Action::SpawnAgent {
-            provider: PROVIDER.to_owned(),
+            provider: runner.provider().to_owned(),
             account: opts.account.clone(),
             worktree: task.worktree.clone(),
             tools: tools.clone(),
