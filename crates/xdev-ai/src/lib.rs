@@ -2,6 +2,7 @@
 
 mod accounts;
 mod claude;
+pub mod ollama;
 mod quota;
 pub mod secrets;
 
