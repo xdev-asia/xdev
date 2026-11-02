@@ -84,6 +84,10 @@ fn unknown_provider_and_bad_fake_fail_with_codes() {
             "error: unknown_provider\n"
         );
     }
+    let out = run(data.path(), &["ai", "key", "set", "openai"], "  \n");
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(String::from_utf8(out.stderr).unwrap(), "error: empty_key\n");
+    assert!(!data.path().join("test-secrets.json").exists());
     std::fs::write(data.path().join("test-secrets.json"), "invalid-placeholder").unwrap();
     let out = run(data.path(), &["ai", "key", "list"], "");
     assert_eq!(out.status.code(), Some(1));

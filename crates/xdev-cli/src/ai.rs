@@ -77,6 +77,10 @@ fn run_key(command: KeyCommand, store: &mut dyn SecretStore) -> Result<(), &'sta
         KeyCommand::Set { provider } => {
             let mut key = String::new();
             io::stdin().read_line(&mut key).map_err(|_| "io")?;
+            // A closed or empty stdin would otherwise overwrite a working key with "".
+            if key.trim().is_empty() {
+                return Err("empty_key");
+            }
             store.set(&provider, key.trim()).map_err(|e| e.code())?;
         }
         KeyCommand::List => {
