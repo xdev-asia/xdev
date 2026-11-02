@@ -72,6 +72,7 @@ pub fn open_vault(
     if let Some(file) = settings_path(&app) {
         let mut saved = settings::load(&file);
         saved.last_vault = Some(path);
+        saved.vault_prompted = true;
         let _ = settings::save(&file, &saved);
     }
     Ok(entries)
@@ -80,6 +81,67 @@ pub fn open_vault(
 #[tauri::command(async)]
 pub fn last_vault(app: AppHandle) -> Option<String> {
     settings::load(&settings_path(&app)?).last_vault
+}
+
+#[derive(Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultSetup {
+    prompt: bool,
+    default_path: String,
+}
+
+#[tauri::command(async)]
+pub fn vault_setup(app: AppHandle) -> VaultSetup {
+    let saved = settings_path(&app)
+        .map(|file| settings::load(&file))
+        .unwrap_or_default();
+    let base = app
+        .path()
+        .document_dir()
+        .or_else(|_| app.path().home_dir())
+        .ok();
+    VaultSetup {
+        prompt: !saved.vault_prompted && saved.last_vault.is_none(),
+        default_path: base
+            .map(|dir| dir.join("xDev").display().to_string())
+            .unwrap_or_default(),
+    }
+}
+
+/// Like `open_vault`, a lost save only means the offer shows once more.
+#[tauri::command(async)]
+pub fn dismiss_vault_prompt(app: AppHandle) {
+    if let Some(file) = settings_path(&app) {
+        let mut saved = settings::load(&file);
+        saved.vault_prompted = true;
+        let _ = settings::save(&file, &saved);
+    }
+}
+
+#[tauri::command(async)]
+pub fn create_vault(path: String, file: String, content: String) -> Result<(), CmdError> {
+    create_vault_at(Path::new(&path), &file, &content)
+}
+
+/// A folder that already has anything in it is the user's; only a fresh one
+/// gets the starter doc.
+fn create_vault_at(dir: &Path, file: &str, content: &str) -> Result<(), CmdError> {
+    // `:` too, so `C:x.md` or an NTFS stream name cannot escape `dir`.
+    if file.contains(['/', '\\', ':']) || file.len() <= ".md".len() || !file.ends_with(".md") {
+        return Err(CmdError {
+            code: "bad_path",
+            detail: Some(file.to_owned()),
+        });
+    }
+    let io_err = |e: std::io::Error| CmdError {
+        code: "io",
+        detail: Some(e.to_string()),
+    };
+    std::fs::create_dir_all(dir).map_err(io_err)?;
+    if std::fs::read_dir(dir).map_err(io_err)?.next().is_none() {
+        std::fs::write(dir.join(file), content).map_err(io_err)?;
+    }
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -307,6 +369,68 @@ mod tests {
 
         let json = serde_json::to_value(CmdError::no_vault()).unwrap();
         assert_eq!(json, serde_json::json!({ "code": "no_vault" }));
+    }
+
+    #[test]
+    fn create_vault_writes_starter_into_new_or_empty_dir() {
+        let root = tempfile::tempdir().unwrap();
+        let fresh = root.path().join("a").join("xDev");
+        create_vault_at(&fresh, "Bắt đầu.md", "# Hi").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(fresh.join("Bắt đầu.md")).unwrap(),
+            "# Hi"
+        );
+
+        let empty = root.path().join("empty");
+        std::fs::create_dir(&empty).unwrap();
+        create_vault_at(&empty, "Getting started.md", "x").unwrap();
+        assert!(empty.join("Getting started.md").is_file());
+    }
+
+    #[test]
+    fn create_vault_leaves_a_used_dir_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        create_vault_at(dir.path(), "Getting started.md", "x").unwrap();
+        let names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, [".git"]);
+    }
+
+    #[test]
+    fn create_vault_rejects_bad_file_names() {
+        let dir = tempfile::tempdir().unwrap();
+        for file in [
+            "../x.md", "a/b.md", "a\\b.md", "C:x.md", "x.txt", ".md", "..",
+        ] {
+            let err = create_vault_at(dir.path(), file, "x").unwrap_err();
+            assert_eq!(err.code, "bad_path", "{file}");
+        }
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn create_vault_over_a_file_is_io() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("xDev");
+        std::fs::write(&file, "not a dir").unwrap();
+        let err = create_vault_at(&file, "Getting started.md", "x").unwrap_err();
+        assert_eq!(err.code, "io");
+        assert!(err.detail.is_some());
+    }
+
+    #[test]
+    fn vault_setup_serializes_like_the_ui_expects() {
+        let setup = VaultSetup {
+            prompt: true,
+            default_path: "C:/Users/me/Documents/xDev".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(setup).unwrap(),
+            serde_json::json!({ "prompt": true, "defaultPath": "C:/Users/me/Documents/xDev" })
+        );
     }
 
     #[test]
