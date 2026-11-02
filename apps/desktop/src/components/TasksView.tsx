@@ -2,6 +2,7 @@ import { Button } from "@xdev/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type ApiError, type FileDiff, type Task, type TaskState, type TasksContext } from "../api";
+import { relativeTime } from "../changes/changes";
 import { useI18n } from "../i18n";
 import { COMPACT, ProblemNote } from "./ChangesPanel";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -15,6 +16,8 @@ const GATED: readonly ApiError["code"][] = ["needs_approval", "denied", "policy_
 const WITH_DETAIL: readonly ApiError["code"][] = ["runner", "git"];
 
 type Action = "run" | "resume" | "approve" | "discard";
+type Filter = "all" | "review" | "running" | "failed" | "merged";
+const FILTERS: readonly Filter[] = ["all", "review", "running", "failed", "merged"];
 type Shown = { path: string } & ({ diff: FileDiff } | { problem: ApiError });
 
 export function canRun(state: TaskState): boolean {
@@ -49,6 +52,7 @@ export function TasksView({ api, initial }: { api: Api; initial?: string }): JSX
   const [confirming, setConfirming] = useState<{ action: "approve" | "discard"; task: Task } | null>(null);
   const [shown, setShown] = useState<Shown | null>(null);
   const [revision, setRevision] = useState(0);
+  const [filter, setFilter] = useState<Filter>("all");
 
   useEffect(() => {
     let disposed = false;
@@ -90,9 +94,11 @@ export function TasksView({ api, initial }: { api: Api; initial?: string }): JSX
 
   const task = tasks?.find((x) => x.id === selected) ?? tasks?.[0];
   const busy = task !== undefined && task.id in pending;
+  const now = Math.floor(Date.now() / 1000);
   // The UI's own wait counts too: the store only says `running` once the gate has passed.
   const state = (x: Task): TaskState =>
     pending[x.id] === "run" || pending[x.id] === "resume" ? "running" : x.state;
+  const filtered = (tasks ?? []).filter((x) => filter === "all" || state(x) === filter);
 
   function select(id: string) {
     setSelected(id);
@@ -228,7 +234,7 @@ export function TasksView({ api, initial }: { api: Api; initial?: string }): JSX
     const last = x.runs[x.runs.length - 1];
     return (
       <section className="task-detail" aria-label={firstLine(x.goal)}>
-        <div className="task-row">
+        <div className="task-row task-head">
           <h2 className="task-goal">{firstLine(x.goal)}</h2>
           <span className="badge task-state" data-state={s}>
             {t(`tasks.state.${s}`)}
@@ -240,6 +246,8 @@ export function TasksView({ api, initial }: { api: Api; initial?: string }): JSX
           <dd className="doc-path">{x.repo}</dd>
           <dt>{t("tasks.branch")}</dt>
           <dd className="doc-path">{x.branch}</dd>
+          <dt>{t("tasks.runs")}</dt>
+          <dd className="task-fact-count">{x.runs.length}</dd>
           {x.approval && (
             <>
               <dt>{t("tasks.state.merged")}</dt>
@@ -304,7 +312,7 @@ export function TasksView({ api, initial }: { api: Api; initial?: string }): JSX
           </Button>
           <button
             type="button"
-            className="btn-secondary"
+            className="btn-secondary task-discard"
             disabled={busy || !canDiscard(x.state)}
             onClick={() => setConfirming({ action: "discard", task: x })}
           >
@@ -318,8 +326,8 @@ export function TasksView({ api, initial }: { api: Api; initial?: string }): JSX
         ) : (
           <ul className="task-runs">
             {x.runs.map((run) => (
-              <li key={run.started} className="task-row">
-                <span>{new Date(run.started * 1000).toLocaleString()}</span>
+              <li key={run.started} className="task-row task-run" data-run={run.ended === null ? "running" : run.is_error ? "error" : "ok"}>
+                <span className="task-run-time">{new Date(run.started * 1000).toLocaleString()}</span>
                 <span>{run.cost_usd === null ? t("tasks.noCost") : t("tasks.cost", { cost: run.cost_usd.toFixed(4) })}</span>
                 <span className="badge" data-run={run.ended === null ? "running" : run.is_error ? "error" : "ok"}>
                   {t(`tasks.run.${run.ended === null ? "running" : run.is_error ? "error" : "ok"}`)}
@@ -418,18 +426,41 @@ export function TasksView({ api, initial }: { api: Api; initial?: string }): JSX
         !creating && <p className="placeholder">{t("tasks.empty")}</p>
       ) : (
         <div className="tasks-body">
-          <ul className="task-list" aria-label={t("tasks.title")}>
-            {tasks.map((x) => (
-              <li key={x.id}>
-                <button type="button" className="task-item" aria-current={x.id === task?.id ? "true" : undefined} onClick={() => select(x.id)}>
-                  <span className="task-item-goal">{firstLine(x.goal)}</span>
-                  <span className="badge task-state" data-state={state(x)}>
-                    {t(`tasks.state.${state(x)}`)}
-                  </span>
+          <div className="task-aside">
+            <div className="task-filters" role="group" aria-label={t("tasks.filterLabel")}>
+              {FILTERS.map((f) => (
+                <button key={f} type="button" className="task-chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>
+                  <span>{f === "all" ? t("tasks.filter.all") : t(`tasks.state.${f}`)}</span>
+                  <span className="task-chip-count">{f === "all" ? tasks.length : tasks.filter((x) => state(x) === f).length}</span>
                 </button>
-              </li>
-            ))}
-          </ul>
+              ))}
+            </div>
+            {filtered.length === 0 ? (
+              <p className="pane-empty">{t("tasks.filterEmpty")}</p>
+            ) : (
+              <ul className="task-list" aria-label={t("tasks.title")}>
+                {filtered.map((x) => {
+                  const age = relativeTime(now, x.created);
+                  return (
+                    <li key={x.id}>
+                      <button type="button" className="task-item" aria-current={x.id === task?.id ? "true" : undefined} onClick={() => select(x.id)}>
+                        <span className="task-item-top">
+                          <span className="task-item-goal">{firstLine(x.goal)}</span>
+                          <span className="badge task-state" data-state={state(x)}>
+                            {t(`tasks.state.${state(x)}`)}
+                          </span>
+                        </span>
+                        <span className="task-item-meta">
+                          <span className="task-item-branch">{x.branch}</span>
+                          <span className="task-item-age">{t(age.key, age.vars)}</span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
           {task ? detail(task) : <p className="placeholder">{t("tasks.select")}</p>}
         </div>
       )}

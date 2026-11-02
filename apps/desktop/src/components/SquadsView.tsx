@@ -474,7 +474,7 @@ export function SquadsView({ api, onOpenTask }: { api: Api; onOpenTask?(task: st
       <li key={`${e.at}-${i}`} className="squad-event">
         <span className="doc-subtitle">{t(age.key, age.vars)}</span>
         {e.role && <span className="badge">{t(`squads.role.${e.role}`)}</span>}
-        <span>{EVENT_KINDS.has(e.kind) ? t(`squads.event.${e.kind}`) : e.kind}</span>
+        <span className="squad-event-kind" data-kind={e.kind}>{EVENT_KINDS.has(e.kind) ? t(`squads.event.${e.kind}`) : e.kind}</span>
         {e.text && <span className="squad-event-text">{e.text}</span>}
       </li>
     );
@@ -554,6 +554,10 @@ export function SquadsView({ api, onOpenTask }: { api: Api; onOpenTask?(task: st
           )}
 
           <div className="squad-card">
+            <div className="task-row squad-card-head">
+              <h3 className="squad-card-title">{t("squads.seats")}</h3>
+              <span className="squad-tag">{t("squads.hierarchy")}</span>
+            </div>
             <div className="squad-tree" aria-label={t("squads.seats")}>
               <div className="squad-tree-lead">{seatButton(v, "lead")}</div>
               <div className="squad-tree-implement">{seatButton(v, "implement")}</div>
@@ -563,6 +567,7 @@ export function SquadsView({ api, onOpenTask }: { api: Api; onOpenTask?(task: st
             <p className="doc-subtitle">{t("squads.ringHint")}</p>
           </div>
 
+          <div className="squad-pair">
           <section className="squad-card" aria-label={t("squads.escalations")}>
             <h3 className="squad-card-title">{t("squads.escalationsCount", { count: open })}</h3>
             {escalations.length === 0 ? (
@@ -584,13 +589,14 @@ export function SquadsView({ api, onOpenTask }: { api: Api; onOpenTask?(task: st
             {events.length === 0 ? (
               <p className="pane-empty">{t("squads.noEvents")}</p>
             ) : (
-              <ol className="squad-list">{[...events].reverse().map((e, i) => eventLine(e, i, now))}</ol>
+              <ol className="squad-list squad-events">{[...events].reverse().map((e, i) => eventLine(e, i, now))}</ol>
             )}
           </section>
+          </div>
           <div className="task-row">
             <button
               type="button"
-              className="btn-secondary"
+              className="btn-secondary squad-remove"
               disabled={busy || s === "running"}
               onClick={() => void act(v.squad.id, "remove", () => api.removeSquad(v.squad.id)).then((ok) => ok && setSelected(null))}
             >
