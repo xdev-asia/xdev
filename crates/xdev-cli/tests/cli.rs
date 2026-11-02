@@ -112,8 +112,102 @@ fn check_prints_broken_links_and_fails() {
     .unwrap();
     let out = xdev(data.path(), &["check", dir]);
     assert_eq!(out.status.code(), Some(1), "{out:?}");
-    assert_eq!(stdout(&out), "sub/b.md\tnope\nsub/b.md\t../gone.md\n");
+    assert_eq!(
+        stdout(&out),
+        "broken\tsub/b.md\tnope\nbroken\tsub/b.md\t../gone.md\n"
+    );
     assert!(out.stderr.is_empty());
+}
+
+/// Local identity and no autocrlf, so the developer's global config plays
+/// no part.
+fn init_repo(dir: &Path) {
+    git(dir, &["init", "-q"]);
+    for (key, value) in [
+        ("user.name", "Test User"),
+        ("user.email", "test@example.com"),
+        ("commit.gpgsign", "false"),
+        ("core.autocrlf", "false"),
+    ] {
+        git(dir, &["config", key, value]);
+    }
+}
+
+fn commit_all(dir: &Path, message: &str) -> String {
+    git(dir, &["add", "-A"]);
+    git(dir, &["commit", "-q", "-m", message]);
+    let out = Command::new("git")
+        .current_dir(dir)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .expect("run git");
+    String::from_utf8(out.stdout).unwrap().trim().to_owned()
+}
+
+fn covered(covers: &str, verified: Option<&str>) -> String {
+    let verified = verified.map_or(String::new(), |v| format!("verified: {v}\n"));
+    format!("---\ncovers: {covers}\n{verified}---\n# D\n")
+}
+
+#[test]
+fn check_reports_stale_unverified_unknown() {
+    let (vault, data) = (vault(), TempDir::new().unwrap());
+    let dir = vault.path();
+    init_repo(dir);
+    fs::create_dir(dir.join("src")).unwrap();
+    fs::write(dir.join("src/x.rs"), "x").unwrap();
+    let first = commit_all(dir, "code");
+    fs::write(dir.join("fresh.md"), covered("src", Some(&first))).unwrap();
+    fs::write(dir.join("stale.md"), covered("[src/**]", Some(&first))).unwrap();
+    fs::write(dir.join("unverified.md"), covered("src", None)).unwrap();
+    fs::write(dir.join("main.md"), covered("src", Some("main"))).unwrap();
+    fs::write(dir.join("unknown.md"), covered("src", Some("ABCDEF0"))).unwrap();
+    fs::write(dir.join("zz.md"), "[[nope]]").unwrap();
+    commit_all(dir, "docs");
+    fs::write(dir.join("src/x.rs"), "x2").unwrap();
+    let head = commit_all(dir, "covered");
+    // Verified in the saved file, not yet committed.
+    fs::write(dir.join("fresh.md"), covered("src", Some(&head))).unwrap();
+
+    let out = xdev(data.path(), &["check", dir.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert_eq!(
+        stdout(&out),
+        "broken\tzz.md\tnope\n\
+         unverified\tmain.md\t-\n\
+         stale\tstale.md\t1\n\
+         unknown\tunknown.md\tabcdef0\n\
+         unverified\tunverified.md\t-\n"
+    );
+    assert!(out.stderr.is_empty(), "{out:?}");
+}
+
+#[test]
+fn check_outside_git_reports_unknown() {
+    let (vault, data) = (vault(), TempDir::new().unwrap());
+    let dir = vault.path();
+    fs::write(dir.join("a.md"), covered("src", Some("abcdef0"))).unwrap();
+    fs::write(dir.join("c.md"), covered("src", None)).unwrap();
+    let out = xdev(data.path(), &["check", dir.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert_eq!(
+        stdout(&out),
+        "unknown\ta.md\tabcdef0\nunverified\tc.md\t-\n"
+    );
+}
+
+#[test]
+fn check_passes_when_covered_docs_are_fresh() {
+    let (vault, data) = (vault(), TempDir::new().unwrap());
+    let dir = vault.path();
+    init_repo(dir);
+    fs::create_dir(dir.join("src")).unwrap();
+    fs::write(dir.join("src/x.rs"), "x").unwrap();
+    let first = commit_all(dir, "code");
+    fs::write(dir.join("a.md"), covered("src", Some(&first))).unwrap();
+    let out = xdev(data.path(), &["check", dir.to_str().unwrap()]);
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(stdout(&out), "");
 }
 
 #[test]

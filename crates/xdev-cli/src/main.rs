@@ -3,8 +3,9 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use xdev_core::{
-    ChangeKind, CoreError, FileStatus, Repo, Store, Vault, Written, broken_links, data_dir,
-    export_plan, export_root, export_write, index_path, list_changes, search, sync_vault,
+    ChangeKind, CoreError, DocState, FileStatus, GitError, Repo, Store, Vault, Written,
+    broken_links, data_dir, export_plan, export_root, export_write, index_path, list_changes,
+    parse_frontmatter, search, stale_docs, sync_vault,
 };
 
 #[derive(Parser)]
@@ -27,8 +28,9 @@ enum Command {
     },
     /// Print `kind<TAB>path` for each doc that differs from git `HEAD`.
     Changes { dir: PathBuf },
-    /// Index a folder, then print `path<TAB>target` for each broken link;
-    /// exits 1 when there is any.
+    /// Index a folder, then print `kind<TAB>path<TAB>detail` for each broken
+    /// link and each stale, unverified or unknown doc; exits 1 when there is
+    /// any.
     Check { dir: PathBuf },
     /// Write AGENTS.md, CLAUDE.md, GEMINI.md and the Cursor rule from the
     /// docs marked for agents; prints `status<TAB>path` per file.
@@ -105,10 +107,26 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
             let (vault, mut store) = open(&dir).map_err(|e| e.code())?;
             sync_vault(&vault, &mut store).map_err(|e| e.code())?;
             let broken = broken_links(&vault, &store).map_err(|e| e.code())?;
+            // Outside git every covered doc is `unknown`, which fails the
+            // check; any other git failure must not pass silently either.
+            let repo = match Repo::discover(vault.root()) {
+                Ok(repo) => Some(repo),
+                Err(GitError::NoRepo) => None,
+                Err(e) => return Err(e.code()),
+            };
+            let stale = stale_docs(&vault, repo.as_ref()).map_err(|e| e.code())?;
             for link in &broken {
-                println!("{}\t{}", link.from, link.target);
+                println!("broken\t{}\t{}", link.from, link.target);
             }
-            if !broken.is_empty() {
+            for doc in &stale {
+                let (kind, detail) = match doc.state {
+                    DocState::Stale => ("stale", doc.count.to_string()),
+                    DocState::Unverified => ("unverified", "-".to_owned()),
+                    _ => ("unknown", verified(&vault, &doc.path)),
+                };
+                println!("{kind}\t{}\t{detail}", doc.path);
+            }
+            if !broken.is_empty() || !stale.is_empty() {
                 return Ok(Outcome::Found);
             }
         }
@@ -149,4 +167,14 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         }
     }
     Ok(Outcome::Ok)
+}
+
+/// The `verified` value an `unknown` doc names, so CI shows which commit is
+/// missing from its checkout.
+fn verified(vault: &Vault, path: &str) -> String {
+    let content = vault.read(path).unwrap_or_default();
+    parse_frontmatter(&content)
+        .0
+        .verified
+        .unwrap_or_else(|| "-".to_owned())
 }
