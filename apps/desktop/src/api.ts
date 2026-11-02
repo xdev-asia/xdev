@@ -1,140 +1,100 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import type {
+  Accounts,
+  Account,
+  Change,
+  CmdError,
+  Commit,
+  DocEntry,
+  DocLink,
+  Expected,
+  ExportPlan,
+  FileDiff,
+  Freshness,
+  LoginStart,
+  Quota,
+  SearchHit,
+  Seen,
+  StaleDoc,
+  Task,
+  TasksContext,
+  VaultChanged,
+  VaultSetup,
+  VcsState,
+} from "@xdev/bindings";
 import type { Target } from "./doc/frontmatter";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 
 export { createMockApi };
 export type { Target };
 
-export type DocEntry = { path: string; title: string; size: number; skipped: null | "too_large" | "not_utf8" };
-export type SearchHit = { path: string; title: string; snippet: string };
-export type ApiError = {
-  code:
-    | "not_found"
-    | "outside_vault"
-    | "no_vault"
-    | "io"
-    | "not_utf8"
-    | "too_large"
-    | "no_git"
-    | "no_repo"
-    | "git"
-    | "git_identity"
-    | "stale"
-    | "conflict"
-    | "changed"
-    | "bad_name"
-    | "exists"
-    | "no_claude"
-    | "bad_registry"
-    | "bad_reserve"
-    | "bad_path"
-    | "no_commits"
-    | "empty_goal"
-    | "needs_approval"
-    | "denied"
-    | "dirty_repo"
-    | "merge_conflict"
-    | "bad_state"
-    | "detached"
-    | "no_session"
-    | "no_worktree"
-    | "runner"
-    | "timeout"
-    | "policy_invalid"
-    | "binary";
-  detail?: string;
-};
-export type VaultSetup = { prompt: boolean; defaultPath: string };
-export type VcsState = { status: "ok" | "no_repo" | "no_git" };
-export type ChangeKind = "added" | "modified" | "deleted";
-// `note` is the summary an agent gave with an `ai` change; null for the other origins.
-// `hash` is the text on disk (null when deleted); approve and reject send it back so
-// the core can refuse a change edited after the person looked at it.
-export type Change = {
-  path: string;
-  kind: ChangeKind;
-  origin: "app" | "outside" | "ai";
-  note: string | null;
-  hash: string | null;
-};
-export type Seen = Pick<Change, "path" | "hash">;
-// `time` is unix seconds, `message` the subject line.
-export type Commit = { id: string; author: string; time: number; message: string };
-// `none`: the doc declares no `covers`, so there is nothing to check.
-export type DocState = "none" | "fresh" | "stale" | "unverified" | "unknown";
-export type Freshness = {
-  state: DocState;
-  covers: string[];
-  verified: string | null;
-  // Full id of HEAD; null without git or commits, which is when a doc cannot be marked verified.
-  head: string | null;
-  // Newest first, at most 20; `count` is the whole range.
-  commits: Commit[];
-  count: number;
-};
-export type StaleDoc = { path: string; title: string; state: "stale" | "unverified" | "unknown"; count: number };
-export type DocLink = { path: string; title: string };
-export type ExportStatus = "new" | "changed" | "unchanged" | "foreign";
-// `path` is relative to the export root with "/" separators; `old` is null when the file does not exist yet.
-export type ExportFile = { path: string; status: ExportStatus; old: string | null; new: string; hash: string };
-export type ExportPlan = {
-  root: string;
-  files: ExportFile[];
-  docs: { path: string; title: string; targets: Target[] }[];
-  tokens: number;
-};
-export type Expected = { path: string; hash: string };
+// The IPC types come from Rust; see packages/bindings/README.md.
+export type {
+  Account,
+  Accounts,
+  Change,
+  ChangeKind,
+  Commit,
+  DocEntry,
+  DocLink,
+  DocState,
+  Expected,
+  ExportPlan,
+  FileDiff,
+  Freshness,
+  LoginStart,
+  Quota,
+  SearchHit,
+  Seen,
+  StaleDoc,
+  Task,
+  TasksContext,
+  TaskState,
+  VaultSetup,
+  VcsState,
+} from "@xdev/bindings";
+// The UI's names for generated types.
+export type { FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
 
-export type AccountStatus = {
-  state: "logged_in" | "logged_out" | "no_claude" | "error";
-  email: string | null; plan: string | null; org: string | null;
-};
-export type Account = { name: string; provider: "claude"; dir: string; status: AccountStatus };
-export type Accounts = { reservePercent: number; accounts: Account[] };
-export type QuotaWindow = { key: string; utilization: number | null; resetsAt: string | null };
-export type Quota = {
-  name: string;
-  state: "ok" | "reserve" | "full" | "unknown";
-  reason: "no_credentials" | "expired" | "unavailable" | "logged_out" | "no_claude" | null;
-  windows: QuotaWindow[];
-};
-export type LoginStart = { opened: boolean; command: string };
-
-// Tasks keep the agent crate's own snake_case record, the same JSON `xdev task show --json` prints.
-// Times are unix seconds.
-export type TaskState = "ready" | "running" | "paused" | "review" | "failed" | "merged" | "discarded";
-export type TaskRun = {
-  started: number;
-  ended: number | null;
-  session_id: string | null;
-  cost_usd: number | null;
-  is_error: boolean;
-  summary: string;
-};
-// Null counts are a binary file.
-export type TaskFile = { path: string; added: number | null; removed: number | null };
-// `exit` is null when the command was killed or could not start.
-export type TaskTest = { command: string[]; exit: number | null; output_tail: string };
-export type TaskEvidence = { base: string; head: string; files: TaskFile[]; test: TaskTest | null };
-export type Task = {
-  id: string;
-  goal: string;
-  repo: string;
-  base: string;
-  branch: string;
-  worktree: string;
-  state: TaskState;
-  runs: TaskRun[];
-  evidence: TaskEvidence | null;
-  approval: { at: number; merge_commit: string } | null;
-  created: number;
-};
-// `defaultRepo` is the open vault's git root; `policyPath` is where the person changes what the gate allows.
-export type TasksContext = { defaultRepo: string | null; policyPath: string | null };
-// A file at the evidence's base and head; null where it does not exist.
-export type FileDiff = { old: string | null; new: string | null };
+// Rust builds `CmdError.code` from each crate's `code()` as a plain string, so the codes the UI
+// knows how to translate are listed here by hand.
+export type ErrorCode =
+  | "not_found"
+  | "outside_vault"
+  | "no_vault"
+  | "io"
+  | "not_utf8"
+  | "too_large"
+  | "no_git"
+  | "no_repo"
+  | "git"
+  | "git_identity"
+  | "stale"
+  | "conflict"
+  | "changed"
+  | "bad_name"
+  | "exists"
+  | "no_claude"
+  | "bad_registry"
+  | "bad_reserve"
+  | "bad_path"
+  | "no_commits"
+  | "empty_goal"
+  | "needs_approval"
+  | "denied"
+  | "dirty_repo"
+  | "merge_conflict"
+  | "bad_state"
+  | "detached"
+  | "no_session"
+  | "no_worktree"
+  | "runner"
+  | "timeout"
+  | "policy_invalid"
+  | "binary";
+export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export interface Api {
   accounts(): Promise<Accounts>;
@@ -195,7 +155,7 @@ function seen({ path, hash }: Seen): Seen {
   return { path, hash };
 }
 
-export const ERROR_CODES: readonly ApiError["code"][] = [
+export const ERROR_CODES: readonly ErrorCode[] = [
   "not_found",
   "outside_vault",
   "no_vault",
@@ -271,7 +231,7 @@ const tauriApi: Api = {
   createDoc: (path, content) => call("create_doc", { path, content }),
   cliPath: () => call("cli_path"),
   search: (query, limit) => call("search", { query, limit }),
-  onVaultChanged: (cb) => listen<{ paths: string[] }>("vault://changed", (e) => cb(e.payload.paths)),
+  onVaultChanged: (cb) => listen<VaultChanged>("vault://changed", (e) => cb(e.payload.paths)),
   vcsState: () => call("vcs_state"),
   initRepo: () => call("init_repo"),
   listChanges: () => call("list_changes"),
