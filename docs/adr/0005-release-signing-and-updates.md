@@ -1,7 +1,8 @@
 # 0005. Updates are signed with a key the owner holds; OS code signing comes later
 
 Status: accepted. Code: `apps/desktop/src-tauri/src/updater.rs`,
-`tauri.conf.json` (`plugins.updater`), `.github/workflows/release.yml`.
+`tauri.conf.json` (`plugins.updater`), `.github/workflows/release.yml`,
+`release-please-config.json`.
 Date: 2026-11-02
 
 ## Context
@@ -29,8 +30,13 @@ That key is separate from Apple and Microsoft code-signing certificates.
 - The release workflow signs in that environment and uploads `latest.json`
   next to the installers on GitHub Releases. The app reads
   `releases/latest/download/latest.json`.
-- Releases stay drafts until the owner publishes them; an install sees an
-  update only after that.
+- Releases are cut by release-please from Conventional Commits on main. It
+  keeps a release PR open; merging it bumps the version, tags it and opens a
+  draft release. The build then signs installers for Windows (x64, ARM64),
+  macOS (Apple silicon, Intel) and Linux (x64, ARM64), uploads them with a
+  `latest.json` that lists all six, and publishes the release. Merging the PR
+  and approving the `release` environment are the two human steps; an
+  install sees an update only after the release is published.
 - Installers are not code-signed by Apple or Microsoft yet. Windows shows
   SmartScreen and macOS needs right-click, Open. Who signs is decided when
   there is a legal entity; it does not change the updater key.

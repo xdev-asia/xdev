@@ -28,6 +28,12 @@ corepack pnpm -r test
 cargo test --workspace
 ```
 
+## Releases
+
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)
+(`feat:`, `fix:`, `chore:` …). release-please reads them to keep a release PR
+open on GitHub; merging that PR publishes the next version (ADR 0005).
+
 ## Building installers
 
 `tauri build` also writes signed update bundles, so it needs the updater key

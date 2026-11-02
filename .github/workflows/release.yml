@@ -1,27 +1,88 @@
 name: Release
 
+# Every push to main updates a release PR (release-please, from Conventional
+# Commits). Merging that PR tags the version, builds and signs every platform,
+# then publishes the release, which is when installs see the update.
+# A manual run builds every platform without signing, to test the matrix.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  release-please:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+      pr: ${{ steps.rp.outputs.pr }}
+    steps:
+      - id: rp
+        uses: googleapis/release-please-action@v4
+
+  # release-please bumps Cargo.toml but not Cargo.lock, and the release
+  # builds use --locked.
+  lockfile:
+    needs: release-please
+    if: needs.release-please.outputs.pr
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ fromJSON(needs.release-please.outputs.pr).headBranchName }}
+      - run: rustup toolchain install
+      - run: cargo update --workspace
+      - name: Commit Cargo.lock
+        run: |
+          git diff --quiet Cargo.lock && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: sync Cargo.lock" Cargo.lock
+          git push
+
   build:
+    needs: release-please
+    if: ${{ !cancelled() && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            bundles: nsis
           - os: macos-latest
             target: aarch64-apple-darwin
+            bundles: app,dmg
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            bundles: app,dmg
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            bundles: appimage,deb
     runs-on: ${{ matrix.os }}
     # The updater key lives only in this environment, which needs a reviewer
-    # before a job can read it (ADR 0005).
-    environment: release
+    # before a job can read it (ADR 0005). Manual runs stay outside it.
+    environment: ${{ github.event_name == 'push' && 'release' || '' }}
     defaults:
       run:
         shell: bash
@@ -30,10 +91,34 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The ARM images do not all ship rustup.
+      - name: Install rustup if missing
+        run: |
+          command -v rustup >/dev/null && exit 0
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            curl -sSfLo rustup-init.exe https://static.rust-lang.org/rustup/dist/aarch64-pc-windows-msvc/rustup-init.exe
+            ./rustup-init.exe -y --default-toolchain none --profile minimal
+            cygpath -w "$USERPROFILE/.cargo/bin" >> "$GITHUB_PATH"
+          else
+            curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+
       - name: Install Rust toolchain from rust-toolchain.toml
-        run: rustup toolchain install
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev patchelf
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
 
       - uses: actions/setup-node@v7
         with:
@@ -45,14 +130,19 @@ jobs:
 
       - run: corepack pnpm install --frozen-lockfile
 
-      - run: cargo build --release -p xdev-cli --locked
+      - run: cargo build --release -p xdev-cli --locked --target ${{ matrix.target }}
 
       # Updates are signed with the updater key; the installers themselves are
       # not OS code-signed yet (Windows unsigned, macOS ad-hoc "-"), so
       # SmartScreen and Gatekeeper still warn on first install.
       - name: Build desktop installers
         working-directory: apps/desktop
-        run: corepack pnpm tauri build
+        run: |
+          args=(--target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}")
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            args+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
+          fi
+          corepack pnpm tauri build "${args[@]}"
         env:
           APPLE_SIGNING_IDENTITY: "-"
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -61,18 +151,31 @@ jobs:
       - name: Stage artifacts
         run: |
           mkdir -p out
-          bundle=target/release/bundle
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            cp target/release/xdev.exe "out/xdev-${{ matrix.target }}.exe"
-            cp "$bundle"/nsis/*.exe "$bundle"/nsis/*.exe.sig "$bundle"/msi/*.msi out/
-          else
-            # tar keeps the executable bit that zip-based artifacts drop.
-            tar -czf "out/xdev-${{ matrix.target }}.tar.gz" -C target/release xdev
-            # Tauri's own tarball, since the .sig covers exactly these bytes.
-            cp "$bundle/macos/xDev.app.tar.gz" "out/xDev-${{ matrix.target }}.app.tar.gz"
-            cp "$bundle/macos/xDev.app.tar.gz.sig" "out/xDev-${{ matrix.target }}.app.tar.gz.sig"
-            cp "$bundle"/dmg/*.dmg out/
-          fi
+          rel=target/${{ matrix.target }}/release
+          bundle=$rel/bundle
+          case "$RUNNER_OS" in
+            Windows)
+              cp "$rel/xdev.exe" "out/xdev-${{ matrix.target }}.exe"
+              cp "$bundle"/nsis/*-setup.exe* out/
+              if [ -d "$bundle/msi" ]; then cp "$bundle"/msi/*.msi* out/; fi
+              ;;
+            macOS)
+              # tar keeps the executable bit that zip-based artifacts drop.
+              tar -czf "out/xdev-${{ matrix.target }}.tar.gz" -C "$rel" xdev
+              # Both macOS targets name the updater tarball xDev.app.tar.gz;
+              # renaming keeps the bytes the .sig covers.
+              for f in "$bundle"/macos/xDev.app.tar.gz*; do
+                name=$(basename "$f")
+                cp "$f" "out/${name/xDev/xDev-${{ matrix.target }}}"
+              done
+              cp "$bundle"/dmg/*.dmg out/
+              ;;
+            Linux)
+              tar -czf "out/xdev-${{ matrix.target }}.tar.gz" -C "$rel" xdev
+              cp "$bundle"/appimage/*.AppImage* "$bundle"/deb/*.deb out/
+              ;;
+          esac
+          ls -l out
 
       - uses: actions/upload-artifact@v7
         with:
@@ -80,42 +183,52 @@ jobs:
           path: out/*
           if-no-files-found: error
 
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+  publish:
+    needs: [release-please, build]
+    if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.release-please.outputs.tag_name }}
     steps:
       - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
 
-      # The app reads releases/latest/download/latest.json, which resolves only
-      # once the owner publishes the draft.
+      # The app reads releases/latest/download/latest.json, so it must list
+      # every platform before the release becomes latest.
       - name: Write latest.json
         run: |
-          win=$(ls dist/*-setup.exe)
-          mac=dist/xDev-aarch64-apple-darwin.app.tar.gz
-          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
+          base="https://github.com/$GH_REPO/releases/download/$TAG"
+          platforms='{}'
+          add() {
+            f=$(compgen -G "dist/$2" | head -n1)
+            if [ -z "$f" ] || [ ! -f "$f.sig" ]; then
+              echo "::error::no signed updater bundle for $1 ($2)"
+              exit 1
+            fi
+            platforms=$(jq --arg k "$1" --arg url "$base/$(basename "$f")" \
+              --arg sig "$(tr -d '\n' < "$f.sig")" \
+              '.[$k] = {url: $url, signature: $sig}' <<< "$platforms")
+          }
+          add windows-x86_64 '*_x64-setup.exe'
+          add windows-aarch64 '*_arm64-setup.exe'
+          add darwin-aarch64 'xDev-aarch64-apple-darwin.app.tar.gz'
+          add darwin-x86_64 'xDev-x86_64-apple-darwin.app.tar.gz'
+          add linux-x86_64 '*_amd64.AppImage'
+          add linux-aarch64 '*_aarch64.AppImage'
           jq -n \
-            --arg version "${GITHUB_REF_NAME#v}" \
-            --arg notes "https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME" \
+            --arg version "${TAG#v}" \
+            --arg notes "https://github.com/$GH_REPO/releases/tag/$TAG" \
             --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg win_url "$base/$(basename "$win")" \
-            --arg win_sig "$(tr -d '\n' < "$win.sig")" \
-            --arg mac_url "$base/$(basename "$mac")" \
-            --arg mac_sig "$(tr -d '\n' < "$mac.sig")" \
-            '{version: $version, notes: $notes, pub_date: $date, platforms: {
-              "windows-x86_64": {url: $win_url, signature: $win_sig},
-              "darwin-aarch64": {url: $mac_url, signature: $mac_sig}}}' \
+            --argjson platforms "$platforms" \
+            '{version: $version, notes: $notes, pub_date: $date, platforms: $platforms}' \
             > dist/latest.json
+          cat dist/latest.json
 
-      - name: Create draft release
-        run: >
-          gh release create "$GITHUB_REF_NAME" dist/*
-          --draft --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+      - run: gh release upload "$TAG" dist/* --clobber
+      - run: gh release edit "$TAG" --draft=false --latest
