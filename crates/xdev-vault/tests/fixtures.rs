@@ -36,6 +36,11 @@ fn frontmatter_fixtures() {
             "case {name}: agents"
         );
         assert_eq!(fm.tags, strings(&case["tags"]), "case {name}: tags");
+        let covers = case.get("covers").map_or_else(Vec::new, strings);
+        assert_eq!(fm.covers, covers, "case {name}: covers");
+        let optional = |key: &str| case.get(key).and_then(Value::as_str).map(str::to_owned);
+        assert_eq!(fm.verified, optional("verified"), "case {name}: verified");
+        assert_eq!(fm.doc_type, optional("type"), "case {name}: type");
     }
 }
 

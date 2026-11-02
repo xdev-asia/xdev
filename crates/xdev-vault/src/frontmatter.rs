@@ -1,4 +1,4 @@
-//! A small YAML subset, parsed by hand: only three keys matter, and a subset
+//! A small YAML subset, parsed by hand: only a few keys matter, and a subset
 //! parser cannot fail on odd YAML, it just ignores what it does not know.
 
 /// `Ord` is the fixed order the generated files and the UI list targets in.
@@ -31,6 +31,12 @@ pub struct Frontmatter {
     /// Deduplicated, in `Target` order.
     pub agents: Vec<Target>,
     pub tags: Vec<String>,
+    /// Repo-relative pathspecs, cleaned so a doc cannot point outside the repo.
+    pub covers: Vec<String>,
+    /// Lowercase hex, 4 to 40 digits; anything else reads as missing.
+    pub verified: Option<String>,
+    /// The `type` key.
+    pub doc_type: Option<String>,
 }
 
 /// Splits off a leading `---` block. The BOM is never part of the body, so
@@ -77,10 +83,13 @@ enum Key {
     Title = 0,
     Agents = 1,
     Tags = 2,
+    Covers = 3,
+    Verified = 4,
+    Type = 5,
 }
 
 fn parse_block(block: &str) -> Frontmatter {
-    let mut values: [Option<Value>; 3] = [None, None, None];
+    let mut values: [Option<Value>; 6] = Default::default();
     // The known key whose `  - item` lines are being collected.
     let mut open: Option<Key> = None;
 
@@ -115,6 +124,9 @@ fn parse_block(block: &str) -> Frontmatter {
             "title" => Key::Title,
             "agents" => Key::Agents,
             "tags" => Key::Tags,
+            "covers" => Key::Covers,
+            "verified" => Key::Verified,
+            "type" => Key::Type,
             _ => continue,
         };
         let value = parse_value(raw);
@@ -127,19 +139,55 @@ fn parse_block(block: &str) -> Frontmatter {
         };
     }
 
-    let [title, agents, tags] = values;
+    let [title, agents, tags, covers, verified, doc_type] = values;
     Frontmatter {
-        title: match title {
-            Some(Value::Scalar { text, .. }) if !text.is_empty() => Some(text),
-            _ => None,
-        },
+        title: text(title),
         agents: parse_agents(agents),
-        tags: match tags {
-            Some(Value::List(items)) => items,
-            Some(Value::Scalar { text, .. }) if !text.is_empty() => vec![text],
-            _ => Vec::new(),
-        },
+        tags: list(tags),
+        covers: parse_covers(list(covers)),
+        verified: text(verified)
+            .filter(|v| (4..=40).contains(&v.len()) && v.bytes().all(|b| b.is_ascii_hexdigit()))
+            .map(|v| v.to_ascii_lowercase()),
+        doc_type: text(doc_type)
+            .map(|t| t.trim().to_owned())
+            .filter(|t| !t.is_empty()),
     }
+}
+
+fn text(value: Option<Value>) -> Option<String> {
+    match value {
+        Some(Value::Scalar { text, .. }) if !text.is_empty() => Some(text),
+        _ => None,
+    }
+}
+
+/// One plain value counts as a list of one.
+fn list(value: Option<Value>) -> Vec<String> {
+    match value {
+        Some(Value::List(items)) => items,
+        Some(Value::Scalar { text, .. }) if !text.is_empty() => vec![text],
+        _ => Vec::new(),
+    }
+}
+
+/// Entries are relative to the repo root, so a leading `/` or `./` is noise;
+/// a `..` segment would reach outside the repo and is dropped.
+fn parse_covers(items: Vec<String>) -> Vec<String> {
+    let mut covers: Vec<String> = Vec::new();
+    for item in items {
+        let item = item.trim();
+        let item = item
+            .strip_prefix("./")
+            .or_else(|| item.strip_prefix('/'))
+            .unwrap_or(item);
+        if item.is_empty() || item.split('/').any(|seg| seg == "..") {
+            continue;
+        }
+        if !covers.iter().any(|c| c == item) {
+            covers.push(item.to_owned());
+        }
+    }
+    covers
 }
 
 fn parse_agents(value: Option<Value>) -> Vec<Target> {
