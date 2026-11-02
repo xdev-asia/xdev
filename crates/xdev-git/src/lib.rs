@@ -6,10 +6,12 @@ mod history;
 mod range;
 mod run;
 mod status;
+mod worktree;
 
 use std::path::{Path, PathBuf};
 
 pub use history::Commit;
+pub use worktree::NumStat;
 
 /// The UI translates `code()`, never the message.
 #[derive(Debug, thiserror::Error)]
