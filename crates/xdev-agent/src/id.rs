@@ -1,5 +1,10 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Counts ids made in this process; the clock alone repeats when two threads
+/// ask in the same tick.
+static SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// `YYYYMMDD-HHMMSS-xxxx` in UTC. Ids sort by creation time; the hex tail
 /// keeps two tasks made in the same second apart.
@@ -10,6 +15,7 @@ pub(crate) fn new_id(goal: &str, now: SystemTime) -> String {
     goal.hash(&mut hasher);
     since.as_nanos().hash(&mut hasher);
     std::process::id().hash(&mut hasher);
+    SEQ.fetch_add(1, Ordering::Relaxed).hash(&mut hasher);
     format!("{}-{:04x}", stamp(secs), hasher.finish() & 0xffff)
 }
 
@@ -75,6 +81,15 @@ mod tests {
         assert!(ids.iter().all(|id| valid_id(id)));
         // Four 16-bit tails all equal would mean the goal is not hashed.
         assert!(ids.iter().any(|id| *id != ids[0]));
+    }
+
+    #[test]
+    fn same_goal_and_time_still_differ() {
+        // macOS clocks tick in microseconds, so parallel tests in one process
+        // used to get the same id and share a live-run slot.
+        let t = UNIX_EPOCH + Duration::new(1_793_491_199, 0);
+        let ids: Vec<String> = (0..4).map(|_| new_id("a", t)).collect();
+        assert!(ids.iter().any(|id| *id != ids[0]), "{ids:?}");
     }
 
     #[test]
