@@ -22,7 +22,9 @@ pub use sync::{DocEntry, Skip, index_path, search, sync_vault};
 // Runtimes open these directly; re-exporting keeps core their only dependency.
 pub use xdev_export::{FileStatus, PlannedFile};
 pub use xdev_git::{ChangeKind, Commit, GitError, Repo};
-pub use xdev_store::{AiWrite, SearchHit, Store, StoreError};
+pub use xdev_store::{
+    AiWrite, ContextPack, ContextSection, Embedder, SearchHit, Store, StoreError,
+};
 pub use xdev_vault::{
     Frontmatter, Link, LinkKind, Resolver, Target, Vault, VaultError, VaultWatcher, content_hash,
     is_doc_path, parse_frontmatter, parse_links,
