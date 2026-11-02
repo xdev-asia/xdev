@@ -92,6 +92,16 @@ impl CoreDocs {
 }
 
 impl Docs for CoreDocs {
+    fn context_pack(
+        &mut self,
+        query: &str,
+        budget: usize,
+    ) -> Result<xdev_core::ContextPack, ToolError> {
+        self.sync()?;
+        crate::context::pack(&self.vault, &self.store, query, budget)
+            .map_err(|code| ToolError { code: code.into() })
+    }
+
     fn vault_name(&self) -> String {
         let root = self.vault.root().display().to_string();
         root.trim_start_matches(r"\\?\").to_owned()

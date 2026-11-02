@@ -5661,6 +5661,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "xdev-store",
 ]
 
 [[package]]
@@ -5677,6 +5678,7 @@ dependencies = [
 name = "xdev-store"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "rusqlite",
  "serde",
  "tempfile",

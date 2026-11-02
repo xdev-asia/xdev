@@ -1,5 +1,6 @@
 mod accounts;
 mod ai;
+mod context;
 mod mcp;
 mod task;
 
@@ -35,6 +36,21 @@ enum Command {
         query: String,
         #[arg(long, default_value_t = 20)]
         limit: usize,
+    },
+    /// Embed changed sections with a local Ollama model.
+    Embed {
+        dir: PathBuf,
+        #[arg(long)]
+        model: Option<String>,
+    },
+    /// Retrieve ranked sections within a character budget.
+    Context {
+        dir: PathBuf,
+        query: String,
+        #[arg(long, default_value_t = 8000)]
+        budget: usize,
+        #[arg(long)]
+        json: bool,
     },
     /// Print `kind<TAB>path` for each doc that differs from git `HEAD`.
     Changes { dir: PathBuf },
@@ -129,6 +145,35 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
                 "indexed {} docs, skipped {skipped}",
                 entries.len() - skipped
             );
+        }
+        Command::Embed { dir, model } => {
+            let (vault, mut store) = open(&dir).map_err(|e| e.code())?;
+            sync_vault(&vault, &mut store).map_err(|e| e.code())?;
+            let stats = store
+                .embed_vault(&context::OllamaEmbedder::new(model))
+                .map_err(context::error_code)?;
+            println!(
+                "embedded\t{}\nkept\t{}\nremoved\t{}",
+                stats.embedded, stats.kept, stats.removed
+            );
+        }
+        Command::Context {
+            dir,
+            query,
+            budget,
+            json,
+        } => {
+            let (vault, mut store) = open(&dir).map_err(|e| e.code())?;
+            sync_vault(&vault, &mut store).map_err(|e| e.code())?;
+            let pack = context::pack(&vault, &store, &query, budget)?;
+            if json {
+                println!("{}", serde_json::to_string(&pack).map_err(|_| "io")?);
+            } else {
+                print!("{}", context::markdown(&pack));
+                if pack.mode == "keyword" {
+                    eprintln!("mode: keyword");
+                }
+            }
         }
         Command::Search { dir, query, limit } => {
             let (vault, mut store) = open(&dir).map_err(|e| e.code())?;

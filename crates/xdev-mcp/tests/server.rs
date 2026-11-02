@@ -31,6 +31,19 @@ fn info(path: &str, state: &str, count: usize) -> DocInfo {
 }
 
 impl Docs for Fake {
+    fn context_pack(
+        &mut self,
+        query: &str,
+        budget: usize,
+    ) -> Result<xdev_mcp::ContextPack, ToolError> {
+        assert_eq!(query, "tokens");
+        assert_eq!(budget, 123);
+        Ok(xdev_mcp::ContextPack {
+            mode: "keyword".into(),
+            sections: vec![],
+        })
+    }
+
     fn vault_name(&self) -> String {
         "demo".to_string()
     }
@@ -230,7 +243,7 @@ fn tools(reply: &Value) -> Vec<Value> {
 }
 
 #[test]
-fn tools_list_has_five_tools_with_schemas() {
+fn tools_list_has_six_tools_with_schemas() {
     let reply = one(
         &mut Fake::default(),
         json!({"jsonrpc":"2.0","id":4,"method":"tools/list","params":{}}),
@@ -240,6 +253,7 @@ fn tools_list_has_five_tools_with_schemas() {
     assert_eq!(
         names,
         [
+            "context_pack",
             "search_docs",
             "get_doc",
             "list_docs",
@@ -253,7 +267,14 @@ fn tools_list_has_five_tools_with_schemas() {
             .map(|a| a.iter().map(|v| v.as_str().unwrap().to_string()).collect())
             .unwrap_or_default()
     };
-    let expect: [&[&str]; 5] = [&["query"], &["path"], &[], &[], &["path", "content"]];
+    let expect: [&[&str]; 6] = [
+        &["query"],
+        &["query"],
+        &["path"],
+        &[],
+        &[],
+        &["path", "content"],
+    ];
     for (t, req) in tools.iter().zip(expect) {
         assert_eq!(t["inputSchema"]["type"], "object", "{t}");
         assert_eq!(t["outputSchema"]["type"], "object", "{t}");
@@ -263,12 +284,12 @@ fn tools_list_has_five_tools_with_schemas() {
             assert!(t["inputSchema"]["properties"][name].is_object());
         }
     }
-    let limit = &tools[0]["inputSchema"]["properties"]["limit"];
+    let limit = &tools[1]["inputSchema"]["properties"]["limit"];
     assert_eq!(limit["minimum"], 1);
     assert_eq!(limit["maximum"], 50);
     assert_eq!(limit["default"], 10);
-    assert!(tools[2]["inputSchema"]["properties"]["type"].is_object());
-    assert!(tools[4]["inputSchema"]["properties"]["summary"].is_object());
+    assert!(tools[3]["inputSchema"]["properties"]["type"].is_object());
+    assert!(tools[5]["inputSchema"]["properties"]["summary"].is_object());
     assert!(reply["result"].get("resultType").is_none());
 }
 
@@ -281,6 +302,7 @@ fn structured_content_has_output_schema_keys() {
         json!({"jsonrpc":"2.0","id":4,"method":"tools/list"}),
     );
     let calls = [
+        ("context_pack", json!({"query":"tokens", "budget":123})),
         ("search_docs", json!({"query":"auth"})),
         ("get_doc", json!({"path":"a.md"})),
         ("list_docs", json!({})),
@@ -597,7 +619,7 @@ fn modern_requests_get_result_type_and_server_info() {
     );
     assert!(r["ttlMs"].as_u64().is_some());
     assert_eq!(r["cacheScope"], "public");
-    assert_eq!(r["tools"].as_array().unwrap().len(), 5);
+    assert_eq!(r["tools"].as_array().unwrap().len(), 6);
 
     let reply = one(
         &mut Fake::default(),
@@ -669,4 +691,22 @@ fn oversized_line_at_eof_finishes_cleanly() {
     let (replies, _) = run_bytes(&mut Fake::default(), &input);
     assert_eq!(replies.len(), 1);
     assert_eq!(replies[0]["error"]["code"], -32600);
+}
+
+#[test]
+fn context_pack_returns_structured_content_and_checks_budget() {
+    let reply = call(
+        &mut Fake::default(),
+        "context_pack",
+        json!({"query":"tokens", "budget":123}),
+    );
+    assert_eq!(reply["structuredContent"]["mode"], "keyword");
+    assert_eq!(reply["content"][0]["text"], "mode: keyword");
+    for budget in [json!(-1), json!(1.5), json!("bad")] {
+        let reply = one(
+            &mut Fake::default(),
+            json!({"jsonrpc":"2.0", "id":1, "method":"tools/call", "params":{"name":"context_pack", "arguments":{"query":"tokens", "budget":budget}}}),
+        );
+        assert_eq!(reply["error"]["code"], -32602);
+    }
 }
