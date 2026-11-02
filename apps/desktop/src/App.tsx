@@ -27,6 +27,7 @@ import { LanguageSwitch } from "./components/LanguageSwitch";
 import { NoVaultView, type VaultFailure } from "./components/NoVaultView";
 import { Preview } from "./components/Preview";
 import { resultId, RESULTS_ID, SearchPanel } from "./components/SearchPanel";
+import { NewDocForm } from "./components/NewDocForm";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { isDirty } from "./doc/docState";
@@ -34,6 +35,7 @@ import { agentsEditable, parseFrontmatter, setAgents, setVerified } from "./doc/
 import { useDoc } from "./doc/useDoc";
 import { useI18n } from "./i18n";
 import type { AppId } from "./shell/apps";
+import { docFileName, newDocContent } from "./shell/newDoc";
 import { setUpVault } from "./shell/setUpVault";
 import { useQuota } from "./shell/useQuota";
 
@@ -171,6 +173,8 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
   // Tagged with its path, so a slow answer for the previous doc is never shown on the next one.
   const [freshness, setFreshness] = useState<{ path: string; value: Freshness; now: number }>();
   const [staleDocs, setStaleDocs] = useState<StaleDoc[]>([]);
+  // Open while the sidebar shows the new-doc form.
+  const [newDoc, setNewDoc] = useState<{ busy: boolean; error?: ApiError["code"] } | null>(null);
   const { state } = doc;
   const searchOpen = query.trim() !== "";
   const quota = useQuota(api, app === "accounts");
@@ -261,6 +265,9 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
         e.preventDefault();
         searchInput.current?.focus();
         searchInput.current?.select();
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        startNewDoc();
       }
     }
     window.addEventListener("keydown", onKey);
@@ -297,6 +304,32 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
     setSelected(null);
     setApp("docs");
     doc.open(path);
+  }
+
+  function startNewDoc() {
+    setQuery("");
+    setApp("docs");
+    setNewDoc({ busy: false });
+  }
+
+  async function createDoc(title: string) {
+    const path = docFileName(title);
+    if (path === null) {
+      setNewDoc({ busy: false, error: "bad_path" });
+      return;
+    }
+    setNewDoc({ busy: true });
+    try {
+      await api.createDoc(path, newDocContent(title));
+    } catch (e) {
+      setNewDoc({ busy: false, error: toApiError(e).code });
+      return;
+    }
+    setNewDoc(null);
+    // The watcher skips the app's own writes, so the list and the change count are refreshed here.
+    api.listDocs().then(setDocs, () => undefined);
+    review.refresh();
+    openDoc(path);
   }
 
   function selectChange(path: string | null) {
@@ -412,7 +445,23 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
           />
         ) : (
           app === "docs" ? (
-            <Sidebar docs={docs} activePath={state.path} stale={staleDocs} onOpen={openDoc} />
+            <Sidebar
+              docs={docs}
+              activePath={state.path}
+              stale={staleDocs}
+              onOpen={openDoc}
+              onNew={startNewDoc}
+              newDoc={
+                newDoc && (
+                  <NewDocForm
+                    busy={newDoc.busy}
+                    error={newDoc.error}
+                    onCreate={(title) => void createDoc(title)}
+                    onCancel={() => setNewDoc(null)}
+                  />
+                )
+              }
+            />
           ) : (
             app === "changes" && (
               <ChangesPanel

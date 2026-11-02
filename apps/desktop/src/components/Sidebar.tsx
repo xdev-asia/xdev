@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 import type { DocEntry, StaleDoc } from "../api";
 import { useI18n } from "../i18n";
 
@@ -12,6 +12,9 @@ function StaleMark(props: { doc: StaleDoc | undefined }): JSX.Element | null {
     </span>
   );
 }
+
+export const NEW_DOC_SHORTCUT =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘N" : "Ctrl+N";
 
 function folderOf(path: string): string {
   const slash = path.lastIndexOf("/");
@@ -34,6 +37,9 @@ export function Sidebar(props: {
   // Docs whose `covers` need a look; the rest get no mark.
   stale?: StaleDoc[];
   onOpen(path: string): void;
+  onNew(): void;
+  // The new-doc form, shown under the heading while it is open.
+  newDoc?: ReactNode;
 }): JSX.Element {
   const { t } = useI18n();
   const marks = new Map((props.stale ?? []).map((s) => [s.path, s]));
@@ -41,9 +47,21 @@ export function Sidebar(props: {
     <nav className="pane" aria-label={t("sidebar.title")}>
       <div className="pane-head">
         <span>{t("sidebar.title")}</span>
-        <span className="pane-count">{t("sidebar.count", { count: props.docs.length })}</span>
+        <span className="pane-tools">
+          <span className="pane-count">{t("sidebar.count", { count: props.docs.length })}</span>
+          <button
+            type="button"
+            className="pane-action"
+            title={t("newDoc.title", { shortcut: NEW_DOC_SHORTCUT })}
+            aria-label={t("newDoc.title", { shortcut: NEW_DOC_SHORTCUT })}
+            onClick={props.onNew}
+          >
+            +
+          </button>
+        </span>
       </div>
-      {props.docs.length === 0 && <p className="pane-empty">{t("sidebar.empty")}</p>}
+      {props.newDoc}
+      {props.docs.length === 0 && !props.newDoc && <p className="pane-empty">{t("sidebar.empty")}</p>}
       {groupByFolder(props.docs).map(([folder, docs]) => (
         <section key={folder} className="docgroup">
           {folder && <h2 className="docgroup-title">{folder}/</h2>}

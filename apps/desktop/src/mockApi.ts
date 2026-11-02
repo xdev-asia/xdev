@@ -580,6 +580,17 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       written.set(path, content);
       notify([path]);
     },
+    async createDoc(path, content) {
+      const bad = guard(path);
+      if (bad) return reject(bad);
+      if (files.has(path)) return reject("exists");
+      files.set(path, content);
+      written.set(path, content);
+      notify([path]);
+    },
+    async cliPath() {
+      return null;
+    },
     async search(query, limit) {
       if (!open) return reject("no_vault");
       const terms = fold(query).text.split(/\s+/).filter(Boolean);

@@ -265,6 +265,49 @@ button:disabled {
   letter-spacing: 0;
 }
 
+.pane-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x-space-2);
+}
+
+.pane-action {
+  padding: 0 var(--x-space-2);
+  font-size: 1.25em;
+  line-height: 1.2;
+  color: var(--x-color-ink);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--x-radius-md);
+  cursor: pointer;
+}
+
+.pane-action:hover {
+  background: var(--x-color-surface-2);
+  border-color: var(--x-color-line);
+}
+
+.newdoc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  padding: 0 var(--x-space-2) var(--x-space-3);
+}
+
+.newdoc input {
+  padding: var(--x-space-1) var(--x-space-2);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-md);
+  background: var(--x-color-surface);
+  color: var(--x-color-ink);
+}
+
+.newdoc-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--x-space-2);
+}
+
 .pane-empty {
   margin: 0;
   padding: var(--x-space-2);

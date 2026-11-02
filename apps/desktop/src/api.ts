@@ -105,6 +105,10 @@ export interface Api {
   listDocs(): Promise<DocEntry[]>;
   readDoc(path: string): Promise<string>;
   writeDoc(path: string, content: string): Promise<void>;
+  // Rejects with `exists` instead of replacing a file; the parent folder must exist.
+  createDoc(path: string, content: string): Promise<void>;
+  // The CLI shipped beside the app, so setup commands work without it on PATH; null when absent.
+  cliPath(): Promise<string | null>;
   search(query: string, limit: number): Promise<SearchHit[]>;
   onVaultChanged(cb: (paths: string[]) => void): Promise<() => void>;
   vcsState(): Promise<VcsState>;
@@ -179,6 +183,8 @@ const tauriApi: Api = {
   listDocs: () => call("list_docs"),
   readDoc: (path) => call("read_doc", { path }),
   writeDoc: (path, content) => call("write_doc", { path, content }),
+  createDoc: (path, content) => call("create_doc", { path, content }),
+  cliPath: () => call("cli_path"),
   search: (query, limit) => call("search", { query, limit }),
   onVaultChanged: (cb) => listen<{ paths: string[] }>("vault://changed", (e) => cb(e.payload.paths)),
   vcsState: () => call("vcs_state"),

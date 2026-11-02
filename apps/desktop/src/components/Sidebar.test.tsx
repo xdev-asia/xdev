@@ -8,7 +8,7 @@ import { Sidebar } from "./Sidebar";
 function render(docs: DocEntry[], stale?: StaleDoc[]): string {
   return renderToStaticMarkup(
     <I18nProvider>
-      <Sidebar docs={docs} activePath={null} stale={stale} onOpen={() => {}} />
+      <Sidebar docs={docs} activePath={null} stale={stale} onOpen={() => {}} onNew={() => {}} />
     </I18nProvider>,
   );
 }
@@ -32,5 +32,26 @@ describe("Sidebar", () => {
     const docs = await api.openVault("/vault");
     expect(render(docs)).not.toContain("docitem-stale");
     expect(render(docs, [])).not.toContain("docitem-stale");
+  });
+
+  it("offers a new doc, and the form replaces the empty note", () => {
+    expect(render([])).toContain('aria-label="New doc (Ctrl+N)"');
+    expect(render([])).toContain("no Markdown files yet");
+    const withForm = renderToStaticMarkup(
+      <I18nProvider>
+        <Sidebar docs={[]} activePath={null} onOpen={() => {}} onNew={() => {}} newDoc={<form className="newdoc" />} />
+      </I18nProvider>,
+    );
+    expect(withForm).toContain('class="newdoc"');
+    expect(withForm).not.toContain("no Markdown files yet");
+  });
+
+  it("mock createDoc never replaces a doc", async () => {
+    const api = createMockApi({ "a.md": "# A" });
+    await api.openVault("/vault");
+    await api.createDoc("b.md", "# B\n\n");
+    expect((await api.listDocs()).map((d) => d.path)).toEqual(["a.md", "b.md"]);
+    await expect(api.createDoc("a.md", "x")).rejects.toMatchObject({ code: "exists" });
+    expect(await api.readDoc("a.md")).toBe("# A");
   });
 });
