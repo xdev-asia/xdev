@@ -1269,8 +1269,15 @@ button:disabled {
 .squad-tree-implement { grid-area: implement; }
 .squad-tree-review { grid-area: review; }
 .squad-tree-tests { grid-area: tests; }
-.squad-tree > div { position: relative; }
-.squad-tree-implement::before, .squad-tree-review::before, .squad-tree-tests::before { content: ""; position: absolute; left: 50%; bottom: 100%; height: var(--x-space-6); border-left: 1px solid var(--x-color-line); }
+/* Cells span their column so a connector can meet the column centre; the seat stays centred. */
+.squad-tree > div { position: relative; display: flex; justify-content: center; justify-self: stretch; }
+.squad-tree-lead::after, .squad-tree-implement::before, .squad-tree-review::before { content: ""; position: absolute; left: 50%; height: calc(var(--x-space-6) / 2); border-left: 1px solid var(--x-color-line); }
+.squad-tree-lead::after { top: 100%; }
+.squad-tree-implement::before, .squad-tree-review::before { bottom: 100%; }
+.squad-tree-implement::after, .squad-tree-review::after { content: ""; position: absolute; top: calc(var(--x-space-6) / -2); border-top: 1px solid var(--x-color-line); }
+.squad-tree-implement::after { left: 50%; right: calc(var(--x-space-4) / -2); }
+.squad-tree-review::after { left: calc(var(--x-space-4) / -2); right: 50%; }
+.squad-tree-tests::before { content: ""; position: absolute; left: 50%; bottom: 100%; height: var(--x-space-6); border-left: 1px solid var(--x-color-line); }
 .squad-seat { display: flex; align-items: center; gap: var(--x-space-3); padding: var(--x-space-2) var(--x-space-3); font: inherit; text-align: left; color: var(--x-color-ink); background: var(--x-color-bg); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-md); cursor: pointer; }
 .squad-seat:hover { background: var(--x-color-surface-2); }
 .squad-seat[aria-pressed="true"] { border-color: var(--x-color-accent); }
