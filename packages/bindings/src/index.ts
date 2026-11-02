@@ -23,6 +23,7 @@ export type { FileDiff } from "./FileDiff";
 export type { FileStatus } from "./FileStatus";
 export type { Freshness } from "./Freshness";
 export type { LoginStart } from "./LoginStart";
+export type { Models } from "./Models";
 export type { Origin } from "./Origin";
 export type { PlannedFile } from "./PlannedFile";
 export type { Provider } from "./Provider";

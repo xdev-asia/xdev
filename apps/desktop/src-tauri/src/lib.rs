@@ -74,6 +74,7 @@ pub fn run() {
             accounts::account_remove,
             accounts::routing_get,
             accounts::routing_set,
+            accounts::routing_models,
             tasks::tasks_context,
             tasks::tasks_list,
             tasks::task_get,

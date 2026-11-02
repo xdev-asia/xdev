@@ -202,7 +202,7 @@
   "routing.maxPrompt": "Prompt up to (chars)",
   "routing.anyLength": "Any length",
   "routing.model": "Model",
-  "routing.modelHint": "haiku, sonnet, gpt-5-mini…",
+  "routing.modelHint": "Pick or type a model",
   "routing.any": "Any",
   "routing.task": "Single task",
   "routing.up": "Up",

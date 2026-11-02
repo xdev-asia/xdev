@@ -162,6 +162,26 @@ pub fn routing_set(state: State<'_, AppState>, routing: Routing) -> Result<(), C
     Ok(())
 }
 
+/// The models each CLI offers, for the routing picker. A CLI that is missing
+/// or fails gives an empty list; the person can still type a name.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct Models {
+    claude: Vec<String>,
+    codex: Vec<String>,
+}
+
+#[tauri::command(async)]
+pub fn routing_models() -> Models {
+    let (claude, codex) = std::thread::scope(|s| {
+        let codex = s.spawn(|| xdev_ai::codex_models().unwrap_or_default());
+        let claude = xdev_ai::claude_models().unwrap_or_default();
+        (claude, codex.join().unwrap_or_default())
+    });
+    Models { claude, codex }
+}
+
 #[tauri::command(async)]
 pub fn account_login(state: State<'_, AppState>, name: String) -> Result<LoginStart, CmdError> {
     let registry = Registry::load(data_dir(&state)?)?;

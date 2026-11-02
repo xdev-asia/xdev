@@ -89,6 +89,48 @@ pub(crate) fn find_cli(var: &str, base: &str, missing: AiError) -> Result<Comman
         .ok_or(missing)
 }
 
+/// The model aliases `claude --help` names under `--model`. The CLI has no
+/// command that lists models; a full model name works too.
+pub fn claude_models() -> Result<Vec<String>, AiError> {
+    let mut cmd = claude_command()?;
+    cmd.arg("--help")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let out = stdout_within(cmd, STATUS_TIMEOUT, MAX_BODY)?;
+    Ok(parse_model_aliases(&String::from_utf8_lossy(&out)))
+}
+
+/// The quoted words in the `--model` entry, which runs until the next option.
+pub(crate) fn parse_model_aliases(help: &str) -> Vec<String> {
+    let mut lines = help
+        .lines()
+        .skip_while(|l| !l.trim_start().starts_with("--model "));
+    let Some(first) = lines.next() else {
+        return Vec::new();
+    };
+    let entry: Vec<&str> = std::iter::once(first)
+        .chain(lines.take_while(|l| !l.trim_start().starts_with('-')))
+        .collect();
+    let mut aliases: Vec<String> = Vec::new();
+    for word in entry.join(" ").split('\'').skip(1).step_by(2) {
+        let name = !word.is_empty()
+            && word
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_'));
+        if name && !aliases.iter().any(|a| a == word) {
+            aliases.push(word.to_owned());
+        }
+    }
+    aliases
+}
+
 /// Sign-in state from `claude auth status --json`. Never fails: a missing
 /// `claude` is `no_claude`, anything else unexpected is `error`.
 pub(crate) fn status(dir: &Path) -> AccountStatus {
@@ -107,14 +149,18 @@ pub(crate) fn status(dir: &Path) -> AccountStatus {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    match stdout_within(cmd, STATUS_TIMEOUT) {
+    match stdout_within(cmd, STATUS_TIMEOUT, MAX_BODY) {
         Ok(out) => parse_status(&out),
         Err(e) if e.kind() == io::ErrorKind::NotFound => AccountStatus::bare(StatusState::NoClaude),
         Err(_) => AccountStatus::bare(StatusState::Error),
     }
 }
 
-fn stdout_within(mut cmd: Command, timeout: Duration) -> io::Result<Vec<u8>> {
+pub(crate) fn stdout_within(
+    mut cmd: Command,
+    timeout: Duration,
+    limit: u64,
+) -> io::Result<Vec<u8>> {
     own_group(&mut cmd);
     let mut child = cmd.spawn()?;
     let stdout = child.stdout.take().expect("stdout is piped");
@@ -123,7 +169,7 @@ fn stdout_within(mut cmd: Command, timeout: Duration) -> io::Result<Vec<u8>> {
     // the pipe, cannot block past the timeout.
     thread::spawn(move || {
         let mut buf = Vec::new();
-        let read = stdout.take(MAX_BODY).read_to_end(&mut buf).map(|_| buf);
+        let read = stdout.take(limit).read_to_end(&mut buf).map(|_| buf);
         let _ = tx.send(read);
     });
     match rx.recv_timeout(timeout) {
@@ -290,6 +336,18 @@ fn parse_usage(body: &str) -> Option<Vec<QuotaWindow>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_aliases_come_from_the_model_entry() {
+        let help = "  --fallback-model <model>  Use 'other' when busy
+                      --model <model>   Model for the session. Provide
+                                        an alias (e.g. 'fable', 'opus', or
+                                        'sonnet') or a model's full name.
+                      --name <name>     Name it 'x'
+";
+        assert_eq!(parse_model_aliases(help), ["fable", "opus", "sonnet"]);
+        assert!(parse_model_aliases("no options here").is_empty());
+    }
 
     #[test]
     fn token_debug_is_redacted() {

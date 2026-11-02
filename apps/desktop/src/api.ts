@@ -14,6 +14,7 @@ import type {
   FileDiff,
   Freshness,
   LoginStart,
+  Models,
   Provider,
   Quota,
   RouteRule,
@@ -54,6 +55,7 @@ export type {
   FileDiff,
   Freshness,
   LoginStart,
+  Models,
   Provider,
   Quota,
   RouteRule,
@@ -154,6 +156,8 @@ export interface Api {
   // The first rule that matches a turn picks its model.
   routing(): Promise<Routing>;
   setRouting(routing: Routing): Promise<void>;
+  /** What each CLI offers; a missing CLI gives an empty list. */
+  models(): Promise<Models>;
   tasksContext(): Promise<TasksContext>;
   // Newest first.
   tasks(): Promise<Task[]>;
@@ -295,6 +299,7 @@ const tauriApi: Api = {
   removeAccount: (name) => call("account_remove", { name }),
   routing: () => call("routing_get"),
   setRouting: (routing) => call("routing_set", { routing }),
+  models: () => call("routing_models"),
   tasksContext: () => call("tasks_context"),
   tasks: () => call("tasks_list"),
   task: (id) => call("task_get", { id }),
