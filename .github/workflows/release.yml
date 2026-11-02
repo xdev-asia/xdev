@@ -150,6 +150,9 @@ jobs:
 
       - name: Stage artifacts
         run: |
+          # Unsigned manual builds have no updater files; publish checks a
+          # release has them all.
+          shopt -s nullglob
           mkdir -p out
           rel=target/${{ matrix.target }}/release
           bundle=$rel/bundle
