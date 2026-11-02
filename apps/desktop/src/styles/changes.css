@@ -534,3 +534,25 @@
   overflow: auto;
   padding: var(--x-space-4) var(--x-space-6);
 }
+
+/* Empty review queue in the main area. */
+.changes-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--x-space-3);
+}
+
+.changes-empty p {
+  margin: 0;
+}
+
+.changes-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  color: var(--x-color-ok);
+  background: var(--x-color-ok-soft);
+}
