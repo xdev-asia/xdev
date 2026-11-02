@@ -7,7 +7,7 @@ repository.workspace = true
 publish.workspace = true
 
 [features]
-ts = ["dep:ts-rs"]
+ts = ["dep:ts-rs", "xdev-ai/ts"]
 
 [dependencies]
 serde.workspace = true
