@@ -756,4 +756,36 @@ mod tests {
         assert!(clipped.ends_with("end"));
         assert_eq!(clip("  short \n"), "short");
     }
+
+    #[test]
+    fn a_released_lock_is_free_while_other_threads_start_processes() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let data = tempfile::tempdir().unwrap();
+        let store = SquadStore::new(data.path());
+        fs::create_dir_all(store.dir("s")).unwrap();
+        let done = Arc::new(AtomicBool::new(false));
+        let spawners: Vec<_> = (0..4)
+            .map(|_| {
+                let done = Arc::clone(&done);
+                std::thread::spawn(move || {
+                    while !done.load(Ordering::Relaxed) {
+                        let _ = std::process::Command::new("git").arg("--version").output();
+                    }
+                })
+            })
+            .collect();
+        let mut busy = 0;
+        for _ in 0..300 {
+            let lock = store.lock("s").unwrap();
+            busy += usize::from(lock.is_none());
+            drop(lock);
+        }
+        done.store(true, Ordering::Relaxed);
+        for s in spawners {
+            s.join().unwrap();
+        }
+        assert_eq!(busy, 0, "a free lock was reported busy");
+    }
 }
