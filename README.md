@@ -1,3 +1,5 @@
+<img src="docs/brand/xdev-icon-512.png" alt="" width="96" align="right">
+
 # xDev
 
 [![CI](https://github.com/xdev-asia/xdev/actions/workflows/ci.yml/badge.svg)](https://github.com/xdev-asia/xdev/actions/workflows/ci.yml)
