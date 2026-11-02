@@ -1,4 +1,6 @@
 mod accounts;
+#[cfg(test)]
+mod bindings;
 mod commands;
 mod session;
 mod settings;

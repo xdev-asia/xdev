@@ -5664,6 +5664,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tempfile",
+ "ts-rs",
  "xdev-agent",
  "xdev-ai",
  "xdev-core",
