@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { toApiError } from "./api";
-import { createMockApi, defaultMessage, DEMO_SEED, EXPORT_MARKER } from "./mockApi";
+import { setVerified } from "./doc/frontmatter";
+import {
+  coverMatcher,
+  createMockApi,
+  defaultMessage,
+  DEMO_COMMITS,
+  DEMO_SEED,
+  EXPORT_MARKER,
+  type SeedCommit,
+} from "./mockApi";
 
 const seed = {
   "README.md": "# Hello\n\nWelcome to the vault.\n",
@@ -109,10 +118,10 @@ describe("mock vcs", () => {
     await api.writeDoc("docs/new.md", "# New\n");
     // Sorted by code unit, like the Rust side, so upper case comes first.
     expect(await api.listChanges()).toEqual([
-      { path: "README.md", kind: "modified", origin: "app" },
-      { path: "docs/kien-truc.md", kind: "modified", origin: "outside" },
-      { path: "docs/new.md", kind: "added", origin: "app" },
-      { path: "docs/xss.md", kind: "deleted", origin: "outside" },
+      { path: "README.md", kind: "modified", origin: "app", note: null },
+      { path: "docs/kien-truc.md", kind: "modified", origin: "outside", note: null },
+      { path: "docs/new.md", kind: "added", origin: "app", note: null },
+      { path: "docs/xss.md", kind: "deleted", origin: "outside", note: null },
     ]);
     // Another program touching a file xDev wrote takes it over.
     api.__editOutside("README.md", "# Theirs now\n");
@@ -125,7 +134,7 @@ describe("mock vcs", () => {
     api.__editOutside("docs/kien-truc.md", "# Theirs\n");
     const id = await api.approve(["README.md"], "Reword the intro");
     expect(id).toMatch(/^[0-9a-f]{40}$/);
-    expect(await api.listChanges()).toEqual([{ path: "docs/kien-truc.md", kind: "modified", origin: "outside" }]);
+    expect(await api.listChanges()).toEqual([{ path: "docs/kien-truc.md", kind: "modified", origin: "outside", note: null }]);
     expect(await api.readBase("README.md")).toBe("# Mine\n");
     const [latest] = await api.history("README.md", 50);
     expect(latest).toMatchObject({ id, author: "You", message: "Reword the intro" });
@@ -185,7 +194,7 @@ describe("mock vcs", () => {
     const first = (await api.history("README.md", 50)).at(-1)!;
     await api.restoreVersion("README.md", first.id);
     expect(await api.readDoc("README.md")).toBe(seed["README.md"]);
-    expect(await api.listChanges()).toEqual([{ path: "README.md", kind: "modified", origin: "app" }]);
+    expect(await api.listChanges()).toEqual([{ path: "README.md", kind: "modified", origin: "app", note: null }]);
     await expect(api.restoreVersion("docs/new.md", first.id)).rejects.toEqual({ code: "not_found" });
   });
 
@@ -216,9 +225,9 @@ describe("mock vcs", () => {
   });
 
   it("default message rules", () => {
-    expect(defaultMessage([{ path: "n.md", kind: "added", origin: "app" }])).toBe("Add n.md");
-    expect(defaultMessage([{ path: "a.md", kind: "modified", origin: "app" }])).toBe("Update a.md");
-    expect(defaultMessage([{ path: "b.md", kind: "deleted", origin: "outside" }])).toBe("Delete b.md");
+    expect(defaultMessage([{ path: "n.md", kind: "added", origin: "app", note: null }])).toBe("Add n.md");
+    expect(defaultMessage([{ path: "a.md", kind: "modified", origin: "app", note: null }])).toBe("Update a.md");
+    expect(defaultMessage([{ path: "b.md", kind: "deleted", origin: "outside", note: null }])).toBe("Delete b.md");
   });
 });
 
@@ -338,5 +347,160 @@ describe("mock links and export", () => {
 
   it("toApiError keeps stale", () => {
     expect(toApiError({ code: "stale" })).toEqual({ code: "stale" });
+  });
+});
+
+describe("mock freshness", () => {
+  const ids = { a: "a".repeat(40), b: "b".repeat(40), c: "c".repeat(40) };
+  const commits: SeedCommit[] = [
+    { id: ids.a, author: "Linh", ago: 300, message: "Base", touched: ["src/lib.rs"] },
+    { id: ids.b, author: "Minh", ago: 200, message: "Touch the store", touched: ["src/store/db.rs"] },
+    { id: ids.c, author: "Linh", ago: 100, message: "Touch the cli", touched: ["cli/main.rs"] },
+  ];
+  const vault = {
+    "plain.md": "# Plain\n",
+    "never.md": "---\ncovers: src\n---\n# Never\n",
+    "store.md": "---\ncovers: [src/store/**]\nverified: AAAAAAA\n---\n# Store\n",
+    "cli.md": "---\ncovers: [cli/*.rs]\nverified: bbbbbbb\n---\n# Cli\n",
+    "lost.md": "---\ncovers: src\nverified: 0123abcd\n---\n# Lost\n",
+  };
+
+  async function vaultApi(repo = true) {
+    const api = createMockApi(vault, { repo, commits });
+    await api.openVault("/vault");
+    return api;
+  }
+
+  it("gives none, unverified, stale, fresh and unknown", async () => {
+    const api = await vaultApi();
+    const head = (await api.docFreshness("plain.md")).head;
+    expect(head).toBe(ids.c);
+    expect(await api.docFreshness("plain.md")).toEqual({
+      state: "none",
+      covers: [],
+      verified: null,
+      head,
+      commits: [],
+      count: 0,
+    });
+    expect(await api.docFreshness("never.md")).toMatchObject({ state: "unverified", covers: ["src"], verified: null });
+    const store = await api.docFreshness("store.md");
+    expect(store).toMatchObject({ state: "stale", verified: "aaaaaaa", count: 1 });
+    expect(store.commits).toEqual([{ id: ids.b, author: "Minh", time: expect.any(Number), message: "Touch the store" }]);
+    expect(await api.docFreshness("cli.md")).toMatchObject({ state: "stale", count: 1 });
+    expect(await api.docFreshness("lost.md")).toMatchObject({ state: "unknown", commits: [], count: 0 });
+  });
+
+  it("lists commits newest first and counts them all", async () => {
+    const many: SeedCommit[] = Array.from({ length: 25 }, (_, i) => ({
+      id: (i + 1).toString(16).padStart(40, "0"),
+      author: "Linh",
+      ago: 1000 - i,
+      message: `Change ${i}`,
+      touched: [`src/f${i}.rs`],
+    }));
+    const api = createMockApi({ "d.md": `---\ncovers: src\nverified: ${many[0].id}\n---\n` }, { commits: many });
+    await api.openVault("/vault");
+    const fresh = await api.docFreshness("d.md");
+    expect(fresh).toMatchObject({ state: "stale", count: 24 });
+    expect(fresh.commits).toHaveLength(20);
+    expect(fresh.commits[0].message).toBe("Change 24");
+  });
+
+  it("saving verified at head makes the doc fresh", async () => {
+    const api = await vaultApi();
+    const { head } = await api.docFreshness("store.md");
+    await api.writeDoc("store.md", setVerified(await api.readDoc("store.md"), head!));
+    expect(await api.docFreshness("store.md")).toMatchObject({ state: "fresh", verified: head, commits: [], count: 0 });
+  });
+
+  it("without git, covered docs are unknown or unverified and there is no head", async () => {
+    const api = await vaultApi(false);
+    expect(await api.docFreshness("store.md")).toMatchObject({ state: "unknown", head: null });
+    expect(await api.docFreshness("never.md")).toMatchObject({ state: "unverified", head: null });
+  });
+
+  it("rejects bad paths", async () => {
+    const api = await vaultApi();
+    await expect(createMockApi(vault).docFreshness("plain.md")).rejects.toEqual({ code: "no_vault" });
+    await expect(api.docFreshness("../x.md")).rejects.toEqual({ code: "outside_vault" });
+    await expect(api.docFreshness("nope.md")).rejects.toEqual({ code: "not_found" });
+  });
+
+  it("staleDocs lists problem docs only", async () => {
+    const api = await vaultApi();
+    expect(await api.staleDocs()).toEqual([
+      { path: "cli.md", title: "Cli", state: "stale", count: 1 },
+      { path: "lost.md", title: "Lost", state: "unknown", count: 0 },
+      { path: "never.md", title: "Never", state: "unverified", count: 0 },
+      { path: "store.md", title: "Store", state: "stale", count: 1 },
+    ]);
+    await expect(createMockApi(vault).staleDocs()).rejects.toEqual({ code: "no_vault" });
+  });
+
+  it("covers match like git glob pathspecs", () => {
+    const store = coverMatcher("crates/store/**");
+    expect(store("crates/store/src/lib.rs")).toBe(true);
+    expect(store("crates/storage/lib.rs")).toBe(false);
+    const folder = coverMatcher("src");
+    expect(folder("src")).toBe(true);
+    expect(folder("src/a/b.rs")).toBe(true);
+    expect(folder("srcx/a.rs")).toBe(false);
+    const star = coverMatcher("src/*.rs");
+    expect(star("src/a.rs")).toBe(true);
+    expect(star("src/a/b.rs")).toBe(false);
+    const any = coverMatcher("**/schema.sql");
+    expect(any("schema.sql")).toBe(true);
+    expect(any("db/v1/schema.sql")).toBe(true);
+    expect(coverMatcher("a.b")("axb")).toBe(false);
+  });
+
+  it("demo seed has a stale and an unverified doc", async () => {
+    expect(DEMO_COMMITS.every((c) => /^[0-9a-f]{40}$/.test(c.id))).toBe(true);
+    const api = createMockApi(DEMO_SEED, { commits: DEMO_COMMITS });
+    await api.openVault("/demo");
+    expect(await api.staleDocs()).toEqual([
+      { path: "docs/architecture/store.md", title: "Store design", state: "stale", count: 3 },
+      { path: "docs/architecture/vault.md", title: "Vault", state: "unverified", count: 0 },
+    ]);
+  });
+});
+
+describe("mock ai proposals", () => {
+  it("shows an ai change with its note until approved", async () => {
+    const api = await opened();
+    api.__propose("README.md", "# Proposed\n", "Shorter intro.");
+    api.__propose("docs/new.md", "# New\n", null);
+    expect(await api.listChanges()).toEqual([
+      { path: "README.md", kind: "modified", origin: "ai", note: "Shorter intro." },
+      { path: "docs/new.md", kind: "added", origin: "ai", note: null },
+    ]);
+    // The agent may revise its own proposal.
+    api.__propose("README.md", "# Proposed again\n", "Second try.");
+    expect((await api.listChanges())[0]).toMatchObject({ origin: "ai", note: "Second try." });
+    await api.approve(["README.md"], "");
+    await api.reject(["docs/new.md"]);
+    expect(await api.listChanges()).toEqual([]);
+  });
+
+  it("refuses over a person's pending edit and without git", async () => {
+    const api = await opened();
+    await api.writeDoc("README.md", "# Mine\n");
+    expect(() => api.__propose("README.md", "# Agent\n", null)).toThrow(expect.objectContaining({ code: "conflict" }));
+    expect(await api.readDoc("README.md")).toBe("# Mine\n");
+    const plain = createMockApi(seed, { repo: false });
+    await plain.openVault("/vault");
+    expect(() => plain.__propose("README.md", "x", null)).toThrow(expect.objectContaining({ code: "no_repo" }));
+  });
+
+  it("an app write of the same text counts as the app's", async () => {
+    const api = await opened();
+    api.__propose("README.md", "# Same\n", "note");
+    await api.writeDoc("README.md", "# Same\n");
+    expect(await api.listChanges()).toEqual([{ path: "README.md", kind: "modified", origin: "app", note: null }]);
+  });
+
+  it("toApiError keeps conflict", () => {
+    expect(toApiError({ code: "conflict", detail: "x" })).toEqual({ code: "conflict", detail: "x" });
   });
 });

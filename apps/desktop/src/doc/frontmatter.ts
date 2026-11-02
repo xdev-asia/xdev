@@ -2,8 +2,19 @@
 
 export type Target = "agents" | "claude" | "gemini" | "cursor";
 export const TARGETS: readonly Target[] = ["agents", "claude", "gemini", "cursor"];
-export type Frontmatter = { title: string | null; agents: Target[]; tags: string[] };
+export type Frontmatter = {
+  title: string | null;
+  agents: Target[];
+  tags: string[];
+  // Paths relative to the repo root that this doc describes.
+  covers: string[];
+  // The commit at which a person last confirmed the doc, lowercase hex.
+  verified: string | null;
+  type: string | null;
+};
 
+const EMPTY: Frontmatter = { title: null, agents: [], tags: [], covers: [], verified: null, type: null };
+const COMMIT_ID = /^[0-9a-f]{4,40}$/i;
 const BOM = "﻿";
 const KEY_LINE = /^([A-Za-z_][\w-]*):(?:[ \t]+(.*))?$/;
 const ITEM_LINE = /^[ \t]*-[ \t]+(.*)$/;
@@ -122,20 +133,44 @@ function toAgents(value: Value | undefined): Target[] {
   return TARGETS.filter((target) => names.has(target));
 }
 
-function toTitle(value: Value | undefined): string | null {
+function toText(value: Value | undefined): string | null {
   if (value?.kind !== "text") return null;
-  const title = value.text.trim();
-  return title === "" ? null : title;
+  const text = value.text.trim();
+  return text === "" ? null : text;
+}
+
+// Entries that could climb out of the repo are dropped rather than trusted.
+function toCovers(value: Value | undefined): string[] {
+  const covers: string[] = [];
+  for (const item of toList(value)) {
+    const trimmed = item.trim();
+    const entry = trimmed.startsWith("./") ? trimmed.slice(2) : trimmed.startsWith("/") ? trimmed.slice(1) : trimmed;
+    if (entry === "" || entry.split("/").includes("..") || covers.includes(entry)) continue;
+    covers.push(entry);
+  }
+  return covers;
+}
+
+function toVerified(value: Value | undefined): string | null {
+  const id = toText(value);
+  return id !== null && COMMIT_ID.test(id) ? id.toLowerCase() : null;
 }
 
 export function parseFrontmatter(content: string): { fm: Frontmatter; body: string; raw: string | null } {
   const { lines, close } = split(content);
   const body = content.startsWith(BOM) ? content.slice(BOM.length) : content;
-  if (close === -1) return { fm: { title: null, agents: [], tags: [] }, body, raw: null };
+  if (close === -1) return { fm: { ...EMPTY }, body, raw: null };
   const inner = lines.slice(1, close);
   const values = readBlock(inner);
   return {
-    fm: { title: toTitle(values.get("title")), agents: toAgents(values.get("agents")), tags: toList(values.get("tags")) },
+    fm: {
+      title: toText(values.get("title")),
+      agents: toAgents(values.get("agents")),
+      tags: toList(values.get("tags")),
+      covers: toCovers(values.get("covers")),
+      verified: toVerified(values.get("verified")),
+      type: toText(values.get("type")),
+    },
     body: join(lines.slice(close + 1)),
     raw: join(inner),
   };
@@ -181,8 +216,8 @@ export function extractTitle(path: string, content: string): string {
   return heading ?? stem(path);
 }
 
-function agentsLine(lines: Line[], close: number): number {
-  for (let i = 1; i < close; i++) if (KEY_LINE.exec(lines[i].text)?.[1] === "agents") return i;
+function keyLine(lines: Line[], close: number, key: string): number {
+  for (let i = 1; i < close; i++) if (KEY_LINE.exec(lines[i].text)?.[1] === key) return i;
   return -1;
 }
 
@@ -190,7 +225,7 @@ function agentsLine(lines: Line[], close: number): number {
 export function agentsEditable(content: string): boolean {
   const { lines, close } = split(content);
   if (close === -1) return true;
-  const at = agentsLine(lines, close);
+  const at = keyLine(lines, close, "agents");
   if (at === -1) return true;
   const value = parseValue(KEY_LINE.exec(lines[at].text)?.[2] ?? "");
   return value.kind === "text" && !value.quoted && (value.text === "true" || value.text === "false");
@@ -203,7 +238,7 @@ export function setAgents(content: string, on: boolean): string {
   if (close === -1) {
     return on ? `${bom}---${eol}agents: true${eol}---${eol}${content.slice(bom.length)}` : content;
   }
-  const at = agentsLine(lines, close);
+  const at = keyLine(lines, close, "agents");
   const next = [...lines];
   if (on) {
     if (at !== -1 && parseFrontmatter(content).fm.agents.length > 0) return content;
@@ -216,4 +251,18 @@ export function setAgents(content: string, on: boolean): string {
   next.splice(at, 1);
   const empty = next.slice(1, close - 1).every((line) => line.text.trim() === "");
   return bom + join(empty ? next.slice(close) : next);
+}
+
+// Only the `verified` line changes, so every other line, comment and the body stay byte-for-byte.
+export function setVerified(content: string, id: string): string {
+  const { bom, lines, close } = split(content);
+  const eol = content.includes("\r\n") ? "\r\n" : "\n";
+  if (close === -1) return `${bom}---${eol}verified: ${id}${eol}---${eol}${content.slice(bom.length)}`;
+  // The parser keeps the last of repeated keys, so that is the one to replace.
+  let at = -1;
+  for (let i = 1; i < close; i++) if (KEY_LINE.exec(lines[i].text)?.[1] === "verified") at = i;
+  const next = [...lines];
+  if (at === -1) next.splice(close, 0, { text: `verified: ${id}`, eol });
+  else next[at] = { text: `verified: ${id}`, eol: lines[at].eol };
+  return bom + join(next);
 }

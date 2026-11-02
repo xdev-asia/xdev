@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { Target } from "./doc/frontmatter";
-import { createMockApi, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
+import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 
 export { createMockApi };
 export type { Target };
@@ -21,14 +21,29 @@ export type ApiError = {
     | "no_repo"
     | "git"
     | "git_identity"
-    | "stale";
+    | "stale"
+    | "conflict";
   detail?: string;
 };
 export type VcsState = { status: "ok" | "no_repo" | "no_git" };
 export type ChangeKind = "added" | "modified" | "deleted";
-export type Change = { path: string; kind: ChangeKind; origin: "app" | "outside" };
+// `note` is the summary an agent gave with an `ai` change; null for the other origins.
+export type Change = { path: string; kind: ChangeKind; origin: "app" | "outside" | "ai"; note: string | null };
 // `time` is unix seconds, `message` the subject line.
 export type Commit = { id: string; author: string; time: number; message: string };
+// `none`: the doc declares no `covers`, so there is nothing to check.
+export type DocState = "none" | "fresh" | "stale" | "unverified" | "unknown";
+export type Freshness = {
+  state: DocState;
+  covers: string[];
+  verified: string | null;
+  // Full id of HEAD; null without git or commits, which is when a doc cannot be marked verified.
+  head: string | null;
+  // Newest first, at most 20; `count` is the whole range.
+  commits: Commit[];
+  count: number;
+};
+export type StaleDoc = { path: string; title: string; state: "stale" | "unverified" | "unknown"; count: number };
 export type DocLink = { path: string; title: string };
 export type ExportStatus = "new" | "changed" | "unchanged" | "foreign";
 // `path` is relative to the export root with "/" separators; `old` is null when the file does not exist yet.
@@ -63,6 +78,9 @@ export interface Api {
   exportPlan(): Promise<ExportPlan>;
   // Rejects with `stale` when the files to write no longer match `expected`.
   exportWrite(expected: Expected[]): Promise<string[]>;
+  // Reads the saved file, so it follows saves rather than the draft.
+  docFreshness(path: string): Promise<Freshness>;
+  staleDocs(): Promise<StaleDoc[]>;
 }
 
 export const ERROR_CODES: readonly ApiError["code"][] = [
@@ -77,6 +95,7 @@ export const ERROR_CODES: readonly ApiError["code"][] = [
   "git",
   "git_identity",
   "stale",
+  "conflict",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -113,11 +132,13 @@ const tauriApi: Api = {
   backlinks: (path) => call("backlinks", { path }),
   exportPlan: () => call("export_plan"),
   exportWrite: (expected) => call("export_write", { expected }),
+  docFreshness: (path) => call("doc_freshness", { path }),
+  staleDocs: () => call("stale_docs"),
 };
 
 function browserApi(): Api {
   const params = new URLSearchParams(location.search);
-  const mock = createMockApi(DEMO_SEED, { repo: !params.has("norepo") });
+  const mock = createMockApi(DEMO_SEED, { repo: !params.has("norepo"), commits: DEMO_COMMITS });
   // Lets the preview simulate an AI agent or another editor from the devtools console.
   Object.assign(window, { xdevMock: mock });
   // The preview lands in the demo vault so the main layout is reachable without a dialog;
@@ -129,8 +150,11 @@ function browserApi(): Api {
     lastVault: async () => (await mock.lastVault()) ?? (firstRun ? null : DEMO_ROOT),
     async openVault(path) {
       const docs = await mock.openVault(path);
-      // One pending outside edit, so the Changes tab has something to review.
-      if (!seeded && (await mock.vcsState()).status === "ok") mock.__editOutside("README.md", DEMO_OUTSIDE_EDIT);
+      // One pending outside edit and one agent proposal, so the Changes tab has something to review.
+      if (!seeded && (await mock.vcsState()).status === "ok") {
+        mock.__editOutside("README.md", DEMO_OUTSIDE_EDIT);
+        mock.__propose(DEMO_AI_EDIT.path, DEMO_AI_EDIT.content, DEMO_AI_EDIT.note);
+      }
       seeded = true;
       return docs;
     },
