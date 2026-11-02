@@ -237,6 +237,9 @@
   "status.accountNoWindow": "{name}",
   "status.noRoom": "Không còn tài khoản trống",
   "status.noVault": "Chưa mở thư mục",
+  "status.update": "Cập nhật lên {version}",
+  "status.updating": "Đang cập nhật…",
+  "status.updateFailed": "Cập nhật lỗi, thử lại",
   "error.bad_path": "Không dùng được tên tệp này.",
   "apps.tasks": "Tác vụ",
   "tasks.title": "Tác vụ",
@@ -401,5 +404,6 @@
   "error.empty_name": "Hãy nhập tên trước.",
   "error.no_run": "Đội không có lượt chạy nào đang diễn ra.",
   "error.not_waiting": "Câu hỏi đó không chờ bạn trả lời.",
-  "error.empty_text": "Hãy nhập nội dung trước."
+  "error.empty_text": "Hãy nhập nội dung trước.",
+  "error.update": "Không kiểm tra hoặc cài được bản cập nhật."
 }

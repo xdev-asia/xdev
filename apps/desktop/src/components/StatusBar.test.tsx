@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Quota } from "../api";
+import type { Update } from "../shell/useUpdate";
 import en from "../i18n/en.json";
 import vi from "../i18n/vi.json";
 import { I18nProvider } from "../i18n";
@@ -11,7 +12,7 @@ function account(name: string, state: Quota["state"], ...use: (number | null)[])
   return { name, state, reason: null, windows: use.map((utilization, i) => ({ key: keys[i], utilization, resetsAt: null })), asOf: null };
 }
 
-function render(props: { staleCount?: number; changeCount?: number | null; quota?: Quota[] | null; noVault?: boolean }): string {
+function render(props: { staleCount?: number; changeCount?: number | null; quota?: Quota[] | null; noVault?: boolean; update?: Update }): string {
   const vault = {
     name: "vault",
     docCount: 4,
@@ -20,7 +21,7 @@ function render(props: { staleCount?: number; changeCount?: number | null; quota
   };
   return renderToStaticMarkup(
     <I18nProvider>
-      <StatusBar vault={props.noVault ? null : vault} quota={props.quota === undefined ? null : props.quota} onOpen={() => {}} />
+      <StatusBar vault={props.noVault ? null : vault} quota={props.quota === undefined ? null : props.quota} update={props.update} onOpen={() => {}} />
     </I18nProvider>,
   );
 }
@@ -78,6 +79,14 @@ describe("StatusBar", () => {
     expect(markup).toContain("No folder open");
     expect(markup).not.toContain("docs");
     expect(markup).toContain("claude-2 · 5h 5%");
+  });
+
+  it("offers a found update, and shows progress and failure", () => {
+    const update: Update = { version: "0.3.0", notes: null, status: "ready" };
+    expect(render({})).not.toContain("Update");
+    expect(render({ update })).toContain("Update to 0.3.0");
+    expect(render({ update: { ...update, status: "installing" } })).toMatch(/<span class="statusbar-end">Updating…</);
+    expect(render({ update: { ...update, status: "failed" } })).toContain("Update failed, try again");
   });
 
   it("has every apps and status key in vi", () => {

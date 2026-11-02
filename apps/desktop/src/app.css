@@ -1326,3 +1326,5 @@ button:disabled {
 .statusbar button { padding: 0; font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
 .statusbar button:hover { color: var(--x-color-ink); text-decoration: underline; }
 .statusbar-end { margin-left: auto; }
+/* Only the first end item pushes right; the rest sit beside it. */
+.statusbar-end ~ .statusbar-end { margin-left: 0; }

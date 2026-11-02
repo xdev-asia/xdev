@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import type { Quota } from "../api";
 import { useI18n } from "../i18n";
 import type { AppId } from "../shell/apps";
+import type { Update } from "../shell/useUpdate";
 
 function highestUse(account: Quota): number {
   return Math.max(0, ...account.windows.flatMap((w) => (w.utilization === null ? [] : [w.utilization])));
@@ -65,11 +66,29 @@ function VaultItems(props: { vault: VaultStatus; onOpen(app: AppId): void }): JS
   );
 }
 
-export function StatusBar(props: { vault: VaultStatus | null; quota: Quota[] | null; onOpen(app: AppId): void }): JSX.Element {
+function UpdateItem(props: { update: Update; onInstall(): void }): JSX.Element {
+  const { t } = useI18n();
+  const { update } = props;
+  if (update.status === "installing") return <span className="statusbar-end">{t("status.updating")}</span>;
+  return (
+    <button type="button" className="statusbar-end" title={update.notes ?? undefined} onClick={props.onInstall}>
+      {update.status === "failed" ? t("status.updateFailed") : t("status.update", { version: update.version })}
+    </button>
+  );
+}
+
+export function StatusBar(props: {
+  vault: VaultStatus | null;
+  quota: Quota[] | null;
+  update?: Update | null;
+  onInstallUpdate?(): void;
+  onOpen(app: AppId): void;
+}): JSX.Element {
   const { t } = useI18n();
   return (
     <footer className="statusbar" aria-label={t("status.label")}>
       {props.vault ? <VaultItems vault={props.vault} onOpen={props.onOpen} /> : <span>{t("status.noVault")}</span>}
+      {props.update && <UpdateItem update={props.update} onInstall={() => props.onInstallUpdate?.()} />}
       {props.quota !== null && props.quota.length > 0 && <AccountItem quota={props.quota} onOpen={props.onOpen} />}
     </footer>
   );

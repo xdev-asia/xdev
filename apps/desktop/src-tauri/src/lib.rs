@@ -6,6 +6,7 @@ mod session;
 mod settings;
 mod squads;
 mod tasks;
+mod updater;
 
 use commands::AppState;
 
@@ -24,6 +25,7 @@ pub fn run() {
     }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState {
             session: Default::default(),
             data_dir,
@@ -31,6 +33,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_version,
+            updater::update_check,
+            updater::update_install,
             commands::open_vault,
             commands::last_vault,
             commands::vault_setup,

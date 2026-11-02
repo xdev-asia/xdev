@@ -26,6 +26,7 @@ import type {
   StaleDoc,
   Task,
   TasksContext,
+  UpdateInfo,
   VaultChanged,
   VaultSetup,
   VcsState,
@@ -71,6 +72,7 @@ export type {
   Task,
   TasksContext,
   TaskState,
+  UpdateInfo,
   VaultSetup,
   VcsState,
 } from "@xdev/bindings";
@@ -126,10 +128,15 @@ export type ErrorCode =
   | "empty_name"
   | "no_run"
   | "not_waiting"
-  | "empty_text";
+  | "empty_text"
+  | "update";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export interface Api {
+  // `null` when this is the newest release.
+  checkUpdate(): Promise<UpdateInfo | null>;
+  // Restarts the app once installed, so it resolves only when there was nothing to install.
+  installUpdate(): Promise<void>;
   accounts(): Promise<Accounts>;
   quota(): Promise<Quota[]>;
   addAccount(name: string, provider: Provider): Promise<Account>;
@@ -251,6 +258,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "no_run",
   "not_waiting",
   "empty_text",
+  "update",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -264,6 +272,8 @@ function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 }
 
 const tauriApi: Api = {
+  checkUpdate: () => call("update_check"),
+  installUpdate: () => call("update_install"),
   accounts: () => call("accounts_list"),
   quota: () => call("accounts_quota"),
   addAccount: (name, provider) => call("account_add", { name, provider }),

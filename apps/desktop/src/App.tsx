@@ -40,6 +40,7 @@ import type { AppId } from "./shell/apps";
 import { docFileName, newDocContent } from "./shell/newDoc";
 import { setUpVault } from "./shell/setUpVault";
 import { useQuota } from "./shell/useQuota";
+import { useUpdate } from "./shell/useUpdate";
 
 const SEARCH_DEBOUNCE_MS = 150;
 const SEARCH_LIMIT = 50;
@@ -184,6 +185,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
   const { state } = doc;
   const searchOpen = query.trim() !== "";
   const quota = useQuota(api, app === "accounts");
+  const update = useUpdate(api);
   const loading = state.status === "loading";
 
   useEffect(() => {
@@ -627,6 +629,8 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
       <StatusBar
         vault={{ name: folderName(props.vault.path), docCount: docs.length, staleCount: staleDocs.length, changeCount }}
         quota={quota}
+        update={update.state}
+        onInstallUpdate={update.install}
         onOpen={openApp}
       />
       <ConfirmDialog

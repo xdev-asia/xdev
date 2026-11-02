@@ -237,6 +237,9 @@
   "status.accountNoWindow": "{name}",
   "status.noRoom": "No account with room",
   "status.noVault": "No folder open",
+  "status.update": "Update to {version}",
+  "status.updating": "Updating…",
+  "status.updateFailed": "Update failed, try again",
   "error.bad_path": "That file name cannot be used.",
   "apps.tasks": "Tasks",
   "tasks.title": "Tasks",
@@ -401,5 +404,6 @@
   "error.empty_name": "Write a name first.",
   "error.no_run": "The squad has no run going.",
   "error.not_waiting": "That question is not waiting for you.",
-  "error.empty_text": "Write a message first."
+  "error.empty_text": "Write a message first.",
+  "error.update": "The update could not be checked or installed."
 }

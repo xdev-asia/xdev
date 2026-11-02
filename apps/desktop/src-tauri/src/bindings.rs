@@ -11,6 +11,7 @@ use crate::accounts::{Account, Accounts, LoginStart};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
 use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
+use crate::updater::UpdateInfo;
 
 /// Each type's dependencies are written with it, so only the roots are here.
 fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
@@ -38,6 +39,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     SquadItem::export_all(cfg)?;
     SquadView::export_all(cfg)?;
     xdev_agent::Seat::export_all(cfg)?;
+    UpdateInfo::export_all(cfg)?;
     Ok(())
 }
 

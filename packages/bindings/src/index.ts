@@ -51,6 +51,7 @@ export type { Task } from "./Task";
 export type { TaskState } from "./TaskState";
 export type { TasksContext } from "./TasksContext";
 export type { TestResult } from "./TestResult";
+export type { UpdateInfo } from "./UpdateInfo";
 export type { VaultChanged } from "./VaultChanged";
 export type { VaultSetup } from "./VaultSetup";
 export type { VcsState } from "./VcsState";
