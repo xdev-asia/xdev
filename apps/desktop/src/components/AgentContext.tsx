@@ -5,7 +5,7 @@ import { toApiError, type Api, type ExportFile, type ExportPlan } from "../api";
 import type { Problem } from "../changes/useChanges";
 import { docsFor, expectedOf, overLimit } from "../export/plan";
 import { useI18n } from "../i18n";
-import { COMPACT, ProblemNote } from "./ChangesPanel";
+import { COMPACT, ICON, Icon, ProblemNote } from "./ChangesPanel";
 import { ConnectAgent } from "./ConnectAgent";
 import { DiffView } from "./DiffView";
 
@@ -81,22 +81,9 @@ export function AgentContext(props: {
   return (
     <div className="agentctx">
       <div className="agentctx-head">
-        <div className="doc-titles">
-          <h1 className="doc-title">{t("agents.title")}</h1>
-          {plan && <span className="doc-path">{t("agents.root", { path: plan.root })}</span>}
-        </div>
-        <div className="doc-actions">
-          {written !== undefined && (
-            <span className="doc-status" role="status">
-              {t("agents.written", { count: written })}
-            </span>
-          )}
-          <Button type="button" style={COMPACT} disabled={writing || pending === 0} onClick={() => void write()}>
-            {writing ? t("agents.writing") : t("agents.write", { count: pending })}
-          </Button>
-        </div>
+        <h1 className="agentctx-title">{t("agents.title")}</h1>
+        {plan && <p className="agentctx-root">{t("agents.root", { path: plan.root })}</p>}
       </div>
-      <ConnectAgent vaultPath={props.vaultPath} cliPath={cliPath} />
       {problem && <ProblemNote problem={problem} />}
       {plan === undefined ? (
         !problem && <p className="placeholder">{t("agents.loading")}</p>
@@ -106,62 +93,92 @@ export function AgentContext(props: {
           <p>{t("agents.emptyHint", { checkbox: t("doc.agents") })}</p>
         </div>
       ) : (
-        <div className="history">
-          <section className="history-side" aria-label={t("agents.files")}>
-            <div className="pane-head">
-              <span>{t("agents.files")}</span>
-            </div>
-            <ul className="history-list">
-              {plan.files.map((f) => (
-                <li key={f.path}>
-                  <button
-                    type="button"
-                    className="history-item agentctx-file"
-                    aria-current={f.path === file?.path ? "true" : undefined}
-                    onClick={() => setSelected(f.path)}
-                  >
-                    <code className="history-message">{f.path}</code>
-                    <span className="badge" data-status={f.status}>
-                      {t(`agents.status.${f.status}`)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <div className="pane-head agentctx-docs-head">
-              <span>{t("agents.docs")}</span>
-              <span className="pane-count">{plan.docs.length}</span>
-            </div>
-            {plan.docs.length === 0 ? (
-              <p className="pane-empty">{t("agents.empty")}</p>
-            ) : (
-              <ul className="history-list">
-                {plan.docs.map((d) => (
-                  <li key={d.path}>
-                    <button type="button" className="history-item" title={d.path} onClick={() => props.onOpenDoc(d.path)}>
-                      <span className="history-message">{d.title}</span>
-                      <span className="badges">
-                        {d.targets.map((target) => (
-                          <span key={target} className="badge">
-                            {t(`target.${target}`)}
-                          </span>
-                        ))}
+        <div className="agentctx-body">
+          <div className="agentctx-side">
+            <section className="agentctx-group" aria-label={t("agents.files")}>
+              <h2 className="agentctx-label">{t("agents.files")}</h2>
+              <ul className="agentctx-list">
+                {plan.files.map((f) => (
+                  <li key={f.path}>
+                    <button
+                      type="button"
+                      className="agentctx-file"
+                      aria-current={f.path === file?.path ? "true" : undefined}
+                      onClick={() => setSelected(f.path)}
+                    >
+                      <span className="agentctx-file-row">
+                        <Icon d={ICON.doc} size={15} />
+                        <code className="agentctx-file-path">{f.path}</code>
+                        <span className="badge" data-status={f.status}>
+                          {t(`agents.status.${f.status}`)}
+                        </span>
                       </span>
+                      {f.path === "AGENTS.md" && (
+                        <span className="agentctx-file-tokens">{t("agents.tokens", { count: plan.tokens })}</span>
+                      )}
                     </button>
                   </li>
                 ))}
               </ul>
-            )}
-          </section>
-          <div className="history-main">
+            </section>
+            <section className="agentctx-group" aria-label={t("agents.docs")}>
+              <h2 className="agentctx-label">
+                {t("agents.docs")}
+                <span className="agentctx-count">{plan.docs.length}</span>
+              </h2>
+              {plan.docs.length === 0 ? (
+                <p className="pane-empty">{t("agents.empty")}</p>
+              ) : (
+                <ul className="agentctx-docs">
+                  {plan.docs.map((d) => (
+                    <li key={d.path}>
+                      <button type="button" className="agentctx-doc" title={d.path} onClick={() => props.onOpenDoc(d.path)}>
+                        <span className="agentctx-doc-row">
+                          <span className="agentctx-doc-title">{d.title}</span>
+                          <span className="badges">
+                            {d.targets.map((target) => (
+                              <span key={target} className="badge" data-target={target}>
+                                {t(`target.${target}`)}
+                              </span>
+                            ))}
+                          </span>
+                        </span>
+                        <code className="agentctx-doc-path">{d.path}</code>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+            <div className="agentctx-write">
+              <Button
+                type="button"
+                className="changes-approve-all agentctx-write-btn"
+                style={COMPACT}
+                disabled={writing || pending === 0}
+                onClick={() => void write()}
+              >
+                <Icon d={ICON.download} />
+                {writing ? t("agents.writing") : t("agents.write", { count: pending })}
+              </Button>
+              {written !== undefined && (
+                <span className="agentctx-written" role="status">
+                  <Icon d={ICON.check} />
+                  {t("agents.written", { count: written })}
+                </span>
+              )}
+            </div>
+          </div>
+          <section className="agentctx-preview" aria-label={file?.path ?? t("agents.files")}>
             {file === undefined ? (
               <p className="placeholder">{t("agents.noFiles")}</p>
             ) : (
               <FileDetail plan={plan} file={file} />
             )}
-          </div>
+          </section>
         </div>
       )}
+      <ConnectAgent vaultPath={props.vaultPath} cliPath={cliPath} />
     </div>
   );
 }
@@ -172,22 +189,37 @@ function FileDetail(props: { plan: ExportPlan; file: ExportFile }): JSX.Element 
   const sources = docsFor(plan, file.path);
   const isAgents = file.path === "AGENTS.md";
   return (
-    <>
-      <div className="history-head">
-        <code className="history-message">{file.path}</code>
-        {isAgents && <span className="agentctx-tokens">{t("agents.tokens", { count: plan.tokens })}</span>}
+    <div className="agentctx-card">
+      <div className="agentctx-card-head">
+        <div className="agentctx-card-title">
+          <code className="agentctx-card-path">{file.path}</code>
+          <span className="badge" data-status={file.status}>
+            {t(`agents.status.${file.status}`)}
+          </span>
+        </div>
+        {sources.length > 0 && (
+          <p className="agentctx-from">{t("agents.from", { docs: sources.map((d) => d.title).join(", ") })}</p>
+        )}
       </div>
       {isAgents && overLimit(file) && (
-        <div className="banner banner-warn" role="alert">
-          <span className="banner-text">{t("agents.tooLarge")}</span>
+        <div className="agentctx-alert" data-tone="warn" role="alert">
+          <Icon d={ICON.warn} />
+          <span>{t("agents.tooLarge")}</span>
         </div>
       )}
-      {file.status === "foreign" && <p className="diff-note">{t("agents.foreign")}</p>}
-      {file.status === "unchanged" && <p className="diff-note">{t("agents.unchanged")}</p>}
-      {sources.length > 0 && (
-        <p className="diff-note">{t("agents.from", { docs: sources.map((d) => d.title).join(", ") })}</p>
+      {file.status === "foreign" && (
+        <div className="agentctx-alert" data-tone="foreign">
+          <Icon d={ICON.lock} size={18} />
+          <span>{t("agents.foreign")}</span>
+        </div>
+      )}
+      {file.status === "unchanged" && (
+        <p className="agentctx-unchanged">
+          <Icon d={ICON.check} />
+          {t("agents.unchanged")}
+        </p>
       )}
       <DiffView base={file.old ?? ""} current={file.new} />
-    </>
+    </div>
   );
 }

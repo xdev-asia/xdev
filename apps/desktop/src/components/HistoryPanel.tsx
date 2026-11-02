@@ -5,9 +5,8 @@ import { toApiError, type Api, type Commit } from "../api";
 import { relativeTime } from "../changes/changes";
 import type { Problem } from "../changes/useChanges";
 import { useI18n } from "../i18n";
-import { COMPACT, ProblemNote } from "./ChangesPanel";
+import { COMPACT, DiffCard, ICON, Icon, ProblemNote } from "./ChangesPanel";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { DiffView } from "./DiffView";
 
 const HISTORY_LIMIT = 50;
 const SHORT_ID = 7;
@@ -81,9 +80,10 @@ export function HistoryPanel(props: {
   return (
     <div className="history">
       <section className="history-side" aria-label={t("history.title")}>
-        <div className="pane-head">
-          <span>{t("history.title")}</span>
-        </div>
+        <h2 className="history-title">
+          <Icon d={ICON.history} />
+          {t("history.title")}
+        </h2>
         {commits === undefined ? (
           !problem && <p className="pane-empty">{t("history.loading")}</p>
         ) : commits.length === 0 ? (
@@ -102,9 +102,9 @@ export function HistoryPanel(props: {
                   >
                     <span className="history-message">{commit.message}</span>
                     <span className="history-meta">
+                      <code className="history-id">{commit.id.slice(0, SHORT_ID)}</code>
                       <span>{commit.author}</span>
                       <span>{t(ago.key, ago.vars)}</span>
-                      <code className="history-id">{commit.id.slice(0, SHORT_ID)}</code>
                     </span>
                   </button>
                 </li>
@@ -123,21 +123,23 @@ export function HistoryPanel(props: {
               <span className="history-message">{selected.message}</span>
               <Button
                 type="button"
+                className="changes-approve-all"
                 style={COMPACT}
                 disabled={restoring || loaded === undefined || loaded.content === null}
                 onClick={() => setConfirming(true)}
               >
+                <Icon d={ICON.restore} />
                 {t("history.restore")}
               </Button>
             </div>
             {loaded === undefined ? (
               !problem && <p className="placeholder">{t("diff.loading")}</p>
             ) : (
-              <>
+              <div className="history-body">
                 {loaded.content === null && <p className="diff-note">{t("history.missing")}</p>}
                 {loaded.content === props.current && <p className="diff-note">{t("diff.same")}</p>}
-                <DiffView base={loaded.content ?? ""} current={props.current} />
-              </>
+                <DiffCard path={path} base={loaded.content ?? ""} current={props.current} />
+              </div>
             )}
           </>
         )}
