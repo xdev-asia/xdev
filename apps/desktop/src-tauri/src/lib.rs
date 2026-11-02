@@ -1,3 +1,4 @@
+mod accounts;
 mod commands;
 mod session;
 mod settings;
@@ -40,6 +41,11 @@ pub fn run() {
             commands::stale_docs,
             commands::export_plan,
             commands::export_write,
+            accounts::accounts_list,
+            accounts::accounts_quota,
+            accounts::account_add,
+            accounts::account_login,
+            accounts::account_remove,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start xDev");

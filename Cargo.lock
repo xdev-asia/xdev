@@ -5027,6 +5027,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tempfile",
+ "xdev-ai",
  "xdev-core",
 ]
 
