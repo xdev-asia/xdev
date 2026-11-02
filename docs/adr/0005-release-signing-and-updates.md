@@ -1,6 +1,7 @@
 # 0005. Updates are signed with a key the owner holds; OS code signing comes later
 
-Status: accepted. Code: none yet; it waits for the owner's public key.
+Status: accepted. Code: `apps/desktop/src-tauri/src/updater.rs`,
+`tauri.conf.json` (`plugins.updater`), `.github/workflows/release.yml`.
 Date: 2026-11-02
 
 ## Context
@@ -12,14 +13,19 @@ That key is separate from Apple and Microsoft code-signing certificates.
 
 ## Decision
 
-- Updates use `tauri-plugin-updater`, with `tauri-plugin-process` to relaunch.
-  Bundles are built with `createUpdaterArtifacts`, so each installer gets a
-  `.sig`.
-- The owner generates the updater keypair on their own machine
-  (`tauri signer generate`). The public key goes in `tauri.conf.json`. The
-  private key and its password exist only in the owner's password manager,
-  in one offline copy, and as secrets of a GitHub Environment `release`
-  that needs a reviewer. Agents and xDev never see the private key.
+- Updates use `tauri-plugin-updater`, driven from Rust commands
+  (`update_check`, `update_install`), which relaunch with
+  `AppHandle::restart`. The webview gets no updater permission and no extra
+  JS package. Bundles are built with `createUpdaterArtifacts`, so each
+  installer gets a `.sig`.
+- The updater keypair is generated on the owner's machine
+  (`tauri signer generate`). On 2026-11-02 a coding agent ran that step at
+  the owner's request, wrote the key and password to the owner's
+  `~/.tauri/`, and set them as secrets without printing, logging or
+  committing them. The public key goes in `tauri.conf.json`. The private
+  key and its password are kept in the owner's password manager, in one
+  offline copy, and as secrets of a GitHub Environment `release` that needs
+  a reviewer. xDev itself never sees the private key.
 - The release workflow signs in that environment and uploads `latest.json`
   next to the installers on GitHub Releases. The app reads
   `releases/latest/download/latest.json`.

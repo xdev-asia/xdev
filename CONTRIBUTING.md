@@ -27,3 +27,13 @@ cargo clippy --workspace --all-targets -- -D warnings
 corepack pnpm -r test
 cargo test --workspace
 ```
+
+## Building installers
+
+`tauri build` also writes signed update bundles, so it needs the updater key
+(ADR 0005). Without it, build the app alone:
+
+```sh
+cd apps/desktop
+corepack pnpm tauri build --no-bundle
+```

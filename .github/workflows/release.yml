@@ -19,6 +19,9 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
+    # The updater key lives only in this environment, which needs a reviewer
+    # before a job can read it (ADR 0005).
+    environment: release
     defaults:
       run:
         shell: bash
@@ -44,13 +47,16 @@ jobs:
 
       - run: cargo build --release -p xdev-cli --locked
 
-      # No signing key yet: Windows installers ship unsigned and the macOS
-      # app is ad-hoc signed ("-"), so Gatekeeper/SmartScreen will warn.
+      # Updates are signed with the updater key; the installers themselves are
+      # not OS code-signed yet (Windows unsigned, macOS ad-hoc "-"), so
+      # SmartScreen and Gatekeeper still warn on first install.
       - name: Build desktop installers
         working-directory: apps/desktop
         run: corepack pnpm tauri build
         env:
           APPLE_SIGNING_IDENTITY: "-"
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Stage artifacts
         run: |
@@ -58,11 +64,13 @@ jobs:
           bundle=target/release/bundle
           if [ "$RUNNER_OS" = "Windows" ]; then
             cp target/release/xdev.exe "out/xdev-${{ matrix.target }}.exe"
-            cp "$bundle"/nsis/*.exe "$bundle"/msi/*.msi out/
+            cp "$bundle"/nsis/*.exe "$bundle"/nsis/*.exe.sig "$bundle"/msi/*.msi out/
           else
             # tar keeps the executable bit that zip-based artifacts drop.
             tar -czf "out/xdev-${{ matrix.target }}.tar.gz" -C target/release xdev
-            tar -czf "out/xDev-${{ matrix.target }}.app.tar.gz" -C "$bundle/macos" xDev.app
+            # Tauri's own tarball, since the .sig covers exactly these bytes.
+            cp "$bundle/macos/xDev.app.tar.gz" "out/xDev-${{ matrix.target }}.app.tar.gz"
+            cp "$bundle/macos/xDev.app.tar.gz.sig" "out/xDev-${{ matrix.target }}.app.tar.gz.sig"
             cp "$bundle"/dmg/*.dmg out/
           fi
 
@@ -83,6 +91,26 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+
+      # The app reads releases/latest/download/latest.json, which resolves only
+      # once the owner publishes the draft.
+      - name: Write latest.json
+        run: |
+          win=$(ls dist/*-setup.exe)
+          mac=dist/xDev-aarch64-apple-darwin.app.tar.gz
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
+          jq -n \
+            --arg version "${GITHUB_REF_NAME#v}" \
+            --arg notes "https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg win_url "$base/$(basename "$win")" \
+            --arg win_sig "$(tr -d '\n' < "$win.sig")" \
+            --arg mac_url "$base/$(basename "$mac")" \
+            --arg mac_sig "$(tr -d '\n' < "$mac.sig")" \
+            '{version: $version, notes: $notes, pub_date: $date, platforms: {
+              "windows-x86_64": {url: $win_url, signature: $win_sig},
+              "darwin-aarch64": {url: $mac_url, signature: $mac_sig}}}' \
+            > dist/latest.json
 
       - name: Create draft release
         run: >
