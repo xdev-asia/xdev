@@ -16,10 +16,10 @@ export const theme = EditorView.theme({
     backgroundColor: "var(--x-color-surface)",
   },
   "&.cm-focused": { outline: "none" },
-  ".cm-scroller": { fontFamily: "var(--x-font-body)", lineHeight: "1.6" },
-  ".cm-content": { padding: "var(--x-space-6) 0", caretColor: "var(--x-color-accent)" },
-  ".cm-line": { padding: "0 var(--x-space-6)" },
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--x-color-accent)" },
+  ".cm-scroller": { fontFamily: "var(--x-font-mono)", fontSize: "13px", lineHeight: "1.75" },
+  ".cm-content": { padding: "var(--x-space-4) 0", caretColor: "var(--x-color-signal)" },
+  ".cm-line": { padding: "0 var(--x-space-4)" },
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--x-color-signal)", borderLeftWidth: "2px" },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
     { backgroundColor: "var(--x-color-accent-soft)" },
   ".cm-activeLine": { backgroundColor: "var(--x-color-surface-2)" },
@@ -70,13 +70,13 @@ export const theme = EditorView.theme({
 
 // Replaces CodeMirror's fallback highlighter, whose fixed colors are unreadable on the dark tokens.
 export const highlight = HighlightStyle.define([
-  { tag: tags.heading, fontWeight: "700", color: "var(--x-color-ink)" },
-  { tag: tags.heading1, fontSize: "1.4em" },
-  { tag: tags.heading2, fontSize: "1.2em" },
+  { tag: tags.heading, fontWeight: "600", color: "var(--x-color-ink)" },
+  { tag: tags.heading1, fontSize: "1.15em" },
+  { tag: tags.heading2, fontSize: "1.08em" },
   { tag: tags.strong, fontWeight: "700" },
   { tag: tags.emphasis, fontStyle: "italic" },
   { tag: tags.strikethrough, textDecoration: "line-through" },
-  { tag: [tags.link, tags.url], color: "var(--x-color-accent)" },
+  { tag: [tags.link, tags.url], color: "var(--x-color-signal)" },
   {
     tag: tags.monospace,
     fontFamily: "var(--x-font-mono)",
