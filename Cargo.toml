@@ -26,6 +26,7 @@ publish = false
 xdev-core = { path = "crates/xdev-core" }
 xdev-export = { path = "crates/xdev-export" }
 xdev-git = { path = "crates/xdev-git" }
+xdev-mcp = { path = "crates/xdev-mcp" }
 xdev-store = { path = "crates/xdev-store" }
 xdev-vault = { path = "crates/xdev-vault" }
 

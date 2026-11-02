@@ -1,3 +1,5 @@
+mod mcp;
+
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -43,6 +45,9 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Serve a folder to AI agents over MCP on stdin/stdout; default
+    /// `./docs` when it is a folder, else the current folder.
+    Mcp { dir: Option<PathBuf> },
 }
 
 /// What a command that ran to the end reports through the exit code.
@@ -72,6 +77,18 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         Ok((vault, store))
     };
     match command {
+        Command::Mcp { dir } => {
+            let dir = dir.unwrap_or_else(|| {
+                let docs = PathBuf::from("docs");
+                if docs.is_dir() {
+                    docs
+                } else {
+                    PathBuf::from(".")
+                }
+            });
+            let (vault, store) = open(&dir).map_err(|e| e.code())?;
+            mcp::run(vault, store)?;
+        }
         Command::Index { dir } => {
             let (vault, mut store) = open(&dir).map_err(|e| e.code())?;
             let entries = sync_vault(&vault, &mut store).map_err(|e| e.code())?;
