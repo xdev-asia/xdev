@@ -9,6 +9,7 @@ import { AccountsView } from "./AccountsView";
 import { ActivityBar } from "./ActivityBar";
 import { LanguageSwitch } from "./LanguageSwitch";
 import { StatusBar } from "./StatusBar";
+import { TasksView } from "./TasksView";
 
 export type VaultFailure = { path: string; code: ApiError["code"] };
 
@@ -36,7 +37,7 @@ export function VaultEmpty(props: { failure?: VaultFailure; busy: boolean; onCre
   );
 }
 
-/** The workbench before any folder is open: Accounts works, the folder apps explain how to get one. */
+/** The workbench before any folder is open: Accounts and Tasks work, the folder apps explain how to get one. */
 export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; onCreate(): void; onOpen(): void }): JSX.Element {
   const { t } = useI18n();
   const [app, setApp] = useState<AppId>("docs");
@@ -57,7 +58,14 @@ export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; onCr
       </header>
       <ActivityBar active={app} changeCount={null} onSelect={setApp} />
       <main className="main">
-        {app === "accounts" ? <AccountsView api={api} /> : <VaultEmpty {...props} />}
+        {app === "accounts" ? (
+          <AccountsView api={api} />
+        ) : app === "tasks" ? (
+          // A task names its own repo, so it needs no docs folder.
+          <TasksView api={api} />
+        ) : (
+          <VaultEmpty {...props} />
+        )}
       </main>
       <StatusBar vault={null} quota={quota} onOpen={setApp} />
     </div>
