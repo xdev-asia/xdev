@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::AiError;
-use crate::accounts::AccountEntry;
 use crate::quota::{QuotaWindow, Reason};
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(15);
@@ -29,6 +28,7 @@ pub enum StatusState {
     LoggedIn,
     LoggedOut,
     NoClaude,
+    NoCodex,
     Error,
 }
 
@@ -42,7 +42,7 @@ pub struct AccountStatus {
 }
 
 impl AccountStatus {
-    fn bare(state: StatusState) -> Self {
+    pub(crate) fn bare(state: StatusState) -> Self {
         AccountStatus {
             state,
             email: None,
@@ -56,19 +56,24 @@ impl AccountStatus {
 /// `claude.exe`, then npm's `claude.cmd`; npm's extensionless `claude` there
 /// is a shell script Windows cannot start.
 pub fn claude_command() -> Result<Command, AiError> {
-    if let Some(bin) = env::var_os("XDEV_CLAUDE_BIN").filter(|b| !b.is_empty()) {
+    find_cli("XDEV_CLAUDE_BIN", "claude", AiError::NoClaude)
+}
+
+/// `var` when set (it must name a file), else `base` on `PATH`.
+pub(crate) fn find_cli(var: &str, base: &str, missing: AiError) -> Result<Command, AiError> {
+    if let Some(bin) = env::var_os(var).filter(|b| !b.is_empty()) {
         let bin = PathBuf::from(bin);
         return if bin.is_file() {
             Ok(Command::new(bin))
         } else {
-            Err(AiError::NoClaude)
+            Err(missing)
         };
     }
     let path = env::var_os("PATH").unwrap_or_default();
-    let names: &[&str] = if cfg!(windows) {
-        &["claude.exe", "claude.cmd"]
+    let names: Vec<String> = if cfg!(windows) {
+        vec![format!("{base}.exe"), format!("{base}.cmd")]
     } else {
-        &["claude"]
+        vec![base.to_owned()]
     };
     names
         .iter()
@@ -78,17 +83,17 @@ pub fn claude_command() -> Result<Command, AiError> {
                 .find(|p| p.is_file())
         })
         .map(Command::new)
-        .ok_or(AiError::NoClaude)
+        .ok_or(missing)
 }
 
 /// Sign-in state from `claude auth status --json`. Never fails: a missing
 /// `claude` is `no_claude`, anything else unexpected is `error`.
-pub fn status(entry: &AccountEntry) -> AccountStatus {
+pub(crate) fn status(dir: &Path) -> AccountStatus {
     let Ok(mut cmd) = claude_command() else {
         return AccountStatus::bare(StatusState::NoClaude);
     };
     cmd.args(["auth", "status", "--json"])
-        .env("CLAUDE_CONFIG_DIR", &entry.dir)
+        .env("CLAUDE_CONFIG_DIR", dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
@@ -153,22 +158,6 @@ fn parse_status(out: &[u8]) -> AccountStatus {
             org: raw.org_name,
         },
         Err(_) => AccountStatus::bare(StatusState::Error),
-    }
-}
-
-/// The command that signs an account in, in the platform shell's own syntax.
-pub fn login_command(dir: &Path, windows: bool) -> String {
-    let dir = dir.to_string_lossy();
-    if windows {
-        format!(
-            "$env:CLAUDE_CONFIG_DIR='{}'; claude auth login",
-            dir.replace('\'', "''")
-        )
-    } else {
-        format!(
-            "CLAUDE_CONFIG_DIR='{}' claude auth login",
-            dir.replace('\'', r"'\''")
-        )
     }
 }
 

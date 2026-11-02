@@ -2,12 +2,16 @@
 
 mod accounts;
 mod claude;
+mod codex;
 pub mod ollama;
 mod quota;
 pub mod secrets;
 
-pub use accounts::{AccountEntry, Provider, Registry, account_dir, valid_name};
-pub use claude::{AccountStatus, StatusState, claude_command, login_command, status};
+pub use accounts::{
+    AccountEntry, Provider, Registry, account_dir, login_command, status, valid_name,
+};
+pub use claude::{AccountStatus, StatusState, claude_command};
+pub use codex::{codex_command, codex_context, codex_home};
 pub use quota::{Quota, QuotaState, QuotaWindow, Reason, classify, pick, quota};
 
 pub const NAME: &str = env!("CARGO_PKG_NAME");
@@ -32,6 +36,8 @@ pub enum AiError {
     NotFound,
     #[error("Claude Code is not installed")]
     NoClaude,
+    #[error("Codex CLI is not installed")]
+    NoCodex,
     #[error("the accounts file is unreadable or from a newer xDev")]
     BadRegistry,
     #[error("reserve must be 0 to 90")]
@@ -52,6 +58,7 @@ impl AiError {
             AiError::Exists => "exists",
             AiError::NotFound => "not_found",
             AiError::NoClaude => "no_claude",
+            AiError::NoCodex => "no_codex",
             AiError::BadRegistry => "bad_registry",
             AiError::BadReserve => "bad_reserve",
             AiError::Io(_) => "io",
