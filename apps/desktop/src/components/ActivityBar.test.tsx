@@ -31,6 +31,12 @@ describe("ActivityBar", () => {
     expect(markup).toContain('aria-label="Changes, 3 pending"');
   });
 
+  it("caps the badge like the Changes list does", () => {
+    const markup = html("docs", 120);
+    expect(markup).toContain('<span class="activity-badge" aria-hidden="true">99+</span>');
+    expect(markup).toContain('aria-label="Changes, 120 pending"');
+  });
+
   it("shows no badge for 0 or null", () => {
     for (const count of [0, null]) {
       const markup = html("docs", count);

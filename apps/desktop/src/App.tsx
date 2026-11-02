@@ -10,9 +10,10 @@ import {
   type SearchHit,
   type StaleDoc,
 } from "./api";
-import { countLabel, rejectPrompt } from "./changes/changes";
+import { rejectPrompt } from "./changes/changes";
 import { useChanges, type Problem } from "./changes/useChanges";
 import { AccountsView } from "./components/AccountsView";
+import { ActivityBar } from "./components/ActivityBar";
 import { AgentContext } from "./components/AgentContext";
 import { Backlinks } from "./components/Backlinks";
 import { ChangesPanel, ChangeView } from "./components/ChangesPanel";
@@ -25,11 +26,14 @@ import { LanguageSwitch } from "./components/LanguageSwitch";
 import { Preview } from "./components/Preview";
 import { resultId, RESULTS_ID, SearchPanel } from "./components/SearchPanel";
 import { Sidebar } from "./components/Sidebar";
+import { StatusBar } from "./components/StatusBar";
 import { Welcome } from "./components/Welcome";
 import { isDirty } from "./doc/docState";
 import { agentsEditable, parseFrontmatter, setAgents, setVerified } from "./doc/frontmatter";
 import { useDoc } from "./doc/useDoc";
 import { useI18n } from "./i18n";
+import type { AppId } from "./shell/apps";
+import { useQuota } from "./shell/useQuota";
 
 const SEARCH_DEBOUNCE_MS = 150;
 const SEARCH_LIMIT = 50;
@@ -86,15 +90,12 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
   const { t } = useI18n();
   const doc = useDoc(api);
   const review = useChanges(api, doc.flush);
-  const [tab, setTab] = useState<"docs" | "changes">("docs");
+  const [app, setApp] = useState<AppId>("docs");
   const [selected, setSelected] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [rejecting, setRejecting] = useState<Change[] | null>(null);
   // The doc whose history is shown; opening another doc closes the panel without extra bookkeeping.
   const [historyFor, setHistoryFor] = useState<string | null>(null);
-  // Takes over the main area; opening a doc or a change goes back to it.
-  const [agentsOpen, setAgentsOpen] = useState(false);
-  const [accountsOpen, setAccountsOpen] = useState(false);
   const [docs, setDocs] = useState(props.vault.docs);
   // One choice for the whole session, so moving between docs keeps reading (or editing) mode.
   const [mode, setMode] = useState<"edit" | "preview">("edit");
@@ -110,6 +111,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
   const [staleDocs, setStaleDocs] = useState<StaleDoc[]>([]);
   const { state } = doc;
   const searchOpen = query.trim() !== "";
+  const quota = useQuota(api, app === "accounts");
   const loading = state.status === "loading";
 
   useEffect(() => {
@@ -226,27 +228,20 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
 
   function openDoc(path: string) {
     setSelected(null);
-    setAgentsOpen(false);
-    setAccountsOpen(false);
+    setApp("docs");
     doc.open(path);
   }
 
   function selectChange(path: string | null) {
-    setAgentsOpen(false);
-    setAccountsOpen(false);
     setSelected(path);
   }
 
-  function toggleAgents() {
-    setAccountsOpen(false);
-    setSelected(null);
-    setAgentsOpen((open) => !open);
-  }
-
-  function toggleAccounts() {
-    setSelected(null);
-    setAgentsOpen(false);
-    setAccountsOpen((open) => !open);
+  function openApp(next: AppId) {
+    // A diff belongs to Changes; elsewhere the main area goes back to the open doc.
+    if (next !== "changes") setSelected(null);
+    // Picking an app is a request for its panel, which search results would otherwise cover.
+    setQuery("");
+    setApp(next);
   }
 
   async function approve(changes: Change[]) {
@@ -276,6 +271,10 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
   }
 
   const change = review.changes.find((c) => c.path === selected) ?? null;
+  // Search results need the panel whichever app is open.
+  const panelOpen = searchOpen || app === "docs" || app === "changes";
+  // Loading or a failed read is not "untracked"; the status bar leaves the item out instead.
+  const changeCount = review.status === "ok" ? review.changes.length : review.status === "loading" || review.status === "error" ? undefined : null;
   const prompt = rejecting && rejecting.length > 0 ? rejectPrompt(rejecting) : null;
   const entry = docs.find((d) => d.path === state.path);
   const dirty = isDirty(state);
@@ -296,7 +295,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
           : t("editor.saved");
 
   return (
-    <div className="app">
+    <div className="app" data-panel={panelOpen ? undefined : "off"}>
       <header className="topbar">
         <div className="topbar-vault" title={t("vault.label", { path: props.vault.path })}>
           <span className="topbar-brand">{t("app.name")}</span>
@@ -320,12 +319,6 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
           />
         </div>
         <div className="topbar-actions">
-          <button type="button" className="btn-secondary" aria-pressed={accountsOpen} onClick={toggleAccounts}>
-            {accountsOpen ? t("accounts.close") : t("accounts.title")}
-          </button>
-          <button type="button" className="btn-secondary" aria-pressed={agentsOpen} onClick={toggleAgents}>
-            {agentsOpen ? t("agents.close") : t("agents.open")}
-          </button>
           <button
             type="button"
             className="btn-secondary"
@@ -337,7 +330,8 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
           <LanguageSwitch />
         </div>
       </header>
-      <aside className="sidebar">
+      <ActivityBar active={app} changeCount={changeCount ?? null} onSelect={openApp} />
+      <aside className="sidebar" hidden={!panelOpen}>
         {searchOpen ? (
           <SearchPanel
             query={query}
@@ -348,22 +342,10 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
             onOpen={openDoc}
           />
         ) : (
-          <>
-            <div className="sidebar-tabs">
-              <div className="segmented" role="tablist" aria-label={t("tabs.label")}>
-                <button type="button" role="tab" aria-selected={tab === "docs"} onClick={() => setTab("docs")}>
-                  {t("tabs.docs")}
-                </button>
-                <button type="button" role="tab" aria-selected={tab === "changes"} onClick={() => setTab("changes")}>
-                  {review.status === "ok"
-                    ? t("tabs.changesCount", { count: countLabel(review.changes.length) })
-                    : t("tabs.changes")}
-                </button>
-              </div>
-            </div>
-            {tab === "docs" ? (
-              <Sidebar docs={docs} activePath={change ? null : state.path} stale={staleDocs} onOpen={openDoc} />
-            ) : (
+          app === "docs" ? (
+            <Sidebar docs={docs} activePath={state.path} stale={staleDocs} onOpen={openDoc} />
+          ) : (
+            app === "changes" && (
               <ChangesPanel
                 review={review}
                 selected={change?.path ?? null}
@@ -373,13 +355,13 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
                 onApprove={(changes) => void approve(changes)}
                 onReject={setRejecting}
               />
-            )}
-          </>
+            )
+          )
         )}
       </aside>
       <main className="main">
-        {accountsOpen && <AccountsView api={api} />}
-        {agentsOpen && (
+        {app === "accounts" && <AccountsView api={api} />}
+        {app === "agents" && (
           <AgentContext
             api={api}
             revision={revision}
@@ -402,7 +384,7 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
           />
         )}
         {/* Hidden rather than unmounted, so the editor keeps its undo history while a diff is shown. */}
-        <div className="docview" hidden={change !== null || agentsOpen || accountsOpen}>
+        <div className="docview" hidden={change !== null || app === "agents" || app === "accounts"}>
           {state.path === null ? (
             <p className="placeholder">{t("editor.placeholder", { shortcut: SHORTCUT })}</p>
           ) : (
@@ -501,6 +483,14 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
           )}
         </div>
       </main>
+      <StatusBar
+        vaultName={folderName(props.vault.path)}
+        docCount={docs.length}
+        staleCount={staleDocs.length}
+        changeCount={changeCount}
+        quota={quota}
+        onOpen={openApp}
+      />
       <ConfirmDialog
         open={prompt !== null}
         title={prompt ? t(prompt.key, prompt.vars) : ""}

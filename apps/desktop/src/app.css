@@ -73,8 +73,7 @@ button:disabled {
   cursor: pointer;
 }
 
-.segmented button[aria-pressed="true"],
-.segmented button[aria-selected="true"] {
+.segmented button[aria-pressed="true"] {
   background: var(--x-color-accent-soft);
   color: var(--x-color-accent);
 }
@@ -128,9 +127,30 @@ button:disabled {
 
 .app {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) 1fr;
-  grid-template-rows: auto 1fr;
+  grid-template-columns: auto minmax(220px, 280px) 1fr;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100%;
+}
+
+/* Placed by column, so a hidden side panel never lets the main area slide into its slot. */
+.app > .activitybar {
+  grid-column: 1;
+}
+
+.app > .sidebar {
+  grid-column: 2;
+}
+
+.app > .main {
+  grid-column: 3;
+}
+
+.app[data-panel="off"] > .main {
+  grid-column: 2 / -1;
+}
+
+.app > .statusbar {
+  grid-column: 1 / -1;
 }
 
 .topbar {
@@ -494,19 +514,6 @@ button:disabled {
 }
 
 /* Review */
-
-.sidebar-tabs {
-  padding: var(--x-space-3) var(--x-space-4) 0;
-}
-
-.sidebar-tabs .segmented {
-  display: flex;
-}
-
-.sidebar-tabs .segmented button {
-  flex: 1;
-  padding: var(--x-space-1) var(--x-space-3);
-}
 
 .pane .banner {
   margin: 0 0 var(--x-space-2);

@@ -38,7 +38,8 @@ export function StatusBar(props: {
   vaultName: string;
   docCount: number;
   staleCount: number;
-  changeCount: number | null;
+  /** `null` when the folder is not tracked by git; `undefined` while that is not known yet. */
+  changeCount: number | null | undefined;
   quota: Quota[] | null;
   onOpen(app: AppId): void;
 }): JSX.Element {
@@ -54,7 +55,7 @@ export function StatusBar(props: {
       )}
       {props.changeCount === null ? (
         <span>{t("status.untracked")}</span>
-      ) : (
+      ) : props.changeCount === undefined ? null : (
         <button type="button" onClick={() => props.onOpen("changes")}>
           {t("status.changes", { count: props.changeCount })}
         </button>

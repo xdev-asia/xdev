@@ -18,7 +18,7 @@ function render(props: { staleCount?: number; changeCount?: number | null; quota
         vaultName="vault"
         docCount={4}
         staleCount={props.staleCount ?? 0}
-        changeCount={props.changeCount === undefined ? 0 : props.changeCount}
+        changeCount={"changeCount" in props ? props.changeCount : 0}
         quota={props.quota === undefined ? null : props.quota}
         onOpen={() => {}}
       />
@@ -54,6 +54,12 @@ describe("StatusBar", () => {
     expect(render({ changeCount: null })).toContain("Not tracked by git");
     expect(render({ changeCount: null })).not.toContain("pending");
     expect(render({ changeCount: 2 })).toContain("2 pending");
+  });
+
+  it("leaves the change item out while git status is unknown", () => {
+    const markup = render({ changeCount: undefined });
+    expect(markup).not.toContain("pending");
+    expect(markup).not.toContain("Not tracked by git");
   });
 
   it("shows the stale item only when there are stale docs", () => {

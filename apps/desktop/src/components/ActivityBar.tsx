@@ -1,4 +1,5 @@
 import type { JSX } from "react";
+import { countLabel } from "../changes/changes";
 import { useI18n } from "../i18n";
 import { APPS, type AppId } from "../shell/apps";
 
@@ -64,7 +65,7 @@ export function ActivityBar(props: { active: AppId; changeCount: number | null; 
             </svg>
             {id === "changes" && pending !== null && (
               <span className="activity-badge" aria-hidden="true">
-                {pending}
+                {countLabel(pending)}
               </span>
             )}
           </button>
