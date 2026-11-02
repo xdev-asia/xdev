@@ -1,0 +1,201 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+
+use serde_json::Value;
+use tempfile::TempDir;
+
+/// Runs setup commands; never used for the code under test.
+fn git(dir: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .expect("run git");
+    assert!(out.status.success(), "git {args:?}: {out:?}");
+    String::from_utf8(out.stdout).unwrap()
+}
+
+/// A repo with one commit, a data dir and a fake `claude`, all under paths
+/// with spaces. The real `claude` is never reachable.
+struct Env {
+    tmp: TempDir,
+}
+
+impl Env {
+    fn new() -> Env {
+        let tmp = TempDir::with_prefix("xdev task ").unwrap();
+        let repo = tmp.path().join("my repo");
+        fs::create_dir(&repo).unwrap();
+        git(&repo, &["init", "-q"]);
+        for (key, value) in [
+            ("user.name", "Test User"),
+            ("user.email", "test@example.com"),
+            ("commit.gpgsign", "false"),
+            ("core.autocrlf", "false"),
+        ] {
+            git(&repo, &["config", key, value]);
+        }
+        fs::write(repo.join("README.md"), "hello\n").unwrap();
+        git(&repo, &["add", "-A"]);
+        git(&repo, &["commit", "-q", "-m", "init"]);
+        let env = Env { tmp };
+        fake_claude(&env.tmp.path().join("bin"));
+        env
+    }
+
+    fn repo(&self) -> PathBuf {
+        self.tmp.path().join("my repo")
+    }
+
+    fn claude(&self) -> PathBuf {
+        let name = if cfg!(windows) {
+            "claude.cmd"
+        } else {
+            "claude"
+        };
+        self.tmp.path().join("bin").join(name)
+    }
+
+    fn xdev(&self, args: &[&str]) -> Output {
+        Command::new(env!("CARGO_BIN_EXE_xdev"))
+            .env("XDEV_DATA_DIR", self.tmp.path().join("data dir"))
+            .env("XDEV_CLAUDE_BIN", self.claude())
+            .env_remove("CLAUDE_CONFIG_DIR")
+            .args(args)
+            .output()
+            .expect("run xdev")
+    }
+
+    fn new_task(&self) -> String {
+        let repo = self.repo();
+        let out = self.xdev(&["task", "new", repo.to_str().unwrap(), "Add a file"]);
+        assert!(out.status.success(), "{out:?}");
+        stdout(&out).trim().to_owned()
+    }
+}
+
+/// Writes `agent.txt` in its working folder and prints a result object.
+fn fake_claude(dir: &Path) {
+    fs::create_dir_all(dir).unwrap();
+    let json = r#"{"type":"result","session_id":"fake-1","total_cost_usd":0.5,"is_error":false,"result":"done"}"#;
+    if cfg!(windows) {
+        let script =
+            format!("@echo off\r\necho from fake> agent.txt\r\necho {json}\r\nexit /b 0\r\n");
+        fs::write(dir.join("claude.cmd"), script).unwrap();
+    } else {
+        let path = dir.join("claude");
+        let script =
+            format!("#!/bin/sh\nprintf 'from fake\\n' > agent.txt\nprintf '%s\\n' '{json}'\n");
+        fs::write(&path, script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+}
+
+fn stdout(out: &Output) -> String {
+    String::from_utf8(out.stdout.clone()).unwrap()
+}
+
+fn json(out: &Output) -> Value {
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+#[test]
+fn new_list_and_show() {
+    let env = Env::new();
+    let id = env.new_task();
+
+    let out = env.xdev(&["task", "list"]);
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(stdout(&out), format!("{id}\tready\tAdd a file\n"));
+
+    let out = env.xdev(&["task", "show", &id, "--json"]);
+    assert!(out.status.success(), "{out:?}");
+    let task = json(&out);
+    assert_eq!(task["state"], "ready");
+    assert_eq!(task["branch"], format!("xdev/task-{id}"));
+
+    let out = env.xdev(&["task", "show", &id]);
+    assert!(stdout(&out).starts_with(&format!("id\t{id}\nstate\tready\n")));
+
+    let out = env.xdev(&["task", "show", "20200101-000000-0000"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("not_found"));
+}
+
+#[test]
+fn new_outside_a_repo_is_no_repo() {
+    let env = Env::new();
+    let plain = env.tmp.path().join("plain");
+    fs::create_dir(&plain).unwrap();
+    let out = env.xdev(&["task", "new", plain.to_str().unwrap(), "x"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr).trim(),
+        "error: no_repo"
+    );
+}
+
+#[test]
+fn extra_tools_or_a_test_need_approval() {
+    let env = Env::new();
+    let id = env.new_task();
+
+    let out = env.xdev(&["task", "run", &id, "--tools", "Read,Bash"]);
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    assert!(stdout(&out).starts_with("ask\t"), "{out:?}");
+
+    let out = env.xdev(&["task", "run", &id, "--test", "cargo test"]);
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    assert!(stdout(&out).contains("cargo"), "{out:?}");
+
+    // Nothing ran: no agent output, task still ready.
+    let out = env.xdev(&["task", "show", &id, "--json"]);
+    assert_eq!(json(&out)["state"], "ready");
+}
+
+#[test]
+fn run_approve_and_discard() {
+    let env = Env::new();
+    let id = env.new_task();
+
+    let out = env.xdev(&["task", "run", &id]);
+    assert!(out.status.success(), "{out:?}");
+    let text = stdout(&out);
+    assert!(text.contains("state\treview\n"), "{text}");
+    assert!(text.contains("file\t1\t0\tagent.txt\n"), "{text}");
+    assert!(text.contains("\tfake-1\t0.5000\tok\n"), "{text}");
+
+    let out = env.xdev(&["task", "approve", &id]);
+    assert!(out.status.success(), "{out:?}");
+    let merge = stdout(&out).trim().to_owned();
+    assert_eq!(git(&env.repo(), &["rev-parse", "HEAD"]).trim(), merge);
+    // `echo` in a batch file ends its line with CRLF.
+    let want = if cfg!(windows) {
+        "from fake\r\n"
+    } else {
+        "from fake\n"
+    };
+    assert_eq!(
+        fs::read_to_string(env.repo().join("agent.txt")).unwrap(),
+        want
+    );
+
+    let other = env.new_task();
+    let out = env.xdev(&["task", "discard", &other]);
+    assert!(out.status.success(), "{out:?}");
+    let out = env.xdev(&["task", "list", "--json"]);
+    let states: Vec<String> = json(&out)
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["state"].as_str().unwrap().to_owned())
+        .collect();
+    let mut sorted = states.clone();
+    sorted.sort();
+    assert_eq!(sorted, ["discarded", "merged"]);
+}

@@ -5010,9 +5010,11 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "xdev-agent",
  "xdev-ai",
  "xdev-core",
  "xdev-mcp",
+ "xdev-policy",
 ]
 
 [[package]]

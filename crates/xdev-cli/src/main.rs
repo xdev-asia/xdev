@@ -1,5 +1,6 @@
 mod accounts;
 mod mcp;
+mod task;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -60,6 +61,12 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// A coding agent's task in its own git worktree, merged only on
+    /// approval.
+    Task {
+        #[command(subcommand)]
+        command: task::TaskCommand,
+    },
 }
 
 /// What a command that ran to the end reports through the exit code.
@@ -94,6 +101,7 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
     match command {
         Command::Accounts { command } => return accounts::run(command, &data_dir),
         Command::Quota { json } => return accounts::run_quota(json, &data_dir),
+        Command::Task { command } => return task::run(command, &data_dir),
         Command::Mcp { dir } => {
             let dir = dir.unwrap_or_else(|| {
                 let docs = PathBuf::from("docs");
