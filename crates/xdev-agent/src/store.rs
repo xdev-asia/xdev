@@ -86,7 +86,7 @@ impl TaskStore {
     pub fn save(&self, task: &Task) -> Result<(), AgentError> {
         let mut text = serde_json::to_string_pretty(task).map_err(io::Error::other)?;
         text.push('\n');
-        write_atomic(&self.task_dir(&task.id), &text)?;
+        write_atomic(&self.task_dir(&task.id), FILE, &text)?;
         Ok(())
     }
 
@@ -111,13 +111,13 @@ impl TaskStore {
     }
 }
 
-fn write_atomic(dir: &Path, content: &str) -> io::Result<()> {
+pub(crate) fn write_atomic(dir: &Path, name: &str, content: &str) -> io::Result<()> {
     fs::create_dir_all(dir)?;
     // Same folder as the target so the rename never crosses a filesystem and
     // a reader never sees a half-written record.
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let tmp = dir.join(format!(
-        ".{FILE}-{}-{}.tmp",
+        ".{name}-{}-{}.tmp",
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
@@ -126,7 +126,7 @@ fn write_atomic(dir: &Path, content: &str) -> io::Result<()> {
         file.write_all(content.as_bytes())?;
         file.sync_all()?;
         drop(file);
-        fs::rename(&tmp, dir.join(FILE))
+        fs::rename(&tmp, dir.join(name))
     })();
     if result.is_err() {
         let _ = fs::remove_file(&tmp);

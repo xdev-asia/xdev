@@ -10,13 +10,13 @@ use crate::id::new_id;
 use crate::process::capture;
 use crate::store::LiveGuard;
 use crate::{
-    AgentError, Approval, DEFAULT_TOOLS, Evidence, FileChange, RunOutcome, RunRecord, RunRequest,
-    Runner, Task, TaskState, TaskStore, TestResult, now, tail,
+    AgentError, Approval, Cancel, DEFAULT_TOOLS, Evidence, FileChange, RunOutcome, RunRecord,
+    RunRequest, Runner, Task, TaskState, TaskStore, TestResult, now, tail,
 };
 
 /// The only runner so far; the gate rules by provider.
 const PROVIDER: &str = "claude";
-const SUMMARY_TAIL: usize = 2000;
+pub(crate) const SUMMARY_TAIL: usize = 2000;
 const OUTPUT_TAIL: usize = 4000;
 /// A test suite that runs longer than this is treated as hung.
 const TEST_TIMEOUT: Duration = Duration::from_secs(30 * 60);
@@ -165,6 +165,7 @@ impl TaskStore {
             prompt,
             resume,
             tools,
+            cancel: Cancel::new(),
         };
         let result = runner.run(&req);
         let outcome = record_run(&mut task, result);
@@ -258,7 +259,7 @@ impl TaskStore {
     }
 }
 
-fn open_repo(dir: &Path) -> Result<Repo, AgentError> {
+pub(crate) fn open_repo(dir: &Path) -> Result<Repo, AgentError> {
     match Repo::discover(dir) {
         Ok(repo) => Ok(repo),
         Err(GitError::NoRepo) => Err(AgentError::NoRepo),
@@ -267,7 +268,7 @@ fn open_repo(dir: &Path) -> Result<Repo, AgentError> {
     }
 }
 
-fn allow(verdict: Verdict) -> Result<(), AgentError> {
+pub(crate) fn allow(verdict: Verdict) -> Result<(), AgentError> {
     match verdict {
         Verdict::Allow => Ok(()),
         other => Err(AgentError::Gated(other)),
@@ -283,13 +284,30 @@ fn prompt(goal: &str) -> String {
     )
 }
 
-/// Fills in the run just started. A timeout with a known session leaves the
-/// task `paused` so it can be resumed; any other failure is `failed`.
+/// Fills in the run just started. A timeout or stop with a known session
+/// leaves the task `paused` so it can be resumed; any other failure is
+/// `failed`.
 fn record_run(
     task: &mut Task,
     result: Result<RunOutcome, AgentError>,
 ) -> Result<RunOutcome, AgentError> {
     let run = task.runs.last_mut().expect("a run was pushed");
+    fill_run(run, &result);
+    if let Err(e) = &result {
+        task.state = if killed(e) && run.session_id.is_some() {
+            TaskState::Paused
+        } else {
+            TaskState::Failed
+        };
+    }
+    result
+}
+
+fn killed(e: &AgentError) -> bool {
+    matches!(e, AgentError::Timeout { .. } | AgentError::Stopped { .. })
+}
+
+pub(crate) fn fill_run(run: &mut RunRecord, result: &Result<RunOutcome, AgentError>) {
     run.ended = Some(now());
     match result {
         Ok(outcome) => {
@@ -299,32 +317,56 @@ fn record_run(
             run.cost_usd = outcome.cost_usd;
             run.is_error = outcome.is_error;
             run.summary = tail(&outcome.result, SUMMARY_TAIL);
-            Ok(outcome)
         }
         Err(e) => {
-            if let AgentError::Timeout {
-                session_id: Some(id),
-            } = &e
-            {
-                run.session_id = Some(id.clone());
+            if let Some(id) = killed_session(e) {
+                run.session_id = Some(id.to_owned());
             }
             run.is_error = true;
             run.summary = tail(&e.to_string(), SUMMARY_TAIL);
-            task.state = match (&e, &run.session_id) {
-                (AgentError::Timeout { .. }, Some(_)) => TaskState::Paused,
-                _ => TaskState::Failed,
-            };
-            Err(e)
         }
     }
 }
 
+/// The session a killed agent left behind, which can be resumed.
+pub(crate) fn killed_session(e: &AgentError) -> Option<&str> {
+    match e {
+        AgentError::Timeout { session_id } | AgentError::Stopped { session_id } => {
+            session_id.as_deref()
+        }
+        _ => None,
+    }
+}
+
 fn finish(task: &mut Task, test: Option<&[String]>, is_error: bool) -> Result<(), AgentError> {
+    commit(task, None)?;
+    let test = test.map(|cmd| run_test(cmd, &task.worktree, &Cancel::new()));
+    task.evidence = Some(evidence(task, test)?);
+    task.state = if is_error {
+        TaskState::Failed
+    } else {
+        TaskState::Review
+    };
+    Ok(())
+}
+
+/// Commits everything in the task's worktree; `label` names who changed it.
+/// Nothing to commit is not an error.
+pub(crate) fn commit(task: &Task, label: Option<&str>) -> Result<(), AgentError> {
     let worktree = Repo::discover(&task.worktree)?;
     let first_line = task.goal.lines().next().unwrap_or_default();
-    worktree.commit_all(&format!("task {}: {first_line}", task.id))?;
+    let message = match label {
+        Some(label) => format!("task {} ({label}): {first_line}", task.id),
+        None => format!("task {}: {first_line}", task.id),
+    };
+    worktree.commit_all(&message)?;
+    Ok(())
+}
+
+/// The task's committed changes since its base, with the test result.
+pub(crate) fn evidence(task: &Task, test: Option<TestResult>) -> Result<Evidence, AgentError> {
+    let worktree = Repo::discover(&task.worktree)?;
     let head = worktree.head_id()?.unwrap_or_else(|| task.base.clone());
-    let test = test.map(|cmd| run_test(cmd, &task.worktree));
     let files = worktree
         .diff_numstat(&task.base, &head)?
         .into_iter()
@@ -334,29 +376,26 @@ fn finish(task: &mut Task, test: Option<&[String]>, is_error: bool) -> Result<()
             removed: f.removed,
         })
         .collect();
-    task.evidence = Some(Evidence {
+    Ok(Evidence {
         base: task.base.clone(),
         head,
         files,
         test,
-    });
-    task.state = if is_error {
-        TaskState::Failed
-    } else {
-        TaskState::Review
-    };
-    Ok(())
+    })
 }
 
-fn run_test(cmd: &[String], cwd: &Path) -> TestResult {
+pub(crate) fn run_test(cmd: &[String], cwd: &Path, cancel: &Cancel) -> TestResult {
     let mut command = Command::new(&cmd[0]);
     command.args(&cmd[1..]).current_dir(cwd);
-    let (exit, output) = match capture(command, TEST_TIMEOUT) {
+    let (exit, output) = match capture(command, TEST_TIMEOUT, cancel) {
         Ok(out) => {
             let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
             text.push_str(&String::from_utf8_lossy(&out.stderr));
             if out.timed_out {
                 text.push_str("\n[xdev: killed after the test timeout]");
+            }
+            if out.cancelled {
+                text.push_str("\n[xdev: killed on stop]");
             }
             (out.status, text)
         }

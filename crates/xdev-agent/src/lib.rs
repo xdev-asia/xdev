@@ -1,10 +1,14 @@
 //! A coding agent's task: a goal worked on in its own git worktree, with the
-//! evidence kept and nothing merged until a person approves.
+//! evidence kept and nothing merged until a person approves. A squad is a
+//! team of agents, one per seat, working one task together.
 
 mod flow;
 mod id;
 mod process;
+mod prompts;
 mod runner;
+mod squad;
+mod squad_run;
 mod store;
 
 use std::path::PathBuf;
@@ -14,7 +18,14 @@ use xdev_git::GitError;
 use xdev_policy::Verdict;
 
 pub use flow::RunOptions;
-pub use runner::{ClaudeRunner, ContextUse, RunOutcome, RunRequest, Runner, parse_claude_json};
+pub use runner::{
+    Cancel, ClaudeRunner, ContextUse, RunOutcome, RunRequest, Runner, parse_claude_json,
+};
+pub use squad::{
+    Escalation, Event, Role, Seat, SeatState, SeatStatus, Squad, SquadRun, SquadStore, Step,
+    Target, Wait,
+};
+pub use squad_run::{QuotaCheck, RunnerFor, SquadDeps};
 pub use store::TaskStore;
 
 /// Tools an agent gets when the caller names none: file work only.
@@ -143,6 +154,25 @@ pub enum AgentError {
     /// The agent was killed; with a session id the task can be resumed.
     #[error("agent timed out")]
     Timeout { session_id: Option<String> },
+    /// The agent was killed on request; with a session id it can go on.
+    #[error("agent stopped")]
+    Stopped { session_id: Option<String> },
+    #[error("the seat has no account")]
+    SeatVacant,
+    #[error("no account with this name")]
+    UnknownAccount,
+    #[error("the squad is busy with a run")]
+    Busy,
+    #[error("not a seat; one of lead, implement, tests, review")]
+    BadRole,
+    #[error("the name is empty")]
+    EmptyName,
+    #[error("the squad has no unfinished run")]
+    NoRun,
+    #[error("nothing is waiting for this")]
+    NotWaiting,
+    #[error("the text is empty")]
+    EmptyText,
     #[error(transparent)]
     Git(#[from] GitError),
     #[error(transparent)]
@@ -166,6 +196,15 @@ impl AgentError {
             AgentError::NoWorktree => "no_worktree",
             AgentError::Runner(_) => "runner",
             AgentError::Timeout { .. } => "timeout",
+            AgentError::Stopped { .. } => "stopped",
+            AgentError::SeatVacant => "seat_vacant",
+            AgentError::UnknownAccount => "unknown_account",
+            AgentError::Busy => "busy",
+            AgentError::BadRole => "bad_role",
+            AgentError::EmptyName => "empty_name",
+            AgentError::NoRun => "no_run",
+            AgentError::NotWaiting => "not_waiting",
+            AgentError::EmptyText => "empty_text",
             AgentError::Git(GitError::NoRepo) => "no_repo",
             AgentError::Git(GitError::Io(_)) | AgentError::Io(_) => "io",
             AgentError::Git(GitError::NoGit) => "no_git",
