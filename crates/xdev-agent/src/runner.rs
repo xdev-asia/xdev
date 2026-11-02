@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use xdev_ai::shim::is_batch;
 use xdev_ai::{claude_command, codex_command, codex_context, codex_home};
 
 use crate::process::capture;
@@ -338,12 +339,6 @@ fn model_args(req: &RunRequest) -> Vec<&str> {
         Some(model) => vec!["-m", model],
         None => Vec::new(),
     }
-}
-
-fn is_batch(program: &Path) -> bool {
-    program
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"))
 }
 
 fn one_line(text: &str) -> String {

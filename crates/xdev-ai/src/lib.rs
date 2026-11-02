@@ -7,6 +7,7 @@ pub mod ollama;
 pub mod process;
 mod quota;
 pub mod secrets;
+pub mod shim;
 
 pub use accounts::{
     AccountEntry, Provider, Registry, account_dir, login_command, status, valid_name,
