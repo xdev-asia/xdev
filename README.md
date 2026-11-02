@@ -31,7 +31,7 @@ Download the installer for Windows (`.msi` / `.exe`) or macOS (`.dmg`) from [Rel
 | `apps/desktop` | Tauri 2 + React desktop app |
 | `app-packs/` | Apps that install into the shell (`docs`, `adr`) |
 | `packages/ui` | Design tokens and shared components |
-| `packages/bindings` | TypeScript types generated from Rust (in progress) |
+| `packages/bindings` | TypeScript types generated from Rust (`cargo test -p xdev-desktop export_bindings`) |
 | `docs/adr/` | Architecture decisions |
 
 ## Develop
