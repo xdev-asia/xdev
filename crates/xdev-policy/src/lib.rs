@@ -1,7 +1,10 @@
 //! What xDev itself may do on the user's behalf. The check runs in the app,
 //! not in a prompt, so an agent cannot talk its way past it.
 
-use std::path::PathBuf;
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -44,3 +47,189 @@ pub enum Verdict {
 pub trait Gate {
     fn check(&self, action: &Action) -> Verdict;
 }
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Rule {
+    #[default]
+    Ask,
+    Deny,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Policy {
+    pub agent_tools: Vec<String>,
+    pub commands: Vec<String>,
+    pub merge: Rule,
+    pub delete: Rule,
+}
+
+impl Default for Policy {
+    fn default() -> Self {
+        Policy {
+            agent_tools: ["Read", "Edit", "Write", "Grep", "Glob"]
+                .map(String::from)
+                .to_vec(),
+            commands: Vec::new(),
+            merge: Rule::Ask,
+            delete: Rule::Ask,
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum PolicyError {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error("invalid policy: {0}")]
+    Parse(String),
+}
+
+impl PolicyError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            PolicyError::Io(_) => "io",
+            PolicyError::Parse(_) => "policy_invalid",
+        }
+    }
+}
+
+impl Policy {
+    pub fn load(data_dir: &Path) -> Result<Policy, PolicyError> {
+        let bytes = match fs::read(data_dir.join("policy.json")) {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Policy::default()),
+            Err(e) => return Err(e.into()),
+        };
+        serde_json::from_slice(&bytes).map_err(|e| PolicyError::Parse(e.to_string()))
+    }
+
+    pub fn save(&self, data_dir: &Path) -> Result<(), PolicyError> {
+        let mut text =
+            serde_json::to_string_pretty(self).map_err(|e| PolicyError::Parse(e.to_string()))?;
+        text.push('\n');
+        fs::create_dir_all(data_dir)?;
+        fs::write(data_dir.join("policy.json"), text)?;
+        Ok(())
+    }
+}
+
+impl Gate for Policy {
+    fn check(&self, action: &Action) -> Verdict {
+        match action {
+            Action::SpawnAgent { tools, .. } => {
+                let extra: Vec<_> = tools
+                    .iter()
+                    .filter(|tool| !self.agent_tools.contains(tool))
+                    .map(String::as_str)
+                    .collect();
+                if extra.is_empty() {
+                    Verdict::Allow
+                } else {
+                    Verdict::Ask {
+                        reason: format!("agent tools require approval: {}", extra.join(", ")),
+                    }
+                }
+            }
+            Action::RunCommand { program, .. } => {
+                let stem = Path::new(program).file_stem().and_then(|s| s.to_str());
+                if stem.is_some_and(|stem| {
+                    self.commands.iter().any(|command| {
+                        if cfg!(windows) {
+                            stem.eq_ignore_ascii_case(command)
+                        } else {
+                            stem == command
+                        }
+                    })
+                }) {
+                    Verdict::Allow
+                } else {
+                    Verdict::Ask {
+                        reason: format!("command requires approval: {program}"),
+                    }
+                }
+            }
+            Action::Merge { .. } => rule_verdict(self.merge, "merge"),
+            Action::Delete { .. } => rule_verdict(self.delete, "delete"),
+        }
+    }
+}
+
+fn rule_verdict(rule: Rule, action: &str) -> Verdict {
+    match rule {
+        Rule::Ask => Verdict::Ask {
+            reason: format!("{action} requires approval"),
+        },
+        Rule::Deny => Verdict::Deny {
+            reason: format!("{action} denied by policy"),
+        },
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditEntry {
+    pub at: u64,
+    pub action: Action,
+    pub verdict: Verdict,
+}
+
+pub struct Audited<G> {
+    inner: G,
+    log: PathBuf,
+}
+
+impl<G> Audited<G> {
+    pub fn new(inner: G, data_dir: &Path) -> Self {
+        Audited {
+            inner,
+            log: data_dir.join("audit.jsonl"),
+        }
+    }
+
+    fn append(&self, action: &Action, verdict: &Verdict) -> io::Result<()> {
+        let at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_secs();
+        let entry = AuditEntry {
+            at,
+            action: action.clone(),
+            verdict: verdict.clone(),
+        };
+        let mut line = serde_json::to_vec(&entry).map_err(io::Error::other)?;
+        line.push(b'\n');
+        if let Some(parent) = self.log.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.log)?;
+        file.write_all(&line)?;
+        file.sync_data()
+    }
+}
+
+impl<G: Gate> Gate for Audited<G> {
+    fn check(&self, action: &Action) -> Verdict {
+        let verdict = self.inner.check(action);
+        if self.append(action, &verdict).is_err() {
+            return Verdict::Deny {
+                reason: "audit log not writable".to_owned(),
+            };
+        }
+        verdict
+    }
+}
+
+pub fn read_audit(data_dir: &Path) -> Result<Vec<AuditEntry>, PolicyError> {
+    let text = fs::read_to_string(data_dir.join("audit.jsonl"))?;
+    text.lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).map_err(|e| PolicyError::Parse(e.to_string())))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests;
