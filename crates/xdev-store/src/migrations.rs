@@ -39,6 +39,15 @@ const MIGRATIONS: &[&str] = &[
      ); -- doc_id = docs.id
      DELETE FROM docs_fts;
      DELETE FROM docs;",
+    // 4: doc writes an agent proposed, so the app can tell them apart from
+    // other pending edits. Unlike the rest of the index these rows cannot be
+    // rebuilt from the files, and nothing here needs a re-read of `docs`.
+    "CREATE TABLE ai_writes (
+       path TEXT PRIMARY KEY,
+       hash TEXT NOT NULL,
+       note TEXT,
+       time_ms INTEGER NOT NULL
+     );",
 ];
 
 pub(crate) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {

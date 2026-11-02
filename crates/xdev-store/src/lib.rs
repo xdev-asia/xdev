@@ -54,6 +54,15 @@ pub struct SearchHit {
     pub snippet: String,
 }
 
+/// A doc write an agent proposed: the content hash it wrote and its summary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiWrite {
+    pub path: String,
+    pub hash: String,
+    pub note: Option<String>,
+    pub time_ms: i64,
+}
+
 pub struct Store {
     conn: Connection,
 }
@@ -189,6 +198,45 @@ impl Store {
             ))
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Only the latest proposal per path matters, so it replaces any earlier.
+    pub fn record_ai_write(&mut self, write: &AiWrite) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO ai_writes (path, hash, note, time_ms)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![write.path, write.hash, write.note, write.time_ms],
+        )?;
+        Ok(())
+    }
+
+    /// Sorted by path.
+    pub fn ai_writes(&self) -> Result<Vec<AiWrite>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT path, hash, note, time_ms FROM ai_writes ORDER BY path")?;
+        let rows = stmt.query_map([], |r| {
+            Ok(AiWrite {
+                path: r.get(0)?,
+                hash: r.get(1)?,
+                note: r.get(2)?,
+                time_ms: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Deletes rows matching both path and hash, so a newer proposal survives.
+    pub fn clear_ai_writes(&mut self, rows: &[(String, String)]) -> Result<(), StoreError> {
+        let tx = self.conn.transaction()?;
+        {
+            let mut delete = tx.prepare("DELETE FROM ai_writes WHERE path = ?1 AND hash = ?2")?;
+            for (path, hash) in rows {
+                delete.execute(params![path, hash])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     /// Best match first. Input is plain words, never FTS5 syntax.
