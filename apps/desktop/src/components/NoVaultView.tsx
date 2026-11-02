@@ -8,6 +8,7 @@ import { useQuota } from "../shell/useQuota";
 import { AccountsView } from "./AccountsView";
 import { ActivityBar } from "./ActivityBar";
 import { LanguageSwitch } from "./LanguageSwitch";
+import { SquadsView } from "./SquadsView";
 import { StatusBar } from "./StatusBar";
 import { TasksView } from "./TasksView";
 
@@ -37,10 +38,11 @@ export function VaultEmpty(props: { failure?: VaultFailure; busy: boolean; onCre
   );
 }
 
-/** The workbench before any folder is open: Accounts and Tasks work, the folder apps explain how to get one. */
+/** The workbench before any folder is open: Accounts, Tasks and Squads work, the folder apps explain how to get one. */
 export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; onCreate(): void; onOpen(): void }): JSX.Element {
   const { t } = useI18n();
   const [app, setApp] = useState<AppId>("docs");
+  const [taskFocus, setTaskFocus] = useState<string | null>(null);
   const quota = useQuota(api, app === "accounts");
   return (
     <div className="app" data-panel="off">
@@ -62,7 +64,15 @@ export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; onCr
           <AccountsView api={api} />
         ) : app === "tasks" ? (
           // A task names its own repo, so it needs no docs folder.
-          <TasksView api={api} />
+          <TasksView key={taskFocus ?? ""} api={api} initial={taskFocus ?? undefined} />
+        ) : app === "squads" ? (
+          <SquadsView
+            api={api}
+            onOpenTask={(id) => {
+              setTaskFocus(id);
+              setApp("tasks");
+            }}
+          />
         ) : (
           <VaultEmpty {...props} />
         )}

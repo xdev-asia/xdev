@@ -30,6 +30,7 @@ import { resultId, RESULTS_ID, SearchPanel } from "./components/SearchPanel";
 import { NewDocForm } from "./components/NewDocForm";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
+import { SquadsView } from "./components/SquadsView";
 import { TasksView } from "./components/TasksView";
 import { isDirty } from "./doc/docState";
 import { agentsEditable, parseFrontmatter, setAgents, setVerified } from "./doc/frontmatter";
@@ -156,6 +157,8 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
   const doc = useDoc(api);
   const review = useChanges(api, doc.flush);
   const [app, setApp] = useState<AppId>("docs");
+  // The task a squad link asked Tasks to show.
+  const [taskFocus, setTaskFocus] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [rejecting, setRejecting] = useState<Change[] | null>(null);
@@ -484,7 +487,16 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
         )}
       </aside>
       <main className="main">
-        {app === "tasks" && <TasksView api={api} />}
+        {app === "tasks" && <TasksView key={taskFocus ?? ""} api={api} initial={taskFocus ?? undefined} />}
+        {app === "squads" && (
+          <SquadsView
+            api={api}
+            onOpenTask={(id) => {
+              setTaskFocus(id);
+              openApp("tasks");
+            }}
+          />
+        )}
         {app === "accounts" && <AccountsView api={api} />}
         {app === "agents" && (
           <AgentContext

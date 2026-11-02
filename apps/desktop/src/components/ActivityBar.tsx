@@ -24,6 +24,14 @@ const ICONS: Record<AppId, JSX.Element> = {
       <path d="m4 6 1.5 1.5L8 5M4 12l1.5 1.5L8 11M4 18l1.5 1.5L8 17" />
     </>
   ),
+  squads: (
+    <>
+      <circle cx="12" cy="5" r="2" />
+      <circle cx="6" cy="18" r="2" />
+      <circle cx="18" cy="18" r="2" />
+      <path d="M12 7v4M6 16v-2.5a1.5 1.5 0 0 1 1.5-1.5h9a1.5 1.5 0 0 1 1.5 1.5V16" />
+    </>
+  ),
   agents: (
     <>
       <rect x="5" y="8" width="14" height="11" rx="2" />
