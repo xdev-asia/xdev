@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # Tauri's beforeBuildCommand calls bare `pnpm`; the corepack shim makes
+      # it resolve to the version pinned in package.json#packageManager.
+      - run: corepack enable
+
+      - run: corepack pnpm install --frozen-lockfile
+
+      - run: cargo build --release -p xdev-cli --locked
+
+      # No signing key yet: Windows installers ship unsigned and the macOS
+      # app is ad-hoc signed ("-"), so Gatekeeper/SmartScreen will warn.
+      - name: Build desktop installers
+        working-directory: apps/desktop
+        run: corepack pnpm tauri build
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+
+      - name: Stage artifacts
+        run: |
+          mkdir -p out
+          bundle=target/release/bundle
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp target/release/xdev.exe "out/xdev-${{ matrix.target }}.exe"
+            cp "$bundle"/nsis/*.exe "$bundle"/msi/*.msi out/
+          else
+            # tar keeps the executable bit that zip-based artifacts drop.
+            tar -czf "out/xdev-${{ matrix.target }}.tar.gz" -C target/release xdev
+            tar -czf "out/xDev-${{ matrix.target }}.app.tar.gz" -C "$bundle/macos" xDev.app
+            cp "$bundle"/dmg/*.dmg out/
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: xdev-${{ matrix.target }}
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create draft release
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --draft --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
