@@ -337,7 +337,9 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
     return null;
   }
 
-  const change = review.changes.find((c) => c.path === selected) ?? null;
+  // Opening Changes should show a diff straight away, not the doc that was open before.
+  const change =
+    review.changes.find((c) => c.path === selected) ?? (app === "changes" ? (review.changes[0] ?? null) : null);
   // Search results need the panel whichever app is open.
   const panelOpen = searchOpen || app === "docs" || app === "changes";
   // Loading or a failed read is not "untracked"; the status bar leaves the item out instead.
@@ -447,11 +449,14 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
             onApprove={() => void approve([change])}
             onReject={() => setRejecting([change])}
             onOpenDoc={() => openDoc(change.path)}
-            onClose={() => selectChange(null)}
+            onClose={() => openApp("docs")}
           />
         )}
+        {app === "changes" && !change && review.status === "ok" && (
+          <p className="placeholder">{t("changes.empty.main")}</p>
+        )}
         {/* Hidden rather than unmounted, so the editor keeps its undo history while a diff is shown. */}
-        <div className="docview" hidden={change !== null || app === "agents" || app === "accounts"}>
+        <div className="docview" hidden={app !== "docs"}>
           {state.path === null ? (
             <p className="placeholder">{t("editor.placeholder", { shortcut: SHORTCUT })}</p>
           ) : (

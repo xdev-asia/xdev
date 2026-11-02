@@ -57,6 +57,7 @@
   "changes.start": "Bắt đầu theo dõi",
   "changes.starting": "Đang bật…",
   "changes.empty": "Mọi thay đổi đã được duyệt.",
+  "changes.empty.main": "Không có gì cần duyệt. Thay đổi sửa trong xDev, sửa bên ngoài hoặc do agent đề xuất sẽ hiện ở đây.",
   "changes.message": "Ghi chú commit (không bắt buộc)",
   "changes.approveAll": "Duyệt tất cả",
   "changes.approve": "Duyệt",

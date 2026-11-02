@@ -57,6 +57,7 @@
   "changes.start": "Start tracking",
   "changes.starting": "Starting…",
   "changes.empty": "Everything is approved.",
+  "changes.empty.main": "Nothing to review. Edits made here, outside xDev, or proposed by an agent show up here.",
   "changes.message": "Commit message (optional)",
   "changes.approveAll": "Approve all",
   "changes.approve": "Approve",
