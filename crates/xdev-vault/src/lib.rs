@@ -37,6 +37,8 @@ pub enum VaultError {
     NotUtf8(String),
     #[error("too large: {0}")]
     TooLarge(String),
+    #[error("already exists: {0}")]
+    Exists(String),
     #[error(transparent)]
     Io(#[from] io::Error),
 }
@@ -48,6 +50,7 @@ impl VaultError {
             VaultError::OutsideVault(_) => "outside_vault",
             VaultError::NotUtf8(_) => "not_utf8",
             VaultError::TooLarge(_) => "too_large",
+            VaultError::Exists(_) => "exists",
             VaultError::Io(_) => "io",
         }
     }
@@ -186,6 +189,32 @@ impl Vault {
         result.map_err(|e| path::io_error(rel, e))
     }
 
+    /// Like `write`, but never replaces a file: the name is claimed with
+    /// `create_new`, so a doc made elsewhere a moment earlier still wins.
+    pub fn create(&self, rel: &str, content: &str) -> Result<(), VaultError> {
+        if !path::is_md(Path::new(rel)) {
+            return Err(VaultError::OutsideVault(rel.to_owned()));
+        }
+        if content.len() as u64 > MAX_DOC_BYTES {
+            return Err(VaultError::TooLarge(rel.to_owned()));
+        }
+        let target = self.resolve(rel)?;
+        let mut file = File::create_new(&target).map_err(|e| match e.kind() {
+            io::ErrorKind::AlreadyExists => VaultError::Exists(rel.to_owned()),
+            _ => path::io_error(rel, e),
+        })?;
+        let result = file
+            .write_all(content.as_bytes())
+            .and_then(|()| file.sync_all());
+        if let Err(e) = result {
+            drop(file);
+            // The file is ours alone; a half-written doc would look real.
+            let _ = fs::remove_file(&target);
+            return Err(path::io_error(rel, e));
+        }
+        Ok(())
+    }
+
     pub fn remove(&self, rel: &str) -> Result<(), VaultError> {
         if !path::is_md(Path::new(rel)) {
             return Err(VaultError::OutsideVault(rel.to_owned()));
@@ -238,6 +267,7 @@ mod tests {
             (VaultError::OutsideVault(String::new()), "outside_vault"),
             (VaultError::NotUtf8(String::new()), "not_utf8"),
             (VaultError::TooLarge(String::new()), "too_large"),
+            (VaultError::Exists(String::new()), "exists"),
             (VaultError::Io(io::Error::other("x")), "io"),
         ];
         for (err, code) in cases {

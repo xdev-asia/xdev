@@ -164,6 +164,30 @@ pub fn write_doc(
 }
 
 #[tauri::command(async)]
+pub fn create_doc(
+    state: State<'_, AppState>,
+    path: String,
+    content: String,
+) -> Result<(), CmdError> {
+    state.session.with(|s| s.create(&path, &content))
+}
+
+/// Lets the UI print an MCP setup command that works without `xdev` on PATH.
+#[tauri::command(async)]
+pub fn cli_path() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    Some(cli_beside(&exe)?.display().to_string())
+}
+
+/// The installer ships the CLI next to the desktop exe.
+fn cli_beside(exe: &Path) -> Option<PathBuf> {
+    let cli = exe
+        .parent()?
+        .join(format!("xdev{}", std::env::consts::EXE_SUFFIX));
+    cli.is_file().then_some(cli)
+}
+
+#[tauri::command(async)]
 pub fn search(
     state: State<'_, AppState>,
     query: String,
@@ -342,6 +366,7 @@ mod tests {
         assert_eq!(code_of(VaultError::OutsideVault(x())), "outside_vault");
         assert_eq!(code_of(VaultError::NotUtf8(x())), "not_utf8");
         assert_eq!(code_of(VaultError::TooLarge(x())), "too_large");
+        assert_eq!(code_of(VaultError::Exists(x())), "exists");
         assert_eq!(code_of(VaultError::Io(io::Error::other("x"))), "io");
         assert_eq!(code_of(StoreError::Io(io::Error::other("x"))), "io");
 
@@ -419,6 +444,24 @@ mod tests {
         let err = create_vault_at(&file, "Getting started.md", "x").unwrap_err();
         assert_eq!(err.code, "io");
         assert!(err.detail.is_some());
+    }
+
+    #[test]
+    fn cli_beside_finds_the_cli_only_when_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("xdev-desktop.exe");
+        assert_eq!(cli_beside(&exe), None);
+
+        let cli = dir
+            .path()
+            .join(format!("xdev{}", std::env::consts::EXE_SUFFIX));
+        std::fs::write(&cli, "").unwrap();
+        assert_eq!(cli_beside(&exe), Some(cli.clone()));
+
+        // A folder with the CLI's name is not the CLI.
+        std::fs::remove_file(&cli).unwrap();
+        std::fs::create_dir(&cli).unwrap();
+        assert_eq!(cli_beside(&exe), None);
     }
 
     #[test]

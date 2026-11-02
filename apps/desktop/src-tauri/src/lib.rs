@@ -29,6 +29,8 @@ pub fn run() {
             commands::list_docs,
             commands::read_doc,
             commands::write_doc,
+            commands::create_doc,
+            commands::cli_path,
             commands::search,
             commands::vcs_state,
             commands::init_repo,

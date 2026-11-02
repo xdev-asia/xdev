@@ -46,6 +46,16 @@ impl Session {
         Ok(())
     }
 
+    /// Recorded and indexed like `write`, so the new doc is reviewed as the
+    /// app's and listed straight away.
+    pub fn create(&mut self, path: &str, content: &str) -> Result<(), CoreError> {
+        self.vault.create(path, content)?;
+        self.written
+            .insert(path.to_owned(), content_hash(content.as_bytes()));
+        sync_vault(&self.vault, &mut self.store)?;
+        Ok(())
+    }
+
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>, CoreError> {
         search(&self.store, query, limit)
     }
@@ -337,6 +347,30 @@ mod tests {
             }
         }
         assert_eq!(hit_paths(&shared, "cherry"), ["c.md"]);
+    }
+
+    #[test]
+    fn create_lists_and_indexes_new_doc_but_never_overwrites() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("a.md"), "# Alpha").unwrap();
+        let shared = Shared::default();
+        shared.open(data.path(), root.path(), |_| {}).unwrap();
+
+        shared.with(|s| s.create("n.md", "# New\n\nkiwi")).unwrap();
+        assert_eq!(paths(&shared.with(|s| s.list()).unwrap()), ["a.md", "n.md"]);
+        assert_eq!(hit_paths(&shared, "kiwi"), ["n.md"]);
+
+        let err = shared.with(|s| s.create("a.md", "x")).unwrap_err();
+        assert_eq!(err.code, "exists");
+        assert_eq!(shared.with(|s| s.read("a.md")).unwrap(), "# Alpha");
+    }
+
+    #[test]
+    fn create_marks_app_origin() {
+        let (_data, _root, shared) = repo_session();
+        shared.with(|s| s.create("n.md", "n")).unwrap();
+        assert_eq!(changes(&shared), [("n.md".to_owned(), "app")]);
     }
 
     #[test]

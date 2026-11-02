@@ -129,6 +129,59 @@ fn write_rejects_non_md() {
 }
 
 #[test]
+fn create_makes_a_new_doc() {
+    let (dir, vault) = vault_with(&[("a/keep.md", "k")]);
+    vault.create("a/new.md", "# New").unwrap();
+    vault.create("top.md", "").unwrap();
+    assert_eq!(vault.read("a/new.md").unwrap(), "# New");
+    assert_eq!(fs::read_to_string(dir.path().join("top.md")).unwrap(), "");
+    assert_eq!(paths(&vault), ["a/keep.md", "a/new.md", "top.md"]);
+}
+
+#[test]
+fn create_refuses_an_existing_file() {
+    let (dir, vault) = vault_with(&[("a.md", "old")]);
+    let err = vault.create("a.md", "new").unwrap_err();
+    assert!(matches!(err, VaultError::Exists(_)), "{err:?}");
+    assert_eq!(err.code(), "exists");
+    assert_eq!(fs::read_to_string(dir.path().join("a.md")).unwrap(), "old");
+}
+
+#[test]
+fn create_rejects_non_md_outside_and_missing_parent() {
+    let outside = TempDir::new().unwrap();
+    let (dir, vault) = vault_with(&[]);
+    let escape = format!(
+        "../{}/x.md",
+        outside.path().file_name().unwrap().to_str().unwrap()
+    );
+    let abs = dir.path().join("abs.md");
+    for rel in [
+        "x.txt",
+        "x",
+        "../x.md",
+        escape.as_str(),
+        abs.to_str().unwrap(),
+    ] {
+        assert!(
+            matches!(vault.create(rel, "x"), Err(VaultError::OutsideVault(_))),
+            "{rel}"
+        );
+    }
+    assert!(matches!(
+        vault.create("missing/x.md", "x"),
+        Err(VaultError::NotFound(_))
+    ));
+    let big = "a".repeat(MAX_DOC_BYTES as usize + 1);
+    assert!(matches!(
+        vault.create("big.md", &big),
+        Err(VaultError::TooLarge(_))
+    ));
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+    assert_eq!(fs::read_dir(outside.path()).unwrap().count(), 0);
+}
+
+#[test]
 fn remove_deletes_file() {
     let (dir, vault) = vault_with(&[("a/b.md", "b"), ("c.md", "c")]);
     vault.remove("a/b.md").unwrap();
