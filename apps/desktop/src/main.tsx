@@ -3,7 +3,15 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { I18nProvider } from "./i18n";
-import "./app.css";
+import "./styles/base.css";
+import "./styles/welcome.css";
+import "./styles/shell.css";
+import "./styles/docs.css";
+import "./styles/changes.css";
+import "./styles/agents.css";
+import "./styles/accounts.css";
+import "./styles/tasks.css";
+import "./styles/squads.css";
 
 const style = document.createElement("style");
 style.textContent = tokensCss();

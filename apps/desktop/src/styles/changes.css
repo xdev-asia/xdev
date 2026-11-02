@@ -1,0 +1,254 @@
+/* Review */
+
+.pane .banner {
+  margin: 0 0 var(--x-space-2);
+}
+
+.commands {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: var(--x-space-2);
+  font-family: var(--x-font-mono);
+  font-size: 0.85em;
+  white-space: pre-wrap;
+  background: var(--x-color-code-bg);
+  border-radius: var(--x-radius-sm);
+}
+
+.pane-note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--x-space-2);
+  line-height: 1.5;
+}
+
+.pane-note p {
+  margin: 0;
+}
+
+.approve-all {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-2);
+  padding: 0 var(--x-space-2) var(--x-space-3);
+}
+
+/* Own row, so the placeholder is readable in a narrow sidebar. */
+.approve-all .field {
+  flex-basis: 100%;
+}
+
+.field {
+  flex: 1;
+  min-width: 0;
+  padding: var(--x-space-1) var(--x-space-2);
+  font: inherit;
+  color: var(--x-color-ink);
+  background: var(--x-color-surface);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-md);
+}
+
+.field:focus {
+  outline: none;
+  border-color: var(--x-color-accent);
+}
+
+.changelist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.change {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-1);
+  padding: var(--x-space-2);
+  border-radius: var(--x-radius-sm);
+}
+
+.change:hover {
+  background: var(--x-color-surface-2);
+}
+
+.change[aria-current="true"] {
+  background: var(--x-color-accent-soft);
+}
+
+.change-open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--x-space-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.change-path {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--x-font-mono);
+  font-size: 0.9em;
+}
+
+.change[aria-current="true"] .change-path {
+  color: var(--x-color-accent);
+  font-weight: 600;
+}
+
+.change-actions {
+  display: flex;
+  gap: var(--x-space-2);
+}
+
+.change-actions .btn-secondary {
+  font-size: 0.85em;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-1);
+}
+
+.badge {
+  padding: 0 var(--x-space-2);
+  border-radius: var(--x-radius-sm);
+  font-size: 0.75em;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+  color: var(--x-color-muted);
+  background: var(--x-color-surface-2);
+}
+
+.badge[data-kind="added"] {
+  color: var(--x-color-ok);
+  background: var(--x-color-ok-soft);
+}
+
+.badge[data-kind="modified"] {
+  color: var(--x-color-accent);
+  background: var(--x-color-accent-soft);
+}
+
+.badge[data-kind="deleted"] {
+  color: var(--x-color-warn);
+  background: var(--x-color-warn-soft);
+}
+
+/* Outlined so it does not read as the "modified" badge next to it, which shares the accent. */
+.badge[data-origin="ai"] {
+  color: var(--x-color-accent);
+  background: var(--x-color-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--x-color-accent);
+}
+
+.change-note-list {
+  font-size: 0.85em;
+  color: var(--x-color-muted);
+  overflow-wrap: anywhere;
+}
+
+.diff-note {
+  margin: var(--x-space-3) var(--x-space-6) 0;
+  color: var(--x-color-muted);
+}
+
+/* History */
+
+.docbody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.history {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.history-side {
+  flex: none;
+  width: 280px;
+  overflow-y: auto;
+  padding: var(--x-space-3) var(--x-space-2);
+  border-right: 1px solid var(--x-color-line);
+  background: var(--x-color-bg);
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.history-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-1);
+  width: 100%;
+  padding: var(--x-space-2);
+  border: 0;
+  border-radius: var(--x-radius-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-item:hover {
+  background: var(--x-color-surface-2);
+}
+
+.history-item[aria-current="true"] {
+  background: var(--x-color-accent-soft);
+}
+
+.history-message {
+  overflow-wrap: anywhere;
+}
+
+.history-item[aria-current="true"] .history-message {
+  color: var(--x-color-accent);
+  font-weight: 600;
+}
+
+.history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-2);
+  font-size: 0.8em;
+  color: var(--x-color-muted);
+}
+
+.history-id {
+  font-family: var(--x-font-mono);
+}
+
+.history-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x-space-4);
+  padding: var(--x-space-3) var(--x-space-6) 0;
+  font-weight: 600;
+}
+
