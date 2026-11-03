@@ -6,6 +6,7 @@ import { DocsApp } from "../DocsApp";
 import { LanguageSwitch } from "../components/LanguageSwitch";
 import { useI18n } from "../i18n";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
+import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { Sessions } from "./sessions";
 import type { TabStatus } from "./status";
@@ -180,6 +181,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (next === "docs") setDocsMounted(true);
   }
 
+  // The docs app has the only search for now; it shows after this render, so its box is looked up then.
+  function openSearch(): void {
+    show("docs");
+    setTimeout(() => {
+      const box = document.querySelector<HTMLInputElement>(".ws-docs .search-input");
+      box?.focus();
+      box?.select();
+    }, 0);
+  }
+
   const removingRepo = removing ? repos?.find((r) => r.worktrees.some((w) => w.path === removing.worktree.path)) : undefined;
 
   return (
@@ -214,7 +225,22 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             <span className="ws-crumb ws-mono">{branch}</span>
           </>
         )}
-        <div className="ws-spacer" />
+        <div className="ws-header-center">
+          <HeaderSearch onOpen={openSearch} />
+        </div>
+        {/* Nothing feeds notifications yet and settings has no home, so both wait, disabled. */}
+        <button type="button" className="ws-icon-btn ws-header-btn" disabled aria-label={t("workspace.header.notifications")} title={t("workspace.header.soon")}>
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+          </svg>
+        </button>
+        <button type="button" className="ws-icon-btn ws-header-btn" disabled aria-label={t("workspace.header.settings")} title={t("workspace.header.soon")}>
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+          </svg>
+        </button>
         <LanguageSwitch />
       </header>
 

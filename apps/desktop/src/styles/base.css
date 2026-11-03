@@ -1,3 +1,62 @@
+/* Workspace design tokens: the one place raw colors live. Dark is the default; an explicit
+   data-theme="light" on the root switches the whole set. Stylesheets use the names only. */
+:root {
+  --bg-0: #0b0b0d;
+  --bg-1: #101013;
+  --bg-2: #16161a;
+  --bg-3: #1e1e23;
+  --line: #232329;
+  --text-1: #e8e8ec;
+  --text-2: #8e8e98;
+  --text-3: #62626c;
+  --term: #09090b;
+  --accent: #2f62e6;
+  --signal: #5bd8ff;
+  --signal-bg: rgba(91, 216, 255, 0.12);
+  --warn: #f2b544;
+  --warn-bg: rgba(242, 181, 68, 0.12);
+  --violet: #b69cff;
+  --violet-bg: rgba(182, 156, 255, 0.12);
+  --ok: #4ade9b;
+  --ok-bg: rgba(74, 222, 155, 0.12);
+  --danger: #ff7a7a;
+  --danger-bg: rgba(255, 122, 122, 0.12);
+  --orange: #f0a070;
+
+  --radius-s: 4px;
+  --radius-m: 6px;
+  --radius-l: 8px;
+
+  --h-header: 38px;
+  --w-side: 296px;
+  --w-panel: 300px;
+  --h-footer: 26px;
+}
+
+:root[data-theme="light"] {
+  --bg-0: #f4f4f6;
+  --bg-1: #ffffff;
+  --bg-2: #ffffff;
+  --bg-3: #ededf0;
+  --line: #dedee3;
+  --text-1: #111114;
+  --text-2: #5c5c66;
+  --text-3: #8a8a94;
+  --term: #fafafb;
+  --accent: #2453d6;
+  --signal: #0670a0;
+  --signal-bg: rgba(6, 112, 160, 0.1);
+  --warn: #8a5200;
+  --warn-bg: rgba(138, 82, 0, 0.1);
+  --violet: #5b3cc4;
+  --violet-bg: rgba(91, 60, 196, 0.1);
+  --ok: #0f7a4a;
+  --ok-bg: rgba(15, 122, 74, 0.1);
+  --danger: #b42318;
+  --danger-bg: rgba(180, 35, 24, 0.1);
+  --orange: #a04a14;
+}
+
 html,
 body,
 #root {
