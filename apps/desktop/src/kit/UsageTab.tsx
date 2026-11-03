@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type Home, type UsageSummary } from "../api";
+import type { Api, Home, UsageSummary } from "../api";
 import { useI18n } from "../i18n";
+import { KitError, kitErr, type KitErr } from "./KitError";
 import { UsageChart } from "./UsageChart";
 import { dayRange, homeLabel, relativeFolder, totalOf, type Tokens } from "./kitUi";
 
@@ -97,7 +98,7 @@ export function UsageTab(props: { api: Api }): JSX.Element {
   const [usage, setUsage] = useState<UsageSummary>();
   const [homes, setHomes] = useState<Home[]>([]);
   const [roots, setRoots] = useState<string[]>([]);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<KitErr>();
   const [busy, setBusy] = useState(false);
   const [reads, setReads] = useState(0);
   // Set by the Refresh button for the next read only.
@@ -128,7 +129,7 @@ export function UsageTab(props: { api: Api }): JSX.Element {
       },
       (e) => {
         if (stale) return;
-        setError(toApiError(e).code);
+        setError(kitErr(e));
         setBusy(false);
       },
     );
@@ -160,7 +161,7 @@ export function UsageTab(props: { api: Api }): JSX.Element {
           {t("kit.usage.refresh")}
         </button>
       </div>
-      {error && <p className="error-text" role="alert">{t(`error.${error}`)}</p>}
+      {error && <KitError error={error} />}
       {usage ? <UsageView usage={usage} homes={homes} roots={roots} /> : !error && <p className="kit-empty">{t("kit.loading")}</p>}
     </div>
   );

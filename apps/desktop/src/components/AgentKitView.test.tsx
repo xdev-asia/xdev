@@ -93,8 +93,33 @@ it("footer popover has token usage link", () => {
   expect(bare).not.toContain("token-usage");
 });
 
-it("no element has a border-left rule", () => {
-  const css = readFileSync(new URL("../styles/kit.css", import.meta.url), "utf8");
-  expect(css).not.toMatch(/border-left/);
-  expect(css).not.toMatch(/inset\s+-?\d+(?:px)?\s+0\s+0/);
+/** The declarations that draw a stripe down one side of a box: a left or inline-start border, or an inset or sideways box-shadow. */
+function stripes(css: string): string[] {
+  const found: string[] = [];
+  for (const [, prop, value] of css.matchAll(/([a-z-]+)\s*:\s*([^;}]+)/g)) {
+    if (/^border-(left|inline-start)/.test(prop!)) found.push(`${prop}: ${value}`);
+    if (prop === "box-shadow") {
+      for (const shadow of value!.split(/,(?![^(]*\))/)) {
+        if (/\binset\b/.test(shadow) || /^\s*-/.test(shadow)) found.push(`box-shadow: ${shadow.trim()}`);
+      }
+    }
+  }
+  return found;
+}
+
+it("the stripe check catches each way of drawing one", () => {
+  expect(stripes(".a { border-left: 3px solid red; }")).toHaveLength(1);
+  expect(stripes(".a { border-left-color: red; }")).toHaveLength(1);
+  expect(stripes(".a { border-inline-start: 3px solid red; }")).toHaveLength(1);
+  expect(stripes(".a { border-inline-start-width: 3px; }")).toHaveLength(1);
+  expect(stripes(".a { box-shadow: inset 3px 0 0 red; }")).toHaveLength(1);
+  expect(stripes(".a { box-shadow: inset 3px 0 0 0 red; }")).toHaveLength(1);
+  expect(stripes(".a { box-shadow: -3px 0 0 red; }")).toHaveLength(1);
+  expect(stripes(".a { box-shadow: 0 1px 2px rgb(0 0 0 / 0.2), -4px 0 0 red; }")).toHaveLength(1);
+  expect(stripes(".a { border: 1px solid red; border-bottom: 2px solid red; box-shadow: 0 1px 2px red; }")).toHaveLength(0);
+});
+
+it("no kit rule draws a stripe down a side", () => {
+  const file = "../styles/kit.css";
+  expect(stripes(readFileSync(new URL(file, import.meta.url), "utf8")), file).toEqual([]);
 });

@@ -6,6 +6,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DiffView } from "../components/DiffView";
 import { Editor } from "../components/Editor";
 import { useI18n } from "../i18n";
+import { KitError, kitErr, type KitErr } from "./KitError";
 import { below, homeLabel, joinPath } from "./kitUi";
 
 type MemoryFile = MemorySet["files"][number];
@@ -104,10 +105,12 @@ export function MemoryTab(props: {
   const { api, worktree } = props;
   const [set, setSet] = useState<MemorySet>();
   const [homes, setHomes] = useState<Home[]>([]);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<KitErr>();
   const [open, setOpen] = useState<Open | null>(null);
   const [changed, setChanged] = useState(false);
   const [keeping, setKeeping] = useState(false);
+  // A file picked while the editor holds unsaved text; it opens once the person agrees.
+  const [discarding, setDiscarding] = useState<string | null>(null);
   const [note, setNote] = useState<string>();
   const [plan, setPlan] = useState<Plan[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -115,6 +118,9 @@ export function MemoryTab(props: {
   // The latest text for Ctrl+S, which the editor reads through a ref.
   const latest = useRef<Open | null>(null);
   latest.current = open;
+  // A save in flight and the newest read, so a second Ctrl+S or a slow read cannot overtake the first.
+  const saving = useRef(false);
+  const reading = useRef(0);
 
   useEffect(() => {
     let stale = false;
@@ -125,7 +131,7 @@ export function MemoryTab(props: {
         setSet(files);
         setHomes(h);
       } catch (e) {
-        if (!stale) setError(toApiError(e).code);
+        if (!stale) setError(kitErr(e));
       }
     })();
     return () => {
@@ -141,17 +147,26 @@ export function MemoryTab(props: {
     setNote(undefined);
     setChanged(false);
     setPlan(null);
+    const mine = ++reading.current;
     try {
       const read = await api.kitRead(path, worktree);
-      setOpen({ path, text: read.text, saved: read.text, stamp: read.stamp });
+      if (mine === reading.current) setOpen({ path, text: read.text, saved: read.text, stamp: read.stamp });
     } catch (e) {
-      setError(toApiError(e).code);
+      if (mine === reading.current) setError(kitErr(e));
     }
+  }
+
+  /** A pick in the tree: unsaved text in the editor is not dropped until the person says so. */
+  function pick(path: string): void {
+    const current = latest.current;
+    if (current && current.path !== path && current.text !== current.saved) setDiscarding(path);
+    else void select(path);
   }
 
   async function save(): Promise<void> {
     const current = latest.current;
-    if (!current || current.text === current.saved) return;
+    if (!current || current.text === current.saved || saving.current) return;
+    saving.current = true;
     setError(undefined);
     setNote(undefined);
     try {
@@ -161,9 +176,10 @@ export function MemoryTab(props: {
       setNote(t("kit.memory.saved"));
       setReloads((n) => n + 1);
     } catch (e) {
-      const code = toApiError(e).code;
-      if (code === "changed") setChanged(true);
-      else setError(code);
+      if (toApiError(e).code === "changed") setChanged(true);
+      else setError(kitErr(e));
+    } finally {
+      saving.current = false;
     }
   }
 
@@ -176,7 +192,8 @@ export function MemoryTab(props: {
   async function keepMine(): Promise<void> {
     setKeeping(false);
     const current = latest.current;
-    if (!current) return;
+    if (!current || saving.current) return;
+    saving.current = true;
     try {
       const fresh = await api.kitRead(current.path, worktree);
       const stamp = await api.kitWrite(current.path, current.text, fresh.stamp, worktree);
@@ -185,9 +202,10 @@ export function MemoryTab(props: {
       setNote(t("kit.memory.saved"));
       setReloads((n) => n + 1);
     } catch (e) {
-      const code = toApiError(e).code;
-      if (code === "changed") setChanged(true);
-      else setError(code);
+      if (toApiError(e).code === "changed") setChanged(true);
+      else setError(kitErr(e));
+    } finally {
+      saving.current = false;
     }
   }
 
@@ -213,13 +231,15 @@ export function MemoryTab(props: {
           const read = await api.kitRead(target.path, worktree);
           rows.push({ target: target.path, label: target.label, base: read.text, stamp: read.stamp, same: read.text === open.text });
         } catch (e) {
-          if (toApiError(e).code !== "not_found") throw e;
+          // A file that is not there is an I/O failure in Rust (`io`); `not_found` is the same thing by another name.
+          const code = toApiError(e).code;
+          if (code !== "io" && code !== "not_found") throw e;
           rows.push({ target: target.path, label: target.label, base: null, stamp: null, same: false });
         }
       }
       setPlan(rows);
     } catch (e) {
-      setError(toApiError(e).code);
+      setError(kitErr(e));
     }
   }
 
@@ -233,8 +253,7 @@ export function MemoryTab(props: {
       setPlan(null);
       setReloads((n) => n + 1);
     } catch (e) {
-      const code = toApiError(e).code;
-      setError(code === "changed" ? "kit_changed" : code);
+      setError(kitErr(e, true));
       setPlan(null);
     } finally {
       setBusy(false);
@@ -248,7 +267,7 @@ export function MemoryTab(props: {
     <div className="kit-memory">
       <aside className="kit-side">
         {set ? (
-          <MemoryTree set={set} homes={homes} selected={open?.path ?? null} onSelect={(p) => void select(p)} />
+          <MemoryTree set={set} homes={homes} selected={open?.path ?? null} onSelect={pick} />
         ) : (
           !error && <p className="kit-empty">{t("kit.loading")}</p>
         )}
@@ -260,7 +279,7 @@ export function MemoryTab(props: {
       </aside>
 
       <div className="kit-main">
-        {error && <p className="error-text" role="alert">{error === "kit_changed" ? t("kit.error.changed") : t(`error.${error}`)}</p>}
+        {error && <KitError error={error} />}
         {!open ? (
           <p className="kit-empty">{t("kit.memory.pick")}</p>
         ) : (
@@ -346,6 +365,18 @@ export function MemoryTab(props: {
         )}
       </div>
 
+      <ConfirmDialog
+        open={discarding !== null}
+        title={t("kit.memory.discardTitle")}
+        body={t("kit.memory.discardBody")}
+        confirmLabel={t("kit.memory.discardConfirm")}
+        onConfirm={() => {
+          const next = discarding;
+          setDiscarding(null);
+          if (next !== null) void select(next);
+        }}
+        onCancel={() => setDiscarding(null)}
+      />
       <ConfirmDialog
         open={keeping}
         title={t("kit.memory.keepTitle")}

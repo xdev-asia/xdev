@@ -1,9 +1,10 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent, JSX } from "react";
-import { toApiError, type Api, type Home, type Skill } from "../api";
+import type { Api, Home, Skill } from "../api";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useI18n } from "../i18n";
+import { KitError, kitErr, type KitErr } from "./KitError";
 import { homeLabel, oneLine, scopeKey, scopeLabel, skillTargets, type SkillTarget } from "./kitUi";
 
 const DESCRIPTION_MAX = 90;
@@ -89,7 +90,7 @@ export function SkillsTab(props: { api: Api; worktree: string | null }): JSX.Ele
   const { api, worktree } = props;
   const [skills, setSkills] = useState<Skill[]>();
   const [homes, setHomes] = useState<Home[]>([]);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<KitErr>();
   const [homeFilter, setHomeFilter] = useState("");
   const [scopeFilter, setScopeFilter] = useState("");
   const [query, setQuery] = useState("");
@@ -110,7 +111,7 @@ export function SkillsTab(props: { api: Api; worktree: string | null }): JSX.Ele
         setHomes(h);
         setError(undefined);
       } catch (e) {
-        if (!stale) setError(toApiError(e).code);
+        if (!stale) setError(kitErr(e));
       }
     })();
     return () => {
@@ -124,7 +125,7 @@ export function SkillsTab(props: { api: Api; worktree: string | null }): JSX.Ele
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return (skills ?? []).filter((s) => {
-      if (homeFilter === "__none" ? s.home_id !== null : homeFilter !== "" && s.home_id !== homeFilter) return false;
+      if (homeFilter !== "" && s.home_id !== homeFilter) return false;
       if (scopeFilter !== "" && scopeKey(s) !== scopeFilter) return false;
       return needle === "" || s.name.toLowerCase().includes(needle) || s.description.toLowerCase().includes(needle);
     });
@@ -138,8 +139,7 @@ export function SkillsTab(props: { api: Api; worktree: string | null }): JSX.Ele
       setToast(await action());
       return true;
     } catch (e) {
-      const code = toApiError(e).code;
-      setError(code === "changed" ? "kit_changed" : code);
+      setError(kitErr(e, true));
       return false;
     } finally {
       setBusy(false);
@@ -237,7 +237,7 @@ export function SkillsTab(props: { api: Api; worktree: string | null }): JSX.Ele
         </Button>
       </div>
 
-      {error && <p className="error-text" role="alert">{error === "kit_changed" ? t("kit.error.changed") : t(`error.${error}`)}</p>}
+      {error && <KitError error={error} />}
 
       {adding && (
         <form className="kit-panel" onSubmit={(e) => void create(e)}>
