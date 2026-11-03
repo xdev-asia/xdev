@@ -1064,5 +1064,9 @@
   "review.send.title": "Gửi ghi chú tới",
   "review.send.includeSent": "Gồm cả ghi chú đã gửi",
   "review.send.newTab": "Tab {name} mới",
-  "review.send.failed": "Chưa gửi được ghi chú: agent chưa khởi động hoặc tab đã kết thúc."
+  "review.send.failed": "Chưa gửi được ghi chú: agent chưa khởi động hoặc tab đã kết thúc.",
+  "panes.closeAgent.title": "Đóng agent đang chạy?",
+  "panes.closeAgent.body": "Đóng sẽ dừng mọi agent còn đang chạy ở đây. Các shell cũng đóng theo.",
+  "panes.closeAgent.confirm": "Đóng",
+  "keys.hint": "{label} ({chord})"
 }

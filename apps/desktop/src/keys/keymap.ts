@@ -63,7 +63,10 @@ const NAMED: Record<string, string> = {
   Equal: "=",
 };
 
-function keyOf(code: string): string | null {
+function keyOf(e: KeyboardEvent): string | null {
+  const code = e.code;
+  // A synthetic event may carry no code; fall back to the character.
+  if (!code) return typeof e.key === "string" && /^[a-z0-9]$/i.test(e.key) ? e.key.toUpperCase() : null;
   if (/^Key[A-Z]$/.test(code)) return code.slice(3);
   if (/^Digit[0-9]$/.test(code)) return code.slice(5);
   return NAMED[code] ?? null;
@@ -74,7 +77,7 @@ function keyOf(code: string): string | null {
  * key outside the set bindings use). Modifier order is Ctrl, Mod (Cmd, macOS only), Alt, Shift.
  */
 export function chordOf(e: KeyboardEvent, mac: boolean): string | null {
-  const key = keyOf(e.code);
+  const key = keyOf(e);
   if (key === null) return null;
   if (e.metaKey && !mac) return null;
   const parts: string[] = [];
@@ -86,16 +89,21 @@ export function chordOf(e: KeyboardEvent, mac: boolean): string | null {
   return [...parts, key].join("+");
 }
 
-/** A binding chord in the form `chordOf` produces: Mod is Ctrl off macOS. */
-function normalize(chord: string, mac: boolean): string {
+// On macOS the Ctrl of a default chord is Cmd, as there; these keep the physical Ctrl (Ctrl+Tab is
+// the system's tab key, and Ctrl+Alt+T already was Ctrl before the keymap).
+const KEEPS_CTRL: ReadonlySet<ActionId> = new Set(["tab.next", "tab.prev", "agent.new"]);
+
+/** A binding chord in the form `chordOf` produces: Mod is Ctrl off macOS; Ctrl is Mod on macOS but for KEEPS_CTRL. */
+function normalize(chord: string, mac: boolean, action?: ActionId): string {
   const parts = chord.split("+");
   const key = parts.pop()!;
-  const mods = new Set(parts.map((p) => (p === "Mod" && !mac ? "Ctrl" : p)));
+  const swap = mac && !(action && KEEPS_CTRL.has(action));
+  const mods = new Set(parts.map((p) => (p === "Mod" && !mac ? "Ctrl" : p === "Ctrl" && swap ? "Mod" : p)));
   return [...["Ctrl", "Mod", "Alt", "Shift"].filter((m) => mods.has(m)), key].join("+");
 }
 
 function table(bindings: Binding[], mac: boolean): Map<string, ActionId> {
-  return new Map(bindings.map((b) => [normalize(b.chord, mac), b.action]));
+  return new Map(bindings.map((b) => [normalize(b.chord, mac, b.action), b.action]));
 }
 
 const TABLES = { mac: table(DEFAULT_BINDINGS, true), other: table(DEFAULT_BINDINGS, false) };
@@ -110,7 +118,7 @@ export function actionOf(e: KeyboardEvent, mac: boolean = IS_MAC): ActionId | nu
 export function chordLabel(action: ActionId, mac: boolean = IS_MAC): string | null {
   const found = DEFAULT_BINDINGS.find((b) => b.action === action);
   if (!found) return null;
-  const parts = normalize(found.chord, mac).split("+");
+  const parts = normalize(found.chord, mac, action).split("+");
   if (!mac) return parts.join("+");
   const glyph: Record<string, string> = { Ctrl: "⌃", Mod: "⌘", Alt: "⌥", Shift: "⇧", Up: "↑", Down: "↓", Enter: "↵" };
   return parts.map((p) => glyph[p] ?? p).join("");
@@ -135,6 +143,8 @@ export function useKeymap(
   opts?: { when?: () => boolean },
 ): void {
   useEffect(() => {
+    // The effect runs again each render, so a view that is hidden holds no listener at all.
+    if (opts?.when && !opts.when()) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.isComposing || e.keyCode === 229) return;
       const action = actionOf(e);
