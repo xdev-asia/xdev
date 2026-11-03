@@ -1,6 +1,8 @@
 {
   "app.name": "xDev",
   "app.tagline": "Tri thức dự án lưu ngay trên máy, dùng được cho cả người lẫn AI agent.",
+  "app.crash.title": "Cửa sổ này gặp lỗi.",
+  "app.crash.reload": "Tải lại",
   "vault.change": "Đổi thư mục",
   "vault.label": "Thư mục đang mở: {path}",
   "vault.open": "Mở thư mục có sẵn",
