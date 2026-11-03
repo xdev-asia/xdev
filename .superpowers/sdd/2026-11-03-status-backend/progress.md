@@ -26,3 +26,12 @@ Task 3: complete
 - `cli_beside` and `settings_path` made `pub(crate)`.
 - StatusSettings field comments are `//` (not `///`) so the TS file matches the contract (no field docs).
 - StatusSettings is camelCase on disk too (one serde shape for disk and IPC); missing fields default per field.
+
+Task 4: complete
+- `hooks.rs`: `HookReader` (per-file offset + "skipping" flag), `PtyHook`, `watch(app, dir)` → `HookWatcher`
+  kept with `app.manage`. Debounce 100 ms, NonRecursive, `NoCache`, same setup as the vault watcher.
+- Overlong line still being written (no newline yet, > 4096 bytes) is dropped up to its newline instead of
+  growing the buffer; added test `reader_skips_a_long_line_still_being_written` (not in plan).
+- Lines with `v` != 1 are skipped. Watcher failure only logs to stderr; panes still run without status.
+- Added an end-to-end test `watcher_emits_appended_lines` (real notify, 10 s timeout) using `append_hook`.
+- Bindings: `PtyHook` exported; HookEvent.ts and PtyHook.ts regenerate byte-identical to the contract.
