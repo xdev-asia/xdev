@@ -2,9 +2,17 @@ import { useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
 import type { ApiError, RepoView, WorktreeView } from "../api";
 import { useI18n } from "../i18n";
+import { groupWorktrees, type Group } from "./groups";
 import type { TabStatus } from "./status";
 
 type T = ReturnType<typeof useI18n>["t"];
+
+/** A worktree with the repo it belongs to; `path` keys the grouping. */
+interface Entry {
+  path: string;
+  wt: WorktreeView;
+  repo: RepoView;
+}
 
 export interface WorktreeListProps {
   /** Null while the first list is loading. */
@@ -21,15 +29,15 @@ export interface WorktreeListProps {
   onAddRepo(): void;
 }
 
-/** The repos of the workspace, each with its worktrees, primary checkout first. */
+/** The worktrees of every repo, split into sections by what their agents are doing. */
 export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const { t } = useI18n();
   // The worktree whose action menu is open.
   const [menu, setMenu] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<string[]>([]);
+  const [collapsed, setCollapsed] = useState<Group[]>([]);
 
-  const toggle = (id: string) =>
-    setCollapsed(collapsed.includes(id) ? collapsed.filter((c) => c !== id) : [...collapsed, id]);
+  const toggle = (group: Group) =>
+    setCollapsed(collapsed.includes(group) ? collapsed.filter((c) => c !== group) : [...collapsed, group]);
   const openMenu = (wt: WorktreeView) => setMenu(wt.path);
   const pick = (action: () => void) => {
     setMenu(null);
@@ -53,7 +61,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   };
 
   // Rows are plain calls, not components, so the list keeps one set of hooks.
-  const row = (wt: WorktreeView) => {
+  const row = ({ wt, repo }: Entry) => {
     const status = props.dots[wt.path] ?? null;
     const open = menu === wt.path;
     return (
@@ -86,6 +94,12 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           </span>
           <span className="ws-wt-sub">
             {wt.primary && <span className="ws-tag">{t("workspace.primary")}</span>}
+            {repo.missing && (
+              <span className="ws-tag ws-tag-warn" title={t("workspace.missingTitle")}>
+                {t("workspace.missing")}
+              </span>
+            )}
+            {many && <span className="ws-tag">{repo.shortName}</span>}
             <span className="ws-wt-branch">{wt.branch ?? t("workspace.detached")}</span>
           </span>
         </button>
@@ -125,29 +139,24 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     );
   };
 
-  const group = (repo: RepoView) => {
-    const open = !collapsed.includes(repo.id);
+  const entries: Entry[] = (props.repos ?? []).flatMap((repo) => repo.worktrees.map((wt) => ({ path: wt.path, wt, repo })));
+  // The repo is named on a row only when more than one repo is listed.
+  const many = (props.repos?.length ?? 0) > 1;
+  const sections = groupWorktrees(entries, (path) => props.dots[path] ?? null);
+
+  const section = ({ group, items }: { group: Group; items: Entry[] }) => {
+    const open = !collapsed.includes(group);
     return (
-      <li key={repo.id} className="ws-group">
-        <button
-          type="button"
-          className="ws-group-head"
-          data-repo={repo.id}
-          aria-expanded={open}
-          title={repo.missing ? t("workspace.missingTitle") : undefined}
-          onClick={() => toggle(repo.id)}
-        >
+      <li key={group} className="ws-group" data-group={group}>
+        <button type="button" className="ws-group-head" data-group={group} aria-expanded={open} onClick={() => toggle(group)}>
           <svg aria-hidden="true" className="ws-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="m6 9 6 6 6-6" />
           </svg>
-          <span className="ws-group-mark" aria-hidden="true">
-            ●
-          </span>
-          <span className="ws-group-name">{repo.shortName}</span>
-          {repo.missing && <span className="ws-tag ws-tag-warn">{t("workspace.missing")}</span>}
-          <span className="ws-group-count">{repo.worktrees.length}</span>
+          <span className={group === "working" ? "ws-group-dot ws-pulse" : "ws-group-dot"} data-group={group} aria-hidden="true" />
+          <span className="ws-group-name">{t(`workspace.group.${group}`)}</span>
+          <span className="ws-group-count">{items.length}</span>
         </button>
-        {open && <ul className="ws-wts">{repo.worktrees.map(row)}</ul>}
+        {open && <ul className="ws-wts">{items.map(row)}</ul>}
       </li>
     );
   };
@@ -171,7 +180,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       </div>
       <div className="ws-list">
         {props.repos?.length === 0 && <p className="ws-empty">{t("workspace.noRepos")}</p>}
-        {props.repos && props.repos.length > 0 && <ul className="ws-groups">{props.repos.map(group)}</ul>}
+        {sections.length > 0 && <ul className="ws-groups">{sections.map(section)}</ul>}
       </div>
       {props.notice && (
         <p className="error-text ws-notice" role="alert">

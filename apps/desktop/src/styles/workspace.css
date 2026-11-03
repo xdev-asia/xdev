@@ -262,17 +262,25 @@
   list-style: none;
 }
 
+/* Sticky inside the scrolling list, so the section of the rows in view stays named. */
 .ws-group-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
+  box-sizing: border-box;
   gap: 6px;
   width: 100%;
   padding: 8px 8px 4px;
   border: 0;
-  background: transparent;
-  font-size: 12px;
+  background: var(--bg-1);
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.02em;
   text-align: left;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
 .ws-chevron {
@@ -285,8 +293,29 @@
   transform: rotate(-90deg);
 }
 
-.ws-group-mark {
-  color: var(--orange);
+.ws-group-dot {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.ws-group-dot[data-group="needs-you"] {
+  background: var(--warn);
+}
+
+.ws-group-dot[data-group="working"] {
+  background: var(--signal);
+}
+
+.ws-group-dot[data-group="review"] {
+  background: var(--violet);
+}
+
+.ws-group-dot[data-group="rest"] {
+  border: 1.5px solid var(--text-2);
+  background: transparent;
 }
 
 .ws-group-name {
