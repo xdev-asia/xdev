@@ -13,6 +13,9 @@ type MemoryFile = MemorySet["files"][number];
 
 const baseName = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 
+/** An import outside every root: the scan lists it with no hash and never reads it, and neither does this view. */
+const unread = (file: MemoryFile) => file.hash === "";
+
 /** How deep a file sits under the file that imports it. */
 function depthOf(file: MemoryFile, byPath: Map<string, MemoryFile>): number {
   let depth = 0;
@@ -54,22 +57,32 @@ export function MemoryTree(props: {
           <ul className="kit-files">
             {group.files.map((file) => {
               const shown = (group.root !== null ? below(group.root, file.path) : null) ?? baseName(file.path);
+              const row = {
+                className: "kit-file",
+                "data-file": file.path,
+                "data-kind": file.kind,
+                style: { paddingInlineStart: `${8 + depthOf(file, byPath) * 14}px` },
+                title: displayPath(file.path),
+              };
               return (
                 <li key={file.path}>
-                  <button
-                    type="button"
-                    className="kit-file"
-                    data-file={file.path}
-                    data-kind={file.kind}
-                    aria-current={selected === file.path ? "true" : undefined}
-                    style={{ paddingInlineStart: `${8 + depthOf(file, byPath) * 14}px` }}
-                    title={displayPath(file.path)}
-                    onClick={() => props.onSelect(file.path)}
-                  >
-                    {file.issues.length > 0 && <span className="kit-dot" data-dot="issue" />}
-                    <span className="kit-cut">{shown}</span>
-                    <span className="kit-num">{t("kit.tokens", { count: file.tokens })}</span>
-                  </button>
+                  {unread(file) ? (
+                    <div {...row} data-unread="true">
+                      <span className="kit-cut">{shown}</span>
+                      <span className="kit-num">{t("kit.memory.outside")}</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      {...row}
+                      aria-current={selected === file.path ? "true" : undefined}
+                      onClick={() => props.onSelect(file.path)}
+                    >
+                      {file.issues.length > 0 && <span className="kit-dot" data-dot="issue" />}
+                      <span className="kit-cut">{shown}</span>
+                      <span className="kit-num">{t("kit.tokens", { count: file.tokens })}</span>
+                    </button>
+                  )}
                 </li>
               );
             })}
@@ -158,6 +171,8 @@ export function MemoryTab(props: {
 
   /** A pick in the tree: unsaved text in the editor is not dropped until the person says so. */
   function pick(path: string): void {
+    const picked = set?.files.find((f) => f.path === path);
+    if (picked && unread(picked)) return;
     const current = latest.current;
     if (current && current.path !== path && current.text !== current.saved) setDiscarding(path);
     else void select(path);

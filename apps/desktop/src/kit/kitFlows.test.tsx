@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { Button } from "@xdev/ui";
 import { expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi, type Api, type Skill } from "../api";
+import { createMockApi, type Api, type MemorySet, type Skill } from "../api";
 import { AgentKitView } from "../components/AgentKitView";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Editor } from "../components/Editor";
@@ -251,6 +251,36 @@ it("the copy diff treats a missing target as a new file, whichever code says so"
     expect(all.some((n) => textOf(n) === en("kit.memory.copyNew"))).toBe(true);
     expect(all.find((n) => n.props["data-target"] === "/h/b/CLAUDE.md")).toBeDefined();
   }
+});
+
+// --- An import outside the roots is listed, never opened ---------------------------------------
+
+it("an unread outside import is a plain row, and picking it never reads it", async () => {
+  const source = "/w/CLAUDE.md";
+  const outside = String.raw`\\nonexistent-host\s\x.md`;
+  const set = {
+    files: [
+      { path: source, home_id: null, kind: "instructions", parent: null, bytes: 20, tokens: 5, hash: "h", issues: [], differs_in: [] },
+      { path: outside, home_id: null, kind: "import", parent: source, bytes: 0, tokens: 0, hash: "", issues: [], differs_in: [] },
+    ],
+    load_tokens: 5,
+  } as unknown as MemorySet;
+  const all = nodes(MemoryTree({ set, homes: [], selected: null, onSelect: () => {} }));
+  expect(all.find((n) => n.type === "button" && n.props["data-file"] === outside)).toBeUndefined();
+  const row = all.find((n) => n.props["data-file"] === outside)!;
+  expect(row.props.onClick).toBeUndefined();
+  expect(textOf(row)).toContain(en("kit.memory.outside"));
+  expect(all.find((n) => n.type === "button" && n.props["data-file"] === source)).toBeDefined();
+  expect(translate("vi", "kit.memory.outside")).toBe("ngoài thư mục, không mở");
+
+  const kitRead = vi.fn(async () => ({ text: "x", stamp: "s" }));
+  const api = { ...createMockApi({}), kitHomes: async () => [], kitMemory: async () => set, kitRead } as unknown as Api;
+  const m = mount(MemoryTab, () => ({ api, worktree: null }));
+  await m.settle();
+  tree(m.all()).props.onSelect(outside);
+  await tick();
+  expect(kitRead).not.toHaveBeenCalled();
+  expect(m.all().find((n) => n.type === Editor)).toBeUndefined();
 });
 
 // --- I1: a usage request does not remount, and is used once ------------------------------------

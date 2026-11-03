@@ -459,7 +459,7 @@ fn sorted_md_files(dir: &Path) -> Vec<PathBuf> {
 
 /// Drops the `\\?\` prefix a Windows canonical path carries, so it can be
 /// compared with a path typed by a person.
-fn plain(path: &Path) -> PathBuf {
+pub(crate) fn plain(path: &Path) -> PathBuf {
     let text = path.to_string_lossy();
     match text.strip_prefix(r"\\?\") {
         Some(rest) if !rest.starts_with("UNC\\") => PathBuf::from(rest),
@@ -468,7 +468,7 @@ fn plain(path: &Path) -> PathBuf {
 }
 
 /// Removes `.` and `..` without touching the disk.
-fn normalize(path: &Path) -> PathBuf {
+pub(crate) fn normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for part in path.components() {
         match part {
@@ -483,7 +483,7 @@ fn normalize(path: &Path) -> PathBuf {
 }
 
 /// Part by part, and ignoring case on Windows, where paths do.
-fn is_under(root: &Path, path: &Path) -> bool {
+pub(crate) fn is_under(root: &Path, path: &Path) -> bool {
     let parts = |p: &Path| -> Vec<String> {
         p.components()
             .map(|c| {
