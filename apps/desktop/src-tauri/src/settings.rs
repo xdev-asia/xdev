@@ -10,6 +10,43 @@ pub struct Settings {
     /// Set once the first-run folder offer was answered either way.
     #[serde(default)]
     pub vault_prompted: bool,
+    #[serde(default)]
+    pub status: StatusSettings,
+}
+
+/// How agent status reaches the person; every switch is on by default.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct StatusSettings {
+    // Agent launches get the per-process hook flags (new sessions only).
+    pub hooks: bool,
+    // OS notification for a pane the person is not looking at.
+    pub os: bool,
+    pub sound: bool,
+    // The person's own sound, copied under the data folder; `None` is the
+    // built-in beep.
+    pub sound_file: Option<String>,
+    // 0–100.
+    pub volume: u8,
+    // The header bell's count and list.
+    pub bell: bool,
+    // The taskbar or dock badge.
+    pub badge: bool,
+}
+
+impl Default for StatusSettings {
+    fn default() -> Self {
+        StatusSettings {
+            hooks: true,
+            os: true,
+            sound: true,
+            sound_file: None,
+            volume: 60,
+            bell: true,
+            badge: true,
+        }
+    }
 }
 
 pub const FILE_NAME: &str = "settings.json";
@@ -42,6 +79,12 @@ mod tests {
         let settings = Settings {
             last_vault: Some("C:/Users/me/Tài liệu".into()),
             vault_prompted: true,
+            status: StatusSettings {
+                hooks: false,
+                sound_file: Some("C:/x/custom.wav".into()),
+                volume: 7,
+                ..StatusSettings::default()
+            },
         };
         save(&path, &settings).unwrap();
         assert_eq!(load(&path), settings);
@@ -60,8 +103,43 @@ mod tests {
             Settings {
                 last_vault: Some("D:/docs".into()),
                 vault_prompted: false,
+                status: StatusSettings::default(),
             }
         );
+    }
+
+    #[test]
+    fn settings_without_status_load_with_hooks_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(&path, r#"{ "last_vault": "D:/docs" }"#).unwrap();
+        let status = load(&path).status;
+        assert_eq!(status, StatusSettings::default());
+        assert!(status.hooks && status.os && status.sound && status.bell && status.badge);
+        assert_eq!((status.volume, status.sound_file), (60, None));
+    }
+
+    #[test]
+    fn status_is_camel_case_and_fills_missing_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(
+            &path,
+            r#"{ "status": { "soundFile": "a.wav", "bell": false } }"#,
+        )
+        .unwrap();
+        let status = load(&path).status;
+        assert_eq!(
+            status,
+            StatusSettings {
+                sound_file: Some("a.wav".into()),
+                bell: false,
+                ..StatusSettings::default()
+            }
+        );
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(json["soundFile"], "a.wav");
+        assert_eq!(json["volume"], 60);
     }
 
     #[test]
