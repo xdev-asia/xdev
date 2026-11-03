@@ -346,3 +346,27 @@ fn hook_drops_a_notify_that_stop_already_reported() {
         .collect();
     assert_eq!(events, ["prompt", "turn-done", "prompt", "turn-done"]);
 }
+
+#[test]
+fn attention_keeps_its_message_as_detail() {
+    let tmp = tempfile::tempdir().unwrap();
+    let local = tmp.path();
+    let long = "é".repeat(300);
+    for args in [
+        vec!["attention", "--message", "build finished"],
+        vec!["attention", "--message={\"a\":1}"],
+        vec!["attention", "--message", &long],
+        vec!["attention"],
+    ] {
+        let out = hook(local, Some(ID), &args);
+        assert!(out.status.success() && out.stdout.is_empty(), "{out:?}");
+    }
+    let got = lines(local);
+    assert_eq!(got.len(), 4);
+    assert!(got.iter().all(|l| l["event"] == "attention"));
+    assert_eq!(got[0]["detail"]["message"], "build finished");
+    assert_eq!(got[1]["detail"]["message"], "{\"a\":1}");
+    let clipped = got[2]["detail"]["message"].as_str().unwrap();
+    assert_eq!(clipped.chars().count(), 180);
+    assert!(got[3].get("detail").is_none());
+}

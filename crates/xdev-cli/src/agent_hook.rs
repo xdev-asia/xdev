@@ -69,6 +69,13 @@ fn write(event: Event, rest: &[String]) -> Result<(), String> {
     if !valid_pty_id(&id) {
         return Err("XDEV_PTY_ID is not a pane id".to_owned());
     }
+    if event == Event::Attention {
+        let detail = attention_message(rest).map(|message| HookDetail {
+            message: Some(message),
+            ..HookDetail::default()
+        });
+        return append(&local, &id, event, detail);
+    }
     let notify = rest.last().and_then(|arg| json_object(arg.as_bytes()));
     let input = match &notify {
         Some(_) => None,
@@ -91,13 +98,32 @@ fn write(event: Event, rest: &[String]) -> Result<(), String> {
         }
         (None, None) => None,
     };
+    append(&local, &id, event, detail)
+}
+
+fn append(local: &Path, id: &str, event: Event, detail: Option<HookDetail>) -> Result<(), String> {
     let at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
         .unwrap_or(0);
-    append_hook_detail(&local, &id, event.into(), at, detail)
+    append_hook_detail(local, id, event.into(), at, detail)
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+/// `attention --message <text>` (or `--message=<text>`): the text, taken as
+/// is (never as hook JSON); the last one wins. Stdin is not read.
+fn attention_message(rest: &[String]) -> Option<String> {
+    let mut message = None;
+    let mut args = rest.iter();
+    while let Some(arg) = args.next() {
+        if arg == "--message" {
+            message = args.next().cloned();
+        } else if let Some(text) = arg.strip_prefix("--message=") {
+            message = Some(text.to_owned());
+        }
+    }
+    message.filter(|m| !m.is_empty())
 }
 
 /// Up to [`STDIN_MAX`] bytes of stdin, when it is not a terminal and the CLI

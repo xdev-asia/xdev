@@ -90,3 +90,10 @@ Worktree `wt/status-4b-backend`, branch `feat/status-4b-backend` from `feat/stat
   person's file; tests only ever touch temp dirs.
 - Caveat: with `XDEV_DATA_DIR` set, the CLI uses `<data_dir>/settings.json`, which the desktop does not (it always
   uses `app_config_dir`); on Windows/macOS without the env var they are the same file.
+
+## Task 5: complete (C13 `xdev agent-hook attention --message`)
+- `xdev agent-hook attention [--message <text> | --message=<text>]` writes an `attention` line with
+  `detail.message` = the text (clipped to DETAIL_MAX chars by `append_hook_detail`); no/empty message → no detail.
+- For `attention` the arguments are never read as codex notify JSON and stdin is not read (a script's own
+  stdin is not hook JSON). Last `--message` wins. Like every hook call: stdout empty, exit 0, the `.off`
+  marker makes it a no-op.
