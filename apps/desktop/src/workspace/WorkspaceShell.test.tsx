@@ -244,6 +244,22 @@ it("a worktree that leaves the list has its terminals closed", async () => {
   expect(close).toHaveBeenCalledWith("/demo/wt/xdev-oak");
 });
 
+it("a missing repo keeps its worktrees' terminals", async () => {
+  const close = vi.spyOn(Sessions.prototype, "closeWorktree");
+  const api = createMockApi({});
+  const view = await harness(api);
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  sessions.open("/demo/wt/xdev-oak", "shell");
+  const real = api.workspaceList.bind(api);
+  // The repo's folder is unreachable for now, so it comes back with no worktrees.
+  vi.spyOn(api, "workspaceList").mockImplementation(async () =>
+    (await real()).map(r => (r.worktrees.some(w => w.path === "/demo/wt/xdev-oak") ? { ...r, missing: true, worktrees: [] } : r)),
+  );
+  view.list().props.onPin(view.worktree("elm"));
+  await tick();
+  expect(close).not.toHaveBeenCalled();
+});
+
 it("switching worktrees keeps every visited worktree's tabs mounted", async () => {
   const view = await harness();
   const tabs = () => view.of(WorktreeTabs).map(n => [n.props.worktree, n.props.visible]);

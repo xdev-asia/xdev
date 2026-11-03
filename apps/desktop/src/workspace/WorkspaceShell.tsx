@@ -69,9 +69,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     try {
       const list = await api.workspaceList();
       setRepos(list);
-      // A worktree gone from the list (removed outside the app, say) must not keep its ptys.
-      const kept = new Set(list.flatMap((r) => r.worktrees.map((w) => w.path)));
-      for (const path of sessions?.worktrees() ?? []) if (!kept.has(path)) void sessions?.closeWorktree(path);
+      // A worktree gone from the list (removed outside the app, say) must not keep its ptys. A
+      // missing repo lists no worktrees though they may still exist, so nothing closes then.
+      if (!list.some((r) => r.missing)) {
+        const kept = new Set(list.flatMap((r) => r.worktrees.map((w) => w.path)));
+        for (const path of sessions?.worktrees() ?? []) if (!kept.has(path)) void sessions?.closeWorktree(path);
+      }
     } catch (e) {
       setNotice(toApiError(e).code);
       setRepos((r) => r ?? []);
