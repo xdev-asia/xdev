@@ -6,15 +6,16 @@ import { useI18n } from "@/i18n";
 import { Terminal } from "@/terminal/Terminal";
 import { useApprovedStart } from "@/terminal/useApprovedStart";
 import { AgentIcon } from "./AgentIcon";
-import type { Sessions, Split, Tab } from "./sessions";
+import { cliOf, type Sessions, type Split, type Tab, type TabCli } from "./sessions";
 import type { TabStatus } from "./status";
+import { StatusGlyph } from "./StatusGlyph";
+import { titleStatus } from "./titles";
 import { WorktreeDiff } from "./WorktreeDiff";
 
 // Offered while the profile view has not loaded: the built-in agents and the default shell.
 const FALLBACK_AGENTS: readonly PtyProfile[] = ["claude", "codex"];
 const FALLBACK_SHELL: PtyProfile = "shell";
 
-const GLYPH: Record<TabStatus, string> = { working: "●", "needs-you": "?", done: "✓", idle: "○", failed: "✕", exited: "–" };
 
 const ended = (status: TabStatus) => status === "failed" || status === "exited";
 
@@ -100,6 +101,16 @@ export function WorktreeTabs(props: {
 
   const { view } = useProfiles();
   const name = (tab: Tab) => profileName(view, tab.profileId, t);
+  // What the tab strip shows: the terminal's own title once it set one, else the profile.
+  const shownName = (tab: Tab) => tab.title ?? name(tab);
+  const statusLabel = (status: TabStatus) => t(`workspace.tabs.status.${status}`);
+  // The CLI a profile runs, from the profile view; the built-in ids stand in until it loads.
+  const cliFor = (id: PtyProfile): TabCli => {
+    const found = view?.profiles.find((p) => p.profile.id === id);
+    if (!found) return cliOf(id);
+    const cli = found.profile.cli;
+    return cli === "claude" || cli === "codex" ? cli : null;
+  };
   // The `+` menu: agents that are on and installed, then every shell on offer.
   const agents = view ? view.profiles.filter((p) => p.profile.enabled && p.installed).map((p) => p.profile.id) : FALLBACK_AGENTS;
   const shells = view ? view.shells.map((s) => s.id) : [FALLBACK_SHELL];
@@ -125,7 +136,7 @@ export function WorktreeTabs(props: {
   function launch(profile: PtyProfile): void {
     setMenu(false);
     setError(null);
-    setActive(sessions.open(worktree, profile).id);
+    setActive(sessions.open(worktree, profile, null, cliFor(profile)).id);
   }
 
   // Ctrl+Alt+T opens the default agent, in the worktree on screen only. Taken in the capture
@@ -172,28 +183,27 @@ export function WorktreeTabs(props: {
               <button
                 type="button"
                 role="tab"
-                className="ws-tab-main"
+                className={tab.unread ? "ws-tab-main ws-tab-unread" : "ws-tab-main"}
                 data-tab={tab.id}
                 aria-selected={tab.id === shown}
+                aria-label={
+                  tab.unread
+                    ? t("workspace.tabs.unreadLabel", { name: shownName(tab), status: statusLabel(tab.status).toLocaleLowerCase() })
+                    : undefined
+                }
+                title={tab.title ?? undefined}
                 onClick={() => select(tab.id)}
               >
                 <AgentIcon profile={tab.profileId} size={16} />
-                <span>{name(tab)}</span>
+                <span className="ws-tab-name">{shownName(tab)}</span>
                 {tab.permissions === "skip" && (
                   <span className="ws-tab-skip" title={t("workspace.tabs.skipHint")}>
                     <span className="ws-tab-skip-dot" aria-hidden="true" />
                     {t("workspace.tabs.skip")}
                   </span>
                 )}
-                <span
-                  className={tab.status === "working" ? "ws-tab-glyph ws-pulse" : "ws-tab-glyph"}
-                  data-status={tab.status}
-                  role="img"
-                  aria-label={t(`workspace.tabs.status.${tab.status}`)}
-                  title={t(`workspace.tabs.status.${tab.status}`)}
-                >
-                  {GLYPH[tab.status]}
-                </span>
+                {/* Plain shells are not agents: no status mark. */}
+                {StatusGlyph({ status: tab.agent ? tab.status : null, label: statusLabel(tab.status) })}
               </button>
               <button
                 type="button"
@@ -328,6 +338,11 @@ export function WorktreeTabs(props: {
               onError={(e) => failed(tab, e)}
               onOutput={(bytes) => sessions.noteOutput(tab.id, bytes)}
               onInput={(text) => sessions.noteInput(tab.id, text)}
+              onTitle={(title) => {
+                sessions.noteTitle(tab.id, title);
+                const status = titleStatus(tab.cli, title);
+                if (status) sessions.noteTitleStatus(tab.id, status);
+              }}
             />
           </div>
         ))}

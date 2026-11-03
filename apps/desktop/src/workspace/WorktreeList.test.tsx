@@ -62,13 +62,13 @@ function harness(dots: Record<string, "working" | "failed" | "idle" | "done"> = 
   };
   const all = () => nodes(draw());
   const html = () => renderToStaticMarkup(draw());
-  const row = (path: string) => all().find(n => n.props.className === "ws-wt" && n.props["data-path"] === path)!;
+  const row = (path: string) => all().find(n => /^ws-wt( |$)/.test(n.props.className ?? "") && n.props["data-path"] === path)!;
   const inRow = (path: string) => nodes(row(path).props.children);
   const main = (path: string) => inRow(path).find(n => n.props.className === "ws-wt-main")!;
   const more = (path: string) => inRow(path).find(n => n.props.className === "ws-wt-more");
   const item = (label: string) => all().find(n => n.props.role === "menuitem" && n.props.children === label);
   const menu = () => all().find(n => n.props.role === "menu");
-  return { calls, all, html, row, main, more, item, menu };
+  return { calls, all, html, row, inRow, main, more, item, menu };
 }
 
 // A stand-in for the open menu's DOM: its items and the row's more button record focus.
@@ -95,8 +95,9 @@ it("lists worktrees by status group, keeps repo order inside one, and no delete 
   expect(html).toContain(en("workspace.primary"));
   expect(html).toContain(en("workspace.missing"));
   expect(html).toContain(en("workspace.detached"));
-  expect(html).toContain('data-dot="working"');
-  expect(html).toContain('data-dot="failed"');
+  expect(html).toContain('class="ws-glyph" data-status="working"');
+  expect(html).toContain('class="ws-glyph" data-status="failed"');
+  expect(html).toContain(`aria-label="${en("workspace.status.failed")}"`);
   expect(html).toContain(`aria-label="${en("workspace.pinned")}"`);
   expect(view.main("/demo/wt/xdev-oak").props["aria-current"]).toBe("true");
 
@@ -120,6 +121,33 @@ it("lists worktrees by status group, keeps repo order inside one, and no delete 
   view.more("/demo/wt/xdev-elm")!.props.onClick();
   view.item(en("workspace.unpin"))!.props.onClick();
   expect(view.calls.pin.map(w => w.path)).toEqual(["/demo/xdev", "/demo/wt/xdev-elm"]);
+});
+
+it("an unread worktree is bold, says so, and the menu can mark one unread", () => {
+  const marked: string[] = [];
+  const view = harness({ ...DOTS, "/demo/xdev": "done" }, repos, {
+    unread: { "/demo/xdev": true },
+    onMarkUnread: (w) => void marked.push(w.path),
+  });
+  expect(view.row("/demo/xdev").props.className).toBe("ws-wt ws-wt-unread");
+  expect(view.row("/demo/wt/xdev-oak").props.className).toBe("ws-wt");
+  const glyph = view.inRow("/demo/xdev").find(n => n.props.className === "ws-glyph")!;
+  expect(glyph.props["data-status"]).toBe("done");
+  expect(glyph.props["aria-label"]).toBe(`${en("workspace.status.done")}, unread`);
+  expect(translate("vi", "workspace.unreadStatus", { status: "x" })).toBe("x, chưa xem");
+
+  // Right-click and the more button open the same menu, both with Mark unread.
+  view.main("/demo/wt/xdev-oak").props.onContextMenu(event);
+  view.item(en("workspace.markUnread"))!.props.onClick();
+  view.more("/demo/wt/xdev-elm")!.props.onClick();
+  view.item(en("workspace.markUnread"))!.props.onClick();
+  expect(marked).toEqual(["/demo/wt/xdev-oak", "/demo/wt/xdev-elm"]);
+  expect(view.menu()).toBeUndefined();
+
+  // Without the callback the item is not offered.
+  const plain = harness();
+  plain.main("/demo/wt/xdev-oak").props.onContextMenu(event);
+  expect(plain.item(en("workspace.markUnread"))).toBeUndefined();
 });
 
 it("new worktree and add repo call back", () => {

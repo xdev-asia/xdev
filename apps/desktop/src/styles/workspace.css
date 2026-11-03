@@ -779,17 +779,83 @@
   color: var(--signal);
 }
 
-.ws-tab-glyph {
-  font-size: 10px;
-  color: var(--text-2);
+/* The status glyph of a tab or worktree row. Shape carries the state, so no colored stripe:
+   working spins, needs-you is a "?", done a check, failed and idle a dot, exited a hollow ring. */
+.ws-glyph {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 
-.ws-tab-glyph[data-status="working"] {
-  color: var(--signal);
+.ws-glyph[data-status="working"] {
+  border: 1.5px solid var(--line);
+  border-top-color: var(--signal);
+  border-radius: 50%;
+  animation: ws-spin 0.9s linear infinite;
 }
 
-.ws-tab-glyph[data-status="failed"] {
-  color: var(--danger);
+.ws-glyph[data-status="needs-you"] {
+  color: var(--warn);
+}
+
+.ws-glyph[data-status="done"] {
+  color: var(--ok);
+}
+
+.ws-glyph[data-status="failed"]::before,
+.ws-glyph[data-status="idle"]::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  content: "";
+}
+
+.ws-glyph[data-status="failed"]::before {
+  background: var(--danger);
+}
+
+.ws-glyph[data-status="idle"]::before {
+  background: var(--text-3);
+}
+
+.ws-glyph[data-status="exited"]::before {
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--text-3);
+  border-radius: 50%;
+  content: "";
+}
+
+@keyframes ws-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A tab name: an OSC title can be long, so it ends in an ellipsis. */
+.ws-tab-name {
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Unread: a tab or worktree whose agent finished or asked while nobody looked. */
+.ws-tab-unread .ws-tab-name {
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.ws-wt-unread .ws-wt-name {
+  font-weight: 800;
+  color: var(--text-1);
 }
 
 /* An agent tab that runs without asking: a red dot and a pill. */
@@ -1543,6 +1609,11 @@ button.ws-tree-row:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .ws-pulse {
+    animation: none;
+  }
+
+  /* Still, the spinner stays a ring with one bright quarter. */
+  .ws-glyph[data-status="working"] {
     animation: none;
   }
 
