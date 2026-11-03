@@ -37,6 +37,8 @@ pub enum GitError {
     Rejected(String),
     #[error("local and remote history have diverged")]
     Diverged,
+    #[error("a commit hook failed: {output}")]
+    Hook { output: String },
     #[error("timeout")]
     Timeout,
     #[error("git {args} failed ({status:?}): {stderr}")]
@@ -60,6 +62,7 @@ impl GitError {
             GitError::Detached => "detached",
             GitError::Rejected(_) => "push_rejected",
             GitError::Diverged => "pull_diverged",
+            GitError::Hook { .. } => "hook_failed",
             GitError::BadId(_) | GitError::Timeout | GitError::Failed { .. } => "git",
             GitError::Io(_) => "io",
         }

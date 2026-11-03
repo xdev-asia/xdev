@@ -176,6 +176,12 @@ fn codes_are_stable() {
         (GitError::BadId(String::new()), "git"),
         (GitError::Timeout, "git"),
         (
+            GitError::Hook {
+                output: String::new(),
+            },
+            "hook_failed",
+        ),
+        (
             GitError::Failed {
                 args: String::new(),
                 status: Some(1),

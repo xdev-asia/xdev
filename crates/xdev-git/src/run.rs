@@ -29,6 +29,16 @@ pub(crate) fn run_long(workdir: &Path, args: &[&str]) -> Result<Output, GitError
     spawn(workdir, args, None, true, LONG_TIMEOUT)
 }
 
+/// Like `run`, but the whole result survives a failure, so the caller can
+/// show what a hook printed.
+pub(crate) fn run_output(
+    workdir: &Path,
+    args: &[&str],
+    stdin: Option<&[u8]>,
+) -> Result<Output, GitError> {
+    spawn(workdir, args, stdin, true, TIMEOUT)
+}
+
 /// Like `run`, but pathspecs keep their magic. Only for callers that write
 /// the magic themselves, such as `:(top,glob)` in front of every entry.
 pub(crate) fn run_magic(workdir: &Path, args: &[&str]) -> Result<Vec<u8>, GitError> {
