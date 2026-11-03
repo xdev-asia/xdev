@@ -290,7 +290,11 @@ pub fn pty_spawn(
     cols: u16,
     rows: u16,
     out: Channel<InvokeResponseBody>,
+    resume: Option<String>,
 ) -> Result<PtyInfo, CmdError> {
+    if resume.is_some() {
+        return Err(crate::workspace::bad_arg("resume"));
+    }
     let data = data_dir(&state)?;
     let hooks = hooks_now(&app);
     let launch = launch_for(data, &profile_id, account.as_deref(), hooks.as_deref())?;
@@ -322,7 +326,11 @@ pub fn pty_approve(
     ptys: State<'_, Ptys>,
     profile_id: String,
     account: Option<String>,
+    resume: Option<String>,
 ) -> Result<(), CmdError> {
+    if resume.is_some() {
+        return Err(crate::workspace::bad_arg("resume"));
+    }
     let data = data_dir(&state)?;
     let hooks = hooks_now(&app);
     let launch = launch_for(data, &profile_id, account.as_deref(), hooks.as_deref())?;

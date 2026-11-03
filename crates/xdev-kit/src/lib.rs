@@ -3,6 +3,7 @@
 
 mod homes;
 mod memory;
+mod sessions;
 mod skills;
 mod usage;
 mod write;
@@ -11,6 +12,7 @@ pub use homes::{Agent, Home, HomeSource, KitError, approx_tokens, homes};
 pub use memory::{
     IssueKind, MemoryFile, MemoryIssue, MemoryKind, MemorySet, project_slug, scan_memory,
 };
+pub use sessions::{AgentSession, SessionIndex};
 pub use skills::{Skill, SkillScope, scan_skills};
 pub use usage::{
     FileMark, RefreshStats, SessionUsage, Tokens, UsageIndex, UsageQuery, UsageSummary, summarize,

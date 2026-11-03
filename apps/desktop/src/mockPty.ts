@@ -4,6 +4,7 @@ import type { MockProfiles } from "./mockProfiles";
 type PtyApi = Pick<Api, "ptySpawn" | "ptyApprove" | "ptyWrite" | "ptyResize" | "ptyAck" | "ptyKill" | "onPtyExit">;
 
 const PROMPT = "$ ";
+const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 function reject(code: ApiError["code"], detail?: string): Promise<never> {
   const error: ApiError = detail === undefined ? { code } : { code, detail };
@@ -24,11 +25,13 @@ export function createMockPty(profiles: Pick<MockProfiles, "__launchError" | "__
   const exits = new Set<(exit: PtyExit) => void>();
 
   return {
-    async ptySpawn(id, _cwd, profileId, account, _cols, _rows, onData) {
+    async ptySpawn(id, _cwd, profileId, account, _cols, _rows, onData, resume) {
       const refused = profiles.__launchError(profileId);
       if (refused) return reject(refused);
       if (ptys.has(id)) return reject("pty_exists");
       const agent = !profileId.startsWith("shell");
+      // Like Rust: only an agent resumes, and the id is a plain token.
+      if (resume !== undefined && (!agent || !SESSION_ID.test(resume))) return reject("bad_arg", "resume");
       const permissions = agent ? (profiles.__permissions(profileId) ?? "ask") : "ask";
       if (agent) {
         // A skip launch is approved for one start only.
