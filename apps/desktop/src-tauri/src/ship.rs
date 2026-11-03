@@ -813,11 +813,14 @@ mod tests {
         let fx = fixture();
         let hooks = fx.main.join(".git").join("hooks");
         fs::create_dir_all(&hooks).unwrap();
-        fs::write(
-            hooks.join("pre-commit"),
-            "#!/bin/sh\necho lint failed >&2\nexit 1\n",
-        )
-        .unwrap();
+        let hook = hooks.join("pre-commit");
+        fs::write(&hook, "#!/bin/sh\necho lint failed >&2\nexit 1\n").unwrap();
+        // Git skips hooks that are not executable on Unix.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+        }
         fs::write(fx.wt.join("x.txt"), "x").unwrap();
         let e: CmdError = Repo::discover(&fx.wt)
             .unwrap()
