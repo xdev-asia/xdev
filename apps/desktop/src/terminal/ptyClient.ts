@@ -22,6 +22,8 @@ export class PtyClient {
   constructor(
     private readonly api: Api,
     readonly id: string,
+    /** An agent session id the pty continues (`--resume`); a restart of the client keeps it. */
+    private readonly resume?: string,
   ) {}
 
   async start(
@@ -51,6 +53,7 @@ export class PtyClient {
     const info = await this.api.ptySpawn(this.id, cwd, profileId, account, cols, rows, (bytes) =>
       // Acked once the terminal has drawn it, so a slow view pauses the pty.
       write(bytes, () => this.rendered(bytes.length)),
+      this.resume,
     );
     this.size = [cols, rows];
     this.live = true;

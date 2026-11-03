@@ -117,6 +117,25 @@ export class Sessions {
   }
 
   /**
+   * Opens an agent tab that continues the CLI session `sessionId`. The tab carries `title` (the
+   * session's first prompt) until the terminal sets its own; a hand name still wins.
+   */
+  resume(worktree: string, profileId: PtyProfile, account: string | null, sessionId: string, title: string | null = null, cli?: TabCli): Tab {
+    const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, sessionId, title);
+    this.entries.set(entry.tab.id, entry);
+    this.cache.delete(worktree);
+    const layout = this.layouts.get(worktree);
+    this.layouts.set(worktree, layout ? addTab(layout, entry.tab.id) : single(entry.tab.id));
+    this.emit();
+    return entry.tab;
+  }
+
+  /** A tab by its pty id; `null` when it is gone. */
+  tab(id: string): Tab | null {
+    return this.entries.get(id)?.tab ?? null;
+  }
+
+  /**
    * Starts a tab again in its place: same worktree and profile, a new pty id. The old pty is
    * killed, since an exited terminal keeps its slot until then. `null` for an unknown id.
    */
@@ -126,7 +145,7 @@ export class Sessions {
     this.clear(this.settle, id);
     this.clear(this.announce, id);
     this.clear(this.stale, id);
-    const next = this.entry(old.tab.worktree, old.tab.profileId, old.tab.account, old.tab.cli);
+    const next = this.entry(old.tab.worktree, old.tab.profileId, old.tab.account, old.tab.cli, old.tab.resumeOf, old.tab.title);
     const kept = [...this.entries].map(([key, e]): [string, Entry] => (key === id ? [next.tab.id, next] : [key, e]));
     this.entries.clear();
     for (const [key, e] of kept) this.entries.set(key, e);
@@ -487,7 +506,7 @@ export class Sessions {
     this.emit();
   }
 
-  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli): Entry {
+  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null): Entry {
     const id = crypto.randomUUID();
     const tab: Tab = {
       id,
@@ -501,10 +520,10 @@ export class Sessions {
       unread: false,
       unreadAt: null,
       unreadReason: null,
-      title: null,
+      title,
       renamed: false,
-      resumeOf: null,
-      client: new PtyClient(this.api, id),
+      resumeOf,
+      client: new PtyClient(this.api, id, resumeOf ?? undefined),
     };
     // Caps stay off until the pty says whether it got hook flags.
     return { tab, state: start(), caps: NO_CAPS };

@@ -291,6 +291,7 @@ export function WorktreeTabs(props: {
       // A tab whose pty never started has nothing to show; the reason stays in the banner.
       () => void sessions.close(tab.id),
       tab.account,
+      tab.resumeOf ?? undefined,
     );
   }
 

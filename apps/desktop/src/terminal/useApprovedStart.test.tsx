@@ -78,3 +78,14 @@ it("shows any other failure as the error and resolves null", async () => {
   expect(await s.start()).toBeNull();
   expect(s.draw().error).toEqual({ code: "pty_spawn", detail: "boom" });
 });
+
+it("approves a resume launch with the same resume id", async () => {
+  const s = setup();
+  const approve = vi.spyOn(s.api, "ptyApprove");
+  const client = new PtyClient(s.api, "t-2", "abc-1");
+  const started = s.draw().start(client, "/demo", "claude", 80, 24, () => {}, null, "abc-1");
+  await tick();
+  s.dialog().onConfirm();
+  expect(await started).toMatchObject({ id: "t-2" });
+  expect(approve).toHaveBeenCalledWith("claude", null, "abc-1");
+});
