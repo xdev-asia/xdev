@@ -121,6 +121,18 @@ export class Sessions {
     );
   }
 
+  /** When any tab of a worktree last produced output (not an echo of typing); null if none did. */
+  lastActivity(worktree: string): number | null {
+    let latest = 0;
+    for (const e of this.entries.values()) if (e.tab.worktree === worktree) latest = Math.max(latest, e.state.lastOutput);
+    return latest > 0 ? latest : null;
+  }
+
+  /** The distinct profiles of a worktree's tabs, in tab order. */
+  profilesOf(worktree: string): PtyProfile[] {
+    return [...new Set(this.tabs(worktree).map((t) => t.profileId))];
+  }
+
   noteInput(id: string): void {
     this.apply(id, { kind: "input", at: this.now() });
   }

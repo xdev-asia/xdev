@@ -65,4 +65,5 @@ export type { Wait } from "./Wait";
 export type { WorktreeChange } from "./WorktreeChange";
 export type { WorktreeFileDiff } from "./WorktreeFileDiff";
 export type { WorktreeSkip } from "./WorktreeSkip";
+export type { WorktreeStat } from "./WorktreeStat";
 export type { WorktreeView } from "./WorktreeView";

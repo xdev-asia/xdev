@@ -1,4 +1,4 @@
-import type { Api, ApiError, RepoView, WorktreeChange, WorktreeFileDiff, WorktreeView } from "./api";
+import type { Api, ApiError, RepoView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 
 type WorkspaceApi = Pick<
   Api,
@@ -11,6 +11,7 @@ type WorkspaceApi = Pick<
   | "worktreeChanges"
   | "worktreeFileDiff"
   | "worktreeCommit"
+  | "worktreeStat"
 >;
 
 export type MockWorkspaceSeed = {
@@ -62,6 +63,17 @@ function slug(name: string): string {
     .join("")
     .replace(/^[-.]+/, "")
     .slice(0, 48);
+}
+
+// Fixed line counts per kind, so the demo rows show numbers that follow the pending changes.
+function demoStat(pending: WorktreeChange[]): WorktreeStat {
+  const lines = { added: [3, 0], modified: [1, 1], deleted: [0, 2] } as const;
+  const stat: WorktreeStat = { files: pending.length, added: 0, removed: 0 };
+  for (const { kind } of pending) {
+    stat.added += lines[kind][0];
+    stat.removed += lines[kind][1];
+  }
+  return stat;
 }
 
 const WORDS = ["birch", "cedar", "fir", "maple", "pine", "willow"];
@@ -167,6 +179,11 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
       changes.set(path, rest);
       commits += 1;
       return commits.toString(16).padStart(40, "a");
+    },
+    async worktreeStat(path) {
+      const found = findWorktree(path);
+      if (!found) return reject("worktree_unknown", path);
+      return demoStat(found.wt.primary ? [] : (changes.get(path) ?? []));
     },
   };
 }

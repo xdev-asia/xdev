@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { RepoView, WorktreeView } from "../api";
 import { translate } from "../i18n";
 import { DEMO_WORKSPACE } from "../mockWorkspace";
-import { WorktreeList } from "./WorktreeList";
+import { WorktreeList, type WorktreeListProps } from "./WorktreeList";
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0 }));
 vi.mock("react", async (original) => ({
@@ -39,7 +39,7 @@ const repos = (): RepoView[] => {
 
 const DOTS: Record<string, "working" | "failed" | "idle"> = { "/demo/wt/xdev-oak": "working", "/demo/wt/xdev-elm": "failed" };
 
-function harness(dots: Record<string, "working" | "failed" | "idle"> = DOTS, list: () => RepoView[] = repos) {
+function harness(dots: Record<string, "working" | "failed" | "idle"> = DOTS, list: () => RepoView[] = repos, extra: Partial<WorktreeListProps> = {}) {
   const calls = { select: [] as WorktreeView[], create: 0, pin: [] as WorktreeView[], remove: [] as WorktreeView[], add: 0 };
   const draw = () => {
     hooks.cursor = 0;
@@ -47,6 +47,7 @@ function harness(dots: Record<string, "working" | "failed" | "idle"> = DOTS, lis
       repos: list(),
       selected: "/demo/wt/xdev-oak",
       dots,
+      ...extra,
       onSelect: (w) => calls.select.push(w),
       onCreate: () => void calls.create++,
       onPin: (w) => calls.pin.push(w),
@@ -197,4 +198,48 @@ it("collapses a group on header click", () => {
   expect(head(view, "working").props["aria-expanded"]).toBe(false);
   head(view, "working").props.onClick();
   expect(view.html()).toContain("/demo/wt/xdev-oak");
+});
+
+const NOW = 1_000_000_000;
+const text = (node: Node): string => [node.props.children].flat().filter(c => typeof c === "string").join("");
+const withData = (extra: Partial<WorktreeListProps> = {}) => harness(DOTS, repos, {
+  now: NOW,
+  stats: { "/demo/wt/xdev-oak": { files: 3, added: 5, removed: 1 }, "/demo/wt/xdev-elm": { files: 0, added: 0, removed: 0 } },
+  activity: { "/demo/wt/xdev-oak": NOW - 5 * 60_000 },
+  profiles: { "/demo/wt/xdev-oak": ["claude", "shell", "codex"], "/demo/wt/xdev-elm": ["shell"] },
+  ...extra,
+});
+const part = (view: ReturnType<typeof harness>, path: string, cls: string) => nodes(view.row(path).props.children).filter(n => n.props.className === cls);
+
+it("row shows time, branch, agent chips and line counts", () => {
+  const view = withData();
+  const oak = "/demo/wt/xdev-oak";
+  expect(part(view, oak, "ws-wt-time").map(text)).toEqual(["5 min"]);
+  expect(part(view, oak, "ws-wt-branch").map(text)).toEqual(["oak"]);
+  // Chips for the agents in tab order; the shell has none.
+  expect(part(view, oak, "ws-chip").map(text)).toEqual(["C", "X"]);
+  expect(part(view, oak, "ws-chip").map(n => n.props["data-profile"])).toEqual(["claude", "codex"]);
+  expect(part(view, oak, "ws-chip").map(n => n.props.title)).toEqual([en("terminal.profile.claude"), en("terminal.profile.codex")]);
+  const counts = part(view, oak, "ws-stat")[0];
+  expect(nodes(counts.props.children).filter(n => typeof n.props.children === "string").map(n => n.props.children).join(" ")).toBe("+5 −1");
+  expect(counts.props.title).toBe(en("workspace.row.stat", { files: 3, added: 5, removed: 1 }));
+  expect(view.html()).toContain("+5</span> <span");
+
+  // Nothing read, nothing run, no chip and no counts: the row keeps just its name and branch.
+  for (const path of ["/demo/wt/xdev-elm", "/demo/xdev", "/code/notes"]) {
+    expect(part(view, path, "ws-wt-time")).toHaveLength(0);
+    expect(part(view, path, "ws-chip")).toHaveLength(0);
+    expect(part(view, path, "ws-stat")).toHaveLength(0);
+    expect(part(view, path, "ws-wt-meta")).toHaveLength(0);
+  }
+});
+
+it("a long name and branch are cut by the row and keep their full text in a title", () => {
+  const long = "feature/a-very-long-branch-name-that-does-not-fit-in-the-sidebar-at-all";
+  const view = withData({ repos: structuredClone(repos()).map(r => ({ ...r, worktrees: r.worktrees.map(w => w.name === "oak" ? { ...w, name: long, branch: long } : w) })) });
+  const oak = "/demo/wt/xdev-oak";
+  expect(nodes(view.row(oak).props.children).find(n => n.props.className === "ws-wt-name")!.props.title).toBe(long);
+  expect(part(view, oak, "ws-wt-branch")[0].props.title).toBe(long);
+  // The counts stay in their own non-shrinking element, after the cut text.
+  expect(part(view, oak, "ws-stat")).toHaveLength(1);
 });

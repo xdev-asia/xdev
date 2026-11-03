@@ -113,6 +113,7 @@ pub fn run() {
             workspace::worktree_pin,
             workspace::worktree_remove,
             workspace::worktree_changes,
+            workspace::worktree_stat,
             workspace::worktree_file_diff,
             workspace::worktree_commit,
         ])

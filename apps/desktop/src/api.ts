@@ -38,6 +38,7 @@ import type {
   RepoView,
   WorktreeChange,
   WorktreeFileDiff,
+  WorktreeStat,
   WorktreeView,
 } from "@xdev/bindings";
 import type { Target } from "./doc/frontmatter";
@@ -94,6 +95,7 @@ export type {
   WorktreeChange,
   WorktreeFileDiff,
   WorktreeSkip,
+  WorktreeStat,
   WorktreeView,
 } from "@xdev/bindings";
 // The UI's names for generated types.
@@ -287,6 +289,8 @@ export interface Api {
   worktreeFileDiff(path: string, file: string): Promise<WorktreeFileDiff>;
   // The new commit's id, or null when none of `files` had a change. Rejects with `empty_message`.
   worktreeCommit(path: string, files: string[], message: string): Promise<string | null>;
+  // Line counts against the start ref (against HEAD for the primary checkout), untracked files included.
+  worktreeStat(path: string): Promise<WorktreeStat>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -451,6 +455,7 @@ const tauriApi: Api = {
   worktreeChanges: (path) => call("worktree_changes", { path }),
   worktreeFileDiff: (path, file) => call("worktree_file_diff", { path, file }),
   worktreeCommit: (path, files, message) => call("worktree_commit", { path, files, message }),
+  worktreeStat: (path) => call("worktree_stat", { path }),
 };
 
 function browserApi(): Api {

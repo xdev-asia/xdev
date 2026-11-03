@@ -450,6 +450,84 @@ pub fn remove_worktree(reg: &mut Registry, path: &Path, force: bool) -> Result<(
     Ok(())
 }
 
+/// What a worktree changed against where it started, for its sidebar row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeStat {
+    pub files: u32,
+    pub added: u32,
+    pub removed: u32,
+}
+
+/// Untracked files bigger than this are counted as a file, not by line.
+const MAX_STAT_BYTES: u64 = 1 << 20;
+/// Git's own look for binary: a NUL in the first 8 KiB.
+const SNIFF_BYTES: usize = 8 << 10;
+
+/// Lines of an untracked file; 0 for a link, a binary or a huge file.
+fn lines_of(file: &Path) -> u32 {
+    let Ok(meta) = fs::symlink_metadata(file) else {
+        return 0;
+    };
+    if !meta.is_file() || meta.len() > MAX_STAT_BYTES {
+        return 0;
+    }
+    let Ok(bytes) = fs::read(file) else {
+        return 0;
+    };
+    if bytes[..bytes.len().min(SNIFF_BYTES)].contains(&0) {
+        return 0;
+    }
+    let newlines = bytes.iter().filter(|b| **b == b'\n').count();
+    let open_line = bytes.last().is_some_and(|b| *b != b'\n');
+    u32::try_from(newlines + usize::from(open_line)).unwrap_or(u32::MAX)
+}
+
+/// Files and lines that differ from the worktree's start commit (`HEAD` for
+/// the primary checkout): committed since, staged, unstaged, and untracked
+/// files counted as added lines. A folder the registry does not know is
+/// `WorktreeUnknown`.
+pub fn stat(reg: &Registry, path: &Path) -> Result<WorktreeStat, WorkspaceError> {
+    let key = path_key(path);
+    // The registry decides first, so a folder it does not know is never read.
+    let start = reg
+        .worktrees
+        .iter()
+        .find(|m| path_key(&m.path) == key)
+        .map(|m| m.start.clone());
+    if start.is_none() && !reg.repos.iter().any(|r| path_key(&r.path) == key) {
+        return Err(WorkspaceError::WorktreeUnknown(path.to_owned()));
+    }
+    let repo = Repo::discover(path)?;
+    let base = match start {
+        Some(start) => Some(start),
+        None => repo.head_id()?,
+    };
+    let mut files = 0u32;
+    let mut added = 0u32;
+    let mut removed = 0u32;
+    if let Some(base) = base {
+        for line in repo.numstat_since(&base)? {
+            files = files.saturating_add(1);
+            added =
+                added.saturating_add(u32::try_from(line.added.unwrap_or(0)).unwrap_or(u32::MAX));
+            removed = removed
+                .saturating_add(u32::try_from(line.removed.unwrap_or(0)).unwrap_or(u32::MAX));
+        }
+    }
+    let top = repo.root();
+    for file in repo.untracked()? {
+        files = files.saturating_add(1);
+        added = added.saturating_add(lines_of(&top.join(&file)));
+    }
+    Ok(WorktreeStat {
+        files,
+        added,
+        removed,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
