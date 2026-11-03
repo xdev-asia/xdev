@@ -10,8 +10,8 @@ use serde::Serialize;
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, State};
 use xdev_agent::{
-    Context, Launch, LaunchError, Permissions, Profile, Profiles, find_builtin, find_program,
-    list_shells, resolve, wsl_distros,
+    Context, HookEvent, Launch, LaunchError, Permissions, Profile, Profiles, find_builtin,
+    find_program, list_shells, resolve, wsl_distros,
 };
 use xdev_ai::Registry;
 use xdev_policy::{Action, Audited, Policy, Verdict, agent_fingerprint};
@@ -56,6 +56,9 @@ pub struct PtyInfo {
     account: Option<String>,
     // Whether the launch got the status hook flags.
     hooks: bool,
+    // The hook events the launch reports (version gate, codex private home or
+    // notify alone); the UI picks its caps from these.
+    hook_events: Vec<HookEvent>,
 }
 
 /// Payload of the `pty://exit` event.
@@ -226,6 +229,7 @@ pub(crate) fn spawn_launch(
         permissions: launch.permissions.as_str().to_owned(),
         account: launch.account,
         hooks: launch.hooks,
+        hook_events: launch.hook_events,
     };
     map.insert(id, session);
     Ok(info)
@@ -377,6 +381,7 @@ mod tests {
             startup: vec![],
             cli: Some(Cli::Claude),
             hooks: false,
+            hook_events: Vec::new(),
         }
     }
 
@@ -415,7 +420,10 @@ mod tests {
         );
         approve_launch(&ptys, data.path(), &l).unwrap();
         let (info, _) = start(&ptys, data.path(), "a", l);
-        assert!(info.unwrap().hooks);
+        let info = info.unwrap();
+        assert!(info.hooks);
+        // An unknown claude: the two ungated events.
+        assert_eq!(info.hook_events, [HookEvent::Prompt, HookEvent::TurnDone]);
         ptys.kill_all();
 
         // Turning hooks off is a different launch line: asked again.

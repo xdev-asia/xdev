@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
-import type { PtyInfo } from "@/api";
+import type { HookEvent, PtyInfo } from "@/api";
 import { INTERRUPT_MS, STALE_MS } from "./status";
 import { DONE_QUIET_MS, Sessions } from "./sessions";
 
@@ -9,7 +9,9 @@ const B = "/demo/wt/xdev-elm";
 
 type Profile = string;
 
-const info = (id: string, hooks: boolean): PtyInfo => ({
+const CLAUDE: HookEvent[] = ["prompt", "needs-input", "resume", "turn-failed", "turn-done"];
+// `true`: a claude past the version gate; a list: just those events.
+const info = (id: string, hooks: boolean | HookEvent[]): PtyInfo => ({
   id,
   pid: 1,
   program: "agent",
@@ -17,7 +19,8 @@ const info = (id: string, hooks: boolean): PtyInfo => ({
   profile: "claude",
   permissions: "ask",
   account: null,
-  hooks,
+  hooks: hooks !== false,
+  hookEvents: hooks === true ? CLAUDE : hooks === false ? [] : hooks,
 });
 
 async function spawn(sessions: Sessions, worktree: string, profile: Profile) {
@@ -437,7 +440,8 @@ describe("Sessions", () => {
     const api = createMockApi({});
     const live = (sessions = new Sessions(api, () => t));
     const tab = live.open(A, "codex");
-    live.noteStarted(tab.id, info(tab.id, true));
+    // codex on notify alone: the turn end only.
+    live.noteStarted(tab.id, info(tab.id, ["turn-done"]));
     live.noteOutput(tab.id, 5);
     expect(live.tabs(A)[0].status).toBe("working");
     // codex ends its turn by hook, so quiet does not: only the 30 minute stale timer waits.

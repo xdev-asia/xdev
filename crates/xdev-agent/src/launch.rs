@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 
 use xdev_ai::{AiError, Provider, Registry, codex_home};
 
-use crate::codex_home::prepare_codex_home;
+use crate::codex_home::{codex_hook_events, prepare_codex_home};
 use crate::flags::flags;
-use crate::hooks::hook_args;
+use crate::hooks::{HookEvent, hook_args, hook_events};
 use crate::profiles::{Cli, Permissions, Profile, ProfileError, Profiles};
 use crate::shells::{ShellEntry, default_shell_id};
 use crate::version::{CliVersion, cli_version};
@@ -33,6 +33,9 @@ pub struct Launch {
     pub cli: Option<Cli>,
     /// Whether `args` carry the status hook flags (`add_hooks`).
     pub hooks: bool,
+    /// The hook events the launch reports, each once; empty without hooks.
+    /// A codex on its private home reports more than on `notify` alone.
+    pub hook_events: Vec<HookEvent>,
 }
 
 impl Launch {
@@ -72,6 +75,7 @@ impl Launch {
         // `xdev agent-hook` drops it when `Stop` already did.
         self.args.extend(flags);
         self.hooks = true;
+        self.hook_events = hook_events(cli, version);
         if cli == Cli::Codex
             && let (Some(data_dir), Some(version)) = (data_dir, version)
         {
@@ -106,6 +110,7 @@ impl Launch {
         };
         self.env.retain(|(key, _)| !is_var(key));
         self.env.push((var.to_owned(), home.into_os_string()));
+        self.hook_events = codex_hook_events(version);
     }
 
     /// What to spawn: `program` and `args` as they are, or, with startup
@@ -246,6 +251,7 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
             .collect(),
         cli: profile.cli,
         hooks: false,
+        hook_events: Vec::new(),
     })
 }
 
@@ -271,6 +277,7 @@ fn resolve_shell(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         startup: Vec::new(),
         cli: None,
         hooks: false,
+        hook_events: Vec::new(),
     })
 }
 
@@ -745,6 +752,7 @@ mod tests {
             startup: startup.iter().map(|a| (*a).to_owned()).collect(),
             cli: None,
             hooks: false,
+            hook_events: Vec::new(),
         }
     }
 
@@ -901,6 +909,40 @@ mod tests {
                 .join("auth.json")
                 .exists()
         );
+    }
+
+    #[test]
+    fn hook_events_say_what_the_launch_reports() {
+        use crate::hooks::HookEvent::*;
+        let p = Profiles::default();
+        let xdev = Path::new("/opt/xdev");
+        let mut unknown = run(&p, "claude", None, &found).unwrap();
+        assert!(unknown.hook_events.is_empty());
+        unknown.add_hooks_with(xdev, None, None);
+        assert_eq!(unknown.hook_events, [Prompt, TurnDone]);
+        let mut known = run(&p, "claude", None, &found).unwrap();
+        known.add_hooks_with(xdev, None, Some(CliVersion(2, 1, 317)));
+        assert_eq!(
+            known.hook_events,
+            [Prompt, NeedsInput, Resume, TurnFailed, TurnDone]
+        );
+
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tmp.path().join("data");
+        // Private home: the hooks it holds; Interrupt only from 0.150.
+        let (mut l, _) = codex_in(tmp.path(), "CODEX_HOME");
+        l.add_hooks_with(xdev, Some(&data), Some(CliVersion(0, 165, 0)));
+        assert_eq!(
+            l.hook_events,
+            [Prompt, NeedsInput, Resume, TurnDone, Interrupt]
+        );
+        let (mut l, _) = codex_in(tmp.path(), "CODEX_HOME");
+        l.add_hooks_with(xdev, Some(&data), Some(CliVersion(0, 140, 0)));
+        assert_eq!(l.hook_events, [Prompt, NeedsInput, Resume, TurnDone]);
+        // notify alone: the end of a turn only.
+        let (mut l, _) = codex_in(tmp.path(), "CODEX_HOME");
+        l.add_hooks_with(xdev, Some(&data), Some(CliVersion(0, 135, 0)));
+        assert_eq!(l.hook_events, [TurnDone]);
     }
 
     #[test]

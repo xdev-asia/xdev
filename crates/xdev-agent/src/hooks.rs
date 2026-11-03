@@ -81,6 +81,33 @@ pub enum HookEvent {
     Attention,
 }
 
+impl HookEvent {
+    /// The event an `xdev agent-hook <name>` writes.
+    pub fn from_name(name: &str) -> Option<HookEvent> {
+        Some(match name {
+            "prompt" => HookEvent::Prompt,
+            "needs-input" => HookEvent::NeedsInput,
+            "resume" => HookEvent::Resume,
+            "turn-done" => HookEvent::TurnDone,
+            "turn-failed" => HookEvent::TurnFailed,
+            "interrupt" => HookEvent::Interrupt,
+            "attention" => HookEvent::Attention,
+            _ => return None,
+        })
+    }
+}
+
+/// Each event of `names` once, in order.
+pub(crate) fn events_of<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<HookEvent> {
+    let mut out = Vec::new();
+    for event in names.into_iter().filter_map(HookEvent::from_name) {
+        if !out.contains(&event) {
+            out.push(event);
+        }
+    }
+    out
+}
+
 /// The few hook stdin fields xDev keeps. Never the prompt text. Each string
 /// is at most [`DETAIL_MAX`] chars.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -300,6 +327,24 @@ const CLAUDE_HOOKS: [ClaudeHook; 8] = [
     },
 ];
 
+/// The claude hooks a version gets: the gated ones only on a version known to have them.
+fn claude_offered(version: Option<CliVersion>) -> impl Iterator<Item = &'static ClaudeHook> {
+    CLAUDE_HOOKS.iter().filter(move |h| {
+        h.since
+            .is_none_or(|since| version.is_some_and(|v| v >= since))
+    })
+}
+
+/// The events `hook_args` makes `cli` report, each once. A codex on its
+/// private home reports more (`codex_home::codex_hook_events`).
+pub fn hook_events(cli: Cli, version: Option<CliVersion>) -> Vec<HookEvent> {
+    match cli {
+        Cli::Claude => events_of(claude_offered(version).map(|h| h.writes)),
+        Cli::Codex => vec![HookEvent::TurnDone],
+        Cli::Gemini => Vec::new(),
+    }
+}
+
 /// The per-process flags that make `cli` run `xdev agent-hook <event>`; empty
 /// for a CLI without hooks. Nothing is written to the CLI's own config.
 /// `version` is what the CLI reported (`None`: unknown).
@@ -313,11 +358,7 @@ pub fn hook_args(cli: Cli, xdev: &Path, version: Option<CliVersion>) -> Vec<Stri
         Cli::Claude => {
             let program = sh_quote(&slashed(xdev));
             let mut hooks = serde_json::Map::new();
-            let offered = |h: &&ClaudeHook| {
-                h.since
-                    .is_none_or(|since| version.is_some_and(|v| v >= since))
-            };
-            for hook in CLAUDE_HOOKS.iter().filter(offered) {
+            for hook in claude_offered(version) {
                 let mut entry = json!({ "hooks": [{
                     "type": "command",
                     "command": format!("{program} agent-hook {}", hook.writes),
