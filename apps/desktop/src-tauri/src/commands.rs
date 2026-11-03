@@ -145,13 +145,14 @@ pub fn terminal_settings_get(app: AppHandle) -> settings::TerminalSettings {
     settings_store::read(&app).terminal
 }
 
-/// Stores Settings → Terminal and returns what was stored.
+/// Stores Settings → Terminal with every number clamped to its range, and
+/// returns what was stored.
 #[tauri::command(async)]
 pub fn terminal_settings_put(
     app: AppHandle,
     settings: settings::TerminalSettings,
 ) -> Result<settings::TerminalSettings, CmdError> {
-    settings_store::write(&app, |s| s.terminal = settings).map(|s| s.terminal)
+    settings_store::write(&app, |s| s.terminal = settings.clamped()).map(|s| s.terminal)
 }
 
 /// The global git `user.name` that the git-username prefix shows; a repo's
