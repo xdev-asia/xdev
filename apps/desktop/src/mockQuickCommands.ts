@@ -97,7 +97,7 @@ export function createMockQuickCommands(lookup: QuickCommandsLookup, emit: Setti
       emit(["quickCommands"]);
     },
     async quickCommandsRecent() {
-      return [...recent];
+      return recent.filter((id) => items.some((c) => c.id === id));
     },
   };
 }
