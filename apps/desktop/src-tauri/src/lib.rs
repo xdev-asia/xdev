@@ -2,6 +2,7 @@ mod accounts;
 #[cfg(test)]
 mod bindings;
 mod commands;
+mod hooks;
 mod kit;
 mod links;
 mod profiles;
@@ -10,6 +11,7 @@ mod session;
 mod settings;
 mod ship;
 mod squads;
+mod status;
 mod tasks;
 mod updater;
 mod workspace;
@@ -30,6 +32,9 @@ pub fn run() {
     if let (Some(data), Some(local)) = (&data_dir, &local_dir) {
         xdev_core::move_indexes(data, local);
     }
+    let hooks_dir = local_dir
+        .as_ref()
+        .map(|local| local.join(xdev_agent::HOOKS_DIR));
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -38,8 +43,19 @@ pub fn run() {
         .manage(pty::Ptys::default())
         .manage(workspace::WorkspaceLock::default())
         .manage(profiles::ProfilesLock::default())
+        .manage(status::Shown::default())
         .setup(|app| {
             updater::start(app.handle().clone());
+            status::listen_clicks(app.handle());
+            // Without the watcher panes still run; they just show no status.
+            if let Some(dir) = hooks_dir {
+                match hooks::watch(app.handle().clone(), dir) {
+                    Ok(watcher) => {
+                        app.manage(watcher);
+                    }
+                    Err(e) => eprintln!("hook watcher: {e}"),
+                }
+            }
             Ok(())
         })
         .manage(AppState {
@@ -111,6 +127,12 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_ack,
             pty::pty_kill,
+            status::status_settings_get,
+            status::status_settings_put,
+            status::status_notify,
+            status::status_badge,
+            status::status_sound_set,
+            status::status_sound,
             profiles::profiles_list,
             profiles::profile_put,
             profiles::profile_remove,

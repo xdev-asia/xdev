@@ -18,7 +18,8 @@ use xdev_policy::{Action, Audited, Policy, Verdict, agent_fingerprint};
 use xdev_pty::{PtyError, Session, SpawnSpec};
 
 use crate::accounts::data_dir;
-use crate::commands::{AppState, CmdError};
+use crate::commands::{AppState, CmdError, cli_beside, settings_path};
+use crate::settings::{self, StatusSettings};
 
 impl From<LaunchError> for CmdError {
     fn from(e: LaunchError) -> CmdError {
@@ -53,6 +54,8 @@ pub struct PtyInfo {
     // The approval mode the launch stands for: ask, accept-edits or skip.
     permissions: String,
     account: Option<String>,
+    // Whether the launch got the status hook flags.
+    hooks: bool,
 }
 
 /// Payload of the `pty://exit` event.
@@ -105,12 +108,28 @@ pub(crate) fn distros() -> &'static [String] {
     WSL.get_or_init(wsl_distros)
 }
 
+/// The `xdev` an agent's status hooks run, when they are on (R4): the
+/// setting is on and the CLI sits next to the desktop exe.
+pub(crate) fn hook_program(status: &StatusSettings, exe: &Path) -> Option<PathBuf> {
+    if status.hooks { cli_beside(exe) } else { None }
+}
+
+/// `hook_program` for this app run, read fresh so a changed setting applies
+/// to the next session.
+fn hooks_now(app: &AppHandle) -> Option<PathBuf> {
+    let status = settings::load(&settings_path(app)?).status;
+    hook_program(&status, &std::env::current_exe().ok()?)
+}
+
 /// The launch of profile or shell `id`, from the stores in `data_dir`.
 /// `account` replaces the profile's own account (a restart keeps the tab's).
+/// With `hooks`, an agent CLI that has status hooks gets the flags that run
+/// that `xdev`.
 pub(crate) fn launch_for(
     data_dir: &Path,
     id: &str,
     account: Option<&str>,
+    hooks: Option<&Path>,
 ) -> Result<Launch, CmdError> {
     let profiles = Profiles::load(data_dir).map_err(LaunchError::from)?;
     let accounts = Registry::load(data_dir)?;
@@ -132,7 +151,11 @@ pub(crate) fn launch_for(
         find: &find,
         account,
     };
-    Ok(resolve(id, &ctx)?)
+    let mut launch = resolve(id, &ctx)?;
+    if let Some(xdev) = hooks {
+        launch.add_hooks(xdev);
+    }
+    Ok(launch)
 }
 
 /// Gates an agent, then starts `launch` in `cwd`.
@@ -202,6 +225,7 @@ pub(crate) fn spawn_launch(
         profile: launch.profile,
         permissions: launch.permissions.as_str().to_owned(),
         account: launch.account,
+        hooks: launch.hooks,
     };
     map.insert(id, session);
     Ok(info)
@@ -260,7 +284,8 @@ pub fn pty_spawn(
     out: Channel<InvokeResponseBody>,
 ) -> Result<PtyInfo, CmdError> {
     let data = data_dir(&state)?;
-    let launch = launch_for(data, &profile_id, account.as_deref())?;
+    let hooks = hooks_now(&app);
+    let launch = launch_for(data, &profile_id, account.as_deref(), hooks.as_deref())?;
     let exit_id = id.clone();
     spawn_launch(
         &ptys,
@@ -284,13 +309,15 @@ pub fn pty_spawn(
 
 #[tauri::command(async)]
 pub fn pty_approve(
+    app: AppHandle,
     state: State<'_, AppState>,
     ptys: State<'_, Ptys>,
     profile_id: String,
     account: Option<String>,
 ) -> Result<(), CmdError> {
     let data = data_dir(&state)?;
-    let launch = launch_for(data, &profile_id, account.as_deref())?;
+    let hooks = hooks_now(&app);
+    let launch = launch_for(data, &profile_id, account.as_deref(), hooks.as_deref())?;
     approve_launch(&ptys, data, &launch)
 }
 
@@ -324,6 +351,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use xdev_agent::{Cli, hook_args};
 
     fn shell(script: &str) -> (PathBuf, Vec<String>) {
         if cfg!(windows) {
@@ -347,7 +375,63 @@ mod tests {
             permissions: Permissions::Ask,
             account: None,
             startup: vec![],
+            cli: Some(Cli::Claude),
+            hooks: false,
         }
+    }
+
+    fn hooked() -> Launch {
+        let mut l = agent();
+        l.add_hooks(Path::new("/opt/xdev"));
+        l
+    }
+
+    #[test]
+    fn hook_program_needs_the_setting_and_the_cli() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("xdev-desktop.exe");
+        let on = StatusSettings::default();
+        let off = StatusSettings {
+            hooks: false,
+            ..StatusSettings::default()
+        };
+        assert_eq!(hook_program(&on, &exe), None);
+        let cli = dir
+            .path()
+            .join(format!("xdev{}", std::env::consts::EXE_SUFFIX));
+        std::fs::write(&cli, "").unwrap();
+        assert_eq!(hook_program(&on, &exe), Some(cli));
+        assert_eq!(hook_program(&off, &exe), None);
+    }
+
+    #[test]
+    fn launch_gets_hooks_only_when_on_and_cli_found() {
+        let data = tempfile::tempdir().unwrap();
+        let ptys = Ptys::default();
+        let l = hooked();
+        assert_eq!(
+            l.args[l.args.len() - 2..],
+            hook_args(Cli::Claude, Path::new("/opt/xdev"))[..]
+        );
+        approve_launch(&ptys, data.path(), &l).unwrap();
+        let (info, _) = start(&ptys, data.path(), "a", l);
+        assert!(info.unwrap().hooks);
+        ptys.kill_all();
+
+        // Turning hooks off is a different launch line: asked again.
+        let (plain, _) = start(&ptys, data.path(), "b", agent());
+        assert_eq!(plain.unwrap_err().code, "needs_approval");
+        let shell = launch_for(data.path(), "shell", None, Some(Path::new("/opt/xdev"))).unwrap();
+        assert!(!shell.hooks);
+        assert!(!shell.args.iter().any(|a| a == "--settings"));
+    }
+
+    #[test]
+    fn toggling_hooks_changes_the_fingerprint() {
+        assert_ne!(print_of(&agent()), print_of(&hooked()));
+        let mut moved = agent();
+        moved.add_hooks(Path::new("/elsewhere/xdev"));
+        assert_ne!(print_of(&hooked()), print_of(&moved));
     }
 
     fn start(
@@ -539,7 +623,7 @@ mod tests {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
         ptys.passes().insert("keep".into());
-        let launch = launch_for(data.path(), "shell", None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None).unwrap();
         start(&ptys, data.path(), "s", launch).0.unwrap();
         ptys.kill_all();
         assert_eq!(ptys.passes().len(), 1);
@@ -640,12 +724,14 @@ mod tests {
     fn launch_for_reports_unknown_and_bad_stores() {
         let data = tempfile::tempdir().unwrap();
         assert_eq!(
-            launch_for(data.path(), "vim", None).unwrap_err().code,
+            launch_for(data.path(), "vim", None, None).unwrap_err().code,
             "unknown_profile"
         );
         std::fs::write(data.path().join("profiles.json"), "not json").unwrap();
         assert_eq!(
-            launch_for(data.path(), "claude", None).unwrap_err().code,
+            launch_for(data.path(), "claude", None, None)
+                .unwrap_err()
+                .code,
             "bad_profiles"
         );
     }
@@ -654,7 +740,7 @@ mod tests {
     fn shell_spawns_without_policy() {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
-        let launch = launch_for(data.path(), "shell", None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None).unwrap();
         let (result, _) = start(&ptys, data.path(), "s", launch);
         assert!(!result.unwrap().agent);
         assert!(!data.path().join("audit.jsonl").exists());
@@ -665,7 +751,7 @@ mod tests {
     fn duplicate_id_is_refused() {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
-        let launch = launch_for(data.path(), "shell", None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None).unwrap();
         start(&ptys, data.path(), "d", launch.clone()).0.unwrap();
         let (again, _) = start(&ptys, data.path(), "d", launch);
         assert_eq!(again.unwrap_err().code, "pty_exists");
@@ -676,7 +762,7 @@ mod tests {
     fn kill_all_ends_every_session() {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
-        let launch = launch_for(data.path(), "shell", None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None).unwrap();
         let (one, rx1) = start(&ptys, data.path(), "1", launch.clone());
         let (two, rx2) = start(&ptys, data.path(), "2", launch);
         one.unwrap();
@@ -692,7 +778,7 @@ mod tests {
     fn missing_cwd_is_not_found() {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
-        let launch = launch_for(data.path(), "shell", None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None).unwrap();
         let err = spawn_launch(
             &ptys,
             data.path(),

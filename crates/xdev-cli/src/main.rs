@@ -1,4 +1,5 @@
 mod accounts;
+mod agent_hook;
 mod ai;
 mod context;
 mod mcp;
@@ -96,6 +97,15 @@ enum Command {
         #[command(subcommand)]
         command: squad::SquadCommand,
     },
+    /// Run by an agent CLI's hook: records the event for the xDev pane in
+    /// `XDEV_PTY_ID`. Always exits 0 and prints nothing to stdout.
+    #[command(name = "agent-hook", hide = true)]
+    AgentHook {
+        event: agent_hook::Event,
+        /// Whatever the CLI appends (Codex passes its JSON); ignored.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        rest: Vec<String>,
+    },
 }
 
 /// What a command that ran to the end reports through the exit code.
@@ -108,7 +118,20 @@ enum Outcome {
 }
 
 fn main() -> ExitCode {
-    match run(Cli::parse().command) {
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        // A hook must never fail the agent's turn, not even on a bad call.
+        Err(e) if std::env::args().nth(1).as_deref() == Some(agent_hook::NAME) => {
+            eprintln!("xdev agent-hook: {}", e.kind());
+            return ExitCode::SUCCESS;
+        }
+        Err(e) => e.exit(),
+    };
+    if let Command::AgentHook { event, .. } = cli.command {
+        agent_hook::run(event);
+        return ExitCode::SUCCESS;
+    }
+    match run(cli.command) {
         Ok(Outcome::Ok) => ExitCode::SUCCESS,
         Ok(Outcome::Found) => ExitCode::from(1),
         Ok(Outcome::Exit(code)) => ExitCode::from(code),
@@ -135,6 +158,8 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         Command::Quota { json } => return accounts::run_quota(json, &data_dir),
         Command::Task { command } => return task::run(command, &data_dir, &local_dir),
         Command::Squad { command } => return squad::run(command, &data_dir, &local_dir),
+        // Handled in `main` before any folder is touched.
+        Command::AgentHook { .. } => return Ok(Outcome::Ok),
         Command::Mcp { dir } => {
             let dir = dir.unwrap_or_else(|| {
                 let docs = PathBuf::from("docs");
