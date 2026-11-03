@@ -170,9 +170,16 @@ impl Repo {
                 }
             }
         }
+        // A file on disk whose deletion is staged (`rm --cached`) is both
+        // untracked and staged; with `staged_too` it goes back to `HEAD`
+        // instead of being deleted.
         let untracked: Vec<String> = wanted
             .iter()
-            .filter(|p| states.get(p.as_str()).is_some_and(|s| s.untracked))
+            .filter(|p| {
+                states
+                    .get(p.as_str())
+                    .is_some_and(|s| s.untracked && !(staged_too && s.staged))
+            })
             .cloned()
             .collect();
         let tracked: Vec<String> = wanted

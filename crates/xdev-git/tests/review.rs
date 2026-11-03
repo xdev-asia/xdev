@@ -492,3 +492,16 @@ fn discard_refuses_drive_and_absolute_paths() {
     }
     assert_eq!(read(dir.path(), "a.txt"), "changed\n");
 }
+
+#[test]
+fn discard_all_with_staged_too_brings_back_an_unstaged_deletion() {
+    // `git rm --cached` leaves the file on disk as untracked, with its
+    // deletion staged; discarding both must bring back HEAD, not delete it.
+    let dir = fixture();
+    git(dir.path(), &["rm", "--cached", "-q", "a.txt"]);
+    write(dir.path(), "a.txt", "a\n");
+    let repo = Repo::discover(dir.path()).unwrap();
+    repo.discard(&paths(&["a.txt"]), true).unwrap();
+    assert_eq!(read(dir.path(), "a.txt"), "a\n");
+    assert_eq!(status(dir.path()), "");
+}
