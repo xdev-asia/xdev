@@ -325,3 +325,17 @@ it("changes tab counts the worktree's files and opens a diff next to the termina
   view.list().props.onSelect(view.worktree("elm"));
   expect(tab().props["aria-label"]).toBe(en("workspace.panel.changes"));
 });
+
+it("hands the list the line counts, times and agents of each worktree", async () => {
+  const api = createMockApi({});
+  const read = vi.spyOn(api, "worktreeStat");
+  const view = await harness(api);
+  // One read per listed worktree when the list loads; the counts reach the rows.
+  await tick();
+  expect(read.mock.calls.map(c => c[0]).sort()).toEqual(["/demo/wt/xdev-elm", "/demo/wt/xdev-oak", "/demo/xdev"]);
+  const props = view.list().props;
+  expect(props.stats["/demo/wt/xdev-oak"]).toEqual({ files: 3, added: 4, removed: 3 });
+  expect(props.activity["/demo/wt/xdev-oak"]).toBeNull();
+  expect(props.profiles["/demo/wt/xdev-oak"]).toEqual([]);
+  expect(typeof props.now).toBe("number");
+});

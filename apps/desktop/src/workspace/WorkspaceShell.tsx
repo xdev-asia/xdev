@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import logo from "../../../../docs/brand/xdev-icon-512.png";
-import { toApiError, type Api, type ApiError, type RepoView, type WorktreeView } from "../api";
+import { toApiError, type Api, type ApiError, type PtyProfile, type RepoView, type WorktreeView } from "../api";
 import { DocsApp } from "../DocsApp";
 import { LanguageSwitch } from "../components/LanguageSwitch";
 import { useI18n } from "../i18n";
@@ -9,6 +9,7 @@ import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { Sessions } from "./sessions";
+import { WorktreeStats } from "./stats";
 import type { TabStatus } from "./status";
 import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeList } from "./WorktreeList";
@@ -58,18 +59,27 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // How many files the Changes panel last listed, for the worktree it listed them for.
   const [changeCount, setChangeCount] = useState<{ worktree: string; count: number } | null>(null);
 
+  // The line counts of the listed worktrees. The object holds nothing live until the effect
+  // below attaches it, so load() can hand it the list before or after that.
+  const [stats] = useState(() => new WorktreeStats());
+
   // One store of terminal tabs for the whole shell. Made in an effect so a dev double mount
   // disposes the first one; disposing kills its ptys.
   useEffect(() => {
     const store = new Sessions(api);
     setSessions(store);
-    return () => store.dispose();
+    stats.attach(api, store, typeof window === "undefined" ? undefined : window);
+    return () => {
+      stats.detach();
+      store.dispose();
+    };
   }, [api]);
 
   async function load(): Promise<void> {
     try {
       const list = await api.workspaceList();
       setRepos(list);
+      stats.track(list.flatMap((r) => r.worktrees.map((w) => w.path)));
       // A worktree gone from the list (removed outside the app, say) must not keep its ptys. A
       // missing repo lists no worktrees though they may still exist, so nothing closes then.
       if (!list.some((r) => r.missing)) {
@@ -92,8 +102,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // A string, so an unchanged store reads as the same snapshot.
   const signature = () => (sessions ? paths.map((p) => `${sessions.dot(p) ?? ""}:${working(sessions, p)}`).join("|") : "");
   useSyncExternalStore(subscribe, signature, signature);
+  useSyncExternalStore(stats.subscribe, stats.snapshot, stats.snapshot);
 
   const dots: Record<string, TabStatus | null> = Object.fromEntries(paths.map((p) => [p, sessions?.dot(p) ?? null]));
+  const activity: Record<string, number | null> = Object.fromEntries(paths.map((p) => [p, sessions?.lastActivity(p) ?? null]));
+  const profiles: Record<string, PtyProfile[]> = Object.fromEntries(paths.map((p) => [p, sessions?.profilesOf(p) ?? []]));
   const running = sessions ? paths.reduce((n, p) => n + working(sessions, p), 0) : 0;
 
   const all = repos?.flatMap((r) => r.worktrees) ?? [];
@@ -274,6 +287,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             repos={repos}
             selected={current?.path ?? null}
             dots={dots}
+            stats={stats.all()}
+            activity={activity}
+            profiles={profiles}
+            now={Date.now()}
             notice={notice}
             onSelect={(wt) => {
               select(wt);

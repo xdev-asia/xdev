@@ -67,6 +67,14 @@ describe("mock workspace", () => {
     expect(await api.worktreeCommit(FIRST, ["src/status.ts"], "again")).toBeNull();
   });
 
+  it("counts lines from the pending changes", async () => {
+    const api = createMockWorkspace();
+    expect(await api.worktreeStat(FIRST)).toEqual({ files: 3, added: 4, removed: 3 });
+    expect(await api.worktreeStat("/demo/wt/xdev-elm")).toEqual({ files: 0, added: 0, removed: 0 });
+    expect(await api.worktreeStat("/demo/xdev")).toEqual({ files: 0, added: 0, removed: 0 });
+    await expect(api.worktreeStat("/nope")).rejects.toMatchObject({ code: "worktree_unknown" });
+  });
+
   it("pins and unpins a worktree", async () => {
     const api = createMockWorkspace();
     await api.worktreePin(FIRST, true);

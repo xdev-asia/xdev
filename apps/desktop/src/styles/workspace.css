@@ -425,6 +425,69 @@
   color: var(--text-2);
 }
 
+.ws-wt-time {
+  flex-shrink: 0;
+  font-family: var(--x-font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+/* Third line: agent chips on the left, line counts pushed to the right and never cut. */
+.ws-wt-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding-left: 15px;
+  font-size: 11px;
+}
+
+.ws-wt-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-chip {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-s);
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-family: var(--x-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ws-chip[data-profile="claude"] {
+  background: var(--orange-bg);
+  color: var(--orange);
+}
+
+.ws-chip[data-profile="codex"] {
+  background: var(--signal-bg);
+  color: var(--signal);
+}
+
+.ws-stat {
+  flex-shrink: 0;
+  font-family: var(--x-font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.ws-stat-add {
+  color: var(--ok);
+}
+
+.ws-stat-del {
+  color: var(--danger);
+}
+
 /* The status dot: working pulses, failed is danger, idle and exited are an outline. */
 .ws-dot {
   flex-shrink: 0;

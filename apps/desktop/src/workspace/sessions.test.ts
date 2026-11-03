@@ -199,4 +199,37 @@ describe("Sessions", () => {
     expect(heard).toHaveBeenCalled();
     expect(live.tabs(A)).toEqual([]);
   });
+
+  it("profilesOf lists distinct profiles in tab order", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    expect(live.profilesOf(A)).toEqual([]);
+    live.open(A, "claude");
+    live.open(A, "shell");
+    live.open(A, "claude");
+    live.open(A, "codex");
+    live.open(B, "shell");
+    expect(live.profilesOf(A)).toEqual(["claude", "shell", "codex"]);
+    expect(live.profilesOf(B)).toEqual(["shell"]);
+  });
+
+  it("lastActivity is the latest output time", () => {
+    let t = 1_000;
+    const live = (sessions = new Sessions(createMockApi({}), () => t));
+    const one = live.open(A, "claude");
+    const two = live.open(A, "codex");
+    // No output yet.
+    expect(live.lastActivity(A)).toBeNull();
+    t = 5_000;
+    live.noteOutput(one.id, 10);
+    t = 9_000;
+    live.noteOutput(two.id, 10);
+    t = 7_000;
+    live.noteOutput(one.id, 10);
+    // The latest of the tabs, not the last call.
+    expect(live.lastActivity(A)).toBe(9_000);
+    expect(live.lastActivity(B)).toBeNull();
+    // An empty read is not activity.
+    live.noteOutput(live.open(B, "claude").id, 0);
+    expect(live.lastActivity(B)).toBeNull();
+  });
 });

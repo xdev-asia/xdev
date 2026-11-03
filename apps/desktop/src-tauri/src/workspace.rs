@@ -14,8 +14,8 @@ use tauri::State;
 use xdev_git::{ChangeKind, GitError, Repo};
 use xdev_policy::{Action, Verdict};
 use xdev_workspace::{
-    Registry, RepoView, WorkspaceError, WorktreeView, add_repo, create_worktree, forget_repo, list,
-    path_key, remove_worktree, set_pinned,
+    Registry, RepoView, WorkspaceError, WorktreeStat, WorktreeView, add_repo, create_worktree,
+    forget_repo, list, path_key, remove_worktree, set_pinned, stat,
 };
 
 use crate::accounts::data_dir;
@@ -344,6 +344,12 @@ pub fn worktree_changes(
     path: PathBuf,
 ) -> Result<Vec<WorktreeChange>, CmdError> {
     changes(data_dir(&state)?, &path)
+}
+
+/// Read-only: loads the registry without the save lock, like `worktree_changes`.
+#[tauri::command(async)]
+pub fn worktree_stat(state: State<'_, AppState>, path: PathBuf) -> Result<WorktreeStat, CmdError> {
+    Ok(stat(&Registry::load(data_dir(&state)?)?, &path)?)
 }
 
 #[tauri::command(async)]

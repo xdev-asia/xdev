@@ -22,6 +22,7 @@
   --danger: #ff7a7a;
   --danger-bg: rgba(255, 122, 122, 0.12);
   --orange: #f0a070;
+  --orange-bg: rgba(240, 160, 112, 0.12);
 
   --radius-s: 4px;
   --radius-m: 6px;
@@ -55,6 +56,7 @@
   --danger: #b42318;
   --danger-bg: rgba(180, 35, 24, 0.1);
   --orange: #a04a14;
+  --orange-bg: rgba(160, 74, 20, 0.1);
 }
 
 html,
