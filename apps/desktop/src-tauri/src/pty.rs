@@ -16,7 +16,9 @@ use xdev_agent::{
 use xdev_ai::Registry;
 use xdev_policy::{Action, Audited, Policy, Verdict, agent_fingerprint};
 use xdev_pty::{PtyError, Session, SpawnSpec};
-use xdev_workspace::{HookKind, Registry as Workspace, WorkspaceError, hook_env, hooks_for};
+use xdev_workspace::{
+    HookKind, Registry as Workspace, SetupPolicy, WorkspaceError, hook_env, hooks_for,
+};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError, cli_beside};
@@ -419,8 +421,13 @@ pub(crate) fn hook_command(
 }
 
 /// The launch that runs the setup script of the worktree at `cwd` in a
-/// terminal; `hook_none` when it has none.
+/// terminal; `setup_skipped` when the repo's setup policy is Skip,
+/// `hook_none` when it has no setup.
 pub(crate) fn setup_launch(data_dir: &Path, cwd: &Path) -> Result<Launch, CmdError> {
+    let reg = Workspace::load(data_dir)?;
+    if hooks_for(&reg, data_dir, cwd)?.policy == SetupPolicy::Skip {
+        return Err(WorkspaceError::SetupSkipped.into());
+    }
     let HookCommand { program, args, env } = hook_command(data_dir, cwd, HookKind::Setup)?
         .ok_or_else(|| WorkspaceError::NoHook("setup".to_owned()))?;
     Ok(Launch {
@@ -1160,5 +1167,15 @@ b",
         assert_eq!(code(&f.repo), "hook_none");
         std::fs::write(f.repo.join("xdev.toml"), "[scripts]\nsetup = \"make\"\n").unwrap();
         assert_eq!(code(&f.repo), "hook_untrusted");
+    }
+
+    #[test]
+    fn setup_launch_refuses_a_repo_whose_policy_is_skip() {
+        let f = setup_fixture("echo hi");
+        let mut reg = Workspace::load(&f.data).unwrap();
+        reg.repos[0].setup_policy = SetupPolicy::Skip;
+        reg.save(&f.data).unwrap();
+        let err = setup_launch(&f.data, &f.repo).unwrap_err();
+        assert_eq!(err.code, "setup_skipped");
     }
 }
