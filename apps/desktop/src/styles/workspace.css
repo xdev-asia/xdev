@@ -1005,6 +1005,74 @@
   height: 6px;
 }
 
+.ws-footer > * {
+  white-space: nowrap;
+}
+
+.ws-footer-branch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-footer-spacer {
+  flex: 1;
+}
+
+.ws-waiting {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-waiting .ws-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--warn);
+}
+
+.ws-meters {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ws-meter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-meter-bar {
+  display: block;
+  width: 54px;
+  height: 5px;
+  border-radius: var(--radius-s);
+  background: var(--bg-3);
+  overflow: hidden;
+}
+
+.ws-meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--signal);
+}
+
+.ws-meter-pct {
+  min-width: 3ch;
+  color: var(--text-1);
+}
+
+.ws-meter-warn .ws-meter-fill {
+  background: var(--warn);
+}
+
+.ws-meter-warn .ws-meter-pct {
+  color: var(--warn);
+}
+
 /* Dialogs */
 
 .ws-fields {
