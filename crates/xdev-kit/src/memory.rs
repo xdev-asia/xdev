@@ -537,7 +537,10 @@ mod tests {
 
     #[test]
     fn claude_md_imports_resolved() {
-        let user = tempfile::tempdir().unwrap();
+        // Long form of the temp path: Windows CI hands out 8.3 names, and
+        // imports are resolved through canonical paths.
+        let base = dunce::canonicalize(std::env::temp_dir()).unwrap();
+        let user = tempfile::tempdir_in(base).unwrap();
         let dir = user.path().join(".claude");
         write(
             &dir.join("CLAUDE.md"),

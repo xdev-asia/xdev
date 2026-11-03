@@ -6196,6 +6196,7 @@ dependencies = [
 name = "xdev-kit"
 version = "0.3.0"
 dependencies = [
+ "dunce",
  "serde",
  "serde_json",
  "tempfile",
@@ -6264,6 +6265,7 @@ name = "xdev-workspace"
 version = "0.3.0"
 dependencies = [
  "blake3",
+ "dunce",
  "serde",
  "serde_json",
  "tempfile",

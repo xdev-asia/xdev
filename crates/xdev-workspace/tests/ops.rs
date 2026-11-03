@@ -33,10 +33,17 @@ impl TestRepo {
     }
 }
 
+/// A temp dir under the long form of the temp path. Windows CI hands out
+/// 8.3 names like `RUNNER~1`, while git reports long paths.
+fn long_temp_dir(prefix: &str) -> TempDir {
+    let base = dunce::canonicalize(std::env::temp_dir()).unwrap();
+    TempDir::with_prefix_in(prefix, base).unwrap()
+}
+
 /// A fresh repo with its own identity, so tests never read the developer's
 /// global config, and without autocrlf, which would rewrite line endings.
 fn repo_dir() -> TestRepo {
-    let tmp = TempDir::with_prefix("ws repo ").unwrap();
+    let tmp = long_temp_dir("ws repo ");
     let main = tmp.path().join("main");
     fs::create_dir(&main).unwrap();
     init(&main);
@@ -112,7 +119,7 @@ fn add_repo_twice_is_refused() {
 
 #[test]
 fn add_repo_names_it_after_its_folder_and_keeps_names_unique() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = long_temp_dir(".tmp");
     let mut reg = Registry::default();
     let mut short_names = Vec::new();
     for parent in ["a", "b"] {
@@ -376,7 +383,7 @@ fn adopt_refuses_primary_and_unknown() {
         adopt_worktree(&mut reg, main.path(), 1),
         Err(WorkspaceError::Primary(_))
     ));
-    let tmp = TempDir::new().unwrap();
+    let tmp = long_temp_dir(".tmp");
     assert!(matches!(
         adopt_worktree(&mut reg, tmp.path(), 1),
         Err(WorkspaceError::WorktreeUnknown(_))
