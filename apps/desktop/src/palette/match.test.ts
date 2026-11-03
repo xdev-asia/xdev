@@ -65,3 +65,16 @@ it("keyword-only match has no visible hits", () => {
   const m = matchItem({ title: "New worktree", keywords: ["create"] }, ["create"])!;
   expect(m.hits).toEqual({ title: [], detail: [] });
 });
+
+it("folds Vietnamese marks in the query and the field", () => {
+  expect(matchField("cai", "Cài đặt")?.hits).toEqual([[0, 3]]);
+  expect(matchField("dat", "Cài đặt")?.hits).toEqual([[4, 7]]);
+  expect(matchField("đặt", "Cai dat")).not.toBeNull();
+  expect(tokens("Cài Đặt")).toEqual(["cai", "dat"]);
+  const m = matchItem({ title: "Cài đặt" }, tokens("cai dat"));
+  expect(m?.hits.title).toEqual([[0, 3], [4, 7]]);
+});
+
+it("folding keeps hit offsets aligned with the original text", () => {
+  expect(matchField("b", "Tiếng Việt b")?.hits).toEqual([[11, 12]]);
+});
