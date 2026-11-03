@@ -12,11 +12,11 @@ export interface FocusTarget {
 export const FOCUS_GAP_MS = 30_000;
 
 /** A worktree that reaches one of these has stopped working, so its files likely changed. */
-const SETTLED: TabStatus[] = ["idle", "exited", "failed"];
+const SETTLED: TabStatus[] = ["idle", "done", "exited", "failed"];
 
 /**
  * The line counts of every listed worktree. A count is read when the worktree is first listed,
- * when its status settles (idle, exited, failed) and when the window gains focus at least
+ * when its status settles (idle, done, exited, failed) and when the window gains focus at least
  * 30 s after the last focus read; never on a timer. Views read it through `subscribe` + `snapshot`.
  */
 export class WorktreeStats {

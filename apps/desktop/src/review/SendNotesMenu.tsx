@@ -5,9 +5,9 @@ import { profileName, useProfiles } from "@/agents/profileStore";
 import { useI18n } from "@/i18n";
 import { sendToChosenTab, type SendChoice } from "@/workspace/agentPrompt";
 import type { Sessions, Tab } from "@/workspace/sessions";
+import { runningAgent as isRunning } from "@/workspace/sendTarget";
 import { notesPrompt, notesToSend } from "./notes";
 
-const isRunning = (tab: Tab) => tab.agent && tab.status !== "failed" && tab.status !== "exited";
 
 /** Tabs have no name of their own, so a tab reads as its profile name, numbered when several share one. */
 function tabLabel(tabs: Tab[], index: number, view: Parameters<typeof profileName>[0], t: Parameters<typeof profileName>[2]): string {

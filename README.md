@@ -21,6 +21,8 @@ Your Markdown files stay the source of truth. xDev indexes them, flags docs that
 | Tasks | A coding agent works in its own git worktree; you review the evidence and diff, then approve or discard |
 | Accounts | Claude Code accounts and quota on this machine; API keys in the OS keychain; local Ollama models (CLI only: `xdev ai models`) |
 
+Guides: [status and notifications](docs/guide/status-and-notifications.md). All guides: [docs/guide](docs/guide/README.md).
+
 ## Install
 
 Download from [Releases](https://github.com/xdev-asia/xdev/releases) or [xdev.asia](https://xdev.asia):
@@ -43,6 +45,7 @@ The `xdev` CLI ships as a separate archive per target on the same page. Installe
 | `packages/ui` | Design tokens and shared components |
 | `packages/bindings` | TypeScript types generated from Rust (`cargo test -p xdev-desktop export_bindings`) |
 | `docs/adr/` | Architecture decisions |
+| `docs/guide/` | User guides |
 
 ## Develop
 

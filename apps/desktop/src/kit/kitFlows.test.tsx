@@ -61,15 +61,18 @@ it("send types one clean line, and Use cleans the history text too", async () =>
 
 // --- I5: Send goes to the tab in front ---------------------------------------------------------
 
-const tab = (id: string, agent: boolean, status = "idle"): Tab => ({ id, agent, status, worktree: "/w", profileId: "claude" } as unknown as Tab);
+const tab = (id: string, agent: boolean, status = "idle", exitCode?: number): Tab =>
+  ({ id, agent, status, worktree: "/w", profileId: "claude", ...(exitCode === undefined ? {} : { exitCode }) }) as unknown as Tab;
 
 it("sendTarget is the tab in front, and only when it is a live agent tab", () => {
-  const tabs = [tab("a", true), tab("b", true), tab("sh", false), tab("dead", true, "exited"), tab("bad", true, "failed")];
+  const tabs = [tab("a", true), tab("b", true), tab("sh", false), tab("dead", true, "exited", 0), tab("bad", true, "failed", 1), tab("turn", true, "failed")];
   expect(sendTarget(tabs, "a")?.id).toBe("a");
   expect(sendTarget(tabs, "b")?.id).toBe("b");
   expect(sendTarget(tabs, "sh")).toBeNull();
   expect(sendTarget(tabs, "dead")).toBeNull();
   expect(sendTarget(tabs, "bad")).toBeNull();
+  // A failed turn is not a dead pty: the agent still takes a prompt.
+  expect(sendTarget(tabs, "turn")?.id).toBe("turn");
   expect(sendTarget(tabs, "file:x.ts")).toBeNull();
   expect(sendTarget(tabs, null)).toBeNull();
 });
