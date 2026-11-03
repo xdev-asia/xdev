@@ -9,6 +9,8 @@ use crate::GitError;
 
 /// A hook or a GPG prompt can wait forever; the UI must not.
 const TIMEOUT: Duration = Duration::from_secs(60);
+/// Push, pull and fetch talk to a remote and may transfer a lot.
+pub(crate) const LONG_TIMEOUT: Duration = Duration::from_secs(300);
 const POLL: Duration = Duration::from_millis(20);
 
 /// Runs git and fails on any non-zero exit.
@@ -17,13 +19,30 @@ pub(crate) fn run(
     args: &[&str],
     stdin: Option<&[u8]>,
 ) -> Result<Vec<u8>, GitError> {
-    checked(args, spawn(workdir, args, stdin, true)?)
+    checked(args, spawn(workdir, args, stdin, true, TIMEOUT)?)
+}
+
+/// For commands that talk to a remote: the long timeout, and the whole
+/// result, because the caller classifies a failure by its exit code and
+/// output instead of treating it as one error.
+pub(crate) fn run_long(workdir: &Path, args: &[&str]) -> Result<Output, GitError> {
+    spawn(workdir, args, None, true, LONG_TIMEOUT)
+}
+
+/// Like `run`, but the whole result survives a failure, so the caller can
+/// show what a hook printed.
+pub(crate) fn run_output(
+    workdir: &Path,
+    args: &[&str],
+    stdin: Option<&[u8]>,
+) -> Result<Output, GitError> {
+    spawn(workdir, args, stdin, true, TIMEOUT)
 }
 
 /// Like `run`, but pathspecs keep their magic. Only for callers that write
 /// the magic themselves, such as `:(top,glob)` in front of every entry.
 pub(crate) fn run_magic(workdir: &Path, args: &[&str]) -> Result<Vec<u8>, GitError> {
-    checked(args, spawn(workdir, args, None, false)?)
+    checked(args, spawn(workdir, args, None, false, TIMEOUT)?)
 }
 
 fn checked(args: &[&str], out: Output) -> Result<Vec<u8>, GitError> {
@@ -44,14 +63,14 @@ pub(crate) fn run_status(
     args: &[&str],
     stdin: Option<&[u8]>,
 ) -> Result<(Option<i32>, Vec<u8>), GitError> {
-    let out = spawn(workdir, args, stdin, true)?;
+    let out = spawn(workdir, args, stdin, true, TIMEOUT)?;
     Ok((out.status, out.stdout))
 }
 
-struct Output {
-    status: Option<i32>,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
+pub(crate) struct Output {
+    pub(crate) status: Option<i32>,
+    pub(crate) stdout: Vec<u8>,
+    pub(crate) stderr: Vec<u8>,
 }
 
 fn spawn(
@@ -59,6 +78,7 @@ fn spawn(
     args: &[&str],
     stdin: Option<&[u8]>,
     literal: bool,
+    timeout: Duration,
 ) -> Result<Output, GitError> {
     // Otherwise a missing folder fails the spawn with `NotFound` on Unix,
     // which would read as "git is not installed".
@@ -120,7 +140,7 @@ fn spawn(
         });
     }
 
-    let deadline = Instant::now() + TIMEOUT;
+    let deadline = Instant::now() + timeout;
     let status = loop {
         if let Some(status) = child.try_wait()? {
             break status;

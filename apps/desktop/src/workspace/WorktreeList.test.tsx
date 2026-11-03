@@ -295,3 +295,26 @@ it("no found group when found is empty", () => {
   expect(view.all().some(n => n.props.className === "ws-found")).toBe(false);
   expect(view.html()).not.toContain(en("workspace.found.title", { count: 0 }));
 });
+
+const PR12 = { number: 12, url: "https://example.test/pull/12", state: "open" as const, title: "t", base: "main", head: "oak" };
+const OAK_PATH = "/demo/wt/xdev-oak";
+
+it("shows the PR chip with state and checks", () => {
+  const checks = [{ name: "build", workflow: "ci", bucket: "fail" as const, link: null }, { name: "lint", workflow: "ci", bucket: "pass" as const, link: null }];
+  const html = harness(DOTS, repos, { prs: { [OAK_PATH]: { pr: PR12, checks } } }).html();
+  expect(html).toContain('aria-label="Pull request #12, open, checks failing"');
+  expect(html).toContain('data-pr="open"');
+  expect(html).toContain('data-check="fail"');
+  expect(html).toContain("#12");
+  // Checks not known yet: the chip has the state dot only.
+  const bare = harness(DOTS, repos, { prs: { [OAK_PATH]: { pr: { ...PR12, state: "draft" }, checks: null } } }).html();
+  expect(bare).toContain('aria-label="Pull request #12, draft"');
+  expect(bare).not.toContain("data-check=");
+  const none = harness(DOTS, repos, { prs: { [OAK_PATH]: { pr: PR12, checks: [] } } }).html();
+  expect(none).not.toContain("data-check=");
+});
+
+it("no chip without a PR", () => {
+  expect(harness().html()).not.toContain("ws-pr");
+  expect(harness(DOTS, repos, { prs: { [OAK_PATH]: { pr: null, checks: null } } }).html()).not.toContain("ws-pr");
+});

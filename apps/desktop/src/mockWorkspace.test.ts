@@ -190,3 +190,50 @@ describe("mock workspace", () => {
     await expect(api.vaultCreateDocs("demo-xdev", "../x.md", "x")).rejects.toMatchObject({ code: "bad_path" });
   });
 });
+
+describe("mock shipping", () => {
+  const files = ["src/session.ts"];
+
+  it("push clears ahead and sets upstream", async () => {
+    const api = createMockWorkspace();
+    expect((await api.worktreeShip(FIRST)).upstream).toBeNull();
+    await api.worktreeCommit(FIRST, files, "first");
+    expect((await api.worktreeShip(FIRST)).range?.commits).toHaveLength(1);
+    const pushed = await api.worktreePush(FIRST);
+    expect(pushed.upstream).toMatchObject({ ahead: 0, behind: 0, branch: "oak" });
+    expect(pushed.headPushed).toBe(true);
+    await api.worktreeCommit(FIRST, ["src/status.ts"], "second");
+    expect((await api.worktreeShip(FIRST)).upstream?.ahead).toBe(1);
+    expect((await api.worktreePush(FIRST)).upstream?.ahead).toBe(0);
+  });
+
+  it("force push needs confirmation", async () => {
+    const api = createMockWorkspace({ repos: DEMO_WORKSPACE.repos, changes: {}, remotes: { [FIRST]: { ahead: 1, behind: 1 } } });
+    await expect(api.worktreeForcePush(FIRST, "b".repeat(40), false)).rejects.toMatchObject({ code: "needs_approval" });
+    expect((await api.worktreeForcePush(FIRST, "b".repeat(40), true)).upstream).toMatchObject({ ahead: 0, behind: 0 });
+  });
+
+  it("force push honours the expected id and strips the remote from the base", async () => {
+    const remotes = { [FIRST]: { ahead: 1, behind: 1 } };
+    const api = createMockWorkspace({ repos: DEMO_WORKSPACE.repos, changes: {}, remotes });
+    await expect(api.worktreeForcePush(FIRST, "c".repeat(40), true)).rejects.toMatchObject({ code: "push_rejected" });
+    const [repo] = DEMO_WORKSPACE.repos;
+    const onBase = { ...repo, baseRef: "origin/oak" };
+    const api2 = createMockWorkspace({ repos: [onBase], changes: {}, remotes });
+    await expect(api2.worktreeForcePush(FIRST, "b".repeat(40), true)).rejects.toMatchObject({ code: "force_base" });
+  });
+
+  it("sync pulls or pushes, not both; open without a pull request is gh_failed", async () => {
+    const api = createMockWorkspace({ repos: DEMO_WORKSPACE.repos, changes: {}, remotes: { [FIRST]: { ahead: 0, behind: 1 } } });
+    expect((await api.worktreeSync(FIRST)).upstream).toMatchObject({ ahead: 0, behind: 0 });
+    const both = createMockWorkspace({ repos: DEMO_WORKSPACE.repos, changes: {}, remotes: { [FIRST]: { ahead: 1, behind: 1 } } });
+    await expect(both.worktreeSync(FIRST)).rejects.toMatchObject({ code: "pull_diverged" });
+    await expect(api.worktreePrOpen(FIRST, false)).rejects.toMatchObject({ code: "gh_failed" });
+  });
+
+  it("hook failure rejects with hook_failed and output", async () => {
+    const api = createMockWorkspace({ ...DEMO_WORKSPACE, hookFailure: { [FIRST]: "lint failed" } });
+    await expect(api.worktreeCommit(FIRST, files, "x")).rejects.toMatchObject({ code: "hook_failed", detail: "lint failed" });
+    expect(await api.worktreeCommit(FIRST, files, "x")).not.toBeNull();
+  });
+});
