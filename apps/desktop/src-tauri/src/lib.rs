@@ -3,6 +3,7 @@ mod accounts;
 mod bindings;
 mod commands;
 mod hooks;
+mod keybindings;
 mod kit;
 mod links;
 mod profiles;
@@ -90,6 +91,13 @@ pub fn run() {
             commands::set_git_settings,
             commands::terminal_settings_get,
             commands::terminal_settings_put,
+            commands::key_settings_get,
+            commands::key_settings_put,
+            commands::ui_settings_get,
+            commands::ui_settings_put,
+            keybindings::keybindings_read,
+            keybindings::keybindings_write,
+            keybindings::keybindings_reveal,
             commands::git_user_name,
             commands::vault_setup,
             commands::dismiss_vault_prompt,

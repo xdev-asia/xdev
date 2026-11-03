@@ -10,12 +10,15 @@ use ts_rs::{Config, TS};
 use crate::accounts::{Account, Accounts, LoginStart, Models};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
 use crate::hooks::PtyHook;
+use crate::keybindings::{KeybindingsChanged, KeybindingsText};
 use crate::kit::{KitText, PromptEntry};
 use crate::profiles::ProfilesView;
 use crate::pty::{PtyExit, PtyInfo};
 use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
-use crate::settings::{GitSettings, SettingsChanged, StatusSettings, TerminalSettings};
+use crate::settings::{
+    GitSettings, KeySettings, SettingsChanged, StatusSettings, TerminalSettings, UiSettings,
+};
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
@@ -59,6 +62,10 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     StatusSettings::export_all(cfg)?;
     TerminalSettings::export_all(cfg)?;
     SettingsChanged::export_all(cfg)?;
+    KeySettings::export_all(cfg)?;
+    UiSettings::export_all(cfg)?;
+    KeybindingsText::export_all(cfg)?;
+    KeybindingsChanged::export_all(cfg)?;
     PtyHook::export_all(cfg)?;
     xdev_workspace::RepoView::export_all(cfg)?;
     xdev_workspace::WorktreeView::export_all(cfg)?;

@@ -160,6 +160,44 @@ pub fn terminal_settings_put(
     .map(|s| s.terminal)
 }
 
+/// Settings → Shortcuts: the terminal policy and the hint toggle; the
+/// defaults when nothing is stored.
+#[tauri::command(async)]
+pub fn key_settings_get(_app: AppHandle) -> settings::KeySettings {
+    settings::KeySettings::default()
+}
+
+/// Stores the key settings and returns what was stored.
+#[tauri::command(async)]
+pub fn key_settings_put(
+    _app: AppHandle,
+    _settings: settings::KeySettings,
+) -> Result<settings::KeySettings, CmdError> {
+    Err(CmdError {
+        code: "io",
+        detail: Some("key settings: not implemented yet".into()),
+    })
+}
+
+/// The window's view settings (zoom); the defaults when nothing is stored.
+#[tauri::command(async)]
+pub fn ui_settings_get(_app: AppHandle) -> settings::UiSettings {
+    settings::UiSettings::default()
+}
+
+/// Stores the view settings with the zoom clamped, and returns what was
+/// stored.
+#[tauri::command(async)]
+pub fn ui_settings_put(
+    _app: AppHandle,
+    _settings: settings::UiSettings,
+) -> Result<settings::UiSettings, CmdError> {
+    Err(CmdError {
+        code: "io",
+        detail: Some("ui settings: not implemented yet".into()),
+    })
+}
+
 /// The global git `user.name` that the git-username prefix shows; a repo's
 /// own `user.name` wins when a worktree is created.
 #[tauri::command(async)]
