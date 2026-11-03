@@ -46,7 +46,13 @@ export function createTerminalHandle(deps: HandleDeps): TerminalHandle {
     find: () => deps.find(),
     hasSelection: () => deps.term()?.hasSelection() ?? false,
     focus: () => deps.term()?.focus(),
-    lines: () => [],
+    lines(max) {
+      const buffer = deps.term()?.buffer.active;
+      if (!buffer) return [];
+      const out: string[] = [];
+      for (let y = 0; y < buffer.length; y++) out.push(buffer.getLine(y)?.translateToString(true) ?? "");
+      return lastLines(out, max);
+    },
   };
 }
 
@@ -72,8 +78,24 @@ export interface ContextInfo {
 
 /** Copy Context text: header lines, then the buffer's last lines with blank tail lines dropped. */
 export function terminalContext(info: ContextInfo, lines: string[]): string {
-  // Contract stub: Lane B (B3).
-  void info;
-  void lines;
-  return "";
+  const exit = info.exitCode === undefined ? "running" : info.exitCode === null ? "unknown" : String(info.exitCode);
+  return [
+    `Terminal: ${info.title} (${info.profile})`,
+    info.branch ? `Worktree: ${info.path} (${info.branch})` : `Worktree: ${info.path}`,
+    `Last exit code: ${exit}`,
+    `--- last ${CONTEXT_LINES} lines ---`,
+    ...lastLines(lines, CONTEXT_LINES),
+  ].join("\n");
+}
+
+/** Copy Context of one terminal to the clipboard; false when the clipboard refuses. */
+export function copyContext(handle: TerminalHandle, info: ContextInfo): Promise<boolean> {
+  return copyText(terminalContext(info, handle.lines(CONTEXT_LINES)));
+}
+
+/** The last `max` lines once blank lines at the end are dropped. */
+function lastLines(lines: string[], max: number): string[] {
+  let end = lines.length;
+  while (end > 0 && !lines[end - 1].trim()) end--;
+  return lines.slice(Math.max(0, end - max), end);
 }

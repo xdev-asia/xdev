@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PtyClient } from "./ptyClient";
-import { createTerminalHandle, type XTermLike } from "./terminalActions";
+import { CONTEXT_LINES, copyContext, copyText, createTerminalHandle, terminalContext, type XTermLike } from "./terminalActions";
 
 // A stand-in xterm: a buffer of lines and spies for every call the handle makes.
 function fakeTerm(over: Partial<XTermLike> = {}, buffer: string[] = []) {
@@ -121,4 +121,52 @@ it("before the xterm exists every call is safe and copy is false", async () => {
   h.selectAll();
   h.focus();
   expect(readText).not.toHaveBeenCalled();
+});
+
+it("copyText writes the given text and is false when the clipboard refuses or is missing", async () => {
+  expect(await copyText("3f2a-tab-id")).toBe(true);
+  expect(writeText).toHaveBeenCalledWith("3f2a-tab-id");
+  writeText.mockRejectedValueOnce(new Error("denied"));
+  expect(await copyText("p2")).toBe(false);
+  vi.stubGlobal("navigator", {});
+  expect(await copyText("p2")).toBe(false);
+});
+
+it("lines gives the last lines of the buffer with blank tail lines dropped", () => {
+  const buffer = [...Array.from({ length: 250 }, (_, i) => `line ${i}`), "", "   ", ""];
+  const { term } = fakeTerm({}, buffer);
+  const { h } = handleFor(term);
+  const got = h.lines(CONTEXT_LINES);
+  expect(got).toHaveLength(200);
+  expect(got[0]).toBe("line 50");
+  expect(got[199]).toBe("line 249");
+  expect(handleFor(null).h.lines(10)).toEqual([]);
+});
+
+it("Copy Context: header lines, then the buffer", () => {
+  const info = { title: "zsh", profile: "shell", path: "/demo/wt/xdev-oak", branch: "feat/x" };
+  expect(terminalContext({ ...info, exitCode: 2 }, ["$ make", "error", "", ""])).toBe(
+    ["Terminal: zsh (shell)", "Worktree: /demo/wt/xdev-oak (feat/x)", "Last exit code: 2", "--- last 200 lines ---", "$ make", "error"].join("\n"),
+  );
+  expect(terminalContext({ ...info, branch: null }, ["$"])).toBe(
+    ["Terminal: zsh (shell)", "Worktree: /demo/wt/xdev-oak", "Last exit code: running", "--- last 200 lines ---", "$"].join("\n"),
+  );
+  expect(terminalContext({ ...info, exitCode: null }, [])).toContain("Last exit code: unknown");
+});
+
+it("Copy Context caps the buffer at 200 lines", () => {
+  const lines = Array.from({ length: 300 }, (_, i) => `l${i}`);
+  const text = terminalContext({ title: "t", profile: "shell", path: "/w", branch: null }, lines);
+  const body = text.split("\n").slice(4);
+  expect(body).toHaveLength(CONTEXT_LINES);
+  expect(body[0]).toBe("l100");
+});
+
+it("copyContext writes the context built from the handle's buffer", async () => {
+  const { term } = fakeTerm({}, ["$ ls", "a b", ""]);
+  const { h } = handleFor(term);
+  expect(await copyContext(h, { title: "zsh", profile: "shell", path: "/w", branch: "main", exitCode: 0 })).toBe(true);
+  expect(writeText).toHaveBeenCalledWith(
+    ["Terminal: zsh (shell)", "Worktree: /w (main)", "Last exit code: 0", "--- last 200 lines ---", "$ ls", "a b"].join("\n"),
+  );
 });
