@@ -505,3 +505,14 @@ fn discard_all_with_staged_too_brings_back_an_unstaged_deletion() {
     assert_eq!(read(dir.path(), "a.txt"), "a\n");
     assert_eq!(status(dir.path()), "");
 }
+
+#[test]
+fn discard_without_staged_too_skips_files_with_only_staged_changes() {
+    let dir = fixture();
+    git(dir.path(), &["rm", "-q", "a.txt"]);
+    write(dir.path(), "b.txt", "b2\n");
+    let repo = Repo::discover(dir.path()).unwrap();
+    repo.discard(&paths(&["a.txt", "b.txt"]), false).unwrap();
+    assert_eq!(read(dir.path(), "b.txt"), "b\n");
+    assert!(!dir.path().join("a.txt").exists());
+}
