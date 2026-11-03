@@ -632,7 +632,7 @@
   "settings.notifications.sound": "Sound",
   "settings.notifications.soundHint": "At most one sound every 2 seconds.",
   "settings.notifications.bell": "Bell",
-  "settings.notifications.bellHint": "The header bell counts unread tabs and lists them.",
+  "settings.notifications.bellHint": "The header bell counts unread worktrees and lists their unread tabs.",
   "settings.notifications.badge": "Taskbar badge",
   "settings.notifications.badgeHint": "A dot on Windows, the number of unread worktrees on macOS and Linux.",
   "settings.notifications.soundGroup": "Sound",

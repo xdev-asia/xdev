@@ -632,7 +632,7 @@
   "settings.notifications.sound": "Âm thanh",
   "settings.notifications.soundHint": "Tối đa một âm mỗi 2 giây.",
   "settings.notifications.bell": "Chuông",
-  "settings.notifications.bellHint": "Chuông trên thanh đầu đếm các tab chưa xem và liệt kê chúng.",
+  "settings.notifications.bellHint": "Chuông trên thanh đầu đếm số worktree chưa xem và liệt kê các tab chưa xem của chúng.",
   "settings.notifications.badge": "Huy hiệu thanh tác vụ",
   "settings.notifications.badgeHint": "Một chấm trên Windows, số worktree chưa xem trên macOS và Linux.",
   "settings.notifications.soundGroup": "Âm thanh",
