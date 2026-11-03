@@ -54,7 +54,7 @@ function setup(over: Partial<JumpPaletteProps> = {}) {
   draw();
   hooks.effects.splice(0).forEach((e) => e());
   const key = (init: Record<string, unknown>) => {
-    const e = { key: "", ctrlKey: false, metaKey: false, shiftKey: false, preventDefault: vi.fn(), ...init };
+    const e = { key: "", ctrlKey: false, metaKey: false, shiftKey: false, keyCode: 0, nativeEvent: { isComposing: false }, preventDefault: vi.fn(), stopPropagation: vi.fn(), ...init };
     draw().props.onKeyDown(e);
     return e;
   };
@@ -170,4 +170,43 @@ it("picking a row notes it as recent", () => {
   const p = setup({ recent });
   p.key({ key: "3" });
   expect(recent.at("wt:/wt/oak")).toBe(5);
+});
+
+it("keys during IME composition do nothing", () => {
+  run.mockReset();
+  const p = setup();
+  const composing = { nativeEvent: { isComposing: true } };
+  p.key({ key: "Enter", ...composing });
+  p.key({ key: "ArrowDown", ...composing });
+  p.key({ key: "1", ...composing });
+  p.key({ key: "Process", keyCode: 229 });
+  p.key({ key: "Enter", keyCode: 229 });
+  expect(run).not.toHaveBeenCalled();
+  expect(p.props.onClose).not.toHaveBeenCalled();
+  // Selection did not move either: Enter after composition still runs the first row.
+  p.key({ key: "Enter" });
+  expect(run).toHaveBeenCalledWith("tab:p1");
+});
+
+it("the selected row scrolls into view", () => {
+  const p = setup();
+  const scroll = (index: number) => {
+    const el = { scrollIntoView: vi.fn() };
+    p.rows()[index].props.ref?.(el);
+    return el.scrollIntoView;
+  };
+  expect(scroll(0)).toHaveBeenCalledWith({ block: "nearest" });
+  expect(scroll(1)).not.toHaveBeenCalled();
+  p.key({ key: "End" });
+  expect(scroll(2)).toHaveBeenCalledWith({ block: "nearest" });
+  expect(scroll(0)).not.toHaveBeenCalled();
+});
+
+it("ctrl+k inside the palette does not reach the window", () => {
+  const p = setup();
+  const e = p.key({ key: "k", ctrlKey: true });
+  expect(e.stopPropagation).toHaveBeenCalled();
+  expect(e.preventDefault).toHaveBeenCalled();
+  const m = p.key({ key: "K", metaKey: true });
+  expect(m.stopPropagation).toHaveBeenCalled();
 });
