@@ -37,14 +37,16 @@ const repos = (): RepoView[] => {
   return [xdev, notes];
 };
 
-function harness() {
+const DOTS: Record<string, "working" | "failed" | "idle"> = { "/demo/wt/xdev-oak": "working", "/demo/wt/xdev-elm": "failed" };
+
+function harness(dots: Record<string, "working" | "failed" | "idle"> = DOTS, list: () => RepoView[] = repos) {
   const calls = { select: [] as WorktreeView[], create: 0, pin: [] as WorktreeView[], remove: [] as WorktreeView[], add: 0 };
   const draw = () => {
     hooks.cursor = 0;
     return WorktreeList({
-      repos: repos(),
+      repos: list(),
       selected: "/demo/wt/xdev-oak",
-      dots: { "/demo/wt/xdev-oak": "working", "/demo/wt/xdev-elm": "failed" },
+      dots,
       onSelect: (w) => calls.select.push(w),
       onCreate: () => void calls.create++,
       onPin: (w) => calls.pin.push(w),
@@ -77,10 +79,11 @@ function dom(labels: string[]) {
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; });
 
-it("lists worktrees grouped by repo with the primary first and no delete on it", () => {
+it("lists worktrees by status group, keeps repo order inside one, and no delete on the primary", () => {
   const view = harness();
   const html = view.html();
-  const order = [">xdev<", "/demo/xdev", "/demo/wt/xdev-oak", "/demo/wt/xdev-elm", ">notes<"].map(s => html.indexOf(s));
+  // failed (needs you), working, then the rest: the primary checkouts of xdev and notes.
+  const order = ["/demo/wt/xdev-elm", "/demo/wt/xdev-oak", "/demo/xdev", "/code/notes"].map(s => html.indexOf(s));
   expect(order.every(i => i >= 0)).toBe(true);
   expect(order).toEqual([...order].sort((a, b) => a - b));
   expect(html).toContain(en("workspace.primary"));
@@ -165,11 +168,33 @@ it("Tab closes the menu", () => {
   expect(view.menu()).toBeUndefined();
 });
 
-it("a repo group collapses", () => {
+const names = (view: ReturnType<typeof harness>) =>
+  view.all().filter(n => n.props.className === "ws-group-head").map(h => nodes(h.props.children).map(c => (typeof c.props.children === "string" || typeof c.props.children === "number" ? String(c.props.children) : "")).join(" ").trim());
+const head = (view: ReturnType<typeof harness>, group: string) => view.all().find(n => n.props.className === "ws-group-head" && n.props["data-group"] === group)!;
+
+const two = (): RepoView[] => {
+  const [xdev] = structuredClone(DEMO_WORKSPACE.repos);
+  return [xdev];
+};
+
+it("shows group headers with counts", () => {
+  // Two working, one idle, the primary checkout without a status.
+  const view = harness({ "/demo/wt/xdev-oak": "working", "/demo/wt/xdev-elm": "working", "/demo/xdev": "idle" }, two);
+  expect(names(view)).toEqual([`${en("workspace.group.working")} 2`, `${en("workspace.group.review")} 1`]);
+  expect(translate("vi", "workspace.group.working")).toBe("Đang chạy");
+  expect(translate("vi", "workspace.group.review")).toBe("Chờ duyệt");
+  expect(head(view, "working").props["aria-expanded"]).toBe(true);
+});
+
+it("collapses a group on header click", () => {
   const view = harness();
-  const head = () => view.all().find(n => n.props.className === "ws-group-head" && n.props["data-repo"] === "demo-xdev")!;
-  expect(head().props["aria-expanded"]).toBe(true);
-  head().props.onClick();
-  expect(head().props["aria-expanded"]).toBe(false);
+  expect(view.html()).toContain("/demo/wt/xdev-oak");
+  head(view, "working").props.onClick();
+  expect(head(view, "working").props["aria-expanded"]).toBe(false);
+  // Its rows leave; the other groups keep theirs. The state lives on across draws.
   expect(view.html()).not.toContain("/demo/wt/xdev-oak");
+  expect(view.html()).toContain("/demo/wt/xdev-elm");
+  expect(head(view, "working").props["aria-expanded"]).toBe(false);
+  head(view, "working").props.onClick();
+  expect(view.html()).toContain("/demo/wt/xdev-oak");
 });
