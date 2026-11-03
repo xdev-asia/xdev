@@ -14,6 +14,7 @@ use crate::accounts::data_dir;
 use crate::links::links_for;
 use crate::session::Shared;
 use crate::settings;
+use crate::settings_store;
 
 pub const CHANGED_EVENT: &str = "vault://changed";
 
@@ -75,18 +76,16 @@ pub fn open_vault(
 
     // Losing this only costs the user one folder pick on the next launch,
     // so it must not fail an open that worked.
-    if let Some(file) = settings_path(&app) {
-        let mut saved = settings::load(&file);
-        saved.last_vault = Some(path);
-        saved.vault_prompted = true;
-        let _ = settings::save(&file, &saved);
-    }
+    let _ = settings_store::write(&app, |s| {
+        s.last_vault = Some(path);
+        s.vault_prompted = true;
+    });
     Ok(entries)
 }
 
 #[tauri::command(async)]
 pub fn last_vault(app: AppHandle) -> Option<String> {
-    settings::load(&settings_path(&app)?).last_vault
+    settings_store::read(&app).last_vault
 }
 
 #[derive(Debug, PartialEq, Eq, serde::Serialize)]
@@ -99,9 +98,7 @@ pub struct VaultSetup {
 
 #[tauri::command(async)]
 pub fn vault_setup(app: AppHandle) -> VaultSetup {
-    let saved = settings_path(&app)
-        .map(|file| settings::load(&file))
-        .unwrap_or_default();
+    let saved = settings_store::read(&app);
     let base = app
         .path()
         .document_dir()
@@ -118,11 +115,7 @@ pub fn vault_setup(app: AppHandle) -> VaultSetup {
 /// Like `open_vault`, a lost save only means the offer shows once more.
 #[tauri::command(async)]
 pub fn dismiss_vault_prompt(app: AppHandle) {
-    if let Some(file) = settings_path(&app) {
-        let mut saved = settings::load(&file);
-        saved.vault_prompted = true;
-        let _ = settings::save(&file, &saved);
-    }
+    let _ = settings_store::write(&app, |s| s.vault_prompted = true);
 }
 
 /// Settings → Git as stored; the defaults when nothing is.
@@ -132,9 +125,7 @@ pub fn git_settings(app: AppHandle) -> settings::GitSettings {
 }
 
 pub(crate) fn load_git_settings(app: &AppHandle) -> settings::GitSettings {
-    settings_path(app)
-        .map(|file| settings::load(&file).git)
-        .unwrap_or_default()
+    settings_store::read(app).git
 }
 
 /// Stores Settings → Git with the custom prefix normalized, and returns
@@ -145,32 +136,13 @@ pub fn set_git_settings(
     app: AppHandle,
     git: settings::GitSettings,
 ) -> Result<settings::GitSettings, CmdError> {
-    let file = settings_path(&app).ok_or_else(|| CmdError {
-        code: "io",
-        detail: Some("no app config folder".into()),
-    })?;
-    store_git_settings(&file, git)
-}
-
-fn store_git_settings(
-    file: &Path,
-    git: settings::GitSettings,
-) -> Result<settings::GitSettings, CmdError> {
-    let mut saved = settings::load(file);
-    saved.git = git.normalized();
-    settings::save(file, &saved).map_err(|e| CmdError {
-        code: "io",
-        detail: Some(e.to_string()),
-    })?;
-    Ok(saved.git)
+    settings_store::write(&app, |s| s.git = git.normalized()).map(|s| s.git)
 }
 
 /// Settings → Terminal as stored; the defaults when nothing is.
 #[tauri::command(async)]
 pub fn terminal_settings_get(app: AppHandle) -> settings::TerminalSettings {
-    settings_path(&app)
-        .map(|file| settings::load(&file).terminal)
-        .unwrap_or_default()
+    settings_store::read(&app).terminal
 }
 
 /// Stores Settings → Terminal and returns what was stored.
@@ -179,17 +151,7 @@ pub fn terminal_settings_put(
     app: AppHandle,
     settings: settings::TerminalSettings,
 ) -> Result<settings::TerminalSettings, CmdError> {
-    let file = settings_path(&app).ok_or_else(|| CmdError {
-        code: "io",
-        detail: Some("no app config folder".into()),
-    })?;
-    let mut saved = settings::load(&file);
-    saved.terminal = settings;
-    settings::save(&file, &saved).map_err(|e| CmdError {
-        code: "io",
-        detail: Some(e.to_string()),
-    })?;
-    Ok(saved.terminal)
+    settings_store::write(&app, |s| s.terminal = settings).map(|s| s.terminal)
 }
 
 /// The global git `user.name` that the git-username prefix shows; a repo's
@@ -451,29 +413,6 @@ mod tests {
 
     fn code_of(e: impl Into<CoreError>) -> &'static str {
         CmdError::from(e.into()).code
-    }
-
-    #[test]
-    fn git_settings_are_stored_normalized_beside_the_rest() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join(settings::FILE_NAME);
-        let before = settings::Settings {
-            last_vault: Some("D:/docs".into()),
-            ..settings::Settings::default()
-        };
-        settings::save(&file, &before).unwrap();
-
-        let git = settings::GitSettings {
-            branch_prefix: settings::BranchPrefixMode::Custom,
-            branch_prefix_custom: " team//me/ ".into(),
-            refresh_local_base_on_create: true,
-            ..settings::GitSettings::default()
-        };
-        let stored = store_git_settings(&file, git).unwrap();
-        assert_eq!(stored.branch_prefix_custom, "team/me");
-        let loaded = settings::load(&file);
-        assert_eq!(loaded.git, stored);
-        assert_eq!(loaded.last_vault.as_deref(), Some("D:/docs"));
     }
 
     #[test]

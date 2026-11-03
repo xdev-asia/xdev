@@ -18,8 +18,9 @@ use xdev_policy::{Action, Audited, Policy, Verdict, agent_fingerprint};
 use xdev_pty::{PtyError, Session, SpawnSpec};
 
 use crate::accounts::data_dir;
-use crate::commands::{AppState, CmdError, cli_beside, settings_path};
-use crate::settings::{self, StatusSettings};
+use crate::commands::{AppState, CmdError, cli_beside};
+use crate::settings::StatusSettings;
+use crate::settings_store;
 
 impl From<LaunchError> for CmdError {
     fn from(e: LaunchError) -> CmdError {
@@ -123,7 +124,7 @@ pub(crate) fn hook_program(status: &StatusSettings, exe: &Path) -> Option<PathBu
 /// `hook_program` for this app run, read fresh so a changed setting applies
 /// to the next session.
 fn hooks_now(app: &AppHandle) -> Option<PathBuf> {
-    let status = settings::load(&settings_path(app)?).status;
+    let status = settings_store::store(app)?.read().status;
     hook_program(&status, &std::env::current_exe().ok()?)
 }
 

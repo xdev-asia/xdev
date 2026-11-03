@@ -11,6 +11,7 @@ mod review;
 mod review_notes;
 mod session;
 mod settings;
+mod settings_store;
 mod ship;
 mod squads;
 mod status;
@@ -50,10 +51,14 @@ pub fn run() {
         .manage(status::Shown::default())
         .setup(move |app| {
             updater::start(app.handle().clone());
+            // Every settings read and write goes through this store.
+            if let Some(file) = commands::settings_path(app.handle()) {
+                app.manage(settings_store::SettingsStore::new(file));
+            }
             // The `.off` marker follows the stored setting from the start,
             // not only once the setting is saved. Best effort.
-            if let (Some(file), Some(local)) = (commands::settings_path(app.handle()), &sync_local)
-                && let Err(e) = status::sync_hooks_marker(&file, local)
+            if let (Some(store), Some(local)) = (settings_store::store(app.handle()), &sync_local)
+                && let Err(e) = status::sync_hooks_marker(&store, local)
             {
                 eprintln!("hooks marker: {e}");
             }

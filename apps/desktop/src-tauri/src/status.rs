@@ -13,8 +13,9 @@ use tauri::ipc::{InvokeResponseBody, Response};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 
-use crate::commands::{AppState, CmdError, settings_path};
-use crate::settings::{self, StatusSettings};
+use crate::commands::{AppState, CmdError};
+use crate::settings::StatusSettings;
+use crate::settings_store::{self, SettingsStore};
 
 /// The largest own sound the app copies and plays.
 const MAX_SOUND: u64 = 1024 * 1024;
@@ -100,19 +101,21 @@ fn bad_sound(detail: impl Into<String>) -> CmdError {
     }
 }
 
-fn file_of(app: &AppHandle) -> Result<PathBuf, CmdError> {
-    settings_path(app).ok_or_else(|| io_error(io::Error::other("no config dir")))
+fn store_of(app: &AppHandle) -> Result<&SettingsStore, CmdError> {
+    settings_store::store(app)
+        .map(|s| s.inner())
+        .ok_or_else(|| io_error(io::Error::other("no config dir")))
 }
 
 /// Stores `next`, except the sound file, which only `status_sound_set` sets.
-fn put(file: &Path, next: StatusSettings) -> io::Result<StatusSettings> {
-    let mut saved = settings::load(file);
-    saved.status = StatusSettings {
-        volume: next.volume.min(100),
-        sound_file: saved.status.sound_file.take(),
-        ..next
-    };
-    settings::save(file, &saved)?;
+fn put(store: &SettingsStore, next: StatusSettings) -> io::Result<StatusSettings> {
+    let saved = store.update(|s| {
+        s.status = StatusSettings {
+            volume: next.volume.min(100),
+            sound_file: s.status.sound_file.take(),
+            ..next
+        };
+    })?;
     Ok(saved.status)
 }
 
@@ -120,22 +123,26 @@ fn put(file: &Path, next: StatusSettings) -> io::Result<StatusSettings> {
 /// so a marker left over from another session (or a settings file that
 /// roamed in without one) does not keep hooks quiet, or on, behind the
 /// setting's back.
-pub fn sync_hooks_marker(file: &Path, local_dir: &Path) -> io::Result<bool> {
-    let on = settings::load(file).status.hooks;
+pub fn sync_hooks_marker(store: &SettingsStore, local_dir: &Path) -> io::Result<bool> {
+    let on = store.read().status.hooks;
     xdev_agent::set_hooks_off(local_dir, !on)?;
     Ok(on)
 }
 
 /// Copies `src` to `<data_dir>/sounds/custom.<ext>`, or clears the setting
 /// for `None`; a copy left from an earlier pick stays on disk.
-fn set_sound(file: &Path, data_dir: &Path, src: Option<&Path>) -> Result<StatusSettings, CmdError> {
+fn set_sound(
+    store: &SettingsStore,
+    data_dir: &Path,
+    src: Option<&Path>,
+) -> Result<StatusSettings, CmdError> {
     let stored = match src {
         None => None,
         Some(src) => Some(copy_sound(data_dir, src)?),
     };
-    let mut saved = settings::load(file);
-    saved.status.sound_file = stored.map(|p| p.display().to_string());
-    settings::save(file, &saved).map_err(io_error)?;
+    let saved = store
+        .update(|s| s.status.sound_file = stored.map(|p| p.display().to_string()))
+        .map_err(io_error)?;
     Ok(saved.status)
 }
 
@@ -193,9 +200,7 @@ fn overlay_dot() -> Vec<u8> {
 
 #[tauri::command(async)]
 pub fn status_settings_get(app: AppHandle) -> StatusSettings {
-    settings_path(&app)
-        .map(|file| settings::load(&file).status)
-        .unwrap_or_default()
+    settings_store::read(&app).status
 }
 
 #[tauri::command(async)]
@@ -204,7 +209,7 @@ pub fn status_settings_put(
     state: State<'_, AppState>,
     settings: StatusSettings,
 ) -> Result<StatusSettings, CmdError> {
-    let stored = put(&file_of(&app)?, settings).map_err(io_error)?;
+    let stored = put(store_of(&app)?, settings).map_err(io_error)?;
     // The marker `xdev agent-hook` checks, so switching hooks off also
     // quiets panes launched while they were on. Best effort.
     if let Some(local) = state.local_dir.as_deref()
@@ -273,15 +278,13 @@ pub fn status_sound_set(
     path: Option<String>,
 ) -> Result<StatusSettings, CmdError> {
     let data_dir = crate::accounts::data_dir(&state)?;
-    set_sound(&file_of(&app)?, data_dir, path.as_deref().map(Path::new))
+    set_sound(store_of(&app)?, data_dir, path.as_deref().map(Path::new))
 }
 
 /// Raw bytes, or JSON `null` when there is no own sound to play.
 #[tauri::command(async)]
 pub fn status_sound(app: AppHandle) -> Response {
-    let status = settings_path(&app)
-        .map(|file| settings::load(&file).status)
-        .unwrap_or_default();
+    let status = settings_store::read(&app).status;
     match sound_bytes(&status) {
         Some(bytes) => Response::new(InvokeResponseBody::Raw(bytes)),
         None => Response::new(InvokeResponseBody::Json("null".to_owned())),
@@ -292,21 +295,23 @@ pub fn status_sound(app: AppHandle) -> Response {
 mod tests {
     use super::*;
 
+    use crate::settings;
+
     struct Dirs {
         _tmp: tempfile::TempDir,
-        file: PathBuf,
+        store: SettingsStore,
         data: PathBuf,
         src: PathBuf,
     }
 
     fn dirs() -> Dirs {
         let tmp = tempfile::tempdir().unwrap();
-        let file = tmp.path().join("config").join(settings::FILE_NAME);
+        let store = SettingsStore::new(tmp.path().join("config").join(settings::FILE_NAME));
         let data = tmp.path().join("data");
         let src = tmp.path().join("pick");
         fs::create_dir_all(&src).unwrap();
         Dirs {
-            file,
+            store,
             data,
             src,
             _tmp: tmp,
@@ -318,18 +323,18 @@ mod tests {
         let d = dirs();
         let good = d.src.join("Ding.WAV");
         fs::write(&good, b"RIFF....").unwrap();
-        let status = set_sound(&d.file, &d.data, Some(&good)).unwrap();
+        let status = set_sound(&d.store, &d.data, Some(&good)).unwrap();
         let dest = d.data.join("sounds").join("custom.wav");
         assert_eq!(
             status.sound_file.as_deref(),
             Some(dest.display().to_string().as_str())
         );
         assert_eq!(fs::read(&dest).unwrap(), b"RIFF....");
-        assert_eq!(settings::load(&d.file).status, status);
+        assert_eq!(d.store.read().status, status);
         assert_eq!(sound_bytes(&status).unwrap(), b"RIFF....");
 
         // Picking the stored copy again keeps its bytes.
-        let again = set_sound(&d.file, &d.data, Some(&dest)).unwrap();
+        let again = set_sound(&d.store, &d.data, Some(&dest)).unwrap();
         assert_eq!(again.sound_file, status.sound_file);
         assert_eq!(fs::read(&dest).unwrap(), b"RIFF....");
 
@@ -339,18 +344,18 @@ mod tests {
         fs::write(&big, vec![0u8; MAX_SOUND as usize + 1]).unwrap();
         let missing = d.src.join("gone.ogg");
         for bad in [&text, &big, &missing, &d.src] {
-            let err = set_sound(&d.file, &d.data, Some(bad)).unwrap_err();
+            let err = set_sound(&d.store, &d.data, Some(bad)).unwrap_err();
             assert_eq!(err.code, "bad_sound", "{}", bad.display());
         }
         // A refused file leaves the stored sound alone.
-        assert_eq!(settings::load(&d.file).status.sound_file, status.sound_file);
+        assert_eq!(d.store.read().status.sound_file, status.sound_file);
 
         let exact = d.src.join("edge.ogg");
         fs::write(&exact, vec![1u8; MAX_SOUND as usize]).unwrap();
-        let ogg = set_sound(&d.file, &d.data, Some(&exact)).unwrap();
+        let ogg = set_sound(&d.store, &d.data, Some(&exact)).unwrap();
         assert!(ogg.sound_file.unwrap().ends_with("custom.ogg"));
 
-        let cleared = set_sound(&d.file, &d.data, None).unwrap();
+        let cleared = set_sound(&d.store, &d.data, None).unwrap();
         assert_eq!(cleared.sound_file, None);
         assert_eq!(sound_bytes(&cleared), None);
     }
@@ -381,18 +386,18 @@ mod tests {
             .join(xdev_agent::HOOKS_OFF);
         // No settings file: hooks are on, a stale marker goes.
         xdev_agent::set_hooks_off(&local, true).unwrap();
-        assert!(sync_hooks_marker(&d.file, &local).unwrap());
+        assert!(sync_hooks_marker(&d.store, &local).unwrap());
         assert!(!marker.exists());
         // Stored off: the marker appears.
         let off = StatusSettings {
             hooks: false,
             ..StatusSettings::default()
         };
-        put(&d.file, off).unwrap();
-        assert!(!sync_hooks_marker(&d.file, &local).unwrap());
+        put(&d.store, off).unwrap();
+        assert!(!sync_hooks_marker(&d.store, &local).unwrap());
         assert!(marker.is_file());
         // Running it again changes nothing.
-        assert!(!sync_hooks_marker(&d.file, &local).unwrap());
+        assert!(!sync_hooks_marker(&d.store, &local).unwrap());
         assert!(marker.is_file());
     }
 
@@ -404,30 +409,30 @@ mod tests {
             os: false,
             ..StatusSettings::default()
         };
-        let stored = put(&d.file, next).unwrap();
+        let stored = put(&d.store, next).unwrap();
         assert_eq!(stored.volume, 100);
         assert!(!stored.os);
-        assert_eq!(settings::load(&d.file).status, stored);
+        assert_eq!(d.store.read().status, stored);
     }
 
     #[test]
     fn settings_put_keeps_other_settings_and_the_sound_file() {
         let d = dirs();
-        let mut saved = settings::Settings {
-            last_vault: Some("vault".to_owned()),
-            ..settings::Settings::default()
-        };
-        saved.status.sound_file = Some("kept.wav".to_owned());
-        settings::save(&d.file, &saved).unwrap();
+        d.store
+            .update(|s| {
+                s.last_vault = Some("vault".to_owned());
+                s.status.sound_file = Some("kept.wav".to_owned());
+            })
+            .unwrap();
         let next = StatusSettings {
             sound_file: Some("from-ui.wav".to_owned()),
             volume: 30,
             ..StatusSettings::default()
         };
-        let stored = put(&d.file, next).unwrap();
+        let stored = put(&d.store, next).unwrap();
         assert_eq!(stored.sound_file.as_deref(), Some("kept.wav"));
         assert_eq!(stored.volume, 30);
-        assert_eq!(settings::load(&d.file).last_vault.as_deref(), Some("vault"));
+        assert_eq!(d.store.read().last_vault.as_deref(), Some("vault"));
     }
 
     #[test]
