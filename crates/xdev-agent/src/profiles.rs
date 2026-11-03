@@ -117,6 +117,7 @@ pub struct Profile {
     /// Shell lines run before the CLI.
     #[serde(default)]
     pub startup: Vec<String>,
+    #[serde(default = "default_true")]
     pub enabled: bool,
 }
 
@@ -149,6 +150,8 @@ pub struct CustomShell {
 pub struct Profiles {
     pub approvals: Approvals,
     pub default_agent: String,
+    /// A shell id without the `shell:` prefix (`powershell`, `fish`,
+    /// `wsl:Ubuntu`); `None` picks the platform's own default.
     #[serde(default)]
     pub default_shell: Option<String>,
     pub profiles: Vec<Profile>,
@@ -189,6 +192,7 @@ struct OnDisk {
     version: u32,
     #[serde(default)]
     approvals: Approvals,
+    #[serde(default = "default_agent")]
     default_agent: String,
     #[serde(default)]
     default_shell: Option<String>,
@@ -196,6 +200,14 @@ struct OnDisk {
     profiles: Vec<Profile>,
     #[serde(default)]
     shells: Vec<CustomShell>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_agent() -> String {
+    DEFAULT_AGENT.to_owned()
 }
 
 /// The built-in profile of `cli`, as first installed.
@@ -341,16 +353,20 @@ impl Profiles {
         Ok(())
     }
 
-    /// Clears the profile's args and env; model, effort, account and startup
-    /// stay.
+    /// Clears a built-in's args, env and mode so it follows the global
+    /// Approvals again; model, effort, account and startup stay. A custom
+    /// profile has nothing to reset and is left as it is.
     pub fn reset(&mut self, id: &str) -> Result<(), ProfileError> {
         let profile = self
             .profiles
             .iter_mut()
             .find(|p| p.id == id)
             .ok_or(ProfileError::Unknown)?;
-        profile.args.clear();
-        profile.env.clear();
+        if profile.cli.is_some() {
+            profile.args.clear();
+            profile.env.clear();
+            profile.permissions = None;
+        }
         Ok(())
     }
 
@@ -372,12 +388,7 @@ impl Profiles {
             .position(|s| s.id == id)
             .ok_or(ProfileError::Unknown)?;
         self.shells.remove(at);
-        let launch_id = format!("shell:{id}");
-        if self
-            .default_shell
-            .as_deref()
-            .is_some_and(|d| d == id || d == launch_id)
-        {
+        if self.default_shell.as_deref() == Some(id) {
             self.default_shell = None;
         }
         Ok(())
@@ -536,7 +547,7 @@ mod tests {
             args: vec!["-l".into()],
         })
         .unwrap();
-        p.set_defaults(Approvals::Skip, "aider-x", Some("shell:fish".into()))
+        p.set_defaults(Approvals::Skip, "aider-x", Some("fish".into()))
             .unwrap();
         p.save(d.path()).unwrap();
         assert_eq!(Profiles::load(d.path()).unwrap(), p);
@@ -664,7 +675,7 @@ mod tests {
     }
 
     #[test]
-    fn reset_clears_args_and_env_only() {
+    fn reset_clears_overrides() {
         let mut p = Profiles::default();
         let mut c = p.get("claude").unwrap().clone();
         c.args = vec!["--verbose".into()];
@@ -676,15 +687,67 @@ mod tests {
         c.effort = Some("high".into());
         c.account = Some("work".into());
         c.startup = vec!["cd src".into()];
+        c.permissions = Some(Permissions::Skip);
         p.put(c).unwrap();
         p.reset("claude").unwrap();
         let c = p.get("claude").unwrap();
         assert!(c.args.is_empty() && c.env.is_empty());
+        assert_eq!(c.permissions, None);
         assert_eq!(c.model.as_deref(), Some("opus"));
         assert_eq!(c.effort.as_deref(), Some("high"));
         assert_eq!(c.account.as_deref(), Some("work"));
         assert_eq!(c.startup, ["cd src"]);
         assert_eq!(code(p.reset("nope")), "unknown_profile");
+    }
+
+    #[test]
+    fn reset_leaves_a_custom_profile_alone() {
+        let mut p = Profiles::default();
+        let mut c = custom("aider");
+        c.args = vec!["--yes".into()];
+        c.env = vec![EnvVar {
+            name: "A".into(),
+            value: "1".into(),
+        }];
+        c.permissions = Some(Permissions::AcceptEdits);
+        p.put(c.clone()).unwrap();
+        p.reset("aider").unwrap();
+        assert_eq!(p.get("aider"), Some(&c));
+    }
+
+    #[test]
+    fn enabled_defaults_to_true() {
+        let d = tempdir();
+        fs::write(
+            d.path().join(FILE),
+            r#"{"version":1,"defaultAgent":"claude","profiles":[
+                {"id":"mine","name":"Mine","program":"mine"}]}"#,
+        )
+        .unwrap();
+        let p = Profiles::load(d.path()).unwrap();
+        assert!(p.get("mine").unwrap().enabled);
+    }
+
+    #[test]
+    fn missing_default_agent_is_claude() {
+        let d = tempdir();
+        fs::write(d.path().join(FILE), r#"{"version":1}"#).unwrap();
+        let p = Profiles::load(d.path()).unwrap();
+        assert_eq!(p.default_agent, "claude");
+        assert_eq!(ids(&p), ["claude", "codex", "gemini"]);
+    }
+
+    #[test]
+    fn failed_save_leaves_no_temp_file() {
+        let d = tempdir();
+        // A folder where the file belongs makes the final rename fail.
+        fs::create_dir(d.path().join(FILE)).unwrap();
+        assert_eq!(code(Profiles::default().save(d.path())), "io");
+        let names: Vec<_> = fs::read_dir(d.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(names, ["profiles.json"]);
     }
 
     #[test]
@@ -702,6 +765,17 @@ mod tests {
         assert_eq!(p.effective(p.get("claude").unwrap()), Permissions::Ask);
         // Reset follows the switch again.
         p.reset("claude").unwrap();
+        assert_eq!(p.effective(p.get("claude").unwrap()), Permissions::Skip);
+        // A mode of its own opts out; Reset takes it back.
+        let mut m = p.get("claude").unwrap().clone();
+        m.permissions = Some(Permissions::AcceptEdits);
+        p.put(m).unwrap();
+        assert_eq!(
+            p.effective(p.get("claude").unwrap()),
+            Permissions::AcceptEdits
+        );
+        p.reset("claude").unwrap();
+        assert!(p.get("claude").unwrap().follows_approvals());
         assert_eq!(p.effective(p.get("claude").unwrap()), Permissions::Skip);
         // Env opts out too.
         let mut x = p.get("codex").unwrap().clone();
@@ -737,10 +811,10 @@ mod tests {
         // Nothing changed.
         assert_eq!(p.approvals, Approvals::Ask);
         assert_eq!(p.default_agent, "claude");
-        p.set_defaults(Approvals::Skip, "gemini", Some("shell:cmd".into()))
+        p.set_defaults(Approvals::Skip, "gemini", Some("cmd".into()))
             .unwrap();
         assert_eq!(p.default_agent, "gemini");
-        assert_eq!(p.default_shell.as_deref(), Some("shell:cmd"));
+        assert_eq!(p.default_shell.as_deref(), Some("cmd"));
     }
 
     #[test]
@@ -776,7 +850,7 @@ mod tests {
         no_program.program = " ".into();
         assert_eq!(code(p.put_shell(no_program)), "invalid_profile");
 
-        p.set_defaults(Approvals::Ask, "claude", Some("shell:fish".into()))
+        p.set_defaults(Approvals::Ask, "claude", Some("fish".into()))
             .unwrap();
         p.remove_shell("fish").unwrap();
         assert!(p.shells.is_empty());
