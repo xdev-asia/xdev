@@ -3,10 +3,12 @@
 //! registry holds `WorkspaceLock` from load to save, so two commands never
 //! write over each other.
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -309,8 +311,6 @@ pub fn repo_forget(
 }
 
 /// What `repo_clone` sends on its channel while git runs.
-// Lane B builds these in repo_clone; the contract only declares them.
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -331,36 +331,201 @@ pub enum CloneProgress {
 
 /// Clones `url` into `parent/name` (the name from the URL when `None`) and
 /// adds it as a repo. `id` names the run for `repo_clone_cancel`.
+/// Every event goes on the channel, `Error` too, and the call also fails
+/// with the error's code: `bad_arg`, `exists`, `busy`, `cancelled` or git's.
 #[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 pub fn repo_clone(
     state: State<'_, AppState>,
     lock: State<'_, WorkspaceLock>,
+    clones: State<'_, Clones>,
     url: String,
     parent: PathBuf,
     name: Option<String>,
     id: String,
     on_event: Channel<CloneProgress>,
 ) -> Result<(), CmdError> {
-    let _ = (state, lock, url, parent, name, id, on_event);
-    Err(CmdError {
-        code: "io",
-        detail: Some("repo_clone is not implemented yet".into()),
-    })
+    let mut send = |event: CloneProgress| {
+        // The window may be gone; the clone still finishes and is added.
+        let _ = on_event.send(event);
+    };
+    let request = CloneRequest {
+        url: &url,
+        parent: &parent,
+        name: name.as_deref(),
+    };
+    let result = clones.begin(&id).and_then(|run| {
+        let data = data_dir(&state)?;
+        clone_with(data, &lock, &request, &run.cancel, &mut send, &trash_folder)
+    });
+    if let Err(e) = &result {
+        send(CloneProgress::Error {
+            message: e.detail.clone().unwrap_or_else(|| e.code.to_owned()),
+        });
+    }
+    result.map(drop)
 }
 
 /// Stops the clone named `id`; nothing when it is not running.
 #[tauri::command]
-pub fn repo_clone_cancel(id: String) -> Result<(), CmdError> {
-    let _ = id;
+pub fn repo_clone_cancel(clones: State<'_, Clones>, id: String) -> Result<(), CmdError> {
+    clones.cancel(&id);
     Ok(())
 }
 
 /// The folder name a clone of `url` gets: `xdev` for `.../xdev.git`.
 #[tauri::command]
 pub fn repo_clone_name(url: String) -> Result<String, CmdError> {
-    let _ = url;
-    Err(bad_arg("repo_clone_name is not implemented yet"))
+    xdev_git::clone_name(&url).ok_or_else(|| bad_arg("no folder name in the URL"))
+}
+
+/// The clones running now, by the id the UI gave each.
+#[derive(Default)]
+pub struct Clones(Mutex<HashMap<String, Arc<AtomicBool>>>);
+
+/// A running clone's cancel flag; leaving the list when dropped.
+pub struct CloneRun<'a> {
+    clones: &'a Clones,
+    id: String,
+    cancel: Arc<AtomicBool>,
+}
+
+impl Clones {
+    /// `busy` when a clone with this id is running.
+    fn begin(&self, id: &str) -> Result<CloneRun<'_>, CmdError> {
+        let mut runs = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if runs.contains_key(id) {
+            return Err(CmdError {
+                code: "busy",
+                detail: Some(format!("clone {id} is running")),
+            });
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        runs.insert(id.to_owned(), cancel.clone());
+        Ok(CloneRun {
+            clones: self,
+            id: id.to_owned(),
+            cancel,
+        })
+    }
+
+    fn cancel(&self, id: &str) {
+        let runs = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(flag) = runs.get(id) {
+            flag.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+impl Drop for CloneRun<'_> {
+    fn drop(&mut self) {
+        let mut runs = self.clones.0.lock().unwrap_or_else(PoisonError::into_inner);
+        runs.remove(&self.id);
+    }
+}
+
+struct CloneRequest<'a> {
+    url: &'a str,
+    parent: &'a Path,
+    name: Option<&'a str>,
+}
+
+/// Progress at most every 100 ms, but always on a new phase or at 100 %.
+const CLONE_EVENT_GAP: Duration = Duration::from_millis(100);
+
+/// The clone behind `repo_clone`: checks the URL, the name and the folder,
+/// makes the empty folder (so a failure can only trash what this run
+/// made), clones into it, then adds it as a repo under the workspace lock
+/// and sends `Done`. On a failure or a cancel the folder goes to `trash`.
+fn clone_with(
+    data: &Path,
+    lock: &WorkspaceLock,
+    request: &CloneRequest<'_>,
+    cancel: &AtomicBool,
+    send: &mut dyn FnMut(CloneProgress),
+    trash: &dyn Fn(&Path) -> io::Result<()>,
+) -> Result<RepoView, CmdError> {
+    let dest = clone_dest(request)?;
+    let cloned = {
+        let mut last: Option<(String, Instant)> = None;
+        let mut on_event = |event: xdev_git::CloneEvent| {
+            let xdev_git::CloneEvent::Progress { phase, percent } = event else {
+                return;
+            };
+            let due = match &last {
+                Some((was, at)) => {
+                    *was != phase || percent == Some(100) || at.elapsed() >= CLONE_EVENT_GAP
+                }
+                None => true,
+            };
+            if due {
+                last = Some((phase.clone(), Instant::now()));
+                send(CloneProgress::Phase { phase, percent });
+            }
+        };
+        xdev_git::clone_repo(request.url, &dest, cancel, &mut on_event)
+    };
+    let added = cloned.map_err(CmdError::from).and_then(|()| {
+        let (now_ms, _) = clock();
+        update(data, lock, |reg| add_repo(reg, &dest, now_ms))
+    });
+    match added {
+        Ok(repo) => {
+            send(CloneProgress::Done { repo: repo.clone() });
+            Ok(repo)
+        }
+        Err(mut e) => {
+            if dest.exists()
+                && let Err(t) = trash(&dest)
+            {
+                let detail = e.detail.take().unwrap_or_default();
+                e.detail = Some(format!(
+                    "{detail}; the folder was left at {}: {t}",
+                    dest.display()
+                ));
+            }
+            Err(e)
+        }
+    }
+}
+
+/// `parent/name` made as an empty folder; `exists` when something is there.
+fn clone_dest(request: &CloneRequest<'_>) -> Result<PathBuf, CmdError> {
+    xdev_git::check_clone_url(request.url)?;
+    let name = match request.name {
+        Some(name) => name.trim().to_owned(),
+        None => {
+            xdev_git::clone_name(request.url).ok_or_else(|| bad_arg("no folder name in the URL"))?
+        }
+    };
+    let plain = !name.is_empty()
+        && name.chars().count() <= 255
+        && name != "."
+        && name != ".."
+        && !name.starts_with('-')
+        && !name
+            .chars()
+            .any(|c| c.is_control() || r#"/\:*?"<>|"#.contains(c));
+    if !plain {
+        return Err(bad_arg("folder name"));
+    }
+    if !request.parent.is_absolute() || !request.parent.is_dir() {
+        return Err(bad_arg("parent folder"));
+    }
+    let dest = request.parent.join(&name);
+    match fs::create_dir(&dest) {
+        Ok(()) => Ok(dest),
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Err(CmdError {
+            code: "exists",
+            detail: Some(dest.display().to_string()),
+        }),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// A failed clone's folder goes to the OS trash, never a hard delete.
+fn trash_folder(path: &Path) -> io::Result<()> {
+    trash::delete(path).map_err(|e| io::Error::other(e.to_string()))
 }
 
 #[tauri::command(async)]
@@ -1370,5 +1535,205 @@ mod tests {
             );
             thread::sleep(Duration::from_millis(100));
         }
+    }
+
+    /// A bare copy of the fixture's repo to clone from, by absolute path.
+    fn bare(fx: &Fixture) -> PathBuf {
+        let bare = fx.main.parent().unwrap().join("origin.git");
+        git(
+            fx.main.parent().unwrap(),
+            &["clone", "-q", "--bare", "main", "origin.git"],
+        );
+        bare
+    }
+
+    struct Trashed(std::cell::RefCell<Vec<PathBuf>>);
+
+    impl Trashed {
+        fn new() -> Self {
+            Trashed(std::cell::RefCell::new(Vec::new()))
+        }
+        fn seam(&self) -> impl Fn(&Path) -> io::Result<()> + '_ {
+            |path: &Path| {
+                self.0.borrow_mut().push(path.to_path_buf());
+                Ok(())
+            }
+        }
+    }
+
+    fn clone_into(
+        fx: &Fixture,
+        url: &str,
+        parent: &Path,
+        name: Option<&str>,
+        cancel: bool,
+        trash: &dyn Fn(&Path) -> io::Result<()>,
+    ) -> (Result<RepoView, CmdError>, Vec<CloneProgress>) {
+        let mut events = Vec::new();
+        let request = CloneRequest { url, parent, name };
+        let result = clone_with(
+            &fx.data,
+            &WorkspaceLock::default(),
+            &request,
+            &AtomicBool::new(cancel),
+            &mut |e| events.push(e),
+            trash,
+        );
+        (result, events)
+    }
+
+    #[test]
+    fn repo_clone_name_takes_the_last_part_of_the_url() {
+        for url in [
+            "https://example.com/team/xdev.git",
+            "git@example.com:team/xdev.git",
+            "ssh://git@example.com/team/xdev",
+        ] {
+            assert_eq!(repo_clone_name(url.into()).unwrap(), "xdev", "{url}");
+        }
+        assert_eq!(code(repo_clone_name("".into())), "bad_arg");
+    }
+
+    #[test]
+    fn a_clone_is_added_to_the_workspace_and_sends_done() {
+        let fx = fixture();
+        let origin = bare(&fx);
+        let parent = fx.main.parent().unwrap().join("clones");
+        fs::create_dir(&parent).unwrap();
+        let trashed = Trashed::new();
+        let (result, events) = clone_into(
+            &fx,
+            origin.to_str().unwrap(),
+            &parent,
+            None,
+            false,
+            &trashed.seam(),
+        );
+        let repo = result.unwrap();
+        let dest = parent.join("origin");
+        assert!(dest.join("a.txt").is_file());
+        assert_eq!(repo.short_name, "origin");
+        let reg = Registry::load(&fx.data).unwrap();
+        assert!(reg.repos.iter().any(|r| r.id == repo.id));
+        assert_eq!(events.last(), Some(&CloneProgress::Done { repo }));
+        assert!(trashed.0.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_clone_takes_the_given_folder_name() {
+        let fx = fixture();
+        let origin = bare(&fx);
+        let parent = fx.main.parent().unwrap();
+        let trashed = Trashed::new();
+        let (result, _) = clone_into(
+            &fx,
+            origin.to_str().unwrap(),
+            parent,
+            Some(" copy "),
+            false,
+            &trashed.seam(),
+        );
+        result.unwrap();
+        assert!(parent.join("copy").join("a.txt").is_file());
+    }
+
+    #[test]
+    fn a_clone_refuses_bad_input_before_making_anything() {
+        let fx = fixture();
+        let origin = bare(&fx);
+        let origin = origin.to_str().unwrap();
+        let parent = fx.main.parent().unwrap();
+        let trashed = Trashed::new();
+        let seam = trashed.seam();
+        let try_clone = |url: &str, parent: &Path, name: Option<&str>| {
+            code(clone_into(&fx, url, parent, name, false, &seam).0)
+        };
+        assert_eq!(try_clone("-uevil", parent, Some("x")), "bad_arg");
+        assert_eq!(try_clone("ext::sh -c x", parent, Some("x")), "bad_arg");
+        assert_eq!(try_clone(origin, parent, Some("-x")), "bad_arg");
+        assert_eq!(try_clone(origin, parent, Some("a/b")), "bad_arg");
+        assert_eq!(try_clone(origin, parent, Some("..")), "bad_arg");
+        assert_eq!(try_clone(origin, Path::new("rel"), Some("x")), "bad_arg");
+        assert_eq!(try_clone(origin, parent, Some("main")), "exists");
+        assert!(!parent.join("x").exists());
+        assert!(fx.main.join("a.txt").is_file());
+        assert!(trashed.0.borrow().is_empty());
+        assert_eq!(Registry::load(&fx.data).unwrap().repos.len(), 1);
+    }
+
+    #[test]
+    fn a_failed_clone_sends_its_folder_to_the_trash() {
+        let fx = fixture();
+        let parent = fx.main.parent().unwrap();
+        let missing = parent.join("nothing.git");
+        let trashed = Trashed::new();
+        let (result, events) = clone_into(
+            &fx,
+            missing.to_str().unwrap(),
+            parent,
+            Some("broken"),
+            false,
+            &trashed.seam(),
+        );
+        assert!(result.is_err());
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, CloneProgress::Done { .. }))
+        );
+        assert_eq!(*trashed.0.borrow(), vec![parent.join("broken")]);
+        assert_eq!(Registry::load(&fx.data).unwrap().repos.len(), 1);
+    }
+
+    #[test]
+    fn a_cancelled_clone_is_trashed_and_says_cancelled() {
+        let fx = fixture();
+        let origin = bare(&fx);
+        let parent = fx.main.parent().unwrap();
+        let trashed = Trashed::new();
+        let (result, _) = clone_into(
+            &fx,
+            origin.to_str().unwrap(),
+            parent,
+            Some("stopped"),
+            true,
+            &trashed.seam(),
+        );
+        assert_eq!(code(result), "cancelled");
+        assert_eq!(*trashed.0.borrow(), vec![parent.join("stopped")]);
+    }
+
+    #[test]
+    fn a_trash_failure_names_the_folder_left_behind() {
+        let fx = fixture();
+        let parent = fx.main.parent().unwrap();
+        let missing = parent.join("nothing.git");
+        let refuse = |_: &Path| Err(io::Error::other("no trash"));
+        let (result, _) = clone_into(
+            &fx,
+            missing.to_str().unwrap(),
+            parent,
+            Some("kept"),
+            false,
+            &refuse,
+        );
+        let detail = result.unwrap_err().detail.unwrap();
+        assert!(detail.contains("the folder was left at"), "{detail}");
+        assert!(detail.contains("kept"), "{detail}");
+        assert!(detail.contains("no trash"), "{detail}");
+    }
+
+    #[test]
+    fn clones_refuse_a_second_run_with_the_same_id_and_cancel_by_id() {
+        let clones = Clones::default();
+        let run = clones.begin("a").unwrap();
+        assert_eq!(code(clones.begin("a").map(drop)), "busy");
+        let other = clones.begin("b").unwrap();
+        clones.cancel("a");
+        clones.cancel("gone");
+        assert!(run.cancel.load(Ordering::Relaxed));
+        assert!(!other.cancel.load(Ordering::Relaxed));
+        drop(run);
+        clones.begin("a").unwrap();
     }
 }

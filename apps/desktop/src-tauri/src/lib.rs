@@ -50,6 +50,7 @@ pub fn run() {
         .manage(updater::Pending::default())
         .manage(pty::Ptys::default())
         .manage(workspace::WorkspaceLock::default())
+        .manage(workspace::Clones::default())
         .manage(review_notes::ReviewNotesLock::default())
         .manage(profiles::ProfilesLock::default())
         .manage(status::Shown::default())
