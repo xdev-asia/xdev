@@ -81,10 +81,15 @@ fn short_name_of(root: &Path) -> String {
 /// Starts tracking the repo that contains `dir`, with every linked worktree
 /// git already lists for it.
 pub fn add_repo(reg: &mut Registry, dir: &Path, now_ms: i64) -> Result<RepoView, WorkspaceError> {
-    let repo = Repo::discover(dir)?;
-    // `components` drops a trailing `.` and a doubled separator, so two
-    // spellings of one folder get one id.
-    let root: PathBuf = repo.root().components().collect();
+    // The primary checkout in git's own spelling, whichever worktree or link
+    // `dir` was reached through: this is the spelling `list` compares with.
+    let root = Repo::discover(dir)?
+        .list_worktrees()?
+        .into_iter()
+        .next()
+        .map(|e| e.path)
+        .ok_or(GitError::NoRepo)?;
+    let repo = Repo::discover(&root)?;
     let id = repo_id(&root);
     if reg.repos.iter().any(|r| r.id == id) {
         return Err(WorkspaceError::RepoExists(id));
@@ -127,8 +132,35 @@ pub fn forget_repo(reg: &mut Registry, id: &str) -> Result<(), WorkspaceError> {
 /// when they were made.
 pub fn list(reg: &mut Registry) -> Result<Vec<RepoView>, WorkspaceError> {
     (0..reg.repos.len())
-        .map(|idx| sync_repo(reg, idx, 0))
+        .map(|idx| {
+            let entry = reg.repos[idx].clone();
+            or_missing(sync_repo(reg, idx, 0), &entry)
+        })
         .collect()
+}
+
+/// One repo git cannot read must not blank the whole sidebar: it shows as
+/// missing. Only "no git program" is every repo's problem.
+fn or_missing(
+    result: Result<RepoView, WorkspaceError>,
+    entry: &RepoEntry,
+) -> Result<RepoView, WorkspaceError> {
+    match result {
+        Err(WorkspaceError::Git(GitError::NoGit)) => Err(GitError::NoGit.into()),
+        Err(WorkspaceError::Git(_) | WorkspaceError::Io(_)) => Ok(missing_view(entry)),
+        other => other,
+    }
+}
+
+fn missing_view(entry: &RepoEntry) -> RepoView {
+    RepoView {
+        id: entry.id.clone(),
+        short_name: entry.short_name.clone(),
+        path: lossy(&entry.path),
+        base_ref: entry.base_ref.clone(),
+        missing: true,
+        worktrees: Vec::new(),
+    }
 }
 
 /// Where a worktree began: its fork point from the base, else its head.
@@ -177,14 +209,7 @@ fn strip_prefix(folder: &str, short_name: &str) -> String {
 /// Aligns one repo's records with git's list and returns its view.
 fn sync_repo(reg: &mut Registry, idx: usize, now_ms: i64) -> Result<RepoView, WorkspaceError> {
     let entry = reg.repos[idx].clone();
-    let mut view = RepoView {
-        id: entry.id.clone(),
-        short_name: entry.short_name.clone(),
-        path: lossy(&entry.path),
-        base_ref: entry.base_ref.clone(),
-        missing: true,
-        worktrees: Vec::new(),
-    };
+    let mut view = missing_view(&entry);
     if !entry.path.is_dir() {
         return Ok(view);
     }
@@ -193,9 +218,17 @@ fn sync_repo(reg: &mut Registry, idx: usize, now_ms: i64) -> Result<RepoView, Wo
         Err(GitError::NoRepo) => return Ok(view),
         Err(e) => return Err(e.into()),
     };
-    view.missing = false;
 
     let listed = repo.list_worktrees()?;
+    // A folder that now sits inside another repo is not this repo, and must
+    // not take that repo's worktrees as its own.
+    if listed
+        .first()
+        .is_none_or(|primary| path_key(&primary.path) != path_key(&entry.path))
+    {
+        return Ok(view);
+    }
+    view.missing = false;
     let linked: Vec<&WorktreeEntry> = listed.iter().skip(1).filter(|e| !e.bare).collect();
     // A prunable entry is still listed: its record stays, in case the
     // folder comes back, but it is not shown.
@@ -320,32 +353,42 @@ pub fn create_worktree(
     };
     fs::create_dir_all(&entry.worktree_root)?;
     repo.add_worktree(&folder, &slug, &start)?;
-    let meta = WorktreeMeta {
-        repo_id: entry.id.clone(),
-        path: folder.clone(),
-        start,
-        pinned: false,
-        created_ms: now_ms,
-        made_here: true,
-    };
-    // Shown the way `list` shows it, in git's spelling of the path.
-    let key = path_key(&folder);
+    // Kept in git's spelling of the path, which may differ from `folder`
+    // when the root lies behind a link; `list` matches on it.
     let git_entry = repo
         .list_worktrees()?
         .into_iter()
-        .find(|e| path_key(&e.path) == key)
+        .find(|e| e.branch.as_deref() == Some(slug.as_str()))
         .unwrap_or_else(|| WorktreeEntry {
             path: folder,
-            head: Some(meta.start.clone()),
+            head: Some(start.clone()),
             branch: Some(slug),
             detached: false,
             bare: false,
             locked: false,
             prunable: false,
         });
+    let meta = WorktreeMeta {
+        repo_id: entry.id.clone(),
+        path: git_entry.path.clone(),
+        start,
+        pinned: false,
+        created_ms: now_ms,
+        made_here: true,
+    };
     let view = view_of(&git_entry, &entry.short_name, Some(&meta));
     reg.worktrees.push(meta);
     Ok(view)
+}
+
+/// The branch tip is in the history of `base_ref`, so deleting the branch
+/// loses no commit.
+fn is_merged(repo: &Repo, branch: &str, base_ref: &str) -> Result<bool, WorkspaceError> {
+    let full = format!("refs/heads/{branch}");
+    let Some(tip) = repo.resolve_ref(&full)? else {
+        return Ok(false);
+    };
+    Ok(repo.merge_base(&full, base_ref)? == Some(tip))
 }
 
 pub fn set_pinned(reg: &mut Registry, path: &Path, pinned: bool) -> Result<(), WorkspaceError> {
@@ -360,8 +403,9 @@ pub fn set_pinned(reg: &mut Registry, path: &Path, pinned: bool) -> Result<(), W
 }
 
 /// Removes a linked worktree. Without `force` it must have no changes,
-/// untracked files included. Its branch goes too when this app made it; the
-/// branch of an imported worktree is kept.
+/// untracked files included. Its branch goes too when this app made it and,
+/// unless `force`, all its commits are in `base_ref`; the branch of an
+/// imported worktree is kept.
 pub fn remove_worktree(reg: &mut Registry, path: &Path, force: bool) -> Result<(), WorkspaceError> {
     let key = path_key(path);
     if reg.repos.iter().any(|r| path_key(&r.path) == key) {
@@ -391,6 +435,11 @@ pub fn remove_worktree(reg: &mut Registry, path: &Path, force: bool) -> Result<(
                     .iter()
                     .any(|e| path_key(&e.path) != key && e.branch.as_deref() == Some(b))
         });
+    // Without `force`, commits found nowhere else keep their branch.
+    let branch = match branch {
+        Some(b) if !force && !is_merged(&repo, &b, &entry.base_ref)? => None,
+        other => other,
+    };
 
     repo.remove_worktree(&meta.path)?;
     reg.worktrees.remove(meta_idx);
@@ -398,4 +447,42 @@ pub fn remove_worktree(reg: &mut Registry, path: &Path, force: bool) -> Result<(
         repo.delete_branch(&branch)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry() -> RepoEntry {
+        RepoEntry {
+            id: "id".into(),
+            short_name: "r".into(),
+            path: "/r".into(),
+            base_ref: "main".into(),
+            worktree_root: "/wt".into(),
+        }
+    }
+
+    fn failed() -> WorkspaceError {
+        GitError::Failed {
+            args: "worktree list".into(),
+            status: Some(128),
+            stderr: "broken".into(),
+        }
+        .into()
+    }
+
+    #[test]
+    fn one_broken_repo_shows_as_missing() {
+        let view = or_missing(Err(failed()), &entry()).unwrap();
+        assert!(view.missing && view.worktrees.is_empty());
+        let io = std::io::Error::other("disk").into();
+        assert!(or_missing(Err(io), &entry()).unwrap().missing);
+    }
+
+    #[test]
+    fn no_git_stays_an_error() {
+        let err = or_missing(Err(GitError::NoGit.into()), &entry()).unwrap_err();
+        assert_eq!(err.code(), "no_git");
+    }
 }

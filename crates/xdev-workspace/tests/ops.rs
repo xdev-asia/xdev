@@ -321,3 +321,113 @@ fn forget_repo_drops_entry_and_metas_but_not_folders() {
         "repo_unknown"
     );
 }
+
+/// A worktree with one commit of its own on branch `work`.
+fn worktree_with_commit() -> (Registry, TestRepo, String, Repo) {
+    let (mut reg, id, main) = registered();
+    let wt = create_worktree(&mut reg, &id, "work", None, 1, 0).unwrap();
+    commit_all(Path::new(&wt.path), "only here");
+    let repo = Repo::discover(main.path()).unwrap();
+    (reg, main, wt.path, repo)
+}
+
+#[test]
+fn remove_without_force_keeps_a_branch_with_unmerged_commits() {
+    let (mut reg, _main, path, repo) = worktree_with_commit();
+    remove_worktree(&mut reg, Path::new(&path), false).unwrap();
+    assert!(!Path::new(&path).exists());
+    assert!(reg.worktrees.is_empty());
+    assert!(repo.branch_exists("work").unwrap());
+}
+
+#[test]
+fn remove_with_force_deletes_a_branch_with_unmerged_commits() {
+    let (mut reg, _main, path, repo) = worktree_with_commit();
+    remove_worktree(&mut reg, Path::new(&path), true).unwrap();
+    assert!(!repo.branch_exists("work").unwrap());
+}
+
+#[test]
+fn remove_without_force_deletes_a_merged_branch() {
+    let (mut reg, main, path, repo) = worktree_with_commit();
+    git(main.path(), &["merge", "-q", "--ff-only", "work"]);
+    remove_worktree(&mut reg, Path::new(&path), false).unwrap();
+    assert!(!repo.branch_exists("work").unwrap());
+}
+
+/// A directory link: a junction on Windows (no privilege needed), a symlink
+/// elsewhere. `None` when the system refuses.
+fn link_dir(target: &Path, link: &Path) -> Option<()> {
+    #[cfg(windows)]
+    let made = Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(link)
+        .arg(target)
+        .output()
+        .ok()?
+        .status
+        .success();
+    #[cfg(unix)]
+    let made = std::os::unix::fs::symlink(target, link).is_ok();
+    made.then_some(())
+}
+
+#[test]
+fn records_survive_a_repo_added_through_a_link() {
+    let tmp = TempDir::with_prefix("ws link ").unwrap();
+    let real = tmp.path().join("real");
+    let repo_path = real.join("main");
+    fs::create_dir_all(&repo_path).unwrap();
+    init(&repo_path);
+    commit_all(&repo_path, "one");
+    let link = tmp.path().join("link");
+    if link_dir(&real, &link).is_none() {
+        eprintln!("skipped: cannot make a directory link here");
+        return;
+    }
+    // The caller's spelling goes through the link; git's does not.
+    let mut reg = Registry::default();
+    let id = add_repo(&mut reg, &link.join("main"), 0).unwrap().id;
+    let wt = create_worktree(&mut reg, &id, "kept", None, 1, 0).unwrap();
+    set_pinned(&mut reg, Path::new(&wt.path), true).unwrap();
+    let repos = list(&mut reg).unwrap();
+    assert!(!repos[0].missing);
+    assert_eq!(reg.worktrees.len(), 1);
+    assert!(reg.worktrees[0].made_here && reg.worktrees[0].pinned);
+    assert_eq!(repos[0].worktrees[1].name, "kept");
+    assert!(repos[0].worktrees[1].pinned);
+    // Removing it still deletes the branch the app made.
+    remove_worktree(&mut reg, Path::new(&wt.path), false).unwrap();
+    assert!(
+        !Repo::discover(&repo_path)
+            .unwrap()
+            .branch_exists("kept")
+            .unwrap()
+    );
+}
+
+#[test]
+fn add_repo_from_a_linked_worktree_tracks_the_primary() {
+    let (mut reg, id, main) = registered();
+    let wt = create_worktree(&mut reg, &id, "side", None, 1, 0).unwrap();
+    let mut other = Registry::default();
+    let view = add_repo(&mut other, Path::new(&wt.path), 0).unwrap();
+    assert_eq!(view.id, id);
+    assert_eq!(view.short_name, "main");
+    assert_eq!(Path::new(&view.path), main.path());
+    assert!(view.worktrees[0].primary);
+    assert_eq!(view.worktrees.len(), 2);
+}
+
+#[test]
+fn a_repo_path_inside_another_repo_is_missing() {
+    let (mut reg, _id, main) = registered();
+    let inner = main.path().join("inner");
+    fs::create_dir(&inner).unwrap();
+    git(main.path(), &["worktree", "add", "-q", "-b", "x", "../x"]);
+    reg.repos[0].path = inner;
+    let repos = list(&mut reg).unwrap();
+    assert!(repos[0].missing);
+    assert!(repos[0].worktrees.is_empty());
+    assert!(reg.worktrees.is_empty());
+}
