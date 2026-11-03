@@ -6190,6 +6190,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "xdev-kit"
+version = "0.3.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "ts-rs",
+ "xdev-ai",
+]
+
+[[package]]
 name = "xdev-mcp"
 version = "0.3.0"
 dependencies = [
