@@ -2,6 +2,7 @@
 //! history, commit and restore. Paths in and out are vault-relative with `/`.
 
 mod commit;
+mod gh;
 mod history;
 mod range;
 mod remote;
@@ -12,6 +13,10 @@ mod worktree;
 
 use std::path::{Path, PathBuf};
 
+pub use gh::{
+    Check, CheckBucket, GhExec, GhOutput, PrDraft, PrState, PrView, SystemGh, pr_checks, pr_create,
+    pr_open_web, pr_view,
+};
 pub use history::Commit;
 pub use remote::{BaseRange, Upstream};
 pub use worktree::{NumStat, WorktreeEntry};
@@ -37,6 +42,14 @@ pub enum GitError {
     Rejected(String),
     #[error("local and remote history have diverged")]
     Diverged,
+    #[error("gh not found")]
+    GhMissing,
+    #[error("gh is not logged in")]
+    GhAuth,
+    #[error("the repo has no GitHub remote")]
+    NotGithub,
+    #[error("gh failed: {0}")]
+    Gh(String),
     #[error("a commit hook failed: {output}")]
     Hook { output: String },
     #[error("timeout")]
@@ -62,6 +75,10 @@ impl GitError {
             GitError::Detached => "detached",
             GitError::Rejected(_) => "push_rejected",
             GitError::Diverged => "pull_diverged",
+            GitError::GhMissing => "gh_missing",
+            GitError::GhAuth => "gh_auth",
+            GitError::NotGithub => "not_github",
+            GitError::Gh(_) => "gh_failed",
             GitError::Hook { .. } => "hook_failed",
             GitError::BadId(_) | GitError::Timeout | GitError::Failed { .. } => "git",
             GitError::Io(_) => "io",
