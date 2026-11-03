@@ -116,6 +116,16 @@ fn put(file: &Path, next: StatusSettings) -> io::Result<StatusSettings> {
     Ok(saved.status)
 }
 
+/// Makes the `.off` marker match the stored `status.hooks`. Run at startup,
+/// so a marker left over from another session (or a settings file that
+/// roamed in without one) does not keep hooks quiet, or on, behind the
+/// setting's back.
+pub fn sync_hooks_marker(file: &Path, local_dir: &Path) -> io::Result<bool> {
+    let on = settings::load(file).status.hooks;
+    xdev_agent::set_hooks_off(local_dir, !on)?;
+    Ok(on)
+}
+
 /// Copies `src` to `<data_dir>/sounds/custom.<ext>`, or clears the setting
 /// for `None`; a copy left from an earlier pick stays on disk.
 fn set_sound(file: &Path, data_dir: &Path, src: Option<&Path>) -> Result<StatusSettings, CmdError> {
@@ -344,6 +354,30 @@ mod tests {
             ..StatusSettings::default()
         };
         assert_eq!(sound_bytes(&status), None);
+    }
+
+    #[test]
+    fn startup_sync_makes_the_marker_follow_the_setting() {
+        let d = dirs();
+        let local = d.data.join("local");
+        let marker = local
+            .join(xdev_agent::HOOKS_DIR)
+            .join(xdev_agent::HOOKS_OFF);
+        // No settings file: hooks are on, a stale marker goes.
+        xdev_agent::set_hooks_off(&local, true).unwrap();
+        assert!(sync_hooks_marker(&d.file, &local).unwrap());
+        assert!(!marker.exists());
+        // Stored off: the marker appears.
+        let off = StatusSettings {
+            hooks: false,
+            ..StatusSettings::default()
+        };
+        put(&d.file, off).unwrap();
+        assert!(!sync_hooks_marker(&d.file, &local).unwrap());
+        assert!(marker.is_file());
+        // Running it again changes nothing.
+        assert!(!sync_hooks_marker(&d.file, &local).unwrap());
+        assert!(marker.is_file());
     }
 
     #[test]
