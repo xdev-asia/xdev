@@ -1,6 +1,6 @@
 import type { Api, HookDetail, PtyInfo, PtyProfile } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
-import { addTab, leaves, removeTab, replaceTab, single, type PaneLayout } from "./paneTree";
+import { addTab, leaves, removeTab, replaceTab, single, type PaneDir, type PaneLayout } from "./paneTree";
 import { DONE_QUIET_MS, INTERRUPT_MS, NO_CAPS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type Caps, type StatusEvent, type StatusState, type TabStatus } from "./status";
 
 /** The CLI behind a tab, for its hook caps and title rules; null for custom profiles and shells. */
@@ -11,6 +11,10 @@ export type TabCli = "claude" | "codex" | null;
  * marks it unread, and so does a terminal `bell`.
  */
 export type Attention = "needs-you" | "done" | "failed" | "bell";
+
+/** A tab's colour: one of ten theme tokens (`--x-tab-color-1` … `10`), or none. */
+export type TabColor = "none" | "c1" | "c2" | "c3" | "c4" | "c5" | "c6" | "c7" | "c8" | "c9" | "c10";
+export const TAB_COLORS: readonly TabColor[] = ["none", "c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10"];
 
 export interface Tab {
   id: string;
@@ -35,6 +39,9 @@ export interface Tab {
   title: string | null;
   /** Named by hand: later titles from the terminal leave the name alone. */
   renamed: boolean;
+  /** Pinned tabs sort first and are skipped by Close Others and Close to the Right. */
+  pinned: boolean;
+  color: TabColor;
   /** Set once the pty exited; `null` when it was killed or its code is unknown. */
   exitCode?: number | null;
   client: PtyClient;
@@ -298,6 +305,52 @@ export class Sessions {
     this.update(entry, { title: next, renamed: true });
   }
 
+  /** Pins or unpins a tab; pinned tabs come first in `tabs()`, in the order they had. */
+  setPinned(id: string, pinned: boolean): void {
+    // Contract stub: Lane B (B2).
+    void id;
+    void pinned;
+  }
+
+  setColor(id: string, color: TabColor): void {
+    // Contract stub: Lane B (B2).
+    void id;
+    void color;
+  }
+
+  /** A title set by the person; null gives back the program's last title. `rename` stays as an alias. */
+  setTitle(id: string, title: string | null): void {
+    // Contract stub: Lane B (B2).
+    void id;
+    void title;
+  }
+
+  /** Moves a tab into a new pane beside its pane. A tab alone in its pane stays (no-op). */
+  moveToSplit(id: string, dir: PaneDir): void {
+    // Contract stub: Lane B (B2).
+    void id;
+    void dir;
+  }
+
+  /** Whether `moveToSplit` would move the tab: it shares its pane with another tab. */
+  canMoveToSplit(id: string): boolean {
+    // Contract stub: Lane B (B2).
+    void id;
+    return false;
+  }
+
+  /** Closes every other tab of the worktree, except pinned ones. */
+  closeOthers(id: string): void {
+    // Contract stub: Lane B (B2).
+    void id;
+  }
+
+  /** Closes the tabs after this one in the worktree, except pinned ones. */
+  closeToRight(id: string): void {
+    // Contract stub: Lane B (B2).
+    void id;
+  }
+
   /**
    * The panes the person looks at now (window focused, workspace shown, the selected worktree's
    * active tab of every pane). Each newly seen tab loses `unread`, a `done` one turns
@@ -501,6 +554,8 @@ export class Sessions {
       unreadReason: null,
       title: null,
       renamed: false,
+      pinned: false,
+      color: "none",
       client: new PtyClient(this.api, id),
     };
     // Caps stay off until the pty says whether it got hook flags.

@@ -59,6 +59,20 @@
   --orange-bg: rgba(160, 74, 20, 0.1);
 }
 
+/* Tab colours (R5): ten names over the palette above, no new hues, so light and dark follow it. */
+:root {
+  --x-tab-color-1: var(--danger);
+  --x-tab-color-2: var(--orange);
+  --x-tab-color-3: var(--warn);
+  --x-tab-color-4: var(--ok);
+  --x-tab-color-5: color-mix(in srgb, var(--ok) 50%, var(--signal));
+  --x-tab-color-6: var(--accent);
+  --x-tab-color-7: color-mix(in srgb, var(--accent) 50%, var(--violet));
+  --x-tab-color-8: var(--violet);
+  --x-tab-color-9: color-mix(in srgb, var(--danger) 50%, var(--violet));
+  --x-tab-color-10: var(--text-2);
+}
+
 html,
 body,
 #root {
