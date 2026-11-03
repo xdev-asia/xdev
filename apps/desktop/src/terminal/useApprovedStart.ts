@@ -24,8 +24,9 @@ export function useApprovedStart(api: Api): {
   /**
    * For a view that restarts on its own: reports a failed start. A first `needs_approval`
    * opens the dialog and, once approved, calls `retry`; anything else becomes `error`.
+   * `cancel` runs when the start is given up: declined, refused again, or failed otherwise.
    */
-  ask(profile: PtyProfile, error: ApiError, alreadyApproved: boolean, retry: () => void): void;
+  ask(profile: PtyProfile, error: ApiError, alreadyApproved: boolean, retry: () => void, cancel?: () => void): void;
   error: ApiError | null;
   setError(error: ApiError | null): void;
   dialog: JSX.Element;

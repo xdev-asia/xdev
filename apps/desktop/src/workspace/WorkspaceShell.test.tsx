@@ -9,6 +9,7 @@ import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { Sessions } from "./sessions";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { WorktreeList } from "./WorktreeList";
+import { WorktreeTabs } from "./WorktreeTabs";
 
 // Hooks are stubbed only while the shell itself is called; children rendered to markup use React's own.
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -27,6 +28,8 @@ vi.mock("react", async (original) => {
     useSyncExternalStore: (subscribe: any, get: any, server?: any) => (hooks.active ? get() : react.useSyncExternalStore(subscribe, get, server)),
   };
 });
+// xterm needs a real canvas; the terminals are tested on their own.
+vi.mock("../terminal/Terminal", () => ({ Terminal: () => null }));
 vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 type Node = ReactElement<Record<string, any>>;
@@ -219,4 +222,19 @@ it("delete asks, closes sessions, then removes; dirty needs the second step", as
   expect(remove).toHaveBeenLastCalledWith("/demo/wt/xdev-elm", false, true);
   expect(view.of(RemoveWorktreeDialog)).toHaveLength(0);
   expect(view.worktree("elm")).toBeUndefined();
+});
+
+it("switching worktrees keeps every visited worktree's tabs mounted", async () => {
+  const view = await harness();
+  const tabs = () => view.of(WorktreeTabs).map(n => [n.props.worktree, n.props.visible]);
+  expect(tabs()).toEqual([["/demo/xdev", true]]);
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  const oakTab = sessions.open("/demo/wt/xdev-oak", "shell");
+
+  view.list().props.onSelect(view.worktree("oak"));
+  expect(tabs()).toEqual([["/demo/xdev", false], ["/demo/wt/xdev-oak", true]]);
+  view.list().props.onSelect(view.worktree("elm"));
+  expect(tabs()).toEqual([["/demo/xdev", false], ["/demo/wt/xdev-oak", false], ["/demo/wt/xdev-elm", true]]);
+  // The hidden worktree still renders its terminal, so its pty keeps running.
+  expect(view.html()).toContain(`data-tab="${oakTab.id}"`);
 });

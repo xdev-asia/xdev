@@ -519,6 +519,170 @@
   margin: 6px 0 0;
 }
 
+/* Center: one tab strip per worktree, its terminals below it */
+
+.ws-tabs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ws-tabstrip {
+  display: flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  height: 34px;
+  border-bottom: 1px solid var(--ws-line);
+  background: var(--ws-panel);
+}
+
+.ws-tablist {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ws-tab {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  border-right: 1px solid var(--ws-line);
+  color: var(--ws-muted);
+}
+
+.ws-tab[data-selected="true"] {
+  background: var(--ws-term);
+  color: var(--ws-ink);
+  box-shadow: inset 0 2px 0 var(--ws-accent);
+}
+
+.ws-tab-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 4px 0 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ws-tab-icon {
+  font-size: 11px;
+  color: var(--ws-muted);
+}
+
+.ws-tab-glyph {
+  font-size: 10px;
+  color: var(--ws-muted);
+}
+
+.ws-tab-glyph[data-status="working"] {
+  color: var(--ws-signal);
+}
+
+.ws-tab-glyph[data-status="failed"] {
+  color: var(--ws-danger);
+}
+
+.ws-tab-close {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ws-muted);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.ws-tab-close:hover {
+  background: var(--ws-surface-2);
+  color: var(--ws-ink);
+}
+
+.ws-tab-add {
+  position: relative;
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 32px;
+}
+
+.ws-tab-add .ws-menu {
+  top: 32px;
+  right: auto;
+  left: 0;
+}
+
+.ws-tabs-banner {
+  margin: 8px 12px 0;
+}
+
+.ws-tabs .banner-text {
+  display: grid;
+  gap: 4px;
+}
+
+.ws-tabs .banner-text .commands {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The terminal reads its colors from these, so it draws on the terminal background. */
+.ws-tab-pane {
+  --x-color-surface: var(--ws-term);
+
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ws-tab-exit {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--ws-line);
+  background: var(--ws-panel);
+  font-size: 12px;
+  color: var(--ws-muted);
+}
+
+.ws-tab-again {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--ws-line);
+  border-radius: 6px;
+  background: var(--ws-surface);
+  color: var(--ws-ink);
+  font-size: 12px;
+}
+
+.ws-tab-again:hover {
+  background: var(--ws-surface-2);
+}
+
+.ws-launch {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .ws-panel {
   display: flex;
   flex: 0 0 276px;
