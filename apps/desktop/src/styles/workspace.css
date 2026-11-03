@@ -1158,6 +1158,75 @@ button.ws-tree-row:focus-visible {
   font-size: 12px;
 }
 
+.ws-change-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ws-change-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.ws-change-group-name {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ws-change-group-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.ws-change-group-actions button {
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+/* Row actions wait for hover or focus so the path keeps the room. */
+.ws-change-actions {
+  display: none;
+  flex-shrink: 0;
+  gap: 2px;
+  padding-right: 4px;
+}
+
+.ws-change:hover .ws-change-actions,
+.ws-change:focus-within .ws-change-actions {
+  display: flex;
+}
+
+.ws-change-act {
+  min-width: 20px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-m);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.ws-change-act:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.ws-change-act[data-danger] {
+  color: var(--danger);
+}
+
+.ws-change:focus-visible {
+  outline: 1px solid var(--accent);
+}
+
 .ws-change-list {
   display: flex;
   flex-direction: column;

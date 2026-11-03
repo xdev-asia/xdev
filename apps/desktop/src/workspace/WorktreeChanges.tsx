@@ -1,7 +1,7 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type WorktreeChange, type WorktreeView } from "@/api";
+import { toApiError, type Api, type StageState, type WorktreeChange, type WorktreeView } from "@/api";
 import type { Problem } from "@/changes/useChanges";
 import { ProblemNote } from "@/components/ChangesPanel";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -39,6 +39,10 @@ export function WorktreeChanges(props: {
   const { api, worktree, sessions } = props;
   const { t } = useI18n();
   const [changes, setChanges] = useState<WorktreeChange[] | null>(null);
+  // Where each path stands against the index; null until read, or when it could not be.
+  const [states, setStates] = useState<StageState[] | null>(null);
+  // A group action (stage, unstage) is running.
+  const [acting, setActing] = useState(false);
   const [stats, setStats] = useState<Record<string, Stats>>({});
   // Unchecked paths, so a file that shows up later starts checked.
   const [skipped, setSkipped] = useState<string[]>([]);
@@ -69,9 +73,11 @@ export function WorktreeChanges(props: {
     const seq = ++loads.current;
     running.current = seq;
     try {
-      const list = await api.worktreeChanges(path);
+      // The groups are only information: a failed stage state leaves one plain list.
+      const [list, state] = await Promise.all([api.worktreeChanges(path), api.worktreeStageState(path).catch(() => null)]);
       if (seq !== loads.current) return;
       setChanges(list);
+      setStates(state);
       // Counts belong to the diffs read before; a file may have changed since.
       setStats({});
       setLoadProblem(null);
@@ -132,6 +138,31 @@ export function WorktreeChanges(props: {
     setSkipped((s) => (s.includes(file) ? s.filter((p) => p !== file) : [...s, file]));
   }
 
+  const stateOf = (file: string) => states?.find((s) => s.path === file);
+  // A file with both an index and a disk change is in both groups, as in git.
+  const stagedList = (changes ?? []).filter((c) => stateOf(c.path)?.staged);
+  const changedList = (changes ?? []).filter((c) => {
+    const s = stateOf(c.path);
+    return !s || s.unstaged || s.untracked || !s.staged;
+  });
+
+  // Runs a stage change, then reads again whatever happened.
+  async function restage(files: string[], staged: boolean): Promise<void> {
+    if (files.length === 0 || acting) return;
+    setActing(true);
+    setProblem(null);
+    try {
+      await api.worktreeStage(path, files, staged);
+    } catch (e) {
+      setProblem(toApiError(e));
+    }
+    try {
+      await load();
+    } finally {
+      setActing(false);
+    }
+  }
+
   async function commit(confirmed = false): Promise<void> {
     setBusy(true);
     setProblem(null);
@@ -169,6 +200,51 @@ export function WorktreeChanges(props: {
     }
   }
 
+  function list(files: WorktreeChange[], group: "staged" | "changes"): JSX.Element {
+    return (
+      <ul className="ws-change-list">
+        {files.map((c) => {
+          const s = stats[c.path];
+          return (
+            <li key={c.path} className="ws-change">
+              <input
+                type="checkbox"
+                checked={!skipped.includes(c.path)}
+                aria-label={t("workspace.changes.include", { path: c.path })}
+                onChange={() => toggle(c.path)}
+              />
+              <button type="button" className="ws-change-open" title={c.path} onClick={() => void open(c.path)}>
+                <span className="ws-change-kind ws-mono" data-kind={c.kind} title={t(`changes.kind.${c.kind}`)}>
+                  {LETTER[c.kind]}
+                </span>
+                <span className="ws-change-path ws-mono">{c.path}</span>
+                {s && (
+                  <span className="diff-stats ws-change-stats ws-mono">
+                    <span className="diff-added" aria-hidden="true">+{s.added}</span>
+                    <span className="diff-removed" aria-hidden="true">−{s.removed}</span>
+                    <span className="diff-stats-text">{t("diff.stats", { count: s.added, removed: s.removed })}</span>
+                  </span>
+                )}
+              </button>
+              <span className="ws-change-actions">
+                <button
+                  type="button"
+                  className="ws-change-act"
+                  aria-label={t(group === "staged" ? "changes.unstage" : "changes.stage", { path: c.path })}
+                  title={t(group === "staged" ? "changes.unstage" : "changes.stage", { path: c.path })}
+                  disabled={acting}
+                  onClick={() => void restage([c.path], group === "changes")}
+                >
+                  {group === "staged" ? "−" : "+"}
+                </button>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
   return (
     <div className="ws-changes">
       <strong className="ws-changes-title">
@@ -203,35 +279,33 @@ export function WorktreeChanges(props: {
           </div>
         </div>
       )}
-      {changes && changes.length > 0 && (
-        <ul className="ws-change-list">
-          {changes.map((c) => {
-            const s = stats[c.path];
-            return (
-              <li key={c.path} className="ws-change">
-                <input
-                  type="checkbox"
-                  checked={!skipped.includes(c.path)}
-                  aria-label={t("workspace.changes.include", { path: c.path })}
-                  onChange={() => toggle(c.path)}
-                />
-                <button type="button" className="ws-change-open" title={c.path} onClick={() => void open(c.path)}>
-                  <span className="ws-change-kind ws-mono" data-kind={c.kind} title={t(`changes.kind.${c.kind}`)}>
-                    {LETTER[c.kind]}
-                  </span>
-                  <span className="ws-change-path ws-mono">{c.path}</span>
-                  {s && (
-                    <span className="diff-stats ws-change-stats ws-mono">
-                      <span className="diff-added" aria-hidden="true">+{s.added}</span>
-                      <span className="diff-removed" aria-hidden="true">−{s.removed}</span>
-                      <span className="diff-stats-text">{t("diff.stats", { count: s.added, removed: s.removed })}</span>
-                    </span>
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+      {stagedList.length > 0 && (
+        <section className="ws-change-group" data-group="staged" aria-label={t("changes.group.staged")}>
+          <header className="ws-change-head">
+            <span className="ws-change-group-name">{t("changes.group.staged")}</span>
+            <span className="ws-change-group-count ws-mono">{stagedList.length}</span>
+            <span className="ws-change-group-actions">
+              <button type="button" className="btn-secondary" aria-label={t("changes.unstageAll")} disabled={acting} onClick={() => void restage(stagedList.map((c) => c.path), false)}>
+                {t("changes.unstageAll")}
+              </button>
+            </span>
+          </header>
+          {list(stagedList, "staged")}
+        </section>
+      )}
+      {changedList.length > 0 && (
+        <section className="ws-change-group" data-group="changes" aria-label={t("changes.group.changes")}>
+          <header className="ws-change-head">
+            <span className="ws-change-group-name">{t("changes.group.changes")}</span>
+            <span className="ws-change-group-count ws-mono">{changedList.length}</span>
+            <span className="ws-change-group-actions">
+              <button type="button" className="btn-secondary" aria-label={t("changes.stageAll")} disabled={acting} onClick={() => void restage(changedList.map((c) => c.path), true)}>
+                {t("changes.stageAll")}
+              </button>
+            </span>
+          </header>
+          {list(changedList, "changes")}
+        </section>
       )}
       <label className="ws-commit-field">
         {t("workspace.changes.message")}
