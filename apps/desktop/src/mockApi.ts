@@ -21,6 +21,7 @@ import { estimateTokens, type ExportDoc, planExport } from "./mockExport";
 import { createMockKit } from "./mockKit";
 import { createMockProfiles } from "./mockProfiles";
 import { createMockPty } from "./mockPty";
+import { createMockStatus, type MockStatus } from "./mockStatus";
 import { createMockSquads } from "./mockSquads";
 import { createMockTasks } from "./mockTasks";
 import { createMockWorkspace, type MockWorkspaceSeed } from "./mockWorkspace";
@@ -344,7 +345,7 @@ function snippet(text: string, terms: string[]): string | null {
   return out.replace(/\s+/g, " ").trim();
 }
 
-export type MockApi = Api & {
+export type MockApi = Api & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge"> & {
   // Changes a file the way another program would (`null` deletes it); xDev did not write it.
   __editOutside(path: string, content: string | null): void;
   // Writes a file the way `propose_update` does over MCP; throws an ApiError like the real tool.
@@ -544,6 +545,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     }),
     ...profiles,
     ...createMockPty(profiles),
+    ...createMockStatus(),
     ...createMockWorkspace(options.workspace),
     ...createMockKit(),
     async accounts() { return structuredClone({ reservePercent: 30, accounts }); },

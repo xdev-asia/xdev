@@ -1,6 +1,6 @@
 import type { PtyProfile } from "@/api";
 import type { Sessions, Tab } from "./sessions";
-import { sendTarget } from "./sendTarget";
+import { runningAgent as running, sendTarget } from "./sendTarget";
 
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
@@ -13,7 +13,6 @@ export function pastePrompt(text: string): string {
   return PASTE_START + text.replace(/\r\n/g, "\n").replace(CONTROLS, "") + PASTE_END + "\r";
 }
 
-const running = (tab: Tab) => tab.agent && tab.status !== "failed" && tab.status !== "exited";
 
 /** How long a new agent tab gets to start and go quiet before the prompt is given up. */
 export const AGENT_START_MS = 30_000;

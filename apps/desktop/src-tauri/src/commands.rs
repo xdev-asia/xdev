@@ -187,7 +187,7 @@ pub fn cli_path() -> Option<String> {
 }
 
 /// The installer ships the CLI next to the desktop exe.
-fn cli_beside(exe: &Path) -> Option<PathBuf> {
+pub(crate) fn cli_beside(exe: &Path) -> Option<PathBuf> {
     let cli = exe
         .parent()?
         .join(format!("xdev{}", std::env::consts::EXE_SUFFIX));
@@ -362,7 +362,7 @@ pub fn export_write(
     Ok(written)
 }
 
-fn settings_path(app: &AppHandle) -> Option<PathBuf> {
+pub(crate) fn settings_path(app: &AppHandle) -> Option<PathBuf> {
     let dir = app.path().app_config_dir().ok()?;
     Some(dir.join(settings::FILE_NAME))
 }
