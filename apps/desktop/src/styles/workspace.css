@@ -2513,3 +2513,57 @@ button.ws-tree-row:focus-visible {
   color: var(--x-color-muted);
   font-size: 12px;
 }
+
+/* The file tree's tools: filter box, refresh, collapse all, search link */
+.ws-tree-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 6px;
+}
+
+.ws-tree-filter {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-sm);
+  background: var(--x-color-surface);
+  color: var(--x-color-ink);
+  font: inherit;
+  font-size: 12px;
+}
+
+.ws-tree-tool {
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--x-radius-sm);
+  background: transparent;
+  color: var(--x-color-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ws-tree-tool:hover:not(:disabled) {
+  background: var(--x-color-surface-2);
+  color: var(--x-color-ink);
+}
+
+.ws-tree-tool:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--x-space-2) var(--x-space-3);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-sm);
+  background: var(--x-color-surface);
+  color: var(--x-color-ink);
+  font: inherit;
+}
