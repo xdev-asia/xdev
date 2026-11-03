@@ -1,11 +1,17 @@
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The shape `save` writes. Bump it with a step in `MIGRATIONS` when a key
 /// is renamed or removed; a new field with a default needs neither.
-#[allow(dead_code, reason = "contract: the settings store uses it")]
 pub const VERSION: u32 = 1;
+
+/// `MIGRATIONS[i]` turns a version `i + 1` file into version `i + 2`; they
+/// run in order on the raw JSON before it is parsed, so a step can rename
+/// or move keys. Version 0 (no `version` key) has the shape of version 1.
+const MIGRATIONS: &[fn(&mut serde_json::Value)] = &[];
+const _: () = assert!(MIGRATIONS.len() as u32 + 1 == VERSION);
 /// Emitted after every settings write, with a `SettingsChanged` payload.
 #[allow(dead_code, reason = "contract: the settings store uses it")]
 pub const CHANGED_EVENT: &str = "settings://changed";
@@ -13,9 +19,9 @@ pub const CHANGED_EVENT: &str = "settings://changed";
 /// Not `Eq`: `terminal.line_height` is an `f32`.
 #[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Settings {
-    /// Missing in files written before the settings store; read as 0 and
-    /// migrated.
-    #[serde(default)]
+    /// The version the file was written as: 0 for files from before the
+    /// settings store. `save` always writes `VERSION`.
+    #[serde(default, deserialize_with = "lenient")]
     pub version: u32,
     /// Kept as the user picked it: the canonical root is a `\\?\` path on
     /// Windows, which the folder dialog and the UI should never see.
@@ -259,22 +265,65 @@ where
 pub const FILE_NAME: &str = "settings.json";
 
 /// A missing or unreadable file means first launch; refusing to start over a
-/// broken settings file would leave the user stuck.
+/// broken settings file would leave the user stuck. An older file is
+/// migrated in memory and keeps its `version` until the next save; a newer
+/// one loads as it is, and keys this build does not know are dropped then.
 pub fn load(path: &Path) -> Settings {
-    fs::read(path)
+    let Some(mut value) = fs::read(path)
         .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .filter(serde_json::Value::is_object)
+    else {
+        return Settings::default();
+    };
+    let version = file_version(&value);
+    if version > VERSION {
+        warn_newer(path, version);
+    }
+    migrate(&mut value, MIGRATIONS);
+    serde_json::from_value(value).unwrap_or_default()
+}
+
+/// 0 when the key is missing or not a number.
+fn file_version(value: &serde_json::Value) -> u32 {
+    value
+        .get("version")
+        .and_then(serde_json::Value::as_u64)
+        .map_or(0, |v| u32::try_from(v).unwrap_or(u32::MAX))
+}
+
+/// Runs the `steps` a file at its version still needs.
+fn migrate(value: &mut serde_json::Value, steps: &[fn(&mut serde_json::Value)]) {
+    let from = file_version(value).max(1) as usize;
+    for step in steps.iter().skip(from - 1) {
+        step(value);
+    }
+}
+
+/// Once per run: every read of a newer file would say the same.
+fn warn_newer(path: &Path, version: u32) {
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if !WARNED.swap(true, Ordering::Relaxed) {
+        eprintln!(
+            "settings: {} is version {version}, newer than this build's {VERSION};              keys this build does not know are dropped on the next save",
+            path.display()
+        );
+    }
 }
 
 /// Writes `settings.json.tmp` beside the file, then renames it over, so a
 /// crash or a full disk leaves the old file or the new one, never half of
 /// one.
+/// Always as `VERSION`.
 pub fn save(path: &Path, settings: &Settings) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
-    let json = serde_json::to_vec_pretty(settings).map_err(io::Error::other)?;
+    let current = Settings {
+        version: VERSION,
+        ..settings.clone()
+    };
+    let json = serde_json::to_vec_pretty(&current).map_err(io::Error::other)?;
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".tmp");
     let tmp = PathBuf::from(tmp);
@@ -511,6 +560,68 @@ mod tests {
         save(&path, &new).unwrap();
         assert_eq!(load(&path).last_vault.as_deref(), Some("D:/new"));
         assert!(!tmp.exists());
+    }
+
+    #[test]
+    fn an_old_file_loads_as_version_0_and_saves_as_the_current_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(&path, r#"{ "last_vault": "D:/docs" }"#).unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.version, 0);
+        assert_eq!(loaded.last_vault.as_deref(), Some("D:/docs"));
+        // Loading alone writes nothing.
+        assert!(!fs::read_to_string(&path).unwrap().contains("version"));
+
+        save(&path, &loaded).unwrap();
+        let raw: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(raw["version"], VERSION);
+        assert_eq!(raw["last_vault"], "D:/docs");
+        let again = load(&path);
+        assert_eq!(again.version, VERSION);
+        assert_eq!(again.last_vault.as_deref(), Some("D:/docs"));
+    }
+
+    #[test]
+    fn a_newer_file_loads_as_it_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let raw = r#"{ "version": 99, "last_vault": "D:/docs", "fromTheFuture": 1,
+            "git": { "branchPrefix": "none" } }"#;
+        fs::write(&path, raw).unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.version, 99);
+        assert_eq!(loaded.last_vault.as_deref(), Some("D:/docs"));
+        assert_eq!(loaded.git.branch_prefix, BranchPrefixMode::None);
+    }
+
+    #[test]
+    fn migrations_run_in_order_from_the_file_version() {
+        fn rename_a(v: &mut serde_json::Value) {
+            let a = v["a"].take();
+            v["b"] = a;
+        }
+        fn rename_b(v: &mut serde_json::Value) {
+            let b = v["b"].take();
+            v["c"] = b;
+        }
+        let steps: &[fn(&mut serde_json::Value)] = &[rename_a, rename_b];
+        // Version 0 has the shape of version 1, so both steps run.
+        for from in [0, 1] {
+            let mut v = serde_json::json!({ "version": from, "a": 7 });
+            migrate(&mut v, steps);
+            assert_eq!(v["c"], 7, "from {from}");
+        }
+        // A version-2 file only needs the second.
+        let mut v = serde_json::json!({ "version": 2, "b": 7 });
+        migrate(&mut v, steps);
+        assert_eq!(v["c"], 7);
+        // Up to date or newer: untouched.
+        for from in [3, 99] {
+            let mut v = serde_json::json!({ "version": from, "a": 7 });
+            migrate(&mut v, steps);
+            assert_eq!(v["a"], 7, "from {from}");
+        }
     }
 
     #[test]
