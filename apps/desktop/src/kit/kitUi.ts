@@ -30,9 +30,15 @@ export function joinPath(base: string, ...parts: string[]): string {
   return [base.replace(/[\\/]+$/, ""), ...parts.map((p) => p.replace(/^[\\/]+|[\\/]+$/g, ""))].join(sep);
 }
 
+/** A path as people read it: without the `\\?\` prefix Windows canonical paths carry. */
+export function displayPath(path: string): string {
+  if (path.startsWith("\\\\?\\UNC\\")) return `\\\\${path.slice(8)}`;
+  return path.startsWith("\\\\?\\") ? path.slice(4) : path;
+}
+
 /** `path` below `root` without the leading separator, or `null` when it is not below it. */
 export function below(root: string, path: string): string | null {
-  const clean = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "");
+  const clean = (p: string) => displayPath(p).replace(/\\/g, "/").replace(/\/+$/, "");
   const r = clean(root);
   const p = clean(path);
   if (p === r) return "";
@@ -47,7 +53,7 @@ export function relativeFolder(folder: string, roots: string[]): string {
     const name = root.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? root;
     return rel === "" ? name : `${name}/${rel}`;
   }
-  return folder;
+  return displayPath(folder);
 }
 
 export function totalOf(t: Tokens): number {

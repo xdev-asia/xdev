@@ -7,7 +7,7 @@ import { DiffView } from "../components/DiffView";
 import { Editor } from "../components/Editor";
 import { useI18n } from "../i18n";
 import { KitError, kitErr, type KitErr } from "./KitError";
-import { below, homeLabel, joinPath } from "./kitUi";
+import { below, displayPath, homeLabel, joinPath } from "./kitUi";
 
 type MemoryFile = MemorySet["files"][number];
 
@@ -63,7 +63,7 @@ export function MemoryTree(props: {
                     data-kind={file.kind}
                     aria-current={selected === file.path ? "true" : undefined}
                     style={{ paddingInlineStart: `${8 + depthOf(file, byPath) * 14}px` }}
-                    title={file.path}
+                    title={displayPath(file.path)}
                     onClick={() => props.onSelect(file.path)}
                   >
                     {file.issues.length > 0 && <span className="kit-dot" data-dot="issue" />}
@@ -285,7 +285,7 @@ export function MemoryTab(props: {
         ) : (
           <>
             <div className="kit-bar-row">
-              <span className="kit-cut kit-path" title={open.path}>{open.path}</span>
+              <span className="kit-cut kit-path" title={displayPath(open.path)}>{displayPath(open.path)}</span>
               {dirty && <span className="kit-chip">{t("kit.memory.dirty")}</span>}
               <span className="kit-spacer" />
               <Button type="button" disabled={!dirty} onClick={() => void save()}>{t("kit.memory.save")}</Button>

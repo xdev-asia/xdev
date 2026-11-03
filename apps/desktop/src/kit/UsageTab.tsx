@@ -4,7 +4,7 @@ import type { Api, Home, UsageSummary } from "../api";
 import { useI18n } from "../i18n";
 import { KitError, kitErr, type KitErr } from "./KitError";
 import { UsageChart } from "./UsageChart";
-import { dayRange, homeLabel, relativeFolder, totalOf, type Tokens } from "./kitUi";
+import { dayRange, displayPath, homeLabel, relativeFolder, totalOf, type Tokens } from "./kitUi";
 
 type Range = 7 | 30;
 
@@ -78,7 +78,7 @@ export function UsageView(props: { usage: UsageSummary; homes: Home[]; roots: st
             {usage.top_sessions.map((s) => (
               <tr key={`${s.home_id}/${s.id}`} data-session={s.id}>
                 <td className="kit-cut" title={s.id}>{`${homeLabel(homes, s.home_id, t)} · ${s.id.slice(0, 8)}`}</td>
-                <td className="kit-cut" title={s.folder ?? ""}>{folder(s.folder)}</td>
+                <td className="kit-cut" title={s.folder === null ? "" : displayPath(s.folder)}>{folder(s.folder)}</td>
                 <td className="kit-cut">{s.model ?? t("kit.usage.noModel")}</td>
                 <td>{s.last > 0 ? new Date(s.last).toLocaleString() : "–"}</td>
                 <td className="kit-num">{totalOf(s.total)}</td>

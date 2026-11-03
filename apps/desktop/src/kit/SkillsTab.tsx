@@ -5,7 +5,7 @@ import type { Api, Home, Skill } from "../api";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useI18n } from "../i18n";
 import { KitError, kitErr, type KitErr } from "./KitError";
-import { homeLabel, oneLine, scopeKey, scopeLabel, skillTargets, type SkillTarget } from "./kitUi";
+import { displayPath, homeLabel, oneLine, scopeKey, scopeLabel, skillTargets, type SkillTarget } from "./kitUi";
 
 const DESCRIPTION_MAX = 90;
 const TOAST_MS = 10_000;
@@ -150,8 +150,8 @@ export function SkillsTab(props: { api: Api; worktree: string | null }): JSX.Ele
   async function openFolder(skill: Skill): Promise<void> {
     // No command reveals a folder yet, so the path goes to the clipboard.
     try {
-      await navigator.clipboard.writeText(skill.dir);
-      setToast({ text: t("kit.skills.pathCopied", { path: skill.dir }) });
+      await navigator.clipboard.writeText(displayPath(skill.dir));
+      setToast({ text: t("kit.skills.pathCopied", { path: displayPath(skill.dir) }) });
     } catch {
       setToast({ text: t("kit.skills.pathFailed") });
     }
@@ -204,7 +204,7 @@ export function SkillsTab(props: { api: Api; worktree: string | null }): JSX.Ele
   const targetOptions = (list: SkillTarget[]) =>
     list.map((x) => (
       <option key={x.dir} value={x.dir}>
-        {`${x.label} — ${x.dir}`}
+        {`${x.label} — ${displayPath(x.dir)}`}
       </option>
     ));
 
