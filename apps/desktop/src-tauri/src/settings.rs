@@ -214,6 +214,12 @@ pub enum SettingsSection {
     Terminal,
     Keys,
     Ui,
+    /// `quickCommands` and their recently used order.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "emitted once the quick commands store lands")
+    )]
+    QuickCommands,
 }
 
 /// What a `settings://changed` event carries.

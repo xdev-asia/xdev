@@ -126,6 +126,10 @@ mod tests {
             json(&[SettingsSection::Keys, SettingsSection::Ui]),
             r#"{"sections":["keys","ui"]}"#
         );
+        assert_eq!(
+            json(&[SettingsSection::QuickCommands]),
+            r#"{"sections":["quickCommands"]}"#
+        );
     }
 
     #[test]

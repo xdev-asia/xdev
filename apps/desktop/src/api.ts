@@ -66,6 +66,8 @@ import type {
   HookRun,
   SetupPolicy,
   ScriptSource,
+  QuickCommand,
+  FileCommands,
 } from "@xdev/bindings";
 import type {
   AgentSession,
@@ -181,6 +183,11 @@ export type {
   TerminalKeyPolicy,
   UiSettings,
   KeybindingsText,
+  QuickCommand,
+  QuickScope,
+  QuickAction,
+  FileCommand,
+  FileCommands,
 } from "@xdev/bindings";
 // The UI's names for generated types.
 export type { Event as SquadEvent, FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
@@ -301,6 +308,8 @@ export type RepoPatch = {
 // The `ptySpawn` profile id that runs the worktree's setup script in the default shell. Rejects
 // with `hook_none` when there is no setup and `hook_untrusted` when its shared part is not trusted.
 export const SETUP_PROFILE = "xdev:setup";
+
+export { QUICK_COMMAND_LIMITS } from "./quickCommands/limits";
 
 export interface Api {
   // The downloaded update waiting for a restart, if any; Rust checks and downloads on its own.
@@ -562,6 +571,30 @@ export interface Api {
   // The agent sessions of every home, matched to the workspace; `refresh` reads the new log
   // bytes first. Rejects with `bad_arg` when `query.limit` is over 500.
   agentSessions(query: SessionQuery, refresh: boolean): Promise<SessionRow[]>;
+
+  // Quick commands
+  // Every saved command (settings.json `quickCommands`), global and per repo together, in order.
+  quickCommandsList(): Promise<QuickCommand[]>;
+  // An empty `id` gets a new `qc-…` one and goes at the end of its scope; a known id is replaced in
+  // place. Resolves with what was stored (label trimmed, command end-trimmed, repo as the workspace
+  // lists it). Rejects with `bad_arg` and the field in `detail`: `label`, `command`, `prompt`,
+  // `profile` (not an agent profile), `repo` (not in the workspace) or `prompts` (all prompts over
+  // `QUICK_COMMAND_LIMITS.promptsTotalBytes`). Every change fires `settings://changed` with `quickCommands`.
+  quickCommandUpsert(item: QuickCommand): Promise<QuickCommand>;
+  // An unknown id is a no-op. Also drops the id from the recent list.
+  quickCommandDelete(id: string): Promise<void>;
+  // Moves the command to index `to` among the commands of its own scope (clamped). Rejects with
+  // `not_found` for an unknown id.
+  quickCommandsMove(id: string, to: number): Promise<void>;
+  // The `[[commands]]` of the worktree's `xdev.toml` (else the primary checkout's), read only. Bad
+  // entries and a file that does not parse are in `errors`. Rejects with `worktree_unknown`.
+  repoFileCommands(worktree: string): Promise<FileCommands>;
+  // Trusts those commands with this hash; `hook_untrusted` when the file changed since.
+  repoFileCommandsTrust(worktree: string, hash: string): Promise<FileCommands>;
+  // Records a run: the id moves to the front of the recent list. An unknown id is a no-op.
+  quickCommandUsed(id: string): Promise<void>;
+  // Recently run ids, newest first, at most `QUICK_COMMAND_LIMITS.recent`.
+  quickCommandsRecent(): Promise<string[]>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -843,6 +876,14 @@ const tauriApi: Api = {
   kitPathsExist: (root, paths) => call("kit_paths_exist", { root, paths }),
   kitPromptHistory: (limit) => call("kit_prompt_history", { limit }),
   agentSessions: (query, refresh) => call("agent_sessions", { query, refresh }),
+  quickCommandsList: () => call("quick_commands_list"),
+  quickCommandUpsert: (item) => call("quick_command_upsert", { item }),
+  quickCommandDelete: (id) => call("quick_command_delete", { id }),
+  quickCommandsMove: (id, to) => call("quick_commands_move", { id, to }),
+  repoFileCommands: (worktree) => call("repo_file_commands", { worktree }),
+  repoFileCommandsTrust: (worktree, hash) => call("repo_file_commands_trust", { worktree, hash }),
+  quickCommandUsed: (id) => call("quick_command_used", { id }),
+  quickCommandsRecent: () => call("quick_commands_recent"),
 };
 
 function browserApi(): Api {

@@ -9,6 +9,7 @@ mod kit;
 mod links;
 mod profiles;
 mod pty;
+mod quick_commands;
 mod review;
 mod review_notes;
 mod session;
@@ -234,6 +235,14 @@ pub fn run() {
             kit::kit_paths_exist,
             kit::kit_prompt_history,
             agent_sessions::agent_sessions,
+            quick_commands::quick_commands_list,
+            quick_commands::quick_command_upsert,
+            quick_commands::quick_command_delete,
+            quick_commands::quick_commands_move,
+            quick_commands::quick_command_used,
+            quick_commands::quick_commands_recent,
+            quick_commands::repo_file_commands,
+            quick_commands::repo_file_commands_trust,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
