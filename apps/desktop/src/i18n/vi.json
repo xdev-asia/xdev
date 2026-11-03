@@ -502,6 +502,7 @@
   "error.not_github": "Remote này không nằm trên GitHub.",
   "error.gh_failed": "gh bị lỗi. Chi tiết hiện cùng thông báo lỗi.",
   "error.draft_failed": "Agent không soạn được nội dung này. Hãy tự viết.",
+  "error.bad_sound": "Hãy chọn tệp wav, mp3 hoặc ogg, tối đa 1 MB.",
   "apps.terminal": "Terminal",
   "terminal.folder": "Thư mục",
   "terminal.pickFolder": "Chọn thư mục…",

@@ -502,6 +502,7 @@
   "error.not_github": "This remote is not on GitHub.",
   "error.gh_failed": "gh failed. The details are shown with the error.",
   "error.draft_failed": "The agent could not draft this text. Write it yourself.",
+  "error.bad_sound": "Use a wav, mp3 or ogg file of at most 1 MB.",
   "apps.terminal": "Terminal",
   "terminal.folder": "Folder",
   "terminal.pickFolder": "Choose folder…",
