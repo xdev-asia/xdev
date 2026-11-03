@@ -261,3 +261,37 @@ it("a long name and branch are cut by the row and keep their full text in a titl
   // The counts stay in their own non-shrinking element, after the cut text.
   expect(part(view, oak, "ws-stat")).toHaveLength(1);
 });
+
+const FOUND: WorktreeView = { path: "/demo/elsewhere/spike", name: "spike", branch: "spike", head: "6666666666666666666666666666666666666666", start: null, primary: false, pinned: false, detached: false };
+
+it("found worktrees show under their repo and Adopt calls onAdopt", () => {
+  const adopted: WorktreeView[] = [];
+  const withFound = () => {
+    const list = repos();
+    list[0].found = [FOUND];
+    return list;
+  };
+  const view = harness(DOTS, withFound, { onAdopt: (w) => adopted.push(w) });
+  const group = () => view.all().find(n => n.props.className === "ws-found" && n.props["data-repo"] === "demo-xdev")!;
+  const toggle = () => nodes(group().props.children).find(n => n.type === "button" && n.props.className?.includes("ws-found-head"))!;
+  expect(view.all().filter(n => n.props.className === "ws-found")).toHaveLength(1);
+  expect(text(nodes(toggle().props.children).find(n => n.props.className === "ws-group-name")!)).toBe(en("workspace.found.title", { count: 1 }));
+  // Collapsed at first: the found rows are not in the list of worktrees.
+  expect(toggle().props["aria-expanded"]).toBe(false);
+  expect(view.html()).not.toContain("/demo/elsewhere/spike");
+  toggle().props.onClick();
+  expect(toggle().props["aria-expanded"]).toBe(true);
+  expect(view.html()).toContain("/demo/elsewhere/spike");
+  // A found worktree is not selectable as a row of the list.
+  expect(view.all().some(n => n.props.className === "ws-wt" && n.props["data-path"] === FOUND.path)).toBe(false);
+  const adopt = nodes(group().props.children).find(n => n.type === "button" && n.props.children === en("workspace.found.adopt"))!;
+  expect(adopt.props["aria-label"]).toBe(en("workspace.found.adoptLabel", { name: "spike" }));
+  adopt.props.onClick();
+  expect(adopted).toEqual([FOUND]);
+});
+
+it("no found group when found is empty", () => {
+  const view = harness(DOTS, repos, { onAdopt: () => {} });
+  expect(view.all().some(n => n.props.className === "ws-found")).toBe(false);
+  expect(view.html()).not.toContain(en("workspace.found.title", { count: 0 }));
+});
