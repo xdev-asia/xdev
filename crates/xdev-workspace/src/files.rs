@@ -3,7 +3,7 @@
 
 use std::fs;
 use std::io::{self, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use serde::{Deserialize, Serialize};
@@ -243,9 +243,8 @@ pub fn create_entry(worktree: &str, rel: &str, dir: bool) -> Result<(), Workspac
 /// Fails with `Exists` when `to` is taken; a name that differs only in case
 /// is the same item on a disk that ignores case, and is renamed.
 pub fn rename_entry(worktree: &str, from: &str, to: &str) -> Result<(), WorkspaceError> {
-    let src = rel_under(worktree, from)?;
     let dst = rel_under(worktree, to)?;
-    fs::symlink_metadata(&src).map_err(|e| missing(e, from))?;
+    let src = entry_path(worktree, from)?;
     if src == dst {
         return Ok(());
     }
@@ -315,10 +314,16 @@ pub fn trash_entry(worktree: &str, rel: &str) -> Result<(), WorkspaceError> {
 /// `trash_entry` with the trash given. When the trash fails the error is
 /// returned and the item stays; there is no hard delete to fall back to.
 pub fn trash_entry_with(worktree: &str, rel: &str, bin: &dyn Trash) -> Result<(), WorkspaceError> {
+    bin.trash(&entry_path(worktree, rel)?)?;
+    Ok(())
+}
+
+/// Where an item that exists inside `worktree` is on disk; the same checks
+/// as every other call here. For callers that hand the path to the OS.
+pub fn entry_path(worktree: &str, rel: &str) -> Result<PathBuf, WorkspaceError> {
     let disk = rel_under(worktree, rel)?;
     fs::symlink_metadata(&disk).map_err(|e| missing(e, rel))?;
-    bin.trash(&disk)?;
-    Ok(())
+    Ok(disk)
 }
 
 #[cfg(test)]
@@ -705,6 +710,25 @@ mod tests {
         assert_eq!(code("../x"), "bad_path");
         assert_eq!(code(".git"), "bad_path");
         assert!(bin.taken.borrow().is_empty());
+    }
+
+    #[test]
+    fn entry_path_names_existing_items_inside_only() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("src").join("m.rs"), "x").unwrap();
+        assert_eq!(
+            entry_path(root(&tmp), "./src/m.rs").unwrap(),
+            tmp.path().join("src").join("m.rs")
+        );
+        assert_eq!(
+            entry_path(root(&tmp), "src").unwrap(),
+            tmp.path().join("src")
+        );
+        let code = |rel| entry_path(root(&tmp), rel).unwrap_err().code();
+        assert_eq!(code("src/gone.rs"), "not_found");
+        assert_eq!(code("src/../../x"), "bad_path");
+        assert_eq!(code(".git"), "bad_path");
     }
 
     /// The real OS trash; run by hand where one exists (a CI runner may have none).
