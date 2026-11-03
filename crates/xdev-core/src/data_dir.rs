@@ -25,6 +25,13 @@ pub fn local_dir() -> Option<PathBuf> {
     )
 }
 
+/// Where the desktop app keeps `settings.json`: its config dir, which is the
+/// data dir on Windows and macOS but `~/.config/<APP_ID>` on Linux.
+/// `XDEV_DATA_DIR` moves it with the data dir, for tests and portable setups.
+pub fn config_dir() -> Option<PathBuf> {
+    resolve(std::env::var_os("XDEV_DATA_DIR"), dirs::config_dir())
+}
+
 fn resolve(env: Option<OsString>, os_data_dir: Option<PathBuf>) -> Option<PathBuf> {
     match env {
         Some(dir) if !dir.is_empty() => Some(PathBuf::from(dir)),

@@ -1,4 +1,5 @@
 mod accounts;
+mod agent;
 mod agent_hook;
 mod ai;
 mod context;
@@ -97,12 +98,18 @@ enum Command {
         #[command(subcommand)]
         command: squad::SquadCommand,
     },
+    /// Agent CLI integration: `hooks status|on|off`.
+    Agent {
+        #[command(subcommand)]
+        command: agent::AgentCommand,
+    },
     /// Run by an agent CLI's hook: records the event for the xDev pane in
     /// `XDEV_PTY_ID`. Always exits 0 and prints nothing to stdout.
     #[command(name = "agent-hook", hide = true)]
     AgentHook {
         event: agent_hook::Event,
-        /// Whatever the CLI appends (Codex passes its JSON); ignored.
+        /// Whatever the CLI appends; codex `notify` passes its JSON last.
+        /// `attention --message <text>` shows the text with the attention.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         rest: Vec<String>,
     },
@@ -127,8 +134,8 @@ fn main() -> ExitCode {
         }
         Err(e) => e.exit(),
     };
-    if let Command::AgentHook { event, .. } = cli.command {
-        agent_hook::run(event);
+    if let Command::AgentHook { event, rest } = cli.command {
+        agent_hook::run(event, &rest);
         return ExitCode::SUCCESS;
     }
     match run(cli.command) {
@@ -156,6 +163,7 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         Command::Ai { command } => return ai::run(command, &data_dir),
         Command::Accounts { command } => return accounts::run(command, &data_dir),
         Command::Quota { json } => return accounts::run_quota(json, &data_dir),
+        Command::Agent { command } => return agent::run(command, &local_dir),
         Command::Task { command } => return task::run(command, &data_dir, &local_dir),
         Command::Squad { command } => return squad::run(command, &data_dir, &local_dir),
         // Handled in `main` before any folder is touched.

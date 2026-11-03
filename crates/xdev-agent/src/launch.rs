@@ -4,12 +4,14 @@ use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use xdev_ai::{AiError, Provider, Registry};
+use xdev_ai::{AiError, Provider, Registry, codex_home};
 
+use crate::codex_home::prepare_codex_home;
 use crate::flags::flags;
 use crate::hooks::hook_args;
 use crate::profiles::{Cli, Permissions, Profile, ProfileError, Profiles};
 use crate::shells::{ShellEntry, default_shell_id};
+use crate::version::{CliVersion, cli_version};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Launch {
@@ -38,15 +40,72 @@ impl Launch {
     /// mapped flags and the profile's args and before any startup wrapping,
     /// so the policy gate and the fingerprint see them. A shell, a custom
     /// program or a CLI without hooks is left as it is.
-    pub fn add_hooks(&mut self, xdev: &Path) {
+    ///
+    /// The CLI is asked for its version first (once per program path), so
+    /// it gets only the hook events it knows. A codex new enough also gets
+    /// its private home under `data_dir` (`CODEX_HOME`, see `codex_home`).
+    pub fn add_hooks(&mut self, xdev: &Path, data_dir: &Path) {
+        let asks = matches!(self.cli, Some(Cli::Claude | Cli::Codex));
+        if asks && self.agent && !self.hooks {
+            let version = cli_version(&self.program);
+            self.add_hooks_with(xdev, Some(data_dir), version);
+        }
+    }
+
+    /// `add_hooks` for a CLI that reported `version` (`None`: unknown).
+    /// Without `data_dir`, codex gets `notify` only.
+    pub fn add_hooks_with(
+        &mut self,
+        xdev: &Path,
+        data_dir: Option<&Path>,
+        version: Option<CliVersion>,
+    ) {
         let Some(cli) = self.cli.filter(|_| self.agent && !self.hooks) else {
             return;
         };
-        let flags = hook_args(cli, xdev);
-        if !flags.is_empty() {
-            self.args.extend(flags);
-            self.hooks = true;
+        let flags = hook_args(cli, xdev, version);
+        if flags.is_empty() {
+            return;
         }
+        // `notify` stays on with the private home: it still reports the end
+        // of a turn if codex skips the hooks (say, an unmatched trust hash);
+        // `xdev agent-hook` drops it when `Stop` already did.
+        self.args.extend(flags);
+        self.hooks = true;
+        if cli == Cli::Codex
+            && let (Some(data_dir), Some(version)) = (data_dir, version)
+        {
+            self.use_codex_home(xdev, data_dir, version);
+        }
+    }
+
+    /// Points `CODEX_HOME` at the private home, built from the home the CLI
+    /// would use (the account's, the profile's `CODEX_HOME`, else the
+    /// default). Any failure leaves the launch on its own home.
+    fn use_codex_home(&mut self, xdev: &Path, data_dir: &Path, version: CliVersion) {
+        let var = Provider::Codex.home_var();
+        let is_var = |key: &str| {
+            if cfg!(windows) {
+                key.eq_ignore_ascii_case(var)
+            } else {
+                key == var
+            }
+        };
+        let set = self
+            .env
+            .iter()
+            .rev()
+            .find(|(key, _)| is_var(key))
+            .map(|(_, dir)| PathBuf::from(dir));
+        let Some(real) = set.or_else(|| codex_home(None)) else {
+            return;
+        };
+        let account = self.account.as_deref();
+        let Ok(home) = prepare_codex_home(data_dir, account, &real, xdev, version) else {
+            return;
+        };
+        self.env.retain(|(key, _)| !is_var(key));
+        self.env.push((var.to_owned(), home.into_os_string()));
     }
 
     /// What to spawn: `program` and `args` as they are, or, with startup
@@ -709,16 +768,37 @@ mod tests {
         c.startup = vec!["nvm use".into()];
         let mut l = run(&with(c), "claude", None, &found).unwrap();
         let xdev = Path::new("/opt/xdev");
-        l.add_hooks(xdev);
-        let hooks = hook_args(Cli::Claude, xdev);
+        let version = Some(CliVersion(2, 1, 317));
+        l.add_hooks_with(xdev, None, version);
+        let hooks = hook_args(Cli::Claude, xdev, version);
         assert_eq!(l.args[..1], ["--verbose"]);
         assert_eq!(l.args[1..], hooks[..]);
         assert!(l.hooks);
-        l.add_hooks(xdev);
+        l.add_hooks_with(xdev, None, version);
+        l.add_hooks(xdev, Path::new("/no/data"));
         assert_eq!(l.args.len(), 3);
         // The startup wrapper carries them as the CLI's own args.
         let (_, wrapped) = l.command();
         assert!(!wrapped.is_empty());
+    }
+
+    #[test]
+    fn add_hooks_offers_an_unknown_claude_only_two_events() {
+        let p = Profiles::default();
+        let xdev = Path::new("/opt/xdev");
+        let mut unknown = run(&p, "claude", None, &found).unwrap();
+        // `found` points at a program that does not exist: no version.
+        unknown.add_hooks(xdev, Path::new("/no/data"));
+        assert_eq!(
+            unknown.args[unknown.args.len() - 2..],
+            hook_args(Cli::Claude, xdev, None)[..]
+        );
+        let mut known = run(&p, "claude", None, &found).unwrap();
+        known.add_hooks_with(xdev, None, Some(CliVersion(2, 1, 317)));
+        assert_ne!(known.args, unknown.args);
+        let settings = known.args.last().unwrap();
+        assert!(settings.contains("PermissionRequest"));
+        assert!(!unknown.args.last().unwrap().contains("PermissionRequest"));
     }
 
     #[test]
@@ -727,18 +807,100 @@ mod tests {
         let p = Profiles::default();
         let mut gemini = run(&p, "gemini", None, &found).unwrap();
         let before = gemini.args.clone();
-        gemini.add_hooks(xdev);
+        gemini.add_hooks(xdev, Path::new("/no/data"));
         assert_eq!((gemini.args, gemini.hooks), (before, false));
 
         let mut aider = run(&with(custom("aider")), "aider", None, &found).unwrap();
-        aider.add_hooks(xdev);
+        aider.add_hooks(xdev, Path::new("/no/data"));
         assert!(!aider.hooks && aider.args.is_empty());
 
         let mut shell = launch_of("/bin/sh", &[], &[]);
         shell.agent = false;
         shell.cli = Some(Cli::Claude);
-        shell.add_hooks(xdev);
+        shell.add_hooks(xdev, Path::new("/no/data"));
         assert!(!shell.hooks && shell.args.is_empty());
+    }
+
+    /// A codex launch whose own home is a fake one in `root`.
+    fn codex_in(root: &Path, var: &str) -> (Launch, PathBuf) {
+        let real = root.join("real-codex");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(real.join("auth.json"), "{}").unwrap();
+        let mut l = run(&Profiles::default(), "codex", None, &found).unwrap();
+        l.env.push((var.to_owned(), real.clone().into_os_string()));
+        (l, real)
+    }
+
+    fn home_of(l: &Launch) -> Vec<&OsString> {
+        l.env
+            .iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case("CODEX_HOME"))
+            .map(|(_, v)| v)
+            .collect()
+    }
+
+    #[test]
+    fn codex_gets_its_private_home_and_keeps_notify() {
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tmp.path().join("data");
+        let xdev = Path::new("/opt/xdev");
+        let (mut l, real) = codex_in(tmp.path(), "CODEX_HOME");
+        l.add_hooks_with(xdev, Some(&data), Some(CliVersion(0, 165, 0)));
+        assert!(l.hooks);
+        assert_eq!(
+            l.args[l.args.len() - 2..],
+            hook_args(Cli::Codex, xdev, None)[..]
+        );
+        let homes = home_of(&l);
+        assert_eq!(homes.len(), 1);
+        let home = PathBuf::from(homes[0]);
+        assert_ne!(home, real);
+        assert!(home.join("hooks.json").is_file());
+        assert!(home.ends_with(Path::new("codex-home").join("default")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn codex_home_var_case_is_ignored_on_windows() {
+        // Elsewhere `codex_home` would not match and the real default home
+        // would be used: not run there.
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut l, _) = codex_in(tmp.path(), "codex_home");
+        l.add_hooks_with(
+            Path::new("/opt/xdev"),
+            Some(&tmp.path().join("data")),
+            Some(CliVersion(0, 165, 0)),
+        );
+        // The profile's variable named the home, and was replaced.
+        let homes = home_of(&l);
+        assert_eq!(homes.len(), 1);
+        assert!(PathBuf::from(homes[0]).join("hooks.json").is_file());
+    }
+
+    #[test]
+    fn old_unknown_or_failing_codex_stays_on_notify() {
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tmp.path().join("data");
+        let xdev = Path::new("/opt/xdev");
+        for version in [None, Some(CliVersion(0, 135, 0))] {
+            let (mut l, real) = codex_in(tmp.path(), "CODEX_HOME");
+            l.add_hooks_with(xdev, Some(&data), version);
+            assert!(l.hooks);
+            assert_eq!(home_of(&l), [real.as_os_str()]);
+        }
+        // No auth.json in the real home: setup fails, the launch is as before.
+        let (mut l, real) = codex_in(tmp.path(), "CODEX_HOME");
+        std::fs::rename(real.join("auth.json"), real.join("moved")).unwrap();
+        l.add_hooks_with(xdev, Some(&data), Some(CliVersion(0, 165, 0)));
+        assert!(l.hooks);
+        assert_eq!(home_of(&l), [real.as_os_str()]);
+        assert!(
+            !data
+                .join("codex-home")
+                .join("default")
+                .join("auth.json")
+                .exists()
+        );
     }
 
     #[test]
