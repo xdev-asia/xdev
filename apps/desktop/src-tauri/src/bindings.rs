@@ -12,7 +12,7 @@ use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
 use crate::kit::{KitText, PromptEntry};
 use crate::profiles::ProfilesView;
 use crate::pty::{PtyExit, PtyInfo};
-use crate::review::{ReviewBranch, ReviewData};
+use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
@@ -60,6 +60,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     WorktreeFileDiff::export_all(cfg)?;
     ReviewData::export_all(cfg)?;
     ReviewBranch::export_all(cfg)?;
+    StageState::export_all(cfg)?;
     ReviewNote::export_all(cfg)?;
     xdev_workspace::DirListing::export_all(cfg)?;
     ShipView::export_all(cfg)?;

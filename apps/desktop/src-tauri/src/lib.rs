@@ -150,6 +150,8 @@ pub fn run() {
             ship::worktree_sync,
             ship::worktree_fetch,
             ship::worktree_force_push,
+            review::worktree_discard,
+            review::worktree_stage_state,
             ship::worktree_amend,
             ship::worktree_pr,
             ship::worktree_pr_create,
