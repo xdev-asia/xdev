@@ -1,8 +1,13 @@
 # 0012. Machine-bound data in the local folder, records in the data folder
 
-Status: accepted. Code: `xdev-core` (`local_dir`, `move_indexes`),
-`xdev-agent` (`TaskStore::with_local`, `SquadStore::with_local`).
+Status: accepted. Amended by 0013. Code: `xdev-core` (`local_dir`,
+`move_indexes`), `xdev-agent` (`TaskStore::with_local`,
+`SquadStore::with_local`).
 Date: 2026-11-02
+Note (0013): the local folder also holds terminal scrollback
+(`pty/<id>.log`) and agent hook events (`hooks/<pty_id>.jsonl`). Worktrees
+made from the workspace go to a per-repo folder, by default
+`<repo parent>/wt/<repo>-<name>`; task worktrees stay as below.
 
 ## Context
 

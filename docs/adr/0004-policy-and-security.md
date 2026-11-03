@@ -1,7 +1,10 @@
 # 0004. Policy enforced by the app, owned by the person
 
-Status: accepted. Code: `xdev-policy`.
+Status: accepted. Amended by 0013. Code: `xdev-policy`.
 Date: 2026-11-02
+Note (0013): plain shell tabs are not gated by policy; the tool list below
+applies to headless tasks; launching an agent CLI is gated by a new
+`Action::LaunchAgent`.
 
 ## Context
 

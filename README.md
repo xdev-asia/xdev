@@ -19,7 +19,7 @@ Your Markdown files stay the source of truth. xDev indexes them, flags docs that
 | Stale docs | `xdev check` reports broken links and docs that went stale or were never verified |
 | Agent context | `xdev export` writes AGENTS.md, CLAUDE.md, GEMINI.md and a Cursor rule; `xdev mcp` serves the docs over MCP stdio |
 | Tasks | A coding agent works in its own git worktree; you review the evidence and diff, then approve or discard |
-| Accounts | Claude Code accounts and quota on this machine; API keys in the OS keychain; local Ollama models |
+| Accounts | Claude Code accounts and quota on this machine; API keys in the OS keychain; local Ollama models (CLI only: `xdev ai models`) |
 
 ## Install
 
@@ -39,7 +39,7 @@ The `xdev` CLI ships as a separate archive per target on the same page. Installe
 |---|---|
 | `crates/` | Rust core: `xdev-core`, `xdev-vault`, `xdev-store`, `xdev-git`, `xdev-export`, `xdev-mcp`, `xdev-ai`, `xdev-agent`, `xdev-policy`, `xdev-api`, `xdev-cli` |
 | `apps/desktop` | Tauri 2 + React desktop app |
-| `app-packs/` | Apps that install into the shell (`docs`, `adr`) |
+| `app-packs/` | Apps that install into the shell (`docs`, `adr`). Deferred: placeholder manifests, no plugin host (ADR 0001) |
 | `packages/ui` | Design tokens and shared components |
 | `packages/bindings` | TypeScript types generated from Rust (`cargo test -p xdev-desktop export_bindings`) |
 | `docs/adr/` | Architecture decisions |
@@ -62,7 +62,7 @@ cargo run -p xdev-cli -- --help
 
 | Repo | What |
 |---|---|
-| [xdev-asia/registry](https://github.com/xdev-asia/registry) | Signed index of installable app packs |
+| [xdev-asia/registry](https://github.com/xdev-asia/registry) | Signed index of installable app packs. Deferred with app packs (ADR 0010) |
 | [xdev-asia/site](https://github.com/xdev-asia/site) | Website and user docs |
 
 ## License

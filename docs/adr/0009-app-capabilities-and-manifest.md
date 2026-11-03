@@ -1,7 +1,10 @@
 # 0009. App capabilities are declared in the manifest and checked by the app
 
-Status: proposed. Code: `xdev-api` (host), `xdev-policy` (gate, audit).
+Status: Deferred (2026-11-02): not implemented; product focus moved to
+workspace agents (see 0013). Code: `xdev-api` (host), `xdev-policy`
+(gate, audit).
 Date: 2026-11-02
+Note: no manifest is read and `xdev-policy` has no `AppCall` action.
 
 ## Context
 
