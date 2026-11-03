@@ -43,6 +43,10 @@ export function WorktreeChanges(props: {
   const [states, setStates] = useState<StageState[] | null>(null);
   // A group action (stage, unstage) is running.
   const [acting, setActing] = useState(false);
+  // The files a discard dialog is about; null while it is closed.
+  const [discarding, setDiscarding] = useState<string[] | null>(null);
+  const [alsoStaged, setAlsoStaged] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
   const [stats, setStats] = useState<Record<string, Stats>>({});
   // Unchecked paths, so a file that shows up later starts checked.
   const [skipped, setSkipped] = useState<string[]>([]);
@@ -163,6 +167,44 @@ export function WorktreeChanges(props: {
     }
   }
 
+  function askDiscard(files: string[]): void {
+    if (files.length === 0) return;
+    setAlsoStaged(false);
+    setDiscarding(files);
+  }
+
+  // Back to the list once the dialog is gone; a closed dialog first gives focus to its opener.
+  function focusList(): void {
+    setTimeout(() => root.current?.querySelector<HTMLElement>(".ws-change")?.focus(), 0);
+  }
+
+  function cancelDiscard(): void {
+    setDiscarding(null);
+    focusList();
+  }
+
+  async function confirmDiscard(): Promise<void> {
+    const files = discarding;
+    if (!files) return;
+    const staged = alsoStaged && files.some((f) => stateOf(f)?.staged);
+    setDiscarding(null);
+    setActing(true);
+    setProblem(null);
+    try {
+      // The dialog is the approval.
+      await api.worktreeDiscard(path, files, staged, true);
+    } catch (e) {
+      const error = toApiError(e);
+      if (error.code !== "needs_approval") setProblem(error);
+    }
+    try {
+      await load();
+    } finally {
+      setActing(false);
+      focusList();
+    }
+  }
+
   async function commit(confirmed = false): Promise<void> {
     setBusy(true);
     setProblem(null);
@@ -237,6 +279,19 @@ export function WorktreeChanges(props: {
                 >
                   {group === "staged" ? "−" : "+"}
                 </button>
+                {group === "changes" && (
+                  <button
+                    type="button"
+                    className="ws-change-act"
+                    data-danger=""
+                    aria-label={t("changes.discard", { path: c.path })}
+                    title={t("changes.discard", { path: c.path })}
+                    disabled={acting}
+                    onClick={() => askDiscard([c.path])}
+                  >
+                    ×
+                  </button>
+                )}
               </span>
             </li>
           );
@@ -246,7 +301,7 @@ export function WorktreeChanges(props: {
   }
 
   return (
-    <div className="ws-changes">
+    <div className="ws-changes" ref={root}>
       <strong className="ws-changes-title">
         {changes && changes.length > 0 ? t("workspace.changes.title", { count: changes.length }) : changes && t("workspace.changes.none")}
       </strong>
@@ -302,6 +357,9 @@ export function WorktreeChanges(props: {
               <button type="button" className="btn-secondary" aria-label={t("changes.stageAll")} disabled={acting} onClick={() => void restage(changedList.map((c) => c.path), true)}>
                 {t("changes.stageAll")}
               </button>
+              <button type="button" className="btn-secondary" aria-label={t("changes.discardAll")} disabled={acting} onClick={() => askDiscard(changedList.map((c) => c.path))}>
+                {t("changes.discardAll")}
+              </button>
             </span>
           </header>
           {list(changedList, "changes")}
@@ -343,6 +401,22 @@ export function WorktreeChanges(props: {
         onConfirm={() => void commit(true)}
         onCancel={() => setAskPushed(false)}
       />
+      <ConfirmDialog
+        open={discarding !== null}
+        title={discarding && discarding.length === 1 ? t("changes.discard.title", { path: discarding[0] }) : t("changes.discard.titleMany", { count: discarding?.length ?? 0 })}
+        body={t("changes.discard.body")}
+        warning={sessions?.dot(path) === "working" ? t("changes.discard.agent") : undefined}
+        confirmLabel={t("changes.discard.confirm")}
+        onConfirm={() => void confirmDiscard()}
+        onCancel={cancelDiscard}
+      >
+        {discarding?.some((f) => stateOf(f)?.staged) && (
+          <label className="dialog-option">
+            <input type="checkbox" checked={alsoStaged} onChange={() => setAlsoStaged((v) => !v)} />
+            {t("changes.discard.staged")}
+          </label>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }
