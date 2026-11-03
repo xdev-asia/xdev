@@ -207,6 +207,43 @@ mod tests {
     }
 
     #[test]
+    fn loads_a_repo_without_script_settings_as_the_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("workspace.json"),
+            r#"{"version":1,"repos":[{"id":"abc","short_name":"xdev","path":"/r","base_ref":"main","worktree_root":"/wt"}],"worktrees":[]}"#,
+        )
+        .unwrap();
+        let r = Registry::load(dir.path()).unwrap();
+        let repo = &r.repos[0];
+        assert_eq!(repo.setup_policy, SetupPolicy::Ask);
+        assert_eq!(repo.script_source, ScriptSource::Auto);
+        assert_eq!(repo.local_setup, "");
+        assert_eq!(repo.local_archive, "");
+    }
+
+    #[test]
+    fn script_settings_survive_a_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut r = Registry::load(dir.path()).unwrap();
+        r.repos.push(RepoEntry {
+            id: "abc".into(),
+            short_name: "xdev".into(),
+            setup_policy: SetupPolicy::Run,
+            script_source: ScriptSource::Both,
+            local_setup: "make".into(),
+            local_archive: "echo bye".into(),
+            ..RepoEntry::default()
+        });
+        r.save(dir.path()).unwrap();
+        let text = std::fs::read_to_string(dir.path().join("workspace.json")).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(json["repos"][0]["setup_policy"], "run");
+        assert_eq!(json["repos"][0]["script_source"], "both");
+        assert_eq!(Registry::load(dir.path()).unwrap(), r);
+    }
+
+    #[test]
     fn vaults_survive_a_save() {
         let dir = tempfile::tempdir().unwrap();
         let mut r = Registry::load(dir.path()).unwrap();

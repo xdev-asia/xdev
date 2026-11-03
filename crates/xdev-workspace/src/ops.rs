@@ -219,6 +219,18 @@ pub fn update_repo(
     if let Some(root) = patch.worktree_root {
         entry.worktree_root = root;
     }
+    if let Some(policy) = patch.setup_policy {
+        entry.setup_policy = policy;
+    }
+    if let Some(source) = patch.script_source {
+        entry.script_source = source;
+    }
+    if let Some(script) = patch.local_setup {
+        entry.local_setup = script;
+    }
+    if let Some(script) = patch.local_archive {
+        entry.local_archive = script;
+    }
     let worktrees = reg.worktrees.clone();
     let view = sync_repo(reg, idx, 0, false);
     if view.is_err() {
