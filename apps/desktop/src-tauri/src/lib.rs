@@ -116,6 +116,7 @@ pub fn run() {
             workspace::worktree_stat,
             workspace::worktree_file_diff,
             workspace::worktree_commit,
+            workspace::worktree_list_dir,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")

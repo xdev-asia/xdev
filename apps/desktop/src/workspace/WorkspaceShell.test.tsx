@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi, type WorktreeView } from "../api";
+import { createMockApi, type WorktreeChange, type WorktreeView } from "../api";
 import { DocsApp } from "../DocsApp";
 import { translate } from "../i18n";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
+import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { Sessions } from "./sessions";
@@ -303,7 +304,7 @@ it("switching worktrees keeps every visited worktree's tabs mounted", async () =
 it("changes tab counts the worktree's files and opens a diff next to the terminals", async () => {
   const view = await harness();
   const panel = () => view.of(WorktreeChanges)[0];
-  const tab = () => view.all().find(n => n.props.className === "ws-panel-tab")!;
+  const tab = () => view.all().find(n => n.props.className === "ws-panel-tab" && n.props["aria-label"].startsWith(en("workspace.panel.changes")))!;
   expect(panel().props.worktree.path).toBe("/demo/xdev");
   expect(tab().props["aria-label"]).toBe(en("workspace.panel.changes"));
 
@@ -338,4 +339,44 @@ it("hands the list the line counts, times and agents of each worktree", async ()
   expect(props.activity["/demo/wt/xdev-oak"]).toBeNull();
   expect(props.profiles["/demo/wt/xdev-oak"]).toEqual([]);
   expect(typeof props.now).toBe("number");
+});
+
+it("panel has Files and Changes icon tabs with a change badge", async () => {
+  const view = await harness();
+  const tabs = () => view.all().filter(n => n.props.className === "ws-panel-tab");
+  const files = () => tabs()[0];
+  const changes = () => tabs()[1];
+  // Icon buttons: a name for screen readers and no visible text.
+  expect(tabs().map(n => n.props["aria-label"])).toEqual([en("workspace.panel.files"), en("workspace.panel.changes")]);
+  expect(tabs().every(n => n.props.role === "tab" && n.type === "button")).toBe(true);
+  expect(renderToStaticMarkup(files())).not.toContain("ws-panel-badge");
+  // Files is the default tab, and the tree and the changes list are both mounted.
+  expect(tabs().map(n => n.props["aria-selected"])).toEqual([true, false]);
+  const panels = () => view.all().filter(n => n.props.role === "tabpanel");
+  expect(panels().map(n => n.props.hidden)).toEqual([false, true]);
+  expect(view.of(FileTree)).toHaveLength(1);
+  expect(view.of(WorktreeChanges)).toHaveLength(1);
+
+  view.list().props.onSelect(view.worktree("oak"));
+  expect(view.of(FileTree)[0].props.worktree).toBe("/demo/wt/xdev-oak");
+  expect(view.of(FileTree)[0].props.changes).toEqual([]);
+  // The tree gets the list the Changes panel read, so it can mark files.
+  const list: WorktreeChange[] = [{ path: "src/session.ts", kind: "modified" }];
+  view.of(WorktreeChanges)[0].props.onChanges(list);
+  view.of(WorktreeChanges)[0].props.onCount(1);
+  expect(view.of(FileTree)[0].props.changes).toBe(list);
+  expect(renderToStaticMarkup(changes())).toContain(">1<");
+  expect(changes().props["aria-label"]).toBe(en("workspace.panel.changesCount.one", { count: 1 }));
+
+  // Opening a changed file from the tree opens its diff, like the Changes list does.
+  const oak = () => view.of(WorktreeTabs).find(n => n.props.worktree === "/demo/wt/xdev-oak")!;
+  view.of(FileTree)[0].props.onOpen("src/session.ts");
+  expect(oak().props.reveal).toEqual({ file: "src/session.ts", seq: 1 });
+
+  changes().props.onClick();
+  expect(tabs().map(n => n.props["aria-selected"])).toEqual([false, true]);
+  expect(panels().map(n => n.props.hidden)).toEqual([true, false]);
+  // Another worktree has its own list.
+  view.list().props.onSelect(view.worktree("elm"));
+  expect(view.of(FileTree)[0].props.changes).toEqual([]);
 });

@@ -361,6 +361,32 @@ pub fn worktree_file_diff(
     file_diff(data_dir(&state)?, &path, &file)
 }
 
+/// One folder of a worktree, for the file tree. Any checkout the registry
+/// knows, the primary one too; `dir` is relative to it.
+fn dir_listing(
+    data: &Path,
+    path: &Path,
+    dir: &str,
+) -> Result<xdev_workspace::DirListing, CmdError> {
+    let key = path_key(path);
+    let reg = Registry::load(data)?;
+    let known = reg.repos.iter().any(|r| path_key(&r.path) == key)
+        || reg.worktrees.iter().any(|m| path_key(&m.path) == key);
+    if !known {
+        return Err(WorkspaceError::WorktreeUnknown(path.to_owned()).into());
+    }
+    Ok(xdev_workspace::list_dir(&path.to_string_lossy(), dir)?)
+}
+
+#[tauri::command(async)]
+pub fn worktree_list_dir(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    dir: String,
+) -> Result<xdev_workspace::DirListing, CmdError> {
+    dir_listing(data_dir(&state)?, &path, &dir)
+}
+
 #[tauri::command(async)]
 pub fn worktree_commit(
     path: PathBuf,
@@ -637,5 +663,26 @@ mod tests {
         let reg = Registry::load(&fx.data).unwrap();
         assert_eq!(reg.worktrees.len(), 2);
         assert!(reg.worktrees.iter().all(|m| m.pinned));
+    }
+
+    #[test]
+    fn list_dir_serves_known_checkouts_only() {
+        let fx = fixture();
+        fs::create_dir(fx.first.join("src")).unwrap();
+        fs::write(fx.first.join("src").join("m.rs"), "x").unwrap();
+        let top = dir_listing(&fx.data, &fx.first, "").unwrap();
+        assert_eq!(top.entries.iter().filter(|e| e.dir).count(), 1);
+        assert!(top.entries.iter().any(|e| e.name == "a.txt" && !e.dir));
+        assert!(top.entries.iter().all(|e| e.name != ".git"));
+        let sub = dir_listing(&fx.data, &fx.first, "src").unwrap();
+        assert_eq!(sub.entries.len(), 1);
+        // The primary checkout is listed too.
+        assert!(dir_listing(&fx.data, &fx.main, "").is_ok());
+        assert_eq!(code(dir_listing(&fx.data, &fx.first, "../x")), "bad_path");
+        let stranger = fx.first.parent().unwrap();
+        assert_eq!(
+            code(dir_listing(&fx.data, stranger, "")),
+            "worktree_unknown"
+        );
     }
 }
