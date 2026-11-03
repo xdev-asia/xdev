@@ -2,8 +2,12 @@
 
 import { useEffect } from "react";
 import { IS_MAC, PLATFORM, type Platform } from "@/platform";
+import { getBindingsState } from "./bindingsStore";
+import { docsShown } from "./docsShown";
 import { normalizeChord } from "./keybindingsFile";
 import { defaultsFor, SHORTCUTS } from "./registry";
+
+export { subscribeBindings } from "./bindingsStore";
 
 type Digit = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
@@ -67,26 +71,16 @@ export interface EffectiveBinding {
   source: "default" | "user";
 }
 
-/** Store snapshot: every chord that is bound now. */
+/** Store snapshot: every chord that is bound now, on this platform. */
 export function effectiveBindings(): EffectiveBinding[] {
-  return DEFAULT_BINDINGS.map((b) => ({ action: b.action, chord: b.chord, source: "default" }));
+  return getBindingsState().bindings;
 }
 
-/** Called after the effective bindings change. Returns the unsubscribe. */
-export function subscribeBindings(fn: () => void): () => void {
-  void fn;
-  return () => {};
-}
-
-/** The action `e` runs when it should leave a focused terminal and go to the app; null otherwise. */
-export function appOwnsKey(e: KeyboardEvent): ActionId | null {
-  void e;
-  return null;
-}
+let suspended = false;
 
 /** While on, every `useKeymap` handler does nothing (the shortcut recorder listens). */
 export function suspendKeymap(on: boolean): void {
-  void on;
+  suspended = on;
 }
 
 // `KeyboardEvent.code` to the key names chords use.
@@ -165,20 +159,34 @@ export function eventChord(e: KeyboardEvent, p: Platform): string | null {
   return normalizeChord([...parts, key].join("+"), p);
 }
 
-// Chord → actions, global ones first; one table per platform, built on first use.
-const TABLES = new Map<Platform, Map<string, ActionId[]>>();
+// The store holds this platform's bindings; another platform (tests, labels) gets its defaults.
+const OTHER_PLATFORMS = new Map<Platform, Binding[]>();
+
+function bindingsFor(p: Platform): readonly Binding[] {
+  if (p === PLATFORM) return getBindingsState().bindings;
+  let found = OTHER_PLATFORMS.get(p);
+  if (!found) OTHER_PLATFORMS.set(p, (found = defaultBindings(p)));
+  return found;
+}
+
+// Chord → actions, global ones first; rebuilt when the bindings it came from change.
+const TABLES = new Map<Platform, { from: readonly Binding[]; table: Map<string, ActionId[]> }>();
 const SCOPE_RANK = { global: 0, terminal: 1, docs: 2 } as const;
-const SCOPE_OF = new Map(SHORTCUTS.map((d) => [d.id, d.scope]));
+const DEF_OF = new Map(SHORTCUTS.map((d) => [d.id, d]));
 
 function tableFor(p: Platform): Map<string, ActionId[]> {
-  let found = TABLES.get(p);
-  if (!found) {
-    found = new Map();
-    for (const b of defaultBindings(p)) found.set(b.chord, [...(found.get(b.chord) ?? []), b.action]);
-    for (const list of found.values()) list.sort((a, b) => SCOPE_RANK[SCOPE_OF.get(a)!] - SCOPE_RANK[SCOPE_OF.get(b)!]);
-    TABLES.set(p, found);
+  const from = bindingsFor(p);
+  const cached = TABLES.get(p);
+  if (cached?.from === from) return cached.table;
+  const table = new Map<string, ActionId[]>();
+  for (const b of from) {
+    const list = table.get(b.chord) ?? [];
+    if (!list.includes(b.action)) list.push(b.action);
+    table.set(b.chord, list);
   }
-  return found;
+  for (const list of table.values()) list.sort((a, b) => SCOPE_RANK[DEF_OF.get(a)!.scope] - SCOPE_RANK[DEF_OF.get(b)!.scope]);
+  TABLES.set(p, { from, table });
+  return table;
 }
 
 /** Every action bound to the chord of `e`, global ones first. */
@@ -193,6 +201,49 @@ export function actionOf(e: KeyboardEvent, mac: boolean = IS_MAC): ActionId | nu
   return actionsOf(e, mac)[0] ?? null;
 }
 
+/**
+ * Chords a focused terminal always keeps, even under "app first" (R5): interrupt, end of input,
+ * suspend, history search and the readline keys. A binding on one still works outside a terminal.
+ */
+export const TERMINAL_KEEPS: readonly string[] = [
+  "Ctrl+C", "Ctrl+D", "Ctrl+Z", "Ctrl+R", "Ctrl+N", "Ctrl+P", "Ctrl+A", "Ctrl+E", "Ctrl+U",
+];
+
+/**
+ * The actions `e` may run while a terminal has focus, the winner first: terminal-scope ones shadow
+ * global ones, docs-scope ones never apply. Under "terminal first" a key a TUI also uses stays with
+ * the program; a key in `TERMINAL_KEEPS` always does.
+ */
+function terminalActions(e: KeyboardEvent, p: Platform): ActionId[] {
+  const chord = eventChord(e, p);
+  if (chord === null || TERMINAL_KEEPS.includes(chord)) return [];
+  const yields = getBindingsState().keySettings.terminalPolicy === "terminal-first";
+  const all = (tableFor(p).get(chord) ?? []).filter((a) => !(yields && DEF_OF.get(a)!.yieldsToTerminal));
+  return [...all.filter((a) => DEF_OF.get(a)!.scope === "terminal"), ...all.filter((a) => DEF_OF.get(a)!.scope === "global")];
+}
+
+/** The action `e` runs when it should leave a focused terminal and go to the app; null otherwise. */
+export function appOwnsKey(e: KeyboardEvent, mac: boolean = IS_MAC): ActionId | null {
+  return terminalActions(e, platformOf(mac))[0] ?? null;
+}
+
+function inTerminal(e: KeyboardEvent): boolean {
+  const target = e.target as { closest?: (selector: string) => unknown } | null;
+  return typeof target?.closest === "function" && target.closest(".xterm") !== null;
+}
+
+/**
+ * The one action `e` runs here, if any. In a focused terminal: what `appOwnsKey` claims. Elsewhere a
+ * docs-scope action shadows a global one while the docs view is shown; terminal-scope ones never apply.
+ */
+function winnerOf(e: KeyboardEvent, mac: boolean): ActionId | undefined {
+  if (inTerminal(e)) return terminalActions(e, platformOf(mac))[0];
+  const all = actionsOf(e, mac);
+  const docs = all.filter((a) => DEF_OF.get(a)!.scope === "docs");
+  const global = all.filter((a) => DEF_OF.get(a)!.scope === "global");
+  return (docs.length > 0 && docsShown() ? docs[0] : undefined) ?? global[0];
+}
+
 const GLYPHS: Record<string, string> = {
   Ctrl: "⌃", Alt: "⌥", Shift: "⇧", Cmd: "⌘", Up: "↑", Down: "↓", Left: "←", Right: "→", Enter: "↵",
 };
@@ -200,7 +251,7 @@ const GLYPHS: Record<string, string> = {
 /** The chord of an action as shown to a person: "Ctrl+T", or "⌘T" on macOS. */
 export function chordLabel(action: ActionId, mac: boolean = IS_MAC): string | null {
   const p = platformOf(mac);
-  const found = defaultBindings(p).find((b) => b.action === action);
+  const found = bindingsFor(p).find((b) => b.action === action);
   if (!found) return null;
   const parts = found.chord.split("+");
   if (!mac) return parts.join("+");
@@ -216,9 +267,11 @@ function modalOpen(): boolean {
 }
 
 /**
- * Handles bound chords in the capture phase on window. A handler returning false lets the key
- * through. Ignored while an IME composes, and (but for the palette key) while a modal dialog is
- * open. A text field does not block a chord: every default chord carries Ctrl or Alt, so none of
+ * Handles bound chords in the capture phase on window. Only the winning action of a chord runs (see
+ * `winnerOf`), so two views holding handlers for one chord do not both fire. A handler returning
+ * false lets the key through. Ignored while an IME composes, while the keymap is suspended, when an
+ * earlier listener already took the key, and (but for the palette key) while a modal dialog is open.
+ * A text field does not block a chord: every default chord carries Ctrl, Alt or Cmd, so none of
  * them types text, and the terminal's own input is a text field.
  */
 export function useKeymap(
@@ -229,10 +282,11 @@ export function useKeymap(
     // The effect runs again each render, so a view that is hidden holds no listener at all.
     if (opts?.when && !opts.when()) return;
     const onKey = (e: KeyboardEvent) => {
+      if (suspended || e.defaultPrevented) return;
       if (e.isComposing || e.keyCode === 229) return;
-      const action = actionsOf(e).find((a) => handlers[a]);
-      if (action === undefined) return;
-      const handler = handlers[action]!;
+      const action = winnerOf(e, IS_MAC);
+      const handler = action === undefined ? undefined : handlers[action];
+      if (action === undefined || handler === undefined) return;
       if (opts?.when && !opts.when()) return;
       if (!WORKS_IN_DIALOG.has(action) && modalOpen()) return;
       // Held down, a chord is swallowed but does not fire again (Ctrl+W would close every tab).

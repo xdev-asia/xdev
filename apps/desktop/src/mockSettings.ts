@@ -1,4 +1,5 @@
 import type { Api, KeySettings, SettingsChanged, SettingsSection, TerminalSettings, UiSettings } from "./api";
+import { KEY_SETTINGS_DEFAULTS } from "./keys/bindingsStore";
 import { clampTerminalSettings, TERMINAL_DEFAULTS } from "./settings/terminalDefaults";
 
 /** Called by a mock's settings write, the way Rust emits `settings://changed`. */
@@ -9,8 +10,7 @@ type SettingsApi = Pick<
   "onSettingsChanged" | "terminalSettings" | "terminalSettingsPut" | "keySettingsGet" | "keySettingsPut" | "uiSettingsGet" | "uiSettingsPut"
 >;
 
-/** `KeySettings::default()` in Rust. */
-export const KEY_SETTINGS_DEFAULTS: KeySettings = { terminalPolicy: "app-first", terminalHints: true };
+export { KEY_SETTINGS_DEFAULTS };
 /** `UiSettings::default()` in Rust, and the range `ui_settings_put` clamps the zoom to. */
 export const UI_SETTINGS_DEFAULTS: UiSettings = { zoom: 1 };
 export const ZOOM_LIMITS = { min: 0.5, max: 2 } as const;
