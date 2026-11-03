@@ -82,6 +82,26 @@ describe("checkPrompt", () => {
     expect(failed(two, EXISTS)).toEqual(["single"]);
   });
 
+  it("wrapped list item stays one list", () => {
+    const text = `${CLEAR}\n1. Add a toggle component\n   that reads the theme from the store\n2. Persist the choice\n3. Cover it with a test`;
+    expect(failed(text, EXISTS)).toEqual([]);
+  });
+
+  it("common verbs open a goal", () => {
+    const tail = " Expected: `pnpm test` passes for the whole module.";
+    const cases = [
+      "Implement the export button in the toolbar of the reports page.",
+      "Refactor parseLine into two functions inside the parser module.",
+      "Hiển thị lỗi khi lưu thất bại trên trang cài đặt.",
+      "Hien thi loi khi luu that bai tren trang cai dat.",
+      "Replace the old date picker with the new one on the form.",
+      "Viết lại hàm tính tổng để dùng vòng lặp thay cho đệ quy.",
+    ];
+    for (const c of cases) {
+      expect(failed(c + tail), c).not.toContain("goal");
+    }
+  });
+
   it("an unfinished vague phrase fails vague but one with an object passes", () => {
     const base = "Add a retry to the upload client in the sync module. Expected: `pnpm test sync` passes. ";
     expect(failed(`${base}Then make it better.`)).toEqual(["vague"]);

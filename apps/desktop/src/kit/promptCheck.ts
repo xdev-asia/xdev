@@ -10,7 +10,10 @@ export interface Check {
 /** Action verbs that open a goal (en + vi). Matched with and without diacritics. */
 export const GOAL_VERBS = [
   "add", "fix", "write", "remove", "rename", "make", "create", "update", "change", "delete", "build", "move",
+  "implement", "refactor", "show", "replace", "support", "handle", "test", "document", "rewrite", "extract",
+  "split", "merge", "return", "render", "display", "validate", "convert",
   "thêm", "sửa", "viết", "xoá", "xóa", "đổi", "làm", "tạo", "cập nhật", "chuyển",
+  "hiển thị", "thay", "triển khai", "viết lại", "tách", "gộp", "kiểm tra", "hỗ trợ", "xử lý", "đưa",
 ];
 
 /** Words that, alone, do not name an object. */
@@ -111,7 +114,8 @@ function numberedLists(text: string): number {
     if (/^\s*\d+[.)]\s+\S/.test(line)) {
       if (!inList) lists++;
       inList = true;
-    } else if (line.trim() !== "") {
+    } else if (line.trim() !== "" && !/^\s+/.test(line)) {
+      // A non-indented, non-numbered line ends the list. Blank and indented lines continue it.
       inList = false;
     }
   }
