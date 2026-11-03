@@ -170,3 +170,19 @@ it("copyContext writes the context built from the handle's buffer", async () => 
     ["Terminal: zsh (shell)", "Worktree: /w (main)", "Last exit code: 0", "--- last 200 lines ---", "$ ls", "a b"].join("\n"),
   );
 });
+
+it("reset sends the current size again so the program redraws (B4)", () => {
+  const { term } = fakeTerm({ cols: 120, rows: 40 });
+  const { h, client } = handleFor(term);
+  h.reset();
+  expect(term.reset).toHaveBeenCalledTimes(1);
+  expect(client.resize).toHaveBeenCalledWith(120, 40, true);
+  expect(client.input).not.toHaveBeenCalled();
+});
+
+it("reset before the pty client exists only resets the xterm", () => {
+  const { term } = fakeTerm();
+  const h = createTerminalHandle({ term: () => term, client: () => null, find: vi.fn() });
+  h.reset();
+  expect(term.reset).toHaveBeenCalledTimes(1);
+});
