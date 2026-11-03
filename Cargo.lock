@@ -6151,6 +6151,7 @@ name = "xdev-desktop"
 version = "0.4.0"
 dependencies = [
  "dunce",
+ "notify-debouncer-full",
  "serde",
  "serde_json",
  "tauri",

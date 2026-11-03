@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use xdev_ai::{AiError, Provider, Registry};
 
 use crate::flags::flags;
+use crate::hooks::hook_args;
 use crate::profiles::{Cli, Permissions, Profile, ProfileError, Profiles};
 use crate::shells::{ShellEntry, default_shell_id};
 
@@ -25,9 +26,29 @@ pub struct Launch {
     pub account: Option<String>,
     /// Shell lines to run before the CLI; see `command`.
     pub startup: Vec<String>,
+    /// The built-in CLI the profile runs; `None` for shells and custom
+    /// programs.
+    pub cli: Option<Cli>,
+    /// Whether `args` carry the status hook flags (`add_hooks`).
+    pub hooks: bool,
 }
 
 impl Launch {
+    /// Appends the status hook flags for `cli` that run `xdev`, after the
+    /// mapped flags and the profile's args and before any startup wrapping,
+    /// so the policy gate and the fingerprint see them. A shell, a custom
+    /// program or a CLI without hooks is left as it is.
+    pub fn add_hooks(&mut self, xdev: &Path) {
+        let Some(cli) = self.cli.filter(|_| self.agent && !self.hooks) else {
+            return;
+        };
+        let flags = hook_args(cli, xdev);
+        if !flags.is_empty() {
+            self.args.extend(flags);
+            self.hooks = true;
+        }
+    }
+
     /// What to spawn: `program` and `args` as they are, or, with startup
     /// lines, a shell that runs the lines and then the CLI. The wrapper
     /// quotes the CLI's program and args, so each stays one argument.
@@ -164,6 +185,8 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
             .map(|line| line.trim().to_owned())
             .filter(|line| !line.is_empty())
             .collect(),
+        cli: profile.cli,
+        hooks: false,
     })
 }
 
@@ -187,6 +210,8 @@ fn resolve_shell(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         permissions: Permissions::Ask,
         account: None,
         startup: Vec::new(),
+        cli: None,
+        hooks: false,
     })
 }
 
@@ -659,7 +684,61 @@ mod tests {
             permissions: Permissions::Ask,
             account: None,
             startup: startup.iter().map(|a| (*a).to_owned()).collect(),
+            cli: None,
+            hooks: false,
         }
+    }
+
+    // --- hooks ---
+
+    #[test]
+    fn resolve_records_the_cli() {
+        let p = Profiles::default();
+        let l = run(&p, "claude", None, &found).unwrap();
+        assert_eq!((l.cli, l.hooks), (Some(Cli::Claude), false));
+        let l = run(&p, "codex", None, &found).unwrap();
+        assert_eq!(l.cli, Some(Cli::Codex));
+        let l = run(&with(custom("aider")), "aider", None, &found).unwrap();
+        assert_eq!(l.cli, None);
+    }
+
+    #[test]
+    fn add_hooks_appends_after_the_profile_args_once() {
+        let mut c = builtin(Cli::Claude);
+        c.args = vec!["--verbose".into()];
+        c.startup = vec!["nvm use".into()];
+        let mut l = run(&with(c), "claude", None, &found).unwrap();
+        let xdev = Path::new("/opt/xdev");
+        l.add_hooks(xdev);
+        let hooks = hook_args(Cli::Claude, xdev);
+        assert_eq!(l.args[..1], ["--verbose"]);
+        assert_eq!(l.args[1..], hooks[..]);
+        assert!(l.hooks);
+        l.add_hooks(xdev);
+        assert_eq!(l.args.len(), 3);
+        // The startup wrapper carries them as the CLI's own args.
+        let (_, wrapped) = l.command();
+        assert!(!wrapped.is_empty());
+    }
+
+    #[test]
+    fn add_hooks_leaves_others_alone() {
+        let xdev = Path::new("/opt/xdev");
+        let p = Profiles::default();
+        let mut gemini = run(&p, "gemini", None, &found).unwrap();
+        let before = gemini.args.clone();
+        gemini.add_hooks(xdev);
+        assert_eq!((gemini.args, gemini.hooks), (before, false));
+
+        let mut aider = run(&with(custom("aider")), "aider", None, &found).unwrap();
+        aider.add_hooks(xdev);
+        assert!(!aider.hooks && aider.args.is_empty());
+
+        let mut shell = launch_of("/bin/sh", &[], &[]);
+        shell.agent = false;
+        shell.cli = Some(Cli::Claude);
+        shell.add_hooks(xdev);
+        assert!(!shell.hooks && shell.args.is_empty());
     }
 
     #[test]
