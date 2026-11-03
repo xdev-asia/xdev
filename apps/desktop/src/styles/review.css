@@ -1,0 +1,271 @@
+/* Review tab: every change of a worktree against a base, in one scrolling list. */
+
+.rv {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-size: 12px;
+}
+
+.rv-bar {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.rv-count {
+  margin-left: auto;
+  color: var(--text-3);
+}
+
+.rv-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-2);
+}
+
+.rv-layout {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+
+.rv-layout button {
+  padding: 3px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.rv-layout button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--x-color-on-accent);
+}
+
+.rv-base {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rv-base-label {
+  color: var(--text-3);
+}
+
+.rv-base-button {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rv-base-menu {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+  max-height: 320px;
+  margin-top: 4px;
+  padding: 4px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--bg-2);
+}
+
+.rv-base-menu button {
+  padding: 5px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rv-base-menu button:hover,
+.rv-base-menu button[aria-selected="true"] {
+  background: var(--bg-3);
+}
+
+.rv-base-free input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-size: 12px;
+}
+
+.rv-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.rv-list {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  overflow: auto;
+  background: var(--bg-2);
+}
+
+.rv-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rv-list-item:hover {
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+.rv-list-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rv-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.rv-dot[data-partial="true"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ok);
+}
+
+.rv-resize {
+  flex-shrink: 0;
+  width: 4px;
+  background: var(--line);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.rv-resize:hover,
+.rv-resize:focus-visible {
+  background: var(--accent);
+}
+
+.rv-files {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+
+.rv-file {
+  border-bottom: 1px solid var(--line);
+}
+
+.rv-file-head {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+}
+
+.rv-file-toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rv-file-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rv-caret {
+  width: 10px;
+  color: var(--text-3);
+}
+
+.rv-letter {
+  color: var(--text-3);
+}
+
+.rv-letter[data-kind="added"] {
+  color: var(--ok);
+}
+
+.rv-letter[data-kind="deleted"] {
+  color: var(--danger);
+}
+
+.rv-stage {
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.rv-stage:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+.rv-stage:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.rv-file-body {
+  overflow: auto;
+}

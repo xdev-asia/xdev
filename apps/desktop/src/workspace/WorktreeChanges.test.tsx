@@ -4,11 +4,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Button } from "@xdev/ui";
 import { createMockApi, type Api, type WorktreeChange, type WorktreeView } from "@/api";
 import { DiffView } from "@/components/DiffView";
+import { FileDiff } from "@/review/FileDiff";
+import { ReviewView } from "@/review/ReviewView";
+import { DEFAULT_VIEW } from "@/review/viewOptions";
 import { translate } from "@/i18n";
 import { Sessions } from "./sessions";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { WorktreeChanges } from "./WorktreeChanges";
-import { WorktreeDiff } from "./WorktreeDiff";
 import { WorktreeTabs } from "./WorktreeTabs";
 
 // Hooks are stubbed only while a component under test is called; each harness keeps its own.
@@ -55,6 +57,23 @@ const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve();
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 const OAK = "/demo/wt/xdev-oak";
 const START = "5555555555555555555555555555555555555555";
+// One file section of the review, drawn open against the worktree's start.
+const section = (api: Api, path: string) =>
+  FileDiff({
+    api,
+    worktree: OAK,
+    base: START,
+    file: { path, kind: "modified", staged: false, unstaged: true },
+    opts: DEFAULT_VIEW,
+    open: true,
+    rev: 0,
+    revealSeq: 0,
+    busy: false,
+    onToggle() {},
+    onStage() {},
+    register() {},
+    onChunks() {},
+  });
 const oak: WorktreeView = { path: OAK, name: "oak", branch: "oak", head: START, start: START, primary: false, pinned: false, detached: false };
 
 // Calls `render` with its own hook values; the first draw's effects run once, as on mount.
@@ -148,7 +167,7 @@ it("says line and lines in the stats text", async () => {
   await tick();
   expect(renderToStaticMarkup(view.row("src/status.ts"))).toContain("2 lines added, 1 removed");
   // The diff header says the same.
-  const diff = mount(() => WorktreeDiff({ api, worktree: OAK, file: "src/session.ts" }));
+  const diff = mount(() => section(api, "src/session.ts"));
   await tick();
   expect(diff.html()).toContain("1 line added, 1 removed");
 });
@@ -201,22 +220,17 @@ it("opens a diff tab for a file", async () => {
   const live = (sessions = new Sessions(api));
   const term = live.open(OAK, "shell");
   const tabs = mount(() => WorktreeTabs({ api, sessions: live, worktree: OAK, visible: true, reveal: { file: "src/session.ts", seq: 1 } }));
-  const tab = tabs.find((n) => n.props.role === "tab" && n.props["data-tab"] === "file:src/session.ts")!;
+  const tab = tabs.find((n) => n.props.role === "tab" && n.props["data-tab"] === "review:")!;
   expect(tab.props["aria-selected"]).toBe(true);
   const pane = (id: string) => tabs.find((n) => n.props.role === "tabpanel" && n.props["data-tab"] === id)!;
-  expect(pane("file:src/session.ts").props.hidden).toBe(false);
+  expect(pane("review:").props.hidden).toBe(false);
   expect(pane(term.id).props.hidden).toBe(true);
-  const diff = nodes(pane("file:src/session.ts")).find((n) => n.type === WorktreeDiff)!;
-  expect(diff.props).toMatchObject({ api, worktree: OAK, file: "src/session.ts" });
-
-  const shown = mount(() => WorktreeDiff(diff.props as Parameters<typeof WorktreeDiff>[0]));
-  await tick();
-  const editor = shown.find((n) => n.type === DiffView)!;
-  expect(editor.props).toEqual({ base: "// src/session.ts\nexport const value = 1;\n", current: "// src/session.ts\nexport const value = 2;\n" });
+  const review = nodes(pane("review:")).find((n) => n.type === ReviewView)!;
+  expect(review.props).toMatchObject({ api, worktree: OAK, reveal: { file: "src/session.ts", seq: 1 } });
 
   // Closing the diff hands the view back to the terminal.
-  tabs.find((n) => n.props["aria-label"] === en("workspace.tabs.close", { name: "session.ts" }))!.props.onClick();
-  expect(tabs.find((n) => n.props["data-tab"] === "file:src/session.ts")).toBeUndefined();
+  tabs.find((n) => n.props["aria-label"] === en("workspace.tabs.close", { name: en("review.tab") }))!.props.onClick();
+  expect(tabs.find((n) => n.props["data-tab"] === "review:")).toBeUndefined();
   expect(pane(term.id).props.hidden).toBe(false);
 });
 
@@ -310,15 +324,15 @@ it("shows git_identity inline", async () => {
 
 it("shows the binary placeholder", async () => {
   const api = createMockApi({});
-  const read = vi.spyOn(api, "worktreeFileDiff").mockResolvedValueOnce({ old: null, new: null, skip: "binary" });
-  const binary = mount(() => WorktreeDiff({ api, worktree: OAK, file: "docs/logo.png" }));
+  const read = vi.spyOn(api, "worktreeReviewFile").mockResolvedValueOnce({ old: null, new: null, skip: "binary" });
+  const binary = mount(() => section(api, "docs/logo.png"));
   await tick();
-  expect(read).toHaveBeenCalledWith(OAK, "docs/logo.png");
+  expect(read).toHaveBeenCalledWith(OAK, START, "docs/logo.png");
   expect(binary.html()).toContain(en("workspace.diff.binary"));
   expect(binary.find((n) => n.type === DiffView)).toBeUndefined();
 
   read.mockResolvedValueOnce({ old: null, new: null, skip: "too_large" });
-  const large = mount(() => WorktreeDiff({ api, worktree: OAK, file: "data/dump.sql" }));
+  const large = mount(() => section(api, "data/dump.sql"));
   await tick();
   expect(large.html()).toContain(en("workspace.diff.tooLarge"));
   expect(large.find((n) => n.type === DiffView)).toBeUndefined();
