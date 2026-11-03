@@ -1,0 +1,117 @@
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import type { JSX } from "react";
+import type { SessionRow, SessionScope } from "@/api";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useI18n } from "@/i18n";
+import type { Sessions, Tab } from "@/workspace/sessions";
+import { SessionsPanel, type ScopeKind } from "./SessionsPanel";
+import { confirmResume, startResume, type PendingResume } from "./resumeFlow";
+import { baseName } from "./sessionsView";
+import type { AgentSessionsStore } from "./store";
+
+/** The worktree on screen, which the first two scopes and a resume from another folder lean on. */
+export type Current = { path: string; repo: string | null };
+
+/** The panel wired to the shared store and the tab store; the shell only says where a tab opened. */
+export function SessionsSidebar(props: {
+  store: AgentSessionsStore;
+  sessions: Sessions;
+  current: Current | null;
+  /** The sidebar shows this view now: it reads the logs while it does. */
+  visible: boolean;
+  focusSeq?: number;
+  reveal?: { key: string; seq: number } | null;
+  /** A resume opened this tab; the shell brings its worktree up and puts it in front. */
+  onOpened(tab: Tab): void;
+  /** Bring an open tab forward. */
+  onFocusTab(id: string): void;
+  /** Select a worktree by path. */
+  onGoTo(worktree: string): void;
+}): JSX.Element {
+  const { store, sessions, current, visible } = props;
+  const { t } = useI18n();
+  const state = useSyncExternalStore(store.subscribe, () => store.state, () => store.state);
+  // A string, so an unchanged tab store reads as the same snapshot.
+  const resumedKey = useSyncExternalStore(
+    (listener) => sessions.subscribe(listener),
+    () =>
+      sessions
+        .resumed()
+        .map((tab) => `${tab.resumeOf}=${tab.id}`)
+        .join("|"),
+    () => "",
+  );
+  const open = useMemo(() => new Map(resumedKey === "" ? [] : resumedKey.split("|").map((p) => p.split("=") as [string, string])), [resumedKey]);
+  const [asking, setAsking] = useState<PendingResume | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!visible) return;
+    setNow(Date.now());
+    return store.watch();
+  }, [store, visible]);
+  // Relative times move on with the clock, not only with a read.
+  useEffect(() => {
+    if (!visible) return;
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, [visible]);
+
+  // The scope follows the worktree on screen while it is one of the two that name a folder.
+  const scope = state.query.scope;
+  const path = current?.path ?? null;
+  const repo = current?.repo ?? null;
+  useEffect(() => {
+    const next = scopeFor(scope.kind, path, repo);
+    if (next.kind !== scope.kind || (next.kind !== "all" && scope.kind !== "all" && next.path !== scope.path)) void store.setQuery({ scope: next });
+  }, [store, scope, path, repo]);
+
+  const resume = (row: SessionRow) => {
+    const tab = startResume(sessions, row, path, setAsking);
+    if (tab) props.onOpened(tab);
+  };
+
+  return (
+    <>
+      <SessionsPanel
+        state={state}
+        now={now}
+        canScope={{ worktree: path !== null, repo: repo !== null }}
+        openTab={(row) => open.get(row.session.id) ?? null}
+        focusSeq={props.focusSeq}
+        reveal={props.reveal}
+        onSearch={(text) => store.search(text)}
+        onScope={(kind) => void store.setQuery({ scope: scopeFor(kind, path, repo) })}
+        onSort={(sort) => void store.setQuery({ sort })}
+        onAgent={(agent) => void store.setQuery({ agent })}
+        onHome={(homeId) => void store.setQuery({ homeId })}
+        onMore={() => void store.loadMore()}
+        onPrimary={(row, tab) => (tab ? props.onFocusTab(tab) : resume(row))}
+        onCopyId={(row) => void navigator.clipboard?.writeText(row.session.id).catch(() => {})}
+        onGoTo={(row) => row.worktree && props.onGoTo(row.worktree)}
+      />
+      <ConfirmDialog
+        open={asking !== null}
+        title={t("agentSessions.mismatch.title")}
+        body={
+          asking
+            ? t("agentSessions.mismatch.body", { folder: asking.row.session.cwd ?? "?", target: baseName(asking.worktree) })
+            : ""
+        }
+        confirmLabel={t("agentSessions.mismatch.confirm")}
+        onConfirm={() => {
+          if (asking) props.onOpened(confirmResume(sessions, asking));
+          setAsking(null);
+        }}
+        onCancel={() => setAsking(null)}
+      />
+    </>
+  );
+}
+
+/** The scope a switch picks; the two folder scopes fall back to All with no worktree on screen. */
+export function scopeFor(kind: ScopeKind, path: string | null, repo: string | null): SessionScope {
+  if (kind === "worktree" && path) return { kind, path };
+  if (kind === "repo" && repo) return { kind, path: repo };
+  return { kind: "all" };
+}

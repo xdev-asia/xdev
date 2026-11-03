@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
 import { Sessions } from "@/workspace/sessions";
-import { AgentSessionsStore, REFRESH_MS } from "./store";
+import { AgentSessionsStore, PAGE, REFRESH_MS } from "./store";
 
 const A = "/demo/wt/xdev-oak";
 
@@ -105,5 +105,58 @@ describe("AgentSessionsStore", () => {
     await agent.client.input("exit\r");
     await vi.waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
     expect(ask).toHaveBeenCalledWith(expect.anything(), true);
+  });
+});
+
+describe("AgentSessionsStore search and paging", () => {
+  let store: AgentSessionsStore | null = null;
+  afterEach(() => {
+    store?.dispose();
+    store = null;
+    vi.useRealTimers();
+  });
+
+  it("search waits 150 ms after the last key, then asks once", async () => {
+    vi.useFakeTimers();
+    const api = createMockApi({});
+    const ask = vi.spyOn(api, "agentSessions");
+    store = new AgentSessionsStore(api, null);
+    store.search("pa");
+    await vi.advanceTimersByTimeAsync(100);
+    store.search("parser");
+    await vi.advanceTimersByTimeAsync(149);
+    expect(ask).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ text: "parser" }), false);
+  });
+
+  it("an empty search clears the text", async () => {
+    vi.useFakeTimers();
+    store = new AgentSessionsStore(createMockApi({}), null);
+    store.search("  ");
+    await vi.advanceTimersByTimeAsync(150);
+    expect(store.state.query.text).toBeNull();
+  });
+
+  it("remembers every home it has seen, so a home filter does not hide its own switch", async () => {
+    store = new AgentSessionsStore(createMockApi({}), null);
+    await store.refresh();
+    expect(store.state.homes).toEqual(["acct-claude-2", "own-claude", "own-codex"]);
+    await store.setQuery({ homeId: "own-codex" });
+    expect(store.state.homes).toEqual(["acct-claude-2", "own-claude", "own-codex"]);
+  });
+
+  it("loadMore raises the limit by one page, up to 500, and says when there is more", async () => {
+    const api = createMockApi({});
+    store = new AgentSessionsStore(api, null);
+    await store.setQuery({ limit: 3 });
+    expect(store.state.more).toBe(true);
+    await store.loadMore();
+    expect(store.state.query.limit).toBe(3 + PAGE);
+    expect(store.state.more).toBe(false);
+    await store.setQuery({ limit: 500 });
+    await store.loadMore();
+    expect(store.state.query.limit).toBe(500);
   });
 });

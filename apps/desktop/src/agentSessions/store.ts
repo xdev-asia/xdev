@@ -4,6 +4,9 @@ import type { Sessions } from "@/workspace/sessions";
 /** A visible panel re-reads the logs this often. */
 export const REFRESH_MS = 60_000;
 export const PAGE = 100;
+/** The search box waits this long after the last key. */
+export const SEARCH_MS = 150;
+const LIMIT_MAX = 500;
 
 export interface AgentSessionsState {
   query: SessionQuery;
@@ -12,6 +15,10 @@ export interface AgentSessionsState {
   loading: boolean;
   /** The last read failed; the rows are from before. */
   error: ApiError | null;
+  /** Every home a read has shown, sorted; the home filter lists these. */
+  homes: string[];
+  /** The list is as long as the limit, so there may be more rows. */
+  more: boolean;
 }
 
 export const DEFAULT_QUERY: SessionQuery = { text: null, scope: { kind: "all" }, agent: null, homeId: null, sort: "lastDesc", limit: PAGE };
@@ -21,13 +28,14 @@ export const DEFAULT_QUERY: SessionQuery = { text: null, scope: { kind: "all" },
  * Rust read new log bytes; `setQuery` only filters what the index holds.
  */
 export class AgentSessionsStore {
-  private current: AgentSessionsState = { query: DEFAULT_QUERY, rows: [], loading: false, error: null };
+  private current: AgentSessionsState = { query: DEFAULT_QUERY, rows: [], loading: false, error: null, homes: [], more: false };
   private readonly listeners = new Set<() => void>();
   private serial = 0;
   private watchers = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly unlisten: Promise<() => void> | null;
   private disposed = false;
+  private typing: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly api: Pick<Api, "agentSessions" | "onPtyExit">,
@@ -56,6 +64,21 @@ export class AgentSessionsStore {
     return this.read(false);
   }
 
+  /** The search text, applied `SEARCH_MS` after the last call. Blank means no text. */
+  search(text: string): void {
+    if (this.typing) clearTimeout(this.typing);
+    this.typing = setTimeout(() => {
+      this.typing = null;
+      void this.setQuery({ text: text.trim() === "" ? null : text.trim() });
+    }, SEARCH_MS);
+  }
+
+  /** Shows one more page of rows. */
+  loadMore(): Promise<void> {
+    const limit = Math.min(LIMIT_MAX, this.current.query.limit + PAGE);
+    return limit === this.current.query.limit ? Promise.resolve() : this.setQuery({ limit });
+  }
+
   /** Reads the logs for new sessions, then the list. */
   refresh(): Promise<void> {
     return this.read(true);
@@ -79,6 +102,7 @@ export class AgentSessionsStore {
 
   dispose(): void {
     this.disposed = true;
+    if (this.typing) clearTimeout(this.typing);
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.listeners.clear();
@@ -91,7 +115,9 @@ export class AgentSessionsStore {
     try {
       const rows = await this.api.agentSessions(this.current.query, refresh);
       // A newer read owns the state.
-      if (mine === this.serial) this.set({ rows, loading: false, error: null });
+      if (mine !== this.serial) return;
+      const homes = [...new Set([...this.current.homes, ...rows.map((r) => r.session.homeId)])].sort();
+      this.set({ rows, loading: false, error: null, homes, more: rows.length >= this.current.query.limit });
     } catch (e) {
       if (mine === this.serial) this.set({ loading: false, error: toApiError(e) });
     }
