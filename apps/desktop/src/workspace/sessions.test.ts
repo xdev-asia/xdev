@@ -3,7 +3,7 @@ import { createMockApi } from "@/mockApi";
 import type { HookEvent, PtyInfo } from "@/api";
 import { INTERRUPT_MS, STALE_MS } from "./status";
 import { addTab, leaves, paneOf, removeTab, splitPane, toggleExpand } from "./paneTree";
-import { DONE_QUIET_MS, Sessions } from "./sessions";
+import { CLOSED_KEPT, DONE_QUIET_MS, Sessions } from "./sessions";
 
 const A = "/demo/wt/xdev-oak";
 const B = "/demo/wt/xdev-elm";
@@ -797,5 +797,34 @@ describe("Sessions", () => {
       expect(live.tabs(A)[0]).toMatchObject({ unread: false, unreadReason: null });
       expect(other.unread).toBe(false);
     });
+  });
+
+  it("reopenClosed gives back the most recent tab closed in that worktree, and pops it", async () => {
+    sessions = new Sessions(createMockApi({}));
+    const shell = sessions.open(A, "shell");
+    const agent = sessions.open(A, "claude", "acct");
+    const other = sessions.open(B, "shell");
+    await sessions.close(shell.id);
+    await sessions.close(agent.id);
+    await sessions.close(other.id);
+    const first = sessions.reopenClosed(A)!;
+    expect([first.profileId, first.account, first.worktree]).toEqual(["claude", "acct", A]);
+    expect(first.id).not.toBe(agent.id);
+    const second = sessions.reopenClosed(A)!;
+    expect(second.profileId).toBe("shell");
+    expect(sessions.reopenClosed(A)).toBeNull();
+    expect(sessions.tabs(A).map((t) => t.id)).toEqual([first.id, second.id]);
+    expect(sessions.reopenClosed(B)!.profileId).toBe("shell");
+  });
+
+  it("closing a whole worktree leaves nothing to reopen, and only the last ten are kept", async () => {
+    sessions = new Sessions(createMockApi({}));
+    sessions.open(A, "shell");
+    await sessions.closeWorktree(A);
+    expect(sessions.reopenClosed(A)).toBeNull();
+    for (let i = 0; i < CLOSED_KEPT + 3; i++) await sessions.close(sessions.open(A, "shell").id);
+    let back = 0;
+    while (sessions.reopenClosed(A)) back++;
+    expect(back).toBe(CLOSED_KEPT);
   });
 });
