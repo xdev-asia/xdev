@@ -22,6 +22,12 @@ impl Repo {
 
     /// `None` when the file did not exist in that commit.
     pub fn show(&self, id: &str, path: &str) -> Result<Option<Vec<u8>>, GitError> {
+        let commit = self.commit_of(id)?;
+        self.blob(&commit, path)
+    }
+
+    /// The full id of commit `id`, which must be plain hex.
+    fn commit_of(&self, id: &str) -> Result<String, GitError> {
         // Checked before git sees it, so an id can never be read as an
         // option or a rev expression.
         if !is_commit_id(id) {
@@ -29,7 +35,21 @@ impl Repo {
         }
         let rev = format!("{id}^{{commit}}");
         let out = run::run(&self.workdir, &["rev-parse", "--verify", "-q", &rev], None)?;
-        self.blob(String::from_utf8_lossy(&out).trim(), path)
+        Ok(String::from_utf8_lossy(&out).trim().to_owned())
+    }
+
+    /// The file's size in that commit without reading it, so a caller can
+    /// refuse a large file first. `None` when it is absent or not a file.
+    pub fn blob_size(&self, id: &str, path: &str) -> Result<Option<u64>, GitError> {
+        let commit = self.commit_of(id)?;
+        // `<rev>:<path>` is relative to the repo's top, not the vault folder.
+        let object = format!("{commit}:{}{path}", self.prefix);
+        let (status, kind) = run::run_status(&self.workdir, &["cat-file", "-t", &object], None)?;
+        if status != Some(0) || String::from_utf8_lossy(&kind).trim() != "blob" {
+            return Ok(None);
+        }
+        let out = run::run(&self.workdir, &["cat-file", "-s", &object], None)?;
+        Ok(String::from_utf8_lossy(&out).trim().parse().ok())
     }
 
     /// Newest first. History does not follow renames.

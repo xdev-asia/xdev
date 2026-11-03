@@ -231,6 +231,28 @@ fn head_content_and_show() {
 }
 
 #[test]
+fn blob_size_without_reading_the_blob() {
+    let dir = repo_dir();
+    write(dir.path(), "a.md", "12345");
+    write(dir.path(), "vault/a.md", "123");
+    let id = commit_all(dir.path(), "one");
+    let repo = Repo::discover(dir.path()).unwrap();
+    assert_eq!(repo.blob_size(&id, "a.md").unwrap(), Some(5));
+    assert_eq!(repo.blob_size(&id[..8], "a.md").unwrap(), Some(5));
+    assert_eq!(repo.blob_size(&id, "missing.md").unwrap(), None);
+    // A folder is not a file.
+    assert_eq!(repo.blob_size(&id, "vault").unwrap(), None);
+    let vault = Repo::discover(&dir.path().join("vault")).unwrap();
+    assert_eq!(vault.blob_size(&id, "a.md").unwrap(), Some(3));
+    for bad in ["--output=x", "HEAD", "abc", ""] {
+        assert!(
+            matches!(repo.blob_size(bad, "a.md"), Err(GitError::BadId(_))),
+            "{bad}"
+        );
+    }
+}
+
+#[test]
 fn show_in_subfolder_is_vault_relative() {
     let dir = repo_dir();
     write(dir.path(), "a.md", "outer");
