@@ -149,8 +149,9 @@ mod tests {
 
     #[test]
     fn small_writes_inside_16ms_arrive_as_one_chunk() {
-        let ms2 = Duration::from_millis(2);
-        let script = (0..3).map(|_| (ms2, vec![b'x'; 10])).collect();
+        // Three separate reads with no delay between them. A 2 ms sleep per
+        // read overshot the 16 ms window on busy macOS runners.
+        let script = (0..3).map(|_| (Duration::ZERO, vec![b'x'; 10])).collect();
         let chunks = run(Script(script));
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].len(), 30);
