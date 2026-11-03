@@ -199,7 +199,13 @@ impl Repo {
                 )?;
                 self.literal(&["rm", "-f", "-q", "--ignore-unmatch"], &added)?;
             } else {
-                self.literal(&["restore", "--worktree"], &tracked)?;
+                // A file with only staged changes has nothing to discard, and
+                // a staged deletion is not in the index for `restore` to find.
+                let changed: Vec<String> = tracked
+                    .into_iter()
+                    .filter(|p| states.get(p.as_str()).is_some_and(|s| s.unstaged))
+                    .collect();
+                self.literal(&["restore", "--worktree"], &changed)?;
             }
         }
         // Never `-d`: only the files that were named.
