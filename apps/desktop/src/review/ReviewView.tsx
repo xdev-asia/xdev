@@ -1,0 +1,246 @@
+import { useEffect, useRef, useState } from "react";
+import type { JSX } from "react";
+import { toApiError, type Api, type ReviewData, type ReviewFile } from "@/api";
+import type { Problem } from "@/changes/useChanges";
+import { ProblemNote } from "@/components/ChangesPanel";
+import { useI18n } from "@/i18n";
+import type { Sessions } from "@/workspace/sessions";
+import type { TabStatus } from "@/workspace/status";
+import { BasePicker } from "./BasePicker";
+import { FileDiff, type DiffHandle } from "./FileDiff";
+import { nextChange, type ChangeAt } from "./navigate";
+import { clampListWidth, readViewOptions, writeViewOptions, type ViewOptions } from "./viewOptions";
+
+// Past this many files the sections start closed, so opening the tab does not read them all.
+export const OPEN_LIMIT = 30;
+const STEP = 16;
+
+const storage = (): Storage | null => (typeof localStorage === "undefined" ? null : localStorage);
+const LETTER: Record<ReviewFile["kind"], string> = { added: "A", modified: "M", deleted: "D" };
+
+/**
+ * Every change of one worktree against a base the person picks, as one scrolling list of files.
+ * It reads again when the window gets focus, after staging, and when an agent of the worktree
+ * goes quiet.
+ */
+export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessions | null; reveal?: { file: string; seq: number } }): JSX.Element {
+  const { api, worktree, sessions, reveal } = props;
+  const { t } = useI18n();
+  const [opts, setOpts] = useState<ViewOptions>(() => readViewOptions(storage()));
+  const [data, setData] = useState<ReviewData | null>(null);
+  const [problem, setProblem] = useState<Problem | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [rev, setRev] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [target, setTarget] = useState<{ file: string; seq: number }>({ file: "", seq: 0 });
+  const [seen, setSeen] = useState(0);
+  const picked = useRef<string | null>(null);
+  const loads = useRef(0);
+  const running = useRef(0);
+  const handles = useRef(new Map<string, DiffHandle>());
+  const cursor = useRef<ChangeAt | null>(null);
+  const drag = useRef<{ x: number; width: number } | null>(null);
+
+  // A reveal opens its file and scrolls to it; taken during render so the frame that asks already shows it.
+  if (reveal && reveal.seq !== seen) {
+    setSeen(reveal.seq);
+    setExpanded({ ...expanded, [reveal.file]: true });
+    setTarget(reveal);
+  }
+
+  async function load(): Promise<void> {
+    const seq = ++loads.current;
+    running.current = seq;
+    try {
+      const next = await api.worktreeReview(worktree, picked.current);
+      if (seq !== loads.current) return;
+      setData(next);
+      setProblem(null);
+      setRev((r) => r + 1);
+    } catch (e) {
+      if (seq === loads.current) setProblem(toApiError(e));
+    } finally {
+      if (running.current === seq) running.current = 0;
+    }
+  }
+
+  // A failed base keeps what is shown and says why.
+  async function pickBase(base: string | null): Promise<void> {
+    const seq = ++loads.current;
+    try {
+      const next = await api.worktreeReview(worktree, base);
+      if (seq !== loads.current) return;
+      picked.current = base;
+      cursor.current = null;
+      setData(next);
+      setProblem(null);
+      setCounts({});
+      setRev((r) => r + 1);
+    } catch (e) {
+      if (seq === loads.current) setProblem(toApiError(e));
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    const again = () => {
+      if (!running.current) void load();
+    };
+    window.addEventListener("focus", again);
+    return () => {
+      window.removeEventListener("focus", again);
+      loads.current++;
+    };
+  }, [api, worktree]);
+
+  // An agent that went quiet has likely written files.
+  useEffect(() => {
+    if (!sessions) return;
+    const statuses = () => new Map<string, TabStatus>(sessions.tabs(worktree).map((tab) => [tab.id, tab.status]));
+    let before = statuses();
+    return sessions.subscribe(() => {
+      const now = statuses();
+      if ([...now].some(([id, status]) => status === "idle" && before.get(id) === "working")) void load();
+      before = now;
+    });
+  }, [api, worktree, sessions]);
+
+  const files = data?.files ?? [];
+  const isOpen = (path: string) => expanded[path] ?? files.length <= OPEN_LIMIT;
+
+  function setOption(patch: Partial<ViewOptions>): void {
+    const next = { ...opts, ...patch };
+    setOpts(next);
+    writeViewOptions(storage(), next);
+  }
+
+  function toggle(path: string): void {
+    setExpanded({ ...expanded, [path]: !isOpen(path) });
+  }
+
+  function show(path: string): void {
+    setExpanded({ ...expanded, [path]: true });
+    setTarget({ file: path, seq: target.seq + 1 });
+  }
+
+  async function stage(file: ReviewFile): Promise<void> {
+    const staged = file.staged && !file.unstaged;
+    setBusy(true);
+    try {
+      await api.worktreeStage(worktree, [file.path], !staged);
+      await load();
+    } catch (e) {
+      setProblem(toApiError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function go(dir: 1 | -1): void {
+    const list = files.map((f) => ({ path: f.path, chunks: counts[f.path] ?? 0 }));
+    const at = nextChange(list, cursor.current, dir);
+    if (!at) return;
+    cursor.current = at;
+    handles.current.get(files[at.file].path)?.goTo(at.chunk);
+  }
+
+  function key(e: { key: string; shiftKey: boolean; preventDefault(): void }): void {
+    if (e.key !== "F7") return;
+    e.preventDefault();
+    go(e.shiftKey ? -1 : 1);
+  }
+
+  const width = clampListWidth(opts.listWidth);
+  const flag = (name: "ignoreWhitespace" | "collapse" | "lineNumbers" | "wrap", label: string) => (
+    <label className="rv-check">
+      <input type="checkbox" checked={opts[name]} onChange={() => setOption({ [name]: !opts[name] })} />
+      <span>{t(label)}</span>
+    </label>
+  );
+
+  return (
+    <div className="rv" onKeyDown={key}>
+      <div className="rv-bar">
+        {data && <BasePicker api={api} worktree={worktree} base={data.base} baseRef={data.baseRef} onPick={(b) => void pickBase(b)} />}
+        <div className="rv-layout" role="group" aria-label={t("review.layout")}>
+          {(["inline", "split"] as const).map((layout) => (
+            <button key={layout} type="button" aria-pressed={opts.layout === layout} onClick={() => setOption({ layout })}>
+              {t(`review.layout.${layout}`)}
+            </button>
+          ))}
+        </div>
+        {flag("ignoreWhitespace", "review.opt.whitespace")}
+        {flag("collapse", "review.opt.collapse")}
+        {flag("lineNumbers", "review.opt.lineNumbers")}
+        {flag("wrap", "review.opt.wrap")}
+        <span className="rv-count">{t("review.files", { count: files.length })}</span>
+      </div>
+      {problem && <ProblemNote problem={problem} />}
+      {data && files.length === 0 && <p className="ws-empty">{t("review.empty")}</p>}
+      {files.length > 0 && data && (
+        <div className="rv-main">
+          <nav className="rv-list" style={{ width }} aria-label={t("review.list")}>
+            {files.map((f) => (
+              <button key={f.path} type="button" className="rv-list-item" data-path={f.path} title={f.path} onClick={() => show(f.path)}>
+                <span className="rv-letter ws-mono" data-kind={f.kind} aria-hidden="true">
+                  {LETTER[f.kind]}
+                </span>
+                <span className="rv-list-path ws-mono">{f.path}</span>
+                {f.staged && <span className="rv-dot" data-partial={f.unstaged} title={t("review.staged")} />}
+              </button>
+            ))}
+          </nav>
+          <div
+            className="rv-resize"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t("review.resize")}
+            aria-valuemin={160}
+            aria-valuemax={480}
+            aria-valuenow={width}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+              e.preventDefault();
+              setOption({ listWidth: clampListWidth(width + (e.key === "ArrowRight" ? STEP : -STEP)) });
+            }}
+            onPointerDown={(e) => {
+              drag.current = { x: e.clientX, width };
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+            }}
+            onPointerMove={(e) => {
+              if (drag.current) setOption({ listWidth: clampListWidth(drag.current.width + e.clientX - drag.current.x) });
+            }}
+            onPointerUp={() => {
+              drag.current = null;
+            }}
+          />
+          <div className="rv-files">
+            {files.map((f) => (
+              <FileDiff
+                key={f.path}
+                api={api}
+                worktree={worktree}
+                base={data.base.id}
+                file={f}
+                opts={opts}
+                open={isOpen(f.path)}
+                rev={rev}
+                revealSeq={target.file === f.path ? target.seq : 0}
+                busy={busy}
+                onToggle={toggle}
+                onStage={(file) => void stage(file)}
+                register={(path, handle) => {
+                  if (handle) handles.current.set(path, handle);
+                  else handles.current.delete(path);
+                }}
+                onChunks={(path, count) => setCounts((c) => (c[path] === count ? c : { ...c, [path]: count }))}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
