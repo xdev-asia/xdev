@@ -10,6 +10,8 @@ import { DEFAULT_VIEW } from "@/review/viewOptions";
 import { translate } from "@/i18n";
 import { Sessions } from "./sessions";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { PrStore } from "./prs";
+import { ShipBar } from "./ShipBar";
 import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeTabs } from "./WorktreeTabs";
 
@@ -445,4 +447,28 @@ it("hook failure shows output and fix with agent sends it", async () => {
   await tick();
   expect(bare.html()).toContain("boom");
   expect(bare.html()).not.toContain(en("ship.hook.fix"));
+});
+
+it("hides the agent actions when Settings → Git turns them off", async () => {
+  const api = createMockApi({});
+  await api.setGitSettings({ ...(await api.gitSettings()), sourceControlAi: false, prDraft: true });
+  vi.spyOn(api, "worktreeCommit").mockRejectedValueOnce({ code: "hook_failed", detail: "boom" });
+  const view = changes(api, undefined, { onFixWithAgent: vi.fn(), prs: new PrStore(api) });
+  await tick();
+  expect(view.find((n) => n.type === ShipBar)!.props.git).toMatchObject({ sourceControlAi: false, prDraft: true });
+  expect(view.html()).not.toContain(en("ship.draft"));
+  view.message().props.onChange({ target: { value: "feat: x" } });
+  view.commit().props.onClick();
+  await tick();
+  expect(view.html()).toContain("boom");
+  expect(view.html()).not.toContain(en("ship.hook.fix"));
+});
+
+it("keeps the agent actions when the git settings cannot be read", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "gitSettings").mockRejectedValue({ code: "io" });
+  const view = changes(api);
+  await tick();
+  expect(view.find((n) => n.type === "button" && n.props.children === en("ship.draft"))).toBeDefined();
+  expect(view.html()).not.toContain(en("error.io"));
 });

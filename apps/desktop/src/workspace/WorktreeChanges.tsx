@@ -1,12 +1,13 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type WorktreeChange, type WorktreeView } from "@/api";
+import { toApiError, type Api, type GitSettings, type WorktreeChange, type WorktreeView } from "@/api";
 import type { Problem } from "@/changes/useChanges";
 import { ProblemNote } from "@/components/ChangesPanel";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { diffStats } from "@/components/DiffView";
 import { useI18n } from "@/i18n";
+import { DEFAULT_GIT_SETTINGS } from "@/settings/gitDefaults";
 import type { PrStore } from "./prs";
 import type { Sessions } from "./sessions";
 import { ShipBar } from "./ShipBar";
@@ -53,6 +54,8 @@ export function WorktreeChanges(props: {
   const [askPushed, setAskPushed] = useState(false);
   // Bumped when the branch may have moved, so the ship bar reads again.
   const [shipKey, setShipKey] = useState(0);
+  // Settings → Git, read with the list so a change there shows on the next focus.
+  const [git, setGit] = useState<GitSettings>(DEFAULT_GIT_SETTINGS);
   const field = useRef<HTMLTextAreaElement>(null);
   // Only the newest load may write, so a slow one never shows an older list.
   const loads = useRef(0);
@@ -68,6 +71,12 @@ export function WorktreeChanges(props: {
   async function load(): Promise<void> {
     const seq = ++loads.current;
     running.current = seq;
+    void api.gitSettings().then(
+      (stored) => {
+        if (seq === loads.current) setGit(stored);
+      },
+      () => undefined,
+    );
     try {
       const list = await api.worktreeChanges(path);
       if (seq !== loads.current) return;
@@ -181,6 +190,7 @@ export function WorktreeChanges(props: {
           checked={checked.length}
           prs={props.prs}
           refreshKey={shipKey}
+          git={git}
           onCommit={() => (message.trim() === "" ? field.current?.focus() : blocked ? undefined : void commit())}
           onChanged={() => props.onShipChanged?.()}
         />
@@ -192,7 +202,7 @@ export function WorktreeChanges(props: {
           <span>{t("error.hook_failed")}</span>
           <pre className="ws-hook-output ws-mono" aria-label={t("ship.hook.output")}>{problem.detail ?? ""}</pre>
           <div className="ws-hook-actions">
-            {props.onFixWithAgent && (
+            {props.onFixWithAgent && git.sourceControlAi && (
               <button type="button" className="btn-secondary" onClick={() => props.onFixWithAgent?.(problem.detail ?? "")}>
                 {t("ship.hook.fix")}
               </button>
@@ -257,9 +267,11 @@ export function WorktreeChanges(props: {
         <Button type="button" disabled={blocked} onClick={() => void commit()}>
           {amend ? t("ship.amend.button") : t("workspace.changes.commit", { count: checked.length })}
         </Button>
-        <button type="button" className="btn-secondary" disabled={drafting || busy || checked.length === 0} onClick={() => void draft()}>
-          {drafting ? t("ship.drafting") : t("ship.draft")}
-        </button>
+        {git.sourceControlAi && (
+          <button type="button" className="btn-secondary" disabled={drafting || busy || checked.length === 0} onClick={() => void draft()}>
+            {drafting ? t("ship.drafting") : t("ship.draft")}
+          </button>
+        )}
       </div>
       <ConfirmDialog
         open={askPushed}

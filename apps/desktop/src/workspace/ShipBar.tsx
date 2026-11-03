@@ -1,9 +1,10 @@
 import { Button } from "@xdev/ui";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type PrView, type ShipView } from "@/api";
+import { toApiError, type Api, type ApiError, type GitSettings, type PrView, type ShipView } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
+import { DEFAULT_GIT_SETTINGS } from "@/settings/gitDefaults";
 import { CreatePrDialog } from "./CreatePrDialog";
 import type { PrStore } from "./prs";
 import { shipAction } from "./ship";
@@ -31,8 +32,11 @@ export function ShipBar(props: {
   // After an action that moved the branch.
   onChanged(): void;
   refreshKey?: number;
+  // Settings → Git: the agent actions and the pull request defaults.
+  git?: GitSettings;
 }): JSX.Element {
   const { api, worktree, prs } = props;
+  const git = props.git ?? DEFAULT_GIT_SETTINGS;
   const { t } = useI18n();
   const [ship, setShip] = useState<ShipView | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
@@ -237,7 +241,10 @@ export function ShipBar(props: {
         <CreatePrDialog
           api={api}
           worktree={worktree}
-          initial={{ base, title: "", body: "", draft: false }}
+          initial={{ base, title: "", body: "", draft: git.prDraft }}
+          ai={git.sourceControlAi}
+          generateOnOpen={git.sourceControlAi && git.prGenerateOnOpen}
+          openAfterCreate={git.prOpenAfterCreate}
           onCreated={(created) => {
             setCreating(false);
             prs.set(worktree, created);

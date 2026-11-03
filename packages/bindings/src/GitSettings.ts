@@ -20,4 +20,21 @@ refreshLocalBaseOnCreate: boolean,
  * Count a branch's committed changes against its upstream rather than
  * the repo's base ref.
  */
-compareAgainstUpstream: boolean, };
+compareAgainstUpstream: boolean, 
+/**
+ * Show the agent actions in Source Control: drafting a commit message
+ * or a pull request, and fixing a failed commit.
+ */
+sourceControlAi: boolean, 
+/**
+ * A new pull request starts as a draft.
+ */
+prDraft: boolean, 
+/**
+ * Draft the pull request's title and body when Create PR opens.
+ */
+prGenerateOnOpen: boolean, 
+/**
+ * Open the pull request in the browser once it is created.
+ */
+prOpenAfterCreate: boolean, };

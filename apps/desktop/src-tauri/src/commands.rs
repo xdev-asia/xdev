@@ -440,7 +440,7 @@ mod tests {
             branch_prefix: settings::BranchPrefixMode::Custom,
             branch_prefix_custom: " team//me/ ".into(),
             refresh_local_base_on_create: true,
-            compare_against_upstream: false,
+            ..settings::GitSettings::default()
         };
         let stored = store_git_settings(&file, git).unwrap();
         assert_eq!(stored.branch_prefix_custom, "team/me");

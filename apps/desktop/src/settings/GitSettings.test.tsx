@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, type GitSettings as Git } from "@/api";
 import { translate } from "@/i18n";
-import { DEMO_WORKSPACE } from "@/mockWorkspace";
+import { DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE } from "@/mockWorkspace";
 import { GitSettings } from "./GitSettings";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
@@ -48,9 +48,11 @@ async function view(seed: { gitUserName?: string | null; git?: Partial<Git> } = 
   const mode = (m: string) => all().find((n) => n.type === "button" && n.props["data-mode"] === m)!;
   const input = () => all().find((n) => n.type === "input" && n.props.name === "branchPrefixCustom");
   const feedback = () => all().find((n) => n.props.id === "settings-git-feedback");
-  const toggle = () => all().find((n) => n.props.role === "switch")!;
+  const toggle = () => all().find((n) => n.props.role === "switch" && n.props["aria-labelledby"] === "settings-git-refresh")!;
+  const ai = () => all().find((n) => n.props.role === "switch" && n.props["aria-labelledby"] === "settings-git-ai")!;
+  const check = (name: string) => all().find((n) => n.type === "input" && n.props.type === "checkbox" && n.props.name === name);
   const type = (value: string) => input()!.props.onChange({ target: { value } });
-  return { api, all, mode, input, feedback, toggle, type, html: () => renderToStaticMarkup(draw()) };
+  return { api, all, mode, input, feedback, toggle, ai, check, type, html: () => renderToStaticMarkup(draw()) };
 }
 
 it("defaults to the git username, read-only, and previews the branch name", async () => {
@@ -73,7 +75,7 @@ it("saves a custom prefix as typed, keeps the raw text and flags a bad one", asy
   const save = vi.spyOn(v.api, "setGitSettings");
   v.mode("custom").props.onClick();
   await tick();
-  expect(save).toHaveBeenLastCalledWith({ branchPrefix: "custom", branchPrefixCustom: "", refreshLocalBaseOnCreate: false, compareAgainstUpstream: false });
+  expect(save).toHaveBeenLastCalledWith({ ...DEFAULT_GIT_SETTINGS, branchPrefix: "custom" });
   expect(v.input()!.props).toMatchObject({ readOnly: false, placeholder: en("settings.git.customPlaceholder") });
 
   // A trailing slash on the way to `team/ui` stays in the box.
@@ -103,7 +105,31 @@ it("hides the prefix field for none and stores the switch and the compare base",
   expect(v.toggle().props["aria-checked"]).toBe(true);
   expect(compare("upstream").props["aria-pressed"]).toBe(true);
   // Every change lands, in order: each later one builds on the earlier.
-  expect(await v.api.gitSettings()).toEqual({ branchPrefix: "none", branchPrefixCustom: "team", refreshLocalBaseOnCreate: true, compareAgainstUpstream: true });
+  expect(await v.api.gitSettings()).toEqual({ ...DEFAULT_GIT_SETTINGS, branchPrefix: "none", branchPrefixCustom: "team", refreshLocalBaseOnCreate: true, compareAgainstUpstream: true });
+});
+
+it("shows the agent actions on by default with the pull request defaults off, and stores each", async () => {
+  const v = await view();
+  expect(v.html()).toContain(en("settings.git.ai.title"));
+  expect(v.ai().props["aria-checked"]).toBe(true);
+  for (const name of ["prDraft", "prGenerateOnOpen", "prOpenAfterCreate"]) {
+    expect(v.check(name)!.props.checked, name).toBe(false);
+    v.check(name)!.props.onChange();
+  }
+  await tick();
+  expect(await v.api.gitSettings()).toMatchObject({ sourceControlAi: true, prDraft: true, prGenerateOnOpen: true, prOpenAfterCreate: true });
+});
+
+it("hides the pull request defaults while the agent actions are off", async () => {
+  const v = await view({ git: { prDraft: true } });
+  v.ai().props.onClick();
+  await tick();
+  expect(v.ai().props["aria-checked"]).toBe(false);
+  expect(v.check("prDraft")).toBeUndefined();
+  // Hidden is not cleared: they come back as they were.
+  expect(await v.api.gitSettings()).toMatchObject({ sourceControlAi: false, prDraft: true });
+  v.ai().props.onClick();
+  expect(v.check("prDraft")!.props.checked).toBe(true);
 });
 
 it("shows a failed save", async () => {

@@ -67,10 +67,12 @@ function mount(render: () => unknown) {
 
 const INITIAL = { base: "main", title: "", body: "", draft: false };
 
-function dialog(api: Api) {
+type Extra = Partial<Parameters<typeof CreatePrDialog>[0]>;
+
+function dialog(api: Api, extra: Extra = {}) {
   const onCreated = vi.fn();
   const onClose = vi.fn();
-  const view = mount(() => CreatePrDialog({ api, worktree: OAK, initial: INITIAL, onCreated, onClose }));
+  const view = mount(() => CreatePrDialog({ api, worktree: OAK, initial: INITIAL, onCreated, onClose, ...extra }));
   const inputs = () => view.all().filter((n) => n.type === "input");
   const base = () => inputs()[0];
   const title = () => inputs()[1];
@@ -78,8 +80,9 @@ function dialog(api: Api) {
   const body = () => view.find((n) => n.type === "textarea")!;
   const create = () => view.find((n) => n.type === Button)!;
   const agent = () => view.find((n) => n.type === "button" && n.props.children === en("ship.pr.agent"))!;
+  const agentBusy = () => view.find((n) => n.type === "button" && n.props.children === en("ship.pr.agentBusy"));
   const submit = () => view.find((n) => n.type === "form")!.props.onSubmit({ preventDefault() {} });
-  return { ...view, onCreated, onClose, base, title, draft, body, create, agent, submit };
+  return { ...view, onCreated, onClose, base, title, draft, body, create, agent, agentBusy, submit };
 }
 
 beforeEach(() => {
@@ -147,4 +150,39 @@ it("shows the detail of a gh failure", async () => {
   view.submit();
   await tick();
   expect(view.html()).toContain("boom happened");
+});
+
+it("starts from the draft default and drafts with the agent on open when asked", async () => {
+  const api = createMockApi({});
+  await api.worktreeCommit(OAK, ["src/session.ts"], "feat: one");
+  const drafting = vi.spyOn(api, "worktreeDraftPr");
+  const view = dialog(api, { initial: { ...INITIAL, draft: true }, generateOnOpen: true });
+  expect(view.draft().props.checked).toBe(true);
+  expect(drafting).toHaveBeenCalledOnce();
+  expect(view.agentBusy()).toBeDefined();
+  await tick();
+  expect(view.title().props.value).toBe("feat: one");
+});
+
+it("hides the agent and never drafts on open without the agent actions", async () => {
+  const api = createMockApi({});
+  const drafting = vi.spyOn(api, "worktreeDraftPr");
+  const view = dialog(api, { ai: false, generateOnOpen: true });
+  expect(view.html()).not.toContain(en("ship.pr.agent"));
+  expect(drafting).not.toHaveBeenCalled();
+});
+
+it("opens the new pull request in the browser when asked", async () => {
+  const api = createMockApi({});
+  await api.worktreeCommit(OAK, ["src/session.ts"], "feat: one");
+  await api.worktreePush(OAK);
+  const open = vi.spyOn(api, "worktreePrOpen").mockRejectedValue({ code: "io" });
+  const view = dialog(api, { openAfterCreate: true });
+  view.title().props.onChange({ target: { value: "Add session" } });
+  view.submit();
+  await tick();
+  expect(open).toHaveBeenCalledWith(OAK, false);
+  // A browser that fails to open does not undo the create.
+  expect(view.onCreated).toHaveBeenCalledOnce();
+  expect(view.html()).not.toContain(en("error.io"));
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMockApi } from "./api";
-import { createMockWorkspace, DEMO_WORKSPACE } from "./mockWorkspace";
+import { createMockWorkspace, DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE } from "./mockWorkspace";
 
 const FIRST = "/demo/wt/xdev-oak";
 
@@ -41,8 +41,8 @@ describe("mock workspace", () => {
     const byUser = await api.worktreeCreate(repo.id, "one", null);
     expect(byUser).toMatchObject({ branch: "duy/one", path: "/demo/wt/xdev-one" });
 
-    const saved = await api.setGitSettings({ branchPrefix: "custom", branchPrefixCustom: " /team//ui/ ", refreshLocalBaseOnCreate: true, compareAgainstUpstream: false });
-    expect(saved).toEqual({ branchPrefix: "custom", branchPrefixCustom: "team/ui", refreshLocalBaseOnCreate: true, compareAgainstUpstream: false });
+    const saved = await api.setGitSettings({ ...DEFAULT_GIT_SETTINGS, branchPrefix: "custom", branchPrefixCustom: " /team//ui/ ", refreshLocalBaseOnCreate: true, prDraft: true });
+    expect(saved).toEqual({ ...DEFAULT_GIT_SETTINGS, branchPrefix: "custom", branchPrefixCustom: "team/ui", refreshLocalBaseOnCreate: true, prDraft: true });
     expect((await api.worktreeCreate(repo.id, "two", null)).branch).toBe("team/ui/two");
 
     await api.setGitSettings({ ...saved, branchPrefixCustom: "a b" });
