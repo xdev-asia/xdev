@@ -681,3 +681,104 @@ it("never shows needs_approval, the dialog was the approval", async () => {
   await tick();
   expect(view.html()).not.toContain(en("error.needs_approval"));
 });
+
+// ---- Keyboard and palette hooks ----
+
+const press = (row: Node, key: string, extra: Record<string, unknown> = {}) => {
+  const event = { key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, preventDefault: vi.fn(), ...extra };
+  row.props.onKeyDown(event);
+  return event;
+};
+
+it("rows are focusable and s stages the focused Changes row", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const stage = vi.spyOn(api, "worktreeStage").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  const row = rowOf(view, "changes", "src/status.ts");
+  expect(row.props.tabIndex).toBe(0);
+  const event = press(row, "s");
+  await tick();
+  expect(event.preventDefault).toHaveBeenCalled();
+  expect(stage).toHaveBeenCalledWith(OAK, ["src/status.ts"], true);
+  // u on a Changes row does nothing.
+  stage.mockClear();
+  press(row, "u");
+  await tick();
+  expect(stage).not.toHaveBeenCalled();
+});
+
+it("u unstages the focused Staged row, and s there does nothing", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const stage = vi.spyOn(api, "worktreeStage").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  const row = rowOf(view, "staged", "docs/old-notes.md");
+  press(row, "s");
+  await tick();
+  expect(stage).not.toHaveBeenCalled();
+  press(row, "u");
+  await tick();
+  expect(stage).toHaveBeenCalledWith(OAK, ["docs/old-notes.md"], false);
+});
+
+it("Delete on a Changes row opens the discard confirm and calls nothing yet", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const discard = vi.spyOn(api, "worktreeDiscard").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  press(rowOf(view, "changes", "src/status.ts"), "Delete");
+  expect(dialog(view).props.open).toBe(true);
+  expect(dialog(view).props.title).toBe(en("changes.discard.title", { path: "src/status.ts" }));
+  expect(discard).not.toHaveBeenCalled();
+  // Delete in Staged is not a discard.
+  dialog(view).props.onCancel();
+  press(rowOf(view, "staged", "docs/old-notes.md"), "Delete");
+  expect(dialog(view).props.open).toBe(false);
+});
+
+it("keys with a modifier are left alone, Ctrl+Enter commits", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const stage = vi.spyOn(api, "worktreeStage").mockResolvedValue(undefined);
+  const commit = vi.spyOn(api, "worktreeCommit").mockResolvedValue("abc");
+  const view = changes(api);
+  await tick();
+  const row = rowOf(view, "changes", "src/status.ts");
+  press(row, "s", { ctrlKey: true });
+  await tick();
+  expect(stage).not.toHaveBeenCalled();
+  // No message yet: the commit waits.
+  press(row, "Enter", { ctrlKey: true });
+  await tick();
+  expect(commit).not.toHaveBeenCalled();
+  view.message().props.onChange({ target: { value: "feat: x" } });
+  press(rowOf(view, "changes", "src/status.ts"), "Enter", { ctrlKey: true });
+  await tick();
+  expect(commit).toHaveBeenCalledWith(OAK, FILES, "feat: x");
+});
+
+it("hands the palette its Stage all and Discard all handlers", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const stage = vi.spyOn(api, "worktreeStage").mockResolvedValue(undefined);
+  const register = vi.fn();
+  const view = changes(api, undefined, { register });
+  await tick();
+  expect(register).toHaveBeenCalledTimes(1);
+  const handlers = register.mock.calls[0][0];
+  // The list drew again after its load, as React would; the handlers see that draw.
+  view.draw();
+  handlers.stageAll();
+  await tick();
+  expect(stage).toHaveBeenCalledWith(OAK, ["src/session.ts", "src/status.ts"], true);
+  handlers.discardAll();
+  expect(dialog(view).props.open).toBe(true);
+  expect(dialog(view).props.title).toBe(en("changes.discard.titleMany", { count: 2 }));
+  // Leaving takes them back.
+  view.cleanups.forEach((c) => typeof c === "function" && c());
+  expect(register).toHaveBeenLastCalledWith(null);
+});

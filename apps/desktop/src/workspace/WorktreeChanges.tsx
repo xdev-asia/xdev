@@ -15,6 +15,9 @@ import type { TabStatus } from "./status";
 // Git's own letters, so they read the same in every language.
 const LETTER: Record<WorktreeChange["kind"], string> = { added: "A", modified: "M", deleted: "D" };
 
+/** What the command palette can ask of the list. */
+export type ChangesHandlers = { stageAll(): void; discardAll(): void };
+
 type Stats = { added: number; removed: number };
 
 /**
@@ -35,6 +38,8 @@ export function WorktreeChanges(props: {
   onShipChanged?(): void;
   // The shared store of pull requests; the ship bar shows only when it is given.
   prs?: PrStore;
+  // Gives the palette handlers for the list's bulk actions, and takes them back on unmount.
+  register?(handlers: ChangesHandlers | null): void;
 }): JSX.Element {
   const { api, worktree, sessions } = props;
   const { t } = useI18n();
@@ -70,6 +75,10 @@ export function WorktreeChanges(props: {
   onCount.current = props.onCount;
   const onChanges = useRef(props.onChanges);
   onChanges.current = props.onChanges;
+  const register = useRef(props.register);
+  register.current = props.register;
+  // The newest closures, so a handler handed out once never acts on an old list.
+  const latest = useRef<ChangesHandlers>({ stageAll() {}, discardAll() {} });
   const primary = worktree.start === null;
   const path = worktree.path;
 
@@ -133,6 +142,12 @@ export function WorktreeChanges(props: {
     });
   }, [api, path, primary, sessions]);
 
+  useEffect(() => {
+    if (primary) return;
+    register.current?.({ stageAll: () => latest.current.stageAll(), discardAll: () => latest.current.discardAll() });
+    return () => register.current?.(null);
+  }, [path, primary]);
+
   if (primary) return <p className="ws-empty">{t("workspace.changes.primary")}</p>;
 
   const checked = (changes ?? []).filter((c) => !skipped.includes(c.path));
@@ -165,6 +180,26 @@ export function WorktreeChanges(props: {
     } finally {
       setActing(false);
     }
+  }
+
+  latest.current = {
+    stageAll: () => void restage(changedList.map((c) => c.path), true),
+    discardAll: () => askDiscard(changedList.map((c) => c.path)),
+  };
+
+  // s, u and Delete act on the focused row, each only in the group where it makes sense.
+  function rowKey(e: { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; preventDefault(): void }, file: string, group: "staged" | "changes"): void {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      if (!blocked) void commit();
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === "s" && group === "changes") void restage([file], true);
+    else if (e.key === "u" && group === "staged") void restage([file], false);
+    else if (e.key === "Delete" && group === "changes") askDiscard([file]);
+    else return;
+    e.preventDefault();
   }
 
   function askDiscard(files: string[]): void {
@@ -248,7 +283,7 @@ export function WorktreeChanges(props: {
         {files.map((c) => {
           const s = stats[c.path];
           return (
-            <li key={c.path} className="ws-change">
+            <li key={c.path} className="ws-change" tabIndex={0} onKeyDown={(e) => rowKey(e, c.path, group)}>
               <input
                 type="checkbox"
                 checked={!skipped.includes(c.path)}
