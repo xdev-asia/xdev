@@ -63,7 +63,13 @@ export function createMockPty(): PtyApi {
       if (!ptys.has(id)) return reject("pty_unknown");
     },
     async ptyKill(id) {
+      const pty = ptys.get(id);
       ptys.delete(id);
+      // Like Rust, killing a live terminal reports its exit.
+      if (pty && !pty.exited) {
+        pty.exited = true;
+        for (const cb of exits) cb({ id, code: null });
+      }
     },
     async onPtyExit(cb) {
       exits.add(cb);

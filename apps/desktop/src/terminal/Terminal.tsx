@@ -17,6 +17,10 @@ export function Terminal(props: {
   profile: PtyProfile;
   onStarted(info: PtyInfo): void;
   onError(error: ApiError): void;
+  /** Bytes of pty output, as they arrive. */
+  onOutput?(bytes: number): void;
+  /** The user typed into the terminal. */
+  onInput?(): void;
 }): JSX.Element {
   const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
@@ -67,9 +71,15 @@ export function Terminal(props: {
 
     const client = new PtyClient(props.api, props.id);
     let alive = true;
-    term.onData((text) => void client.input(text).catch(() => {}));
+    term.onData((text) => {
+      handlers.current.onInput?.();
+      void client.input(text).catch(() => {});
+    });
     term.onResize(({ cols, rows }) => void client.resize(cols, rows).catch(() => {}));
-    client.start(props.cwd, props.profile, term.cols, term.rows, (bytes, rendered) => term.write(bytes, rendered)).then(
+    client.start(props.cwd, props.profile, term.cols, term.rows, (bytes, rendered) => {
+      handlers.current.onOutput?.(bytes.length);
+      term.write(bytes, rendered);
+    }).then(
       (info) => {
         if (!alive) return;
         handlers.current.onStarted(info);
