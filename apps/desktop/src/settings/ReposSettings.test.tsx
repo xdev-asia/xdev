@@ -2,9 +2,9 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Button } from "@xdev/ui";
-import { createMockApi, type RepoView } from "../api";
-import { translate } from "../i18n";
-import { DEMO_WORKSPACE } from "../mockWorkspace";
+import { createMockApi, type RepoView } from "@/api";
+import { translate } from "@/i18n";
+import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { ReposSettings } from "./ReposSettings";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
@@ -21,7 +21,7 @@ vi.mock("react", async (original) => {
     useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
   };
 });
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {

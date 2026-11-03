@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Api, Quota } from "../api";
+import type { Api, Quota } from "@/api";
 
 const REFRESH_MS = 300_000;
 

@@ -6,7 +6,7 @@ use std::process::Command;
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
 use xdev_agent::{
@@ -698,6 +698,12 @@ fn stop_kills_the_working_agent() {
     assert_eq!(dev.state, SeatStatus::Idle);
     assert_eq!(dev.session.as_deref(), Some("s-dev"));
     assert_eq!(env.task_state(&run), TaskState::Paused);
+    // `is_running` tries the lock once, and a child that another test thread
+    // forks holds it until it execs, so "running" can linger for a moment.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while env.store.is_running(&squad.id).unwrap() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
     assert!(!env.store.is_running(&squad.id).unwrap());
     assert!(
         env.store

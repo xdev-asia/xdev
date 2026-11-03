@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
-import { PTY_PROFILES, type Api, type ApiError, type PtyProfile } from "../api";
-import { useI18n } from "../i18n";
-import { Terminal } from "../terminal/Terminal";
-import { useApprovedStart } from "../terminal/useApprovedStart";
+import { profileName, useProfiles } from "@/agents/profileStore";
+import { type Api, type ApiError, type PtyProfile } from "@/api";
+import { useI18n } from "@/i18n";
+import { Terminal } from "@/terminal/Terminal";
+import { useApprovedStart } from "@/terminal/useApprovedStart";
 import { AgentIcon } from "./AgentIcon";
 import type { Sessions, Split, Tab } from "./sessions";
 import type { TabStatus } from "./status";
 import { WorktreeDiff } from "./WorktreeDiff";
+
+// Offered while the profile view has not loaded: the built-in agents and the default shell.
+const FALLBACK_AGENTS: readonly PtyProfile[] = ["claude", "codex"];
+const FALLBACK_SHELL: PtyProfile = "shell";
 
 const GLYPH: Record<TabStatus, string> = { working: "●", idle: "○", failed: "✕", exited: "–" };
 
@@ -93,7 +98,15 @@ export function WorktreeTabs(props: {
   const visibleIds = partner ? [shown, partner] : [shown];
   const canSplit = tabs.length >= 2 && at >= 0;
 
-  const name = (tab: Tab) => t(`terminal.profile.${tab.profileId}`);
+  const { view } = useProfiles();
+  const name = (tab: Tab) => profileName(view, tab.profileId, t);
+  // The `+` menu: agents that are on and installed, then every shell on offer.
+  const agents = view ? view.profiles.filter((p) => p.profile.enabled && p.installed).map((p) => p.profile.id) : FALLBACK_AGENTS;
+  const shells = view ? view.shells.map((s) => s.id) : [FALLBACK_SHELL];
+  const groups = [
+    { label: t("workspace.tabs.agents"), ids: agents },
+    { label: t("workspace.tabs.shells"), ids: shells },
+  ].filter((g) => g.ids.length > 0);
 
   // Picking the second tab of a split keeps the pair: the tab that was in front takes its place.
   function select(id: string): void {
@@ -115,6 +128,22 @@ export function WorktreeTabs(props: {
     setActive(sessions.open(worktree, profile).id);
   }
 
+  // Ctrl+Alt+T opens the default agent, in the worktree on screen only. Taken in the capture
+  // phase so the terminal under focus does not also get the key.
+  const defaultAgent = view?.defaultAgent ?? FALLBACK_AGENTS[0];
+  useEffect(() => {
+    if (!visible) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || !e.ctrlKey || !e.altKey || e.shiftKey || e.metaKey) return;
+      if (e.code !== "KeyT" && e.key.toLowerCase() !== "t") return;
+      e.preventDefault();
+      e.stopPropagation();
+      launch(defaultAgent);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [visible, defaultAgent, sessions, worktree]);
+
   function failed(tab: Tab, e: ApiError): void {
     const tries = attempts[tab.id] ?? 0;
     ask(
@@ -124,6 +153,7 @@ export function WorktreeTabs(props: {
       () => setAttempts((a) => ({ ...a, [tab.id]: (a[tab.id] ?? 0) + 1 })),
       // A tab whose pty never started has nothing to show; the reason stays in the banner.
       () => void sessions.close(tab.id),
+      tab.account,
     );
   }
 
@@ -149,6 +179,12 @@ export function WorktreeTabs(props: {
               >
                 <AgentIcon profile={tab.profileId} size={16} />
                 <span>{name(tab)}</span>
+                {tab.permissions === "skip" && (
+                  <span className="ws-tab-skip" title={t("workspace.tabs.skipHint")}>
+                    <span className="ws-tab-skip-dot" aria-hidden="true" />
+                    {t("workspace.tabs.skip")}
+                  </span>
+                )}
                 <span
                   className={tab.status === "working" ? "ws-tab-glyph ws-pulse" : "ws-tab-glyph"}
                   data-status={tab.status}
@@ -238,10 +274,17 @@ export function WorktreeTabs(props: {
             <>
               <div className="ws-menu-backdrop" onClick={() => setMenu(false)} />
               <div className="ws-menu" role="menu">
-                {PTY_PROFILES.map((p) => (
-                  <button key={p} type="button" role="menuitem" onClick={() => launch(p)}>
-                    {t(`terminal.profile.${p}`)}
-                  </button>
+                {groups.map((g) => (
+                  <div key={g.label} className="ws-menu-group" role="group" aria-label={g.label}>
+                    <div className="ws-menu-label" aria-hidden="true">
+                      {g.label}
+                    </div>
+                    {g.ids.map((p) => (
+                      <button key={p} type="button" role="menuitem" onClick={() => launch(p)}>
+                        {profileName(view, p, t)}
+                      </button>
+                    ))}
+                  </div>
                 ))}
               </div>
             </>
@@ -269,7 +312,7 @@ export function WorktreeTabs(props: {
                     : t("terminal.exited", { code: tab.exitCode })}
                 </span>
                 <button type="button" className="ws-tab-again" onClick={() => again(tab)}>
-                  {t("workspace.tabs.again")}
+                  {tab.agent ? t("workspace.tabs.restart") : t("workspace.tabs.again")}
                 </button>
               </div>
             )}
@@ -280,7 +323,8 @@ export function WorktreeTabs(props: {
               id={tab.id}
               cwd={worktree}
               profile={tab.profileId}
-              onStarted={() => {}}
+              account={tab.account}
+              onStarted={(info) => sessions.noteStarted(tab.id, info)}
               onError={(e) => failed(tab, e)}
               onOutput={(bytes) => sessions.noteOutput(tab.id, bytes)}
               onInput={() => sessions.noteInput(tab.id)}
@@ -299,9 +343,9 @@ export function WorktreeTabs(props: {
         <div className="ws-center-empty">
           <p>{t("workspace.tabs.empty")}</p>
           <div className="ws-launch">
-            {PTY_PROFILES.map((p) => (
+            {[view?.defaultShell ?? FALLBACK_SHELL, ...agents].map((p) => (
               <button key={p} type="button" className="btn-secondary" onClick={() => launch(p)}>
-                {t(`terminal.profile.${p}`)}
+                {profileName(view, p, t)}
               </button>
             ))}
           </div>

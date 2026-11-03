@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi, type Api, type DirListing, type WorktreeChange } from "../api";
-import { translate } from "../i18n";
+import { createMockApi, type Api, type DirListing, type WorktreeChange } from "@/api";
+import { translate } from "@/i18n";
 import { FileTree } from "./FileTree";
 
 // Hooks are stubbed only while a component under test is called; each harness keeps its own.
@@ -31,7 +31,7 @@ vi.mock("react", async (original) => {
     useCallback: (fn: any, deps: any) => (hooks.active ? fn : react.useCallback(fn, deps)),
   };
 });
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {

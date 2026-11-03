@@ -2,12 +2,13 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import pkg from "../../package.json";
 import logo from "../../../../docs/brand/xdev-icon-512.png";
-import { toApiError, type Api, type ApiError, type Check, type PrView, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "../api";
-import { DocsApp } from "../DocsApp";
-import type { KitTab } from "../components/AgentKitView";
-import { LanguageSwitch } from "../components/LanguageSwitch";
-import { useI18n } from "../i18n";
-import { SettingsView } from "../settings/SettingsView";
+import { ProfilesProvider } from "@/agents/profileStore";
+import { toApiError, type Api, type ApiError, type Check, type PrView, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
+import { DocsApp } from "@/DocsApp";
+import type { KitTab } from "@/components/AgentKitView";
+import { LanguageSwitch } from "@/components/LanguageSwitch";
+import { useI18n } from "@/i18n";
+import { SettingsView } from "@/settings/SettingsView";
 import { ChecksPanel } from "./ChecksPanel";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { FileTree } from "./FileTree";
@@ -225,9 +226,22 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       const wt = await api.worktreeCreate(repoId, name, from);
       setCreating(null);
       await load();
+      await openDefaultAgent(wt.path);
       select(wt);
     } catch (e) {
       setCreating({ repoId, busy: false, error: toApiError(e).code });
+    }
+  }
+
+  // A new worktree starts with the default agent when it is on and installed; else nothing opens.
+  async function openDefaultAgent(path: string): Promise<void> {
+    if (!sessions) return;
+    try {
+      const view = await api.profiles();
+      const found = view.profiles.find((p) => p.profile.id === view.defaultAgent);
+      if (found?.profile.enabled && found.installed) sessions.open(path, found.profile.id);
+    } catch {
+      // The worktree is made; it just opens empty.
     }
   }
 
@@ -295,6 +309,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const removingRepo = removing ? repos?.find((r) => r.worktrees.some((w) => w.path === removing.worktree.path)) : undefined;
 
   return (
+    <ProfilesProvider api={api}>
     <div className="ws-shell">
       <header className="ws-header">
         <button
@@ -573,6 +588,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         />
       )}
     </div>
+    </ProfilesProvider>
   );
 }
 

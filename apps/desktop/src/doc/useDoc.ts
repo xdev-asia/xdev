@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { toApiError, type Api } from "../api";
+import { toApiError, type Api } from "@/api";
 import { docReducer, initialDocState, isDirty, type DocAction, type DocState } from "./docState";
 
 const AUTOSAVE_MS = 1000;

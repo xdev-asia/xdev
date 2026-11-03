@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMockApi } from "../mockApi";
+import { createMockApi } from "@/mockApi";
 import { PtyClient, toBytes } from "./ptyClient";
 
 const text = (chunks: Uint8Array[]) => new TextDecoder().decode(Uint8Array.from(chunks.flatMap((c) => [...c])));
@@ -49,7 +49,7 @@ describe("PtyClient", () => {
     const api = createMockApi({});
     const client = new PtyClient(api, "t4");
     await expect(client.start("/demo", "claude", 80, 24, () => {})).rejects.toMatchObject({ code: "needs_approval" });
-    await api.ptyApprove("claude");
+    await api.ptyApprove("claude", null);
     await expect(client.start("/demo", "claude", 80, 24, () => {})).resolves.toMatchObject({ agent: true });
     client.dispose();
   });

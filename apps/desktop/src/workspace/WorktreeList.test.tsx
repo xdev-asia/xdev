@@ -1,21 +1,23 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { RepoView, WorktreeView } from "../api";
-import { translate } from "../i18n";
-import { DEMO_WORKSPACE } from "../mockWorkspace";
+import type { RepoView, WorktreeView } from "@/api";
+import { translate } from "@/i18n";
+import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { WorktreeList, type WorktreeListProps } from "./WorktreeList";
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0 }));
 vi.mock("react", async (original) => ({
   ...await original<typeof import("react")>(),
+  // The profile store is outside what these tests render; its context keeps the default.
+  useContext: (ctx: { _currentValue: unknown }) => ctx._currentValue,
   useState: (initial: unknown) => {
     const index = hooks.cursor++;
     if (!(index in hooks.values)) hooks.values[index] = initial;
     return [hooks.values[index], (value: unknown) => { hooks.values[index] = typeof value === "function" ? value(hooks.values[index]) : value; }];
   },
 }));
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {

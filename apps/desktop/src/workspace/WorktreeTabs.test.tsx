@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi, toApiError, type Api, type PtyExit } from "../api";
-import { translate } from "../i18n";
-import { Terminal } from "../terminal/Terminal";
+import { createMockApi, toApiError, type Api, type Profile, type ProfilesView, type PtyExit } from "@/api";
+import { translate } from "@/i18n";
+import { Terminal } from "@/terminal/Terminal";
 import { AgentIcon } from "./AgentIcon";
 import { Sessions } from "./sessions";
 import { WorktreeTabs } from "./WorktreeTabs";
@@ -20,15 +20,23 @@ vi.mock("react", async (original) => {
   };
   return {
     ...react,
+    // The profile store is outside what these tests render; its context keeps the default.
+    useContext: (ctx: { _currentValue: unknown }) => ctx._currentValue,
     useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
     useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
     useCallback: (fn: any, deps: any) => (hooks.active ? fn : react.useCallback(fn, deps)),
     useSyncExternalStore: (subscribe: any, get: any, server?: any) => (hooks.active ? get() : react.useSyncExternalStore(subscribe, get, server)),
   };
 });
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+// The profile view the tabs read; `null` is a store that has not loaded.
+const store = vi.hoisted(() => ({ view: null as ProfilesView | null }));
+vi.mock("@/agents/profileStore", async (original) => ({
+  ...await original<typeof import("@/agents/profileStore")>(),
+  useProfiles: () => ({ view: store.view, update() {}, async reload() {} }),
+}));
 // xterm needs a real canvas; `run` below does what the terminal does with its client.
-vi.mock("../terminal/Terminal", () => ({ Terminal: () => null }));
+vi.mock("@/terminal/Terminal", () => ({ Terminal: () => null }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {
@@ -63,13 +71,13 @@ function harness(api: Api, sessions: Sessions, worktree = A, visible = true) {
 // What the terminal does on mount: start its tab's client, report the outcome.
 async function run(term: Node) {
   await term.props.client
-    .start(term.props.cwd, term.props.profile, 80, 24, () => {})
+    .start(term.props.cwd, term.props.profile, 80, 24, () => {}, term.props.account ?? null)
     .then(term.props.onStarted, (e: unknown) => term.props.onError(toApiError(e)));
 }
 
 let sessions: Sessions | null = null;
-beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; });
-afterEach(() => { sessions?.dispose(); sessions = null; vi.restoreAllMocks(); });
+beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; store.view = null; });
+afterEach(() => { sessions?.dispose(); sessions = null; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it("plus menu starts claude in the worktree after approval", async () => {
   const api = createMockApi({});
@@ -92,7 +100,7 @@ it("plus menu starts claude in the worktree after approval", async () => {
 
   view.dialog().props.onConfirm();
   await tick();
-  expect(approve).toHaveBeenCalledWith("claude");
+  expect(approve).toHaveBeenCalledWith("claude", null);
   const second = view.terminals()[0];
   // A fresh view on the same tab and pty id.
   expect(second.key).not.toBe(first.key);
@@ -299,4 +307,215 @@ it("a split with one tab is disabled", () => {
   expect(view.labelled(en("workspace.tabs.split.right")).props.title).toBe(en("workspace.tabs.split.right"));
   live.open(A, "claude");
   expect(view.labelled(en("workspace.tabs.split.right")).props["aria-disabled"]).toBe(false);
+});
+
+const custom = (over: Partial<Profile> = {}): Profile => ({
+  id: "aider", name: "Aider", cli: null, program: "aider", args: [], env: [], model: null, effort: null,
+  permissions: null, account: null, startup: [], enabled: true, ...over,
+});
+const profileOf = async (api: Api, id: string) => (await api.profiles()).profiles.find((p) => p.profile.id === id)!.profile;
+const openMenu = (view: ReturnType<typeof harness>) => view.labelled(en("workspace.tabs.new")).props.onClick();
+const group = (view: ReturnType<typeof harness>, label: string) => view.find((n) => n.props.role === "group" && n.props["aria-label"] === label);
+const items = (g: Node | undefined) => (g ? nodes(g.props.children).filter((n) => n.props.role === "menuitem").map((n) => n.props.children) : []);
+
+it("plus_menu_lists_agents_and_shells", async () => {
+  const api = createMockApi({});
+  // Gemini is not installed in the mock; codex is turned off here.
+  store.view = await api.profilePut({ ...(await profileOf(api, "codex")), enabled: false });
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  openMenu(view);
+  expect(items(group(view, en("workspace.tabs.agents")))).toEqual([en("terminal.profile.claude")]);
+  expect(items(group(view, en("workspace.tabs.shells")))).toEqual(["PowerShell", "CMD", "WSL Ubuntu"]);
+  // Each group says what it holds.
+  expect(view.html()).toContain(`>${en("workspace.tabs.agents")}<`);
+});
+
+it("wsl_item_opens_that_shell", async () => {
+  const api = createMockApi({});
+  const spawn = vi.spyOn(api, "ptySpawn");
+  store.view = await api.profiles();
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  openMenu(view);
+  view.find((n) => n.props.role === "menuitem" && n.props.children === "WSL Ubuntu")!.props.onClick();
+  const [tab] = live.tabs(A);
+  expect(tab).toMatchObject({ worktree: A, profileId: "shell:wsl:Ubuntu", agent: false });
+  expect(view.find((n) => n.props.role === "menu")).toBeUndefined();
+  await run(view.terminals()[0]);
+  expect(spawn.mock.calls[0].slice(0, 3)).toEqual([tab.id, A, "shell:wsl:Ubuntu"]);
+  // A shell never asks.
+  expect(view.dialog().props.open).toBe(false);
+  expect(view.html()).toContain(">WSL Ubuntu<");
+});
+
+it("skip_tab_shows_badge", async () => {
+  const api = createMockApi({});
+  store.view = await api.profilesDefaults("skip", "claude", null);
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  const shell = live.open(A, "shell");
+  await run(view.terminals()[0]);
+  const tab = live.open(A, "claude");
+  await run(view.terminals()[1]);
+  view.dialog().props.onConfirm();
+  await tick();
+  await run(view.terminals()[1]);
+  expect(live.tabs(A).find((t) => t.id === tab.id)!.permissions).toBe("skip");
+  const badge = (id: string) =>
+    nodes(view.find((n) => n.props.role === "tab" && n.props["data-tab"] === id)!.props.children).find((n) => n.props.className === "ws-tab-skip");
+  expect(badge(tab.id)).toBeDefined();
+  expect(badge(shell.id)).toBeUndefined();
+  const html = view.html();
+  expect(html).toContain(`>${en("workspace.tabs.skip")}<`);
+  expect(html).toContain('class="ws-tab-skip-dot"');
+});
+
+it("approval_dialog_warns_on_skip", async () => {
+  const api = createMockApi({});
+  store.view = await api.profiles();
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  live.open(A, "claude");
+  await run(view.terminals()[0]);
+  // Asking mode: the plain question.
+  expect(view.dialog().props.open).toBe(true);
+  expect(view.dialog().props.warning).toBeUndefined();
+  view.dialog().props.onCancel();
+
+  store.view = await api.profilesDefaults("skip", "claude", null);
+  live.open(A, "claude");
+  await run(view.terminals()[0]);
+  expect(view.dialog().props.open).toBe(true);
+  expect(view.dialog().props.warning).toBe(en("terminal.approve.skip"));
+  const markup = renderToStaticMarkup(view.dialog());
+  expect(markup).toContain('class="dialog-warn"');
+  expect(markup).toContain(en("terminal.approve.skip"));
+});
+
+it("custom_profile_tab_uses_its_name", async () => {
+  const api = createMockApi({});
+  store.view = await api.profilePut(custom());
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  openMenu(view);
+  expect(items(group(view, en("workspace.tabs.agents")))).toContain("Aider");
+  view.find((n) => n.props.role === "menuitem" && n.props.children === "Aider")!.props.onClick();
+  const [tab] = live.tabs(A);
+  expect(tab.profileId).toBe("aider");
+  const html = view.html();
+  expect(html).toContain("<span>Aider</span>");
+  expect(html).toContain(">A</span>");
+  expect(view.labelled(en("workspace.tabs.close", { name: "Aider" }))).toBeDefined();
+
+  // Once the profile is gone the tab falls back to its id.
+  store.view = await api.profileRemove("aider");
+  expect(view.html()).toContain("<span>aider</span>");
+});
+
+it("restart_of_disabled_profile_shows_error", async () => {
+  const api = createMockApi({});
+  let fire: (e: PtyExit) => void = () => {};
+  vi.spyOn(api, "onPtyExit").mockImplementation(async (cb) => ((fire = cb), () => {}));
+  await api.ptyApprove("codex", null);
+  store.view = await api.profiles();
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  const tab = live.open(A, "codex");
+  await run(view.terminals()[0]);
+  fire({ id: tab.id, code: 0 });
+
+  // Codex is turned off while its tab sits exited.
+  store.view = await api.profilePut({ ...(await profileOf(api, "codex")), enabled: false });
+  expect(view.html()).toContain(`<span>${en("terminal.profile.codex")}</span>`);
+  view.find((n) => n.type === "button" && n.props.className === "ws-tab-again")!.props.onClick();
+  await run(view.terminals()[0]);
+  await tick();
+  const banner = view.find((n) => n.props.role === "alert")!;
+  expect(renderToStaticMarkup(banner)).toContain(en("error.profile_off"));
+  // The failed start leaves nothing behind but the banner.
+  expect(live.tabs(A)).toEqual([]);
+});
+
+it("agent_exit_shows_restart_with_same_account", async () => {
+  const api = createMockApi({});
+  let fire: (e: PtyExit) => void = () => {};
+  vi.spyOn(api, "onPtyExit").mockImplementation(async (cb) => ((fire = cb), () => {}));
+  const spawn = vi.spyOn(api, "ptySpawn");
+  await api.ptyApprove("claude", "work");
+  store.view = await api.profiles();
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  const tab = live.open(A, "claude", "work");
+  await run(view.terminals()[0]);
+  expect(view.find((n) => n.props.className === "ws-tab-again")).toBeUndefined();
+
+  fire({ id: tab.id, code: 0 });
+  const chip = view.find((n) => n.type === "button" && n.props.className === "ws-tab-again")!;
+  expect(chip.props.children).toBe(en("workspace.tabs.restart"));
+  chip.props.onClick();
+  const [next] = live.tabs(A);
+  expect(next.id).not.toBe(tab.id);
+  expect(next).toMatchObject({ profileId: "claude", account: "work" });
+  await run(view.terminals()[0]);
+  expect(spawn).toHaveBeenCalledTimes(2);
+  expect([spawn.mock.calls[1][0], ...spawn.mock.calls[1].slice(1, 4)]).toEqual([next.id, A, "claude", "work"]);
+});
+
+it("shell_exit_keeps_run_again", async () => {
+  const api = createMockApi({});
+  let fire: (e: PtyExit) => void = () => {};
+  vi.spyOn(api, "onPtyExit").mockImplementation(async (cb) => ((fire = cb), () => {}));
+  store.view = await api.profiles();
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  const tab = live.open(A, "shell:cmd");
+  await run(view.terminals()[0]);
+  fire({ id: tab.id, code: 0 });
+  const chip = view.find((n) => n.type === "button" && n.props.className === "ws-tab-again")!;
+  expect(chip.props.children).toBe(en("workspace.tabs.again"));
+  expect(view.html()).not.toContain(en("workspace.tabs.restart"));
+});
+
+// Runs the effects of one fresh draw against a stubbed window; hands back its keydown listeners.
+function keys(view: ReturnType<typeof harness>) {
+  const listeners = new Set<(e: KeyboardEvent) => void>();
+  const add = vi.fn((type: string, fn: (e: KeyboardEvent) => void) => void (type === "keydown" && listeners.add(fn)));
+  const remove = vi.fn((type: string, fn: (e: KeyboardEvent) => void) => void (type === "keydown" && listeners.delete(fn)));
+  vi.stubGlobal("window", { addEventListener: add, removeEventListener: remove });
+  hooks.effects = [];
+  view.draw();
+  const cleanups = hooks.effects.map((effect) => effect()).filter((c): c is () => void => typeof c === "function");
+  const press = (over: Partial<KeyboardEvent> = {}) => {
+    const e = { key: "t", code: "KeyT", ctrlKey: true, altKey: true, shiftKey: false, metaKey: false, repeat: false, preventDefault: vi.fn(), stopPropagation: vi.fn(), ...over };
+    for (const fn of [...listeners]) fn(e as unknown as KeyboardEvent);
+    return e;
+  };
+  return { listeners, add, press, cleanup: () => cleanups.forEach((c) => c()) };
+}
+
+it("ctrl_alt_t_opens_default_agent", async () => {
+  const api = createMockApi({});
+  store.view = await api.profilesDefaults("ask", "codex", null);
+  const live = (sessions = new Sessions(api));
+
+  // A hidden worktree does not listen.
+  const hidden = keys(harness(api, live, B, false));
+  expect(hidden.listeners.size).toBe(0);
+  hidden.cleanup();
+
+  const shown = keys(harness(api, live, A, true));
+  expect(shown.listeners.size).toBe(1);
+  // A held key repeats; only the first press counts, and other chords do nothing.
+  shown.press({ repeat: true });
+  shown.press({ altKey: false });
+  shown.press({ key: "y", code: "KeyY" });
+  expect(live.tabs(A)).toEqual([]);
+  const e = shown.press();
+  expect(e.preventDefault).toHaveBeenCalled();
+  expect(live.tabs(A).map((t) => t.profileId)).toEqual(["codex"]);
+  expect(live.tabs(B)).toEqual([]);
+
+  shown.cleanup();
+  expect(shown.listeners.size).toBe(0);
 });

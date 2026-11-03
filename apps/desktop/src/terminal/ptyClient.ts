@@ -1,4 +1,4 @@
-import type { Api, PtyInfo, PtyProfile } from "../api";
+import type { Api, PtyInfo, PtyProfile } from "@/api";
 
 /** Output is acknowledged in steps this big; Rust pauses a terminal at 4 MB unacknowledged. */
 export const ACK_BYTES = 256 * 1024;
@@ -30,8 +30,9 @@ export class PtyClient {
     cols: number,
     rows: number,
     write: (bytes: Uint8Array, rendered: () => void) => void,
+    account: string | null = null,
   ): Promise<PtyInfo> {
-    const run = this.spawn(cwd, profileId, cols, rows, write);
+    const run = this.spawn(cwd, profileId, cols, rows, write, account);
     this.started = run.catch(() => {});
     return run;
   }
@@ -42,11 +43,12 @@ export class PtyClient {
     cols: number,
     rows: number,
     write: (bytes: Uint8Array, rendered: () => void) => void,
+    account: string | null,
   ): Promise<PtyInfo> {
     // A view that mounts and unmounts in one tick (StrictMode in dev) never starts a pty.
     await Promise.resolve();
     if (this.disposed) throw new Error("disposed");
-    const info = await this.api.ptySpawn(this.id, cwd, profileId, cols, rows, (bytes) =>
+    const info = await this.api.ptySpawn(this.id, cwd, profileId, account, cols, rows, (bytes) =>
       // Acked once the terminal has drawn it, so a slow view pauses the pty.
       write(bytes, () => this.rendered(bytes.length)),
     );

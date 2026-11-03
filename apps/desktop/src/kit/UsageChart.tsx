@@ -1,6 +1,6 @@
 import type { JSX } from "react";
-import type { UsageSummary } from "../api";
-import { useI18n } from "../i18n";
+import type { UsageSummary } from "@/api";
+import { useI18n } from "@/i18n";
 import { totalOf } from "./kitUi";
 
 const WIDTH = 640;

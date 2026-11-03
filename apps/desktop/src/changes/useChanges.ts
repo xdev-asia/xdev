@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { toApiError, type Api, type ApiError, type Change, type VcsState } from "../api";
+import { toApiError, type Api, type ApiError, type Change, type VcsState } from "@/api";
 import { sortChanges } from "./changes";
 
 const REFRESH_DEBOUNCE_MS = 200;

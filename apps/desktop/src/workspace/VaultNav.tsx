@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type VaultView } from "../api";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type ApiError, type VaultView } from "@/api";
+import { useI18n } from "@/i18n";
 
 /** The registered vaults under the Docs & SDLC item; a click opens one. */
 export function VaultNav(props: {

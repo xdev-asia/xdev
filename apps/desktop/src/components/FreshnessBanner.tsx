@@ -1,8 +1,8 @@
 import { Button } from "@xdev/ui";
 import type { JSX } from "react";
-import type { Freshness } from "../api";
-import { parseFrontmatter } from "../doc/frontmatter";
-import { useI18n, type Locale } from "../i18n";
+import type { Freshness } from "@/api";
+import { parseFrontmatter } from "@/doc/frontmatter";
+import { useI18n, type Locale } from "@/i18n";
 import { COMPACT } from "./ChangesPanel";
 
 const SHORT_ID = 7;

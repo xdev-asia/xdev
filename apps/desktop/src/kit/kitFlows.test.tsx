@@ -2,13 +2,13 @@ import { readFileSync } from "node:fs";
 import { Button } from "@xdev/ui";
 import { expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi, type Api, type MemorySet, type Skill } from "../api";
-import { AgentKitView } from "../components/AgentKitView";
-import { ConfirmDialog } from "../components/ConfirmDialog";
-import { Editor } from "../components/Editor";
-import { translate } from "../i18n";
-import { sendTarget } from "../workspace/sendTarget";
-import type { Tab } from "../workspace/sessions";
+import { createMockApi, type Api, type MemorySet, type Skill } from "@/api";
+import { AgentKitView } from "@/components/AgentKitView";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Editor } from "@/components/Editor";
+import { translate } from "@/i18n";
+import { sendTarget } from "@/workspace/sendTarget";
+import type { Tab } from "@/workspace/sessions";
 import { KitError } from "./KitError";
 import { MemoryTab, MemoryTree } from "./MemoryTab";
 import { PromptsTab } from "./PromptsTab";
@@ -16,8 +16,8 @@ import { SkillTable, SkillsTab } from "./SkillsTab";
 import { mount, nodes, textOf, tick, type Node } from "./testHooks";
 
 vi.mock("react", async (original) => (await import("./testHooks")).patchReact(await original<typeof import("react")>()));
-vi.mock("../i18n", async (original) => ({
-  ...(await original<typeof import("../i18n")>()),
+vi.mock("@/i18n", async (original) => ({
+  ...(await original<typeof import("@/i18n")>()),
   useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }),
 }));
 

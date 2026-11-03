@@ -1,12 +1,12 @@
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { translate } from "../i18n";
-import { APPS, type AppId } from "../shell/apps";
+import { translate } from "@/i18n";
+import { APPS, type AppId } from "@/shell/apps";
 import { ActivityBar } from "./ActivityBar";
 
 // The component is called as a plain function to reach its onClick handlers, so the hook must not need a provider.
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {

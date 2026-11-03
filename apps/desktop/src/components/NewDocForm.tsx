@@ -1,8 +1,8 @@
 import { Button } from "@xdev/ui";
 import { useState } from "react";
 import type { JSX } from "react";
-import type { ApiError } from "../api";
-import { useI18n } from "../i18n";
+import type { ApiError } from "@/api";
+import { useI18n } from "@/i18n";
 import { COMPACT } from "./ChangesPanel";
 
 export function NewDocForm(props: {

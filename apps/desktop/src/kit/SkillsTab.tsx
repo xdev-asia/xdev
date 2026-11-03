@@ -1,9 +1,9 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent, JSX } from "react";
-import type { Api, Home, Skill } from "../api";
-import { ConfirmDialog } from "../components/ConfirmDialog";
-import { useI18n } from "../i18n";
+import type { Api, Home, Skill } from "@/api";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useI18n } from "@/i18n";
 import { KitError, kitErr, type KitErr } from "./KitError";
 import { displayPath, homeLabel, oneLine, scopeKey, scopeLabel, skillTargets, type SkillTarget } from "./kitUi";
 

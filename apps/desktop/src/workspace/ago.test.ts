@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { translate } from "../i18n";
+import { translate } from "@/i18n";
 import { ago } from "./ago";
 
 const NOW = 1_000_000_000;

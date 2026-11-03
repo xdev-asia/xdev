@@ -4,6 +4,7 @@ mod bindings;
 mod commands;
 mod kit;
 mod links;
+mod profiles;
 mod pty;
 mod session;
 mod settings;
@@ -36,6 +37,7 @@ pub fn run() {
         .manage(updater::Pending::default())
         .manage(pty::Ptys::default())
         .manage(workspace::WorkspaceLock::default())
+        .manage(profiles::ProfilesLock::default())
         .setup(|app| {
             updater::start(app.handle().clone());
             Ok(())
@@ -109,6 +111,13 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_ack,
             pty::pty_kill,
+            profiles::profiles_list,
+            profiles::profile_put,
+            profiles::profile_remove,
+            profiles::profile_reset,
+            profiles::profiles_defaults,
+            profiles::shell_put,
+            profiles::shell_remove,
             workspace::workspace_list,
             workspace::repo_add,
             workspace::repo_forget,

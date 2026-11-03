@@ -1,18 +1,18 @@
 import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi } from "../api";
-import { translate } from "../i18n";
-import { MemoryTree } from "../kit/MemoryTab";
-import { PromptChecks } from "../kit/PromptsTab";
-import { SkillTable } from "../kit/SkillsTab";
-import { UsageChart } from "../kit/UsageChart";
-import { checkPrompt } from "../kit/promptCheck";
-import { WorkspaceFooter } from "../workspace/WorkspaceFooter";
+import { createMockApi } from "@/api";
+import { translate } from "@/i18n";
+import { MemoryTree } from "@/kit/MemoryTab";
+import { PromptChecks } from "@/kit/PromptsTab";
+import { SkillTable } from "@/kit/SkillsTab";
+import { UsageChart } from "@/kit/UsageChart";
+import { checkPrompt } from "@/kit/promptCheck";
+import { WorkspaceFooter } from "@/workspace/WorkspaceFooter";
 import { AgentKitView } from "./AgentKitView";
 
-vi.mock("../i18n", async (original) => ({
-  ...(await original<typeof import("../i18n")>()),
+vi.mock("@/i18n", async (original) => ({
+  ...(await original<typeof import("@/i18n")>()),
   useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }),
 }));
 

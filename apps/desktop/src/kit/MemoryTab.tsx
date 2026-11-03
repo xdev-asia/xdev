@@ -1,11 +1,11 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type Home, type MemorySet } from "../api";
-import { ConfirmDialog } from "../components/ConfirmDialog";
-import { DiffView } from "../components/DiffView";
-import { Editor } from "../components/Editor";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type Home, type MemorySet } from "@/api";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { DiffView } from "@/components/DiffView";
+import { Editor } from "@/components/Editor";
+import { useI18n } from "@/i18n";
 import { KitError, kitErr, type KitErr } from "./KitError";
 import { below, displayPath, homeLabel, joinPath } from "./kitUi";
 

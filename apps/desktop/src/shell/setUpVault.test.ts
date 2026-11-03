@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createMockApi } from "../api";
+import { createMockApi } from "@/api";
 import { setUpVault } from "./setUpVault";
 
 const starter = { file: "Getting started.md", content: "# Getting started\n" };

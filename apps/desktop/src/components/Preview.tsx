@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import type { JSX, MouseEvent } from "react";
-import { parseFrontmatter } from "../doc/frontmatter";
-import { createResolver } from "../doc/links";
-import { renderMarkdown } from "../doc/markdown";
-import { useI18n } from "../i18n";
+import { parseFrontmatter } from "@/doc/frontmatter";
+import { createResolver } from "@/doc/links";
+import { renderMarkdown } from "@/doc/markdown";
+import { useI18n } from "@/i18n";
 
 // Rendered view of the current draft. Links never navigate the WebView: only `data-doc` links do anything,
 // and they open the doc inside xDev.

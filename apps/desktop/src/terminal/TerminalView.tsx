@@ -1,11 +1,14 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { PTY_PROFILES, toApiError, type Api, type ApiError, type PtyProfile } from "../api";
-import { COMPACT } from "../components/ChangesPanel";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type ApiError, type PtyProfile } from "@/api";
+import { COMPACT } from "@/components/ChangesPanel";
+import { useI18n } from "@/i18n";
 import { Terminal } from "./Terminal";
 import { useApprovedStart } from "./useApprovedStart";
+
+// The picker offers the plain shell and the built-in agents; the workspace `+` menu has the rest.
+const PTY_PROFILES: readonly PtyProfile[] = ["shell", "claude", "codex"];
 
 type Run = { id: string; cwd: string; profile: PtyProfile; approved: boolean };
 

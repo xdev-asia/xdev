@@ -1,12 +1,14 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { createMockApi } from "../api";
-import { translate } from "../i18n";
+import { createMockApi } from "@/api";
+import { translate } from "@/i18n";
 import { PtyClient } from "./ptyClient";
 import { useApprovedStart } from "./useApprovedStart";
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0 }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
+  // The profile store is outside what these tests render; its context keeps the default.
+  useContext: (ctx: { _currentValue: unknown }) => ctx._currentValue,
   useState: (initial: unknown) => {
     const index = hooks.cursor++;
     if (!(index in hooks.values)) hooks.values[index] = initial;
@@ -18,8 +20,8 @@ vi.mock("react", async (original) => ({
     ];
   },
 }));
-vi.mock("../i18n", async (original) => ({
-  ...(await original<typeof import("../i18n")>()),
+vi.mock("@/i18n", async (original) => ({
+  ...(await original<typeof import("@/i18n")>()),
   useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }),
 }));
 
@@ -44,7 +46,7 @@ beforeEach(() => {
 
 it("starts straight away when no approval is needed", async () => {
   const s = setup();
-  await s.api.ptyApprove("claude");
+  await s.api.ptyApprove("claude", null);
   expect(await s.start()).toMatchObject({ id: "t-1", agent: true });
   expect(s.dialog().open).toBe(false);
 });
@@ -57,7 +59,7 @@ it("asks once, approves, then starts again", async () => {
   expect(s.dialog().open).toBe(true);
   s.dialog().onConfirm();
   expect(await started).toMatchObject({ id: "t-1" });
-  expect(approve).toHaveBeenCalledWith("claude");
+  expect(approve).toHaveBeenCalledWith("claude", null);
   expect(s.dialog().open).toBe(false);
 });
 

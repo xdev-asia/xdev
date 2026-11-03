@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ExportFile, ExportPlan } from "../api";
+import type { ExportFile, ExportPlan } from "@/api";
 import { AGENTS_LIMIT_BYTES, docsFor, expectedOf, overLimit, writable } from "./plan";
 
 const file = (path: string, status: ExportFile["status"], content = "x"): ExportFile => ({

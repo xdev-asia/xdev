@@ -1,16 +1,16 @@
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import en from "../i18n/en.json";
-import viDict from "../i18n/vi.json";
-import { translate } from "../i18n";
+import en from "@/i18n/en.json";
+import viDict from "@/i18n/vi.json";
+import { translate } from "@/i18n";
 import { CreateVaultDialog } from "./CreateVaultDialog";
 import { VaultEmpty } from "./NoVaultView";
 
 // Called as plain functions, so the hooks are stubbed out.
 vi.mock("react", async (original) => ({ ...(await original<typeof import("react")>()), useRef: () => ({ current: null }), useEffect: () => {} }));
-vi.mock("../i18n", async (original) => ({
-  ...(await original<typeof import("../i18n")>()),
+vi.mock("@/i18n", async (original) => ({
+  ...(await original<typeof import("@/i18n")>()),
   useI18n: () => ({ locale: "en", setLocale: () => {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }),
 }));
 

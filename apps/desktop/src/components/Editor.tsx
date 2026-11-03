@@ -6,7 +6,7 @@ import { tags } from "@lezer/highlight";
 import { basicSetup, EditorView } from "codemirror";
 import { useEffect, useRef } from "react";
 import type { JSX } from "react";
-import { useI18n } from "../i18n";
+import { useI18n } from "@/i18n";
 
 // Only CSS variables, so the editor follows the app's light/dark tokens with no separate dark theme.
 export const theme = EditorView.theme({

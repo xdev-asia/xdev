@@ -1,9 +1,9 @@
 import { Button } from "@xdev/ui";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type PrView, type ShipView } from "../api";
-import { ConfirmDialog } from "../components/ConfirmDialog";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type ApiError, type PrView, type ShipView } from "@/api";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useI18n } from "@/i18n";
 import { CreatePrDialog } from "./CreatePrDialog";
 import type { PrStore } from "./prs";
 import { shipAction } from "./ship";

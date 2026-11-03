@@ -1,10 +1,10 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type Commit } from "../api";
-import { relativeTime } from "../changes/changes";
-import type { Problem } from "../changes/useChanges";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type Commit } from "@/api";
+import { relativeTime } from "@/changes/changes";
+import type { Problem } from "@/changes/useChanges";
+import { useI18n } from "@/i18n";
 import { COMPACT, DiffCard, ICON, Icon, ProblemNote } from "./ChangesPanel";
 import { ConfirmDialog } from "./ConfirmDialog";
 

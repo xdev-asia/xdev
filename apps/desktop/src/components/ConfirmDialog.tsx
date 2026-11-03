@@ -1,13 +1,15 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useRef } from "react";
 import type { JSX } from "react";
-import { useI18n } from "../i18n";
+import { useI18n } from "@/i18n";
 
 // A native modal dialog: focus trapping, Escape and the backdrop come from the browser.
 export function ConfirmDialog(props: {
   open: boolean;
   title: string;
   body: string;
+  /** An extra line in red under the body, for a choice that carries a risk. */
+  warning?: string;
   confirmLabel: string;
   onConfirm(): void;
   onCancel(): void;
@@ -37,6 +39,7 @@ export function ConfirmDialog(props: {
         {props.title}
       </h2>
       <p className="dialog-body">{props.body}</p>
+      {props.warning && <p className="dialog-warn">{props.warning}</p>}
       <div className="dialog-actions">
         {/* Cancel first and focused, so a stray Enter never discards work. */}
         <button type="button" className="btn-secondary" autoFocus onClick={props.onCancel}>

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { I18nProvider } from "../i18n";
+import { I18nProvider } from "@/i18n";
 import { ConnectAgent, mcpCommand, mcpConfig } from "./ConnectAgent";
 
 const VAULT = "C:\\Users\\lan\\notes";

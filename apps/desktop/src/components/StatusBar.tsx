@@ -1,8 +1,8 @@
 import type { JSX } from "react";
-import type { Quota } from "../api";
-import { useI18n } from "../i18n";
-import type { AppId } from "../shell/apps";
-import type { Update } from "../shell/useUpdate";
+import type { Quota } from "@/api";
+import { useI18n } from "@/i18n";
+import type { AppId } from "@/shell/apps";
+import type { Update } from "@/shell/useUpdate";
 
 function highestUse(account: Quota): number {
   return Math.max(0, ...account.windows.flatMap((w) => (w.utilization === null ? [] : [w.utilization])));

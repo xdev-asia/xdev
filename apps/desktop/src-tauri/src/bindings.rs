@@ -10,6 +10,7 @@ use ts_rs::{Config, TS};
 use crate::accounts::{Account, Accounts, LoginStart, Models};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
 use crate::kit::{KitText, PromptEntry};
+use crate::profiles::ProfilesView;
 use crate::pty::{PtyExit, PtyInfo};
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
@@ -46,6 +47,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_agent::Routing::export_all(cfg)?;
     Models::export_all(cfg)?;
     UpdateInfo::export_all(cfg)?;
+    ProfilesView::export_all(cfg)?;
+    xdev_agent::CustomShell::export_all(cfg)?;
     PtyInfo::export_all(cfg)?;
     PtyExit::export_all(cfg)?;
     xdev_workspace::RepoView::export_all(cfg)?;
