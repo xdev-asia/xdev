@@ -15,6 +15,7 @@ import "./styles/tasks.css";
 import "./styles/squads.css";
 import "./styles/terminal.css";
 import "./styles/workspace.css";
+import "./styles/settings.css";
 
 const style = document.createElement("style");
 style.textContent = tokensCss();

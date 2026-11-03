@@ -8,6 +8,7 @@ import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
+import { SettingsView } from "../settings/SettingsView";
 import { Sessions } from "./sessions";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { WorktreeChanges } from "./WorktreeChanges";
@@ -119,6 +120,33 @@ it("header has repo, branch, search, bell and settings", async () => {
   vi.useRealTimers();
   expect(query).toHaveBeenCalledWith(".ws-docs .search-input");
   expect(box.focus).toHaveBeenCalledTimes(1);
+});
+
+it("header settings button opens settings", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  const region = (cls: string) => view.all().find(n => n.props.className === cls)!;
+  const button = () => view.all().find(n => n.type === "button" && n.props["aria-label"] === en("workspace.header.settings"))!;
+  expect(button().props.disabled).toBeFalsy();
+  expect(button().props["aria-pressed"]).toBe(false);
+  expect(view.of(SettingsView)).toHaveLength(0);
+  expect(region("ws-settings").props.hidden).toBe(true);
+
+  button().props.onClick();
+  expect(button().props["aria-pressed"]).toBe(true);
+  expect(region("ws-settings").props.hidden).toBe(false);
+  expect(region("ws-stage").props.hidden).toBe(true);
+  const settings = view.of(SettingsView)[0];
+  expect(settings.props.api).toBe(api);
+  // A change in settings reloads the worktree list.
+  const list = vi.spyOn(api, "workspaceList");
+  settings.props.onChanged();
+  await tick();
+  expect(list).toHaveBeenCalledTimes(1);
+
+  view.nav(en("workspace.nav.workspace")).props.onClick();
+  expect(view.of(SettingsView)).toHaveLength(0);
+  expect(region("ws-stage").props.hidden).toBe(false);
 });
 
 it("docs nav mounts the docs app once and keeps the workspace mounted", async () => {

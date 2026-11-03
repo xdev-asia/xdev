@@ -16,6 +16,7 @@
 .ws-header,
 .ws-sidebar,
 .ws-stage,
+.ws-settings,
 .ws-footer,
 .ws-dialog {
   --x-color-bg: var(--bg-0);
