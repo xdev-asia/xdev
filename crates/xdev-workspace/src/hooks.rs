@@ -81,8 +81,9 @@ pub(crate) struct SharedFile {
     pub unknown: Vec<String>,
 }
 
-/// `Ok(None)` when there is no file; `Err` is the reason it is not used.
-pub(crate) fn read_file(path: &Path) -> Result<Option<SharedFile>, String> {
+/// The text of `xdev.toml` at `path`, at most `MAX_FILE` bytes. `Ok(None)`
+/// when there is no file; `Err` is the reason it is not used.
+pub(crate) fn read_text(path: &Path) -> Result<Option<String>, String> {
     let file = match fs::File::open(path) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -96,6 +97,14 @@ pub(crate) fn read_file(path: &Path) -> Result<Option<SharedFile>, String> {
         return Err(format!("{FILE_NAME} is over {} KiB", MAX_FILE / 1024));
     }
     let text = String::from_utf8(bytes).map_err(|_| format!("{FILE_NAME} is not UTF-8"))?;
+    Ok(Some(text))
+}
+
+/// `Ok(None)` when there is no file; `Err` is the reason it is not used.
+pub(crate) fn read_file(path: &Path) -> Result<Option<SharedFile>, String> {
+    let Some(text) = read_text(path)? else {
+        return Ok(None);
+    };
     let table: toml::Table = toml::from_str(&text).map_err(|e| e.to_string())?;
     let mut out = SharedFile::default();
     for (key, value) in table {
@@ -137,6 +146,8 @@ pub(crate) fn read_file(path: &Path) -> Result<Option<SharedFile>, String> {
                     out.wait_for_setup = wait;
                 }
             }
+            // Read by `repo_commands`.
+            "commands" => {}
             _ => out.unknown.push(key),
         }
     }
@@ -161,17 +172,23 @@ pub(crate) fn repo_of<'a>(
         .ok_or_else(|| WorkspaceError::WorktreeUnknown(worktree.to_owned()))
 }
 
-/// The worktree's own file, else the primary checkout's.
-fn shared_of(repo: &RepoEntry, worktree: &Path) -> Result<Option<SharedFile>, String> {
-    match read_file(&worktree.join(FILE_NAME)) {
-        Ok(None) if path_key(worktree) != path_key(&repo.path) => {
-            read_file(&repo.path.join(FILE_NAME))
-        }
+/// `read` of the worktree's own file, else of the primary checkout's.
+pub(crate) fn file_of<T>(
+    repo: &RepoEntry,
+    worktree: &Path,
+    read: impl Fn(&Path) -> Result<Option<T>, String>,
+) -> Result<Option<T>, String> {
+    match read(&worktree.join(FILE_NAME)) {
+        Ok(None) if path_key(worktree) != path_key(&repo.path) => read(&repo.path.join(FILE_NAME)),
         other => other,
     }
 }
 
-fn hash_of(text: &str) -> String {
+fn shared_of(repo: &RepoEntry, worktree: &Path) -> Result<Option<SharedFile>, String> {
+    file_of(repo, worktree, read_file)
+}
+
+pub(crate) fn hash_of(text: &str) -> String {
     blake3::hash(text.as_bytes()).to_hex().to_string()
 }
 
@@ -223,7 +240,7 @@ pub fn hooks_for(
     let store = load_trust(data);
     let script = |kind: HookKind, shared: Option<&str>, local: &str| {
         script_of(repo.script_source, shared, local, |hash| {
-            store.has(&repo.id, kind, hash)
+            store.has(&repo.id, kind.into(), hash)
         })
     };
     let setup = script(HookKind::Setup, file.setup.as_deref(), &repo.local_setup);
@@ -247,25 +264,44 @@ pub fn hooks_for(
     })
 }
 
-/// `hook-trust.json`: the shared scripts the person has approved, one
-/// entry per repo and kind.
+/// `hook-trust.json`: the shared scripts and `[[commands]]` the person has
+/// approved, one entry per repo and kind.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct TrustStore {
+pub(crate) struct TrustStore {
     version: u32,
     entries: Vec<TrustEntry>,
+}
+
+/// What a trust entry approves: a `HookKind` script, or the repo's
+/// `[[commands]]`. Spelled as `HookKind` on disk, so older files read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum TrustKind {
+    Setup,
+    Archive,
+    Commands,
+}
+
+impl From<HookKind> for TrustKind {
+    fn from(kind: HookKind) -> TrustKind {
+        match kind {
+            HookKind::Setup => TrustKind::Setup,
+            HookKind::Archive => TrustKind::Archive,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TrustEntry {
     repo_id: String,
-    kind: HookKind,
+    kind: TrustKind,
     hash: String,
     approved_ms: i64,
 }
 
 impl TrustStore {
-    fn has(&self, repo_id: &str, kind: HookKind, hash: &str) -> bool {
+    pub(crate) fn has(&self, repo_id: &str, kind: TrustKind, hash: &str) -> bool {
         self.entries
             .iter()
             .any(|e| e.repo_id == repo_id && e.kind == kind && e.hash == hash)
@@ -273,7 +309,7 @@ impl TrustStore {
 }
 
 /// A missing, unreadable or corrupt store trusts nothing.
-fn load_trust(data: &Path) -> TrustStore {
+pub(crate) fn load_trust(data: &Path) -> TrustStore {
     fs::read(data.join(TRUST_FILE))
         .ok()
         .and_then(|bytes| serde_json::from_slice::<TrustStore>(&bytes).ok())
@@ -288,6 +324,17 @@ pub fn trust(
     data: &Path,
     repo_id: &str,
     kind: HookKind,
+    hash: &str,
+    now_ms: i64,
+) -> Result<(), WorkspaceError> {
+    record_trust(data, repo_id, kind.into(), hash, now_ms)
+}
+
+/// `trust` for any `TrustKind`.
+pub(crate) fn record_trust(
+    data: &Path,
+    repo_id: &str,
+    kind: TrustKind,
     hash: &str,
     now_ms: i64,
 ) -> Result<(), WorkspaceError> {
@@ -526,6 +573,30 @@ mod tests {
         assert_eq!(hooks.setup.unwrap().text, "make");
         let file = read_file(&f.worktree.join(FILE_NAME)).unwrap().unwrap();
         assert_eq!(file.unknown, ["ports", "scripts.run"]);
+
+        f.write(
+            &f.worktree,
+            "[scripts]
+setup = \"make\"
+
+[[commands]]
+label = \"Tests\"
+run = \"make test\"
+",
+        );
+        let file = read_file(&f.worktree.join(FILE_NAME)).unwrap().unwrap();
+        assert!(file.unknown.is_empty(), "{:?}", file.unknown);
+    }
+
+    #[test]
+    fn a_store_from_before_commands_still_reads() {
+        let f = fixture();
+        let old = r#"{ "version": 1, "entries": [
+            { "repoId": "abc", "kind": "setup", "hash": "h", "approvedMs": 1 } ] }"#;
+        fs::write(f.data.join(TRUST_FILE), old).unwrap();
+        let store = load_trust(&f.data);
+        assert!(store.has("abc", TrustKind::Setup, "h"));
+        assert!(!store.has("abc", TrustKind::Commands, "h"));
     }
 
     #[test]
@@ -661,7 +732,7 @@ mod tests {
                 version: 1,
                 entries: vec![TrustEntry {
                     repo_id: "abc".into(),
-                    kind: HookKind::Setup,
+                    kind: TrustKind::Setup,
                     hash,
                     approved_ms: 7,
                 }],
@@ -730,9 +801,9 @@ mod tests {
         trust(dir.path(), "two", HookKind::Setup, "h2", 2).unwrap();
         trust(dir.path(), "one", HookKind::Setup, "h3", 3).unwrap();
         let store = load_trust(dir.path());
-        assert!(store.has("two", HookKind::Setup, "h2"));
-        assert!(store.has("one", HookKind::Setup, "h3"));
-        assert!(!store.has("one", HookKind::Setup, "h1"));
+        assert!(store.has("two", TrustKind::Setup, "h2"));
+        assert!(store.has("one", TrustKind::Setup, "h3"));
+        assert!(!store.has("one", TrustKind::Setup, "h1"));
     }
 
     #[test]

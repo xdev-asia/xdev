@@ -4,6 +4,7 @@ mod hooks;
 mod names;
 mod ops;
 mod registry;
+mod repo_commands;
 mod vaults;
 
 use std::io;
@@ -24,6 +25,10 @@ pub use ops::{
 };
 pub use registry::{
     Registry, RepoEntry, ScriptSource, SetupPolicy, VaultEntry, WorktreeMeta, repo_id,
+};
+pub use repo_commands::{
+    COMMAND_LABEL_MAX, COMMAND_PROMPT_MAX, COMMAND_TEXT_MAX, RepoAction, RepoCommand, RepoCommands,
+    repo_commands, trust_commands,
 };
 pub use vaults::{VaultKind, VaultView, add_vault, forget_vault, list_vaults, repo_docs_dir};
 
