@@ -1156,6 +1156,8 @@
   "toast.close": "Đóng",
   "keys.terminalHandled": "Phím tắt đã được ứng dụng xử lý trong terminal: {title} ({chord})",
   "keys.openShortcuts": "Mở phím tắt",
+  "keys.fileError": "Không đọc được keybindings.json: {message}",
+  "keys.fileConflicts": "keybindings.json có {count} phím tắt xung đột. Một số đã bị bỏ qua.",
   "keys.hint": "{label} ({chord})",
   "agentSessions.title": "Phiên agent",
   "agentSessions.tab.worktrees": "Worktree",

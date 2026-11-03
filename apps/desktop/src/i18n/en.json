@@ -1156,6 +1156,8 @@
   "toast.close": "Close",
   "keys.terminalHandled": "Terminal shortcut handled: {title} ({chord})",
   "keys.openShortcuts": "Open Shortcuts",
+  "keys.fileError": "keybindings.json could not be read: {message}",
+  "keys.fileConflicts": "keybindings.json has {count} conflicting shortcuts. Some were dropped.",
   "keys.hint": "{label} ({chord})",
   "agentSessions.title": "Agent sessions",
   "agentSessions.tab.worktrees": "Worktrees",

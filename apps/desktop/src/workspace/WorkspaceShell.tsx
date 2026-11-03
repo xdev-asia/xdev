@@ -10,7 +10,7 @@ import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useI18n } from "@/i18n";
 import { PaletteHost } from "@/palette/PaletteHost";
 import { useKeymap, type ActionId } from "@/keys/keymap";
-import { setTerminalKeyHost } from "@/keys/terminalKey";
+import { setTerminalKeyHost, startDiagnosticToasts } from "@/keys/terminalKey";
 import { Toasts } from "./Toasts";
 import { useJumpKey } from "@/palette/useJumpKey";
 import { SettingsView } from "@/settings/SettingsView";
@@ -118,7 +118,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [bellOpen, setBellOpen] = useState(false);
   const statusSettings = useStatusSettings();
   // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
-  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action: string) => {}, notifier: null as Notifier | null }));
+  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, notifier: null as Notifier | null }));
 
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
@@ -391,7 +391,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The terminal key toast words itself with the latest render's `t` and sends its button to the page.
   useEffect(() => {
     setTerminalKeyHost({ t: (key, vars) => live.t(key, vars), openShortcuts: (action) => live.openShortcuts(action) });
-    return () => setTerminalKeyHost(null);
+    const stop = startDiagnosticToasts();
+    return () => {
+      stop();
+      setTerminalKeyHost(null);
+    };
   }, [live]);
   // Keys that work in every view; the worktree keys below need the workspace.
   useKeymap({
