@@ -6153,6 +6153,7 @@ dependencies = [
 name = "xdev-desktop"
 version = "0.4.0"
 dependencies = [
+ "blake3",
  "dunce",
  "notify-debouncer-full",
  "serde",

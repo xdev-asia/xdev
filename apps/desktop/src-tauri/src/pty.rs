@@ -3,7 +3,10 @@
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 
 use serde::Serialize;
@@ -16,7 +19,9 @@ use xdev_agent::{
 use xdev_ai::Registry;
 use xdev_policy::{Action, Audited, Policy, Verdict, agent_fingerprint};
 use xdev_pty::{PtyError, Session, SpawnSpec};
-use xdev_workspace::{HookKind, Registry as Workspace, WorkspaceError, hook_env, hooks_for};
+use xdev_workspace::{
+    HookKind, Registry as Workspace, SetupPolicy, WorkspaceError, hook_env, hooks_for,
+};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError, cli_beside};
@@ -312,9 +317,10 @@ fn launch_action(launch: &Launch) -> Action {
     }
 }
 
-/// The program and args that run `script` in `shell` and end with it.
-/// CMD runs one line, so the script's lines are joined with ` & `. A WSL
-/// shell runs it with `sh -lc` in its distro.
+/// The program and args that run `script` in `shell` and end with it, as
+/// the gate and the audit see them. CMD reads one line from `/C`, so
+/// `hook_command` swaps its script for a batch file (`cmd_file`) when it
+/// runs. A WSL shell runs it with `sh -lc` in its distro.
 pub(crate) fn setup_command(shell: &ShellEntry, script: &str) -> (PathBuf, Vec<String>) {
     let own = |args: &[&str]| -> Vec<String> {
         args.iter()
@@ -324,15 +330,7 @@ pub(crate) fn setup_command(shell: &ShellEntry, script: &str) -> (PathBuf, Vec<S
     };
     let args = match shell.kind {
         ShellKind::Powershell => own(&["-NoLogo", "-NoProfile", "-Command"]),
-        ShellKind::Cmd => {
-            let line = script
-                .lines()
-                .map(str::trim)
-                .filter(|l| !l.is_empty())
-                .collect::<Vec<_>>()
-                .join(" & ");
-            vec!["/D".to_owned(), "/C".to_owned(), line]
-        }
+        ShellKind::Cmd => own(&["/D", "/C"]),
         ShellKind::Wsl => shell
             .args
             .iter()
@@ -343,6 +341,41 @@ pub(crate) fn setup_command(shell: &ShellEntry, script: &str) -> (PathBuf, Vec<S
         ShellKind::Custom => own(&["-c"]),
     };
     (shell.program.clone(), args)
+}
+
+/// The data dir folder of the batch files CMD runs hook scripts from.
+const CMD_SCRIPTS: &str = "hook-scripts";
+
+/// `script` as a batch file in the data dir, named by the blake3 of its
+/// content so the same script is written once and two runs never write
+/// over a file the other is reading. The lines are the script's own, with
+/// CRLF ends and `@echo off` first, as one `/C` line printed nothing but
+/// the output.
+fn cmd_file(data_dir: &Path, script: &str) -> io::Result<PathBuf> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let dir = data_dir.join(CMD_SCRIPTS);
+    fs::create_dir_all(&dir)?;
+    let mut body = String::from("@echo off\r\n");
+    for line in script.lines() {
+        body.push_str(line);
+        body.push_str("\r\n");
+    }
+    let path = dir.join(format!("{}.cmd", blake3::hash(body.as_bytes()).to_hex()));
+    let written = |path: &Path| fs::read(path).is_ok_and(|b| b == body.as_bytes());
+    if written(&path) {
+        return Ok(path);
+    }
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let tmp = dir.join(format!(".{}-{n}.tmp", std::process::id()));
+    fs::write(&tmp, &body)?;
+    match fs::rename(&tmp, &path) {
+        Ok(()) => Ok(path),
+        Err(e) => {
+            let _ = fs::remove_file(&tmp);
+            // Another run may have put the same file there first.
+            if written(&path) { Ok(path) } else { Err(e) }
+        }
+    }
 }
 
 /// A hook script ready to run: the shell line, and `hook_env`.
@@ -415,12 +448,23 @@ pub(crate) fn hook_command(
             detail: Some(reason),
         });
     }
+    let mut args = args;
+    if shell.kind == ShellKind::Cmd
+        && let Some(last) = args.last_mut()
+    {
+        *last = cmd_file(data_dir, &script.text)?.display().to_string();
+    }
     Ok(Some(HookCommand { program, args, env }))
 }
 
 /// The launch that runs the setup script of the worktree at `cwd` in a
-/// terminal; `hook_none` when it has none.
+/// terminal; `setup_skipped` when the repo's setup policy is Skip,
+/// `hook_none` when it has no setup.
 pub(crate) fn setup_launch(data_dir: &Path, cwd: &Path) -> Result<Launch, CmdError> {
+    let reg = Workspace::load(data_dir)?;
+    if hooks_for(&reg, data_dir, cwd)?.policy == SetupPolicy::Skip {
+        return Err(WorkspaceError::SetupSkipped.into());
+    }
     let HookCommand { program, args, env } = hook_command(data_dir, cwd, HookKind::Setup)?
         .ok_or_else(|| WorkspaceError::NoHook("setup".to_owned()))?;
     Ok(Launch {
@@ -1098,13 +1142,30 @@ b",
         assert_eq!(ps.0, PathBuf::from("pwsh.exe"));
         assert_eq!(ps.1, ["-NoLogo", "-NoProfile", "-Command", script]);
         let cmd = setup_command(&entry(ShellKind::Cmd, "cmd.exe", &[]), script);
-        assert_eq!(cmd.1, ["/D", "/C", "pnpm i & cargo fetch"]);
+        assert_eq!(cmd.1, ["/D", "/C", script]);
         let wsl = setup_command(&entry(ShellKind::Wsl, "wsl.exe", &["-d", "Ubuntu"]), script);
         assert_eq!(wsl.1, ["-d", "Ubuntu", "--exec", "sh", "-lc", script]);
         let login = setup_command(&entry(ShellKind::Login, "/bin/zsh", &["-l"]), script);
         assert_eq!(login.1, ["-l", "-c", script]);
         let custom = setup_command(&entry(ShellKind::Custom, "fish", &[]), script);
         assert_eq!(custom.1, ["-c", script]);
+    }
+
+    #[test]
+    fn cmd_file_writes_the_script_once_as_a_batch_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = "pnpm i\nif 1==1 (\n  echo yes\n)";
+        let path = cmd_file(dir.path(), script).unwrap();
+        assert_eq!(path.extension().unwrap(), "cmd");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "@echo off\r\npnpm i\r\nif 1==1 (\r\n  echo yes\r\n)\r\n"
+        );
+        assert_eq!(cmd_file(dir.path(), script).unwrap(), path);
+        assert_ne!(cmd_file(dir.path(), "make").unwrap(), path);
+        // No temp file is left behind.
+        let names = std::fs::read_dir(path.parent().unwrap()).unwrap().count();
+        assert_eq!(names, 2);
     }
 
     /// A data dir and a repo at `<tmp>/xdev` that the registry tracks.
@@ -1160,5 +1221,15 @@ b",
         assert_eq!(code(&f.repo), "hook_none");
         std::fs::write(f.repo.join("xdev.toml"), "[scripts]\nsetup = \"make\"\n").unwrap();
         assert_eq!(code(&f.repo), "hook_untrusted");
+    }
+
+    #[test]
+    fn setup_launch_refuses_a_repo_whose_policy_is_skip() {
+        let f = setup_fixture("echo hi");
+        let mut reg = Workspace::load(&f.data).unwrap();
+        reg.repos[0].setup_policy = SetupPolicy::Skip;
+        reg.save(&f.data).unwrap();
+        let err = setup_launch(&f.data, &f.repo).unwrap_err();
+        assert_eq!(err.code, "setup_skipped");
     }
 }

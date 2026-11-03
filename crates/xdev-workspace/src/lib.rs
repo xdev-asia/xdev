@@ -70,6 +70,9 @@ pub enum WorkspaceError {
     HookUntrusted(String),
     #[error("no {0} script")]
     NoHook(String),
+    /// The repo's setup policy is Skip, so its setup never runs.
+    #[error("setup is turned off for this repo")]
+    SetupSkipped,
     #[error("the script failed with code {code:?}")]
     HookFailed { code: Option<i32>, output: String },
 }
@@ -96,6 +99,7 @@ impl WorkspaceError {
             WorkspaceError::BadPath(_) => "bad_path",
             WorkspaceError::HookUntrusted(_) => "hook_untrusted",
             WorkspaceError::NoHook(_) => "hook_none",
+            WorkspaceError::SetupSkipped => "setup_skipped",
             WorkspaceError::HookFailed { .. } => "hook_failed",
         }
     }

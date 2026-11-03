@@ -473,6 +473,7 @@ export function createMockWorkspace(
     async __setupRun(cwd) {
       const found = hooksOf(cwd);
       if (!found) return reject("worktree_unknown", cwd);
+      if (found.hooks.policy === "skip") return reject("setup_skipped");
       const script = found.hooks.setup;
       if (!script) return reject("hook_none", "setup");
       if (!script.trusted) return reject("hook_untrusted", "setup");

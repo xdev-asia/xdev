@@ -516,6 +516,7 @@
   "error.bad_sound": "Use a wav, mp3 or ogg file of at most 1 MB.",
   "error.hook_untrusted": "The script from xdev.toml is not trusted yet, or it changed since you trusted it.",
   "error.hook_none": "This repo has no script for that.",
+  "error.setup_skipped": "Setup is turned off for this repo in Settings → Repos.",
   "apps.terminal": "Terminal",
   "terminal.folder": "Folder",
   "terminal.pickFolder": "Choose folder…",
