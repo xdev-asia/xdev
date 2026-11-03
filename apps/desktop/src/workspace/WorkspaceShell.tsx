@@ -92,6 +92,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [prs] = useState(() => new PrStore(api));
   // The jump palette, and the settings section it asked for; a new `seq` is a new request.
   const [jumpOpen, setJumpOpen] = useState(false);
+  // Asks the front terminal of a worktree to take keyboard focus, as the palette closes.
+  const [termFocus, setTermFocus] = useState<{ worktree: string; seq: number } | null>(null);
+  const focusTerminal = (worktree: string) => setTermFocus((f) => ({ worktree, seq: (f?.seq ?? 0) + 1 }));
   const [settingsAt, setSettingsAt] = useState<{ section?: string; seq: number }>({ seq: 0 });
   // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
   const dialogOpen = creating !== null || removing !== null;
@@ -450,6 +453,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   onShown={(id) => setShownTab((s) => (s[path] === id ? s : { ...s, [path]: id }))}
                   reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq } : undefined}
                   front={front?.worktree === path ? { id: front.id, seq: front.seq } : undefined}
+                  focusSeq={termFocus?.worktree === path ? termFocus.seq : undefined}
                 />
               ))}
             {!current && repos && (
@@ -600,9 +604,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           selectWorktree: (wt) => {
             select(wt);
             show("workspace");
+            focusTerminal(wt.path);
           },
           showWorkspace: () => show("workspace"),
-          frontTab: (worktree, id) => setFront((f) => ({ worktree, id, seq: (f?.seq ?? 0) + 1 })),
+          frontTab: (worktree, id) => {
+            setFront((f) => ({ worktree, id, seq: (f?.seq ?? 0) + 1 }));
+            focusTerminal(worktree);
+          },
           openSettings: (section) => {
             setSettingsAt((s) => ({ section, seq: s.seq + 1 }));
             show("settings");
