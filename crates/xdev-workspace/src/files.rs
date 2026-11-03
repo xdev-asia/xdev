@@ -2,7 +2,9 @@
 //! Every path is relative to the worktree and checked so it never leaves it.
 
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
+use std::path::Path;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use serde::{Deserialize, Serialize};
 
@@ -149,12 +151,80 @@ fn missing(e: io::Error, rel: &str) -> WorkspaceError {
 pub fn write_file(
     worktree: &str,
     rel: &str,
-    _text: &str,
-    _eol: Eol,
-    _expected: Option<&str>,
+    text: &str,
+    eol: Eol,
+    expected: Option<&str>,
 ) -> Result<WriteOutcome, WorkspaceError> {
-    rel_under(worktree, rel)?;
-    Err(todo("write_file"))
+    let disk = rel_under(worktree, rel)?;
+    let on_disk = match fs::metadata(&disk) {
+        Ok(meta) if meta.is_dir() => return Err(WorkspaceError::BadPath(rel.to_owned())),
+        Ok(_) => Some(hash_file(&disk)?),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e.into()),
+    };
+    if on_disk.as_deref() != expected {
+        return Ok(WriteOutcome::Conflict {
+            disk_hash: on_disk.unwrap_or_default(),
+        });
+    }
+    let lf = text.replace("\r\n", "\n").replace('\r', "\n");
+    let bytes = match eol {
+        Eol::Lf => lf,
+        Eol::Crlf => lf.replace('\n', "\r\n"),
+    };
+    replace(&disk, bytes.as_bytes(), |from, to| fs::rename(from, to))?;
+    Ok(WriteOutcome::Saved {
+        hash: hash_of(bytes.as_bytes()),
+    })
+}
+
+/// blake3 of a file, read in pieces.
+fn hash_file(path: &Path) -> io::Result<String> {
+    let mut hasher = blake3::Hasher::new();
+    io::copy(&mut fs::File::open(path)?, &mut hasher)?;
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+/// Puts `bytes` at `path` through a new file in the same folder and a
+/// `rename`, so a reader sees the old file or the new one, never half of
+/// one. On Unix the new file takes the old one's mode. When anything fails
+/// the temp file is removed and `path` is as it was.
+fn replace(
+    path: &Path,
+    bytes: &[u8],
+    rename: impl FnOnce(&Path, &Path) -> io::Result<()>,
+) -> io::Result<()> {
+    static SEQ: AtomicU32 = AtomicU32::new(0);
+    let dir = path.parent().unwrap_or(Path::new("."));
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    let (tmp, mut file) = loop {
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+        let tmp = dir.join(format!(".{name}.{}-{seq}.xdev-tmp", std::process::id()));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+        {
+            Ok(file) => break (tmp, file),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    };
+    let result = (|| {
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        #[cfg(unix)]
+        if let Ok(meta) = fs::metadata(path) {
+            fs::set_permissions(&tmp, meta.permissions())?;
+        }
+        rename(&tmp, path)
+    })();
+    if result.is_err() {
+        // Ours, never the user's file.
+        let _ = fs::remove_file(&tmp);
+    }
+    result
 }
 
 /// An empty file or a folder; fails with `Exists` when the name is taken.
@@ -295,5 +365,148 @@ mod tests {
             r#""tooLarge""#
         );
         assert_eq!(serde_json::from_str::<Eol>(r#""crlf""#).unwrap(), Eol::Crlf);
+    }
+
+    fn names_in(dir: &std::path::Path) -> Vec<String> {
+        let mut names: Vec<_> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn write_file_saves_against_the_loaded_hash() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "old\n").unwrap();
+        let loaded = read_file(root(&tmp), "a.txt").unwrap();
+        let out = write_file(root(&tmp), "a.txt", "new\n", Eol::Lf, Some(&loaded.hash)).unwrap();
+        assert_eq!(
+            out,
+            WriteOutcome::Saved {
+                hash: blake(b"new\n")
+            }
+        );
+        assert_eq!(fs::read(tmp.path().join("a.txt")).unwrap(), b"new\n");
+        // The saved hash is what a read gives now, and no temp file is left.
+        assert_eq!(
+            read_file(root(&tmp), "a.txt").unwrap().hash,
+            blake(b"new\n")
+        );
+        assert_eq!(names_in(tmp.path()), ["a.txt"]);
+    }
+
+    #[test]
+    fn write_file_reports_a_conflict_and_writes_nothing() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("a.txt");
+        fs::write(&path, "theirs\n").unwrap();
+        let stale = blake(b"mine\n");
+        let out = write_file(root(&tmp), "a.txt", "lost\n", Eol::Lf, Some(&stale)).unwrap();
+        assert_eq!(
+            out,
+            WriteOutcome::Conflict {
+                disk_hash: blake(b"theirs\n")
+            }
+        );
+        // `None` means a new file, and this one exists.
+        let out = write_file(root(&tmp), "a.txt", "lost\n", Eol::Lf, None).unwrap();
+        assert!(matches!(out, WriteOutcome::Conflict { .. }));
+        assert_eq!(fs::read(&path).unwrap(), b"theirs\n");
+        // The file went away since it was loaded.
+        let out = write_file(root(&tmp), "gone.txt", "x", Eol::Lf, Some(&stale)).unwrap();
+        assert_eq!(
+            out,
+            WriteOutcome::Conflict {
+                disk_hash: String::new()
+            }
+        );
+        assert!(!tmp.path().join("gone.txt").exists());
+        assert_eq!(names_in(tmp.path()), ["a.txt"]);
+    }
+
+    #[test]
+    fn write_file_makes_a_new_file_when_none_is_expected() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("src")).unwrap();
+        let out = write_file(root(&tmp), "src/new.rs", "fn x() {}", Eol::Lf, None).unwrap();
+        assert!(matches!(out, WriteOutcome::Saved { .. }));
+        assert_eq!(
+            fs::read(tmp.path().join("src").join("new.rs")).unwrap(),
+            b"fn x() {}"
+        );
+    }
+
+    #[test]
+    fn write_file_writes_every_line_break_as_the_chosen_eol() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("w.txt");
+        fs::write(&path, "a\r\nb\r\n").unwrap();
+        let loaded = read_file(root(&tmp), "w.txt").unwrap();
+        assert_eq!(loaded.eol, Eol::Crlf);
+        let out = write_file(
+            root(&tmp),
+            "w.txt",
+            "a\nb\r\nc\rd\n",
+            loaded.eol,
+            Some(&loaded.hash),
+        )
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"a\r\nb\r\nc\r\nd\r\n");
+        let WriteOutcome::Saved { hash } = out else {
+            panic!("not saved: {out:?}");
+        };
+        write_file(root(&tmp), "w.txt", "x\r\ny\r\n", Eol::Lf, Some(&hash)).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"x\ny\n");
+    }
+
+    #[test]
+    fn write_file_refuses_folders_missing_parents_and_escapes() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("src")).unwrap();
+        let code = |rel| {
+            write_file(root(&tmp), rel, "x", Eol::Lf, None)
+                .unwrap_err()
+                .code()
+        };
+        assert_eq!(code("src"), "bad_path");
+        assert_eq!(code("nope/a.txt"), "not_found");
+        assert_eq!(code("../a.txt"), "bad_path");
+        assert_eq!(code(".git/config"), "bad_path");
+        assert_eq!(names_in(tmp.path()), ["src"]);
+    }
+
+    #[test]
+    fn a_failed_rename_leaves_the_file_and_no_temp_file() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("a.txt");
+        fs::write(&path, "old").unwrap();
+        let err =
+            replace(&path, b"new", |_, _| Err(io::Error::other("rename failed"))).unwrap_err();
+        assert_eq!(err.to_string(), "rename failed");
+        assert_eq!(fs::read(&path).unwrap(), b"old");
+        assert_eq!(names_in(tmp.path()), ["a.txt"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_file_keeps_the_file_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("run.sh");
+        fs::write(&path, "#!/bin/sh\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o750)).unwrap();
+        let loaded = read_file(root(&tmp), "run.sh").unwrap();
+        write_file(
+            root(&tmp),
+            "run.sh",
+            "#!/bin/sh\necho\n",
+            Eol::Lf,
+            Some(&loaded.hash),
+        )
+        .unwrap();
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o750);
     }
 }
