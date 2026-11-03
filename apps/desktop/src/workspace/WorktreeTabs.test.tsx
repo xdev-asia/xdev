@@ -4,13 +4,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, toApiError, type Api, type Profile, type ProfilesView, type PtyExit } from "@/api";
 import { translate } from "@/i18n";
 import { useKeymap } from "@/keys/keymap";
-import { Terminal } from "@/terminal/Terminal";
+import { Terminal, type TerminalHandle } from "@/terminal/Terminal";
+import { ContextMenu } from "@/ui/ContextMenu";
 import { AgentIcon } from "./AgentIcon";
 import { CloseTabsDialog } from "./CloseTabsDialog";
 import { Sessions } from "./sessions";
 import { addTab, leaves, paneOf, removeTab, resize, selectTab, splitPane, toggleExpand, type PaneLayout, type PaneNode } from "./paneTree";
 import { PaneView } from "./PaneView";
 import { TabStrip } from "./TabStrip";
+import { TabTitleDialog } from "./TabTitleDialog";
 import { WorktreeTabs } from "./WorktreeTabs";
 
 // Hooks are stubbed only while the tabs component itself is called; each harness keeps its own.
@@ -452,25 +454,50 @@ it("split right and split down in the plus menu open the default shell in a new 
 
 // ---- tab context menu --------------------------------------------------------------------------
 
-function contextMenu(view: ReturnType<typeof harness>, id: string) {
+type MenuNode = { id: string; labelKey: string; run?: () => void; disabled?: boolean; checked?: boolean; children?: MenuNode[]; kind?: string };
+type View = ReturnType<typeof harness>;
+const menuOf = (view: View) => view.find((n) => n.type === ContextMenu);
+// Walks ids down a path: `pick(view, "color", "c3")` is the Tab Color > c3 item.
+function pick(view: View, ...path: string[]): MenuNode {
+  let level = menuOf(view)!.props.items as MenuNode[];
+  let found!: MenuNode;
+  for (const id of path) {
+    found = level.find((i) => i.id === id)!;
+    level = found.children ?? [];
+  }
+  return found;
+}
+function contextMenu(view: View, id: string) {
   const tab = view.all().find((n) => n.props.className === "ws-tab" && nodes(n.props.children).some((c) => c.props["data-tab"] === id))!;
   tab.props.onContextMenu({ preventDefault() {}, clientX: 10, clientY: 20 });
-  return (label: string) => view.find((n) => n.props.role === "menuitem" && n.props.children === label)!;
+  return (...path: string[]) => pick(view, ...path);
 }
 
-it("a tab context menu offers close, close others, split, rename", () => {
+it("a tab context menu offers the SCR-14 items at the pointer", () => {
   const api = createMockApi({});
   const live = (sessions = new Sessions(api));
   const one = live.open(A, "shell");
   live.open(A, "claude");
   const view = harness(api, live);
-  const item = contextMenu(view, one.id);
-  expect(view.find((n) => n.props.role === "menu")!.props.style).toMatchObject({ left: 10, top: 20 });
-  expect(["workspace.tabs.split.right", "workspace.tabs.split.down", "panes.menu.closeOthers", "panes.menu.rename"].map((k) => item(en(k)))).toHaveLength(4);
-  expect(item(en("workspace.tabs.close", { name: en("terminal.profile.shell") }))).toBeDefined();
+  contextMenu(view, one.id);
+  expect(menuOf(view)!.props.at).toEqual({ x: 10, y: 20 });
+  const items = menuOf(view)!.props.items as MenuNode[];
+  expect(items.map((i) => (i.kind === "separator" ? "-" : i.id))).toEqual([
+    "splitRight", "splitDown", "moveToSplit", "-", "pin", "copyTabId", "-", "changeTitle", "color", "-", "close", "closeOthers", "closeToRight",
+  ]);
 });
 
-it("context menu close and close others call Sessions.close", async () => {
+it("the menu closes through its own onClose", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const one = live.open(A, "shell");
+  const view = harness(api, live);
+  contextMenu(view, one.id);
+  menuOf(view)!.props.onClose();
+  expect(menuOf(view)).toBeUndefined();
+});
+
+it("context menu close and close others call Sessions", async () => {
   const api = createMockApi({});
   const live = (sessions = new Sessions(api));
   const one = live.open(A, "shell");
@@ -478,51 +505,194 @@ it("context menu close and close others call Sessions.close", async () => {
   const three = live.open(A, "codex");
   const close = vi.spyOn(live, "close");
   const view = harness(api, live);
-  contextMenu(view, two.id)(en("workspace.tabs.close", { name: en("terminal.profile.claude") })).props.onClick();
+  contextMenu(view, two.id)("close").run!();
   expect(close).toHaveBeenCalledWith(two.id);
   await tick();
-  close.mockClear();
-  contextMenu(view, one.id)(en("panes.menu.closeOthers")).props.onClick();
-  expect(close.mock.calls.map((c) => c[0])).toEqual([three.id]);
-  // The menu closes once an item ran.
-  expect(view.find((n) => n.props.role === "menu")).toBeUndefined();
+  await tick();
+  contextMenu(view, one.id)("closeOthers").run!();
+  expect(live.tabs(A).map((t) => t.id)).toEqual([one.id]);
+  expect(three.id).not.toBe(one.id);
 });
 
-it("context menu split moves the tab into a new pane; a pane's only tab cannot split", () => {
+it("Close Others keeps pinned tabs", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const one = live.open(A, "shell");
+  const two = live.open(A, "claude");
+  const three = live.open(A, "codex");
+  live.setPinned(three.id, true);
+  const view = harness(api, live);
+  contextMenu(view, one.id)("closeOthers").run!();
+  expect(live.tabs(A).map((t) => t.id).sort()).toEqual([one.id, three.id].sort());
+  expect(two.id).not.toBe(three.id);
+});
+
+it("pin toggles the label and the tab", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const one = live.open(A, "shell");
+  live.open(A, "claude");
+  const view = harness(api, live);
+  expect(contextMenu(view, one.id)("pin").labelKey).toBe("tabMenu.pin");
+  pick(view, "pin").run!();
+  expect(live.tabs(A).find((t) => t.id === one.id)!.pinned).toBe(true);
+  expect(contextMenu(view, one.id)("pin").labelKey).toBe("tabMenu.unpin");
+  pick(view, "pin").run!();
+  expect(live.tabs(A).find((t) => t.id === one.id)!.pinned).toBe(false);
+});
+
+it("the colour submenu sets the tab colour", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const one = live.open(A, "shell");
+  const view = harness(api, live);
+  contextMenu(view, one.id)("color", "c3").run!();
+  expect(live.tabs(A)[0].color).toBe("c3");
+  contextMenu(view, one.id)("color", "none").run!();
+  expect(live.tabs(A)[0].color).toBe("none");
+});
+
+it("Copy Tab ID writes the tab id to the clipboard", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const one = live.open(A, "shell");
+  const writeText = vi.fn(async () => {});
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  const view = harness(api, live);
+  contextMenu(view, one.id)("copyTabId").run!();
+  expect(writeText).toHaveBeenCalledWith(one.id);
+});
+
+it("context menu move to split moves the tab into a new pane; a pane's only tab cannot move", () => {
   const api = createMockApi({});
   const live = (sessions = new Sessions(api));
   const one = live.open(A, "shell");
   const two = live.open(A, "claude");
   const view = harness(api, live);
-  contextMenu(view, one.id)(en("workspace.tabs.split.down")).props.onClick();
+  contextMenu(view, one.id)("moveToSplit", "moveDown").run!();
   const l = live.layout(A)!;
   expect(leaves(l)).toHaveLength(2);
   expect((l.root as Extract<PaneNode, { kind: "split" }>).dir).toBe("down");
   expect(l.focused).toBe(paneOf(l, one.id));
   expect(paneOf(l, one.id)).not.toBe(paneOf(l, two.id));
-  // Each pane has one tab now: nothing to split off, nothing to close.
+  // Each pane has one tab now: nothing to move off, nothing to close.
   const before = live.layout(A);
   const item = contextMenu(view, two.id);
-  expect(item(en("workspace.tabs.split.right")).props["aria-disabled"]).toBe(true);
-  expect(item(en("panes.menu.closeOthers")).props["aria-disabled"]).toBe(true);
-  item(en("workspace.tabs.split.right")).props.onClick();
+  expect(item("moveToSplit").disabled).toBe(true);
+  expect(item("closeOthers").disabled).toBe(true);
   expect(live.layout(A)).toBe(before);
 });
 
-it("context menu rename names the tab by hand", () => {
+it("Change Title opens the dialog; Save names the tab, Reset gives back the program title, Cancel leaves it", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const tab = live.open(A, "shell");
+  live.noteTitle(tab.id, "bash");
+  const view = harness(api, live);
+  const dialog = () => view.find((n) => n.type === TabTitleDialog);
+  contextMenu(view, tab.id)("changeTitle").run!();
+  expect(dialog()!.props.title).toBe("bash");
+  dialog()!.props.onSave("build");
+  expect(live.tabs(A)[0]).toMatchObject({ title: "build", renamed: true });
+  expect(dialog()).toBeUndefined();
+  contextMenu(view, tab.id)("changeTitle").run!();
+  expect(dialog()!.props.title).toBe("build");
+  dialog()!.props.onCancel();
+  expect(dialog()).toBeUndefined();
+  expect(live.tabs(A)[0].title).toBe("build");
+  contextMenu(view, tab.id)("changeTitle").run!();
+  dialog()!.props.onSave(null);
+  expect(live.tabs(A)[0]).toMatchObject({ title: "bash", renamed: false });
+});
+
+it("double click on a tab renames it inline", () => {
   const api = createMockApi({});
   const live = (sessions = new Sessions(api));
   const tab = live.open(A, "shell");
   const view = harness(api, live);
-  contextMenu(view, tab.id)(en("panes.menu.rename")).props.onClick();
+  const strip = () => view.find((n) => n.props["data-tab"] === tab.id && typeof n.props.onDoubleClick === "function")!;
+  strip().props.onDoubleClick();
   const input = view.find((n) => n.type === "input" && n.props["aria-label"] === en("panes.rename"))!;
   input.props.onKeyDown({ key: "Enter", currentTarget: { value: "  build  " } });
   expect(live.tabs(A)[0]).toMatchObject({ title: "build", renamed: true });
   // Escape leaves the name alone.
-  contextMenu(view, tab.id)(en("panes.menu.rename")).props.onClick();
+  strip().props.onDoubleClick();
   view.find((n) => n.type === "input")!.props.onKeyDown({ key: "Escape", currentTarget: { value: "zzz" } });
   expect(live.tabs(A)[0].title).toBe("build");
   expect(view.find((n) => n.type === "input")).toBeUndefined();
+});
+
+// ---- terminal right-click menu -----------------------------------------------------------------
+
+function fakeHandle(selection = true) {
+  const calls: string[] = [];
+  const handle: TerminalHandle = {
+    copy: async () => { calls.push("copy"); return true; },
+    paste: async () => { calls.push("paste"); },
+    selectAll: () => void calls.push("selectAll"),
+    clear: () => void calls.push("clear"),
+    reset: () => void calls.push("reset"),
+    find: () => void calls.push("find"),
+    hasSelection: () => selection,
+    focus: () => void calls.push("focus"),
+    lines: () => ["$ ls", "a b", "", ""],
+  };
+  return { calls, handle };
+}
+function openTerminalMenu(view: View, id: string, handle: TerminalHandle) {
+  view.terminals().find((n) => n.props.id === id)!.props.onMenu({ x: 5, y: 6 }, handle);
+  return (...path: string[]) => pick(view, ...path);
+}
+
+it("a right click in the terminal opens its menu at the pointer; items call the handle", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const tab = live.open(A, "shell");
+  const view = harness(api, live);
+  const { calls, handle } = fakeHandle();
+  const item = openTerminalMenu(view, tab.id, handle);
+  expect(menuOf(view)!.props.at).toEqual({ x: 5, y: 6 });
+  for (const id of ["copy", "paste", "selectAll", "clear", "reset"]) item(id).run!();
+  expect(calls).toEqual(["copy", "paste", "selectAll", "clear", "reset"]);
+  expect(item("copy").disabled).toBeFalsy();
+  menuOf(view)!.props.onClose();
+  expect(menuOf(view)).toBeUndefined();
+  expect(openTerminalMenu(view, tab.id, fakeHandle(false).handle)("copy").disabled).toBe(true);
+});
+
+it("terminal menu: Copy Terminal ID, Copy Pane ID and Copy Context write the clipboard", async () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const tab = live.open(A, "shell");
+  const writeText = vi.fn(async () => {});
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  const view = harness(api, live, A, true, { branch: "oak" });
+  const item = openTerminalMenu(view, tab.id, fakeHandle().handle);
+  item("copyTerminalId").run!();
+  item("copyPaneId").run!();
+  item("copyContext").run!();
+  await tick();
+  const pane = paneOf(live.layout(A)!, tab.id);
+  const written = writeText.mock.calls.map((c) => (c as unknown[])[0] as string);
+  expect(written.slice(0, 2)).toEqual([tab.id, pane]);
+  expect(written[2]).toContain(A);
+  expect(written[2]).toContain("oak");
+  expect(written[2]).toContain("$ ls\na b");
+});
+
+it("terminal menu: Set Title opens the dialog, Split Right opens a shell in a new pane, Close closes the tab", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const tab = live.open(A, "shell");
+  const view = harness(api, live);
+  const item = openTerminalMenu(view, tab.id, fakeHandle().handle);
+  item("setTitle").run!();
+  expect(view.find((n) => n.type === TabTitleDialog)).toBeDefined();
+  item("splitRight").run!();
+  expect(leaves(live.layout(A)!)).toHaveLength(2);
+  const close = vi.spyOn(live, "close");
+  openTerminalMenu(view, tab.id, fakeHandle().handle)("close").run!();
+  expect(close).toHaveBeenCalledWith(tab.id);
 });
 
 const custom = (over: Partial<Profile> = {}): Profile => ({

@@ -6,7 +6,9 @@ import { useI18n } from "@/i18n";
 import { withChord } from "@/keys/hint";
 import { AgentIcon } from "./AgentIcon";
 import type { PaneDir } from "./paneTree";
-import type { Tab } from "./sessions";
+import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
+import type { Tab, TabColor } from "./sessions";
+import { tabMenuItems } from "./tabMenu";
 import type { TabStatus } from "./status";
 import { StatusGlyph } from "./StatusGlyph";
 
@@ -33,11 +35,17 @@ export function TabStrip(props: {
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onCloseOthers: (id: string) => void;
+  onCloseToRight: (id: string) => void;
   onLaunch: (profile: PtyProfile) => void;
   /** Splits this pane, opening the default shell in the new one. */
   onSplit: (dir: PaneDir) => void;
   /** Moves a tab of this pane into a new pane beside it. */
-  onSplitTab: (id: string, dir: PaneDir) => void;
+  onMoveToSplit: (id: string, dir: PaneDir) => void;
+  onPin: (id: string, pinned: boolean) => void;
+  onCopyTabId: (id: string) => void;
+  /** Opens the title dialog for a tab. */
+  onChangeTitle: (id: string) => void;
+  onColor: (id: string, color: TabColor) => void;
   onRename: (id: string, name: string) => void;
   menuOpen: boolean;
   onMenu: (open: boolean) => void;
@@ -75,6 +83,39 @@ export function TabStrip(props: {
 
   const picked = context ? items.find((i) => i.id === context.id) : null;
   const canSplitTab = items.length > 1;
+  const strip = items.flatMap((i) => (i.tab ? [i.tab] : []));
+
+  // The tab menu; the review tab is no terminal, so it has no pin, colour or title.
+  const contextItems = (item: StripItem): MenuItem[] => {
+    if (!item.tab) {
+      return [
+        {
+          id: "moveToSplit",
+          labelKey: "tabMenu.moveToSplit",
+          disabled: !canSplitTab,
+          children: [
+            { id: "moveRight", labelKey: "tabMenu.moveRight", run: () => props.onMoveToSplit(item.id, "right") },
+            { id: "moveDown", labelKey: "tabMenu.moveDown", run: () => props.onMoveToSplit(item.id, "down") },
+          ],
+        },
+        { id: "close", labelKey: "tabMenu.close", run: () => props.onClose(item.id) },
+      ];
+    }
+    return tabMenuItems({
+      tab: item.tab,
+      tabs: strip,
+      canMoveToSplit: canSplitTab,
+      split: props.onSplit,
+      moveToSplit: (dir) => props.onMoveToSplit(item.id, dir),
+      setPinned: (pinned) => props.onPin(item.id, pinned),
+      copyTabId: () => props.onCopyTabId(item.id),
+      changeTitle: () => props.onChangeTitle(item.id),
+      setColor: (color) => props.onColor(item.id, color),
+      close: () => props.onClose(item.id),
+      closeOthers: () => props.onCloseOthers(item.id),
+      closeToRight: () => props.onCloseToRight(item.id),
+    });
+  };
 
   return (
     <div className="ws-tabstrip" data-pane={props.pane}>
@@ -121,6 +162,7 @@ export function TabStrip(props: {
                   }
                   title={tab?.title ?? undefined}
                   onClick={() => props.onSelect(item.id)}
+                  onDoubleClick={() => tab && setRenaming(item.id)}
                 >
                   {tab ? (
                     <>
@@ -196,23 +238,7 @@ export function TabStrip(props: {
           </>
         )}
         {context && picked && (
-          <>
-            <div
-              className="ws-menu-backdrop"
-              onClick={() => setContext(null)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setContext(null);
-              }}
-            />
-            <div className="ws-menu ws-menu-at" role="menu" style={{ left: context.x, top: context.y }}>
-              {menuItem("close", t("workspace.tabs.close", { name: labelOf(picked) }), () => props.onClose(picked.id))}
-              {menuItem("close-others", t("panes.menu.closeOthers"), () => props.onCloseOthers(picked.id), { disabled: items.length < 2 })}
-              {menuItem("split-right", t("workspace.tabs.split.right"), () => props.onSplitTab(picked.id, "right"), { disabled: !canSplitTab })}
-              {menuItem("split-down", t("workspace.tabs.split.down"), () => props.onSplitTab(picked.id, "down"), { disabled: !canSplitTab })}
-              {picked.tab && menuItem("rename", t("panes.menu.rename"), () => setRenaming(picked.id))}
-            </div>
-          </>
+          <ContextMenu at={{ x: context.x, y: context.y }} items={contextItems(picked)} onClose={() => setContext(null)} />
         )}
       </div>
     </div>
