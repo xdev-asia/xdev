@@ -71,14 +71,16 @@ fn write(event: Event, rest: &[String]) -> Result<(), String> {
     };
     let detail = match (&notify, &input) {
         (Some(payload), _) => {
-            if stale_turn(&local, &id, payload) {
+            if stale_turn(&local, &id, payload) || reported_turn(&local, &id, payload) {
                 return Ok(());
             }
             Some(notify_detail(payload))
         }
         (None, Some(input)) => {
-            if event == Event::Prompt {
-                remember_turn(&local, &id, input);
+            match event {
+                Event::Prompt => remember_turn(&local, &id, input, "turn"),
+                Event::TurnDone => remember_turn(&local, &id, input, "done"),
+                _ => {}
             }
             Some(stdin_detail(event, input))
         }
@@ -150,18 +152,20 @@ fn notify_detail(payload: &serde_json::Map<String, Value>) -> HookDetail {
     }
 }
 
-/// Where the turn id of the pane's last codex prompt is kept.
-fn turn_file(local: &Path, id: &str) -> std::path::PathBuf {
-    local.join(HOOKS_DIR).join(format!("{id}.turn"))
+/// Where the turn id of the pane's last codex prompt (`turn`) or `Stop`
+/// (`done`) is kept. The desktop reads only `*.jsonl` there.
+fn turn_file(local: &Path, id: &str, kind: &str) -> std::path::PathBuf {
+    local.join(HOOKS_DIR).join(format!("{id}.{kind}"))
 }
 
-/// Keeps codex's `turn_id` from `UserPromptSubmit`, so a `notify` for another
-/// turn (codex runs internal title turns) can be told apart.
-fn remember_turn(local: &Path, id: &str, input: &serde_json::Map<String, Value>) {
+/// Keeps codex's `turn_id` from `UserPromptSubmit` or `Stop`, so a `notify`
+/// for another turn (codex runs internal title turns), or for a turn `Stop`
+/// already reported, can be told apart.
+fn remember_turn(local: &Path, id: &str, input: &serde_json::Map<String, Value>, kind: &str) {
     let Some(turn) = text(input, "turn_id").filter(|t| t.len() <= 200) else {
         return;
     };
-    let path = turn_file(local, id);
+    let path = turn_file(local, id, kind);
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
@@ -171,8 +175,17 @@ fn remember_turn(local: &Path, id: &str, input: &serde_json::Map<String, Value>)
 /// A `notify` payload whose `turn-id` is not the pane's last prompt's turn.
 /// Without a known turn (codex without hooks) every payload counts.
 fn stale_turn(local: &Path, id: &str, payload: &serde_json::Map<String, Value>) -> bool {
-    let Ok(known) = std::fs::read_to_string(turn_file(local, id)) else {
+    let Ok(known) = std::fs::read_to_string(turn_file(local, id, "turn")) else {
         return false;
     };
     text(payload, "turn-id").is_some_and(|turn| turn != known)
+}
+
+/// A `notify` payload for the turn whose `Stop` hook already wrote
+/// `turn-done`: notify is only the fallback for when the hooks do not run.
+fn reported_turn(local: &Path, id: &str, payload: &serde_json::Map<String, Value>) -> bool {
+    let Ok(done) = std::fs::read_to_string(turn_file(local, id, "done")) else {
+        return false;
+    };
+    text(payload, "turn-id").is_some_and(|turn| turn == done)
 }

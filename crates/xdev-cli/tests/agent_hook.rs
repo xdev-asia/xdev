@@ -324,3 +324,25 @@ fn hook_does_not_wait_on_an_open_stdin() {
     assert!(start.elapsed() < std::time::Duration::from_secs(5));
     assert_eq!(lines(tmp.path()).len(), 1);
 }
+
+#[test]
+fn hook_drops_a_notify_that_stop_already_reported() {
+    let tmp = tempfile::tempdir().unwrap();
+    let local = tmp.path();
+    let prompt = serde_json::json!({ "hook_event_name": "UserPromptSubmit", "turn_id": "t1" });
+    json_hook(local, "prompt", &prompt);
+    let stop = serde_json::json!({ "hook_event_name": "Stop", "turn_id": "t1" });
+    json_hook(local, "turn-done", &stop);
+    let notify = serde_json::json!({ "type": "agent-turn-complete", "turn-id": "t1" });
+    hook(local, Some(ID), &["turn-done", &notify.to_string()]);
+    // The next turn, with hooks that did not run its Stop: notify reports it.
+    let next = serde_json::json!({ "hook_event_name": "UserPromptSubmit", "turn_id": "t2" });
+    json_hook(local, "prompt", &next);
+    let notify = serde_json::json!({ "type": "agent-turn-complete", "turn-id": "t2" });
+    hook(local, Some(ID), &["turn-done", &notify.to_string()]);
+    let events: Vec<String> = lines(local)
+        .iter()
+        .map(|l| l["event"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(events, ["prompt", "turn-done", "prompt", "turn-done"]);
+}

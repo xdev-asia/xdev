@@ -2,6 +2,7 @@
 //! evidence kept and nothing merged until a person approves. A squad is a
 //! team of agents, one per seat, working one task together.
 
+mod codex_home;
 mod detect;
 mod flags;
 mod flow;
@@ -25,6 +26,10 @@ use serde::{Deserialize, Serialize};
 use xdev_git::GitError;
 use xdev_policy::Verdict;
 
+pub use codex_home::{
+    CODEX_HOME_DIR, CODEX_HOOKS_SINCE, CODEX_INTERRUPT_SINCE, codex_hooks_json, hook_command,
+    prepare_codex_home, private_codex_home, trust_hash,
+};
 pub use detect::{find_builtin, find_program};
 pub use flags::{efforts, flags};
 pub use flow::RunOptions;

@@ -153,7 +153,7 @@ pub(crate) fn launch_for(
     };
     let mut launch = resolve(id, &ctx)?;
     if let Some(xdev) = hooks {
-        launch.add_hooks(xdev);
+        launch.add_hooks(xdev, data_dir);
     }
     Ok(launch)
 }
@@ -382,7 +382,7 @@ mod tests {
 
     fn hooked() -> Launch {
         let mut l = agent();
-        l.add_hooks_with(Path::new("/opt/xdev"), None);
+        l.add_hooks_with(Path::new("/opt/xdev"), None, None);
         l
     }
 
@@ -430,7 +430,7 @@ mod tests {
     fn toggling_hooks_changes_the_fingerprint() {
         assert_ne!(print_of(&agent()), print_of(&hooked()));
         let mut moved = agent();
-        moved.add_hooks_with(Path::new("/elsewhere/xdev"), None);
+        moved.add_hooks_with(Path::new("/elsewhere/xdev"), None, None);
         assert_ne!(print_of(&hooked()), print_of(&moved));
     }
 
