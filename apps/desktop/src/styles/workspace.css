@@ -2259,3 +2259,33 @@ button.ws-tree-row:focus-visible {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* A plain bordered panel: no coloured stripe, no rounding. */
+.ws-setup-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-size: 12.5px;
+}
+
+.ws-setup-card p {
+  margin: 0;
+}
+
+.ws-setup-card code {
+  padding: 2px 6px;
+  background: var(--term);
+}
+
+.ws-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
