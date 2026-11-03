@@ -4,6 +4,7 @@ import { toApiError, type ApiError, type StatusSettings } from "@/api";
 import { useI18n } from "@/i18n";
 import type { SettingsSectionProps } from "@/settings/sections";
 import { playStatusSound } from "@/status/sound";
+import { setStatusSettings } from "@/status/statusSettings";
 
 // The channel switches, in the order the page lists them.
 export const CHANNELS = ["os", "sound", "bell", "badge"] as const;
@@ -63,7 +64,8 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
       const stored = await run();
       setSettings(stored);
       setVolume(null);
-      props.onSaved?.(stored);
+      // The notifier, bell and badge read the shared copy, so a change applies without a reload.
+      (props.onSaved ?? setStatusSettings)(stored);
     } catch (e) {
       onError(toApiError(e).code);
     } finally {
