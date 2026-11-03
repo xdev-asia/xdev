@@ -13,18 +13,20 @@ use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
 use crate::hooks::PtyHook;
 use crate::keybindings::{KeybindingsChanged, KeybindingsText};
 use crate::kit::{KitText, PromptEntry};
+use crate::open_in::OpenTarget;
 use crate::profiles::ProfilesView;
 use crate::pty::{PtyExit, PtyInfo};
 use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
-    GitSettings, KeySettings, SettingsChanged, StatusSettings, TerminalSettings, UiSettings,
+    GitSettings, KeySettings, OpenInSettings, SettingsChanged, StatusSettings, TerminalSettings,
+    UiSettings,
 };
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
 use crate::updater::UpdateInfo;
-use crate::workspace::{WorktreeChange, WorktreeFileDiff};
+use crate::workspace::{CloneProgress, WorktreeChange, WorktreeFileDiff};
 
 /// Each type's dependencies are written with it, so only the roots are here.
 fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
@@ -65,6 +67,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     SettingsChanged::export_all(cfg)?;
     KeySettings::export_all(cfg)?;
     UiSettings::export_all(cfg)?;
+    OpenInSettings::export_all(cfg)?;
+    OpenTarget::export_all(cfg)?;
+    CloneProgress::export_all(cfg)?;
     KeybindingsText::export_all(cfg)?;
     KeybindingsChanged::export_all(cfg)?;
     PtyHook::export_all(cfg)?;
