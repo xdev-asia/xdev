@@ -10,6 +10,7 @@ import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { Sessions } from "./sessions";
 import type { TabStatus } from "./status";
 import { WorktreeList } from "./WorktreeList";
+import { WorktreeTabs } from "./WorktreeTabs";
 
 const SELECTED_KEY = "xdev.workspace.selected";
 
@@ -48,6 +49,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [creating, setCreating] = useState<Creating | null>(null);
   const [removing, setRemoving] = useState<Removing | null>(null);
   const [notice, setNotice] = useState<ApiError["code"]>();
+  // Worktrees shown so far; their tabs stay mounted, hidden, so a switch never stops a pty.
+  const [visited, setVisited] = useState<string[]>([]);
 
   // One store of terminal tabs for the whole shell. Made in an effect so a dev double mount
   // disposes the first one.
@@ -85,6 +88,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const current = all.find((w) => w.path === selected) ?? all[0] ?? null;
   const currentRepo = repos?.find((r) => r.worktrees.some((w) => w.path === current?.path)) ?? null;
   const branch = current ? (current.branch ?? t("workspace.detached")) : null;
+  // Noted during render, so the first frame of a worktree already has its tabs.
+  const seen = current && !visited.includes(current.path) ? [...visited, current.path] : visited;
+  if (seen !== visited) setVisited(seen);
+  const mounted = seen.filter((p) => paths.includes(p));
 
   function select(wt: WorktreeView): void {
     setSelected(wt.path);
@@ -236,19 +243,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         </aside>
 
         <div className="ws-stage" hidden={view === "docs"}>
-          {/* Task 9 puts the worktree's terminal tabs here. */}
           <main className="ws-center" aria-label={t("workspace.center.label")}>
-            <div className="ws-center-empty">
-              {current ? (
-                <>
-                  <strong>{current.name}</strong>
-                  <span className="ws-mono">{current.path}</span>
-                  <p>{t("workspace.center.empty")}</p>
-                </>
-              ) : (
-                repos && <p>{t("workspace.center.none")}</p>
-              )}
-            </div>
+            {sessions &&
+              mounted.map((path) => (
+                <WorktreeTabs key={path} api={api} sessions={sessions} worktree={path} visible={path === current?.path} />
+              ))}
+            {!current && repos && (
+              <div className="ws-center-empty">
+                <p>{t("workspace.center.none")}</p>
+              </div>
+            )}
           </main>
           {/* Task 10 fills Changes and adds its count badge. */}
           <aside className="ws-panel" aria-label={t("workspace.panel.label")}>

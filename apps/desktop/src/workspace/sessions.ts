@@ -9,6 +9,8 @@ export interface Tab {
   /** Agent tabs count for the worktree's status dot; plain shells do not. */
   agent: boolean;
   status: TabStatus;
+  /** Set once the pty exited; `null` when it was killed or its code is unknown. */
+  exitCode?: number | null;
   client: PtyClient;
 }
 
@@ -43,19 +45,29 @@ export class Sessions {
   }
 
   open(worktree: string, profileId: PtyProfile): Tab {
-    const id = crypto.randomUUID();
-    const tab: Tab = {
-      id,
-      worktree,
-      profileId,
-      agent: profileId !== "shell",
-      status: "idle",
-      client: new PtyClient(this.api, id),
-    };
-    this.entries.set(id, { tab, state: { status: "idle", lastInput: 0, lastOutput: 0 } });
+    const entry = this.entry(worktree, profileId);
+    this.entries.set(entry.tab.id, entry);
     this.cache.delete(worktree);
     this.emit();
-    return tab;
+    return entry.tab;
+  }
+
+  /**
+   * Starts a tab again in its place: same worktree and profile, a new pty id. The old pty is
+   * killed, since an exited terminal keeps its slot until then. `null` for an unknown id.
+   */
+  restart(id: string): Tab | null {
+    const old = this.entries.get(id);
+    if (!old) return null;
+    const next = this.entry(old.tab.worktree, old.tab.profileId);
+    const kept = [...this.entries].map(([key, e]): [string, Entry] => (key === id ? [next.tab.id, next] : [key, e]));
+    this.entries.clear();
+    for (const [key, e] of kept) this.entries.set(key, e);
+    this.cache.delete(old.tab.worktree);
+    this.sync();
+    this.emit();
+    void old.tab.client.dispose();
+    return next.tab;
   }
 
   /** Closes one tab and kills its pty. */
@@ -76,7 +88,10 @@ export class Sessions {
     );
     let timer: ReturnType<typeof setTimeout> | undefined;
     const giveUp = new Promise<void>((resolve) => (timer = setTimeout(resolve, EXIT_WAIT_MS)));
-    const kills = Promise.all(entries.map((e) => e.tab.client.dispose()));
+    const kills = Promise.all(entries.map((e) => e.tab.client.dispose())).then(() => {
+      // A tab whose pty never started has no exit to report.
+      for (const e of live) if (!e.tab.client.spawned) this.waiting.get(e.tab.id)?.();
+    });
     await Promise.race([Promise.all([exits, kills]), giveUp]);
     clearTimeout(timer);
     for (const e of live) this.waiting.delete(e.tab.id);
@@ -139,11 +154,24 @@ export class Sessions {
     const changed = next.status !== entry.state.status;
     entry.state = next;
     if (changed) {
-      entry.tab = { ...entry.tab, status: next.status };
+      entry.tab = { ...entry.tab, status: next.status, ...(event.kind === "exit" ? { exitCode: event.code } : {}) };
       this.cache.delete(entry.tab.worktree);
       this.emit();
     }
     return changed;
+  }
+
+  private entry(worktree: string, profileId: PtyProfile): Entry {
+    const id = crypto.randomUUID();
+    const tab: Tab = {
+      id,
+      worktree,
+      profileId,
+      agent: profileId !== "shell",
+      status: "idle",
+      client: new PtyClient(this.api, id),
+    };
+    return { tab, state: { status: "idle", lastInput: 0, lastOutput: 0 } };
   }
 
   private remove(entries: Entry[]): void {

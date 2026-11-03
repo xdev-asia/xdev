@@ -59,7 +59,7 @@ describe("Sessions", () => {
     vi.useFakeTimers();
     const api = createMockApi({});
     const live = (sessions = new Sessions(api));
-    live.open(A, "shell");
+    await spawn(live, A, "shell");
     vi.spyOn(api, "ptyKill").mockResolvedValue();
     let done = false;
     const closing = live.closeWorktree(A).then(() => (done = true));
@@ -69,6 +69,45 @@ describe("Sessions", () => {
     await closing;
     expect(done).toBe(true);
     expect(live.tabs(A)).toEqual([]);
+  });
+
+  it("does not wait for a tab whose pty never started", async () => {
+    vi.useFakeTimers();
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    const started = await spawn(live, A, "shell");
+    const never = live.open(A, "claude");
+    const kill = vi.spyOn(api, "ptyKill");
+    let done = false;
+    const closing = live.closeWorktree(A).then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(done).toBe(true);
+    await closing;
+    expect(kill.mock.calls.map((c) => c[0]).sort()).toEqual([started.id, never.id].sort());
+    expect(live.tabs(A)).toEqual([]);
+  });
+
+  it("keeps the exit code, and start again replaces the tab with a new pty", async () => {
+    const api = createMockApi({});
+    let fire: (e: { id: string; code: number | null }) => void = () => {};
+    vi.spyOn(api, "onPtyExit").mockImplementation(async (cb) => ((fire = cb), () => {}));
+    const live = (sessions = new Sessions(api));
+    const first = await spawn(live, A, "shell");
+    const second = live.open(A, "codex");
+    fire({ id: first.id, code: 1 });
+    expect(live.tabs(A)[0]).toMatchObject({ status: "failed", exitCode: 1 });
+    const kill = vi.spyOn(api, "ptyKill");
+
+    const again = live.restart(first.id)!;
+    expect(again.id).not.toBe(first.id);
+    expect(again).toMatchObject({ worktree: A, profileId: "shell", status: "idle" });
+    expect(again.exitCode).toBeUndefined();
+    // Same place in the strip.
+    expect(live.tabs(A).map((t) => t.id)).toEqual([again.id, second.id]);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(kill).toHaveBeenCalledWith(first.id);
+    expect(live.restart("gone")).toBeNull();
   });
 
   it("shell tabs do not count for the dot", () => {
