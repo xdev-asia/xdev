@@ -38,7 +38,7 @@ function MeterItem(props: { meter: Meter }): JSX.Element {
   const windowName = name.startsWith("workspace.footer.window.") ? window : name;
   const title = known ? t("workspace.footer.meterTitle", { name: label, window: windowName, percent }) : t("workspace.footer.meterUnknown", { name: label });
   return (
-    <span className={`ws-meter${known && percent > WARN_PERCENT ? " ws-meter-warn" : ""}`} title={title}>
+    <span className={`ws-meter${known && percent >= WARN_PERCENT ? " ws-meter-warn" : ""}`} title={title}>
       <span className="ws-meter-name">{label}</span>
       {known ? (
         <span

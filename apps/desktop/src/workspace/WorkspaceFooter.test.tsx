@@ -41,8 +41,8 @@ it("one meter per account with the busiest window", () => {
   expect(html).toContain("claude-2");
 });
 
-it("meter over 80 % uses the warn class; unknown state shows a dash", () => {
-  const html = render([account("hot", [["five_hour", 81]]), account("calm", [["five_hour", 80]]), account("old", [], "unknown")]);
+it("meter at 80 % or more uses the warn class; unknown state shows a dash", () => {
+  const html = render([account("hot", [["five_hour", 80]]), account("calm", [["five_hour", 79]]), account("old", [], "unknown")]);
   const meters = html.split(/<span class="ws-meter(?=[ "])/).slice(1);
   expect(meters).toHaveLength(3);
   expect(meters[0]).toMatch(/^ ws-meter-warn"/);
