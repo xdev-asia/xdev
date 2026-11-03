@@ -288,8 +288,7 @@ fn a_refresh_reads_the_logs_and_saves_the_index() {
     fs::create_dir_all(&logs).unwrap();
     let cwd = root.join("w");
     fs::create_dir_all(&cwd).unwrap();
-    // A recent time, so the history window keeps it.
-    let ts = "2099-01-01T00:00:00Z";
+    let ts = "2030-01-01T00:00:00Z";
     let line = format!(
         r#"{{"type":"user","cwd":{},"timestamp":"{ts}","message":{{"content":"hello there"}}}}"#,
         serde_json::to_string(&path_of(&cwd)).unwrap()
@@ -298,15 +297,61 @@ fn a_refresh_reads_the_logs_and_saves_the_index() {
     let homes = || vec![claude_home(&root.join("user"))];
     let q = query(SessionScope::All);
 
-    let rows = sessions(&data, homes, &q, false).unwrap();
+    let rows = sessions(&data, homes, &q, None).unwrap();
     assert!(rows.is_empty(), "no refresh, no saved index");
 
-    let rows = sessions(&data, homes, &q, true).unwrap();
+    let rows = sessions(&data, homes, &q, Some(0)).unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].session.title.as_deref(), Some("hello there"));
     assert!(rows[0].resumable);
     assert!(data.join("kit").join("sessions.json").is_file());
 
     // Kept between calls without a refresh.
-    assert_eq!(sessions(&data, homes, &q, false).unwrap().len(), 1);
+    assert_eq!(sessions(&data, homes, &q, None).unwrap().len(), 1);
+}
+
+/// 2030-01-01T00:00:00Z in unix ms.
+const JAN_2030: i64 = 1_893_456_000_000;
+const DAY: i64 = 24 * 60 * 60 * 1000;
+
+#[test]
+fn the_history_window_is_a_cutoff_in_days_within_its_range() {
+    assert_eq!(history_cutoff(JAN_2030, 90), JAN_2030 - 90 * DAY);
+    assert_eq!(history_cutoff(JAN_2030, 0), JAN_2030 - DAY);
+    assert_eq!(history_cutoff(JAN_2030, 10_000), JAN_2030 - 3650 * DAY);
+    assert_eq!(HISTORY_DAYS, 90);
+}
+
+#[test]
+fn a_narrower_window_prunes_on_the_next_refresh() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let data = root.join("data");
+    let logs = root
+        .join("user")
+        .join(".claude")
+        .join("projects")
+        .join("-w");
+    fs::create_dir_all(&logs).unwrap();
+    let line = |id: &str, ts: &str| {
+        format!(
+            r#"{{"type":"user","sessionId":"{id}","timestamp":"{ts}","message":{{"content":"hi {id}"}}}}"#
+        ) + "
+"
+    };
+    // Ten days and one day before the "now" below.
+    fs::write(logs.join("old.jsonl"), line("old", "2030-01-01T00:00:00Z")).unwrap();
+    fs::write(logs.join("new.jsonl"), line("new", "2030-01-10T00:00:00Z")).unwrap();
+    let homes = || vec![claude_home(&root.join("user"))];
+    let q = query(SessionScope::All);
+    let now = JAN_2030 + 10 * DAY;
+    let ids = |rows: Vec<SessionRow>| rows.into_iter().map(|r| r.session.id).collect::<Vec<_>>();
+
+    let rows = sessions(&data, homes, &q, Some(history_cutoff(now, 90))).unwrap();
+    assert_eq!(ids(rows), ["new", "old"]);
+
+    let rows = sessions(&data, homes, &q, Some(history_cutoff(now, 5))).unwrap();
+    assert_eq!(ids(rows), ["new"]);
+    // The pruned index is the one saved.
+    assert_eq!(SessionIndex::load(&data).list().len(), 1);
 }
