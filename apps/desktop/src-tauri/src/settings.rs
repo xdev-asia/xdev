@@ -52,6 +52,13 @@ pub struct Settings {
     /// entry that does not parse is dropped on its own.
     #[serde(default, rename = "quickCommands", deserialize_with = "lenient_items")]
     pub quick_commands: Vec<QuickCommand>,
+    /// Ids of the recently run quick commands, newest first.
+    #[serde(
+        default,
+        rename = "quickCommandsRecent",
+        deserialize_with = "lenient_items"
+    )]
+    pub quick_commands_recent: Vec<String>,
 }
 
 /// Who gets a key that both the app and a focused terminal want.
@@ -873,6 +880,20 @@ then sum up"
 
         fs::write(&path, r#"{ "version": 1, "quickCommands": { "id": "x" } }"#).unwrap();
         assert!(load(&path).quick_commands.is_empty());
+    }
+
+    #[test]
+    fn recent_quick_commands_keep_only_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(
+            &path,
+            r#"{ "version": 1, "quickCommandsRecent": ["qc-2", 7, "qc-1"] }"#,
+        )
+        .unwrap();
+        assert_eq!(load(&path).quick_commands_recent, ["qc-2", "qc-1"]);
+        fs::write(&path, r#"{ "version": 1 }"#).unwrap();
+        assert!(load(&path).quick_commands_recent.is_empty());
     }
 
     #[test]

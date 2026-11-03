@@ -15,7 +15,7 @@ use xdev_workspace::{
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError};
-use crate::settings::SettingsSection;
+use crate::settings::{Settings, SettingsSection};
 use crate::settings_store;
 use crate::workspace::{WorkspaceLock, bad_arg, clock, lock_guard};
 
@@ -28,6 +28,8 @@ pub const PROMPT_MAX: usize = COMMAND_PROMPT_MAX;
 /// All agent prompts together, in UTF-8 bytes, so `settings.json` stays
 /// small enough to read on every change.
 pub const PROMPTS_TOTAL_MAX: usize = 2 * 1024 * 1024;
+/// How many recent runs are kept.
+pub const RECENT_MAX: usize = 20;
 
 /// What every change here tells the windows.
 const SECTIONS: &[SettingsSection] = &[SettingsSection::QuickCommands];
@@ -223,11 +225,30 @@ fn move_within(list: &mut [QuickCommand], id: &str, to: usize) -> Result<(), Cmd
     Ok(())
 }
 
-fn not_yet() -> CmdError {
-    CmdError {
-        code: "io",
-        detail: Some("quick commands are not implemented yet".into()),
+/// Puts `id` first among the recent runs, keeping `RECENT_MAX`; an id
+/// that is not a saved command changes nothing.
+fn used_in(s: &mut Settings, id: &str) {
+    if !s.quick_commands.iter().any(|c| c.id == id) {
+        return;
     }
+    s.quick_commands_recent.retain(|r| r != id);
+    s.quick_commands_recent.insert(0, id.to_owned());
+    s.quick_commands_recent.truncate(RECENT_MAX);
+}
+
+/// Drops the command and its place among the recent runs.
+fn delete_from(s: &mut Settings, id: &str) {
+    s.quick_commands.retain(|c| c.id != id);
+    s.quick_commands_recent.retain(|r| r != id);
+}
+
+/// The recent runs that are still saved commands.
+fn recent_of(s: &Settings) -> Vec<String> {
+    s.quick_commands_recent
+        .iter()
+        .filter(|r| s.quick_commands.iter().any(|c| &c.id == *r))
+        .cloned()
+        .collect()
 }
 
 /// Every saved command, in order: global and per repo together.
@@ -257,7 +278,7 @@ pub fn quick_command_upsert(
 /// An unknown id is a no-op.
 #[tauri::command(async)]
 pub fn quick_command_delete(app: AppHandle, id: String) -> Result<(), CmdError> {
-    settings_store::write(&app, SECTIONS, |s| s.quick_commands.retain(|c| c.id != id))?;
+    settings_store::write(&app, SECTIONS, |s| delete_from(s, &id))?;
     Ok(())
 }
 
@@ -269,18 +290,24 @@ pub fn quick_commands_move(app: AppHandle, id: String, to: usize) -> Result<(), 
     })
 }
 
-/// Records a run, for the recently used order.
+/// Records a run, for the recently used order. An unknown id is a no-op.
 #[tauri::command(async)]
 pub fn quick_command_used(app: AppHandle, id: String) -> Result<(), CmdError> {
-    let _ = (app, id);
-    Err(not_yet())
+    if !settings_store::read(&app)
+        .quick_commands
+        .iter()
+        .any(|c| c.id == id)
+    {
+        return Ok(());
+    }
+    settings_store::write(&app, SECTIONS, |s| used_in(s, &id))?;
+    Ok(())
 }
 
 /// Ids of the recently run commands, newest first, at most 20.
 #[tauri::command(async)]
 pub fn quick_commands_recent(app: AppHandle) -> Result<Vec<String>, CmdError> {
-    let _ = app;
-    Ok(Vec::new())
+    Ok(recent_of(&settings_store::read(&app)))
 }
 
 /// The file's commands as the UI runs them: a prompt without `agent` goes
@@ -570,11 +597,68 @@ mod tests {
         let a = upsert(&store, terminal("", "A", QuickScope::Global)).unwrap();
         upsert(&store, terminal("", "B", QuickScope::Global)).unwrap();
         for id in [a.id.as_str(), "qc-none"] {
-            store
-                .update(|s| s.quick_commands.retain(|c| c.id != id))
-                .unwrap();
+            store.update(|s| delete_from(s, id)).unwrap();
         }
         assert_eq!(labels(&store.read().quick_commands), ["B"]);
+    }
+
+    #[test]
+    fn a_run_goes_to_the_front_of_recent_capped() {
+        let (_dir, store) = store();
+        let mut ids = Vec::new();
+        for i in 0..RECENT_MAX + 2 {
+            ids.push(
+                upsert(&store, terminal("", &format!("C{i}"), QuickScope::Global))
+                    .unwrap()
+                    .id,
+            );
+        }
+        for id in &ids {
+            store.update(|s| used_in(s, id)).unwrap();
+        }
+        store.update(|s| used_in(s, &ids[5])).unwrap();
+        let recent = store.read().quick_commands_recent;
+        assert_eq!(recent.len(), RECENT_MAX);
+        assert_eq!(recent[0], ids[5]);
+        assert_eq!(recent[1], ids[RECENT_MAX + 1]);
+        assert_eq!(recent.iter().filter(|r| **r == ids[5]).count(), 1);
+        assert!(!recent.contains(&ids[0]));
+    }
+
+    #[test]
+    fn an_unknown_run_changes_nothing() {
+        let (_dir, store) = store();
+        let a = upsert(&store, terminal("", "A", QuickScope::Global)).unwrap();
+        store.update(|s| used_in(s, &a.id)).unwrap();
+        let before = store.read();
+        let mut after = before.clone();
+        used_in(&mut after, "qc-none");
+        assert_eq!(after, before);
+    }
+
+    #[test]
+    fn delete_drops_the_id_from_recent() {
+        let (_dir, store) = store();
+        let a = upsert(&store, terminal("", "A", QuickScope::Global)).unwrap();
+        let b = upsert(&store, terminal("", "B", QuickScope::Global)).unwrap();
+        store.update(|s| used_in(s, &a.id)).unwrap();
+        store.update(|s| used_in(s, &b.id)).unwrap();
+        store.update(|s| delete_from(s, &b.id)).unwrap();
+        assert_eq!(
+            store.read().quick_commands_recent,
+            std::slice::from_ref(&a.id)
+        );
+        assert_eq!(recent_of(&store.read()), [a.id]);
+    }
+
+    #[test]
+    fn recent_lists_only_commands_that_still_exist() {
+        let s = Settings {
+            quick_commands: vec![terminal("qc-a", "A", QuickScope::Global)],
+            quick_commands_recent: vec!["qc-gone".into(), "qc-a".into()],
+            ..Settings::default()
+        };
+        assert_eq!(recent_of(&s), ["qc-a"]);
     }
 
     #[test]
