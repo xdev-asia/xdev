@@ -7,6 +7,7 @@ import { ago } from "./ago";
 import { groupWorktrees, type Group } from "./groups";
 import { checksSummary } from "./ship";
 import type { TabStatus } from "./status";
+import { StatusGlyph } from "./StatusGlyph";
 
 type T = ReturnType<typeof useI18n>["t"];
 
@@ -42,6 +43,12 @@ export interface WorktreeListProps {
   onAddRepo(): void;
   /** Takes a worktree made outside xDev into the list; without it the found rows have no button. */
   onAdopt?(worktree: WorktreeView): void;
+  /** Worktree paths that are unread: a tab finished or asked while nobody looked, or marked by hand. */
+  unread?: Record<string, boolean>;
+  /** Marks a worktree unread until one of its panes is next seen; without it the menu has no such item. */
+  onMarkUnread?(worktree: WorktreeView): void;
+  /** Marks an unread worktree read; the menu offers it in place of "Mark unread" while the row is unread. */
+  onMarkRead?(worktree: WorktreeView): void;
 }
 
 /** The worktrees of every repo, split into sections by what their agents are doing. */
@@ -90,8 +97,10 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     const found = props.prs?.[wt.path];
     const pr = found?.pr ?? null;
     const summary = pr && found?.checks ? checksSummary(found.checks) : null;
+    const unread = props.unread?.[wt.path] === true;
+    const statusLabel = status ? t(`workspace.status.${status}`) : "";
     return (
-      <li key={wt.path} className="ws-wt" data-path={wt.path}>
+      <li key={wt.path} className={unread ? "ws-wt ws-wt-unread" : "ws-wt"} data-path={wt.path}>
         <button
           type="button"
           className="ws-wt-main"
@@ -105,13 +114,9 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         >
           <span className="ws-wt-line">
             {status ? (
-              <span
-                className={status === "working" ? "ws-dot ws-pulse" : "ws-dot"}
-                data-dot={status}
-                role="img"
-                aria-label={t(`workspace.status.${status}`)}
-                title={t(`workspace.status.${status}`)}
-              />
+              StatusGlyph({ status, label: unread ? t("workspace.unreadStatus", { status: statusLabel }) : statusLabel })
+            ) : unread ? (
+              <span className="ws-dot" data-dot="none" role="img" aria-label={t("workspace.unread")} title={t("workspace.unread")} />
             ) : (
               <span className="ws-dot" data-dot="none" aria-hidden="true" />
             )}
@@ -183,6 +188,17 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
               <button type="button" role="menuitem" autoFocus onClick={() => pick(() => props.onPin(wt))}>
                 {wt.pinned ? t("workspace.unpin") : t("workspace.pin")}
               </button>
+              {props.unread?.[wt.path] && props.onMarkRead ? (
+                <button type="button" role="menuitem" onClick={() => pick(() => props.onMarkRead?.(wt))}>
+                  {t("workspace.markRead")}
+                </button>
+              ) : (
+                props.onMarkUnread && (
+                  <button type="button" role="menuitem" onClick={() => pick(() => props.onMarkUnread?.(wt))}>
+                    {t("workspace.markUnread")}
+                  </button>
+                )
+              )}
               {/* The primary checkout is the repo itself: it can be pinned but never removed. */}
               {!wt.primary && (
                 <button type="button" role="menuitem" className="ws-menu-danger" onClick={() => pick(() => props.onRemove(wt))}>

@@ -2,9 +2,11 @@
 //! evidence kept and nothing merged until a person approves. A squad is a
 //! team of agents, one per seat, working one task together.
 
+mod codex_home;
 mod detect;
 mod flags;
 mod flow;
+mod hooks;
 mod id;
 mod launch;
 mod process;
@@ -16,6 +18,7 @@ mod shells;
 mod squad;
 mod squad_run;
 mod store;
+mod version;
 
 use std::path::PathBuf;
 
@@ -23,9 +26,17 @@ use serde::{Deserialize, Serialize};
 use xdev_git::GitError;
 use xdev_policy::Verdict;
 
+pub use codex_home::{
+    CODEX_HOME_DIR, CODEX_HOOKS_SINCE, CODEX_INTERRUPT_SINCE, codex_hooks_json, hook_command,
+    prepare_codex_home, private_codex_home, trust_hash,
+};
 pub use detect::{find_builtin, find_program};
 pub use flags::{efforts, flags};
 pub use flow::RunOptions;
+pub use hooks::{
+    DETAIL_MAX, HOOKS_DIR, HOOKS_OFF, HookDetail, HookEvent, HookLine, LINE_MAX, REPEAT_MS,
+    append_hook, append_hook_detail, hook_args, hook_file, hooks_off, set_hooks_off, valid_pty_id,
+};
 pub use launch::{Context, Launch, LaunchError, resolve};
 pub use profiles::{
     Approvals, Cli, CustomShell, EnvVar, Permissions, Profile, ProfileError, Profiles, builtin,
@@ -45,6 +56,7 @@ pub use squad::{
 };
 pub use squad_run::{QuotaCheck, RunnerFor, SquadDeps};
 pub use store::TaskStore;
+pub use version::{CliVersion, cli_version};
 
 /// Tools an agent gets when the caller names none: file work only.
 pub const DEFAULT_TOOLS: [&str; 5] = ["Read", "Edit", "Write", "Grep", "Glob"];
