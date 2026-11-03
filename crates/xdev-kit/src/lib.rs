@@ -2,18 +2,22 @@
 //! CLI session logs on this machine. Writes only through `write`.
 
 mod homes;
+mod logs;
 mod memory;
+mod sessions;
 mod skills;
 mod usage;
 mod write;
 
 pub use homes::{Agent, Home, HomeSource, KitError, approx_tokens, homes};
+pub use logs::FileMark;
 pub use memory::{
     IssueKind, MemoryFile, MemoryIssue, MemoryKind, MemorySet, project_slug, scan_memory,
 };
+pub use sessions::{AgentSession, SessionIndex};
 pub use skills::{Skill, SkillScope, scan_skills};
 pub use usage::{
-    FileMark, RefreshStats, SessionUsage, Tokens, UsageIndex, UsageQuery, UsageSummary, summarize,
+    RefreshStats, SessionUsage, Tokens, UsageIndex, UsageQuery, UsageSummary, summarize,
 };
 pub use write::{
     Roots, copy_file, copy_skill_dir, new_skill, read_for_edit, remove_skill, restore_skill,
