@@ -205,3 +205,42 @@ fn mcp_defaults_to_docs_folder() {
         .collect();
     assert_eq!(paths, ["auth.md", "guide.md"], "{replies:?}");
 }
+
+#[test]
+fn stale_docs_and_get_doc_name_unlinked() {
+    let (repo, data) = (repo(), TempDir::new().unwrap());
+    let vault = repo.path().join("docs");
+    fs::write(
+        vault.join("linked.md"),
+        "---\ncovers: [nobody:src/**]\nverified: abcdef0\n---\n# Linked\n",
+    )
+    .unwrap();
+    let replies = mcp(
+        repo.path(),
+        data.path(),
+        &[vault.to_str().unwrap()],
+        &[
+            initialize(),
+            call(1, "stale_docs", json!({})),
+            call(2, "get_doc", json!({"path":"linked.md"})),
+        ],
+    );
+    let why = "unlinked (a covers prefix names no known repo)";
+    let stale = &replies[1]["result"];
+    assert_eq!(
+        stale["structuredContent"]["docs"],
+        json!([{"path":"linked.md","title":"Linked","type":null,"state":"unlinked",
+            "covers":["nobody:src/**"],"count":0}]),
+        "{stale}"
+    );
+    assert!(
+        stale["content"][0]["text"].as_str().unwrap().contains(why),
+        "{stale}"
+    );
+    let doc = &replies[2]["result"];
+    assert_eq!(doc["structuredContent"]["state"], "unlinked", "{doc}");
+    assert!(
+        doc["content"][0]["text"].as_str().unwrap().contains(why),
+        "{doc}"
+    );
+}

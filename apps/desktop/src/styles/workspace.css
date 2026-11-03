@@ -16,6 +16,7 @@
 .ws-header,
 .ws-sidebar,
 .ws-stage,
+.ws-settings,
 .ws-footer,
 .ws-dialog {
   --x-color-bg: var(--bg-0);
@@ -1509,4 +1510,99 @@ button.ws-tree-row:focus-visible {
   .ws-chevron {
     transition: none;
   }
+}
+
+/* Worktrees found outside xDev: a closed group under the list, one Adopt per row. */
+
+.ws-found {
+  margin-top: 4px;
+}
+
+.ws-found-head .ws-tag {
+  margin-left: auto;
+}
+
+.ws-found-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-found-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 2px 8px 2px 20px;
+  font-size: 12px;
+}
+
+.ws-found-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ws-found-text > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-found-text .ws-wt-branch {
+  color: var(--text-2);
+}
+
+.ws-found-adopt {
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+/* The vaults under Docs & SDLC. */
+
+.ws-vault-list {
+  margin: 2px 0 4px;
+  padding: 0 0 0 22px;
+  list-style: none;
+}
+
+.ws-vault {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-m);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-vault:hover:not(:disabled) {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.ws-vault[aria-current="true"] {
+  border-color: var(--line);
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+.ws-vault:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.ws-vault-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

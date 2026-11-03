@@ -17,10 +17,15 @@ pub struct RepoView {
     pub short_name: String,
     pub path: String,
     pub base_ref: String,
+    /// The folder new worktrees of this repo go under.
+    pub worktree_root: String,
     /// The folder is gone or no longer a repo; the entry stays so a
     /// reconnected drive finds it again.
     pub missing: bool,
     pub worktrees: Vec<WorktreeView>,
+    /// Live linked worktrees git lists that xDev has no record of, sorted by
+    /// path. They stay here until `adopt_worktree`.
+    pub found: Vec<WorktreeView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -40,9 +45,21 @@ pub struct WorktreeView {
 }
 
 /// Paths from git, the registry and the UI compare in this form: `/` as the
-/// separator, no trailing `/`, lowercased on Windows.
+/// separator, no trailing `/`, lowercased on Windows. A canonical Windows path
+/// (`\\?\E:\x`, `\\?\UNC\host\share`) reads as its plain spelling, so a vault
+/// root from `canonicalize` matches the folder the person registered.
 pub fn path_key(path: &Path) -> String {
-    normalize(path).trim_end_matches('/').to_owned()
+    let text = normalize(path);
+    let plain = if cfg!(windows) {
+        if let Some(rest) = text.strip_prefix("//?/unc/") {
+            format!("//{rest}")
+        } else {
+            text.strip_prefix("//?/").map_or(text.clone(), str::to_owned)
+        }
+    } else {
+        text
+    };
+    plain.trim_end_matches('/').to_owned()
 }
 
 fn lossy(path: &Path) -> String {
@@ -111,10 +128,89 @@ pub fn add_repo(reg: &mut Registry, dir: &Path, now_ms: i64) -> Result<RepoView,
     });
     let idx = reg.repos.len() - 1;
     let before = reg.worktrees.len();
-    let view = sync_repo(reg, idx, now_ms);
+    let view = sync_repo(reg, idx, now_ms, true);
     if view.is_err() {
         reg.repos.pop();
         reg.worktrees.truncate(before);
+    }
+    view
+}
+
+/// Edits to a repo's settings; a `None` field is left as it is.
+#[derive(Debug, Default, Clone)]
+pub struct RepoPatch {
+    pub short_name: Option<String>,
+    pub base_ref: Option<String>,
+    pub worktree_root: Option<PathBuf>,
+}
+
+/// 1 to 40 characters: `[a-z0-9]` first, then `[a-z0-9._-]`. No `:` or `/`,
+/// so a `<short_name>:` prefix is never ambiguous.
+pub fn valid_short_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && name.len() <= 40
+        && chars.all(|c| matches!(c, 'a'..='z' | '0'..='9' | '.' | '_' | '-'))
+}
+
+/// Changes a repo's short name, base ref or worktree folder. Every field is
+/// checked before any is written, so a refusal leaves the repo as it was.
+/// Existing worktrees are neither moved nor renamed.
+pub fn update_repo(
+    reg: &mut Registry,
+    id: &str,
+    patch: RepoPatch,
+) -> Result<RepoView, WorkspaceError> {
+    let idx = reg
+        .repos
+        .iter()
+        .position(|r| r.id == id)
+        .ok_or_else(|| WorkspaceError::RepoUnknown(id.to_owned()))?;
+    let old = reg.repos[idx].clone();
+    if let Some(name) = &patch.short_name {
+        if !valid_short_name(name) {
+            return Err(WorkspaceError::BadName(name.clone()));
+        }
+        if reg
+            .repos
+            .iter()
+            .any(|r| r.id != id && &r.short_name == name)
+        {
+            return Err(WorkspaceError::ShortNameTaken(name.clone()));
+        }
+    }
+    if let Some(base) = &patch.base_ref {
+        let repo = Repo::discover(&old.path)?;
+        match repo.resolve_ref(base) {
+            Ok(Some(_)) => {}
+            Ok(None) | Err(GitError::BadId(_)) => return Err(WorkspaceError::BadRef(base.clone())),
+            Err(e) => return Err(e.into()),
+        }
+    }
+    if let Some(root) = &patch.worktree_root {
+        let key = path_key(root);
+        let primary = path_key(&old.path);
+        if !root.is_absolute() || key == primary || key.starts_with(&format!("{primary}/")) {
+            return Err(WorkspaceError::BadPath(lossy(root)));
+        }
+    }
+    let entry = &mut reg.repos[idx];
+    if let Some(name) = patch.short_name {
+        entry.short_name = name;
+    }
+    if let Some(base) = patch.base_ref {
+        entry.base_ref = base;
+    }
+    if let Some(root) = patch.worktree_root {
+        entry.worktree_root = root;
+    }
+    let worktrees = reg.worktrees.clone();
+    let view = sync_repo(reg, idx, 0, false);
+    if view.is_err() {
+        reg.repos[idx] = old;
+        reg.worktrees = worktrees;
     }
     view
 }
@@ -129,13 +225,14 @@ pub fn forget_repo(reg: &mut Registry, id: &str) -> Result<(), WorkspaceError> {
 }
 
 /// Every repo with its worktrees, brought in line with what git lists now.
-/// Worktrees found without a record get one, dated 0 as the app cannot know
-/// when they were made.
+/// Records of worktrees git no longer lists are dropped. A live worktree
+/// without a record is not recorded: it comes back in `found` until
+/// `adopt_worktree`.
 pub fn list(reg: &mut Registry) -> Result<Vec<RepoView>, WorkspaceError> {
     (0..reg.repos.len())
         .map(|idx| {
             let entry = reg.repos[idx].clone();
-            or_missing(sync_repo(reg, idx, 0), &entry)
+            or_missing(sync_repo(reg, idx, 0, false), &entry)
         })
         .collect()
 }
@@ -159,8 +256,10 @@ fn missing_view(entry: &RepoEntry) -> RepoView {
         short_name: entry.short_name.clone(),
         path: lossy(&entry.path),
         base_ref: entry.base_ref.clone(),
+        worktree_root: lossy(&entry.worktree_root),
         missing: true,
         worktrees: Vec::new(),
+        found: Vec::new(),
     }
 }
 
@@ -207,8 +306,15 @@ fn strip_prefix(folder: &str, short_name: &str) -> String {
     }
 }
 
-/// Aligns one repo's records with git's list and returns its view.
-fn sync_repo(reg: &mut Registry, idx: usize, now_ms: i64) -> Result<RepoView, WorkspaceError> {
+/// Aligns one repo's records with git's list and returns its view. With
+/// `import`, a live worktree without a record gets one (`add_repo`); without
+/// it, such a worktree is only reported in `found`.
+fn sync_repo(
+    reg: &mut Registry,
+    idx: usize,
+    now_ms: i64,
+    import: bool,
+) -> Result<RepoView, WorkspaceError> {
     let entry = reg.repos[idx].clone();
     let mut view = missing_view(&entry);
     if !entry.path.is_dir() {
@@ -238,24 +344,27 @@ fn sync_repo(reg: &mut Registry, idx: usize, now_ms: i64) -> Result<RepoView, Wo
         .retain(|m| m.repo_id != entry.id || known.contains(&path_key(&m.path)));
 
     let live = || linked.iter().filter(|e| !e.prunable);
-    for wt in live() {
+    let recorded = |reg: &Registry, wt: &WorktreeEntry| {
         let key = path_key(&wt.path);
-        if reg
-            .worktrees
+        reg.worktrees
             .iter()
             .any(|m| m.repo_id == entry.id && path_key(&m.path) == key)
-        {
-            continue;
+    };
+    if import {
+        for wt in live() {
+            if recorded(reg, wt) {
+                continue;
+            }
+            let start = start_of(&repo, wt, &entry.base_ref)?;
+            reg.worktrees.push(WorktreeMeta {
+                repo_id: entry.id.clone(),
+                path: wt.path.clone(),
+                start,
+                pinned: false,
+                created_ms: now_ms,
+                made_here: false,
+            });
         }
-        let start = start_of(&repo, wt, &entry.base_ref)?;
-        reg.worktrees.push(WorktreeMeta {
-            repo_id: entry.id.clone(),
-            path: wt.path.clone(),
-            start,
-            pinned: false,
-            created_ms: now_ms,
-            made_here: false,
-        });
     }
 
     if let Some(primary) = listed.first() {
@@ -278,7 +387,72 @@ fn sync_repo(reg: &mut Registry, idx: usize, now_ms: i64) -> Result<RepoView, Wo
         .collect();
     rest.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
     view.worktrees.extend(rest.into_iter().map(|(_, _, v)| v));
+    view.found = live()
+        .filter(|wt| !recorded(reg, wt))
+        .map(|wt| {
+            let mut found = view_of(wt, &entry.short_name, None);
+            // `view_of` reads "no record" as the primary checkout.
+            found.primary = false;
+            found
+        })
+        .collect();
+    view.found.sort_by_key(|w| path_key(Path::new(&w.path)));
     Ok(view)
+}
+
+/// Records a linked worktree xDev found outside itself, as one it did not
+/// make: removing it later keeps its branch. `WorktreeExists` when it is
+/// already recorded, `Primary` for a primary checkout, `WorktreeUnknown` when
+/// no registered repo lists it.
+pub fn adopt_worktree(
+    reg: &mut Registry,
+    path: &Path,
+    now_ms: i64,
+) -> Result<WorktreeView, WorkspaceError> {
+    let key = path_key(path);
+    if reg.repos.iter().any(|r| path_key(&r.path) == key) {
+        return Err(WorkspaceError::Primary(path.to_owned()));
+    }
+    if reg.worktrees.iter().any(|m| path_key(&m.path) == key) {
+        return Err(WorkspaceError::WorktreeExists(path.to_owned()));
+    }
+    for entry in reg.repos.clone() {
+        if !entry.path.is_dir() {
+            continue;
+        }
+        let repo = match Repo::discover(&entry.path) {
+            Ok(repo) => repo,
+            Err(GitError::NoRepo) => continue,
+            Err(e) => return Err(e.into()),
+        };
+        let listed = repo.list_worktrees()?;
+        // Not this repo when its folder now sits inside another one.
+        if listed
+            .first()
+            .is_none_or(|primary| path_key(&primary.path) != path_key(&entry.path))
+        {
+            continue;
+        }
+        let Some(wt) = listed
+            .iter()
+            .skip(1)
+            .find(|e| !e.bare && !e.prunable && path_key(&e.path) == key)
+        else {
+            continue;
+        };
+        let meta = WorktreeMeta {
+            repo_id: entry.id.clone(),
+            path: wt.path.clone(),
+            start: start_of(&repo, wt, &entry.base_ref)?,
+            pinned: false,
+            created_ms: now_ms,
+            made_here: false,
+        };
+        let view = view_of(wt, &entry.short_name, Some(&meta));
+        reg.worktrees.push(meta);
+        return Ok(view);
+    }
+    Err(WorkspaceError::WorktreeUnknown(path.to_owned()))
 }
 
 /// A word for a worktree nobody named: free as a branch, as a folder and
@@ -629,6 +803,18 @@ mod tests {
 
     fn names(l: &DirListing) -> Vec<(&str, bool)> {
         l.entries.iter().map(|e| (e.name.as_str(), e.dir)).collect()
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn path_key_reads_a_canonical_windows_path_as_its_plain_spelling() {
+        let plain = path_key(Path::new(r"E:\Codes\Notes\"));
+        assert_eq!(plain, "e:/codes/notes");
+        assert_eq!(path_key(Path::new(r"\\?\E:\Codes\Notes")), plain);
+        assert_eq!(
+            path_key(Path::new(r"\\?\UNC\host\share\x")),
+            path_key(Path::new(r"\\host\share\x"))
+        );
     }
 
     #[test]

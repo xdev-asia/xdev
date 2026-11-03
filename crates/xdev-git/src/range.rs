@@ -56,16 +56,32 @@ impl Repo {
         covers: &[String],
         limit: usize,
     ) -> Result<(Vec<Commit>, usize), GitError> {
-        // Checked before git sees it, so `since` can never be read as an
-        // option or a rev expression.
-        if !is_hex_id(since) {
-            return Err(GitError::BadId(since.to_owned()));
+        match self.head()? {
+            Some(head) => self.commits_between(since, &head, covers, limit),
+            // Checked anyway, so a bad id fails the same before the first
+            // commit.
+            None => hex_id(since).map(|()| (Vec::new(), 0)),
         }
+    }
+
+    /// Like `commits_since`, for `since..until`. Both must be commit ids,
+    /// never names.
+    pub fn commits_between(
+        &self,
+        since: &str,
+        until: &str,
+        covers: &[String],
+        limit: usize,
+    ) -> Result<(Vec<Commit>, usize), GitError> {
+        // Checked before git sees them, so neither can ever be read as an
+        // option or a rev expression.
+        hex_id(since)?;
+        hex_id(until)?;
         // Without pathspecs git would count every commit.
-        if covers.is_empty() || self.head()?.is_none() {
+        if covers.is_empty() {
             return Ok((Vec::new(), 0));
         }
-        let range = format!("{since}..HEAD");
+        let range = format!("{since}..{until}");
         // `top` because entries describe code beside the vault, not in it;
         // the explicit magic also keeps an entry starting with `:` from
         // being read as magic of its own.
@@ -98,6 +114,14 @@ fn with_specs<'a>(head: &[&'a str], specs: &'a [String]) -> Vec<&'a str> {
     args.push("--");
     args.extend(specs.iter().map(String::as_str));
     args
+}
+
+fn hex_id(id: &str) -> Result<(), GitError> {
+    if is_hex_id(id) {
+        Ok(())
+    } else {
+        Err(GitError::BadId(id.to_owned()))
+    }
 }
 
 fn is_hex_id(id: &str) -> bool {
