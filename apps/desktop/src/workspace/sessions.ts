@@ -1,12 +1,15 @@
-import type { Api, PtyInfo, PtyProfile } from "@/api";
+import type { Api, HookDetail, PtyInfo, PtyProfile } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
-import { INTERRUPT_MS, capsFor, isInterrupt, start, step, worktreeDot, type StatusEvent, type StatusState, type TabStatus } from "./status";
+import { INTERRUPT_MS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type StatusEvent, type StatusState, type TabStatus } from "./status";
 
 /** The CLI behind a tab, for its hook caps and title rules; null for custom profiles and shells. */
 export type TabCli = "claude" | "codex" | null;
 
-/** The states that ask for the person: reaching one on a pane nobody looks at marks it unread. */
-export type Attention = "needs-you" | "done" | "failed";
+/**
+ * What asks for the person: a state (`needs-you`, `done`, `failed`) reached on a pane nobody looks at
+ * marks it unread, and so does a terminal `bell`.
+ */
+export type Attention = "needs-you" | "done" | "failed" | "bell";
 
 export interface Tab {
   id: string;
@@ -25,6 +28,8 @@ export interface Tab {
   unread: boolean;
   /** When `unread` was last set; null while it is not. */
   unreadAt: number | null;
+  /** Why it is unread; null while it is not. */
+  unreadReason: Attention | null;
   /** The terminal's own title (OSC 0/2), or the hand-given name when `renamed`. */
   title: string | null;
   /** Named by hand: later titles from the terminal leave the name alone. */
@@ -53,8 +58,9 @@ interface Entry {
   state: StatusState;
 }
 
-const ended = (status: TabStatus) => status === "failed" || status === "exited";
-const asks = (status: TabStatus): status is Attention =>
+// Only an exit ends a tab: `failed` can also be a turn that failed, with the pty still alive.
+const ended = (tab: Tab) => tab.exitCode !== undefined;
+const asks = (status: TabStatus): status is Exclude<Attention, "bell"> =>
   status === "needs-you" || status === "done" || status === "failed";
 
 /** The CLI of a built-in profile id, for callers that have no profile view. */
@@ -77,21 +83,25 @@ export class Sessions {
   // The panes the person looks at now, and the worktrees marked unread by hand.
   private seen = new Set<string>();
   private readonly marked = new Set<string>();
-  private readonly attention = new Set<(tab: Tab, status: Attention) => void>();
+  private readonly attention = new Set<(tab: Tab, status: Attention, detail: HookDetail | null) => void>();
   private interval: ReturnType<typeof setInterval> | null = null;
   // One-shot timers per tab: an interrupt settling, a done waiting to be announced.
   private readonly settle = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly announce = new Map<string, ReturnType<typeof setTimeout>>();
+  // A working hooked pane with no event for STALE_MS rests.
+  private readonly stale = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly unlisten: Promise<() => void>[];
 
   constructor(
     private readonly api: Api,
     private readonly now: () => number = () => Date.now(),
+    /** Whether a pane the person looks at stays quiet. Off: it notifies too (but is never unread). */
+    private readonly suppressWhenFocused: () => boolean = () => true,
   ) {
     this.unlisten = [
       api.onPtyExit((e) => this.apply(e.id, { kind: "exit", code: e.code })),
       // Windows compare against this clock, so a hook is timed when it arrives.
-      api.onPtyHook((h) => this.apply(h.id, { kind: "hook", event: h.event, at: this.now() })),
+      api.onPtyHook((h) => this.apply(h.id, { kind: "hook", event: h.event, at: this.now(), detail: h.detail })),
     ];
   }
 
@@ -113,6 +123,7 @@ export class Sessions {
     if (!old) return null;
     this.clear(this.settle, id);
     this.clear(this.announce, id);
+    this.clear(this.stale, id);
     const next = this.entry(old.tab.worktree, old.tab.profileId, old.tab.account, old.tab.cli);
     const kept = [...this.entries].map(([key, e]): [string, Entry] => (key === id ? [next.tab.id, next] : [key, e]));
     this.entries.clear();
@@ -138,7 +149,7 @@ export class Sessions {
   /** Kills every tab of a worktree; resolves when each reported its exit, or after 5 s. */
   async closeWorktree(worktree: string): Promise<void> {
     const entries = [...this.entries.values()].filter((e) => e.tab.worktree === worktree);
-    const live = entries.filter((e) => !ended(e.tab.status));
+    const live = entries.filter((e) => !ended(e.tab));
     for (const e of entries) this.closing.add(e.tab.id);
     // Listen before killing: the exit event can arrive before dispose resolves.
     const exits = Promise.all(
@@ -270,9 +281,31 @@ export class Sessions {
       if (!entry) continue;
       if (this.marked.delete(entry.tab.worktree)) this.emit();
       this.advance(entry, { kind: "seen", at });
-      if (entry.tab.unread) this.update(entry, { unread: false, unreadAt: null });
+      if (entry.tab.unread) this.update(entry, { unread: false, unreadAt: null, unreadReason: null });
     }
     this.sync();
+  }
+
+  /** A terminal bell (BEL outside an OSC string) on a pane: unread with the reason `bell`, if nobody looks. */
+  noteBell(id: string): void {
+    const entry = this.entries.get(id);
+    if (!entry || entry.state.dead || this.closing.has(id)) return;
+    const seen = this.seen.has(id);
+    if (seen && this.suppressWhenFocused()) return;
+    this.call(entry, "bell", null, !seen);
+  }
+
+  /** Marks a worktree read: its hand mark goes and so does the unread of each of its tabs. */
+  markRead(worktree: string): void {
+    let changed = this.marked.delete(worktree);
+    for (const e of this.entries.values()) {
+      if (e.tab.worktree !== worktree || !e.tab.unread) continue;
+      e.tab = { ...e.tab, unread: false, unreadAt: null, unreadReason: null };
+      changed = true;
+    }
+    if (!changed) return;
+    this.cache.delete(worktree);
+    this.emit();
   }
 
   /** Marks a worktree unread by hand, until one of its panes is next seen. */
@@ -292,8 +325,15 @@ export class Sessions {
     return [...this.entries.values()].filter((e) => e.tab.unread).map((e) => e.tab);
   }
 
-  /** Called once per transition that marks a tab unread. */
-  onAttention(listener: (tab: Tab, status: Attention) => void): () => void {
+  /** The worktrees that are unread: marked by hand, or with an unread tab that `count` accepts. */
+  unreadWorktrees(count: (tab: Tab) => boolean = () => true): string[] {
+    const found = new Set(this.marked);
+    for (const e of this.entries.values()) if (e.tab.unread && count(e.tab)) found.add(e.tab.worktree);
+    return [...found];
+  }
+
+  /** Called once per transition that asks for the person, with what the hook said (never the prompt). */
+  onAttention(listener: (tab: Tab, status: Attention, detail: HookDetail | null) => void): () => void {
     this.attention.add(listener);
     return () => this.attention.delete(listener);
   }
@@ -309,9 +349,10 @@ export class Sessions {
     this.interval = null;
     this.listeners.clear();
     this.attention.clear();
-    for (const t of [...this.settle.values(), ...this.announce.values()]) clearTimeout(t);
+    for (const t of [...this.settle.values(), ...this.announce.values(), ...this.stale.values()]) clearTimeout(t);
     this.settle.clear();
     this.announce.clear();
+    this.stale.clear();
     const entries = [...this.entries.values()];
     this.entries.clear();
     this.cache.clear();
@@ -331,21 +372,32 @@ export class Sessions {
     this.sync();
   }
 
-  /** Steps one entry; true when its visible status changed. */
+  /** Steps one entry; true when it reached a state worth a look (see `news` below). */
   private advance(entry: Entry, event: StatusEvent): boolean {
     const id = entry.tab.id;
     const seen = this.seen.has(id);
-    const next = step(entry.state, event, seen);
-    const changed = next.status !== entry.state.status;
+    const before = entry.state;
+    const next = step(before, event, seen);
+    // What the pane reached, as if nobody looked: a `done` seen at once rests as idle, yet it happened.
+    const news = seen ? step(before, event, false).status : next.status;
     entry.state = next;
-    if (!changed) return false;
-    // Any change ends a done that was still settling.
-    this.clear(this.announce, id);
+    this.watchStale(entry, before);
+    const statusChanged = next.status !== before.status;
+    const exit = event.kind === "exit" ? { exitCode: event.code } : {};
+    if (!statusChanged && news === next.status) {
+      if (event.kind === "exit") this.update(entry, exit);
+      return false;
+    }
+    if (statusChanged) {
+      // Any change ends a done that was still settling.
+      this.clear(this.announce, id);
+      this.update(entry, { status: next.status, ...exit });
+    }
     // Only agents ask for the person; a closing tab's exit is expected.
-    const calls = entry.tab.agent && !seen && !this.closing.has(id) && asks(next.status);
-    this.update(entry, { status: next.status, ...(event.kind === "exit" ? { exitCode: event.code } : {}) });
-    if (!calls) return true;
-    if (next.status !== "done") this.call(entry, next.status as Attention);
+    const quiet = seen && this.suppressWhenFocused();
+    if (!entry.tab.agent || quiet || this.closing.has(id) || news === before.status || !asks(news)) return statusChanged;
+    const detail = event.kind === "hook" ? (event.detail ?? null) : null;
+    if (news !== "done") this.call(entry, news, detail, !seen);
     else {
       // A finished turn is news only if it stays finished: no new prompt, no interrupt, no look.
       this.announce.set(
@@ -353,17 +405,39 @@ export class Sessions {
         setTimeout(() => {
           this.announce.delete(id);
           const live = this.entries.get(id);
-          if (live && live.tab.status === "done" && !this.seen.has(id) && !this.closing.has(id)) this.call(live, "done");
+          if (!live || this.closing.has(id)) return;
+          const looked = this.seen.has(id);
+          if (live.tab.status === "done" ? !looked : !this.suppressWhenFocused()) this.call(live, "done", detail, !looked);
         }, DONE_QUIET_MS),
       );
     }
     return true;
   }
 
-  /** Marks a tab unread and tells the attention listeners, once per transition. */
-  private call(entry: Entry, status: Attention): void {
-    this.update(entry, { unread: true, unreadAt: this.now() });
-    for (const l of [...this.attention]) l(entry.tab, status);
+  /** Tells the attention listeners; marks the tab unread when `mark` (nobody is looking). */
+  private call(entry: Entry, status: Attention, detail: HookDetail | null, mark: boolean): void {
+    const tab = entry.tab;
+    // A bell on a pane that is already unread for a state keeps that state as its reason.
+    if (mark && !(tab.unread && status === "bell")) {
+      this.update(entry, { unread: true, unreadAt: this.now(), unreadReason: status });
+    }
+    for (const l of [...this.attention]) l(entry.tab, status, detail);
+  }
+
+  /** One timer per working hooked pane: STALE_MS after its last event it gets a tick that settles it. */
+  private watchStale(entry: Entry, before: StatusState): void {
+    const id = entry.tab.id;
+    const s = entry.state;
+    if (s.status !== "working" || !s.caps.turnDone) return this.clear(this.stale, id);
+    if (this.stale.has(id) && s.lastEvent === before.lastEvent) return;
+    this.clear(this.stale, id);
+    this.stale.set(
+      id,
+      setTimeout(() => {
+        this.stale.delete(id);
+        this.apply(id, { kind: "tick", at: this.now() });
+      }, Math.max(0, s.lastEvent + STALE_MS - this.now())),
+    );
   }
 
   private clear(timers: Map<string, ReturnType<typeof setTimeout>>, id: string): void {
@@ -392,6 +466,7 @@ export class Sessions {
       cli,
       unread: false,
       unreadAt: null,
+      unreadReason: null,
       title: null,
       renamed: false,
       client: new PtyClient(this.api, id),
@@ -404,6 +479,7 @@ export class Sessions {
     for (const e of entries) {
       this.clear(this.settle, e.tab.id);
       this.clear(this.announce, e.tab.id);
+      this.clear(this.stale, e.tab.id);
       this.entries.delete(e.tab.id);
       this.cache.delete(e.tab.worktree);
       // Closing the second tab of a split unsplits; so does leaving fewer than two tabs.

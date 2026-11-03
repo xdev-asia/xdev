@@ -17,7 +17,8 @@ const FALLBACK_AGENTS: readonly PtyProfile[] = ["claude", "codex"];
 const FALLBACK_SHELL: PtyProfile = "shell";
 
 
-const ended = (status: TabStatus) => status === "failed" || status === "exited";
+// Only an exit ends a tab; a turn that failed (status failed) still has its pty.
+const ended = (tab: Tab) => tab.exitCode !== undefined;
 
 // A diff tab's id; terminal tabs use their pty id, which never has a colon.
 const fileTab = (file: string) => `file:${file}`;
@@ -320,7 +321,7 @@ export function WorktreeTabs(props: {
       <div className="ws-panes" data-split={partner ? split?.dir : undefined}>
         {tabs.map((tab) => (
           <div key={tab.id} className="ws-tab-pane" role="tabpanel" data-tab={tab.id} hidden={!visibleIds.includes(tab.id)}>
-            {ended(tab.status) && (
+            {ended(tab) && (
               <div className="ws-tab-exit" role="status">
                 <span>
                   {tab.exitCode === null || tab.exitCode === undefined
