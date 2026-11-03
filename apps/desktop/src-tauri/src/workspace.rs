@@ -7,7 +7,7 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -385,6 +385,8 @@ pub fn worktree_archive_run(
 const ARCHIVE_TIMEOUT: Duration = Duration::from_secs(120);
 /// The most of its output kept.
 const MAX_HOOK_OUTPUT: usize = 64 * 1024;
+/// How long the output is still read after the shell has ended.
+const READ_GRACE: Duration = Duration::from_secs(2);
 
 /// `worktree_archive_run` with the timeout as a parameter.
 fn archive_run(data: &Path, path: &Path, timeout: Duration) -> Result<HookRun, CmdError> {
@@ -427,23 +429,24 @@ fn run_headless(hook: HookCommand, cwd: &Path, timeout: Duration) -> io::Result<
             .take()
             .map(|r| Box::new(r) as Box<dyn Read + Send>),
     ];
-    let readers: Vec<_> = pipes
-        .into_iter()
-        .flatten()
-        .map(|mut pipe| {
-            let out = Arc::clone(&out);
-            thread::spawn(move || {
-                let mut buf = [0u8; 8192];
-                // Reads to the end past the cap, so the shell never blocks
-                // on a full pipe.
-                while let Ok(n @ 1..) = pipe.read(&mut buf) {
-                    let mut out = out.lock().unwrap_or_else(PoisonError::into_inner);
-                    let room = MAX_HOOK_OUTPUT.saturating_sub(out.len());
-                    out.extend_from_slice(&buf[..n.min(room)]);
-                }
-            })
-        })
-        .collect();
+    let (done, finished) = mpsc::channel::<()>();
+    let mut readers = 0;
+    for mut pipe in pipes.into_iter().flatten() {
+        let out = Arc::clone(&out);
+        let done = done.clone();
+        readers += 1;
+        thread::spawn(move || {
+            let mut buf = [0u8; 8192];
+            // Reads to the end past the cap, so the shell never blocks on a
+            // full pipe.
+            while let Ok(n @ 1..) = pipe.read(&mut buf) {
+                let mut out = out.lock().unwrap_or_else(PoisonError::into_inner);
+                let room = MAX_HOOK_OUTPUT.saturating_sub(out.len());
+                out.extend_from_slice(&buf[..n.min(room)]);
+            }
+            let _ = done.send(());
+        });
+    }
     let deadline = Instant::now() + timeout;
     let status = loop {
         if let Some(status) = child.try_wait()? {
@@ -456,11 +459,14 @@ fn run_headless(hook: HookCommand, cwd: &Path, timeout: Duration) -> io::Result<
         }
         thread::sleep(Duration::from_millis(20));
     };
-    // After a kill a child the shell started may still hold the pipes, so
-    // the readers are left to finish on their own.
-    if status.is_some() {
-        for reader in readers {
-            let _ = reader.join();
+    // A child the shell left running may still hold the pipes: the readers
+    // get `READ_GRACE` to reach the end, then are left to finish on their
+    // own and what they read by then is the output.
+    let grace = Instant::now() + READ_GRACE;
+    for _ in 0..readers {
+        let left = grace.saturating_duration_since(Instant::now());
+        if finished.recv_timeout(left).is_err() {
+            break;
         }
     }
     let bytes = out.lock().unwrap_or_else(PoisonError::into_inner).clone();
@@ -1179,5 +1185,42 @@ mod tests {
             "{}",
             run.output
         );
+    }
+
+    /// A shell line for the platform's own shell, without any profile.
+    fn plain_hook(unix: &str, windows: &str) -> HookCommand {
+        let (program, args) = if cfg!(windows) {
+            (
+                "powershell.exe",
+                vec!["-NoProfile", "-NonInteractive", "-Command", windows],
+            )
+        } else {
+            ("/bin/sh", vec!["-c", unix])
+        };
+        HookCommand {
+            program: program.into(),
+            args: args.into_iter().map(String::from).collect(),
+            env: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn run_headless_returns_while_a_background_child_holds_the_output() {
+        let dir = tempfile::tempdir().unwrap();
+        // The background child inherits stdout and outlives the shell.
+        let hook = plain_hook(
+            "sleep 20 & echo hi",
+            "Start-Process -FilePath ping -ArgumentList '-n','20','127.0.0.1' -NoNewWindow; \
+             [Console]::Out.WriteLine('hi')",
+        );
+        let started = Instant::now();
+        let run = run_headless(hook, dir.path(), ARCHIVE_TIMEOUT).unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(12),
+            "waited {:?}",
+            started.elapsed()
+        );
+        assert_eq!((run.ran, run.code), (true, Some(0)));
+        assert!(run.output.contains("hi"), "{}", run.output);
     }
 }
