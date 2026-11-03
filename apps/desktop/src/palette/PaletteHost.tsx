@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { useProfiles, profileName } from "@/agents/profileStore";
-import type { RepoView, WorktreeView } from "@/api";
+import type { RepoView, SessionRow, WorktreeView } from "@/api";
+import type { AgentSessionsStore } from "@/agentSessions/store";
 import { useI18n } from "@/i18n";
 import type { Sessions } from "@/workspace/sessions";
-import { actionItems, settingItems, tabItems, worktreeItems, type ActionName, type Attention, type PaletteItem } from "./items";
+import { actionItems, sessionItems, settingItems, tabItems, worktreeItems, type ActionName, type Attention, type PaletteItem } from "./items";
 import { JumpPalette } from "./JumpPalette";
 import { RecentStore } from "./recent";
 
@@ -26,6 +27,10 @@ export interface PaletteActions {
   stageAllChanges?(): void;
   /** Opens the discard confirm for every change of the selected worktree. */
   discardAllChanges?(): void;
+  /** Opens the sessions panel with the search box focused. */
+  openSessions?(): void;
+  /** Resumes a session of the current worktree in a new agent tab. */
+  resumeSession?(row: SessionRow): void;
 }
 
 export interface PaletteHostProps {
@@ -38,9 +43,12 @@ export interface PaletteHostProps {
   shownTab: string | null;
   /** Optional: what an agent wants from the person, so those tabs rank first. */
   attention?: (tabId: string) => Attention | null;
+  /** Optional: the agent session list, for "Resume: ..." items. */
+  history?: AgentSessionsStore | null;
   actions: PaletteActions;
 }
 
+const NO_ROWS: SessionRow[] = [];
 const FALLBACK_AGENT = "claude";
 const FALLBACK_SHELL = "shell";
 
@@ -50,6 +58,16 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
   const { t } = useI18n();
   const { view } = useProfiles();
   const [recent] = useState(() => new RecentStore());
+  const history = props.history ?? null;
+  const rows = useSyncExternalStore(
+    (listener) => (history ? history.subscribe(listener) : () => {}),
+    () => history?.state.rows ?? NO_ROWS,
+    () => NO_ROWS,
+  );
+  // A palette that opens reads the logs once, so a session that just ended is in the list.
+  useEffect(() => {
+    if (open) void history?.refresh();
+  }, [open, history]);
 
   const currentPath = current?.path ?? null;
   useEffect(() => {
@@ -81,6 +99,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       toggleSidebar: () => actions.toggleSidebar(),
       showDocs: () => actions.showDocs(),
       stageAll: current && actions.stageAllChanges ? () => actions.stageAllChanges?.() : undefined,
+      resumeSession: actions.openSessions ? () => actions.openSessions?.() : undefined,
       discardAll: current && actions.discardAllChanges ? () => actions.discardAllChanges?.() : undefined,
     };
     const worktreeOf = (path: string) => list.flatMap((r) => r.worktrees).find((w) => w.path === path);
@@ -103,6 +122,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       }),
       ...settingItems(t, (id) => actions.openSettings(id)),
       ...actionItems(t, handlers),
+      ...(actions.resumeSession ? sessionItems(rows, currentPath, t, actions.resumeSession) : []),
     ];
   }
 

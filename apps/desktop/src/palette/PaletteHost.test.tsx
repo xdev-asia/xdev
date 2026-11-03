@@ -18,6 +18,7 @@ vi.mock("react", async (original) => {
   return {
     ...react,
     useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
+    useSyncExternalStore: (_sub: unknown, snapshot: () => unknown) => snapshot(),
     useEffect: (effect: any) => (hooks.active ? void hooks.effects.push(effect) : void 0),
   };
 });
@@ -139,4 +140,21 @@ it("opens settings on the section and builds nothing while closed", () => {
   h.item("set:repos").run();
   expect(h.actions.openSettings).toHaveBeenCalledWith("repos");
   expect(host({ open: false }).palette().items).toEqual([]);
+});
+
+it("lists Resume items of the current worktree and an action that opens the panel", () => {
+  const row = { session: { key: "k1", id: "s1", agent: "claude", branch: "main", title: "Fix login", last: 5 }, worktree: "/wt/oak", repo: "/r/x", resumable: true };
+  const history = { state: { rows: [row] }, subscribe: () => () => {}, refresh: vi.fn(async () => {}) };
+  const h = host({ history: history as never });
+  const resumeSession = vi.fn();
+  const openSessions = vi.fn();
+  h.props.actions.resumeSession = resumeSession;
+  h.props.actions.openSessions = openSessions;
+  expect(h.item("sess:k1").title).toBe("Resume: Fix login");
+  h.item("sess:k1").run();
+  expect(resumeSession).toHaveBeenCalledWith(row);
+  h.item("act:resumeSession").run();
+  expect(openSessions).toHaveBeenCalled();
+  hooks.effects.forEach((e) => e());
+  expect(history.refresh).toHaveBeenCalled();
 });

@@ -66,6 +66,8 @@ export function WorktreeTabs(props: {
   onPanes?: (ids: string[]) => void;
   /** A new value puts keyboard focus in the terminal in front. */
   focusSeq?: number;
+  /** Shows a session in the session history panel. */
+  onShowHistory?: (sessionId: string) => void;
 }): JSX.Element {
   const { api, sessions, worktree, visible, reveal } = props;
   const { t } = useI18n();
@@ -291,6 +293,7 @@ export function WorktreeTabs(props: {
       // A tab whose pty never started has nothing to show; the reason stays in the banner.
       () => void sessions.close(tab.id),
       tab.account,
+      tab.resumeOf ?? undefined,
     );
   }
 
@@ -322,6 +325,7 @@ export function WorktreeTabs(props: {
         onSplit={(dir) => defaultShell !== null && splitWith(leaf.id, dir, defaultShell)}
         onSplitTab={(id, dir) => splitTab(leaf.id, id, dir)}
         onRename={(id, name) => sessions.rename(id, name)}
+        onShowHistory={props.onShowHistory}
       />
     );
   };

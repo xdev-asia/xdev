@@ -21,6 +21,7 @@ import "./styles/terminal.css";
 import "./styles/workspace.css";
 import "./styles/review.css";
 import "./styles/settings.css";
+import "./styles/agentSessions.css";
 
 const style = document.createElement("style");
 style.textContent = tokensCss();

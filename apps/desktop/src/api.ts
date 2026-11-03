@@ -74,6 +74,7 @@ import type {
   PromptEntry,
   SessionQuery,
   SessionRow,
+  Agent,
   Skill,
   UsageSummary,
 } from "@xdev/bindings";
@@ -84,7 +85,7 @@ import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT
 export { createMockApi };
 export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
-export type { AgentSession, SessionQuery, SessionRow };
+export type { Agent, AgentSession, SessionQuery, SessionRow };
 export type { SessionScope, SessionSort } from "@xdev/bindings";
 
 // The IPC types come from Rust; see packages/bindings/README.md.
