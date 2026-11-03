@@ -849,3 +849,69 @@ it("setup after create: with wait, the default agent starts after setup exits", 
   v.card().props.onStartNow();
   expect(v.open.mock.calls.filter((c) => c[1] !== SETUP_PROFILE).length).toBeGreaterThan(0);
 });
+
+// ---- Archive before delete ---------------------------------------------------------------------
+
+async function removal(files: Record<string, unknown>, patch: Record<string, unknown> = {}) {
+  const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), repoFiles: { "/demo/xdev": files } } as never });
+  if (Object.keys(patch).length) await api.repoUpdate("demo-xdev", patch);
+  const archive = vi.spyOn(api, "worktreeArchiveRun");
+  const remove = vi.spyOn(api, "worktreeRemove");
+  const view = await harness(api);
+  view.list().props.onRemove(view.worktree("oak"));
+  return { ...view, archive, remove, dialog: () => view.of(RemoveWorktreeDialog)[0], trust: () => view.of(TrustDialog)[0] };
+}
+
+it("delete: no archive script removes at once", async () => {
+  const v = await removal({});
+  v.dialog().props.onConfirm();
+  await tick();
+  expect(v.archive).toHaveBeenCalledWith("/demo/wt/xdev-oak");
+  expect(v.remove).toHaveBeenCalledOnce();
+});
+
+it("delete: the archive runs first, with a spinner line and Cancel usable", async () => {
+  const v = await removal({}, { localArchive: "echo bye" });
+  let finish!: (r: { ran: boolean; code: number; output: string }) => void;
+  v.archive.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+  v.dialog().props.onConfirm();
+  expect(v.dialog().props.archiving).toBe(true);
+  const markup = renderToStaticMarkup(v.dialog());
+  expect(markup).toContain(en("workspace.remove.archiving"));
+  expect(markup).toMatch(/<button[^>]*autofocus[^>]*>/i);
+  expect(markup).not.toMatch(/<button[^>]*disabled[^>]*>\s*Cancel/);
+  // Cancel during the run closes the dialog; the late result removes nothing.
+  v.dialog().props.onCancel();
+  finish({ ran: true, code: 0, output: "" });
+  await tick();
+  expect(v.remove).not.toHaveBeenCalled();
+});
+
+it("delete: a failing archive script shows its output and asks", async () => {
+  const v = await removal({ archiveCode: 2, archiveOutput: "boom" }, { localArchive: "exit 2" });
+  v.dialog().props.onConfirm();
+  await tick();
+  expect(v.remove).not.toHaveBeenCalled();
+  expect(v.dialog().props.failed).toEqual({ code: 2, output: "boom" });
+  const markup = renderToStaticMarkup(v.dialog());
+  expect(markup).toContain("boom");
+  expect(markup).toContain(en("workspace.remove.anyway"));
+  v.dialog().props.onConfirm();
+  await tick();
+  expect(v.archive).toHaveBeenCalledOnce();
+  expect(v.remove).toHaveBeenCalledOnce();
+});
+
+it("delete: an untrusted archive script shows the trust prompt, then removes", async () => {
+  const v = await removal({ archive: "echo bye" });
+  v.dialog().props.onConfirm();
+  await tick();
+  expect(v.remove).not.toHaveBeenCalled();
+  expect(v.trust().props.kind).toBe("archive");
+  expect(v.trust().props.text).toBe("echo bye");
+  v.trust().props.onTrust();
+  await tick();
+  await tick();
+  expect(v.trust()).toBeUndefined();
+  expect(v.remove).toHaveBeenCalledOnce();
+});
