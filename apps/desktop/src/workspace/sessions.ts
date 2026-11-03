@@ -35,6 +35,8 @@ export interface Tab {
   title: string | null;
   /** Named by hand: later titles from the terminal leave the name alone. */
   renamed: boolean;
+  /** The agent session id this tab resumed; null for a new session. */
+  resumeOf: string | null;
   /** Set once the pty exited; `null` when it was killed or its code is unknown. */
   exitCode?: number | null;
   client: PtyClient;
@@ -501,6 +503,7 @@ export class Sessions {
       unreadReason: null,
       title: null,
       renamed: false,
+      resumeOf: null,
       client: new PtyClient(this.api, id),
     };
     // Caps stay off until the pty says whether it got hook flags.

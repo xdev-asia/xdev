@@ -8,6 +8,7 @@ use std::path::Path;
 use ts_rs::{Config, TS};
 
 use crate::accounts::{Account, Accounts, LoginStart, Models};
+use crate::agent_sessions::{SessionQuery, SessionRow};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
 use crate::hooks::PtyHook;
 use crate::kit::{KitText, PromptEntry};
@@ -84,6 +85,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_kit::Skill::export_all(cfg)?;
     xdev_kit::MemorySet::export_all(cfg)?;
     xdev_kit::UsageSummary::export_all(cfg)?;
+    SessionQuery::export_all(cfg)?;
+    SessionRow::export_all(cfg)?;
     xdev_workspace::VaultView::export_all(cfg)?;
     xdev_workspace::VaultKind::export_all(cfg)?;
     Ok(())
