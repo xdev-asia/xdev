@@ -1,6 +1,6 @@
 import { createElement, useState } from "react";
 import type { JSX } from "react";
-import { profileName, useProfiles } from "@/agents/profileStore";
+import { profileName, profilePermissions, useProfiles } from "@/agents/profileStore";
 import { toApiError, type Api, type ApiError, type PtyInfo, type PtyProfile } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
@@ -106,6 +106,8 @@ export function useApprovedStart(api: Api): {
     open: asking !== null,
     title: t("terminal.approve.title"),
     body: asking ? t("terminal.approve.body", { profile: profileName(view, asking.profile, t), reason: asking.reason }) : "",
+    // Skip is approved for one start only, and the agent then acts without asking.
+    warning: asking && profilePermissions(view, asking.profile) === "skip" ? t("terminal.approve.skip") : undefined,
     confirmLabel: t("terminal.approve.confirm"),
     onConfirm: () => void approve(),
     onCancel: decline,

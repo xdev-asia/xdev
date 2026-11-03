@@ -251,6 +251,13 @@ kbd {
   line-height: 1.6;
 }
 
+/* Sits under the body, which keeps its own bottom margin. */
+.dialog-warn {
+  margin: calc(var(--x-space-4) * -1) 0 var(--x-space-6);
+  color: var(--danger);
+  line-height: 1.6;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;

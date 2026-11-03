@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi, toApiError, type Api, type PtyExit } from "@/api";
+import { createMockApi, toApiError, type Api, type Profile, type ProfilesView, type PtyExit } from "@/api";
 import { translate } from "@/i18n";
 import { Terminal } from "@/terminal/Terminal";
 import { AgentIcon } from "./AgentIcon";
@@ -29,6 +29,12 @@ vi.mock("react", async (original) => {
   };
 });
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+// The profile view the tabs read; `null` is a store that has not loaded.
+const store = vi.hoisted(() => ({ view: null as ProfilesView | null }));
+vi.mock("@/agents/profileStore", async (original) => ({
+  ...await original<typeof import("@/agents/profileStore")>(),
+  useProfiles: () => ({ view: store.view, update() {}, async reload() {} }),
+}));
 // xterm needs a real canvas; `run` below does what the terminal does with its client.
 vi.mock("@/terminal/Terminal", () => ({ Terminal: () => null }));
 
@@ -70,7 +76,7 @@ async function run(term: Node) {
 }
 
 let sessions: Sessions | null = null;
-beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; });
+beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; store.view = null; });
 afterEach(() => { sessions?.dispose(); sessions = null; vi.restoreAllMocks(); });
 
 it("plus menu starts claude in the worktree after approval", async () => {
@@ -301,4 +307,132 @@ it("a split with one tab is disabled", () => {
   expect(view.labelled(en("workspace.tabs.split.right")).props.title).toBe(en("workspace.tabs.split.right"));
   live.open(A, "claude");
   expect(view.labelled(en("workspace.tabs.split.right")).props["aria-disabled"]).toBe(false);
+});
+
+const custom = (over: Partial<Profile> = {}): Profile => ({
+  id: "aider", name: "Aider", cli: null, program: "aider", args: [], env: [], model: null, effort: null,
+  permissions: null, account: null, startup: [], enabled: true, ...over,
+});
+const profileOf = async (api: Api, id: string) => (await api.profiles()).profiles.find((p) => p.profile.id === id)!.profile;
+const openMenu = (view: ReturnType<typeof harness>) => view.labelled(en("workspace.tabs.new")).props.onClick();
+const group = (view: ReturnType<typeof harness>, label: string) => view.find((n) => n.props.role === "group" && n.props["aria-label"] === label);
+const items = (g: Node | undefined) => (g ? nodes(g.props.children).filter((n) => n.props.role === "menuitem").map((n) => n.props.children) : []);
+
+it("plus_menu_lists_agents_and_shells", async () => {
+  const api = createMockApi({});
+  // Gemini is not installed in the mock; codex is turned off here.
+  store.view = await api.profilePut({ ...(await profileOf(api, "codex")), enabled: false });
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  openMenu(view);
+  expect(items(group(view, en("workspace.tabs.agents")))).toEqual([en("terminal.profile.claude")]);
+  expect(items(group(view, en("workspace.tabs.shells")))).toEqual(["PowerShell", "CMD", "WSL Ubuntu"]);
+  // Each group says what it holds.
+  expect(view.html()).toContain(`>${en("workspace.tabs.agents")}<`);
+});
+
+it("wsl_item_opens_that_shell", async () => {
+  const api = createMockApi({});
+  const spawn = vi.spyOn(api, "ptySpawn");
+  store.view = await api.profiles();
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  openMenu(view);
+  view.find((n) => n.props.role === "menuitem" && n.props.children === "WSL Ubuntu")!.props.onClick();
+  const [tab] = live.tabs(A);
+  expect(tab).toMatchObject({ worktree: A, profileId: "shell:wsl:Ubuntu", agent: false });
+  expect(view.find((n) => n.props.role === "menu")).toBeUndefined();
+  await run(view.terminals()[0]);
+  expect(spawn.mock.calls[0].slice(0, 3)).toEqual([tab.id, A, "shell:wsl:Ubuntu"]);
+  // A shell never asks.
+  expect(view.dialog().props.open).toBe(false);
+  expect(view.html()).toContain(">WSL Ubuntu<");
+});
+
+it("skip_tab_shows_badge", async () => {
+  const api = createMockApi({});
+  store.view = await api.profilesDefaults("skip", "claude", null);
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  const shell = live.open(A, "shell");
+  await run(view.terminals()[0]);
+  const tab = live.open(A, "claude");
+  await run(view.terminals()[1]);
+  view.dialog().props.onConfirm();
+  await tick();
+  await run(view.terminals()[1]);
+  expect(live.tabs(A).find((t) => t.id === tab.id)!.permissions).toBe("skip");
+  const badge = (id: string) =>
+    nodes(view.find((n) => n.props.role === "tab" && n.props["data-tab"] === id)!.props.children).find((n) => n.props.className === "ws-tab-skip");
+  expect(badge(tab.id)).toBeDefined();
+  expect(badge(shell.id)).toBeUndefined();
+  const html = view.html();
+  expect(html).toContain(`>${en("workspace.tabs.skip")}<`);
+  expect(html).toContain('class="ws-tab-skip-dot"');
+});
+
+it("approval_dialog_warns_on_skip", async () => {
+  const api = createMockApi({});
+  store.view = await api.profiles();
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  live.open(A, "claude");
+  await run(view.terminals()[0]);
+  // Asking mode: the plain question.
+  expect(view.dialog().props.open).toBe(true);
+  expect(view.dialog().props.warning).toBeUndefined();
+  view.dialog().props.onCancel();
+
+  store.view = await api.profilesDefaults("skip", "claude", null);
+  live.open(A, "claude");
+  await run(view.terminals()[0]);
+  expect(view.dialog().props.open).toBe(true);
+  expect(view.dialog().props.warning).toBe(en("terminal.approve.skip"));
+  const markup = renderToStaticMarkup(view.dialog());
+  expect(markup).toContain('class="dialog-warn"');
+  expect(markup).toContain(en("terminal.approve.skip"));
+});
+
+it("custom_profile_tab_uses_its_name", async () => {
+  const api = createMockApi({});
+  store.view = await api.profilePut(custom());
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  openMenu(view);
+  expect(items(group(view, en("workspace.tabs.agents")))).toContain("Aider");
+  view.find((n) => n.props.role === "menuitem" && n.props.children === "Aider")!.props.onClick();
+  const [tab] = live.tabs(A);
+  expect(tab.profileId).toBe("aider");
+  const html = view.html();
+  expect(html).toContain("<span>Aider</span>");
+  expect(html).toContain(">A</span>");
+  expect(view.labelled(en("workspace.tabs.close", { name: "Aider" }))).toBeDefined();
+
+  // Once the profile is gone the tab falls back to its id.
+  store.view = await api.profileRemove("aider");
+  expect(view.html()).toContain("<span>aider</span>");
+});
+
+it("restart_of_disabled_profile_shows_error", async () => {
+  const api = createMockApi({});
+  let fire: (e: PtyExit) => void = () => {};
+  vi.spyOn(api, "onPtyExit").mockImplementation(async (cb) => ((fire = cb), () => {}));
+  await api.ptyApprove("codex", null);
+  store.view = await api.profiles();
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  const tab = live.open(A, "codex");
+  await run(view.terminals()[0]);
+  fire({ id: tab.id, code: 0 });
+
+  // Codex is turned off while its tab sits exited.
+  store.view = await api.profilePut({ ...(await profileOf(api, "codex")), enabled: false });
+  expect(view.html()).toContain(`<span>${en("terminal.profile.codex")}</span>`);
+  view.find((n) => n.type === "button" && n.props.className === "ws-tab-again")!.props.onClick();
+  await run(view.terminals()[0]);
+  await tick();
+  const banner = view.find((n) => n.props.role === "alert")!;
+  expect(renderToStaticMarkup(banner)).toContain(en("error.profile_off"));
+  // The failed start leaves nothing behind but the banner.
+  expect(live.tabs(A)).toEqual([]);
 });

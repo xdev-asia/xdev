@@ -10,8 +10,9 @@ import type { Sessions, Split, Tab } from "./sessions";
 import type { TabStatus } from "./status";
 import { WorktreeDiff } from "./WorktreeDiff";
 
-// The `+` menu and the empty state offer these until the profile menu lands.
-const LAUNCH: readonly PtyProfile[] = ["shell", "claude", "codex"];
+// Offered while the profile view has not loaded: the built-in agents and the default shell.
+const FALLBACK_AGENTS: readonly PtyProfile[] = ["claude", "codex"];
+const FALLBACK_SHELL: PtyProfile = "shell";
 
 const GLYPH: Record<TabStatus, string> = { working: "●", idle: "○", failed: "✕", exited: "–" };
 
@@ -99,6 +100,13 @@ export function WorktreeTabs(props: {
 
   const { view } = useProfiles();
   const name = (tab: Tab) => profileName(view, tab.profileId, t);
+  // The `+` menu: agents that are on and installed, then every shell on offer.
+  const agents = view ? view.profiles.filter((p) => p.profile.enabled && p.installed).map((p) => p.profile.id) : FALLBACK_AGENTS;
+  const shells = view ? view.shells.map((s) => s.id) : [FALLBACK_SHELL];
+  const groups = [
+    { label: t("workspace.tabs.agents"), ids: agents },
+    { label: t("workspace.tabs.shells"), ids: shells },
+  ].filter((g) => g.ids.length > 0);
 
   // Picking the second tab of a split keeps the pair: the tab that was in front takes its place.
   function select(id: string): void {
@@ -155,6 +163,12 @@ export function WorktreeTabs(props: {
               >
                 <AgentIcon profile={tab.profileId} size={16} />
                 <span>{name(tab)}</span>
+                {tab.permissions === "skip" && (
+                  <span className="ws-tab-skip" title={t("workspace.tabs.skipHint")}>
+                    <span className="ws-tab-skip-dot" aria-hidden="true" />
+                    {t("workspace.tabs.skip")}
+                  </span>
+                )}
                 <span
                   className={tab.status === "working" ? "ws-tab-glyph ws-pulse" : "ws-tab-glyph"}
                   data-status={tab.status}
@@ -244,10 +258,17 @@ export function WorktreeTabs(props: {
             <>
               <div className="ws-menu-backdrop" onClick={() => setMenu(false)} />
               <div className="ws-menu" role="menu">
-                {LAUNCH.map((p) => (
-                  <button key={p} type="button" role="menuitem" onClick={() => launch(p)}>
-                    {profileName(view, p, t)}
-                  </button>
+                {groups.map((g) => (
+                  <div key={g.label} className="ws-menu-group" role="group" aria-label={g.label}>
+                    <div className="ws-menu-label" aria-hidden="true">
+                      {g.label}
+                    </div>
+                    {g.ids.map((p) => (
+                      <button key={p} type="button" role="menuitem" onClick={() => launch(p)}>
+                        {profileName(view, p, t)}
+                      </button>
+                    ))}
+                  </div>
                 ))}
               </div>
             </>
@@ -287,7 +308,7 @@ export function WorktreeTabs(props: {
               cwd={worktree}
               profile={tab.profileId}
               account={tab.account}
-              onStarted={() => {}}
+              onStarted={(info) => sessions.noteStarted(tab.id, info)}
               onError={(e) => failed(tab, e)}
               onOutput={(bytes) => sessions.noteOutput(tab.id, bytes)}
               onInput={() => sessions.noteInput(tab.id)}
@@ -306,7 +327,7 @@ export function WorktreeTabs(props: {
         <div className="ws-center-empty">
           <p>{t("workspace.tabs.empty")}</p>
           <div className="ws-launch">
-            {LAUNCH.map((p) => (
+            {[view?.defaultShell ?? FALLBACK_SHELL, ...agents].map((p) => (
               <button key={p} type="button" className="btn-secondary" onClick={() => launch(p)}>
                 {profileName(view, p, t)}
               </button>
