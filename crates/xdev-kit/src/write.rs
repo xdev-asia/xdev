@@ -4,12 +4,13 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path, PathBuf, Prefix};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
+use crate::memory::{is_under, normalize, plain};
 use crate::{KitError, fnv1a_hex};
 
 const TMP_SUFFIX: &str = ".xdev-tmp";
@@ -34,6 +35,17 @@ impl Roots {
             .collect()
     }
 
+    /// The roots as given and as canonical: a path from a scan is canonical,
+    /// a home as the settings name it may not be.
+    fn given_and_canonical(&self) -> Vec<PathBuf> {
+        self.homes
+            .iter()
+            .chain(self.worktree.iter())
+            .cloned()
+            .chain(self.canonical())
+            .collect()
+    }
+
     /// Where `path` is, or would be: its parent made canonical, plus its
     /// name. `Outside` unless that parent is under a root. A relative path,
     /// or one with a `..` part, is `Outside`; so is a path whose last part
@@ -44,6 +56,12 @@ impl Roots {
         if !path.is_absolute() || path.components().any(|c| c == Component::ParentDir) {
             return Err(outside());
         }
+        // By the text first: `path` is not opened until it says it is under a
+        // root. Making `\\host\share` canonical would connect to `host`.
+        if !lexically_inside(path, &self.given_and_canonical()) {
+            return Err(outside());
+        }
+        // Then by the real path, which settles links.
         let name = path.file_name().ok_or_else(outside)?;
         let parent = canonical_prefix(path.parent().ok_or_else(outside)?)?;
         if !self.canonical().iter().any(|root| parent.starts_with(root)) {
@@ -59,6 +77,30 @@ impl Roots {
     fn removed_dir(&self) -> PathBuf {
         self.data_dir.join("kit").join("removed")
     }
+}
+
+/// `true` when the text of `path` puts it under one of `roots`, part by part
+/// and ignoring case on Windows, with no `\\?\` prefix on either side.
+/// Nothing on the disk is touched. A network path (`\\server\...`) is under
+/// no root unless a root is one too.
+fn lexically_inside(path: &Path, roots: &[PathBuf]) -> bool {
+    let path = normalize(&plain(path));
+    let roots: Vec<PathBuf> = roots
+        .iter()
+        .filter(|r| r.is_absolute())
+        .map(|r| normalize(&plain(r)))
+        .collect();
+    if is_network(&path) && !roots.iter().any(|r| is_network(r)) {
+        return false;
+    }
+    roots.iter().any(|root| is_under(root, &path))
+}
+
+fn is_network(path: &Path) -> bool {
+    matches!(
+        path.components().next(),
+        Some(Component::Prefix(p)) if matches!(p.kind(), Prefix::UNC(..) | Prefix::VerbatimUNC(..))
+    )
 }
 
 /// `true` when `path` exists and is a link. A missing path is not one.
@@ -320,7 +362,9 @@ pub fn remove_skill(roots: &Roots, dir: &Path) -> Result<PathBuf, KitError> {
 /// Moves a folder that `remove_skill` made back to `to`. An existing target
 /// is `Changed`, unless it is what that remove left behind.
 pub fn restore_skill(roots: &Roots, removed: &Path, to: &Path) -> Result<(), KitError> {
-    if is_link(removed) {
+    let area = roots.removed_dir();
+    let areas: Vec<PathBuf> = area.canonicalize().into_iter().chain([area]).collect();
+    if !lexically_inside(removed, &areas) || is_link(removed) {
         return Err(KitError::Outside(removed.to_path_buf()));
     }
     let removed_canon = canonical_prefix(removed)?;
@@ -931,6 +975,88 @@ mod tests {
             write_checked(&fx.roots, Path::new("relative.md"), "no", None),
             Err(KitError::Outside(_))
         ));
+    }
+
+    #[test]
+    fn lexical_gate_reads_only_the_text() {
+        let home = PathBuf::from(if cfg!(windows) {
+            r"C:\Users\me\.claude"
+        } else {
+            "/home/me/.claude"
+        });
+        let roots = vec![home.clone()];
+        assert!(lexically_inside(&home.join("CLAUDE.md"), &roots));
+        assert!(!lexically_inside(
+            Path::new(r"\\nonexistent-host\s\x.md"),
+            &roots
+        ));
+        assert!(!lexically_inside(
+            Path::new(r"\\?\UNC\nonexistent-host\s\x.md"),
+            &roots
+        ));
+        // Whole parts: `.claude2` is not under `.claude`.
+        let sibling = home.with_file_name(".claude2").join("CLAUDE.md");
+        assert!(!lexically_inside(&sibling, &roots));
+        let outside = if cfg!(windows) {
+            r"C:\secret.md"
+        } else {
+            "/secret.md"
+        };
+        assert!(!lexically_inside(Path::new(outside), &roots));
+        if cfg!(windows) {
+            // Case does not count on Windows, and neither does `\\?\`.
+            assert!(lexically_inside(
+                Path::new(r"c:\USERS\Me\.Claude\CLAUDE.md"),
+                &roots
+            ));
+            assert!(lexically_inside(
+                Path::new(r"\\?\C:\Users\me\.claude\CLAUDE.md"),
+                &[PathBuf::from(r"\\?\C:\Users\me\.claude")]
+            ));
+            // A network path is fine only under a root that is one.
+            let share = vec![PathBuf::from(r"\\nonexistent-host\s")];
+            assert!(lexically_inside(
+                Path::new(r"\\nonexistent-host\s\x.md"),
+                &share
+            ));
+            assert!(!lexically_inside(Path::new(r"\\other-host\s\x.md"), &share));
+        }
+    }
+
+    #[test]
+    fn outside_paths_are_refused_by_text_first() {
+        let fx = fixture();
+        fs::write(fx.home.join("a.md"), "a").unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        fs::write(elsewhere.path().join("x.md"), "x").unwrap();
+
+        assert!(is_outside(read_for_edit(
+            &fx.roots,
+            Path::new(r"\\nonexistent-host\s\x.md")
+        )));
+        assert!(is_outside(read_for_edit(
+            &fx.roots,
+            Path::new(r"\\?\UNC\nonexistent-host\s\x.md")
+        )));
+        assert!(is_outside(read_for_edit(
+            &fx.roots,
+            &elsewhere.path().join("x.md")
+        )));
+
+        // A folder outside that links into the home: the text says outside,
+        // and the text is checked before the link is followed.
+        let door = elsewhere.path().join("door");
+        if !link_dir(&fx.home, &door) {
+            return;
+        }
+        assert!(is_outside(read_for_edit(&fx.roots, &door.join("a.md"))));
+        assert!(is_outside(write_checked(
+            &fx.roots,
+            &door.join("b.md"),
+            "no",
+            None
+        )));
+        assert!(!fx.home.join("b.md").exists());
     }
 
     #[test]

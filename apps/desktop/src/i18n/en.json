@@ -666,6 +666,7 @@
   "kit.memory.issue.missing_path": "{target} does not exist",
   "kit.memory.issue.import_cycle": "Importing {target} makes a loop",
   "kit.memory.issue.import_outside": "{target} is outside the folders xDev reads",
+  "kit.memory.outside": "outside, not opened",
   "kit.memory.copyOther": "Copy to other homes",
   "kit.memory.copyNone": "There is no other home of this agent.",
   "kit.memory.copySave": "Save the file first.",

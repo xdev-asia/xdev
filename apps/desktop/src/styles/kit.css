@@ -330,6 +330,15 @@
   background: var(--bg-2);
 }
 
+.kit-file[data-unread] {
+  color: var(--text-2);
+  cursor: default;
+}
+
+.kit-file[data-unread]:hover {
+  background: none;
+}
+
 .kit-file .kit-cut {
   flex: 1;
   min-width: 0;

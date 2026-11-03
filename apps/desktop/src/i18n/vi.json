@@ -666,6 +666,7 @@
   "kit.memory.issue.missing_path": "{target} không tồn tại",
   "kit.memory.issue.import_cycle": "Nhập {target} tạo thành vòng lặp",
   "kit.memory.issue.import_outside": "{target} nằm ngoài các thư mục xDev đọc",
+  "kit.memory.outside": "ngoài thư mục, không mở",
   "kit.memory.copyOther": "Sao chép sang thư mục agent khác",
   "kit.memory.copyNone": "Không có thư mục agent khác cùng loại.",
   "kit.memory.copySave": "Hãy lưu tệp trước.",
