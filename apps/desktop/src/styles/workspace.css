@@ -959,6 +959,46 @@
   text-align: center;
 }
 
+/* Below 1076px (sidebar 296 + panel 300 + center 480) the panel folds to its icon rail, so the
+   center keeps 480px; the open tab shows over the center while the pointer or focus is in it. */
+@media (max-width: 1075px) {
+  .ws-panel {
+    position: relative;
+    flex-basis: 41px;
+  }
+
+  .ws-panel-tabs {
+    flex-direction: column;
+    height: auto;
+    padding: 4px 0;
+    border-bottom: 0;
+  }
+
+  .ws-panel-tab {
+    height: 34px;
+  }
+
+  .ws-panel-tab[aria-selected="true"] {
+    box-shadow: none;
+    background: var(--bg-2);
+  }
+
+  .ws-panel-body {
+    position: absolute;
+    top: 0;
+    right: 100%;
+    bottom: 0;
+    z-index: 10;
+    width: calc(var(--w-panel) - 41px);
+    border-left: 1px solid var(--line);
+    background: var(--bg-1);
+  }
+
+  .ws-panel:not(:hover, :focus-within) .ws-panel-body {
+    display: none;
+  }
+}
+
 /* Files panel: one worktree as a lazy tree, 24px rows, indent 8px plus 14px a level. */
 
 .ws-tree {
