@@ -14,7 +14,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::commands::{AppState, CmdError};
-use crate::settings::StatusSettings;
+use crate::settings::{SettingsSection, StatusSettings};
 use crate::settings_store::{self, SettingsStore};
 
 /// The largest own sound the app copies and plays.
@@ -210,6 +210,7 @@ pub fn status_settings_put(
     settings: StatusSettings,
 ) -> Result<StatusSettings, CmdError> {
     let stored = put(store_of(&app)?, settings).map_err(io_error)?;
+    settings_store::emit_changed(&app, &[SettingsSection::Status]);
     // The marker `xdev agent-hook` checks, so switching hooks off also
     // quiets panes launched while they were on. Best effort.
     if let Some(local) = state.local_dir.as_deref()
@@ -278,7 +279,9 @@ pub fn status_sound_set(
     path: Option<String>,
 ) -> Result<StatusSettings, CmdError> {
     let data_dir = crate::accounts::data_dir(&state)?;
-    set_sound(store_of(&app)?, data_dir, path.as_deref().map(Path::new))
+    let stored = set_sound(store_of(&app)?, data_dir, path.as_deref().map(Path::new))?;
+    settings_store::emit_changed(&app, &[SettingsSection::Status]);
+    Ok(stored)
 }
 
 /// Raw bytes, or JSON `null` when there is no own sound to play.
