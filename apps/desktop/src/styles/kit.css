@@ -199,10 +199,18 @@
   white-space: nowrap;
 }
 
+/* A table cell ignores max-width; a zero one with a share of the width lets the text cut. */
+.kit-skills td.kit-cut {
+  max-width: 0;
+  width: 40%;
+}
+
 .kit-actions {
-  display: flex;
-  gap: 12px;
   white-space: nowrap;
+}
+
+.kit-actions > * + * {
+  margin-inline-start: 12px;
 }
 
 .kit-chip {
