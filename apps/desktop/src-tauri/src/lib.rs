@@ -2,6 +2,7 @@ mod accounts;
 #[cfg(test)]
 mod bindings;
 mod commands;
+mod hooks;
 mod kit;
 mod links;
 mod profiles;
@@ -30,6 +31,9 @@ pub fn run() {
     if let (Some(data), Some(local)) = (&data_dir, &local_dir) {
         xdev_core::move_indexes(data, local);
     }
+    let hooks_dir = local_dir
+        .as_ref()
+        .map(|local| local.join(xdev_agent::HOOKS_DIR));
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -40,6 +44,15 @@ pub fn run() {
         .manage(profiles::ProfilesLock::default())
         .setup(|app| {
             updater::start(app.handle().clone());
+            // Without the watcher panes still run; they just show no status.
+            if let Some(dir) = hooks_dir {
+                match hooks::watch(app.handle().clone(), dir) {
+                    Ok(watcher) => {
+                        app.manage(watcher);
+                    }
+                    Err(e) => eprintln!("hook watcher: {e}"),
+                }
+            }
             Ok(())
         })
         .manage(AppState {
