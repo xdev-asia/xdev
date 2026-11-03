@@ -198,7 +198,7 @@ function firstBadNote(notes: ReviewNote[]): string | null {
 const WORDS = ["birch", "cedar", "fir", "maple", "pine", "willow"];
 
 // `GitSettings::default()` in Rust.
-export const DEFAULT_GIT_SETTINGS: GitSettings = { branchPrefix: "git-username", branchPrefixCustom: "", refreshLocalBaseOnCreate: false };
+export const DEFAULT_GIT_SETTINGS: GitSettings = { branchPrefix: "git-username", branchPrefixCustom: "", refreshLocalBaseOnCreate: false, compareAgainstUpstream: false };
 
 function demoDiff(file: string, kind: WorktreeChange["kind"]): WorktreeFileDiff {
   if (/\.(png|jpe?g|gif|ico)$/i.test(file)) return { old: null, new: null, skip: "binary" };
@@ -265,6 +265,9 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
       r.tracked && branch !== null
         ? { remote: "origin", branch, id: "b".repeat(40), ahead: r.ahead, behind: r.behind }
         : null;
+    // Against the upstream only the unpushed commits count; they are the newest, first in the list.
+    const vsUpstream = git.compareAgainstUpstream && upstream !== null;
+    const counted = vsUpstream ? r.commits.slice(0, r.ahead) : r.commits;
     return {
       branch,
       base: repo.baseRef,
@@ -272,7 +275,9 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
       upstream,
       headPushed: upstream !== null && r.ahead === 0,
       atStart: r.commits.length === 0,
-      range: wt.primary ? null : { mergeBase: DEMO_START, added: r.commits.length * 3, removed: 0, commits: structuredClone(r.commits), truncated: false },
+      range: wt.primary ? null : { mergeBase: DEMO_START, added: counted.length * 3, removed: 0, commits: structuredClone(counted), truncated: false },
+      rangeBase: vsUpstream ? `origin/${upstream.branch}` : repo.baseRef,
+      aheadOfBase: !wt.primary && r.commits.length > 0,
     };
   }
 

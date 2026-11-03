@@ -7,7 +7,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 use xdev_agent::{AgentError, Cancel, RunRequest, Runner};
 use xdev_ai::Provider;
 use xdev_git::{
@@ -18,7 +18,7 @@ use xdev_policy::{Action, Gate, Verdict};
 use xdev_workspace::{Registry, WorkspaceError, path_key};
 
 use crate::accounts::data_dir;
-use crate::commands::{AppState, CmdError};
+use crate::commands::{AppState, CmdError, load_git_settings};
 use crate::tasks::{gate, provider_runner};
 use crate::workspace::{bad_arg, inside, parent_within, start_of};
 
@@ -42,8 +42,14 @@ pub struct ShipView {
     pub head_pushed: bool,
     /// `HEAD` is still the commit the worktree started from.
     pub at_start: bool,
-    /// What the branch adds to its base; `None` for the primary checkout.
+    /// What the branch adds to `range_base`; `None` for the primary checkout.
     pub range: Option<BaseRange>,
+    /// What `range` counts from: the base, or the upstream when
+    /// Settings → Git compares against it and the branch has one.
+    pub range_base: String,
+    /// The branch has commits its base lacks, whatever `range` counts from;
+    /// what offering a pull request goes by.
+    pub ahead_of_base: bool,
 }
 
 /// What the registry knows about a checkout.
@@ -77,7 +83,7 @@ fn err(code: &'static str, detail: Option<String>) -> CmdError {
     CmdError { code, detail }
 }
 
-fn view(data: &Path, path: &Path) -> Result<ShipView, CmdError> {
+fn view(data: &Path, path: &Path, against_upstream: bool) -> Result<ShipView, CmdError> {
     let known = locate(data, path)?;
     let repo = Repo::discover(path)?;
     let branch = repo.current_branch()?;
@@ -88,9 +94,22 @@ fn view(data: &Path, path: &Path) -> Result<ShipView, CmdError> {
         (Some(start), Some(head)) => *start == head,
         _ => false,
     };
+    // The full ref, so a local branch named like `origin/feat` is not read instead.
+    let (range_base, range_rev) = match &upstream {
+        Some(up) if against_upstream && up.id.is_some() => (
+            format!("{}/{}", up.remote, up.branch),
+            format!("refs/remotes/{}/{}", up.remote, up.branch),
+        ),
+        _ => (known.base_ref.clone(), known.base_ref.clone()),
+    };
     let range = match known.start {
-        Some(_) => repo.branch_vs_base(&known.base_ref, RANGE_LIMIT).ok(),
+        Some(_) => repo.branch_vs_base(&range_rev, RANGE_LIMIT).ok(),
         None => None,
+    };
+    let ahead_of_base = match (&known.start, &range) {
+        (None, _) => false,
+        (Some(_), Some(r)) if range_rev == known.base_ref => !r.commits.is_empty(),
+        (Some(_), _) => has_commits_over(&repo, &known.base_ref),
     };
     Ok(ShipView {
         branch,
@@ -100,30 +119,41 @@ fn view(data: &Path, path: &Path) -> Result<ShipView, CmdError> {
         head_pushed,
         at_start,
         range,
+        range_base,
+        ahead_of_base,
     })
 }
 
-fn push_with(data: &Path, path: &Path) -> Result<ShipView, CmdError> {
+/// `HEAD` has a commit that `base` lacks; `false` when `base` does not resolve.
+fn has_commits_over(repo: &Repo, base: &str) -> bool {
+    let Ok(Some(merge_base)) = repo.merge_base(base, "HEAD") else {
+        return false;
+    };
+    repo.commits_since(&merge_base, &["**".to_owned()], 1)
+        .is_ok_and(|(commits, _)| !commits.is_empty())
+}
+
+fn push_with(data: &Path, path: &Path, against_upstream: bool) -> Result<ShipView, CmdError> {
     locate(data, path)?;
     Repo::discover(path)?.push()?;
-    view(data, path)
+    view(data, path, against_upstream)
 }
 
-fn pull_with(data: &Path, path: &Path) -> Result<ShipView, CmdError> {
+fn pull_with(data: &Path, path: &Path, against_upstream: bool) -> Result<ShipView, CmdError> {
     locate(data, path)?;
     Repo::discover(path)?.pull()?;
-    view(data, path)
+    view(data, path, against_upstream)
 }
 
-fn fetch_with(data: &Path, path: &Path) -> Result<ShipView, CmdError> {
+fn fetch_with(data: &Path, path: &Path, against_upstream: bool) -> Result<ShipView, CmdError> {
     locate(data, path)?;
     Repo::discover(path)?.fetch()?;
-    view(data, path)
+    view(data, path, against_upstream)
 }
 
 /// Fetches, then fast-forwards when behind or pushes when ahead. Split
 /// histories are `pull_diverged` and nothing is pushed.
-fn sync_with(data: &Path, path: &Path) -> Result<ShipView, CmdError> {
+fn sync_with(data: &Path, path: &Path, against_upstream: bool) -> Result<ShipView, CmdError> {
     locate(data, path)?;
     let repo = Repo::discover(path)?;
     repo.fetch()?;
@@ -134,7 +164,7 @@ fn sync_with(data: &Path, path: &Path) -> Result<ShipView, CmdError> {
         // Behind, or both: `pull` refuses a split history itself.
         _ => repo.pull()?,
     }
-    view(data, path)
+    view(data, path, against_upstream)
 }
 
 fn force_push_with(
@@ -142,6 +172,7 @@ fn force_push_with(
     path: &Path,
     expected: &str,
     confirmed: bool,
+    against_upstream: bool,
 ) -> Result<ShipView, CmdError> {
     let known = locate(data, path)?;
     let repo = Repo::discover(path)?;
@@ -174,7 +205,7 @@ fn force_push_with(
         Verdict::Deny { reason } => return Err(err("denied", Some(reason))),
     }
     repo.force_push(expected)?;
-    view(data, path)
+    view(data, path, against_upstream)
 }
 
 /// Rewrites `HEAD`. Local only, so no policy gate; pushing the result later
@@ -467,39 +498,71 @@ pub fn worktree_draft_pr(state: State<'_, AppState>, path: PathBuf) -> Result<Pr
     draft_pr_with(runner.as_ref(), &repo, &plain_base(&repo, &known.base_ref))
 }
 
-#[tauri::command(async)]
-pub fn worktree_ship(state: State<'_, AppState>, path: PathBuf) -> Result<ShipView, CmdError> {
-    view(data_dir(&state)?, &path)
+/// Settings → Git: count the range against the upstream.
+fn against_upstream(app: &AppHandle) -> bool {
+    load_git_settings(app).compare_against_upstream
 }
 
 #[tauri::command(async)]
-pub fn worktree_push(state: State<'_, AppState>, path: PathBuf) -> Result<ShipView, CmdError> {
-    push_with(data_dir(&state)?, &path)
+pub fn worktree_ship(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: PathBuf,
+) -> Result<ShipView, CmdError> {
+    view(data_dir(&state)?, &path, against_upstream(&app))
 }
 
 #[tauri::command(async)]
-pub fn worktree_pull(state: State<'_, AppState>, path: PathBuf) -> Result<ShipView, CmdError> {
-    pull_with(data_dir(&state)?, &path)
+pub fn worktree_push(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: PathBuf,
+) -> Result<ShipView, CmdError> {
+    push_with(data_dir(&state)?, &path, against_upstream(&app))
 }
 
 #[tauri::command(async)]
-pub fn worktree_sync(state: State<'_, AppState>, path: PathBuf) -> Result<ShipView, CmdError> {
-    sync_with(data_dir(&state)?, &path)
+pub fn worktree_pull(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: PathBuf,
+) -> Result<ShipView, CmdError> {
+    pull_with(data_dir(&state)?, &path, against_upstream(&app))
 }
 
 #[tauri::command(async)]
-pub fn worktree_fetch(state: State<'_, AppState>, path: PathBuf) -> Result<ShipView, CmdError> {
-    fetch_with(data_dir(&state)?, &path)
+pub fn worktree_sync(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: PathBuf,
+) -> Result<ShipView, CmdError> {
+    sync_with(data_dir(&state)?, &path, against_upstream(&app))
+}
+
+#[tauri::command(async)]
+pub fn worktree_fetch(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: PathBuf,
+) -> Result<ShipView, CmdError> {
+    fetch_with(data_dir(&state)?, &path, against_upstream(&app))
 }
 
 #[tauri::command(async)]
 pub fn worktree_force_push(
+    app: AppHandle,
     state: State<'_, AppState>,
     path: PathBuf,
     expected: String,
     confirmed: bool,
 ) -> Result<ShipView, CmdError> {
-    force_push_with(data_dir(&state)?, &path, &expected, confirmed)
+    force_push_with(
+        data_dir(&state)?,
+        &path,
+        &expected,
+        confirmed,
+        against_upstream(&app),
+    )
 }
 
 #[tauri::command(async)]
@@ -597,29 +660,59 @@ mod tests {
     #[test]
     fn ship_view_reports_range_and_no_upstream() {
         let fx = fixture();
-        let v = view(&fx.data, &fx.wt).unwrap();
-        assert!(v.at_start && !v.head_pushed);
+        let v = view(&fx.data, &fx.wt, false).unwrap();
+        assert!(v.at_start && !v.head_pushed && !v.ahead_of_base);
         assert_eq!(v.remote.as_deref(), Some("origin"));
         assert_eq!(v.upstream, None);
         assert_eq!(v.range.as_ref().unwrap().commits.len(), 0);
 
         commit_file(&fx.wt, "b.txt", "two");
-        let v = view(&fx.data, &fx.wt).unwrap();
-        assert!(!v.at_start);
+        let v = view(&fx.data, &fx.wt, false).unwrap();
+        assert!(!v.at_start && v.ahead_of_base);
         let range = v.range.unwrap();
         assert_eq!(range.commits.len(), 1);
         assert_eq!(range.added, 1);
 
         // The primary checkout has no start and no range.
-        let v = view(&fx.data, &fx.main).unwrap();
+        let v = view(&fx.data, &fx.main, false).unwrap();
         assert_eq!((v.range, v.at_start), (None, false));
+    }
+
+    #[test]
+    fn ship_view_counts_against_the_upstream_when_asked() {
+        let fx = fixture();
+        commit_file(&fx.wt, "b.txt", "two");
+        // No upstream yet: the base stays.
+        let v = view(&fx.data, &fx.wt, true).unwrap();
+        assert_eq!(v.range_base, v.base);
+        assert_eq!(v.range.unwrap().commits.len(), 1);
+
+        push_with(&fx.data, &fx.wt, false).unwrap();
+        commit_file(&fx.wt, "c.txt", "three");
+        let by_base = view(&fx.data, &fx.wt, false).unwrap();
+        assert_eq!(by_base.range_base, by_base.base);
+        assert_eq!(by_base.range.unwrap().commits.len(), 2);
+
+        let by_upstream = view(&fx.data, &fx.wt, true).unwrap();
+        assert_eq!(by_upstream.range_base, format!("origin/{}", branch(&fx)));
+        assert_eq!(by_upstream.base, by_base.base);
+        assert!(by_upstream.ahead_of_base);
+        let range = by_upstream.range.unwrap();
+        assert_eq!(range.commits.len(), 1);
+        assert_eq!(range.commits[0].message, "c.txt");
+
+        // Everything pushed: nothing over the upstream, still work over the base.
+        push_with(&fx.data, &fx.wt, false).unwrap();
+        let v = view(&fx.data, &fx.wt, true).unwrap();
+        assert_eq!(v.range.unwrap().commits.len(), 0);
+        assert!(v.ahead_of_base);
     }
 
     #[test]
     fn push_then_ship_shows_upstream() {
         let fx = fixture();
         commit_file(&fx.wt, "b.txt", "two");
-        let v = push_with(&fx.data, &fx.wt).unwrap();
+        let v = push_with(&fx.data, &fx.wt, false).unwrap();
         let up = v.upstream.unwrap();
         assert_eq!((up.ahead, up.behind), (0, 0));
         assert_eq!(up.branch, branch(&fx));
@@ -634,7 +727,7 @@ mod tests {
     fn sync_pulls_then_pushes() {
         let fx = fixture();
         commit_file(&fx.wt, "b.txt", "two");
-        push_with(&fx.data, &fx.wt).unwrap();
+        push_with(&fx.data, &fx.wt, false).unwrap();
         let name = branch(&fx);
 
         let other = fx.tmp.path().join("other");
@@ -649,12 +742,12 @@ mod tests {
         commit_file(&other, "c.txt", "three");
         git(&other, &["push", "-q", "origin", &name]);
 
-        let v = sync_with(&fx.data, &fx.wt).unwrap();
+        let v = sync_with(&fx.data, &fx.wt, false).unwrap();
         assert!(fx.wt.join("c.txt").exists());
         assert_eq!(v.upstream.unwrap().behind, 0);
 
         commit_file(&fx.wt, "d.txt", "four");
-        let v = sync_with(&fx.data, &fx.wt).unwrap();
+        let v = sync_with(&fx.data, &fx.wt, false).unwrap();
         assert_eq!(v.upstream.unwrap().ahead, 0);
         assert_eq!(
             git(&fx.origin, &["rev-parse", &name]),
@@ -667,7 +760,7 @@ mod tests {
         git(&other, &["push", "-q", "origin", &name]);
         commit_file(&fx.wt, "f.txt", "six");
         let remote_before = git(&fx.origin, &["rev-parse", &name]);
-        assert_eq!(code(sync_with(&fx.data, &fx.wt)), "pull_diverged");
+        assert_eq!(code(sync_with(&fx.data, &fx.wt, false)), "pull_diverged");
         assert_eq!(git(&fx.origin, &["rev-parse", &name]), remote_before);
     }
 
@@ -675,18 +768,18 @@ mod tests {
     fn force_push_needs_confirmation() {
         let fx = fixture();
         commit_file(&fx.wt, "b.txt", "two");
-        let v = push_with(&fx.data, &fx.wt).unwrap();
+        let v = push_with(&fx.data, &fx.wt, false).unwrap();
         let expected = v.upstream.unwrap().id.unwrap();
         git(&fx.wt, &["commit", "-q", "--amend", "-m", "reworded"]);
         let name = branch(&fx);
 
         assert_eq!(
-            code(force_push_with(&fx.data, &fx.wt, &expected, false)),
+            code(force_push_with(&fx.data, &fx.wt, &expected, false, false)),
             "needs_approval"
         );
         assert_eq!(git(&fx.origin, &["rev-parse", &name]), expected);
 
-        let v = force_push_with(&fx.data, &fx.wt, &expected, true).unwrap();
+        let v = force_push_with(&fx.data, &fx.wt, &expected, true, false).unwrap();
         assert!(v.head_pushed);
         assert_eq!(
             git(&fx.origin, &["rev-parse", &name]),
@@ -700,7 +793,7 @@ mod tests {
         // The primary checkout sits on the base branch.
         let head = git(&fx.main, &["rev-parse", "HEAD"]);
         assert_eq!(
-            code(force_push_with(&fx.data, &fx.main, &head, true)),
+            code(force_push_with(&fx.data, &fx.main, &head, true, false)),
             "force_base"
         );
     }
@@ -741,7 +834,7 @@ mod tests {
         let id = git(&fx.wt, &["rev-parse", "HEAD"]);
         let before = git(&fx.origin, &["rev-parse", "other"]);
         assert_eq!(
-            code(force_push_with(&fx.data, &fx.wt, &id, true)),
+            code(force_push_with(&fx.data, &fx.wt, &id, true, false)),
             "push_rejected"
         );
         assert_eq!(git(&fx.origin, &["rev-parse", "other"]), before);
@@ -751,7 +844,7 @@ mod tests {
     fn create_pr_refuses_deleted_remote_branch() {
         let fx = fixture();
         commit_file(&fx.wt, "b.txt", "two");
-        push_with(&fx.data, &fx.wt).unwrap();
+        push_with(&fx.data, &fx.wt, false).unwrap();
         let name = branch(&fx);
         git(&fx.origin, &["branch", "-D", &name]);
         git(&fx.wt, &["fetch", "-q", "--prune", "origin"]);
@@ -785,7 +878,7 @@ mod tests {
     fn amend_pushed_needs_confirmation() {
         let fx = fixture();
         commit_file(&fx.wt, "b.txt", "two");
-        push_with(&fx.data, &fx.wt).unwrap();
+        push_with(&fx.data, &fx.wt, false).unwrap();
         let head = git(&fx.wt, &["rev-parse", "HEAD"]);
         assert_eq!(
             code(amend_with(&fx.data, &fx.wt, &[], "again", false)),
@@ -798,7 +891,7 @@ mod tests {
     fn amend_confirmed_rewrites_pushed_head() {
         let fx = fixture();
         commit_file(&fx.wt, "b.txt", "two");
-        push_with(&fx.data, &fx.wt).unwrap();
+        push_with(&fx.data, &fx.wt, false).unwrap();
         let old = git(&fx.wt, &["rev-parse", "HEAD"]);
         fs::write(fx.wt.join("b.txt"), "three").unwrap();
         let new = amend_with(&fx.data, &fx.wt, &["b.txt".to_owned()], "again", true).unwrap();
@@ -932,7 +1025,7 @@ mod tests {
             "not_pushed"
         );
         // Ahead of the upstream.
-        push_with(&fx.data, &fx.wt).unwrap();
+        push_with(&fx.data, &fx.wt, false).unwrap();
         commit_file(&fx.wt, "c.txt", "three");
         assert_eq!(
             code(create_pr_with(&gh, &repo, "origin/main", draft("T"))),
@@ -945,7 +1038,7 @@ mod tests {
     fn create_pr_refuses_empty_title() {
         let fx = fixture();
         commit_file(&fx.wt, "b.txt", "two");
-        push_with(&fx.data, &fx.wt).unwrap();
+        push_with(&fx.data, &fx.wt, false).unwrap();
         let gh = FakeGh::new(vec![]);
         assert_eq!(
             code(create_pr_with(&gh, &repo_of(&fx), "main", draft("  "))),
@@ -963,7 +1056,7 @@ mod tests {
     fn create_pr_uses_branch_as_head() {
         let fx = fixture();
         commit_file(&fx.wt, "b.txt", "two");
-        push_with(&fx.data, &fx.wt).unwrap();
+        push_with(&fx.data, &fx.wt, false).unwrap();
         let name = branch(&fx);
         let view = format!(
             r#"{{"number":3,"url":"https://x/pull/3","state":"OPEN","isDraft":false,"title":"T","baseRefName":"main","headRefName":"{name}"}}"#

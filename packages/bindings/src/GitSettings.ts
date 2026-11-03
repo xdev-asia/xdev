@@ -15,4 +15,9 @@ branchPrefixCustom: string,
  * Fetch the base and fast-forward its local branch before a worktree
  * is created.
  */
-refreshLocalBaseOnCreate: boolean, };
+refreshLocalBaseOnCreate: boolean, 
+/**
+ * Count a branch's committed changes against its upstream rather than
+ * the repo's base ref.
+ */
+compareAgainstUpstream: boolean, };

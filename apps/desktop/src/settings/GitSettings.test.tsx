@@ -73,7 +73,7 @@ it("saves a custom prefix as typed, keeps the raw text and flags a bad one", asy
   const save = vi.spyOn(v.api, "setGitSettings");
   v.mode("custom").props.onClick();
   await tick();
-  expect(save).toHaveBeenLastCalledWith({ branchPrefix: "custom", branchPrefixCustom: "", refreshLocalBaseOnCreate: false });
+  expect(save).toHaveBeenLastCalledWith({ branchPrefix: "custom", branchPrefixCustom: "", refreshLocalBaseOnCreate: false, compareAgainstUpstream: false });
   expect(v.input()!.props).toMatchObject({ readOnly: false, placeholder: en("settings.git.customPlaceholder") });
 
   // A trailing slash on the way to `team/ui` stays in the box.
@@ -90,16 +90,20 @@ it("saves a custom prefix as typed, keeps the raw text and flags a bad one", asy
   expect(v.input()!.props["aria-invalid"]).toBe(true);
 });
 
-it("hides the prefix field for none and stores the switch", async () => {
+it("hides the prefix field for none and stores the switch and the compare base", async () => {
   const v = await view({ git: { branchPrefix: "custom", branchPrefixCustom: "team" } });
   expect(v.input()!.props.value).toBe("team");
+  const compare = (c: string) => v.all().find((n) => n.type === "button" && n.props["data-compare"] === c)!;
+  expect(compare("base").props["aria-pressed"]).toBe(true);
   v.mode("none").props.onClick();
   v.toggle().props.onClick();
+  compare("upstream").props.onClick();
   await tick();
   expect(v.input()).toBeUndefined();
   expect(v.toggle().props["aria-checked"]).toBe(true);
-  // Both changes land, in order: the later one builds on the earlier.
-  expect(await v.api.gitSettings()).toEqual({ branchPrefix: "none", branchPrefixCustom: "team", refreshLocalBaseOnCreate: true });
+  expect(compare("upstream").props["aria-pressed"]).toBe(true);
+  // Every change lands, in order: each later one builds on the earlier.
+  expect(await v.api.gitSettings()).toEqual({ branchPrefix: "none", branchPrefixCustom: "team", refreshLocalBaseOnCreate: true, compareAgainstUpstream: true });
 });
 
 it("shows a failed save", async () => {

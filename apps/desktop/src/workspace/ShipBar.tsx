@@ -134,6 +134,11 @@ export function ShipBar(props: {
                 {t("ship.counts", { added: range.added, removed: range.removed })}
               </span>
             )}
+            {range && ship.rangeBase !== ship.base && (
+              <span className="ws-ship-counts ws-mono" data-range-base={ship.rangeBase}>
+                {t("ship.rangeVs", { ref: ship.rangeBase })}
+              </span>
+            )}
             {range && range.commits.length > 0 && (
               <button
                 type="button"

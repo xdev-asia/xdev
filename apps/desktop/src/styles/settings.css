@@ -290,6 +290,7 @@
   min-width: 0;
 }
 
+.settings-page > .settings-hint,
 .settings-git-text .settings-hint {
   color: var(--text-2);
 }

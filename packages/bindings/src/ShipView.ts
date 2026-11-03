@@ -24,6 +24,16 @@ headPushed: boolean,
  */
 atStart: boolean, 
 /**
- * What the branch adds to its base; `None` for the primary checkout.
+ * What the branch adds to `range_base`; `None` for the primary checkout.
  */
-range: BaseRange | null, };
+range: BaseRange | null, 
+/**
+ * What `range` counts from: the base, or the upstream when
+ * Settings → Git compares against it and the branch has one.
+ */
+rangeBase: string, 
+/**
+ * The branch has commits its base lacks, whatever `range` counts from;
+ * what offering a pull request goes by.
+ */
+aheadOfBase: boolean, };

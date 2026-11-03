@@ -111,6 +111,20 @@ it("shows branch to base with counts and commits", async () => {
   expect(open).toContain("aaaaaaa");
 });
 
+it("names the upstream when the range counts against it", async () => {
+  const api = createMockApi({}, { workspace: { ...DEMO_WORKSPACE, git: { compareAgainstUpstream: true } } });
+  await api.worktreeCommit(OAK, ["src/session.ts"], "feat: one");
+  const before = bar(api);
+  await tick();
+  expect(before.html()).not.toContain(en("ship.rangeVs", { ref: "origin/oak" }));
+  await api.worktreePush(OAK);
+  hooks.values = []; hooks.effects = [];
+  const after = bar(api);
+  await tick();
+  expect(after.html()).toContain(en("ship.rangeVs", { ref: "origin/oak" }));
+  expect(after.html()).toContain(en("ship.counts", { added: 0, removed: 0 }));
+});
+
 it("main button follows state: commit, publish, push, create PR, open PR", async () => {
   // Checked changes first.
   const first = bar(seeded(), { checked: 2 });

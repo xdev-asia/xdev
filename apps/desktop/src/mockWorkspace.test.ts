@@ -41,8 +41,8 @@ describe("mock workspace", () => {
     const byUser = await api.worktreeCreate(repo.id, "one", null);
     expect(byUser).toMatchObject({ branch: "duy/one", path: "/demo/wt/xdev-one" });
 
-    const saved = await api.setGitSettings({ branchPrefix: "custom", branchPrefixCustom: " /team//ui/ ", refreshLocalBaseOnCreate: true });
-    expect(saved).toEqual({ branchPrefix: "custom", branchPrefixCustom: "team/ui", refreshLocalBaseOnCreate: true });
+    const saved = await api.setGitSettings({ branchPrefix: "custom", branchPrefixCustom: " /team//ui/ ", refreshLocalBaseOnCreate: true, compareAgainstUpstream: false });
+    expect(saved).toEqual({ branchPrefix: "custom", branchPrefixCustom: "team/ui", refreshLocalBaseOnCreate: true, compareAgainstUpstream: false });
     expect((await api.worktreeCreate(repo.id, "two", null)).branch).toBe("team/ui/two");
 
     await api.setGitSettings({ ...saved, branchPrefixCustom: "a b" });
@@ -223,6 +223,19 @@ describe("mock shipping", () => {
     await api.worktreeCommit(FIRST, ["src/status.ts"], "second");
     expect((await api.worktreeShip(FIRST)).upstream?.ahead).toBe(1);
     expect((await api.worktreePush(FIRST)).upstream?.ahead).toBe(0);
+  });
+
+  it("counts the range against the upstream when the git settings say so", async () => {
+    const api = createMockWorkspace({ ...DEMO_WORKSPACE, git: { compareAgainstUpstream: true } });
+    await api.worktreeCommit(FIRST, files, "first");
+    // No upstream yet: the base stays.
+    expect(await api.worktreeShip(FIRST)).toMatchObject({ rangeBase: "main", aheadOfBase: true });
+    await api.worktreePush(FIRST);
+    await api.worktreeCommit(FIRST, ["src/status.ts"], "second");
+    const ship = await api.worktreeShip(FIRST);
+    expect(ship).toMatchObject({ base: "main", rangeBase: "origin/oak", aheadOfBase: true });
+    expect(ship.range?.commits.map((c) => c.message)).toEqual(["second"]);
+    expect((await api.worktreePush(FIRST)).range?.commits).toEqual([]);
   });
 
   it("force push needs confirmation", async () => {
