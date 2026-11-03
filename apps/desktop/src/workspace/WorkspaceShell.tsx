@@ -12,6 +12,7 @@ import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
+import { sendToAgentTab } from "./agentPrompt";
 import { sendTarget } from "./sendTarget";
 import { Sessions } from "./sessions";
 import { WorktreeStats } from "./stats";
@@ -62,6 +63,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [creating, setCreating] = useState<Creating | null>(null);
   const [removing, setRemoving] = useState<Removing | null>(null);
   const [notice, setNotice] = useState<ApiError["code"]>();
+  const [fixNote, setFixNote] = useState(false);
+  // A request to bring a tab to the front of its worktree; a new `seq` is a new request.
+  const [front, setFront] = useState<{ worktree: string; id: string; seq: number } | null>(null);
   // Worktrees shown so far; their tabs stay mounted, hidden, so a switch never stops a pty.
   const [visited, setVisited] = useState<string[]>([]);
   // The file a diff tab should show, for the worktree that asked.
@@ -228,6 +232,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     return true;
   }
 
+  // Gives a failed commit hook's output to an agent of the worktree and brings its tab to the front.
+  async function fixWithAgent(output: string): Promise<void> {
+    if (!sessions || !current) return;
+    const path = current.path;
+    const prompt = `The git commit hook failed. Fix the problem it reports, then stop; do not commit.\n\n${output}`;
+    const tab = await sendToAgentTab(sessions, path, shownTab[path] ?? null, prompt);
+    setFixNote(!tab);
+    if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
+  }
+
   // The docs app has the only search for now; it shows after this render, so its box is looked up then.
   function openSearch(): void {
     show("docs");
@@ -349,12 +363,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   visible={path === current?.path}
                   onShown={(id) => setShownTab((s) => (s[path] === id ? s : { ...s, [path]: id }))}
                   reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq } : undefined}
+                  front={front?.worktree === path ? { id: front.id, seq: front.seq } : undefined}
                 />
               ))}
             {!current && repos && (
               <div className="ws-center-empty">
                 <p>{t("workspace.center.none")}</p>
               </div>
+            )}
+            {fixNote && (
+              <p className="error-text ws-notice" role="alert">
+                {t("ship.fix.noTab")}
+              </p>
             )}
           </main>
           <aside className="ws-panel" aria-label={t("workspace.panel.label")}>
@@ -415,6 +435,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   onOpenFile={(file) => openFile(current.path, file)}
                   onCount={(n) => setChangeCount({ worktree: current.path, count: n })}
                   onChanges={(list) => setChangeList({ worktree: current.path, list })}
+                  onFixWithAgent={(output) => void fixWithAgent(output)}
                 />
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>

@@ -40,6 +40,8 @@ export function WorktreeTabs(props: {
   worktree: string;
   visible: boolean;
   reveal?: Reveal;
+  /** Brings a terminal tab to the front; a new `seq` is a new request. */
+  front?: { id: string; seq: number };
   /** Told which tab is in front, so the shell knows where a prompt from the Agent kit goes. */
   onShown?: (id: string | null) => void;
 }): JSX.Element {
@@ -53,6 +55,7 @@ export function WorktreeTabs(props: {
   // Open diff tabs; `seq` keys the view, so opening a file again reads it again.
   const [files, setFiles] = useState<Reveal[]>([]);
   const [revealed, setRevealed] = useState(0);
+  const [fronted, setFronted] = useState(0);
 
   // Taken during render, so the frame that asks for a file already shows it.
   let open = files;
@@ -62,6 +65,12 @@ export function WorktreeTabs(props: {
     pick = fileTab(reveal.file);
     setRevealed(reveal.seq);
     setFiles(open);
+    setActive(pick);
+  }
+
+  if (props.front && props.front.seq !== fronted) {
+    pick = props.front.id;
+    setFronted(props.front.seq);
     setActive(pick);
   }
 
