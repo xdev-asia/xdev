@@ -18,6 +18,7 @@ import type {
 import { extractTitle, parseFrontmatter } from "./doc/frontmatter";
 import { createResolver, parseLinks } from "./doc/links";
 import { estimateTokens, type ExportDoc, planExport } from "./mockExport";
+import { createMockAgentSessions } from "./mockAgentSessions";
 import { createMockKit } from "./mockKit";
 import { createMockProfiles } from "./mockProfiles";
 import { createMockPty } from "./mockPty";
@@ -551,6 +552,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockWorkspace(options.workspace, settingsHub.emit),
     ...createMockSettings(settingsHub),
     ...createMockKit(),
+    ...createMockAgentSessions(),
     async accounts() { return structuredClone({ reservePercent: 30, accounts }); },
     async quota() { return structuredClone(quotas); },
     async updateStatus() { return null; },

@@ -114,6 +114,8 @@ pub struct RefreshStats {
     pub files_read: usize,
     /// JSON lines that could not be used.
     pub bad_lines: usize,
+    /// Log bytes read.
+    pub bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
