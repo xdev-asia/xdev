@@ -351,3 +351,29 @@
   font-weight: 400;
   accent-color: var(--accent);
 }
+
+.settings-script {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-script .settings-row {
+  align-items: center;
+}
+
+.settings-script-text {
+  max-height: 160px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--bg-2);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.ws-field textarea.ws-mono {
+  resize: vertical;
+}

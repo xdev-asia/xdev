@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Button } from "@xdev/ui";
 import { createMockApi, type RepoView } from "@/api";
 import { translate } from "@/i18n";
-import { DEMO_WORKSPACE } from "@/mockWorkspace";
+import { DEMO_WORKSPACE, type MockRepoFile } from "@/mockWorkspace";
 import { ReposSettings } from "./ReposSettings";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
@@ -37,8 +37,8 @@ const other: RepoView = { ...structuredClone(DEMO_WORKSPACE.repos[0]), id: "demo
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; });
 
-async function view() {
-  const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), repos: [structuredClone(DEMO_WORKSPACE.repos[0]), other] } });
+async function view(repoFiles?: Record<string, MockRepoFile>) {
+  const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), repos: [structuredClone(DEMO_WORKSPACE.repos[0]), other], repoFiles } });
   const onChanged = vi.fn();
   const draw = () => {
     hooks.cursor = 0;
@@ -50,13 +50,15 @@ async function view() {
   await tick();
   const all = () => nodes(draw());
   const form = (id: string) => all().find((n) => n.type === "form" && n.key === id)!;
-  const field = (id: string, name: string) => nodes(form(id)).find((n) => n.type === "input" && n.props.name === name)!;
+  const field = (id: string, name: string) => nodes(form(id)).find((n) => (n.type === "input" || n.type === "textarea" || n.type === "select") && n.props.name === name)!;
   const type = (id: string, name: string, value: string) => field(id, name).props.onChange({ target: { value } });
+  const pick = (id: string, name: string, value: string) => nodes(form(id)).find((n) => n.type === "input" && n.props.name === name && n.props.value === value)!.props.onChange({ target: { value } });
+  const trust = async (id: string, kind: string) => { nodes(form(id)).find((n) => n.props["data-trust"] === kind)!.props.onClick(); await tick(); };
   const submit = async (id: string) => { form(id).props.onSubmit({ preventDefault() {} }); await tick(); };
   const error = (id: string, name: string) => all().find((n) => n.props.id === `settings-${id}-${name}-error`);
   const save = (id: string) => nodes(form(id)).find((n) => n.type === Button)!;
   const html = () => renderToStaticMarkup(draw());
-  return { api, onChanged, all, form, field, type, submit, error, save, html };
+  return { api, onChanged, all, form, field, type, pick, trust, submit, error, save, html };
 }
 
 it("saves a changed short name and shows short_name_taken inline", async () => {
@@ -107,4 +109,40 @@ it("a bad short name shows the naming rule", async () => {
   v.type("demo-xdev", "shortName", "Bad Name");
   await v.submit("demo-xdev");
   expect(v.error("demo-xdev", "shortName")?.props.children).toBe(en("settings.repos.badName"));
+});
+
+it("each scripts field sends only itself", async () => {
+  const v = await view();
+  const update = vi.spyOn(v.api, "repoUpdate");
+  v.pick("demo-xdev", "setupPolicy", "run");
+  await v.submit("demo-xdev");
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { setupPolicy: "run" });
+  v.type("demo-xdev", "scriptSource", "both");
+  await v.submit("demo-xdev");
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { scriptSource: "both" });
+  v.type("demo-xdev", "localSetup", "pnpm i\nmake");
+  await v.submit("demo-xdev");
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { localSetup: "pnpm i\nmake" });
+  v.type("demo-xdev", "localArchive", "make down");
+  await v.submit("demo-xdev");
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { localArchive: "make down" });
+  expect(v.field("demo-xdev", "localSetup").props.className).toContain("ws-mono");
+});
+
+it("shows the shared scripts with their trust state and trusts the shown hash", async () => {
+  const v = await view({ "/demo/xdev": { setup: "pnpm i", archive: "make down" } });
+  const hooks = await v.api.repoHooks("/demo/xdev");
+  const text = v.html();
+  expect(text).toContain("pnpm i");
+  expect(text).toContain(en("settings.repos.scripts.untrusted"));
+  const trust = vi.spyOn(v.api, "repoHookTrust");
+  await v.trust("demo-xdev", "setup");
+  expect(trust).toHaveBeenCalledWith("/demo/xdev", "setup", hooks.setup!.hash);
+  expect(v.all().some((n) => n.props["data-trust"] === "setup")).toBe(false);
+  expect(v.all().some((n) => n.props["data-trust"] === "archive")).toBe(true);
+});
+
+it("shows the parse error of xdev.toml", async () => {
+  const v = await view({ "/demo/xdev": { parseError: "line 2: expected '='" } });
+  expect(v.html()).toContain("line 2: expected &#x27;=&#x27;");
 });
