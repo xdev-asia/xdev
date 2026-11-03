@@ -8,6 +8,8 @@ export type { ChangeKind } from "./ChangeKind";
 export type { CmdError } from "./CmdError";
 export type { Commit } from "./Commit";
 export type { ContextUse } from "./ContextUse";
+export type { DirEntry } from "./DirEntry";
+export type { DirListing } from "./DirListing";
 export type { DocEntry } from "./DocEntry";
 export type { DocLink } from "./DocLink";
 export type { DocState } from "./DocState";
