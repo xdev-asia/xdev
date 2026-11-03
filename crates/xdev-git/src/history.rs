@@ -97,6 +97,6 @@ pub(crate) fn parse_log(out: &[u8]) -> Vec<Commit> {
         .collect()
 }
 
-fn is_commit_id(id: &str) -> bool {
+pub(crate) fn is_commit_id(id: &str) -> bool {
     (4..=64).contains(&id.len()) && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }

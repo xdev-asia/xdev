@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Command;
 
 use tempfile::TempDir;
-use xdev_git::{NumStat, Repo};
+use xdev_git::{ChangeKind, GitError, NumStat, Repo};
 
 /// Runs setup commands; never used for the code under test.
 fn git(dir: &Path, args: &[&str]) -> String {
@@ -278,4 +278,68 @@ fn branch_name_checks() {
     for bad in ["-b", "a..b", "a b", "a~1", "", "@{-1}", "a\0b"] {
         assert!(!repo.valid_branch_name(bad).unwrap(), "{bad:?}");
     }
+}
+
+#[test]
+fn changes_since_takes_committed_staged_unstaged_and_untracked() {
+    // `with_worktree` seeds only `a.txt`; this one also needs `seed.txt`.
+    let dir = repo_dir();
+    fs::write(dir.path().join("a.txt"), "a\n").unwrap();
+    fs::write(dir.path().join("seed.txt"), "seed\n").unwrap();
+    let base = commit_all(dir.path(), "A");
+    let wt = TempDir::with_prefix("wt parent ").unwrap();
+    let w = wt.path().join("wt");
+    Repo::discover(dir.path())
+        .unwrap()
+        .add_worktree(&w, "task", &base)
+        .unwrap();
+    fs::write(w.join("a.txt"), "changed\n").unwrap();
+    commit_all(&w, "committed on the branch");
+    fs::write(w.join("b.txt"), "staged\n").unwrap();
+    git(&w, &["add", "b.txt"]);
+    fs::write(w.join("c.txt"), "untracked\n").unwrap();
+    fs::remove_file(w.join("seed.txt")).unwrap();
+    let repo = Repo::discover(&w).unwrap();
+    let got: Vec<(String, ChangeKind)> = repo
+        .changes_since(&base)
+        .unwrap()
+        .into_iter()
+        .map(|s| (s.path, s.kind))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("a.txt".into(), ChangeKind::Modified),
+            ("b.txt".into(), ChangeKind::Added),
+            ("c.txt".into(), ChangeKind::Added),
+            ("seed.txt".into(), ChangeKind::Deleted),
+        ]
+    );
+}
+
+#[test]
+fn changes_since_refuses_a_name() {
+    let (_main, wt, _repo, _base) = with_worktree();
+    let repo = Repo::discover(&wt.path().join("wt")).unwrap();
+    assert!(matches!(
+        repo.changes_since("main"),
+        Err(GitError::BadId(_))
+    ));
+}
+
+#[test]
+fn changes_since_from_a_subfolder_uses_top_relative_paths() {
+    let (_main, wt, _repo, base) = with_worktree();
+    let w = wt.path().join("wt");
+    fs::create_dir_all(w.join("sub")).unwrap();
+    fs::write(w.join("sub/n.txt"), "n\n").unwrap();
+    fs::write(w.join("top.txt"), "t\n").unwrap();
+    let repo = Repo::discover(&w.join("sub")).unwrap();
+    let got: Vec<String> = repo
+        .changes_since(&base)
+        .unwrap()
+        .into_iter()
+        .map(|s| s.path)
+        .collect();
+    assert_eq!(got, ["sub/n.txt", "top.txt"]);
 }
