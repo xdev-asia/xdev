@@ -5,6 +5,7 @@ import { api } from "./api";
 import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { I18nProvider } from "./i18n";
+import { startBindingsSync } from "./keys/bindingsStore";
 import { loadStatusSettings } from "./status/statusSettings";
 import { loadTerminalSettings, startSettingsSync } from "./terminal/terminalSettings";
 import "./styles/base.css";
@@ -31,6 +32,8 @@ document.head.prepend(style);
 void loadStatusSettings(api);
 void loadTerminalSettings(api);
 startSettingsSync(api);
+// The shortcuts: keybindings.json over the defaults, and the terminal key policy.
+startBindingsSync(api);
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

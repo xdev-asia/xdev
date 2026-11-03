@@ -1,10 +1,19 @@
-import type { Api, SettingsChanged, SettingsSection, TerminalSettings } from "./api";
+import type { Api, KeySettings, SettingsChanged, SettingsSection, TerminalSettings, UiSettings } from "./api";
+import { KEY_SETTINGS_DEFAULTS } from "./keys/bindingsStore";
 import { clampTerminalSettings, TERMINAL_DEFAULTS } from "./settings/terminalDefaults";
 
 /** Called by a mock's settings write, the way Rust emits `settings://changed`. */
 export type SettingsEmit = (sections: SettingsSection[]) => void;
 
-type SettingsApi = Pick<Api, "onSettingsChanged" | "terminalSettings" | "terminalSettingsPut">;
+type SettingsApi = Pick<
+  Api,
+  "onSettingsChanged" | "terminalSettings" | "terminalSettingsPut" | "keySettingsGet" | "keySettingsPut" | "uiSettingsGet" | "uiSettingsPut"
+>;
+
+export { KEY_SETTINGS_DEFAULTS };
+/** `UiSettings::default()` in Rust, and the range `ui_settings_put` clamps the zoom to. */
+export const UI_SETTINGS_DEFAULTS: UiSettings = { zoom: 1 };
+export const ZOOM_LIMITS = { min: 0.5, max: 2 } as const;
 
 export type SettingsHub = { emit: SettingsEmit; onSettingsChanged: Api["onSettingsChanged"] };
 
@@ -22,9 +31,11 @@ export function createSettingsHub(): SettingsHub {
   };
 }
 
-/** Settings → Terminal in memory, clamped like Rust stores it. */
+/** Settings → Terminal, Keys and the view settings in memory, clamped like Rust stores them. */
 export function createMockSettings(hub: SettingsHub = createSettingsHub()): SettingsApi {
   let terminal: TerminalSettings = { ...TERMINAL_DEFAULTS };
+  let keys: KeySettings = { ...KEY_SETTINGS_DEFAULTS };
+  let ui: UiSettings = { ...UI_SETTINGS_DEFAULTS };
   return {
     onSettingsChanged: hub.onSettingsChanged,
     async terminalSettings() {
@@ -34,6 +45,23 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
       terminal = clampTerminalSettings(next);
       hub.emit(["terminal"]);
       return { ...terminal };
+    },
+    async keySettingsGet() {
+      return { ...keys };
+    },
+    async keySettingsPut(next) {
+      keys = { ...next };
+      hub.emit(["keys"]);
+      return { ...keys };
+    },
+    async uiSettingsGet() {
+      return { ...ui };
+    },
+    async uiSettingsPut(next) {
+      const zoom = Number.isFinite(next.zoom) ? next.zoom : UI_SETTINGS_DEFAULTS.zoom;
+      ui = { zoom: Math.max(ZOOM_LIMITS.min, Math.min(ZOOM_LIMITS.max, zoom)) };
+      hub.emit(["ui"]);
+      return { ...ui };
     },
   };
 }

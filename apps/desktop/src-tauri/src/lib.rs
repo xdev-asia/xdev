@@ -4,6 +4,7 @@ mod agent_sessions;
 mod bindings;
 mod commands;
 mod hooks;
+mod keybindings;
 mod kit;
 mod links;
 mod profiles;
@@ -50,6 +51,7 @@ pub fn run() {
         .manage(review_notes::ReviewNotesLock::default())
         .manage(profiles::ProfilesLock::default())
         .manage(status::Shown::default())
+        .manage(keybindings::LastSent::default())
         .setup(move |app| {
             updater::start(app.handle().clone());
             // Every settings read and write goes through this store.
@@ -64,6 +66,14 @@ pub fn run() {
                 eprintln!("hooks marker: {e}");
             }
             status::listen_clicks(app.handle());
+            // Without it an edit on disk shows only after a restart.
+            let last = app.state::<keybindings::LastSent>().inner().clone();
+            match keybindings::watch(app.handle().clone(), last) {
+                Ok(watcher) => {
+                    app.manage(watcher);
+                }
+                Err(e) => eprintln!("keybindings watcher: {e}"),
+            }
             // Without the watcher panes still run; they just show no status.
             if let Some(dir) = hooks_dir {
                 match hooks::watch(app.handle().clone(), dir) {
@@ -91,6 +101,13 @@ pub fn run() {
             commands::set_git_settings,
             commands::terminal_settings_get,
             commands::terminal_settings_put,
+            commands::key_settings_get,
+            commands::key_settings_put,
+            commands::ui_settings_get,
+            commands::ui_settings_put,
+            keybindings::keybindings_read,
+            keybindings::keybindings_write,
+            keybindings::keybindings_reveal,
             commands::git_user_name,
             commands::vault_setup,
             commands::dismiss_vault_prompt,
