@@ -126,7 +126,6 @@
 .agentctx-file[aria-current="true"] {
   border-color: var(--x-color-signal);
   background: var(--x-color-signal-soft);
-  box-shadow: inset 3px 0 0 var(--x-color-signal);
 }
 
 .agentctx-file-row {

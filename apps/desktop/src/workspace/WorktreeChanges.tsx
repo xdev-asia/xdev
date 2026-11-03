@@ -24,6 +24,8 @@ export function WorktreeChanges(props: {
   sessions?: Sessions | null;
   onOpenFile(file: string): void;
   onCount?(count: number): void;
+  // The whole list, each time it is read.
+  onChanges?(list: WorktreeChange[]): void;
 }): JSX.Element {
   const { api, worktree, sessions } = props;
   const { t } = useI18n();
@@ -42,6 +44,8 @@ export function WorktreeChanges(props: {
   const running = useRef(0);
   const onCount = useRef(props.onCount);
   onCount.current = props.onCount;
+  const onChanges = useRef(props.onChanges);
+  onChanges.current = props.onChanges;
   const primary = worktree.start === null;
   const path = worktree.path;
 
@@ -56,6 +60,7 @@ export function WorktreeChanges(props: {
       setStats({});
       setLoadProblem(null);
       onCount.current?.(list.length);
+      onChanges.current?.(list);
     } catch (e) {
       if (seq === loads.current) setLoadProblem(toApiError(e));
     } finally {

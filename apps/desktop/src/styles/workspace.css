@@ -1,27 +1,12 @@
-/* Workspace shell: the Graphite palette, scoped to the shell so the docs app keeps its own. */
+/* Workspace shell. Colors, radii and sizes are the tokens of base.css; this file holds no raw values. */
 
 .ws-shell {
-  --ws-bg: var(--x-graphite-bg);
-  --ws-panel: var(--x-graphite-panel);
-  --ws-surface: var(--x-graphite-surface);
-  --ws-surface-2: var(--x-graphite-surface-2);
-  --ws-line: var(--x-graphite-line);
-  --ws-ink: var(--x-graphite-ink);
-  --ws-muted: var(--x-graphite-muted);
-  --ws-term: var(--x-graphite-term);
-  --ws-orange: var(--x-graphite-orange);
-  --ws-accent: var(--x-color-accent);
-  --ws-signal: var(--x-color-signal);
-  --ws-warn: var(--x-color-warn);
-  --ws-ok: var(--x-color-ok);
-  --ws-danger: var(--x-color-danger);
-
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: var(--ws-bg);
-  color: var(--ws-ink);
+  background: var(--bg-0);
+  color: var(--text-1);
   font-family: var(--x-font-body);
   font-size: 13px;
 }
@@ -33,18 +18,24 @@
 .ws-stage,
 .ws-footer,
 .ws-dialog {
-  --x-color-bg: var(--ws-bg);
-  --x-color-panel: var(--ws-panel);
-  --x-color-surface: var(--ws-surface);
-  --x-color-surface-2: var(--ws-surface-2);
-  --x-color-line: var(--ws-line);
-  --x-color-ink: var(--ws-ink);
-  --x-color-muted: var(--ws-muted);
-  --x-color-code-bg: var(--ws-term);
+  --x-color-bg: var(--bg-0);
+  --x-color-panel: var(--bg-1);
+  --x-color-surface: var(--bg-2);
+  --x-color-surface-2: var(--bg-3);
+  --x-color-line: var(--line);
+  --x-color-ink: var(--text-1);
+  --x-color-muted: var(--text-2);
+  --x-color-code-bg: var(--term);
+  --x-color-accent: var(--accent);
+  --x-color-signal: var(--signal);
+  --x-color-warn: var(--warn);
+  --x-color-warn-soft: var(--warn-bg);
+  --x-color-ok: var(--ok);
+  --x-color-danger: var(--danger);
 }
 
 .ws-shell :focus-visible {
-  outline: 2px solid var(--ws-signal);
+  outline: 2px solid var(--signal);
   outline-offset: 2px;
 }
 
@@ -67,14 +58,14 @@
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   background: transparent;
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
 .ws-icon-btn:hover:not(:disabled) {
-  background: var(--ws-surface-2);
-  color: var(--ws-ink);
+  background: var(--bg-3);
+  color: var(--text-1);
 }
 
 /* Header */
@@ -84,16 +75,16 @@
   flex-shrink: 0;
   align-items: center;
   gap: 10px;
-  height: 38px;
+  height: var(--h-header);
   padding: 0 12px;
-  border-bottom: 1px solid var(--ws-line);
-  background: var(--ws-panel);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-1);
 }
 
 .ws-logo {
   display: block;
   flex-shrink: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-s);
 }
 
 .ws-brand {
@@ -101,19 +92,74 @@
 }
 
 .ws-crumb-sep {
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
 .ws-crumb {
   overflow: hidden;
   font-size: 12px;
-  color: var(--ws-muted);
+  color: var(--text-2);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
 .ws-crumb.ws-mono {
-  color: var(--ws-ink);
+  color: var(--text-1);
+}
+
+.ws-header-center {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+}
+
+.ws-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 420px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  color: var(--text-2);
+  font-size: 12px;
+  text-align: left;
+}
+
+.ws-search:hover {
+  border-color: var(--text-3);
+}
+
+.ws-search svg {
+  flex-shrink: 0;
+}
+
+.ws-search-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ws-search-hint {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  line-height: 1.3;
+}
+
+.ws-header-btn {
+  width: 30px;
+  height: 30px;
+}
+
+.ws-header-btn:disabled {
+  cursor: default;
 }
 
 /* Body */
@@ -126,11 +172,11 @@
 
 .ws-sidebar {
   display: flex;
-  flex: 0 0 268px;
+  flex: 0 0 var(--w-side);
   flex-direction: column;
   min-height: 0;
-  border-right: 1px solid var(--ws-line);
-  background: var(--ws-panel);
+  border-right: 1px solid var(--line);
+  background: var(--bg-1);
 }
 
 .ws-nav {
@@ -147,18 +193,18 @@
   height: 28px;
   padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   background: transparent;
   text-align: left;
 }
 
 .ws-nav-item svg {
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
 .ws-nav-item:hover,
 .ws-nav-item[aria-current="page"] {
-  background: var(--ws-surface-2);
+  background: var(--bg-3);
 }
 
 .ws-nav-item[aria-current="page"] {
@@ -166,7 +212,7 @@
 }
 
 .ws-nav-item[aria-current="page"] svg {
-  color: var(--ws-ink);
+  color: var(--text-1);
 }
 
 /* Worktree list */
@@ -192,13 +238,13 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
 .ws-section-head .ws-icon-btn {
   width: 24px;
   height: 24px;
-  border-radius: 5px;
+  border-radius: var(--radius-s);
 }
 
 .ws-list {
@@ -216,22 +262,30 @@
   list-style: none;
 }
 
+/* Sticky inside the scrolling list, so the section of the rows in view stays named. */
 .ws-group-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
+  box-sizing: border-box;
   gap: 6px;
   width: 100%;
   padding: 8px 8px 4px;
   border: 0;
-  background: transparent;
-  font-size: 12px;
+  background: var(--bg-1);
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.02em;
   text-align: left;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
 .ws-chevron {
   flex-shrink: 0;
-  color: var(--ws-muted);
+  color: var(--text-2);
   transition: transform 120ms ease;
 }
 
@@ -239,8 +293,29 @@
   transform: rotate(-90deg);
 }
 
-.ws-group-mark {
-  color: var(--ws-orange);
+.ws-group-dot {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.ws-group-dot[data-group="needs-you"] {
+  background: var(--warn);
+}
+
+.ws-group-dot[data-group="working"] {
+  background: var(--signal);
+}
+
+.ws-group-dot[data-group="review"] {
+  background: var(--violet);
+}
+
+.ws-group-dot[data-group="rest"] {
+  border: 1.5px solid var(--text-2);
+  background: transparent;
 }
 
 .ws-group-name {
@@ -255,23 +330,23 @@
   font-family: var(--x-font-mono);
   font-size: 11px;
   font-weight: 400;
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
 .ws-tag {
   flex-shrink: 0;
   padding: 0 5px;
-  border: 1px solid var(--ws-line);
-  border-radius: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
   font-size: 10px;
   font-weight: 400;
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
 .ws-tag-warn {
   border-color: transparent;
-  background: var(--x-color-warn-soft);
-  color: var(--ws-warn);
+  background: var(--warn-bg);
+  color: var(--warn);
   font-weight: 600;
 }
 
@@ -290,18 +365,18 @@
   overflow: hidden;
   padding: 7px 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-l);
   background: transparent;
   text-align: left;
 }
 
 .ws-wt-main:hover {
-  background: var(--ws-surface-2);
+  background: var(--bg-3);
 }
 
 .ws-wt-main[aria-current="true"] {
-  background: var(--ws-surface-2);
-  box-shadow: inset 2px 0 0 var(--ws-accent);
+  background: var(--bg-3);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 /* Border-box, so the padding that clears the menu button stays inside the row. */
@@ -324,7 +399,7 @@
   gap: 6px;
   padding-left: 15px;
   font-size: 11px;
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
 .ws-wt-name {
@@ -347,7 +422,70 @@
 
 .ws-pin {
   flex-shrink: 0;
-  color: var(--ws-muted);
+  color: var(--text-2);
+}
+
+.ws-wt-time {
+  flex-shrink: 0;
+  font-family: var(--x-font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+/* Third line: agent chips on the left, line counts pushed to the right and never cut. */
+.ws-wt-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding-left: 15px;
+  font-size: 11px;
+}
+
+.ws-wt-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-chip {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-s);
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-family: var(--x-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ws-chip[data-profile="claude"] {
+  background: var(--orange-bg);
+  color: var(--orange);
+}
+
+.ws-chip[data-profile="codex"] {
+  background: var(--signal-bg);
+  color: var(--signal);
+}
+
+.ws-stat {
+  flex-shrink: 0;
+  font-family: var(--x-font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.ws-stat-add {
+  color: var(--ok);
+}
+
+.ws-stat-del {
+  color: var(--danger);
 }
 
 /* The status dot: working pulses, failed is danger, idle and exited are an outline. */
@@ -360,16 +498,16 @@
 }
 
 .ws-dot[data-dot="working"] {
-  background: var(--ws-signal);
+  background: var(--signal);
 }
 
 .ws-dot[data-dot="failed"] {
-  background: var(--ws-danger);
+  background: var(--danger);
 }
 
 .ws-dot[data-dot="idle"],
 .ws-dot[data-dot="exited"] {
-  border: 1.5px solid var(--ws-muted);
+  border: 1.5px solid var(--text-2);
   background: transparent;
 }
 
@@ -383,9 +521,9 @@
   height: 22px;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-s);
   background: transparent;
-  color: var(--ws-muted);
+  color: var(--text-2);
   line-height: 1;
   opacity: 0;
 }
@@ -397,8 +535,8 @@
 }
 
 .ws-wt-more:hover {
-  background: var(--ws-line);
-  color: var(--ws-ink);
+  background: var(--line);
+  color: var(--text-1);
 }
 
 .ws-menu-backdrop {
@@ -416,34 +554,56 @@
   flex-direction: column;
   min-width: 140px;
   padding: 4px;
-  border: 1px solid var(--ws-line);
-  border-radius: 8px;
-  background: var(--ws-surface);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--ws-ink) 16%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-1) 16%, transparent);
 }
 
 .ws-menu button {
   height: 28px;
   padding: 0 8px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-s);
   background: transparent;
   text-align: left;
 }
 
 .ws-menu button:hover {
-  background: var(--ws-surface-2);
+  background: var(--bg-3);
 }
 
 .ws-menu .ws-menu-danger {
-  color: var(--ws-danger);
+  color: var(--danger);
+}
+
+.ws-missing-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-missing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.ws-missing .ws-wt-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ws-empty {
   margin: 0;
   padding: 8px;
   font-size: 12px;
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
 .ws-notice {
@@ -456,7 +616,7 @@
   align-items: center;
   gap: 4px;
   padding: 6px 8px;
-  border-top: 1px solid var(--ws-line);
+  border-top: 1px solid var(--line);
 }
 
 .ws-add-repo {
@@ -467,15 +627,15 @@
   height: 28px;
   padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   background: transparent;
-  color: var(--ws-muted);
+  color: var(--text-2);
   text-align: left;
 }
 
 .ws-add-repo:hover {
-  background: var(--ws-surface-2);
-  color: var(--ws-ink);
+  background: var(--bg-3);
+  color: var(--text-1);
 }
 
 /* Stage: the center and the right panel */
@@ -491,7 +651,7 @@
   display: flex;
   flex: 1;
   min-width: 0;
-  background: var(--ws-term);
+  background: var(--term);
 }
 
 .ws-center-empty {
@@ -503,12 +663,12 @@
   gap: 6px;
   padding: 24px;
   text-align: center;
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
 .ws-center-empty strong {
   font-size: 15px;
-  color: var(--ws-ink);
+  color: var(--text-1);
 }
 
 .ws-center-empty .ws-mono {
@@ -534,8 +694,8 @@
   flex-shrink: 0;
   align-items: stretch;
   height: 34px;
-  border-bottom: 1px solid var(--ws-line);
-  background: var(--ws-panel);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-1);
 }
 
 .ws-tablist {
@@ -549,14 +709,14 @@
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  border-right: 1px solid var(--ws-line);
-  color: var(--ws-muted);
+  border-right: 1px solid var(--line);
+  color: var(--text-2);
 }
 
 .ws-tab[data-selected="true"] {
-  background: var(--ws-term);
-  color: var(--ws-ink);
-  box-shadow: inset 0 2px 0 var(--ws-accent);
+  background: var(--term);
+  color: var(--text-1);
+  box-shadow: inset 0 2px 0 var(--accent);
 }
 
 .ws-tab-main {
@@ -572,22 +732,45 @@
   white-space: nowrap;
 }
 
-.ws-tab-icon {
-  font-size: 11px;
-  color: var(--ws-muted);
+/* The letter mark of an agent profile, on that profile's token color. */
+.ws-agent {
+  --agent-size: 16px;
+
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: var(--agent-size);
+  height: var(--agent-size);
+  border-radius: var(--radius-s);
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-family: var(--x-font-mono);
+  font-size: calc(var(--agent-size) * 0.62);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.ws-agent[data-profile="claude"] {
+  background: var(--orange-bg);
+  color: var(--orange);
+}
+
+.ws-agent[data-profile="codex"] {
+  background: var(--signal-bg);
+  color: var(--signal);
 }
 
 .ws-tab-glyph {
   font-size: 10px;
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
 .ws-tab-glyph[data-status="working"] {
-  color: var(--ws-signal);
+  color: var(--signal);
 }
 
 .ws-tab-glyph[data-status="failed"] {
-  color: var(--ws-danger);
+  color: var(--danger);
 }
 
 .ws-tab-close {
@@ -598,16 +781,35 @@
   margin-right: 6px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-s);
   background: transparent;
-  color: var(--ws-muted);
+  color: var(--text-2);
   font-size: 14px;
   line-height: 1;
 }
 
 .ws-tab-close:hover {
-  background: var(--ws-surface-2);
-  color: var(--ws-ink);
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+.ws-tab-tools {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding: 0 4px;
+}
+
+.ws-tab-tools .ws-icon-btn[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ws-tab-tools .ws-icon-btn[aria-pressed="true"] {
+  background: var(--bg-3);
+  color: var(--text-1);
 }
 
 .ws-tab-add {
@@ -639,13 +841,43 @@
   overflow-wrap: anywhere;
 }
 
+/* The panes of one worktree: one shows, or two when it is split. */
+.ws-panes {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ws-panes:empty {
+  display: none;
+}
+
+.ws-panes[data-split="right"] {
+  flex-direction: row;
+}
+
+.ws-panes[data-split="down"] {
+  flex-direction: column;
+}
+
+/* Hidden panes stay between the two, so the divider goes on every visible pane after the first. */
+.ws-panes[data-split="right"] > .ws-tab-pane:not([hidden]) ~ .ws-tab-pane:not([hidden]) {
+  border-left: 1px solid var(--line);
+}
+
+.ws-panes[data-split="down"] > .ws-tab-pane:not([hidden]) ~ .ws-tab-pane:not([hidden]) {
+  border-top: 1px solid var(--line);
+}
+
 /* The terminal reads its colors from these, so it draws on the terminal background. */
 .ws-tab-pane {
-  --x-color-surface: var(--ws-term);
+  --x-color-surface: var(--term);
 
   display: flex;
   flex: 1;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -655,24 +887,24 @@
   align-items: center;
   gap: 12px;
   padding: 6px 12px;
-  border-bottom: 1px solid var(--ws-line);
-  background: var(--ws-panel);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-1);
   font-size: 12px;
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
 .ws-tab-again {
   height: 24px;
   padding: 0 10px;
-  border: 1px solid var(--ws-line);
-  border-radius: 6px;
-  background: var(--ws-surface);
-  color: var(--ws-ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  color: var(--text-1);
   font-size: 12px;
 }
 
 .ws-tab-again:hover {
-  background: var(--ws-surface-2);
+  background: var(--bg-3);
 }
 
 .ws-launch {
@@ -685,39 +917,42 @@
 
 .ws-panel {
   display: flex;
-  flex: 0 0 276px;
+  flex: 0 0 var(--w-panel);
   flex-direction: column;
   min-height: 0;
-  border-left: 1px solid var(--ws-line);
-  background: var(--ws-panel);
+  border-left: 1px solid var(--line);
+  background: var(--bg-1);
 }
 
 .ws-panel-tabs {
   display: flex;
   flex-shrink: 0;
-  align-items: center;
-  gap: 2px;
+  align-items: stretch;
   height: 34px;
-  padding: 0 6px;
-  border-bottom: 1px solid var(--ws-line);
+  padding: 0 4px;
+  border-bottom: 1px solid var(--line);
 }
 
+/* An icon button; the selected one carries an accent bar along its bottom edge. */
 .ws-panel-tab {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 3px;
-  height: 26px;
-  padding: 0 7px;
+  justify-content: center;
+  width: 40px;
+  padding: 0;
   border: 0;
-  border-radius: 6px;
   background: transparent;
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
-.ws-panel-tab:hover,
+.ws-panel-tab:hover {
+  color: var(--text-1);
+}
+
 .ws-panel-tab[aria-selected="true"] {
-  background: var(--ws-surface-2);
-  color: var(--ws-ink);
+  color: var(--text-1);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .ws-panel-body {
@@ -727,16 +962,147 @@
   padding: 6px 4px;
 }
 
+.ws-panel-body[hidden] {
+  display: none;
+}
+
 .ws-panel-badge {
-  min-width: 16px;
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 15px;
   padding: 0 4px;
-  border-radius: 8px;
-  background: var(--ws-surface);
-  color: var(--ws-ink);
-  font-size: 10px;
+  border-radius: var(--radius-l);
+  background: var(--accent);
+  color: var(--bg-0);
+  font-size: 9px;
   font-weight: 700;
-  line-height: 16px;
+  line-height: 15px;
   text-align: center;
+}
+
+/* Below 1076px (sidebar 296 + panel 300 + center 480) the panel folds to its icon rail, so the
+   center keeps 480px; the open tab shows over the center while the pointer or focus is in it. */
+@media (max-width: 1075px) {
+  .ws-panel {
+    position: relative;
+    flex-basis: 41px;
+  }
+
+  .ws-panel-tabs {
+    flex-direction: column;
+    height: auto;
+    padding: 4px 0;
+    border-bottom: 0;
+  }
+
+  .ws-panel-tab {
+    height: 34px;
+  }
+
+  .ws-panel-tab[aria-selected="true"] {
+    box-shadow: none;
+    background: var(--bg-2);
+  }
+
+  .ws-panel-body {
+    position: absolute;
+    top: 0;
+    right: 100%;
+    bottom: 0;
+    z-index: 10;
+    width: calc(var(--w-panel) - 41px);
+    border-left: 1px solid var(--line);
+    background: var(--bg-1);
+  }
+
+  .ws-panel:not(:hover, :focus-within) .ws-panel-body {
+    display: none;
+  }
+}
+
+/* Files panel: one worktree as a lazy tree, 24px rows, indent 8px plus 14px a level. */
+
+.ws-tree {
+  --tree-pad: 8px;
+  --tree-indent: 14px;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+}
+
+.ws-tree-row,
+.ws-tree-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 24px;
+  padding-right: 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+}
+
+button.ws-tree-row {
+  cursor: pointer;
+}
+
+button.ws-tree-row:hover {
+  background: var(--bg-3);
+}
+
+button.ws-tree-row:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.ws-tree-icon {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+
+.ws-tree-icon[data-open] {
+  color: var(--signal);
+  opacity: 0.6;
+}
+
+.ws-tree-icon[data-open="true"] {
+  opacity: 1;
+}
+
+.ws-tree-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-tree-mark {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--warn);
+}
+
+.ws-tree-mark[data-kind="added"] {
+  color: var(--ok);
+}
+
+.ws-tree-dot {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.ws-tree-note {
+  color: var(--text-3);
 }
 
 /* Changes panel: the worktree's uncommitted files and a commit of the checked ones. */
@@ -766,17 +1132,17 @@
   align-items: center;
   gap: 6px;
   padding-left: 4px;
-  border-radius: 6px;
+  border-radius: var(--radius-m);
 }
 
 .ws-change:hover {
-  background: var(--ws-surface-2);
+  background: var(--bg-3);
 }
 
 .ws-change input {
   flex-shrink: 0;
   margin: 0;
-  accent-color: var(--ws-accent);
+  accent-color: var(--accent);
 }
 
 .ws-change-open {
@@ -788,7 +1154,7 @@
   padding: 4px 6px 4px 0;
   border: 0;
   background: transparent;
-  color: var(--ws-ink);
+  color: var(--text-1);
   font-size: 12px;
   text-align: left;
 }
@@ -798,15 +1164,15 @@
   flex-shrink: 0;
   font-size: 11px;
   font-weight: 700;
-  color: var(--ws-warn);
+  color: var(--warn);
 }
 
 .ws-change-kind[data-kind="added"] {
-  color: var(--ws-ok);
+  color: var(--ok);
 }
 
 .ws-change-kind[data-kind="deleted"] {
-  color: var(--ws-danger);
+  color: var(--danger);
 }
 
 .ws-change-path {
@@ -829,16 +1195,16 @@
   flex-direction: column;
   gap: 6px;
   font-size: 11px;
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
 .ws-commit-field textarea {
   min-height: 52px;
   padding: 8px;
-  border: 1px solid var(--ws-line);
-  border-radius: 6px;
-  background: var(--ws-surface);
-  color: var(--ws-ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  color: var(--text-1);
   font-size: 12px;
   resize: vertical;
 }
@@ -863,7 +1229,7 @@
   gap: 12px;
   height: 32px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--ws-line);
+  border-bottom: 1px solid var(--line);
   font-size: 12px;
 }
 
@@ -911,12 +1277,12 @@
   flex-shrink: 0;
   align-items: center;
   gap: 16px;
-  height: 26px;
+  height: var(--h-footer);
   padding: 0 12px;
-  border-top: 1px solid var(--ws-line);
-  background: var(--ws-panel);
+  border-top: 1px solid var(--line);
+  background: var(--bg-1);
   font-size: 11.5px;
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
 .ws-running {
@@ -928,6 +1294,105 @@
 .ws-running .ws-dot {
   width: 6px;
   height: 6px;
+}
+
+.ws-footer > * {
+  white-space: nowrap;
+}
+
+.ws-footer-branch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-footer-spacer {
+  flex: 1;
+}
+
+.ws-waiting {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-waiting .ws-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--warn);
+}
+
+/* A ready update: a flat accent tint with a full 1px border and a dot, never a side stripe. */
+.ws-update {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text-1);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ws-update::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.ws-update:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.ws-update-busy {
+  color: var(--text-2);
+}
+
+.ws-meters {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ws-meter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-meter-bar {
+  display: block;
+  width: 54px;
+  height: 5px;
+  border-radius: var(--radius-s);
+  background: var(--bg-3);
+  overflow: hidden;
+}
+
+.ws-meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--signal);
+}
+
+.ws-meter-pct {
+  min-width: 3ch;
+  color: var(--text-1);
+}
+
+.ws-meter-warn .ws-meter-fill {
+  background: var(--warn);
+}
+
+.ws-meter-warn .ws-meter-pct {
+  color: var(--warn);
 }
 
 /* Dialogs */
@@ -951,10 +1416,10 @@
 .ws-field select {
   height: 30px;
   padding: 0 8px;
-  border: 1px solid var(--ws-line);
-  border-radius: 6px;
-  background: var(--ws-bg);
-  color: var(--ws-ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-0);
+  color: var(--text-1);
   font: inherit;
   font-weight: 400;
 }
@@ -968,16 +1433,16 @@
   min-height: 32px;
   padding: 0 var(--x-space-4);
   border: 0;
-  border-radius: var(--x-radius-md);
+  border-radius: var(--radius-l);
   background: var(--x-color-danger);
-  color: var(--ws-bg);
+  color: var(--bg-0);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
 }
 
 .ws-danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--x-color-danger) 88%, var(--ws-ink));
+  background: color-mix(in srgb, var(--x-color-danger) 88%, var(--text-1));
 }
 
 .ws-danger:disabled {
@@ -988,7 +1453,7 @@
 .ws-field small {
   font-size: 11.5px;
   font-weight: 400;
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
 .ws-facts {
@@ -1000,7 +1465,7 @@
 }
 
 .ws-facts dt {
-  color: var(--ws-muted);
+  color: var(--text-2);
 }
 
 .ws-facts dd {

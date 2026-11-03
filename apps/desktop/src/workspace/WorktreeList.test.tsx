@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { RepoView, WorktreeView } from "../api";
 import { translate } from "../i18n";
 import { DEMO_WORKSPACE } from "../mockWorkspace";
-import { WorktreeList } from "./WorktreeList";
+import { WorktreeList, type WorktreeListProps } from "./WorktreeList";
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0 }));
 vi.mock("react", async (original) => ({
@@ -28,23 +28,28 @@ const en = (key: string, vars?: Record<string, string | number>) => translate("e
 const event = { preventDefault() {} };
 
 const notes: RepoView = {
-  id: "repo-2-notes", shortName: "notes", path: "/code/notes", baseRef: "main", missing: true,
+  id: "repo-2-notes", shortName: "notes", path: "/code/notes", baseRef: "main", missing: false,
   worktrees: [{ path: "/code/notes", name: "notes", branch: null, head: null, start: null, primary: true, pinned: false, detached: true }],
 };
+// A repo whose folder is gone comes back with no worktrees.
+const gone: RepoView = { id: "repo-3-gone", shortName: "gone", path: "/code/gone", baseRef: "main", missing: true, worktrees: [] };
 const repos = (): RepoView[] => {
   const [xdev] = structuredClone(DEMO_WORKSPACE.repos);
   xdev.worktrees[2].pinned = true;
-  return [xdev, notes];
+  return [xdev, notes, gone];
 };
 
-function harness() {
+const DOTS: Record<string, "working" | "failed" | "idle"> = { "/demo/wt/xdev-oak": "working", "/demo/wt/xdev-elm": "failed" };
+
+function harness(dots: Record<string, "working" | "failed" | "idle"> = DOTS, list: () => RepoView[] = repos, extra: Partial<WorktreeListProps> = {}) {
   const calls = { select: [] as WorktreeView[], create: 0, pin: [] as WorktreeView[], remove: [] as WorktreeView[], add: 0 };
   const draw = () => {
     hooks.cursor = 0;
     return WorktreeList({
-      repos: repos(),
+      repos: list(),
       selected: "/demo/wt/xdev-oak",
-      dots: { "/demo/wt/xdev-oak": "working", "/demo/wt/xdev-elm": "failed" },
+      dots,
+      ...extra,
       onSelect: (w) => calls.select.push(w),
       onCreate: () => void calls.create++,
       onPin: (w) => calls.pin.push(w),
@@ -77,10 +82,11 @@ function dom(labels: string[]) {
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; });
 
-it("lists worktrees grouped by repo with the primary first and no delete on it", () => {
+it("lists worktrees by status group, keeps repo order inside one, and no delete on the primary", () => {
   const view = harness();
   const html = view.html();
-  const order = [">xdev<", "/demo/xdev", "/demo/wt/xdev-oak", "/demo/wt/xdev-elm", ">notes<"].map(s => html.indexOf(s));
+  // failed (needs you), working, then the rest: the primary checkouts of xdev and notes.
+  const order = ["/demo/wt/xdev-elm", "/demo/wt/xdev-oak", "/demo/xdev", "/code/notes"].map(s => html.indexOf(s));
   expect(order.every(i => i >= 0)).toBe(true);
   expect(order).toEqual([...order].sort((a, b) => a - b));
   expect(html).toContain(en("workspace.primary"));
@@ -165,11 +171,92 @@ it("Tab closes the menu", () => {
   expect(view.menu()).toBeUndefined();
 });
 
-it("a repo group collapses", () => {
+const names = (view: ReturnType<typeof harness>) =>
+  view.all().filter(n => n.props.className === "ws-group-head").map(h => nodes(h.props.children).map(c => (typeof c.props.children === "string" || typeof c.props.children === "number" ? String(c.props.children) : "")).join(" ").trim());
+const head = (view: ReturnType<typeof harness>, group: string) => view.all().find(n => n.props.className === "ws-group-head" && n.props["data-group"] === group)!;
+
+const two = (): RepoView[] => {
+  const [xdev] = structuredClone(DEMO_WORKSPACE.repos);
+  return [xdev];
+};
+
+it("shows group headers with counts", () => {
+  // Two working, one idle, the primary checkout without a status.
+  const view = harness({ "/demo/wt/xdev-oak": "working", "/demo/wt/xdev-elm": "working", "/demo/xdev": "idle" }, two);
+  expect(names(view)).toEqual([`${en("workspace.group.working")} 2`, `${en("workspace.group.review")} 1`]);
+  expect(translate("vi", "workspace.group.working")).toBe("Đang chạy");
+  expect(translate("vi", "workspace.group.review")).toBe("Chờ duyệt");
+  expect(head(view, "working").props["aria-expanded"]).toBe(true);
+});
+
+it("collapses a group on header click", () => {
   const view = harness();
-  const head = () => view.all().find(n => n.props.className === "ws-group-head" && n.props["data-repo"] === "demo-xdev")!;
-  expect(head().props["aria-expanded"]).toBe(true);
-  head().props.onClick();
-  expect(head().props["aria-expanded"]).toBe(false);
+  expect(view.html()).toContain("/demo/wt/xdev-oak");
+  head(view, "working").props.onClick();
+  expect(head(view, "working").props["aria-expanded"]).toBe(false);
+  // Its rows leave; the other groups keep theirs. The state lives on across draws.
   expect(view.html()).not.toContain("/demo/wt/xdev-oak");
+  expect(view.html()).toContain("/demo/wt/xdev-elm");
+  expect(head(view, "working").props["aria-expanded"]).toBe(false);
+  head(view, "working").props.onClick();
+  expect(view.html()).toContain("/demo/wt/xdev-oak");
+});
+
+const NOW = 1_000_000_000;
+const text = (node: Node): string => [node.props.children].flat().filter(c => typeof c === "string").join("");
+const withData = (extra: Partial<WorktreeListProps> = {}) => harness(DOTS, repos, {
+  now: NOW,
+  stats: { "/demo/wt/xdev-oak": { files: 3, added: 5, removed: 1 }, "/demo/wt/xdev-elm": { files: 0, added: 0, removed: 0 } },
+  activity: { "/demo/wt/xdev-oak": NOW - 5 * 60_000 },
+  profiles: { "/demo/wt/xdev-oak": ["claude", "shell", "codex"], "/demo/wt/xdev-elm": ["shell"] },
+  ...extra,
+});
+const part = (view: ReturnType<typeof harness>, path: string, cls: string) => nodes(view.row(path).props.children).filter(n => n.props.className === cls);
+
+it("row shows time, branch, agent chips and line counts", () => {
+  const view = withData();
+  const oak = "/demo/wt/xdev-oak";
+  expect(part(view, oak, "ws-wt-time").map(text)).toEqual(["5 min"]);
+  expect(part(view, oak, "ws-wt-branch").map(text)).toEqual(["oak"]);
+  // Chips for the agents in tab order; the shell has none.
+  expect(part(view, oak, "ws-chip").map(text)).toEqual(["C", "X"]);
+  expect(part(view, oak, "ws-chip").map(n => n.props["data-profile"])).toEqual(["claude", "codex"]);
+  expect(part(view, oak, "ws-chip").map(n => n.props.title)).toEqual([en("terminal.profile.claude"), en("terminal.profile.codex")]);
+  const counts = part(view, oak, "ws-stat")[0];
+  expect(nodes(counts.props.children).filter(n => typeof n.props.children === "string").map(n => n.props.children).join(" ")).toBe("+5 −1");
+  expect(counts.props.title).toBe(en("workspace.row.stat", { files: 3, added: 5, removed: 1 }));
+  expect(view.html()).toContain("+5</span> <span");
+
+  // Nothing read, nothing run, no chip and no counts: the row keeps just its name and branch.
+  for (const path of ["/demo/wt/xdev-elm", "/demo/xdev", "/code/notes"]) {
+    expect(part(view, path, "ws-wt-time")).toHaveLength(0);
+    expect(part(view, path, "ws-chip")).toHaveLength(0);
+    expect(part(view, path, "ws-stat")).toHaveLength(0);
+    expect(part(view, path, "ws-wt-meta")).toHaveLength(0);
+  }
+});
+
+it("a repo whose folder is gone stays listed with its name, a missing tag and its path", () => {
+  const html = harness().html();
+  expect(html).toMatch(/<li class="ws-missing" title="\/code\/gone">/);
+  const item = html.slice(html.indexOf('class="ws-missing"'));
+  expect(item).toContain(">gone<");
+  expect(item).toContain(`title="${en("workspace.missingTitle")}"`);
+  expect(item).toContain(en("workspace.missing"));
+  // Only gone repos: still listed, and no worktree can be made.
+  const only = harness(DOTS, () => [gone]).html();
+  expect(only).toContain('class="ws-missing"');
+  expect(only).toMatch(new RegExp(`aria-label="${en("workspace.new")}"[^>]*disabled=""`));
+  // A present repo has no such row.
+  expect(harness(DOTS, () => [notes]).html()).not.toContain("ws-missing");
+});
+
+it("a long name and branch are cut by the row and keep their full text in a title", () => {
+  const long = "feature/a-very-long-branch-name-that-does-not-fit-in-the-sidebar-at-all";
+  const view = withData({ repos: structuredClone(repos()).map(r => ({ ...r, worktrees: r.worktrees.map(w => w.name === "oak" ? { ...w, name: long, branch: long } : w) })) });
+  const oak = "/demo/wt/xdev-oak";
+  expect(nodes(view.row(oak).props.children).find(n => n.props.className === "ws-wt-name")!.props.title).toBe(long);
+  expect(part(view, oak, "ws-wt-branch")[0].props.title).toBe(long);
+  // The counts stay in their own non-shrinking element, after the cut text.
+  expect(part(view, oak, "ws-stat")).toHaveLength(1);
 });

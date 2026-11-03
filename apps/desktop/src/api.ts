@@ -38,14 +38,17 @@ import type {
   RepoView,
   WorktreeChange,
   WorktreeFileDiff,
+  WorktreeStat,
   WorktreeView,
 } from "@xdev/bindings";
+import type { DirEntry, DirListing } from "@xdev/bindings";
 import type { Target } from "./doc/frontmatter";
 import { toBytes } from "./terminal/ptyClient";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 
 export { createMockApi };
 export type { Target };
+export type { DirEntry, DirListing };
 
 // The IPC types come from Rust; see packages/bindings/README.md.
 export type {
@@ -94,6 +97,7 @@ export type {
   WorktreeChange,
   WorktreeFileDiff,
   WorktreeSkip,
+  WorktreeStat,
   WorktreeView,
 } from "@xdev/bindings";
 // The UI's names for generated types.
@@ -287,6 +291,12 @@ export interface Api {
   worktreeFileDiff(path: string, file: string): Promise<WorktreeFileDiff>;
   // The new commit's id, or null when none of `files` had a change. Rejects with `empty_message`.
   worktreeCommit(path: string, files: string[], message: string): Promise<string | null>;
+  // Line counts against the start ref (against HEAD for the primary checkout), untracked files included.
+  worktreeStat(path: string): Promise<WorktreeStat>;
+  // One folder level of a worktree (`dir` is relative; "" is the top): folders first, then files,
+  // A to Z, `.git` left out, links listed as files and never followed, at most 2000 names with
+  // `truncated` set past that. Rejects with `bad_path` for `..`, an absolute path or a link.
+  worktreeListDir(path: string, dir: string): Promise<DirListing>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -451,6 +461,8 @@ const tauriApi: Api = {
   worktreeChanges: (path) => call("worktree_changes", { path }),
   worktreeFileDiff: (path, file) => call("worktree_file_diff", { path, file }),
   worktreeCommit: (path, files, message) => call("worktree_commit", { path, files, message }),
+  worktreeStat: (path) => call("worktree_stat", { path }),
+  worktreeListDir: (path, dir) => call("worktree_list_dir", { path, dir }),
 };
 
 function browserApi(): Api {
@@ -461,9 +473,12 @@ function browserApi(): Api {
   // The preview lands in the demo vault so the main layout is reachable without a dialog;
   // `?welcome` simulates a first launch instead.
   const firstRun = params.has("welcome");
+  // `?update=0.4.0` simulates a downloaded update, so the restart button can be previewed.
+  const pending = params.get("update");
   let seeded = false;
   return {
     ...mock,
+    updateStatus: async () => (pending ? { version: pending, notes: null } : null),
     lastVault: async () => (await mock.lastVault()) ?? (firstRun ? null : DEMO_ROOT),
     async openVault(path) {
       const docs = await mock.openVault(path);

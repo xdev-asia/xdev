@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::history::is_commit_id;
+use crate::worktree::{NumStat, parse_numstat};
 use crate::{ChangeKind, FileStatus, GitError, Repo, run};
 
 impl Repo {
@@ -36,6 +37,32 @@ impl Repo {
             .into_iter()
             .map(|(path, kind)| FileStatus { path, kind })
             .collect())
+    }
+
+    /// Line counts of the tracked files that differ from the commit `base`
+    /// in the work tree, renames shown as delete plus add. Untracked files
+    /// are not in `git diff`; see `untracked`. `base` must be a full commit id.
+    pub fn numstat_since(&self, base: &str) -> Result<Vec<NumStat>, GitError> {
+        if !is_commit_id(base) {
+            return Err(GitError::BadId(base.to_owned()));
+        }
+        let out = run::run(
+            &self.root(),
+            &["diff", "--numstat", "-z", "--no-renames", base, "--"],
+            None,
+        )?;
+        Ok(parse_numstat(&out))
+    }
+
+    /// Untracked files that are not ignored, relative to the repo's top
+    /// folder. A name that is not valid UTF-8 is left out.
+    pub fn untracked(&self) -> Result<Vec<String>, GitError> {
+        let out = run::run(
+            &self.root(),
+            &["ls-files", "--others", "--exclude-standard", "-z"],
+            None,
+        )?;
+        Ok(fields(&out).map(str::to_owned).collect())
     }
 }
 

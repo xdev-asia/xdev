@@ -48,8 +48,10 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     PtyExit::export_all(cfg)?;
     xdev_workspace::RepoView::export_all(cfg)?;
     xdev_workspace::WorktreeView::export_all(cfg)?;
+    xdev_workspace::WorktreeStat::export_all(cfg)?;
     WorktreeChange::export_all(cfg)?;
     WorktreeFileDiff::export_all(cfg)?;
+    xdev_workspace::DirListing::export_all(cfg)?;
     Ok(())
 }
 

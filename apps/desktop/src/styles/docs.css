@@ -364,7 +364,6 @@
 .preview-body blockquote {
   padding: var(--x-space-1) var(--x-space-4);
   border-left: 3px solid var(--x-color-signal);
-  border-radius: 0 var(--x-radius-md) var(--x-radius-md) 0;
   background: var(--x-color-signal-soft);
   color: var(--x-color-ink);
 }
