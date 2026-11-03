@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -75,8 +76,15 @@ impl Registry {
         let json =
             serde_json::to_vec_pretty(&out).map_err(|e| WorkspaceError::Corrupt(e.to_string()))?;
         let tmp = data_dir.join(format!("{FILE}.tmp"));
-        fs::write(&tmp, json)?;
-        fs::rename(&tmp, data_dir.join(FILE)).inspect_err(|_| {
+        // Flushed to disk before the rename, so the new name never points at
+        // a file whose contents are still in the cache.
+        let write = || -> std::io::Result<()> {
+            let mut file = fs::File::create(&tmp)?;
+            file.write_all(&json)?;
+            file.sync_all()?;
+            fs::rename(&tmp, data_dir.join(FILE))
+        };
+        write().inspect_err(|_| {
             let _ = fs::remove_file(&tmp);
         })?;
         Ok(())
