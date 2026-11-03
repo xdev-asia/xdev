@@ -5,7 +5,7 @@ import { toApiError, type ApiError, type RepoPatch, type RepoView } from "@/api"
 import { useI18n } from "@/i18n";
 import type { SettingsSectionProps } from "./sections";
 
-type Field = keyof Required<RepoPatch>;
+type Field = "shortName" | "baseRef" | "worktreeRoot";
 type Draft = Partial<Record<Field, string>>;
 type Failure = { field: Field | "form"; code: ApiError["code"] };
 

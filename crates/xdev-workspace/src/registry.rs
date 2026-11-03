@@ -10,7 +10,7 @@ const FILE: &str = "workspace.json";
 const VERSION: u32 = 1;
 
 /// A repo the app was asked to track.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoEntry {
     pub id: String,
     pub short_name: String,
@@ -18,6 +18,44 @@ pub struct RepoEntry {
     pub base_ref: String,
     /// The folder new worktrees of this repo go under.
     pub worktree_root: PathBuf,
+    /// Whether a new worktree's setup script runs. Absent in older files.
+    #[serde(default)]
+    pub setup_policy: SetupPolicy,
+    /// Which scripts count: the shared `xdev.toml` ones, this machine's, or both.
+    #[serde(default)]
+    pub script_source: ScriptSource,
+    /// This machine's setup script. Typed in xDev, so it is trusted.
+    #[serde(default)]
+    pub local_setup: String,
+    /// This machine's archive script, run before a worktree is removed.
+    #[serde(default)]
+    pub local_archive: String,
+}
+
+/// Whether setup runs after a worktree is created.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum SetupPolicy {
+    /// The person decides on each create.
+    #[default]
+    Ask,
+    Run,
+    Skip,
+}
+
+/// Which script runs when both the repo file and this machine have one.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum ScriptSource {
+    /// `Local` when a local script exists, else `Shared`.
+    #[default]
+    Auto,
+    Shared,
+    Local,
+    /// The shared script, a newline, then the local one.
+    Both,
 }
 
 /// What the app knows about a linked worktree that git does not.
@@ -145,6 +183,7 @@ mod tests {
             path: "/r".into(),
             base_ref: "main".into(),
             worktree_root: "/wt".into(),
+            ..RepoEntry::default()
         });
         r.save(dir.path()).unwrap();
         assert_eq!(Registry::load(dir.path()).unwrap(), r);

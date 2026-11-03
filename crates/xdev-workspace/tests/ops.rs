@@ -647,6 +647,7 @@ fn update_changes_short_name_base_ref_and_root() {
             short_name: Some("core".into()),
             base_ref: Some("dev".into()),
             worktree_root: Some(abs_root.clone()),
+            ..RepoPatch::default()
         },
     )
     .unwrap();
@@ -790,6 +791,7 @@ fn update_writes_nothing_when_a_later_field_fails() {
             short_name: Some("core".into()),
             base_ref: Some("nope".into()),
             worktree_root: None,
+            ..RepoPatch::default()
         },
     )
     .unwrap_err();
