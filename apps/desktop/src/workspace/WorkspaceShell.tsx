@@ -11,6 +11,9 @@ import { useI18n } from "@/i18n";
 import { PaletteHost } from "@/palette/PaletteHost";
 import { useKeymap, type ActionId } from "@/keys/keymap";
 import { setTerminalKeyHost, startDiagnosticToasts } from "@/keys/terminalKey";
+import { startAutosave } from "@/files/autosave";
+import { fileTabId, fileTabs } from "@/files/fileTabs";
+import { onOpenFile, type OpenFileRequest } from "@/files/openFile";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
 import { copyText } from "@/terminal/terminalActions";
@@ -140,7 +143,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [bellOpen, setBellOpen] = useState(false);
   const statusSettings = useStatusSettings();
   // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
-  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, notifier: null as Notifier | null }));
+  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, notifier: null as Notifier | null }));
 
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
@@ -391,6 +394,17 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   live.t = t;
   live.jump = jumpTo;
   live.openShortcuts = (action) => openSettings("keys", action);
+  // `openFile()` from anywhere: the file joins its worktree's tabs and comes to the front there.
+  live.openFileTab = (req) => {
+    const wt = all.find((w) => w.path === req.worktree);
+    if (!wt) return;
+    fileTabs.open(req.worktree, req.rel, req);
+    select(wt);
+    show("workspace");
+    setFront((f) => ({ worktree: wt.path, id: fileTabId(req.rel), seq: (f?.seq ?? 0) + 1 }));
+  };
+  useEffect(() => onOpenFile((req) => live.openFileTab(req)), [live]);
+  useEffect(() => startAutosave(api, fileTabs, t), [api, t]);
 
   function toggleBell(): void {
     const next = !bellOpen;

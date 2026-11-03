@@ -1,0 +1,113 @@
+import { indentUnit, syntaxHighlighting } from "@codemirror/language";
+import { Compartment, EditorState, Prec } from "@codemirror/state";
+import { keymap } from "@codemirror/view";
+import { basicSetup, EditorView } from "codemirror";
+import { useEffect, useRef } from "react";
+import type { JSX } from "react";
+import type { EditorSettings } from "@/api";
+import { highlight, theme } from "@/components/Editor";
+import { useI18n } from "@/i18n";
+import type { Goto } from "./fileTabs";
+import { languageOf, loadLanguage } from "./languages";
+
+const wrap = (on: boolean) => (on ? EditorView.lineWrapping : []);
+const tabs = (size: number) => [EditorState.tabSize.of(size), indentUnit.of(" ".repeat(size))];
+
+/** A CodeMirror view of one file's text. The text is owned by the caller; edits come out of `onChange`. */
+export function CodeEditor(props: {
+  rel: string;
+  value: string;
+  settings: EditorSettings;
+  goto?: Goto;
+  onChange(text: string): void;
+  onSave(): void;
+}): JSX.Element {
+  const { t } = useI18n();
+  const host = useRef<HTMLDivElement>(null);
+  const view = useRef<EditorView | null>(null);
+  const latest = useRef(props);
+  latest.current = props;
+  const lang = useRef(new Compartment());
+  const wrapping = useRef(new Compartment());
+  const indent = useRef(new Compartment());
+  const label = useRef(new Compartment());
+
+  useEffect(() => {
+    const s = latest.current.settings;
+    const v = new EditorView({
+      parent: host.current!,
+      state: EditorState.create({
+        doc: latest.current.value,
+        extensions: [
+          Prec.high(keymap.of([{ key: "Mod-s", preventDefault: true, run: () => (latest.current.onSave(), true) }])),
+          basicSetup,
+          syntaxHighlighting(highlight),
+          theme,
+          lang.current.of([]),
+          wrapping.current.of(wrap(s.wordWrap)),
+          indent.current.of(tabs(s.tabSize)),
+          label.current.of([]),
+          EditorView.updateListener.of((update) => {
+            if (!update.docChanged) return;
+            const text = update.state.doc.toString();
+            // A change pushed in from props (a reload) is not an edit.
+            if (text !== latest.current.value) latest.current.onChange(text);
+          }),
+        ],
+      }),
+    });
+    view.current = v;
+    return () => {
+      v.destroy();
+      view.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const language = languageOf(props.rel);
+    if (!language) return void view.current?.dispatch({ effects: lang.current.reconfigure([]) });
+    let live = true;
+    void loadLanguage(language).then(
+      (ext) => live && view.current?.dispatch({ effects: lang.current.reconfigure(ext) }),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [props.rel]);
+
+  useEffect(() => {
+    const v = view.current;
+    if (!v) return;
+    const current = v.state.doc.toString();
+    if (current !== props.value) v.dispatch({ changes: { from: 0, to: current.length, insert: props.value } });
+  }, [props.value]);
+
+  useEffect(() => {
+    view.current?.dispatch({ effects: wrapping.current.reconfigure(wrap(props.settings.wordWrap)) });
+  }, [props.settings.wordWrap]);
+
+  useEffect(() => {
+    view.current?.dispatch({ effects: indent.current.reconfigure(tabs(props.settings.tabSize)) });
+  }, [props.settings.tabSize]);
+
+  useEffect(() => {
+    view.current?.dispatch({
+      effects: label.current.reconfigure(EditorView.contentAttributes.of({ "aria-label": t("editor.label") })),
+    });
+  }, [t]);
+
+  // A new `seq` moves the caret to the line, once the text is in.
+  const seq = props.goto?.seq;
+  useEffect(() => {
+    const v = view.current;
+    const g = latest.current.goto;
+    if (!v || !g) return;
+    const line = v.state.doc.line(Math.max(1, Math.min(g.line, v.state.doc.lines)));
+    const anchor = line.from + Math.max(0, Math.min((g.column ?? 1) - 1, line.length));
+    v.dispatch({ selection: { anchor }, effects: EditorView.scrollIntoView(anchor, { y: "center" }) });
+    v.focus();
+  }, [seq]);
+
+  return <div className="editor file-editor" ref={host} style={{ "--editor-font-size": `${props.settings.fontSize}px` } as React.CSSProperties} />;
+}
