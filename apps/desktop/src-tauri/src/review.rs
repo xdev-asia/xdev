@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tauri::State;
 use xdev_git::{ChangeKind, Repo};
-use xdev_policy::{Action, Gate, Verdict};
+use xdev_policy::{Action, Verdict};
 use xdev_workspace::{Registry, WorkspaceError, path_key};
 
 use crate::accounts::data_dir;
