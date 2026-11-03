@@ -10,9 +10,9 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use xdev_core::{
-    ChangeKind, CoreError, DocState, FileStatus, GitError, Repo, Store, Vault, Written, ai_writes,
-    broken_links, data_dir, export_plan, export_root, export_write, index_path, list_changes,
-    local_dir, move_indexes, parse_frontmatter, search, stale_docs, sync_vault,
+    ChangeKind, CoreError, DocState, FileStatus, GitError, Links, Repo, Store, Vault, Written,
+    ai_writes, broken_links, data_dir, export_plan, export_root, export_write, index_path,
+    list_changes, local_dir, move_indexes, parse_frontmatter, search, stale_docs, sync_vault,
 };
 
 #[derive(Parser)]
@@ -56,8 +56,8 @@ enum Command {
     /// Print `kind<TAB>path` for each doc that differs from git `HEAD`.
     Changes { dir: PathBuf },
     /// Index a folder, then print `kind<TAB>path<TAB>detail` for each broken
-    /// link and each stale, unverified or unknown doc; exits 1 when there is
-    /// any.
+    /// link and each stale, unverified, unlinked or unknown doc; exits 1 when
+    /// there is any.
     Check { dir: PathBuf },
     /// Write AGENTS.md, CLAUDE.md, GEMINI.md and the Cursor rule from the
     /// docs marked for agents; prints `status<TAB>path` per file.
@@ -220,7 +220,8 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
                 Err(GitError::NoRepo) => None,
                 Err(e) => return Err(e.code()),
             };
-            let stale = stale_docs(&vault, repo.as_ref()).map_err(|e| e.code())?;
+            let stale =
+                stale_docs(&vault, repo.as_ref(), &Links::default()).map_err(|e| e.code())?;
             for link in &broken {
                 println!("broken\t{}\t{}", link.from, link.target);
             }
@@ -228,6 +229,7 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
                 let (kind, detail) = match doc.state {
                     DocState::Stale => ("stale", doc.count.to_string()),
                     DocState::Unverified => ("unverified", "-".to_owned()),
+                    DocState::Unlinked => ("unlinked", "-".to_owned()),
                     _ => ("unknown", verified(&vault, &doc.path)),
                 };
                 println!("{kind}\t{}\t{detail}", doc.path);

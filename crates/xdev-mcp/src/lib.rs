@@ -27,7 +27,8 @@ pub struct DocInfo {
     pub title: String,
     #[serde(rename = "type")]
     pub doc_type: Option<String>,
-    /// `DocState` as lowercase text: `fresh`, `stale`, `unverified`, `unknown`, `none`.
+    /// `DocState` as lowercase text: `fresh`, `stale`, `unverified`, `unknown`,
+    /// `unlinked`, `none`.
     pub state: String,
     pub covers: Vec<String>,
     /// Commits since `verified` that touched a covered path.
@@ -55,7 +56,7 @@ pub trait Docs {
     fn search(&mut self, query: &str, limit: usize) -> Result<Vec<Hit>, ToolError>;
     fn get(&mut self, path: &str) -> Result<Doc, ToolError>;
     fn list(&mut self, doc_type: Option<&str>) -> Result<Vec<DocInfo>, ToolError>;
-    /// Docs whose state is `stale`, `unverified` or `unknown`.
+    /// Docs whose state is `stale`, `unverified`, `unknown` or `unlinked`.
     fn stale(&mut self) -> Result<Vec<DocInfo>, ToolError>;
     fn propose(
         &mut self,
