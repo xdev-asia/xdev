@@ -21,6 +21,7 @@ import { estimateTokens, type ExportDoc, planExport } from "./mockExport";
 import { createMockPty } from "./mockPty";
 import { createMockSquads } from "./mockSquads";
 import { createMockTasks } from "./mockTasks";
+import { createMockWorkspace, type MockWorkspaceSeed } from "./mockWorkspace";
 
 export { EXPORT_MARKER } from "./mockExport";
 
@@ -356,6 +357,8 @@ type MockOptions = {
   commits?: SeedCommit[];
   // How long a fake task run takes.
   runDelayMs?: number;
+  // Repos and pending changes for the workspace; the demo repo when left out.
+  workspace?: MockWorkspaceSeed;
 };
 
 export function createMockApi(seed: Record<string, string>, options: MockOptions = {}): MockApi {
@@ -537,6 +540,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       runDelayMs: options.runDelayMs,
     }),
     ...createMockPty(),
+    ...createMockWorkspace(options.workspace),
     async accounts() { return structuredClone({ reservePercent: 30, accounts }); },
     async quota() { return structuredClone(quotas); },
     async updateStatus() { return null; },
