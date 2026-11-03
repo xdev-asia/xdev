@@ -1736,4 +1736,24 @@ mod tests {
         drop(run);
         clones.begin("a").unwrap();
     }
+
+    #[test]
+    fn repo_forget_drops_the_repo_and_its_worktrees_but_keeps_the_folders() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let id = Registry::load(&fx.data).unwrap().repos[0].id.clone();
+        // The body of `repo_forget`, without the Tauri state.
+        update(&fx.data, &lock, |reg| forget_repo(reg, &id)).unwrap();
+        let reg = Registry::load(&fx.data).unwrap();
+        assert!(reg.repos.is_empty());
+        assert!(reg.worktrees.is_empty());
+        for dir in [&fx.main, &fx.first, &fx.second] {
+            assert!(dir.join("a.txt").is_file(), "{}", dir.display());
+        }
+        assert!(git(&fx.main, &["worktree", "list"]).lines().count() >= 3);
+        assert_eq!(
+            code(update(&fx.data, &lock, |reg| forget_repo(reg, &id))),
+            "repo_unknown"
+        );
+    }
 }
