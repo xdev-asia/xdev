@@ -49,7 +49,7 @@ jobs:
 
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      - run: cargo test --workspace --no-fail-fast
 
       # The generated files are the same on every OS, so one is enough.
       # Intent-to-add makes a newly generated file show in the diff too.
