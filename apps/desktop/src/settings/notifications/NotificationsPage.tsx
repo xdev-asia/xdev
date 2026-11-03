@@ -9,6 +9,9 @@ import { setStatusSettings } from "@/status/statusSettings";
 // The channel switches, in the order the page lists them.
 export const CHANNELS = ["os", "sound", "bell", "badge"] as const;
 export type Channel = (typeof CHANNELS)[number];
+// The events that can raise a channel; each has its own switch under the master one.
+export const EVENTS = ["onNeedsInput", "onDone", "onFailed", "onBell"] as const;
+export type EventSwitch = (typeof EVENTS)[number];
 
 export function clampVolume(value: number): number {
   return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
@@ -28,6 +31,8 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError["code"]>();
   const [soundError, setSoundError] = useState<ApiError["code"]>();
+  // Set when the test notification could not be sent (the OS refused it or the app has no permission).
+  const [testFailed, setTestFailed] = useState(false);
 
   useEffect(() => {
     api.statusSettings().then(setSettings, (e) => setError(toApiError(e).code));
@@ -60,6 +65,7 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
     setBusy(true);
     setError(undefined);
     setSoundError(undefined);
+    setTestFailed(false);
     try {
       const stored = await run();
       setSettings(stored);
@@ -80,6 +86,17 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
     void put({ ...current, volume: clampVolume(volume) });
   }
 
+  // A real OS notification and the sound, whatever the switches say: it shows what the rest will do.
+  async function sendTest(): Promise<void> {
+    setTestFailed(false);
+    void playStatusSound(api, { ...current, volume: shownVolume }, Date.now(), true);
+    try {
+      await api.statusNotify(t("settings.notifications.testTitle"), t("settings.notifications.testBody"), "");
+    } catch {
+      setTestFailed(true);
+    }
+  }
+
   async function pickSound(): Promise<void> {
     if (busy) return;
     const path = await api.pickSoundFile().catch(() => null);
@@ -96,7 +113,44 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
         </p>
       )}
 
+      <h4 className="settings-group">{t("settings.notifications.events")}</h4>
+      <ul className="settings-list">
+        <li className="settings-item" data-master="enabled">
+          <div className="settings-item-text">
+            <strong>{t("settings.notifications.enabled")}</strong>
+            <span className="settings-path">{t("settings.notifications.enabledHint")}</span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            className="agent-switch"
+            aria-checked={current.enabled}
+            aria-label={t("settings.notifications.enabled")}
+            disabled={busy}
+            onClick={() => void put({ ...current, enabled: !current.enabled })}
+          />
+        </li>
+        {EVENTS.map((e) => (
+          <li key={e} className="settings-item" data-event={e}>
+            <div className="settings-item-text">
+              <strong>{t(`settings.notifications.${e}`)}</strong>
+              <span className="settings-path">{t(`settings.notifications.${e}Hint`)}</span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              className="agent-switch"
+              aria-checked={current[e]}
+              aria-label={t(`settings.notifications.${e}`)}
+              disabled={busy || !current.enabled}
+              onClick={() => void put({ ...current, [e]: !current[e] })}
+            />
+          </li>
+        ))}
+      </ul>
+
       <h4 className="settings-group">{t("settings.notifications.channels")}</h4>
+      <p className="settings-empty">{t("settings.notifications.channelsHint")}</p>
       <ul className="settings-list">
         {CHANNELS.map((c) => (
           <li key={c} className="settings-item" data-channel={c}>
@@ -156,11 +210,16 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
         <button
           type="button"
           className="btn-secondary"
-          onClick={() => void playStatusSound(api, { ...current, volume: shownVolume }, Date.now(), true)}
+          onClick={() => void sendTest()}
         >
           {t("settings.notifications.test")}
         </button>
       </div>
+      {testFailed && (
+        <p className="error-text" role="alert" data-field="test-failed">
+          {t("settings.notifications.testFailed")}
+        </p>
+      )}
       {soundError ? (
         <p className="error-text" role="alert">
           {t(`error.${soundError}`)}

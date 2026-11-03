@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
 import { getStatusSettings, resetStatusSettings } from "@/status/statusSettings";
-import { CHANNELS, NotificationsPage } from "./NotificationsPage";
+import { CHANNELS, EVENTS, NotificationsPage } from "./NotificationsPage";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
 const sound = vi.hoisted(() => ({ play: vi.fn(async () => true) }));
@@ -50,9 +50,11 @@ async function page(withOnSaved = true) {
   const all = () => nodes(draw());
   const sw = (channel: string) => nodes(all().find((n) => n.props["data-channel"] === channel)).find((n) => n.props.role === "switch")!;
   const button = (label: string) => all().find((n) => n.type === "button" && n.props.children === label)!;
+  const master = () => nodes(all().find((n) => n.props["data-master"] === "enabled")).find((n) => n.props.role === "switch")!;
+  const ev = (name: string) => nodes(all().find((n) => n.props["data-event"] === name)).find((n) => n.props.role === "switch")!;
   const volume = () => all().find((n) => n.props["data-field"] === "volume")!;
   const alert = () => all().find((n) => n.props.role === "alert");
-  return { api, onSaved, all, sw, button, volume, alert };
+  return { api, onSaved, all, sw, master, ev, button, volume, alert };
 }
 
 it("lists one switch per channel, all on by default", async () => {
@@ -151,18 +153,52 @@ it("a cancelled pick changes nothing", async () => {
   expect(set).not.toHaveBeenCalled();
 });
 
-it("test plays the sound even when sound is off", async () => {
+it("the master switch and each event switch save, bell off by default", async () => {
+  expect(EVENTS).toEqual(["onNeedsInput", "onDone", "onFailed", "onBell"]);
   const p = await page();
+  expect(p.master().props["aria-checked"]).toBe(true);
+  expect(p.ev("onNeedsInput").props["aria-checked"]).toBe(true);
+  expect(p.ev("onBell").props["aria-checked"]).toBe(false);
+  const put = vi.spyOn(p.api, "statusSettingsPut");
+  p.ev("onBell").props.onClick();
+  await tick();
+  expect(put.mock.calls[0][0].onBell).toBe(true);
+  expect(p.ev("onBell").props["aria-checked"]).toBe(true);
+  p.ev("onDone").props.onClick();
+  await tick();
+  expect(put.mock.calls[1][0]).toEqual(expect.objectContaining({ onDone: false, onBell: true }));
+  p.master().props.onClick();
+  await tick();
+  expect(put.mock.calls[2][0].enabled).toBe(false);
+  // Under an off master switch the event switches cannot be flipped.
+  for (const e of EVENTS) expect(p.ev(e).props.disabled).toBe(true);
+  expect(translate("vi", "settings.notifications.onBell")).toBe("Chuông terminal");
+});
+
+it("test sends a real OS notification and plays the sound even when sound is off", async () => {
+  const p = await page();
+  const notify = vi.spyOn(p.api, "statusNotify");
   p.sw("sound").props.onClick();
   await tick();
   p.volume().props.onChange({ target: { value: "20" } });
   p.button(en("settings.notifications.test")).props.onClick();
+  await tick();
+  expect(notify).toHaveBeenCalledWith(en("settings.notifications.testTitle"), en("settings.notifications.testBody"), "");
   expect(sound.play).toHaveBeenCalledTimes(1);
   const [api, settings, now, force] = sound.play.mock.calls[0] as unknown as [unknown, { sound: boolean; volume: number }, number, boolean];
   expect(api).toBe(p.api);
   expect(settings).toEqual(expect.objectContaining({ sound: false, volume: 20 }));
   expect(typeof now).toBe("number");
   expect(force).toBe(true);
+  expect(p.all().some((n) => n.props["data-field"] === "test-failed")).toBe(false);
+});
+
+it("a test the OS refuses shows a hint", async () => {
+  const p = await page();
+  vi.spyOn(p.api, "statusNotify").mockRejectedValue({ code: "io" });
+  p.button(en("settings.notifications.test")).props.onClick();
+  await tick();
+  expect(p.all().find((n) => n.props["data-field"] === "test-failed")!.props.children).toBe(en("settings.notifications.testFailed"));
 });
 
 it("a failed load shows the error", async () => {
