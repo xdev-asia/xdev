@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
+import { resetBindingsForTests, setKeySettings } from "@/keys/bindingsStore";
 import { PtyClient } from "./ptyClient";
 import { Terminal } from "./Terminal";
 import { resetTerminalSettingsForTests, setTerminalSettings, TERMINAL_DEFAULTS } from "./terminalSettings";
 
 // The first ref is the xterm host; the rest keep their initial value.
-const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, listeners: {} as Record<string, (e: unknown) => void> }));
+const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void> }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: (initial: unknown) => [initial, () => {}],
@@ -40,7 +41,18 @@ vi.mock("@xterm/xterm", () => ({
     rows = 24;
     loadAddon() {}
     open() {}
-    attachCustomKeyEventHandler() {}
+    attachCustomKeyEventHandler(cb: (e: KeyboardEvent) => boolean) {
+      hooks.keyHandler = cb;
+    }
+    clear() {
+      hooks.calls.push("clear");
+    }
+    selectAll() {
+      hooks.calls.push("selectAll");
+    }
+    paste(text: string) {
+      hooks.calls.push(`paste:${text}`);
+    }
     options: Record<string, unknown>;
     constructor(opts: Record<string, unknown>) {
       this.options = hooks.options = { ...opts };
@@ -108,6 +120,9 @@ beforeEach(() => {
   hooks.selection = "";
   hooks.osc = null;
   hooks.options = {};
+  hooks.keyHandler = null;
+  hooks.calls = [];
+  resetBindingsForTests();
   hooks.listeners = {};
   resetTerminalSettingsForTests();
   vi.stubGlobal("getComputedStyle", () => ({ getPropertyValue: () => "" }));
@@ -272,4 +287,64 @@ it("OSC 52 writes the clipboard when on, nothing when off, and never reads", () 
   setTerminalSettings({ ...TERMINAL_DEFAULTS, osc52Clipboard: false });
   expect(hooks.osc?.("c;aGk=")).toBe(true);
   expect(writeText).toHaveBeenCalledTimes(1);
+});
+
+// ---- Keys the app owns ----
+
+const key = (init: Record<string, unknown>) => {
+  const e = { type: "keydown", ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, code: "", preventDefault: vi.fn(), ...init };
+  return e as unknown as KeyboardEvent & { preventDefault: ReturnType<typeof vi.fn> };
+};
+
+function started() {
+  const { effect } = mount({ api: createMockApi({}) });
+  effect();
+  return hooks.keyHandler!;
+}
+
+it("Ctrl+K clears the terminal and sends nothing to the program", () => {
+  vi.stubGlobal("navigator", { userAgent: "Windows" });
+  const handler = started();
+  const e = key({ ctrlKey: true, code: "KeyK" });
+  expect(handler(e)).toBe(false);
+  expect(hooks.calls).toEqual(["clear"]);
+  expect(e.preventDefault).toHaveBeenCalled();
+});
+
+it("select all and paste run in the terminal; copy writes the selection", async () => {
+  const writeText = vi.fn(async () => {});
+  vi.stubGlobal("navigator", { userAgent: "Windows", clipboard: { writeText, readText: async () => "pasted" } });
+  hooks.selection = "chosen";
+  const handler = started();
+  expect(handler(key({ ctrlKey: true, shiftKey: true, code: "KeyA" }))).toBe(false);
+  expect(handler(key({ ctrlKey: true, shiftKey: true, code: "KeyC" }))).toBe(false);
+  expect(handler(key({ ctrlKey: true, shiftKey: true, code: "KeyV" }))).toBe(false);
+  await tick();
+  expect(writeText).toHaveBeenCalledWith("chosen");
+  expect(hooks.calls).toEqual(["selectAll", "paste:pasted"]);
+});
+
+it("a key the terminal keeps (Ctrl+N), a plain key and a key release go to the program", () => {
+  vi.stubGlobal("navigator", { userAgent: "Windows" });
+  const handler = started();
+  expect(handler(key({ ctrlKey: true, code: "KeyN" }))).toBe(true);
+  expect(handler(key({ code: "KeyA" }))).toBe(true);
+  expect(handler(key({ type: "keyup", ctrlKey: true, code: "KeyK" }))).toBe(true);
+  expect(hooks.calls).toEqual([]);
+});
+
+it("a global app chord leaves xterm (it ran in the window handler)", () => {
+  vi.stubGlobal("navigator", { userAgent: "Windows" });
+  const handler = started();
+  expect(handler(key({ ctrlKey: true, shiftKey: true, code: "KeyG" }))).toBe(false);
+});
+
+it("under terminal first the keys a TUI uses reach the program", () => {
+  vi.stubGlobal("navigator", { userAgent: "Windows" });
+  setKeySettings({ terminalPolicy: "terminal-first", terminalHints: true });
+  const handler = started();
+  expect(handler(key({ ctrlKey: true, code: "KeyF" }))).toBe(true);
+  // Ctrl+K no longer clears (it yields); the global search is what is left on that chord.
+  expect(handler(key({ ctrlKey: true, code: "KeyK" }))).toBe(false);
+  expect(hooks.calls).toEqual([]);
 });

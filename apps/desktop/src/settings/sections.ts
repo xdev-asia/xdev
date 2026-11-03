@@ -11,6 +11,8 @@ export interface SettingsSectionProps {
   api: Api;
   // Something the workspace lists changed, so it reloads.
   onChanged(): void;
+  // A search the section starts with (Shortcuts: an action id the toast asked for).
+  filter?: string;
 }
 
 export interface SettingsSection {

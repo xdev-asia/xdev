@@ -22,6 +22,7 @@ import { WorkspaceShell } from "./WorkspaceShell";
 import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeList } from "./WorktreeList";
 import { WorktreeTabs } from "./WorktreeTabs";
+import { Toasts } from "./Toasts";
 import { SessionsSidebar } from "@/agentSessions/SessionsSidebar";
 
 // Hooks are stubbed only while the shell itself is called; children rendered to markup use React's own.
@@ -56,6 +57,8 @@ vi.mock("@/keys/keymap", async (original) => ({
   // A shell calls useKeymap more than once; the handlers add up, and `when` is the last call's.
   useKeymap: (handlers: Record<string, () => boolean | void>, opts?: { when?: () => boolean }) => { keymap.handlers = { ...keymap.handlers, ...handlers }; keymap.when = opts?.when ?? (() => true); },
 }));
+const termKey = vi.hoisted(() => ({ host: null as null | { t: (k: string) => string; openShortcuts: (a: string) => void } }));
+vi.mock("@/keys/terminalKey", async (original) => ({ ...await original<typeof import("@/keys/terminalKey")>(), setTerminalKeyHost: (h: typeof termKey.host) => { termKey.host = h; } }));
 // xterm needs a real canvas; the terminals are tested on their own.
 vi.mock("@/terminal/Terminal", () => ({ Terminal: () => null }));
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
@@ -768,4 +771,20 @@ it("sessions.open shows the sessions view with the search box asked for focus", 
   expect(side.props.visible).toBe(true);
   expect(side.props.focusSeq).toBeGreaterThan(before ?? 0);
   expect(keymap.when()).toBe(true);
+});
+
+it("the toast host is mounted, and its Open Shortcuts button opens that page filtered to the action", async () => {
+  const view = await harness();
+  expect(view.of(Toasts)).toHaveLength(1);
+  view.draw();
+  // Every effect of a render; the one that registers the terminal key host is among them.
+  for (const effect of hooks.effects.slice(2)) {
+    try { effect(); } catch { /* the others need a window */ }
+  }
+  expect(termKey.host).not.toBeNull();
+  termKey.host!.openShortcuts("panel.sourceControl");
+  view.draw();
+  const settings = view.of(SettingsView)[0];
+  expect(settings.props.initial).toBe("keys");
+  expect(settings.props.filter).toBe("panel.sourceControl");
 });
