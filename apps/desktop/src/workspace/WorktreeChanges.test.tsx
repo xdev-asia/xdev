@@ -669,11 +669,33 @@ it("warns when an agent is working in the worktree", async () => {
   labelled(group(quiet, "changes"), en("changes.discardAll")).props.onClick();
   expect(dialog(quiet).props.warning).toBeUndefined();
 
-  const busy = { dot: () => "working", tabs: () => [], subscribe: () => () => {} } as unknown as Sessions;
+  const busy = { dot: () => "working", tabs: () => [{ id: "a", agent: true, status: "working" }], subscribe: () => () => {} } as unknown as Sessions;
   const view = changes(api, busy);
   await tick();
   labelled(group(view, "changes"), en("changes.discardAll")).props.onClick();
   expect(dialog(view).props.warning).toBe(en("changes.discard.agent"));
+});
+
+it("warns while any agent is still mid-turn, even when another one's status is more urgent", async () => {
+  const api = createMockApi({});
+  // The worktree dot shows the most urgent tab, so a finished agent would hide a working one.
+  for (const [dot, statuses] of [
+    ["done", ["done", "working"]],
+    ["needs-you", ["needs-you"]],
+  ] as const) {
+    const tabs = statuses.map((status, i) => ({ id: `t${i}`, agent: true, status }));
+    const sessions = { dot: () => dot, tabs: () => tabs, subscribe: () => () => {} } as unknown as Sessions;
+    const view = changes(api, sessions);
+    await tick();
+    labelled(group(view, "changes"), en("changes.discardAll")).props.onClick();
+    expect(dialog(view).props.warning, dot).toBe(en("changes.discard.agent"));
+  }
+  // A shell tab that is busy is not an agent.
+  const shell = { dot: () => null, tabs: () => [{ id: "s", agent: false, status: "working" }], subscribe: () => () => {} } as unknown as Sessions;
+  const view = changes(api, shell);
+  await tick();
+  labelled(group(view, "changes"), en("changes.discardAll")).props.onClick();
+  expect(dialog(view).props.warning).toBeUndefined();
 });
 
 it("shows the policy's reason when discard is denied, and reads again", async () => {

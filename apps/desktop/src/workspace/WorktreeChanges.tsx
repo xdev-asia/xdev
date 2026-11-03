@@ -166,6 +166,9 @@ export function WorktreeChanges(props: {
   }
 
   const stateOf = (file: string) => states?.find((s) => s.path === file);
+  // Any agent mid-turn, waiting on the person included: the worktree dot shows only the most
+  // urgent status, so a finished agent would hide a working one.
+  const agentBusy = sessions?.tabs(path).some((tab) => tab.agent && (tab.status === "working" || tab.status === "needs-you")) ?? false;
   // A file with both an index and a disk change is in both groups, as in git.
   const stagedList = (changes ?? []).filter((c) => stateOf(c.path)?.staged);
   const changedList = (changes ?? []).filter((c) => {
@@ -450,7 +453,7 @@ export function WorktreeChanges(props: {
         open={discarding !== null}
         title={discarding && discarding.length === 1 ? t("changes.discard.title", { path: discarding[0] }) : t("changes.discard.titleMany", { count: discarding?.length ?? 0 })}
         body={t("changes.discard.body")}
-        warning={sessions?.dot(path) === "working" ? t("changes.discard.agent") : undefined}
+        warning={agentBusy ? t("changes.discard.agent") : undefined}
         confirmLabel={t("changes.discard.confirm")}
         onConfirm={() => void confirmDiscard()}
         onCancel={cancelDiscard}
