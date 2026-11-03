@@ -184,3 +184,98 @@ fn remove_worktree_and_delete_branch() {
     assert_eq!(git(dir.path(), &["branch", "--list", "task"]), "");
     repo.delete_branch("task").unwrap();
 }
+
+#[test]
+fn list_worktrees_reads_primary_and_linked() {
+    let (_main, _wt, repo, _base) = with_worktree();
+    let list = repo.list_worktrees().unwrap();
+    assert_eq!(list.len(), 2);
+    assert!(!list[0].detached);
+    assert_eq!(list[1].branch.as_deref(), Some("task"));
+    assert!(list[1].head.as_deref().is_some_and(|h| h.len() == 40));
+}
+
+#[test]
+fn list_worktrees_marks_detached_and_missing() {
+    let (main, wt, repo, base) = with_worktree();
+    let det = wt.path().join("det");
+    git(
+        main.path(),
+        &[
+            "worktree",
+            "add",
+            "--detach",
+            "-q",
+            det.to_str().unwrap(),
+            &base,
+        ],
+    );
+    drop(wt); // folders gone, entries still in git's list
+    let list = repo.list_worktrees().unwrap();
+    assert!(list.iter().any(|w| w.detached));
+    assert!(list.iter().any(|w| w.prunable));
+}
+
+#[test]
+fn default_branch_prefers_origin_head_then_main() {
+    let dir = repo_dir();
+    fs::write(dir.path().join("a.txt"), "a\n").unwrap();
+    commit_all(dir.path(), "one");
+    let repo = Repo::discover(dir.path()).unwrap();
+    git(dir.path(), &["branch", "-M", "main"]);
+    assert_eq!(repo.default_branch().unwrap().as_deref(), Some("main"));
+    git(
+        dir.path(),
+        &["update-ref", "refs/remotes/origin/trunk", "HEAD"],
+    );
+    git(
+        dir.path(),
+        &[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/trunk",
+        ],
+    );
+    assert_eq!(
+        repo.default_branch().unwrap().as_deref(),
+        Some("origin/trunk")
+    );
+}
+
+#[test]
+fn default_branch_falls_back_to_current_branch_then_none() {
+    let dir = repo_dir();
+    fs::write(dir.path().join("a.txt"), "a\n").unwrap();
+    let id = commit_all(dir.path(), "one");
+    let repo = Repo::discover(dir.path()).unwrap();
+    git(dir.path(), &["branch", "-M", "work"]);
+    assert_eq!(repo.default_branch().unwrap().as_deref(), Some("work"));
+    git(dir.path(), &["switch", "-q", "--detach", &id]);
+    assert_eq!(repo.default_branch().unwrap(), None);
+}
+
+#[test]
+fn merge_base_of_branch_and_base() {
+    let (main, wt, repo, base) = with_worktree();
+    let w = wt.path().join("wt");
+    fs::write(w.join("t.txt"), "t\n").unwrap();
+    commit_all(&w, "on task");
+    fs::write(main.path().join("m.txt"), "m\n").unwrap();
+    commit_all(main.path(), "on main");
+    assert_eq!(
+        repo.merge_base("task", "HEAD").unwrap().as_deref(),
+        Some(base.as_str())
+    );
+    assert_eq!(repo.merge_base("task", "nope").unwrap(), None);
+}
+
+#[test]
+fn branch_name_checks() {
+    let (_main, _wt, repo, _base) = with_worktree();
+    assert!(repo.branch_exists("task").unwrap());
+    assert!(!repo.branch_exists("nope").unwrap());
+    assert!(repo.valid_branch_name("fix/login-2").unwrap());
+    for bad in ["-b", "a..b", "a b", "a~1", "", "@{-1}", "a\0b"] {
+        assert!(!repo.valid_branch_name(bad).unwrap(), "{bad:?}");
+    }
+}

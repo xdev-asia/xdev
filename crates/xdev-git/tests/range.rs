@@ -258,3 +258,34 @@ fn pathspec_env_is_ignored() {
         );
     }
 }
+
+#[test]
+fn resolve_ref_takes_names_and_ids() {
+    let dir = repo_dir();
+    write(dir.path(), "a.txt", "a\n");
+    let id = commit_all(dir.path(), "one");
+    let repo = Repo::discover(dir.path()).unwrap();
+    assert_eq!(
+        repo.resolve_ref("HEAD").unwrap().as_deref(),
+        Some(id.as_str())
+    );
+    assert_eq!(
+        repo.resolve_ref(&id[..8]).unwrap().as_deref(),
+        Some(id.as_str())
+    );
+    assert_eq!(repo.resolve_ref("no-such-branch").unwrap(), None);
+}
+
+#[test]
+fn resolve_ref_refuses_option_like_input() {
+    let dir = repo_dir();
+    write(dir.path(), "a.txt", "a\n");
+    commit_all(dir.path(), "one");
+    let repo = Repo::discover(dir.path()).unwrap();
+    for bad in ["--upload-pack=x", "-h", "", "a\nb"] {
+        assert!(
+            matches!(repo.resolve_ref(bad), Err(xdev_git::GitError::BadId(_))),
+            "{bad:?}"
+        );
+    }
+}

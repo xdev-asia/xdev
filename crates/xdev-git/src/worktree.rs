@@ -1,5 +1,5 @@
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::{GitError, Repo, run};
 
@@ -9,6 +9,21 @@ pub struct NumStat {
     pub path: String,
     pub added: Option<u64>,
     pub removed: Option<u64>,
+}
+
+/// One entry of `git worktree list`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorktreeEntry {
+    pub path: PathBuf,
+    pub head: Option<String>,
+    /// Without `refs/heads/`; `None` when detached or bare.
+    pub branch: Option<String>,
+    pub detached: bool,
+    pub bare: bool,
+    pub locked: bool,
+    /// The folder is gone or no longer a worktree; `git worktree prune`
+    /// would drop the entry.
+    pub prunable: bool,
 }
 
 impl Repo {
@@ -32,6 +47,69 @@ impl Repo {
             None,
         )?;
         Ok(out.iter().all(u8::is_ascii_whitespace))
+    }
+
+    /// Every worktree of the repo; the first entry is the primary checkout.
+    pub fn list_worktrees(&self) -> Result<Vec<WorktreeEntry>, GitError> {
+        let out = run::run(
+            &self.workdir,
+            &["worktree", "list", "--porcelain", "-z"],
+            None,
+        )?;
+        Ok(parse_worktrees(&out))
+    }
+
+    /// `origin/<name>` when `refs/remotes/origin/HEAD` points at a branch
+    /// that exists; else local `main`, then `master`; else the branch `HEAD`
+    /// is on; else `None`.
+    pub fn default_branch(&self) -> Result<Option<String>, GitError> {
+        let (status, out) = run::run_status(
+            &self.workdir,
+            &["symbolic-ref", "-q", "refs/remotes/origin/HEAD"],
+            None,
+        )?;
+        if status == Some(0) {
+            let target = String::from_utf8_lossy(&out).trim().to_owned();
+            if let Some(name) = target.strip_prefix("refs/remotes/")
+                && self.ref_exists(&target)?
+            {
+                return Ok(Some(name.to_owned()));
+            }
+        }
+        for name in ["main", "master"] {
+            if self.branch_exists(name)? {
+                return Ok(Some(name.to_owned()));
+            }
+        }
+        self.current_branch()
+    }
+
+    /// Whether a local branch of that name exists.
+    pub fn branch_exists(&self, name: &str) -> Result<bool, GitError> {
+        if name.is_empty() || name.chars().any(char::is_control) {
+            return Ok(false);
+        }
+        self.ref_exists(&format!("refs/heads/{name}"))
+    }
+
+    /// Whether `name` can be a new branch name: git's own rules, and not
+    /// something a command would read as an option or as `@{-1}`.
+    pub fn valid_branch_name(&self, name: &str) -> Result<bool, GitError> {
+        if name.is_empty() || name.starts_with('-') || name.chars().any(char::is_control) {
+            return Ok(false);
+        }
+        let (status, out) =
+            run::run_status(&self.workdir, &["check-ref-format", "--branch", name], None)?;
+        // `--branch` expands `@{-1}` to a branch name; a name that comes
+        // back changed was not a plain name.
+        Ok(status == Some(0) && String::from_utf8_lossy(&out).trim() == name)
+    }
+
+    /// `full` is a complete ref name such as `refs/heads/x`.
+    fn ref_exists(&self, full: &str) -> Result<bool, GitError> {
+        let (status, _) =
+            run::run_status(&self.workdir, &["rev-parse", "-q", "--verify", full], None)?;
+        Ok(status == Some(0))
     }
 
     /// `git worktree add -b <branch> <path> <base>`.
@@ -140,6 +218,56 @@ fn utf8(path: &Path) -> Result<&str, GitError> {
     })
 }
 
+/// `-z` output: one field per NUL (`worktree <path>`, `HEAD <id>`,
+/// `branch refs/heads/x`, `detached`, `bare`, `locked [reason]`,
+/// `prunable [reason]`), and an empty field after each entry.
+fn parse_worktrees(out: &[u8]) -> Vec<WorktreeEntry> {
+    let mut entries = Vec::new();
+    let mut current: Option<WorktreeEntry> = None;
+    for field in out.split(|b| *b == 0) {
+        let field = String::from_utf8_lossy(field);
+        if field.is_empty() {
+            entries.extend(current.take());
+            continue;
+        }
+        let (key, value) = field.split_once(' ').unwrap_or((&field, ""));
+        if key == "worktree" {
+            entries.extend(current.take());
+            current = Some(WorktreeEntry {
+                path: PathBuf::from(value),
+                head: None,
+                branch: None,
+                detached: false,
+                bare: false,
+                locked: false,
+                prunable: false,
+            });
+            continue;
+        }
+        let Some(entry) = current.as_mut() else {
+            continue;
+        };
+        match key {
+            "HEAD" => entry.head = Some(value.to_owned()),
+            "branch" => {
+                entry.branch = Some(
+                    value
+                        .strip_prefix("refs/heads/")
+                        .unwrap_or(value)
+                        .to_owned(),
+                );
+            }
+            "detached" => entry.detached = true,
+            "bare" => entry.bare = true,
+            "locked" => entry.locked = true,
+            "prunable" => entry.prunable = true,
+            _ => {}
+        }
+    }
+    entries.extend(current);
+    entries
+}
+
 /// `-z` output: `added<TAB>removed<TAB>path<NUL>`, `-` for binary counts.
 pub(crate) fn parse_numstat(out: &[u8]) -> Vec<NumStat> {
     out.split(|b| *b == 0)
@@ -186,6 +314,23 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn parses_worktree_records() {
+        let out = b"worktree C:/r\0HEAD aaaa\0branch refs/heads/main\0\0\
+                    worktree C:/w x\0HEAD bbbb\0detached\0locked why\0prunable gone\0\0\
+                    worktree C:/bare\0bare\0\0";
+        let list = parse_worktrees(out);
+        assert_eq!(list.len(), 3);
+        assert_eq!(list[0].path, PathBuf::from("C:/r"));
+        assert_eq!(list[0].branch.as_deref(), Some("main"));
+        assert_eq!(list[0].head.as_deref(), Some("aaaa"));
+        assert_eq!(list[1].path, PathBuf::from("C:/w x"));
+        assert!(list[1].detached && list[1].locked && list[1].prunable);
+        assert_eq!(list[1].branch, None);
+        assert!(list[2].bare && list[2].head.is_none());
+        assert!(parse_worktrees(b"").is_empty());
     }
 
     #[test]
