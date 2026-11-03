@@ -140,6 +140,35 @@ fn merge_and_delete_never_allow() {
 }
 
 #[test]
+fn force_push_always_asks() {
+    let action = Action::ForcePush {
+        worktree: PathBuf::from("wt"),
+        remote: "origin".to_owned(),
+        branch: "feat".to_owned(),
+    };
+    let ask = Verdict::Ask {
+        reason: "force push always asks".to_owned(),
+    };
+    for policy in [
+        Policy::default(),
+        Policy {
+            merge: Rule::Deny,
+            delete: Rule::Deny,
+            commands: vec!["git".to_owned()],
+            ..Policy::default()
+        },
+    ] {
+        assert_eq!(policy.check(&action), ask);
+    }
+    let dir = tempdir().unwrap();
+    let gate = Audited::new(Policy::default(), dir.path());
+    assert_eq!(gate.check_confirmed(&action, false), ask);
+    assert_eq!(gate.check(&action), ask);
+    // A confirmation is the only way through.
+    assert_eq!(gate.check_confirmed(&action, true), Verdict::Allow);
+}
+
+#[test]
 fn audit_records_checks_in_order() {
     let dir = tempdir().unwrap();
     let data = dir.path().join("data");
@@ -222,14 +251,20 @@ fn confirmed_ask_is_logged_as_allow() {
     let dir = tempdir().unwrap();
     let gate = Audited::new(Policy::default(), dir.path());
     let action = merge();
-    assert!(matches!(gate.check_confirmed(&action, false), Verdict::Ask { .. }));
+    assert!(matches!(
+        gate.check_confirmed(&action, false),
+        Verdict::Ask { .. }
+    ));
     assert_eq!(gate.check_confirmed(&action, true), Verdict::Allow);
     let verdicts: Vec<_> = read_audit(dir.path())
         .unwrap()
         .into_iter()
         .map(|entry| entry.verdict)
         .collect();
-    assert!(matches!(verdicts[..], [Verdict::Ask { .. }, Verdict::Allow]));
+    assert!(matches!(
+        verdicts[..],
+        [Verdict::Ask { .. }, Verdict::Allow]
+    ));
 }
 
 #[test]
@@ -242,5 +277,8 @@ fn confirmation_does_not_lift_a_deny() {
         },
         dir.path(),
     );
-    assert!(matches!(gate.check_confirmed(&merge(), true), Verdict::Deny { .. }));
+    assert!(matches!(
+        gate.check_confirmed(&merge(), true),
+        Verdict::Deny { .. }
+    ));
 }

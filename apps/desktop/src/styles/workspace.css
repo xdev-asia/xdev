@@ -16,6 +16,7 @@
 .ws-header,
 .ws-sidebar,
 .ws-stage,
+.ws-settings,
 .ws-footer,
 .ws-dialog {
   --x-color-bg: var(--bg-0);
@@ -1310,6 +1311,20 @@ button.ws-tree-row:focus-visible {
   flex: 1;
 }
 
+.ws-footer-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.ws-footer-link:hover {
+  color: var(--text-1);
+  text-decoration: underline;
+}
+
 .ws-waiting {
   display: flex;
   align-items: center;
@@ -1495,4 +1510,389 @@ button.ws-tree-row:focus-visible {
   .ws-chevron {
     transition: none;
   }
+}
+
+/* Worktrees found outside xDev: a closed group under the list, one Adopt per row. */
+
+.ws-found {
+  margin-top: 4px;
+}
+
+.ws-found-head .ws-tag {
+  margin-left: auto;
+}
+
+.ws-found-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-found-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 2px 8px 2px 20px;
+  font-size: 12px;
+}
+
+.ws-found-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ws-found-text > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-found-text .ws-wt-branch {
+  color: var(--text-2);
+}
+
+.ws-found-adopt {
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+/* The vaults under Docs & SDLC. */
+
+.ws-vault-list {
+  margin: 2px 0 4px;
+  padding: 0 0 0 22px;
+  list-style: none;
+}
+
+.ws-vault {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-m);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-vault:hover:not(:disabled) {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.ws-vault[aria-current="true"] {
+  border-color: var(--line);
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+.ws-vault:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.ws-vault-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-amend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.ws-commit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-hook {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.ws-hook-output {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ws-hook-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ws-ship {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.ws-ship-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ws-ship-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ws-ship-branch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+}
+
+.ws-ship-counts {
+  flex-shrink: 0;
+}
+
+.ws-ship-commits,
+.ws-ship-link {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ws-ship-link {
+  margin-left: 0;
+}
+
+.ws-ship-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 4px 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.ws-ship-commit {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ws-ship-subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+}
+
+.ws-ship-upstream {
+  display: flex;
+  gap: 8px;
+}
+
+.ws-ship-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-ship-menu {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-1);
+}
+
+.ws-ship-item {
+  padding: 6px 10px;
+  border: 0;
+  background: none;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-ship-item:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.ws-ship-item:disabled {
+  color: var(--text-2);
+  cursor: default;
+}
+
+.ws-ship-note {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}
+
+/* Pull request and check states: dots only, drawn on the status dot. */
+.ws-dot[data-pr="open"],
+.ws-dot[data-check="pass"] {
+  background: var(--ok);
+}
+
+.ws-dot[data-pr="draft"],
+.ws-dot[data-check="skipping"] {
+  border: 1.5px solid var(--text-2);
+  background: transparent;
+}
+
+.ws-dot[data-pr="merged"] {
+  background: var(--accent);
+}
+
+.ws-dot[data-pr="closed"],
+.ws-dot[data-check="fail"],
+.ws-dot[data-check="cancel"] {
+  background: var(--danger);
+}
+
+.ws-dot[data-check="pending"] {
+  background: var(--warn);
+}
+
+.ws-panel-badge[data-tone="danger"] {
+  background: var(--danger);
+}
+
+.ws-pr {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  color: var(--text-2);
+  font-family: var(--x-font-mono);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.ws-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
+.ws-checks-pr {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.ws-checks-number {
+  flex-shrink: 0;
+  font-family: var(--x-font-mono);
+  color: var(--text-2);
+}
+
+.ws-checks-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-checks-state {
+  flex-shrink: 0;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.ws-checks-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ws-checks-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-1);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ws-checks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.ws-check-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-check-workflow {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--text-2);
+  font-size: 11px;
 }

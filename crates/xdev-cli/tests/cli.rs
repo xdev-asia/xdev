@@ -204,6 +204,32 @@ fn check_reports_stale_unverified_unknown() {
 }
 
 #[test]
+fn check_reports_unlinked() {
+    let (vault, data) = (vault(), TempDir::new().unwrap());
+    let dir = vault.path();
+    init_repo(dir);
+    fs::create_dir(dir.join("src")).unwrap();
+    fs::write(dir.join("src/x.rs"), "x").unwrap();
+    let first = commit_all(dir, "code");
+    fs::write(dir.join("fresh.md"), covered("src", Some(&first))).unwrap();
+    fs::write(
+        dir.join("linked.md"),
+        covered("[nobody:src/**]", Some(&first)),
+    )
+    .unwrap();
+    commit_all(dir, "docs");
+
+    let out = xdev(data.path(), &["check", dir.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert_eq!(
+        stdout(&out),
+        "unlinked	linked.md	-
+"
+    );
+    assert!(out.stderr.is_empty(), "{out:?}");
+}
+
+#[test]
 fn check_outside_git_reports_unknown() {
     let (vault, data) = (vault(), TempDir::new().unwrap());
     let dir = vault.path();

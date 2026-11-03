@@ -1,5 +1,7 @@
 use xdev_ai::ollama::Ollama;
-use xdev_core::{ContextPack, Embedder, GitError, Repo, Store, StoreError, Vault, stale_docs};
+use xdev_core::{
+    ContextPack, Embedder, GitError, Links, Repo, Store, StoreError, Vault, stale_docs,
+};
 
 pub struct OllamaEmbedder {
     client: Ollama,
@@ -51,7 +53,7 @@ pub fn pack(
         Err(GitError::NoRepo | GitError::NoGit) => None,
         Err(e) => return Err(e.code()),
     };
-    let stale = stale_docs(vault, repo.as_ref()).map_err(|e| e.code())?;
+    let stale = stale_docs(vault, repo.as_ref(), &Links::default()).map_err(|e| e.code())?;
     for section in &mut pack.sections {
         section.stale = stale.iter().any(|doc| doc.path == section.path);
     }

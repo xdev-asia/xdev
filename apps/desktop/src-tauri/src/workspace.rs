@@ -14,12 +14,13 @@ use tauri::State;
 use xdev_git::{ChangeKind, GitError, Repo};
 use xdev_policy::{Action, Verdict};
 use xdev_workspace::{
-    Registry, RepoView, WorkspaceError, WorktreeStat, WorktreeView, add_repo, create_worktree,
-    forget_repo, list, path_key, remove_worktree, set_pinned, stat,
+    Registry, RepoPatch, RepoView, VaultView, WorkspaceError, WorktreeStat, WorktreeView, add_repo,
+    add_vault, adopt_worktree, create_worktree, forget_repo, forget_vault, list, list_vaults,
+    path_key, remove_worktree, repo_docs_dir, set_pinned, stat, update_repo,
 };
 
 use crate::accounts::data_dir;
-use crate::commands::{AppState, CmdError};
+use crate::commands::{AppState, CmdError, create_vault_at};
 use crate::tasks::gate;
 
 /// Files bigger than this are not read into the diff view.
@@ -80,7 +81,7 @@ pub struct WorktreeFileDiff {
     pub skip: Option<Skip>,
 }
 
-fn bad_arg(detail: &str) -> CmdError {
+pub(crate) fn bad_arg(detail: &str) -> CmdError {
     CmdError {
         code: "bad_arg",
         detail: Some(detail.to_owned()),
@@ -89,7 +90,7 @@ fn bad_arg(detail: &str) -> CmdError {
 
 /// `root` joined with `file`, when `file` is a plain relative path that
 /// stays under `root`.
-fn inside(root: &Path, file: &str) -> Option<PathBuf> {
+pub(crate) fn inside(root: &Path, file: &str) -> Option<PathBuf> {
     let rel = Path::new(file);
     let plain = rel
         .components()
@@ -106,7 +107,7 @@ fn inside(root: &Path, file: &str) -> Option<PathBuf> {
 
 /// Whether the folder holding `disk` is really inside `root`, links
 /// resolved. A folder that does not exist holds nothing to read, so it passes.
-fn parent_within(root: &Path, disk: &Path) -> Result<bool, CmdError> {
+pub(crate) fn parent_within(root: &Path, disk: &Path) -> Result<bool, CmdError> {
     let Some(parent) = disk.parent() else {
         return Ok(false);
     };
@@ -185,7 +186,7 @@ fn remove_with(
 
 /// The commit a linked worktree started from. The primary checkout has no
 /// record, so it is as unknown as a folder the app never made.
-fn start_of(data: &Path, path: &Path) -> Result<String, CmdError> {
+pub(crate) fn start_of(data: &Path, path: &Path) -> Result<String, CmdError> {
     let key = path_key(path);
     Registry::load(data)?
         .worktrees
@@ -304,6 +305,92 @@ pub fn repo_forget(
 }
 
 #[tauri::command(async)]
+pub fn repo_update(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    id: String,
+    short_name: Option<String>,
+    base_ref: Option<String>,
+    worktree_root: Option<PathBuf>,
+) -> Result<RepoView, CmdError> {
+    let patch = RepoPatch {
+        short_name,
+        base_ref,
+        worktree_root,
+    };
+    update(data_dir(&state)?, &lock, |reg| update_repo(reg, &id, patch))
+}
+
+#[tauri::command(async)]
+pub fn worktree_adopt(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    path: PathBuf,
+) -> Result<WorktreeView, CmdError> {
+    let (now_ms, _) = clock();
+    update(data_dir(&state)?, &lock, |reg| {
+        adopt_worktree(reg, &path, now_ms)
+    })
+}
+
+/// Read-only: loads the registry without the save lock, like `worktree_stat`.
+#[tauri::command(async)]
+pub fn vault_list(state: State<'_, AppState>) -> Result<Vec<VaultView>, CmdError> {
+    Ok(list_vaults(&Registry::load(data_dir(&state)?)?))
+}
+
+#[tauri::command(async)]
+pub fn vault_add(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    path: PathBuf,
+) -> Result<VaultView, CmdError> {
+    update(data_dir(&state)?, &lock, |reg| add_vault(reg, &path))
+}
+
+#[tauri::command(async)]
+pub fn vault_forget(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    id: String,
+) -> Result<(), CmdError> {
+    update(data_dir(&state)?, &lock, |reg| forget_vault(reg, &id))
+}
+
+/// Makes `<primary checkout>/docs` for a repo without one, with the starter
+/// doc; a folder that already has anything in it is left alone. Writes no
+/// registry data, so it needs no lock.
+fn vault_create_docs_in(
+    data: &Path,
+    repo_id: &str,
+    file: &str,
+    content: &str,
+) -> Result<VaultView, CmdError> {
+    let reg = Registry::load(data)?;
+    let entry = reg
+        .repos
+        .iter()
+        .find(|r| r.id == repo_id)
+        .ok_or_else(|| WorkspaceError::RepoUnknown(repo_id.to_owned()))?;
+    create_vault_at(&repo_docs_dir(entry), file, content)?;
+    let id = format!("repo:{repo_id}");
+    list_vaults(&reg)
+        .into_iter()
+        .find(|v| v.id == id)
+        .ok_or_else(|| WorkspaceError::RepoUnknown(repo_id.to_owned()).into())
+}
+
+#[tauri::command(async)]
+pub fn vault_create_docs(
+    state: State<'_, AppState>,
+    repo_id: String,
+    file: String,
+    content: String,
+) -> Result<VaultView, CmdError> {
+    vault_create_docs_in(data_dir(&state)?, &repo_id, &file, &content)
+}
+
+#[tauri::command(async)]
 pub fn worktree_create(
     state: State<'_, AppState>,
     lock: State<'_, WorkspaceLock>,
@@ -403,7 +490,7 @@ mod tests {
     use std::process::Command;
 
     use tempfile::TempDir;
-    use xdev_workspace::{Registry, add_repo, create_worktree};
+    use xdev_workspace::{Registry, VaultKind, add_repo, create_worktree};
 
     use super::*;
 
@@ -429,7 +516,7 @@ mod tests {
     }
 
     fn fixture() -> Fixture {
-        let tmp = TempDir::with_prefix("ws cmd ").unwrap();
+        let tmp = crate::test_dirs::long_temp_dir("ws cmd ");
         let main = tmp.path().join("main");
         let data = tmp.path().join("data");
         fs::create_dir(&main).unwrap();
@@ -479,7 +566,10 @@ mod tests {
             .into_iter()
             .map(|entry| entry.verdict)
             .collect();
-        assert!(matches!(verdicts[..], [Verdict::Ask { .. }, Verdict::Allow]));
+        assert!(matches!(
+            verdicts[..],
+            [Verdict::Ask { .. }, Verdict::Allow]
+        ));
     }
 
     #[test]
@@ -648,6 +738,118 @@ mod tests {
         } else {
             assert_eq!(key("/R/Wt"), "/R/Wt");
         }
+    }
+
+    #[test]
+    fn repo_update_saves_through_lock() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let id = Registry::load(&fx.data).unwrap().repos[0].id.clone();
+        let patch = RepoPatch {
+            short_name: Some("renamed".to_owned()),
+            ..RepoPatch::default()
+        };
+        let view = update(&fx.data, &lock, |reg| update_repo(reg, &id, patch)).unwrap();
+        assert_eq!(view.short_name, "renamed");
+        assert_eq!(
+            Registry::load(&fx.data).unwrap().repos[0].short_name,
+            "renamed"
+        );
+
+        // A refused patch saves nothing.
+        let bad = RepoPatch {
+            short_name: Some("Bad Name".to_owned()),
+            ..RepoPatch::default()
+        };
+        let err = update(&fx.data, &lock, |reg| update_repo(reg, &id, bad)).unwrap_err();
+        assert_eq!(err.code, "bad_name");
+        assert_eq!(
+            Registry::load(&fx.data).unwrap().repos[0].short_name,
+            "renamed"
+        );
+    }
+
+    #[test]
+    fn new_workspace_errors_map_to_codes() {
+        let code_of = |e: WorkspaceError| CmdError::from(e).code;
+        assert_eq!(
+            code_of(WorkspaceError::ShortNameTaken("x".into())),
+            "short_name_taken"
+        );
+        assert_eq!(
+            code_of(WorkspaceError::VaultExists("x".into())),
+            "vault_exists"
+        );
+        assert_eq!(
+            code_of(WorkspaceError::VaultUnknown("x".into())),
+            "vault_unknown"
+        );
+    }
+
+    #[test]
+    fn vault_add_and_forget_keep_the_folder() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let shared = fx.main.parent().unwrap().join("shared");
+        fs::create_dir(&shared).unwrap();
+        fs::write(shared.join("a.md"), "# a").unwrap();
+        let view = update(&fx.data, &lock, |reg| add_vault(reg, &shared)).unwrap();
+        assert_eq!(view.kind, VaultKind::Shared);
+        let listed = list_vaults(&Registry::load(&fx.data).unwrap());
+        assert!(listed.iter().any(|v| v.id == view.id));
+        let again = update(&fx.data, &lock, |reg| add_vault(reg, &shared));
+        assert_eq!(code(again), "vault_exists");
+
+        update(&fx.data, &lock, |reg| forget_vault(reg, &view.id)).unwrap();
+        assert!(shared.join("a.md").is_file());
+        let gone = update(&fx.data, &lock, |reg| forget_vault(reg, &view.id));
+        assert_eq!(code(gone), "vault_unknown");
+    }
+
+    #[test]
+    fn vault_create_docs_writes_starter_once() {
+        let fx = fixture();
+        let id = Registry::load(&fx.data).unwrap().repos[0].id.clone();
+        let docs = fx.main.join("docs");
+        assert!(!docs.exists());
+
+        let view = vault_create_docs_in(&fx.data, &id, "Start.md", "# Hi").unwrap();
+        assert_eq!(view.id, format!("repo:{id}"));
+        assert!(view.exists);
+        assert_eq!(fs::read_to_string(docs.join("Start.md")).unwrap(), "# Hi");
+
+        // A second call leaves what is there alone.
+        fs::write(docs.join("Start.md"), "mine").unwrap();
+        let view = vault_create_docs_in(&fx.data, &id, "Start.md", "# Hi").unwrap();
+        assert!(view.exists);
+        assert_eq!(fs::read_to_string(docs.join("Start.md")).unwrap(), "mine");
+
+        let unknown = vault_create_docs_in(&fx.data, "nope", "Start.md", "x");
+        assert_eq!(code(unknown), "repo_unknown");
+        let bad = vault_create_docs_in(&fx.data, &id, "../x.md", "x");
+        assert_eq!(code(bad), "bad_path");
+    }
+
+    #[test]
+    fn adopt_through_lock_records_the_worktree_once() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let out = fx.main.parent().unwrap().join("outside-wt");
+        git(
+            &fx.main,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "outside",
+                out.to_str().unwrap(),
+            ],
+        );
+        let view = update(&fx.data, &lock, |reg| adopt_worktree(reg, &out, 9)).unwrap();
+        assert_eq!(path_key(Path::new(&view.path)), path_key(&out));
+        let again = update(&fx.data, &lock, |reg| adopt_worktree(reg, &out, 9));
+        assert_eq!(code(again), "worktree_exists");
     }
 
     #[test]

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io;
 
 use xdev_core::{
-    CoreError, DocState, GitError, Repo, Store, Vault, backlinks, freshness, is_doc_path,
+    CoreError, DocState, GitError, Links, Repo, Store, Vault, backlinks, freshness, is_doc_path,
     parse_frontmatter, propose_update, search, stale_docs, sync_vault,
 };
 use xdev_mcp::{Doc, DocInfo, Docs, Hit, ToolError};
@@ -40,6 +40,7 @@ fn state_name(state: DocState) -> &'static str {
         DocState::Stale => "stale",
         DocState::Unverified => "unverified",
         DocState::Unknown => "unknown",
+        DocState::Unlinked => "unlinked",
     }
 }
 
@@ -77,7 +78,7 @@ impl CoreDocs {
         let (state, count) = if fm.covers.is_empty() {
             (DocState::None, 0)
         } else {
-            let f = freshness(&self.vault, repo, path).map_err(tool_error)?;
+            let f = freshness(&self.vault, repo, &Links::default(), path).map_err(tool_error)?;
             (f.state, f.count)
         };
         Ok(DocInfo {
@@ -164,7 +165,7 @@ impl Docs for CoreDocs {
         self.sync()?;
         let repo = self.repo()?;
         let mut out = Vec::new();
-        for doc in stale_docs(&self.vault, repo.as_ref()).map_err(tool_error)? {
+        for doc in stale_docs(&self.vault, repo.as_ref(), &Links::default()).map_err(tool_error)? {
             let content = self.vault.read(&doc.path).map_err(tool_error)?;
             let fm = parse_frontmatter(&content).0;
             out.push(DocInfo {

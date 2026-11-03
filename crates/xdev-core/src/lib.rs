@@ -12,7 +12,10 @@ mod sync;
 pub use data_dir::{APP_ID, data_dir, local_dir, move_indexes};
 pub use error::CoreError;
 pub use export::{ExportPlan, ExportedDoc, export_plan, export_root, export_write};
-pub use freshness::{DocState, FRESHNESS_COMMITS, Freshness, StaleDoc, freshness, stale_docs};
+pub use freshness::{
+    DocState, FRESHNESS_COMMITS, Freshness, LinkedRepo, Links, StaleDoc, freshness, split_prefix,
+    stale_docs,
+};
 pub use links::{BrokenLink, DocLink, backlinks, broken_links};
 pub use review::{
     AiWrites, Change, Origin, Seen, Written, ai_writes, approve, default_message, forget_ai_writes,

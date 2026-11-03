@@ -4,9 +4,12 @@ import type { JSX } from "react";
 import { toApiError, type Api, type WorktreeChange, type WorktreeView } from "../api";
 import type { Problem } from "../changes/useChanges";
 import { ProblemNote } from "../components/ChangesPanel";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { diffStats } from "../components/DiffView";
 import { useI18n } from "../i18n";
+import type { PrStore } from "./prs";
 import type { Sessions } from "./sessions";
+import { ShipBar } from "./ShipBar";
 import type { TabStatus } from "./status";
 
 // Git's own letters, so they read the same in every language.
@@ -26,6 +29,12 @@ export function WorktreeChanges(props: {
   onCount?(count: number): void;
   // The whole list, each time it is read.
   onChanges?(list: WorktreeChange[]): void;
+  // Hands a failed hook's output to an agent; the button is hidden without it.
+  onFixWithAgent?(output: string): void;
+  // After a commit or amend, so the ship bar reads again.
+  onShipChanged?(): void;
+  // The shared store of pull requests; the ship bar shows only when it is given.
+  prs?: PrStore;
 }): JSX.Element {
   const { api, worktree, sessions } = props;
   const { t } = useI18n();
@@ -38,6 +47,13 @@ export function WorktreeChanges(props: {
   const [loadProblem, setLoadProblem] = useState<Problem | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [busy, setBusy] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [amend, setAmend] = useState(false);
+  // The last amend was refused because the commit is pushed; waits for the person's answer.
+  const [askPushed, setAskPushed] = useState(false);
+  // Bumped when the branch may have moved, so the ship bar reads again.
+  const [shipKey, setShipKey] = useState(0);
+  const field = useRef<HTMLTextAreaElement>(null);
   // Only the newest load may write, so a slow one never shows an older list.
   const loads = useRef(0);
   // The load still running, if any; a focus does not start another.
@@ -99,7 +115,10 @@ export function WorktreeChanges(props: {
     let before = statuses();
     return sessions.subscribe(() => {
       const now = statuses();
-      if ([...now].some(([id, status]) => status === "idle" && before.get(id) === "working")) void load();
+      if ([...now].some(([id, status]) => status === "idle" && before.get(id) === "working")) {
+        void load();
+        setShipKey((k) => k + 1);
+      }
       before = now;
     });
   }, [api, path, primary, sessions]);
@@ -107,28 +126,46 @@ export function WorktreeChanges(props: {
   if (primary) return <p className="ws-empty">{t("workspace.changes.primary")}</p>;
 
   const checked = (changes ?? []).filter((c) => !skipped.includes(c.path));
-  const blocked = busy || checked.length === 0 || message.trim() === "";
+  const blocked = busy || message.trim() === "" || (!amend && checked.length === 0);
 
   function toggle(file: string): void {
     setSkipped((s) => (s.includes(file) ? s.filter((p) => p !== file) : [...s, file]));
   }
 
-  async function commit(): Promise<void> {
+  async function commit(confirmed = false): Promise<void> {
     setBusy(true);
     setProblem(null);
+    setAskPushed(false);
     try {
-      const sha = await api.worktreeCommit(
-        path,
-        checked.map((c) => c.path),
-        message,
-      );
+      const files = checked.map((c) => c.path);
+      const sha = amend ? await api.worktreeAmend(path, files, message, confirmed) : await api.worktreeCommit(path, files, message);
       // Null: none of the files had changes any more, so the message waits for the next try.
-      if (sha) setMessage("");
+      if (sha) {
+        setMessage("");
+        setAmend(false);
+        props.onShipChanged?.();
+        setShipKey((k) => k + 1);
+      }
       await load();
+    } catch (e) {
+      const error = toApiError(e);
+      if (amend && error.code === "amend_pushed") setAskPushed(true);
+      else setProblem(error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Only fills the box; the person reads it and commits.
+  async function draft(): Promise<void> {
+    setDrafting(true);
+    setProblem(null);
+    try {
+      setMessage(await api.worktreeDraftCommit(path, checked.map((c) => c.path)));
     } catch (e) {
       setProblem(toApiError(e));
     } finally {
-      setBusy(false);
+      setDrafting(false);
     }
   }
 
@@ -137,8 +174,35 @@ export function WorktreeChanges(props: {
       <strong className="ws-changes-title">
         {changes && changes.length > 0 ? t("workspace.changes.title", { count: changes.length }) : changes && t("workspace.changes.none")}
       </strong>
+      {props.prs && (
+        <ShipBar
+          api={api}
+          worktree={path}
+          checked={checked.length}
+          prs={props.prs}
+          refreshKey={shipKey}
+          onCommit={() => (message.trim() === "" ? field.current?.focus() : blocked ? undefined : void commit())}
+          onChanged={() => props.onShipChanged?.()}
+        />
+      )}
       {loadProblem && <ProblemNote problem={loadProblem} />}
-      {problem && <ProblemNote problem={problem} />}
+      {problem && problem.code !== "hook_failed" && <ProblemNote problem={problem} />}
+      {problem?.code === "hook_failed" && (
+        <div className="ws-hook" role="alert">
+          <span>{t("error.hook_failed")}</span>
+          <pre className="ws-hook-output ws-mono" aria-label={t("ship.hook.output")}>{problem.detail ?? ""}</pre>
+          <div className="ws-hook-actions">
+            {props.onFixWithAgent && (
+              <button type="button" className="btn-secondary" onClick={() => props.onFixWithAgent?.(problem.detail ?? "")}>
+                {t("ship.hook.fix")}
+              </button>
+            )}
+            <button type="button" className="btn-secondary" onClick={() => void Promise.resolve(navigator.clipboard?.writeText(problem.detail ?? "")).catch(() => undefined)}>
+              {t("ship.hook.copy")}
+            </button>
+          </div>
+        </div>
+      )}
       {changes && changes.length > 0 && (
         <ul className="ws-change-list">
           {changes.map((c) => {
@@ -171,11 +235,40 @@ export function WorktreeChanges(props: {
       )}
       <label className="ws-commit-field">
         {t("workspace.changes.message")}
-        <textarea className="ws-mono" rows={3} value={message} onChange={(e) => setMessage(e.target.value)} />
+        <textarea
+          ref={field}
+          className="ws-mono"
+          rows={3}
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              if (!blocked) void commit();
+            }
+          }}
+        />
       </label>
-      <Button type="button" disabled={blocked} onClick={() => void commit()}>
-        {t("workspace.changes.commit", { count: checked.length })}
-      </Button>
+      <label className="ws-amend">
+        <input type="checkbox" checked={amend} disabled={busy} onChange={() => setAmend((a) => !a)} />
+        {t("ship.amend.toggle")}
+      </label>
+      <div className="ws-commit-actions">
+        <Button type="button" disabled={blocked} onClick={() => void commit()}>
+          {amend ? t("ship.amend.button") : t("workspace.changes.commit", { count: checked.length })}
+        </Button>
+        <button type="button" className="btn-secondary" disabled={drafting || busy || checked.length === 0} onClick={() => void draft()}>
+          {drafting ? t("ship.drafting") : t("ship.draft")}
+        </button>
+      </div>
+      <ConfirmDialog
+        open={askPushed}
+        title={t("ship.amend.pushed.title")}
+        body={t("ship.amend.pushed.body")}
+        confirmLabel={t("ship.amend.pushed.confirm")}
+        onConfirm={() => void commit(true)}
+        onCancel={() => setAskPushed(false)}
+      />
     </div>
   );
 }

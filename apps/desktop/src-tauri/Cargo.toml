@@ -23,17 +23,21 @@ xdev-agent.workspace = true
 xdev-ai.workspace = true
 xdev-core.workspace = true
 xdev-git.workspace = true
+xdev-kit.workspace = true
 xdev-policy.workspace = true
 xdev-pty.workspace = true
 xdev-workspace.workspace = true
 
 [dev-dependencies]
+dunce = "1.0.5"
 tempfile.workspace = true
 ts-rs.workspace = true
 # Only the test that writes `packages/bindings` needs the TypeScript derives.
 xdev-agent = { workspace = true, features = ["ts"] }
 xdev-ai = { workspace = true, features = ["ts"] }
 xdev-core = { workspace = true, features = ["ts"] }
+xdev-git = { workspace = true, features = ["ts"] }
+xdev-kit = { workspace = true, features = ["ts"] }
 xdev-workspace = { workspace = true, features = ["ts"] }
 
 [lints]

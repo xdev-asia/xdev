@@ -67,6 +67,14 @@ describe("FreshnessBanner", () => {
     expect(missing).toContain("Commit abcdef0 from its verified line is not in this repository.");
   });
 
+  it("shows the unlinked copy", () => {
+    const html = render({ ...stale, state: "unlinked", covers: ["nobody:x/**"], head: null, commits: [], count: 0 });
+    expect(html).toContain('data-state="unlinked"');
+    expect(html).toContain("Some covered code is in a repo xDev does not know.");
+    expect(html).toContain("Add the repo, or check the prefix in nobody:x/** against Settings → Repos.");
+    expect(verifyButton(html)).toContain("disabled");
+  });
+
   it("mark_verified_disabled_without_head", () => {
     const button = verifyButton(render({ ...stale, state: "unknown", head: null, commits: [], count: 0 }));
     expect(button).toContain("disabled");

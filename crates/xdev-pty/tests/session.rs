@@ -136,8 +136,11 @@ fn ten_kb_paste_arrives_whole() {
     let run = if cfg!(windows) {
         powershell("$l = [Console]::In.ReadLine(); [Console]::Out.WriteLine('LEN=' + $l.Length)")
     } else {
-        // A cooked tty line stops at 4 KB.
-        sh("stty -icanon; IFS= read -r l; echo LEN=${#l}")
+        // A cooked tty line stops at 4 KB, so leave cooked mode before the
+        // paste lands.
+        let run = sh("stty -icanon; echo READY; IFS= read -r l; echo LEN=${#l}");
+        run.wait_for("READY");
+        run
     };
     let mut paste = vec![b'a'; 10_240];
     paste.push(b'\r');
