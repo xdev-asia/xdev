@@ -17,12 +17,18 @@ function block(selector: string, vars: Vars): string {
 export function tokensCss(): string {
   const light = {
     ...prefixed("color", tokens.color.light),
+    // Near-black neutrals of the workspace shell; the semantic colors stay in `color`.
+    ...prefixed("graphite", tokens.graphite.light),
     ...prefixed("space", tokens.space),
     ...prefixed("radius", tokens.radius),
     ...prefixed("font", tokens.font),
     "color-scheme": "light",
   };
-  const dark = { ...prefixed("color", tokens.color.dark), "color-scheme": "dark" };
+  const dark = {
+    ...prefixed("color", tokens.color.dark),
+    ...prefixed("graphite", tokens.graphite.dark),
+    "color-scheme": "dark",
+  };
   // Follow the OS by default, but let an explicit data-theme win either way.
   return [
     block(":root", light),

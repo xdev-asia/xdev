@@ -1,0 +1,678 @@
+/* Workspace shell: the Graphite palette, scoped to the shell so the docs app keeps its own. */
+
+.ws-shell {
+  --ws-bg: var(--x-graphite-bg);
+  --ws-panel: var(--x-graphite-panel);
+  --ws-surface: var(--x-graphite-surface);
+  --ws-surface-2: var(--x-graphite-surface-2);
+  --ws-line: var(--x-graphite-line);
+  --ws-ink: var(--x-graphite-ink);
+  --ws-muted: var(--x-graphite-muted);
+  --ws-term: var(--x-graphite-term);
+  --ws-orange: var(--x-graphite-orange);
+  --ws-accent: var(--x-color-accent);
+  --ws-signal: var(--x-color-signal);
+  --ws-warn: var(--x-color-warn);
+  --ws-ok: var(--x-color-ok);
+  --ws-danger: var(--x-color-danger);
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ws-bg);
+  color: var(--ws-ink);
+  font-family: var(--x-font-body);
+  font-size: 13px;
+}
+
+/* The regions the shell owns read the shared classes (.dialog, .btn-secondary, .lang-select)
+   in Graphite too. `.ws-docs` is left out on purpose. */
+.ws-header,
+.ws-sidebar,
+.ws-stage,
+.ws-footer,
+.ws-dialog {
+  --x-color-bg: var(--ws-bg);
+  --x-color-panel: var(--ws-panel);
+  --x-color-surface: var(--ws-surface);
+  --x-color-surface-2: var(--ws-surface-2);
+  --x-color-line: var(--ws-line);
+  --x-color-ink: var(--ws-ink);
+  --x-color-muted: var(--ws-muted);
+  --x-color-code-bg: var(--ws-term);
+}
+
+.ws-shell :focus-visible {
+  outline: 2px solid var(--ws-signal);
+  outline-offset: 2px;
+}
+
+.ws-shell button {
+  cursor: pointer;
+}
+
+.ws-mono {
+  font-family: var(--x-font-mono);
+}
+
+.ws-spacer {
+  flex: 1;
+}
+
+.ws-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ws-muted);
+}
+
+.ws-icon-btn:hover:not(:disabled) {
+  background: var(--ws-surface-2);
+  color: var(--ws-ink);
+}
+
+/* Header */
+
+.ws-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--ws-line);
+  background: var(--ws-panel);
+}
+
+.ws-logo {
+  display: block;
+  flex-shrink: 0;
+  border-radius: 5px;
+}
+
+.ws-brand {
+  font-weight: 700;
+}
+
+.ws-crumb-sep {
+  color: var(--ws-muted);
+}
+
+.ws-crumb {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--ws-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ws-crumb.ws-mono {
+  color: var(--ws-ink);
+}
+
+/* Body */
+
+.ws-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.ws-sidebar {
+  display: flex;
+  flex: 0 0 268px;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--ws-line);
+  background: var(--ws-panel);
+}
+
+.ws-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 8px 6px;
+}
+
+.ws-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+}
+
+.ws-nav-item svg {
+  color: var(--ws-muted);
+}
+
+.ws-nav-item:hover,
+.ws-nav-item[aria-current="page"] {
+  background: var(--ws-surface-2);
+}
+
+.ws-nav-item[aria-current="page"] {
+  font-weight: 600;
+}
+
+.ws-nav-item[aria-current="page"] svg {
+  color: var(--ws-ink);
+}
+
+/* Worktree list */
+
+.ws-worktrees {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ws-section-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px 4px 16px;
+}
+
+.ws-section-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ws-muted);
+}
+
+.ws-section-head .ws-icon-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+}
+
+.ws-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 8px 8px;
+}
+
+.ws-groups,
+.ws-wts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 8px 4px;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.ws-chevron {
+  flex-shrink: 0;
+  color: var(--ws-muted);
+  transition: transform 120ms ease;
+}
+
+.ws-group-head[aria-expanded="false"] .ws-chevron {
+  transform: rotate(-90deg);
+}
+
+.ws-group-mark {
+  color: var(--ws-orange);
+}
+
+.ws-group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ws-group-count {
+  font-family: var(--x-font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ws-muted);
+}
+
+.ws-tag {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border: 1px solid var(--ws-line);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ws-muted);
+}
+
+.ws-tag-warn {
+  border-color: transparent;
+  background: var(--x-color-warn-soft);
+  color: var(--ws-warn);
+  font-weight: 600;
+}
+
+.ws-wt {
+  position: relative;
+  margin-bottom: 2px;
+}
+
+.ws-wt-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.ws-wt-main:hover {
+  background: var(--ws-surface-2);
+}
+
+.ws-wt-main[aria-current="true"] {
+  background: var(--ws-surface-2);
+  box-shadow: inset 2px 0 0 var(--ws-accent);
+}
+
+.ws-wt-line,
+.ws-wt-sub {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.ws-wt-line {
+  gap: 8px;
+  padding-right: 22px;
+}
+
+.ws-wt-sub {
+  gap: 6px;
+  padding-left: 15px;
+  font-size: 11px;
+  color: var(--ws-muted);
+}
+
+.ws-wt-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ws-wt-branch {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--x-font-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ws-pin {
+  flex-shrink: 0;
+  color: var(--ws-muted);
+}
+
+/* The status dot: working pulses, failed is danger, idle and exited are an outline. */
+.ws-dot {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.ws-dot[data-dot="working"] {
+  background: var(--ws-signal);
+}
+
+.ws-dot[data-dot="failed"] {
+  background: var(--ws-danger);
+}
+
+.ws-dot[data-dot="idle"],
+.ws-dot[data-dot="exited"] {
+  border: 1.5px solid var(--ws-muted);
+  background: transparent;
+}
+
+.ws-wt-more {
+  position: absolute;
+  top: 5px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ws-muted);
+  line-height: 1;
+  opacity: 0;
+}
+
+.ws-wt:hover .ws-wt-more,
+.ws-wt-more:focus-visible,
+.ws-wt-more[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.ws-wt-more:hover {
+  background: var(--ws-line);
+  color: var(--ws-ink);
+}
+
+.ws-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+}
+
+.ws-menu {
+  position: absolute;
+  top: 30px;
+  right: 4px;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 4px;
+  border: 1px solid var(--ws-line);
+  border-radius: 8px;
+  background: var(--ws-surface);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ws-ink) 16%, transparent);
+}
+
+.ws-menu button {
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  text-align: left;
+}
+
+.ws-menu button:hover {
+  background: var(--ws-surface-2);
+}
+
+.ws-menu .ws-menu-danger {
+  color: var(--ws-danger);
+}
+
+.ws-empty {
+  margin: 0;
+  padding: 8px;
+  font-size: 12px;
+  color: var(--ws-muted);
+}
+
+.ws-notice {
+  padding: 6px 16px;
+  font-size: 12px;
+}
+
+.ws-sidebar-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--ws-line);
+}
+
+.ws-add-repo {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ws-muted);
+  text-align: left;
+}
+
+.ws-add-repo:hover {
+  background: var(--ws-surface-2);
+  color: var(--ws-ink);
+}
+
+/* Stage: the center and the right panel */
+
+.ws-stage {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ws-center {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  background: var(--ws-term);
+}
+
+.ws-center-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+  color: var(--ws-muted);
+}
+
+.ws-center-empty strong {
+  font-size: 15px;
+  color: var(--ws-ink);
+}
+
+.ws-center-empty .ws-mono {
+  font-size: 12px;
+}
+
+.ws-center-empty p {
+  margin: 6px 0 0;
+}
+
+.ws-panel {
+  display: flex;
+  flex: 0 0 276px;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--ws-line);
+  background: var(--ws-panel);
+}
+
+.ws-panel-tabs {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--ws-line);
+}
+
+.ws-panel-tab {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 26px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ws-muted);
+}
+
+.ws-panel-tab:hover,
+.ws-panel-tab[aria-selected="true"] {
+  background: var(--ws-surface-2);
+  color: var(--ws-ink);
+}
+
+.ws-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 4px;
+}
+
+/* Docs view: the docs app fills the space beside the sidebar. */
+
+.ws-docs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ws-docs > :not(dialog) {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* Footer */
+
+.ws-footer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 16px;
+  height: 26px;
+  padding: 0 12px;
+  border-top: 1px solid var(--ws-line);
+  background: var(--ws-panel);
+  font-size: 11.5px;
+  color: var(--ws-muted);
+}
+
+.ws-running {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-running .ws-dot {
+  width: 6px;
+  height: 6px;
+}
+
+/* Dialogs */
+
+.ws-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.ws-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ws-field input,
+.ws-field select {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--ws-line);
+  border-radius: 6px;
+  background: var(--ws-bg);
+  color: var(--ws-ink);
+  font: inherit;
+  font-weight: 400;
+}
+
+.ws-field input.ws-mono {
+  font-family: var(--x-font-mono);
+}
+
+.ws-field small {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ws-muted);
+}
+
+.ws-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 12px 0;
+  font-size: 12px;
+}
+
+.ws-facts dt {
+  color: var(--ws-muted);
+}
+
+.ws-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ws-pulse {
+  animation: ws-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes ws-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-pulse {
+    animation: none;
+  }
+
+  .ws-chevron {
+    transition: none;
+  }
+}
