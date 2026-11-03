@@ -6,6 +6,7 @@ import { translate } from "@/i18n";
 import { BasePicker } from "./BasePicker";
 import { FileDiff } from "./FileDiff";
 import { ReviewView } from "./ReviewView";
+import { touchChanges } from "@/workspace/changesBus";
 import { VIEW_KEY } from "./viewOptions";
 
 // Hooks are stubbed only while a component under test is called.
@@ -176,6 +177,21 @@ it("stages and unstages one file, then reads again", async () => {
   v.diff("src/session.ts").props.onStage(v.diff("src/session.ts").props.file, false);
   await tick();
   expect(stage).toHaveBeenLastCalledWith(OAK, ["src/session.ts"], false);
+});
+
+it("reads again when the changes panel stages or discards, and stops once it unmounts", async () => {
+  const api = createMockApi({});
+  const read = vi.spyOn(api, "worktreeReview");
+  const v = review(api);
+  await tick();
+  expect(read).toHaveBeenCalledTimes(1);
+  touchChanges(OAK);
+  await tick();
+  expect(read).toHaveBeenCalledTimes(2);
+  v.cleanups.forEach((stop) => typeof stop === "function" && stop());
+  touchChanges(OAK);
+  await tick();
+  expect(read).toHaveBeenCalledTimes(2);
 });
 
 it("saves the view options and restores them", async () => {

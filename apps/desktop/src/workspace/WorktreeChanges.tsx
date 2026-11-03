@@ -1,5 +1,6 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useRef, useState } from "react";
+import { onChangesTouched, touchChanges } from "./changesBus";
 import type { JSX } from "react";
 import { toApiError, type Api, type StageState, type WorktreeChange, type WorktreeView } from "@/api";
 import type { Problem } from "@/changes/useChanges";
@@ -69,6 +70,8 @@ export function WorktreeChanges(props: {
   const field = useRef<HTMLTextAreaElement>(null);
   // Only the newest load may write, so a slow one never shows an older list.
   const loads = useRef(0);
+  // This panel's own listener on the changes bus, so it does not read twice after its own action.
+  const touched = useRef<(() => void) | undefined>(undefined);
   // The load still running, if any; a focus does not start another.
   const running = useRef(0);
   const onCount = useRef(props.onCount);
@@ -120,8 +123,13 @@ export function WorktreeChanges(props: {
       if (!running.current) void load();
     };
     window.addEventListener("focus", again);
+    // The review tab staged something.
+    const onTouched = () => void load();
+    touched.current = onTouched;
+    const stop = onChangesTouched(path, onTouched);
     return () => {
       window.removeEventListener("focus", again);
+      stop();
       // A load still running belongs to a worktree that is gone.
       loads.current++;
     };
@@ -175,6 +183,7 @@ export function WorktreeChanges(props: {
     } catch (e) {
       setProblem(toApiError(e));
     }
+    touchChanges(path, touched.current);
     try {
       await load();
     } finally {
@@ -232,6 +241,7 @@ export function WorktreeChanges(props: {
       const error = toApiError(e);
       if (error.code !== "needs_approval") setProblem(error);
     }
+    touchChanges(path, touched.current);
     try {
       await load();
     } finally {

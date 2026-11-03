@@ -8,6 +8,7 @@ import { FileDiff } from "@/review/FileDiff";
 import { ReviewView } from "@/review/ReviewView";
 import { DEFAULT_VIEW } from "@/review/viewOptions";
 import { translate } from "@/i18n";
+import { touchChanges, onChangesTouched } from "./changesBus";
 import { Sessions } from "./sessions";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { WorktreeChanges } from "./WorktreeChanges";
@@ -508,6 +509,24 @@ it("Stage All stages every file of Changes, then reads again", async () => {
   labelled(group(view, "changes"), en("changes.stageAll")).props.onClick();
   await tick();
   expect(stage).toHaveBeenCalledWith(OAK, ["src/session.ts", "src/status.ts"], true);
+  expect(list.mock.calls.length).toBe(before + 1);
+});
+
+it("a stage here tells the review tab, and a stage there reads the list again", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  vi.spyOn(api, "worktreeStage").mockResolvedValue(undefined);
+  const list = vi.spyOn(api, "worktreeChanges");
+  const view = changes(api);
+  await tick();
+  const told = vi.fn();
+  onChangesTouched(OAK, told);
+  labelled(group(view, "changes"), en("changes.stageAll")).props.onClick();
+  await tick();
+  expect(told).toHaveBeenCalledTimes(1);
+  const before = list.mock.calls.length;
+  touchChanges(OAK);
+  await tick();
   expect(list.mock.calls.length).toBe(before + 1);
 });
 
