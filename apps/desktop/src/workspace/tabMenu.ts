@@ -53,7 +53,7 @@ export function tabMenuItems(ctx: TabMenuContext): MenuItem[] {
         id: color,
         labelKey: `tabMenu.color.${color}`,
         checked: ctx.tab.color === color,
-        swatch: color === "none" ? undefined : `--x-tab-color-${color.slice(1)}`,
+        swatch: tabColorVar(color) ?? undefined,
         run: () => ctx.setColor(color),
       })),
     },
@@ -62,4 +62,9 @@ export function tabMenuItems(ctx: TabMenuContext): MenuItem[] {
     { id: "closeOthers", labelKey: "tabMenu.closeOthers", disabled: !others, run: ctx.closeOthers },
     { id: "closeToRight", labelKey: "tabMenu.closeToRight", disabled: !right, run: ctx.closeToRight },
   ];
+}
+
+/** The colour token of a tab colour (`c3` -> `--x-tab-color-3`); null for "none". */
+export function tabColorVar(color: TabColor): string | null {
+  return color === "none" ? null : `--x-tab-color-${color.slice(1)}`;
 }
