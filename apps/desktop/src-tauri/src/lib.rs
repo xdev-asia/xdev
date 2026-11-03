@@ -83,6 +83,8 @@ pub fn run() {
             commands::last_vault,
             commands::git_settings,
             commands::set_git_settings,
+            commands::terminal_settings_get,
+            commands::terminal_settings_put,
             commands::git_user_name,
             commands::vault_setup,
             commands::dismiss_vault_prompt,

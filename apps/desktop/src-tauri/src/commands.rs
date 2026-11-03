@@ -165,6 +165,33 @@ fn store_git_settings(
     Ok(saved.git)
 }
 
+/// Settings → Terminal as stored; the defaults when nothing is.
+#[tauri::command(async)]
+pub fn terminal_settings_get(app: AppHandle) -> settings::TerminalSettings {
+    settings_path(&app)
+        .map(|file| settings::load(&file).terminal)
+        .unwrap_or_default()
+}
+
+/// Stores Settings → Terminal and returns what was stored.
+#[tauri::command(async)]
+pub fn terminal_settings_put(
+    app: AppHandle,
+    settings: settings::TerminalSettings,
+) -> Result<settings::TerminalSettings, CmdError> {
+    let file = settings_path(&app).ok_or_else(|| CmdError {
+        code: "io",
+        detail: Some("no app config folder".into()),
+    })?;
+    let mut saved = settings::load(&file);
+    saved.terminal = settings;
+    settings::save(&file, &saved).map_err(|e| CmdError {
+        code: "io",
+        detail: Some(e.to_string()),
+    })?;
+    Ok(saved.terminal)
+}
+
 /// The global git `user.name` that the git-username prefix shows; a repo's
 /// own `user.name` wins when a worktree is created.
 #[tauri::command(async)]

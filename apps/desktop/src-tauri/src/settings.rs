@@ -2,8 +2,21 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// The shape `save` writes. Bump it with a step in `MIGRATIONS` when a key
+/// is renamed or removed; a new field with a default needs neither.
+#[allow(dead_code, reason = "contract: the settings store uses it")]
+pub const VERSION: u32 = 1;
+/// Emitted after every settings write, with a `SettingsChanged` payload.
+#[allow(dead_code, reason = "contract: the settings store uses it")]
+pub const CHANGED_EVENT: &str = "settings://changed";
+
+/// Not `Eq`: `terminal.line_height` is an `f32`.
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Settings {
+    /// Missing in files written before the settings store; read as 0 and
+    /// migrated.
+    #[serde(default)]
+    pub version: u32,
     /// Kept as the user picked it: the canonical root is a `\\?\` path on
     /// Windows, which the folder dialog and the UI should never see.
     pub last_vault: Option<String>,
@@ -17,6 +30,92 @@ pub struct Settings {
     /// Settings → Notifications; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub status: StatusSettings,
+    /// Settings → Terminal; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub terminal: TerminalSettings,
+}
+
+/// How every terminal pane looks and behaves. Values outside the ranges
+/// below are clamped when stored.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct TerminalSettings {
+    /// Empty means the `--x-font-mono` token.
+    pub font_family: String,
+    /// 8..=32.
+    pub font_size: u8,
+    pub font_weight: FontWeight,
+    /// 1.0..=2.0.
+    pub line_height: f32,
+    pub cursor_style: CursorStyle,
+    pub cursor_blink: bool,
+    /// Lines kept above the screen, 0..=100_000.
+    pub scrollback: u32,
+    pub copy_on_select: bool,
+    /// Off on macOS, on elsewhere, as the reference app does.
+    pub right_click_paste: bool,
+    /// Programs may write the clipboard with OSC 52; they can never read it.
+    pub osc52_clipboard: bool,
+}
+
+impl Default for TerminalSettings {
+    fn default() -> Self {
+        TerminalSettings {
+            font_family: String::new(),
+            font_size: 13,
+            font_weight: FontWeight::Normal,
+            line_height: 1.0,
+            cursor_style: CursorStyle::Block,
+            cursor_blink: true,
+            scrollback: 10_000,
+            copy_on_select: true,
+            right_click_paste: !cfg!(target_os = "macos"),
+            osc52_clipboard: true,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum FontWeight {
+    #[default]
+    Normal,
+    Medium,
+    Bold,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum CursorStyle {
+    #[default]
+    Block,
+    Bar,
+    Underline,
+}
+
+/// One part of the settings file, as a `settings://changed` event names it.
+#[allow(dead_code, reason = "contract: the settings store uses it")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum SettingsSection {
+    /// `last_vault` and `vault_prompted`.
+    Vault,
+    Git,
+    Status,
+    Terminal,
+}
+
+/// What a `settings://changed` event carries.
+#[allow(dead_code, reason = "contract: the settings store uses it")]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsChanged {
+    pub sections: Vec<SettingsSection>,
 }
 
 /// How agent status reaches the person. A channel fires only when `enabled`,
@@ -185,6 +284,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("nested").join(FILE_NAME);
         let settings = Settings {
+            version: VERSION,
             last_vault: Some("C:/Users/me/Tài liệu".into()),
             vault_prompted: true,
             git: GitSettings {
@@ -202,6 +302,11 @@ mod tests {
                 sound_file: Some("C:/x/custom.wav".into()),
                 volume: 7,
                 ..StatusSettings::default()
+            },
+            terminal: TerminalSettings {
+                font_size: 15,
+                cursor_style: CursorStyle::Bar,
+                ..TerminalSettings::default()
             },
         };
         save(&path, &settings).unwrap();
@@ -298,7 +403,7 @@ mod tests {
                 last_vault: Some("D:/docs".into()),
                 vault_prompted: false,
                 git: GitSettings::default(),
-                status: StatusSettings::default(),
+                ..Settings::default()
             }
         );
     }

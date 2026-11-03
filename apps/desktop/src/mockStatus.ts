@@ -1,4 +1,5 @@
 import type { Api, ApiError, HookDetail, HookEvent, PtyHook, StatusSettings } from "./api";
+import type { SettingsEmit } from "./mockSettings";
 
 type StatusApi = Pick<
   Api,
@@ -42,7 +43,7 @@ export const DEFAULT_STATUS: StatusSettings = {
 const SOUND = /\.(wav|mp3|ogg)$/i;
 
 /** Status channels in memory: hooks are fired by hand, the OS sees nothing. */
-export function createMockStatus(): MockStatus {
+export function createMockStatus(emit: SettingsEmit = () => {}): MockStatus {
   let settings = { ...DEFAULT_STATUS };
   let badge = 0;
   const hooks = new Set<(hook: PtyHook) => void>();
@@ -59,6 +60,7 @@ export function createMockStatus(): MockStatus {
     },
     async statusSettingsPut(next) {
       settings = { ...next, soundFile: settings.soundFile, volume: Math.max(0, Math.min(100, Math.round(next.volume))) };
+      emit(["status"]);
       return { ...settings };
     },
     async statusNotify(title, body, ptyId) {
@@ -78,6 +80,7 @@ export function createMockStatus(): MockStatus {
       }
       const ext = path?.match(SOUND)?.[1]?.toLowerCase();
       settings = { ...settings, soundFile: ext ? `/demo/data/sounds/custom.${ext}` : null };
+      emit(["status"]);
       return { ...settings };
     },
     async statusSound() {
