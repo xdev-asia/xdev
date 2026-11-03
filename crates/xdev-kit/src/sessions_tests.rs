@@ -317,3 +317,67 @@ fn a_log_seen_through_two_homes_is_one_session() {
     index.refresh(&homes);
     assert_eq!(only(&index).key, format!("own-codex:{CODEX_ID}"));
 }
+
+#[test]
+fn save_then_load_is_equal() {
+    let (_dir, h) = fixture_home(Agent::Claude);
+    let mut index = SessionIndex::default();
+    index.refresh(&[h]);
+    let data = tempfile::tempdir().unwrap();
+    index.save(data.path()).unwrap();
+    assert!(data.path().join("kit").join("sessions.json").is_file());
+    assert_eq!(SessionIndex::load(data.path()), index);
+}
+
+#[test]
+fn a_missing_bad_or_other_version_file_loads_empty() {
+    let data = tempfile::tempdir().unwrap();
+    assert_eq!(SessionIndex::load(data.path()), SessionIndex::default());
+    let kit = data.path().join("kit");
+    fs::create_dir_all(&kit).unwrap();
+    fs::write(kit.join("sessions.json"), "{not json").unwrap();
+    assert_eq!(SessionIndex::load(data.path()), SessionIndex::default());
+
+    let (_dir, h) = fixture_home(Agent::Claude);
+    let mut index = SessionIndex::default();
+    index.refresh(&[h]);
+    index.version = 99;
+    index.save(data.path()).unwrap();
+    assert_eq!(SessionIndex::load(data.path()), SessionIndex::default());
+}
+
+#[test]
+fn prune_drops_old_sessions_only() {
+    let (_dir, h, file) = claude_home_with(&prompt("2026-11-02T10:00:00Z", "old"));
+    let proj = file.parent().unwrap();
+    fs::write(
+        proj.join("s-y.jsonl"),
+        prompt("2026-11-03T09:00:00Z", "new"),
+    )
+    .unwrap();
+    let mut index = SessionIndex::default();
+    index.refresh(std::slice::from_ref(&h));
+    index.prune(T_NOV3_09H);
+    let titles: Vec<_> = index
+        .list()
+        .iter()
+        .map(|s| s.title.clone().unwrap())
+        .collect();
+    assert_eq!(titles, ["new"]);
+
+    // The old log is not read again while it does not change.
+    let stats = index.refresh(std::slice::from_ref(&h));
+    assert_eq!((stats.files_read, stats.bytes), (0, 0));
+    assert_eq!(index.list().len(), 1);
+
+    // It comes back when it is written to again.
+    append(&file, &prompt("2026-11-03T10:00:00Z", "again"));
+    index.refresh(std::slice::from_ref(&h));
+    index.prune(T_NOV3_09H);
+    let titles: Vec<_> = index
+        .list()
+        .iter()
+        .map(|s| s.title.clone().unwrap())
+        .collect();
+    assert_eq!(titles, ["old", "new"]);
+}
