@@ -54,7 +54,8 @@ pub fn path_key(path: &Path) -> String {
         if let Some(rest) = text.strip_prefix("//?/unc/") {
             format!("//{rest}")
         } else {
-            text.strip_prefix("//?/").map_or(text.clone(), str::to_owned)
+            text.strip_prefix("//?/")
+                .map_or(text.clone(), str::to_owned)
         }
     } else {
         text

@@ -160,7 +160,10 @@ mod tests {
         let shared = fx._tmp.path().join("notes");
         fs::create_dir(&shared).unwrap();
         add_vault(&mut fx.reg, &shared).unwrap();
-        let root = xdev_core::Vault::open(&shared).unwrap().root().to_path_buf();
+        let root = xdev_core::Vault::open(&shared)
+            .unwrap()
+            .root()
+            .to_path_buf();
         assert!(links_for(&fx.reg, &root).shared);
 
         fs::create_dir(fx.feature.join("docs")).unwrap();

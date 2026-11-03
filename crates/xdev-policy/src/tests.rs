@@ -251,14 +251,20 @@ fn confirmed_ask_is_logged_as_allow() {
     let dir = tempdir().unwrap();
     let gate = Audited::new(Policy::default(), dir.path());
     let action = merge();
-    assert!(matches!(gate.check_confirmed(&action, false), Verdict::Ask { .. }));
+    assert!(matches!(
+        gate.check_confirmed(&action, false),
+        Verdict::Ask { .. }
+    ));
     assert_eq!(gate.check_confirmed(&action, true), Verdict::Allow);
     let verdicts: Vec<_> = read_audit(dir.path())
         .unwrap()
         .into_iter()
         .map(|entry| entry.verdict)
         .collect();
-    assert!(matches!(verdicts[..], [Verdict::Ask { .. }, Verdict::Allow]));
+    assert!(matches!(
+        verdicts[..],
+        [Verdict::Ask { .. }, Verdict::Allow]
+    ));
 }
 
 #[test]
@@ -271,5 +277,8 @@ fn confirmation_does_not_lift_a_deny() {
         },
         dir.path(),
     );
-    assert!(matches!(gate.check_confirmed(&merge(), true), Verdict::Deny { .. }));
+    assert!(matches!(
+        gate.check_confirmed(&merge(), true),
+        Verdict::Deny { .. }
+    ));
 }
