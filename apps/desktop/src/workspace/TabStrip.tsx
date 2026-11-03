@@ -39,6 +39,8 @@ export function TabStrip(props: {
   /** Moves a tab of this pane into a new pane beside it. */
   onSplitTab: (id: string, dir: PaneDir) => void;
   onRename: (id: string, name: string) => void;
+  /** Shows a resumed tab's session in the session history; absent when there is no history panel. */
+  onShowHistory?: (sessionId: string) => void;
   menuOpen: boolean;
   onMenu: (open: boolean) => void;
 }): JSX.Element {
@@ -211,6 +213,7 @@ export function TabStrip(props: {
               {menuItem("split-right", t("workspace.tabs.split.right"), () => props.onSplitTab(picked.id, "right"), { disabled: !canSplitTab })}
               {menuItem("split-down", t("workspace.tabs.split.down"), () => props.onSplitTab(picked.id, "down"), { disabled: !canSplitTab })}
               {picked.tab && menuItem("rename", t("panes.menu.rename"), () => setRenaming(picked.id))}
+              {picked.tab?.resumeOf && props.onShowHistory && menuItem("history", t("agentSessions.showInHistory"), () => props.onShowHistory?.(picked.tab?.resumeOf ?? ""))}
             </div>
           </>
         )}
