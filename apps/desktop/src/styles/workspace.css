@@ -2417,6 +2417,16 @@ button.ws-tree-row:focus-visible {
     inset 0 -3px 0 var(--ws-tab-color);
 }
 
+/* The dot of a file tab with unsaved edits, before its close button. */
+.ws-tab-dirty {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-inline: 2px;
+  border-radius: 50%;
+  background: var(--text-2);
+}
+
 .ws-tab-pin {
   display: inline-flex;
   align-items: center;
