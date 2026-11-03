@@ -1,6 +1,6 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useState } from "react";
-import logo from "../../../../docs/brand/xdev-icon-512.png";
+import { BrandMark } from "./BrandMark";
 import type { JSX } from "react";
 import { api, type ApiError } from "@/api";
 import { useI18n } from "@/i18n";
@@ -47,7 +47,7 @@ export function VaultEmpty(props: { failure?: VaultFailure; busy: boolean; onCre
   const { t } = useI18n();
   return (
     <div className="vault-empty">
-      <img className="vault-empty-logo" src={logo} alt="" />
+      <BrandMark className="vault-empty-logo" size={64} />
       <h1 className="vault-empty-title">{t("vault.empty.title")}</h1>
       {props.failure ? (
         <p className="error-text" role="alert">
@@ -90,7 +90,7 @@ export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; kit?
     <div className="app" data-panel="off">
       <header className="topbar">
         <div className="topbar-vault">
-          <img className="topbar-logo" src={logo} alt="" />
+          <BrandMark className="topbar-logo" size={20} />
           <span className="topbar-brand">{t("app.name")}</span>
         </div>
         <div />

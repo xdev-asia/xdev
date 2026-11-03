@@ -23,11 +23,9 @@
 }
 
 .vault-empty-logo {
-  width: 88px;
-  height: 88px;
+  display: block;
   margin-top: var(--x-space-6);
-  border-radius: 22px;
-  box-shadow: 0 0 48px color-mix(in srgb, var(--x-color-signal) 35%, transparent);
+  color: var(--accent);
 }
 
 .vault-empty-title {
