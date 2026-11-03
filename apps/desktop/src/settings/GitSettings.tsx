@@ -6,8 +6,13 @@ import { previewPrefix } from "./branchPrefix";
 import type { SettingsSectionProps } from "./sections";
 
 const MODES: BranchPrefixMode[] = ["git-username", "custom", "none"];
+// The pull request defaults, in the reference app's order.
+const PR_DEFAULTS = ["prDraft", "prGenerateOnOpen", "prOpenAfterCreate"] as const;
 
-/** Settings → Git: the branch prefix new worktrees get, and whether a create first updates the local base. */
+/**
+ * Settings → Git: the branch prefix new worktrees get, the compare base, whether a create first
+ * updates the local base, and the Source Control agent actions with the pull request defaults.
+ */
 export function GitSettings(props: SettingsSectionProps): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
@@ -153,6 +158,34 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
           onClick={() => change({ refreshLocalBaseOnCreate: !git.refreshLocalBaseOnCreate })}
         />
       </div>
+      <h4 className="settings-group" id="settings-git-ai-title">
+        {t("settings.git.ai.title")}
+      </h4>
+      <div className="settings-item settings-git-row">
+        <div className="settings-git-text">
+          <strong id="settings-git-ai">{t("settings.git.ai.show")}</strong>
+          <small className="settings-hint">{t("settings.git.ai.showHint")}</small>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          className="agent-switch"
+          aria-checked={git.sourceControlAi}
+          aria-labelledby="settings-git-ai"
+          onClick={() => change({ sourceControlAi: !git.sourceControlAi })}
+        />
+      </div>
+      {git.sourceControlAi && (
+        <fieldset className="settings-git-checks">
+          <legend>{t("settings.git.pr.title")}</legend>
+          {PR_DEFAULTS.map((key) => (
+            <label key={key} className="settings-git-check">
+              <input type="checkbox" name={key} checked={git[key]} onChange={() => change({ [key]: !git[key] })} />
+              {t(`settings.git.pr.${key}`)}
+            </label>
+          ))}
+        </fieldset>
+      )}
       {saveError && (
         <p className="error-text" role="alert">
           {t(`error.${saveError}`)}

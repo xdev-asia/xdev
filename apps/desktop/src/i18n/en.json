@@ -1029,5 +1029,12 @@
   "settings.git.compare": "Default Compare Base",
   "settings.git.compare.base": "Repository default",
   "settings.git.compare.upstream": "Branch upstream",
-  "settings.git.compareHint": "What the changes a branch has committed are counted against. A branch with no upstream yet uses the repository default."
+  "settings.git.compareHint": "What the changes a branch has committed are counted against. A branch with no upstream yet uses the repository default.",
+  "settings.git.ai.title": "Source Control AI defaults",
+  "settings.git.ai.show": "Show Source Control AI actions",
+  "settings.git.ai.showHint": "The agent buttons in Source Control: drafting a commit message or a pull request, and fixing a failed commit.",
+  "settings.git.pr.title": "Pull request creation defaults",
+  "settings.git.pr.prDraft": "Draft by default",
+  "settings.git.pr.prGenerateOnOpen": "Generate details when opening Create PR",
+  "settings.git.pr.prOpenAfterCreate": "Open the pull request after creation"
 }

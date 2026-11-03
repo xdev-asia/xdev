@@ -31,7 +31,7 @@ pub enum BranchPrefixMode {
 
 /// Settings → Git. Every field has a default, so a file from an older
 /// version, or one missing a field, still loads.
-#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(default, rename_all = "camelCase")]
 pub struct GitSettings {
@@ -45,6 +45,32 @@ pub struct GitSettings {
     /// Count a branch's committed changes against its upstream rather than
     /// the repo's base ref.
     pub compare_against_upstream: bool,
+    /// Show the agent actions in Source Control: drafting a commit message
+    /// or a pull request, and fixing a failed commit.
+    pub source_control_ai: bool,
+    /// A new pull request starts as a draft.
+    pub pr_draft: bool,
+    /// Draft the pull request's title and body when Create PR opens.
+    pub pr_generate_on_open: bool,
+    /// Open the pull request in the browser once it is created.
+    pub pr_open_after_create: bool,
+}
+
+impl Default for GitSettings {
+    /// The reference app's defaults: the git username as the prefix, agent
+    /// actions shown, everything else off.
+    fn default() -> GitSettings {
+        GitSettings {
+            branch_prefix: BranchPrefixMode::default(),
+            branch_prefix_custom: String::new(),
+            refresh_local_base_on_create: false,
+            compare_against_upstream: false,
+            source_control_ai: true,
+            pr_draft: false,
+            pr_generate_on_open: false,
+            pr_open_after_create: false,
+        }
+    }
 }
 
 impl GitSettings {
@@ -109,6 +135,10 @@ mod tests {
                 branch_prefix_custom: "team/me".into(),
                 refresh_local_base_on_create: true,
                 compare_against_upstream: true,
+                source_control_ai: false,
+                pr_draft: true,
+                pr_generate_on_open: true,
+                pr_open_after_create: true,
             },
         };
         save(&path, &settings).unwrap();
@@ -128,6 +158,12 @@ mod tests {
         assert_eq!(git.branch_prefix_custom, "");
         assert!(!git.refresh_local_base_on_create);
         assert!(!git.compare_against_upstream);
+        assert!(git.source_control_ai);
+        assert!(!git.pr_draft && !git.pr_generate_on_open && !git.pr_open_after_create);
+        // A file from before these fields gets the same.
+        let old: GitSettings = serde_json::from_str(r#"{"branchPrefix":"none"}"#).unwrap();
+        assert!(old.source_control_ai);
+        assert_eq!(old.branch_prefix, BranchPrefixMode::None);
     }
 
     #[test]
@@ -151,7 +187,7 @@ mod tests {
             branch_prefix: BranchPrefixMode::Custom,
             branch_prefix_custom: " /team//me/ ".into(),
             refresh_local_base_on_create: true,
-            compare_against_upstream: false,
+            ..GitSettings::default()
         }
         .normalized();
         assert_eq!(git.branch_prefix_custom, "team/me");

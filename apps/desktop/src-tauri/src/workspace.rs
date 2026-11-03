@@ -605,8 +605,7 @@ mod tests {
         let mut git = GitSettings {
             branch_prefix: BranchPrefixMode::Custom,
             branch_prefix_custom: "a b".into(),
-            refresh_local_base_on_create: false,
-            compare_against_upstream: false,
+            ..GitSettings::default()
         };
         let err = create_with(&fx.data, &lock, &git, &id, "x", None).unwrap_err();
         assert_eq!(err.code, "bad_branch_prefix");

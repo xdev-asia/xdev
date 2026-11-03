@@ -2,8 +2,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Button } from "@xdev/ui";
-import { createMockApi, type Api, type PrView } from "@/api";
-import { DEMO_WORKSPACE } from "@/mockWorkspace";
+import { createMockApi, type Api, type GitSettings, type PrView } from "@/api";
+import { DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE } from "@/mockWorkspace";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { translate } from "@/i18n";
 import { CreatePrDialog } from "./CreatePrDialog";
@@ -69,11 +69,11 @@ function mount(render: () => unknown) {
 }
 
 
-function bar(api: Api, extra: { checked?: number } = {}) {
+function bar(api: Api, extra: { checked?: number; git?: GitSettings } = {}) {
   const prs = new PrStore(api);
   const onCommit = vi.fn();
   const onChanged = vi.fn();
-  const view = mount(() => ShipBar({ api, worktree: OAK, checked: extra.checked ?? 0, prs, onCommit, onChanged }));
+  const view = mount(() => ShipBar({ api, worktree: OAK, checked: extra.checked ?? 0, prs, onCommit, onChanged, git: extra.git }));
   const main = () => view.find((n) => n.type === Button)!;
   const more = () => view.find((n) => n.props["aria-haspopup"] === "menu")!;
   const item = (label: string) => view.find((n) => n.props.role === "menuitem" && n.props.children === label)!;
@@ -263,4 +263,25 @@ it("shows the pull request number from the store", async () => {
   await tick();
   view.prs.set(OAK, PR);
   expect(view.html()).toContain(en("ship.pr.label", { number: 7 }));
+});
+
+it("hands the pull request defaults from Settings → Git to Create PR", async () => {
+  const api = seeded();
+  await api.worktreeCommit(OAK, ["src/session.ts"], "feat: one");
+  await api.worktreePush(OAK);
+  const open = async (git?: GitSettings) => {
+    hooks.values = []; hooks.effects = [];
+    const view = bar(api, { git });
+    await tick();
+    expect(view.main().props.children).toBe(en("ship.action.create_pr"));
+    view.main().props.onClick();
+    return view.find((n) => n.type === CreatePrDialog)!.props;
+  };
+  const on = await open({ ...DEFAULT_GIT_SETTINGS, prDraft: true, prGenerateOnOpen: true, prOpenAfterCreate: true });
+  expect(on).toMatchObject({ initial: { base: "main", title: "", body: "", draft: true }, ai: true, generateOnOpen: true, openAfterCreate: true });
+  // With the agent actions off nothing drafts on open, and the agent button goes.
+  const off = await open({ ...DEFAULT_GIT_SETTINGS, sourceControlAi: false, prGenerateOnOpen: true });
+  expect(off).toMatchObject({ ai: false, generateOnOpen: false, openAfterCreate: false });
+  // Not given: the defaults.
+  expect(await open()).toMatchObject({ initial: { draft: false }, ai: true, generateOnOpen: false, openAfterCreate: false });
 });

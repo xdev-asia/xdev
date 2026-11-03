@@ -1,4 +1,5 @@
 import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
+import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import type { Api, ApiError, Check, Commit, DirEntry, DirListing, GitSettings, RepoView, ReviewNote, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 
 type WorkspaceApi = Pick<
@@ -197,8 +198,7 @@ function firstBadNote(notes: ReviewNote[]): string | null {
 
 const WORDS = ["birch", "cedar", "fir", "maple", "pine", "willow"];
 
-// `GitSettings::default()` in Rust.
-export const DEFAULT_GIT_SETTINGS: GitSettings = { branchPrefix: "git-username", branchPrefixCustom: "", refreshLocalBaseOnCreate: false, compareAgainstUpstream: false };
+export { DEFAULT_GIT_SETTINGS };
 
 function demoDiff(file: string, kind: WorktreeChange["kind"]): WorktreeFileDiff {
   if (/\.(png|jpe?g|gif|ico)$/i.test(file)) return { old: null, new: null, skip: "binary" };

@@ -11,8 +11,15 @@ export function CreatePrDialog(props: {
   initial: PrDraft;
   onCreated(pr: PrView): void;
   onClose(): void;
+  // Settings → Git. Without `ai` the agent button is hidden.
+  ai?: boolean;
+  // Runs the agent once on open.
+  generateOnOpen?: boolean;
+  // Opens the new pull request in the browser.
+  openAfterCreate?: boolean;
 }): JSX.Element {
   const { api, worktree } = props;
+  const ai = props.ai ?? true;
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const [base, setBase] = useState(props.initial.base);
@@ -26,6 +33,9 @@ export function CreatePrDialog(props: {
   useEffect(() => {
     const d = dialog.current;
     if (d && typeof d.showModal === "function" && !d.open) d.showModal();
+    if (ai && props.generateOnOpen) void agent();
+    // Only on open: the dialog is mounted once per opening.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function agent(): Promise<void> {
@@ -46,7 +56,10 @@ export function CreatePrDialog(props: {
     setBusy(true);
     setError(null);
     try {
-      props.onCreated(await api.worktreePrCreate(worktree, { base: base.trim(), title: title.trim(), body, draft }));
+      const created = await api.worktreePrCreate(worktree, { base: base.trim(), title: title.trim(), body, draft });
+      // The pull request exists either way; a browser that will not open is not an error here.
+      if (props.openAfterCreate) void api.worktreePrOpen(worktree, false).catch(() => undefined);
+      props.onCreated(created);
     } catch (e) {
       setError(toApiError(e));
     } finally {
@@ -100,9 +113,11 @@ export function CreatePrDialog(props: {
           </p>
         )}
         <div className="dialog-actions">
-          <button type="button" className="btn-secondary" disabled={busy || drafting} onClick={() => void agent()}>
-            {drafting ? t("ship.pr.agentBusy") : t("ship.pr.agent")}
-          </button>
+          {ai && (
+            <button type="button" className="btn-secondary" disabled={busy || drafting} onClick={() => void agent()}>
+              {drafting ? t("ship.pr.agentBusy") : t("ship.pr.agent")}
+            </button>
+          )}
           <button type="button" className="btn-secondary" disabled={busy} onClick={props.onClose}>
             {t("dialog.cancel")}
           </button>
