@@ -1,3 +1,4 @@
+import { BADGE_DEBOUNCE_MS } from "./notifier";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -554,7 +555,7 @@ it("hidden worktree asking a question raises everything", async () => {
   expect(nodes(bell(view).props.children).find(n => n.props.className === "ws-bell-count")!.props.children).toBe("1");
   expect(view.of(LiveWorkspaceFooter)[0].props.waiting).toBe(1);
   // The OS hears the worktree and the tab, and the sound goes with it.
-  expect(notify).toHaveBeenCalledWith("oak", "Claude Code needs you", tab.id);
+  expect(notify).toHaveBeenCalledWith("oak · Claude Code · Needs you", "", tab.id);
   expect(sound.play).toHaveBeenCalledTimes(1);
 
   // The bell lists the tab; its row goes there.
@@ -613,4 +614,32 @@ it("the bell and the sound follow the settings", async () => {
   expect(bell(view).props.title).toBe(en("status.bell.off"));
   expect(nodes(bell(view).props.children).some(n => n.props.className === "ws-bell-count")).toBe(false);
   expect(view.list().props.unread[OAK]).toBe(true);
+});
+
+// Draws again and runs the effects that follow state (the badge among them), then waits out the debounce.
+async function rerun(view: Awaited<ReturnType<typeof harness>>) {
+  hooks.effects = [];
+  view.draw();
+  for (const effect of hooks.effects.slice(2)) {
+    const cleanup = effect();
+    if (typeof cleanup === "function") cleanups.push(cleanup);
+  }
+  await new Promise((r) => setTimeout(r, BADGE_DEBOUNCE_MS + 50));
+}
+
+it("the badge counts worktrees with something unread, not tabs", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  const { sessions, tab } = attend(view);
+  const second = sessions.open(OAK, "claude");
+  sessions.noteStarted(second.id, { id: second.id, pid: 2, program: "agent", agent: true, profile: "claude", permissions: "ask", account: null, hooks: true });
+  api.__hook(tab.id, "needs-input");
+  api.__hook(second.id, "needs-input");
+  await settle();
+  await rerun(view);
+  expect(api.__badge()).toBe(1);
+  // Marking the worktree read clears it.
+  sessions.markRead(OAK);
+  await rerun(view);
+  expect(api.__badge()).toBe(0);
 });

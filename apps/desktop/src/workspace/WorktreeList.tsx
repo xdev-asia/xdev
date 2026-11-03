@@ -47,6 +47,8 @@ export interface WorktreeListProps {
   unread?: Record<string, boolean>;
   /** Marks a worktree unread until one of its panes is next seen; without it the menu has no such item. */
   onMarkUnread?(worktree: WorktreeView): void;
+  /** Marks an unread worktree read; the menu offers it in place of "Mark unread" while the row is unread. */
+  onMarkRead?(worktree: WorktreeView): void;
 }
 
 /** The worktrees of every repo, split into sections by what their agents are doing. */
@@ -186,10 +188,16 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
               <button type="button" role="menuitem" autoFocus onClick={() => pick(() => props.onPin(wt))}>
                 {wt.pinned ? t("workspace.unpin") : t("workspace.pin")}
               </button>
-              {props.onMarkUnread && (
-                <button type="button" role="menuitem" onClick={() => pick(() => props.onMarkUnread?.(wt))}>
-                  {t("workspace.markUnread")}
+              {props.unread?.[wt.path] && props.onMarkRead ? (
+                <button type="button" role="menuitem" onClick={() => pick(() => props.onMarkRead?.(wt))}>
+                  {t("workspace.markRead")}
                 </button>
+              ) : (
+                props.onMarkUnread && (
+                  <button type="button" role="menuitem" onClick={() => pick(() => props.onMarkUnread?.(wt))}>
+                    {t("workspace.markUnread")}
+                  </button>
+                )
               )}
               {/* The primary checkout is the repo itself: it can be pinned but never removed. */}
               {!wt.primary && (

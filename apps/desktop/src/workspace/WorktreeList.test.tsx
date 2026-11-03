@@ -150,6 +150,22 @@ it("an unread worktree is bold, says so, and the menu can mark one unread", () =
   expect(plain.item(en("workspace.markUnread"))).toBeUndefined();
 });
 
+it("an unread row offers Mark read in place of Mark unread", () => {
+  const read: string[] = [];
+  const view = harness({ ...DOTS, "/demo/xdev": "done" }, repos, {
+    unread: { "/demo/xdev": true },
+    onMarkUnread: () => undefined,
+    onMarkRead: (w) => void read.push(w.path),
+  });
+  view.main("/demo/xdev").props.onContextMenu(event);
+  expect(view.item(en("workspace.markUnread"))).toBeUndefined();
+  view.item(en("workspace.markRead"))!.props.onClick();
+  expect(read).toEqual(["/demo/xdev"]);
+  // A row that is read still offers Mark unread.
+  view.main("/demo/wt/xdev-oak").props.onContextMenu(event);
+  expect(view.item(en("workspace.markUnread"))).toBeDefined();
+});
+
 it("new worktree and add repo call back", () => {
   const view = harness();
   view.all().find(n => n.props["aria-label"] === en("workspace.new"))!.props.onClick();
