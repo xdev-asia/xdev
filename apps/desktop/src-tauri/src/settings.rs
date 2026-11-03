@@ -39,6 +39,85 @@ pub struct Settings {
     /// Settings → Terminal; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub terminal: TerminalSettings,
+    /// Settings → Shortcuts: how keys behave with a terminal focused. The
+    /// bindings themselves live in `keybindings.json`, not here.
+    #[serde(default, deserialize_with = "lenient")]
+    pub keys: KeySettings,
+    /// Window-wide view settings (zoom) until a General page exists.
+    #[serde(default, deserialize_with = "lenient")]
+    pub ui: UiSettings,
+}
+
+/// Who gets a key that both the app and a focused terminal want.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum TerminalKeyPolicy {
+    /// Every app shortcut wins, as in the reference app.
+    #[default]
+    AppFirst,
+    /// Shortcuts marked as yielding go to the program in the terminal.
+    TerminalFirst,
+}
+
+/// A value this build does not know reads as the default, so the hint
+/// toggle beside it is kept (a failed field would reset the whole section).
+impl<'de> serde::Deserialize<'de> for TerminalKeyPolicy {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("terminal-first") => TerminalKeyPolicy::TerminalFirst,
+            _ => TerminalKeyPolicy::AppFirst,
+        })
+    }
+}
+
+/// Settings → Shortcuts, the part that is a setting rather than a binding.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct KeySettings {
+    pub terminal_policy: TerminalKeyPolicy,
+    /// A toast says so when the app took a key from a focused terminal.
+    pub terminal_hints: bool,
+}
+
+impl Default for KeySettings {
+    fn default() -> Self {
+        KeySettings {
+            terminal_policy: TerminalKeyPolicy::AppFirst,
+            terminal_hints: true,
+        }
+    }
+}
+
+/// View settings of the whole window. Not `Eq`: `zoom` is an `f32`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct UiSettings {
+    /// The root font scale, 0.5..=2.0; 1.0 is 100 %.
+    pub zoom: f32,
+}
+
+impl Default for UiSettings {
+    fn default() -> Self {
+        UiSettings { zoom: 1.0 }
+    }
+}
+
+impl UiSettings {
+    pub const ZOOM: RangeInclusive<f32> = 0.5..=2.0;
+
+    /// As stored: the zoom inside its range; 1.0 when it is no number.
+    pub fn clamped(mut self) -> Self {
+        self.zoom = if self.zoom.is_finite() {
+            self.zoom.clamp(*Self::ZOOM.start(), *Self::ZOOM.end())
+        } else {
+            1.0
+        };
+        self
+    }
 }
 
 /// How every terminal pane looks and behaves. Values outside the ranges
@@ -133,6 +212,8 @@ pub enum SettingsSection {
     Git,
     Status,
     Terminal,
+    Keys,
+    Ui,
 }
 
 /// What a `settings://changed` event carries.
@@ -392,6 +473,7 @@ mod tests {
                 cursor_style: CursorStyle::Bar,
                 ..TerminalSettings::default()
             },
+            ..Settings::default()
         };
         save(&path, &settings).unwrap();
         assert_eq!(load(&path), settings);
@@ -679,6 +761,62 @@ mod tests {
         let loaded = load(&path);
         assert_eq!(loaded.last_vault.as_deref(), Some("D:/docs"));
         assert_eq!(loaded.terminal, TerminalSettings::default());
+    }
+
+    #[test]
+    fn a_file_without_keys_or_ui_loads_their_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(&path, r#"{ "version": 1, "last_vault": "D:/docs" }"#).unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.keys.terminal_policy, TerminalKeyPolicy::AppFirst);
+        assert!(loaded.keys.terminal_hints);
+        assert_eq!(loaded.ui.zoom, 1.0);
+        assert_eq!(loaded.last_vault.as_deref(), Some("D:/docs"));
+    }
+
+    #[test]
+    fn key_settings_round_trip_and_an_unknown_policy_reads_as_app_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let keys = KeySettings {
+            terminal_policy: TerminalKeyPolicy::TerminalFirst,
+            terminal_hints: false,
+        };
+        save(
+            &path,
+            &Settings {
+                keys: keys.clone(),
+                ..Settings::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(load(&path).keys, keys);
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(
+            raw.contains("\"terminalPolicy\": \"terminal-first\""),
+            "{raw}"
+        );
+
+        fs::write(
+            &path,
+            r#"{ "keys": { "terminalPolicy": "both", "terminalHints": false }, "ui": { "zoom": "big" } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.keys.terminal_policy, TerminalKeyPolicy::AppFirst);
+        assert!(!loaded.keys.terminal_hints);
+        assert_eq!(loaded.ui, UiSettings::default());
+    }
+
+    #[test]
+    fn zoom_clamps_to_its_range() {
+        let at = |zoom: f32| UiSettings { zoom }.clamped().zoom;
+        assert_eq!(at(0.1), 0.5);
+        assert_eq!(at(3.0), 2.0);
+        assert_eq!(at(1.25), 1.25);
+        assert_eq!(at(f32::NAN), 1.0);
+        assert_eq!(at(f32::INFINITY), 1.0);
     }
 
     #[test]
