@@ -73,7 +73,8 @@ export function WorkspaceFooter(props: {
     <footer className="ws-footer" hidden={props.hidden}>
       {props.branch && <span className="ws-mono ws-footer-branch">{`⎇ ${props.branch}`}</span>}
       {meters.length > 0 && (
-        <span className="ws-meters" role="group" aria-label={t("workspace.footer.usage")}>
+        // One tab stop, so the footer is in the focus order and the meters are read out.
+        <span className="ws-meters" role="group" aria-label={t("workspace.footer.usage")} tabIndex={0}>
           {meters.map((m) => (
             <MeterItem key={m.label} meter={m} />
           ))}
