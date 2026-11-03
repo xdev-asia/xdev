@@ -122,6 +122,33 @@ mod tests {
             ]),
             r#"{"sections":["vault","git","terminal"]}"#
         );
+        assert_eq!(
+            json(&[SettingsSection::Keys, SettingsSection::Ui]),
+            r#"{"sections":["keys","ui"]}"#
+        );
+    }
+
+    #[test]
+    fn key_and_ui_settings_are_stored_beside_the_rest() {
+        let (_dir, store) = store();
+        store
+            .update(|s| s.last_vault = Some("D:/docs".into()))
+            .unwrap();
+        let keys = settings::KeySettings {
+            terminal_policy: settings::TerminalKeyPolicy::TerminalFirst,
+            terminal_hints: false,
+        };
+        let stored = store.update(|s| s.keys = keys.clone()).unwrap();
+        assert_eq!(stored.keys, keys);
+        let ui = store
+            .update(|s| s.ui = settings::UiSettings { zoom: 9.0 }.clamped())
+            .unwrap()
+            .ui;
+        assert_eq!(ui.zoom, 2.0);
+        let loaded = store.read();
+        assert_eq!(loaded.keys, keys);
+        assert_eq!(loaded.ui.zoom, 2.0);
+        assert_eq!(loaded.last_vault.as_deref(), Some("D:/docs"));
     }
 
     #[test]
