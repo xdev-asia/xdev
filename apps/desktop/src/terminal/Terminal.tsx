@@ -8,6 +8,8 @@ import type { JSX } from "react";
 import { toApiError, type Api, type ApiError, type PtyInfo, type PtyProfile } from "@/api";
 import { useI18n } from "@/i18n";
 import { PtyClient } from "./ptyClient";
+import { getTerminalSettings, subscribeTerminalSettings } from "./terminalSettings";
+import { decodeOsc52Write, xtermOptions } from "./terminalOptions";
 
 /**
  * One running pty in an xterm. Starts on mount. Kills the pty on unmount, unless the pty
@@ -57,11 +59,9 @@ export function Terminal(props: {
     if (!el) return;
     const css = getComputedStyle(el);
     const color = (name: string) => css.getPropertyValue(name).trim() || undefined;
+    const mono = color("--x-font-mono");
     const term = new XTerm({
-      cursorBlink: true,
-      fontFamily: color("--x-font-mono"),
-      fontSize: 13,
-      scrollback: 10_000,
+      ...xtermOptions(getTerminalSettings(), mono),
       theme: { background: color("--x-color-surface"), foreground: color("--x-color-ink") },
     });
     const fit = new FitAddon();
@@ -82,7 +82,14 @@ export function Terminal(props: {
     });
     term.onSelectionChange(() => {
       const text = term.getSelection();
-      if (text) void navigator.clipboard?.writeText(text).catch(() => {});
+      if (text && getTerminalSettings().copyOnSelect) void navigator.clipboard?.writeText(text).catch(() => {});
+    });
+    // A program may write the clipboard (OSC 52) when the setting allows it; a read request is always refused.
+    term.parser.registerOscHandler(52, (data) => {
+      if (!getTerminalSettings().osc52Clipboard) return true;
+      const text = decodeOsc52Write(data);
+      if (text !== null) void navigator.clipboard?.writeText(text).catch(() => {});
+      return true;
     });
 
     // A hidden view has no size; fitting it would shrink the pty to nothing.
@@ -90,6 +97,33 @@ export function Terminal(props: {
       if (el.clientWidth > 0 && el.clientHeight > 0) fit.fit();
     };
     fitVisible();
+
+    // The right click pastes when the setting is on; off, the event is left alone.
+    const onContextMenu = (e: MouseEvent) => {
+      if (!getTerminalSettings().rightClickPaste) return;
+      e.preventDefault();
+      void navigator.clipboard
+        ?.readText()
+        .then((text) => {
+          if (text) void client.input(text).catch(() => {});
+        })
+        .catch(() => {});
+    };
+    el.addEventListener("contextmenu", onContextMenu);
+    // A change in Settings applies to this pane at once, with no restart.
+    const offSettings = subscribeTerminalSettings(() => {
+      const next = xtermOptions(getTerminalSettings(), mono);
+      term.options.fontFamily = next.fontFamily;
+      term.options.fontSize = next.fontSize;
+      term.options.fontWeight = next.fontWeight;
+      term.options.lineHeight = next.lineHeight;
+      term.options.cursorStyle = next.cursorStyle;
+      term.options.cursorBlink = next.cursorBlink;
+      term.options.scrollback = next.scrollback;
+      fitVisible();
+      // A font that has not loaded yet measures wrong; measure again when it has.
+      if (typeof document !== "undefined") void document.fonts?.ready.then(() => alive && fitVisible());
+    });
 
     const owned = !props.client;
     const client = props.client ?? new PtyClient(props.api, props.id);
@@ -122,6 +156,8 @@ export function Terminal(props: {
 
     return () => {
       alive = false;
+      offSettings();
+      el.removeEventListener("contextmenu", onContextMenu);
       observer.disconnect();
       if (owned) void client.dispose();
       search.current = null;

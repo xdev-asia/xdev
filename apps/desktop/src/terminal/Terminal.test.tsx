@@ -3,16 +3,27 @@ import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
 import { PtyClient } from "./ptyClient";
 import { Terminal } from "./Terminal";
+import { resetTerminalSettingsForTests, setTerminalSettings, TERMINAL_DEFAULTS } from "./terminalSettings";
 
 // The first ref is the xterm host; the rest keep their initial value.
-const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null }));
+const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, listeners: {} as Record<string, (e: unknown) => void> }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: (initial: unknown) => [initial, () => {}],
   // Refs are kept by call order, so a second render of the view sees the first one's.
   useRef: (initial: unknown) => {
     const at = hooks.refs++;
-    return (hooks.store[at] ??= { current: at === 0 ? { clientWidth: 0, clientHeight: 0 } : initial });
+    return (hooks.store[at] ??= {
+      current:
+        at === 0
+          ? {
+              clientWidth: 0,
+              clientHeight: 0,
+              addEventListener: (name: string, cb: (e: unknown) => void) => void (hooks.listeners[name] = cb),
+              removeEventListener: (name: string) => void delete hooks.listeners[name],
+            }
+          : initial,
+    });
   },
   useEffect: (effect: () => void | (() => void)) => {
     hooks.effects.push(effect);
@@ -30,7 +41,18 @@ vi.mock("@xterm/xterm", () => ({
     loadAddon() {}
     open() {}
     attachCustomKeyEventHandler() {}
-    onSelectionChange() {}
+    options: Record<string, unknown>;
+    constructor(opts: Record<string, unknown>) {
+      this.options = hooks.options = { ...opts };
+    }
+    parser = {
+      registerOscHandler(id: number, cb: (d: string) => boolean) {
+        if (id === 52) hooks.osc = cb;
+      },
+    };
+    onSelectionChange(cb: () => void) {
+      hooks.select = cb;
+    }
     onData() {}
     onResize() {}
     onTitleChange() {}
@@ -42,12 +64,12 @@ vi.mock("@xterm/xterm", () => ({
       hooks.focused++;
     }
     getSelection() {
-      return "";
+      return hooks.selection;
     }
     dispose() {}
   },
 }));
-vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() {} } }));
+vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() { hooks.fits++; } } }));
 vi.mock("@xterm/addon-search", () => ({ SearchAddon: class { findNext() {} findPrevious() {} } }));
 vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: class {} }));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
@@ -81,6 +103,13 @@ beforeEach(() => {
   hooks.store = [];
   hooks.focused = 0;
   hooks.effects = [];
+  hooks.fits = 0;
+  hooks.select = null;
+  hooks.selection = "";
+  hooks.osc = null;
+  hooks.options = {};
+  hooks.listeners = {};
+  resetTerminalSettingsForTests();
   vi.stubGlobal("getComputedStyle", () => ({ getPropertyValue: () => "" }));
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
 });
@@ -166,4 +195,81 @@ it("does not focus when the request is dropped or no xterm is up", async () => {
   expect(hooks.focused).toBe(0);
   render({ focusSeq: undefined })();
   expect(hooks.focused).toBe(0);
+});
+
+const clipboard = () => {
+  const writeText = vi.fn(async () => {});
+  const readText = vi.fn(async () => "pasted");
+  vi.stubGlobal("navigator", { clipboard: { writeText, readText } });
+  return { writeText, readText };
+};
+
+it("builds the xterm options from the stored settings", () => {
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, fontSize: 17, scrollback: 42, cursorStyle: "bar", fontWeight: "medium" });
+  const { effect } = mount({ api: createMockApi({}), id: "o-1" });
+  effect();
+  expect(hooks.options).toMatchObject({ fontSize: 17, scrollback: 42, cursorStyle: "bar", fontWeight: "500", cursorBlink: true });
+});
+
+it("a store change updates the options and fits again", async () => {
+  const { effect } = mount({ api: createMockApi({}), id: "o-2" });
+  (hooks.store[0].current as { clientWidth: number }).clientWidth = 800;
+  (hooks.store[0].current as { clientHeight: number }).clientHeight = 600;
+  const cleanup = effect() as () => void;
+  const before = hooks.fits;
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, fontSize: 20, lineHeight: 1.4 });
+  expect(hooks.options).toMatchObject({ fontSize: 20, lineHeight: 1.4 });
+  expect(hooks.fits).toBe(before + 1);
+  cleanup();
+  // A disposed pane no longer listens.
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, fontSize: 24 });
+  expect(hooks.options.fontSize).toBe(20);
+  await tick();
+});
+
+it("copy on select writes the clipboard, and writes nothing when off", () => {
+  const { writeText } = clipboard();
+  const { effect } = mount({ api: createMockApi({}), id: "c-1" });
+  effect();
+  hooks.selection = "abc";
+  hooks.select?.();
+  expect(writeText).toHaveBeenCalledWith("abc");
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, copyOnSelect: false });
+  hooks.select?.();
+  expect(writeText).toHaveBeenCalledTimes(1);
+});
+
+it("a right click pastes when on and does nothing when off", async () => {
+  const { readText } = clipboard();
+  const api = createMockApi({});
+  const input = vi.spyOn(api, "ptyWrite");
+  const { effect } = mount({ api, id: "r-1" });
+  effect();
+  await tick();
+  const event = { preventDefault: vi.fn() };
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, rightClickPaste: true });
+  hooks.listeners.contextmenu(event);
+  await tick();
+  expect(event.preventDefault).toHaveBeenCalledTimes(1);
+  expect(readText).toHaveBeenCalledTimes(1);
+  expect(input).toHaveBeenCalledWith("r-1", new TextEncoder().encode("pasted"));
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, rightClickPaste: false });
+  hooks.listeners.contextmenu(event);
+  await tick();
+  expect(event.preventDefault).toHaveBeenCalledTimes(1);
+  expect(readText).toHaveBeenCalledTimes(1);
+});
+
+it("OSC 52 writes the clipboard when on, nothing when off, and never reads", () => {
+  const { writeText, readText } = clipboard();
+  const { effect } = mount({ api: createMockApi({}), id: "k-1" });
+  effect();
+  expect(hooks.osc?.("c;aGk=")).toBe(true);
+  expect(writeText).toHaveBeenCalledWith("hi");
+  expect(hooks.osc?.("c;?")).toBe(true);
+  expect(writeText).toHaveBeenCalledTimes(1);
+  expect(readText).not.toHaveBeenCalled();
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, osc52Clipboard: false });
+  expect(hooks.osc?.("c;aGk=")).toBe(true);
+  expect(writeText).toHaveBeenCalledTimes(1);
 });
