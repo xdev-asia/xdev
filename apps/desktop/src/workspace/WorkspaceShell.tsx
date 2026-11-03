@@ -27,6 +27,7 @@ import { sendToAgentTab } from "./agentPrompt";
 import { sendTarget } from "./sendTarget";
 import { createNotifier, type Notifier } from "./notifier";
 import { AgentSessionsStore } from "@/agentSessions/store";
+import { confirmResume } from "@/agentSessions/resumeFlow";
 import { SessionsSidebar } from "@/agentSessions/SessionsSidebar";
 import { Sessions, type Attention, type Tab } from "./sessions";
 import { PrStore } from "./prs";
@@ -91,6 +92,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The agent session history, and which of the two sidebar views shows.
   const [history, setHistory] = useState<AgentSessionsStore | null>(null);
   const [sideView, setSideView] = useState<"worktrees" | "sessions">("worktrees");
+  // A new `seq` asks the sessions panel for the search box, or to mark one session.
+  const [sessionsAsk, setSessionsAsk] = useState<{ seq: number; focus: boolean; reveal: { key: string; seq: number } | null }>({ seq: 0, focus: false, reveal: null });
   const [creating, setCreating] = useState<Creating | null>(null);
   const [removing, setRemoving] = useState<Removing | null>(null);
   const [notice, setNotice] = useState<ApiError["code"]>();
@@ -322,6 +325,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
 
   // Brings a tab's worktree up, puts the tab in front and gives its terminal the keys.
+  /** Shows the sessions view of the sidebar; `reveal` marks one session, else the search box takes focus. */
+  function openSessionsPanel(sessionId: string | null): void {
+    const key = sessionId === null ? null : history?.state.rows.find((r) => r.session.id === sessionId)?.session.key ?? null;
+    setSidebarOpen(true);
+    setSideView("sessions");
+    setSessionsAsk((a) => ({ seq: a.seq + 1, focus: key === null, reveal: key === null ? null : { key, seq: a.seq + 1 } }));
+  }
+  const showInHistory = (sessionId: string) => openSessionsPanel(sessionId);
+
   function jumpTo(id: string): void {
     if (!sessions) return;
     const tab = sessions
@@ -649,6 +661,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                 sessions={sessions}
                 current={current ? { path: current.path, repo: repos?.find((r) => r.worktrees.some((w) => w.path === current.path))?.path ?? null } : null}
                 visible={sideView === "sessions" && sidebarOpen}
+                focusSeq={sessionsAsk.focus ? sessionsAsk.seq : undefined}
+                reveal={sessionsAsk.reveal}
                 onOpened={(tab) => jumpTo(tab.id)}
                 onFocusTab={jumpTo}
                 onGoTo={(path) => {
@@ -703,6 +717,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq } : undefined}
                   front={front?.worktree === path ? { id: front.id, seq: front.seq } : undefined}
                   focusSeq={termFocus?.worktree === path ? termFocus.seq : undefined}
+                  onShowHistory={showInHistory}
                 />
               ))}
             {!current && repos && (
@@ -861,6 +876,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         onClose={() => setJumpOpen(false)}
         repos={repos}
         sessions={sessions}
+        history={history}
         current={current}
         shownTab={current ? shownTab[current.path] ?? null : null}
         actions={{
@@ -881,6 +897,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           toggleSidebar: () => setSidebarOpen((o) => !o),
           showDocs: () => show("docs"),
           stageAllChanges: changesReady ? () => runOnChanges((h) => h.stageAll()) : undefined,
+          openSessions: () => openSessionsPanel(null),
+          resumeSession: (row) => {
+            if (!sessions || !row.worktree) return;
+            jumpTo(confirmResume(sessions, { row, worktree: row.worktree }).id);
+          },
           discardAllChanges: changesReady ? () => runOnChanges((h) => h.discardAll()) : undefined,
         }}
       />

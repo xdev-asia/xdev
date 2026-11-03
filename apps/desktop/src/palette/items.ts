@@ -1,5 +1,5 @@
 import { chordLabel } from "@/keys/keymap";
-import type { RepoView, WorktreeView } from "@/api";
+import type { RepoView, SessionRow, WorktreeView } from "@/api";
 import { SECTIONS } from "@/settings/sections";
 import type { Tab } from "@/workspace/sessions";
 import type { TabStatus } from "@/workspace/status";
@@ -105,10 +105,11 @@ export type ActionName =
   | "searchDocs"
   | "toggleSidebar"
   | "showDocs"
+  | "resumeSession"
   | "stageAll"
   | "discardAll";
 
-const ORDER: ActionName[] = ["newWorktree", "newAgentTab", "newShellTab", "addRepo", "openSettings", "searchDocs", "toggleSidebar", "showDocs", "stageAll", "discardAll"];
+const ORDER: ActionName[] = ["newWorktree", "newAgentTab", "newShellTab", "addRepo", "openSettings", "searchDocs", "toggleSidebar", "showDocs", "resumeSession", "stageAll", "discardAll"];
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
 const HINTS: Partial<Record<ActionName, string>> = {
   searchDocs: MAC ? "⌘ K" : "Ctrl K",
@@ -133,6 +134,30 @@ export function actionItems(t: T, acts: Partial<Record<ActionName, () => void>>)
     });
   }
   return out;
+}
+
+/** How many recent sessions of the worktree the palette lists. */
+export const RECENT_SESSIONS = 5;
+
+/** The newest resumable sessions that ran in a worktree, as "Resume: {title}" items. */
+export function sessionItems(rows: SessionRow[], worktree: string | null, t: T, onResume: (row: SessionRow) => void): PaletteItem[] {
+  if (!worktree) return [];
+  return rows
+    .filter((r) => r.worktree === worktree && r.resumable)
+    .sort((a, b) => b.session.last - a.session.last)
+    .slice(0, RECENT_SESSIONS)
+    .map((row) => {
+      const title = row.session.title ?? t("agentSessions.untitled");
+      return {
+        id: `sess:${row.session.key}`,
+        kind: "action" as const,
+        title: t("agentSessions.palette.resume", { title }),
+        detail: row.session.branch ?? undefined,
+        keywords: ["resume", "session", "agent", row.session.agent],
+        worktree,
+        run: () => onResume(row),
+      };
+    });
 }
 
 /** The same check as the create-worktree dialog. */
