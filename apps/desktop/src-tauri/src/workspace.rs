@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use tauri::State;
 use xdev_git::{ChangeKind, GitError, Repo};
-use xdev_policy::{Action, Gate, Verdict};
+use xdev_policy::{Action, Verdict};
 use xdev_workspace::{
     Registry, RepoView, WorkspaceError, WorktreeView, add_repo, create_worktree, forget_repo, list,
     path_key, remove_worktree, set_pinned,
@@ -162,11 +162,11 @@ fn remove_with(
     force: bool,
     confirmed: bool,
 ) -> Result<(), CmdError> {
-    match gate(data)?.check(&Action::Delete {
+    let action = Action::Delete {
         path: path.to_owned(),
-    }) {
+    };
+    match gate(data)?.check_confirmed(&action, confirmed) {
         Verdict::Allow => {}
-        Verdict::Ask { .. } if confirmed => {}
         Verdict::Ask { reason } => {
             return Err(CmdError {
                 code: "needs_approval",
@@ -442,8 +442,12 @@ mod tests {
 
         remove_with(&fx.data, &lock, &fx.first, false, true).unwrap();
         assert!(!fx.first.exists());
-        let audit = fs::read_to_string(fx.data.join("audit.jsonl")).unwrap();
-        assert_eq!(audit.lines().count(), 2);
+        let verdicts: Vec<_> = xdev_policy::read_audit(&fx.data)
+            .unwrap()
+            .into_iter()
+            .map(|entry| entry.verdict)
+            .collect();
+        assert!(matches!(verdicts[..], [Verdict::Ask { .. }, Verdict::Allow]));
     }
 
     #[test]

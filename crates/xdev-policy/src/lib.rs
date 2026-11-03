@@ -258,15 +258,29 @@ impl<G> Audited<G> {
     }
 }
 
-impl<G: Gate> Gate for Audited<G> {
-    fn check(&self, action: &Action) -> Verdict {
-        let verdict = self.inner.check(action);
+impl<G: Gate> Audited<G> {
+    /// Like `check`, but a one-time confirmation turns `Ask` into `Allow`
+    /// and the log records what ran. Nothing is saved as a standing approval.
+    pub fn check_confirmed(&self, action: &Action, confirmed: bool) -> Verdict {
+        match self.inner.check(action) {
+            Verdict::Ask { .. } if confirmed => self.logged(action, Verdict::Allow),
+            verdict => self.logged(action, verdict),
+        }
+    }
+
+    fn logged(&self, action: &Action, verdict: Verdict) -> Verdict {
         if self.append(action, &verdict).is_err() {
             return Verdict::Deny {
                 reason: "audit log not writable".to_owned(),
             };
         }
         verdict
+    }
+}
+
+impl<G: Gate> Gate for Audited<G> {
+    fn check(&self, action: &Action) -> Verdict {
+        self.logged(action, self.inner.check(action))
     }
 }
 
