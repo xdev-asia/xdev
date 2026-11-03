@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
 import { type Api, type ApiError, type PtyProfile } from "@/api";
 import { useI18n } from "@/i18n";
+import { ReviewView } from "@/review/ReviewView";
 import { Terminal } from "@/terminal/Terminal";
 import { useApprovedStart } from "@/terminal/useApprovedStart";
 import { AgentIcon } from "./AgentIcon";
@@ -10,19 +11,16 @@ import { cliOf, type Sessions, type Split, type Tab, type TabCli } from "./sessi
 import type { TabStatus } from "./status";
 import { StatusGlyph } from "./StatusGlyph";
 import { titleStatus } from "./titles";
-import { WorktreeDiff } from "./WorktreeDiff";
 
 // Offered while the profile view has not loaded: the built-in agents and the default shell.
 const FALLBACK_AGENTS: readonly PtyProfile[] = ["claude", "codex"];
 const FALLBACK_SHELL: PtyProfile = "shell";
 
-
 // Only an exit ends a tab; a turn that failed (status failed) still has its pty.
 const ended = (tab: Tab) => tab.exitCode !== undefined;
 
-// A diff tab's id; terminal tabs use their pty id, which never has a colon.
-const fileTab = (file: string) => `file:${file}`;
-const base = (file: string) => file.slice(file.lastIndexOf("/") + 1);
+// The review tab's id; terminal tabs use their pty id, which never has a colon.
+const REVIEW_TAB = "review:";
 
 /** The terminal that shows beside the one at `at`: the split's second, or a neighbour when that one is in front. */
 function partnerOf(tabs: Tab[], at: number, split: NonNullable<Split>): string | null {
@@ -32,7 +30,7 @@ function partnerOf(tabs: Tab[], at: number, split: NonNullable<Split>): string |
   return (tabs[at - 1] ?? tabs[at + 1])?.id ?? null;
 }
 
-/** A file to show as a diff tab; a new `seq` opens it again, read afresh. */
+/** A file to show in the review tab; a new `seq` asks for it again. */
 export type Reveal = { file: string; seq: number };
 
 /**
@@ -53,6 +51,8 @@ export function WorktreeTabs(props: {
   onShown?: (id: string | null) => void;
   /** Told which terminal panes are on screen (the front tab and its split partner), so the shell knows what is seen. */
   onPanes?: (ids: string[]) => void;
+  /** A new value puts keyboard focus in the terminal in front. */
+  focusSeq?: number;
 }): JSX.Element {
   const { api, sessions, worktree, visible, reveal } = props;
   const { t } = useI18n();
@@ -61,19 +61,19 @@ export function WorktreeTabs(props: {
   // Views started per tab; a retry after approval mounts a fresh view on the same pty id.
   const [attempts, setAttempts] = useState<Record<string, number>>({});
   const { ask, error, setError, dialog } = useApprovedStart(api);
-  // Open diff tabs; `seq` keys the view, so opening a file again reads it again.
-  const [files, setFiles] = useState<Reveal[]>([]);
+  // The one review tab; a reveal opens it (or points it at another file).
+  const [review, setReview] = useState<Reveal | null>(null);
   const [revealed, setRevealed] = useState(0);
   const [fronted, setFronted] = useState(0);
 
   // Taken during render, so the frame that asks for a file already shows it.
-  let open = files;
+  let open = review;
   let pick = active;
   if (reveal && reveal.seq !== revealed) {
-    open = [...files.filter((f) => f.file !== reveal.file), reveal];
-    pick = fileTab(reveal.file);
+    open = reveal;
+    pick = REVIEW_TAB;
     setRevealed(reveal.seq);
-    setFiles(open);
+    setReview(open);
     setActive(pick);
   }
 
@@ -86,14 +86,14 @@ export function WorktreeTabs(props: {
   const subscribe = useCallback((listener: () => void) => sessions.subscribe(listener), [sessions]);
   const snapshot = () => sessions.tabs(worktree);
   const tabs = useSyncExternalStore(subscribe, snapshot, snapshot);
-  // A closed tab hands the view to the newest terminal, else to the newest diff.
-  const ids = [...tabs.map((tab) => tab.id), ...open.map((f) => fileTab(f.file))];
-  const shown = pick && ids.includes(pick) ? pick : (tabs[tabs.length - 1]?.id ?? (open.length ? fileTab(open[open.length - 1].file) : null));
+  // A closed tab hands the view to the newest terminal, else to the review tab.
+  const ids = [...tabs.map((tab) => tab.id), ...(open ? [REVIEW_TAB] : [])];
+  const shown = pick && ids.includes(pick) ? pick : (tabs[tabs.length - 1]?.id ?? (open ? REVIEW_TAB : null));
 
   const { onShown } = props;
   useEffect(() => onShown?.(shown), [shown]);
 
-  // The split pairs the shown terminal with one other; a diff tab in front shows alone.
+  // The split pairs the shown terminal with one other; the review tab in front shows alone.
   const splitSnapshot = () => sessions.split(worktree);
   const split = useSyncExternalStore(subscribe, splitSnapshot, splitSnapshot);
   const at = tabs.findIndex((tab) => tab.id === shown);
@@ -101,7 +101,7 @@ export function WorktreeTabs(props: {
   // Both panes of a split are visible; every other pane stays mounted and hidden.
   const visibleIds = partner ? [shown, partner] : [shown];
   // A string, so the shell hears only when the pair on screen changes.
-  const paneKey = visibleIds.filter((id): id is string => !!id && !id.startsWith("file:")).join(" ");
+  const paneKey = visibleIds.filter((id): id is string => !!id && id !== REVIEW_TAB).join(" ");
   const { onPanes } = props;
   useEffect(() => onPanes?.(paneKey ? paneKey.split(" ") : []), [paneKey]);
   const canSplit = tabs.length >= 2 && at >= 0;
@@ -128,7 +128,7 @@ export function WorktreeTabs(props: {
 
   // Picking the second tab of a split keeps the pair: the tab that was in front takes its place.
   function select(id: string): void {
-    if (split && id === split.second && shown && !shown.startsWith("file:")) sessions.setSplit(worktree, { ...split, second: shown });
+    if (split && id === split.second && shown && shown !== REVIEW_TAB) sessions.setSplit(worktree, { ...split, second: shown });
     setActive(id);
   }
 
@@ -223,33 +223,32 @@ export function WorktreeTabs(props: {
               </button>
             </div>
           ))}
-          {open.map(({ file }) => (
-            <div key={fileTab(file)} className="ws-tab" data-selected={fileTab(file) === shown}>
+          {open && (
+            <div className="ws-tab" data-selected={REVIEW_TAB === shown}>
               <button
                 type="button"
                 role="tab"
                 className="ws-tab-main"
-                data-tab={fileTab(file)}
-                aria-selected={fileTab(file) === shown}
-                title={file}
-                onClick={() => setActive(fileTab(file))}
+                data-tab={REVIEW_TAB}
+                aria-selected={REVIEW_TAB === shown}
+                onClick={() => setActive(REVIEW_TAB)}
               >
                 <span className="ws-tab-icon ws-mono" aria-hidden="true">
                   ±
                 </span>
-                <span>{base(file)}</span>
+                <span>{t("review.tab")}</span>
               </button>
               <button
                 type="button"
                 className="ws-tab-close"
-                aria-label={t("workspace.tabs.close", { name: base(file) })}
-                title={t("workspace.tabs.close", { name: base(file) })}
-                onClick={() => setFiles(open.filter((f) => f.file !== file))}
+                aria-label={t("workspace.tabs.close", { name: t("review.tab") })}
+                title={t("workspace.tabs.close", { name: t("review.tab") })}
+                onClick={() => setReview(null)}
               >
                 ×
               </button>
             </div>
-          ))}
+          )}
         </div>
         <div className="ws-tab-tools">
           {(["right", "down"] as const).map((dir) => {
@@ -351,18 +350,19 @@ export function WorktreeTabs(props: {
                 const status = titleStatus(tab.cli, title);
                 if (status) sessions.noteTitleStatus(tab.id, status);
               }}
+              focusSeq={tab.id === shown ? props.focusSeq : undefined}
             />
           </div>
         ))}
 
-        {open.map((f) => (
-          <div key={fileTab(f.file)} className="ws-tab-pane" role="tabpanel" data-tab={fileTab(f.file)} hidden={fileTab(f.file) !== shown}>
-            <WorktreeDiff key={f.seq} api={api} worktree={worktree} file={f.file} />
+        {open && (
+          <div className="ws-tab-pane" role="tabpanel" data-tab={REVIEW_TAB} hidden={REVIEW_TAB !== shown}>
+            <ReviewView api={api} worktree={worktree} sessions={sessions} reveal={open} />
           </div>
-        ))}
+        )}
       </div>
 
-      {tabs.length === 0 && open.length === 0 && (
+      {tabs.length === 0 && !open && (
         <div className="ws-center-empty">
           <p>{t("workspace.tabs.empty")}</p>
           <div className="ws-launch">

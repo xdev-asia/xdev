@@ -39,9 +39,9 @@ function storeLocale(locale: Locale): void {
   }
 }
 
-type I18n = { locale: Locale; setLocale(l: Locale): void; t(key: string, vars?: Vars): string };
+export type I18n = { locale: Locale; setLocale(l: Locale): void; t(key: string, vars?: Vars): string };
 
-const I18nContext = createContext<I18n | null>(null);
+export const I18nContext = createContext<I18n | null>(null);
 
 export function I18nProvider(props: { children: ReactNode }): JSX.Element {
   const [locale, setLocaleState] = useState<Locale>(() => storedLocale() ?? detectLocale(navigator.language));

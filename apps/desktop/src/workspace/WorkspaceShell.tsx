@@ -8,6 +8,8 @@ import { DocsApp } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useI18n } from "@/i18n";
+import { PaletteHost } from "@/palette/PaletteHost";
+import { useJumpKey } from "@/palette/useJumpKey";
 import { SettingsView } from "@/settings/SettingsView";
 import { playStatusSound } from "@/status/sound";
 import { usePresence } from "@/status/presence";
@@ -52,7 +54,7 @@ function storeSelected(path: string): void {
 
 type View = "workspace" | "docs" | "settings";
 type PanelTab = "files" | "changes" | "checks";
-type Creating = { repoId: string; busy: boolean; error?: ApiError["code"] };
+type Creating = { repoId: string; busy: boolean; error?: ApiError["code"]; name?: string };
 type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"] };
 
 /** The app frame: repos and worktrees on the left, the selected worktree in the middle. */
@@ -101,6 +103,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [docsKey, setDocsKey] = useState(0);
   // Pull requests and checks of every worktree, shared by the ship bar and the panels.
   const [prs] = useState(() => new PrStore(api));
+  // The jump palette, and the settings section it asked for; a new `seq` is a new request.
+  const [jumpOpen, setJumpOpen] = useState(false);
+  // Asks the front terminal of a worktree to take keyboard focus, as the palette closes.
+  const [termFocus, setTermFocus] = useState<{ worktree: string; seq: number } | null>(null);
+  const focusTerminal = (worktree: string) => setTermFocus((f) => ({ worktree, seq: (f?.seq ?? 0) + 1 }));
+  const [settingsAt, setSettingsAt] = useState<{ section?: string; seq: number }>({ seq: 0 });
+  // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
+  const dialogOpen = creating !== null || removing !== null;
+  useJumpKey(useCallback(() => setJumpOpen((o) => (dialogOpen ? false : !o)), [dialogOpen]));
 
   // One store of terminal tabs for the whole shell. Made in an effect so a dev double mount
   // disposes the first one; disposing kills its ptys.
@@ -362,10 +373,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     return typeof document === "undefined" || !document.querySelector(".ws-docs .doc-status[data-dirty]");
   }
 
-  function startCreate(repoId?: string): void {
+  function startCreate(repoId?: string, name?: string): void {
     const usable = repos?.filter((r) => !r.missing) ?? [];
     const id = repoId ?? (currentRepo && !currentRepo.missing ? currentRepo.id : usable[0]?.id);
-    if (id) setCreating({ repoId: id, busy: false });
+    if (id) setCreating({ repoId: id, busy: false, name });
   }
 
   async function create(repoId: string, name: string, from: string | null): Promise<void> {
@@ -490,7 +501,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           </>
         )}
         <div className="ws-header-center">
-          <HeaderSearch onOpen={openSearch} />
+          <HeaderSearch onOpen={openSearch} onJump={() => setJumpOpen(true)} />
         </div>
         {/* The bell: the unread tabs, newest first. Turned off in Settings it shows nothing. */}
         <div className="ws-bell">
@@ -522,7 +533,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           aria-label={t("workspace.header.settings")}
           title={t("workspace.header.settings")}
           aria-pressed={view === "settings"}
-          onClick={() => show("settings")}
+          onClick={() => {
+            // The gear opens the first section, not one the palette asked for earlier.
+            setSettingsAt((s) => ({ seq: s.seq }));
+            show("settings");
+          }}
         >
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="3" />
@@ -607,6 +622,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   onPanes={(ids) => setPanes((s) => (s[path]?.join(" ") === ids.join(" ") ? s : { ...s, [path]: ids }))}
                   reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq } : undefined}
                   front={front?.worktree === path ? { id: front.id, seq: front.seq } : undefined}
+                  focusSeq={termFocus?.worktree === path ? termFocus.seq : undefined}
                 />
               ))}
             {!current && repos && (
@@ -721,7 +737,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         <div className="ws-settings" hidden={view !== "settings"}>
           {view === "settings" && (
             <SettingsView
+              key={settingsAt.seq}
               api={api}
+              initial={settingsAt.section}
               onChanged={() => {
                 void load();
                 void loadStatusSettings(api);
@@ -748,10 +766,40 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           repoId={creating.repoId}
           busy={creating.busy}
           error={creating.error}
+          name={creating.name}
           onCreate={(repoId, name, from) => void create(repoId, name, from)}
           onCancel={() => setCreating(null)}
         />
       )}
+      <PaletteHost
+        open={jumpOpen}
+        onClose={() => setJumpOpen(false)}
+        repos={repos}
+        sessions={sessions}
+        current={current}
+        shownTab={current ? shownTab[current.path] ?? null : null}
+        actions={{
+          selectWorktree: (wt) => {
+            select(wt);
+            show("workspace");
+            focusTerminal(wt.path);
+          },
+          showWorkspace: () => show("workspace"),
+          frontTab: (worktree, id) => {
+            setFront((f) => ({ worktree, id, seq: (f?.seq ?? 0) + 1 }));
+            focusTerminal(worktree);
+          },
+          openSettings: (section) => {
+            setSettingsAt((s) => ({ section, seq: s.seq + 1 }));
+            show("settings");
+          },
+          newWorktree: (name) => startCreate(undefined, name),
+          addRepo: () => void addRepo(),
+          searchDocs: openSearch,
+          toggleSidebar: () => setSidebarOpen((o) => !o),
+          showDocs: () => show("docs"),
+        }}
+      />
       {removing && (
         <RemoveWorktreeDialog
           worktree={removing.worktree}
