@@ -4,7 +4,6 @@ import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { ReviewNote } from "@/api";
 import { I18nContext, type I18n } from "@/i18n";
-import { MAX_ANCHOR } from "./notes";
 import { NoteCard, noteLabel } from "./NoteCard";
 import { NoteComposer } from "./NoteComposer";
 
@@ -29,7 +28,7 @@ export function rangeFromSelection(state: EditorState): NoteRange {
 export function rangeOfLines(state: EditorState, startLine: number, line: number): NoteRange {
   const from = state.doc.line(startLine).from;
   const to = state.doc.line(line).to;
-  return { startLine, line, anchor: state.doc.sliceString(from, to).slice(0, MAX_ANCHOR) };
+  return { startLine, line, anchor: state.doc.sliceString(from, to) };
 }
 
 /** `c` alone (a held modifier makes it another key to the editor) and Ctrl+Shift+A. */

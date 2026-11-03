@@ -98,11 +98,15 @@ enum Read {
     /// Another worktree's file (hash clash): empty, never overwritten.
     Clash,
     Broken,
+    /// Could not read it (not "missing"): never treated as empty, so a put cannot wipe it.
+    Failed(String),
 }
 
 fn read_file(file: &Path, path: &Path) -> Read {
-    let Ok(text) = fs::read_to_string(file) else {
-        return Read::Missing;
+    let text = match fs::read_to_string(file) {
+        Ok(t) => t,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Read::Missing,
+        Err(e) => return Read::Failed(e.to_string()),
     };
     match serde_json::from_str::<Stored>(&text) {
         Ok(s) if s.path == path_key(path) => Read::Ok(s.notes),
@@ -113,12 +117,22 @@ fn read_file(file: &Path, path: &Path) -> Read {
 
 fn plain_file(file: &str) -> bool {
     !file.is_empty()
-        && !file.contains('\\')
-        && !file.contains(':')
         && !file.starts_with('/')
         && file
             .split('/')
             .all(|p| !p.is_empty() && p != "." && p != "..")
+        && windows_safe(file)
+}
+
+/// Backslash and colon are path syntax only on Windows; elsewhere they are ordinary name characters.
+#[cfg(windows)]
+fn windows_safe(file: &str) -> bool {
+    !file.contains('\\') && !file.contains(':')
+}
+
+#[cfg(not(windows))]
+fn windows_safe(_file: &str) -> bool {
+    true
 }
 
 fn validate(notes: &[ReviewNote]) -> Result<(), CmdError> {
@@ -180,10 +194,11 @@ fn get(data: &Path, lock: &ReviewNotesLock, path: &Path) -> Result<Vec<ReviewNot
     known(data, path)?;
     let _guard = lock.0.lock().unwrap_or_else(PoisonError::into_inner);
     let file = data.join(DIR).join(file_name(path));
-    Ok(match read_file(&file, path) {
-        Read::Ok(notes) => notes,
-        _ => Vec::new(),
-    })
+    match read_file(&file, path) {
+        Read::Ok(notes) => Ok(notes),
+        Read::Failed(why) => Err(io_err(why)),
+        Read::Missing | Read::Clash | Read::Broken => Ok(Vec::new()),
+    }
 }
 
 fn put(
@@ -204,6 +219,7 @@ fn put(
             // Keep what was there; a later person can still read it.
             let _ = fs::rename(&file, dir.join(format!("{name}.bad")));
         }
+        Read::Failed(why) => return Err(io_err(why)),
         Read::Ok(_) | Read::Missing => {}
     }
     let stored = Stored {
@@ -347,6 +363,16 @@ mod tests {
         assert!(get(&fx.data, &fx.lock, &fx.wt).unwrap().is_empty());
         assert!(put(&fx.data, &fx.lock, &fx.wt, vec![note("a")]).is_err());
         assert_eq!(fs::read_to_string(&file).unwrap(), text);
+    }
+
+    #[test]
+    fn unreadable_file_is_an_error_not_empty() {
+        let fx = fixture();
+        let dir = fx.data.join(DIR);
+        // A directory where the file should be: reading it fails, but not with NotFound.
+        fs::create_dir_all(dir.join(file_name(&fx.wt))).unwrap();
+        assert_eq!(code(get(&fx.data, &fx.lock, &fx.wt)), "io");
+        assert_eq!(code(put(&fx.data, &fx.lock, &fx.wt, vec![note("a")])), "io");
     }
 
     #[test]
