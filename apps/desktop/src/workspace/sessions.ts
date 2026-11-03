@@ -495,7 +495,8 @@ export class Sessions {
       profileId,
       account,
       permissions: "ask",
-      agent: !profileId.startsWith("shell"),
+      // The setup script's tab (`xdev:` ids) is a terminal, not an agent: it must not drive the status dot.
+      agent: !profileId.startsWith("shell") && !profileId.startsWith("xdev:"),
       status: "idle",
       cli,
       unread: false,
