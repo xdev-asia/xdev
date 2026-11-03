@@ -14,9 +14,10 @@ use tauri::{AppHandle, State};
 use xdev_git::{ChangeKind, GitError, Repo};
 use xdev_policy::{Action, Verdict};
 use xdev_workspace::{
-    Registry, RepoPatch, RepoView, VaultView, WorkspaceError, WorktreeStat, WorktreeView, add_repo,
-    add_vault, adopt_worktree, create_worktree_with, forget_repo, forget_vault, list, list_vaults,
-    path_key, refresh_base, remove_worktree, repo_docs_dir, set_pinned, stat, update_repo,
+    HookKind, HookRun, Registry, RepoHooks, RepoPatch, RepoView, ScriptSource, SetupPolicy,
+    VaultView, WorkspaceError, WorktreeStat, WorktreeView, add_repo, add_vault, adopt_worktree,
+    create_worktree_with, forget_repo, forget_vault, hooks_for, list, list_vaults, path_key,
+    refresh_base, remove_worktree, repo_docs_dir, set_pinned, stat, trust_hook, update_repo,
 };
 
 use crate::accounts::data_dir;
@@ -317,6 +318,7 @@ pub fn repo_forget(
 }
 
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 pub fn repo_update(
     state: State<'_, AppState>,
     lock: State<'_, WorkspaceLock>,
@@ -324,13 +326,61 @@ pub fn repo_update(
     short_name: Option<String>,
     base_ref: Option<String>,
     worktree_root: Option<PathBuf>,
+    setup_policy: Option<SetupPolicy>,
+    script_source: Option<ScriptSource>,
+    local_setup: Option<String>,
+    local_archive: Option<String>,
 ) -> Result<RepoView, CmdError> {
     let patch = RepoPatch {
         short_name,
         base_ref,
         worktree_root,
+        setup_policy,
+        script_source,
+        local_setup,
+        local_archive,
     };
     update(data_dir(&state)?, &lock, |reg| update_repo(reg, &id, patch))
+}
+
+/// The setup and archive scripts of the worktree at `path`. Read only.
+#[tauri::command(async)]
+pub fn repo_hooks(state: State<'_, AppState>, path: PathBuf) -> Result<RepoHooks, CmdError> {
+    let data = data_dir(&state)?;
+    Ok(hooks_for(&Registry::load(data)?, data, &path)?)
+}
+
+/// Trusts the shared script of `kind` whose hash is `hash`; `hook_untrusted`
+/// when the file no longer holds that script.
+#[tauri::command(async)]
+pub fn repo_hook_trust(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    path: PathBuf,
+    kind: HookKind,
+    hash: String,
+) -> Result<RepoHooks, CmdError> {
+    let data = data_dir(&state)?;
+    let (now_ms, _) = clock();
+    // The trust store is not the registry, but one writer at a time keeps
+    // two approvals from racing on it too.
+    let _guard = lock_guard(&lock);
+    let reg = Registry::load(data)?;
+    Ok(trust_hook(&reg, data, &path, kind, &hash, now_ms)?)
+}
+
+/// Runs the worktree's archive script headless before it is removed.
+#[tauri::command(async)]
+pub fn worktree_archive_run(
+    state: State<'_, AppState>,
+    path: PathBuf,
+) -> Result<HookRun, CmdError> {
+    let _ = (data_dir(&state)?, path);
+    Ok(HookRun {
+        ran: false,
+        code: None,
+        output: String::new(),
+    })
 }
 
 #[tauri::command(async)]

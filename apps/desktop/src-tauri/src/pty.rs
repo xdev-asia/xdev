@@ -39,6 +39,10 @@ impl From<PtyError> for CmdError {
     }
 }
 
+/// The reserved profile id that runs the worktree's setup script, from
+/// `repo_hooks`, in the default shell.
+pub const SETUP_PROFILE: &str = "xdev:setup";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -292,6 +296,12 @@ pub fn pty_spawn(
     out: Channel<InvokeResponseBody>,
 ) -> Result<PtyInfo, CmdError> {
     let data = data_dir(&state)?;
+    if profile_id == SETUP_PROFILE {
+        return Err(CmdError {
+            code: "hook_none",
+            detail: Some("setup".to_owned()),
+        });
+    }
     let hooks = hooks_now(&app);
     let launch = launch_for(data, &profile_id, account.as_deref(), hooks.as_deref())?;
     let exit_id = id.clone();

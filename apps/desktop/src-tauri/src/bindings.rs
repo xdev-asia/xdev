@@ -59,6 +59,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     StatusSettings::export_all(cfg)?;
     PtyHook::export_all(cfg)?;
     xdev_workspace::RepoView::export_all(cfg)?;
+    xdev_workspace::RepoHooks::export_all(cfg)?;
+    xdev_workspace::HookKind::export_all(cfg)?;
+    xdev_workspace::HookRun::export_all(cfg)?;
     xdev_workspace::WorktreeView::export_all(cfg)?;
     xdev_workspace::WorktreeStat::export_all(cfg)?;
     WorktreeChange::export_all(cfg)?;

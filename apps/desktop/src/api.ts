@@ -55,6 +55,11 @@ import type {
   PrDraft,
   PrView,
   ShipView,
+  RepoHooks,
+  HookKind,
+  HookRun,
+  SetupPolicy,
+  ScriptSource,
 } from "@xdev/bindings";
 import type {
   DirEntry,
@@ -149,6 +154,12 @@ export type {
   ShipView,
   GitSettings,
   BranchPrefixMode,
+  SetupPolicy,
+  ScriptSource,
+  HookKind,
+  HookScript,
+  RepoHooks,
+  HookRun,
 } from "@xdev/bindings";
 // The UI's names for generated types.
 export type { Event as SquadEvent, FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
@@ -251,10 +262,24 @@ export type ErrorCode =
   | "not_github"
   | "gh_failed"
   | "draft_failed"
-  | "bad_sound";
+  | "bad_sound"
+  | "hook_untrusted"
+  | "hook_none";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
-export type RepoPatch = { shortName?: string; baseRef?: string; worktreeRoot?: string };
+export type RepoPatch = {
+  shortName?: string;
+  baseRef?: string;
+  worktreeRoot?: string;
+  setupPolicy?: SetupPolicy;
+  scriptSource?: ScriptSource;
+  localSetup?: string;
+  localArchive?: string;
+};
+
+// The `ptySpawn` profile id that runs the worktree's setup script in the default shell. Rejects
+// with `hook_none` when there is no setup and `hook_untrusted` when its shared part is not trusted.
+export const SETUP_PROFILE = "xdev:setup";
 
 export interface Api {
   // The downloaded update waiting for a restart, if any; Rust checks and downloads on its own.
@@ -395,6 +420,14 @@ export interface Api {
   // `bad_ref` for a base ref that does not resolve, `bad_path` for a worktree folder that is relative
   // or inside the primary checkout; a refused patch saves nothing.
   repoUpdate(id: string, patch: RepoPatch): Promise<RepoView>;
+  // The setup and archive scripts of a worktree: `xdev.toml` in it (else in the primary checkout)
+  // joined with the repo's local scripts by its script source. A bad file is `parseError`, not a rejection.
+  repoHooks(path: string): Promise<RepoHooks>;
+  // Trusts the shared script of `kind` with this hash; `hook_untrusted` when the file changed since.
+  repoHookTrust(path: string, kind: HookKind, hash: string): Promise<RepoHooks>;
+  // Runs the archive script headless (120 s, 64 KiB of output); `ran: false` when there is none.
+  // Rejects with `hook_untrusted`.
+  worktreeArchiveRun(path: string): Promise<HookRun>;
   // Records a worktree from `RepoView.found`. Rejects with `worktree_exists` when it is already
   // recorded and `worktree_unknown` when no repo has it.
   worktreeAdopt(path: string): Promise<WorktreeView>;
@@ -577,6 +610,8 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "gh_failed",
   "draft_failed",
   "bad_sound",
+  "hook_untrusted",
+  "hook_none",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -693,6 +728,9 @@ const tauriApi: Api = {
   repoAdd: (path) => call("repo_add", { path }),
   repoForget: (id) => call("repo_forget", { id }),
   repoUpdate: (id, patch) => call("repo_update", { id, ...patch }),
+  repoHooks: (path) => call("repo_hooks", { path }),
+  repoHookTrust: (path, kind, hash) => call("repo_hook_trust", { path, kind, hash }),
+  worktreeArchiveRun: (path) => call("worktree_archive_run", { path }),
   worktreeAdopt: (path) => call("worktree_adopt", { path }),
   vaultList: () => call("vault_list"),
   vaultAdd: (path) => call("vault_add", { path }),

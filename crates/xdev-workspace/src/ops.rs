@@ -6,7 +6,9 @@ use serde::Serialize;
 use xdev_git::{BaseRefresh, GitError, Repo, WorktreeEntry};
 
 use crate::registry::normalize;
-use crate::{Registry, RepoEntry, WorkspaceError, WorktreeMeta, names, repo_id};
+use crate::{
+    Registry, RepoEntry, ScriptSource, SetupPolicy, WorkspaceError, WorktreeMeta, names, repo_id,
+};
 
 /// A repo as the sidebar shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -19,6 +21,11 @@ pub struct RepoView {
     pub base_ref: String,
     /// The folder new worktrees of this repo go under.
     pub worktree_root: String,
+    pub setup_policy: SetupPolicy,
+    pub script_source: ScriptSource,
+    /// This machine's scripts; the shared ones come from `repo_hooks`.
+    pub local_setup: String,
+    pub local_archive: String,
     /// The folder is gone or no longer a repo; the entry stays so a
     /// reconnected drive finds it again.
     pub missing: bool,
@@ -126,6 +133,7 @@ pub fn add_repo(reg: &mut Registry, dir: &Path, now_ms: i64) -> Result<RepoView,
         path: root,
         base_ref,
         worktree_root,
+        ..RepoEntry::default()
     });
     let idx = reg.repos.len() - 1;
     let before = reg.worktrees.len();
@@ -143,6 +151,10 @@ pub struct RepoPatch {
     pub short_name: Option<String>,
     pub base_ref: Option<String>,
     pub worktree_root: Option<PathBuf>,
+    pub setup_policy: Option<SetupPolicy>,
+    pub script_source: Option<ScriptSource>,
+    pub local_setup: Option<String>,
+    pub local_archive: Option<String>,
 }
 
 /// 1 to 40 characters: `[a-z0-9]` first, then `[a-z0-9._-]`. No `:` or `/`,
@@ -258,6 +270,10 @@ fn missing_view(entry: &RepoEntry) -> RepoView {
         path: lossy(&entry.path),
         base_ref: entry.base_ref.clone(),
         worktree_root: lossy(&entry.worktree_root),
+        setup_policy: entry.setup_policy,
+        script_source: entry.script_source,
+        local_setup: entry.local_setup.clone(),
+        local_archive: entry.local_archive.clone(),
         missing: true,
         worktrees: Vec::new(),
         found: Vec::new(),
@@ -1048,6 +1064,7 @@ mod tests {
             path: "/r".into(),
             base_ref: "main".into(),
             worktree_root: "/wt".into(),
+            ..RepoEntry::default()
         }
     }
 
