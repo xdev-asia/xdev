@@ -5,6 +5,7 @@ import { IS_MAC, PLATFORM, type Platform } from "@/platform";
 import { getBindingsState } from "./bindingsStore";
 import { docsShown } from "./docsShown";
 import { normalizeChord } from "./keybindingsFile";
+import { notifyTerminalKey } from "./terminalKey";
 import { defaultsFor, SHORTCUTS } from "./registry";
 
 export { subscribeBindings } from "./bindingsStore";
@@ -36,6 +37,7 @@ export type ActionId =
   | "zoom.in" | "zoom.out" | "zoom.reset"
   | "tab.reopenClosed"
   | "settings.open" | "settings.shortcuts"
+  | "sessions.open"
   | "docs.search" | "docs.new" | "docs.save"
   // Bound to nothing by default; the quick-commands plan registers the handler.
   | "quickCommands.open";
@@ -296,6 +298,7 @@ export function useKeymap(
         return;
       }
       if (handler() === false) return;
+      if (inTerminal(e)) notifyTerminalKey(action, chordLabel(action));
       e.preventDefault();
       e.stopPropagation();
     };

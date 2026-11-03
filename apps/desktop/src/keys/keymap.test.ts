@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resetBindingsForTests, setKeybindingsText, setKeySettings } from "./bindingsStore";
+import { getToasts, resetToastsForTests } from "@/workspace/toastStore";
+import { resetTerminalKeyForTests, setTerminalKeyHost } from "./terminalKey";
 import { actionOf, actionsOf, appOwnsKey, chordLabel, chordOf, DEFAULT_BINDINGS, eventChord, suspendKeymap, TERMINAL_KEEPS, useKeymap, type ActionId } from "./keymap";
 
 const hooks = vi.hoisted(() => ({ effects: [] as (() => void | (() => void))[] }));
@@ -13,6 +15,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
   resetBindingsForTests();
   suspendKeymap(false);
+  resetToastsForTests();
+  resetTerminalKeyForTests();
 });
 
 const ev = (init: Record<string, unknown>) =>
@@ -328,4 +332,51 @@ it("the keys a terminal always keeps are the R5 list, and a binding on one works
   expect(press({ ctrlKey: true, code: "KeyD" }, true).event.defaultPrevented).toBe(false);
   press({ ctrlKey: true, code: "KeyD" });
   expect(run).toHaveBeenCalledTimes(1);
+});
+
+// ---- The X-1 toast ----
+
+const GIT = { ctrlKey: true, shiftKey: true, code: "KeyG" };
+function toastHost() {
+  const open = vi.fn();
+  setTerminalKeyHost({ t: (k, v) => (v ? `${k} ${JSON.stringify(v)}` : k), openShortcuts: open });
+  return open;
+}
+
+it("an app key taken from a focused terminal shows the toast once", () => {
+  const open = toastHost();
+  const run = vi.fn();
+  const { press } = setup({ "panel.sourceControl": run });
+  press(GIT, true);
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(getToasts()).toHaveLength(1);
+  expect(getToasts()[0].text).toContain('"title":"keys.action.panel.sourceControl"');
+  expect(getToasts()[0].text).toContain('"chord":"Ctrl+Shift+G"');
+  press(GIT, true);
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(getToasts()).toHaveLength(1);
+  getToasts()[0].actions[0].run();
+  expect(open).toHaveBeenCalledWith("panel.sourceControl");
+});
+
+it("no toast outside a terminal, with hints off, or when the key goes to the program", () => {
+  toastHost();
+  const run = vi.fn();
+  const { press } = setup({ "panel.sourceControl": run, "terminal.find": vi.fn() });
+  press(GIT, false);
+  expect(getToasts()).toHaveLength(0);
+  setKeySettings({ terminalPolicy: "app-first", terminalHints: false });
+  press(GIT, true);
+  expect(getToasts()).toHaveLength(0);
+  setKeySettings({ terminalPolicy: "terminal-first", terminalHints: true });
+  // Ctrl+F is the terminal's own under terminal first: nothing runs, nothing shows.
+  press({ ctrlKey: true, code: "KeyF" }, true);
+  expect(getToasts()).toHaveLength(0);
+});
+
+it("a key the terminal always keeps (Ctrl+N) is not an app key there", () => {
+  toastHost();
+  const { press } = setup({ "docs.new": vi.fn() });
+  press({ ctrlKey: true, code: "KeyN" }, true);
+  expect(getToasts()).toHaveLength(0);
 });
