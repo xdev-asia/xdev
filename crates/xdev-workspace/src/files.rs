@@ -6,6 +6,7 @@ use std::io;
 use serde::{Deserialize, Serialize};
 
 use crate::WorkspaceError;
+use crate::ops::rel_under;
 
 /// Larger files open read-only as "too large"; nothing of them is read.
 pub const READ_MAX: u64 = 2 * 1024 * 1024;
@@ -67,7 +68,8 @@ fn todo(what: &str) -> WorkspaceError {
 }
 
 /// The file `rel` of `worktree`.
-pub fn read_file(_worktree: &str, _rel: &str) -> Result<FileText, WorkspaceError> {
+pub fn read_file(worktree: &str, rel: &str) -> Result<FileText, WorkspaceError> {
+    rel_under(worktree, rel)?;
     Err(todo("read_file"))
 }
 
@@ -75,27 +77,32 @@ pub fn read_file(_worktree: &str, _rel: &str) -> Result<FileText, WorkspaceError
 /// `expected` is the hash the editor loaded; `None` means the file must not
 /// exist yet.
 pub fn write_file(
-    _worktree: &str,
-    _rel: &str,
+    worktree: &str,
+    rel: &str,
     _text: &str,
     _eol: Eol,
     _expected: Option<&str>,
 ) -> Result<WriteOutcome, WorkspaceError> {
+    rel_under(worktree, rel)?;
     Err(todo("write_file"))
 }
 
 /// An empty file or a folder; fails with `Exists` when the name is taken.
-pub fn create_entry(_worktree: &str, _rel: &str, _dir: bool) -> Result<(), WorkspaceError> {
+pub fn create_entry(worktree: &str, rel: &str, _dir: bool) -> Result<(), WorkspaceError> {
+    rel_under(worktree, rel)?;
     Err(todo("create_entry"))
 }
 
 /// Fails with `Exists` when `to` is taken.
-pub fn rename_entry(_worktree: &str, _from: &str, _to: &str) -> Result<(), WorkspaceError> {
+pub fn rename_entry(worktree: &str, from: &str, to: &str) -> Result<(), WorkspaceError> {
+    rel_under(worktree, from)?;
+    rel_under(worktree, to)?;
     Err(todo("rename_entry"))
 }
 
 /// Moves the item to the OS trash; never a hard delete.
-pub fn trash_entry(_worktree: &str, _rel: &str) -> Result<(), WorkspaceError> {
+pub fn trash_entry(worktree: &str, rel: &str) -> Result<(), WorkspaceError> {
+    rel_under(worktree, rel)?;
     Err(todo("trash_entry"))
 }
 

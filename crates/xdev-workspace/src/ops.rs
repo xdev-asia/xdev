@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::fs;
+use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
@@ -852,9 +853,27 @@ fn is_git(name: &std::ffi::OsStr) -> bool {
     name.eq_ignore_ascii_case(".git")
 }
 
-/// The folder `rel` names under `worktree`, when `rel` is plain (relative,
-/// no `..`, no drive or stream) and no part of it is a link or `.git`.
-fn dir_under(worktree: &str, rel: &str) -> Result<PathBuf, WorkspaceError> {
+/// A name Windows would not keep as typed: a trailing dot or space is dropped
+/// (`.git.` opens `.git`), and `nul`, `con.txt`, `COM1` name devices.
+fn windows_odd(name: &std::ffi::OsStr) -> bool {
+    let name = name.to_string_lossy();
+    if name.ends_with(['.', ' ']) {
+        return true;
+    }
+    let stem = name.split('.').next().unwrap_or_default();
+    let stem = stem.trim_end().to_ascii_lowercase();
+    let numbered = |p: &str| {
+        stem.strip_prefix(p)
+            .is_some_and(|n| n.len() == 1 && matches!(n.as_bytes()[0], b'1'..=b'9'))
+    };
+    matches!(stem.as_str(), "con" | "prn" | "aux" | "nul") || numbered("com") || numbered("lpt")
+}
+
+/// `rel` under `worktree`, when `rel` is plain (relative, no `..`, no drive
+/// or stream) and no part of it is a link or `.git`. Every part must exist,
+/// but the last one may be missing when `missing_last`; a missing folder
+/// above it is `NotFound`.
+fn under(worktree: &str, rel: &str, missing_last: bool) -> Result<PathBuf, WorkspaceError> {
     let bad = || WorkspaceError::BadPath(rel.to_owned());
     let plain = Path::new(rel)
         .components()
@@ -863,26 +882,60 @@ fn dir_under(worktree: &str, rel: &str) -> Result<PathBuf, WorkspaceError> {
     if !plain || (cfg!(windows) && rel.contains(':')) {
         return Err(bad());
     }
+    let names: Vec<_> = Path::new(rel)
+        .components()
+        .filter_map(|c| match c {
+            Component::Normal(name) => Some(name),
+            _ => None,
+        })
+        .collect();
+    // Every name first: a bad one is refused even under a missing folder.
+    if names
+        .iter()
+        .any(|name| is_git(name) || (cfg!(windows) && windows_odd(name)))
+    {
+        return Err(bad());
+    }
     let mut disk = PathBuf::from(worktree);
-    for part in Path::new(rel).components() {
-        let Component::Normal(name) = part else {
-            continue;
-        };
-        if is_git(name) {
-            return Err(bad());
-        }
+    for (i, name) in names.iter().enumerate() {
+        let last = i + 1 == names.len();
         disk.push(name);
+        let meta = match fs::symlink_metadata(&disk) {
+            Ok(meta) => meta,
+            Err(e) if e.kind() == io::ErrorKind::NotFound && last && missing_last => break,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Err(WorkspaceError::NotFound(rel.to_owned()));
+            }
+            Err(e) => return Err(e.into()),
+        };
         // A link is not followed: it could lead anywhere on the disk.
-        if fs::symlink_metadata(&disk)?.is_symlink() {
+        if meta.is_symlink() || (!last && !meta.is_dir()) {
             return Err(bad());
         }
-        // Windows also opens `.git` as `.git.`, `.git ` or `GIT~1`; the name
-        // on disk tells.
+        // Windows also opens `.git` as `GIT~1`; the name on disk tells.
         if cfg!(windows) && fs::canonicalize(&disk)?.file_name().is_some_and(is_git) {
             return Err(bad());
         }
     }
     Ok(disk)
+}
+
+/// The folder `rel` names under `worktree` (`""` for its top); see `under`.
+fn dir_under(worktree: &str, rel: &str) -> Result<PathBuf, WorkspaceError> {
+    under(worktree, rel, false)
+}
+
+/// The file or folder `rel` names under `worktree`, for the editor: it need
+/// not exist yet, but every folder above it must be a real folder (no link),
+/// and `rel` must name something below the top.
+pub(crate) fn rel_under(worktree: &str, rel: &str) -> Result<PathBuf, WorkspaceError> {
+    let named = Path::new(rel)
+        .components()
+        .any(|c| matches!(c, Component::Normal(_)));
+    if !named {
+        return Err(WorkspaceError::BadPath(rel.to_owned()));
+    }
+    under(worktree, rel, true)
 }
 
 /// The names in folder `rel` of `worktree` (`""` for its top). `.git` is left
@@ -1067,6 +1120,100 @@ mod tests {
         assert_eq!(names(&top), [("link", false)]);
         assert_eq!(list_dir(root, "link").unwrap_err().code(), "bad_path");
         assert_eq!(list_dir(root, "link/sub").unwrap_err().code(), "bad_path");
+    }
+
+    #[test]
+    fn rel_under_refuses_paths_that_leave_the_worktree() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().to_str().unwrap();
+        fs::create_dir_all(tmp.path().join("a").join(".git")).unwrap();
+        fs::write(tmp.path().join("file.txt"), "x").unwrap();
+        let mut bad = vec![
+            "",
+            ".",
+            "../x",
+            "a/../../x",
+            "a/..",
+            "/etc/passwd",
+            ".git/config",
+            ".GIT",
+            "a/.git",
+            "a/.git/new",
+        ];
+        if cfg!(windows) {
+            bad.extend([
+                "C:x",
+                r"C:\x",
+                r"\\host\share\x",
+                r"a\..\..\x",
+                "a:stream",
+                "x/.git.",
+                "x/.git ",
+                "new.",
+                "nul",
+                "a/CON.txt",
+            ]);
+        }
+        for rel in bad {
+            let err = rel_under(root, rel).unwrap_err();
+            assert_eq!(err.code(), "bad_path", "{rel:?}");
+        }
+        // A file is not a folder to go into.
+        assert_eq!(
+            rel_under(root, "file.txt/x").unwrap_err().code(),
+            "bad_path"
+        );
+    }
+
+    #[test]
+    fn rel_under_allows_a_missing_last_part_under_real_folders() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().to_str().unwrap();
+        fs::create_dir(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("src").join("lib.rs"), "x").unwrap();
+        assert_eq!(
+            rel_under(root, "src/new.rs").unwrap(),
+            tmp.path().join("src").join("new.rs")
+        );
+        assert_eq!(
+            rel_under(root, "./src/lib.rs").unwrap(),
+            tmp.path().join("src").join("lib.rs")
+        );
+        assert_eq!(rel_under(root, "new").unwrap(), tmp.path().join("new"));
+        // Only the last part may be missing.
+        assert_eq!(
+            rel_under(root, "nope/new.rs").unwrap_err().code(),
+            "not_found"
+        );
+    }
+
+    #[test]
+    fn rel_under_does_not_follow_symlinks() {
+        let tmp = TempDir::new().unwrap();
+        let outside = tmp.path().join("outside");
+        let root = tmp.path().join("wt");
+        fs::create_dir(&outside).unwrap();
+        fs::create_dir(&root).unwrap();
+        fs::write(outside.join("x.txt"), "secret").unwrap();
+        if !link_dir(&root.join("link"), &outside) {
+            eprintln!("skipped: cannot make a folder link here");
+            return;
+        }
+        let root = root.to_str().unwrap();
+        for rel in ["link", "link/x.txt", "link/new.txt"] {
+            assert_eq!(
+                rel_under(root, rel).unwrap_err().code(),
+                "bad_path",
+                "{rel}"
+            );
+        }
+    }
+
+    #[test]
+    fn list_dir_reports_a_missing_folder_as_not_found() {
+        let tmp = TempDir::new().unwrap();
+        let err = list_dir(tmp.path().to_str().unwrap(), "nope").unwrap_err();
+        assert_eq!(err.code(), "not_found");
     }
 
     fn entry() -> RepoEntry {
