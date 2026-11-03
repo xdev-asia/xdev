@@ -788,3 +788,36 @@ it("the toast host is mounted, and its Open Shortcuts button opens that page fil
   expect(settings.props.initial).toBe("keys");
   expect(settings.props.filter).toBe("panel.sourceControl");
 });
+
+it("sidebar and panel keys toggle the left sidebar and the right panel", async () => {
+  const view = await harness();
+  const region = (cls: string) => view.all().find((n) => n.props.className === cls)!;
+  expect(region("ws-sidebar").props.hidden).toBe(false);
+  keymap.handlers["sidebar.left.toggle"]();
+  view.draw();
+  expect(region("ws-sidebar").props.hidden).toBe(true);
+  expect(region("ws-panel").props.hidden).toBe(false);
+  keymap.handlers["sidebar.right.toggle"]();
+  view.draw();
+  expect(region("ws-panel").props.hidden).toBe(true);
+  // A panel key reopens it on its tab; pressed again on that tab it closes.
+  keymap.handlers["panel.sourceControl"]();
+  view.draw();
+  expect(region("ws-panel").props.hidden).toBe(false);
+  keymap.handlers["panel.sourceControl"]();
+  view.draw();
+  expect(region("ws-panel").props.hidden).toBe(true);
+  keymap.handlers["panel.explorer"]();
+  view.draw();
+  expect(region("ws-panel").props.hidden).toBe(false);
+});
+
+it("settings and search keys open their views", async () => {
+  const view = await harness();
+  keymap.handlers["settings.shortcuts"]();
+  view.draw();
+  expect(view.of(SettingsView)[0].props.initial).toBe("keys");
+  keymap.handlers["search.open"]();
+  view.draw();
+  expect(view.of(DocsApp)).toHaveLength(1);
+});
