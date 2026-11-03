@@ -16,7 +16,7 @@ const encode = (text: string) => new TextEncoder().encode(text);
  * An echo terminal: what is typed comes back, Enter starts a new prompt. Agents need approval
  * once; an agent running as `skip` needs it before every start.
  */
-export function createMockPty(profiles: Pick<MockProfiles, "__knows" | "__permissions">): PtyApi {
+export function createMockPty(profiles: Pick<MockProfiles, "__launchError" | "__permissions">): PtyApi {
   // Like Rust, an exited terminal keeps its slot until `ptyKill`.
   const ptys = new Map<string, { onData: (bytes: Uint8Array) => void; line: string; exited: boolean }>();
   const approved = new Set<PtyProfile>();
@@ -25,7 +25,8 @@ export function createMockPty(profiles: Pick<MockProfiles, "__knows" | "__permis
 
   return {
     async ptySpawn(id, _cwd, profileId, account, _cols, _rows, onData) {
-      if (!profiles.__knows(profileId)) return reject("unknown_profile");
+      const refused = profiles.__launchError(profileId);
+      if (refused) return reject(refused);
       if (ptys.has(id)) return reject("pty_exists");
       const agent = !profileId.startsWith("shell");
       const permissions = agent ? (profiles.__permissions(profileId) ?? "ask") : "ask";

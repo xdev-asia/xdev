@@ -10,7 +10,7 @@ type Asking = { profile: PtyProfile; account: string | null; reason: string; ret
 
 /**
  * The approval flow of an agent start: a refused start asks once, approves in the policy,
- * then starts again. Uses only `useState` and `useI18n`.
+ * then starts again. Reads the profile names from `useProfiles`, so a harness that stubs hooks must stub `useContext` too.
  */
 export function useApprovedStart(api: Api): {
   /** Starts a client's pty; `null` when it failed (see `error`) or approval was declined. */
