@@ -555,3 +555,129 @@ it("shows the error of a failed stage and still reads again", async () => {
   expect(view.html()).toContain("index.lock exists");
   expect(list.mock.calls.length).toBe(before + 1);
 });
+
+// ---- Discard ----
+
+const dialog = (view: ReturnType<typeof changes>) => view.find((n) => n.type === ConfirmDialog && n.props.confirmLabel === en("changes.discard.confirm"))!;
+const rowOf = (view: ReturnType<typeof changes>, name: string, path: string) =>
+  nodes(group(view, name)).filter((n) => n.type === "li").find((li) => nodes(li).some((n) => n.props.title === path))!;
+const hasStagedBox = (view: ReturnType<typeof changes>) => nodes(dialog(view).props.children).find((n) => n.type === "input");
+
+it("offers Discard in Changes rows only, and asks before doing anything", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const discard = vi.spyOn(api, "worktreeDiscard").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  const label = (path: string) => en("changes.discard", { path });
+  expect(nodes(rowOf(view, "staged", "docs/old-notes.md")).some((n) => n.props["aria-label"] === label("docs/old-notes.md"))).toBe(false);
+  expect(dialog(view).props.open).toBe(false);
+  labelled(rowOf(view, "changes", "src/status.ts"), label("src/status.ts")).props.onClick();
+  expect(dialog(view).props.open).toBe(true);
+  expect(dialog(view).props.title).toBe(en("changes.discard.title", { path: "src/status.ts" }));
+  expect(dialog(view).props.body).toBe(en("changes.discard.body"));
+  expect(discard).not.toHaveBeenCalled();
+});
+
+it("cancel calls nothing and closes the dialog", async () => {
+  const api = createMockApi({});
+  const discard = vi.spyOn(api, "worktreeDiscard").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  labelled(group(view, "changes"), en("changes.discardAll")).props.onClick();
+  expect(dialog(view).props.open).toBe(true);
+  dialog(view).props.onCancel();
+  expect(dialog(view).props.open).toBe(false);
+  await tick();
+  expect(discard).not.toHaveBeenCalled();
+});
+
+it("confirming a file calls with confirmed set and without the staged flag", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const discard = vi.spyOn(api, "worktreeDiscard").mockResolvedValue(undefined);
+  const list = vi.spyOn(api, "worktreeChanges");
+  const view = changes(api);
+  await tick();
+  const before = list.mock.calls.length;
+  labelled(rowOf(view, "changes", "src/status.ts"), en("changes.discard", { path: "src/status.ts" })).props.onClick();
+  // Untracked: nothing staged to ask about.
+  expect(hasStagedBox(view)).toBeUndefined();
+  dialog(view).props.onConfirm();
+  await tick();
+  expect(discard).toHaveBeenCalledWith(OAK, ["src/status.ts"], false, true);
+  expect(dialog(view).props.open).toBe(false);
+  expect(list.mock.calls.length).toBe(before + 1);
+});
+
+it("the staged checkbox shows only for a staged file and is passed on", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const discard = vi.spyOn(api, "worktreeDiscard").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  labelled(rowOf(view, "changes", "src/session.ts"), en("changes.discard", { path: "src/session.ts" })).props.onClick();
+  const box = hasStagedBox(view)!;
+  expect(renderToStaticMarkup(dialog(view).props.children)).toContain(en("changes.discard.staged"));
+  expect(box.props.checked).toBe(false);
+  box.props.onChange();
+  expect(hasStagedBox(view)!.props.checked).toBe(true);
+  dialog(view).props.onConfirm();
+  await tick();
+  expect(discard).toHaveBeenCalledWith(OAK, ["src/session.ts"], true, true);
+  // A later dialog starts unchecked again.
+  labelled(rowOf(view, "changes", "src/session.ts"), en("changes.discard", { path: "src/session.ts" })).props.onClick();
+  expect(hasStagedBox(view)!.props.checked).toBe(false);
+});
+
+it("Discard All names the count and lists every file of Changes", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const discard = vi.spyOn(api, "worktreeDiscard").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  labelled(group(view, "changes"), en("changes.discardAll")).props.onClick();
+  expect(dialog(view).props.title).toBe(en("changes.discard.titleMany", { count: 2 }));
+  dialog(view).props.onConfirm();
+  await tick();
+  expect(discard).toHaveBeenCalledWith(OAK, ["src/session.ts", "src/status.ts"], false, true);
+});
+
+it("warns when an agent is working in the worktree", async () => {
+  const api = createMockApi({});
+  const quiet = changes(api);
+  await tick();
+  labelled(group(quiet, "changes"), en("changes.discardAll")).props.onClick();
+  expect(dialog(quiet).props.warning).toBeUndefined();
+
+  const busy = { dot: () => "working", tabs: () => [], subscribe: () => () => {} } as unknown as Sessions;
+  const view = changes(api, busy);
+  await tick();
+  labelled(group(view, "changes"), en("changes.discardAll")).props.onClick();
+  expect(dialog(view).props.warning).toBe(en("changes.discard.agent"));
+});
+
+it("shows the policy's reason when discard is denied, and reads again", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeDiscard").mockRejectedValue({ code: "denied", detail: "discarding is off today" });
+  const list = vi.spyOn(api, "worktreeChanges");
+  const view = changes(api);
+  await tick();
+  const before = list.mock.calls.length;
+  labelled(group(view, "changes"), en("changes.discardAll")).props.onClick();
+  dialog(view).props.onConfirm();
+  await tick();
+  expect(view.html()).toContain("discarding is off today");
+  expect(list.mock.calls.length).toBe(before + 1);
+});
+
+it("never shows needs_approval, the dialog was the approval", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeDiscard").mockRejectedValue({ code: "needs_approval", detail: "asks" });
+  const view = changes(api);
+  await tick();
+  labelled(group(view, "changes"), en("changes.discardAll")).props.onClick();
+  dialog(view).props.onConfirm();
+  await tick();
+  expect(view.html()).not.toContain(en("error.needs_approval"));
+});
