@@ -85,6 +85,25 @@ describe("WorktreeStats", () => {
     stats.detach();
   });
 
+  it("reads again when a hooked turn ends as done", async () => {
+    const api = createMockApi({});
+    const read = vi.spyOn(api, "worktreeStat");
+    const live = (sessions = new Sessions(api));
+    const stats = new WorktreeStats();
+    stats.attach(api, live);
+    stats.track([A]);
+    const tab = live.open(A, "claude");
+    live.noteStarted(tab.id, { id: tab.id, pid: 1, program: "agent", agent: true, profile: "claude", permissions: "ask", account: null, hooks: true, hookEvents: ["prompt", "turn-done"] });
+    api.__hook(tab.id, "prompt");
+    await settle();
+    const before = read.mock.calls.length;
+    api.__hook(tab.id, "turn-done");
+    await settle();
+    expect(live.dot(A)).toBe("done");
+    expect(read.mock.calls.length).toBe(before + 1);
+    stats.detach();
+  });
+
   it("reads every listed worktree on focus, redraws, and stops after detach", async () => {
     const api = createMockApi({});
     const read = vi.spyOn(api, "worktreeStat");
