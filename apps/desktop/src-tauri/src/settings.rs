@@ -1,5 +1,6 @@
 use std::fs;
 use std::io::{self, Write};
+use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -79,6 +80,27 @@ impl Default for TerminalSettings {
             right_click_paste: !cfg!(target_os = "macos"),
             osc52_clipboard: true,
         }
+    }
+}
+
+impl TerminalSettings {
+    pub const FONT_SIZE: RangeInclusive<u8> = 8..=32;
+    pub const LINE_HEIGHT: RangeInclusive<f32> = 1.0..=2.0;
+    pub const MAX_SCROLLBACK: u32 = 100_000;
+
+    /// As stored: every number inside its range.
+    pub fn clamped(mut self) -> Self {
+        self.font_size = self
+            .font_size
+            .clamp(*Self::FONT_SIZE.start(), *Self::FONT_SIZE.end());
+        self.line_height = if self.line_height.is_finite() {
+            self.line_height
+                .clamp(*Self::LINE_HEIGHT.start(), *Self::LINE_HEIGHT.end())
+        } else {
+            *Self::LINE_HEIGHT.start()
+        };
+        self.scrollback = self.scrollback.min(Self::MAX_SCROLLBACK);
+        self
     }
 }
 
@@ -622,6 +644,129 @@ mod tests {
             migrate(&mut v, steps);
             assert_eq!(v["a"], 7, "from {from}");
         }
+    }
+
+    #[test]
+    fn terminal_round_trips_camel_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let terminal = TerminalSettings {
+            font_family: "Cascadia Code".into(),
+            font_size: 15,
+            font_weight: FontWeight::Medium,
+            line_height: 1.2,
+            cursor_style: CursorStyle::Underline,
+            cursor_blink: false,
+            scrollback: 5_000,
+            copy_on_select: false,
+            right_click_paste: false,
+            osc52_clipboard: false,
+        };
+        let settings = Settings {
+            terminal: terminal.clone(),
+            ..Settings::default()
+        };
+        save(&path, &settings).unwrap();
+        assert_eq!(load(&path).terminal, terminal);
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("\"lineHeight\": 1.2,"), "{raw}");
+        assert!(raw.contains("\"cursorStyle\": \"underline\""), "{raw}");
+        assert!(raw.contains("\"fontWeight\": \"medium\""), "{raw}");
+
+        // A bad terminal section costs only itself.
+        fs::write(
+            &path,
+            r#"{ "last_vault": "D:/docs", "terminal": { "cursorStyle": "beam" } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.last_vault.as_deref(), Some("D:/docs"));
+        assert_eq!(loaded.terminal, TerminalSettings::default());
+    }
+
+    #[test]
+    fn terminal_clamps_to_its_ranges() {
+        let wild = TerminalSettings {
+            font_size: 200,
+            scrollback: 10_000_000,
+            line_height: 0.1,
+            ..TerminalSettings::default()
+        }
+        .clamped();
+        assert_eq!(
+            (wild.font_size, wild.scrollback, wild.line_height),
+            (32, 100_000, 1.0)
+        );
+        let low = TerminalSettings {
+            font_size: 0,
+            line_height: 9.0,
+            ..TerminalSettings::default()
+        }
+        .clamped();
+        assert_eq!((low.font_size, low.line_height), (8, 2.0));
+        let nan = TerminalSettings {
+            line_height: f32::NAN,
+            ..TerminalSettings::default()
+        }
+        .clamped();
+        assert_eq!(nan.line_height, 1.0);
+        // In range: untouched.
+        let fine = TerminalSettings {
+            font_size: 14,
+            line_height: 1.4,
+            scrollback: 0,
+            ..TerminalSettings::default()
+        };
+        assert_eq!(fine.clone().clamped(), fine);
+    }
+
+    /// `TERMINAL_DEFAULTS` in the UI and the generated binding name the same
+    /// fields as Rust, with the same default values.
+    #[test]
+    fn terminal_defaults_match_the_ui() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let rust = serde_json::to_value(TerminalSettings::default()).unwrap();
+        let rust = rust.as_object().unwrap();
+
+        let binding =
+            fs::read_to_string(root.join("packages/bindings/src/TerminalSettings.ts")).unwrap();
+        for key in rust.keys() {
+            assert!(binding.contains(&format!("{key}: ")), "binding lacks {key}");
+        }
+
+        let ui =
+            fs::read_to_string(root.join("apps/desktop/src/settings/terminalDefaults.ts")).unwrap();
+        let body = ui
+            .split_once("TERMINAL_DEFAULTS: TerminalSettings = {")
+            .and_then(|(_, rest)| rest.split_once("};"))
+            .map(|(body, _)| body)
+            .expect("TERMINAL_DEFAULTS literal");
+        let mut seen = Vec::new();
+        for line in body.lines().map(str::trim).filter(|l| !l.is_empty()) {
+            let (key, value) = line
+                .trim_end_matches(',')
+                .split_once(": ")
+                .unwrap_or_else(|| panic!("{line}"));
+            let want = rust.get(key).unwrap_or_else(|| panic!("UI has {key}"));
+            if value == "!IS_MAC" {
+                assert_eq!(
+                    want,
+                    &serde_json::json!(!cfg!(target_os = "macos")),
+                    "{key}"
+                );
+            } else {
+                let got: serde_json::Value = serde_json::from_str(value).unwrap();
+                match (got.as_f64(), want.as_f64()) {
+                    (Some(a), Some(b)) => assert!((a - b).abs() < 1e-6, "{key}: {a} != {b}"),
+                    _ => assert_eq!(&got, want, "{key}"),
+                }
+            }
+            seen.push(key.to_owned());
+        }
+        seen.sort();
+        let mut keys: Vec<_> = rust.keys().cloned().collect();
+        keys.sort();
+        assert_eq!(seen, keys);
     }
 
     #[test]
