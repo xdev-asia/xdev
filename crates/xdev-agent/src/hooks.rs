@@ -133,14 +133,24 @@ pub struct HookLine {
     pub at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<HookDetail>,
-    /// The agent's own session id from the hook stdin (`session_id`), at
-    /// most [`SESSION_MAX`] chars of `[A-Za-z0-9._-]`.
+    /// The agent's own session id from the hook stdin (`session_id`) or codex
+    /// `notify` (`thread-id`); only when [`valid_session_id`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
 }
 
 /// The longest agent session id a hook line keeps, in chars.
 pub const SESSION_MAX: usize = 128;
+
+/// An agent session id a hook line may carry: 1..=[`SESSION_MAX`] chars of
+/// `[A-Za-z0-9._-]`. It goes back to the CLI as a resume argument, so
+/// nothing else is kept.
+pub fn valid_session_id(id: &str) -> bool {
+    (1..=SESSION_MAX).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+}
 
 /// A pane id as the UI makes it: a lowercase UUID, so it is safe as a file name.
 pub fn valid_pty_id(id: &str) -> bool {
@@ -165,7 +175,7 @@ pub fn hook_file(local_dir: &Path, pty_id: &str) -> Option<PathBuf> {
 /// Appends one line to the pane's hook file, making the folder if missing.
 /// The line goes out in one write, so a reader never sees two lines mixed.
 pub fn append_hook(local_dir: &Path, pty_id: &str, event: HookEvent, at_ms: i64) -> io::Result<()> {
-    append_hook_detail(local_dir, pty_id, event, at_ms, None).map(|_| ())
+    append_hook_detail(local_dir, pty_id, event, at_ms, None, None).map(|_| ())
 }
 
 /// The longest hook line the desktop reads (R5), newline included.
@@ -174,6 +184,7 @@ pub const LINE_MAX: usize = 4096;
 /// `append_hook` with the stdin fields kept. Each string is cut at
 /// [`DETAIL_MAX`] chars and an empty detail is left out; if the line would
 /// still pass [`LINE_MAX`] bytes, the message and then the whole detail go.
+/// `session` is kept only when [`valid_session_id`].
 ///
 /// A `needs-input` within [`REPEAT_MS`] of a `needs-input` that is the
 /// file's last line is not written: claude's `AskUserQuestion` fires
@@ -186,6 +197,7 @@ pub fn append_hook_detail(
     event: HookEvent,
     at_ms: i64,
     detail: Option<HookDetail>,
+    session: Option<&str>,
 ) -> io::Result<bool> {
     let path = hook_file(local_dir, pty_id)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "bad pty id"))?;
@@ -206,7 +218,7 @@ pub fn append_hook_detail(
         detail: detail
             .map(HookDetail::clipped)
             .filter(|d| *d != HookDetail::default()),
-        session: None,
+        session: session.filter(|s| valid_session_id(s)).map(str::to_owned),
     };
     let mut line = serde_json::to_string(&hook)?;
     if line.len() >= LINE_MAX {
@@ -744,7 +756,8 @@ mod tests {
     #[test]
     fn needs_input_is_idempotent_within_the_repeat_window() {
         let dir = tempfile::tempdir().unwrap();
-        let ask = |at| append_hook_detail(dir.path(), ID, HookEvent::NeedsInput, at, None).unwrap();
+        let ask =
+            |at| append_hook_detail(dir.path(), ID, HookEvent::NeedsInput, at, None, None).unwrap();
         assert!(ask(1000));
         // PreToolUse(AskUserQuestion) then PermissionRequest: one line.
         assert!(!ask(1300));
@@ -774,13 +787,14 @@ mod tests {
             is_interrupt: false,
             error: Some("  ".into()),
         };
-        append_hook_detail(dir.path(), ID, HookEvent::TurnDone, 1, Some(detail)).unwrap();
+        append_hook_detail(dir.path(), ID, HookEvent::TurnDone, 1, Some(detail), None).unwrap();
         append_hook_detail(
             dir.path(),
             ID,
             HookEvent::Prompt,
             2,
             Some(HookDetail::default()),
+            None,
         )
         .unwrap();
         let lines = read_lines(dir.path());
@@ -804,10 +818,41 @@ mod tests {
             is_interrupt: true,
             error: Some(wide.clone()),
         };
-        append_hook_detail(dir.path(), ID, HookEvent::TurnFailed, 1, Some(detail)).unwrap();
+        append_hook_detail(dir.path(), ID, HookEvent::TurnFailed, 1, Some(detail), None).unwrap();
         let text = fs::read_to_string(hook_file(dir.path(), ID).unwrap()).unwrap();
         assert!(text.len() <= LINE_MAX, "{}", text.len());
         assert_eq!(read_lines(dir.path())[0].event, HookEvent::TurnFailed);
+    }
+
+    #[test]
+    fn session_ids_are_short_and_plain() {
+        assert!(valid_session_id("0b3c9a52-6f1e-4d7a-9c1b-2e4f6a8b0c1d"));
+        assert!(valid_session_id("rollout_2026.11"));
+        assert!(valid_session_id(&"a".repeat(SESSION_MAX)));
+        let long = "a".repeat(SESSION_MAX + 1);
+        for bad in ["", "a/b", r"a\b", "a b", "s\n", "é", "$(x)", long.as_str()] {
+            assert!(!valid_session_id(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn append_keeps_a_valid_session_and_drops_a_bad_one() {
+        let dir = tempfile::tempdir().unwrap();
+        append_hook_detail(dir.path(), ID, HookEvent::TurnDone, 1, None, Some("s-1")).unwrap();
+        append_hook_detail(dir.path(), ID, HookEvent::TurnDone, 2, None, Some("../s")).unwrap();
+        let lines = read_lines(dir.path());
+        assert_eq!(lines[0].session.as_deref(), Some("s-1"));
+        assert_eq!(lines[1].session, None);
+        let text = fs::read_to_string(hook_file(dir.path(), ID).unwrap()).unwrap();
+        assert!(!text.contains("../s"), "{text}");
+    }
+
+    #[test]
+    fn an_old_line_without_a_session_still_parses() {
+        let old = r#"{"v":1,"event":"turn-done","at":3,"detail":{"message":"ok"}}"#;
+        let line: HookLine = serde_json::from_str(old).unwrap();
+        assert_eq!(line.session, None);
+        assert_eq!(line.detail.unwrap().message.as_deref(), Some("ok"));
     }
 
     #[test]
