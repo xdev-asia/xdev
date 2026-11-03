@@ -14,6 +14,8 @@ function ship(over: { ahead?: number; behind?: number; upstream?: boolean; commi
     headPushed: ahead === 0,
     atStart: false,
     range: { mergeBase: "m", added: 1, removed: 0, commits: Array(commits).fill(commit), truncated: false },
+    rangeBase: "main",
+    aheadOfBase: commits > 0,
     ...rest,
   };
 }
@@ -50,6 +52,8 @@ describe("shipAction", () => {
   it("create_pr with commits and no PR", () => {
     expect(shipAction({ checked: 0, ship: ship(), pr: null })).toBe("create_pr");
     expect(shipAction({ checked: 0, ship: ship({ commits: 0 }), pr: null })).toBe("none");
+    // Counted against the upstream the range is empty once pushed; the work over the base still counts.
+    expect(shipAction({ checked: 0, ship: ship({ commits: 0, rangeBase: "origin/oak", aheadOfBase: true }), pr: null })).toBe("create_pr");
   });
   it("open_pr when a PR is open", () => {
     expect(shipAction({ checked: 0, ship: ship(), pr: pr("open") })).toBe("open_pr");

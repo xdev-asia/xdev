@@ -13,7 +13,7 @@ export function shipAction({ checked, ship, pr }: { checked: number; ship: ShipV
   if (up.ahead > 0) return "push";
   const open = pr != null && (pr.state === "open" || pr.state === "draft");
   // undefined means not loaded or the lookup failed: never offer create_pr then.
-  if (pr === null && (ship.range?.commits.length ?? 0) > 0) return "create_pr";
+  if (pr === null && ship.aheadOfBase) return "create_pr";
   if (open) return "open_pr";
   return "none";
 }

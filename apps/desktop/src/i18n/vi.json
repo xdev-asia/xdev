@@ -1024,5 +1024,10 @@
   "settings.git.issue.edge": "Tiền tố không được bắt đầu bằng - hoặc kết thúc bằng dấu chấm.",
   "settings.git.issue.part": "Không phần nào của tiền tố được bắt đầu bằng dấu chấm hoặc kết thúc bằng .lock.",
   "settings.git.refresh": "Giữ nhánh main cục bộ luôn mới",
-  "settings.git.refreshHint": "Trước khi tạo worktree mới, fetch nhánh gốc và fast-forward bản cục bộ. Bỏ qua khi nhánh đó có thay đổi hoặc commit riêng."
+  "settings.git.refreshHint": "Trước khi tạo worktree mới, fetch nhánh gốc và fast-forward bản cục bộ. Bỏ qua khi nhánh đó có thay đổi hoặc commit riêng.",
+  "ship.rangeVs": "so với {ref}",
+  "settings.git.compare": "Mốc so sánh mặc định",
+  "settings.git.compare.base": "Mặc định của repo",
+  "settings.git.compare.upstream": "Upstream của nhánh",
+  "settings.git.compareHint": "Mốc dùng để đếm các thay đổi đã commit của nhánh. Nhánh chưa có upstream sẽ dùng mặc định của repo."
 }

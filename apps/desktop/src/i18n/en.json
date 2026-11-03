@@ -1024,5 +1024,10 @@
   "settings.git.issue.edge": "The prefix cannot start with - or end with a dot.",
   "settings.git.issue.part": "No part of the prefix can start with a dot or end with .lock.",
   "settings.git.refresh": "Keep Local Main Up to Date",
-  "settings.git.refreshHint": "Before a new worktree is created, fetch its base branch and fast-forward the local copy. Skipped when that branch has changes or commits of its own."
+  "settings.git.refreshHint": "Before a new worktree is created, fetch its base branch and fast-forward the local copy. Skipped when that branch has changes or commits of its own.",
+  "ship.rangeVs": "vs {ref}",
+  "settings.git.compare": "Default Compare Base",
+  "settings.git.compare.base": "Repository default",
+  "settings.git.compare.upstream": "Branch upstream",
+  "settings.git.compareHint": "What the changes a branch has committed are counted against. A branch with no upstream yet uses the repository default."
 }

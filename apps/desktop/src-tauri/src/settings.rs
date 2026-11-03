@@ -42,6 +42,9 @@ pub struct GitSettings {
     /// Fetch the base and fast-forward its local branch before a worktree
     /// is created.
     pub refresh_local_base_on_create: bool,
+    /// Count a branch's committed changes against its upstream rather than
+    /// the repo's base ref.
+    pub compare_against_upstream: bool,
 }
 
 impl GitSettings {
@@ -105,6 +108,7 @@ mod tests {
                 branch_prefix: BranchPrefixMode::Custom,
                 branch_prefix_custom: "team/me".into(),
                 refresh_local_base_on_create: true,
+                compare_against_upstream: true,
             },
         };
         save(&path, &settings).unwrap();
@@ -114,6 +118,7 @@ mod tests {
         assert!(raw.contains("\"last_vault\""), "{raw}");
         assert!(raw.contains("\"branchPrefix\": \"custom\""), "{raw}");
         assert!(raw.contains("\"refreshLocalBaseOnCreate\": true"), "{raw}");
+        assert!(raw.contains("\"compareAgainstUpstream\": true"), "{raw}");
     }
 
     #[test]
@@ -122,6 +127,7 @@ mod tests {
         assert_eq!(git.branch_prefix, BranchPrefixMode::GitUsername);
         assert_eq!(git.branch_prefix_custom, "");
         assert!(!git.refresh_local_base_on_create);
+        assert!(!git.compare_against_upstream);
     }
 
     #[test]
@@ -145,6 +151,7 @@ mod tests {
             branch_prefix: BranchPrefixMode::Custom,
             branch_prefix_custom: " /team//me/ ".into(),
             refresh_local_base_on_create: true,
+            compare_against_upstream: false,
         }
         .normalized();
         assert_eq!(git.branch_prefix_custom, "team/me");

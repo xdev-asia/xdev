@@ -120,6 +120,25 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
           </label>
         </div>
       )}
+      <h4 className="settings-group" id="settings-git-compare">
+        {t("settings.git.compare")}
+      </h4>
+      <div className="segmented settings-git-modes" role="group" aria-labelledby="settings-git-compare" aria-describedby="settings-git-compare-hint">
+        {[false, true].map((upstream) => (
+          <button
+            key={String(upstream)}
+            type="button"
+            data-compare={upstream ? "upstream" : "base"}
+            aria-pressed={git.compareAgainstUpstream === upstream}
+            onClick={() => change({ compareAgainstUpstream: upstream })}
+          >
+            {t(upstream ? "settings.git.compare.upstream" : "settings.git.compare.base")}
+          </button>
+        ))}
+      </div>
+      <small id="settings-git-compare-hint" className="settings-hint">
+        {t("settings.git.compareHint")}
+      </small>
       <div className="settings-item settings-git-row">
         <div className="settings-git-text">
           <strong id="settings-git-refresh">{t("settings.git.refresh")}</strong>

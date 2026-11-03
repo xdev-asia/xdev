@@ -20,8 +20,8 @@ use xdev_workspace::{
 };
 
 use crate::accounts::data_dir;
-use crate::commands::{AppState, CmdError, create_vault_at, settings_path};
-use crate::settings::{self, GitSettings};
+use crate::commands::{AppState, CmdError, create_vault_at, load_git_settings};
+use crate::settings::GitSettings;
 use crate::tasks::gate;
 
 /// Files bigger than this are not read into the diff view.
@@ -413,9 +413,7 @@ pub fn worktree_create(
     name: String,
     from: Option<String>,
 ) -> Result<WorktreeView, CmdError> {
-    let git = settings_path(&app)
-        .map(|file| settings::load(&file).git)
-        .unwrap_or_default();
+    let git = load_git_settings(&app);
     create_with(
         data_dir(&state)?,
         &lock,
@@ -608,6 +606,7 @@ mod tests {
             branch_prefix: BranchPrefixMode::Custom,
             branch_prefix_custom: "a b".into(),
             refresh_local_base_on_create: false,
+            compare_against_upstream: false,
         };
         let err = create_with(&fx.data, &lock, &git, &id, "x", None).unwrap_err();
         assert_eq!(err.code, "bad_branch_prefix");

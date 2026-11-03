@@ -128,7 +128,11 @@ pub fn dismiss_vault_prompt(app: AppHandle) {
 /// Settings → Git as stored; the defaults when nothing is.
 #[tauri::command(async)]
 pub fn git_settings(app: AppHandle) -> settings::GitSettings {
-    settings_path(&app)
+    load_git_settings(&app)
+}
+
+pub(crate) fn load_git_settings(app: &AppHandle) -> settings::GitSettings {
+    settings_path(app)
         .map(|file| settings::load(&file).git)
         .unwrap_or_default()
 }
@@ -436,6 +440,7 @@ mod tests {
             branch_prefix: settings::BranchPrefixMode::Custom,
             branch_prefix_custom: " team//me/ ".into(),
             refresh_local_base_on_create: true,
+            compare_against_upstream: false,
         };
         let stored = store_git_settings(&file, git).unwrap();
         assert_eq!(stored.branch_prefix_custom, "team/me");
