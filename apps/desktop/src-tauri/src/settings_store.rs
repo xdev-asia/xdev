@@ -50,6 +50,34 @@ impl SettingsStore {
         settings::save(&self.path, &next)?;
         Ok(next)
     }
+
+    /// `update` for a change that may be refused: nothing is saved when `f`
+    /// fails. Returns what `f` returned.
+    pub fn try_update<T, F>(&self, f: F) -> Result<T, CmdError>
+    where
+        F: FnOnce(&mut Settings) -> Result<T, CmdError>,
+    {
+        let _held = self.lock.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut next = settings::load(&self.path);
+        let out = f(&mut next)?;
+        next.version = VERSION;
+        settings::save(&self.path, &next).map_err(io_error)?;
+        Ok(out)
+    }
+}
+
+fn io_error(e: io::Error) -> CmdError {
+    CmdError {
+        code: "io",
+        detail: Some(e.to_string()),
+    }
+}
+
+fn no_store() -> CmdError {
+    CmdError {
+        code: "io",
+        detail: Some("no app config folder".into()),
+    }
 }
 
 /// The app's store, once setup registered it.
@@ -69,16 +97,21 @@ pub fn write<F: FnOnce(&mut Settings)>(
     sections: &[SettingsSection],
     f: F,
 ) -> Result<Settings, CmdError> {
-    let store = store(app).ok_or_else(|| CmdError {
-        code: "io",
-        detail: Some("no app config folder".into()),
-    })?;
-    let saved = store.update(f).map_err(|e| CmdError {
-        code: "io",
-        detail: Some(e.to_string()),
-    })?;
+    let store = store(app).ok_or_else(no_store)?;
+    let saved = store.update(f).map_err(io_error)?;
     emit_changed(app, sections);
     Ok(saved)
+}
+
+/// `write` for a change `f` may refuse: then nothing is saved or emitted.
+pub fn try_write<T, F>(app: &AppHandle, sections: &[SettingsSection], f: F) -> Result<T, CmdError>
+where
+    F: FnOnce(&mut Settings) -> Result<T, CmdError>,
+{
+    let store = store(app).ok_or_else(no_store)?;
+    let out = store.try_update(f)?;
+    emit_changed(app, sections);
+    Ok(out)
 }
 
 fn changed(sections: &[SettingsSection]) -> SettingsChanged {
@@ -125,6 +158,10 @@ mod tests {
         assert_eq!(
             json(&[SettingsSection::Keys, SettingsSection::Ui]),
             r#"{"sections":["keys","ui"]}"#
+        );
+        assert_eq!(
+            json(&[SettingsSection::QuickCommands]),
+            r#"{"sections":["quickCommands"]}"#
         );
     }
 
@@ -181,6 +218,31 @@ mod tests {
         let loaded = store.read();
         assert_eq!(loaded.git, stored);
         assert_eq!(loaded.last_vault.as_deref(), Some("D:/docs"));
+    }
+
+    #[test]
+    fn a_refused_try_update_saves_nothing() {
+        let (_dir, store) = store();
+        store
+            .update(|s| s.last_vault = Some("D:/docs".into()))
+            .unwrap();
+        let refused = store.try_update(|s| {
+            s.last_vault = None;
+            Err::<(), _>(CmdError {
+                code: "bad_arg",
+                detail: Some("label".into()),
+            })
+        });
+        assert_eq!(refused.unwrap_err().code, "bad_arg");
+        assert_eq!(store.read().last_vault.as_deref(), Some("D:/docs"));
+        let kept = store
+            .try_update(|s| {
+                s.vault_prompted = true;
+                Ok(7)
+            })
+            .unwrap();
+        assert_eq!(kept, 7);
+        assert!(store.read().vault_prompted);
     }
 
     #[test]

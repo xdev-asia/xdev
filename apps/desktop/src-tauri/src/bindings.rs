@@ -15,6 +15,7 @@ use crate::keybindings::{KeybindingsChanged, KeybindingsText};
 use crate::kit::{KitText, PromptEntry};
 use crate::profiles::ProfilesView;
 use crate::pty::{PtyExit, PtyInfo};
+use crate::quick_commands::{FileCommands, QuickCommand};
 use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
@@ -99,6 +100,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     SessionRow::export_all(cfg)?;
     xdev_workspace::VaultView::export_all(cfg)?;
     xdev_workspace::VaultKind::export_all(cfg)?;
+    QuickCommand::export_all(cfg)?;
+    FileCommands::export_all(cfg)?;
     Ok(())
 }
 

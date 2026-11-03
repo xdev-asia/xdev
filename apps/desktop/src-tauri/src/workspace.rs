@@ -124,7 +124,7 @@ pub(crate) fn parent_within(root: &Path, disk: &Path) -> Result<bool, CmdError> 
     }
 }
 
-fn lock_guard(lock: &WorkspaceLock) -> std::sync::MutexGuard<'_, ()> {
+pub(crate) fn lock_guard(lock: &WorkspaceLock) -> std::sync::MutexGuard<'_, ()> {
     // The guard protects no data, only the load-to-save span, so a panic in
     // another command leaves nothing to distrust.
     lock.0.lock().unwrap_or_else(PoisonError::into_inner)
@@ -148,7 +148,7 @@ fn update<T>(
 }
 
 /// Milliseconds since the epoch, and the nanoseconds as a seed for names.
-fn clock() -> (i64, u64) {
+pub(crate) fn clock() -> (i64, u64) {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
