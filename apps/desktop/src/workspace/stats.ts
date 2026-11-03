@@ -8,13 +8,16 @@ export interface FocusTarget {
   removeEventListener(type: "focus", listener: () => void): void;
 }
 
+/** A focus this soon after the last focus read redraws only: each read runs git per worktree. */
+export const FOCUS_GAP_MS = 30_000;
+
 /** A worktree that reaches one of these has stopped working, so its files likely changed. */
 const SETTLED: TabStatus[] = ["idle", "exited", "failed"];
 
 /**
  * The line counts of every listed worktree. A count is read when the worktree is first listed,
- * when its status settles (idle, exited, failed) and when the window gains focus; never on a
- * timer. Views read it through `subscribe` + `snapshot`.
+ * when its status settles (idle, exited, failed) and when the window gains focus at least
+ * 30 s after the last focus read; never on a timer. Views read it through `subscribe` + `snapshot`.
  */
 export class WorktreeStats {
   private data: Record<string, WorktreeStat | undefined> = {};
@@ -27,6 +30,8 @@ export class WorktreeStats {
   private sessions: Sessions | null = null;
   private off: (() => void) | null = null;
   private sweeping = false;
+  // When the last focus read ended; -Infinity before the first.
+  private swept = -Infinity;
 
   /** Changes whenever the counts do, or the window regains focus so relative times redraw. */
   snapshot = (): number => this.version;
@@ -94,12 +99,13 @@ export class WorktreeStats {
   private async focused(): Promise<void> {
     // Redraw first, so the times move even when no count does.
     this.bump();
-    if (this.sweeping) return;
+    if (this.sweeping || Date.now() - this.swept < FOCUS_GAP_MS) return;
     this.sweeping = true;
     try {
       await this.sweep(this.paths);
     } finally {
       this.sweeping = false;
+      this.swept = Date.now();
     }
   }
 

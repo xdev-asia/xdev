@@ -112,11 +112,6 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           </span>
           <span className="ws-wt-sub">
             {wt.primary && <span className="ws-tag">{t("workspace.primary")}</span>}
-            {repo.missing && (
-              <span className="ws-tag ws-tag-warn" title={t("workspace.missingTitle")}>
-                {t("workspace.missing")}
-              </span>
-            )}
             {many && <span className="ws-tag">{repo.shortName}</span>}
             <span className="ws-wt-branch" title={wt.branch ?? undefined}>
               {wt.branch ?? t("workspace.detached")}
@@ -180,6 +175,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   // The repo is named on a row only when more than one repo is listed.
   const many = (props.repos?.length ?? 0) > 1;
   const sections = groupWorktrees(entries, (path) => props.dots[path] ?? null);
+  const gone = (props.repos ?? []).filter((repo) => repo.missing);
 
   const section = ({ group, items }: { group: Group; items: Entry[] }) => {
     const open = !collapsed.includes(group);
@@ -218,6 +214,20 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       <div className="ws-list">
         {props.repos?.length === 0 && <p className="ws-empty">{t("workspace.noRepos")}</p>}
         {sections.length > 0 && <ul className="ws-groups">{sections.map(section)}</ul>}
+        {/* A repo whose folder is gone has no worktrees to list; it stays named so it can be found again. */}
+        {gone.length > 0 && (
+          <ul className="ws-missing-list">
+            {gone.map((repo) => (
+              <li key={repo.id} className="ws-missing" title={repo.path}>
+                <span className="ws-dot" data-dot="none" aria-hidden="true" />
+                <span className="ws-wt-name">{repo.shortName}</span>
+                <span className="ws-tag ws-tag-warn" title={t("workspace.missingTitle")}>
+                  {t("workspace.missing")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       {props.notice && (
         <p className="error-text ws-notice" role="alert">

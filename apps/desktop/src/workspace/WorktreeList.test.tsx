@@ -28,13 +28,15 @@ const en = (key: string, vars?: Record<string, string | number>) => translate("e
 const event = { preventDefault() {} };
 
 const notes: RepoView = {
-  id: "repo-2-notes", shortName: "notes", path: "/code/notes", baseRef: "main", missing: true,
+  id: "repo-2-notes", shortName: "notes", path: "/code/notes", baseRef: "main", missing: false,
   worktrees: [{ path: "/code/notes", name: "notes", branch: null, head: null, start: null, primary: true, pinned: false, detached: true }],
 };
+// A repo whose folder is gone comes back with no worktrees.
+const gone: RepoView = { id: "repo-3-gone", shortName: "gone", path: "/code/gone", baseRef: "main", missing: true, worktrees: [] };
 const repos = (): RepoView[] => {
   const [xdev] = structuredClone(DEMO_WORKSPACE.repos);
   xdev.worktrees[2].pinned = true;
-  return [xdev, notes];
+  return [xdev, notes, gone];
 };
 
 const DOTS: Record<string, "working" | "failed" | "idle"> = { "/demo/wt/xdev-oak": "working", "/demo/wt/xdev-elm": "failed" };
@@ -232,6 +234,21 @@ it("row shows time, branch, agent chips and line counts", () => {
     expect(part(view, path, "ws-stat")).toHaveLength(0);
     expect(part(view, path, "ws-wt-meta")).toHaveLength(0);
   }
+});
+
+it("a repo whose folder is gone stays listed with its name, a missing tag and its path", () => {
+  const html = harness().html();
+  expect(html).toMatch(/<li class="ws-missing" title="\/code\/gone">/);
+  const item = html.slice(html.indexOf('class="ws-missing"'));
+  expect(item).toContain(">gone<");
+  expect(item).toContain(`title="${en("workspace.missingTitle")}"`);
+  expect(item).toContain(en("workspace.missing"));
+  // Only gone repos: still listed, and no worktree can be made.
+  const only = harness(DOTS, () => [gone]).html();
+  expect(only).toContain('class="ws-missing"');
+  expect(only).toMatch(new RegExp(`aria-label="${en("workspace.new")}"[^>]*disabled=""`));
+  // A present repo has no such row.
+  expect(harness(DOTS, () => [notes]).html()).not.toContain("ws-missing");
 });
 
 it("a long name and branch are cut by the row and keep their full text in a title", () => {
