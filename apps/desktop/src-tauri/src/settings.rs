@@ -92,6 +92,62 @@ pub struct OpenInApp {
     pub args: Vec<String>,
 }
 
+impl OpenInSettings {
+    pub const MAX_APPS: usize = 8;
+    pub const MAX_LABEL: usize = 40;
+    pub const MAX_COMMAND: usize = 260;
+    pub const MAX_ARGS: usize = 8;
+    pub const MAX_ARG: usize = 200;
+
+    /// `Err` names the first rule the list breaks: `apps`, `id`, `label`,
+    /// `command` or `args`.
+    pub fn check(&self) -> Result<(), &'static str> {
+        if self.apps.len() > Self::MAX_APPS {
+            return Err("apps");
+        }
+        let mut ids = std::collections::HashSet::new();
+        for app in &self.apps {
+            if app.id.trim().is_empty() || !ids.insert(app.id.as_str()) {
+                return Err("id");
+            }
+            app.check()?;
+        }
+        Ok(())
+    }
+}
+
+impl OpenInApp {
+    fn check(&self) -> Result<(), &'static str> {
+        let len = |s: &str| s.chars().count();
+        if self.label.trim().is_empty() || len(&self.label) > OpenInSettings::MAX_LABEL {
+            return Err("label");
+        }
+        let command = &self.command;
+        if command.trim().is_empty()
+            || len(command) > OpenInSettings::MAX_COMMAND
+            || command.contains('\0')
+        {
+            return Err("command");
+        }
+        // `code --new` would be a shell line; a real path may hold spaces.
+        if command.chars().any(char::is_whitespace) {
+            let path = std::path::Path::new(command);
+            if !path.is_absolute() || !path.exists() {
+                return Err("command");
+            }
+        }
+        if self.args.len() > OpenInSettings::MAX_ARGS
+            || self
+                .args
+                .iter()
+                .any(|a| len(a) > OpenInSettings::MAX_ARG || a.contains('\0'))
+        {
+            return Err("args");
+        }
+        Ok(())
+    }
+}
+
 /// Who gets a key that both the app and a focused terminal want.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
