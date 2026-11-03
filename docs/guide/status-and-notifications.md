@@ -24,7 +24,7 @@ A failed turn is not final: the next prompt starts a new turn. Only a process ex
 ### Stop, resume and silence
 
 - **Escape or Ctrl-C** in a working tab, or in a tab that waits for you, stops the turn. If no hook says otherwise within 500 ms, the tab goes to idle without any notification. Claude sends no hook for Escape; Codex sends an `interrupt` hook, which settles the tab at once. A turn-done that arrives for a turn you just stopped is not news.
-- **Resume.** When a tool runs or you answer a question, the agent tells xDev the turn goes on, and the tab goes back to working.
+- **Resume.** When a tool runs or you answer a question, the agent tells xDev the turn goes on, and the tab goes back to working. A resume that comes within 1.5 seconds of a turn-done also takes the tab back to working: a finished turn is news only once the tab stayed done that long.
 - **Silence.** A working tab with hooks and no event for 30 minutes goes to idle, quietly. The agent may have been closed or have lost its connection.
 
 ## Where the status comes from
@@ -40,9 +40,9 @@ xDev uses three sources. A more exact source wins over a less exact one.
    - `interrupt`: the turn was stopped (idle, quietly). Codex only.
    - `attention`: an agent or a script asked for you on purpose (needs-you). See [the agent hooks CLI](agent-hooks-cli.md).
 
-   Which events a tab reports depends on the agent and its version.
+   Which events a tab reports depends on the agent and its version. xDev learns them when the tab starts: an event the tab does not report is left to titles and timing.
 2. **Terminal titles.** Agent CLIs set the terminal title. The title becomes the tab's name, unless you renamed the tab yourself. Some titles also mark a state, for example working or waiting for input.
-3. **Output timing.** New output marks a tab working; 3 seconds of quiet marks it idle. The echo of your own typing does not count. This is the only source for agents without hooks or useful titles.
+3. **Output timing.** New output marks a tab working; 3 seconds of quiet marks it idle. The echo of your own typing does not count. This is the only source for agents without hooks or useful titles. In a tab whose hooks report the prompt, output does not wake the tab; the hooks start and end its turns.
 
 Timing never moves a tab out of needs-you or done. A CLI that redraws its prompt after a turn does not undo the state the hook set.
 
@@ -50,10 +50,11 @@ Timing never moves a tab out of needs-you or done. A CLI that redraws its prompt
 
 Settings → Agents → **Status hooks** turns the hooks on or off. The switch is on by default.
 
-- The hooks are flags on the agent's command line for that one start: `--settings '<json>'` for `claude`, `-c notify=[…]` for `codex`. xDev never writes into the CLIs' config folders, and the CLIs' own settings stay as they are.
+- For `claude` the hooks are flags on the command line for that one start: `--settings '<json>'`. xDev does not write into its config folder.
+- For `codex` xDev keeps a private home in its data folder (`codex-home/<account>-<key>`) and starts codex with `CODEX_HOME` pointing at it. The private home holds xDev's `hooks.json`, a `config.toml` built from your own one, and a hard link to your `auth.json`, so you stay logged in. Your own codex home is not changed. codex also gets `-c notify=[…]`, which reports the end of a turn. When the private home cannot be made (a codex too old for hooks, no `auth.json`, a config that does not parse, or an `auth.json` on another drive), codex runs with `notify` alone and reports only the end of a turn.
 - Each hook appends one short line to `hooks/<tab id>.jsonl` in the xDev local folder (`%LOCALAPPDATA%\asia.xdev.desktop` on Windows). xDev reads that folder; there is no network listener.
 - A hook always exits with success and prints nothing, so it never blocks or changes the agent's turn.
-- The switch applies to new agent tabs only. Tabs that are already open keep the flags they started with. The `xdev agent hooks off` command is different: it takes effect on the next hook call, also in open tabs (see [the agent hooks CLI](agent-hooks-cli.md)).
+- Turning the switch off takes effect at once: open tabs ignore their hooks and go back to titles and timing. Turning it on applies to new agent tabs only; a tab started while the switch was off has no hook flags until you restart it. The `xdev agent hooks off` command also stops the hooks of open tabs, at the next hook call (see [the agent hooks CLI](agent-hooks-cli.md)).
 - The hook flags are part of the command that xDev asks you to approve. When you turn the switch on or off, or when xDev moves to another folder, the next start of each agent asks for approval again.
 
 Hooks are used only when the setting is on **and** the `xdev` CLI is installed next to the desktop app. Otherwise the tab uses titles and output timing.
@@ -76,11 +77,11 @@ Unread lives in memory only. It does not survive an app restart.
 
 Each time a tab becomes unread, xDev uses the channels that are on. A channel fires only when **both** the switch of the event and the switch of the channel are on, and the master switch is on. All channels are on by default. Every event is on by default except the terminal bell.
 
-By default nothing notifies for a pane you are looking at. Set `suppressWhenFocused` to `false` in the status settings and a seen pane also sends the OS notification and the sound (it still does not become unread). This option has no switch in the app yet.
+By default nothing notifies for a pane you are looking at. Turn off **Quiet when in view** on the Notifications page and a seen pane also sends the OS notification and the sound (it still does not become unread).
 
 ### OS notification
 
-A system notification. The title holds the worktree, the tab's profile and the state word, for example `oak · Claude Code · Needs you`. The body is what the agent said: the hook's message, else the name of the tool it wants to run, else empty. The worktree is cut at 40 characters, the title at 80 and the body at 180. The body never holds your prompt text. It is shown only when the pane is not seen. Clicking it opens that pane (planned). Where the OS does not report the click, bringing xDev to the front within 15 seconds of the newest notification opens its pane, unless you clicked something in xDev first.
+A system notification. The title holds the worktree, the tab's profile and the state word, for example `oak · Claude Code · Needs you`. The body is what the agent said: the hook's message, else for a failed turn its error, else the name of the tool it wants to run, else empty. The worktree is cut at 40 characters, the title at 80 and the body at 180. The body never holds your prompt text. It is shown only when the pane is not seen. Clicking it opens that pane (planned). Where the OS does not report the click, bringing xDev to the front within 15 seconds of the newest notification opens its pane, unless you clicked something in xDev first.
 
 ### Sound
 
@@ -91,7 +92,7 @@ A short two-tone beep, or your own sound file. At most one sound plays every 2 s
 
 ### Bell
 
-The bell in the header shows the number of unread tabs (`99+` above 99). Tabs whose event switch is off are not listed. Click it to see the list: worktree, agent, state and how long ago. Click a row to jump to that pane.
+The bell in the header shows the number of worktrees that have an unread tab (`99+` above 99). Tabs whose event switch is off are not counted or listed. Click it to see the list of unread tabs: worktree, agent, state and how long ago. Click a row to jump to that pane.
 
 ### Taskbar badge
 
@@ -107,6 +108,7 @@ The Notifications page has:
 - A master switch, **Notify me about agents**. Off, no event raises anything, and the badge shows nothing.
 - One switch per event: **Needs your input**, **Turn done**, **Turn failed**, **Terminal bell** (off by default). They are disabled while the master switch is off.
 - One switch per channel: **OS notification**, **Sound**, **Bell**, **Taskbar badge**.
+- **Quiet when in view** (on by default): a pane you are looking at raises nothing.
 - **Volume**, saved when you let go of the slider.
 - **Use own sound…** opens a file picker. A file of the wrong type or over 1 MB shows "Use a wav, mp3 or ogg file of at most 1 MB."
 - **Use default beep** removes your own sound.
@@ -120,7 +122,7 @@ The **Status hooks** switch is on the Agents page, not here, because it changes 
 Hooks need the `xdev` CLI next to the desktop app (the installer puts it there). In a development build, build the CLI next to the desktop executable. Check also that Settings → Agents → Status hooks is on, then open a new agent tab: open tabs keep the flags they started with.
 
 **A `codex` tab never shows needs-you.**
-Depending on the Codex version and how it starts, it may report only "turn finished". Then a Codex tab shows needs-you only when its terminal title says so; otherwise it stays working until the turn ends.
+When xDev could not make its private codex home (see Status hooks), Codex reports only "turn finished". Then a Codex tab shows needs-you only when its terminal title says so; otherwise it stays working until the turn ends.
 
 **A tab went idle by itself after I pressed Escape.**
 That is the stop rule: Escape or Ctrl-C ends the turn, and the tab rests as idle with no notification.
