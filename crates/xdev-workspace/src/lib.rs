@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use xdev_git::GitError;
 
 pub use ops::{
-    RepoView, WorktreeView, add_repo, create_worktree, forget_repo, list, path_key,
-    remove_worktree, set_pinned,
+    DirEntry, DirListing, RepoView, WorktreeStat, WorktreeView, add_repo, create_worktree,
+    forget_repo, list, list_dir, path_key, remove_worktree, set_pinned, stat,
 };
 pub use registry::{Registry, RepoEntry, WorktreeMeta, repo_id};
 
@@ -42,6 +42,8 @@ pub enum WorkspaceError {
     Dirty(PathBuf),
     #[error("the primary checkout cannot be removed: {0}")]
     Primary(PathBuf),
+    #[error("not a folder inside the worktree: {0}")]
+    BadPath(String),
 }
 
 impl WorkspaceError {
@@ -59,6 +61,7 @@ impl WorkspaceError {
             WorkspaceError::BadName(_) => "bad_name",
             WorkspaceError::Dirty(_) => "worktree_dirty",
             WorkspaceError::Primary(_) => "primary_worktree",
+            WorkspaceError::BadPath(_) => "bad_path",
         }
     }
 }

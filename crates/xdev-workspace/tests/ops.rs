@@ -5,7 +5,8 @@ use std::process::Command;
 use tempfile::TempDir;
 use xdev_git::Repo;
 use xdev_workspace::{
-    Registry, add_repo, create_worktree, forget_repo, list, remove_worktree, set_pinned,
+    Registry, WorktreeStat, add_repo, create_worktree, forget_repo, list, remove_worktree,
+    set_pinned, stat,
 };
 
 /// Runs setup commands; never used for the code under test.
@@ -432,4 +433,64 @@ fn a_repo_path_inside_another_repo_is_missing() {
     assert!(repos[0].missing);
     assert!(repos[0].worktrees.is_empty());
     assert!(reg.worktrees.is_empty());
+}
+
+#[test]
+fn stat_counts_added_removed_and_untracked() {
+    let (mut reg, id, _main) = registered();
+    let wt = create_worktree(&mut reg, &id, "work", None, 1, 0).unwrap();
+    let dir = Path::new(&wt.path);
+    // `a.txt` held one line; two replace it.
+    fs::write(
+        dir.join("a.txt"),
+        "x
+y
+",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("new.txt"),
+        "1
+2
+3
+",
+    )
+    .unwrap();
+    assert_eq!(
+        stat(&reg, dir).unwrap(),
+        WorktreeStat {
+            files: 2,
+            added: 5,
+            removed: 1
+        }
+    );
+}
+
+#[test]
+fn stat_of_the_primary_checkout_is_against_head() {
+    let (reg, _id, main) = registered();
+    assert_eq!(
+        stat(&reg, main.path()).unwrap(),
+        WorktreeStat {
+            files: 0,
+            added: 0,
+            removed: 0
+        }
+    );
+    fs::write(
+        main.path().join("a.txt"),
+        "one
+two
+",
+    )
+    .unwrap();
+    assert_eq!(stat(&reg, main.path()).unwrap().files, 1);
+}
+
+#[test]
+fn stat_refuses_unknown_worktree() {
+    let (reg, _id, main) = registered();
+    let other = main.path().join("nowhere");
+    let err = stat(&reg, &other).unwrap_err();
+    assert_eq!(err.code(), "worktree_unknown");
 }

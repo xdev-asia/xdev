@@ -64,7 +64,7 @@
 /* Escalations and activity */
 .squad-list { display: grid; gap: var(--x-space-2); margin: 0; padding: 0; list-style: none; }
 .squad-escalation { display: grid; gap: var(--x-space-1); padding: var(--x-space-3); background: var(--x-color-bg); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); }
-.squad-escalation[data-open="true"] { background: var(--x-color-warn-soft); border-color: var(--x-color-warn-line); border-left: 3px solid var(--x-color-warn); }
+.squad-escalation[data-open="true"] { background: var(--x-color-warn-soft); border-color: var(--x-color-warn-line); }
 .squad-question { margin: 0; white-space: pre-wrap; }
 .squad-escalation p { margin: 0; }
 .squad-answer { flex: 1; min-width: 10em; padding: var(--x-space-2); font: inherit; color: var(--x-color-ink); background: var(--x-color-bg); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); }

@@ -82,7 +82,7 @@
 .task-files li + li { border-top: 1px solid var(--x-color-line); }
 .task-file { display: flex; align-items: center; gap: var(--x-space-3); width: 100%; padding: var(--x-space-2) var(--x-space-3); font: inherit; text-align: left; color: var(--x-color-ink); background: var(--x-color-surface); border: none; cursor: pointer; }
 .task-file:hover { background: var(--x-color-surface-2); }
-.task-file[aria-pressed="true"] { background: var(--x-color-signal-soft); box-shadow: inset 2px 0 0 var(--x-color-signal); }
+.task-file[aria-pressed="true"] { background: var(--x-color-signal-soft); }
 .task-file .doc-path { min-width: 0; overflow-wrap: anywhere; font-size: 0.85em; color: var(--x-color-ink); }
 .task-count { flex: none; min-width: 3em; font-family: var(--x-font-mono); font-size: 0.85em; }
 .task-count[data-kind="added"] { color: var(--x-color-ok); }

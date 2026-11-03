@@ -199,4 +199,78 @@ describe("Sessions", () => {
     expect(heard).toHaveBeenCalled();
     expect(live.tabs(A)).toEqual([]);
   });
+
+  it("profilesOf lists distinct profiles in tab order", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    expect(live.profilesOf(A)).toEqual([]);
+    live.open(A, "claude");
+    live.open(A, "shell");
+    live.open(A, "claude");
+    live.open(A, "codex");
+    live.open(B, "shell");
+    expect(live.profilesOf(A)).toEqual(["claude", "shell", "codex"]);
+    expect(live.profilesOf(B)).toEqual(["shell"]);
+  });
+
+  it("lastActivity is the latest output time", () => {
+    let t = 1_000;
+    const live = (sessions = new Sessions(createMockApi({}), () => t));
+    const one = live.open(A, "claude");
+    const two = live.open(A, "codex");
+    // No output yet.
+    expect(live.lastActivity(A)).toBeNull();
+    t = 5_000;
+    live.noteOutput(one.id, 10);
+    t = 9_000;
+    live.noteOutput(two.id, 10);
+    t = 7_000;
+    live.noteOutput(one.id, 10);
+    // The latest of the tabs, not the last call.
+    expect(live.lastActivity(A)).toBe(9_000);
+    expect(live.lastActivity(B)).toBeNull();
+    // An empty read is not activity.
+    live.noteOutput(live.open(B, "claude").id, 0);
+    expect(live.lastActivity(B)).toBeNull();
+  });
+
+  it("split holds a pair of tabs and drops it when the second goes", async () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const one = live.open(A, "shell");
+    const two = live.open(A, "claude");
+    const three = live.open(A, "codex");
+    const heard = vi.fn();
+    live.subscribe(heard);
+    expect(live.split(A)).toBeNull();
+
+    live.setSplit(A, { dir: "right", second: two.id });
+    expect(live.split(A)).toEqual({ dir: "right", second: two.id });
+    expect(live.split(A)).toBe(live.split(A));
+    expect(heard).toHaveBeenCalledTimes(1);
+    // Another worktree has none.
+    expect(live.split(B)).toBeNull();
+    // A tab that is not there is no split.
+    live.setSplit(A, { dir: "down", second: "nope" });
+    expect(live.split(A)).toBeNull();
+    // Clearing a split that is not set tells no one.
+    heard.mockClear();
+    live.setSplit(A, null);
+    expect(heard).not.toHaveBeenCalled();
+
+    live.setSplit(A, { dir: "down", second: two.id });
+    // Closing a third tab keeps it.
+    await live.close(three.id);
+    expect(live.split(A)).toEqual({ dir: "down", second: two.id });
+    // Starting the second again keeps it on the new pty.
+    const again = live.restart(two.id)!;
+    expect(live.split(A)).toEqual({ dir: "down", second: again.id });
+    await live.close(again.id);
+    expect(live.split(A)).toBeNull();
+    expect(live.tabs(A).map((t) => t.id)).toEqual([one.id]);
+
+    // Fewer than two tabs left drops it too.
+    const four = live.open(A, "claude");
+    live.setSplit(A, { dir: "right", second: four.id });
+    await live.close(one.id);
+    expect(live.split(A)).toBeNull();
+  });
 });

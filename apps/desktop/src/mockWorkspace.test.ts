@@ -67,6 +67,14 @@ describe("mock workspace", () => {
     expect(await api.worktreeCommit(FIRST, ["src/status.ts"], "again")).toBeNull();
   });
 
+  it("counts lines from the pending changes", async () => {
+    const api = createMockWorkspace();
+    expect(await api.worktreeStat(FIRST)).toEqual({ files: 3, added: 4, removed: 3 });
+    expect(await api.worktreeStat("/demo/wt/xdev-elm")).toEqual({ files: 0, added: 0, removed: 0 });
+    expect(await api.worktreeStat("/demo/xdev")).toEqual({ files: 0, added: 0, removed: 0 });
+    await expect(api.worktreeStat("/nope")).rejects.toMatchObject({ code: "worktree_unknown" });
+  });
+
   it("pins and unpins a worktree", async () => {
     const api = createMockWorkspace();
     await api.worktreePin(FIRST, true);
@@ -93,5 +101,27 @@ describe("mock workspace", () => {
     await api.repoForget(repo.id);
     await expect(api.repoForget(repo.id)).rejects.toMatchObject({ code: "repo_unknown" });
     expect(await api.workspaceList()).toHaveLength(1);
+  });
+
+  it("lists a folder, folders first, with the worktree changes applied", async () => {
+    const api = createMockWorkspace();
+    const names = async (dir: string) => (await api.worktreeListDir(FIRST, dir)).entries.map((e) => (e.dir ? `${e.name}/` : e.name));
+    expect(await names("")).toEqual(["docs/", "src/", "package.json", "README.md"]);
+    // An added file shows, a deleted one is gone.
+    expect(await names("src")).toEqual(["lib/", "App.tsx", "main.tsx", "session.ts", "status.ts"]);
+    expect(await names("docs")).toEqual(["guide.md"]);
+    expect(await api.worktreeListDir(FIRST, "")).toMatchObject({ truncated: false });
+    // The primary checkout has a tree too.
+    expect(await api.worktreeListDir("/demo/xdev", "src/lib")).toEqual({ entries: [{ name: "format.ts", dir: false }], truncated: false });
+  });
+
+  it("refuses unknown worktrees, odd folders and missing ones", async () => {
+    const api = createMockWorkspace();
+    await expect(api.worktreeListDir("/nowhere", "")).rejects.toMatchObject({ code: "worktree_unknown" });
+    for (const dir of ["..", "../x", "/x", "C:\\x","src/../x", ".git"]) {
+      await expect(api.worktreeListDir(FIRST, dir)).rejects.toMatchObject({ code: "bad_path" });
+    }
+    await expect(api.worktreeListDir(FIRST, "nope")).rejects.toMatchObject({ code: "not_found" });
+    await expect(api.worktreeListDir(FIRST, "README.md")).rejects.toMatchObject({ code: "not_found" });
   });
 });
