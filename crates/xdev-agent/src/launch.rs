@@ -8,6 +8,7 @@ use xdev_ai::{AiError, Provider, Registry, claude_command, codex_command};
 
 use crate::flags::flags;
 use crate::profiles::{Cli, Permissions, Profile, ProfileError, Profiles};
+use crate::shells::{ShellEntry, default_shell_id, shell};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Launch {
@@ -81,6 +82,8 @@ impl LaunchError {
 pub struct Context<'a> {
     pub profiles: &'a Profiles,
     pub accounts: &'a Registry,
+    /// The shells on offer (`list_shells`), for the `shell` ids.
+    pub shells: &'a [ShellEntry],
     /// The program of a profile, or `None` when it is not installed.
     pub find: &'a dyn Fn(&Profile) -> Option<PathBuf>,
     /// An account that replaces the profile's own (a restart keeps the
@@ -88,8 +91,12 @@ pub struct Context<'a> {
     pub account: Option<&'a str>,
 }
 
-/// The launch of the agent profile `id`.
+/// The launch of the agent profile or shell `id`: `shell` (the default
+/// shell), `shell:<shell id>` or a profile id.
 pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
+    if id == "shell" || id.starts_with("shell:") {
+        return resolve_shell(id, ctx);
+    }
     let profile = ctx.profiles.get(id).ok_or(LaunchError::UnknownProfile)?;
     if !profile.enabled {
         return Err(LaunchError::Off);
@@ -160,6 +167,29 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
     })
 }
 
+/// A shell is never an agent: no policy gate, no account, no startup lines.
+fn resolve_shell(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
+    let shell_id = match id.strip_prefix("shell:") {
+        Some(shell_id) => shell_id.to_owned(),
+        None => default_shell_id(ctx.profiles, ctx.shells),
+    };
+    let entry = ctx
+        .shells
+        .iter()
+        .find(|s| s.id == shell_id)
+        .ok_or(LaunchError::UnknownProfile)?;
+    Ok(Launch {
+        profile: id.to_owned(),
+        program: entry.program.clone(),
+        args: entry.args.clone(),
+        env: Vec::new(),
+        agent: false,
+        permissions: Permissions::Ask,
+        account: None,
+        startup: Vec::new(),
+    })
+}
+
 pub fn launch(profile_id: &str) -> Result<Launch, LaunchError> {
     launch_with(profile_id, |id| {
         let command = if id == "claude" {
@@ -197,26 +227,6 @@ pub fn launch_with(
         account: None,
         startup: Vec::new(),
     })
-}
-
-/// `pwsh.exe` when installed, else Windows PowerShell; `$SHELL` elsewhere.
-fn shell() -> (PathBuf, Vec<String>) {
-    if cfg!(windows) {
-        let program = on_path("pwsh.exe").unwrap_or_else(|| PathBuf::from("powershell.exe"));
-        (program, vec!["-NoLogo".to_owned()])
-    } else {
-        let program = env::var_os("SHELL")
-            .filter(|s| !s.is_empty())
-            .map_or_else(|| PathBuf::from("/bin/sh"), PathBuf::from);
-        (program, Vec::new())
-    }
-}
-
-fn on_path(name: &str) -> Option<PathBuf> {
-    let path = env::var_os("PATH")?;
-    env::split_paths(&path)
-        .map(|dir| dir.join(name))
-        .find(|p| p.is_file())
 }
 
 /// Windows PowerShell running `lines`, then the program with its args, and
@@ -343,6 +353,7 @@ fn base64(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::profiles::{Approvals, EnvVar, builtin};
+    use crate::shells::ShellKind;
 
     #[test]
     fn unknown_profile_is_an_error() {
@@ -408,6 +419,7 @@ mod tests {
             &Context {
                 profiles,
                 accounts: &accounts,
+                shells: &[],
                 find,
                 account,
             },
@@ -475,6 +487,83 @@ mod tests {
     fn resolve_unknown_is_unknown_profile() {
         let err = run(&Profiles::default(), "vim", None, &found).unwrap_err();
         assert_eq!(err.code(), "unknown_profile");
+    }
+
+    // --- shells ---
+
+    fn entry(id: &str, kind: ShellKind) -> ShellEntry {
+        ShellEntry {
+            id: id.to_owned(),
+            name: id.to_owned(),
+            kind,
+            program: PathBuf::from(format!("/sh/{id}")),
+            args: vec!["-x".to_owned()],
+        }
+    }
+
+    fn run_shell(profiles: &Profiles, id: &str) -> Result<Launch, LaunchError> {
+        let shells = [
+            entry("powershell", ShellKind::Powershell),
+            entry("login", ShellKind::Login),
+            entry("wsl:Ubuntu", ShellKind::Wsl),
+            entry("fish", ShellKind::Custom),
+        ];
+        let accounts = accounts();
+        resolve(
+            id,
+            &Context {
+                profiles,
+                accounts: &accounts,
+                shells: &shells,
+                find: &|_| panic!("a shell is not detected as a profile"),
+                account: Some("work"),
+            },
+        )
+    }
+
+    #[test]
+    fn resolve_named_shell_is_not_an_agent() {
+        let l = run_shell(&Profiles::default(), "shell:wsl:Ubuntu").unwrap();
+        assert_eq!(l.profile, "shell:wsl:Ubuntu");
+        assert_eq!(l.program, PathBuf::from("/sh/wsl:Ubuntu"));
+        assert_eq!(l.args, ["-x"]);
+        assert!(!l.agent && l.env.is_empty() && l.startup.is_empty());
+        assert_eq!(l.permissions, Permissions::Ask);
+        // An account override for an agent tab never reaches a shell.
+        assert_eq!(l.account, None);
+        let l = run_shell(&Profiles::default(), "shell:fish").unwrap();
+        assert_eq!(l.program, PathBuf::from("/sh/fish"));
+    }
+
+    #[test]
+    fn resolve_shell_opens_the_default_shell() {
+        let own = if cfg!(windows) { "powershell" } else { "login" };
+        let mut p = Profiles::default();
+        let l = run_shell(&p, "shell").unwrap();
+        assert_eq!(l.profile, "shell");
+        assert_eq!(l.program, PathBuf::from(format!("/sh/{own}")));
+        assert!(!l.agent);
+
+        p.default_shell = Some("fish".to_owned());
+        assert_eq!(
+            run_shell(&p, "shell").unwrap().program,
+            PathBuf::from("/sh/fish")
+        );
+        // A default that is no longer listed falls back to the platform's.
+        p.default_shell = Some("wsl:Gone".to_owned());
+        assert_eq!(
+            run_shell(&p, "shell").unwrap().program,
+            PathBuf::from(format!("/sh/{own}"))
+        );
+    }
+
+    #[test]
+    fn resolve_unknown_shell_is_unknown_profile() {
+        for id in ["shell:nope", "shell:", "shell:shell", "shell:wsl:Gone"] {
+            let err = run_shell(&Profiles::default(), id).unwrap_err();
+            assert_eq!(err.code(), "unknown_profile", "{id}");
+        }
+        // No shell is listed at all.
         let err = run(&Profiles::default(), "shell", None, &found).unwrap_err();
         assert_eq!(err.code(), "unknown_profile");
     }
