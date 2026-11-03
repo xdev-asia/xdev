@@ -110,3 +110,10 @@ Worktree `wt/status-4b-backend`, branch `feat/status-4b-backend` from `feat/stat
   cannot replace the older one on Windows/macOS/Linux through the plugin. Clicks still route per pane through
   the existing `ptyId` extra / `Shown` map. Open: would need a native toast call (Windows `Tag`/`Group`) outside
   the plugin.
+
+## Final gate (2026-11-03, at 77617ee + this ledger)
+- `cargo fmt --all --check` OK; `cargo clippy --workspace --all-targets -- -D warnings` OK;
+  `cargo test --workspace --no-fail-fast`: 890 passed, 0 failed, 6 ignored.
+- `cargo test -p xdev-desktop export_bindings` OK; `git diff --exit-code packages/bindings` clean (no bindings change).
+- `corepack pnpm install --frozen-lockfile` OK; `pnpm -r typecheck` OK; `pnpm -r test`: 6 + 635 passed;
+  `pnpm --filter desktop build` OK (only the existing chunk-size warning).
