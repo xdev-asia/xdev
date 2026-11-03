@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import type { Api } from "@/api";
 import { AgentsPage } from "./agents/AgentsPage";
 import { GitSettings } from "./GitSettings";
+import { OpenInPage } from "./OpenInPage";
 import { NotificationsPage } from "./notifications/NotificationsPage";
 import { ReposSettings } from "./ReposSettings";
 import { ShortcutsPage } from "./shortcuts/ShortcutsPage";
@@ -28,6 +29,7 @@ export const SECTIONS: SettingsSection[] = [
   { id: "notifications", labelKey: "settings.notifications.title", Component: NotificationsPage },
   { id: "terminal", labelKey: "settings.terminal.title", Component: TerminalPage },
   { id: "repos", labelKey: "settings.repos.title", Component: ReposSettings },
+  { id: "openIn", labelKey: "openIn.title", Component: OpenInPage },
   { id: "git", labelKey: "settings.git.title", Component: GitSettings },
   { id: "vaults", labelKey: "settings.vaults.title", Component: VaultsSettings },
   { id: "keys", labelKey: "keys.title", Component: ShortcutsPage },
