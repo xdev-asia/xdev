@@ -14,11 +14,22 @@ pub struct Settings {
     pub status: StatusSettings,
 }
 
-/// How agent status reaches the person; every switch is on by default.
+/// How agent status reaches the person. A channel fires only when `enabled`,
+/// its event switch and the channel switch are all on.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(default, rename_all = "camelCase")]
 pub struct StatusSettings {
+    // Master switch for every channel below.
+    pub enabled: bool,
+    // Which events notify.
+    pub on_needs_input: bool,
+    pub on_done: bool,
+    pub on_failed: bool,
+    // A terminal bell on a pane the person is not looking at.
+    pub on_bell: bool,
+    // No notification for a pane the person is looking at.
+    pub suppress_when_focused: bool,
     // Agent launches get the per-process hook flags (new sessions only).
     pub hooks: bool,
     // OS notification for a pane the person is not looking at.
@@ -38,6 +49,12 @@ pub struct StatusSettings {
 impl Default for StatusSettings {
     fn default() -> Self {
         StatusSettings {
+            enabled: true,
+            on_needs_input: true,
+            on_done: true,
+            on_failed: true,
+            on_bell: false,
+            suppress_when_focused: true,
             hooks: true,
             os: true,
             sound: true,

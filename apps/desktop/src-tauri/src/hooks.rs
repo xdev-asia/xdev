@@ -13,7 +13,7 @@ use notify_debouncer_full::notify::{self, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, NoCache, new_debouncer_opt};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
-use xdev_agent::{HookEvent, HookLine, valid_pty_id};
+use xdev_agent::{HookDetail, HookEvent, HookLine, valid_pty_id};
 
 /// A hook writes one short line; anything longer is not one of ours.
 const MAX_LINE: usize = 4096;
@@ -28,6 +28,7 @@ pub struct PtyHook {
     pub id: String,
     pub event: HookEvent,
     pub at: i64,
+    pub detail: Option<HookDetail>,
 }
 
 /// How far a hook file has been read.
@@ -133,6 +134,7 @@ fn parse(id: &str, line: &[u8]) -> Option<PtyHook> {
         id: id.to_owned(),
         event: line.event,
         at: line.at,
+        detail: line.detail,
     })
 }
 
@@ -208,6 +210,7 @@ mod tests {
             id: ID.to_owned(),
             event,
             at,
+            detail: None,
         }
     }
 

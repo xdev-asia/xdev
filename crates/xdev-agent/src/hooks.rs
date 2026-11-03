@@ -34,23 +34,52 @@ use crate::profiles::Cli;
 /// The folder under `local_dir` that holds one `<pty_id>.jsonl` per pane.
 pub const HOOKS_DIR: &str = "hooks";
 
-/// What an agent's hook reported: a prompt was sent, it waits for the person, or its turn ended.
+/// What an agent's hook reported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "kebab-case")]
 pub enum HookEvent {
+    /// A prompt was sent.
     Prompt,
+    /// The agent waits for the person (permission, question, elicitation).
     NeedsInput,
+    /// Work went on after a needs-input: the tool ran or the answer arrived.
+    Resume,
+    /// The turn ended.
     TurnDone,
+    /// The turn ended on an error (claude `StopFailure`, which comes instead of `Stop`).
+    TurnFailed,
+    /// The person stopped the turn (codex `Interrupt`); settles quietly.
+    Interrupt,
+    /// `xdev agent-hook attention`: something outside the agent asks for a look.
+    Attention,
 }
 
-/// One line of a hook file.
+/// The few hook stdin fields xDev keeps. Never the prompt text. Each string
+/// is at most [`DETAIL_MAX`] chars.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct HookDetail {
+    pub tool_name: Option<String>,
+    pub message: Option<String>,
+    pub is_interrupt: bool,
+    pub error: Option<String>,
+}
+
+/// The longest string a [`HookDetail`] field keeps, in chars.
+pub const DETAIL_MAX: usize = 180;
+
+/// One line of a hook file. `detail` is left out when empty, so v1 lines
+/// written before it existed still read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HookLine {
     pub v: u32,
     pub event: HookEvent,
     /// Unix time in milliseconds.
     pub at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<HookDetail>,
 }
 
 /// A pane id as the UI makes it: a lowercase UUID, so it is safe as a file name.
@@ -85,6 +114,7 @@ pub fn append_hook(local_dir: &Path, pty_id: &str, event: HookEvent, at_ms: i64)
         v: 1,
         event,
         at: at_ms,
+        detail: None,
     })?;
     line.push('\n');
     OpenOptions::new()
@@ -286,10 +316,40 @@ mod tests {
             v: 1,
             event: HookEvent::NeedsInput,
             at: 5,
+            detail: None,
         };
         let text = serde_json::to_string(&line).unwrap();
         assert_eq!(text, r#"{"v":1,"event":"needs-input","at":5}"#);
         assert_eq!(serde_json::from_str::<HookLine>(&text).unwrap(), line);
+    }
+
+    #[test]
+    fn line_detail_is_camel_case_and_optional() {
+        let line = HookLine {
+            v: 1,
+            event: HookEvent::TurnFailed,
+            at: 6,
+            detail: Some(HookDetail {
+                tool_name: Some("Bash".into()),
+                error: Some("model_not_found".into()),
+                ..HookDetail::default()
+            }),
+        };
+        let text = serde_json::to_string(&line).unwrap();
+        assert_eq!(
+            text,
+            r#"{"v":1,"event":"turn-failed","at":6,"detail":{"toolName":"Bash","message":null,"isInterrupt":false,"error":"model_not_found"}}"#
+        );
+        assert_eq!(serde_json::from_str::<HookLine>(&text).unwrap(), line);
+        for event in ["resume", "interrupt", "attention"] {
+            let old = format!(r#"{{"v":1,"event":"{event}","at":1}}"#);
+            assert!(
+                serde_json::from_str::<HookLine>(&old)
+                    .unwrap()
+                    .detail
+                    .is_none()
+            );
+        }
     }
 
     #[test]
@@ -337,12 +397,14 @@ mod tests {
                 HookLine {
                     v: 1,
                     event: HookEvent::Prompt,
-                    at: 1
+                    at: 1,
+                    detail: None,
                 },
                 HookLine {
                     v: 1,
                     event: HookEvent::TurnDone,
-                    at: 2
+                    at: 2,
+                    detail: None,
                 },
             ]
         );

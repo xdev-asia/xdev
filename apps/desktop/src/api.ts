@@ -99,6 +99,7 @@ export type {
   PtyInfo,
   StatusSettings,
   HookEvent,
+  HookDetail,
   Quota,
   RouteRule,
   Routing,

@@ -3,6 +3,12 @@ import type { Api, StatusSettings } from "@/api";
 
 /** What the desktop stores before anyone changed a switch (`StatusSettings::default` in Rust). */
 export const STATUS_DEFAULTS: StatusSettings = {
+  enabled: true,
+  onNeedsInput: true,
+  onDone: true,
+  onFailed: true,
+  onBell: false,
+  suppressWhenFocused: true,
   hooks: true,
   os: true,
   sound: true,
