@@ -36,7 +36,8 @@ export type FileDiffProps = {
   revealSeq: number;
   busy: boolean;
   onToggle(path: string): void;
-  onStage(file: ReviewFile): void;
+  /** `stage` true stages the file's unstaged changes; false unstages its staged ones. */
+  onStage(file: ReviewFile, stage: boolean): void;
   register(path: string, handle: DiffHandle | null): void;
   onChunks(path: string, count: number): void;
   /** This file's notes, drawn under their lines on the new side. */
@@ -106,6 +107,11 @@ function build(host: HTMLElement, diff: WorktreeFileDiff, opts: ViewOptions, lab
   };
 }
 
+/** The old diff when a reload read the same content, so the editors are not built again for nothing. */
+export function keepSame(prev: WorktreeFileDiff | null, next: WorktreeFileDiff): WorktreeFileDiff {
+  return prev && prev.old === next.old && prev.new === next.new && prev.skip === next.skip ? prev : next;
+}
+
 /** One file of the review: its header, and the diff itself while the file is open. */
 export function FileDiff(props: FileDiffProps): JSX.Element {
   const { api, worktree, base, file, opts, open, rev, register, onChunks } = props;
@@ -128,7 +134,7 @@ export function FileDiff(props: FileDiffProps): JSX.Element {
     api.worktreeReviewFile(worktree, base, file.path).then(
       (d) => {
         if (!alive) return;
-        setDiff(d);
+        setDiff((prev) => keepSame(prev, d));
         if (!d.skip) props.onRead(file.path, d.new);
       },
       (e) => alive && setProblem(toApiError(e)),
@@ -165,7 +171,6 @@ export function FileDiff(props: FileDiffProps): JSX.Element {
   }, [props.revealSeq]);
 
   const blank = shown !== null && opts.ignoreWhitespace && onlyWhitespace(shown.old ?? "", shown.new ?? "");
-  const staged = file.staged && !file.unstaged;
   return (
     <section className="rv-file" data-path={file.path} ref={root}>
       <header className="rv-file-head">
@@ -179,9 +184,16 @@ export function FileDiff(props: FileDiffProps): JSX.Element {
           <span className="rv-file-path ws-mono">{file.path}</span>
         </button>
         {shown && <DiffStats base={shown.old ?? ""} current={shown.new ?? ""} />}
-        <button type="button" className="rv-stage" disabled={props.busy} onClick={() => props.onStage(file)}>
-          {staged ? t("review.unstage") : t("review.stage")}
-        </button>
+        {file.unstaged && (
+          <button type="button" className="rv-stage" disabled={props.busy} onClick={() => props.onStage(file, true)}>
+            {t("review.stage")}
+          </button>
+        )}
+        {file.staged && (
+          <button type="button" className="rv-stage" disabled={props.busy} onClick={() => props.onStage(file, false)}>
+            {t("review.unstage")}
+          </button>
+        )}
       </header>
       {open && problem && <ProblemNote problem={problem} />}
       {open && diff?.skip === "binary" && <p className="ws-empty">{t("workspace.diff.binary")}</p>}

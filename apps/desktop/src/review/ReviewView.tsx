@@ -44,6 +44,8 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
   const loads = useRef(0);
   const running = useRef(0);
   const handles = useRef(new Map<string, DiffHandle>());
+  // A jump into a file that is not drawn yet; it runs when that file registers.
+  const pending = useRef<{ file: string; chunk?: number; line?: number } | null>(null);
   const cursor = useRef<ChangeAt | null>(null);
   const drag = useRef<{ x: number; width: number } | null>(null);
   const store = useReviewNotes(api, worktree);
@@ -140,11 +142,10 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
     setTarget({ file: path, seq: target.seq + 1 });
   }
 
-  async function stage(file: ReviewFile): Promise<void> {
-    const staged = file.staged && !file.unstaged;
+  async function stage(file: ReviewFile, staging: boolean): Promise<void> {
     setBusy(true);
     try {
-      await api.worktreeStage(worktree, [file.path], !staged);
+      await api.worktreeStage(worktree, [file.path], staging);
       await load();
     } catch (e) {
       setProblem(toApiError(e));
@@ -158,15 +159,22 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
     setListing(false);
     show(note.file);
     const handle = handles.current.get(note.file);
-    handle?.goToLine(note.line);
+    if (handle) handle.goToLine(note.line);
+    else pending.current = { file: note.file, line: note.line };
   }
 
   function go(dir: 1 | -1): void {
-    const list = files.map((f) => ({ path: f.path, chunks: counts[f.path] ?? 0 }));
+    // A file never opened has no count yet, but every listed file has changes.
+    const list = files.map((f) => ({ path: f.path, chunks: counts[f.path] ?? 1 }));
     const at = nextChange(list, cursor.current, dir);
     if (!at) return;
     cursor.current = at;
-    handles.current.get(files[at.file].path)?.goTo(at.chunk);
+    const path = files[at.file].path;
+    const handle = handles.current.get(path);
+    if (handle) return void handle.goTo(at.chunk);
+    // A closed file (or one still being read) is opened; the jump runs when its diff registers.
+    setExpanded({ ...expanded, [path]: true });
+    pending.current = { file: path, chunk: at.chunk };
   }
 
   function key(e: { key: string; shiftKey: boolean; preventDefault(): void }): void {
@@ -282,10 +290,16 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
                 revealSeq={target.file === f.path ? target.seq : 0}
                 busy={busy}
                 onToggle={toggle}
-                onStage={(file) => void stage(file)}
+                onStage={(file, staging) => void stage(file, staging)}
                 register={(path, handle) => {
-                  if (handle) handles.current.set(path, handle);
-                  else handles.current.delete(path);
+                  if (!handle) return void handles.current.delete(path);
+                  handles.current.set(path, handle);
+                  const job = pending.current;
+                  if (job?.file === path) {
+                    pending.current = null;
+                    if (job.line !== undefined) handle.goToLine(job.line);
+                    else handle.goTo(job.chunk ?? 0);
+                  }
                 }}
                 notes={notesOf(f.path)}
                 handlers={{
