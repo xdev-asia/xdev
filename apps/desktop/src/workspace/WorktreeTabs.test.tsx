@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi, toApiError, type Api, type PtyExit } from "../api";
-import { translate } from "../i18n";
-import { Terminal } from "../terminal/Terminal";
+import { createMockApi, toApiError, type Api, type PtyExit } from "@/api";
+import { translate } from "@/i18n";
+import { Terminal } from "@/terminal/Terminal";
 import { AgentIcon } from "./AgentIcon";
 import { Sessions } from "./sessions";
 import { WorktreeTabs } from "./WorktreeTabs";
@@ -28,9 +28,9 @@ vi.mock("react", async (original) => {
     useSyncExternalStore: (subscribe: any, get: any, server?: any) => (hooks.active ? get() : react.useSyncExternalStore(subscribe, get, server)),
   };
 });
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 // xterm needs a real canvas; `run` below does what the terminal does with its client.
-vi.mock("../terminal/Terminal", () => ({ Terminal: () => null }));
+vi.mock("@/terminal/Terminal", () => ({ Terminal: () => null }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {

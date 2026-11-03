@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMockApi } from "../mockApi";
+import { createMockApi } from "@/mockApi";
 import { PtyClient, toBytes } from "./ptyClient";
 
 const text = (chunks: Uint8Array[]) => new TextDecoder().decode(Uint8Array.from(chunks.flatMap((c) => [...c])));

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
-import { useI18n } from "../i18n";
+import { useI18n } from "@/i18n";
 import { ICON, Icon } from "./ChangesPanel";
 
 type Copy = "idle" | "copied" | "failed";

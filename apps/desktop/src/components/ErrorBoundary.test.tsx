@@ -1,12 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { DocsApp } from "../DocsApp";
-import en from "../i18n/en.json";
-import { translate } from "../i18n";
+import { DocsApp } from "@/DocsApp";
+import en from "@/i18n/en.json";
+import { translate } from "@/i18n";
 import { CrashView, ErrorBoundary } from "./ErrorBoundary";
 
-vi.mock("../i18n", async (original) => ({
-  ...(await original<typeof import("../i18n")>()),
+vi.mock("@/i18n", async (original) => ({
+  ...(await original<typeof import("@/i18n")>()),
   useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }),
 }));
 

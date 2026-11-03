@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
-import type { ApiError, Check, PrView, PtyProfile, RepoView, WorktreeStat, WorktreeView } from "../api";
-import { useI18n } from "../i18n";
-import { profileLetter, profileName, useProfiles } from "../agents/profileStore";
+import type { ApiError, Check, PrView, PtyProfile, RepoView, WorktreeStat, WorktreeView } from "@/api";
+import { useI18n } from "@/i18n";
+import { profileLetter, profileName, useProfiles } from "@/agents/profileStore";
 import { ago } from "./ago";
 import { groupWorktrees, type Group } from "./groups";
 import { checksSummary } from "./ship";

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
-import { profileName, useProfiles } from "../agents/profileStore";
-import { type Api, type ApiError, type PtyProfile } from "../api";
-import { useI18n } from "../i18n";
-import { Terminal } from "../terminal/Terminal";
-import { useApprovedStart } from "../terminal/useApprovedStart";
+import { profileName, useProfiles } from "@/agents/profileStore";
+import { type Api, type ApiError, type PtyProfile } from "@/api";
+import { useI18n } from "@/i18n";
+import { Terminal } from "@/terminal/Terminal";
+import { useApprovedStart } from "@/terminal/useApprovedStart";
 import { AgentIcon } from "./AgentIcon";
 import type { Sessions, Split, Tab } from "./sessions";
 import type { TabStatus } from "./status";

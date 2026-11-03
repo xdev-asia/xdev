@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { translate } from "../i18n";
+import { translate } from "@/i18n";
 import { HeaderSearch } from "./HeaderSearch";
 
 // The effect is captured, not run by the renderer, so the test can run it against its own window.
@@ -10,7 +10,7 @@ vi.mock("react", async (original) => ({
   ...await original<typeof import("react")>(),
   useEffect: (effect: () => void | (() => void)) => void hooks.effects.push(effect),
 }));
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 beforeEach(() => { hooks.effects = []; });
 afterEach(() => { vi.unstubAllGlobals(); });

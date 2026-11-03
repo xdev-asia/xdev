@@ -1,4 +1,4 @@
-import type { Api, WorktreeStat } from "../api";
+import type { Api, WorktreeStat } from "@/api";
 import type { Sessions } from "./sessions";
 import type { TabStatus } from "./status";
 

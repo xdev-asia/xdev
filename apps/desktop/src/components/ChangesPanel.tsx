@@ -1,9 +1,9 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type Change } from "../api";
-import type { Changes, Problem } from "../changes/useChanges";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type Change } from "@/api";
+import type { Changes, Problem } from "@/changes/useChanges";
+import { useI18n } from "@/i18n";
 import { DiffStats, DiffView } from "./DiffView";
 
 // Shell commands, so they stay in English whatever the UI language.

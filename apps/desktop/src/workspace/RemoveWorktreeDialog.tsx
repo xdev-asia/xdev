@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { JSX } from "react";
-import type { ApiError, WorktreeView } from "../api";
-import { useI18n } from "../i18n";
+import type { ApiError, WorktreeView } from "@/api";
+import { useI18n } from "@/i18n";
 
 // Mounted only while open. `dirty` turns the confirm into the forced delete.
 export function RemoveWorktreeDialog(props: {

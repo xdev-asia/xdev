@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ERROR_CODES } from "../api";
+import { ERROR_CODES } from "@/api";
 import en from "./en.json";
 import vi from "./vi.json";
 import { detectLocale, translate } from "./index";

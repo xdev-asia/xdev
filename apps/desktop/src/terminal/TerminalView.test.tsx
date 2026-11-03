@@ -1,8 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi, type PtyExit } from "../api";
-import { translate } from "../i18n";
+import { createMockApi, type PtyExit } from "@/api";
+import { translate } from "@/i18n";
 import { Terminal } from "./Terminal";
 import { TerminalView } from "./TerminalView";
 
@@ -18,7 +18,7 @@ vi.mock("react", async (original) => ({
   },
   useEffect: (effect: () => void) => { hooks.effects.push(effect); },
 }));
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 // xterm needs a real canvas; the view is tested around it.
 vi.mock("./Terminal", () => ({ Terminal: () => null }));
 

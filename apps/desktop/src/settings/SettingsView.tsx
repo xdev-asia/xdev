@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { JSX } from "react";
-import type { Api } from "../api";
-import { useI18n } from "../i18n";
+import type { Api } from "@/api";
+import { useI18n } from "@/i18n";
 import { SECTIONS } from "./sections";
 
 /** Settings: the list of sections on the left, the chosen one on the right. */

@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { useI18n, type Locale } from "../i18n";
+import { useI18n, type Locale } from "@/i18n";
 
 const LOCALES: Locale[] = ["en", "vi"];
 

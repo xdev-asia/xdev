@@ -1,10 +1,10 @@
 import { expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { Quota } from "../api";
-import { translate } from "../i18n";
+import type { Quota } from "@/api";
+import { translate } from "@/i18n";
 import { meterOf, WorkspaceFooter } from "./WorkspaceFooter";
 
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 const account = (name: string, windows: [string, number | null][], state: Quota["state"] = "ok"): Quota => ({

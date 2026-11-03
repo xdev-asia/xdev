@@ -1,10 +1,10 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ExportFile, type ExportPlan } from "../api";
-import type { Problem } from "../changes/useChanges";
-import { docsFor, expectedOf, overLimit } from "../export/plan";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type ExportFile, type ExportPlan } from "@/api";
+import type { Problem } from "@/changes/useChanges";
+import { docsFor, expectedOf, overLimit } from "@/export/plan";
+import { useI18n } from "@/i18n";
 import { COMPACT, ICON, Icon, ProblemNote } from "./ChangesPanel";
 import { ConnectAgent } from "./ConnectAgent";
 import { DiffView } from "./DiffView";

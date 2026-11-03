@@ -1,17 +1,17 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi, type WorktreeChange, type WorktreeView } from "../api";
-import { DocsApp } from "../DocsApp";
-import { DEMO_WORKSPACE } from "../mockWorkspace";
-import { translate } from "../i18n";
+import { createMockApi, type WorktreeChange, type WorktreeView } from "@/api";
+import { DocsApp } from "@/DocsApp";
+import { DEMO_WORKSPACE } from "@/mockWorkspace";
+import { translate } from "@/i18n";
 import { ChecksPanel } from "./ChecksPanel";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { VaultNav } from "./VaultNav";
-import { SettingsView } from "../settings/SettingsView";
+import { SettingsView } from "@/settings/SettingsView";
 import { Sessions } from "./sessions";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { WorktreeChanges } from "./WorktreeChanges";
@@ -38,8 +38,8 @@ vi.mock("react", async (original) => {
   };
 });
 // xterm needs a real canvas; the terminals are tested on their own.
-vi.mock("../terminal/Terminal", () => ({ Terminal: () => null }));
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/terminal/Terminal", () => ({ Terminal: () => null }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {

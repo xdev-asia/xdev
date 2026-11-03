@@ -1,6 +1,6 @@
 import type { CSSProperties, JSX } from "react";
-import type { PtyProfile } from "../api";
-import { profileLetter, useProfiles } from "../agents/profileStore";
+import type { PtyProfile } from "@/api";
+import { profileLetter, useProfiles } from "@/agents/profileStore";
 
 /** A letter mark on the profile's color; the name is always written next to it, so it is hidden from readers. */
 export function AgentIcon(props: { profile: PtyProfile; size?: number }): JSX.Element {

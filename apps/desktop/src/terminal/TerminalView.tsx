@@ -1,9 +1,9 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type PtyProfile } from "../api";
-import { COMPACT } from "../components/ChangesPanel";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type ApiError, type PtyProfile } from "@/api";
+import { COMPACT } from "@/components/ChangesPanel";
+import { useI18n } from "@/i18n";
 import { Terminal } from "./Terminal";
 import { useApprovedStart } from "./useApprovedStart";
 

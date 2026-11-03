@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Change } from "../api";
-import en from "../i18n/en.json";
+import type { Change } from "@/api";
+import en from "@/i18n/en.json";
 import { countLabel, rejectPrompt, relativeTime, sortChanges } from "./changes";
 
 const added: Change = { path: "notes/new.md", kind: "added", origin: "app", note: null, hash: null };

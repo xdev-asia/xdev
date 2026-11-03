@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import type { Api } from "../api";
+import type { Api } from "@/api";
 import { ReposSettings } from "./ReposSettings";
 import { VaultsSettings } from "./VaultsSettings";
 

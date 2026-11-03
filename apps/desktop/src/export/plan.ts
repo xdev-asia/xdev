@@ -1,4 +1,4 @@
-import type { Expected, ExportFile, ExportPlan, Target } from "../api";
+import type { Expected, ExportFile, ExportPlan, Target } from "@/api";
 
 // Codex's default limit for project docs; past it, agents may read only part of AGENTS.md.
 export const AGENTS_LIMIT_BYTES = 32 * 1024;

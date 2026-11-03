@@ -1,13 +1,13 @@
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import en from "../i18n/en.json";
-import { translate } from "../i18n";
+import en from "@/i18n/en.json";
+import { translate } from "@/i18n";
 import { LanguageSwitch } from "./LanguageSwitch";
 
 const setLocale = vi.fn();
-vi.mock("../i18n", async (original) => ({
-  ...(await original<typeof import("../i18n")>()),
+vi.mock("@/i18n", async (original) => ({
+  ...(await original<typeof import("@/i18n")>()),
   useI18n: () => ({ locale: "vi", setLocale, t: (key: string) => translate("en", key) }),
 }));
 

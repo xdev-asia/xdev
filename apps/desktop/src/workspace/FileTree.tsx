@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type DirListing, type WorktreeChange } from "../api";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type DirListing, type WorktreeChange } from "@/api";
+import { useI18n } from "@/i18n";
 
 // Git's own letters, so they read the same in every language. A deleted file is not on disk, so
 // the tree never meets one.

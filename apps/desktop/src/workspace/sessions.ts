@@ -1,5 +1,5 @@
-import type { Api, PtyProfile } from "../api";
-import { PtyClient } from "../terminal/ptyClient";
+import type { Api, PtyProfile } from "@/api";
+import { PtyClient } from "@/terminal/ptyClient";
 import { step, worktreeDot, type StatusEvent, type StatusState, type TabStatus } from "./status";
 
 export interface Tab {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import type { Api, Home, UsageSummary } from "../api";
-import { useI18n } from "../i18n";
+import type { Api, Home, UsageSummary } from "@/api";
+import { useI18n } from "@/i18n";
 import { KitError, kitErr, type KitErr } from "./KitError";
 import { UsageChart } from "./UsageChart";
 import { dayRange, displayPath, homeLabel, relativeFolder, totalOf, type Tokens } from "./kitUi";

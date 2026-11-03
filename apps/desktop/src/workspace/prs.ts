@@ -1,4 +1,4 @@
-import { toApiError, type Api, type ApiError, type Check, type PrView } from "../api";
+import { toApiError, type Api, type ApiError, type Check, type PrView } from "@/api";
 
 type Entry = { pr: PrView | null; checks: Check[] | null; error?: ApiError };
 
