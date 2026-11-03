@@ -1,6 +1,6 @@
 import type { Api, HookDetail, PtyInfo, PtyProfile } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
-import { INTERRUPT_MS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type StatusEvent, type StatusState, type TabStatus } from "./status";
+import { DONE_QUIET_MS, INTERRUPT_MS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type StatusEvent, type StatusState, type TabStatus } from "./status";
 
 /** The CLI behind a tab, for its hook caps and title rules; null for custom profiles and shells. */
 export type TabCli = "claude" | "codex" | null;
@@ -48,10 +48,10 @@ export type Split = { dir: "right" | "down"; second: string } | null;
 /** How long removing a worktree waits for its terminals to report their exit. */
 export const EXIT_WAIT_MS = 5000;
 const TICK_MS = 1000;
-/** A finished turn is news only once the pane stayed done this long. */
-export const DONE_QUIET_MS = 1500;
 // Longer titles are cut; a terminal can send anything.
 const TITLE_MAX = 200;
+
+export { DONE_QUIET_MS };
 
 interface Entry {
   tab: Tab;

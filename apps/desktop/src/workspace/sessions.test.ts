@@ -500,6 +500,33 @@ describe("Sessions", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("a resume inside the done window keeps the turn going and is not announced (R18)", () => {
+    vi.useFakeTimers();
+    let t = 1_000;
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api, () => t));
+    const tab = live.open(A, "claude");
+    live.noteStarted(tab.id, info(tab.id, true));
+    const heard = vi.fn();
+    live.onAttention(heard);
+    api.__hook(tab.id, "prompt");
+    api.__hook(tab.id, "turn-done");
+    t += 500;
+    vi.advanceTimersByTime(500);
+    api.__hook(tab.id, "resume");
+    expect(live.tabs(A)[0].status).toBe("working");
+    t += DONE_QUIET_MS;
+    vi.advanceTimersByTime(DONE_QUIET_MS);
+    expect(heard).not.toHaveBeenCalled();
+    // After the window, a done is settled: a stray resume no longer reopens it.
+    api.__hook(tab.id, "turn-done");
+    t += DONE_QUIET_MS;
+    vi.advanceTimersByTime(DONE_QUIET_MS);
+    expect(heard).toHaveBeenCalledTimes(1);
+    api.__hook(tab.id, "resume");
+    expect(live.tabs(A)[0].status).toBe("done");
+  });
+
   it("escape on a hooked working pane settles idle after 500 ms and asks no one", () => {
     vi.useFakeTimers();
     let t = 1_000;

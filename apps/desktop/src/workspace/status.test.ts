@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INTERRUPT_MS, NO_CAPS, QUIET_MS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type StatusState, type TabStatus } from "./status";
+import { DONE_QUIET_MS, INTERRUPT_MS, NO_CAPS, QUIET_MS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type StatusState, type TabStatus } from "./status";
 
 const idle = (): StatusState => start(capsFor([]));
 // What the backend reports: claude past the version gate, codex on its private home, codex on notify alone.
@@ -274,9 +274,10 @@ describe("tab status", () => {
     expect(s.status).toBe("working");
     s = step(s, { kind: "hook", event: "attention", at: 3 });
     expect(s.status).toBe("needs-you");
-    // A resume after the turn ended or was stopped changes nothing.
+    // A resume while a done still settles means the turn went on (R18); once settled, it changes nothing.
     const done = step(s, { kind: "hook", event: "turn-done", at: 4 });
-    expect(step(done, { kind: "hook", event: "resume", at: 5 }).status).toBe("done");
+    expect(step(done, { kind: "hook", event: "resume", at: 5 }).status).toBe("working");
+    expect(step(done, { kind: "hook", event: "resume", at: 4 + DONE_QUIET_MS }).status).toBe("done");
     const stopped = step(step(s, { kind: "hook", event: "interrupt", at: 4 }), { kind: "hook", event: "resume", at: 5 });
     expect(stopped.status).toBe("idle");
   });
