@@ -163,3 +163,83 @@
   display: flex;
   gap: 6px;
 }
+
+/* Edit dialog and Settings page. Tokens only. */
+.qc-dialog {
+  width: min(520px, 92vw);
+}
+
+.qc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.qc-field > span:first-child,
+.qc-field > legend {
+  color: var(--text-2);
+}
+
+.qc-field textarea {
+  resize: vertical;
+}
+
+.qc-choice {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+}
+
+.qc-choice > legend {
+  width: 100%;
+  padding: 0;
+}
+
+.qc-choice label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.qc-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.qc-counter {
+  align-self: flex-end;
+  color: var(--text-2);
+}
+
+.qc-counter[data-over] {
+  color: var(--danger);
+}
+
+.qc-page-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.qc-page-tools .qc-search {
+  flex: 1;
+}
+
+.qc-page-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.qc-page-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}

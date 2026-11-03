@@ -9,6 +9,7 @@ import type { Sessions, Tab } from "@/workspace/sessions";
 import type { Env, Row } from "./model";
 import { QuickCommandsButton } from "./QuickCommandsButton";
 import { QuickCommandsPopover } from "./QuickCommandsPopover";
+import { QuickCommandDialog, type RepoChoice } from "./QuickCommandDialog";
 import { runQuickCommand } from "./run";
 import { trustFileCommands, useQuickCommands } from "./store";
 
@@ -34,7 +35,6 @@ export function QuickCommandsControl(props: {
   /** A new value opens the popover (the `quickCommands.open` key and the palette). */
   openSeq?: number;
   onFocus?(tab: Tab): void;
-  onNew(): void;
   onManage(): void;
 }): JSX.Element {
   const { api, sessions, worktree, tab } = props;
@@ -42,6 +42,7 @@ export function QuickCommandsControl(props: {
   const { view } = useProfiles();
   const [open, setOpen] = useState(false);
   const [trusting, setTrusting] = useState<{ hash: string; text: string; busy: boolean } | null>(null);
+  const [creating, setCreating] = useState<RepoChoice[] | null>(null);
   const q = useQuickCommands(api, props.repo, worktree);
 
   const [seen, setSeen] = useState(props.openSeq ?? 0);
@@ -94,7 +95,10 @@ export function QuickCommandsControl(props: {
           }}
           onNew={() => {
             setOpen(false);
-            props.onNew();
+            void api.workspaceList().then(
+              (rs) => setCreating(rs.filter((r) => !r.missing).map((r) => ({ path: r.path, name: r.shortName }))),
+              () => setCreating([]),
+            );
           }}
           onManage={() => {
             setOpen(false);
@@ -103,6 +107,17 @@ export function QuickCommandsControl(props: {
           onClose={() => setOpen(false)}
         />
       </QuickCommandsButton>
+      {creating && (
+        <QuickCommandDialog
+          api={api}
+          initial={null}
+          defaultRepo={props.repo}
+          repos={creating}
+          profiles={view ? view.profiles.map((p) => ({ id: p.profile.id, name: p.profile.name })) : []}
+          onSaved={() => setCreating(null)}
+          onCancel={() => setCreating(null)}
+        />
+      )}
       {trusting && (
         <TrustDialog
           repo={props.repoName}
