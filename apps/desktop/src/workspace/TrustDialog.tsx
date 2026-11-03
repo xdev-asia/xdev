@@ -10,7 +10,8 @@ export function TrustDialog(props: {
   repo: string;
   /** The repo file the script comes from. */
   file: string;
-  kind: HookKind;
+  /** A script of the repo file, or the `[[commands]]` list. */
+  kind: HookKind | "commands";
   text: string;
   /** The dialog reopened because the script changed after it was last shown. */
   changed: boolean;
@@ -38,9 +39,11 @@ export function TrustDialog(props: {
       }}
     >
       <h2 id="ws-trust-title" className="dialog-title">
-        {t("setup.trust.title", { kind: t(`setup.kind.${props.kind}`) })}
+        {props.kind === "commands" ? t("qcmd.trust.title") : t("setup.trust.title", { kind: t(`setup.kind.${props.kind}`) })}
       </h2>
-      <p className="dialog-body">{t("setup.trust.body", { repo: props.repo, file: props.file })}</p>
+      <p className="dialog-body">
+        {props.kind === "commands" ? t("qcmd.trust.body", { repo: props.repo, file: props.file }) : t("setup.trust.body", { repo: props.repo, file: props.file })}
+      </p>
       {props.changed && <p className="dialog-body">{t("setup.trust.changed")}</p>}
       <pre className="ws-mono ws-script" tabIndex={0}>{props.text}</pre>
       <p className="dialog-body">{t("setup.trust.note")}</p>
@@ -55,7 +58,7 @@ export function TrustDialog(props: {
           {t("dialog.cancel")}
         </button>
         <Button type="button" disabled={props.busy} onClick={props.onTrust}>
-          {t("setup.trust.confirm")}
+          {props.kind === "commands" ? t("qcmd.trust.confirm") : t("setup.trust.confirm")}
         </Button>
       </div>
     </dialog>
