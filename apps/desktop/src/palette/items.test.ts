@@ -78,6 +78,20 @@ it("actions without a handler are left out", () => {
   expect(newWorktree).toHaveBeenCalled();
 });
 
+it("stage and discard all are listed only when the worktree can run them", () => {
+  const stageAll = vi.fn();
+  const discardAll = vi.fn();
+  const items = actionItems(t, { stageAll, discardAll });
+  expect(items.map((i) => i.id)).toEqual(["act:stageAll", "act:discardAll"]);
+  expect(items[0].title).toBe(t("palette.action.stageAll"));
+  expect(items[1].title).toBe(t("palette.action.discardAll"));
+  items[0].run();
+  items[1].run();
+  expect(stageAll).toHaveBeenCalled();
+  expect(discardAll).toHaveBeenCalled();
+  expect(actionItems(t, { newWorktree: vi.fn() }).map((i) => i.id)).toEqual(["act:newWorktree"]);
+});
+
 it("validWorktreeName", () => {
   expect(validWorktreeName("fix-login")).toBe(true);
   expect(validWorktreeName("feat/x")).toBe(true);
