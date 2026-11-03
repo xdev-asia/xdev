@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Emitter, Manager, State};
 use xdev_core::{
-    Change, Commit, CoreError, DocEntry, DocLink, ExportPlan, Freshness, SearchHit, StaleDoc, Vault,
+    Change, Commit, CoreError, DocEntry, DocLink, ExportPlan, Freshness, Links, SearchHit,
+    StaleDoc, Vault,
 };
 
 use crate::session::Shared;
@@ -294,13 +295,22 @@ pub fn backlinks(state: State<'_, AppState>, path: String) -> Result<Vec<DocLink
 #[tauri::command(async)]
 pub fn doc_freshness(state: State<'_, AppState>, path: String) -> Result<Freshness, CmdError> {
     let (vault, repo) = state.session.freshness_source()?;
-    Ok(xdev_core::freshness(&vault, repo.as_ref(), &path)?)
+    Ok(xdev_core::freshness(
+        &vault,
+        repo.as_ref(),
+        &Links::default(),
+        &path,
+    )?)
 }
 
 #[tauri::command(async)]
 pub fn stale_docs(state: State<'_, AppState>) -> Result<Vec<StaleDoc>, CmdError> {
     let (vault, repo) = state.session.freshness_source()?;
-    Ok(xdev_core::stale_docs(&vault, repo.as_ref())?)
+    Ok(xdev_core::stale_docs(
+        &vault,
+        repo.as_ref(),
+        &Links::default(),
+    )?)
 }
 
 /// Outside the session lock: reading every doc and asking git for the repo
