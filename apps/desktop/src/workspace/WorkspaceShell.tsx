@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import pkg from "../../package.json";
-import logo from "../../../../docs/brand/xdev-icon-512.png";
+import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider } from "@/agents/profileStore";
 import { toApiError, type Api, type ApiError, type Check, type PrView, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
 import { DocsApp } from "@/DocsApp";
@@ -337,7 +337,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             <path d="M9 4v16" />
           </svg>
         </button>
-        <img className="ws-logo" src={logo} alt="" width={18} height={18} />
+        <BrandMark className="ws-logo" size={18} />
         <span className="ws-brand">xDev</span>
         {/* The docs app shows its own folder, so the crumbs go with the workspace view. */}
         {view === "workspace" && currentRepo && current && (
