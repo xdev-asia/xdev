@@ -351,3 +351,153 @@
   font-weight: 400;
   accent-color: var(--accent);
 }
+
+/* Settings → Shortcuts */
+.keys-file {
+  align-items: center;
+}
+
+.keys-file .settings-path {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.keys-diagnostics {
+  margin: 0;
+  padding: 8px 12px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.keys-policy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.keys-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.keys-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.keys-search {
+  flex: 1;
+  min-width: 200px;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.keys-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.keys-chip[aria-pressed="true"] {
+  background: var(--bg-3);
+  border-color: var(--accent);
+}
+
+.keys-count {
+  color: var(--text-2);
+  font-weight: 400;
+}
+
+.keys-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.keys-row[data-conflict] .keys-chord kbd {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.keys-row-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.keys-title {
+  display: inline-flex;
+  flex: 1 1 180px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.keys-chords,
+.keys-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.keys-chord {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.keys-chord kbd {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--bg-3);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.keys-chord-x {
+  min-width: 32px;
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.keys-chord-x:hover {
+  color: var(--text-1);
+}
+
+.keys-recorder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+}
+
+.keys-rec-text[data-invalid] {
+  color: var(--danger);
+}
