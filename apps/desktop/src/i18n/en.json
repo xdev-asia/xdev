@@ -1064,5 +1064,9 @@
   "review.send.title": "Send notes to",
   "review.send.includeSent": "Include sent notes",
   "review.send.newTab": "New {name} tab",
-  "review.send.failed": "The notes were not sent: the agent did not start or its tab ended."
+  "review.send.failed": "The notes were not sent: the agent did not start or its tab ended.",
+  "panes.closeAgent.title": "Close a running agent?",
+  "panes.closeAgent.body": "Closing ends every agent that is still running here. Shells close too.",
+  "panes.closeAgent.confirm": "Close",
+  "keys.hint": "{label} ({chord})"
 }

@@ -43,10 +43,14 @@ it("every default binding is reached by its chord off macOS", () => {
   }
 });
 
-it("on macOS Mod is Cmd and a literal Ctrl stays Ctrl", () => {
+it("on macOS Ctrl is Cmd, but Ctrl+Tab and Ctrl+Alt+T keep Ctrl", () => {
   expect(actionOf(ev({ metaKey: true, code: "KeyJ" }), true)).toBe("palette.jump");
   expect(actionOf(ev({ ctrlKey: true, code: "KeyJ" }), true)).toBeNull();
-  expect(actionOf(ev({ ctrlKey: true, code: "KeyT" }), true)).toBe("tab.new");
+  expect(actionOf(ev({ metaKey: true, code: "KeyT" }), true)).toBe("tab.new");
+  expect(actionOf(ev({ ctrlKey: true, code: "KeyT" }), true)).toBeNull();
+  expect(actionOf(ev({ ctrlKey: true, code: "Tab" }), true)).toBe("tab.next");
+  expect(actionOf(ev({ ctrlKey: true, altKey: true, code: "KeyT" }), true)).toBe("agent.new");
+  expect(actionOf(ev({ metaKey: true, code: "Digit3" }), true)).toBe("worktree.select.3");
   expect(chordOf(ev({ metaKey: true, shiftKey: true, code: "KeyD" }), true)).toBe("Mod+Shift+D");
 });
 
@@ -67,7 +71,8 @@ it("labels read Ctrl+T off macOS and ⌘J on macOS", () => {
   expect(chordLabel("tab.new", false)).toBe("Ctrl+T");
   expect(chordLabel("pane.splitRight", false)).toBe("Ctrl+Shift+D");
   expect(chordLabel("palette.jump", true)).toBe("⌘J");
-  expect(chordLabel("tab.new", true)).toBe("⌃T");
+  expect(chordLabel("tab.new", true)).toBe("⌘T");
+  expect(chordLabel("tab.next", true)).toBe("⌃Tab");
 });
 
 function setup(handlers: Partial<Record<ActionId, () => boolean | void>>, opts?: { when?: () => boolean }, modal = false) {
