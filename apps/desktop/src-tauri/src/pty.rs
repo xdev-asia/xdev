@@ -101,6 +101,10 @@ impl Ptys {
 /// The WSL distros, asked for once per app run.
 static WSL: OnceLock<Vec<String>> = OnceLock::new();
 
+pub(crate) fn distros() -> &'static [String] {
+    WSL.get_or_init(wsl_distros)
+}
+
 /// The launch of profile or shell `id`, from the stores in `data_dir`.
 /// `account` replaces the profile's own account (a restart keeps the tab's).
 pub(crate) fn launch_for(
@@ -112,7 +116,7 @@ pub(crate) fn launch_for(
     let accounts = Registry::load(data_dir)?;
     // Only the shell ids look at the shells; `wsl.exe` is not asked for an agent.
     let distros: &[String] = if id == "shell" || id.starts_with("shell:") {
-        WSL.get_or_init(wsl_distros)
+        distros()
     } else {
         &[]
     };
