@@ -34,6 +34,7 @@ pub fn run() {
     if let (Some(data), Some(local)) = (&data_dir, &local_dir) {
         xdev_core::move_indexes(data, local);
     }
+    let sync_local = local_dir.clone();
     let hooks_dir = local_dir
         .as_ref()
         .map(|local| local.join(xdev_agent::HOOKS_DIR));
@@ -47,8 +48,16 @@ pub fn run() {
         .manage(review_notes::ReviewNotesLock::default())
         .manage(profiles::ProfilesLock::default())
         .manage(status::Shown::default())
-        .setup(|app| {
+        .setup(move |app| {
             updater::start(app.handle().clone());
+            // The `.off` marker follows the stored setting from the start,
+            // not only once the setting is saved. Best effort.
+            if let (Some(file), Some(local)) = (commands::settings_path(app.handle()), &sync_local)
+            {
+                if let Err(e) = status::sync_hooks_marker(&file, local) {
+                    eprintln!("hooks marker: {e}");
+                }
+            }
             status::listen_clicks(app.handle());
             // Without the watcher panes still run; they just show no status.
             if let Some(dir) = hooks_dir {
