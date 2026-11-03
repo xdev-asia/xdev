@@ -565,6 +565,7 @@
   "workspace.vaults.label": "Vault",
   "workspace.vaults.shared": "dùng chung",
   "workspace.vaults.missing": "Không thấy thư mục: {path}",
+  "workspace.vaults.unsaved": "Tài liệu đang mở có chỉnh sửa chưa lưu. Lưu lại (Ctrl+S) rồi đổi vault.",
   "workspace.pinned": "Đã ghim",
   "workspace.pin": "Ghim",
   "workspace.unpin": "Bỏ ghim",

@@ -45,9 +45,21 @@ pub struct WorktreeView {
 }
 
 /// Paths from git, the registry and the UI compare in this form: `/` as the
-/// separator, no trailing `/`, lowercased on Windows.
+/// separator, no trailing `/`, lowercased on Windows. A canonical Windows path
+/// (`\\?\E:\x`, `\\?\UNC\host\share`) reads as its plain spelling, so a vault
+/// root from `canonicalize` matches the folder the person registered.
 pub fn path_key(path: &Path) -> String {
-    normalize(path).trim_end_matches('/').to_owned()
+    let text = normalize(path);
+    let plain = if cfg!(windows) {
+        if let Some(rest) = text.strip_prefix("//?/unc/") {
+            format!("//{rest}")
+        } else {
+            text.strip_prefix("//?/").map_or(text.clone(), str::to_owned)
+        }
+    } else {
+        text
+    };
+    plain.trim_end_matches('/').to_owned()
 }
 
 fn lossy(path: &Path) -> String {
@@ -791,6 +803,18 @@ mod tests {
 
     fn names(l: &DirListing) -> Vec<(&str, bool)> {
         l.entries.iter().map(|e| (e.name.as_str(), e.dir)).collect()
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn path_key_reads_a_canonical_windows_path_as_its_plain_spelling() {
+        let plain = path_key(Path::new(r"E:\Codes\Notes\"));
+        assert_eq!(plain, "e:/codes/notes");
+        assert_eq!(path_key(Path::new(r"\\?\E:\Codes\Notes")), plain);
+        assert_eq!(
+            path_key(Path::new(r"\\?\UNC\host\share\x")),
+            path_key(Path::new(r"\\host\share\x"))
+        );
     }
 
     #[test]

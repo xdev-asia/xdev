@@ -163,7 +163,9 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
   }
 
   function vaults(): VaultView[] {
-    return [...repos.map(repoVault), ...shared.map(sharedVault)];
+    // Shared ones by name, as Rust lists them.
+    const named = shared.map(sharedVault).sort((x, y) => x.name.toLowerCase().localeCompare(y.name.toLowerCase()) || x.path.localeCompare(y.path));
+    return [...repos.map(repoVault), ...named];
   }
 
   function findWorktree(path: string): { repo: RepoView; wt: WorktreeView } | undefined {
@@ -222,6 +224,7 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
       return structuredClone(repo);
     },
     async worktreeAdopt(path) {
+      if (repos.some((r) => r.path === path)) return reject("primary_worktree", path);
       if (findWorktree(path)) return reject("worktree_exists", path);
       for (const repo of repos) {
         const wt = repo.found.find((w) => w.path === path);

@@ -33,7 +33,7 @@ const en = (key: string, vars?: Record<string, string | number>) => translate("e
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; });
 
-async function view(listed?: VaultView[], last?: string) {
+async function view(listed?: VaultView[], last?: string, canOpen?: () => boolean) {
   const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), docs: ["demo-xdev"], vaults: ["/demo/shared-docs"] } });
   if (listed) vi.spyOn(api, "vaultList").mockResolvedValue(listed);
   if (last) vi.spyOn(api, "lastVault").mockResolvedValue(last);
@@ -41,7 +41,7 @@ async function view(listed?: VaultView[], last?: string) {
   const draw = () => {
     hooks.cursor = 0;
     hooks.active = true;
-    try { return VaultNav({ api, onOpened }); } finally { hooks.active = false; }
+    try { return VaultNav({ api, onOpened, canOpen }); } finally { hooks.active = false; }
   };
   draw();
   hooks.effects.forEach((e) => e());
@@ -87,4 +87,14 @@ it("a refused open shows why and calls nothing back", async () => {
   await tick();
   expect(v.onOpened).not.toHaveBeenCalled();
   expect(v.all().some((n) => n.props.role === "alert")).toBe(true);
+});
+
+it("unsaved edits in the open doc keep the vault", async () => {
+  const v = await view(undefined, undefined, () => false);
+  const open = vi.spyOn(v.api, "openVault");
+  v.row("/demo/shared-docs").props.onClick();
+  await tick();
+  expect(open).not.toHaveBeenCalled();
+  expect(v.onOpened).not.toHaveBeenCalled();
+  expect(v.all().find((n) => n.props.role === "alert")?.props.children).toBe(en("workspace.vaults.unsaved"));
 });

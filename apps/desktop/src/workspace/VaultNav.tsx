@@ -4,12 +4,17 @@ import { toApiError, type Api, type ApiError, type VaultView } from "../api";
 import { useI18n } from "../i18n";
 
 /** The registered vaults under the Docs & SDLC item; a click opens one. */
-export function VaultNav(props: { api: Api; onOpened(path: string): void }): JSX.Element | null {
+export function VaultNav(props: {
+  api: Api;
+  onOpened(path: string): void;
+  // False while the open doc has unsaved edits: its autosave would write into whichever vault is open by then.
+  canOpen?(): boolean;
+}): JSX.Element | null {
   const { api } = props;
   const { t } = useI18n();
   const [vaults, setVaults] = useState<VaultView[]>([]);
   const [current, setCurrent] = useState<string | null>(null);
-  const [error, setError] = useState<ApiError["code"]>();
+  const [error, setError] = useState<ApiError["code"] | "unsaved">();
 
   useEffect(() => {
     api.vaultList().then(setVaults, () => setVaults([]));
@@ -18,6 +23,10 @@ export function VaultNav(props: { api: Api; onOpened(path: string): void }): JSX
 
   async function open(vault: VaultView): Promise<void> {
     setError(undefined);
+    if (props.canOpen && !props.canOpen()) {
+      setError("unsaved");
+      return;
+    }
     try {
       await api.openVault(vault.path);
       setCurrent(vault.path);
@@ -53,7 +62,7 @@ export function VaultNav(props: { api: Api; onOpened(path: string): void }): JSX
       </ul>
       {error && (
         <p className="error-text ws-notice" role="alert">
-          {t(`error.${error}`)}
+          {error === "unsaved" ? t("workspace.vaults.unsaved") : t(`error.${error}`)}
         </p>
       )}
     </div>

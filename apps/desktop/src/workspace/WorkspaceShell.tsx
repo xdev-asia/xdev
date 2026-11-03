@@ -175,6 +175,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     }
   }
 
+  // The docs app marks its status line while the open doc differs from disk; DocsApp.tsx stays as is.
+  function docsSaved(): boolean {
+    return typeof document === "undefined" || !document.querySelector(".ws-docs .doc-status[data-dirty]");
+  }
+
   function startCreate(repoId?: string): void {
     const usable = repos?.filter((r) => !r.missing) ?? [];
     const id = repoId ?? (currentRepo && !currentRepo.missing ? currentRepo.id : usable[0]?.id);
@@ -314,6 +319,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             {view === "docs" && (
               <VaultNav
                 api={api}
+                canOpen={docsSaved}
                 onOpened={() => {
                   setDocsMounted(true);
                   setDocsKey((k) => k + 1);

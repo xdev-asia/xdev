@@ -565,6 +565,7 @@
   "workspace.vaults.label": "Vaults",
   "workspace.vaults.shared": "shared",
   "workspace.vaults.missing": "Folder not found: {path}",
+  "workspace.vaults.unsaved": "The open doc has unsaved edits. Save it (Ctrl+S), then switch vault.",
   "workspace.pinned": "Pinned",
   "workspace.pin": "Pin",
   "workspace.unpin": "Unpin",
