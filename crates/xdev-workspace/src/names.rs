@@ -52,9 +52,105 @@ pub fn slug(name: &str) -> String {
     }
 }
 
+/// A branch prefix as stored or typed: trimmed, without a leading or
+/// trailing `/`, and with each `//` run cut to one `/`.
+pub fn normalize_prefix(prefix: &str) -> String {
+    let mut out = String::new();
+    for c in prefix.trim().trim_matches('/').chars() {
+        if c == '/' && out.ends_with('/') {
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Why a normalized prefix cannot start a branch name, or `None` when it
+/// can. The rules are git's for a ref part: no control character or space,
+/// none of `~ ^ : ? * [ \`, no `..` or `@{`, no leading `-` or trailing
+/// `.`, and no part that starts with `.` or ends with `.lock`.
+pub fn prefix_issue(prefix: &str) -> Option<PrefixIssue> {
+    if prefix
+        .chars()
+        .any(|c| (c as u32) <= 0x20 || c as u32 == 0x7f)
+    {
+        return Some(PrefixIssue::Control);
+    }
+    if prefix.contains(['~', '^', ':', '?', '*', '[', '\\']) {
+        return Some(PrefixIssue::Char);
+    }
+    if prefix.contains("..") || prefix.contains("@{") {
+        return Some(PrefixIssue::Sequence);
+    }
+    if prefix.starts_with('-') || prefix.ends_with('.') {
+        return Some(PrefixIssue::Edge);
+    }
+    if prefix
+        .split('/')
+        .any(|part| part.starts_with('.') || part.ends_with(".lock"))
+    {
+        return Some(PrefixIssue::Part);
+    }
+    None
+}
+
+/// What `prefix_issue` found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrefixIssue {
+    /// A control character or a space.
+    Control,
+    /// One of `~ ^ : ? * [ \`.
+    Char,
+    /// `..` or `@{`.
+    Sequence,
+    /// A leading `-` or a trailing `.`.
+    Edge,
+    /// A part that starts with `.` or ends with `.lock`.
+    Part,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalize_prefix_trims_and_tidies_slashes() {
+        assert_eq!(normalize_prefix("  feature  "), "feature");
+        assert_eq!(normalize_prefix("/team//me/"), "team/me");
+        assert_eq!(normalize_prefix("a///b"), "a/b");
+        assert_eq!(normalize_prefix(" // "), "");
+        assert_eq!(normalize_prefix(""), "");
+    }
+
+    #[test]
+    fn prefix_issue_follows_git_ref_rules() {
+        for ok in ["feature", "team/me", "duy.tran", "a-b_c", "Tên"] {
+            assert_eq!(prefix_issue(ok), None, "{ok}");
+        }
+        let bad = [
+            ("a b", PrefixIssue::Control),
+            ("a\tb", PrefixIssue::Control),
+            ("a\u{7f}", PrefixIssue::Control),
+            ("a~b", PrefixIssue::Char),
+            ("a^b", PrefixIssue::Char),
+            ("a:b", PrefixIssue::Char),
+            ("a?b", PrefixIssue::Char),
+            ("a*b", PrefixIssue::Char),
+            ("a[b", PrefixIssue::Char),
+            ("a\\b", PrefixIssue::Char),
+            ("a..b", PrefixIssue::Sequence),
+            ("a@{b", PrefixIssue::Sequence),
+            ("-a", PrefixIssue::Edge),
+            ("a.", PrefixIssue::Edge),
+            (".a", PrefixIssue::Part),
+            ("a/.b", PrefixIssue::Part),
+            ("a.lock/b", PrefixIssue::Part),
+            ("a/b.lock", PrefixIssue::Part),
+        ];
+        for (input, want) in bad {
+            assert_eq!(prefix_issue(input), Some(want), "{input:?}");
+        }
+    }
 
     #[test]
     fn pick_starts_at_the_seed_and_skips_taken_words() {

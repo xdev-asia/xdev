@@ -462,6 +462,7 @@ fn pick_free(
     repo: &Repo,
     entry: &RepoEntry,
     listed: &[WorktreeEntry],
+    prefix: Option<&str>,
     seed: u64,
 ) -> Result<String, WorkspaceError> {
     let mut taken: HashSet<String> = listed
@@ -474,7 +475,8 @@ fn pick_free(
         .collect();
     loop {
         let word = names::pick(&taken, seed);
-        if !repo.branch_exists(&word)? && !worktree_folder(entry, &word).exists() {
+        if !repo.branch_exists(&prefixed(prefix, &word))? && !worktree_folder(entry, &word).exists()
+        {
             return Ok(word);
         }
         taken.insert(word);
@@ -487,8 +489,50 @@ fn worktree_folder(entry: &RepoEntry, slug: &str) -> PathBuf {
         .join(format!("{}-{}", entry.short_name, slug.replace('/', "-")))
 }
 
-/// A new branch and a worktree for it under the repo's worktree root. A
-/// blank `name` gets a free word; `from` defaults to the repo's base ref.
+/// Where the first part of a new branch name comes from.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum BranchPrefix {
+    /// The repo's `user.name`; one no ref can hold is left out silently.
+    GitUsername,
+    /// Typed by the person; one no ref can hold is refused.
+    Custom(String),
+    #[default]
+    None,
+}
+
+/// How `create_worktree_with` makes a worktree.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CreateOptions {
+    pub prefix: BranchPrefix,
+}
+
+/// The prefix to put in front of new branch names, normalized; `None` for
+/// no prefix. `BadPrefix` only for a custom one.
+fn branch_prefix(repo: &Repo, rule: &BranchPrefix) -> Result<Option<String>, WorkspaceError> {
+    let (raw, custom) = match rule {
+        BranchPrefix::None => return Ok(None),
+        BranchPrefix::Custom(p) => (p.clone(), true),
+        BranchPrefix::GitUsername => (repo.user_name()?.unwrap_or_default(), false),
+    };
+    let prefix = names::normalize_prefix(&raw);
+    if prefix.is_empty() {
+        return Ok(None);
+    }
+    match names::prefix_issue(&prefix) {
+        None => Ok(Some(prefix)),
+        Some(_) if custom => Err(WorkspaceError::BadPrefix(prefix)),
+        Some(_) => Ok(None),
+    }
+}
+
+fn prefixed(prefix: Option<&str>, leaf: &str) -> String {
+    match prefix {
+        Some(p) => format!("{p}/{leaf}"),
+        None => leaf.to_owned(),
+    }
+}
+
+/// `create_worktree_with` and no options: no prefix.
 pub fn create_worktree(
     reg: &mut Registry,
     repo_id: &str,
@@ -497,22 +541,53 @@ pub fn create_worktree(
     now_ms: i64,
     seed: u64,
 ) -> Result<WorktreeView, WorkspaceError> {
+    create_worktree_with(
+        reg,
+        repo_id,
+        name,
+        from,
+        now_ms,
+        seed,
+        &CreateOptions::default(),
+    )
+}
+
+/// A new branch and a worktree for it under the repo's worktree root. A
+/// blank `name` gets a free word; `from` defaults to the repo's base ref.
+/// The branch is `<prefix>/<name>`; the folder is named from `name` alone.
+pub fn create_worktree_with(
+    reg: &mut Registry,
+    repo_id: &str,
+    name: &str,
+    from: Option<&str>,
+    now_ms: i64,
+    seed: u64,
+    opts: &CreateOptions,
+) -> Result<WorktreeView, WorkspaceError> {
     let entry = find_repo(reg, repo_id)?;
     let repo = Repo::discover(&entry.path)?;
+    let prefix = branch_prefix(&repo, &opts.prefix)?;
     let name = name.trim();
-    let slug = if name.is_empty() {
-        pick_free(&repo, &entry, &repo.list_worktrees()?, seed)?
+    let leaf = if name.is_empty() {
+        pick_free(
+            &repo,
+            &entry,
+            &repo.list_worktrees()?,
+            prefix.as_deref(),
+            seed,
+        )?
     } else {
         names::slug(name)
     };
+    let slug = prefixed(prefix.as_deref(), &leaf);
     // Before `branch_exists`, which reads `main~1` as a branch that exists.
-    if slug.is_empty() || !repo.valid_branch_name(&slug)? {
+    if leaf.is_empty() || !repo.valid_branch_name(&slug)? {
         return Err(WorkspaceError::BadName(name.to_owned()));
     }
     if repo.branch_exists(&slug)? {
         return Err(WorkspaceError::BranchExists(slug));
     }
-    let folder = worktree_folder(&entry, &slug);
+    let folder = worktree_folder(&entry, &leaf);
     if folder.exists() {
         return Err(WorkspaceError::WorktreeExists(folder));
     }
