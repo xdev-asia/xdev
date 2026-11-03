@@ -85,7 +85,7 @@
 .ws-logo {
   display: block;
   flex-shrink: 0;
-  border-radius: var(--radius-s);
+  color: var(--accent);
 }
 
 .ws-brand {
