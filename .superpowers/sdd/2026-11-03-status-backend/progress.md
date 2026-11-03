@@ -35,3 +35,20 @@ Task 4: complete
 - Lines with `v` != 1 are skipped. Watcher failure only logs to stderr; panes still run without status.
 - Added an end-to-end test `watcher_emits_appended_lines` (real notify, 10 s timeout) using `append_hook`.
 - Bindings: `PtyHook` exported; HookEvent.ts and PtyHook.ts regenerate byte-identical to the contract.
+
+Task 5: complete
+- `status.rs`: status_settings_get, status_settings_put (returns StatusSettings per contract, not `()` as in
+  plan), status_notify, status_badge, status_sound_set, status_sound. Registered in lib.rs.
+- status_settings_put clamps volume to 100 and keeps the stored `soundFile` (only status_sound_set sets it),
+  same as the mock. Other Settings fields (last_vault, ...) are kept.
+- Notification click: plugin 2.8.0 desktop `on_action` reports `tap`, so `status://notification-click
+  {ptyId}` IS emitted. Handler registered in `setup` (before any notification). The pane comes from the
+  notification's `extra.ptyId`, falling back to an id → pane map of the last 64 notifications (`Shown`).
+  Not checked on screen: Windows reports a click only while the toast is visible.
+- status_sound returns `tauri::ipc::Response`: raw bytes, or JSON `null` (instead of `Option<Response>`,
+  which is not an IPC response type). api.ts already accepts ArrayBuffer | null.
+- status_sound_set: copying a file onto itself is skipped (it would truncate). A copy left from an earlier
+  pick (other extension) or after clearing stays on disk; nothing is deleted.
+- Badge: Windows `set_overlay_icon` with a 16×16 red dot; others `set_badge_count`. Only the Windows branch
+  was compiled here; the macOS/Linux branch is not compiled on this machine.
+- `bad_sound` comes from status.rs (Rust has no central code list; codes are inline like `draft_failed`).
