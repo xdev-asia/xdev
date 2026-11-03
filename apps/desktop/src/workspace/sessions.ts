@@ -219,7 +219,7 @@ export class Sessions {
   noteStarted(id: string, info: PtyInfo): void {
     const entry = this.entries.get(id);
     if (!entry) return;
-    entry.state = { ...entry.state, caps: capsFor(entry.tab.cli, info.hooks) };
+    entry.state = { ...entry.state, caps: capsFor(info.hooks ? info.hookEvents : []) };
     this.sync();
     if (entry.tab.permissions === info.permissions && entry.tab.account === info.account) return;
     this.update(entry, { permissions: info.permissions, account: info.account });

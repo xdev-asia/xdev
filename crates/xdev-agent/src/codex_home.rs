@@ -22,6 +22,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
 
+use crate::hooks::{HookEvent, events_of};
 use crate::version::CliVersion;
 
 /// The folder under the data dir that holds the private homes.
@@ -86,6 +87,11 @@ fn offered(version: CliVersion) -> impl Iterator<Item = &'static CodexHook> {
     CODEX_HOOKS
         .iter()
         .filter(move |h| h.event != "Interrupt" || version >= CODEX_INTERRUPT_SINCE)
+}
+
+/// The events the private home's hooks report on `version`, each once.
+pub fn codex_hook_events(version: CliVersion) -> Vec<HookEvent> {
+    events_of(offered(version).map(|h| h.writes))
 }
 
 /// The private home of `account` (`None`: the system default codex).

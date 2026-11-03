@@ -45,8 +45,14 @@ export function createMockPty(profiles: Pick<MockProfiles, "__launchError" | "__
         profile: profileId,
         permissions,
         account,
-        // Built-in agents get hook flags while Status hooks is on.
+        // Built-in agents get hook flags while Status hooks is on: claude past the version gate, codex on its private home.
         hooks: profileId === "claude" || profileId === "codex",
+        hookEvents:
+          profileId === "claude"
+            ? ["prompt", "needs-input", "resume", "turn-failed", "turn-done"]
+            : profileId === "codex"
+              ? ["prompt", "needs-input", "resume", "turn-done", "interrupt"]
+              : [],
       };
     },
     async ptyApprove(profileId) {

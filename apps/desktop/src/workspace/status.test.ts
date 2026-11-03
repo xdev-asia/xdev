@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { INTERRUPT_MS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type StatusState, type TabStatus } from "./status";
+import { INTERRUPT_MS, NO_CAPS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type StatusState, type TabStatus } from "./status";
 
-const idle = (): StatusState => start(capsFor(null, false));
+const idle = (): StatusState => start(capsFor([]));
+// What the backend reports: claude past the version gate, codex on its private home, codex on notify alone.
+const CLAUDE = ["prompt", "needs-input", "resume", "turn-failed", "turn-done"] as const;
+const CODEX_HOME = ["prompt", "needs-input", "resume", "turn-done", "interrupt"] as const;
+const NOTIFY = ["turn-done"] as const;
 
 describe("tab status", () => {
   it("echo_after_keystroke_stays_idle", () => {
@@ -56,7 +60,7 @@ describe("tab status", () => {
   });
 
   it("hook events drive a claude tab", () => {
-    let s = start(capsFor("claude", true));
+    let s = start(capsFor(CLAUDE));
     s = step(s, { kind: "hook", event: "prompt", at: 1 }, false);
     expect(s.status).toBe("working");
     s = step(s, { kind: "hook", event: "needs-input", at: 2 }, false);
@@ -70,15 +74,38 @@ describe("tab status", () => {
   });
 
   it("claude with hooks does not wake on output alone", () => {
-    let s = start(capsFor("claude", true));
+    let s = start(capsFor(CLAUDE));
     s = step(s, { kind: "output", at: 1000 });
     expect(s.status).toBe("idle");
     // Output still counts as activity.
     expect(s.lastOutput).toBe(1000);
   });
 
-  it("codex uses timing for working and the hook for done", () => {
-    let s = start(capsFor("codex", true));
+  it("caps follow the events the launch reports", () => {
+    expect(capsFor(CLAUDE)).toEqual({ prompt: true, needsInput: true, turnDone: true });
+    expect(capsFor(CODEX_HOME)).toEqual({ prompt: true, needsInput: true, turnDone: true });
+    // An unknown claude: the two ungated events.
+    expect(capsFor(["prompt", "turn-done"])).toEqual({ prompt: true, needsInput: false, turnDone: true });
+    expect(capsFor(NOTIFY)).toEqual({ prompt: false, needsInput: false, turnDone: true });
+    expect(capsFor(undefined)).toEqual(capsFor([]));
+  });
+
+  it("codex on its private home is driven by hooks like claude", () => {
+    let s = start(capsFor(CODEX_HOME));
+    s = step(s, { kind: "output", at: 1000 }, false);
+    expect(s.status).toBe("idle");
+    s = step(s, { kind: "hook", event: "prompt", at: 2000 }, false);
+    expect(s.status).toBe("working");
+    s = step(s, { kind: "hook", event: "needs-input", at: 3000 }, false);
+    expect(s.status).toBe("needs-you");
+    s = step(s, { kind: "hook", event: "resume", at: 4000 }, false);
+    expect(s.status).toBe("working");
+    s = step(s, { kind: "hook", event: "interrupt", at: 5000 }, false);
+    expect(s.status).toBe("idle");
+  });
+
+  it("codex on notify alone uses timing for working and the hook for done", () => {
+    let s = start(capsFor(NOTIFY));
     s = step(s, { kind: "output", at: 1000 }, false);
     expect(s.status).toBe("working");
     // No quiet → idle while the hook reports the end.
@@ -89,13 +116,13 @@ describe("tab status", () => {
   });
 
   it("turn done on a seen pane is idle at once", () => {
-    const s = step(start(capsFor("claude", true)), { kind: "hook", event: "turn-done", at: 1 }, true);
+    const s = step(start(capsFor(CLAUDE)), { kind: "hook", event: "turn-done", at: 1 }, true);
     expect(s.status).toBe("idle");
   });
 
   it("timing_does_not_leave_done", () => {
     for (const event of ["turn-done", "needs-input"] as const) {
-      for (const caps of [capsFor("claude", true), capsFor("codex", true), capsFor(null, false)]) {
+      for (const caps of [capsFor(CLAUDE), capsFor(NOTIFY), capsFor([])]) {
         let s = step(start(caps), { kind: "hook", event, at: 1000 });
         const held = s.status;
         s = step(s, { kind: "output", at: 2000 });
@@ -109,7 +136,7 @@ describe("tab status", () => {
   });
 
   it("no hooks keeps today's timing", () => {
-    let s = start(capsFor(null, false));
+    let s = start(capsFor([]));
     s = step(s, { kind: "input", at: 1000 });
     s = step(s, { kind: "output", at: 1100 });
     expect(s.status).toBe("idle");
@@ -117,9 +144,8 @@ describe("tab status", () => {
     expect(s.status).toBe("working");
     s = step(s, { kind: "tick", at: 5000 });
     expect(s.status).toBe("idle");
-    // Hook-less codex and claude are the same.
-    expect(capsFor("codex", false)).toEqual(capsFor(null, false));
-    expect(capsFor("claude", false)).toEqual(capsFor(null, true));
+    // No reported events is no caps, whatever the CLI.
+    expect(capsFor([])).toEqual(NO_CAPS);
   });
 
   it("a title rule sets its status", () => {
@@ -133,7 +159,7 @@ describe("tab status", () => {
   });
 
   it("exit 0 is exited, other codes failed", () => {
-    for (const caps of [capsFor("claude", true), capsFor(null, false)]) {
+    for (const caps of [capsFor(CLAUDE), capsFor([])]) {
       const busy = step(start(caps), { kind: "hook", event: "prompt", at: 1 });
       expect(step(busy, { kind: "exit", code: 0 }).status).toBe("exited");
       expect(step(busy, { kind: "exit", code: 1 }).status).toBe("failed");
@@ -158,7 +184,7 @@ describe("tab status", () => {
   });
   it("hook data outranks titles on a hooked pane", () => {
     // Before any hook, a title still counts.
-    let s = step(start(capsFor("claude", true)), { kind: "title", status: "working", at: 1 });
+    let s = step(start(capsFor(CLAUDE)), { kind: "title", status: "working", at: 1 });
     expect(s.status).toBe("working");
     s = step(s, { kind: "hook", event: "needs-input", at: 2 });
     expect(s.hooked).toBe(true);
@@ -171,7 +197,7 @@ describe("tab status", () => {
   });
 
   it("an interrupt with no hook after it settles idle, not done", () => {
-    let s = step(start(capsFor("claude", true)), { kind: "hook", event: "prompt", at: 1000 });
+    let s = step(start(capsFor(CLAUDE)), { kind: "hook", event: "prompt", at: 1000 });
     s = step(s, { kind: "input", at: 2000, interrupt: true });
     expect(s).toMatchObject({ status: "working", interruptAt: 2000 });
     s = step(s, { kind: "tick", at: 2000 + INTERRUPT_MS - 1 });
@@ -188,7 +214,7 @@ describe("tab status", () => {
   });
 
   it("a turn end right after an interrupt rests; other hooks keep the turn", () => {
-    const working = step(start(capsFor("claude", true)), { kind: "hook", event: "prompt", at: 1000 });
+    const working = step(start(capsFor(CLAUDE)), { kind: "hook", event: "prompt", at: 1000 });
     const stopped = step(working, { kind: "input", at: 2000, interrupt: true });
     expect(step(stopped, { kind: "hook", event: "turn-done", at: 2100 }).status).toBe("idle");
     const asked = step(stopped, { kind: "hook", event: "needs-input", at: 2100 });
@@ -205,12 +231,12 @@ describe("tab status", () => {
     let plain = step(idle(), { kind: "output", at: 1000 });
     plain = step(plain, { kind: "input", at: 2000, interrupt: true });
     expect(plain.interruptAt).toBeNull();
-    const rest = step(start(capsFor("claude", true)), { kind: "input", at: 1, interrupt: true });
+    const rest = step(start(capsFor(CLAUDE)), { kind: "input", at: 1, interrupt: true });
     expect(rest.interruptAt).toBeNull();
   });
 
   it("escape in needs-you settles idle after 500 ms of silence", () => {
-    let s = step(start(capsFor("claude", true)), { kind: "hook", event: "needs-input", at: 1000 });
+    let s = step(start(capsFor(CLAUDE)), { kind: "hook", event: "needs-input", at: 1000 });
     s = step(s, { kind: "input", at: 2000, interrupt: true });
     expect(s).toMatchObject({ status: "needs-you", interruptAt: 2000 });
     expect(step(s, { kind: "tick", at: 2000 + INTERRUPT_MS - 1 }).status).toBe("needs-you");
@@ -220,7 +246,7 @@ describe("tab status", () => {
   });
 
   it("an interrupt hook settles working and needs-you at once; done stays", () => {
-    const caps = capsFor("codex", true);
+    const caps = capsFor(NOTIFY);
     const working = step(start(caps), { kind: "hook", event: "prompt", at: 1 });
     expect(step(working, { kind: "hook", event: "interrupt", at: 2 })).toMatchObject({ status: "idle", cancelled: true });
     const asking = step(start(caps), { kind: "hook", event: "needs-input", at: 1 });
@@ -230,13 +256,13 @@ describe("tab status", () => {
   });
 
   it("a turn-done with the interrupt flag is not done", () => {
-    const working = step(start(capsFor("claude", true)), { kind: "hook", event: "prompt", at: 1 });
+    const working = step(start(capsFor(CLAUDE)), { kind: "hook", event: "prompt", at: 1 });
     const detail = { toolName: null, message: null, isInterrupt: true, error: null };
     expect(step(working, { kind: "hook", event: "turn-done", at: 2, detail })).toMatchObject({ status: "idle", cancelled: true });
   });
 
   it("resume goes back to working; attention asks like needs-input", () => {
-    const caps = capsFor("claude", true);
+    const caps = capsFor(CLAUDE);
     let s = step(start(caps), { kind: "hook", event: "needs-input", at: 1 });
     s = step(s, { kind: "hook", event: "resume", at: 2 });
     expect(s.status).toBe("working");
@@ -250,7 +276,7 @@ describe("tab status", () => {
   });
 
   it("a failed turn is not the end of the pane", () => {
-    const caps = capsFor("claude", true);
+    const caps = capsFor(CLAUDE);
     let s = step(start(caps), { kind: "hook", event: "prompt", at: 1 });
     s = step(s, { kind: "hook", event: "turn-failed", at: 2 });
     expect(s).toMatchObject({ status: "failed", dead: false });
@@ -263,7 +289,7 @@ describe("tab status", () => {
   });
 
   it("working with no event for 30 minutes goes idle, unannounced", () => {
-    let s = step(start(capsFor("claude", true)), { kind: "hook", event: "prompt", at: 1000 });
+    let s = step(start(capsFor(CLAUDE)), { kind: "hook", event: "prompt", at: 1000 });
     expect(step(s, { kind: "tick", at: 1000 + STALE_MS - 1 }).status).toBe("working");
     expect(step(s, { kind: "tick", at: 1000 + STALE_MS })).toMatchObject({ status: "idle", cancelled: false });
     // Any hook restarts the clock.

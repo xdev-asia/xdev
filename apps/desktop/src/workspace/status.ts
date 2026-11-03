@@ -11,11 +11,14 @@ export type Caps = { prompt: boolean; needsInput: boolean; turnDone: boolean };
 
 export const NO_CAPS: Caps = { prompt: false, needsInput: false, turnDone: false };
 
-/** What a launch reports: `claude` with hooks all three, `codex` with hooks the turn end only. */
-export function capsFor(cli: "claude" | "codex" | null, hooks: boolean): Caps {
-  if (!hooks || cli === null) return NO_CAPS;
-  if (cli === "claude") return { prompt: true, needsInput: true, turnDone: true };
-  return { prompt: false, needsInput: false, turnDone: true };
+/**
+ * What a launch reports, from the hook events the backend says it wired: a claude past the version
+ * gate or a codex on its private home has all three; an unknown claude has no needs-input; a codex on
+ * `notify` alone has the turn end only.
+ */
+export function capsFor(events: readonly HookEvent[] | undefined): Caps {
+  if (!events || events.length === 0) return NO_CAPS;
+  return { prompt: events.includes("prompt"), needsInput: events.includes("needs-input"), turnDone: events.includes("turn-done") };
 }
 
 export interface StatusState {
