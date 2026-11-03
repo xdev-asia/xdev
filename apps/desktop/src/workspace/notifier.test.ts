@@ -31,8 +31,7 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 it("notifies, sounds and counts when channels are on", async () => {
   const s = setup();
   await s.notifier.attention(tab("a"), "needs-you", names);
-  expect(s.notify).toHaveBeenCalledWith("oak", en("status.notify.needs-you", { name: "Claude" }), "a");
-  expect(s.api.__notifications.at(-1)?.body).toBe("Claude needs you");
+  expect(s.notify).toHaveBeenCalledWith("oak · Claude · Needs you", "", "a");
   expect(s.play).toHaveBeenCalledTimes(1);
   expect(s.notifier.lastNotified()).toEqual({ ptyId: "a", at: s.now() });
   s.notifier.badge(1);
@@ -41,12 +40,54 @@ it("notifies, sounds and counts when channels are on", async () => {
   expect(s.api.__badge()).toBe(1);
 });
 
-it("the body names the tab and the state, never what was typed", async () => {
+it("the title names worktree, tab and state; the body is what the hook said", async () => {
   const s = setup();
-  await s.notifier.attention(tab("a"), "done", { worktree: "oak", tab: "Codex" });
-  await s.notifier.attention(tab("a"), "failed", { worktree: "oak", tab: "Codex" });
-  expect(s.api.__notifications.map((n) => n.body)).toEqual(["Codex finished", "Codex failed"]);
-  expect(translate("vi", "status.notify.done", { name: "Codex" })).toBe("Codex đã xong");
+  const said = { toolName: "Bash", message: "Run rm -rf build?", isInterrupt: false, error: null };
+  await s.notifier.attention(tab("a"), "needs-you", names, said);
+  // No message: the tool name. No detail at all: an empty body.
+  await s.notifier.attention(tab("b"), "needs-you", names, { ...said, message: null });
+  await s.notifier.attention(tab("c"), "done", { worktree: "oak", tab: "Codex" });
+  await s.notifier.attention(tab("d"), "failed", names, { toolName: null, message: null, isInterrupt: false, error: "rate limit" });
+  expect(s.api.__notifications.map((n) => [n.title, n.body])).toEqual([
+    ["oak · Claude · Needs you", "Run rm -rf build?"],
+    ["oak · Claude · Needs you", "Bash"],
+    ["oak · Codex · Done", ""],
+    ["oak · Claude · Failed", "rate limit"],
+  ]);
+  expect(translate("vi", "status.word.done")).toBe("Đã xong");
+});
+
+it("title and body are cut at 40, 80 and 180 and never hold more than the hook gave", async () => {
+  const s = setup();
+  const long = "x".repeat(300);
+  await s.notifier.attention(tab("a"), "needs-you", { worktree: "w".repeat(100), tab: "T".repeat(100) }, { toolName: null, message: `${long} second`, isInterrupt: false, error: null });
+  const sent = s.api.__notifications[0];
+  expect(sent.title.length).toBeLessThanOrEqual(80);
+  expect(sent.title.startsWith(`${"w".repeat(39)}…`)).toBe(true);
+  expect(sent.body.length).toBe(180);
+  expect(sent.body.endsWith("…")).toBe(true);
+  expect(sent.body).not.toContain(" second");
+  // Line breaks and runs of spaces fold into single spaces.
+  await s.notifier.attention(tab("b"), "done", names, { toolName: null, message: "one\ntwo  \r\n three", isInterrupt: false, error: null });
+  expect(s.api.__notifications[1].body).toBe("one two three");
+});
+
+it("the master switch and the event switch gate every channel", async () => {
+  const s = setup({ onDone: false });
+  await s.notifier.attention(tab("a"), "done", names);
+  await s.notifier.attention(tab("b"), "bell", names);
+  expect(s.notify).not.toHaveBeenCalled();
+  expect(s.play).not.toHaveBeenCalled();
+  await s.notifier.attention(tab("c"), "needs-you", names);
+  expect(s.notify).toHaveBeenCalledTimes(1);
+  s.set({ onBell: true });
+  await s.notifier.attention(tab("b"), "bell", names);
+  expect(s.api.__notifications.at(-1)?.title).toBe("oak · Claude · Bell");
+  s.set({ enabled: false });
+  await s.notifier.attention(tab("d"), "failed", names);
+  await s.notifier.attention(tab("e"), "needs-you", names);
+  expect(s.notify).toHaveBeenCalledTimes(2);
+  expect(s.play).toHaveBeenCalledTimes(2);
 });
 
 it("each channel can be turned off, and follows a change at once", async () => {

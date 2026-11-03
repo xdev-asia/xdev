@@ -1,4 +1,4 @@
-import type { HookEvent } from "@/api";
+import type { HookDetail, HookEvent } from "@/api";
 
 /**
  * What a terminal tab is doing. Hooks and titles say it when the CLI reports them; timing (no
@@ -29,6 +29,10 @@ export interface StatusState {
   interruptAt: number | null;
   /** The last turn was interrupted: a late `turn-done` for it is not a finished turn. */
   cancelled: boolean;
+  /** The pty exited. Only an exit is final: a failed turn (`failed`) moves on with the next prompt. */
+  dead: boolean;
+  /** When the pane last got a hook, a keystroke or started working; a long silence is stale. */
+  lastEvent: number;
 }
 
 export type StatusEvent =
@@ -36,7 +40,7 @@ export type StatusEvent =
   | { kind: "output"; at: number }
   | { kind: "tick"; at: number }
   | { kind: "exit"; code: number | null }
-  | { kind: "hook"; event: HookEvent; at: number }
+  | { kind: "hook"; event: HookEvent; at: number; detail?: HookDetail | null }
   | { kind: "title"; status: "working" | "needs-you" | "idle"; at: number }
   | { kind: "seen"; at: number };
 
@@ -46,35 +50,42 @@ export const ECHO_MS = 250;
 export const QUIET_MS = 3000;
 /** After Escape or Ctrl-C on a hooked working pane, how long a hook has to say otherwise. */
 export const INTERRUPT_MS = 500;
+/** A working hooked pane with no event for this long is stale: it rests as idle, unannounced. */
+export const STALE_MS = 30 * 60 * 1000;
 
 /** The keystrokes read as "stop the turn": Escape alone or Ctrl-C. */
 export function isInterrupt(text: string): boolean {
   return text === "\x1b" || text === "\x03";
 }
 
-const ended = (status: TabStatus) => status === "failed" || status === "exited";
 // Only a hook, a keystroke or a look moves a tab out of these.
-const waiting = (status: TabStatus) => status === "needs-you" || status === "done";
+const waiting = (status: TabStatus) => status === "needs-you" || status === "done" || status === "failed";
+const stoppable = (status: TabStatus) => status === "working" || status === "needs-you";
 
 export function start(caps: Caps = NO_CAPS): StatusState {
-  return { status: "idle", lastInput: 0, lastOutput: 0, caps, hooked: false, interruptAt: null, cancelled: false };
+  return { status: "idle", lastInput: 0, lastOutput: 0, caps, hooked: false, interruptAt: null, cancelled: false, dead: false, lastEvent: 0 };
 }
 
 /** One event on a tab. `seen`: the person is looking at the pane, so a finished turn is idle at once. */
 export function step(s: StatusState, e: StatusEvent, seen = false): StatusState {
-  const next = raw(s, e);
+  let next = raw(s, e);
+  // Entering `working` starts the stale clock.
+  if (next.status === "working" && s.status !== "working" && "at" in e) next = { ...next, lastEvent: e.at };
   return seen && next.status === "done" ? { ...next, status: "idle" } : next;
 }
 
 function raw(s: StatusState, e: StatusEvent): StatusState {
-  if (ended(s.status)) return s;
+  if (s.dead) return s;
   switch (e.kind) {
     case "input":
       if (e.interrupt) {
-        // Only a hooked turn can be stopped this way; timing already sees the quiet after it.
-        return s.status === "working" && s.caps.turnDone ? { ...s, lastInput: e.at, interruptAt: e.at } : { ...s, lastInput: e.at };
+        // Only a hooked turn can be stopped this way (also a permission dialog: claude sends no hook for
+        // Escape there); timing already sees the quiet after it.
+        return stoppable(s.status) && s.caps.turnDone ? { ...s, lastInput: e.at, interruptAt: e.at } : { ...s, lastInput: e.at };
       }
-      return { ...s, lastInput: e.at, cancelled: false, status: s.status === "needs-you" ? "working" : s.status };
+      // Typing answers a question and clears a failed turn; a hook says what comes next.
+      const typed = s.status === "needs-you" ? "working" : s.status === "failed" ? "idle" : s.status;
+      return { ...s, lastInput: e.at, lastEvent: e.at, cancelled: false, status: typed };
     case "output": {
       if (e.at - s.lastInput <= ECHO_MS) return s;
       const wakes = s.status === "idle" && !s.caps.prompt;
@@ -83,21 +94,41 @@ function raw(s: StatusState, e: StatusEvent): StatusState {
     case "tick":
       if (s.interruptAt !== null && e.at - s.interruptAt >= INTERRUPT_MS) {
         // No hook said otherwise: the turn was stopped. Idle, not done.
-        return { ...s, interruptAt: null, ...(s.status === "working" ? { status: "idle", cancelled: true } : {}) };
+        return { ...s, interruptAt: null, ...(stoppable(s.status) ? { status: "idle", cancelled: true } : {}) };
       }
+      // A hooked turn that went silent for good rests quietly.
+      if (s.status === "working" && s.caps.turnDone && e.at - s.lastEvent >= STALE_MS) return { ...s, status: "idle" };
       return s.status === "working" && !s.caps.turnDone && e.at - s.lastOutput >= QUIET_MS ? { ...s, status: "idle" } : s;
     case "exit":
-      return { ...s, status: e.code === 0 ? "exited" : "failed" };
+      return { ...s, dead: true, status: e.code === 0 ? "exited" : "failed" };
     case "hook": {
-      const hooked = { ...s, hooked: true, interruptAt: null };
-      if (e.event === "turn-done") {
-        // The turn the person just stopped ends here: it rests and is not news.
-        if (s.interruptAt !== null && e.at - s.interruptAt < INTERRUPT_MS) return { ...hooked, status: "idle", cancelled: true };
-        // A late end of a stopped turn, after it already went idle.
-        if (s.cancelled && s.status === "idle") return hooked;
-        return { ...hooked, status: "done", cancelled: false };
+      const hooked = { ...s, hooked: true, interruptAt: null, lastEvent: e.at };
+      switch (e.event) {
+        case "interrupt":
+          // codex says it: the turn was stopped, quietly. A finished or failed turn stays as it is.
+          return stoppable(s.status) ? { ...hooked, status: "idle", cancelled: true } : hooked;
+        case "turn-done":
+          // The turn the person just stopped ends here: it rests and is not news.
+          if (e.detail?.isInterrupt || (s.interruptAt !== null && e.at - s.interruptAt < INTERRUPT_MS)) {
+            return { ...hooked, status: "idle", cancelled: true };
+          }
+          // A late end of a stopped turn, after it already went idle.
+          if (s.cancelled && s.status === "idle") return hooked;
+          return { ...hooked, status: "done", cancelled: false };
+        case "turn-failed":
+          return { ...hooked, status: "failed", cancelled: false };
+        case "resume":
+          // A tool ran or a question was answered: the turn goes on. A late one after a stop, or after
+          // the turn ended, says nothing new.
+          if (waiting(s.status) && s.status !== "needs-you") return hooked;
+          if (s.cancelled && s.status === "idle") return hooked;
+          return { ...hooked, cancelled: false, status: "working" };
+        case "prompt":
+          return { ...hooked, cancelled: false, status: "working" };
+        case "needs-input":
+        case "attention":
+          return { ...hooked, cancelled: false, status: "needs-you" };
       }
-      return { ...hooked, cancelled: false, status: e.event === "prompt" ? "working" : "needs-you" };
     }
     case "title":
       // Fresh hook data outranks titles on a pane whose launch reports hooks.

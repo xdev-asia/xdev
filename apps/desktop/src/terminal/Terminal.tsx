@@ -29,6 +29,8 @@ export function Terminal(props: {
   onInput?(text: string): void;
   /** The program set the terminal title (OSC 0 or 2). */
   onTitle?(title: string): void;
+  /** The program rang the terminal bell (BEL outside an OSC string; xterm tells the two apart). */
+  onBell?(): void;
 }): JSX.Element {
   const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
@@ -85,6 +87,7 @@ export function Terminal(props: {
       void client.input(text).catch(() => {});
     });
     term.onTitleChange((title) => handlers.current.onTitle?.(title));
+    term.onBell(() => handlers.current.onBell?.());
     term.onResize(({ cols, rows }) => void client.resize(cols, rows).catch(() => {}));
     // A mount undone in the same tick (StrictMode in dev) starts nothing, so a shared client
     // is started once, by the mount that stays.
