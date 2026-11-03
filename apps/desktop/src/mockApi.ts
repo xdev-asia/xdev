@@ -18,6 +18,7 @@ import type {
 import { extractTitle, parseFrontmatter } from "./doc/frontmatter";
 import { createResolver, parseLinks } from "./doc/links";
 import { estimateTokens, type ExportDoc, planExport } from "./mockExport";
+import { createMockProfiles } from "./mockProfiles";
 import { createMockPty } from "./mockPty";
 import { createMockSquads } from "./mockSquads";
 import { createMockTasks } from "./mockTasks";
@@ -362,6 +363,7 @@ type MockOptions = {
 };
 
 export function createMockApi(seed: Record<string, string>, options: MockOptions = {}): MockApi {
+  const profiles = createMockProfiles();
   const accounts: Account[] = ["claude-2", "claude-3", "old"].map((name): Account => ({
     name, provider: "claude", dir: `/demo/accounts/${name}`,
     status: { state: name === "old" ? "logged_out" : "logged_in", email: name === "old" ? null : `${name}@example.com`, plan: name === "old" ? null : "Max", org: null },
@@ -539,7 +541,8 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       accounts: () => accounts,
       runDelayMs: options.runDelayMs,
     }),
-    ...createMockPty(),
+    ...profiles,
+    ...createMockPty(profiles),
     ...createMockWorkspace(options.workspace),
     async accounts() { return structuredClone({ reservePercent: 30, accounts }); },
     async quota() { return structuredClone(quotas); },

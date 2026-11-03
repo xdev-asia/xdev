@@ -592,5 +592,11 @@
   "workspace.remove.forceNote": "Deleting anyway also deletes a branch xDev made, even with commits found nowhere else.",
   "workspace.remove.confirm": "Delete",
   "workspace.remove.force": "Delete anyway (uncommitted work is lost)",
-  "workspace.remove.busy": "Deleting…"
+  "workspace.remove.busy": "Deleting…",
+  "error.bad_profiles": "The saved profiles file cannot be read, so it was left as it is.",
+  "error.invalid_profile": "That profile or shell is not valid.",
+  "error.builtin_profile": "A built-in profile cannot be removed.",
+  "error.profile_off": "That profile is turned off.",
+  "error.not_installed": "That program is not installed.",
+  "terminal.profile.gemini": "Gemini CLI"
 }

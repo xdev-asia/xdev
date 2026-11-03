@@ -1,6 +1,7 @@
 import { useCallback, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
-import { PTY_PROFILES, type Api, type ApiError, type PtyProfile } from "../api";
+import { profileName, useProfiles } from "../agents/profileStore";
+import { type Api, type ApiError, type PtyProfile } from "../api";
 import { useI18n } from "../i18n";
 import { Terminal } from "../terminal/Terminal";
 import { useApprovedStart } from "../terminal/useApprovedStart";
@@ -8,6 +9,9 @@ import { AgentIcon } from "./AgentIcon";
 import type { Sessions, Split, Tab } from "./sessions";
 import type { TabStatus } from "./status";
 import { WorktreeDiff } from "./WorktreeDiff";
+
+// The `+` menu and the empty state offer these until the profile menu lands.
+const LAUNCH: readonly PtyProfile[] = ["shell", "claude", "codex"];
 
 const GLYPH: Record<TabStatus, string> = { working: "●", idle: "○", failed: "✕", exited: "–" };
 
@@ -79,7 +83,8 @@ export function WorktreeTabs(props: {
   const visibleIds = partner ? [shown, partner] : [shown];
   const canSplit = tabs.length >= 2 && at >= 0;
 
-  const name = (tab: Tab) => t(`terminal.profile.${tab.profileId}`);
+  const { view } = useProfiles();
+  const name = (tab: Tab) => profileName(view, tab.profileId, t);
 
   // Picking the second tab of a split keeps the pair: the tab that was in front takes its place.
   function select(id: string): void {
@@ -110,6 +115,7 @@ export function WorktreeTabs(props: {
       () => setAttempts((a) => ({ ...a, [tab.id]: (a[tab.id] ?? 0) + 1 })),
       // A tab whose pty never started has nothing to show; the reason stays in the banner.
       () => void sessions.close(tab.id),
+      tab.account,
     );
   }
 
@@ -224,9 +230,9 @@ export function WorktreeTabs(props: {
             <>
               <div className="ws-menu-backdrop" onClick={() => setMenu(false)} />
               <div className="ws-menu" role="menu">
-                {PTY_PROFILES.map((p) => (
+                {LAUNCH.map((p) => (
                   <button key={p} type="button" role="menuitem" onClick={() => launch(p)}>
-                    {t(`terminal.profile.${p}`)}
+                    {profileName(view, p, t)}
                   </button>
                 ))}
               </div>
@@ -266,6 +272,7 @@ export function WorktreeTabs(props: {
               id={tab.id}
               cwd={worktree}
               profile={tab.profileId}
+              account={tab.account}
               onStarted={() => {}}
               onError={(e) => failed(tab, e)}
               onOutput={(bytes) => sessions.noteOutput(tab.id, bytes)}
@@ -285,9 +292,9 @@ export function WorktreeTabs(props: {
         <div className="ws-center-empty">
           <p>{t("workspace.tabs.empty")}</p>
           <div className="ws-launch">
-            {PTY_PROFILES.map((p) => (
+            {LAUNCH.map((p) => (
               <button key={p} type="button" className="btn-secondary" onClick={() => launch(p)}>
-                {t(`terminal.profile.${p}`)}
+                {profileName(view, p, t)}
               </button>
             ))}
           </div>

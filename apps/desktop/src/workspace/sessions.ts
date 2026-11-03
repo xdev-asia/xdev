@@ -6,6 +6,10 @@ export interface Tab {
   id: string;
   worktree: string;
   profileId: PtyProfile;
+  /** The account the profile runs under, if one was picked. */
+  account: string | null;
+  /** What the tab was started as (`ask`, `accept-edits`, `skip`); filled in once known. */
+  permissions: string;
   /** Agent tabs count for the worktree's status dot; plain shells do not. */
   agent: boolean;
   status: TabStatus;
@@ -51,8 +55,8 @@ export class Sessions {
     this.unlisten = api.onPtyExit((e) => this.apply(e.id, { kind: "exit", code: e.code }));
   }
 
-  open(worktree: string, profileId: PtyProfile): Tab {
-    const entry = this.entry(worktree, profileId);
+  open(worktree: string, profileId: PtyProfile, account: string | null = null): Tab {
+    const entry = this.entry(worktree, profileId, account);
     this.entries.set(entry.tab.id, entry);
     this.cache.delete(worktree);
     this.emit();
@@ -66,7 +70,7 @@ export class Sessions {
   restart(id: string): Tab | null {
     const old = this.entries.get(id);
     if (!old) return null;
-    const next = this.entry(old.tab.worktree, old.tab.profileId);
+    const next = this.entry(old.tab.worktree, old.tab.profileId, old.tab.account);
     const kept = [...this.entries].map(([key, e]): [string, Entry] => (key === id ? [next.tab.id, next] : [key, e]));
     this.entries.clear();
     for (const [key, e] of kept) this.entries.set(key, e);
@@ -205,13 +209,15 @@ export class Sessions {
     return changed;
   }
 
-  private entry(worktree: string, profileId: PtyProfile): Entry {
+  private entry(worktree: string, profileId: PtyProfile, account: string | null): Entry {
     const id = crypto.randomUUID();
     const tab: Tab = {
       id,
       worktree,
       profileId,
-      agent: profileId !== "shell",
+      account,
+      permissions: "ask",
+      agent: !profileId.startsWith("shell"),
       status: "idle",
       client: new PtyClient(this.api, id),
     };

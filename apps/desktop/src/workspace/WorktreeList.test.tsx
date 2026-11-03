@@ -9,6 +9,8 @@ import { WorktreeList, type WorktreeListProps } from "./WorktreeList";
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0 }));
 vi.mock("react", async (original) => ({
   ...await original<typeof import("react")>(),
+  // The profile store is outside what these tests render; its context keeps the default.
+  useContext: (ctx: { _currentValue: unknown }) => ctx._currentValue,
   useState: (initial: unknown) => {
     const index = hooks.cursor++;
     if (!(index in hooks.values)) hooks.values[index] = initial;

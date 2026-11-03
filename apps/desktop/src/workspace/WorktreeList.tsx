@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
 import type { ApiError, PtyProfile, RepoView, WorktreeStat, WorktreeView } from "../api";
 import { useI18n } from "../i18n";
-import { AGENT_LETTER } from "./AgentIcon";
+import { profileLetter, profileName, useProfiles } from "../agents/profileStore";
 import { ago } from "./ago";
 import { groupWorktrees, type Group } from "./groups";
 import type { TabStatus } from "./status";
@@ -42,6 +42,7 @@ export interface WorktreeListProps {
 /** The worktrees of every repo, split into sections by what their agents are doing. */
 export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const { t } = useI18n();
+  const { view } = useProfiles();
   // The worktree whose action menu is open.
   const [menu, setMenu] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Group[]>([]);
@@ -77,7 +78,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     const stat = props.stats?.[wt.path];
     const seen = props.activity?.[wt.path] ?? null;
     // Plain shells are not agents: only the agent profiles get a chip.
-    const agents = (props.profiles?.[wt.path] ?? []).filter((p) => p !== "shell");
+    const agents = (props.profiles?.[wt.path] ?? []).filter((p) => !p.startsWith("shell"));
     const counts = stat && (stat.added > 0 || stat.removed > 0) ? stat : null;
     return (
       <li key={wt.path} className="ws-wt" data-path={wt.path}>
@@ -120,8 +121,8 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           {(agents.length > 0 || counts) && (
             <span className="ws-wt-meta">
               {agents.map((p) => (
-                <span key={p} className="ws-chip" data-profile={p} title={t(`terminal.profile.${p}`)}>
-                  {AGENT_LETTER[p]}
+                <span key={p} className="ws-chip" data-profile={p} title={profileName(view, p, t)}>
+                  {profileLetter(view, p)}
                 </span>
               ))}
               <span className="ws-wt-spacer" />
