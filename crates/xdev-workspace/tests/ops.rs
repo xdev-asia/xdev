@@ -5,9 +5,9 @@ use std::process::Command;
 use tempfile::TempDir;
 use xdev_git::{BaseRefresh, Repo};
 use xdev_workspace::{
-    BranchPrefix, CreateOptions, Registry, RepoPatch, WorkspaceError, WorktreeStat, add_repo,
-    adopt_worktree, create_worktree, create_worktree_with, forget_repo, list, path_key,
-    refresh_base, remove_worktree, set_pinned, stat, update_repo, valid_short_name,
+    BranchPrefix, CreateOptions, Registry, RepoPatch, ScriptSource, SetupPolicy, WorkspaceError,
+    WorktreeStat, add_repo, adopt_worktree, create_worktree, create_worktree_with, forget_repo,
+    list, path_key, refresh_base, remove_worktree, set_pinned, stat, update_repo, valid_short_name,
 };
 
 /// Runs setup commands; never used for the code under test.
@@ -778,6 +778,47 @@ fn update_refuses_root_inside_primary_or_relative() {
         assert_eq!(err.code(), "bad_path", "{bad:?}");
         assert_eq!(reg, before);
     }
+}
+
+#[test]
+fn update_sets_the_script_settings() {
+    let (mut reg, id, _main) = registered();
+    let view = update_repo(
+        &mut reg,
+        &id,
+        RepoPatch {
+            setup_policy: Some(SetupPolicy::Skip),
+            script_source: Some(ScriptSource::Both),
+            local_setup: Some("pnpm install\nmake".into()),
+            local_archive: Some("echo bye".into()),
+            ..RepoPatch::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(view.setup_policy, SetupPolicy::Skip);
+    assert_eq!(view.script_source, ScriptSource::Both);
+    assert_eq!(view.local_setup, "pnpm install\nmake");
+    assert_eq!(view.local_archive, "echo bye");
+    let entry = &reg.repos[0];
+    assert_eq!(entry.setup_policy, SetupPolicy::Skip);
+    assert_eq!(entry.script_source, ScriptSource::Both);
+    assert_eq!(entry.local_setup, "pnpm install\nmake");
+    assert_eq!(entry.local_archive, "echo bye");
+
+    // Each field alone leaves the others; an empty script clears it.
+    update_repo(
+        &mut reg,
+        &id,
+        RepoPatch {
+            local_archive: Some(String::new()),
+            ..RepoPatch::default()
+        },
+    )
+    .unwrap();
+    let entry = &reg.repos[0];
+    assert_eq!(entry.local_archive, "");
+    assert_eq!(entry.local_setup, "pnpm install\nmake");
+    assert_eq!(entry.setup_policy, SetupPolicy::Skip);
 }
 
 #[test]
