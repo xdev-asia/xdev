@@ -4,6 +4,8 @@ import { useProfiles, profileName } from "@/agents/profileStore";
 import type { RepoView, SessionRow, WorktreeView } from "@/api";
 import type { AgentSessionsStore } from "@/agentSessions/store";
 import { useI18n } from "@/i18n";
+import { copyContext } from "@/terminal/terminalActions";
+import { terminalOf } from "@/terminal/terminalRegistry";
 import type { Sessions } from "@/workspace/sessions";
 import { actionItems, sessionItems, settingItems, tabItems, worktreeItems, type ActionName, type Attention, type PaletteItem } from "./items";
 import { JumpPalette } from "./JumpPalette";
@@ -102,6 +104,21 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       resumeSession: actions.openSessions ? () => actions.openSessions?.() : undefined,
       discardAll: current && actions.discardAllChanges ? () => actions.discardAllChanges?.() : undefined,
     };
+    // The tab in front, when it is a terminal: the same calls as the tab and terminal menus.
+    const front = sessions && current && shownTab ? sessions.tabs(current.path).find((x) => x.id === shownTab) : undefined;
+    if (sessions && current && front) {
+      handlers.pinTab = front.pinned ? undefined : () => sessions.setPinned(front.id, true);
+      handlers.unpinTab = front.pinned ? () => sessions.setPinned(front.id, false) : undefined;
+      handlers.moveTabRight = sessions.canMoveToSplit(front.id) ? () => sessions.moveToSplit(front.id, "right") : undefined;
+      const handle = terminalOf(front.id);
+      if (handle) {
+        const profile = profileName(view, front.profileId, t);
+        handlers.clearTerminal = () => handle.clear();
+        handlers.resetTerminal = () => handle.reset();
+        handlers.copyTerminalContext = () =>
+          void copyContext(handle, { title: front.title ?? profile, profile, path: current.path, branch: current.branch, exitCode: front.exitCode });
+      }
+    }
     const worktreeOf = (path: string) => list.flatMap((r) => r.worktrees).find((w) => w.path === path);
     items = [
       ...tabItems(list, (path) => sessions?.tabs(path) ?? [], {

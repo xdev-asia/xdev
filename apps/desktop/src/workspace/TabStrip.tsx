@@ -1,12 +1,14 @@
 import { useState } from "react";
-import type { JSX } from "react";
+import type { CSSProperties, JSX } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
 import type { PtyProfile } from "@/api";
 import { useI18n } from "@/i18n";
 import { withChord } from "@/keys/hint";
 import { AgentIcon } from "./AgentIcon";
 import type { PaneDir } from "./paneTree";
-import type { Tab } from "./sessions";
+import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
+import type { Tab, TabColor } from "./sessions";
+import { tabColorVar, tabMenuItems } from "./tabMenu";
 import type { TabStatus } from "./status";
 import { StatusGlyph } from "./StatusGlyph";
 
@@ -33,11 +35,17 @@ export function TabStrip(props: {
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onCloseOthers: (id: string) => void;
+  onCloseToRight: (id: string) => void;
   onLaunch: (profile: PtyProfile) => void;
   /** Splits this pane, opening the default shell in the new one. */
   onSplit: (dir: PaneDir) => void;
   /** Moves a tab of this pane into a new pane beside it. */
-  onSplitTab: (id: string, dir: PaneDir) => void;
+  onMoveToSplit: (id: string, dir: PaneDir) => void;
+  onPin: (id: string, pinned: boolean) => void;
+  onCopyTabId: (id: string) => void;
+  /** Opens the title dialog for a tab. */
+  onChangeTitle: (id: string) => void;
+  onColor: (id: string, color: TabColor) => void;
   onRename: (id: string, name: string) => void;
   /** Shows a resumed tab's session in the session history; absent when there is no history panel. */
   onShowHistory?: (sessionId: string) => void;
@@ -77,6 +85,50 @@ export function TabStrip(props: {
 
   const picked = context ? items.find((i) => i.id === context.id) : null;
   const canSplitTab = items.length > 1;
+  const strip = items.flatMap((i) => (i.tab ? [i.tab] : []));
+
+  // The tab menu; the review tab is no terminal, so it has no pin, colour or title.
+  const contextItems = (item: StripItem): MenuItem[] => {
+    if (!item.tab) {
+      return [
+        {
+          id: "moveToSplit",
+          labelKey: "tabMenu.moveToSplit",
+          disabled: !canSplitTab,
+          children: [
+            { id: "moveRight", labelKey: "tabMenu.moveRight", run: () => props.onMoveToSplit(item.id, "right") },
+            { id: "moveDown", labelKey: "tabMenu.moveDown", run: () => props.onMoveToSplit(item.id, "down") },
+          ],
+        },
+        { id: "close", labelKey: "tabMenu.close", run: () => props.onClose(item.id) },
+      ];
+    }
+    const resumed = item.tab.resumeOf;
+    const history: MenuItem[] =
+      resumed && props.onShowHistory
+        ? [
+            { id: "sep-history", labelKey: "", kind: "separator" },
+            { id: "history", labelKey: "agentSessions.showInHistory", run: () => props.onShowHistory?.(resumed) },
+          ]
+        : [];
+    return [
+      ...tabMenuItems({
+        tab: item.tab,
+      tabs: strip,
+      canMoveToSplit: canSplitTab,
+      split: props.onSplit,
+      moveToSplit: (dir) => props.onMoveToSplit(item.id, dir),
+      setPinned: (pinned) => props.onPin(item.id, pinned),
+      copyTabId: () => props.onCopyTabId(item.id),
+      changeTitle: () => props.onChangeTitle(item.id),
+      setColor: (color) => props.onColor(item.id, color),
+      close: () => props.onClose(item.id),
+      closeOthers: () => props.onCloseOthers(item.id),
+      closeToRight: () => props.onCloseToRight(item.id),
+      }),
+      ...history,
+    ];
+  };
 
   return (
     <div className="ws-tabstrip" data-pane={props.pane}>
@@ -89,6 +141,9 @@ export function TabStrip(props: {
               key={item.id}
               className="ws-tab"
               data-selected={selected}
+              data-pinned={tab?.pinned || undefined}
+              data-color={tab && tab.color !== "none" ? tab.color : undefined}
+              style={tab && tab.color !== "none" ? ({ "--ws-tab-color": `var(${tabColorVar(tab.color)!})` } as CSSProperties) : undefined}
               onContextMenu={(e) => {
                 e.preventDefault();
                 props.onMenu(false);
@@ -123,10 +178,18 @@ export function TabStrip(props: {
                   }
                   title={tab?.title ?? undefined}
                   onClick={() => props.onSelect(item.id)}
+                  onDoubleClick={() => tab && setRenaming(item.id)}
                 >
                   {tab ? (
                     <>
                       <AgentIcon profile={tab.profileId} size={16} />
+                      {tab.pinned && (
+                        <span className="ws-tab-pin" role="img" aria-label={t("tabMenu.pinned")} title={t("tabMenu.pinned")}>
+                          <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
+                            <path d="M10 1.5 14.5 6l-1.6.6-2.4 2.4.4 3.2-1.2 1.2L7 10.2 3.5 13.7 2.3 12.5 5.8 9 3.2 6.2 4.4 5l3.2.4L10 3z" fill="currentColor" />
+                          </svg>
+                        </span>
+                      )}
                       <span className="ws-tab-name">{shownName(tab)}</span>
                       {tab.permissions === "skip" && (
                         <span className="ws-tab-skip" title={t("workspace.tabs.skipHint")}>
@@ -147,6 +210,7 @@ export function TabStrip(props: {
                   )}
                 </button>
               )}
+              {!tab?.pinned && (
               <button
                 type="button"
                 className="ws-tab-close"
@@ -156,6 +220,7 @@ export function TabStrip(props: {
               >
                 ×
               </button>
+              )}
             </div>
           );
         })}
@@ -198,24 +263,7 @@ export function TabStrip(props: {
           </>
         )}
         {context && picked && (
-          <>
-            <div
-              className="ws-menu-backdrop"
-              onClick={() => setContext(null)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setContext(null);
-              }}
-            />
-            <div className="ws-menu ws-menu-at" role="menu" style={{ left: context.x, top: context.y }}>
-              {menuItem("close", t("workspace.tabs.close", { name: labelOf(picked) }), () => props.onClose(picked.id))}
-              {menuItem("close-others", t("panes.menu.closeOthers"), () => props.onCloseOthers(picked.id), { disabled: items.length < 2 })}
-              {menuItem("split-right", t("workspace.tabs.split.right"), () => props.onSplitTab(picked.id, "right"), { disabled: !canSplitTab })}
-              {menuItem("split-down", t("workspace.tabs.split.down"), () => props.onSplitTab(picked.id, "down"), { disabled: !canSplitTab })}
-              {picked.tab && menuItem("rename", t("panes.menu.rename"), () => setRenaming(picked.id))}
-              {picked.tab?.resumeOf && props.onShowHistory && menuItem("history", t("agentSessions.showInHistory"), () => props.onShowHistory?.(picked.tab?.resumeOf ?? ""))}
-            </div>
-          </>
+          <ContextMenu at={{ x: context.x, y: context.y }} items={contextItems(picked)} onClose={() => setContext(null)} />
         )}
       </div>
     </div>

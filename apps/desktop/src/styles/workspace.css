@@ -2289,3 +2289,132 @@ button.ws-tree-row:focus-visible {
   gap: 8px;
   margin-left: auto;
 }
+
+/* ContextMenu (ui/ContextMenu.tsx): at a point, in a portal. */
+.x-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--bg-2);
+  color: var(--text-1);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-1) 16%, transparent);
+}
+
+.x-menu-root {
+  position: fixed;
+  z-index: 60;
+}
+
+.x-menu-row {
+  position: relative;
+}
+
+.x-menu-sub {
+  position: absolute;
+  top: -5px;
+  left: 100%;
+  z-index: 1;
+}
+
+.x-menu-root[data-flip] .x-menu-sub {
+  left: auto;
+  right: 100%;
+}
+
+.x-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: default;
+}
+
+.x-menu-item[data-active] {
+  background: var(--bg-3);
+}
+
+.x-menu-item[data-danger] {
+  color: var(--danger);
+}
+
+.x-menu-item[aria-disabled="true"] {
+  color: var(--text-2);
+  opacity: 0.6;
+}
+
+.x-menu-item[aria-checked="true"] .x-menu-label {
+  font-weight: 600;
+}
+
+.x-menu-label {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.x-menu-chord,
+.x-menu-arrow {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.x-menu-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+}
+
+.x-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--line);
+}
+
+.ws-title-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 12px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.ws-title-field input {
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13px;
+}
+
+/* A coloured tab: a 3px underline in its colour; the selected top accent stays. */
+.ws-tab[data-color] {
+  box-shadow: inset 0 -3px 0 var(--ws-tab-color);
+}
+
+.ws-tab[data-color][data-selected="true"] {
+  box-shadow:
+    inset 0 2px 0 var(--accent),
+    inset 0 -3px 0 var(--ws-tab-color);
+}
+
+.ws-tab-pin {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-3);
+}

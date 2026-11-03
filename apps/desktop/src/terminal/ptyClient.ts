@@ -78,8 +78,9 @@ export class PtyClient {
     return this.api.ptyWrite(this.id, this.encoder.encode(text));
   }
 
-  async resize(cols: number, rows: number): Promise<void> {
-    if (this.size?.[0] === cols && this.size[1] === rows) return;
+  /** A resize to the size it has is dropped, unless `force` (Reset Terminal asks the program to redraw). */
+  async resize(cols: number, rows: number, force = false): Promise<void> {
+    if (!force && this.size?.[0] === cols && this.size[1] === rows) return;
     this.size = [cols, rows];
     await this.api.ptyResize(this.id, cols, rows);
   }

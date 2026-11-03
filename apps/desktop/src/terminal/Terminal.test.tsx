@@ -6,7 +6,7 @@ import { Terminal } from "./Terminal";
 import { resetTerminalSettingsForTests, setTerminalSettings, TERMINAL_DEFAULTS } from "./terminalSettings";
 
 // The first ref is the xterm host; the rest keep their initial value.
-const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, listeners: {} as Record<string, (e: unknown) => void> }));
+const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[] }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: (initial: unknown) => [initial, () => {}],
@@ -27,6 +27,9 @@ vi.mock("react", async (original) => ({
   },
   useEffect: (effect: () => void | (() => void)) => {
     hooks.effects.push(effect);
+  },
+  useImperativeHandle: (ref: { current: unknown } | null | undefined, create: () => unknown) => {
+    if (ref) ref.current = create();
   },
 }));
 vi.mock("@/i18n", async (original) => ({
@@ -65,6 +68,12 @@ vi.mock("@xterm/xterm", () => ({
     }
     getSelection() {
       return hooks.selection;
+    }
+    hasSelection() {
+      return hooks.selection.length > 0;
+    }
+    paste(text: string) {
+      hooks.pasted.push(text);
     }
     dispose() {}
   },
@@ -109,6 +118,7 @@ beforeEach(() => {
   hooks.osc = null;
   hooks.options = {};
   hooks.listeners = {};
+  hooks.pasted = [];
   resetTerminalSettingsForTests();
   vi.stubGlobal("getComputedStyle", () => ({ getPropertyValue: () => "" }));
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
@@ -258,6 +268,43 @@ it("a right click pastes when on and does nothing when off", async () => {
   await tick();
   expect(event.preventDefault).toHaveBeenCalledTimes(1);
   expect(readText).toHaveBeenCalledTimes(1);
+});
+
+it("R1: Shift+right-click opens the menu when paste is on; a right click opens it when paste is off", async () => {
+  const { readText } = clipboard();
+  const onMenu = vi.fn();
+  const handleRef = { current: null as unknown };
+  const { effect } = mount({ api: createMockApi({}), id: "m-1", onMenu, handleRef: handleRef as never });
+  effect();
+  await tick();
+  const event = (shiftKey: boolean) => ({ shiftKey, clientX: 12, clientY: 34, preventDefault: vi.fn(), stopPropagation: vi.fn() });
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, rightClickPaste: true });
+  const shifted = event(true);
+  hooks.listeners.contextmenu(shifted);
+  await tick();
+  expect(shifted.preventDefault).toHaveBeenCalled();
+  expect(onMenu).toHaveBeenCalledWith({ x: 12, y: 34 }, handleRef.current);
+  expect(readText).not.toHaveBeenCalled();
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, rightClickPaste: false });
+  hooks.listeners.contextmenu(event(false));
+  await tick();
+  expect(onMenu).toHaveBeenCalledTimes(2);
+  expect(readText).not.toHaveBeenCalled();
+});
+
+it("the handle in handleRef copies and pastes through the live xterm", async () => {
+  const { writeText } = clipboard();
+  const handleRef = { current: null as null | import("./Terminal").TerminalHandle };
+  const { effect } = mount({ api: createMockApi({}), id: "h-1", handleRef: handleRef as never });
+  const h = handleRef.current!;
+  expect(await h.copy()).toBe(false);
+  effect();
+  await tick();
+  hooks.selection = "echo hi";
+  expect(await h.copy()).toBe(true);
+  expect(writeText).toHaveBeenCalledWith("echo hi");
+  await h.paste();
+  expect(hooks.pasted).toEqual(["pasted"]);
 });
 
 it("OSC 52 writes the clipboard when on, nothing when off, and never reads", () => {
