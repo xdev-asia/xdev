@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
+import pkg from "../../package.json";
 import logo from "../../../../docs/brand/xdev-icon-512.png";
 import { toApiError, type Api, type ApiError, type PtyProfile, type RepoView, type WorktreeView } from "../api";
 import { DocsApp } from "../DocsApp";
@@ -8,6 +9,7 @@ import { useI18n } from "../i18n";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
+import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { Sessions } from "./sessions";
 import { WorktreeStats } from "./stats";
 import type { TabStatus } from "./status";
@@ -365,13 +367,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       </div>
 
       {/* The docs app keeps its own status bar, so this one shows with the workspace only. */}
-      <footer className="ws-footer" hidden={view === "docs"}>
-        {branch && <span className="ws-mono">{`⎇ ${branch}`}</span>}
-        <span className="ws-running">
-          {running > 0 && <span className="ws-dot ws-pulse" data-dot="working" aria-hidden="true" />}
-          {t("workspace.footer.running", { count: running })}
-        </span>
-      </footer>
+      <LiveWorkspaceFooter
+        api={api}
+        branch={branch}
+        running={running}
+        // Tabs that wait on the person arrive with Plan 4; none exist yet.
+        waiting={0}
+        version={pkg.version}
+        hidden={view === "docs"}
+      />
 
       {creating && repos && (
         <CreateWorktreeDialog
