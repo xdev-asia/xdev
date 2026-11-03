@@ -7,6 +7,7 @@ mod links;
 mod pty;
 mod session;
 mod settings;
+mod ship;
 mod squads;
 mod tasks;
 mod updater;
@@ -125,6 +126,19 @@ pub fn run() {
             workspace::worktree_file_diff,
             workspace::worktree_commit,
             workspace::worktree_list_dir,
+            ship::worktree_ship,
+            ship::worktree_push,
+            ship::worktree_pull,
+            ship::worktree_sync,
+            ship::worktree_fetch,
+            ship::worktree_force_push,
+            ship::worktree_amend,
+            ship::worktree_pr,
+            ship::worktree_pr_create,
+            ship::worktree_pr_checks,
+            ship::worktree_pr_open,
+            ship::worktree_draft_commit,
+            ship::worktree_draft_pr,
             kit::kit_homes,
             kit::kit_skills,
             kit::kit_memory,

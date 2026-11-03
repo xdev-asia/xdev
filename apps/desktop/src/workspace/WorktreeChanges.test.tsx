@@ -6,6 +6,7 @@ import { createMockApi, type Api, type WorktreeChange, type WorktreeView } from 
 import { DiffView } from "../components/DiffView";
 import { translate } from "../i18n";
 import { Sessions } from "./sessions";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeDiff } from "./WorktreeDiff";
 import { WorktreeTabs } from "./WorktreeTabs";
@@ -72,10 +73,10 @@ function mount(render: () => unknown) {
   return { draw, all, html, find, cleanups };
 }
 
-function changes(api: Api, sessions?: Sessions) {
+function changes(api: Api, sessions?: Sessions, extra: Partial<Parameters<typeof WorktreeChanges>[0]> = {}) {
   const onOpenFile = vi.fn();
   const onCount = vi.fn();
-  const view = mount(() => WorktreeChanges({ api, worktree: oak, sessions, onOpenFile, onCount }));
+  const view = mount(() => WorktreeChanges({ api, worktree: oak, sessions, onOpenFile, onCount, ...extra }));
   const rows = () => view.all().filter((n) => n.type === "li");
   const row = (path: string) => rows().find((r) => nodes(r).some((n) => n.props.children === path))!;
   const box = (path: string) => nodes(row(path)).find((n) => n.type === "input")!;
@@ -319,4 +320,110 @@ it("shows the binary placeholder", async () => {
   await tick();
   expect(large.html()).toContain(en("workspace.diff.tooLarge"));
   expect(large.find((n) => n.type === DiffView)).toBeUndefined();
+});
+
+const FILES = ["docs/old-notes.md", "src/session.ts", "src/status.ts"];
+const key = (extra: object = {}) => ({ key: "Enter", ctrlKey: true, preventDefault: vi.fn(), ...extra });
+
+it("ctrl+enter commits", async () => {
+  const api = createMockApi({});
+  const commit = vi.spyOn(api, "worktreeCommit");
+  const onShipChanged = vi.fn();
+  const view = changes(api, undefined, { onShipChanged });
+  await tick();
+  view.message().props.onChange({ target: { value: "feat: status line" } });
+  const event = key();
+  view.message().props.onKeyDown(event);
+  await tick();
+  expect(event.preventDefault).toHaveBeenCalled();
+  expect(commit).toHaveBeenCalledWith(OAK, FILES, "feat: status line");
+  expect(onShipChanged).toHaveBeenCalledTimes(1);
+  // Cmd+Enter does the same.
+  const other = createMockApi({});
+  const cmd = vi.spyOn(other, "worktreeCommit");
+  const mac = changes(other);
+  await tick();
+  mac.message().props.onChange({ target: { value: "again" } });
+  mac.message().props.onKeyDown(key({ ctrlKey: false, metaKey: true }));
+  await tick();
+  expect(cmd).toHaveBeenCalledTimes(1);
+});
+
+it("ctrl+enter does nothing with an empty message", async () => {
+  const api = createMockApi({});
+  const commit = vi.spyOn(api, "worktreeCommit");
+  const view = changes(api);
+  await tick();
+  view.message().props.onKeyDown(key());
+  view.message().props.onKeyDown(key({ ctrlKey: false }));
+  await tick();
+  expect(commit).not.toHaveBeenCalled();
+});
+
+it("draft fills the message", async () => {
+  const api = createMockApi({});
+  const draft = vi.spyOn(api, "worktreeDraftCommit");
+  const commit = vi.spyOn(api, "worktreeCommit");
+  const view = changes(api);
+  await tick();
+  const button = () => view.find((n) => n.type === "button" && n.props.children === en("ship.draft"))!;
+  button().props.onClick();
+  expect(view.find((n) => n.type === "button" && n.props.children === en("ship.drafting"))!.props.disabled).toBe(true);
+  await tick();
+  expect(draft).toHaveBeenCalledWith(OAK, FILES);
+  expect(view.message().props.value).toBe("Update 3 files");
+  // Drafting never commits by itself.
+  expect(commit).not.toHaveBeenCalled();
+  vi.spyOn(api, "worktreeDraftCommit").mockRejectedValueOnce({ code: "draft_failed" });
+  button().props.onClick();
+  await tick();
+  expect(view.html()).toContain(en("error.draft_failed"));
+});
+
+it("amend pushed asks then confirms", async () => {
+  const api = createMockApi({});
+  const amend = vi.spyOn(api, "worktreeAmend")
+    .mockRejectedValueOnce({ code: "amend_pushed" })
+    .mockResolvedValueOnce("c".repeat(40));
+  const commit = vi.spyOn(api, "worktreeCommit");
+  const view = changes(api);
+  await tick();
+  view.find((n) => n.type === "input" && n.props["aria-label"] === undefined && n.props.type === "checkbox" && n.props.checked === false)!.props.onChange();
+  view.message().props.onChange({ target: { value: "fix: reword" } });
+  expect(view.commit().props.children).toBe(en("ship.amend.button"));
+  view.commit().props.onClick();
+  await tick();
+  expect(amend).toHaveBeenLastCalledWith(OAK, FILES, "fix: reword", false);
+  const dialog = () => view.find((n) => n.type === ConfirmDialog)!;
+  expect(dialog().props.open).toBe(true);
+  expect(dialog().props.body).toBe("This commit is already on the remote. Amending it means the next push must be a force push.");
+  dialog().props.onConfirm();
+  await tick();
+  expect(amend).toHaveBeenLastCalledWith(OAK, FILES, "fix: reword", true);
+  expect(dialog().props.open).toBe(false);
+  expect(commit).not.toHaveBeenCalled();
+});
+
+it("hook failure shows output and fix with agent sends it", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeCommit").mockRejectedValueOnce({ code: "hook_failed", detail: "eslint: 3 errors" });
+  const onFixWithAgent = vi.fn();
+  const view = changes(api, undefined, { onFixWithAgent });
+  await tick();
+  view.message().props.onChange({ target: { value: "feat: x" } });
+  view.commit().props.onClick();
+  await tick();
+  const pre = view.find((n) => n.type === "pre")!;
+  expect(pre.props.children).toBe("eslint: 3 errors");
+  view.find((n) => n.type === "button" && n.props.children === en("ship.hook.fix"))!.props.onClick();
+  expect(onFixWithAgent).toHaveBeenCalledWith("eslint: 3 errors");
+  // Without the prop the button is hidden.
+  const bare = changes(api);
+  await tick();
+  bare.message().props.onChange({ target: { value: "x" } });
+  vi.spyOn(api, "worktreeCommit").mockRejectedValueOnce({ code: "hook_failed", detail: "boom" });
+  bare.commit().props.onClick();
+  await tick();
+  expect(bare.html()).toContain("boom");
+  expect(bare.html()).not.toContain(en("ship.hook.fix"));
 });

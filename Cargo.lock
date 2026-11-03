@@ -6185,6 +6185,7 @@ name = "xdev-git"
 version = "0.3.0"
 dependencies = [
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "ts-rs",

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
-import type { ApiError, PtyProfile, RepoView, WorktreeStat, WorktreeView } from "../api";
+import type { ApiError, Check, PrView, PtyProfile, RepoView, WorktreeStat, WorktreeView } from "../api";
 import { useI18n } from "../i18n";
 import { AGENT_LETTER } from "./AgentIcon";
 import { ago } from "./ago";
 import { groupWorktrees, type Group } from "./groups";
+import { checksSummary } from "./ship";
 import type { TabStatus } from "./status";
 
 type T = ReturnType<typeof useI18n>["t"];
@@ -28,6 +29,8 @@ export interface WorktreeListProps {
   activity?: Record<string, number | null>;
   /** The profiles open in each worktree path, in tab order. */
   profiles?: Record<string, PtyProfile[]>;
+  /** The pull request and checks of each worktree path, once looked at. */
+  prs?: Record<string, { pr: PrView | null; checks: Check[] | null }>;
   /** The time the relative times count from; `Date.now()` when left out. */
   now?: number;
   /** Why the last repo or pin action failed. */
@@ -83,6 +86,9 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     // Plain shells are not agents: only the agent profiles get a chip.
     const agents = (props.profiles?.[wt.path] ?? []).filter((p) => p !== "shell");
     const counts = stat && (stat.added > 0 || stat.removed > 0) ? stat : null;
+    const found = props.prs?.[wt.path];
+    const pr = found?.pr ?? null;
+    const summary = pr && found?.checks ? checksSummary(found.checks) : null;
     return (
       <li key={wt.path} className="ws-wt" data-path={wt.path}>
         <button
@@ -121,7 +127,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
               {wt.branch ?? t("workspace.detached")}
             </span>
           </span>
-          {(agents.length > 0 || counts) && (
+          {(agents.length > 0 || counts || pr) && (
             <span className="ws-wt-meta">
               {agents.map((p) => (
                 <span key={p} className="ws-chip" data-profile={p} title={t(`terminal.profile.${p}`)}>
@@ -135,7 +141,21 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
                   <span className="ws-stat-del">{`−${counts.removed}`}</span>
                 </span>
               )}
-              {/* The pull request badge goes here once a worktree has one. */}
+              {pr && (
+                <span
+                  className="ws-pr"
+                  role="img"
+                  aria-label={
+                    summary
+                      ? t("ship.chip.labelChecks", { number: pr.number, state: t(`checks.state.${pr.state}`).toLowerCase(), checks: t(`checks.summary.${summary}`) })
+                      : t("ship.chip.label", { number: pr.number, state: t(`checks.state.${pr.state}`).toLowerCase() })
+                  }
+                >
+                  <span className="ws-dot" data-pr={pr.state} aria-hidden="true" />
+                  {`#${pr.number}`}
+                  {summary && <span className="ws-dot" data-check={summary} aria-hidden="true" />}
+                </span>
+              )}
             </span>
           )}
         </button>

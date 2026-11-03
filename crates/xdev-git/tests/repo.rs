@@ -173,8 +173,18 @@ fn codes_are_stable() {
         (GitError::NoGit, "no_git"),
         (GitError::NoRepo, "no_repo"),
         (GitError::Identity, "git_identity"),
+        (GitError::GhMissing, "gh_missing"),
+        (GitError::GhAuth, "gh_auth"),
+        (GitError::NotGithub, "not_github"),
+        (GitError::Gh(String::new()), "gh_failed"),
         (GitError::BadId(String::new()), "git"),
         (GitError::Timeout, "git"),
+        (
+            GitError::Hook {
+                output: String::new(),
+            },
+            "hook_failed",
+        ),
         (
             GitError::Failed {
                 args: String::new(),

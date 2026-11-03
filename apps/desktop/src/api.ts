@@ -41,6 +41,10 @@ import type {
   WorktreeFileDiff,
   WorktreeStat,
   WorktreeView,
+  Check,
+  PrDraft,
+  PrView,
+  ShipView,
 } from "@xdev/bindings";
 import type {
   DirEntry,
@@ -111,6 +115,10 @@ export type {
   WorktreeSkip,
   WorktreeStat,
   WorktreeView,
+  Check,
+  PrDraft,
+  PrView,
+  ShipView,
 } from "@xdev/bindings";
 // The UI's names for generated types.
 export type { Event as SquadEvent, FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
@@ -190,7 +198,22 @@ export type ErrorCode =
   | "kit_bad_input"
   | "short_name_taken"
   | "vault_exists"
-  | "vault_unknown";
+  | "vault_unknown"
+  | "no_remote"
+  | "no_upstream"
+  | "push_rejected"
+  | "pull_diverged"
+  | "force_base"
+  | "nothing_to_amend"
+  | "amend_pushed"
+  | "hook_failed"
+  | "not_pushed"
+  | "empty_title"
+  | "gh_missing"
+  | "gh_auth"
+  | "not_github"
+  | "gh_failed"
+  | "draft_failed";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = { shortName?: string; baseRef?: string; worktreeRoot?: string };
@@ -327,6 +350,26 @@ export interface Api {
   worktreeCommit(path: string, files: string[], message: string): Promise<string | null>;
   // Line counts against the start ref (against HEAD for the primary checkout), untracked files included.
   worktreeStat(path: string): Promise<WorktreeStat>;
+  // Shipping: where the branch stands against its upstream and base. Push, pull, sync and fetch
+  // resolve with the new state. Push rejects with `no_remote`, `detached` or `push_rejected`; pull
+  // with `no_upstream` or `pull_diverged`; a commit or amend with `hook_failed` (detail is the hook output).
+  worktreeShip(path: string): Promise<ShipView>;
+  worktreePush(path: string): Promise<ShipView>;
+  worktreePull(path: string): Promise<ShipView>;
+  worktreeSync(path: string): Promise<ShipView>;
+  worktreeFetch(path: string): Promise<ShipView>;
+  // `expected` is the remote commit the caller saw; without `confirmed` this rejects with `needs_approval`.
+  worktreeForcePush(path: string, expected: string, confirmed: boolean): Promise<ShipView>;
+  // The new commit's id. Rejects with `nothing_to_amend`, or `amend_pushed` unless `confirmed`.
+  worktreeAmend(path: string, files: string[], message: string, confirmed: boolean): Promise<string>;
+  // Pull requests through the `gh` tool; null when the branch has none.
+  worktreePr(path: string): Promise<PrView | null>;
+  worktreePrCreate(path: string, draft: PrDraft): Promise<PrView>;
+  worktreePrChecks(path: string, number: number): Promise<Check[]>;
+  worktreePrOpen(path: string, checks: boolean): Promise<void>;
+  // Drafted texts; reject with `draft_failed`.
+  worktreeDraftCommit(path: string, files: string[]): Promise<string>;
+  worktreeDraftPr(path: string): Promise<PrDraft>;
   // One folder level of a worktree (`dir` is relative; "" is the top): folders first, then files,
   // A to Z, `.git` left out, links listed as files and never followed, at most 2000 names with
   // `truncated` set past that. Rejects with `bad_path` for `..`, an absolute path or a link.
@@ -427,6 +470,21 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "short_name_taken",
   "vault_exists",
   "vault_unknown",
+  "no_remote",
+  "no_upstream",
+  "push_rejected",
+  "pull_diverged",
+  "force_base",
+  "nothing_to_amend",
+  "amend_pushed",
+  "hook_failed",
+  "not_pushed",
+  "empty_title",
+  "gh_missing",
+  "gh_auth",
+  "not_github",
+  "gh_failed",
+  "draft_failed",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -530,6 +588,19 @@ const tauriApi: Api = {
   worktreeFileDiff: (path, file) => call("worktree_file_diff", { path, file }),
   worktreeCommit: (path, files, message) => call("worktree_commit", { path, files, message }),
   worktreeStat: (path) => call("worktree_stat", { path }),
+  worktreeShip: (path) => call("worktree_ship", { path }),
+  worktreePush: (path) => call("worktree_push", { path }),
+  worktreePull: (path) => call("worktree_pull", { path }),
+  worktreeSync: (path) => call("worktree_sync", { path }),
+  worktreeFetch: (path) => call("worktree_fetch", { path }),
+  worktreeForcePush: (path, expected, confirmed) => call("worktree_force_push", { path, expected, confirmed }),
+  worktreeAmend: (path, files, message, confirmed) => call("worktree_amend", { path, files, message, confirmed }),
+  worktreePr: (path) => call("worktree_pr", { path }),
+  worktreePrCreate: (path, draft) => call("worktree_pr_create", { path, draft }),
+  worktreePrChecks: (path, number) => call("worktree_pr_checks", { path, number }),
+  worktreePrOpen: (path, checks) => call("worktree_pr_open", { path, checks }),
+  worktreeDraftCommit: (path, files) => call("worktree_draft_commit", { path, files }),
+  worktreeDraftPr: (path) => call("worktree_draft_pr", { path }),
   worktreeListDir: (path, dir) => call("worktree_list_dir", { path, dir }),
   kitHomes: () => call("kit_homes"),
   kitSkills: (worktree) => call("kit_skills", { worktree }),
