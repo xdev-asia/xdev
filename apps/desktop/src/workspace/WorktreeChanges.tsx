@@ -197,7 +197,7 @@ export function WorktreeChanges(props: {
                 {t("ship.hook.fix")}
               </button>
             )}
-            <button type="button" className="btn-secondary" onClick={() => void navigator.clipboard?.writeText(problem.detail ?? "")}>
+            <button type="button" className="btn-secondary" onClick={() => void Promise.resolve(navigator.clipboard?.writeText(problem.detail ?? "")).catch(() => undefined)}>
               {t("ship.hook.copy")}
             </button>
           </div>

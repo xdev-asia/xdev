@@ -3,6 +3,7 @@
 //! Each command returns a fresh `ShipView` so the UI never guesses.
 
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -147,19 +148,21 @@ fn force_push_with(
     let branch = repo
         .current_branch()?
         .ok_or_else(|| err("detached", None))?;
-    let remote = repo.remote_for(&branch);
-    // The base ref may carry its remote's name: `origin/main` -> `main`.
-    let base = match &remote {
-        Ok(r) => known
-            .base_ref
-            .strip_prefix(&format!("{r}/"))
-            .unwrap_or(&known.base_ref),
-        Err(_) => &known.base_ref,
-    };
-    if branch == base {
+    // The base ref may carry a remote's name: `origin/main` -> `main`.
+    if branch == plain_base(&repo, &known.base_ref) {
         return Err(err("force_base", Some(branch)));
     }
-    let remote = remote?;
+    let remote = repo.remote_for(&branch)?;
+    // The lease names the local branch's ref on the remote; with a differently named upstream
+    // it would point at the wrong ref.
+    if let Some(up) = repo.upstream()?
+        && up.branch != branch
+    {
+        return Err(err(
+            "push_rejected",
+            Some(format!("{}/{}", up.remote, up.branch)),
+        ));
+    }
     let action = Action::ForcePush {
         worktree: path.to_owned(),
         remote,
@@ -213,20 +216,17 @@ fn pr_with(gh: &dyn GhExec, path: &Path) -> Result<Option<PrView>, CmdError> {
     Ok(pr_view(gh, path)?)
 }
 
-/// The base without its remote's name: `origin/main` -> `main`.
+/// The base without a remote's name: `origin/main` -> `main`. Any configured remote counts.
 fn plain_base(repo: &Repo, base_ref: &str) -> String {
-    let remote = repo
-        .current_branch()
-        .ok()
-        .flatten()
-        .and_then(|b| repo.remote_for(&b).ok());
-    match remote {
-        Some(r) => base_ref
-            .strip_prefix(&format!("{r}/"))
-            .unwrap_or(base_ref)
-            .to_owned(),
-        None => base_ref.to_owned(),
+    let mut remotes = repo.remote_names().unwrap_or_default();
+    // Longest first, so `a/b` wins over `a`.
+    remotes.sort_by_key(|r| std::cmp::Reverse(r.len()));
+    for r in remotes {
+        if let Some(rest) = base_ref.strip_prefix(&format!("{r}/")) {
+            return rest.to_owned();
+        }
     }
+    base_ref.to_owned()
 }
 
 fn create_pr_with(
@@ -239,7 +239,7 @@ fn create_pr_with(
         .current_branch()?
         .ok_or_else(|| err("detached", None))?;
     match repo.upstream()? {
-        Some(up) if up.ahead == 0 => {}
+        Some(up) if up.ahead == 0 && up.id.is_some() => {}
         _ => return Err(err("not_pushed", None)),
     }
     let title = draft.title.trim();
@@ -309,6 +309,17 @@ fn ask(runner: &dyn Runner, repo: &Repo, prompt: String) -> Result<String, CmdEr
     Ok(answer)
 }
 
+/// At most `DRAFT_CAP` bytes of a file: a huge file must not be loaded whole.
+fn read_capped(path: &Path) -> Option<Vec<u8>> {
+    let mut bytes = Vec::new();
+    fs::File::open(path)
+        .ok()?
+        .take(DRAFT_CAP as u64)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    Some(bytes)
+}
+
 fn draft_commit_with(
     runner: &dyn Runner,
     repo: &Repo,
@@ -318,7 +329,7 @@ fn draft_commit_with(
     // Untracked files are not in `git diff`; show them whole.
     let untracked = repo.untracked()?;
     for file in files.iter().filter(|f| untracked.contains(f)) {
-        let Ok(bytes) = fs::read(repo.root().join(file)) else {
+        let Some(bytes) = read_capped(&repo.root().join(file)) else {
             continue;
         };
         if bytes.contains(&0) {
@@ -695,6 +706,69 @@ mod tests {
     }
 
     #[test]
+    fn plain_base_strips_any_remote() {
+        let fx = fixture();
+        git(
+            &fx.wt,
+            &["remote", "add", "upstream", fx.origin.to_str().unwrap()],
+        );
+        let repo = repo_of(&fx);
+        assert_eq!(plain_base(&repo, "upstream/main"), "main");
+        assert_eq!(plain_base(&repo, "origin/main"), "main");
+        assert_eq!(plain_base(&repo, "main"), "main");
+        assert_eq!(plain_base(&repo, "feature/x"), "feature/x");
+    }
+
+    #[test]
+    fn force_push_refuses_renamed_upstream() {
+        let fx = fixture();
+        commit_file(&fx.wt, "b.txt", "two");
+        let name = branch(&fx);
+        git(&fx.wt, &["push", "-q", "origin", &format!("{name}:other")]);
+        git(
+            &fx.wt,
+            &["config", &format!("branch.{name}.remote"), "origin"],
+        );
+        git(
+            &fx.wt,
+            &[
+                "config",
+                &format!("branch.{name}.merge"),
+                "refs/heads/other",
+            ],
+        );
+        git(&fx.wt, &["fetch", "-q", "origin"]);
+        let id = git(&fx.wt, &["rev-parse", "HEAD"]);
+        let before = git(&fx.origin, &["rev-parse", "other"]);
+        assert_eq!(
+            code(force_push_with(&fx.data, &fx.wt, &id, true)),
+            "push_rejected"
+        );
+        assert_eq!(git(&fx.origin, &["rev-parse", "other"]), before);
+    }
+
+    #[test]
+    fn create_pr_refuses_deleted_remote_branch() {
+        let fx = fixture();
+        commit_file(&fx.wt, "b.txt", "two");
+        push_with(&fx.data, &fx.wt).unwrap();
+        let name = branch(&fx);
+        git(&fx.origin, &["branch", "-D", &name]);
+        git(&fx.wt, &["fetch", "-q", "--prune", "origin"]);
+        let gh = FakeGh::new(vec![]);
+        assert_eq!(
+            code(create_pr_with(
+                &gh,
+                &repo_of(&fx),
+                "origin/main",
+                draft("T")
+            )),
+            "not_pushed"
+        );
+        assert!(gh.calls.borrow().is_empty());
+    }
+
+    #[test]
     fn amend_refuses_start_commit() {
         let fx = fixture();
         assert_eq!(
@@ -927,6 +1001,14 @@ mod tests {
         let prompt = runner.reqs.borrow()[0].prompt.clone();
         assert!(prompt.len() <= 61_000, "{}", prompt.len());
         assert!(prompt.contains("[cut]"));
+    }
+
+    #[test]
+    fn untracked_files_are_read_capped() {
+        let fx = fixture();
+        fs::write(fx.wt.join("huge.txt"), "x".repeat(DRAFT_CAP * 3)).unwrap();
+        let bytes = read_capped(&fx.wt.join("huge.txt")).unwrap();
+        assert_eq!(bytes.len(), DRAFT_CAP);
     }
 
     #[test]

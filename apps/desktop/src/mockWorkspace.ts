@@ -313,19 +313,25 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
       return doPull(path);
     },
     async worktreeSync(path) {
-      const pulled = doPull(path);
-      if (pulled instanceof Promise) return pulled;
-      return doPush(path);
+      // Like Rust: pull when behind (a split history is refused), push when only ahead.
+      const view = shipView(path);
+      if (view instanceof Promise) return view;
+      if (view.upstream === null) return reject("no_upstream");
+      if (view.upstream.behind > 0) return doPull(path);
+      if (view.upstream.ahead > 0) return doPush(path);
+      return view;
     },
     async worktreeFetch(path) {
       return shipView(path);
     },
-    async worktreeForcePush(path, _expected, confirmed) {
+    async worktreeForcePush(path, expected, confirmed) {
       if (!confirmed) return reject("needs_approval", `force push ${path}`);
       const view = shipView(path);
       if (view instanceof Promise) return view;
       if (view.upstream === null) return reject("no_upstream");
-      if (view.branch === view.base) return reject("force_base", view.branch ?? "");
+      if (view.branch === view.base.replace(/^origin\//, "")) return reject("force_base", view.branch ?? "");
+      // The lease: the remote must still be where the caller last saw it.
+      if (expected !== view.upstream.id) return reject("push_rejected", "stale info");
       const r = remoteOf(path);
       r.ahead = 0;
       r.behind = 0;
@@ -380,7 +386,7 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
     },
     async worktreePrOpen(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);
-      if (!prs.has(path)) return reject("not_pushed");
+      if (!prs.has(path)) return reject("gh_failed");
     },
     async worktreeDraftCommit(path, files) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);
