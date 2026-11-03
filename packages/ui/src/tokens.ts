@@ -17,7 +17,8 @@ function block(selector: string, vars: Vars): string {
 export function tokensCss(): string {
   const light = {
     ...prefixed("color", tokens.color.light),
-    // Near-black neutrals of the workspace shell; the semantic colors stay in `color`.
+    // Neutrals of the workspace shell: cool grays here, near-black in dark mode. The semantic
+    // colors stay in `color`.
     ...prefixed("graphite", tokens.graphite.light),
     ...prefixed("space", tokens.space),
     ...prefixed("radius", tokens.radius),

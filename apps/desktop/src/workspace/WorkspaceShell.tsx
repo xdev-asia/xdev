@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import logo from "../../../../docs/brand/xdev-icon-512.png";
 import { toApiError, type Api, type ApiError, type RepoView, type WorktreeView } from "../api";
-import { DocsApp } from "../App";
+import { DocsApp } from "../DocsApp";
 import { LanguageSwitch } from "../components/LanguageSwitch";
 import { useI18n } from "../i18n";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
@@ -176,7 +176,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         </button>
         <img className="ws-logo" src={logo} alt="" width={18} height={18} />
         <span className="ws-brand">xDev</span>
-        {currentRepo && current && (
+        {/* The docs app shows its own folder, so the crumbs go with the workspace view. */}
+        {view === "workspace" && currentRepo && current && (
           <>
             <span className="ws-crumb-sep" aria-hidden="true">
               /

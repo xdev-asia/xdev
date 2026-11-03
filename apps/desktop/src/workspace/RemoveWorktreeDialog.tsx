@@ -1,4 +1,3 @@
-import { Button } from "@xdev/ui";
 import { useEffect, useRef } from "react";
 import type { JSX } from "react";
 import type { ApiError, WorktreeView } from "../api";
@@ -63,15 +62,9 @@ export function RemoveWorktreeDialog(props: {
         <button type="button" className="btn-secondary" autoFocus disabled={props.busy} onClick={props.onCancel}>
           {t("dialog.cancel")}
         </button>
-        <Button
-          type="button"
-          className="ws-danger"
-          style={{ background: "var(--x-color-danger)" }}
-          disabled={props.busy}
-          onClick={props.onConfirm}
-        >
+        <button type="button" className="ws-danger" disabled={props.busy} onClick={props.onConfirm}>
           {props.busy ? t("workspace.remove.busy") : props.dirty ? t("workspace.remove.force") : t("workspace.remove.confirm")}
-        </Button>
+        </button>
       </div>
     </dialog>
   );

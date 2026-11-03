@@ -537,7 +537,7 @@
   "workspace.remove.folder": "Thư mục",
   "workspace.remove.branch": "Nhánh",
   "workspace.remove.branchNote": "Nhánh cũng bị xoá nếu do xDev tạo và mọi commit của nó đã có trong {base}.",
-  "workspace.remove.forceNote": "Nếu vẫn xoá, nhánh do xDev tạo cũng bị xoá, kể cả khi có commit không còn ở nơi nào khác.",
+  "workspace.remove.forceNote": "Nếu vẫn xoá, nhánh do xDev tạo cũng bị xoá, kể cả khi nhánh có commit chưa có ở nơi nào khác.",
   "workspace.remove.confirm": "Xoá",
   "workspace.remove.force": "Vẫn xoá (mất phần chưa commit)",
   "workspace.remove.busy": "Đang xoá…"

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, type WorktreeView } from "../api";
-import { DocsApp } from "../App";
+import { DocsApp } from "../DocsApp";
 import { translate } from "../i18n";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
@@ -28,7 +28,6 @@ vi.mock("react", async (original) => {
   };
 });
 vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
-vi.mock("../App", () => ({ DocsApp: () => null }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {
@@ -94,7 +93,11 @@ it("shell_renders_without_vault", async () => {
 it("docs nav mounts the docs app once and keeps the workspace mounted", async () => {
   const view = await harness();
   const region = (cls: string) => view.all().find(n => n.props.className === cls)!;
+  const crumbs = () => view.all().filter(n => String(n.props.className ?? "").includes("ws-crumb"));
+  expect(crumbs().length).toBeGreaterThan(0);
   view.nav(en("workspace.nav.docs")).props.onClick();
+  // The docs app has its own folder bar, so the shell drops the repo and branch crumbs.
+  expect(crumbs()).toHaveLength(0);
   expect(view.of(DocsApp)).toHaveLength(1);
   expect(region("ws-docs").props.hidden).toBe(false);
   expect(region("ws-stage").props.hidden).toBe(true);
@@ -105,6 +108,7 @@ it("docs nav mounts the docs app once and keeps the workspace mounted", async ()
   expect(view.of(DocsApp)).toHaveLength(1);
   expect(region("ws-docs").props.hidden).toBe(true);
   expect(region("ws-stage").props.hidden).toBe(false);
+  expect(crumbs().length).toBeGreaterThan(0);
 
   view.nav(en("workspace.nav.docs")).props.onClick();
   expect(view.of(DocsApp)).toHaveLength(1);

@@ -30,8 +30,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
 
   const toggle = (id: string) =>
     setCollapsed(collapsed.includes(id) ? collapsed.filter((c) => c !== id) : [...collapsed, id]);
-  // The primary checkout can be neither pinned nor removed, so it has no menu.
-  const openMenu = (wt: WorktreeView) => setMenu(wt.primary ? null : wt.path);
+  const openMenu = (wt: WorktreeView) => setMenu(wt.path);
   const pick = (action: () => void) => {
     setMenu(null);
     action();
@@ -74,19 +73,17 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
             <span className="ws-wt-branch">{wt.branch ?? t("workspace.detached")}</span>
           </span>
         </button>
-        {!wt.primary && (
-          <button
-            type="button"
-            className="ws-wt-more"
-            aria-label={t("workspace.more", { name: wt.name })}
-            title={t("workspace.more", { name: wt.name })}
-            aria-haspopup="menu"
-            aria-expanded={open}
-            onClick={() => setMenu(open ? null : wt.path)}
-          >
-            ⋯
-          </button>
-        )}
+        <button
+          type="button"
+          className="ws-wt-more"
+          aria-label={t("workspace.more", { name: wt.name })}
+          title={t("workspace.more", { name: wt.name })}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setMenu(open ? null : wt.path)}
+        >
+          ⋯
+        </button>
         {open && (
           <>
             <div className="ws-menu-backdrop" aria-hidden="true" onClick={() => setMenu(null)} />
@@ -101,9 +98,12 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
               <button type="button" role="menuitem" autoFocus onClick={() => pick(() => props.onPin(wt))}>
                 {wt.pinned ? t("workspace.unpin") : t("workspace.pin")}
               </button>
-              <button type="button" role="menuitem" className="ws-menu-danger" onClick={() => pick(() => props.onRemove(wt))}>
-                {t("workspace.delete")}
-              </button>
+              {/* The primary checkout is the repo itself: it can be pinned but never removed. */}
+              {!wt.primary && (
+                <button type="button" role="menuitem" className="ws-menu-danger" onClick={() => pick(() => props.onRemove(wt))}>
+                  {t("workspace.delete")}
+                </button>
+              )}
             </div>
           </>
         )}

@@ -204,7 +204,8 @@
 .ws-list {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 0 8px 8px;
 }
 
@@ -283,7 +284,10 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
+  box-sizing: border-box;
   width: 100%;
+  min-width: 0;
+  overflow: hidden;
   padding: 7px 8px;
   border: 0;
   border-radius: 8px;
@@ -300,12 +304,15 @@
   box-shadow: inset 2px 0 0 var(--ws-accent);
 }
 
+/* Border-box, so the padding that clears the menu button stays inside the row. */
 .ws-wt-line,
 .ws-wt-sub {
   display: flex;
   align-items: center;
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
+  overflow: hidden;
 }
 
 .ws-wt-line {
@@ -571,6 +578,14 @@
   min-height: 0;
 }
 
+/* The shell header already shows the logo, the name and the language, so the docs bar keeps
+   only its folder controls. */
+.ws-docs .topbar-logo,
+.ws-docs .topbar-brand,
+.ws-docs .topbar-actions .lang-select {
+  display: none;
+}
+
 /* Footer */
 
 .ws-footer {
@@ -628,6 +643,28 @@
 
 .ws-field input.ws-mono {
   font-family: var(--x-font-mono);
+}
+
+/* The delete confirm, plain and forced: dark text on danger, legible in both modes. */
+.ws-danger {
+  min-height: 32px;
+  padding: 0 var(--x-space-4);
+  border: 0;
+  border-radius: var(--x-radius-md);
+  background: var(--x-color-danger);
+  color: var(--ws-bg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ws-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--x-color-danger) 88%, var(--ws-ink));
+}
+
+.ws-danger:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .ws-field small {
