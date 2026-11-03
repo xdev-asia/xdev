@@ -147,6 +147,21 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
             />
           </li>
         ))}
+        <li className="settings-item" data-option="suppressWhenFocused">
+          <div className="settings-item-text">
+            <strong>{t("settings.notifications.suppressWhenFocused")}</strong>
+            <span className="settings-path">{t("settings.notifications.suppressWhenFocusedHint")}</span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            className="agent-switch"
+            aria-checked={current.suppressWhenFocused}
+            aria-label={t("settings.notifications.suppressWhenFocused")}
+            disabled={busy || !current.enabled}
+            onClick={() => void put({ ...current, suppressWhenFocused: !current.suppressWhenFocused })}
+          />
+        </li>
       </ul>
 
       <h4 className="settings-group">{t("settings.notifications.channels")}</h4>
