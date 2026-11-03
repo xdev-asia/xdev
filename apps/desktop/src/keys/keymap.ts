@@ -5,6 +5,7 @@ import { IS_MAC, PLATFORM, type Platform } from "@/platform";
 import { getBindingsState } from "./bindingsStore";
 import { docsShown } from "./docsShown";
 import { normalizeChord } from "./keybindingsFile";
+import { notifyTerminalKey } from "./terminalKey";
 import { defaultsFor, SHORTCUTS } from "./registry";
 
 export { subscribeBindings } from "./bindingsStore";
@@ -297,6 +298,7 @@ export function useKeymap(
         return;
       }
       if (handler() === false) return;
+      if (inTerminal(e)) notifyTerminalKey(action, chordLabel(action));
       e.preventDefault();
       e.stopPropagation();
     };
