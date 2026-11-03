@@ -21,6 +21,7 @@ const info = (id: string, hooks: boolean | HookEvent[]): PtyInfo => ({
   account: null,
   hooks: hooks !== false,
   hookEvents: hooks === true ? CLAUDE : hooks === false ? [] : hooks,
+  cli: "claude",
 });
 
 async function spawn(sessions: Sessions, worktree: string, profile: Profile) {
@@ -529,6 +530,18 @@ describe("Sessions", () => {
     t += 5000;
     vi.advanceTimersByTime(5000);
     expect(live.tabs(A)[0].status).toBe("working");
+  });
+
+  it("a tab opened without a cli takes the one its pty reports", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "work", null);
+    expect(live.tabs(A)[0].cli).toBeNull();
+    live.noteStarted(tab.id, { ...info(tab.id, true), profile: "work", cli: "codex" });
+    expect(live.tabs(A)[0].cli).toBe("codex");
+    // gemini has no title rules or caps of its own here: it stays null.
+    const g = live.open(A, "gem", null);
+    live.noteStarted(g.id, { ...info(g.id, false), profile: "gem", cli: "gemini" });
+    expect(live.tabs(A)[1].cli).toBeNull();
   });
 
   it("a resume inside the done window keeps the turn going and is not announced (R18)", () => {

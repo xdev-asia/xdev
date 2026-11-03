@@ -225,8 +225,11 @@ export class Sessions {
     entry.caps = capsFor(info.hooks ? info.hookEvents : []);
     entry.state = { ...entry.state, caps: this.hooksOn ? entry.caps : NO_CAPS };
     this.sync();
-    if (entry.tab.permissions === info.permissions && entry.tab.account === info.account) return;
-    this.update(entry, { permissions: info.permissions, account: info.account });
+    // A tab opened without a profile view (the palette, a prompt) learns its CLI here, for title rules.
+    const reported: TabCli = info.cli === "claude" || info.cli === "codex" ? info.cli : null;
+    const cli = entry.tab.cli ?? reported;
+    if (entry.tab.permissions === info.permissions && entry.tab.account === info.account && entry.tab.cli === cli) return;
+    this.update(entry, { permissions: info.permissions, account: info.account, cli });
   }
 
   /**

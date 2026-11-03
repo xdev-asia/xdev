@@ -532,7 +532,7 @@ function attend(view: Awaited<ReturnType<typeof harness>>) {
   const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
   // An agent tab with hooks in a worktree that is not on screen.
   const tab = sessions.open(OAK, "claude");
-  sessions.noteStarted(tab.id, { id: tab.id, pid: 1, program: "agent", agent: true, profile: "claude", permissions: "ask", account: null, hooks: true, hookEvents: ["prompt", "needs-input", "resume", "turn-failed", "turn-done"] });
+  sessions.noteStarted(tab.id, { id: tab.id, pid: 1, program: "agent", agent: true, profile: "claude", permissions: "ask", account: null, hooks: true, hookEvents: ["prompt", "needs-input", "resume", "turn-failed", "turn-done"], cli: "claude" });
   return { fire, sessions, tab };
 }
 const OAK = "/demo/wt/xdev-oak";
@@ -635,7 +635,7 @@ it("the badge counts worktrees with something unread, not tabs", async () => {
   const view = await harness(api);
   const { sessions, tab } = attend(view);
   const second = sessions.open(OAK, "claude");
-  sessions.noteStarted(second.id, { id: second.id, pid: 2, program: "agent", agent: true, profile: "claude", permissions: "ask", account: null, hooks: true, hookEvents: ["prompt", "needs-input", "resume", "turn-failed", "turn-done"] });
+  sessions.noteStarted(second.id, { id: second.id, pid: 2, program: "agent", agent: true, profile: "claude", permissions: "ask", account: null, hooks: true, hookEvents: ["prompt", "needs-input", "resume", "turn-failed", "turn-done"], cli: "claude" });
   api.__hook(tab.id, "needs-input");
   api.__hook(second.id, "needs-input");
   await settle();
