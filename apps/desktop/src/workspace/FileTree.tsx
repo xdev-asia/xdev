@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type DirListing, type WorktreeChange } from "@/api";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { NameDialog } from "@/files/NameDialog";
+import { fileName, fileTabs } from "@/files/fileTabs";
+import { openFile } from "@/files/openFile";
+import { copyAbsolute, copyRelative, createEntry, deleteEntry, parentOf, renameEntry, type TreeIo } from "@/files/treeActions";
 import { useI18n } from "@/i18n";
+import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 
 // Git's own letters, so they read the same in every language. A deleted file is not on disk, so
 // the tree never meets one.
@@ -51,6 +57,26 @@ export function treeRows(folders: Record<string, Folder>, open: string[], change
 }
 
 /**
+ * The rows of the folders already loaded whose names match `query`, with the folders above a match
+ * kept so it stays reachable. An empty query keeps every row.
+ */
+export function filterRows(rows: Row[], query: string): Row[] {
+  const q = query.trim().toLowerCase();
+  if (q === "") return rows;
+  const hits = rows.filter((r) => r.type !== "note" && r.name.toLowerCase().includes(q));
+  const keep = new Set<string>();
+  for (const r of hits) {
+    keep.add(r.path);
+    for (let i = r.path.indexOf("/"); i >= 0; i = r.path.indexOf("/", i + 1)) keep.add(r.path.slice(0, i));
+  }
+  return rows.filter((r) => r.type !== "note" && keep.has(r.path));
+}
+
+// What a menu or dialog is about: a row, or the tree's empty space (the worktree root).
+type Target = { rel: string; dir: boolean };
+type Ask = { kind: "newFile" | "newFolder" | "rename"; dir: string; rel?: string } | { kind: "delete"; rel: string };
+
+/**
  * One worktree's files, a folder level at a time. A folder is read when first opened and kept until
  * the worktree's change list is read again; then the shown folders are read afresh.
  */
@@ -59,11 +85,17 @@ export function FileTree(props: {
   worktree: string;
   changes: WorktreeChange[];
   onOpen: (file: string) => void;
+  /** Opens the search in files; the link is off until something handles it. */
+  onSearch?: () => void;
 }): JSX.Element {
-  const { api, worktree, changes, onOpen } = props;
+  const { api, worktree, changes, onOpen, onSearch } = props;
   const { t } = useI18n();
   const [folders, setFolders] = useState<Record<string, Folder>>({});
   const [open, setOpen] = useState<string[]>([]);
+  const [filter, setFilter] = useState("");
+  const [refresh, setRefresh] = useState(0);
+  const [menu, setMenu] = useState<{ x: number; y: number; target: Target | null } | null>(null);
+  const [ask, setAsk] = useState<Ask | null>(null);
   // Bumped when the cache is dropped, so an answer to an older question is not kept.
   const epoch = useRef(0);
   // Folders asked for and not answered yet, so a second click does not ask again.
@@ -93,7 +125,7 @@ export function FileTree(props: {
     // What is shown stays until its new reading arrives; a closed folder is read again when opened.
     setFolders((all) => Object.fromEntries(Object.entries(all).filter(([dir]) => shown.includes(dir))));
     for (const dir of shown) read(dir);
-  }, [api, worktree, changes]);
+  }, [api, worktree, changes, refresh]);
 
   function toggle(dir: string): void {
     const closing = open.includes(dir);
@@ -101,10 +133,79 @@ export function FileTree(props: {
     if (!closing && !folders[dir]) read(dir);
   }
 
+  const io = (): TreeIo => ({ api, store: fileTabs, worktree, t });
+
+  // Only the folder that changed is read again; its old rows stay until the new ones arrive.
+  function reload(dir: string | null): void {
+    if (dir === null) return;
+    asked.current.delete(dir);
+    read(dir);
+    if (dir !== "" && !openNow.current.includes(dir)) setOpen((all) => [...all, dir]);
+  }
+
+  const namesIn = (dir: string): string[] => {
+    const folder = folders[dir];
+    return folder && "listing" in folder ? folder.listing.entries.map((e) => e.name) : [];
+  };
+
+  function menuItems(target: Target | null): MenuItem[] {
+    const dirOf = target === null ? "" : target.dir ? target.rel : parentOf(target.rel);
+    const items: MenuItem[] = [];
+    if (target && !target.dir) items.push({ id: "open", labelKey: "files.menu.open", run: () => openFile({ worktree, rel: target.rel }) });
+    if (target) {
+      items.push(
+        { id: "copyPath", labelKey: "files.menu.copyPath", run: () => void copyAbsolute(io(), target.rel) },
+        { id: "copyRel", labelKey: "files.menu.copyRelativePath", run: () => void copyRelative(target.rel) },
+        { id: "sep1", labelKey: "", kind: "separator" },
+      );
+    }
+    items.push(
+      { id: "newFile", labelKey: "files.menu.newFile", run: () => setAsk({ kind: "newFile", dir: dirOf }) },
+      { id: "newFolder", labelKey: "files.menu.newFolder", run: () => setAsk({ kind: "newFolder", dir: dirOf }) },
+    );
+    if (target) {
+      items.push(
+        { id: "rename", labelKey: "files.menu.rename", run: () => setAsk({ kind: "rename", dir: parentOf(target.rel), rel: target.rel }) },
+        { id: "delete", labelKey: "files.menu.delete", danger: true, run: () => setAsk({ kind: "delete", rel: target.rel }) },
+        { id: "sep2", labelKey: "", kind: "separator" },
+        { id: "reveal", labelKey: "files.menu.reveal", run: () => void api.fileReveal(worktree, target.rel).catch(() => undefined) },
+      );
+    }
+    return items;
+  }
+
+  const onMenu = (e: MouseEvent, target: Target | null) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: e.clientX, y: e.clientY, target });
+  };
+
+  const rows = filterRows(treeRows(folders, open, changes), filter);
   const kinds = new Map(changes.map((c) => [c.path, c.kind]));
   return (
-    <div className="ws-tree ws-mono" role="tree" aria-label={t("workspace.files.tree")}>
-      {treeRows(folders, open, changes).map((row) => {
+    <div className="ws-tree-wrap">
+      <div className="ws-tree-tools">
+        <input
+          className="ws-tree-filter"
+          type="search"
+          data-field="filter"
+          placeholder={t("files.tree.filter")}
+          aria-label={t("files.tree.filter")}
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+        <button type="button" className="ws-tree-tool" data-action="refresh" title={t("files.tree.refresh")} aria-label={t("files.tree.refresh")} onClick={() => setRefresh((n) => n + 1)}>
+          ↻
+        </button>
+        <button type="button" className="ws-tree-tool" data-action="collapse" title={t("files.tree.collapseAll")} aria-label={t("files.tree.collapseAll")} onClick={() => setOpen([])}>
+          ⊟
+        </button>
+        <button type="button" className="ws-tree-tool" data-action="search" disabled={!onSearch} onClick={onSearch}>
+          {t("files.tree.searchInFiles")}
+        </button>
+      </div>
+    <div className="ws-tree ws-mono" role="tree" aria-label={t("workspace.files.tree")} onContextMenu={(e) => onMenu(e as unknown as MouseEvent, null)}>
+      {rows.map((row) => {
         const indent = { paddingLeft: `calc(var(--tree-indent) * ${row.depth} + var(--tree-pad))` };
         if (row.type === "note") {
           return (
@@ -125,6 +226,7 @@ export function FileTree(props: {
               title={row.path}
               style={indent}
               onClick={() => toggle(row.path)}
+              onContextMenu={(e) => onMenu(e as unknown as MouseEvent, { rel: row.path, dir: true })}
             >
               <svg className="ws-tree-icon" data-open={row.open} aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -148,17 +250,54 @@ export function FileTree(props: {
             )}
           </>
         );
-        // Only a changed file has a diff to open.
-        return kinds.has(row.path) ? (
-          <button key={row.path} type="button" role="treeitem" className="ws-tree-row" aria-level={row.depth + 1} title={row.path} style={indent} onClick={() => onOpen(row.path)}>
+        // A changed file opens its diff on a click; every file opens in an editor on a double click.
+        const changed = kinds.has(row.path);
+        return (
+          <button
+            key={row.path}
+            type="button"
+            role="treeitem"
+            className="ws-tree-row"
+            aria-level={row.depth + 1}
+            title={row.path}
+            style={indent}
+            onClick={() => (changed ? onOpen(row.path) : openFile({ worktree, rel: row.path }))}
+            onDoubleClick={() => openFile({ worktree, rel: row.path })}
+            onContextMenu={(e) => onMenu(e as unknown as MouseEvent, { rel: row.path, dir: false })}
+          >
             {body}
           </button>
-        ) : (
-          <div key={row.path} role="treeitem" className="ws-tree-row" aria-level={row.depth + 1} title={row.path} style={indent}>
-            {body}
-          </div>
         );
       })}
+    </div>
+      {menu && <ContextMenu at={menu} items={menuItems(menu.target)} onClose={() => setMenu(null)} />}
+      {ask && ask.kind !== "delete" && (
+        <NameDialog
+          title={t(`files.name.${ask.kind}`)}
+          initial={ask.rel ? fileName(ask.rel) : ""}
+          siblings={namesIn(ask.dir).filter((n) => n !== (ask.rel ? fileName(ask.rel) : null))}
+          confirmLabel={t(ask.kind === "rename" ? "files.name.renameConfirm" : "files.name.createConfirm")}
+          onCancel={() => setAsk(null)}
+          onConfirm={(name) => {
+            const a = ask;
+            setAsk(null);
+            const done = a.kind === "rename" ? renameEntry(io(), a.rel!, name) : createEntry(io(), a.dir, name, a.kind === "newFolder");
+            void done.then(reload);
+          }}
+        />
+      )}
+      <ConfirmDialog
+        open={ask?.kind === "delete"}
+        title={t("files.delete.title", { name: ask?.kind === "delete" ? fileName(ask.rel) : "" })}
+        body={t("files.delete.body")}
+        confirmLabel={t("files.delete.confirm")}
+        onCancel={() => setAsk(null)}
+        onConfirm={() => {
+          const a = ask;
+          setAsk(null);
+          if (a?.kind === "delete") void deleteEntry(io(), a.rel).then(reload);
+        }}
+      />
     </div>
   );
 }
