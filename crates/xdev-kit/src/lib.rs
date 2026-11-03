@@ -2,9 +2,13 @@
 //! CLI session logs on this machine. Writes only through `write`.
 
 mod homes;
+mod memory;
 mod skills;
 
 pub use homes::{Agent, Home, HomeSource, KitError, approx_tokens, homes};
+pub use memory::{
+    IssueKind, MemoryFile, MemoryIssue, MemoryKind, MemorySet, project_slug, scan_memory,
+};
 pub use skills::{Skill, SkillScope, scan_skills};
 
 /// FNV-1a, 64 bit, as 16 hex digits. It tells two files apart; it is not a
