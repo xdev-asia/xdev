@@ -622,6 +622,41 @@ it("double click on a tab renames it inline", () => {
   expect(view.find((n) => n.type === "input")).toBeUndefined();
 });
 
+// ---- pinned and coloured tabs --------------------------------------------------------------------
+
+const rowOf = (view: View, id: string) =>
+  view.all().find((n) => n.props.className === "ws-tab" && nodes(n.props.children).some((c) => c.props["data-tab"] === id))!;
+
+it("a pinned tab shows the pin glyph and has no close button", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const one = live.open(A, "shell");
+  const two = live.open(A, "claude");
+  live.setPinned(one.id, true);
+  const view = harness(api, live);
+  const pinned = nodes(rowOf(view, one.id).props.children);
+  expect(rowOf(view, one.id).props["data-pinned"]).toBe(true);
+  expect(pinned.some((n) => n.props.className === "ws-tab-pin" && n.props["aria-label"] === en("tabMenu.pinned"))).toBe(true);
+  expect(pinned.some((n) => n.props.className === "ws-tab-close")).toBe(false);
+  // The other tab is unchanged.
+  const plain = nodes(rowOf(view, two.id).props.children);
+  expect(plain.some((n) => n.props.className === "ws-tab-pin")).toBe(false);
+  expect(plain.some((n) => n.props.className === "ws-tab-close")).toBe(true);
+});
+
+it("a coloured tab carries its colour token; no colour leaves the row plain", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const one = live.open(A, "shell");
+  const two = live.open(A, "claude");
+  live.setColor(one.id, "c4");
+  const view = harness(api, live);
+  expect(rowOf(view, one.id).props.style).toEqual({ "--ws-tab-color": "var(--x-tab-color-4)" });
+  expect(rowOf(view, one.id).props["data-color"]).toBe("c4");
+  expect(rowOf(view, two.id).props.style).toBeUndefined();
+  expect(rowOf(view, two.id).props["data-color"]).toBeUndefined();
+});
+
 // ---- terminal right-click menu -----------------------------------------------------------------
 
 function fakeHandle(selection = true) {

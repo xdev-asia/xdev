@@ -2358,3 +2358,20 @@ button.ws-tree-row:focus-visible {
   font: inherit;
   font-size: 13px;
 }
+
+/* A coloured tab: a 3px underline in its colour; the selected top accent stays. */
+.ws-tab[data-color] {
+  box-shadow: inset 0 -3px 0 var(--ws-tab-color);
+}
+
+.ws-tab[data-color][data-selected="true"] {
+  box-shadow:
+    inset 0 2px 0 var(--accent),
+    inset 0 -3px 0 var(--ws-tab-color);
+}
+
+.ws-tab-pin {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-3);
+}
