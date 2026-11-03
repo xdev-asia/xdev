@@ -34,6 +34,29 @@ describe("Sessions", () => {
     expect(live.tabs(B)).toEqual([]);
   });
 
+  it("dispose kills every tab it holds", async () => {
+    const api = createMockApi({});
+    const live = new Sessions(api);
+    const a = await spawn(live, A, "shell");
+    const b = await spawn(live, B, "shell");
+    live.open(B, "shell");
+    const kill = vi.spyOn(api, "ptyKill");
+    live.dispose();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(kill.mock.calls.map((c) => c[0])).toEqual(expect.arrayContaining([a.id, b.id]));
+    expect(live.tabs(A)).toEqual([]);
+    expect(live.tabs(B)).toEqual([]);
+  });
+
+  it("lists the worktrees that have tabs", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    live.open(A, "shell");
+    live.open(A, "shell");
+    live.open(B, "shell");
+    expect(live.worktrees()).toEqual([A, B]);
+  });
+
   it("removing_a_worktree_kills_its_sessions_first", async () => {
     const api = createMockApi({});
     await api.ptyApprove("claude");

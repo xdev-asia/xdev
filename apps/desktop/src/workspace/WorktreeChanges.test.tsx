@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Button } from "@xdev/ui";
-import { createMockApi, type Api, type WorktreeView } from "../api";
+import { createMockApi, type Api, type WorktreeChange, type WorktreeView } from "../api";
 import { DiffView } from "../components/DiffView";
 import { translate } from "../i18n";
 import { Sessions } from "./sessions";
@@ -93,6 +93,7 @@ afterEach(() => { sessions?.dispose(); sessions = null; vi.useRealTimers(); vi.u
 
 it("lists changes with kind letters and all checked", async () => {
   const api = createMockApi({});
+  const read = vi.spyOn(api, "worktreeFileDiff");
   const view = changes(api);
   await tick();
   const html = view.html();
@@ -100,15 +101,90 @@ it("lists changes with kind letters and all checked", async () => {
   const letter = (path: string) => nodes(view.row(path)).find((n) => n.props["data-kind"])!.props.children;
   expect([letter("docs/old-notes.md"), letter("src/session.ts"), letter("src/status.ts")]).toEqual(["D", "M", "A"]);
   expect(view.rows().map((r) => nodes(r).find((n) => n.type === "input")!.props.checked)).toEqual([true, true, true]);
-  // The line counts come from each file's diff.
-  const modified = renderToStaticMarkup(view.row("src/session.ts"));
-  expect(modified).toContain("+1");
-  expect(modified).toContain("−1");
+  // A refresh reads no file; line counts wait until a file's diff is opened.
+  expect(read).not.toHaveBeenCalled();
+  expect(renderToStaticMarkup(view.row("src/session.ts"))).not.toContain("−");
   expect(html).toContain(en("workspace.changes.title", { count: 3 }));
   expect(view.commit().props.children).toBe(en("workspace.changes.commit", { count: 3 }));
   // Nothing to say yet.
   expect(view.commit().props.disabled).toBe(true);
   expect(view.onCount).toHaveBeenLastCalledWith(3);
+});
+
+it("shows line counts for a file once its diff loads, until the next refresh", async () => {
+  const api = createMockApi({});
+  const read = vi.spyOn(api, "worktreeFileDiff");
+  const view = changes(api);
+  await tick();
+  const open = (path: string) => nodes(view.row(path)).find((n) => n.type === "button")!.props.onClick();
+  open("src/session.ts");
+  await tick();
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(read).toHaveBeenCalledWith(OAK, "src/session.ts");
+  const modified = renderToStaticMarkup(view.row("src/session.ts"));
+  expect(modified).toContain("+1");
+  expect(modified).toContain("−1");
+  expect(renderToStaticMarkup(view.row("src/status.ts"))).not.toContain("−");
+
+  window.dispatchEvent(new Event("focus"));
+  await tick();
+  expect(renderToStaticMarkup(view.row("src/session.ts"))).not.toContain("−");
+  expect(read).toHaveBeenCalledTimes(1);
+});
+
+it("says line and lines in the stats text", async () => {
+  const api = createMockApi({});
+  const read = vi.spyOn(api, "worktreeFileDiff");
+  const view = changes(api);
+  await tick();
+  nodes(view.row("src/session.ts")).find((n) => n.type === "button")!.props.onClick();
+  await tick();
+  expect(renderToStaticMarkup(view.row("src/session.ts"))).toContain("1 line added, 1 removed");
+  read.mockResolvedValueOnce({ old: "a\n", new: "b\nc\n", skip: null });
+  nodes(view.row("src/status.ts")).find((n) => n.type === "button")!.props.onClick();
+  await tick();
+  expect(renderToStaticMarkup(view.row("src/status.ts"))).toContain("2 lines added, 1 removed");
+  // The diff header says the same.
+  const diff = mount(() => WorktreeDiff({ api, worktree: OAK, file: "src/session.ts" }));
+  await tick();
+  expect(diff.html()).toContain("1 line added, 1 removed");
+});
+
+it("does not start a second load on focus while one runs", async () => {
+  const api = createMockApi({});
+  let finish: (list: WorktreeChange[]) => void = () => {};
+  const list = vi.spyOn(api, "worktreeChanges").mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+  changes(api);
+  window.dispatchEvent(new Event("focus"));
+  await tick();
+  expect(list).toHaveBeenCalledTimes(1);
+  finish([]);
+  await tick();
+  window.dispatchEvent(new Event("focus"));
+  await tick();
+  expect(list).toHaveBeenCalledTimes(2);
+});
+
+it("clears a load error once a later load works", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeChanges").mockRejectedValueOnce({ code: "git", detail: "index.lock exists" });
+  const view = changes(api);
+  await tick();
+  expect(view.html()).toContain("index.lock exists");
+  window.dispatchEvent(new Event("focus"));
+  await tick();
+  expect(view.html()).not.toContain("index.lock exists");
+  expect(view.rows()).toHaveLength(3);
+});
+
+it("cannot commit with no file checked", async () => {
+  const api = createMockApi({});
+  const view = changes(api);
+  await tick();
+  view.message().props.onChange({ target: { value: "feat: status line" } });
+  expect(view.commit().props.disabled).toBe(false);
+  for (const path of ["docs/old-notes.md", "src/session.ts", "src/status.ts"]) view.box(path).props.onChange();
+  expect(view.commit().props.disabled).toBe(true);
 });
 
 it("opens a diff tab for a file", async () => {
@@ -210,6 +286,10 @@ it("shows git_identity inline", async () => {
   expect(html).toContain("git config --global user.name");
   // The message stays for the next try.
   expect(view.message().props.value).toBe("feat: status line");
+  // A refresh in between keeps the commit's error.
+  window.dispatchEvent(new Event("focus"));
+  await tick();
+  expect(view.html()).toContain(en("error.git_identity"));
 
   commit.mockRejectedValueOnce({ code: "git", detail: "pre-commit hook failed" });
   view.commit().props.onClick();

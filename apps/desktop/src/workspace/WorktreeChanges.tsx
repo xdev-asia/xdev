@@ -32,10 +32,14 @@ export function WorktreeChanges(props: {
   // Unchecked paths, so a file that shows up later starts checked.
   const [skipped, setSkipped] = useState<string[]>([]);
   const [message, setMessage] = useState("");
+  // Kept apart: a good load clears its own error, never the commit's.
+  const [loadProblem, setLoadProblem] = useState<Problem | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [busy, setBusy] = useState(false);
   // Only the newest load may write, so a slow one never shows an older list.
   const loads = useRef(0);
+  // The load still running, if any; a focus does not start another.
+  const running = useRef(0);
   const onCount = useRef(props.onCount);
   onCount.current = props.onCount;
   const primary = worktree.start === null;
@@ -43,28 +47,38 @@ export function WorktreeChanges(props: {
 
   async function load(): Promise<void> {
     const seq = ++loads.current;
+    running.current = seq;
     try {
       const list = await api.worktreeChanges(path);
       if (seq !== loads.current) return;
       setChanges(list);
+      // Counts belong to the diffs read before; a file may have changed since.
+      setStats({});
+      setLoadProblem(null);
       onCount.current?.(list.length);
-      const diffs = await Promise.all(list.map((c) => api.worktreeFileDiff(path, c.path).catch(() => null)));
-      if (seq !== loads.current) return;
-      const next: Record<string, Stats> = {};
-      list.forEach((c, i) => {
-        const d = diffs[i];
-        if (d && !d.skip) next[c.path] = diffStats(d.old ?? "", d.new ?? "");
-      });
-      setStats(next);
     } catch (e) {
-      if (seq === loads.current) setProblem(toApiError(e));
+      if (seq === loads.current) setLoadProblem(toApiError(e));
+    } finally {
+      if (running.current === seq) running.current = 0;
     }
+  }
+
+  // Reads one file's diff for its line counts; only files the user opens cost a read.
+  async function open(file: string): Promise<void> {
+    props.onOpenFile(file);
+    const seq = loads.current;
+    const diff = await api.worktreeFileDiff(path, file).catch(() => null);
+    if (!diff || diff.skip || seq !== loads.current) return;
+    const counted = diffStats(diff.old ?? "", diff.new ?? "");
+    setStats((s) => ({ ...s, [file]: counted }));
   }
 
   useEffect(() => {
     if (primary) return;
     void load();
-    const again = () => void load();
+    const again = () => {
+      if (!running.current) void load();
+    };
     window.addEventListener("focus", again);
     return () => {
       window.removeEventListener("focus", again);
@@ -118,6 +132,7 @@ export function WorktreeChanges(props: {
       <strong className="ws-changes-title">
         {changes && changes.length > 0 ? t("workspace.changes.title", { count: changes.length }) : changes && t("workspace.changes.none")}
       </strong>
+      {loadProblem && <ProblemNote problem={loadProblem} />}
       {problem && <ProblemNote problem={problem} />}
       {changes && changes.length > 0 && (
         <ul className="ws-change-list">
@@ -131,7 +146,7 @@ export function WorktreeChanges(props: {
                   aria-label={t("workspace.changes.include", { path: c.path })}
                   onChange={() => toggle(c.path)}
                 />
-                <button type="button" className="ws-change-open" title={c.path} onClick={() => props.onOpenFile(c.path)}>
+                <button type="button" className="ws-change-open" title={c.path} onClick={() => void open(c.path)}>
                   <span className="ws-change-kind ws-mono" data-kind={c.kind} title={t(`changes.kind.${c.kind}`)}>
                     {LETTER[c.kind]}
                   </span>
@@ -140,7 +155,7 @@ export function WorktreeChanges(props: {
                     <span className="diff-stats ws-change-stats ws-mono">
                       <span className="diff-added" aria-hidden="true">+{s.added}</span>
                       <span className="diff-removed" aria-hidden="true">−{s.removed}</span>
-                      <span className="diff-stats-text">{t("diff.stats", s)}</span>
+                      <span className="diff-stats-text">{t("diff.stats", { count: s.added, removed: s.removed })}</span>
                     </span>
                   )}
                 </button>

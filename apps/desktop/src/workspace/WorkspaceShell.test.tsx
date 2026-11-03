@@ -226,6 +226,24 @@ it("delete asks, closes sessions, then removes; dirty needs the second step", as
   expect(view.worktree("elm")).toBeUndefined();
 });
 
+it("a worktree that leaves the list has its terminals closed", async () => {
+  const close = vi.spyOn(Sessions.prototype, "closeWorktree");
+  const api = createMockApi({});
+  const view = await harness(api);
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  sessions.open("/demo/wt/xdev-oak", "shell");
+  sessions.open("/demo/xdev", "shell");
+  const real = api.workspaceList.bind(api);
+  vi.spyOn(api, "workspaceList").mockImplementation(async () =>
+    (await real()).map(r => ({ ...r, worktrees: r.worktrees.filter(w => w.path !== "/demo/wt/xdev-oak") })),
+  );
+  // Any reload notices; here, a pin.
+  view.list().props.onPin(view.worktree("elm"));
+  await tick();
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(close).toHaveBeenCalledWith("/demo/wt/xdev-oak");
+});
+
 it("switching worktrees keeps every visited worktree's tabs mounted", async () => {
   const view = await harness();
   const tabs = () => view.of(WorktreeTabs).map(n => [n.props.worktree, n.props.visible]);

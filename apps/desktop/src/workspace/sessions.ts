@@ -107,6 +107,11 @@ export class Sessions {
     return tabs;
   }
 
+  /** Every worktree that has a tab, in the order its first tab opened. */
+  worktrees(): string[] {
+    return [...new Set([...this.entries.values()].map((e) => e.tab.worktree))];
+  }
+
   /** The status a worktree shows, from its agent tabs only. */
   dot(worktree: string): TabStatus | null {
     return worktreeDot(
@@ -129,11 +134,15 @@ export class Sessions {
     return () => this.listeners.delete(listener);
   }
 
-  /** Stops the exit listener and the timer. Tabs are left to their owners. */
+  /** Kills every tab, then stops the exit listener and the timer. */
   dispose(): void {
     if (this.interval) clearInterval(this.interval);
     this.interval = null;
     this.listeners.clear();
+    const entries = [...this.entries.values()];
+    this.entries.clear();
+    this.cache.clear();
+    for (const e of entries) void e.tab.client.dispose();
     void this.unlisten.then((off) => off()).catch(() => {});
   }
 
