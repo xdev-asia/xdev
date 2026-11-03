@@ -115,6 +115,34 @@ describe("WorktreeStats", () => {
     expect(read).toHaveBeenCalledTimes(2);
   });
 
+  it("a focus within 30 s of the last focus read redraws but reads nothing", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_000_000);
+    const api = createMockApi({});
+    const read = vi.spyOn(api, "worktreeStat");
+    const focus = focusTarget();
+    const stats = new WorktreeStats();
+    stats.attach(api, (sessions = new Sessions(api)), focus.target);
+    stats.track([A, B]);
+    await settle();
+    focus.focus();
+    await settle();
+    read.mockClear();
+
+    vi.setSystemTime(1_000_000 + 29_000);
+    const before = stats.snapshot();
+    focus.focus();
+    await settle();
+    expect(stats.snapshot()).toBeGreaterThan(before);
+    expect(read).not.toHaveBeenCalled();
+
+    vi.setSystemTime(1_000_000 + 30_000);
+    focus.focus();
+    await settle();
+    expect(read.mock.calls.map((c) => c[0])).toEqual([A, B]);
+    stats.detach();
+  });
+
   it("keeps the last count when a read fails", async () => {
     const api = createMockApi({});
     const stats = new WorktreeStats();

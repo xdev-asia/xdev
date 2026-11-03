@@ -580,6 +580,11 @@ fn dir_under(worktree: &str, rel: &str) -> Result<PathBuf, WorkspaceError> {
         if fs::symlink_metadata(&disk)?.is_symlink() {
             return Err(bad());
         }
+        // Windows also opens `.git` as `.git.`, `.git ` or `GIT~1`; the name
+        // on disk tells.
+        if cfg!(windows) && fs::canonicalize(&disk)?.file_name().is_some_and(is_git) {
+            return Err(bad());
+        }
     }
     Ok(disk)
 }
@@ -678,6 +683,28 @@ mod tests {
             let err = list_dir(root, rel).unwrap_err();
             assert_eq!(err.code(), "bad_path", "{rel}");
         }
+    }
+
+    /// Windows opens `.git.`, `.git ` and the short name `GIT~1` as `.git`.
+    #[cfg(windows)]
+    #[test]
+    fn list_dir_refuses_other_spellings_of_git_on_windows() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().to_str().unwrap();
+        fs::create_dir_all(tmp.path().join(".git").join("hooks")).unwrap();
+        fs::write(tmp.path().join(".git").join("config"), "").unwrap();
+        let mut bad = vec![".git.", ".git ", ".git./hooks", ".GIT. /hooks"];
+        // Short names exist only where the volume keeps them.
+        if fs::symlink_metadata(tmp.path().join("GIT~1")).is_ok() {
+            bad.extend(["GIT~1", "git~1/hooks"]);
+        }
+        for rel in bad {
+            let err = list_dir(root, rel).unwrap_err();
+            assert_eq!(err.code(), "bad_path", "{rel:?}");
+        }
+        // A plain folder with a tilde or dot in its name still lists.
+        fs::create_dir(tmp.path().join("a~b.c")).unwrap();
+        assert!(list_dir(root, "a~b.c").is_ok());
     }
 
     #[test]
