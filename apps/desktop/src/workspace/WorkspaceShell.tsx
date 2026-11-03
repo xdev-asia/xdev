@@ -63,7 +63,7 @@ type PanelTab = "files" | "changes" | "checks";
 type Creating = { repoId: string; busy: boolean; error?: ApiError["code"]; name?: string };
 type SetupCardAt = { kind: "detected"; command: string; repoId: string } | { kind: "ask"; repoId: string };
 type TrustAsk = { path: string; repoId: string; kind: HookKind; text: string; hash: string; changed: boolean; busy: boolean; error?: ApiError["code"] };
-type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"] };
+type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"]; archiving?: boolean; failed?: { code: number | null; output: string } };
 
 /** The app frame: repos and worktrees on the left, the selected worktree in the middle. */
 export function WorkspaceShell(props: { api: Api }): JSX.Element {
@@ -97,6 +97,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [cards, setCards] = useState<Record<string, SetupCardAt>>({});
   const [trusting, setTrusting] = useState<TrustAsk | null>(null);
   const [gate] = useState(() => new SetupGate());
+  // Which remove is current; a Cancel during the archive run bumps it so the late result is dropped.
+  const removeRun = useRef(0);
   const [removing, setRemoving] = useState<Removing | null>(null);
   const [notice, setNotice] = useState<ApiError["code"]>();
   const [fixNote, setFixNote] = useState(false);
@@ -485,9 +487,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     dropCard(path);
   }
 
-  function askTrust(path: string, repoId: string, hooks: RepoHooks, changed: boolean): void {
-    if (!hooks.setup) return;
-    setTrusting({ path, repoId, kind: "setup", text: hooks.setup.text, hash: hooks.setup.hash, changed, busy: false });
+  function askTrust(path: string, repoId: string, hooks: RepoHooks, changed: boolean, kind: HookKind = "setup"): void {
+    const script = hooks[kind];
+    if (!script) return;
+    setTrusting({ path, repoId, kind, text: script.text, hash: script.hash, changed, busy: false });
+  }
+
+  // The archive script is not trusted: show its current text, then run the removal again on Trust.
+  async function askArchiveTrust(path: string): Promise<void> {
+    try {
+      const hooks = await api.repoHooks(path);
+      const repoId = repos?.find((r) => r.worktrees.some((w) => w.path === path))?.id ?? "";
+      askTrust(path, repoId, hooks, false, "archive");
+    } catch (e) {
+      setRemoving((r) => (r ? { ...r, error: toApiError(e).code } : r));
+    }
   }
 
   // The card's Run setup: the script is read again first, so the trust check sees the file as it is now.
@@ -511,13 +525,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       const hooks = await api.repoHookTrust(ask.path, ask.kind, ask.hash);
       setTrusting(null);
       if (ask.kind === "setup") startSetup(ask.path, hooks);
+      else void remove();
     } catch (e) {
       const code = toApiError(e).code;
       if (code !== "hook_untrusted") return setTrusting({ ...ask, busy: false, error: code });
       try {
         const fresh = await api.repoHooks(ask.path);
-        if (!fresh.setup) return setTrusting(null);
-        setTrusting({ ...ask, text: fresh.setup.text, hash: fresh.setup.hash, changed: true, busy: false, error: undefined });
+        const script = fresh[ask.kind];
+        if (!script) return setTrusting(null);
+        setTrusting({ ...ask, text: script.text, hash: script.hash, changed: true, busy: false, error: undefined });
       } catch (again) {
         setTrusting({ ...ask, busy: false, error: toApiError(again).code });
       }
@@ -538,17 +554,31 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   // Terminals go first so nothing holds the folder, then the folder; uncommitted work needs a
   // second, forced confirm.
-  async function remove(): Promise<void> {
+  // The archive script runs first (up to 120 s, Cancel stays usable); a failure asks, an untrusted
+  // shared script opens the trust prompt, and no script goes straight on.
+  async function remove(skipArchive = false): Promise<void> {
     if (!removing || removing.busy) return;
     const { worktree, dirty } = removing;
-    setRemoving({ worktree, dirty, busy: true });
+    const run = ++removeRun.current;
     try {
+      if (!skipArchive) {
+        setRemoving({ worktree, dirty, busy: true, archiving: true });
+        const ran = await api.worktreeArchiveRun(worktree.path);
+        if (run !== removeRun.current) return;
+        if (ran.ran && ran.code !== 0) return setRemoving({ worktree, dirty, busy: false, failed: { code: ran.code, output: ran.output } });
+      }
+      setRemoving({ worktree, dirty, busy: true });
       await sessions?.closeWorktree(worktree.path);
       await api.worktreeRemove(worktree.path, dirty, true);
       setRemoving(null);
       await load();
     } catch (e) {
+      if (run !== removeRun.current) return;
       const code = toApiError(e).code;
+      if (code === "hook_untrusted") {
+        setRemoving({ worktree, dirty, busy: false });
+        return void askArchiveTrust(worktree.path);
+      }
       const nowDirty = dirty || code === "worktree_dirty";
       setRemoving({ worktree, dirty: nowDirty, busy: false, error: code === "worktree_dirty" ? undefined : code });
     }
@@ -989,9 +1019,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           base={removingRepo?.baseRef ?? ""}
           dirty={removing.dirty}
           busy={removing.busy}
+          archiving={removing.archiving}
+          failed={removing.failed}
           error={removing.error}
-          onConfirm={() => void remove()}
-          onCancel={() => setRemoving(null)}
+          onConfirm={() => void remove(removing.failed !== undefined)}
+          onCancel={() => {
+            removeRun.current++;
+            setRemoving(null);
+          }}
         />
       )}
     </div>

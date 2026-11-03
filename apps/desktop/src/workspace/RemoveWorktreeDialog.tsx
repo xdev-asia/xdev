@@ -10,6 +10,10 @@ export function RemoveWorktreeDialog(props: {
   base: string;
   dirty: boolean;
   busy: boolean;
+  /** The archive script is running; it can take a while, so Cancel stays usable. */
+  archiving?: boolean;
+  /** The archive script ended with a failure; the person may remove anyway. */
+  failed?: { code: number | null; output: string };
   error?: ApiError["code"];
   onConfirm(): void;
   onCancel(): void;
@@ -30,7 +34,7 @@ export function RemoveWorktreeDialog(props: {
       aria-labelledby="ws-remove-title"
       onCancel={(e) => {
         e.preventDefault();
-        if (!props.busy) props.onCancel();
+        if (!props.busy || props.archiving) props.onCancel();
       }}
     >
       <h2 id="ws-remove-title" className="dialog-title">
@@ -52,6 +56,19 @@ export function RemoveWorktreeDialog(props: {
           <p className="dialog-body">{t("workspace.remove.forceNote")}</p>
         </>
       )}
+      {props.archiving && (
+        <p className="dialog-body" role="status">
+          {t("workspace.remove.archiving")}
+        </p>
+      )}
+      {props.failed && (
+        <>
+          <p className="error-text" role="alert">
+            {props.failed.code === null ? t("workspace.remove.archiveFailedNoCode") : t("workspace.remove.archiveFailed", { code: props.failed.code })}
+          </p>
+          <pre className="ws-mono ws-script" tabIndex={0}>{props.failed.output}</pre>
+        </>
+      )}
       {props.error && (
         <p className="error-text" role="alert">
           {t(`error.${props.error}`)}
@@ -59,11 +76,11 @@ export function RemoveWorktreeDialog(props: {
       )}
       <div className="dialog-actions">
         {/* Cancel first and focused, so a stray Enter never deletes anything. */}
-        <button type="button" className="btn-secondary" autoFocus disabled={props.busy} onClick={props.onCancel}>
+        <button type="button" className="btn-secondary" autoFocus disabled={props.busy && !props.archiving} onClick={props.onCancel}>
           {t("dialog.cancel")}
         </button>
         <button type="button" className="ws-danger" disabled={props.busy} onClick={props.onConfirm}>
-          {props.busy ? t("workspace.remove.busy") : props.dirty ? t("workspace.remove.force") : t("workspace.remove.confirm")}
+          {props.busy ? t("workspace.remove.busy") : props.failed ? t("workspace.remove.anyway") : props.dirty ? t("workspace.remove.force") : t("workspace.remove.confirm")}
         </button>
       </div>
     </dialog>
