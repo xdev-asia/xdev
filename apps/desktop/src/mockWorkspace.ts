@@ -1,7 +1,7 @@
 import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
 import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
-import type { Api, ApiError, Check, Commit, DirEntry, DirListing, GitSettings, HookKind, HookScript, RepoHooks, RepoView, ReviewNote, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, Check, Commit, DirEntry, DirListing, FileCommand, FileCommands, GitSettings, HookKind, HookScript, RepoHooks, RepoView, ReviewNote, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 
 type WorkspaceApi = Pick<
   Api,
@@ -11,6 +11,8 @@ type WorkspaceApi = Pick<
   | "repoUpdate"
   | "repoHooks"
   | "repoHookTrust"
+  | "repoFileCommands"
+  | "repoFileCommandsTrust"
   | "worktreeArchiveRun"
   | "worktreeAdopt"
   | "vaultList"
@@ -89,6 +91,9 @@ export type MockRepoFile = {
   setupCode?: number;
   archiveCode?: number;
   archiveOutput?: string;
+  // The valid `[[commands]]` entries, and one line per entry left out.
+  commands?: FileCommand[];
+  commandErrors?: string[];
 };
 
 // What the mock terminal of `SETUP_PROFILE` prints and exits with.
@@ -386,6 +391,15 @@ export function createMockWorkspace(
     };
   }
 
+  // Like `repo_file_commands`: listed even when untrusted; none when the file does not parse.
+  function commandsOf(repo: RepoView, file: MockRepoFile | undefined): FileCommands {
+    if (file?.parseError !== undefined) return { trusted: true, hash: "", commands: [], errors: [file.parseError] };
+    const commands = structuredClone(file?.commands ?? []);
+    const errors = [...(file?.commandErrors ?? [])];
+    const hash = commands.length > 0 ? mockHash(JSON.stringify(commands)) : "";
+    return { trusted: hash === "" || trusted.has(`${repo.id}:commands:${hash}`), hash, commands, errors };
+  }
+
   function findWorktree(path: string): { repo: RepoView; wt: WorktreeView } | undefined {
     for (const repo of repos) {
       const wt = repo.worktrees.find((w) => w.path === path);
@@ -461,6 +475,19 @@ export function createMockWorkspace(
       if (!script || !script.shared || script.hash !== hash) return reject("hook_untrusted", kind);
       trusted.add(`${found.repo.id}:${kind}:${hash}`);
       return hooksOf(path)!.hooks;
+    },
+    async repoFileCommands(path) {
+      const found = hooksOf(path);
+      if (!found) return reject("worktree_unknown", path);
+      return commandsOf(found.repo, found.file);
+    },
+    async repoFileCommandsTrust(path, hash) {
+      const found = hooksOf(path);
+      if (!found) return reject("worktree_unknown", path);
+      const now = commandsOf(found.repo, found.file);
+      if (now.hash === "" || now.hash !== hash) return reject("hook_untrusted", "commands");
+      trusted.add(`${found.repo.id}:commands:${hash}`);
+      return commandsOf(found.repo, found.file);
     },
     async worktreeArchiveRun(path) {
       const found = hooksOf(path);

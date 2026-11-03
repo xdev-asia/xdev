@@ -19,6 +19,7 @@ import { extractTitle, parseFrontmatter } from "./doc/frontmatter";
 import { createResolver, parseLinks } from "./doc/links";
 import { estimateTokens, type ExportDoc, planExport } from "./mockExport";
 import { createMockAgentSessions } from "./mockAgentSessions";
+import { createMockQuickCommands } from "./mockQuickCommands";
 import { createMockKit } from "./mockKit";
 import { createMockProfiles } from "./mockProfiles";
 import { createMockPty } from "./mockPty";
@@ -558,6 +559,13 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockKeybindings(options.keybindings ?? null),
     ...createMockKit(),
     ...createMockAgentSessions(),
+    ...createMockQuickCommands(
+      {
+        agentProfiles: async () => (await profiles.profiles()).profiles.map((p) => p.profile.id),
+        repoPaths: async () => (await workspace.workspaceList()).map((r) => r.path),
+      },
+      settingsHub.emit,
+    ),
     async accounts() { return structuredClone({ reservePercent: 30, accounts }); },
     async quota() { return structuredClone(quotas); },
     async updateStatus() { return null; },
