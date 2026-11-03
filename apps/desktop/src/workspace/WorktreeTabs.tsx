@@ -4,7 +4,11 @@ import { profileName, useProfiles } from "@/agents/profileStore";
 import { type Api, type ApiError, type PtyProfile } from "@/api";
 import { useI18n } from "@/i18n";
 import { useKeymap } from "@/keys/keymap";
+import { buildSections } from "@/quickCommands/model";
 import { QuickCommandsControl } from "@/quickCommands/QuickCommandsControl";
+import { runWithToast } from "@/quickCommands/runUi";
+import { getQuickCommands, selectCommands } from "@/quickCommands/store";
+import { quickCommandsSubmenu } from "@/quickCommands/submenu";
 import { ReviewView } from "@/review/ReviewView";
 import { Terminal, type TerminalHandle } from "@/terminal/Terminal";
 import { copyContext, copyText } from "@/terminal/terminalActions";
@@ -334,6 +338,10 @@ export function WorktreeTabs(props: {
   const termMenuItems = (tab: Tab, handle: TerminalHandle) => {
     const pane = layout ? paneOf(layout, tab.id) : null;
     const profile = profileName(view, tab.profileId, t);
+    // Read when the menu opens, not as a hook: the strip's own control keeps the file commands loaded.
+    const quickState = getQuickCommands();
+    const quick = selectCommands(quickState, props.repo ?? null);
+    const quickFile = quickState.files[worktree] ?? null;
     return terminalMenuItems({
       handle,
       tab,
@@ -351,6 +359,16 @@ export function WorktreeTabs(props: {
         }),
       copyTerminalId: () => void copyText(tab.id),
       copyPaneId: () => pane && void copyText(pane),
+      quickCommands: quickCommandsSubmenu(
+        buildSections(quick, quickFile, "", { hasTerminal: tab.exitCode === undefined, profiles: view ? view.profiles.map((p) => p.profile.id) : null }),
+        (row) =>
+          void runWithToast(
+            api,
+            row.cmd,
+            { sessions, worktree, tab, trusted: quickFile?.trusted, profiles: view?.profiles.map((p) => p.profile.id), focus: () => handle.focus() },
+            t,
+          ),
+      ),
     });
   };
 

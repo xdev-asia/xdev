@@ -30,7 +30,7 @@ function setup(over: { selection?: boolean; paneId?: string | null; agent?: bool
   };
   const items = terminalMenuItems(ctx);
   const find = (id: string) => items.find((i) => i.id === id) as MenuItem;
-  return { calls, items, find };
+  return { calls, items, find, ctx };
 }
 
 it("lists the items in the reference order, separated into groups", () => {
@@ -81,4 +81,31 @@ it("every label exists in en and vi", () => {
     expect(en, item.labelKey).toHaveProperty([item.labelKey]);
     expect(viText, item.labelKey).toHaveProperty([item.labelKey]);
   }
+});
+
+import { chordLabel } from "@/keys/keymap";
+
+function withExtras(quick?: MenuItem) {
+  const base = setup();
+  // Same context as `setup`, plus the submenu.
+  return terminalMenuItems({ ...base.ctx, quickCommands: quick });
+}
+
+it("shows the chord of every item that has an action, from the keys registry", () => {
+  const { find } = setup();
+  expect(find("copy").chord).toBe(chordLabel("terminal.copy") ?? undefined);
+  expect(find("paste").chord).toBe(chordLabel("terminal.paste") ?? undefined);
+  expect(find("splitRight").chord).toBe(chordLabel("pane.splitRight") ?? undefined);
+  expect(find("splitRight").chord).toBeTruthy();
+  expect(find("clear").chord).toBe(chordLabel("terminal.clear") ?? undefined);
+  expect(find("close").chord).toBe(chordLabel("tab.close") ?? undefined);
+  expect(find("setTitle").chord).toBeUndefined();
+});
+
+it("puts the Quick Commands submenu before Copy Context, and leaves it out without one", () => {
+  const sub: MenuItem = { id: "quickCommands", labelKey: "termMenu.quickCommands", children: [] };
+  const ids = (items: MenuItem[]) => items.map((i) => (i.kind === "separator" ? "-" : i.id));
+  const withSub = ids(withExtras(sub));
+  expect(withSub.slice(withSub.indexOf("quickCommands"), withSub.indexOf("quickCommands") + 2)).toEqual(["quickCommands", "copyContext"]);
+  expect(ids(withExtras())).not.toContain("quickCommands");
 });
