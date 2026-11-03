@@ -15,7 +15,7 @@ use xdev_git::{ChangeKind, GitError, Repo};
 use xdev_policy::{Action, Gate, Verdict};
 use xdev_workspace::{
     Registry, RepoView, WorkspaceError, WorktreeView, add_repo, create_worktree, forget_repo, list,
-    remove_worktree, set_pinned,
+    path_key, remove_worktree, set_pinned,
 };
 
 use crate::accounts::data_dir;
@@ -114,17 +114,6 @@ fn parent_within(root: &Path, disk: &Path) -> Result<bool, CmdError> {
         Ok(parent) => Ok(parent.starts_with(fs::canonicalize(root)?)),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(true),
         Err(e) => Err(e.into()),
-    }
-}
-
-/// Registry paths and the UI's agree in this form, as in the workspace crate.
-fn path_key(path: &Path) -> String {
-    let text = path.to_string_lossy().replace('\\', "/");
-    let text = text.trim_end_matches('/');
-    if cfg!(windows) {
-        text.to_lowercase()
-    } else {
-        text.to_owned()
     }
 }
 
@@ -236,7 +225,12 @@ fn file_diff(data: &Path, path: &Path, file: &str) -> Result<WorktreeFileDiff, C
         return Err(bad_arg(file));
     }
     let start = start_of(data, path)?;
-    let old = Repo::discover(path)?.show(&start, file)?;
+    let repo = Repo::discover(path)?;
+    // Sized before it is read, so a large old file never sits in memory.
+    let old_size = repo.blob_size(&start, file)?;
+    if old_size.is_some_and(|n| n > MAX_BYTES) {
+        return Ok(skipped(Skip::TooLarge));
+    }
     // A link is not followed: it could point anywhere on the disk.
     let new = match fs::symlink_metadata(&disk) {
         Ok(meta) if meta.is_symlink() => return Ok(skipped(Skip::Binary)),
@@ -250,9 +244,10 @@ fn file_diff(data: &Path, path: &Path, file: &str) -> Result<WorktreeFileDiff, C
         Err(e) if e.kind() == io::ErrorKind::NotFound => None,
         Err(e) => return Err(e.into()),
     };
-    if old.as_ref().is_some_and(|b| b.len() as u64 > MAX_BYTES) {
-        return Ok(skipped(Skip::TooLarge));
-    }
+    let old = match old_size {
+        Some(_) => repo.show(&start, file)?,
+        None => None,
+    };
     if [&old, &new].into_iter().flatten().any(|b| is_binary(b)) {
         return Ok(skipped(Skip::Binary));
     }
@@ -546,6 +541,28 @@ mod tests {
     }
 
     #[test]
+    fn file_diff_skips_a_large_old_side() {
+        let fx = fixture();
+        fs::write(fx.main.join("big.txt"), "a".repeat(2 << 20)).unwrap();
+        git(&fx.main, &["add", "big.txt"]);
+        git(&fx.main, &["commit", "-q", "-m", "big"]);
+        let mut reg = Registry::load(&fx.data).unwrap();
+        let id = reg.repos[0].id.clone();
+        let third = create_worktree(&mut reg, &id, "third", None, 3, 3).unwrap();
+        reg.save(&fx.data).unwrap();
+        let third = PathBuf::from(third.path);
+
+        // Small now, and gone: the old side alone is too large to read.
+        fs::write(third.join("big.txt"), "small").unwrap();
+        let d = file_diff(&fx.data, &third, "big.txt").unwrap();
+        assert_eq!(d.skip, Some(Skip::TooLarge));
+        assert_eq!((d.old, d.new), (None, None));
+        fs::remove_file(third.join("big.txt")).unwrap();
+        let d = file_diff(&fx.data, &third, "big.txt").unwrap();
+        assert_eq!(d.skip, Some(Skip::TooLarge));
+    }
+
+    #[test]
     fn changes_list_files_since_the_start() {
         let fx = fixture();
         fs::write(fx.first.join("a.txt"), "two").unwrap();
@@ -583,6 +600,18 @@ mod tests {
         assert_eq!(code(commit_files(&fx.first, &files, "  ")), "empty_message");
         let outside = ["../x".to_owned()];
         assert_eq!(code(commit_files(&fx.first, &outside, "m")), "bad_arg");
+    }
+
+    #[test]
+    fn path_key_is_the_workspace_crates() {
+        let key = |p: &str| xdev_workspace::path_key(Path::new(p));
+        assert_eq!(key("/r/wt/a/"), "/r/wt/a");
+        assert_eq!(key("/r/wt/a//"), "/r/wt/a");
+        if cfg!(windows) {
+            assert_eq!(key("C:\\R\\Wt\\A\\"), "c:/r/wt/a");
+        } else {
+            assert_eq!(key("/R/Wt"), "/R/Wt");
+        }
     }
 
     #[test]
