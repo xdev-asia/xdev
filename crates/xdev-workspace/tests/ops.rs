@@ -159,7 +159,9 @@ fn create_refuses_existing_branch_bad_ref_and_bad_name() {
     assert_eq!(code(&mut reg, "x", Some("--upload-pack=y")), "bad_ref");
     assert_eq!(code(&mut reg, "x", Some("no-such")), "bad_ref");
     assert_eq!(code(&mut reg, "...", None), "bad_name");
-    assert_eq!(code(&mut reg, "a..b", None), "bad_name");
+    // `slug` collapses `a..b` to `a.b`; a part starting with `.` still
+    // reaches git and is refused there.
+    assert_eq!(code(&mut reg, "a/.b", None), "bad_name");
     assert!(reg.worktrees.is_empty());
 }
 
