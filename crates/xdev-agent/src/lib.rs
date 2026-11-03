@@ -2,6 +2,7 @@
 //! evidence kept and nothing merged until a person approves. A squad is a
 //! team of agents, one per seat, working one task together.
 
+mod detect;
 mod flags;
 mod flow;
 mod id;
@@ -11,6 +12,7 @@ pub mod profiles;
 mod prompts;
 mod route;
 mod runner;
+mod shells;
 mod squad;
 mod squad_run;
 mod store;
@@ -21,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use xdev_git::GitError;
 use xdev_policy::Verdict;
 
+pub use detect::{find_builtin, find_program};
 pub use flags::{efforts, flags};
 pub use flow::RunOptions;
 pub use launch::{Context, Launch, LaunchError, launch, launch_with, resolve};
@@ -32,6 +35,9 @@ pub use route::{RouteRule, Routing};
 pub use runner::{
     Cancel, ClaudeRunner, CodexRunner, ContextUse, RunOutcome, RunRequest, Runner,
     parse_claude_json, parse_codex_jsonl,
+};
+pub use shells::{
+    ShellEntry, ShellKind, default_shell_id, list_shells, parse_wsl_list, wsl_distros,
 };
 pub use squad::{
     Escalation, Event, Role, Seat, SeatState, SeatStatus, Squad, SquadRun, SquadStore, Step,
