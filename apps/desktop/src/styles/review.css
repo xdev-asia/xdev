@@ -269,3 +269,137 @@
 .rv-file-body {
   overflow: auto;
 }
+
+/* Notes: a tint on the noted lines, a card under the last one, and the composer. */
+
+.rv-noted {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.rv-widget {
+  padding: 4px 12px 6px;
+  background: var(--bg-1);
+  font-family: var(--x-font-body);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.rv-note,
+.rv-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.rv-note-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rv-note-label {
+  color: var(--text-2);
+}
+
+.rv-note-actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.rv-note-actions button,
+.rv-undo button {
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.rv-note-body > :first-child {
+  margin-top: 0;
+}
+
+.rv-note-body > :last-child {
+  margin-bottom: 0;
+}
+
+.rv-note-body code {
+  font-family: var(--x-font-mono);
+}
+
+.rv-mark {
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.rv-mark-outdated {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.rv-composer textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+  color: var(--text-1);
+  font: inherit;
+}
+
+.rv-composer-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.rv-add-gutter {
+  width: 18px;
+}
+
+.rv-plus {
+  display: inline-block;
+  width: 16px;
+  border-radius: var(--radius-s);
+  background: var(--accent);
+  color: var(--x-color-on-accent);
+  text-align: center;
+  cursor: pointer;
+}
+
+.rv-notes {
+  position: relative;
+}
+
+.rv-notes-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rv-note-snippet {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rv-undo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+}

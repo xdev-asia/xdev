@@ -73,6 +73,9 @@ const section = (api: Api, path: string) =>
     onStage() {},
     register() {},
     onChunks() {},
+    notes: [],
+    handlers: { add() {}, edit() {}, remove() {} },
+    onRead() {},
   });
 const oak: WorktreeView = { path: OAK, name: "oak", branch: "oak", head: START, start: START, primary: false, pinned: false, detached: false };
 
