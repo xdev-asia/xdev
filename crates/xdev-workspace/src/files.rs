@@ -63,13 +63,6 @@ pub enum WriteOutcome {
     Conflict { disk_hash: String },
 }
 
-fn todo(what: &str) -> WorkspaceError {
-    WorkspaceError::Io(io::Error::new(
-        io::ErrorKind::Unsupported,
-        format!("{what} is not built yet"),
-    ))
-}
-
 /// The file `rel` of `worktree`.
 pub fn read_file(worktree: &str, rel: &str) -> Result<FileText, WorkspaceError> {
     let disk = rel_under(worktree, rel)?;
@@ -228,22 +221,104 @@ fn replace(
 }
 
 /// An empty file or a folder; fails with `Exists` when the name is taken.
-pub fn create_entry(worktree: &str, rel: &str, _dir: bool) -> Result<(), WorkspaceError> {
-    rel_under(worktree, rel)?;
-    Err(todo("create_entry"))
+/// The folder above must exist.
+pub fn create_entry(worktree: &str, rel: &str, dir: bool) -> Result<(), WorkspaceError> {
+    let disk = rel_under(worktree, rel)?;
+    // Windows answers "access denied" for a file over a folder; ask first.
+    if fs::symlink_metadata(&disk).is_ok() {
+        return Err(WorkspaceError::Exists(rel.to_owned()));
+    }
+    let made = if dir {
+        fs::create_dir(&disk)
+    } else {
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&disk)
+            .map(drop)
+    };
+    made.map_err(|e| taken(e, rel))
 }
 
-/// Fails with `Exists` when `to` is taken.
+/// Fails with `Exists` when `to` is taken; a name that differs only in case
+/// is the same item on a disk that ignores case, and is renamed.
 pub fn rename_entry(worktree: &str, from: &str, to: &str) -> Result<(), WorkspaceError> {
-    rel_under(worktree, from)?;
-    rel_under(worktree, to)?;
-    Err(todo("rename_entry"))
+    let src = rel_under(worktree, from)?;
+    let dst = rel_under(worktree, to)?;
+    fs::symlink_metadata(&src).map_err(|e| missing(e, from))?;
+    if src == dst {
+        return Ok(());
+    }
+    if dst.starts_with(&src) {
+        // A folder cannot go inside itself.
+        return Err(WorkspaceError::BadPath(to.to_owned()));
+    }
+    match fs::symlink_metadata(&dst) {
+        Ok(_) if !same_entry(&src, &dst)? => return Err(WorkspaceError::Exists(to.to_owned())),
+        Ok(_) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
+    }
+    fs::rename(&src, &dst)?;
+    Ok(())
+}
+
+/// Whether two paths name one item, as `a.txt` and `A.txt` do where case is
+/// ignored.
+fn same_entry(a: &Path, b: &Path) -> io::Result<bool> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let (a, b) = (fs::symlink_metadata(a)?, fs::symlink_metadata(b)?);
+        Ok((a.dev(), a.ino()) == (b.dev(), b.ino()))
+    }
+    #[cfg(windows)]
+    {
+        use winapi_util::{Handle, file};
+        let id = |p: &Path| -> io::Result<(u64, u64)> {
+            let info = file::information(Handle::from_path_any(p)?)?;
+            Ok((info.volume_serial_number(), info.file_index()))
+        };
+        Ok(id(a)? == id(b)?)
+    }
+}
+
+/// `Exists` for a name that is taken; other errors as `missing` maps them.
+fn taken(e: io::Error, rel: &str) -> WorkspaceError {
+    if e.kind() == io::ErrorKind::AlreadyExists {
+        WorkspaceError::Exists(rel.to_owned())
+    } else {
+        missing(e, rel)
+    }
+}
+
+/// Where a deleted item goes: the OS trash in the app, a fake in tests.
+pub trait Trash {
+    fn trash(&self, path: &Path) -> io::Result<()>;
+}
+
+/// The Recycle Bin on Windows, the Finder trash on macOS, the freedesktop
+/// trash elsewhere.
+pub struct OsTrash;
+
+impl Trash for OsTrash {
+    fn trash(&self, path: &Path) -> io::Result<()> {
+        trash::delete(path).map_err(io::Error::other)
+    }
 }
 
 /// Moves the item to the OS trash; never a hard delete.
 pub fn trash_entry(worktree: &str, rel: &str) -> Result<(), WorkspaceError> {
-    rel_under(worktree, rel)?;
-    Err(todo("trash_entry"))
+    trash_entry_with(worktree, rel, &OsTrash)
+}
+
+/// `trash_entry` with the trash given. When the trash fails the error is
+/// returned and the item stays; there is no hard delete to fall back to.
+pub fn trash_entry_with(worktree: &str, rel: &str, bin: &dyn Trash) -> Result<(), WorkspaceError> {
+    let disk = rel_under(worktree, rel)?;
+    fs::symlink_metadata(&disk).map_err(|e| missing(e, rel))?;
+    bin.trash(&disk)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -508,5 +583,137 @@ mod tests {
         .unwrap();
         let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o750);
+    }
+
+    #[test]
+    fn create_entry_makes_an_empty_file_or_a_folder_once() {
+        let tmp = TempDir::new().unwrap();
+        create_entry(root(&tmp), "notes", true).unwrap();
+        assert!(tmp.path().join("notes").is_dir());
+        create_entry(root(&tmp), "notes/todo.md", false).unwrap();
+        assert_eq!(
+            fs::read(tmp.path().join("notes").join("todo.md")).unwrap(),
+            b""
+        );
+        let code = |rel, dir| create_entry(root(&tmp), rel, dir).unwrap_err().code();
+        assert_eq!(code("notes", true), "exists");
+        assert_eq!(code("notes", false), "exists");
+        assert_eq!(code("notes/todo.md", false), "exists");
+        assert_eq!(code("notes/todo.md", true), "exists");
+        // Parents are not made.
+        assert_eq!(code("a/b", true), "not_found");
+        assert_eq!(code("a/b.txt", false), "not_found");
+        assert_eq!(code("../x", false), "bad_path");
+        assert_eq!(code(".git", true), "bad_path");
+        assert_eq!(names_in(tmp.path()), ["notes"]);
+    }
+
+    #[test]
+    fn rename_entry_moves_within_the_worktree_onto_free_names() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("src").join("deep")).unwrap();
+        fs::create_dir(tmp.path().join("docs")).unwrap();
+        fs::write(tmp.path().join("a.txt"), "a").unwrap();
+        fs::write(tmp.path().join("b.txt"), "b").unwrap();
+        fs::write(tmp.path().join("src").join("x.rs"), "x").unwrap();
+
+        rename_entry(root(&tmp), "src/x.rs", "docs/y.rs").unwrap();
+        assert_eq!(
+            fs::read(tmp.path().join("docs").join("y.rs")).unwrap(),
+            b"x"
+        );
+        assert!(!tmp.path().join("src").join("x.rs").exists());
+        rename_entry(root(&tmp), "docs", "guide").unwrap();
+        assert!(tmp.path().join("guide").join("y.rs").is_file());
+
+        let code = |from, to| rename_entry(root(&tmp), from, to).unwrap_err().code();
+        assert_eq!(code("a.txt", "b.txt"), "exists");
+        assert_eq!(code("a.txt", "src"), "exists");
+        assert_eq!(code("missing.txt", "c.txt"), "not_found");
+        assert_eq!(code("a.txt", "nope/a.txt"), "not_found");
+        assert_eq!(code("src", "src/deep/src"), "bad_path");
+        assert_eq!(code("a.txt", "../a.txt"), "bad_path");
+        assert_eq!(code("../a.txt", "c.txt"), "bad_path");
+        assert_eq!(code("a.txt", ".git"), "bad_path");
+        assert_eq!(fs::read(tmp.path().join("b.txt")).unwrap(), b"b");
+        assert_eq!(fs::read(tmp.path().join("a.txt")).unwrap(), b"a");
+        // The same name is nothing to do.
+        rename_entry(root(&tmp), "a.txt", "./a.txt").unwrap();
+    }
+
+    #[test]
+    fn rename_entry_changes_only_the_case() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "a").unwrap();
+        rename_entry(root(&tmp), "a.txt", "A.txt").unwrap();
+        assert_eq!(names_in(tmp.path()), ["A.txt"]);
+        assert_eq!(fs::read(tmp.path().join("A.txt")).unwrap(), b"a");
+    }
+
+    /// Moves items into its own folder and keeps their paths, so a test sees
+    /// what went to the trash without the OS trash.
+    struct FakeTrash {
+        bin: TempDir,
+        taken: std::cell::RefCell<Vec<std::path::PathBuf>>,
+    }
+
+    impl FakeTrash {
+        fn new() -> FakeTrash {
+            FakeTrash {
+                bin: TempDir::new().unwrap(),
+                taken: Default::default(),
+            }
+        }
+    }
+
+    impl Trash for FakeTrash {
+        fn trash(&self, path: &Path) -> io::Result<()> {
+            let n = self.taken.borrow().len();
+            fs::rename(path, self.bin.path().join(n.to_string()))?;
+            self.taken.borrow_mut().push(path.to_owned());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn trash_entry_hands_the_item_to_the_trash() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("src").join("x.rs"), "x").unwrap();
+        fs::write(tmp.path().join("a.txt"), "a").unwrap();
+        let bin = FakeTrash::new();
+        trash_entry_with(root(&tmp), "a.txt", &bin).unwrap();
+        trash_entry_with(root(&tmp), "src", &bin).unwrap();
+        assert_eq!(
+            *bin.taken.borrow(),
+            [tmp.path().join("a.txt"), tmp.path().join("src")]
+        );
+        assert!(names_in(tmp.path()).is_empty());
+        // The folder went whole.
+        assert!(bin.bin.path().join("1").join("x.rs").is_file());
+    }
+
+    #[test]
+    fn trash_entry_refuses_missing_items_and_escapes() {
+        let tmp = TempDir::new().unwrap();
+        let bin = FakeTrash::new();
+        let code = |rel| trash_entry_with(root(&tmp), rel, &bin).unwrap_err().code();
+        assert_eq!(code("missing.txt"), "not_found");
+        assert_eq!(code(""), "bad_path");
+        assert_eq!(code("."), "bad_path");
+        assert_eq!(code(".."), "bad_path");
+        assert_eq!(code("../x"), "bad_path");
+        assert_eq!(code(".git"), "bad_path");
+        assert!(bin.taken.borrow().is_empty());
+    }
+
+    /// The real OS trash; run by hand where one exists (a CI runner may have none).
+    #[test]
+    #[ignore = "moves a temp file to the real OS trash"]
+    fn trash_entry_uses_the_os_trash() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("xdev-trash-test.txt"), "x").unwrap();
+        trash_entry(root(&tmp), "xdev-trash-test.txt").unwrap();
+        assert!(names_in(tmp.path()).is_empty());
     }
 }

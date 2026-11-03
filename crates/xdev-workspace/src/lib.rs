@@ -13,8 +13,8 @@ use std::path::PathBuf;
 use xdev_git::GitError;
 
 pub use files::{
-    Eol, FileKind, FileText, READ_MAX, WriteOutcome, create_entry, read_file, rename_entry,
-    trash_entry, write_file,
+    Eol, FileKind, FileText, OsTrash, READ_MAX, Trash, WriteOutcome, create_entry, read_file,
+    rename_entry, trash_entry, trash_entry_with, write_file,
 };
 pub use hooks::{
     FILE_NAME, HookKind, HookRun, HookScript, RepoHooks, TRUST_FILE, detect_setup, hook_env,
