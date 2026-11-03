@@ -1,5 +1,7 @@
 //! The desktop app's list of repos and the worktrees made from them.
 
+mod names;
+mod ops;
 mod registry;
 
 use std::io;
@@ -7,6 +9,10 @@ use std::path::PathBuf;
 
 use xdev_git::GitError;
 
+pub use ops::{
+    RepoView, WorktreeView, add_repo, create_worktree, forget_repo, list, remove_worktree,
+    set_pinned,
+};
 pub use registry::{Registry, RepoEntry, WorktreeMeta, repo_id};
 
 /// The UI translates `code()`, never the message.
