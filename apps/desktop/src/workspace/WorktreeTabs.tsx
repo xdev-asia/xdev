@@ -48,6 +48,8 @@ export function WorktreeTabs(props: {
   front?: { id: string; seq: number };
   /** Told which tab is in front, so the shell knows where a prompt from the Agent kit goes. */
   onShown?: (id: string | null) => void;
+  /** A new value puts keyboard focus in the terminal in front. */
+  focusSeq?: number;
 }): JSX.Element {
   const { api, sessions, worktree, visible, reveal } = props;
   const { t } = useI18n();
@@ -326,6 +328,7 @@ export function WorktreeTabs(props: {
               onError={(e) => failed(tab, e)}
               onOutput={(bytes) => sessions.noteOutput(tab.id, bytes)}
               onInput={() => sessions.noteInput(tab.id)}
+              focusSeq={tab.id === shown ? props.focusSeq : undefined}
             />
           </div>
         ))}

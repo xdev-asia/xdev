@@ -27,15 +27,26 @@ export function Terminal(props: {
   onOutput?(bytes: number): void;
   /** The user typed into the terminal. */
   onInput?(): void;
+  /** A new value asks the terminal to take keyboard focus; the first value alone asks nothing. */
+  focusSeq?: number;
 }): JSX.Element {
   const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
   const search = useRef<SearchAddon | null>(null);
+  const xterm = useRef<XTerm | null>(null);
+  const seen = useRef(props.focusSeq);
   const [finding, setFinding] = useState(false);
   const [query, setQuery] = useState("");
   // Callbacks change every render; the effect below runs once per pty.
   const handlers = useRef(props);
   handlers.current = props;
+
+  // Declared before the pty effect, which owns the xterm this one focuses.
+  useEffect(() => {
+    if (props.focusSeq === seen.current) return;
+    seen.current = props.focusSeq;
+    if (props.focusSeq) xterm.current?.focus();
+  }, [props.focusSeq]);
 
   useEffect(() => {
     const el = host.current;
@@ -52,6 +63,7 @@ export function Terminal(props: {
     const fit = new FitAddon();
     const finder = new SearchAddon();
     search.current = finder;
+    xterm.current = term;
     term.loadAddon(fit);
     term.loadAddon(finder);
     // No opener plugin in the app: the webview hands the link to the system browser.
@@ -107,6 +119,7 @@ export function Terminal(props: {
       observer.disconnect();
       if (owned) void client.dispose();
       search.current = null;
+      xterm.current = null;
       term.dispose();
     };
   }, [props.api, props.id, props.client, props.cwd, props.profile, props.account]);
