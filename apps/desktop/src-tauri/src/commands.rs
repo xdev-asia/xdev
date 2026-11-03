@@ -192,6 +192,25 @@ pub fn ui_settings_put(
     settings_store::write(&app, &[SettingsSection::Ui], |s| s.ui = settings.clamped()).map(|s| s.ui)
 }
 
+/// Settings → Editor as stored; the defaults when nothing is.
+#[tauri::command(async)]
+pub fn editor_settings_get(app: AppHandle) -> settings::EditorSettings {
+    settings_store::read(&app).editor
+}
+
+/// Stores Settings → Editor with every number clamped to its range, and
+/// returns what was stored.
+#[tauri::command(async)]
+pub fn editor_settings_put(
+    app: AppHandle,
+    settings: settings::EditorSettings,
+) -> Result<settings::EditorSettings, CmdError> {
+    settings_store::write(&app, &[SettingsSection::Editor], |s| {
+        s.editor = settings.clamped()
+    })
+    .map(|s| s.editor)
+}
+
 /// The global git `user.name` that the git-username prefix shows; a repo's
 /// own `user.name` wins when a worktree is created.
 #[tauri::command(async)]

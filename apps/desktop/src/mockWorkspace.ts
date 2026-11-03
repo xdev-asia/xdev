@@ -1,6 +1,7 @@
 import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
 import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
+import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
 import type { Api, ApiError, Check, Commit, DirEntry, DirListing, GitSettings, HookKind, HookScript, RepoHooks, RepoView, ReviewNote, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 
 type WorkspaceApi = Pick<
@@ -94,13 +95,6 @@ export type MockRepoFile = {
 // What the mock terminal of `SETUP_PROFILE` prints and exits with.
 export type MockSetupRun = { text: string; code: number };
 
-// A stand-in for Rust's blake3 hex: the same text gives the same hash.
-function mockHash(text: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
-  return h.toString(16).padStart(8, "0");
-}
-
 // The fake remote of one worktree.
 type Remote = { tracked: boolean; ahead: number; behind: number; commits: Commit[] };
 
@@ -151,15 +145,16 @@ function demoFiles(pending: WorktreeChange[]): string[] {
   return [...new Set([...DEMO_FILES, ...added])].filter((f) => !gone.has(f));
 }
 
-function demoListing(files: string[], dir: string): DirListing | null {
+// `dirs` holds every folder, also the empty ones a create left.
+function demoListing(files: string[], dirs: Set<string>, dir: string): DirListing | null {
+  if (dir !== "" && !dirs.has(dir)) return null;
   const prefix = dir === "" ? "" : `${dir}/`;
   const found = new Map<string, DirEntry>();
-  for (const file of files) {
-    if (!file.startsWith(prefix)) continue;
-    const [name, ...rest] = file.slice(prefix.length).split("/");
-    found.set(name, { name, dir: rest.length > 0 });
+  for (const path of [...files, ...dirs]) {
+    if (!path.startsWith(prefix)) continue;
+    const [name, ...rest] = path.slice(prefix.length).split("/");
+    found.set(name, { name, dir: rest.length > 0 || dirs.has(path) });
   }
-  if (dir !== "" && found.size === 0) return null;
   const entries = [...found.values()].sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   return { entries: entries.slice(0, LIST_CAP), truncated: entries.length > LIST_CAP };
 }
@@ -249,7 +244,7 @@ function demoDiff(file: string, kind: WorktreeChange["kind"]): WorktreeFileDiff 
 export function createMockWorkspace(
   seed: MockWorkspaceSeed = DEMO_WORKSPACE,
   emit: SettingsEmit = () => {},
-): WorkspaceApi & { __setupRun(cwd: string): Promise<MockSetupRun> } {
+): WorkspaceApi & Omit<MockFiles, "tree"> & { __setupRun(cwd: string): Promise<MockSetupRun> } {
   const repos: RepoView[] = structuredClone(seed.repos);
   const changes = new Map<string, WorktreeChange[]>(Object.entries(structuredClone(seed.changes)));
   let commits = 0;
@@ -394,7 +389,10 @@ export function createMockWorkspace(
     return undefined;
   }
 
+  const { tree, ...files } = createMockFiles((path) => (findWorktree(path) ? demoFiles(changes.get(path) ?? []) : null));
+
   return {
+    ...files,
     async workspaceList() {
       return structuredClone(repos);
     },
@@ -766,7 +764,8 @@ export function createMockWorkspace(
       const plain = dir.split("/").every((part) => part !== ".." && part !== ".git" && !part.includes(":"));
       if (dir.startsWith("/") || !plain) return reject("bad_path", dir);
       const rel = dir.split("/").filter((part) => part !== "" && part !== ".").join("/");
-      const listing = demoListing(demoFiles(changes.get(path) ?? []), rel);
+      const now = tree(path);
+      const listing = now && demoListing(now.files, now.dirs, rel);
       return listing ? structuredClone(listing) : reject("not_found", dir);
     },
   };

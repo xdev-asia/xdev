@@ -71,6 +71,9 @@ import type {
   AgentSession,
   DirEntry,
   DirListing,
+  EditorSettings,
+  Eol,
+  FileText,
   GitSettings,
   Home,
   KitText,
@@ -81,6 +84,7 @@ import type {
   Agent,
   Skill,
   UsageSummary,
+  WriteOutcome,
 } from "@xdev/bindings";
 import type { Target } from "./doc/frontmatter";
 import { toBytes } from "./terminal/ptyClient";
@@ -90,6 +94,8 @@ export { createMockApi };
 export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
 export type { Agent, AgentSession, SessionQuery, SessionRow };
+export type { EditorSettings, Eol, FileText, WriteOutcome };
+export type { FileKind } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
 
 // The IPC types come from Rust; see packages/bindings/README.md.
@@ -562,6 +568,27 @@ export interface Api {
   // The agent sessions of every home, matched to the workspace; `refresh` reads the new log
   // bytes first. Rejects with `bad_arg` when `query.limit` is over 500.
   agentSessions(query: SessionQuery, refresh: boolean): Promise<SessionRow[]>;
+
+  // Files. `worktree` is a repo or worktree the workspace knows (any other rejects with
+  // `worktree_unknown`); `rel` is relative to it with forward slashes. `..`, an absolute path, a
+  // link or `.git` rejects with `bad_path`.
+  // The text, or `text: null` with `kind` `binary` or `tooLarge` (over 2 MiB, nothing read).
+  // Rejects with `not_found`.
+  fileRead(worktree: string, rel: string): Promise<FileText>;
+  // Saves when the file still has the `expected` hash (null: the file must not exist yet), with
+  // every line break in `text` written as `eol`. Otherwise resolves `conflict` and writes nothing.
+  fileWrite(worktree: string, rel: string, text: string, eol: Eol, expected: string | null): Promise<WriteOutcome>;
+  // An empty file or a folder; its parent must exist. Rejects with `exists`.
+  fileCreate(worktree: string, rel: string, dir: boolean): Promise<void>;
+  // Within the worktree; a change of case only is allowed. Rejects with `exists`.
+  fileRename(worktree: string, from: string, to: string): Promise<void>;
+  // Moves the item to the OS trash after the policy gate; rejects with `denied` or `needs_approval`.
+  fileTrash(worktree: string, rel: string): Promise<void>;
+  // Opens the OS file manager with the item selected where the OS allows it.
+  fileReveal(worktree: string, rel: string): Promise<void>;
+  // Settings → Editor; the put returns what was stored, with numbers clamped to their ranges.
+  editorSettings(): Promise<EditorSettings>;
+  editorSettingsPut(v: EditorSettings): Promise<EditorSettings>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -843,6 +870,14 @@ const tauriApi: Api = {
   kitPathsExist: (root, paths) => call("kit_paths_exist", { root, paths }),
   kitPromptHistory: (limit) => call("kit_prompt_history", { limit }),
   agentSessions: (query, refresh) => call("agent_sessions", { query, refresh }),
+  fileRead: (worktree, rel) => call("file_read", { worktree, rel }),
+  fileWrite: (worktree, rel, text, eol, expected) => call("file_write", { worktree, rel, text, eol, expected }),
+  fileCreate: (worktree, rel, dir) => call("file_create", { worktree, rel, dir }),
+  fileRename: (worktree, from, to) => call("file_rename", { worktree, from, to }),
+  fileTrash: (worktree, rel) => call("file_trash", { worktree, rel }),
+  fileReveal: (worktree, rel) => call("file_reveal", { worktree, rel }),
+  editorSettings: () => call("editor_settings_get"),
+  editorSettingsPut: (settings) => call("editor_settings_put", { settings }),
 };
 
 function browserApi(): Api {
