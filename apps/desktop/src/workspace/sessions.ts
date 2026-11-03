@@ -14,6 +14,12 @@ export interface Tab {
   client: PtyClient;
 }
 
+/**
+ * Two terminal tabs of a worktree shown together: the active tab and `second`, side by side
+ * (`right`) or stacked (`down`). `null` is no split. One level only.
+ */
+export type Split = { dir: "right" | "down"; second: string } | null;
+
 /** How long removing a worktree waits for its terminals to report their exit. */
 export const EXIT_WAIT_MS = 5000;
 const TICK_MS = 1000;
@@ -32,6 +38,7 @@ const ended = (status: TabStatus) => status === "failed" || status === "exited";
 export class Sessions {
   private readonly entries = new Map<string, Entry>();
   private readonly cache = new Map<string, Tab[]>();
+  private readonly splits = new Map<string, NonNullable<Split>>();
   private readonly listeners = new Set<() => void>();
   private readonly waiting = new Map<string, () => void>();
   private interval: ReturnType<typeof setInterval> | null = null;
@@ -64,6 +71,9 @@ export class Sessions {
     this.entries.clear();
     for (const [key, e] of kept) this.entries.set(key, e);
     this.cache.delete(old.tab.worktree);
+    // The new tab takes the old one's place in a split too.
+    const split = this.splits.get(old.tab.worktree);
+    if (split?.second === id) this.splits.set(old.tab.worktree, { ...split, second: next.tab.id });
     this.sync();
     this.emit();
     void old.tab.client.dispose();
@@ -107,6 +117,18 @@ export class Sessions {
     return tabs;
   }
 
+  /** The split of a worktree's terminals; the same object until it changes. */
+  split(worktree: string): Split {
+    return this.splits.get(worktree) ?? null;
+  }
+
+  /** Sets or clears a worktree's split. A `second` that is not one of its tabs clears it. */
+  setSplit(worktree: string, split: Split): void {
+    if (split && this.tabs(worktree).some((t) => t.id === split.second)) this.splits.set(worktree, split);
+    else if (!this.splits.delete(worktree)) return;
+    this.emit();
+  }
+
   /** Every worktree that has a tab, in the order its first tab opened. */
   worktrees(): string[] {
     return [...new Set([...this.entries.values()].map((e) => e.tab.worktree))];
@@ -119,6 +141,18 @@ export class Sessions {
         .filter((t) => t.agent)
         .map((t) => t.status),
     );
+  }
+
+  /** When any tab of a worktree last produced output (not an echo of typing); null if none did. */
+  lastActivity(worktree: string): number | null {
+    let latest = 0;
+    for (const e of this.entries.values()) if (e.tab.worktree === worktree) latest = Math.max(latest, e.state.lastOutput);
+    return latest > 0 ? latest : null;
+  }
+
+  /** The distinct profiles of a worktree's tabs, in tab order. */
+  profilesOf(worktree: string): PtyProfile[] {
+    return [...new Set(this.tabs(worktree).map((t) => t.profileId))];
   }
 
   noteInput(id: string): void {
@@ -142,6 +176,7 @@ export class Sessions {
     const entries = [...this.entries.values()];
     this.entries.clear();
     this.cache.clear();
+    this.splits.clear();
     for (const e of entries) void e.tab.client.dispose();
     void this.unlisten.then((off) => off()).catch(() => {});
   }
@@ -187,6 +222,9 @@ export class Sessions {
     for (const e of entries) {
       this.entries.delete(e.tab.id);
       this.cache.delete(e.tab.worktree);
+      // Closing the second tab of a split unsplits; so does leaving fewer than two tabs.
+      const split = this.splits.get(e.tab.worktree);
+      if (split && (split.second === e.tab.id || this.tabs(e.tab.worktree).length < 2)) this.splits.delete(e.tab.worktree);
     }
     this.sync();
     this.emit();
