@@ -2338,3 +2338,23 @@ button.ws-tree-row:focus-visible {
   margin: 4px 0;
   background: var(--line);
 }
+
+.ws-title-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 12px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.ws-title-field input {
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13px;
+}

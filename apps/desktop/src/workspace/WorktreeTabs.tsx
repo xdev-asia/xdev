@@ -5,8 +5,11 @@ import { type Api, type ApiError, type PtyProfile } from "@/api";
 import { useI18n } from "@/i18n";
 import { useKeymap } from "@/keys/keymap";
 import { ReviewView } from "@/review/ReviewView";
-import { Terminal } from "@/terminal/Terminal";
+import { Terminal, type TerminalHandle } from "@/terminal/Terminal";
+import { copyContext, copyText } from "@/terminal/terminalActions";
+import { terminalMenuItems } from "@/terminal/terminalMenu";
 import { useApprovedStart } from "@/terminal/useApprovedStart";
+import { ContextMenu } from "@/ui/ContextMenu";
 import {
   addTab,
   equalize,
@@ -29,6 +32,7 @@ import { bodyStyle, PaneView, paneRects } from "./PaneView";
 import { cliOf, type Sessions, type Tab, type TabCli } from "./sessions";
 import { TabStrip, type MenuGroup, type StripItem } from "./TabStrip";
 import { cycleTab, nthTab } from "./tabNav";
+import { TabTitleDialog } from "./TabTitleDialog";
 import { titleStatus } from "./titles";
 
 // Offered while the profile view has not loaded: the built-in agents and the default shell.
@@ -56,6 +60,8 @@ export function WorktreeTabs(props: {
   api: Api;
   sessions: Sessions;
   worktree: string;
+  /** The branch of the worktree, for Copy Context; null when detached or unknown. */
+  branch?: string | null;
   visible: boolean;
   reveal?: Reveal;
   /** Brings a terminal tab to the front; a new `seq` is a new request. */
@@ -73,6 +79,9 @@ export function WorktreeTabs(props: {
   const [menuPane, setMenuPane] = useState<string | null>(null);
   // Tabs a key asked to close while an agent runs in one of them; null when nothing waits.
   const [closing, setClosing] = useState<string[] | null>(null);
+  // The tab whose title dialog is open, and the terminal menu (tab, pointer, that terminal's handle).
+  const [titling, setTitling] = useState<string | null>(null);
+  const [termMenu, setTermMenu] = useState<{ id: string; at: { x: number; y: number }; handle: TerminalHandle } | null>(null);
   // Bumped when a key moves focus, so the terminal in front takes the keyboard.
   const [kick, setKick] = useState(0);
   // Views started per tab; a retry after approval mounts a fresh view on the same pty id.
@@ -299,6 +308,30 @@ export function WorktreeTabs(props: {
     sessions.restart(tab.id);
   }
 
+  // The right-click menu of a terminal: its handle acts on the xterm, the rest on the tab and its pane.
+  const termMenuItems = (tab: Tab, handle: TerminalHandle) => {
+    const pane = layout ? paneOf(layout, tab.id) : null;
+    const profile = profileName(view, tab.profileId, t);
+    return terminalMenuItems({
+      handle,
+      tab,
+      paneId: pane,
+      split: (dir) => pane && defaultShell !== null && splitWith(pane, dir, defaultShell),
+      setTitle: () => setTitling(tab.id),
+      close: () => void requestClose([tab.id]),
+      copyContext: () =>
+        void copyContext(handle, {
+          title: tab.title ?? profile,
+          profile,
+          path: worktree,
+          branch: props.branch ?? null,
+          exitCode: tab.exitCode,
+        }),
+      copyTerminalId: () => void copyText(tab.id),
+      copyPaneId: () => pane && void copyText(pane),
+    });
+  };
+
   const stripOf = (leaf: Leaf) => {
     const items: StripItem[] = leaf.tabs.flatMap((id): StripItem[] => {
       if (id === REVIEW_TAB) return [{ id, tab: null }];
@@ -315,12 +348,15 @@ export function WorktreeTabs(props: {
         onMenu={(isOpen) => setMenuPane(isOpen ? leaf.id : null)}
         onSelect={(id) => layout && setLayout(selectTab(layout, id))}
         onClose={closeTab}
-        onCloseOthers={(id) => {
-          for (const other of leaf.tabs) if (other !== id) closeTab(other);
-        }}
+        onCloseOthers={(id) => sessions.closeOthers(id)}
+        onCloseToRight={(id) => sessions.closeToRight(id)}
         onLaunch={(profile) => launch(profile, leaf.id)}
         onSplit={(dir) => defaultShell !== null && splitWith(leaf.id, dir, defaultShell)}
-        onSplitTab={(id, dir) => splitTab(leaf.id, id, dir)}
+        onMoveToSplit={(id, dir) => (id === REVIEW_TAB ? splitTab(leaf.id, id, dir) : sessions.moveToSplit(id, dir))}
+        onPin={(id, pinned) => sessions.setPinned(id, pinned)}
+        onCopyTabId={(id) => void copyText(id)}
+        onChangeTitle={(id) => setTitling(id)}
+        onColor={(id, color) => sessions.setColor(id, color)}
         onRename={(id, name) => sessions.rename(id, name)}
       />
     );
@@ -400,6 +436,7 @@ export function WorktreeTabs(props: {
                   if (status) sessions.noteTitleStatus(tab.id, status);
                 }}
                 focusSeq={tab.id === shown ? (props.focusSeq ?? 0) + kick : undefined}
+                onMenu={(at, handle) => setTermMenu({ id: tab.id, at, handle })}
               />
             </div>
           );
@@ -425,6 +462,19 @@ export function WorktreeTabs(props: {
         </div>
       )}
       {dialog}
+      {termMenu && byId.get(termMenu.id) && (
+        <ContextMenu at={termMenu.at} items={termMenuItems(byId.get(termMenu.id)!, termMenu.handle)} onClose={() => setTermMenu(null)} />
+      )}
+      {titling && byId.get(titling) && (
+        <TabTitleDialog
+          title={byId.get(titling)!.title ?? profileName(view, byId.get(titling)!.profileId, t)}
+          onSave={(title) => {
+            sessions.setTitle(titling, title);
+            setTitling(null);
+          }}
+          onCancel={() => setTitling(null)}
+        />
+      )}
       {closing && (
         <CloseTabsDialog
           onConfirm={() => {

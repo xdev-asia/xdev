@@ -7,7 +7,7 @@ import { terminalMenuItems, type TerminalMenuContext } from "./terminalMenu";
 function setup(over: { selection?: boolean; paneId?: string | null; agent?: boolean } = {}) {
   const calls: string[] = [];
   const handle: TerminalHandle = {
-    copy: async () => void calls.push("copy") ?? true,
+    copy: async () => { calls.push("copy"); return true; },
     paste: async () => void calls.push("paste"),
     selectAll: () => void calls.push("selectAll"),
     clear: () => void calls.push("clear"),

@@ -662,6 +662,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   api={api}
                   sessions={sessions}
                   worktree={path}
+                  branch={repos?.flatMap((r) => r.worktrees).find((w) => w.path === path)?.branch ?? null}
                   visible={path === current?.path}
                   onShown={(id) => setShownTab((s) => (s[path] === id ? s : { ...s, [path]: id }))}
                   onPanes={(ids) => setPanes((s) => (s[path]?.join(" ") === ids.join(" ") ? s : { ...s, [path]: ids }))}
