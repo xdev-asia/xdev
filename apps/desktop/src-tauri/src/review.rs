@@ -70,6 +70,20 @@ pub struct ReviewBranch {
     pub remote: bool,
 }
 
+/// Where one changed path stands against the index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct StageState {
+    pub path: String,
+    /// The index differs from `HEAD`.
+    pub staged: bool,
+    /// The disk differs from the index, or the file is untracked.
+    pub unstaged: bool,
+    /// The file is not tracked at all.
+    pub untracked: bool,
+}
+
 /// A checkout the registry knows: its start commit (`None` for a primary
 /// checkout) and its repo's base ref.
 fn known(data: &Path, path: &Path) -> Result<(Option<String>, String), CmdError> {
@@ -187,6 +201,22 @@ fn stage(data: &Path, path: &Path, files: &[String], staged: bool) -> Result<(),
     Ok(())
 }
 
+fn stage_state(data: &Path, path: &Path) -> Result<Vec<StageState>, CmdError> {
+    let _ = (data, path);
+    todo!("stage_state")
+}
+
+fn discard(
+    data: &Path,
+    path: &Path,
+    files: &[String],
+    staged_too: bool,
+    confirmed: bool,
+) -> Result<(), CmdError> {
+    let _ = (data, path, files, staged_too, confirmed);
+    todo!("discard")
+}
+
 fn branches(data: &Path, path: &Path) -> Result<Vec<ReviewBranch>, CmdError> {
     known(data, path)?;
     Ok(Repo::discover(path)?
@@ -227,6 +257,27 @@ pub fn worktree_stage(
     staged: bool,
 ) -> Result<(), CmdError> {
     stage(data_dir(&state)?, &path, &files, staged)
+}
+
+/// Throws away uncommitted changes. Always gated: `confirmed` is the person's yes.
+#[tauri::command(async)]
+pub fn worktree_discard(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    files: Vec<String>,
+    staged_too: bool,
+    confirmed: bool,
+) -> Result<(), CmdError> {
+    discard(data_dir(&state)?, &path, &files, staged_too, confirmed)
+}
+
+/// Read-only: where every changed path stands against the index.
+#[tauri::command(async)]
+pub fn worktree_stage_state(
+    state: State<'_, AppState>,
+    path: PathBuf,
+) -> Result<Vec<StageState>, CmdError> {
+    stage_state(data_dir(&state)?, &path)
 }
 
 #[tauri::command(async)]

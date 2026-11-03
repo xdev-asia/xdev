@@ -25,6 +25,8 @@ pub struct StageState {
     pub staged: bool,
     /// The disk differs from the index, or the file is untracked.
     pub unstaged: bool,
+    /// The path is not tracked at all (also counted in `unstaged`).
+    pub untracked: bool,
 }
 
 impl Repo {
@@ -69,12 +71,14 @@ impl Repo {
     pub fn stage_state(&self) -> Result<Vec<StageState>, GitError> {
         let top = self.root();
         let mut found: BTreeMap<String, StageState> = BTreeMap::new();
-        let mut mark = |path: &str, staged: bool| {
+        let mut mark = |path: &str, staged: bool, untracked: bool| {
             let entry = found.entry(path.to_owned()).or_insert_with(|| StageState {
                 path: path.to_owned(),
                 staged: false,
                 unstaged: false,
+                untracked: false,
             });
+            entry.untracked |= untracked;
             if staged {
                 entry.staged = true;
             } else {
@@ -90,11 +94,11 @@ impl Repo {
         };
         let staged = run::run(&top, &cached, None)?;
         for path in fields(&staged) {
-            mark(path, true);
+            mark(path, true, false);
         }
         let unstaged = run::run(&top, &["diff", "--name-only", "-z", "--no-renames"], None)?;
         for path in fields(&unstaged) {
-            mark(path, false);
+            mark(path, false, false);
         }
         let untracked = run::run(
             &top,
@@ -102,7 +106,7 @@ impl Repo {
             None,
         )?;
         for path in fields(&untracked) {
-            mark(path, false);
+            mark(path, false, true);
         }
         Ok(found.into_values().collect())
     }
@@ -121,6 +125,13 @@ impl Repo {
         } else {
             self.at_top(&["rm", "--cached", "-q", "--ignore-unmatch"], paths)
         }
+    }
+
+    /// Puts tracked `paths` back to the index version and deletes untracked ones.
+    /// `staged_too`: also reset the index to `HEAD` first, so staged edits are lost as well.
+    pub fn discard(&self, paths: &[String], staged_too: bool) -> Result<(), GitError> {
+        let _ = (paths, staged_too);
+        todo!("discard")
     }
 
     /// Runs `args -- paths` from the top folder; nothing at all without paths.

@@ -45,6 +45,11 @@ pub enum Action {
         remote: String,
         branch: String,
     },
+    /// Throw away uncommitted changes of `paths` (relative to `worktree`).
+    Discard {
+        worktree: PathBuf,
+        paths: Vec<String>,
+    },
 }
 
 /// `Ask` stops until a person approves; nothing proceeds on silence.
@@ -172,6 +177,10 @@ impl Gate for Policy {
             // No rule can relax this: a person confirms every force push.
             Action::ForcePush { .. } => Verdict::Ask {
                 reason: "force push always asks".to_owned(),
+            },
+            // Loses work that git cannot bring back: a person confirms every time.
+            Action::Discard { .. } => Verdict::Ask {
+                reason: "discarding changes always asks".to_owned(),
             },
             Action::LaunchAgent {
                 profile,
