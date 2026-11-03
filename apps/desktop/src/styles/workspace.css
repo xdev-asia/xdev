@@ -1171,6 +1171,10 @@
   margin-top: 10px;
 }
 
+.ws-panel[hidden] {
+  display: none;
+}
+
 .ws-panel {
   display: flex;
   flex: 0 0 var(--w-panel);

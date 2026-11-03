@@ -12,6 +12,7 @@ import { PaletteHost } from "@/palette/PaletteHost";
 import { useKeymap, type ActionId } from "@/keys/keymap";
 import { setTerminalKeyHost, startDiagnosticToasts } from "@/keys/terminalKey";
 import { Toasts } from "./Toasts";
+import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
 import { SettingsView } from "@/settings/SettingsView";
 import { playStatusSound } from "@/status/sound";
@@ -78,6 +79,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The tab in front of each worktree, which is where a prompt from the Agent kit is typed.
   const [shownTab, setShownTab] = useState<Record<string, string | null>>({});
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // The right panel (Files / Changes / Checks); hidden, not unmounted, so its state stays.
+  const [rightOpen, setRightOpen] = useState(true);
   // The mounted changes panel's bulk actions, for the palette.
   const changesHandlers = useRef<ChangesHandlers | null>(null);
   const [changesReady, setChangesReady] = useState(false);
@@ -397,12 +400,38 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       setTerminalKeyHost(null);
     };
   }, [live]);
+  // The stored zoom is applied once, as the shell mounts.
+  useEffect(() => {
+    void loadZoom(api);
+  }, []);
   // Keys that work in every view; the worktree keys below need the workspace.
+  // A panel key shows that tab of the right panel; pressed again on the tab in front, it closes the panel.
+  function panelKey(tab: PanelTab): void {
+    show("workspace");
+    if (rightOpen && panelTab === tab) {
+      setRightOpen(false);
+      return;
+    }
+    setRightOpen(true);
+    setPanelTab(tab);
+  }
   useKeymap({
     "sessions.open": () => {
       show("workspace");
       openSessionsPanel(null);
     },
+    "search.open": () => openSearch(),
+    "settings.open": () => openSettings(),
+    "settings.shortcuts": () => openSettings("keys"),
+    "sidebar.left.toggle": () => setSidebarOpen((o) => !o),
+    "sidebar.right.toggle": () => setRightOpen((o) => !o),
+    "panel.explorer": () => panelKey("files"),
+    // The file tree has no search box of its own, so the jump palette is the search.
+    "panel.search": () => setJumpOpen(true),
+    "panel.sourceControl": () => panelKey("changes"),
+    "zoom.in": () => void stepZoom(api, ZOOM_STEP),
+    "zoom.out": () => void stepZoom(api, -ZOOM_STEP),
+    "zoom.reset": () => void stepZoom(api, 0),
   });
   useKeymap(
     {
@@ -542,6 +571,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   function openSearch(): void {
     show("docs");
     setTimeout(() => {
+      if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
       const box = document.querySelector<HTMLInputElement>(".ws-docs .search-input");
       box?.focus();
       box?.select();
@@ -750,7 +780,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               </p>
             )}
           </main>
-          <aside className="ws-panel" aria-label={t("workspace.panel.label")}>
+          <aside className="ws-panel" hidden={!rightOpen} aria-label={t("workspace.panel.label")}>
             <div className="ws-panel-tabs" role="tablist" aria-label={t("workspace.panel.label")}>
               <button
                 type="button"
