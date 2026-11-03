@@ -4,6 +4,7 @@ import { AgentsPage } from "./agents/AgentsPage";
 import { GitSettings } from "./GitSettings";
 import { OpenInPage } from "./OpenInPage";
 import { NotificationsPage } from "./notifications/NotificationsPage";
+import { QuickCommandsPage } from "./quickCommands/QuickCommandsPage";
 import { ReposSettings } from "./ReposSettings";
 import { ShortcutsPage } from "./shortcuts/ShortcutsPage";
 import { TerminalPage } from "./TerminalPage";
@@ -33,4 +34,5 @@ export const SECTIONS: SettingsSection[] = [
   { id: "git", labelKey: "settings.git.title", Component: GitSettings },
   { id: "vaults", labelKey: "settings.vaults.title", Component: VaultsSettings },
   { id: "keys", labelKey: "keys.title", Component: ShortcutsPage },
+  { id: "qcmd", labelKey: "qcmd.title", Component: QuickCommandsPage },
 ];

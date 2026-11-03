@@ -1,0 +1,245 @@
+/* Quick commands: the Command button on the tab strip and its popover. Tokens only. */
+.qc-anchor {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 0 6px;
+}
+
+.qc-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-2);
+}
+
+.qc-button:hover,
+.qc-button[aria-expanded="true"] {
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+.qc-pop-slot {
+  position: absolute;
+  top: 100%;
+  right: 4px;
+  z-index: 21;
+}
+
+.qc-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(440px, 92vw);
+  max-height: min(520px, 70vh);
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-1) 16%, transparent);
+}
+
+.qc-search {
+  width: 100%;
+  min-height: 32px;
+}
+
+.qc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.qc-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.qc-section-title {
+  padding: 4px 8px 2px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.qc-untrusted {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-s);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.qc-row {
+  display: grid;
+  grid-template-columns: minmax(0, auto) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-1);
+  text-align: left;
+}
+
+.qc-row[data-active],
+.qc-row:hover:not([aria-disabled="true"]) {
+  background: var(--bg-3);
+}
+
+.qc-row[aria-disabled="true"] {
+  color: var(--text-3);
+  cursor: not-allowed;
+}
+
+.qc-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qc-badge {
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.qc-badge[data-badge="agent"] {
+  background: var(--violet-bg);
+  color: var(--violet);
+}
+
+.qc-row-text {
+  overflow: hidden;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qc-empty {
+  margin: 0;
+  padding: 12px 8px;
+  color: var(--text-2);
+}
+
+.qc-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.qc-target {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.qc-warn {
+  color: var(--warn);
+}
+
+.qc-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Edit dialog and Settings page. Tokens only. */
+.qc-dialog {
+  width: min(520px, 92vw);
+}
+
+.qc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.qc-field > span:first-child,
+.qc-field > legend {
+  color: var(--text-2);
+}
+
+.qc-field textarea {
+  resize: vertical;
+}
+
+.qc-choice {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+}
+
+.qc-choice > legend {
+  width: 100%;
+  padding: 0;
+}
+
+.qc-choice label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.qc-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.qc-counter {
+  align-self: flex-end;
+  color: var(--text-2);
+}
+
+.qc-counter[data-over] {
+  color: var(--danger);
+}
+
+.qc-page-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.qc-page-tools .qc-search {
+  flex: 1;
+}
+
+.qc-page-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.qc-page-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}

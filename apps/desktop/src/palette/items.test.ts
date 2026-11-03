@@ -152,3 +152,26 @@ it("the Resume agent session action is listed only when the shell supplies it", 
   item?.run();
   expect(open).toHaveBeenCalled();
 });
+
+import type { QuickCommand } from "@/api";
+import { quickCommandItems } from "./items";
+import { selectCommands } from "@/quickCommands/store";
+
+const qcs: QuickCommand[] = [
+  { id: "g", label: "Git status", scope: { type: "global" }, action: { type: "terminal", command: "git status", appendEnter: true } },
+  { id: "a", label: "Tests", scope: { type: "repo", repo: "/r/x" }, action: { type: "terminal", command: "cargo test", appendEnter: true } },
+  { id: "b", label: "Other repo", scope: { type: "repo", repo: "/r/y" }, action: { type: "terminal", command: "ls", appendEnter: true } },
+];
+
+it("quick command items: only the current repo's and global ones, then New", () => {
+  const sel = selectCommands({ items: qcs, recent: [], files: {} }, "/r/x");
+  const run = vi.fn();
+  const create = vi.fn();
+  const items = quickCommandItems([...sel.global, ...sel.project], "xdev", t, { run, create });
+  expect(items.map((i) => i.title)).toEqual(["Run: Git status", "Run: Tests", "New quick command…"]);
+  expect(items.map((i) => i.detail)).toEqual(["Global", "xdev", undefined]);
+  items[1].run();
+  expect(run).toHaveBeenCalledWith(qcs[1]);
+  items[2].run();
+  expect(create).toHaveBeenCalled();
+});
