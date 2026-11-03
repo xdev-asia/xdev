@@ -921,5 +921,6 @@
   "workspace.tabs.shells": "Shell",
   "workspace.tabs.skip": "skip",
   "workspace.tabs.skipHint": "Agent này chạy mà không hỏi trước khi làm.",
-  "terminal.approve.skip": "Hồ sơ này chạy ở chế độ skip: agent làm mà không hỏi bạn. Chỉ cho phép lần chạy này; lần sau sẽ hỏi lại."
+  "terminal.approve.skip": "Hồ sơ này chạy ở chế độ skip: agent làm mà không hỏi bạn. Chỉ cho phép lần chạy này; lần sau sẽ hỏi lại.",
+  "workspace.tabs.restart": "Khởi động lại"
 }

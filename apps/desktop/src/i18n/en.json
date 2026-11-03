@@ -921,5 +921,6 @@
   "workspace.tabs.shells": "Shells",
   "workspace.tabs.skip": "skip",
   "workspace.tabs.skipHint": "This agent runs without asking before it acts.",
-  "terminal.approve.skip": "This profile runs in skip mode: the agent acts without asking you. This allows one start only; the next start asks again."
+  "terminal.approve.skip": "This profile runs in skip mode: the agent acts without asking you. This allows one start only; the next start asks again.",
+  "workspace.tabs.restart": "Restart"
 }

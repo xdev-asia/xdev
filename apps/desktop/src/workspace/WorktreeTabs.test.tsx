@@ -71,13 +71,13 @@ function harness(api: Api, sessions: Sessions, worktree = A, visible = true) {
 // What the terminal does on mount: start its tab's client, report the outcome.
 async function run(term: Node) {
   await term.props.client
-    .start(term.props.cwd, term.props.profile, 80, 24, () => {})
+    .start(term.props.cwd, term.props.profile, 80, 24, () => {}, term.props.account ?? null)
     .then(term.props.onStarted, (e: unknown) => term.props.onError(toApiError(e)));
 }
 
 let sessions: Sessions | null = null;
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; store.view = null; });
-afterEach(() => { sessions?.dispose(); sessions = null; vi.restoreAllMocks(); });
+afterEach(() => { sessions?.dispose(); sessions = null; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it("plus menu starts claude in the worktree after approval", async () => {
   const api = createMockApi({});
@@ -435,4 +435,87 @@ it("restart_of_disabled_profile_shows_error", async () => {
   expect(renderToStaticMarkup(banner)).toContain(en("error.profile_off"));
   // The failed start leaves nothing behind but the banner.
   expect(live.tabs(A)).toEqual([]);
+});
+
+it("agent_exit_shows_restart_with_same_account", async () => {
+  const api = createMockApi({});
+  let fire: (e: PtyExit) => void = () => {};
+  vi.spyOn(api, "onPtyExit").mockImplementation(async (cb) => ((fire = cb), () => {}));
+  const spawn = vi.spyOn(api, "ptySpawn");
+  await api.ptyApprove("claude", "work");
+  store.view = await api.profiles();
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  const tab = live.open(A, "claude", "work");
+  await run(view.terminals()[0]);
+  expect(view.find((n) => n.props.className === "ws-tab-again")).toBeUndefined();
+
+  fire({ id: tab.id, code: 0 });
+  const chip = view.find((n) => n.type === "button" && n.props.className === "ws-tab-again")!;
+  expect(chip.props.children).toBe(en("workspace.tabs.restart"));
+  chip.props.onClick();
+  const [next] = live.tabs(A);
+  expect(next.id).not.toBe(tab.id);
+  expect(next).toMatchObject({ profileId: "claude", account: "work" });
+  await run(view.terminals()[0]);
+  expect(spawn).toHaveBeenCalledTimes(2);
+  expect([spawn.mock.calls[1][0], ...spawn.mock.calls[1].slice(1, 4)]).toEqual([next.id, A, "claude", "work"]);
+});
+
+it("shell_exit_keeps_run_again", async () => {
+  const api = createMockApi({});
+  let fire: (e: PtyExit) => void = () => {};
+  vi.spyOn(api, "onPtyExit").mockImplementation(async (cb) => ((fire = cb), () => {}));
+  store.view = await api.profiles();
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  const tab = live.open(A, "shell:cmd");
+  await run(view.terminals()[0]);
+  fire({ id: tab.id, code: 0 });
+  const chip = view.find((n) => n.type === "button" && n.props.className === "ws-tab-again")!;
+  expect(chip.props.children).toBe(en("workspace.tabs.again"));
+  expect(view.html()).not.toContain(en("workspace.tabs.restart"));
+});
+
+// Runs the effects of one fresh draw against a stubbed window; hands back its keydown listeners.
+function keys(view: ReturnType<typeof harness>) {
+  const listeners = new Set<(e: KeyboardEvent) => void>();
+  const add = vi.fn((type: string, fn: (e: KeyboardEvent) => void) => void (type === "keydown" && listeners.add(fn)));
+  const remove = vi.fn((type: string, fn: (e: KeyboardEvent) => void) => void (type === "keydown" && listeners.delete(fn)));
+  vi.stubGlobal("window", { addEventListener: add, removeEventListener: remove });
+  hooks.effects = [];
+  view.draw();
+  const cleanups = hooks.effects.map((effect) => effect()).filter((c): c is () => void => typeof c === "function");
+  const press = (over: Partial<KeyboardEvent> = {}) => {
+    const e = { key: "t", code: "KeyT", ctrlKey: true, altKey: true, shiftKey: false, metaKey: false, repeat: false, preventDefault: vi.fn(), stopPropagation: vi.fn(), ...over };
+    for (const fn of [...listeners]) fn(e as unknown as KeyboardEvent);
+    return e;
+  };
+  return { listeners, add, press, cleanup: () => cleanups.forEach((c) => c()) };
+}
+
+it("ctrl_alt_t_opens_default_agent", async () => {
+  const api = createMockApi({});
+  store.view = await api.profilesDefaults("ask", "codex", null);
+  const live = (sessions = new Sessions(api));
+
+  // A hidden worktree does not listen.
+  const hidden = keys(harness(api, live, B, false));
+  expect(hidden.listeners.size).toBe(0);
+  hidden.cleanup();
+
+  const shown = keys(harness(api, live, A, true));
+  expect(shown.listeners.size).toBe(1);
+  // A held key repeats; only the first press counts, and other chords do nothing.
+  shown.press({ repeat: true });
+  shown.press({ altKey: false });
+  shown.press({ key: "y", code: "KeyY" });
+  expect(live.tabs(A)).toEqual([]);
+  const e = shown.press();
+  expect(e.preventDefault).toHaveBeenCalled();
+  expect(live.tabs(A).map((t) => t.profileId)).toEqual(["codex"]);
+  expect(live.tabs(B)).toEqual([]);
+
+  shown.cleanup();
+  expect(shown.listeners.size).toBe(0);
 });

@@ -128,6 +128,22 @@ export function WorktreeTabs(props: {
     setActive(sessions.open(worktree, profile).id);
   }
 
+  // Ctrl+Alt+T opens the default agent, in the worktree on screen only. Taken in the capture
+  // phase so the terminal under focus does not also get the key.
+  const defaultAgent = view?.defaultAgent ?? FALLBACK_AGENTS[0];
+  useEffect(() => {
+    if (!visible) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || !e.ctrlKey || !e.altKey || e.shiftKey || e.metaKey) return;
+      if (e.code !== "KeyT" && e.key.toLowerCase() !== "t") return;
+      e.preventDefault();
+      e.stopPropagation();
+      launch(defaultAgent);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [visible, defaultAgent, sessions, worktree]);
+
   function failed(tab: Tab, e: ApiError): void {
     const tries = attempts[tab.id] ?? 0;
     ask(
@@ -296,7 +312,7 @@ export function WorktreeTabs(props: {
                     : t("terminal.exited", { code: tab.exitCode })}
                 </span>
                 <button type="button" className="ws-tab-again" onClick={() => again(tab)}>
-                  {t("workspace.tabs.again")}
+                  {tab.agent ? t("workspace.tabs.restart") : t("workspace.tabs.again")}
                 </button>
               </div>
             )}
