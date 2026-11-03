@@ -128,7 +128,13 @@ export function DocsApp() {
     void api.dismissVaultPrompt().catch(() => undefined);
   }
 
-  if (booting) return <div className="app-boot" />;
+  if (booting) {
+    return (
+      <div className="app-boot" role="status">
+        {t("vault.opening")}
+      </div>
+    );
+  }
   return (
     <>
       {vault ? (

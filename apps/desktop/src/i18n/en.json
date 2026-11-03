@@ -1,6 +1,8 @@
 {
   "app.name": "xDev",
   "app.tagline": "Local-first project knowledge for humans and AI agents.",
+  "app.crash.title": "Something went wrong in this window.",
+  "app.crash.reload": "Reload",
   "vault.change": "Change folder",
   "vault.label": "Open folder: {path}",
   "vault.open": "Open a folder",
