@@ -477,6 +477,7 @@
   "error.primary_worktree": "Không thể xoá bản checkout chính của kho mã ở đây.",
   "error.empty_message": "Hãy viết nội dung commit trước.",
   "error.outside": "Nằm ngoài các thư mục agent, hoặc là tệp liên kết",
+  "error.kit_bad_input": "Kit agent từ chối dữ liệu này. Chi tiết nằm kèm theo lỗi.",
   "apps.terminal": "Terminal",
   "terminal.folder": "Thư mục",
   "terminal.pickFolder": "Chọn thư mục…",

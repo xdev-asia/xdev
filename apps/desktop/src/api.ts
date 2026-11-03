@@ -183,7 +183,8 @@ export type ErrorCode =
   | "worktree_dirty"
   | "primary_worktree"
   | "empty_message"
-  | "outside";
+  | "outside"
+  | "kit_bad_input";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export interface Api {
@@ -399,6 +400,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "primary_worktree",
   "empty_message",
   "outside",
+  "kit_bad_input",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
