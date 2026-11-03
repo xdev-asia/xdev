@@ -34,6 +34,7 @@ import type {
   UpdateInfo,
   VaultChanged,
   VaultSetup,
+  VaultView,
   VcsState,
   RepoView,
   WorktreeChange,
@@ -100,7 +101,9 @@ export type {
   TasksContext,
   TaskState,
   UpdateInfo,
+  VaultKind,
   VaultSetup,
+  VaultView,
   VcsState,
   RepoView,
   WorktreeChange,
@@ -184,8 +187,13 @@ export type ErrorCode =
   | "primary_worktree"
   | "empty_message"
   | "outside"
-  | "kit_bad_input";
+  | "kit_bad_input"
+  | "short_name_taken"
+  | "vault_exists"
+  | "vault_unknown";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
+
+export type RepoPatch = { shortName?: string; baseRef?: string; worktreeRoot?: string };
 
 export interface Api {
   // The downloaded update waiting for a restart, if any; Rust checks and downloads on its own.
@@ -290,6 +298,21 @@ export interface Api {
   repoAdd(path: string): Promise<RepoView>;
   // Only the entry goes; nothing on disk is touched.
   repoForget(id: string): Promise<void>;
+  // Only the fields given change. Rejects with `bad_name` / `short_name_taken` for the short name,
+  // `bad_ref` for a base ref that does not resolve, `bad_path` for a worktree folder that is relative
+  // or inside the primary checkout; a refused patch saves nothing.
+  repoUpdate(id: string, patch: RepoPatch): Promise<RepoView>;
+  // Records a worktree from `RepoView.found`. Rejects with `worktree_exists` when it is already
+  // recorded and `worktree_unknown` when no repo has it.
+  worktreeAdopt(path: string): Promise<WorktreeView>;
+  // Repo vaults (each repo's `docs/`, `exists: false` when there is none) then shared vaults.
+  vaultList(): Promise<VaultView[]>;
+  // Rejects with `bad_path` for a folder that is not there, `vault_exists` for one already listed.
+  vaultAdd(path: string): Promise<VaultView>;
+  // Only the record goes; the folder stays. Rejects with `vault_unknown`.
+  vaultForget(id: string): Promise<void>;
+  // Makes the repo's `docs/` with a starter doc; a folder with anything in it is left alone.
+  vaultCreateDocs(repoId: string, file: string, content: string): Promise<VaultView>;
   // A new branch and folder; a blank `name` gets a free word, a null `from` starts at the repo's
   // base ref. Rejects with `bad_name`, `branch_exists`, `worktree_exists` or `bad_ref`.
   worktreeCreate(repoId: string, name: string, from: string | null): Promise<WorktreeView>;
@@ -401,6 +424,9 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "empty_message",
   "outside",
   "kit_bad_input",
+  "short_name_taken",
+  "vault_exists",
+  "vault_unknown",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -491,6 +517,12 @@ const tauriApi: Api = {
   workspaceList: () => call("workspace_list"),
   repoAdd: (path) => call("repo_add", { path }),
   repoForget: (id) => call("repo_forget", { id }),
+  repoUpdate: (id, patch) => call("repo_update", { id, ...patch }),
+  worktreeAdopt: (path) => call("worktree_adopt", { path }),
+  vaultList: () => call("vault_list"),
+  vaultAdd: (path) => call("vault_add", { path }),
+  vaultForget: (id) => call("vault_forget", { id }),
+  vaultCreateDocs: (repoId, file, content) => call("vault_create_docs", { repoId, file, content }),
   worktreeCreate: (repoId, name, from) => call("worktree_create", { repoId, name, from }),
   worktreePin: (path, pinned) => call("worktree_pin", { path, pinned }),
   worktreeRemove: (path, force, confirmed) => call("worktree_remove", { path, force, confirmed }),

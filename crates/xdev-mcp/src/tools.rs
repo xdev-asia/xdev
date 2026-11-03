@@ -83,7 +83,7 @@ pub(crate) fn definitions() -> Value {
         {
             "name": "stale_docs",
             "title": "Stale docs",
-            "description": "Docs that may no longer match the code they cover: stale (covered paths changed since the verified commit), unverified (no verified commit) or unknown (commit or git missing).",
+            "description": "Docs that may no longer match the code they cover: stale (covered paths changed since the verified commit), unverified (no verified commit), unknown (commit or git missing) or unlinked (a covers prefix names no known repo).",
             "inputSchema": no_args,
             "outputSchema": docs_schema()
         },
@@ -125,7 +125,7 @@ fn info_properties() -> Map<String, Value> {
         "path": {"type": "string"},
         "title": {"type": "string"},
         "type": {"type": ["string", "null"]},
-        "state": {"type": "string", "enum": ["fresh", "stale", "unverified", "unknown", "none"]},
+        "state": {"type": "string", "enum": ["fresh", "stale", "unverified", "unknown", "unlinked", "none"]},
         "covers": {"type": "array", "items": {"type": "string"}},
         "count": {"type": "integer", "minimum": 0}
     });
@@ -318,7 +318,7 @@ fn stale_result(list: &[DocInfo]) -> Output {
     let mut text = match list.len() {
         0 => {
             return (
-                "No stale, unverified or unknown docs.".to_string(),
+                "No stale, unverified, unknown or unlinked docs.".to_string(),
                 json!({"docs": list}),
             );
         }
@@ -361,6 +361,7 @@ fn freshness(info: &DocInfo) -> String {
         ),
         "unverified" => "unverified (no verified commit)".into(),
         "unknown" => "unknown (verified commit not found, or no git)".into(),
+        "unlinked" => "unlinked (a covers prefix names no known repo)".into(),
         "none" => "none (covers no code)".into(),
         other => one_line(other),
     }

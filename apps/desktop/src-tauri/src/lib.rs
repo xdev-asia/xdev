@@ -3,6 +3,7 @@ mod accounts;
 mod bindings;
 mod commands;
 mod kit;
+mod links;
 mod pty;
 mod session;
 mod settings;
@@ -110,6 +111,12 @@ pub fn run() {
             workspace::workspace_list,
             workspace::repo_add,
             workspace::repo_forget,
+            workspace::repo_update,
+            workspace::worktree_adopt,
+            workspace::vault_list,
+            workspace::vault_add,
+            workspace::vault_forget,
+            workspace::vault_create_docs,
             workspace::worktree_create,
             workspace::worktree_pin,
             workspace::worktree_remove,

@@ -8,6 +8,9 @@ import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
+import { DEMO_WORKSPACE } from "../mockWorkspace";
+import { VaultNav } from "./VaultNav";
+import { SettingsView } from "../settings/SettingsView";
 import { Sessions } from "./sessions";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { WorktreeChanges } from "./WorktreeChanges";
@@ -119,6 +122,67 @@ it("header has repo, branch, search, bell and settings", async () => {
   vi.useRealTimers();
   expect(query).toHaveBeenCalledWith(".ws-docs .search-input");
   expect(box.focus).toHaveBeenCalledTimes(1);
+});
+
+it("header settings button opens settings", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  const region = (cls: string) => view.all().find(n => n.props.className === cls)!;
+  const button = () => view.all().find(n => n.type === "button" && n.props["aria-label"] === en("workspace.header.settings"))!;
+  expect(button().props.disabled).toBeFalsy();
+  expect(button().props["aria-pressed"]).toBe(false);
+  expect(view.of(SettingsView)).toHaveLength(0);
+  expect(region("ws-settings").props.hidden).toBe(true);
+
+  button().props.onClick();
+  expect(button().props["aria-pressed"]).toBe(true);
+  expect(region("ws-settings").props.hidden).toBe(false);
+  expect(region("ws-stage").props.hidden).toBe(true);
+  const settings = view.of(SettingsView)[0];
+  expect(settings.props.api).toBe(api);
+  // A change in settings reloads the worktree list.
+  const list = vi.spyOn(api, "workspaceList");
+  settings.props.onChanged();
+  await tick();
+  expect(list).toHaveBeenCalledTimes(1);
+
+  view.nav(en("workspace.nav.workspace")).props.onClick();
+  expect(view.of(SettingsView)).toHaveLength(0);
+  expect(region("ws-stage").props.hidden).toBe(false);
+});
+
+it("adopting refreshes the list", async () => {
+  const spike: WorktreeView = { path: "/demo/elsewhere/spike", name: "spike", branch: "spike", head: "6666666666666666666666666666666666666666", start: null, primary: false, pinned: false, detached: false };
+  const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), found: { "demo-xdev": [spike] } } });
+  const view = await harness(api);
+  expect(view.list().props.repos[0].found).toHaveLength(1);
+  const adopt = vi.spyOn(api, "worktreeAdopt");
+  view.list().props.onAdopt(spike);
+  await tick();
+  expect(adopt).toHaveBeenCalledWith("/demo/elsewhere/spike");
+  expect(view.list().props.repos[0].found).toHaveLength(0);
+  expect(view.worktree("spike")?.path).toBe("/demo/elsewhere/spike");
+
+  // A second adopt of the same path is refused, and the reason shows in the list.
+  view.list().props.onAdopt(spike);
+  await tick();
+  expect(view.list().props.notice).toBe("worktree_exists");
+});
+
+it("opening a vault from the nav remounts docs", async () => {
+  const view = await harness();
+  expect(view.of(VaultNav)).toHaveLength(0);
+  view.nav(en("workspace.nav.docs")).props.onClick();
+  const [nav] = view.of(VaultNav);
+  expect(nav).toBeDefined();
+  const key = () => view.of(DocsApp)[0].key;
+  const before = key();
+  nav.props.onOpened("/demo/xdev/docs");
+  expect(view.of(DocsApp)).toHaveLength(1);
+  expect(key()).not.toBe(before);
+  // The vault list goes with the docs view.
+  view.nav(en("workspace.nav.workspace")).props.onClick();
+  expect(view.of(VaultNav)).toHaveLength(0);
 });
 
 it("docs nav mounts the docs app once and keeps the workspace mounted", async () => {

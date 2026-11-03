@@ -289,3 +289,35 @@ fn resolve_ref_refuses_option_like_input() {
         );
     }
 }
+
+#[test]
+fn commits_between_stops_at_until() {
+    let (dir, a) = fixture();
+    write(dir.path(), "src/x.rs", "x2");
+    let b = commit_all(dir.path(), "B");
+    write(dir.path(), "src/x.rs", "x3");
+    commit_all(dir.path(), "C");
+    let repo = vault_repo(dir.path());
+    let (commits, total) = repo.commits_between(&a, &b, &covers(&["src"]), 20).unwrap();
+    assert_eq!(subjects(&commits), ["B"]);
+    assert_eq!(total, 1);
+}
+
+#[test]
+fn commits_between_refuses_non_hex_until() {
+    let (dir, a) = fixture();
+    let repo = vault_repo(dir.path());
+    for until in ["HEAD", "--all", "main", ""] {
+        assert!(
+            matches!(
+                repo.commits_between(&a, until, &covers(&["src"]), 20),
+                Err(xdev_git::GitError::BadId(_))
+            ),
+            "{until}"
+        );
+    }
+    assert!(matches!(
+        repo.commits_between("HEAD", &a, &covers(&["src"]), 20),
+        Err(xdev_git::GitError::BadId(_))
+    ));
+}

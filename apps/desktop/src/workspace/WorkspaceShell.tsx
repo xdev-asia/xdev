@@ -7,10 +7,12 @@ import { DocsApp } from "../DocsApp";
 import type { KitTab } from "../components/AgentKitView";
 import { LanguageSwitch } from "../components/LanguageSwitch";
 import { useI18n } from "../i18n";
+import { SettingsView } from "../settings/SettingsView";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
+import { VaultNav } from "./VaultNav";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { sendTarget } from "./sendTarget";
 import { Sessions } from "./sessions";
@@ -39,7 +41,7 @@ function storeSelected(path: string): void {
   }
 }
 
-type View = "workspace" | "docs";
+type View = "workspace" | "docs" | "settings";
 type PanelTab = "files" | "changes";
 type Creating = { repoId: string; busy: boolean; error?: ApiError["code"] };
 type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"] };
@@ -75,6 +77,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
   const [stats] = useState(() => new WorktreeStats());
+  // Bumped when a vault opens from the sidebar, so the docs app boots again on the new folder.
+  const [docsKey, setDocsKey] = useState(0);
 
   // One store of terminal tabs for the whole shell. Made in an effect so a dev double mount
   // disposes the first one; disposing kills its ptys.
@@ -167,6 +171,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     } catch (e) {
       setNotice(toApiError(e).code);
     }
+  }
+
+  async function adopt(wt: WorktreeView): Promise<void> {
+    setNotice(undefined);
+    try {
+      await api.worktreeAdopt(wt.path);
+      await load();
+    } catch (e) {
+      setNotice(toApiError(e).code);
+    }
+  }
+
+  // The docs app marks its status line while the open doc differs from disk; DocsApp.tsx stays as is.
+  function docsSaved(): boolean {
+    return typeof document === "undefined" || !document.querySelector(".ws-docs .doc-status[data-dirty]");
   }
 
   function startCreate(repoId?: string): void {
@@ -275,14 +294,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         <div className="ws-header-center">
           <HeaderSearch onOpen={openSearch} />
         </div>
-        {/* Nothing feeds notifications yet and settings has no home, so both wait, disabled. */}
+        {/* Nothing feeds notifications yet, so that button waits, disabled. */}
         <button type="button" className="ws-icon-btn ws-header-btn" disabled aria-label={t("workspace.header.notifications")} title={t("workspace.header.soon")}>
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
             <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
             <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
           </svg>
         </button>
-        <button type="button" className="ws-icon-btn ws-header-btn" disabled aria-label={t("workspace.header.settings")} title={t("workspace.header.soon")}>
+        <button
+          type="button"
+          className="ws-icon-btn ws-header-btn"
+          aria-label={t("workspace.header.settings")}
+          title={t("workspace.header.settings")}
+          aria-pressed={view === "settings"}
+          onClick={() => show("settings")}
+        >
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
@@ -316,6 +342,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               </svg>
               <span>{t("workspace.nav.docs")}</span>
             </button>
+            {view === "docs" && (
+              <VaultNav
+                api={api}
+                canOpen={docsSaved}
+                onOpened={() => {
+                  setDocsMounted(true);
+                  setDocsKey((k) => k + 1);
+                }}
+              />
+            )}
           </nav>
           <WorktreeList
             repos={repos}
@@ -334,10 +370,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onPin={(wt) => void pin(wt)}
             onRemove={(wt) => setRemoving({ worktree: wt, dirty: false, busy: false })}
             onAddRepo={addRepo}
+            onAdopt={(wt) => void adopt(wt)}
           />
         </aside>
 
-        <div className="ws-stage" hidden={view === "docs"}>
+        <div className="ws-stage" hidden={view !== "workspace"}>
           <main className="ws-center" aria-label={t("workspace.center.label")}>
             {sessions &&
               mounted.map((path) => (
@@ -424,7 +461,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         </div>
 
         <div className="ws-docs" hidden={view !== "docs"}>
-          {docsMounted && <DocsApp kit={{ worktree: current?.path ?? null, open: kitOpen, onOpened: kitOpened, onSendToAgent: sendToAgent, canSend: target(current?.path) !== null }} />}
+          {docsMounted && <DocsApp key={docsKey} kit={{ worktree: current?.path ?? null, open: kitOpen, onOpened: kitOpened, onSendToAgent: sendToAgent, canSend: target(current?.path) !== null }} />}
+        </div>
+
+        <div className="ws-settings" hidden={view !== "settings"}>
+          {view === "settings" && <SettingsView api={api} onChanged={() => void load()} />}
         </div>
       </div>
 

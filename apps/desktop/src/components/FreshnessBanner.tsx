@@ -66,9 +66,11 @@ export function FreshnessBanner(props: {
       ? t(count === 1 ? "freshness.stale.bodyOne" : "freshness.stale.body", { count, covers: paths, id })
       : state === "unverified"
         ? t("freshness.unverified.body", { covers: paths })
-        : head === null
-          ? t("freshness.unknown.noGit", { covers: paths })
-          : t("freshness.unknown.missing", { id });
+        : state === "unlinked"
+          ? t("freshness.unlinked.body", { covers: paths })
+          : head === null
+            ? t("freshness.unknown.noGit", { covers: paths })
+            : t("freshness.unknown.missing", { id });
   const pending = head !== null && verifiedInDraft(props.draft, head);
   return (
     <div className="banner banner-warn freshness-banner" data-state={state} role="status">

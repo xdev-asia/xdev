@@ -756,7 +756,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       const found: StaleDoc[] = [];
       for (const { path, title } of readable()) {
         const { state, count } = freshness(files.get(path)!);
-        if (state === "stale" || state === "unverified" || state === "unknown") found.push({ path, title, state, count });
+        if (state === "stale" || state === "unverified" || state === "unknown" || state === "unlinked") found.push({ path, title, state, count });
       }
       return found;
     },
