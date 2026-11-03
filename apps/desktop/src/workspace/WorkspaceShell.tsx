@@ -25,7 +25,9 @@ import { ChecksPanel } from "./ChecksPanel";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
+import { RemoveRepoDialog } from "./RemoveRepoDialog";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
+import { removeRepo } from "./removeRepo";
 import { VaultNav } from "./VaultNav";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { sendToAgentTab } from "./agentPrompt";
@@ -149,6 +151,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // Asks the front terminal of a worktree to take keyboard focus, as the palette closes.
   const [termFocus, setTermFocus] = useState<{ worktree: string; seq: number } | null>(null);
   const focusTerminal = (worktree: string) => setTermFocus((f) => ({ worktree, seq: (f?.seq ?? 0) + 1 }));
+  // The repo Remove from xDev asks about, and why the last try failed.
+  const [forgetting, setForgetting] = useState<{ repo: RepoView; error?: ApiError["code"] } | null>(null);
   const [openInApps, setOpenInApps] = useState<OpenInApp[]>([]);
   const [settingsAt, setSettingsAt] = useState<{ section?: string; filter?: string; seq: number }>({ seq: 0 });
   // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
@@ -501,6 +505,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     } catch {
       // The profile list did not load; the + menu of the tab strip still works.
     }
+  }
+
+  async function forgetRepo(repo: RepoView): Promise<void> {
+    const code = await removeRepo({ forget: (id) => api.repoForget(id), closeWorktree: (path) => sessions?.closeWorktree(path) }, repo);
+    if (code) return setForgetting({ repo, error: code });
+    setForgetting(null);
+    await load();
   }
 
   async function addRepo(): Promise<void> {
@@ -920,6 +931,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onOpenIn={(path, target) => void openIn(path, target)}
             onCopy={(text) => void copy(text)}
             onNewTerminal={(wt) => void newTerminalIn(wt)}
+            onRepoSettings={(repo) => openSettings("repos", repo.id)}
+            onRemoveRepo={(repo) => setForgetting({ repo })}
           />
           </div>
         </aside>
@@ -1171,6 +1184,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         />
       )}
       <Toasts />
+      {forgetting && (
+        <RemoveRepoDialog
+          name={forgetting.repo.shortName}
+          worktrees={forgetting.repo.worktrees.length}
+          tabs={forgetting.repo.worktrees.flatMap((w) => sessions?.tabs(w.path) ?? []).map((tab) => tab.title ?? tab.profileId)}
+          error={forgetting.error}
+          onConfirm={() => void forgetRepo(forgetting.repo)}
+          onCancel={() => setForgetting(null)}
+        />
+      )}
       {removing && (
         <RemoveWorktreeDialog
           worktree={removing.worktree}
