@@ -14,7 +14,7 @@ import { WorktreeDiff } from "./WorktreeDiff";
 const FALLBACK_AGENTS: readonly PtyProfile[] = ["claude", "codex"];
 const FALLBACK_SHELL: PtyProfile = "shell";
 
-const GLYPH: Record<TabStatus, string> = { working: "●", idle: "○", failed: "✕", exited: "–" };
+const GLYPH: Record<TabStatus, string> = { working: "●", "needs-you": "?", done: "✓", idle: "○", failed: "✕", exited: "–" };
 
 const ended = (status: TabStatus) => status === "failed" || status === "exited";
 
@@ -327,7 +327,7 @@ export function WorktreeTabs(props: {
               onStarted={(info) => sessions.noteStarted(tab.id, info)}
               onError={(e) => failed(tab, e)}
               onOutput={(bytes) => sessions.noteOutput(tab.id, bytes)}
-              onInput={() => sessions.noteInput(tab.id)}
+              onInput={(text) => sessions.noteInput(tab.id, text)}
             />
           </div>
         ))}

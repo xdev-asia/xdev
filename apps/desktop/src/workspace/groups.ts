@@ -5,12 +5,13 @@ export type Group = "needs-you" | "working" | "review" | "rest";
 
 export const GROUPS: readonly Group[] = ["needs-you", "working", "review", "rest"];
 
-// Until `needs-you` and `done` have their own sources, a failed agent is what needs the user and
-// an idle one is waiting for review.
+// A question and a failure both need the person; a finished turn waits for review.
 const OF_DOT: Record<TabStatus, Group> = {
+  "needs-you": "needs-you",
   failed: "needs-you",
   working: "working",
-  idle: "review",
+  done: "review",
+  idle: "rest",
   exited: "rest",
 };
 

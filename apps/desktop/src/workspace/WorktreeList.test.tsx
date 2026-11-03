@@ -42,9 +42,9 @@ const repos = (): RepoView[] => {
   return [xdev, notes, gone];
 };
 
-const DOTS: Record<string, "working" | "failed" | "idle"> = { "/demo/wt/xdev-oak": "working", "/demo/wt/xdev-elm": "failed" };
+const DOTS: Record<string, "working" | "failed" | "idle" | "done"> = { "/demo/wt/xdev-oak": "working", "/demo/wt/xdev-elm": "failed" };
 
-function harness(dots: Record<string, "working" | "failed" | "idle"> = DOTS, list: () => RepoView[] = repos, extra: Partial<WorktreeListProps> = {}) {
+function harness(dots: Record<string, "working" | "failed" | "idle" | "done"> = DOTS, list: () => RepoView[] = repos, extra: Partial<WorktreeListProps> = {}) {
   const calls = { select: [] as WorktreeView[], create: 0, pin: [] as WorktreeView[], remove: [] as WorktreeView[], add: 0 };
   const draw = () => {
     hooks.cursor = 0;
@@ -184,8 +184,8 @@ const two = (): RepoView[] => {
 };
 
 it("shows group headers with counts", () => {
-  // Two working, one idle, the primary checkout without a status.
-  const view = harness({ "/demo/wt/xdev-oak": "working", "/demo/wt/xdev-elm": "working", "/demo/xdev": "idle" }, two);
+  // Two working, one done, the primary checkout without a status.
+  const view = harness({ "/demo/wt/xdev-oak": "working", "/demo/wt/xdev-elm": "working", "/demo/xdev": "done" }, two);
   expect(names(view)).toEqual([`${en("workspace.group.working")} 2`, `${en("workspace.group.review")} 1`]);
   expect(translate("vi", "workspace.group.working")).toBe("Đang chạy");
   expect(translate("vi", "workspace.group.review")).toBe("Chờ duyệt");
