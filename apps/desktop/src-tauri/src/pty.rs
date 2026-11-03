@@ -144,6 +144,9 @@ pub(crate) fn spawn_launch(
     on_output: impl FnMut(Vec<u8>) + Send + 'static,
     on_exit: impl FnOnce(Option<i32>) + Send + 'static,
 ) -> Result<PtyInfo, CmdError> {
+    // A skip approval covers one start attempt: taken out first, so a start
+    // that fails early cannot leave it behind for a later one.
+    let approved_now = launch.agent && ptys.passes().remove(&fingerprint(&launch));
     if !cwd.is_dir() {
         return Err(CmdError {
             code: "not_found",
@@ -159,8 +162,6 @@ pub(crate) fn spawn_launch(
     }
     if launch.agent {
         let gate = Audited::new(Policy::load(data_dir)?, data_dir);
-        // A skip approval is spent by the start it was given for.
-        let approved_now = ptys.passes().remove(&fingerprint(&launch));
         match gate.check_confirmed(&launch_action(&launch), approved_now) {
             Verdict::Allow => {}
             Verdict::Ask { reason } => {
@@ -368,11 +369,12 @@ mod tests {
         (result, rx)
     }
 
-    /// Runs `launch` and returns what it printed once it has exited.
-    fn run_to_end(ptys: &Ptys, data: &Path, launch: Launch) -> (PtyInfo, String) {
+    /// Runs `launch` and returns what it printed once the output holds
+    /// `until` (exit is reported on its own thread, so it says nothing about
+    /// whether the last output has arrived).
+    fn run_until(ptys: &Ptys, data: &Path, launch: Launch, until: &str) -> (PtyInfo, String) {
         let out = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&out);
-        let (tx, rx) = mpsc::channel();
         let info = spawn_launch(
             ptys,
             data,
@@ -382,29 +384,37 @@ mod tests {
             80,
             24,
             move |bytes| sink.lock().unwrap().extend(bytes),
-            move |code| {
-                let _ = tx.send(code);
-            },
+            |_| {},
         )
         .unwrap();
+        let text =
+            |out: &Mutex<Vec<u8>>| String::from_utf8_lossy(&out.lock().unwrap()).into_owned();
         // The console asks where the cursor is and waits; a terminal answers.
         let mut answered = false;
-        let mut exited = Err(mpsc::RecvTimeoutError::Timeout);
         for _ in 0..400 {
-            exited = rx.recv_timeout(Duration::from_millis(50));
-            if exited.is_ok() {
+            let seen = text(&out);
+            if seen.contains(until) {
                 break;
             }
-            let asked = out.lock().unwrap().windows(4).any(|w| w == b"[6n");
-            if asked && !answered {
+            if !answered && seen.contains("\x1b[6n") {
                 answered = true;
-                let _ = ptys.with("w", |s| s.write(b"[1;1R".to_vec()));
+                let _ = ptys.with("w", |s| s.write(b"\x1b[1;1R".to_vec()));
             }
+            std::thread::sleep(Duration::from_millis(50));
         }
         ptys.kill_all();
-        let text = String::from_utf8_lossy(&out.lock().unwrap()).into_owned();
-        assert!(exited.is_ok(), "no exit; output: {text:?}");
-        (info, text)
+        (info, text(&out))
+    }
+
+    fn wrapper_shell() -> String {
+        if cfg!(windows) {
+            "powershell.exe".to_owned()
+        } else {
+            std::env::var("SHELL")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "/bin/sh".into())
+        }
     }
 
     fn with_extra_args(extra: [&str; 2]) -> Launch {
@@ -561,18 +571,65 @@ mod tests {
             startup: vec!["echo hi".into()],
             ..agent()
         };
-        let (info, output) = run_to_end(&ptys, data.path(), l);
-        let wrapper = if cfg!(windows) {
-            "powershell.exe".to_owned()
-        } else {
-            std::env::var("SHELL")
-                .ok()
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| "/bin/sh".into())
+        let (info, output) = run_until(&ptys, data.path(), l, "done");
+        assert_eq!(info.program, wrapper_shell());
+        // The startup line runs first, then the program.
+        let lines: Vec<&str> = output
+            .split('\n')
+            .map(|l| l.trim_end_matches('\r'))
+            .collect();
+        assert!(
+            lines
+                .windows(2)
+                .any(|w| w[0].ends_with("hi") && w[1] == "done"),
+            "output: {output:?}"
+        );
+    }
+
+    #[test]
+    fn startup_agent_is_gated_on_the_cli_not_the_wrapper() {
+        let data = tempfile::tempdir().unwrap();
+        let ptys = Ptys::default();
+        let l = Launch {
+            startup: vec!["echo hi".into()],
+            ..agent()
         };
-        assert_eq!(info.program, wrapper);
-        assert!(output.contains("hi"), "output: {output:?}");
-        assert!(output.contains("done"), "output: {output:?}");
+        approve_launch(&ptys, data.path(), &l).unwrap();
+        let info = start(&ptys, data.path(), "a", l.clone()).0.unwrap();
+        ptys.kill_all();
+        assert_eq!(info.program, wrapper_shell());
+        assert!(info.agent);
+        let cli_print = agent_fingerprint(&l.program.to_string_lossy(), &l.args, "ask");
+        assert_eq!(
+            Policy::load(data.path()).unwrap().approved_agents,
+            [cli_print]
+        );
+    }
+
+    #[test]
+    fn failed_early_start_does_not_leave_a_skip_pass() {
+        let data = tempfile::tempdir().unwrap();
+        let ptys = Ptys::default();
+        let l = Launch {
+            permissions: Permissions::Skip,
+            ..agent()
+        };
+        approve_launch(&ptys, data.path(), &l).unwrap();
+        let missing = spawn_launch(
+            &ptys,
+            data.path(),
+            "m".into(),
+            data.path().join("nope"),
+            l.clone(),
+            80,
+            24,
+            |_| {},
+            |_| {},
+        );
+        assert_eq!(missing.unwrap_err().code, "not_found");
+        assert!(ptys.passes().is_empty());
+        let (later, _) = start(&ptys, data.path(), "a", l);
+        assert_eq!(later.unwrap_err().code, "needs_approval");
     }
 
     #[test]
