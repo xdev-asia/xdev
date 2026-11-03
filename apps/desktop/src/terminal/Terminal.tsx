@@ -25,8 +25,12 @@ export function Terminal(props: {
   onError(error: ApiError): void;
   /** Bytes of pty output, as they arrive. */
   onOutput?(bytes: number): void;
-  /** The user typed into the terminal. */
-  onInput?(): void;
+  /** The user typed into the terminal; `text` is what was sent (Escape alone may stop a turn). */
+  onInput?(text: string): void;
+  /** The program set the terminal title (OSC 0 or 2). */
+  onTitle?(title: string): void;
+  /** The program rang the terminal bell (BEL outside an OSC string; xterm tells the two apart). */
+  onBell?(): void;
   /** A new value asks the terminal to take keyboard focus; the first value alone asks nothing. */
   focusSeq?: number;
 }): JSX.Element {
@@ -91,9 +95,11 @@ export function Terminal(props: {
     const client = props.client ?? new PtyClient(props.api, props.id);
     let alive = true;
     term.onData((text) => {
-      handlers.current.onInput?.();
+      handlers.current.onInput?.(text);
       void client.input(text).catch(() => {});
     });
+    term.onTitleChange((title) => handlers.current.onTitle?.(title));
+    term.onBell(() => handlers.current.onBell?.());
     term.onResize(({ cols, rows }) => void client.resize(cols, rows).catch(() => {}));
     // A mount undone in the same tick (StrictMode in dev) starts nothing, so a shared client
     // is started once, by the mount that stays.

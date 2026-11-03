@@ -53,13 +53,19 @@ portable-pty = "=0.9.0"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+# The trust hash codex expects for a hook (sha256 of its definition).
+sha2 = "0.10.9"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
+# Merging the codex config.toml into a private CODEX_HOME.
+toml = "1.1.8"
 # TypeScript for the types that cross the desktop IPC boundary; behind each
 # crate's `ts` feature so the CLI never builds it.
 ts-rs = "12.0.1"
 # One blocking HTTPS call; rustls with its bundled roots, no async runtime.
 ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
+# A file's link count and identity on Windows, without unsafe code here.
+winapi-util = "0.1.11"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

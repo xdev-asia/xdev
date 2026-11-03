@@ -9,11 +9,13 @@ use ts_rs::{Config, TS};
 
 use crate::accounts::{Account, Accounts, LoginStart, Models};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
+use crate::hooks::PtyHook;
 use crate::kit::{KitText, PromptEntry};
 use crate::profiles::ProfilesView;
 use crate::pty::{PtyExit, PtyInfo};
 use crate::review::{ReviewBranch, ReviewData};
 use crate::review_notes::ReviewNote;
+use crate::settings::StatusSettings;
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
@@ -53,6 +55,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_agent::CustomShell::export_all(cfg)?;
     PtyInfo::export_all(cfg)?;
     PtyExit::export_all(cfg)?;
+    StatusSettings::export_all(cfg)?;
+    PtyHook::export_all(cfg)?;
     xdev_workspace::RepoView::export_all(cfg)?;
     xdev_workspace::WorktreeView::export_all(cfg)?;
     xdev_workspace::WorktreeStat::export_all(cfg)?;
