@@ -168,6 +168,11 @@ export class FileTabs {
     return moved;
   }
 
+  /** Every open file of every worktree. */
+  all(): FileEntry[] {
+    return [...this.entries.values()];
+  }
+
   /** The open files at or under `rel` (a file, or a folder that was deleted). */
   under(worktree: string, rel: string): FileEntry[] {
     return this.list(worktree).filter((e) => e.rel === rel || e.rel.startsWith(`${rel}/`));

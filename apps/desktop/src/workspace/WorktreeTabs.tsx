@@ -322,6 +322,13 @@ export function WorktreeTabs(props: {
       "pane.expand": () => reshape((l) => toggleExpand(l, l.focused)),
       "pane.equalize": () => reshape(equalize),
       "pane.close": () => requestClose(focusedLeaf?.tabs ?? []),
+      // Only a file tab takes the save key; anywhere else it goes on to its other owners.
+      "file.save": () => {
+        const rel = shown ? fileTabRel(shown) : null;
+        if (rel === null) return false;
+        void saveFile({ api, store: fileTabs, t }, worktree, rel);
+        return true;
+      },
     },
     { when: () => visible },
   );
