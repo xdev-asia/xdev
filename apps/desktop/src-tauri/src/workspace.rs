@@ -7,12 +7,13 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::{AppHandle, State};
+use xdev_ai::process::{kill_tree, own_group};
 use xdev_git::{ChangeKind, GitError, Repo};
 use xdev_policy::{Action, Verdict};
 use xdev_workspace::{
@@ -385,6 +386,8 @@ pub fn worktree_archive_run(
 const ARCHIVE_TIMEOUT: Duration = Duration::from_secs(120);
 /// The most of its output kept.
 const MAX_HOOK_OUTPUT: usize = 64 * 1024;
+/// How long the output is still read after the shell has ended.
+const READ_GRACE: Duration = Duration::from_secs(2);
 
 /// `worktree_archive_run` with the timeout as a parameter.
 fn archive_run(data: &Path, path: &Path, timeout: Duration) -> Result<HookRun, CmdError> {
@@ -400,7 +403,8 @@ fn archive_run(data: &Path, path: &Path, timeout: Duration) -> Result<HookRun, C
 
 /// Runs `hook` in `cwd` with no window and no input, stdout and stderr
 /// together in one buffer of at most `MAX_HOOK_OUTPUT` bytes. Past
-/// `timeout` the shell is killed and `code` is `None`.
+/// `timeout` the shell and everything it started are killed (a process
+/// group on Unix, `taskkill /T` on Windows) and `code` is `None`.
 fn run_headless(hook: HookCommand, cwd: &Path, timeout: Duration) -> io::Result<HookRun> {
     let mut cmd = Command::new(&hook.program);
     cmd.args(&hook.args)
@@ -415,6 +419,8 @@ fn run_headless(hook: HookCommand, cwd: &Path, timeout: Duration) -> io::Result<
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
+    // Its own process group on Unix, so the timeout reaches what it started.
+    own_group(&mut cmd);
     let mut child = cmd.spawn()?;
     let out = Arc::new(Mutex::new(Vec::new()));
     let pipes: [Option<Box<dyn Read + Send>>; 2] = [
@@ -427,40 +433,47 @@ fn run_headless(hook: HookCommand, cwd: &Path, timeout: Duration) -> io::Result<
             .take()
             .map(|r| Box::new(r) as Box<dyn Read + Send>),
     ];
-    let readers: Vec<_> = pipes
-        .into_iter()
-        .flatten()
-        .map(|mut pipe| {
-            let out = Arc::clone(&out);
-            thread::spawn(move || {
-                let mut buf = [0u8; 8192];
-                // Reads to the end past the cap, so the shell never blocks
-                // on a full pipe.
-                while let Ok(n @ 1..) = pipe.read(&mut buf) {
-                    let mut out = out.lock().unwrap_or_else(PoisonError::into_inner);
-                    let room = MAX_HOOK_OUTPUT.saturating_sub(out.len());
-                    out.extend_from_slice(&buf[..n.min(room)]);
-                }
-            })
-        })
-        .collect();
+    let (done, finished) = mpsc::channel::<()>();
+    let mut readers = 0;
+    for mut pipe in pipes.into_iter().flatten() {
+        let out = Arc::clone(&out);
+        let done = done.clone();
+        readers += 1;
+        thread::spawn(move || {
+            let mut buf = [0u8; 8192];
+            // Reads to the end past the cap, so the shell never blocks on a
+            // full pipe.
+            while let Ok(n @ 1..) = pipe.read(&mut buf) {
+                let mut out = out.lock().unwrap_or_else(PoisonError::into_inner);
+                let room = MAX_HOOK_OUTPUT.saturating_sub(out.len());
+                out.extend_from_slice(&buf[..n.min(room)]);
+            }
+            let _ = done.send(());
+        });
+    }
     let deadline = Instant::now() + timeout;
     let status = loop {
         if let Some(status) = child.try_wait()? {
             break Some(status);
         }
         if Instant::now() >= deadline {
+            // The tree first: Windows finds it by parent id, so the shell
+            // must still be alive.
+            kill_tree(child.id());
             let _ = child.kill();
             let _ = child.wait();
             break None;
         }
         thread::sleep(Duration::from_millis(20));
     };
-    // After a kill a child the shell started may still hold the pipes, so
-    // the readers are left to finish on their own.
-    if status.is_some() {
-        for reader in readers {
-            let _ = reader.join();
+    // A child the shell left running may still hold the pipes: the readers
+    // get `READ_GRACE` to reach the end, then are left to finish on their
+    // own and what they read by then is the output.
+    let grace = Instant::now() + READ_GRACE;
+    for _ in 0..readers {
+        let left = grace.saturating_duration_since(Instant::now());
+        if finished.recv_timeout(left).is_err() {
+            break;
         }
     }
     let bytes = out.lock().unwrap_or_else(PoisonError::into_inner).clone();
@@ -1125,7 +1138,28 @@ mod tests {
             ..xdev_workspace::RepoEntry::default()
         });
         reg.save(&data).unwrap();
+        // A plain `sh`, so no login profile runs; Windows' own default
+        // PowerShell already runs with `-NoProfile`.
+        if cfg!(unix) {
+            use_shell(&data, "sh");
+        }
         (tmp, data, repo)
+    }
+
+    /// Makes `id` the default shell in `data`; `sh` is added as a custom
+    /// shell running `/bin/sh`.
+    fn use_shell(data: &Path, id: &str) {
+        let mut profiles = xdev_agent::Profiles::load(data).unwrap();
+        if id == "sh" {
+            profiles.shells.push(xdev_agent::CustomShell {
+                id: "sh".into(),
+                name: "sh".into(),
+                program: "/bin/sh".into(),
+                args: Vec::new(),
+            });
+        }
+        profiles.default_shell = Some(id.into());
+        profiles.save(data).unwrap();
     }
 
     #[test]
@@ -1134,6 +1168,17 @@ mod tests {
         let run = archive_run(&data, &repo, ARCHIVE_TIMEOUT).unwrap();
         assert_eq!((run.ran, run.code), (true, Some(0)));
         assert_eq!(run.output, "hi");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn archive_run_in_cmd_runs_a_script_of_several_lines() {
+        // Joined into one line with ` & `, the block would not parse.
+        let (_tmp, data, repo) = archive_repo("if 1==1 (\n  echo yes\n)\nexit /b 3\n");
+        use_shell(&data, "cmd");
+        let run = archive_run(&data, &repo, ARCHIVE_TIMEOUT).unwrap();
+        assert_eq!(run.output, "yes");
+        assert_eq!(run.code, Some(3));
     }
 
     #[test]
@@ -1179,5 +1224,86 @@ mod tests {
             "{}",
             run.output
         );
+    }
+
+    /// A shell line for the platform's own shell, without any profile.
+    fn plain_hook(unix: &str, windows: &str) -> HookCommand {
+        let (program, args) = if cfg!(windows) {
+            (
+                "powershell.exe",
+                vec!["-NoProfile", "-NonInteractive", "-Command", windows],
+            )
+        } else {
+            ("/bin/sh", vec!["-c", unix])
+        };
+        HookCommand {
+            program: program.into(),
+            args: args.into_iter().map(String::from).collect(),
+            env: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn run_headless_returns_while_a_background_child_holds_the_output() {
+        let dir = tempfile::tempdir().unwrap();
+        // The background child inherits stdout and outlives the shell.
+        let hook = plain_hook(
+            "sleep 20 & echo hi",
+            "Start-Process -FilePath ping -ArgumentList '-n','20','127.0.0.1' -NoNewWindow; \
+             [Console]::Out.WriteLine('hi')",
+        );
+        let started = Instant::now();
+        let run = run_headless(hook, dir.path(), ARCHIVE_TIMEOUT).unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(12),
+            "waited {:?}",
+            started.elapsed()
+        );
+        assert_eq!((run.ran, run.code), (true, Some(0)));
+        assert!(run.output.contains("hi"), "{}", run.output);
+    }
+
+    fn alive(pid: u32) -> bool {
+        if cfg!(windows) {
+            let out = Command::new("tasklist")
+                .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).contains(&format!("\"{pid}\""))
+        } else {
+            Command::new("kill")
+                .args(["-0", &pid.to_string()])
+                .stderr(Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        }
+    }
+
+    #[test]
+    fn run_headless_timeout_ends_the_whole_process_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        // Prints the grandchild's pid as `pid=<n>`, then waits on it.
+        let hook = plain_hook(
+            "sleep 30 & echo pid=$!; wait",
+            "$p = Start-Process -FilePath ping -ArgumentList '-n','30','127.0.0.1' \
+             -NoNewWindow -PassThru; [Console]::Out.WriteLine(\"pid=$($p.Id)\"); \
+             [Console]::Out.Flush(); $p.WaitForExit()",
+        );
+        let run = run_headless(hook, dir.path(), Duration::from_secs(5)).unwrap();
+        assert_eq!(run.code, None, "{}", run.output);
+        let grandchild: u32 = run
+            .output
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("pid=")?.parse().ok())
+            .unwrap_or_else(|| panic!("no pid printed: {}", run.output));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while alive(grandchild) {
+            assert!(
+                Instant::now() < deadline,
+                "grandchild {grandchild} survived"
+            );
+            thread::sleep(Duration::from_millis(100));
+        }
     }
 }

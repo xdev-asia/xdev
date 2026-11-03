@@ -285,7 +285,8 @@ export type ErrorCode =
   | "draft_failed"
   | "bad_sound"
   | "hook_untrusted"
-  | "hook_none";
+  | "hook_none"
+  | "setup_skipped";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -299,7 +300,8 @@ export type RepoPatch = {
 };
 
 // The `ptySpawn` profile id that runs the worktree's setup script in the default shell. Rejects
-// with `hook_none` when there is no setup and `hook_untrusted` when its shared part is not trusted.
+// with `setup_skipped` when the repo's setup policy is skip, `hook_none` when there is no setup and
+// `hook_untrusted` when its shared part is not trusted.
 export const SETUP_PROFILE = "xdev:setup";
 
 export interface Api {
@@ -660,6 +662,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "bad_sound",
   "hook_untrusted",
   "hook_none",
+  "setup_skipped",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.

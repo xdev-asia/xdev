@@ -367,4 +367,11 @@ describe("mock repo hooks", () => {
     expect(info.agent).toBe(false);
     expect(await exit).toEqual({ id: "s", code: 0 });
   });
+
+  it("refuses to run setup when the repo's policy is skip, like Rust", async () => {
+    const api = createMockApi({}, { workspace: seed });
+    await api.repoHookTrust(FIRST, "setup", (await api.repoHooks(FIRST)).setup!.hash);
+    await api.repoUpdate("demo-xdev", { setupPolicy: "skip" });
+    await expect(api.ptySpawn("s", FIRST, SETUP_PROFILE, null, 80, 24, () => {})).rejects.toMatchObject({ code: "setup_skipped" });
+  });
 });
