@@ -30,6 +30,7 @@ import { createMockStatus, type MockStatus } from "./mockStatus";
 import { createMockSquads } from "./mockSquads";
 import { createMockTasks } from "./mockTasks";
 import { createMockWorkspace, type MockWorkspaceSeed } from "./mockWorkspace";
+import { mockHash, type MockFiles } from "./mockFiles";
 
 export { EXPORT_MARKER } from "./mockExport";
 
@@ -222,13 +223,6 @@ export function defaultMessage(changes: Change[]): string {
   return `${verb[kind]} ${path}`;
 }
 
-// Stands in for the core's content hash; only equality matters to the UI.
-function mockHash(content: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < content.length; i++) h = Math.imul(h ^ content.charCodeAt(i), 0x01000193);
-  return (h >>> 0).toString(16).padStart(8, "0");
-}
-
 function newCommitId(): string {
   return [...crypto.getRandomValues(new Uint8Array(20))].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -350,7 +344,7 @@ function snippet(text: string, terms: string[]): string | null {
   return out.replace(/\s+/g, " ").trim();
 }
 
-export type MockApi = Api & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & Pick<MockOpenIn, "__openInCalls"> & {
+export type MockApi = Api & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & Pick<MockOpenIn, "__openInCalls"> & Pick<MockFiles, "__editFile" | "__fileReveals"> & {
   // Changes a file the way another program would (`null` deletes it); xDev did not write it.
   __editOutside(path: string, content: string | null): void;
   // Writes a file the way `propose_update` does over MCP; throws an ApiError like the real tool.

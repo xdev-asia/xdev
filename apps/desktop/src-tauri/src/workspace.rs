@@ -175,8 +175,24 @@ fn remove_with(
     let action = Action::Delete {
         path: path.to_owned(),
     };
-    allowed(gate(data)?.check_confirmed(&action, confirmed))?;
+    allowed(data, &action, confirmed)?;
     update(data, lock, |reg| remove_worktree(reg, path, force))
+}
+
+/// `Ok` when the policy gate lets `action` run; `confirmed` says the user
+/// already said yes to it. The gate writes the audit line.
+pub(crate) fn allowed(data: &Path, action: &Action, confirmed: bool) -> Result<(), CmdError> {
+    match gate(data)?.check_confirmed(action, confirmed) {
+        Verdict::Allow => Ok(()),
+        Verdict::Ask { reason } => Err(CmdError {
+            code: "needs_approval",
+            detail: Some(reason),
+        }),
+        Verdict::Deny { reason } => Err(CmdError {
+            code: "denied",
+            detail: Some(reason),
+        }),
+    }
 }
 
 /// The commit a linked worktree started from. The primary checkout has no
@@ -869,8 +885,8 @@ fn dir_listing(
     Ok(xdev_workspace::list_dir(&path.to_string_lossy(), dir)?)
 }
 
-/// `worktree_unknown` unless `path` is a repo or a worktree the registry
-/// knows.
+/// `Ok` when `path` is a repo or a worktree the registry knows, the primary
+/// checkout too; `worktree_unknown` otherwise.
 pub(crate) fn known_checkout(data: &Path, path: &Path) -> Result<(), CmdError> {
     let key = path_key(path);
     let reg = Registry::load(data)?;
@@ -880,22 +896,6 @@ pub(crate) fn known_checkout(data: &Path, path: &Path) -> Result<(), CmdError> {
         return Err(WorkspaceError::WorktreeUnknown(path.to_owned()).into());
     }
     Ok(())
-}
-
-/// A policy verdict as a command result: `needs_approval` for Ask,
-/// `denied` for Deny.
-pub(crate) fn allowed(verdict: Verdict) -> Result<(), CmdError> {
-    match verdict {
-        Verdict::Allow => Ok(()),
-        Verdict::Ask { reason } => Err(CmdError {
-            code: "needs_approval",
-            detail: Some(reason),
-        }),
-        Verdict::Deny { reason } => Err(CmdError {
-            code: "denied",
-            detail: Some(reason),
-        }),
-    }
 }
 
 #[tauri::command(async)]

@@ -1,4 +1,5 @@
-import type { Api, KeySettings, SettingsChanged, SettingsSection, TerminalSettings, UiSettings } from "./api";
+import type { Api, EditorSettings, KeySettings, SettingsChanged, SettingsSection, TerminalSettings, UiSettings } from "./api";
+import { clampEditorSettings, EDITOR_DEFAULTS } from "./files/editorDefaults";
 import { KEY_SETTINGS_DEFAULTS } from "./keys/bindingsStore";
 import { clampTerminalSettings, TERMINAL_DEFAULTS } from "./settings/terminalDefaults";
 
@@ -7,7 +8,15 @@ export type SettingsEmit = (sections: SettingsSection[]) => void;
 
 type SettingsApi = Pick<
   Api,
-  "onSettingsChanged" | "terminalSettings" | "terminalSettingsPut" | "keySettingsGet" | "keySettingsPut" | "uiSettingsGet" | "uiSettingsPut"
+  | "onSettingsChanged"
+  | "terminalSettings"
+  | "terminalSettingsPut"
+  | "keySettingsGet"
+  | "keySettingsPut"
+  | "uiSettingsGet"
+  | "uiSettingsPut"
+  | "editorSettings"
+  | "editorSettingsPut"
 >;
 
 export { KEY_SETTINGS_DEFAULTS };
@@ -31,11 +40,12 @@ export function createSettingsHub(): SettingsHub {
   };
 }
 
-/** Settings → Terminal, Keys and the view settings in memory, clamped like Rust stores them. */
+/** Settings → Terminal, Keys, Editor and the view settings in memory, clamped like Rust stores them. */
 export function createMockSettings(hub: SettingsHub = createSettingsHub()): SettingsApi {
   let terminal: TerminalSettings = { ...TERMINAL_DEFAULTS };
   let keys: KeySettings = { ...KEY_SETTINGS_DEFAULTS };
   let ui: UiSettings = { ...UI_SETTINGS_DEFAULTS };
+  let editor: EditorSettings = { ...EDITOR_DEFAULTS };
   return {
     onSettingsChanged: hub.onSettingsChanged,
     async terminalSettings() {
@@ -62,6 +72,14 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
       ui = { zoom: Math.max(ZOOM_LIMITS.min, Math.min(ZOOM_LIMITS.max, zoom)) };
       hub.emit(["ui"]);
       return { ...ui };
+    },
+    async editorSettings() {
+      return { ...editor };
+    },
+    async editorSettingsPut(next) {
+      editor = clampEditorSettings(next);
+      hub.emit(["editor"]);
+      return { ...editor };
     },
   };
 }
