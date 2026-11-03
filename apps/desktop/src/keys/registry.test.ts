@@ -19,7 +19,7 @@ const ALL: Record<ActionId, true> = {
   "worktree.select.1": true, "worktree.select.2": true, "worktree.select.3": true, "worktree.select.4": true,
   "worktree.select.5": true, "worktree.select.6": true, "worktree.select.7": true, "worktree.select.8": true,
   "worktree.select.9": true,
-  "agent.new": true, "palette.jump": true, "search.open": true,
+  "agent.new": true, "palette.jump": true, "search.open": true, "sessions.open": true,
   "sidebar.left.toggle": true, "sidebar.right.toggle": true,
   "panel.explorer": true, "panel.search": true, "panel.sourceControl": true,
   "terminal.clear": true, "terminal.copy": true, "terminal.paste": true, "terminal.selectAll": true, "terminal.find": true,

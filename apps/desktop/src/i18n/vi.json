@@ -1236,6 +1236,7 @@
   "keys.action.zoom.reset": "Đặt lại cỡ",
   "keys.action.settings.open": "Mở cài đặt",
   "keys.action.settings.shortcuts": "Mở phím tắt",
+  "keys.action.sessions.open": "Mở lịch sử phiên",
   "keys.action.docs.search": "Tìm tài liệu",
   "keys.action.docs.new": "Tài liệu mới",
   "keys.action.docs.save": "Lưu tài liệu",

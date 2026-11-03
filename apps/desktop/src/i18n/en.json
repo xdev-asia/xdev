@@ -1236,6 +1236,7 @@
   "keys.action.zoom.reset": "Reset zoom",
   "keys.action.settings.open": "Open settings",
   "keys.action.settings.shortcuts": "Open shortcuts",
+  "keys.action.sessions.open": "Open session history",
   "keys.action.docs.search": "Search docs",
   "keys.action.docs.new": "New doc",
   "keys.action.docs.save": "Save doc",

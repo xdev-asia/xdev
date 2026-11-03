@@ -36,6 +36,7 @@ export type ActionId =
   | "zoom.in" | "zoom.out" | "zoom.reset"
   | "tab.reopenClosed"
   | "settings.open" | "settings.shortcuts"
+  | "sessions.open"
   | "docs.search" | "docs.new" | "docs.save"
   // Bound to nothing by default; the quick-commands plan registers the handler.
   | "quickCommands.open";
