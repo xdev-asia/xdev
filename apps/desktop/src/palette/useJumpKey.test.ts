@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useJumpKey } from "./useJumpKey";
+import { isJumpKey, useJumpKey } from "./useJumpKey";
 
 const hooks = vi.hoisted(() => ({ effects: [] as (() => void | (() => void))[] }));
 vi.mock("react", async (original) => ({
@@ -41,10 +41,24 @@ it("ctrl+j is taken in the capture phase", () => {
   expect(stopPropagation).toHaveBeenCalled();
 });
 
-it("meta+j works too", () => {
-  const { onToggle, press } = setup();
-  press({ metaKey: true, key: "J" });
-  expect(onToggle).toHaveBeenCalledTimes(1);
+const ev = (init: Record<string, unknown>) => ({ shiftKey: false, altKey: false, metaKey: false, ctrlKey: false, repeat: false, key: "j", code: "KeyJ", ...init }) as unknown as KeyboardEvent;
+
+it("macOS takes Cmd+J and not Ctrl+J", () => {
+  expect(isJumpKey(ev({ metaKey: true, key: "J" }), true)).toBe(true);
+  expect(isJumpKey(ev({ ctrlKey: true }), true)).toBe(false);
+  expect(isJumpKey(ev({ metaKey: true, ctrlKey: true }), true)).toBe(false);
+});
+
+it("Windows and Linux take Ctrl+J and not Meta+J", () => {
+  expect(isJumpKey(ev({ ctrlKey: true }), false)).toBe(true);
+  expect(isJumpKey(ev({ metaKey: true }), false)).toBe(false);
+  expect(isJumpKey(ev({ ctrlKey: true, metaKey: true }), false)).toBe(false);
+});
+
+it("the physical J key counts on a non-Latin layout", () => {
+  expect(isJumpKey(ev({ ctrlKey: true, key: "о", code: "KeyJ" }), false)).toBe(true);
+  expect(isJumpKey(ev({ ctrlKey: true, key: "о", code: "KeyK" }), false)).toBe(false);
+  expect(isJumpKey(ev({ metaKey: true, key: "о", code: "KeyJ" }), true)).toBe(true);
 });
 
 it("shift, alt and repeat are ignored", () => {
