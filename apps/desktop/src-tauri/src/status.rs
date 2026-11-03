@@ -215,7 +215,17 @@ pub fn status_settings_put(
     Ok(stored)
 }
 
-/// Best effort: a refused or failed notification is only logged.
+/// A notification the OS refused or could not show, as the `io` error the
+/// Test button reports. Logged too.
+fn shown_or_error(result: Result<(), impl std::fmt::Display>) -> Result<(), CmdError> {
+    result.map_err(|e| {
+        eprintln!("status notification: {e}");
+        io_error(io::Error::other(e.to_string()))
+    })
+}
+
+/// Fails with `io` when the OS refused or could not show it; the notifier
+/// treats that as best effort, the Test button shows it.
 #[tauri::command(async)]
 pub fn status_notify(
     app: AppHandle,
@@ -223,7 +233,7 @@ pub fn status_notify(
     title: String,
     body: String,
     pty_id: String,
-) {
+) -> Result<(), CmdError> {
     let id = shown.add(&pty_id);
     let result = app
         .notification()
@@ -233,9 +243,7 @@ pub fn status_notify(
         .body(body)
         .extra("ptyId", &pty_id)
         .show();
-    if let Err(e) = result {
-        eprintln!("status notification: {e}");
-    }
+    shown_or_error(result)
 }
 
 /// `0` clears the badge. Never fails; an OS without badges shows nothing.
@@ -354,6 +362,14 @@ mod tests {
             ..StatusSettings::default()
         };
         assert_eq!(sound_bytes(&status), None);
+    }
+
+    #[test]
+    fn a_refused_notification_is_an_io_error() {
+        assert!(shown_or_error(Ok::<(), String>(())).is_ok());
+        let err = shown_or_error(Err("toast refused")).unwrap_err();
+        assert_eq!(err.code, "io");
+        assert_eq!(err.detail.as_deref(), Some("toast refused"));
     }
 
     #[test]
