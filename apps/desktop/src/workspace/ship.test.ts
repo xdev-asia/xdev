@@ -22,6 +22,10 @@ const pr = (state: PrView["state"]): PrView => ({ number: 1, url: "u", state, ti
 const check = (bucket: Check["bucket"]): Check => ({ name: "n", workflow: null, bucket, link: null });
 
 describe("shipAction", () => {
+  it("never offers create_pr while the pull request is unknown", () => {
+    expect(shipAction({ checked: 0, ship: ship(), pr: undefined })).toBe("none");
+    expect(shipAction({ checked: 0, ship: ship(), pr: null })).toBe("create_pr");
+  });
   it("commit wins over everything", () => {
     expect(shipAction({ checked: 1, ship: ship({ ahead: 1, behind: 1 }), pr: null })).toBe("commit");
     expect(shipAction({ checked: 2, ship: null, pr: null })).toBe("commit");

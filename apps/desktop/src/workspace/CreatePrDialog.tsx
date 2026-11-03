@@ -96,6 +96,7 @@ export function CreatePrDialog(props: {
         {error && (
           <p className="error-text" role="alert">
             {t(`error.${error.code}`)}
+            {["git", "push_rejected", "gh_failed", "draft_failed"].includes(error.code) && error.detail ? ` ${error.detail}` : ""}
           </p>
         )}
         <div className="dialog-actions">

@@ -46,6 +46,17 @@ impl Repo {
         }
     }
 
+    /// The names of the configured remotes.
+    pub fn remote_names(&self) -> Result<Vec<String>, GitError> {
+        let out = run::run(&self.workdir, &["remote"], None)?;
+        Ok(String::from_utf8_lossy(&out)
+            .lines()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map(str::to_owned)
+            .collect())
+    }
+
     fn default_remote(&self) -> Result<String, GitError> {
         let out = run::run(&self.workdir, &["remote"], None)?;
         let out = String::from_utf8_lossy(&out);

@@ -18,6 +18,8 @@ type Force = { remote: string; branch: string; id: string };
  * commit, publish, push, pull, open a pull request. The rest sits in the More menu. Reads again on
  * mount, on window focus, after each action and whenever `refreshKey` changes.
  */
+const DETAIL_CODES = new Set(["git", "push_rejected", "gh_failed", "draft_failed"]);
+
 export function ShipBar(props: {
   api: Api;
   // The worktree's path.
@@ -45,7 +47,8 @@ export function ShipBar(props: {
   onChanged.current = props.onChanged;
 
   useSyncExternalStore(useCallback((fn: () => void) => prs.subscribe(fn), [prs]), () => prs.snapshot(), () => prs.snapshot());
-  const pr: PrView | null = prs.get(worktree)?.pr ?? null;
+  const entry = prs.get(worktree);
+  const pr: PrView | null | undefined = entry === undefined || entry.error ? undefined : entry.pr;
 
   async function refresh(): Promise<void> {
     const seq = ++reads.current;
@@ -206,7 +209,7 @@ export function ShipBar(props: {
       {error && (
         <p className="error-text" role="alert">
           {t(`error.${error.code}`)}
-          {error.code === "git" && error.detail ? ` ${error.detail}` : ""}
+          {DETAIL_CODES.has(error.code) && error.detail ? ` ${error.detail}` : ""}
         </p>
       )}
       <ConfirmDialog

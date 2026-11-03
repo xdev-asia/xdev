@@ -3,7 +3,7 @@ import type { Check, PrView, ShipView } from "../api";
 export type ShipAction = "commit" | "publish" | "push" | "pull" | "diverged" | "create_pr" | "open_pr" | "none";
 
 // What the main button does. The first rule that matches wins.
-export function shipAction({ checked, ship, pr }: { checked: number; ship: ShipView | null; pr: PrView | null }): ShipAction {
+export function shipAction({ checked, ship, pr }: { checked: number; ship: ShipView | null; pr: PrView | null | undefined }): ShipAction {
   if (checked > 0) return "commit";
   if (ship === null || ship.branch === null || ship.remote === null) return "none";
   const up = ship.upstream;
@@ -11,7 +11,8 @@ export function shipAction({ checked, ship, pr }: { checked: number; ship: ShipV
   if (up.ahead > 0 && up.behind > 0) return "diverged";
   if (up.behind > 0) return "pull";
   if (up.ahead > 0) return "push";
-  const open = pr !== null && (pr.state === "open" || pr.state === "draft");
+  const open = pr != null && (pr.state === "open" || pr.state === "draft");
+  // undefined means not loaded or the lookup failed: never offer create_pr then.
   if (pr === null && (ship.range?.commits.length ?? 0) > 0) return "create_pr";
   if (open) return "open_pr";
   return "none";

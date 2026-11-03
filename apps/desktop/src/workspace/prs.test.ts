@@ -40,3 +40,28 @@ it("loads checks only when asked and a pull request exists", async () => {
   store.set(OAK, { number: 3, url: "u", state: "open", title: "t", base: "main", head: "oak" });
   expect(store.get(OAK)?.pr?.number).toBe(3);
 });
+
+it("a checks load that arrives during a plain load still fetches checks", async () => {
+  const api = createMockApi({});
+  const pr = { number: 3, url: "u", state: "open" as const, title: "t", base: "main", head: "oak" };
+  vi.spyOn(api, "worktreePr").mockResolvedValue(pr);
+  const checks = vi.spyOn(api, "worktreePrChecks");
+  const store = new PrStore(api);
+  const a = store.load(OAK);
+  const b = store.load(OAK, { checks: true });
+  await Promise.all([a, b]);
+  expect(checks).toHaveBeenCalledTimes(1);
+  expect(store.get(OAK)?.checks).not.toBeNull();
+});
+
+it("set wins over a read that was already in flight", async () => {
+  const api = createMockApi({});
+  let release: (v: null) => void = () => {};
+  vi.spyOn(api, "worktreePr").mockReturnValue(new Promise((r) => (release = r)));
+  const store = new PrStore(api);
+  const run = store.load(OAK);
+  store.set(OAK, { number: 9, url: "u", state: "open", title: "t", base: "main", head: "oak" });
+  release(null);
+  await run;
+  expect(store.get(OAK)?.pr?.number).toBe(9);
+});

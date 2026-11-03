@@ -138,3 +138,13 @@ it("shows a refused create by its code", async () => {
   expect(view.html()).toContain(en("error.not_pushed"));
   expect(view.onCreated).not.toHaveBeenCalled();
 });
+
+it("shows the detail of a gh failure", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreePrCreate").mockRejectedValue({ code: "gh_failed", detail: "boom happened" });
+  const view = dialog(api);
+  view.title().props.onChange({ target: { value: "x" } });
+  view.submit();
+  await tick();
+  expect(view.html()).toContain("boom happened");
+});
