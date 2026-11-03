@@ -1,6 +1,6 @@
 import type { Api, HookDetail, PtyInfo, PtyProfile } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
-import { DONE_QUIET_MS, INTERRUPT_MS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type StatusEvent, type StatusState, type TabStatus } from "./status";
+import { DONE_QUIET_MS, INTERRUPT_MS, NO_CAPS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type Caps, type StatusEvent, type StatusState, type TabStatus } from "./status";
 
 /** The CLI behind a tab, for its hook caps and title rules; null for custom profiles and shells. */
 export type TabCli = "claude" | "codex" | null;
@@ -56,6 +56,8 @@ export { DONE_QUIET_MS };
 interface Entry {
   tab: Tab;
   state: StatusState;
+  /** What the launch reports; the state uses them only while hooks are on. */
+  caps: Caps;
 }
 
 // Only an exit ends a tab: `failed` can also be a turn that failed, with the pty still alive.
@@ -91,6 +93,7 @@ export class Sessions {
   // A working hooked pane with no event for STALE_MS rests.
   private readonly stale = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly unlisten: Promise<() => void>[];
+  private hooksOn = true;
 
   constructor(
     private readonly api: Api,
@@ -219,10 +222,26 @@ export class Sessions {
   noteStarted(id: string, info: PtyInfo): void {
     const entry = this.entries.get(id);
     if (!entry) return;
-    entry.state = { ...entry.state, caps: capsFor(info.hooks ? info.hookEvents : []) };
+    entry.caps = capsFor(info.hooks ? info.hookEvents : []);
+    entry.state = { ...entry.state, caps: this.hooksOn ? entry.caps : NO_CAPS };
     this.sync();
     if (entry.tab.permissions === info.permissions && entry.tab.account === info.account) return;
     this.update(entry, { permissions: info.permissions, account: info.account });
+  }
+
+  /**
+   * The hooks switch. Off, the `.off` marker drops every hook event, so each pane falls back to timing
+   * (a hooked turn in progress then ends on quiet); on again, panes get back what their launch reports.
+   */
+  setHooks(on: boolean): void {
+    if (on === this.hooksOn) return;
+    this.hooksOn = on;
+    for (const e of this.entries.values()) {
+      const before = e.state;
+      e.state = { ...before, caps: on ? e.caps : NO_CAPS, interruptAt: null };
+      this.watchStale(e, before);
+    }
+    this.sync();
   }
 
   /** A keystroke batch from the person. Escape or Ctrl-C on a hooked working pane may stop its turn. */
@@ -472,7 +491,7 @@ export class Sessions {
       client: new PtyClient(this.api, id),
     };
     // Caps stay off until the pty says whether it got hook flags.
-    return { tab, state: start() };
+    return { tab, state: start(), caps: NO_CAPS };
   }
 
   private remove(entries: Entry[]): void {

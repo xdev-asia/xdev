@@ -500,6 +500,37 @@ describe("Sessions", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("hooks switched off send open panes back to timing, and on restores their caps", () => {
+    vi.useFakeTimers();
+    let t = 1_000;
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api, () => t));
+    const tab = live.open(A, "claude");
+    live.noteStarted(tab.id, info(tab.id, true));
+    api.__hook(tab.id, "prompt");
+    expect(live.tabs(A)[0].status).toBe("working");
+    // The marker now drops every hook: quiet has to end the turn, not a 30 minute wait.
+    live.setHooks(false);
+    t += 3000;
+    vi.advanceTimersByTime(3000);
+    expect(live.tabs(A)[0].status).toBe("idle");
+    // A pane started while off keeps no caps.
+    const later = live.open(A, "claude");
+    live.noteStarted(later.id, info(later.id, true));
+    live.noteOutput(later.id, 5);
+    expect(live.tabs(A)[1].status).toBe("working");
+    t += 3000;
+    vi.advanceTimersByTime(3000);
+    expect(live.tabs(A)[1].status).toBe("idle");
+    live.setHooks(true);
+    live.noteOutput(tab.id, 5);
+    expect(live.tabs(A)[0].status).toBe("idle");
+    api.__hook(tab.id, "prompt");
+    t += 5000;
+    vi.advanceTimersByTime(5000);
+    expect(live.tabs(A)[0].status).toBe("working");
+  });
+
   it("a resume inside the done window keeps the turn going and is not announced (R18)", () => {
     vi.useFakeTimers();
     let t = 1_000;
