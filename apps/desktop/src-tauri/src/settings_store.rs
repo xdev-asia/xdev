@@ -178,7 +178,13 @@ mod tests {
         let stored = store.update(|s| s.keys = keys.clone()).unwrap();
         assert_eq!(stored.keys, keys);
         let ui = store
-            .update(|s| s.ui = settings::UiSettings { zoom: 9.0 }.clamped())
+            .update(|s| {
+                s.ui = settings::UiSettings {
+                    zoom: 9.0,
+                    ..settings::UiSettings::default()
+                }
+                .clamped()
+            })
             .unwrap()
             .ui;
         assert_eq!(ui.zoom, 2.0);

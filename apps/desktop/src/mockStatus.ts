@@ -15,8 +15,8 @@ type StatusApi = Pick<
 >;
 
 export type MockStatus = StatusApi & {
-  // Fires `pty://hook` the way an agent's hook would.
-  __hook(id: string, event: HookEvent, detail?: HookDetail): void;
+  // Fires `pty://hook` the way an agent's hook would; `session` is the agent's own session id.
+  __hook(id: string, event: HookEvent, detail?: HookDetail, session?: string): void;
   // Fires a click on the status notification of `ptyId`.
   __clickNotification(ptyId: string): void;
   // What the app sent to the OS, newest last.
@@ -89,8 +89,8 @@ export function createMockStatus(emit: SettingsEmit = () => {}): MockStatus {
     async pickSoundFile() {
       return null;
     },
-    __hook(id, event, detail) {
-      for (const cb of hooks) cb({ id, event, at: Date.now(), detail: detail ?? null });
+    __hook(id, event, detail, session) {
+      for (const cb of hooks) cb({ id, event, at: Date.now(), detail: detail ?? null, session: session ?? null });
     },
     __clickNotification(ptyId) {
       for (const cb of clicks) cb(ptyId);

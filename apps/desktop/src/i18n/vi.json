@@ -1582,5 +1582,12 @@
   "qcmd.page.deleteTitle": "Xoá lệnh này?",
   "qcmd.page.deleteBody": "Lệnh \"{label}\" sẽ bị xoá và không khôi phục được.",
   "qcmd.palette.run": "Chạy: {label}",
-  "qcmd.palette.new": "Lệnh nhanh mới…"
+  "qcmd.palette.new": "Lệnh nhanh mới…",
+  "layout.restored": "Đã mở lại {resumed} tab agent và {fresh} tab shell",
+  "layout.undo": "Hoàn tác",
+  "layout.setting": "Khi khởi động, mở lại các tab",
+  "layout.setting.hint": "Tab agent tiếp tục đúng cuộc trò chuyện của nó; tab shell mở mới trong cùng thư mục.",
+  "layout.mode.all": "Tất cả tab",
+  "layout.mode.agentsOnly": "Chỉ tab agent",
+  "layout.mode.none": "Không mở lại"
 }

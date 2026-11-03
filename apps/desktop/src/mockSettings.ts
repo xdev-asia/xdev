@@ -21,7 +21,7 @@ type SettingsApi = Pick<
 
 export { KEY_SETTINGS_DEFAULTS };
 /** `UiSettings::default()` in Rust, and the range `ui_settings_put` clamps the zoom to. */
-export const UI_SETTINGS_DEFAULTS: UiSettings = { zoom: 1 };
+export const UI_SETTINGS_DEFAULTS: UiSettings = { zoom: 1, restore: "all" };
 export const ZOOM_LIMITS = { min: 0.5, max: 2 } as const;
 
 export type SettingsHub = { emit: SettingsEmit; onSettingsChanged: Api["onSettingsChanged"] };
@@ -69,7 +69,7 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
     },
     async uiSettingsPut(next) {
       const zoom = Number.isFinite(next.zoom) ? next.zoom : UI_SETTINGS_DEFAULTS.zoom;
-      ui = { zoom: Math.max(ZOOM_LIMITS.min, Math.min(ZOOM_LIMITS.max, zoom)) };
+      ui = { zoom: Math.max(ZOOM_LIMITS.min, Math.min(ZOOM_LIMITS.max, zoom)), restore: next.restore };
       hub.emit(["ui"]);
       return { ...ui };
     },

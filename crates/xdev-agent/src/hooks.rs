@@ -123,8 +123,8 @@ pub struct HookDetail {
 /// The longest string a [`HookDetail`] field keeps, in chars.
 pub const DETAIL_MAX: usize = 180;
 
-/// One line of a hook file. `detail` is left out when empty, so v1 lines
-/// written before it existed still read.
+/// One line of a hook file. `detail` and `session` are left out when empty,
+/// so v1 lines written before they existed still read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HookLine {
     pub v: u32,
@@ -133,7 +133,14 @@ pub struct HookLine {
     pub at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<HookDetail>,
+    /// The agent's own session id from the hook stdin (`session_id`), at
+    /// most [`SESSION_MAX`] chars of `[A-Za-z0-9._-]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
 }
+
+/// The longest agent session id a hook line keeps, in chars.
+pub const SESSION_MAX: usize = 128;
 
 /// A pane id as the UI makes it: a lowercase UUID, so it is safe as a file name.
 pub fn valid_pty_id(id: &str) -> bool {
@@ -199,6 +206,7 @@ pub fn append_hook_detail(
         detail: detail
             .map(HookDetail::clipped)
             .filter(|d| *d != HookDetail::default()),
+        session: None,
     };
     let mut line = serde_json::to_string(&hook)?;
     if line.len() >= LINE_MAX {
@@ -627,6 +635,7 @@ mod tests {
             event: HookEvent::NeedsInput,
             at: 5,
             detail: None,
+            session: None,
         };
         let text = serde_json::to_string(&line).unwrap();
         assert_eq!(text, r#"{"v":1,"event":"needs-input","at":5}"#);
@@ -644,6 +653,7 @@ mod tests {
                 error: Some("model_not_found".into()),
                 ..HookDetail::default()
             }),
+            session: None,
         };
         let text = serde_json::to_string(&line).unwrap();
         assert_eq!(
@@ -709,12 +719,14 @@ mod tests {
                     event: HookEvent::Prompt,
                     at: 1,
                     detail: None,
+                    session: None,
                 },
                 HookLine {
                     v: 1,
                     event: HookEvent::TurnDone,
                     at: 2,
                     detail: None,
+                    session: None,
                 },
             ]
         );

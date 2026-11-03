@@ -88,6 +88,7 @@ export type { QuotaWindow } from "./QuotaWindow";
 export type { Reason } from "./Reason";
 export type { RepoHooks } from "./RepoHooks";
 export type { RepoView } from "./RepoView";
+export type { RestoreMode } from "./RestoreMode";
 export type { ReviewBase } from "./ReviewBase";
 export type { ReviewBaseKind } from "./ReviewBaseKind";
 export type { ReviewBranch } from "./ReviewBranch";

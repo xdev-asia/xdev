@@ -29,6 +29,8 @@ pub struct PtyHook {
     pub event: HookEvent,
     pub at: i64,
     pub detail: Option<HookDetail>,
+    /// The agent's own session id, when its hook sent one.
+    pub session: Option<String>,
 }
 
 /// How far a hook file has been read.
@@ -135,6 +137,7 @@ fn parse(id: &str, line: &[u8]) -> Option<PtyHook> {
         event: line.event,
         at: line.at,
         detail: line.detail,
+        session: line.session,
     })
 }
 
@@ -211,6 +214,7 @@ mod tests {
             event,
             at,
             detail: None,
+            session: None,
         }
     }
 

@@ -27,11 +27,16 @@ export async function loadZoom(api: Pick<Api, "uiSettingsGet">): Promise<void> {
   if (s) apply(clampZoom(s.zoom));
 }
 
-/** `delta` of 0 resets to 100%. Applies at once, then stores; the store's answer is the truth. */
-export async function stepZoom(api: Pick<Api, "uiSettingsPut">, delta: number): Promise<number> {
+/**
+ * `delta` of 0 resets to 100%. Applies at once, then stores; the store's answer is the truth. The put
+ * carries the other view settings as stored, so a zoom step never resets them.
+ */
+export async function stepZoom(api: Pick<Api, "uiSettingsGet" | "uiSettingsPut">, delta: number): Promise<number> {
   const next = delta === 0 ? 1 : clampZoom(level + delta);
   apply(next);
-  const saved = await api.uiSettingsPut({ zoom: next }).catch(() => null);
+  const current = await api.uiSettingsGet().catch(() => null);
+  if (!current) return level;
+  const saved = await api.uiSettingsPut({ ...current, zoom: next }).catch(() => null);
   if (saved) apply(clampZoom(saved.zoom));
   return level;
 }
