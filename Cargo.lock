@@ -6150,6 +6150,7 @@ dependencies = [
 name = "xdev-desktop"
 version = "0.3.0"
 dependencies = [
+ "dunce",
  "serde",
  "serde_json",
  "tauri",

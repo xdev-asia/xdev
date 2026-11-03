@@ -105,7 +105,7 @@ mod tests {
     }
 
     fn fixture() -> Fixture {
-        let tmp = TempDir::with_prefix("links ").unwrap();
+        let tmp = crate::test_dirs::long_temp_dir("links ");
         let api = make_repo(tmp.path(), "api");
         let web = make_repo(tmp.path(), "web");
         let mut reg = Registry::default();

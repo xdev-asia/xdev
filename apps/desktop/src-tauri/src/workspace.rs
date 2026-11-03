@@ -516,7 +516,7 @@ mod tests {
     }
 
     fn fixture() -> Fixture {
-        let tmp = TempDir::with_prefix("ws cmd ").unwrap();
+        let tmp = crate::test_dirs::long_temp_dir("ws cmd ");
         let main = tmp.path().join("main");
         let data = tmp.path().join("data");
         fs::create_dir(&main).unwrap();

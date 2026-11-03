@@ -543,7 +543,7 @@ mod tests {
 
     /// A repo with a local bare `origin` and one worktree.
     fn fixture() -> Fixture {
-        let tmp = TempDir::with_prefix("ship cmd ").unwrap();
+        let tmp = crate::test_dirs::long_temp_dir("ship cmd ");
         let main = tmp.path().join("main");
         let origin = tmp.path().join("origin.git");
         let data = tmp.path().join("data");
