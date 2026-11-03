@@ -125,20 +125,26 @@ impl Registry {
         };
         let json =
             serde_json::to_vec_pretty(&out).map_err(|e| WorkspaceError::Corrupt(e.to_string()))?;
-        let tmp = data_dir.join(format!("{FILE}.tmp"));
-        // Flushed to disk before the rename, so the new name never points at
-        // a file whose contents are still in the cache.
-        let write = || -> std::io::Result<()> {
-            let mut file = fs::File::create(&tmp)?;
-            file.write_all(&json)?;
-            file.sync_all()?;
-            fs::rename(&tmp, data_dir.join(FILE))
-        };
-        write().inspect_err(|_| {
-            let _ = fs::remove_file(&tmp);
-        })?;
-        Ok(())
+        write_atomic(data_dir, FILE, &json)
     }
+}
+
+/// Writes `dir/name` through a temp file and a rename. Flushed to disk
+/// before the rename, so the name never points at a file whose contents are
+/// still in the cache.
+pub(crate) fn write_atomic(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), WorkspaceError> {
+    fs::create_dir_all(dir)?;
+    let tmp = dir.join(format!("{name}.tmp"));
+    let write = || -> std::io::Result<()> {
+        let mut file = fs::File::create(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        fs::rename(&tmp, dir.join(name))
+    };
+    write().inspect_err(|_| {
+        let _ = fs::remove_file(&tmp);
+    })?;
+    Ok(())
 }
 
 /// The path with `\` as `/`, lowercased on Windows where the file system

