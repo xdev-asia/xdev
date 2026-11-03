@@ -127,7 +127,7 @@ it("lists the running agent tabs and a new tab for each agent that is on and ins
     ],
     shells: [],
   } as unknown as ProfilesView;
-  const f = fake([tab("a"), tab("sh", { agent: false, profileId: "shell" }), tab("dead", { status: "exited" }), tab("b", { profileId: "codex" })]);
+  const f = fake([tab("a"), tab("sh", { agent: false, profileId: "shell" }), tab("dead", { status: "exited", exitCode: 0 }), tab("b", { profileId: "codex" })]);
   const m = menu(f.sessions);
   m.openMenu();
   expect(m.items().map((n) => n.props["data-tab"] ?? `new:${n.props["data-new"]}`)).toEqual(["a", "b", "new:claude"]);

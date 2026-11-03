@@ -49,10 +49,19 @@ it("prefers the shown running agent tab", async () => {
 
 it("falls back to another running agent tab", async () => {
   const shell = tab("s", { agent: false, profileId: "shell" });
-  const dead = tab("d", { status: "exited" });
+  const dead = tab("d", { status: "exited", exitCode: 0 });
   const live = tab("l");
   const { sessions, open } = fake([shell, dead, live]);
   expect(await sendToAgentTab(sessions, "/w", "s", "hi")).toBe(live);
+  expect(open).not.toHaveBeenCalled();
+});
+
+it("a failed turn still takes a prompt; a pty that exited does not", async () => {
+  const turn = tab("t", { status: "failed" });
+  const crashed = tab("c", { status: "failed", exitCode: 1 });
+  const { sessions, open } = fake([crashed, turn]);
+  expect(await sendToAgentTab(sessions, "/w", "t", "hi")).toBe(turn);
+  expect(await sendToAgentTab(sessions, "/w", "c", "hi")).toBe(turn);
   expect(open).not.toHaveBeenCalled();
 });
 
@@ -91,7 +100,7 @@ it("sendToChosenTab types into the chosen running tab and never opens one", asyn
 
 it("sendToChosenTab gives up on a tab that ended, and waits for a new one", async () => {
   vi.useFakeTimers();
-  const dead = tab("d", { status: "exited" });
+  const dead = tab("d", { status: "exited", exitCode: 0 });
   const f = fake([dead]);
   expect(await sendToChosenTab(f.sessions, "/w", { tab: "d" }, "hi")).toBeNull();
   expect(dead.client.input).not.toHaveBeenCalled();
