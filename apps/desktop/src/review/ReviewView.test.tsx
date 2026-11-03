@@ -168,12 +168,12 @@ it("stages and unstages one file, then reads again", async () => {
   const read = vi.spyOn(api, "worktreeReview");
   const v = review(api);
   await tick();
-  v.diff("src/session.ts").props.onStage(v.diff("src/session.ts").props.file);
+  v.diff("src/session.ts").props.onStage(v.diff("src/session.ts").props.file, true);
   await tick();
   expect(stage).toHaveBeenLastCalledWith(OAK, ["src/session.ts"], true);
   expect(read).toHaveBeenCalledTimes(2);
   expect(v.diff("src/session.ts").props.file).toMatchObject({ staged: true, unstaged: false });
-  v.diff("src/session.ts").props.onStage(v.diff("src/session.ts").props.file);
+  v.diff("src/session.ts").props.onStage(v.diff("src/session.ts").props.file, false);
   await tick();
   expect(stage).toHaveBeenLastCalledWith(OAK, ["src/session.ts"], false);
 });
@@ -252,4 +252,52 @@ it("the base picker takes a typed commit and ignores an empty one", async () => 
   p.find((n) => n.type === "input")!.props.onChange({ target: { value: "  abc1234 " } });
   submit();
   expect(onPick).toHaveBeenCalledWith("abc1234");
+});
+
+const manyFiles = (api: Api) => {
+  const files = Array.from({ length: 31 }, (_, i) => ({ path: `f${i}.ts`, kind: "modified" as const, staged: false, unstaged: true }));
+  vi.spyOn(api, "worktreeReview").mockResolvedValue({ base: { kind: "start", name: null, id: START }, branch: "oak", baseRef: "main", files });
+};
+
+it("F7 opens a closed file and goes to its first change once it is drawn", async () => {
+  const api = createMockApi({});
+  manyFiles(api);
+  const v = review(api);
+  await tick();
+  expect(v.diff("f0.ts").props.open).toBe(false);
+  v.root().props.onKeyDown(key());
+  expect(v.diff("f0.ts").props.open).toBe(true);
+  const goTo = vi.fn();
+  v.diff("f0.ts").props.register("f0.ts", { chunks: () => 2, goTo, goToLine: vi.fn() });
+  expect(goTo).toHaveBeenCalledWith(0);
+});
+
+it("a note in the list scrolls to its line after a closed file is drawn", async () => {
+  const api = createMockApi({});
+  manyFiles(api);
+  const v = review(api);
+  await tick();
+  v.diff("f2.ts").props.handlers.add({ startLine: 7, line: 8, anchor: "x" }, "fix");
+  await tick();
+  v.find((n) => n.props["aria-haspopup"] === "dialog")!.props.onClick();
+  const menu = v.find((n) => n.props.role === "dialog")!;
+  nodes(menu.props.children).find((n) => n.type === "button")!.props.onClick();
+  expect(v.diff("f2.ts").props.open).toBe(true);
+  const goToLine = vi.fn();
+  v.diff("f2.ts").props.register("f2.ts", { chunks: () => 1, goTo: vi.fn(), goToLine });
+  expect(goToLine).toHaveBeenCalledWith(8);
+});
+
+it("a file both staged and unstaged offers Stage and Unstage", () => {
+  const props = (file: object) => ({ api: createMockApi({}), worktree: OAK, base: START, file, opts: { layout: "inline" }, open: false, rev: 0, revealSeq: 0, busy: false, onToggle() {}, onStage() {}, register() {}, onChunks() {}, notes: [], handlers: {}, onRead() {} }) as any;
+  const labels = (file: object) => mount(() => FileDiff(props(file))).html();
+  const both = labels({ path: "a.ts", kind: "modified", staged: true, unstaged: true });
+  expect(both).toContain(en("review.stage"));
+  expect(both).toContain(en("review.unstage"));
+  const staged = labels({ path: "a.ts", kind: "modified", staged: true, unstaged: false });
+  expect(staged).toContain(en("review.unstage"));
+  expect(staged).not.toContain(`>${en("review.stage")}<`);
+  const plain = labels({ path: "a.ts", kind: "modified", staged: false, unstaged: true });
+  expect(plain).toContain(`>${en("review.stage")}<`);
+  expect(plain).not.toContain(en("review.unstage"));
 });
