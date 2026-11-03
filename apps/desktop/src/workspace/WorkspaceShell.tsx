@@ -58,7 +58,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [changeCount, setChangeCount] = useState<{ worktree: string; count: number } | null>(null);
 
   // One store of terminal tabs for the whole shell. Made in an effect so a dev double mount
-  // disposes the first one.
+  // disposes the first one; disposing kills its ptys.
   useEffect(() => {
     const store = new Sessions(api);
     setSessions(store);
@@ -67,7 +67,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   async function load(): Promise<void> {
     try {
-      setRepos(await api.workspaceList());
+      const list = await api.workspaceList();
+      setRepos(list);
+      // A worktree gone from the list (removed outside the app, say) must not keep its ptys.
+      const kept = new Set(list.flatMap((r) => r.worktrees.map((w) => w.path)));
+      for (const path of sessions?.worktrees() ?? []) if (!kept.has(path)) void sessions?.closeWorktree(path);
     } catch (e) {
       setNotice(toApiError(e).code);
       setRepos((r) => r ?? []);
