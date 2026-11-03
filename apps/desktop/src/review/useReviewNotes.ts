@@ -11,6 +11,7 @@ export type NotesSnapshot = {
   /** The note just deleted, while Undo is on offer. */
   removed: ReviewNote | null;
   problem: Problem | null;
+  /** The first read has returned, well or not. */
   loaded: boolean;
 };
 
@@ -22,6 +23,8 @@ export class NotesStore {
   private state: NotesSnapshot = { notes: [], removed: null, problem: null, loaded: false };
   private listeners = new Set<() => void>();
   private queue: Promise<unknown> = Promise.resolve();
+  /** Only a read that worked allows writes: a put of a list that never loaded would wipe the file. */
+  private ready = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -51,6 +54,7 @@ export class NotesStore {
   async load(): Promise<void> {
     try {
       const notes = await this.api.reviewNotes(this.worktree);
+      this.ready = true;
       this.set({ notes, loaded: true, problem: null });
     } catch (e) {
       this.set({ loaded: true, problem: toApiError(e) });
@@ -59,6 +63,7 @@ export class NotesStore {
 
   /** Shows `next` now and writes it; on a failed write the list goes back and says why. */
   private commit(next: ReviewNote[]): Promise<void> {
+    if (!this.ready) return Promise.resolve();
     const before = this.state.notes;
     this.set({ notes: next });
     const run = async () => {
