@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { RepoView, WorktreeView } from "@/api";
 import { translate } from "@/i18n";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
+import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import { WorktreeList, type WorktreeListProps } from "./WorktreeList";
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
@@ -68,21 +69,10 @@ function harness(dots: Record<string, "working" | "failed" | "idle" | "done"> = 
   const inRow = (path: string) => nodes(row(path).props.children);
   const main = (path: string) => inRow(path).find(n => n.props.className === "ws-wt-main")!;
   const more = (path: string) => inRow(path).find(n => n.props.className === "ws-wt-more");
-  const item = (label: string) => all().find(n => n.props.role === "menuitem" && n.props.children === label);
-  const menu = () => all().find(n => n.props.role === "menu");
+  const menu = () => all().find(n => n.type === ContextMenu);
+  const flat = (items: MenuItem[]): MenuItem[] => items.flatMap(i => [i, ...flat(i.children ?? [])]);
+  const item = (id: string) => flat((menu()?.props.items ?? []) as MenuItem[]).find(i => i.id === id);
   return { calls, all, html, row, inRow, main, more, item, menu };
-}
-
-// A stand-in for the open menu's DOM: its items and the row's more button record focus.
-function dom(labels: string[]) {
-  const focused: string[] = [];
-  const el = (name: string) => ({ name, focus: () => void focused.push(name) });
-  const items = labels.map(el);
-  const more = el("more");
-  const menu = { querySelectorAll: () => items, parentElement: { querySelector: () => more } };
-  let prevented = 0;
-  const key = (key: string, on = 0) => ({ key, target: items[on], currentTarget: menu, preventDefault: () => void prevented++ });
-  return { focused, key, prevented: () => prevented };
 }
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; });
@@ -106,22 +96,22 @@ it("lists worktrees by status group, keeps repo order inside one, and no delete 
   // The primary checkout can be pinned but never removed.
   expect(view.more("/demo/xdev")).toBeDefined();
   view.main("/demo/xdev").props.onContextMenu(event);
-  expect(view.item(en("workspace.delete"))).toBeUndefined();
-  view.item(en("workspace.pin"))!.props.onClick();
+  expect(view.item("delete")).toBeUndefined();
+  view.item("pin")!.run!();
   expect(view.calls.pin.map(w => w.path)).toEqual(["/demo/xdev"]);
-  expect(view.all().some(n => n.props.role === "menu")).toBe(false);
+  expect(view.menu()).toBeDefined();
 
   view.main("/demo/wt/xdev-oak").props.onClick();
   expect(view.calls.select.map(w => w.path)).toEqual(["/demo/wt/xdev-oak"]);
 
   view.main("/demo/wt/xdev-oak").props.onContextMenu(event);
-  expect(view.item(en("workspace.pin"))).toBeDefined();
-  view.item(en("workspace.delete"))!.props.onClick();
+  expect(view.item("pin")).toBeDefined();
+  view.item("delete")!.run!();
   expect(view.calls.remove.map(w => w.path)).toEqual(["/demo/wt/xdev-oak"]);
-  expect(view.all().some(n => n.props.role === "menu")).toBe(false);
+  expect(view.menu()).toBeDefined();
 
-  view.more("/demo/wt/xdev-elm")!.props.onClick();
-  view.item(en("workspace.unpin"))!.props.onClick();
+  view.more("/demo/wt/xdev-elm")!.props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 0, bottom: 0 }) } });
+  view.item("pin")!.run!();
   expect(view.calls.pin.map(w => w.path)).toEqual(["/demo/xdev", "/demo/wt/xdev-elm"]);
 });
 
@@ -140,16 +130,15 @@ it("an unread worktree is bold, says so, and the menu can mark one unread", () =
 
   // Right-click and the more button open the same menu, both with Mark unread.
   view.main("/demo/wt/xdev-oak").props.onContextMenu(event);
-  view.item(en("workspace.markUnread"))!.props.onClick();
-  view.more("/demo/wt/xdev-elm")!.props.onClick();
-  view.item(en("workspace.markUnread"))!.props.onClick();
+  view.item("markUnread")!.run!();
+  view.more("/demo/wt/xdev-elm")!.props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 0, bottom: 0 }) } });
+  view.item("markUnread")!.run!();
   expect(marked).toEqual(["/demo/wt/xdev-oak", "/demo/wt/xdev-elm"]);
-  expect(view.menu()).toBeUndefined();
 
   // Without the callback the item is not offered.
   const plain = harness();
   plain.main("/demo/wt/xdev-oak").props.onContextMenu(event);
-  expect(plain.item(en("workspace.markUnread"))).toBeUndefined();
+  expect(plain.item("markUnread")).toBeUndefined();
 });
 
 it("an unread row offers Mark read in place of Mark unread", () => {
@@ -160,12 +149,12 @@ it("an unread row offers Mark read in place of Mark unread", () => {
     onMarkRead: (w) => void read.push(w.path),
   });
   view.main("/demo/xdev").props.onContextMenu(event);
-  expect(view.item(en("workspace.markUnread"))).toBeUndefined();
-  view.item(en("workspace.markRead"))!.props.onClick();
+  expect(view.item("markUnread")).toBeUndefined();
+  view.item("markRead")!.run!();
   expect(read).toEqual(["/demo/xdev"]);
   // A row that is read still offers Mark unread.
   view.main("/demo/wt/xdev-oak").props.onContextMenu(event);
-  expect(view.item(en("workspace.markUnread"))).toBeDefined();
+  expect(view.item("markUnread")).toBeDefined();
 });
 
 it("new worktree and add repo call back", () => {
@@ -176,48 +165,67 @@ it("new worktree and add repo call back", () => {
   expect(view.calls.add).toBe(1);
 });
 
-it("arrow keys move between menu items", () => {
+it("the more button and a right-click open the menu at a point and it closes by onClose", () => {
   const view = harness();
-  view.more("/demo/wt/xdev-oak")!.props.onClick();
-  const two = dom(["pin", "delete"]);
-  view.menu()!.props.onKeyDown(two.key("ArrowDown", 0));
-  view.menu()!.props.onKeyDown(two.key("ArrowDown", 1));
-  view.menu()!.props.onKeyDown(two.key("ArrowUp", 0));
-  view.menu()!.props.onKeyDown(two.key("Home", 1));
-  view.menu()!.props.onKeyDown(two.key("End", 0));
-  expect(two.focused).toEqual(["delete", "pin", "delete", "pin", "delete"]);
-  expect(two.prevented()).toBe(5);
-  expect(view.menu()).toBeDefined();
-
-  // The primary row has one item; the keys keep focus on it.
-  view.more("/demo/wt/xdev-oak")!.props.onClick();
-  view.more("/demo/xdev")!.props.onClick();
-  const one = dom(["pin"]);
-  for (const k of ["ArrowDown", "ArrowUp", "Home", "End"]) view.menu()!.props.onKeyDown(one.key(k));
-  expect(one.focused).toEqual(["pin", "pin", "pin", "pin"]);
+  view.main("/demo/wt/xdev-oak").props.onContextMenu({ ...event, clientX: 30, clientY: 40 });
+  expect(view.menu()!.props.at).toEqual({ x: 30, y: 40 });
+  view.menu()!.props.onClose();
+  expect(view.menu()).toBeUndefined();
+  view.more("/demo/wt/xdev-oak")!.props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 5, bottom: 9 }) } });
+  expect(view.menu()!.props.at).toEqual({ x: 5, y: 9 });
 });
 
-it("Escape returns focus to the more button", () => {
-  const view = harness();
-  view.more("/demo/wt/xdev-oak")!.props.onClick();
-  const page = dom(["pin", "delete"]);
-  view.menu()!.props.onKeyDown(page.key("Escape", 1));
-  expect(page.focused).toEqual(["more"]);
-  expect(view.menu()).toBeUndefined();
+it("Open in lists the apps from props and calls onOpenIn with the worktree path", () => {
+  const opened: [string, unknown][] = [];
+  const view = harness(DOTS, repos, {
+    openInApps: [{ id: "vscode", label: "VS Code", command: "code", args: [] }],
+    onOpenIn: (path, target) => void opened.push([path, target]),
+  });
+  view.main("/demo/wt/xdev-oak").props.onContextMenu({ ...event, clientX: 0, clientY: 0 });
+  view.item("app:vscode")!.run!();
+  view.item("fileManager")!.run!();
+  expect(opened).toEqual([["/demo/wt/xdev-oak", { type: "app", id: "vscode" }], ["/demo/wt/xdev-oak", { type: "fileManager" }]]);
 });
 
-it("Tab closes the menu", () => {
-  const view = harness();
-  view.main("/demo/wt/xdev-oak").props.onContextMenu(event);
-  const page = dom(["pin", "delete"]);
-  view.menu()!.props.onKeyDown(page.key("Tab"));
-  expect(view.menu()).toBeUndefined();
-  // Focus is not trapped: the browser's own Tab move goes ahead.
-  expect(page.prevented()).toBe(0);
+it("Copy Path, Copy Worktree Name and Copy Branch go to onCopy", () => {
+  const copied: string[] = [];
+  const view = harness(DOTS, repos, { onCopy: (text) => void copied.push(text) });
+  view.main("/demo/wt/xdev-oak").props.onContextMenu({ ...event, clientX: 0, clientY: 0 });
+  view.item("copyPath")!.run!();
+  view.item("copyName")!.run!();
+  view.item("copyBranch")!.run!();
+  const wt = repos()[0].worktrees.find(w => w.path === "/demo/wt/xdev-oak")!;
+  expect(copied).toEqual(["/demo/wt/xdev-oak", wt.name, wt.branch]);
+});
 
-  view.main("/demo/wt/xdev-oak").props.onContextMenu(event);
-  view.all().find(n => n.props.className === "ws-menu-backdrop")!.props.onClick();
-  expect(view.menu()).toBeUndefined();
+it("New terminal tab here calls onNewTerminal with the worktree", () => {
+  const made: string[] = [];
+  const view = harness(DOTS, repos, { onNewTerminal: (w) => void made.push(w.path) });
+  view.main("/demo/xdev").props.onContextMenu({ ...event, clientX: 0, clientY: 0 });
+  view.item("newTerminal")!.run!();
+  expect(made).toEqual(["/demo/xdev"]);
+});
+
+it("a repo row opens the project menu: Open in, Copy Path, Repo settings and Remove from xDev", () => {
+  const log: string[] = [];
+  const view = harness(DOTS, repos, {
+    onOpenIn: (path, target) => void log.push(`open ${path} ${target.type}`),
+    onCopy: (text) => void log.push(`copy ${text}`),
+    onRepoSettings: (r) => void log.push(`settings ${r.id}`),
+    onRemoveRepo: (r) => void log.push(`remove ${r.id}`),
+  });
+  const project = view.all().find(n => n.props.className === "ws-repo" && n.props["data-repo"] === "repo-2-notes")!;
+  project.props.onContextMenu({ ...event, clientX: 1, clientY: 2 });
+  view.item("fileManager")!.run!();
+  view.item("copyPath")!.run!();
+  view.item("repoSettings")!.run!();
+  view.item("remove")!.run!();
+  expect(log).toEqual(["open /code/notes fileManager", "copy /code/notes", "settings repo-2-notes", "remove repo-2-notes"]);
+  // A repo whose folder is gone has the same menu, so it can be removed.
+  const missing = view.all().find(n => n.props.className === "ws-missing")!;
+  missing.props.onContextMenu({ ...event, clientX: 1, clientY: 2 });
+  view.item("remove")!.run!();
+  expect(log.at(-1)).toBe("remove repo-3-gone");
 });
 
 const names = (view: ReturnType<typeof harness>) =>
