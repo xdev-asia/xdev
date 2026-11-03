@@ -1,8 +1,10 @@
 //! Token usage read from the CLI session logs. The index holds counts, ids,
 //! times, model names and folder keys, never prompt or reply text.
 //!
-//! Day keys are UTC `YYYY-MM-DD`: std has no local time zone, and no time
-//! crate is allowed in this crate.
+//! Day keys are local `YYYY-MM-DD`. std has no local time zone and no time
+//! crate is allowed here, so the caller passes the offset from UTC in minutes
+//! (UTC+7 is 420). A fixed offset does not follow daylight saving; the index
+//! is rebuilt when the offset it was built with changes.
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
@@ -15,7 +17,9 @@ use serde_json::Value;
 
 use crate::{Agent, Home, KitError};
 
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
+/// How many counted Claude message ids a file mark keeps.
+const RECENT_IDS: usize = 256;
 const TOP_SESSIONS: usize = 20;
 const MAX_CODEX_DEPTH: usize = 6;
 const UNKNOWN: &str = "(unknown)";
@@ -59,7 +63,7 @@ pub struct SessionUsage {
     pub first: i64,
     pub last: i64,
     pub total: Tokens,
-    /// UTC `YYYY-MM-DD`.
+    /// Local `YYYY-MM-DD`, by the offset the index was built with.
     pub days: BTreeMap<String, Tokens>,
 }
 
@@ -71,11 +75,19 @@ pub struct FileMark {
     pub offset: u64,
     /// Key into `UsageIndex::sessions`.
     pub session: String,
+    /// The last counted `message.id` values of this file (Claude only), oldest
+    /// first. They are API ids, not text, and let a read that starts at
+    /// `offset` skip a message that was logged again.
+    #[serde(default)]
+    pub recent_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UsageIndex {
     pub version: u32,
+    /// Minutes of local time minus UTC that the day keys were made with.
+    #[serde(default)]
+    pub utc_offset_minutes: i32,
     /// Keyed by the log file's path.
     #[serde(default)]
     pub files: BTreeMap<String, FileMark>,
@@ -88,6 +100,7 @@ impl Default for UsageIndex {
     fn default() -> Self {
         Self {
             version: VERSION,
+            utc_offset_minutes: 0,
             files: BTreeMap::new(),
             sessions: BTreeMap::new(),
         }
@@ -153,11 +166,18 @@ impl UsageIndex {
     }
 
     /// Reads what is new in the session logs of `homes`. A log that was not
-    /// touched since the last call is not opened.
-    pub fn refresh(&mut self, homes: &[Home]) -> RefreshStats {
+    /// touched since the last call is not opened. `utc_offset_minutes` is
+    /// local time minus UTC; when it differs from the one the index was built
+    /// with, the index starts again from zero.
+    pub fn refresh(&mut self, homes: &[Home], utc_offset_minutes: i32) -> RefreshStats {
         let mut stats = RefreshStats::default();
         if self.version != VERSION {
             *self = Self::default();
+        }
+        if self.utc_offset_minutes != utc_offset_minutes {
+            self.files.clear();
+            self.sessions.clear();
+            self.utc_offset_minutes = utc_offset_minutes;
         }
         for home in homes {
             for file in log_files(home) {
@@ -181,6 +201,7 @@ impl UsageIndex {
         let session_key = format!("{}:{stem}", home.id);
 
         let mut start = 0;
+        let mut recent_ids: Vec<String> = Vec::new();
         if let Some(mark) = self.files.get(&file_key) {
             if mark.len == len && mark.mtime_ns == mtime_ns {
                 return;
@@ -188,6 +209,7 @@ impl UsageIndex {
             let rewritten = len < mark.offset || (mark.mtime_ns != mtime_ns && len <= mark.offset);
             if !rewritten && mark.session == session_key {
                 start = mark.offset;
+                recent_ids = mark.recent_ids.clone();
             }
         }
         // From 0 the totals start again; a session with no mark would
@@ -199,6 +221,7 @@ impl UsageIndex {
         };
         if existing.is_none() {
             start = 0;
+            recent_ids.clear();
         }
         let existed = existing.is_some();
         let mut session = existing.unwrap_or_else(|| SessionUsage {
@@ -215,9 +238,25 @@ impl UsageIndex {
 
         let mut bad = 0;
         let mut touched = false;
+        let offset_min = self.utc_offset_minutes;
         let read = match home.agent {
-            Agent::Claude => read_claude(path, start, &mut session, &mut bad, &mut touched),
-            Agent::Codex => read_codex(path, start, &mut session, &mut bad, &mut touched),
+            Agent::Claude => read_claude(
+                path,
+                start,
+                offset_min,
+                &mut recent_ids,
+                &mut session,
+                &mut bad,
+                &mut touched,
+            ),
+            Agent::Codex => read_codex(
+                path,
+                start,
+                offset_min,
+                &mut session,
+                &mut bad,
+                &mut touched,
+            ),
         };
         let Ok(offset) = read else {
             return;
@@ -237,6 +276,7 @@ impl UsageIndex {
                 mtime_ns,
                 offset,
                 session: session_key,
+                recent_ids,
             },
         );
     }
@@ -361,49 +401,45 @@ fn line_time(v: &Value) -> Option<i64> {
         .and_then(parse_ts)
 }
 
-fn add_day(session: &mut SessionUsage, ms: i64, t: &Tokens) {
+fn add_day(session: &mut SessionUsage, ms: i64, utc_offset_minutes: i32, t: &Tokens) {
     session.total.add(t);
-    session.days.entry(day_key(ms)).or_default().add(t);
+    session
+        .days
+        .entry(day_key(ms, utc_offset_minutes))
+        .or_default()
+        .add(t);
 }
 
-/// Claude Code: `<home>/projects/*/*.jsonl`. When a file is read again from a
-/// mark, the part before the mark is read only to collect the message ids
-/// already counted; ids are not kept in the index.
+/// Claude Code: `<home>/projects/*/*.jsonl`. The read starts at `start`;
+/// `recent_ids` holds the message ids counted before it, and is updated.
 fn read_claude(
     path: &Path,
     start: u64,
+    utc_offset_minutes: i32,
+    recent_ids: &mut Vec<String>,
     session: &mut SessionUsage,
     bad: &mut usize,
     touched: &mut bool,
 ) -> io::Result<u64> {
-    let mut seen: HashSet<String> = HashSet::new();
-    for_each_line(path, 0, |pos, line| {
-        let counting = pos >= start;
-        if !counting && !contains(line, b"\"usage\"") {
-            return;
-        }
+    let mut seen: HashSet<String> = recent_ids.iter().cloned().collect();
+    for_each_line(path, start, |_, line| {
         let Some(v) = parse_line(line) else {
-            if counting && !is_blank(line) {
+            if !is_blank(line) {
                 *bad += 1;
             }
             return;
         };
+        *touched = true;
         let message = v.get("message");
         let usage = message
             .and_then(|m| m.get("usage"))
             .filter(|u| u.is_object());
         let is_usage_line = v.get("type").and_then(Value::as_str) == Some("assistant");
-        let duplicate = match (is_usage_line, usage) {
-            (true, Some(_)) => message
-                .and_then(|m| m.get("id"))
-                .and_then(Value::as_str)
-                .is_some_and(|id| !seen.insert(id.to_string())),
+        let id = message.and_then(|m| m.get("id")).and_then(Value::as_str);
+        let duplicate = match (is_usage_line, usage, id) {
+            (true, Some(_), Some(id)) => seen.contains(id),
             _ => false,
         };
-        if !counting {
-            return;
-        }
-        *touched = true;
         let ts = line_time(&v);
         note_time(session, ts);
         if session.folder.is_none() {
@@ -415,6 +451,13 @@ fn read_claude(
         if let Some(model) = message.and_then(|m| m.get("model")).and_then(Value::as_str) {
             session.model = Some(model.to_string());
         }
+        if let Some(id) = id {
+            seen.insert(id.to_string());
+            recent_ids.push(id.to_string());
+            if recent_ids.len() > RECENT_IDS {
+                recent_ids.remove(0);
+            }
+        }
         let Some(ms) = ts else {
             *bad += 1;
             return;
@@ -425,12 +468,8 @@ fn read_claude(
             cache_read: num(usage, "cache_read_input_tokens"),
             cache_write: num(usage, "cache_creation_input_tokens"),
         };
-        add_day(session, ms, &t);
+        add_day(session, ms, utc_offset_minutes, &t);
     })
-}
-
-fn contains(hay: &[u8], needle: &[u8]) -> bool {
-    hay.windows(needle.len()).any(|w| w == needle)
 }
 
 fn codex_tokens(v: &Value) -> Tokens {
@@ -447,6 +486,7 @@ fn codex_tokens(v: &Value) -> Tokens {
 fn read_codex(
     path: &Path,
     start: u64,
+    utc_offset_minutes: i32,
     session: &mut SessionUsage,
     bad: &mut usize,
     touched: &mut bool,
@@ -485,20 +525,28 @@ fn read_codex(
                 let Some(info) = payload.get("info").filter(|i| i.is_object()) else {
                     return;
                 };
-                if let Some(last) = info.get("last_token_usage").filter(|u| u.is_object()) {
+                let total = info
+                    .get("total_token_usage")
+                    .filter(|u| u.is_object())
+                    .map(codex_tokens);
+                // The same total as the event before it: the event was logged
+                // again, and its `last_token_usage` is already counted.
+                let repeated = total.is_some_and(|t| t == session.total);
+                let last = info.get("last_token_usage").filter(|u| u.is_object());
+                if let (Some(last), false) = (last, repeated) {
                     match ts {
                         Some(ms) => {
                             // `add_day` also adds to the total; the total is
                             // set from `total_token_usage` below.
                             let before = session.total;
-                            add_day(session, ms, &codex_tokens(last));
+                            add_day(session, ms, utc_offset_minutes, &codex_tokens(last));
                             session.total = before;
                         }
                         None => *bad += 1,
                     }
                 }
-                if let Some(total) = info.get("total_token_usage").filter(|u| u.is_object()) {
-                    session.total = codex_tokens(total);
+                if let Some(total) = total {
+                    session.total = total;
                 }
             }
             _ => {}
@@ -592,9 +640,10 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-/// UTC `YYYY-MM-DD` of a unix ms time.
-fn day_key(ms: i64) -> String {
-    let (y, m, d) = civil_from_days(ms.div_euclid(86_400_000));
+/// `YYYY-MM-DD` of a unix ms time, `utc_offset_minutes` ahead of UTC.
+fn day_key(ms: i64, utc_offset_minutes: i32) -> String {
+    let local = ms.saturating_add(i64::from(utc_offset_minutes) * 60_000);
+    let (y, m, d) = civil_from_days(local.div_euclid(86_400_000));
     format!("{y:04}-{m:02}-{d:02}")
 }
 
@@ -743,7 +792,7 @@ mod tests {
         copy_tree(&fixture("claude"), dir.path());
         let h = home("own-claude", Agent::Claude, dir.path());
         let mut index = UsageIndex::default();
-        let stats = index.refresh(std::slice::from_ref(&h));
+        let stats = index.refresh(std::slice::from_ref(&h), 0);
         assert_eq!(stats.bad_lines, 0);
         let s = &index.sessions["own-claude:s-0001"];
         assert_eq!(s.id, "s-0001");
@@ -758,7 +807,7 @@ mod tests {
         assert_eq!(s.days["2026-11-03"], tok(1, 2, 3, 4));
 
         // Nothing changed: a second refresh reads nothing and keeps the numbers.
-        let again = index.refresh(std::slice::from_ref(&h));
+        let again = index.refresh(std::slice::from_ref(&h), 0);
         assert_eq!(again.files_read, 0);
         assert_eq!(
             index.sessions["own-claude:s-0001"].total,
@@ -773,7 +822,7 @@ mod tests {
         text.push_str(&claude_line("msg_03", "2026-11-03T09:00:02.000Z", 5, 6));
         text.push('\n');
         fs::write(&file, text).unwrap();
-        index.refresh(std::slice::from_ref(&h));
+        index.refresh(std::slice::from_ref(&h), 0);
         let s = &index.sessions["own-claude:s-0001"];
         assert_eq!(s.total, tok(16, 28, 33, 44));
         assert_eq!(s.days["2026-11-03"], tok(6, 8, 3, 4));
@@ -785,7 +834,7 @@ mod tests {
         copy_tree(&fixture("codex"), dir.path());
         let h = home("own-codex", Agent::Codex, dir.path());
         let mut index = UsageIndex::default();
-        let stats = index.refresh(std::slice::from_ref(&h));
+        let stats = index.refresh(std::slice::from_ref(&h), 0);
         assert_eq!(stats.bad_lines, 0);
         let s = &index.sessions["own-codex:rollout-2026-11-02T10-00-00-c0de01"];
         assert_eq!(s.agent, Agent::Codex);
@@ -800,23 +849,106 @@ mod tests {
     }
 
     #[test]
+    fn recent_ids_keep_the_last_256() {
+        let mut text = String::new();
+        for n in 0..300 {
+            text.push_str(&claude_line(
+                &format!("m{n:03}"),
+                "2026-11-02T10:00:00.000Z",
+                1,
+                1,
+            ));
+            text.push('\n');
+        }
+        let (_dir, h, _file) = claude_home_with(&text);
+        let mut index = UsageIndex::default();
+        index.refresh(std::slice::from_ref(&h), 0);
+        let ids = &index.files.values().next().unwrap().recent_ids;
+        assert_eq!(ids.len(), 256);
+        assert_eq!(ids.first().unwrap(), "m044");
+        assert_eq!(ids.last().unwrap(), "m299");
+        assert_eq!(index.sessions["own-claude:s-x"].total, tok(300, 300, 0, 0));
+    }
+
+    #[test]
+    fn codex_repeated_total_is_not_counted_twice() {
+        let dir = tempfile::tempdir().unwrap();
+        let sessions = dir.path().join("sessions");
+        fs::create_dir_all(&sessions).unwrap();
+        let file = sessions.join("rollout-r1.jsonl");
+        let event = |ts: &str, input: u64, last: u64| {
+            format!(
+                r#"{{"timestamp":"{ts}","type":"event_msg","payload":{{"type":"token_count","info":{{"total_token_usage":{{"input_tokens":{input},"output_tokens":0}},"last_token_usage":{{"input_tokens":{last},"output_tokens":0}}}}}}}}"#
+            )
+        };
+        let first = event("2026-11-02T10:00:00.000Z", 100, 100);
+        let again = event("2026-11-02T10:00:01.000Z", 100, 100);
+        let next = event("2026-11-02T10:00:02.000Z", 130, 30);
+        fs::write(&file, format!("{first}\n{again}\n{next}\n")).unwrap();
+        let h = home("own-codex", Agent::Codex, dir.path());
+        let mut index = UsageIndex::default();
+        index.refresh(std::slice::from_ref(&h), 0);
+        let s = &index.sessions["own-codex:rollout-r1"];
+        assert_eq!(s.days["2026-11-02"], tok(130, 0, 0, 0));
+        assert_eq!(s.total, tok(130, 0, 0, 0));
+
+        // The same holds across two refreshes.
+        let mut text = fs::read_to_string(&file).unwrap();
+        text.push_str(&event("2026-11-02T10:00:03.000Z", 130, 30));
+        text.push('\n');
+        fs::write(&file, text).unwrap();
+        index.refresh(std::slice::from_ref(&h), 0);
+        let s = &index.sessions["own-codex:rollout-r1"];
+        assert_eq!(s.days["2026-11-02"], tok(130, 0, 0, 0));
+    }
+
+    #[test]
     fn partial_last_line_is_read_next_time() {
         let first = claude_line("m1", "2026-11-02T10:00:00.000Z", 1, 1);
         let second = claude_line("m2", "2026-11-02T10:00:01.000Z", 2, 2);
         let (_dir, h, file) = claude_home_with(&format!("{first}\n{}", &second[..40]));
         let mut index = UsageIndex::default();
-        let stats = index.refresh(std::slice::from_ref(&h));
+        let stats = index.refresh(std::slice::from_ref(&h), 0);
         assert_eq!(stats.bad_lines, 0);
         assert_eq!(index.sessions["own-claude:s-x"].total, tok(1, 1, 0, 0));
         let mark = index.files.values().next().unwrap();
         assert_eq!(mark.offset, (first.len() + 1) as u64);
 
         fs::write(&file, format!("{first}\n{second}\n")).unwrap();
-        let stats = index.refresh(std::slice::from_ref(&h));
+        let stats = index.refresh(std::slice::from_ref(&h), 0);
         assert_eq!(stats.bad_lines, 0);
         assert_eq!(index.sessions["own-claude:s-x"].total, tok(3, 3, 0, 0));
         let mark = index.files.values().next().unwrap();
         assert_eq!(mark.offset, (first.len() + second.len() + 2) as u64);
+    }
+
+    #[test]
+    fn bytes_before_offset_are_not_read() {
+        let a = claude_line("m1", "2026-11-02T10:00:00.000Z", 1, 1);
+        let b = claude_line("m2", "2026-11-02T10:00:01.000Z", 2, 2);
+        let (_dir, h, file) = claude_home_with(&format!("{a}\n{b}\n"));
+        let mut index = UsageIndex::default();
+        index.refresh(std::slice::from_ref(&h), 0);
+        assert_eq!(index.sessions["own-claude:s-x"].total, tok(3, 3, 0, 0));
+        let offset = index.files.values().next().unwrap().offset as usize;
+
+        // Everything before the offset becomes garbage of the same length (line
+        // ends stay). A repeat of m2 and a new line m3 are appended.
+        let mut bytes = fs::read(&file).unwrap();
+        assert_eq!(bytes.len(), offset);
+        for byte in bytes.iter_mut().filter(|b| **b != b'\n') {
+            *byte = b'x';
+        }
+        bytes.extend_from_slice(claude_line("m2", "2026-11-02T10:00:02.000Z", 2, 2).as_bytes());
+        bytes.push(b'\n');
+        bytes.extend_from_slice(claude_line("m3", "2026-11-02T10:00:03.000Z", 5, 6).as_bytes());
+        bytes.push(b'\n');
+        fs::write(&file, bytes).unwrap();
+
+        let stats = index.refresh(std::slice::from_ref(&h), 0);
+        assert_eq!(stats.bad_lines, 0);
+        // Only m3 is added; m2 is known from the stored ids, not from the file.
+        assert_eq!(index.sessions["own-claude:s-x"].total, tok(8, 9, 0, 0));
     }
 
     #[test]
@@ -825,13 +957,13 @@ mod tests {
         let b = claude_line("m2", "2026-11-02T10:00:01.000Z", 100, 100);
         let (_dir, h, file) = claude_home_with(&format!("{a}\n{b}\n"));
         let mut index = UsageIndex::default();
-        index.refresh(std::slice::from_ref(&h));
+        index.refresh(std::slice::from_ref(&h), 0);
         assert_eq!(index.sessions["own-claude:s-x"].total, tok(200, 200, 0, 0));
 
         let c = claude_line("m3", "2026-11-02T10:00:02.000Z", 7, 8);
         assert!(c.len() + 1 < a.len() + b.len() + 2);
         fs::write(&file, format!("{c}\n")).unwrap();
-        index.refresh(std::slice::from_ref(&h));
+        index.refresh(std::slice::from_ref(&h), 0);
         let s = &index.sessions["own-claude:s-x"];
         assert_eq!(s.total, tok(7, 8, 0, 0));
         assert_eq!(s.days["2026-11-02"], tok(7, 8, 0, 0));
@@ -843,7 +975,7 @@ mod tests {
         let b = claude_line("m2", "2026-11-02T10:00:01.000Z", 2, 2);
         let (_dir, h, _file) = claude_home_with(&format!("{a}\nthis is not json {{\n{b}\n"));
         let mut index = UsageIndex::default();
-        let stats = index.refresh(std::slice::from_ref(&h));
+        let stats = index.refresh(std::slice::from_ref(&h), 0);
         assert_eq!(stats.bad_lines, 1);
         assert_eq!(index.sessions["own-claude:s-x"].total, tok(3, 3, 0, 0));
     }
@@ -859,19 +991,20 @@ mod tests {
             home("own-codex", Agent::Codex, codex.path()),
         ];
         let mut index = UsageIndex::default();
-        index.refresh(&homes);
+        index.refresh(&homes, 0);
         let data = tempfile::tempdir().unwrap();
         index.save(data.path()).unwrap();
         let on_disk = fs::read_to_string(data.path().join("kit").join("usage.json")).unwrap();
         let in_memory = serde_json::to_string(&index).unwrap();
         for text in [on_disk, in_memory] {
             assert!(text.contains("own-claude:s-0001"));
+            // Message ids are kept (`recent_ids`); they are ids, not text.
+            assert!(text.contains("msg_01"));
             for secret in [
                 "SECRET-PROMPT-ALPHA",
                 "SECRET-REPLY-BETA",
                 "SECRET-SUMMARY",
                 "SECRET-CODEX-PROMPT",
-                "msg_01",
             ] {
                 assert!(!text.contains(secret), "index leaks {secret}");
             }
@@ -973,10 +1106,49 @@ mod tests {
         assert_eq!(parse_ts("1970-01-01T00:00:00Z"), Some(0));
         assert_eq!(parse_ts("yesterday"), None);
         assert_eq!(parse_ts("2026-13-02T10:00:00Z"), None);
-        assert_eq!(day_key(T_NOV2_10H), "2026-11-02");
-        assert_eq!(day_key(0), "1970-01-01");
-        assert_eq!(day_key(-1), "1969-12-31");
-        assert_eq!(day_key(951_782_400_000), "2000-02-29");
+        assert_eq!(day_key(T_NOV2_10H, 0), "2026-11-02");
+        assert_eq!(day_key(0, 0), "1970-01-01");
+        assert_eq!(day_key(-1, 0), "1969-12-31");
+        assert_eq!(day_key(951_782_400_000, 0), "2000-02-29");
+    }
+
+    #[test]
+    fn day_key_uses_local_offset() {
+        let late = parse_ts("2026-11-02T20:30:00Z").unwrap();
+        assert_eq!(day_key(late, 0), "2026-11-02");
+        // UTC+7: already the next morning.
+        assert_eq!(day_key(late, 420), "2026-11-03");
+        // UTC-5: still the afternoon of the same day.
+        assert_eq!(day_key(late, -300), "2026-11-02");
+        assert_eq!(day_key(0, -1), "1969-12-31");
+    }
+
+    #[test]
+    fn offset_change_rebuilds_index() {
+        let line = claude_line("m1", "2026-11-02T20:30:00.000Z", 4, 5);
+        let (_dir, h, _file) = claude_home_with(&format!(
+            "{line}
+"
+        ));
+        let mut index = UsageIndex::default();
+        index.refresh(std::slice::from_ref(&h), 0);
+        assert_eq!(index.utc_offset_minutes, 0);
+        assert_eq!(
+            index.sessions["own-claude:s-x"].days["2026-11-02"],
+            tok(4, 5, 0, 0)
+        );
+
+        // The same offset reads nothing.
+        assert_eq!(index.refresh(std::slice::from_ref(&h), 0).files_read, 0);
+
+        // Another offset starts again from zero, with no double count.
+        let stats = index.refresh(std::slice::from_ref(&h), 420);
+        assert_eq!(stats.files_read, 1);
+        assert_eq!(index.utc_offset_minutes, 420);
+        let s = &index.sessions["own-claude:s-x"];
+        assert_eq!(s.total, tok(4, 5, 0, 0));
+        assert_eq!(s.days.len(), 1);
+        assert_eq!(s.days["2026-11-03"], tok(4, 5, 0, 0));
     }
 
     #[test]
@@ -987,13 +1159,13 @@ mod tests {
         let stale = r#"{"version":99,"files":{},"sessions":{"x:y":{"id":"y","home_id":"x","agent":"claude","folder":null,"model":null,"first":0,"last":0,"total":{"input":9,"output":9,"cache_read":9,"cache_write":9},"days":{}}}}"#;
         fs::write(kit.join("usage.json"), stale).unwrap();
         let mut index = UsageIndex::load(data.path());
-        assert_eq!(index.version, 1);
+        assert_eq!(index.version, 2);
         assert!(index.sessions.is_empty());
 
         let claude = tempfile::tempdir().unwrap();
         copy_tree(&fixture("claude"), claude.path());
         let h = home("own-claude", Agent::Claude, claude.path());
-        index.refresh(std::slice::from_ref(&h));
+        index.refresh(std::slice::from_ref(&h), 0);
         assert_eq!(index.sessions.len(), 1);
         index.save(data.path()).unwrap();
         assert_eq!(UsageIndex::load(data.path()), index);
