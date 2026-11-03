@@ -10,6 +10,7 @@ mod links;
 mod open_in;
 mod profiles;
 mod pty;
+mod reveal;
 mod review;
 mod review_notes;
 mod session;
