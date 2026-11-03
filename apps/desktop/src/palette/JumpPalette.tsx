@@ -87,6 +87,14 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
   }
 
   function onKeyDown(e: KeyboardEvent) {
+    // An Enter that confirms an IME candidate (Telex, CJK) is not a command.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    // The search shortcut must not run behind the open palette.
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const digit = /^[1-9]$/.test(e.key) ? Number(e.key) : null;
     if (digit !== null && (e.ctrlKey || e.metaKey || query === "")) {
       const row = byDigit(digit);
@@ -125,6 +133,7 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
   }
 
   const selectedRow = picks[at];
+  const reveal = (el: HTMLDivElement | null) => el?.scrollIntoView?.({ block: "nearest" });
 
   return (
     <dialog
@@ -179,14 +188,14 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
           const on = row === selectedRow;
           if (row.type === "more") {
             return (
-              <div key={`m${row.section}`} role="option" aria-selected={on} className="pal-row pal-more" data-selected={on} onClick={() => run(row)}>
+              <div key={`m${row.section}`} role="option" aria-selected={on} ref={on ? reveal : undefined} className="pal-row pal-more" data-selected={on} onClick={() => run(row)}>
                 {t("palette.more", { count: row.count })}
               </div>
             );
           }
           if (row.type === "create") {
             return (
-              <div key="create" role="option" aria-selected={on} className="pal-row" data-selected={on} onClick={() => run(row)}>
+              <div key="create" role="option" aria-selected={on} ref={on ? reveal : undefined} className="pal-row" data-selected={on} onClick={() => run(row)}>
                 <KindIcon kind="worktree" />
                 <span className="pal-title-text">{t("palette.create", { name: row.name })}</span>
               </div>
@@ -194,7 +203,7 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
           }
           const { item } = row;
           return (
-            <div key={item.id} role="option" aria-selected={on} className="pal-row" data-selected={on} data-kind={item.kind} onClick={() => run(row)}>
+            <div key={item.id} role="option" aria-selected={on} ref={on ? reveal : undefined} className="pal-row" data-selected={on} data-kind={item.kind} onClick={() => run(row)}>
               <KindIcon kind={item.kind} />
               <span className="pal-title-text">
                 <Highlight text={item.title} hits={row.hits.title} />
