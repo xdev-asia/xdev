@@ -727,6 +727,160 @@
   padding: 6px 4px;
 }
 
+.ws-panel-badge {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--ws-surface);
+  color: var(--ws-ink);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* Changes panel: the worktree's uncommitted files and a commit of the checked ones. */
+
+.ws-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 8px;
+}
+
+.ws-changes-title {
+  font-size: 12px;
+}
+
+.ws-change-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-change {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
+  border-radius: 6px;
+}
+
+.ws-change:hover {
+  background: var(--ws-surface-2);
+}
+
+.ws-change input {
+  flex-shrink: 0;
+  margin: 0;
+  accent-color: var(--ws-accent);
+}
+
+.ws-change-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 6px 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ws-ink);
+  font-size: 12px;
+  text-align: left;
+}
+
+.ws-change-kind {
+  width: 14px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ws-warn);
+}
+
+.ws-change-kind[data-kind="added"] {
+  color: var(--ws-ok);
+}
+
+.ws-change-kind[data-kind="deleted"] {
+  color: var(--ws-danger);
+}
+
+.ws-change-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-change-stats {
+  position: relative;
+  flex-shrink: 0;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.ws-commit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ws-muted);
+}
+
+.ws-commit-field textarea {
+  min-height: 52px;
+  padding: 8px;
+  border: 1px solid var(--ws-line);
+  border-radius: 6px;
+  background: var(--ws-surface);
+  color: var(--ws-ink);
+  font-size: 12px;
+  resize: vertical;
+}
+
+.ws-changes > .banner {
+  margin: 0;
+}
+
+/* Diff tab: one file against the worktree's last commit. */
+
+.ws-diff {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ws-diff-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  height: 32px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--ws-line);
+  font-size: 12px;
+}
+
+.ws-diff-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-diff-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
 /* Docs view: the docs app fills the space beside the sidebar. */
 
 .ws-docs {

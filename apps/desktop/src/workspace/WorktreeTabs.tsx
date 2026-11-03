@@ -6,30 +6,60 @@ import { Terminal } from "../terminal/Terminal";
 import { useApprovedStart } from "../terminal/useApprovedStart";
 import type { Sessions, Tab } from "./sessions";
 import type { TabStatus } from "./status";
+import { WorktreeDiff } from "./WorktreeDiff";
 
 const GLYPH: Record<TabStatus, string> = { working: "●", idle: "○", failed: "✕", exited: "–" };
 
 const ended = (status: TabStatus) => status === "failed" || status === "exited";
 
+// A diff tab's id; terminal tabs use their pty id, which never has a colon.
+const fileTab = (file: string) => `file:${file}`;
+const base = (file: string) => file.slice(file.lastIndexOf("/") + 1);
+
+/** A file to show as a diff tab; a new `seq` opens it again, read afresh. */
+export type Reveal = { file: string; seq: number };
+
 /**
  * The terminal tabs of one worktree. Every tab stays mounted while it is open, hidden when
  * another one shows, so switching never stops a pty. The shell keeps one of these per visited
- * worktree and hides the ones not selected.
+ * worktree and hides the ones not selected. Diff tabs of the worktree's files sit after the
+ * terminals.
  */
-export function WorktreeTabs(props: { api: Api; sessions: Sessions; worktree: string; visible: boolean }): JSX.Element {
-  const { api, sessions, worktree, visible } = props;
+export function WorktreeTabs(props: {
+  api: Api;
+  sessions: Sessions;
+  worktree: string;
+  visible: boolean;
+  reveal?: Reveal;
+}): JSX.Element {
+  const { api, sessions, worktree, visible, reveal } = props;
   const { t } = useI18n();
   const [active, setActive] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
   // Views started per tab; a retry after approval mounts a fresh view on the same pty id.
   const [attempts, setAttempts] = useState<Record<string, number>>({});
   const { ask, error, setError, dialog } = useApprovedStart(api);
+  // Open diff tabs; `seq` keys the view, so opening a file again reads it again.
+  const [files, setFiles] = useState<Reveal[]>([]);
+  const [revealed, setRevealed] = useState(0);
+
+  // Taken during render, so the frame that asks for a file already shows it.
+  let open = files;
+  let pick = active;
+  if (reveal && reveal.seq !== revealed) {
+    open = [...files.filter((f) => f.file !== reveal.file), reveal];
+    pick = fileTab(reveal.file);
+    setRevealed(reveal.seq);
+    setFiles(open);
+    setActive(pick);
+  }
 
   const subscribe = useCallback((listener: () => void) => sessions.subscribe(listener), [sessions]);
   const snapshot = () => sessions.tabs(worktree);
   const tabs = useSyncExternalStore(subscribe, snapshot, snapshot);
-  // A closed tab hands the view to the newest one.
-  const shown = tabs.some((tab) => tab.id === active) ? active : (tabs[tabs.length - 1]?.id ?? null);
+  // A closed tab hands the view to the newest terminal, else to the newest diff.
+  const ids = [...tabs.map((tab) => tab.id), ...open.map((f) => fileTab(f.file))];
+  const shown = pick && ids.includes(pick) ? pick : (tabs[tabs.length - 1]?.id ?? (open.length ? fileTab(open[open.length - 1].file) : null));
 
   const name = (tab: Tab) => t(`terminal.profile.${tab.profileId}`);
 
@@ -91,6 +121,33 @@ export function WorktreeTabs(props: { api: Api; sessions: Sessions; worktree: st
                 aria-label={t("workspace.tabs.close", { name: name(tab) })}
                 title={t("workspace.tabs.close", { name: name(tab) })}
                 onClick={() => void sessions.close(tab.id)}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          {open.map(({ file }) => (
+            <div key={fileTab(file)} className="ws-tab" data-selected={fileTab(file) === shown}>
+              <button
+                type="button"
+                role="tab"
+                className="ws-tab-main"
+                data-tab={fileTab(file)}
+                aria-selected={fileTab(file) === shown}
+                title={file}
+                onClick={() => setActive(fileTab(file))}
+              >
+                <span className="ws-tab-icon ws-mono" aria-hidden="true">
+                  ±
+                </span>
+                <span>{base(file)}</span>
+              </button>
+              <button
+                type="button"
+                className="ws-tab-close"
+                aria-label={t("workspace.tabs.close", { name: base(file) })}
+                title={t("workspace.tabs.close", { name: base(file) })}
+                onClick={() => setFiles(open.filter((f) => f.file !== file))}
               >
                 ×
               </button>
@@ -164,7 +221,13 @@ export function WorktreeTabs(props: { api: Api; sessions: Sessions; worktree: st
         </div>
       ))}
 
-      {tabs.length === 0 && (
+      {open.map((f) => (
+        <div key={fileTab(f.file)} className="ws-tab-pane" role="tabpanel" data-tab={fileTab(f.file)} hidden={fileTab(f.file) !== shown}>
+          <WorktreeDiff key={f.seq} api={api} worktree={worktree} file={f.file} />
+        </div>
+      ))}
+
+      {tabs.length === 0 && open.length === 0 && (
         <div className="ws-center-empty">
           <p>{t("workspace.tabs.empty")}</p>
           <div className="ws-launch">
