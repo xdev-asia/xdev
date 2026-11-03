@@ -44,6 +44,7 @@ import { WorktreeChanges, type ChangesHandlers } from "./WorktreeChanges";
 import { worktreeTarget } from "./groups";
 import { WorktreeList } from "./WorktreeList";
 import { WorktreeTabs, type Reveal } from "./WorktreeTabs";
+import { runWithToast } from "@/quickCommands/runUi";
 import { startQuickCommands } from "@/quickCommands/store";
 
 const SELECTED_KEY = "xdev.workspace.selected";
@@ -1114,6 +1115,20 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             jumpTo(confirmResume(sessions, { row, worktree: row.worktree }).id);
           },
           discardAllChanges: changesReady ? () => runOnChanges((h) => h.discardAll()) : undefined,
+          runQuickCommand: (cmd) => {
+            if (!sessions || !current) return;
+            const path = current.path;
+            const front = sessions.tabs(path).find((x) => x.id === shownTab[path]);
+            show("workspace");
+            void api
+              .profiles()
+              .then((v) => v.profiles.map((p) => p.profile.id))
+              .catch(() => undefined)
+              .then((profiles) =>
+                runWithToast(api, cmd, { sessions, worktree: path, tab: front && front.exitCode === undefined ? front : null, profiles, focus: () => focusTerminal(path) }, t),
+              );
+          },
+          newQuickCommand: () => openSettings("qcmd", "new"),
         }}
       />
       {trusting && (

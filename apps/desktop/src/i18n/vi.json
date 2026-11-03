@@ -1475,5 +1475,7 @@
   "qcmd.page.moveDown": "Chuyển xuống",
   "qcmd.page.copySuffix": " (bản sao)",
   "qcmd.page.deleteTitle": "Xoá lệnh này?",
-  "qcmd.page.deleteBody": "Lệnh \"{label}\" sẽ bị xoá và không khôi phục được."
+  "qcmd.page.deleteBody": "Lệnh \"{label}\" sẽ bị xoá và không khôi phục được.",
+  "qcmd.palette.run": "Chạy: {label}",
+  "qcmd.palette.new": "Lệnh nhanh mới…"
 }
