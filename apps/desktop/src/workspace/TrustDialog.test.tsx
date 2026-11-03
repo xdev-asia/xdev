@@ -58,3 +58,10 @@ it("says so when it reopens with changed text, and stays usable while busy only 
 it("a failure shows its message", () => {
   expect(text(draw({ error: "hook_untrusted" }).all)).toContain(en("error.hook_untrusted"));
 });
+
+it("uses the commands wording for xdev.toml quick commands", () => {
+  const { all } = draw({ kind: "commands", text: "Lint\n  pnpm lint" });
+  const shown = text(all);
+  expect(shown).toContain(en("qcmd.trust.title", { repo: "xdev" }));
+  expect(button(all, en("qcmd.trust.confirm"))).toBeDefined();
+});

@@ -4,6 +4,7 @@ import { profileName, useProfiles } from "@/agents/profileStore";
 import { type Api, type ApiError, type PtyProfile } from "@/api";
 import { useI18n } from "@/i18n";
 import { useKeymap } from "@/keys/keymap";
+import { QuickCommandsControl } from "@/quickCommands/QuickCommandsControl";
 import { ReviewView } from "@/review/ReviewView";
 import { Terminal, type TerminalHandle } from "@/terminal/Terminal";
 import { copyContext, copyText } from "@/terminal/terminalActions";
@@ -78,6 +79,13 @@ export function WorktreeTabs(props: {
   onShowHistory?: (sessionId: string) => void;
   /** Holds agent launches while this worktree's setup tab runs. */
   gate?: SetupGate;
+  /** The repo registry key of the worktree and its short name, for the quick commands. */
+  repo?: string | null;
+  repoName?: string;
+  /** A new value opens the Command popover of the focused pane. */
+  quickSeq?: number;
+  onNewQuickCommand?: () => void;
+  onManageQuickCommands?: () => void;
 }): JSX.Element {
   const { api, sessions, worktree, visible, reveal } = props;
   const { t } = useI18n();
@@ -374,6 +382,20 @@ export function WorktreeTabs(props: {
         onColor={(id, color) => sessions.setColor(id, color)}
         onRename={(id, name) => sessions.rename(id, name)}
         onShowHistory={props.onShowHistory}
+        trailing={
+          <QuickCommandsControl
+            api={api}
+            sessions={sessions}
+            worktree={worktree}
+            repo={props.repo ?? null}
+            repoName={props.repoName ?? ""}
+            tab={leaf.active === REVIEW_TAB ? null : (byId.get(leaf.active ?? "") ?? null)}
+            openSeq={layout?.focused === leaf.id ? props.quickSeq : undefined}
+            onFocus={() => setKick((k) => k + 1)}
+            onNew={() => props.onNewQuickCommand?.()}
+            onManage={() => props.onManageQuickCommands?.()}
+          />
+        }
       />
     );
   };

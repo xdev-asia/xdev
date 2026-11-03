@@ -44,6 +44,7 @@ import { WorktreeChanges, type ChangesHandlers } from "./WorktreeChanges";
 import { worktreeTarget } from "./groups";
 import { WorktreeList } from "./WorktreeList";
 import { WorktreeTabs, type Reveal } from "./WorktreeTabs";
+import { startQuickCommands } from "@/quickCommands/store";
 
 const SELECTED_KEY = "xdev.workspace.selected";
 
@@ -147,6 +148,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // Asks the front terminal of a worktree to take keyboard focus, as the palette closes.
   const [termFocus, setTermFocus] = useState<{ worktree: string; seq: number } | null>(null);
   const focusTerminal = (worktree: string) => setTermFocus((f) => ({ worktree, seq: (f?.seq ?? 0) + 1 }));
+  // A new value asks the front pane to open its quick commands popover.
+  const [quickSeq, setQuickSeq] = useState(0);
   const [settingsAt, setSettingsAt] = useState<{ section?: string; filter?: string; seq: number }>({ seq: 0 });
   // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
   const dialogOpen = creating !== null || removing !== null;
@@ -430,6 +433,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setRightOpen(true);
     setPanelTab(tab);
   }
+  useEffect(() => startQuickCommands(api), [api]);
   useKeymap({
     "sessions.open": () => {
       show("workspace");
@@ -437,6 +441,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     },
     "search.open": () => openSearch(),
     "settings.open": () => openSettings(),
+    "quickCommands.open": () => setQuickSeq((n) => n + 1),
     "settings.shortcuts": () => openSettings("keys"),
     "sidebar.left.toggle": () => setSidebarOpen((o) => !o),
     "sidebar.right.toggle": () => setRightOpen((o) => !o),
@@ -892,6 +897,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   focusSeq={termFocus?.worktree === path ? termFocus.seq : undefined}
                   onShowHistory={showInHistory}
                   gate={gate}
+                  repo={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.path ?? null}
+                  repoName={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.shortName ?? ""}
+                  quickSeq={path === current?.path ? quickSeq : undefined}
+                  onNewQuickCommand={() => openSettings("qcmd", "new")}
+                  onManageQuickCommands={() => openSettings("qcmd")}
                 />
               ))}
             {current && cardFor(current.path) && (
