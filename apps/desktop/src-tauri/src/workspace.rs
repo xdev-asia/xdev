@@ -80,7 +80,7 @@ pub struct WorktreeFileDiff {
     pub skip: Option<Skip>,
 }
 
-fn bad_arg(detail: &str) -> CmdError {
+pub(crate) fn bad_arg(detail: &str) -> CmdError {
     CmdError {
         code: "bad_arg",
         detail: Some(detail.to_owned()),
@@ -89,7 +89,7 @@ fn bad_arg(detail: &str) -> CmdError {
 
 /// `root` joined with `file`, when `file` is a plain relative path that
 /// stays under `root`.
-fn inside(root: &Path, file: &str) -> Option<PathBuf> {
+pub(crate) fn inside(root: &Path, file: &str) -> Option<PathBuf> {
     let rel = Path::new(file);
     let plain = rel
         .components()
@@ -106,7 +106,7 @@ fn inside(root: &Path, file: &str) -> Option<PathBuf> {
 
 /// Whether the folder holding `disk` is really inside `root`, links
 /// resolved. A folder that does not exist holds nothing to read, so it passes.
-fn parent_within(root: &Path, disk: &Path) -> Result<bool, CmdError> {
+pub(crate) fn parent_within(root: &Path, disk: &Path) -> Result<bool, CmdError> {
     let Some(parent) = disk.parent() else {
         return Ok(false);
     };
@@ -185,7 +185,7 @@ fn remove_with(
 
 /// The commit a linked worktree started from. The primary checkout has no
 /// record, so it is as unknown as a folder the app never made.
-fn start_of(data: &Path, path: &Path) -> Result<String, CmdError> {
+pub(crate) fn start_of(data: &Path, path: &Path) -> Result<String, CmdError> {
     let key = path_key(path);
     Registry::load(data)?
         .worktrees
