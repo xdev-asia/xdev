@@ -1,5 +1,5 @@
 import { Button } from "@xdev/ui";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import logo from "../../../../docs/brand/xdev-icon-512.png";
 import type { JSX } from "react";
 import { api, type ApiError } from "../api";
@@ -8,6 +8,7 @@ import type { AppId } from "../shell/apps";
 import { useQuota } from "../shell/useQuota";
 import { AccountsView } from "./AccountsView";
 import { ActivityBar } from "./ActivityBar";
+import { AgentKitView, type KitHost } from "./AgentKitView";
 import { LanguageSwitch } from "./LanguageSwitch";
 import { SquadsView } from "./SquadsView";
 import { StatusBar } from "./StatusBar";
@@ -76,11 +77,15 @@ export function VaultEmpty(props: { failure?: VaultFailure; busy: boolean; onCre
 }
 
 /** The workbench before any folder is open: Accounts, Tasks and Squads work, the folder apps explain how to get one. */
-export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; onCreate(): void; onOpen(): void }): JSX.Element {
+export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; kit?: KitHost; onCreate(): void; onOpen(): void }): JSX.Element {
   const { t } = useI18n();
   const [app, setApp] = useState<AppId>("docs");
   const [taskFocus, setTaskFocus] = useState<string | null>(null);
   const quota = useQuota(api, app === "accounts");
+  const kitSeq = props.kit?.open?.seq ?? 0;
+  useEffect(() => {
+    if (kitSeq > 0) setApp("kit");
+  }, [kitSeq]);
   return (
     <div className="app" data-panel="off">
       <header className="topbar">
@@ -103,6 +108,14 @@ export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; onCr
         ) : app === "tasks" ? (
           // A task names its own repo, so it needs no docs folder.
           <TasksView key={taskFocus ?? ""} api={api} initial={taskFocus ?? undefined} />
+        ) : app === "kit" ? (
+          <AgentKitView
+            key={props.kit?.open?.seq ?? 0}
+            api={api}
+            worktree={props.kit?.worktree ?? null}
+            initialTab={props.kit?.open?.tab}
+            onSendToAgent={props.kit?.onSendToAgent}
+          />
         ) : app === "squads" ? (
           <SquadsView
             api={api}
