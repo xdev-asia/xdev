@@ -34,6 +34,7 @@ vi.mock("react", async (original) => {
     useContext: (ctx: { _currentValue: unknown }) => ctx._currentValue,
     useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
     useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
+    useRef: (initial: any) => (hooks.active ? (state({ current: initial }) as [{ current: unknown }])[0] : react.useRef(initial)),
     useCallback: (fn: any, deps: any) => (hooks.active ? fn : react.useCallback(fn, deps)),
     useSyncExternalStore: (subscribe: any, get: any, server?: any) => (hooks.active ? get() : react.useSyncExternalStore(subscribe, get, server)),
   };
