@@ -173,21 +173,7 @@ fn remove_with(
     let action = Action::Delete {
         path: path.to_owned(),
     };
-    match gate(data)?.check_confirmed(&action, confirmed) {
-        Verdict::Allow => {}
-        Verdict::Ask { reason } => {
-            return Err(CmdError {
-                code: "needs_approval",
-                detail: Some(reason),
-            });
-        }
-        Verdict::Deny { reason } => {
-            return Err(CmdError {
-                code: "denied",
-                detail: Some(reason),
-            });
-        }
-    }
+    allowed(gate(data)?.check_confirmed(&action, confirmed))?;
     update(data, lock, |reg| remove_worktree(reg, path, force))
 }
 
@@ -714,6 +700,13 @@ fn dir_listing(
     path: &Path,
     dir: &str,
 ) -> Result<xdev_workspace::DirListing, CmdError> {
+    known_checkout(data, path)?;
+    Ok(xdev_workspace::list_dir(&path.to_string_lossy(), dir)?)
+}
+
+/// `worktree_unknown` unless `path` is a repo or a worktree the registry
+/// knows.
+pub(crate) fn known_checkout(data: &Path, path: &Path) -> Result<(), CmdError> {
     let key = path_key(path);
     let reg = Registry::load(data)?;
     let known = reg.repos.iter().any(|r| path_key(&r.path) == key)
@@ -721,7 +714,23 @@ fn dir_listing(
     if !known {
         return Err(WorkspaceError::WorktreeUnknown(path.to_owned()).into());
     }
-    Ok(xdev_workspace::list_dir(&path.to_string_lossy(), dir)?)
+    Ok(())
+}
+
+/// A policy verdict as a command result: `needs_approval` for Ask,
+/// `denied` for Deny.
+pub(crate) fn allowed(verdict: Verdict) -> Result<(), CmdError> {
+    match verdict {
+        Verdict::Allow => Ok(()),
+        Verdict::Ask { reason } => Err(CmdError {
+            code: "needs_approval",
+            detail: Some(reason),
+        }),
+        Verdict::Deny { reason } => Err(CmdError {
+            code: "denied",
+            detail: Some(reason),
+        }),
+    }
 }
 
 #[tauri::command(async)]
