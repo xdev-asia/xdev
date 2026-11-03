@@ -781,6 +781,26 @@ it("Delete on a Changes row opens the discard confirm and calls nothing yet", as
   expect(dialog(view).props.open).toBe(false);
 });
 
+it("s, u and Delete are left alone while focus is in a control inside the row", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const stage = vi.spyOn(api, "worktreeStage").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  for (const target of [{ tagName: "INPUT" }, { tagName: "TEXTAREA" }, { tagName: "SELECT" }, { tagName: "DIV", isContentEditable: true }]) {
+    const del = press(rowOf(view, "changes", "src/status.ts"), "Delete", { target });
+    expect(dialog(view).props.open, target.tagName).toBe(false);
+    expect(del.preventDefault).not.toHaveBeenCalled();
+    press(rowOf(view, "changes", "src/status.ts"), "s", { target });
+    press(rowOf(view, "staged", "docs/old-notes.md"), "u", { target });
+  }
+  await tick();
+  expect(stage).not.toHaveBeenCalled();
+  // On the row itself Delete still asks.
+  press(rowOf(view, "changes", "src/status.ts"), "Delete", { target: { tagName: "LI" } });
+  expect(dialog(view).props.open).toBe(true);
+});
+
 it("keys with a modifier are left alone, Ctrl+Enter commits", async () => {
   const api = createMockApi({});
   vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
