@@ -14,7 +14,7 @@ const addedLine = "color-mix(in srgb, var(--x-color-ok) 14%, transparent)";
 
 // The merge package ships fixed light/dark colors; `&.cm-merge-b` matches the specificity of its rules,
 // and theme rules are mounted after base themes, so these win in both color schemes.
-const diffTheme = EditorView.theme({
+export const diffTheme = EditorView.theme({
   "&": { backgroundColor: "var(--x-color-surface)" },
   ".cm-scroller": { fontFamily: "var(--x-font-mono)", fontSize: "12.5px", lineHeight: "1.7" },
   ".cm-content": { padding: "var(--x-space-2) 0" },

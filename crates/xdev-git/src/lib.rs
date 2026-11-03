@@ -7,6 +7,7 @@ mod gh;
 mod history;
 mod range;
 mod remote;
+mod review;
 mod run;
 mod since;
 mod status;
@@ -20,6 +21,7 @@ pub use gh::{
 };
 pub use history::Commit;
 pub use remote::{BaseRange, Upstream};
+pub use review::{Branch, StageState};
 pub use worktree::{NumStat, WorktreeEntry};
 
 /// The UI translates `code()`, never the message.

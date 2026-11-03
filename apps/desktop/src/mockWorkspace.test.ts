@@ -237,3 +237,68 @@ describe("mock shipping", () => {
     expect(await api.worktreeCommit(FIRST, files, "x")).not.toBeNull();
   });
 });
+
+describe("mock review", () => {
+  const note = (id: string, body = "fix it") => ({
+    id,
+    file: "src/session.ts",
+    startLine: 1,
+    line: 2,
+    anchor: "a\nb",
+    body,
+    createdAt: 1,
+    sentAt: null,
+    outdated: false,
+  });
+
+  it("lists the files against the start with their stage state", async () => {
+    const api = createMockWorkspace();
+    const r = await api.worktreeReview(FIRST, null);
+    expect(r.base.kind).toBe("start");
+    expect(r.branch).toBe("oak");
+    expect(r.baseRef).toBe("main");
+    expect(r.files.map((f) => f.path)).toEqual(["docs/old-notes.md", "src/session.ts", "src/status.ts"]);
+    expect(r.files.every((f) => !f.staged && f.unstaged)).toBe(true);
+  });
+
+  it("stages and unstages a file", async () => {
+    const api = createMockWorkspace();
+    await api.worktreeStage(FIRST, ["src/session.ts"], true);
+    let f = (await api.worktreeReview(FIRST, null)).files.find((x) => x.path === "src/session.ts");
+    expect(f).toMatchObject({ staged: true, unstaged: false });
+    await api.worktreeStage(FIRST, ["src/session.ts"], false);
+    f = (await api.worktreeReview(FIRST, null)).files.find((x) => x.path === "src/session.ts");
+    expect(f).toMatchObject({ staged: false, unstaged: true });
+    await expect(api.worktreeStage(FIRST, ["nope.ts"], true)).rejects.toMatchObject({ code: "bad_arg" });
+  });
+
+  it("takes a branch or commit base and refuses an unknown one", async () => {
+    const api = createMockWorkspace();
+    const branches = await api.worktreeBranches(FIRST);
+    expect(branches.some((b) => b.name === "main" && !b.remote)).toBe(true);
+    expect((await api.worktreeReview(FIRST, "main")).base).toMatchObject({ kind: "ref", name: "main" });
+    expect((await api.worktreeReview(FIRST, "abc1234")).base.kind).toBe("ref");
+    await expect(api.worktreeReview(FIRST, "nope")).rejects.toMatchObject({ code: "bad_ref" });
+    await expect(api.worktreeReview(FIRST, "--x")).rejects.toMatchObject({ code: "bad_ref" });
+  });
+
+  it("reads one file's sides by base id", async () => {
+    const api = createMockWorkspace();
+    const r = await api.worktreeReview(FIRST, null);
+    expect(await api.worktreeReviewFile(FIRST, r.base.id, "src/status.ts")).toMatchObject({ old: null, skip: null });
+    await expect(api.worktreeReviewFile(FIRST, "main", "src/status.ts")).rejects.toMatchObject({ code: "bad_ref" });
+  });
+
+  it("keeps notes per worktree and checks them", async () => {
+    const api = createMockWorkspace();
+    expect(await api.reviewNotes(FIRST)).toEqual([]);
+    expect(await api.reviewNotesPut(FIRST, [note("a"), note("b")])).toHaveLength(2);
+    expect((await api.reviewNotes(FIRST)).map((n) => n.id)).toEqual(["a", "b"]);
+    await expect(api.reviewNotesPut(FIRST, [note("c", "  ")])).rejects.toMatchObject({ code: "bad_note" });
+    await expect(api.reviewNotesPut(FIRST, [note("d"), note("d")])).rejects.toMatchObject({ code: "bad_note" });
+    await expect(api.reviewNotesPut(FIRST, [{ ...note("e"), startLine: 5 }])).rejects.toMatchObject({ code: "bad_note" });
+    await expect(api.reviewNotesPut(FIRST, [{ ...note("f"), file: "../x" }])).rejects.toMatchObject({ code: "bad_note" });
+    expect(await api.reviewNotes(FIRST)).toHaveLength(2);
+    await expect(api.reviewNotes("/nowhere")).rejects.toMatchObject({ code: "worktree_unknown" });
+  });
+});
