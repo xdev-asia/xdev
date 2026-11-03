@@ -535,6 +535,8 @@
   "workspace.panel.empty": "Thay đổi của worktree đang chọn sẽ hiện ở đây.",
   "workspace.tabs.label": "Các tab đang mở",
   "workspace.tabs.new": "Tab mới",
+  "workspace.tabs.split.right": "Chia sang phải",
+  "workspace.tabs.split.down": "Chia xuống dưới",
   "workspace.tabs.close": "Đóng {name}",
   "workspace.tabs.empty": "Chưa có gì chạy trong worktree này. Mở một shell hoặc một agent tại đây.",
   "workspace.tabs.again": "Chạy lại",

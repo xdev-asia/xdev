@@ -232,4 +232,45 @@ describe("Sessions", () => {
     live.noteOutput(live.open(B, "claude").id, 0);
     expect(live.lastActivity(B)).toBeNull();
   });
+
+  it("split holds a pair of tabs and drops it when the second goes", async () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const one = live.open(A, "shell");
+    const two = live.open(A, "claude");
+    const three = live.open(A, "codex");
+    const heard = vi.fn();
+    live.subscribe(heard);
+    expect(live.split(A)).toBeNull();
+
+    live.setSplit(A, { dir: "right", second: two.id });
+    expect(live.split(A)).toEqual({ dir: "right", second: two.id });
+    expect(live.split(A)).toBe(live.split(A));
+    expect(heard).toHaveBeenCalledTimes(1);
+    // Another worktree has none.
+    expect(live.split(B)).toBeNull();
+    // A tab that is not there is no split.
+    live.setSplit(A, { dir: "down", second: "nope" });
+    expect(live.split(A)).toBeNull();
+    // Clearing a split that is not set tells no one.
+    heard.mockClear();
+    live.setSplit(A, null);
+    expect(heard).not.toHaveBeenCalled();
+
+    live.setSplit(A, { dir: "down", second: two.id });
+    // Closing a third tab keeps it.
+    await live.close(three.id);
+    expect(live.split(A)).toEqual({ dir: "down", second: two.id });
+    // Starting the second again keeps it on the new pty.
+    const again = live.restart(two.id)!;
+    expect(live.split(A)).toEqual({ dir: "down", second: again.id });
+    await live.close(again.id);
+    expect(live.split(A)).toBeNull();
+    expect(live.tabs(A).map((t) => t.id)).toEqual([one.id]);
+
+    // Fewer than two tabs left drops it too.
+    const four = live.open(A, "claude");
+    live.setSplit(A, { dir: "right", second: four.id });
+    await live.close(one.id);
+    expect(live.split(A)).toBeNull();
+  });
 });

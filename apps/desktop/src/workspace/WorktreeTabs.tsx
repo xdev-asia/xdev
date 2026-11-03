@@ -4,7 +4,8 @@ import { PTY_PROFILES, type Api, type ApiError, type PtyProfile } from "../api";
 import { useI18n } from "../i18n";
 import { Terminal } from "../terminal/Terminal";
 import { useApprovedStart } from "../terminal/useApprovedStart";
-import type { Sessions, Tab } from "./sessions";
+import { AgentIcon } from "./AgentIcon";
+import type { Sessions, Split, Tab } from "./sessions";
 import type { TabStatus } from "./status";
 import { WorktreeDiff } from "./WorktreeDiff";
 
@@ -15,6 +16,14 @@ const ended = (status: TabStatus) => status === "failed" || status === "exited";
 // A diff tab's id; terminal tabs use their pty id, which never has a colon.
 const fileTab = (file: string) => `file:${file}`;
 const base = (file: string) => file.slice(file.lastIndexOf("/") + 1);
+
+/** The terminal that shows beside the one at `at`: the split's second, or a neighbour when that one is in front. */
+function partnerOf(tabs: Tab[], at: number, split: NonNullable<Split>): string | null {
+  const second = tabs.find((tab) => tab.id === split.second);
+  if (!second) return null;
+  if (second.id !== tabs[at].id) return second.id;
+  return (tabs[at - 1] ?? tabs[at + 1])?.id ?? null;
+}
 
 /** A file to show as a diff tab; a new `seq` opens it again, read afresh. */
 export type Reveal = { file: string; seq: number };
@@ -61,7 +70,30 @@ export function WorktreeTabs(props: {
   const ids = [...tabs.map((tab) => tab.id), ...open.map((f) => fileTab(f.file))];
   const shown = pick && ids.includes(pick) ? pick : (tabs[tabs.length - 1]?.id ?? (open.length ? fileTab(open[open.length - 1].file) : null));
 
+  // The split pairs the shown terminal with one other; a diff tab in front shows alone.
+  const splitSnapshot = () => sessions.split(worktree);
+  const split = useSyncExternalStore(subscribe, splitSnapshot, splitSnapshot);
+  const at = tabs.findIndex((tab) => tab.id === shown);
+  const partner = split && at >= 0 ? partnerOf(tabs, at, split) : null;
+  // Both panes of a split are visible; every other pane stays mounted and hidden.
+  const visibleIds = partner ? [shown, partner] : [shown];
+  const canSplit = tabs.length >= 2 && at >= 0;
+
   const name = (tab: Tab) => t(`terminal.profile.${tab.profileId}`);
+
+  // Picking the second tab of a split keeps the pair: the tab that was in front takes its place.
+  function select(id: string): void {
+    if (split && id === split.second && shown && !shown.startsWith("file:")) sessions.setSplit(worktree, { ...split, second: shown });
+    setActive(id);
+  }
+
+  function toggleSplit(dir: "right" | "down"): void {
+    if (!canSplit) return;
+    if (split?.dir === dir) return sessions.setSplit(worktree, null);
+    // Keep the tab already beside this one when only the direction changes.
+    const second = partner ?? tabs[at + 1 < tabs.length ? at + 1 : at - 1].id;
+    sessions.setSplit(worktree, { dir, second });
+  }
 
   function launch(profile: PtyProfile): void {
     setMenu(false);
@@ -99,11 +131,9 @@ export function WorktreeTabs(props: {
                 className="ws-tab-main"
                 data-tab={tab.id}
                 aria-selected={tab.id === shown}
-                onClick={() => setActive(tab.id)}
+                onClick={() => select(tab.id)}
               >
-                <span className="ws-tab-icon ws-mono" aria-hidden="true">
-                  {">_"}
-                </span>
+                <AgentIcon profile={tab.profileId} size={16} />
                 <span>{name(tab)}</span>
                 <span
                   className={tab.status === "working" ? "ws-tab-glyph ws-pulse" : "ws-tab-glyph"}
@@ -154,6 +184,28 @@ export function WorktreeTabs(props: {
             </div>
           ))}
         </div>
+        <div className="ws-tab-tools">
+          {(["right", "down"] as const).map((dir) => {
+            const label = t(`workspace.tabs.split.${dir}`);
+            return (
+              <button
+                key={dir}
+                type="button"
+                className="ws-icon-btn"
+                aria-label={label}
+                title={label}
+                aria-disabled={!canSplit}
+                aria-pressed={split?.dir === dir}
+                onClick={() => toggleSplit(dir)}
+              >
+                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d={dir === "right" ? "M12 4v16" : "M3 12h18"} />
+                </svg>
+              </button>
+            );
+          })}
+        </div>
         <div className="ws-tab-add">
           <button
             type="button"
@@ -192,40 +244,42 @@ export function WorktreeTabs(props: {
         </div>
       )}
 
-      {tabs.map((tab) => (
-        <div key={tab.id} className="ws-tab-pane" role="tabpanel" data-tab={tab.id} hidden={tab.id !== shown}>
-          {ended(tab.status) && (
-            <div className="ws-tab-exit" role="status">
-              <span>
-                {tab.exitCode === null || tab.exitCode === undefined
-                  ? t("terminal.exitedUnknown")
-                  : t("terminal.exited", { code: tab.exitCode })}
-              </span>
-              <button type="button" className="ws-tab-again" onClick={() => again(tab)}>
-                {t("workspace.tabs.again")}
-              </button>
-            </div>
-          )}
-          <Terminal
-            key={`${tab.id}:${attempts[tab.id] ?? 0}`}
-            api={api}
-            client={tab.client}
-            id={tab.id}
-            cwd={worktree}
-            profile={tab.profileId}
-            onStarted={() => {}}
-            onError={(e) => failed(tab, e)}
-            onOutput={(bytes) => sessions.noteOutput(tab.id, bytes)}
-            onInput={() => sessions.noteInput(tab.id)}
-          />
-        </div>
-      ))}
+      <div className="ws-panes" data-split={partner ? split?.dir : undefined}>
+        {tabs.map((tab) => (
+          <div key={tab.id} className="ws-tab-pane" role="tabpanel" data-tab={tab.id} hidden={!visibleIds.includes(tab.id)}>
+            {ended(tab.status) && (
+              <div className="ws-tab-exit" role="status">
+                <span>
+                  {tab.exitCode === null || tab.exitCode === undefined
+                    ? t("terminal.exitedUnknown")
+                    : t("terminal.exited", { code: tab.exitCode })}
+                </span>
+                <button type="button" className="ws-tab-again" onClick={() => again(tab)}>
+                  {t("workspace.tabs.again")}
+                </button>
+              </div>
+            )}
+            <Terminal
+              key={`${tab.id}:${attempts[tab.id] ?? 0}`}
+              api={api}
+              client={tab.client}
+              id={tab.id}
+              cwd={worktree}
+              profile={tab.profileId}
+              onStarted={() => {}}
+              onError={(e) => failed(tab, e)}
+              onOutput={(bytes) => sessions.noteOutput(tab.id, bytes)}
+              onInput={() => sessions.noteInput(tab.id)}
+            />
+          </div>
+        ))}
 
-      {open.map((f) => (
-        <div key={fileTab(f.file)} className="ws-tab-pane" role="tabpanel" data-tab={fileTab(f.file)} hidden={fileTab(f.file) !== shown}>
-          <WorktreeDiff key={f.seq} api={api} worktree={worktree} file={f.file} />
-        </div>
-      ))}
+        {open.map((f) => (
+          <div key={fileTab(f.file)} className="ws-tab-pane" role="tabpanel" data-tab={fileTab(f.file)} hidden={fileTab(f.file) !== shown}>
+            <WorktreeDiff key={f.seq} api={api} worktree={worktree} file={f.file} />
+          </div>
+        ))}
+      </div>
 
       {tabs.length === 0 && open.length === 0 && (
         <div className="ws-center-empty">
