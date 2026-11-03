@@ -282,3 +282,31 @@ fn confirmation_does_not_lift_a_deny() {
         Verdict::Deny { .. }
     ));
 }
+
+#[test]
+fn discard_always_asks_until_confirmed() {
+    let action = Action::Discard {
+        worktree: PathBuf::from("wt"),
+        paths: vec!["a.txt".to_owned()],
+    };
+    let ask = Verdict::Ask {
+        reason: "discarding changes always asks".to_owned(),
+    };
+    for policy in [
+        Policy::default(),
+        Policy {
+            delete: Rule::Deny,
+            commands: vec!["git".to_owned()],
+            ..Policy::default()
+        },
+    ] {
+        assert_eq!(policy.check(&action), ask);
+    }
+    let dir = tempdir().unwrap();
+    let gate = Audited::new(Policy::default(), dir.path());
+    assert_eq!(gate.check_confirmed(&action, false), ask);
+    assert_eq!(gate.check_confirmed(&action, true), Verdict::Allow);
+    let log = read_audit(dir.path()).unwrap();
+    assert_eq!(log.len(), 2);
+    assert_eq!(log[1].action, action);
+}
