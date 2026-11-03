@@ -26,6 +26,10 @@ import type {
   StatusSettings,
   SettingsChanged,
   TerminalSettings,
+  KeySettings,
+  KeybindingsChanged,
+  KeybindingsText,
+  UiSettings,
   Quota,
   RouteRule,
   Routing,
@@ -156,6 +160,10 @@ export type {
   CursorStyle,
   SettingsSection,
   SettingsChanged,
+  KeySettings,
+  TerminalKeyPolicy,
+  UiSettings,
+  KeybindingsText,
 } from "@xdev/bindings";
 // The UI's names for generated types.
 export type { Event as SquadEvent, FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
@@ -330,6 +338,21 @@ export interface Api {
   terminalSettingsPut(s: TerminalSettings): Promise<TerminalSettings>;
   /** Calls `listener` after any settings write, from this window or another. Returns the unsubscribe. */
   onSettingsChanged(listener: (e: SettingsChanged) => void): () => void;
+  // Window view settings (zoom, 0.5..2); the put returns what was stored, clamped.
+  uiSettingsGet(): Promise<UiSettings>;
+  uiSettingsPut(s: UiSettings): Promise<UiSettings>;
+  // Keys. `keybindings.json` in the app config folder holds the shortcut overrides; Rust only moves
+  // the text, `keys/keybindingsFile.ts` parses it. `text` is null when there is no file.
+  keybindingsRead(): Promise<KeybindingsText>;
+  // Replaces the whole file; rejects with `bad_arg` past 1 MiB.
+  keybindingsWrite(text: string): Promise<void>;
+  // Opens the folder, writing an empty version-1 file first when there is none.
+  keybindingsReveal(): Promise<void>;
+  // After our own write and when the file changes on disk.
+  onKeybindingsChanged(fn: (text: string | null) => void): Promise<() => void>;
+  // The terminal policy and the hint toggle (settings.json `keys`); the put returns what was stored.
+  keySettingsGet(): Promise<KeySettings>;
+  keySettingsPut(s: KeySettings): Promise<KeySettings>;
   // The global git `user.name` the git-username prefix shows; `null` when none is set.
   gitUserName(): Promise<string | null>;
   // Writes `file` only into a new or empty folder; does not open it.
@@ -650,6 +673,14 @@ const tauriApi: Api = {
     const unlisten = listen<SettingsChanged>("settings://changed", (e) => listener(e.payload));
     return () => void unlisten.then((stop) => stop());
   },
+  uiSettingsGet: () => call("ui_settings_get"),
+  uiSettingsPut: (settings) => call("ui_settings_put", { settings }),
+  keybindingsRead: () => call("keybindings_read"),
+  keybindingsWrite: (text) => call("keybindings_write", { text }),
+  keybindingsReveal: () => call("keybindings_reveal"),
+  onKeybindingsChanged: (fn) => listen<KeybindingsChanged>("keybindings://changed", (e) => fn(e.payload.text)),
+  keySettingsGet: () => call("key_settings_get"),
+  keySettingsPut: (settings) => call("key_settings_put", { settings }),
   gitUserName: () => call("git_user_name"),
   createVault: (path, file, content) => call("create_vault", { path, file, content }),
   listDocs: () => call("list_docs"),

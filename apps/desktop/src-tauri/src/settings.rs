@@ -39,6 +39,59 @@ pub struct Settings {
     /// Settings → Terminal; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub terminal: TerminalSettings,
+    /// Settings → Shortcuts: how keys behave with a terminal focused. The
+    /// bindings themselves live in `keybindings.json`, not here.
+    #[serde(default, deserialize_with = "lenient")]
+    pub keys: KeySettings,
+    /// Window-wide view settings (zoom) until a General page exists.
+    #[serde(default, deserialize_with = "lenient")]
+    pub ui: UiSettings,
+}
+
+/// Who gets a key that both the app and a focused terminal want.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum TerminalKeyPolicy {
+    /// Every app shortcut wins, as in the reference app.
+    #[default]
+    AppFirst,
+    /// Shortcuts marked as yielding go to the program in the terminal.
+    TerminalFirst,
+}
+
+/// Settings → Shortcuts, the part that is a setting rather than a binding.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct KeySettings {
+    pub terminal_policy: TerminalKeyPolicy,
+    /// A toast says so when the app took a key from a focused terminal.
+    pub terminal_hints: bool,
+}
+
+impl Default for KeySettings {
+    fn default() -> Self {
+        KeySettings {
+            terminal_policy: TerminalKeyPolicy::AppFirst,
+            terminal_hints: true,
+        }
+    }
+}
+
+/// View settings of the whole window. Not `Eq`: `zoom` is an `f32`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct UiSettings {
+    /// The root font scale, 0.5..=2.0; 1.0 is 100 %.
+    pub zoom: f32,
+}
+
+impl Default for UiSettings {
+    fn default() -> Self {
+        UiSettings { zoom: 1.0 }
+    }
 }
 
 /// How every terminal pane looks and behaves. Values outside the ranges
@@ -133,6 +186,11 @@ pub enum SettingsSection {
     Git,
     Status,
     Terminal,
+    // Written once the key settings commands land.
+    #[allow(dead_code)]
+    Keys,
+    #[allow(dead_code)]
+    Ui,
 }
 
 /// What a `settings://changed` event carries.
@@ -392,6 +450,7 @@ mod tests {
                 cursor_style: CursorStyle::Bar,
                 ..TerminalSettings::default()
             },
+            ..Settings::default()
         };
         save(&path, &settings).unwrap();
         assert_eq!(load(&path), settings);

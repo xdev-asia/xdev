@@ -21,6 +21,7 @@ import { estimateTokens, type ExportDoc, planExport } from "./mockExport";
 import { createMockKit } from "./mockKit";
 import { createMockProfiles } from "./mockProfiles";
 import { createMockPty } from "./mockPty";
+import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
 import { createMockSettings, createSettingsHub } from "./mockSettings";
 import { createMockStatus, type MockStatus } from "./mockStatus";
 import { createMockSquads } from "./mockSquads";
@@ -346,7 +347,7 @@ function snippet(text: string, terms: string[]): string | null {
   return out.replace(/\s+/g, " ").trim();
 }
 
-export type MockApi = Api & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge"> & {
+export type MockApi = Api & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & {
   // Changes a file the way another program would (`null` deletes it); xDev did not write it.
   __editOutside(path: string, content: string | null): void;
   // Writes a file the way `propose_update` does over MCP; throws an ApiError like the real tool.
@@ -363,6 +364,8 @@ type MockOptions = {
   runDelayMs?: number;
   // Repos and pending changes for the workspace; the demo repo when left out.
   workspace?: MockWorkspaceSeed;
+  // The text of `keybindings.json`; no file when left out.
+  keybindings?: string | null;
 };
 
 export function createMockApi(seed: Record<string, string>, options: MockOptions = {}): MockApi {
@@ -550,6 +553,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockStatus(settingsHub.emit),
     ...createMockWorkspace(options.workspace, settingsHub.emit),
     ...createMockSettings(settingsHub),
+    ...createMockKeybindings(options.keybindings ?? null),
     ...createMockKit(),
     async accounts() { return structuredClone({ reservePercent: 30, accounts }); },
     async quota() { return structuredClone(quotas); },

@@ -22,7 +22,17 @@ export type ActionId =
   | "worktree.prev"
   | `worktree.select.${Digit}`
   | "agent.new"
-  | "palette.jump";
+  | "palette.jump"
+  | "search.open"
+  | "sidebar.left.toggle" | "sidebar.right.toggle"
+  | "panel.explorer" | "panel.search" | "panel.sourceControl"
+  | "terminal.clear" | "terminal.copy" | "terminal.paste" | "terminal.selectAll" | "terminal.find"
+  | "zoom.in" | "zoom.out" | "zoom.reset"
+  | "tab.reopenClosed"
+  | "settings.open" | "settings.shortcuts"
+  | "docs.search" | "docs.new" | "docs.save"
+  // Bound to nothing by default; the quick-commands plan registers the handler.
+  | "quickCommands.open";
 
 export interface Binding {
   action: ActionId;
@@ -50,6 +60,35 @@ export const DEFAULT_BINDINGS: Binding[] = [
   { action: "agent.new", chord: "Ctrl+Alt+T" },
   { action: "palette.jump", chord: "Mod+J" },
 ];
+
+/** One chord of one action as it applies now: a default, or from `keybindings.json`. */
+export interface EffectiveBinding {
+  action: ActionId;
+  chord: string;
+  source: "default" | "user";
+}
+
+/** Store snapshot: every chord that is bound now. */
+export function effectiveBindings(): EffectiveBinding[] {
+  return DEFAULT_BINDINGS.map((b) => ({ action: b.action, chord: b.chord, source: "default" }));
+}
+
+/** Called after the effective bindings change. Returns the unsubscribe. */
+export function subscribeBindings(fn: () => void): () => void {
+  void fn;
+  return () => {};
+}
+
+/** The action `e` runs when it should leave a focused terminal and go to the app; null otherwise. */
+export function appOwnsKey(e: KeyboardEvent): ActionId | null {
+  void e;
+  return null;
+}
+
+/** While on, every `useKeymap` handler does nothing (the shortcut recorder listens). */
+export function suspendKeymap(on: boolean): void {
+  void on;
+}
 
 const NAMED: Record<string, string> = {
   Tab: "Tab",
