@@ -796,6 +796,7 @@ pub fn list_dir(worktree: &str, rel: &str) -> Result<DirListing, WorkspaceError>
 
 #[cfg(test)]
 mod tests {
+    #[cfg(windows)]
     use std::process::Command;
 
     use tempfile::TempDir;
