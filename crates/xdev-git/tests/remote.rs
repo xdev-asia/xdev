@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Command;
 
 use tempfile::TempDir;
-use xdev_git::{GitError, Repo, Upstream};
+use xdev_git::{BaseRefresh, GitError, Repo, Upstream};
 
 /// Runs setup commands; never used for the code under test.
 fn git(dir: &Path, args: &[&str]) -> String {
@@ -357,4 +357,122 @@ fn detached_head_refuses_push() {
     assert_eq!(fx.repo.upstream().unwrap(), None);
     // A detached worktree can still fetch.
     fx.repo.fetch().unwrap();
+}
+
+/// The other clone pushes a commit to `main`; returns its id.
+fn move_remote_main(fx: &Fixture, name: &str) -> String {
+    let o = fx.other.path();
+    git(o, &["switch", "-q", "main"]);
+    let id = commit_file(o, name, "main\n");
+    git(o, &["push", "-q", "origin", "main"]);
+    id
+}
+
+#[test]
+fn refresh_fast_forwards_a_local_base_nobody_has_out() {
+    let fx = Fixture::new();
+    let tip = move_remote_main(&fx, "m.txt");
+    assert_eq!(
+        fx.repo.refresh_local_base("origin/main").unwrap(),
+        BaseRefresh::Updated
+    );
+    let w = fx.work.path();
+    assert_eq!(git(w, &["rev-parse", "refs/remotes/origin/main"]), tip);
+    assert_eq!(git(w, &["rev-parse", "refs/heads/main"]), tip);
+    // The checkout on `feat` is left alone.
+    assert_eq!(git(w, &["symbolic-ref", "--short", "HEAD"]), "feat");
+    assert_eq!(
+        fx.repo.refresh_local_base("origin/main").unwrap(),
+        BaseRefresh::UpToDate
+    );
+}
+
+#[test]
+fn refresh_moves_a_clean_checkout_of_the_base() {
+    let fx = Fixture::new();
+    let w = fx.work.path();
+    git(w, &["switch", "-q", "main"]);
+    let tip = move_remote_main(&fx, "m.txt");
+    assert_eq!(
+        fx.repo.refresh_local_base("origin/main").unwrap(),
+        BaseRefresh::Updated
+    );
+    assert_eq!(fx.head(), tip);
+    assert!(w.join("m.txt").exists());
+    assert!(fx.repo.is_clean().unwrap());
+}
+
+#[test]
+fn refresh_skips_a_dirty_checkout_but_still_fetches() {
+    let fx = Fixture::new();
+    let w = fx.work.path();
+    git(w, &["switch", "-q", "main"]);
+    let before = fx.head();
+    fs::write(w.join("a.txt"), "edited\n").unwrap();
+    let tip = move_remote_main(&fx, "m.txt");
+    assert_eq!(
+        fx.repo.refresh_local_base("origin/main").unwrap(),
+        BaseRefresh::Dirty
+    );
+    assert_eq!(fx.head(), before);
+    assert_eq!(git(w, &["rev-parse", "refs/remotes/origin/main"]), tip);
+    assert_eq!(fs::read_to_string(w.join("a.txt")).unwrap(), "edited\n");
+}
+
+#[test]
+fn refresh_skips_a_base_with_local_commits() {
+    let fx = Fixture::new();
+    let w = fx.work.path();
+    git(w, &["switch", "-q", "main"]);
+    let mine = commit_file(w, "mine.txt", "mine\n");
+    git(w, &["switch", "-q", "feat"]);
+    move_remote_main(&fx, "m.txt");
+    assert_eq!(
+        fx.repo.refresh_local_base("origin/main").unwrap(),
+        BaseRefresh::LocalCommits
+    );
+    assert_eq!(git(w, &["rev-parse", "refs/heads/main"]), mine);
+}
+
+#[test]
+fn refresh_follows_the_upstream_of_a_local_base() {
+    let fx = Fixture::new();
+    let w = fx.work.path();
+    git(w, &["config", "branch.main.remote", "origin"]);
+    git(w, &["config", "branch.main.merge", "refs/heads/main"]);
+    let tip = move_remote_main(&fx, "m.txt");
+    assert_eq!(
+        fx.repo.refresh_local_base("main").unwrap(),
+        BaseRefresh::Updated
+    );
+    assert_eq!(git(w, &["rev-parse", "refs/heads/main"]), tip);
+}
+
+#[test]
+fn refresh_without_a_remote_or_a_local_branch_does_nothing() {
+    let fx = Fixture::new();
+    let w = fx.work.path();
+    // `feat` has no upstream, and a commit id names no branch.
+    assert_eq!(
+        fx.repo.refresh_local_base("feat").unwrap(),
+        BaseRefresh::NoRemote
+    );
+    let id = fx.head();
+    assert_eq!(
+        fx.repo.refresh_local_base(&id).unwrap(),
+        BaseRefresh::NoRemote
+    );
+    // No local `main` to move; the remote ref still moves.
+    git(w, &["branch", "-D", "main"]);
+    let tip = move_remote_main(&fx, "m.txt");
+    assert_eq!(
+        fx.repo.refresh_local_base("origin/main").unwrap(),
+        BaseRefresh::NoLocal
+    );
+    assert_eq!(git(w, &["rev-parse", "refs/remotes/origin/main"]), tip);
+    // Never handed to git as an option.
+    assert!(matches!(
+        fx.repo.refresh_local_base("origin/--upload-pack=x"),
+        Ok(BaseRefresh::NoRemote) | Err(GitError::BadId(_))
+    ));
 }

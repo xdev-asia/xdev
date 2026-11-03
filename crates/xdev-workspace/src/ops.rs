@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
-use xdev_git::{GitError, Repo, WorktreeEntry};
+use xdev_git::{BaseRefresh, GitError, Repo, WorktreeEntry};
 
 use crate::registry::normalize;
 use crate::{Registry, RepoEntry, WorkspaceError, WorktreeMeta, names, repo_id};
@@ -504,6 +504,24 @@ pub enum BranchPrefix {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CreateOptions {
     pub prefix: BranchPrefix,
+}
+
+/// Fetches the base a new worktree of `repo_id` would start from (`from`,
+/// else the repo's base ref) and fast-forwards its local branch; see
+/// `Repo::refresh_local_base`. It talks to the remote, so callers run it
+/// before `create_worktree_with` and outside any registry lock.
+pub fn refresh_base(
+    reg: &Registry,
+    repo_id: &str,
+    from: Option<&str>,
+) -> Result<BaseRefresh, WorkspaceError> {
+    let entry = find_repo(reg, repo_id)?;
+    let repo = Repo::discover(&entry.path)?;
+    let base = from
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&entry.base_ref);
+    Ok(repo.refresh_local_base(base)?)
 }
 
 /// The prefix to put in front of new branch names, normalized; `None` for
