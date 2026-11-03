@@ -38,6 +38,7 @@ vi.mock("react", async (original) => {
     useContext: (ctx: { _currentValue: unknown }) => ctx._currentValue,
     useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
     useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
+    useRef: (initial: any) => (hooks.active ? (state({ current: initial }) as [{ current: unknown }])[0] : react.useRef(initial)),
     useCallback: (fn: any, deps: any) => (hooks.active ? fn : react.useCallback(fn, deps)),
     useSyncExternalStore: (subscribe: any, get: any, server?: any) => (hooks.active ? get() : react.useSyncExternalStore(subscribe, get, server)),
   };
@@ -47,6 +48,12 @@ const sound = vi.hoisted(() => ({ play: vi.fn(async () => true) }));
 vi.mock("@/status/sound", async (original) => ({ ...await original<typeof import("@/status/sound")>(), playStatusSound: sound.play }));
 const jump = vi.hoisted(() => ({ toggle: null as null | (() => void) }));
 vi.mock("@/palette/useJumpKey", () => ({ useJumpKey: (fn: () => void) => { jump.toggle = fn; } }));
+// The worktree keys: the shell's handlers are called straight, the keymap itself is tested on its own.
+const keymap = vi.hoisted(() => ({ handlers: {} as Record<string, () => boolean | void>, when: (() => true) as () => boolean }));
+vi.mock("@/keys/keymap", async (original) => ({
+  ...await original<typeof import("@/keys/keymap")>(),
+  useKeymap: (handlers: Record<string, () => boolean | void>, opts?: { when?: () => boolean }) => { keymap.handlers = handlers; keymap.when = opts?.when ?? (() => true); },
+}));
 // xterm needs a real canvas; the terminals are tested on their own.
 vi.mock("@/terminal/Terminal", () => ({ Terminal: () => null }));
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
@@ -698,4 +705,50 @@ it("ctrl+j does not open the palette over a worktree dialog", async () => {
   view.draw();
   jump.toggle!();
   expect(view.of(PaletteHost)[0].props.open).toBe(false);
+});
+
+// ---- Worktree keys ----
+
+it("ctrl+shift+down walks the worktrees in sidebar order and wraps", async () => {
+  vi.stubGlobal("localStorage", storage());
+  const view = await harness();
+  const order = view.list().props.repos.flatMap((r: { worktrees: WorktreeView[] }) => r.worktrees.map((w) => w.path)) as string[];
+  expect(order.length).toBeGreaterThan(1);
+  view.list().props.onOrder(order);
+  view.draw();
+  view.list().props.onSelect(view.worktree(order[order.length - 1].split("/").pop()!.replace("xdev-", "")));
+  view.draw();
+  expect(view.list().props.selected).toBe(order[order.length - 1]);
+  expect(keymap.handlers["worktree.next"]()).toBe(true);
+  view.draw();
+  expect(view.list().props.selected).toBe(order[0]);
+  expect(keymap.handlers["worktree.prev"]()).toBe(true);
+  view.draw();
+  expect(view.list().props.selected).toBe(order[order.length - 1]);
+});
+
+it("ctrl+3 picks the third worktree the sidebar shows, and a missing one lets the key on", async () => {
+  vi.stubGlobal("localStorage", storage());
+  const view = await harness();
+  const all = view.list().props.repos.flatMap((r: { worktrees: WorktreeView[] }) => r.worktrees.map((w) => w.path)) as string[];
+  // A collapsed group is not in the order the list reports.
+  const shown = [all[0], all[2], all[1]];
+  view.list().props.onOrder(shown);
+  view.draw();
+  expect(keymap.handlers["worktree.select.3"]()).toBe(true);
+  view.draw();
+  expect(view.list().props.selected).toBe(all[1]);
+  expect(keymap.handlers["worktree.select.4"]()).toBe(false);
+});
+
+it("worktree keys do nothing with no worktrees, and only while the workspace view shows", async () => {
+  vi.stubGlobal("localStorage", storage());
+  const view = await harness();
+  view.draw();
+  expect(keymap.handlers["worktree.next"]()).toBe(false);
+  expect(keymap.handlers["worktree.select.1"]()).toBe(false);
+  expect(keymap.when()).toBe(true);
+  view.nav(en("workspace.nav.docs")).props.onClick();
+  view.draw();
+  expect(keymap.when()).toBe(false);
 });

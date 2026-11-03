@@ -1,3 +1,4 @@
+import { chordLabel } from "@/keys/keymap";
 import type { RepoView, WorktreeView } from "@/api";
 import { SECTIONS } from "@/settings/sections";
 import type { Tab } from "@/workspace/sessions";
@@ -103,11 +104,18 @@ export type ActionName =
   | "openSettings"
   | "searchDocs"
   | "toggleSidebar"
-  | "showDocs";
+  | "showDocs"
+  | "stageAll"
+  | "discardAll";
 
-const ORDER: ActionName[] = ["newWorktree", "newAgentTab", "newShellTab", "addRepo", "openSettings", "searchDocs", "toggleSidebar", "showDocs"];
+const ORDER: ActionName[] = ["newWorktree", "newAgentTab", "newShellTab", "addRepo", "openSettings", "searchDocs", "toggleSidebar", "showDocs", "stageAll", "discardAll"];
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
-const HINTS: Partial<Record<ActionName, string>> = { searchDocs: MAC ? "⌘ K" : "Ctrl K" };
+const HINTS: Partial<Record<ActionName, string>> = {
+  searchDocs: MAC ? "⌘ K" : "Ctrl K",
+  // The same chords the keymap binds.
+  newAgentTab: chordLabel("agent.new") ?? undefined,
+  newShellTab: chordLabel("tab.new") ?? undefined,
+};
 
 /** The app actions that have a handler; an action that cannot run now is not listed. */
 export function actionItems(t: T, acts: Partial<Record<ActionName, () => void>>): PaletteItem[] {
