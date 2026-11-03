@@ -172,3 +172,13 @@ it("a new tab that never gets ready marks nothing and says so", async () => {
   expect(m.markSent).not.toHaveBeenCalled();
   expect(m.html()).toContain(en("review.send.failed"));
 });
+
+it("running tabs of one agent are told apart by number", () => {
+  const f = fake([tab("a"), tab("b"), tab("c", { profileId: "codex" })]);
+  const m = menu(f.sessions);
+  m.openMenu();
+  const text = (n: { props: Record<string, any> }) => String(n.props.children);
+  const labels = m.items().filter((n) => n.props["data-tab"]).map(text);
+  expect(labels.slice(0, 2)).toEqual(["Claude Code 1", "Claude Code 2"]);
+  expect(labels[2]).not.toMatch(/\d/);
+});
