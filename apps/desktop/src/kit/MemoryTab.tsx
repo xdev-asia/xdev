@@ -339,7 +339,7 @@ export function MemoryTab(props: {
                 <h3 className="kit-h">{t("kit.memory.copyHeading")}</h3>
                 {plan.map((row) => (
                   <div key={row.target} className="kit-plan" data-target={row.target}>
-                    <p className="kit-cut" title={row.target}>{`${row.label} — ${row.target}`}</p>
+                    <p className="kit-cut" title={displayPath(row.target)}>{`${row.label} — ${displayPath(row.target)}`}</p>
                     {row.same ? (
                       <p className="kit-empty">{t("kit.memory.copySame")}</p>
                     ) : (
