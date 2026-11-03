@@ -33,11 +33,23 @@ pub struct WorktreeMeta {
     pub made_here: bool,
 }
 
+/// A docs folder shared across repos. Only these are stored; a repo's own
+/// vault is derived from its checkout.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VaultEntry {
+    /// The 12-hex path hash `repo_id` makes.
+    pub id: String,
+    pub path: PathBuf,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Registry {
     pub version: u32,
     pub repos: Vec<RepoEntry>,
     pub worktrees: Vec<WorktreeMeta>,
+    /// Absent in files written before vaults existed.
+    #[serde(default)]
+    pub vaults: Vec<VaultEntry>,
 }
 
 impl Registry {
@@ -141,6 +153,30 @@ mod tests {
             .map(|e| e.unwrap().file_name())
             .collect();
         assert_eq!(left, ["workspace.json"]); // no temp file left behind
+    }
+
+    #[test]
+    fn loads_file_without_vaults() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("workspace.json"),
+            r#"{"version":1,"repos":[],"worktrees":[]}"#,
+        )
+        .unwrap();
+        let r = Registry::load(dir.path()).unwrap();
+        assert!(r.vaults.is_empty());
+    }
+
+    #[test]
+    fn vaults_survive_a_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut r = Registry::load(dir.path()).unwrap();
+        r.vaults.push(VaultEntry {
+            id: "0123456789ab".into(),
+            path: "/v".into(),
+        });
+        r.save(dir.path()).unwrap();
+        assert_eq!(Registry::load(dir.path()).unwrap().vaults, r.vaults);
     }
 
     #[test]

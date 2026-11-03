@@ -17,6 +17,8 @@ pub struct RepoView {
     pub short_name: String,
     pub path: String,
     pub base_ref: String,
+    /// The folder new worktrees of this repo go under.
+    pub worktree_root: String,
     /// The folder is gone or no longer a repo; the entry stays so a
     /// reconnected drive finds it again.
     pub missing: bool,
@@ -119,6 +121,85 @@ pub fn add_repo(reg: &mut Registry, dir: &Path, now_ms: i64) -> Result<RepoView,
     view
 }
 
+/// Edits to a repo's settings; a `None` field is left as it is.
+#[derive(Debug, Default, Clone)]
+pub struct RepoPatch {
+    pub short_name: Option<String>,
+    pub base_ref: Option<String>,
+    pub worktree_root: Option<PathBuf>,
+}
+
+/// 1 to 40 characters: `[a-z0-9]` first, then `[a-z0-9._-]`. No `:` or `/`,
+/// so a `<short_name>:` prefix is never ambiguous.
+pub fn valid_short_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && name.len() <= 40
+        && chars.all(|c| matches!(c, 'a'..='z' | '0'..='9' | '.' | '_' | '-'))
+}
+
+/// Changes a repo's short name, base ref or worktree folder. Every field is
+/// checked before any is written, so a refusal leaves the repo as it was.
+/// Existing worktrees are neither moved nor renamed.
+pub fn update_repo(
+    reg: &mut Registry,
+    id: &str,
+    patch: RepoPatch,
+) -> Result<RepoView, WorkspaceError> {
+    let idx = reg
+        .repos
+        .iter()
+        .position(|r| r.id == id)
+        .ok_or_else(|| WorkspaceError::RepoUnknown(id.to_owned()))?;
+    let old = reg.repos[idx].clone();
+    if let Some(name) = &patch.short_name {
+        if !valid_short_name(name) {
+            return Err(WorkspaceError::BadName(name.clone()));
+        }
+        if reg
+            .repos
+            .iter()
+            .any(|r| r.id != id && &r.short_name == name)
+        {
+            return Err(WorkspaceError::ShortNameTaken(name.clone()));
+        }
+    }
+    if let Some(base) = &patch.base_ref {
+        let repo = Repo::discover(&old.path)?;
+        match repo.resolve_ref(base) {
+            Ok(Some(_)) => {}
+            Ok(None) | Err(GitError::BadId(_)) => return Err(WorkspaceError::BadRef(base.clone())),
+            Err(e) => return Err(e.into()),
+        }
+    }
+    if let Some(root) = &patch.worktree_root {
+        let key = path_key(root);
+        let primary = path_key(&old.path);
+        if !root.is_absolute() || key == primary || key.starts_with(&format!("{primary}/")) {
+            return Err(WorkspaceError::BadPath(lossy(root)));
+        }
+    }
+    let entry = &mut reg.repos[idx];
+    if let Some(name) = patch.short_name {
+        entry.short_name = name;
+    }
+    if let Some(base) = patch.base_ref {
+        entry.base_ref = base;
+    }
+    if let Some(root) = patch.worktree_root {
+        entry.worktree_root = root;
+    }
+    let worktrees = reg.worktrees.clone();
+    let view = sync_repo(reg, idx, 0);
+    if view.is_err() {
+        reg.repos[idx] = old;
+        reg.worktrees = worktrees;
+    }
+    view
+}
+
 /// Drops the repo and what the registry knows about its worktrees. Nothing
 /// on disk is touched.
 pub fn forget_repo(reg: &mut Registry, id: &str) -> Result<(), WorkspaceError> {
@@ -159,6 +240,7 @@ fn missing_view(entry: &RepoEntry) -> RepoView {
         short_name: entry.short_name.clone(),
         path: lossy(&entry.path),
         base_ref: entry.base_ref.clone(),
+        worktree_root: lossy(&entry.worktree_root),
         missing: true,
         worktrees: Vec::new(),
     }
