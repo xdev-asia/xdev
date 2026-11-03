@@ -297,7 +297,8 @@ pub fn copy_skill_dir(
 }
 
 /// Moves a skill folder to `<data dir>/kit/removed/<unix-ms>/<name>/` and
-/// returns that folder. Nothing is deleted.
+/// returns that folder. Nothing is deleted. A file the move could not take
+/// off another drive stays behind; the returned folder is still whole.
 pub fn remove_skill(roots: &Roots, dir: &Path) -> Result<PathBuf, KitError> {
     let dir = roots.resolve(dir)?;
     require_skill_dir(&dir)?;
@@ -316,7 +317,8 @@ pub fn remove_skill(roots: &Roots, dir: &Path) -> Result<PathBuf, KitError> {
     Ok(target)
 }
 
-/// Moves a folder that `remove_skill` made back to `to`. An existing target is `Changed`.
+/// Moves a folder that `remove_skill` made back to `to`. An existing target
+/// is `Changed`, unless it is what that remove left behind.
 pub fn restore_skill(roots: &Roots, removed: &Path, to: &Path) -> Result<(), KitError> {
     if is_link(removed) {
         return Err(KitError::Outside(removed.to_path_buf()));
@@ -333,7 +335,15 @@ pub fn restore_skill(roots: &Roots, removed: &Path, to: &Path) -> Result<(), Kit
     require_skill_dir(&removed_canon)?;
     let to = roots.resolve(to)?;
     if to.symlink_metadata().is_ok() {
-        return Err(KitError::Changed);
+        // A remove that could not clear the skill folder left part of it
+        // here; that part is filled back in. Anything else is `Changed`.
+        if !is_leftover_of(&to, &removed_canon)? {
+            return Err(KitError::Changed);
+        }
+        fill_missing(&removed_canon, &to)?;
+        // The skill is back; a copy that will not go is only clutter.
+        let _ = fs::remove_dir_all(&removed_canon);
+        return Ok(());
     }
     move_dir(&removed_canon, &to)
 }
@@ -373,19 +383,32 @@ fn require_skill_dir(dir: &Path) -> Result<(), KitError> {
 /// A rename, or a copy and removal of the original when the two places are
 /// on different drives. The copy is whole before anything is removed.
 fn move_dir(from: &Path, to: &Path) -> Result<(), KitError> {
-    move_dir_with(from, to, &|a, b| fs::rename(a, b))
+    move_dir_with(from, to, &|a, b| fs::rename(a, b), &|dir| {
+        fs::remove_dir_all(dir)
+    })
 }
 
 fn move_dir_with(
     from: &Path,
     to: &Path,
     rename: &dyn Fn(&Path, &Path) -> io::Result<()>,
+    remove_all: &dyn Fn(&Path) -> io::Result<()>,
 ) -> Result<(), KitError> {
+    let made = to.parent().filter(|dir| !dir.exists());
     if let Some(dir) = to.parent() {
         fs::create_dir_all(dir)?;
     }
-    if rename(from, to).is_ok() {
-        return Ok(());
+    let error = match rename(from, to) {
+        Ok(()) => return Ok(()),
+        Err(e) => e,
+    };
+    // Only a move to another drive is copied. Any other failure (a file in
+    // use, no access) is reported with nothing moved.
+    if !is_cross_device(&error) {
+        if let Some(dir) = made {
+            let _ = fs::remove_dir(dir);
+        }
+        return Err(error.into());
     }
     // Never copy into, or clear, a folder this call did not make.
     if to.symlink_metadata().is_ok() {
@@ -395,7 +418,65 @@ fn move_dir_with(
         let _ = fs::remove_dir_all(to);
         return Err(e);
     }
-    fs::remove_dir_all(from)?;
+    // The copy is whole, so the move is done even when part of the original
+    // cannot be removed (a file open elsewhere). That leftover stays where it
+    // is, and the caller still gets the new place, so Undo is offered;
+    // `restore_skill` fills such a leftover back in from the copy.
+    let _ = remove_all(from);
+    Ok(())
+}
+
+fn is_cross_device(error: &io::Error) -> bool {
+    // 17 is `ERROR_NOT_SAME_DEVICE`.
+    error.kind() == io::ErrorKind::CrossesDevices
+        || (cfg!(windows) && error.raw_os_error() == Some(17))
+}
+
+/// `true` when every file under `part` is in `whole` with the same bytes:
+/// what a move that could not finish removing left behind.
+fn is_leftover_of(part: &Path, whole: &Path) -> io::Result<bool> {
+    if !part.symlink_metadata()?.is_dir() {
+        return Ok(false);
+    }
+    for entry in fs::read_dir(part)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        let twin = whole.join(entry.file_name());
+        let Ok(twin_meta) = twin.symlink_metadata() else {
+            return Ok(false);
+        };
+        let same = if kind.is_dir() {
+            twin_meta.is_dir() && is_leftover_of(&entry.path(), &twin)?
+        } else {
+            kind.is_file() && twin_meta.is_file() && fs::read(entry.path())? == fs::read(&twin)?
+        };
+        if !same {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Copies into `to` each file of `from` that `to` does not have. A link is
+/// an error.
+fn fill_missing(from: &Path, to: &Path) -> Result<(), KitError> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        let target = to.join(entry.file_name());
+        if kind.is_symlink() {
+            return Err(KitError::Io(format!(
+                "{} is a link",
+                entry.path().display()
+            )));
+        }
+        if kind.is_dir() {
+            fill_missing(&entry.path(), &target)?;
+        } else if target.symlink_metadata().is_err() {
+            fs::copy(entry.path(), &target)?;
+        }
+    }
     Ok(())
 }
 
@@ -650,6 +731,14 @@ mod tests {
         assert_no_tmp_left(&fx.home, "a.md");
     }
 
+    fn cross_device(_: &Path, _: &Path) -> io::Result<()> {
+        Err(io::Error::from(io::ErrorKind::CrossesDevices))
+    }
+
+    fn remove_all(dir: &Path) -> io::Result<()> {
+        fs::remove_dir_all(dir)
+    }
+
     #[test]
     fn move_dir_fallback_never_removes_existing_target() {
         let fx = fixture();
@@ -659,18 +748,113 @@ mod tests {
         fs::write(from.join("SKILL.md"), "from").unwrap();
         fs::create_dir_all(&to).unwrap();
         fs::write(to.join("keep.txt"), "keep").unwrap();
-        let fail = |_: &Path, _: &Path| -> io::Result<()> { Err(io::Error::other("other drive")) };
 
-        assert_eq!(move_dir_with(&from, &to, &fail), Err(KitError::Changed));
+        assert_eq!(
+            move_dir_with(&from, &to, &cross_device, &remove_all),
+            Err(KitError::Changed)
+        );
         assert_eq!(fs::read_to_string(to.join("keep.txt")).unwrap(), "keep");
         assert!(!to.join("SKILL.md").exists());
         assert_eq!(fs::read_to_string(from.join("SKILL.md")).unwrap(), "from");
 
         // With no target the copy fallback works and the original goes.
         let fresh = fx.home.join("fresh");
-        move_dir_with(&from, &fresh, &fail).unwrap();
+        move_dir_with(&from, &fresh, &cross_device, &remove_all).unwrap();
         assert_eq!(fs::read_to_string(fresh.join("SKILL.md")).unwrap(), "from");
         assert!(!from.exists());
+    }
+
+    #[test]
+    fn move_dir_copies_only_across_drives() {
+        let fx = fixture();
+        let from = fx.home.join("from");
+        let to = fx.home.join("removed").join("1").join("from");
+        fs::create_dir_all(&from).unwrap();
+        fs::write(from.join("SKILL.md"), "from").unwrap();
+        let busy = |_: &Path, _: &Path| -> io::Result<()> {
+            Err(io::Error::from(io::ErrorKind::PermissionDenied))
+        };
+
+        // A file in use, or no access: reported, and nothing moves.
+        let err = move_dir_with(&from, &to, &busy, &remove_all).unwrap_err();
+        assert!(matches!(err, KitError::Io(_)), "{err:?}");
+        assert_eq!(fs::read_to_string(from.join("SKILL.md")).unwrap(), "from");
+        assert!(!to.exists());
+        assert!(!to.parent().unwrap().exists());
+
+        // The error a rename gives across drives on Windows.
+        let not_same_device =
+            |_: &Path, _: &Path| -> io::Result<()> { Err(io::Error::from_raw_os_error(17)) };
+        let result = move_dir_with(&from, &to, &not_same_device, &remove_all);
+        if cfg!(windows) {
+            result.unwrap();
+            assert_eq!(fs::read_to_string(to.join("SKILL.md")).unwrap(), "from");
+            assert!(!from.exists());
+        } else {
+            assert!(result.is_err());
+            assert!(from.join("SKILL.md").is_file());
+        }
+    }
+
+    #[test]
+    fn partly_removed_skill_still_moves_and_restores() {
+        let fx = fixture();
+        let skill = fx.home.join("skills").join("demo");
+        fs::create_dir_all(skill.join("scripts")).unwrap();
+        fs::write(skill.join("SKILL.md"), "skill").unwrap();
+        fs::write(skill.join("scripts").join("run.sh"), "run").unwrap();
+        let target = fx.roots.removed_dir().join("1").join("demo");
+        // The removal stops part way: `SKILL.md` is gone, `scripts/` is in use.
+        let partial = |dir: &Path| -> io::Result<()> {
+            fs::remove_file(dir.join("SKILL.md"))?;
+            Err(io::Error::from(io::ErrorKind::PermissionDenied))
+        };
+
+        // The copy is whole, so the move is done and the target is known.
+        move_dir_with(&skill, &target, &cross_device, &partial).unwrap();
+        assert_eq!(
+            fs::read_to_string(target.join("SKILL.md")).unwrap(),
+            "skill"
+        );
+        assert!(target.join("scripts").join("run.sh").is_file());
+        assert!(!skill.join("SKILL.md").exists());
+
+        // Undo fills the leftover back in from the copy.
+        restore_skill(&fx.roots, &target, &skill).unwrap();
+        assert_eq!(fs::read_to_string(skill.join("SKILL.md")).unwrap(), "skill");
+        assert_eq!(
+            fs::read_to_string(skill.join("scripts").join("run.sh")).unwrap(),
+            "run"
+        );
+        assert!(!target.exists());
+    }
+
+    #[test]
+    fn restore_refuses_leftover_that_was_edited() {
+        let fx = fixture();
+        let skill = fx.home.join("skills").join("demo");
+        fs::create_dir_all(skill.join("scripts")).unwrap();
+        fs::write(skill.join("SKILL.md"), "skill").unwrap();
+        fs::write(skill.join("scripts").join("run.sh"), "run").unwrap();
+        let target = fx.roots.removed_dir().join("1").join("demo");
+        let partial = |dir: &Path| -> io::Result<()> {
+            fs::remove_file(dir.join("SKILL.md"))?;
+            Err(io::Error::from(io::ErrorKind::PermissionDenied))
+        };
+        move_dir_with(&skill, &target, &cross_device, &partial).unwrap();
+
+        // The leftover changed since: it is not ours to fill.
+        fs::write(skill.join("scripts").join("run.sh"), "edited").unwrap();
+        assert_eq!(
+            restore_skill(&fx.roots, &target, &skill),
+            Err(KitError::Changed)
+        );
+        assert_eq!(
+            fs::read_to_string(skill.join("scripts").join("run.sh")).unwrap(),
+            "edited"
+        );
+        assert!(!skill.join("SKILL.md").exists());
+        assert!(target.join("SKILL.md").is_file());
     }
 
     #[test]
