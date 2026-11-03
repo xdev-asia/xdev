@@ -3,6 +3,7 @@
 mod names;
 mod ops;
 mod registry;
+mod vaults;
 
 use std::io;
 use std::path::PathBuf;
@@ -15,6 +16,7 @@ pub use ops::{
     set_pinned, stat, update_repo, valid_short_name,
 };
 pub use registry::{Registry, RepoEntry, VaultEntry, WorktreeMeta, repo_id};
+pub use vaults::{VaultKind, VaultView, add_vault, forget_vault, list_vaults, repo_docs_dir};
 
 /// The UI translates `code()`, never the message.
 #[derive(Debug, thiserror::Error)]
@@ -41,6 +43,10 @@ pub enum WorkspaceError {
     BadName(String),
     #[error("short name already used by another repo: {0}")]
     ShortNameTaken(String),
+    #[error("vault already added: {0}")]
+    VaultExists(String),
+    #[error("unknown vault: {0}")]
+    VaultUnknown(String),
     #[error("worktree has uncommitted changes: {0}")]
     Dirty(PathBuf),
     #[error("the primary checkout cannot be removed: {0}")]
@@ -63,6 +69,8 @@ impl WorkspaceError {
             WorkspaceError::BadRef(_) => "bad_ref",
             WorkspaceError::BadName(_) => "bad_name",
             WorkspaceError::ShortNameTaken(_) => "short_name_taken",
+            WorkspaceError::VaultExists(_) => "vault_exists",
+            WorkspaceError::VaultUnknown(_) => "vault_unknown",
             WorkspaceError::Dirty(_) => "worktree_dirty",
             WorkspaceError::Primary(_) => "primary_worktree",
             WorkspaceError::BadPath(_) => "bad_path",
