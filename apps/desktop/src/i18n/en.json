@@ -1361,6 +1361,7 @@
   "keys.action.worktree.select.9": "Go to worktree 9",
   "termMenu.label": "Terminal menu",
   "termMenu.copy": "Copy",
+  "termMenu.quickCommands": "Quick Commands",
   "termMenu.paste": "Paste",
   "termMenu.selectAll": "Select All",
   "termMenu.quickCommands": "Quick Commands",
