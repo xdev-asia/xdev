@@ -89,26 +89,8 @@ fn spawn(
         )));
     }
 
-    let mut cmd = Command::new("git");
-    cmd.current_dir(workdir)
-        .args(args)
-        // Never wait for a password; a status must not rewrite `.git/index`
-        // behind the user's back.
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        // Paths are file names, not patterns: `[a].md` must not also match
-        // `a.md`, and a leading `:` must not be read as pathspec magic.
-        .env("GIT_LITERAL_PATHSPECS", if literal { "1" } else { "0" })
-        // Pathspec meaning is chosen by the caller alone; these would turn
-        // globs off, on or case-blind behind its back.
-        .env_remove("GIT_ICASE_PATHSPECS")
-        .env_remove("GIT_NOGLOB_PATHSPECS")
-        .env_remove("GIT_GLOB_PATHSPECS")
-        // Set when xDev itself is started from a git hook; they would point
-        // every call at another repo or index.
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
+    let mut cmd = git_command(workdir, literal);
+    cmd.args(args)
         .stdin(if stdin.is_some() {
             Stdio::piped()
         } else {
@@ -116,12 +98,6 @@ fn spawn(
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
 
     let mut child = cmd.spawn().map_err(|e| match e.kind() {
         io::ErrorKind::NotFound => GitError::NoGit,
@@ -162,6 +138,37 @@ fn spawn(
         stdout,
         stderr,
     })
+}
+
+/// `git` in `workdir` with the environment every xDev call runs with and
+/// no console window; the caller adds the arguments and the pipes.
+pub(crate) fn git_command(workdir: &Path, literal: bool) -> Command {
+    let mut cmd = Command::new("git");
+    cmd.current_dir(workdir)
+        // Never wait for a password; a status must not rewrite `.git/index`
+        // behind the user's back.
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        // Paths are file names, not patterns: `[a].md` must not also match
+        // `a.md`, and a leading `:` must not be read as pathspec magic.
+        .env("GIT_LITERAL_PATHSPECS", if literal { "1" } else { "0" })
+        // Pathspec meaning is chosen by the caller alone; these would turn
+        // globs off, on or case-blind behind its back.
+        .env_remove("GIT_ICASE_PATHSPECS")
+        .env_remove("GIT_NOGLOB_PATHSPECS")
+        .env_remove("GIT_GLOB_PATHSPECS")
+        // Set when xDev itself is started from a git hook; they would point
+        // every call at another repo or index.
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
 }
 
 fn read_on_thread(pipe: Option<impl Read + Send + 'static>) -> Receiver<Vec<u8>> {

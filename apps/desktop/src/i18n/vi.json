@@ -517,6 +517,7 @@
   "error.hook_untrusted": "Script trong xdev.toml chưa được tin cậy, hoặc đã đổi từ lúc bạn tin cậy.",
   "error.hook_none": "Repo này không có script cho việc đó.",
   "error.setup_skipped": "Setup đang tắt cho repo này trong Cài đặt → Repos.",
+  "error.cancelled": "Đã huỷ clone.",
   "apps.terminal": "Terminal",
   "terminal.folder": "Thư mục",
   "terminal.pickFolder": "Chọn thư mục…",

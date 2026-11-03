@@ -59,6 +59,9 @@ tempfile = "3.27.0"
 thiserror = "2.0.21"
 # Merging the codex config.toml into a private CODEX_HOME.
 toml = "1.1.8"
+# A failed clone (and later an editor delete) goes to the OS trash, never a
+# hard delete.
+trash = "5.2.9"
 # TypeScript for the types that cross the desktop IPC boundary; behind each
 # crate's `ts` feature so the CLI never builds it.
 ts-rs = "12.0.1"

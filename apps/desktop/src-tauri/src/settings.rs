@@ -59,6 +59,106 @@ pub struct Settings {
         deserialize_with = "lenient_items"
     )]
     pub quick_commands_recent: Vec<String>,
+    /// Settings → Open In Apps: the programs a worktree can be opened in.
+    #[serde(default, deserialize_with = "lenient")]
+    pub open_in: OpenInSettings,
+}
+
+/// The apps the Open in menu lists, in order.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct OpenInSettings {
+    /// At most `MAX_APPS`.
+    pub apps: Vec<OpenInApp>,
+}
+
+impl Default for OpenInSettings {
+    /// VS Code alone, as in the reference app.
+    fn default() -> Self {
+        OpenInSettings {
+            apps: vec![OpenInApp {
+                id: "vscode".into(),
+                label: "VS Code".into(),
+                command: "code".into(),
+                args: Vec::new(),
+            }],
+        }
+    }
+}
+
+/// One program the Open in menu can start with a folder. xDev never builds a
+/// shell line from it: the program gets `args` and then the folder, each as
+/// its own argument.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct OpenInApp {
+    /// `vscode` for the default, `app-<uuid>` for the person's own.
+    pub id: String,
+    /// 1..=40 characters.
+    pub label: String,
+    /// A program name or an absolute path, 1..=260 characters, no arguments.
+    pub command: String,
+    /// Arguments before the folder: at most 8, each at most 200 characters.
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
+impl OpenInSettings {
+    pub const MAX_APPS: usize = 8;
+    pub const MAX_LABEL: usize = 40;
+    pub const MAX_COMMAND: usize = 260;
+    pub const MAX_ARGS: usize = 8;
+    pub const MAX_ARG: usize = 200;
+
+    /// `Err` names the first rule the list breaks: `apps`, `id`, `label`,
+    /// `command` or `args`.
+    pub fn check(&self) -> Result<(), &'static str> {
+        if self.apps.len() > Self::MAX_APPS {
+            return Err("apps");
+        }
+        let mut ids = std::collections::HashSet::new();
+        for app in &self.apps {
+            if app.id.trim().is_empty() || !ids.insert(app.id.as_str()) {
+                return Err("id");
+            }
+            app.check()?;
+        }
+        Ok(())
+    }
+}
+
+impl OpenInApp {
+    fn check(&self) -> Result<(), &'static str> {
+        let len = |s: &str| s.chars().count();
+        if self.label.trim().is_empty() || len(&self.label) > OpenInSettings::MAX_LABEL {
+            return Err("label");
+        }
+        let command = &self.command;
+        if command.trim().is_empty()
+            || len(command) > OpenInSettings::MAX_COMMAND
+            || command.contains('\0')
+        {
+            return Err("command");
+        }
+        // `code --new` would be a shell line; a real path may hold spaces.
+        if command.chars().any(char::is_whitespace) {
+            let path = std::path::Path::new(command);
+            if !path.is_absolute() || !path.exists() {
+                return Err("command");
+            }
+        }
+        if self.args.len() > OpenInSettings::MAX_ARGS
+            || self
+                .args
+                .iter()
+                .any(|a| len(a) > OpenInSettings::MAX_ARG || a.contains('\0'))
+        {
+            return Err("args");
+        }
+        Ok(())
+    }
 }
 
 /// Who gets a key that both the app and a focused terminal want.
@@ -229,6 +329,7 @@ pub enum SettingsSection {
     Ui,
     /// `quickCommands` and their recently used order.
     QuickCommands,
+    OpenIn,
 }
 
 /// What a `settings://changed` event carries.
