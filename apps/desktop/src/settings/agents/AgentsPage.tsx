@@ -10,6 +10,7 @@ import {
   type StatusSettings,
 } from "@/api";
 import { useProfiles } from "@/agents/profileStore";
+import { patchStatusSettings, setStatusSettings } from "@/status/statusSettings";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
 import type { SettingsSectionProps } from "@/settings/sections";
@@ -39,15 +40,16 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
     api.statusSettings().then(setStatus, (e) => setError(toApiError(e).code));
   }, [api]);
 
-  // Status hooks apply to agent tabs started after the change; open tabs keep their flags.
+  // Off, the `.off` marker drops hook events at once and open tabs go back to timing. On, tabs started
+  // with hook flags use them again; a tab started while off has none until it restarts.
   async function toggleHooks(): Promise<void> {
     if (statusBusy || !status) return;
     setStatusBusy(true);
     setError(undefined);
     try {
-      const stored = await api.statusSettingsPut({ ...status, hooks: !status.hooks });
+      const stored = await patchStatusSettings(api, { hooks: !status.hooks });
       setStatus(stored);
-      props.onStatusSaved?.(stored);
+      (props.onStatusSaved ?? setStatusSettings)(stored);
     } catch (e) {
       setError(toApiError(e).code);
     } finally {

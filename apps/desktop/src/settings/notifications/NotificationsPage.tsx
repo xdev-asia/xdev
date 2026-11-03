@@ -4,7 +4,7 @@ import { toApiError, type ApiError, type StatusSettings } from "@/api";
 import { useI18n } from "@/i18n";
 import type { SettingsSectionProps } from "@/settings/sections";
 import { playStatusSound } from "@/status/sound";
-import { setStatusSettings } from "@/status/statusSettings";
+import { patchStatusSettings, setStatusSettings } from "@/status/statusSettings";
 
 // The channel switches, in the order the page lists them.
 export const CHANNELS = ["os", "sound", "bell", "badge"] as const;
@@ -79,11 +79,12 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
     }
   }
 
-  const put = (next: StatusSettings) => save(() => api.statusSettingsPut(next), setError);
+  // Only the changed field goes over what is stored now (see `patchStatusSettings`).
+  const put = (patch: Partial<StatusSettings>) => save(() => patchStatusSettings(api, patch), setError);
 
   function commitVolume(): void {
     if (volume === null || volume === current.volume) return;
-    void put({ ...current, volume: clampVolume(volume) });
+    void put({ volume: clampVolume(volume) });
   }
 
   // A real OS notification and the sound, whatever the switches say: it shows what the rest will do.
@@ -127,7 +128,7 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
             aria-checked={current.enabled}
             aria-label={t("settings.notifications.enabled")}
             disabled={busy}
-            onClick={() => void put({ ...current, enabled: !current.enabled })}
+            onClick={() => void put({ enabled: !current.enabled })}
           />
         </li>
         {EVENTS.map((e) => (
@@ -143,7 +144,7 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
               aria-checked={current[e]}
               aria-label={t(`settings.notifications.${e}`)}
               disabled={busy || !current.enabled}
-              onClick={() => void put({ ...current, [e]: !current[e] })}
+              onClick={() => void put({ [e]: !current[e] })}
             />
           </li>
         ))}
@@ -159,7 +160,7 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
             aria-checked={current.suppressWhenFocused}
             aria-label={t("settings.notifications.suppressWhenFocused")}
             disabled={busy || !current.enabled}
-            onClick={() => void put({ ...current, suppressWhenFocused: !current.suppressWhenFocused })}
+            onClick={() => void put({ suppressWhenFocused: !current.suppressWhenFocused })}
           />
         </li>
       </ul>
@@ -180,7 +181,7 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
               aria-checked={current[c]}
               aria-label={t(`settings.notifications.${c}`)}
               disabled={busy}
-              onClick={() => void put({ ...current, [c]: !current[c] })}
+              onClick={() => void put({ [c]: !current[c] })}
             />
           </li>
         ))}

@@ -90,6 +90,18 @@ it("without onSaved a save updates the shared status settings", async () => {
   resetStatusSettings();
 });
 
+it("a switch saves only its own field over what is stored now", async () => {
+  const p = await page();
+  // The CLI turned hooks off after the page loaded; toggling sound must not turn them back on.
+  const stored = await p.api.statusSettings();
+  await p.api.statusSettingsPut({ ...stored, hooks: false });
+  const put = vi.spyOn(p.api, "statusSettingsPut");
+  p.sw("sound").props.onClick();
+  await tick();
+  expect(put).toHaveBeenCalledWith(expect.objectContaining({ sound: false, hooks: false }));
+  expect((await p.api.statusSettings()).hooks).toBe(false);
+});
+
 it("volume is saved clamped when the slider is let go", async () => {
   const p = await page();
   const put = vi.spyOn(p.api, "statusSettingsPut");
