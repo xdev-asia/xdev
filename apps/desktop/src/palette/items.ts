@@ -106,9 +106,15 @@ export type ActionName =
   | "toggleSidebar"
   | "showDocs"
   | "stageAll"
-  | "discardAll";
+  | "discardAll"
+  | "pinTab"
+  | "unpinTab"
+  | "moveTabRight"
+  | "clearTerminal"
+  | "resetTerminal"
+  | "copyTerminalContext";
 
-const ORDER: ActionName[] = ["newWorktree", "newAgentTab", "newShellTab", "addRepo", "openSettings", "searchDocs", "toggleSidebar", "showDocs", "stageAll", "discardAll"];
+const ORDER: ActionName[] = ["newWorktree", "newAgentTab", "newShellTab", "addRepo", "openSettings", "searchDocs", "toggleSidebar", "showDocs", "stageAll", "discardAll", "pinTab", "unpinTab", "moveTabRight", "clearTerminal", "resetTerminal", "copyTerminalContext"];
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
 const HINTS: Partial<Record<ActionName, string>> = {
   searchDocs: MAC ? "⌘ K" : "Ctrl K",

@@ -4,6 +4,8 @@ import type { RepoView, WorktreeView } from "@/api";
 import { translate } from "@/i18n";
 import type { Sessions, Tab } from "@/workspace/sessions";
 import { JumpPalette } from "./JumpPalette";
+import { registerTerminal } from "@/terminal/terminalRegistry";
+import type { TerminalHandle } from "@/terminal/Terminal";
 import { PaletteHost, type PaletteActions, type PaletteHostProps } from "./PaletteHost";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
@@ -40,7 +42,7 @@ function host(over: Partial<PaletteHostProps> = {}) {
   const actions: PaletteActions = { selectWorktree: vi.fn(), frontTab: vi.fn(), showWorkspace: vi.fn(), openSettings: vi.fn(), newWorktree: vi.fn(), addRepo: vi.fn(), searchDocs: vi.fn(), toggleSidebar: vi.fn(), showDocs: vi.fn() };
   const open = vi.fn((worktree: string, profile: string) => tabOf("new1", worktree, profile, true));
   const tabs: Record<string, Tab[]> = { "/wt/oak": [tabOf("p1", "/wt/oak", "claude", true)], "/wt/elm": [tabOf("p2", "/wt/elm", "shell", false)] };
-  const sessions = { tabs: (p: string) => tabs[p] ?? [], dot: () => null, lastActivity: () => null, open } as unknown as Sessions;
+  const sessions = { tabs: (p: string) => tabs[p] ?? [], dot: () => null, lastActivity: () => null, open, setPinned: vi.fn(), moveToSplit: vi.fn(), canMoveToSplit: () => true } as unknown as Sessions;
   const props: PaletteHostProps = { open: true, onClose: vi.fn(), repos, sessions, current: oak, shownTab: "p1", actions, ...over };
   const draw = () => {
     hooks.cursor = 0;
@@ -49,7 +51,7 @@ function host(over: Partial<PaletteHostProps> = {}) {
   };
   const palette = () => draw().props as { items: { id: string; title: string; status?: string; run(): void }[] };
   const item = (id: string) => palette().items.find((i) => i.id === id)!;
-  return { actions, open, props, draw, palette, item };
+  return { actions, open, props, draw, palette, item, sessions: sessions as unknown as Record<string, ReturnType<typeof vi.fn>> };
 }
 
 it("lists Stage all and Discard all for the selected worktree and runs them", () => {
@@ -139,4 +141,40 @@ it("opens settings on the section and builds nothing while closed", () => {
   h.item("set:repos").run();
   expect(h.actions.openSettings).toHaveBeenCalledWith("repos");
   expect(host({ open: false }).palette().items).toEqual([]);
+});
+
+it("lists the focused tab's actions and runs them through Sessions and the terminal handle", async () => {
+  const calls: string[] = [];
+  const handle = {
+    clear: () => calls.push("clear"),
+    reset: () => calls.push("reset"),
+    lines: () => ["$ ls"],
+  } as unknown as TerminalHandle;
+  registerTerminal("p1", handle);
+  const writeText = vi.fn(async (_text: string) => {});
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  try {
+    const h = host();
+    const ids = h.palette().items.map((i) => i.id);
+    expect(ids).toEqual(expect.arrayContaining(["act:pinTab", "act:moveTabRight", "act:clearTerminal", "act:resetTerminal", "act:copyTerminalContext"]));
+    expect(ids).not.toContain("act:unpinTab");
+    h.item("act:pinTab").run();
+    h.item("act:moveTabRight").run();
+    h.item("act:clearTerminal").run();
+    h.item("act:resetTerminal").run();
+    h.item("act:copyTerminalContext").run();
+    await Promise.resolve();
+    expect(h.sessions.setPinned).toHaveBeenCalledWith("p1", true);
+    expect(h.sessions.moveToSplit).toHaveBeenCalledWith("p1", "right");
+    expect(calls).toEqual(["clear", "reset"]);
+    expect(writeText.mock.calls[0][0]).toContain("$ ls");
+    // No terminal registered for the tab in front: the terminal actions are not listed.
+    registerTerminal("p1", null);
+    expect(h.palette().items.some((i) => i.id === "act:clearTerminal")).toBe(false);
+    // Nothing in front (a file tab): no tab actions at all.
+    expect(host({ shownTab: "file:a.md" }).palette().items.some((i) => i.id === "act:pinTab")).toBe(false);
+  } finally {
+    registerTerminal("p1", null);
+    vi.unstubAllGlobals();
+  }
 });
