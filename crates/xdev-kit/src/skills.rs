@@ -70,7 +70,11 @@ pub fn scan_skills(homes: &[Home], worktree: Option<&Path>) -> Vec<Skill> {
 
 /// Folders holding a `SKILL.md`, at most `MAX_DEPTH` levels below `skills`.
 fn collect_skill_dirs(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+    // Dot folders hold trash, version control or tool state, not skills.
     for sub in sorted_subdirs(dir) {
+        if file_name(&sub).starts_with('.') {
+            continue;
+        }
         if sub.join(SKILL_FILE).is_file() {
             out.push(sub.clone());
         }
@@ -356,5 +360,32 @@ mod tests {
         for s in &skills {
             assert_eq!(s.duplicate, s.name == "x", "{}", s.name);
         }
+    }
+
+    #[test]
+    fn dot_folders_are_not_walked() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join("skills/live/SKILL.md"),
+            "---
+name: live
+---
+new
+",
+        );
+        write(
+            &dir.path().join("skills/.trash/live/SKILL.md"),
+            "---
+name: live
+---
+old
+",
+        );
+        write(&dir.path().join("skills/.hidden/SKILL.md"), "x");
+        write(&dir.path().join("skills/a/.git/x/SKILL.md"), "x");
+        let skills = scan_skills(&[home("h", Agent::Claude, dir.path())], None);
+        let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["live"]);
+        assert!(!skills[0].duplicate);
     }
 }
