@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMockApi } from "./api";
-import { createMockWorkspace } from "./mockWorkspace";
+import { createMockWorkspace, DEMO_WORKSPACE } from "./mockWorkspace";
 
 const FIRST = "/demo/wt/xdev-oak";
 
@@ -123,5 +123,65 @@ describe("mock workspace", () => {
     }
     await expect(api.worktreeListDir(FIRST, "nope")).rejects.toMatchObject({ code: "not_found" });
     await expect(api.worktreeListDir(FIRST, "README.md")).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("repoUpdate refuses a taken short name with short_name_taken", async () => {
+    const api = createMockWorkspace();
+    const other = await api.repoAdd("/home/me/web");
+    await expect(api.repoUpdate(other.id, { shortName: "xdev" })).rejects.toMatchObject({ code: "short_name_taken" });
+    for (const bad of ["", "Web", "a b", "x:y", "a/b", "-x", "x".repeat(41)]) {
+      await expect(api.repoUpdate(other.id, { shortName: bad })).rejects.toMatchObject({ code: "bad_name" });
+    }
+    await expect(api.repoUpdate(other.id, { baseRef: "-x" })).rejects.toMatchObject({ code: "bad_ref" });
+    await expect(api.repoUpdate(other.id, { worktreeRoot: "rel/wt" })).rejects.toMatchObject({ code: "bad_path" });
+    await expect(api.repoUpdate(other.id, { worktreeRoot: "/home/me/web/wt" })).rejects.toMatchObject({ code: "bad_path" });
+    await expect(api.repoUpdate("nope", { shortName: "x" })).rejects.toMatchObject({ code: "repo_unknown" });
+    // A refused patch changes nothing, even its valid fields.
+    await expect(api.repoUpdate(other.id, { shortName: "front", baseRef: "-x" })).rejects.toMatchObject({ code: "bad_ref" });
+    expect((await api.workspaceList())[1].shortName).toBe("web");
+
+    const saved = await api.repoUpdate(other.id, { shortName: "front", baseRef: "origin/main", worktreeRoot: "/home/me/trees" });
+    expect(saved).toMatchObject({ shortName: "front", baseRef: "origin/main", worktreeRoot: "/home/me/trees" });
+    // Its own name again is not taken.
+    await api.repoUpdate(other.id, { shortName: "front" });
+  });
+
+  it("adopt moves a found worktree into worktrees", async () => {
+    const outside = { path: "/demo/wt/hand-made", name: "hand-made", branch: "hand", head: "5".repeat(40), start: null, primary: false, pinned: false, detached: false };
+    const api = createMockWorkspace({ ...DEMO_WORKSPACE, found: { "demo-xdev": [outside] } });
+    expect((await api.workspaceList())[0].found.map((w) => w.path)).toEqual([outside.path]);
+    const adopted = await api.worktreeAdopt(outside.path);
+    expect(adopted.path).toBe(outside.path);
+    const [repo] = await api.workspaceList();
+    expect(repo.found).toEqual([]);
+    expect(repo.worktrees.map((w) => w.path)).toContain(outside.path);
+    await expect(api.worktreeAdopt(outside.path)).rejects.toMatchObject({ code: "worktree_exists" });
+    await expect(api.worktreeAdopt("/nowhere")).rejects.toMatchObject({ code: "worktree_unknown" });
+  });
+
+  it("vaultAdd refuses the same path twice", async () => {
+    const api = createMockWorkspace({ ...DEMO_WORKSPACE, docs: ["demo-xdev"] });
+    const before = await api.vaultList();
+    expect(before).toEqual([
+      { id: "repo:demo-xdev", kind: "repo", path: "/demo/xdev/docs", name: "xdev", repoId: "demo-xdev", exists: true },
+    ]);
+    const shared = await api.vaultAdd("/demo/xdev-internal");
+    expect(shared).toMatchObject({ kind: "shared", name: "xdev-internal", repoId: null, exists: true });
+    await expect(api.vaultAdd("/demo/xdev-internal/")).rejects.toMatchObject({ code: "vault_exists" });
+    await expect(api.vaultAdd("/demo/xdev/docs")).rejects.toMatchObject({ code: "vault_exists" });
+    await expect(api.vaultAdd("relative")).rejects.toMatchObject({ code: "bad_path" });
+    expect(await api.vaultList()).toHaveLength(2);
+    await api.vaultForget(shared.id);
+    await expect(api.vaultForget(shared.id)).rejects.toMatchObject({ code: "vault_unknown" });
+    await expect(api.vaultForget("repo:demo-xdev")).rejects.toMatchObject({ code: "vault_unknown" });
+  });
+
+  it("creates docs for a repo without a vault", async () => {
+    const api = createMockWorkspace();
+    expect((await api.vaultList())[0]).toMatchObject({ id: "repo:demo-xdev", exists: false });
+    const made = await api.vaultCreateDocs("demo-xdev", "Start.md", "# Hi");
+    expect(made).toMatchObject({ id: "repo:demo-xdev", exists: true });
+    await expect(api.vaultCreateDocs("nope", "Start.md", "x")).rejects.toMatchObject({ code: "repo_unknown" });
+    await expect(api.vaultCreateDocs("demo-xdev", "../x.md", "x")).rejects.toMatchObject({ code: "bad_path" });
   });
 });
