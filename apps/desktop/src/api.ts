@@ -56,12 +56,15 @@ import type {
   ShipView,
 } from "@xdev/bindings";
 import type {
+  AgentSession,
   DirEntry,
   DirListing,
   Home,
   KitText,
   MemorySet,
   PromptEntry,
+  SessionQuery,
+  SessionRow,
   Skill,
   UsageSummary,
 } from "@xdev/bindings";
@@ -72,6 +75,8 @@ import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT
 export { createMockApi };
 export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
+export type { AgentSession, SessionQuery, SessionRow };
+export type { SessionScope, SessionSort } from "@xdev/bindings";
 
 // The IPC types come from Rust; see packages/bindings/README.md.
 export type {
@@ -337,8 +342,10 @@ export interface Api {
   staleDocs(): Promise<StaleDoc[]>;
   // A terminal per tab. Output arrives on `onData` until the tab calls `ptyKill`; an agent profile
   // rejects with `needs_approval` / `denied` until `ptyApprove` records it in the policy.
-  ptySpawn(id: string, cwd: string, profileId: PtyProfile, account: string | null, cols: number, rows: number, onData: (bytes: Uint8Array) => void): Promise<PtyInfo>;
-  ptyApprove(profileId: PtyProfile, account: string | null): Promise<void>;
+  // `resume` is an agent session id (A-Z, a-z, 0-9, `_`, `-`): the CLI continues that session.
+  ptySpawn(id: string, cwd: string, profileId: PtyProfile, account: string | null, cols: number, rows: number, onData: (bytes: Uint8Array) => void, resume?: string): Promise<PtyInfo>;
+  // Approves the launch `ptySpawn` was refused for; pass the same `resume`, as it is part of the launch line.
+  ptyApprove(profileId: PtyProfile, account: string | null, resume?: string): Promise<void>;
   // Agent profiles and the shells of the `+` menu; each write returns the whole view.
   profiles(): Promise<ProfilesView>;
   profilePut(p: Profile): Promise<ProfilesView>;
@@ -466,6 +473,11 @@ export interface Api {
   kitPathsExist(root: string, paths: string[]): Promise<boolean[]>;
   // Newest first, at most `limit` (and 1000).
   kitPromptHistory(limit: number): Promise<PromptEntry[]>;
+
+  // Agent sessions
+  // The agent sessions of every home, matched to the workspace; `refresh` reads the new log
+  // bytes first. Rejects with `bad_arg` when `query.limit` is over 500.
+  agentSessions(query: SessionQuery, refresh: boolean): Promise<SessionRow[]>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -636,13 +648,13 @@ const tauriApi: Api = {
   exportWrite: (expected) => call("export_write", { expected }),
   docFreshness: (path) => call("doc_freshness", { path }),
   staleDocs: () => call("stale_docs"),
-  ptySpawn(id, cwd, profileId, account, cols, rows, onData) {
+  ptySpawn(id, cwd, profileId, account, cols, rows, onData, resume) {
     // Rust sends raw bytes, which arrive as an ArrayBuffer.
     const out = new Channel<ArrayBuffer | number[]>();
     out.onmessage = (msg) => onData(toBytes(msg));
-    return call("pty_spawn", { id, cwd, profileId, account, cols, rows, out });
+    return call("pty_spawn", { id, cwd, profileId, account, cols, rows, out, resume: resume ?? null });
   },
-  ptyApprove: (profileId, account) => call("pty_approve", { profileId, account }),
+  ptyApprove: (profileId, account, resume) => call("pty_approve", { profileId, account, resume: resume ?? null }),
   profiles: () => call("profiles_list"),
   profilePut: (profile) => call("profile_put", { profile }),
   profileRemove: (id) => call("profile_remove", { id }),
@@ -721,6 +733,7 @@ const tauriApi: Api = {
     call("kit_usage", { sinceDay, untilDay, refresh, utcOffsetMinutes: -new Date().getTimezoneOffset() }),
   kitPathsExist: (root, paths) => call("kit_paths_exist", { root, paths }),
   kitPromptHistory: (limit) => call("kit_prompt_history", { limit }),
+  agentSessions: (query, refresh) => call("agent_sessions", { query, refresh }),
 };
 
 function browserApi(): Api {

@@ -1,4 +1,5 @@
 mod accounts;
+mod agent_sessions;
 #[cfg(test)]
 mod bindings;
 mod commands;
@@ -200,6 +201,7 @@ pub fn run() {
             kit::kit_usage,
             kit::kit_paths_exist,
             kit::kit_prompt_history,
+            agent_sessions::agent_sessions,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
