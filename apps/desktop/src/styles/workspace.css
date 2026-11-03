@@ -770,29 +770,32 @@
 .ws-panel-tabs {
   display: flex;
   flex-shrink: 0;
-  align-items: center;
-  gap: 2px;
+  align-items: stretch;
   height: 34px;
-  padding: 0 6px;
+  padding: 0 4px;
   border-bottom: 1px solid var(--line);
 }
 
+/* An icon button; the selected one carries an accent bar along its bottom edge. */
 .ws-panel-tab {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 3px;
-  height: 26px;
-  padding: 0 7px;
+  justify-content: center;
+  width: 40px;
+  padding: 0;
   border: 0;
-  border-radius: var(--radius-m);
   background: transparent;
   color: var(--text-2);
 }
 
-.ws-panel-tab:hover,
-.ws-panel-tab[aria-selected="true"] {
-  background: var(--bg-3);
+.ws-panel-tab:hover {
   color: var(--text-1);
+}
+
+.ws-panel-tab[aria-selected="true"] {
+  color: var(--text-1);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .ws-panel-body {
@@ -802,16 +805,107 @@
   padding: 6px 4px;
 }
 
+.ws-panel-body[hidden] {
+  display: none;
+}
+
 .ws-panel-badge {
-  min-width: 16px;
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 15px;
   padding: 0 4px;
   border-radius: var(--radius-l);
-  background: var(--bg-2);
-  color: var(--text-1);
-  font-size: 10px;
+  background: var(--accent);
+  color: var(--bg-0);
+  font-size: 9px;
   font-weight: 700;
-  line-height: 16px;
+  line-height: 15px;
   text-align: center;
+}
+
+/* Files panel: one worktree as a lazy tree, 24px rows, indent 8px plus 14px a level. */
+
+.ws-tree {
+  --tree-pad: 8px;
+  --tree-indent: 14px;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+}
+
+.ws-tree-row,
+.ws-tree-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 24px;
+  padding-right: 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+}
+
+button.ws-tree-row {
+  cursor: pointer;
+}
+
+button.ws-tree-row:hover {
+  background: var(--bg-3);
+}
+
+button.ws-tree-row:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.ws-tree-icon {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+
+.ws-tree-icon[data-open] {
+  color: var(--signal);
+  opacity: 0.6;
+}
+
+.ws-tree-icon[data-open="true"] {
+  opacity: 1;
+}
+
+.ws-tree-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-tree-mark {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--warn);
+}
+
+.ws-tree-mark[data-kind="added"] {
+  color: var(--ok);
+}
+
+.ws-tree-dot {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.ws-tree-note {
+  color: var(--text-3);
 }
 
 /* Changes panel: the worktree's uncommitted files and a commit of the checked ones. */

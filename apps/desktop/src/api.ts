@@ -40,12 +40,14 @@ import type {
   WorktreeFileDiff,
   WorktreeView,
 } from "@xdev/bindings";
+import type { DirEntry, DirListing } from "@xdev/bindings";
 import type { Target } from "./doc/frontmatter";
 import { toBytes } from "./terminal/ptyClient";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 
 export { createMockApi };
 export type { Target };
+export type { DirEntry, DirListing };
 
 // The IPC types come from Rust; see packages/bindings/README.md.
 export type {
@@ -287,6 +289,10 @@ export interface Api {
   worktreeFileDiff(path: string, file: string): Promise<WorktreeFileDiff>;
   // The new commit's id, or null when none of `files` had a change. Rejects with `empty_message`.
   worktreeCommit(path: string, files: string[], message: string): Promise<string | null>;
+  // One folder level of a worktree (`dir` is relative; "" is the top): folders first, then files,
+  // A to Z, `.git` left out, links listed as files and never followed, at most 2000 names with
+  // `truncated` set past that. Rejects with `bad_path` for `..`, an absolute path or a link.
+  worktreeListDir(path: string, dir: string): Promise<DirListing>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -451,6 +457,7 @@ const tauriApi: Api = {
   worktreeChanges: (path) => call("worktree_changes", { path }),
   worktreeFileDiff: (path, file) => call("worktree_file_diff", { path, file }),
   worktreeCommit: (path, files, message) => call("worktree_commit", { path, files, message }),
+  worktreeListDir: (path, dir) => call("worktree_list_dir", { path, dir }),
 };
 
 function browserApi(): Api {
