@@ -6,6 +6,7 @@ mod flow;
 mod id;
 mod launch;
 mod process;
+pub mod profiles;
 mod prompts;
 mod route;
 mod runner;
@@ -21,6 +22,10 @@ use xdev_policy::Verdict;
 
 pub use flow::RunOptions;
 pub use launch::{Launch, LaunchError, launch, launch_with};
+pub use profiles::{
+    Approvals, Cli, CustomShell, EnvVar, Permissions, Profile, ProfileError, Profiles, builtin,
+    valid_id,
+};
 pub use route::{RouteRule, Routing};
 pub use runner::{
     Cancel, ClaudeRunner, CodexRunner, ContextUse, RunOutcome, RunRequest, Runner,
