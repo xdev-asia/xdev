@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { createMockApi, type DocEntry, type StaleDoc } from "../api";
-import { I18nProvider } from "../i18n";
-import { DEMO_COMMITS, DEMO_SEED } from "../mockApi";
+import { createMockApi, type DocEntry, type StaleDoc } from "@/api";
+import { I18nProvider } from "@/i18n";
+import { DEMO_COMMITS, DEMO_SEED } from "@/mockApi";
 import { Sidebar } from "./Sidebar";
 
 function render(docs: DocEntry[], stale?: StaleDoc[]): string {

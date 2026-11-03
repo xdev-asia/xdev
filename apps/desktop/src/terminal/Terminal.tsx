@@ -5,8 +5,8 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type PtyInfo, type PtyProfile } from "../api";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type ApiError, type PtyInfo, type PtyProfile } from "@/api";
+import { useI18n } from "@/i18n";
 import { PtyClient } from "./ptyClient";
 
 /**

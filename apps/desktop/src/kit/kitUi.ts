@@ -1,4 +1,4 @@
-import type { Home, Skill, UsageSummary } from "../api";
+import type { Home, Skill, UsageSummary } from "@/api";
 
 export type Tokens = UsageSummary["days"][number][1];
 

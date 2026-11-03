@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi } from "../api";
-import { translate } from "../i18n";
-import en from "../i18n/en.json";
-import viDict from "../i18n/vi.json";
+import { createMockApi } from "@/api";
+import { translate } from "@/i18n";
+import en from "@/i18n/en.json";
+import viDict from "@/i18n/vi.json";
 import { AccountsView } from "./AccountsView";
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[], deps: [] as unknown[][] }));
@@ -17,7 +17,7 @@ vi.mock("react", async (original) => ({
   },
   useEffect: (effect: () => void, deps: unknown[]) => { hooks.effects.push(effect); hooks.deps.push(deps); },
 }));
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {

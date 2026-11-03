@@ -1,8 +1,8 @@
 import type { JSX } from "react";
-import type { Api, Quota } from "../api";
-import { useI18n } from "../i18n";
-import { useQuota } from "../shell/useQuota";
-import { useUpdate, type Update } from "../shell/useUpdate";
+import type { Api, Quota } from "@/api";
+import { useI18n } from "@/i18n";
+import { useQuota } from "@/shell/useQuota";
+import { useUpdate, type Update } from "@/shell/useUpdate";
 
 /** A meter above this share of its window shows in the warn colour. */
 export const WARN_PERCENT = 80;

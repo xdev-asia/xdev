@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { createMockApi } from "../api";
+import { createMockApi } from "@/api";
 import { useQuota } from "./useQuota";
 
 const hooks = vi.hoisted(() => ({ value: undefined as unknown, effects: [] as (() => void | (() => void))[] }));

@@ -1,8 +1,8 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
-import type { Api, PromptEntry } from "../api";
-import { useI18n } from "../i18n";
+import type { Api, PromptEntry } from "@/api";
+import { useI18n } from "@/i18n";
 import { KitError, kitErr, type KitErr } from "./KitError";
 import { oneLine } from "./kitUi";
 import { checkPrompt, namedPaths } from "./promptCheck";

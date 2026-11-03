@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type JSX, type ReactNode } from "react";
-import { useI18n } from "../i18n";
+import { useI18n } from "@/i18n";
 
 /** What the window shows when a view throws while rendering, instead of going blank. */
 export function CrashView(props: { error: Error }): JSX.Element {

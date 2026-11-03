@@ -5,7 +5,7 @@ import { EditorState, Text } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { useEffect, useMemo, useRef } from "react";
 import type { JSX } from "react";
-import { useI18n } from "../i18n";
+import { useI18n } from "@/i18n";
 import { highlight, theme } from "./Editor";
 
 const added = "color-mix(in srgb, var(--x-color-ok) 30%, transparent)";

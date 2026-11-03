@@ -1,6 +1,6 @@
 import type { JSX } from "react";
-import { toApiError } from "../api";
-import { useI18n } from "../i18n";
+import { toApiError } from "@/api";
+import { useI18n } from "@/i18n";
 
 /** What a kit tab keeps of a failure: the code the text comes from, and the detail that came with it. */
 export interface KitErr {

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi, type Api, type Check, type PrView } from "../api";
-import { DEMO_WORKSPACE } from "../mockWorkspace";
-import { translate } from "../i18n";
+import { createMockApi, type Api, type Check, type PrView } from "@/api";
+import { DEMO_WORKSPACE } from "@/mockWorkspace";
+import { translate } from "@/i18n";
 import { ChecksPanel } from "./ChecksPanel";
 import { PrStore } from "./prs";
 
@@ -24,7 +24,7 @@ vi.mock("react", async (original) => {
     useSyncExternalStore: (subscribe: any, get: any, server?: any) => (hooks.active ? get() : react.useSyncExternalStore(subscribe, get, server)),
   };
 });
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {

@@ -1,9 +1,9 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { RepoView, WorktreeView } from "../api";
-import { translate } from "../i18n";
-import { DEMO_WORKSPACE } from "../mockWorkspace";
+import type { RepoView, WorktreeView } from "@/api";
+import { translate } from "@/i18n";
+import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { WorktreeList, type WorktreeListProps } from "./WorktreeList";
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0 }));
@@ -17,7 +17,7 @@ vi.mock("react", async (original) => ({
     return [hooks.values[index], (value: unknown) => { hooks.values[index] = typeof value === "function" ? value(hooks.values[index]) : value; }];
   },
 }));
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {

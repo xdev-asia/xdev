@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMockApi } from "../mockApi";
+import { createMockApi } from "@/mockApi";
 import { Sessions } from "./sessions";
 
 const A = "/demo/wt/xdev-oak";

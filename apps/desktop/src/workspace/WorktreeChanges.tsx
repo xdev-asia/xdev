@@ -1,12 +1,12 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type WorktreeChange, type WorktreeView } from "../api";
-import type { Problem } from "../changes/useChanges";
-import { ProblemNote } from "../components/ChangesPanel";
-import { ConfirmDialog } from "../components/ConfirmDialog";
-import { diffStats } from "../components/DiffView";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type WorktreeChange, type WorktreeView } from "@/api";
+import type { Problem } from "@/changes/useChanges";
+import { ProblemNote } from "@/components/ChangesPanel";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { diffStats } from "@/components/DiffView";
+import { useI18n } from "@/i18n";
 import type { PrStore } from "./prs";
 import type { Sessions } from "./sessions";
 import { ShipBar } from "./ShipBar";

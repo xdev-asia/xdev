@@ -1,4 +1,4 @@
-import type { Check, PrView, ShipView } from "../api";
+import type { Check, PrView, ShipView } from "@/api";
 
 export type ShipAction = "commit" | "publish" | "push" | "pull" | "diverged" | "create_pr" | "open_pr" | "none";
 

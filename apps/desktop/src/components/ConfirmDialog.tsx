@@ -1,7 +1,7 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useRef } from "react";
 import type { JSX } from "react";
-import { useI18n } from "../i18n";
+import { useI18n } from "@/i18n";
 
 // A native modal dialog: focus trapping, Escape and the backdrop come from the browser.
 export function ConfirmDialog(props: {

@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import { createMockApi } from "../api";
-import { translate } from "../i18n";
+import { createMockApi } from "@/api";
+import { translate } from "@/i18n";
 import { ReposSettings } from "./ReposSettings";
 import { SECTIONS } from "./sections";
 import { SettingsView } from "./SettingsView";
@@ -17,7 +17,7 @@ vi.mock("react", async (original) => {
   };
   return { ...react, useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)) };
 });
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {

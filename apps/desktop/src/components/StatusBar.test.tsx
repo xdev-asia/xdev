@@ -1,10 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { Quota } from "../api";
-import type { Update } from "../shell/useUpdate";
-import en from "../i18n/en.json";
-import vi from "../i18n/vi.json";
-import { I18nProvider } from "../i18n";
+import type { Quota } from "@/api";
+import type { Update } from "@/shell/useUpdate";
+import en from "@/i18n/en.json";
+import vi from "@/i18n/vi.json";
+import { I18nProvider } from "@/i18n";
 import { roomiest, StatusBar } from "./StatusBar";
 
 function account(name: string, state: Quota["state"], ...use: (number | null)[]): Quota {

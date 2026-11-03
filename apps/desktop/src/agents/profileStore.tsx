@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { JSX, ReactNode } from "react";
-import type { Api, ProfilesView } from "../api";
+import type { Api, ProfilesView } from "@/api";
 
 type Store = {
   view: ProfilesView | null;

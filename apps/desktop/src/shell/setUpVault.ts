@@ -1,4 +1,4 @@
-import type { Api, DocEntry } from "../api";
+import type { Api, DocEntry } from "@/api";
 
 export type Starter = { file: string; content: string };
 

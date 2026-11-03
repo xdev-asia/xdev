@@ -1,9 +1,9 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type ApiError, type VaultView } from "../api";
-import { ConfirmDialog } from "../components/ConfirmDialog";
-import { useI18n } from "../i18n";
+import { toApiError, type ApiError, type VaultView } from "@/api";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useI18n } from "@/i18n";
 import type { SettingsSectionProps } from "./sections";
 
 /** Repo vaults (each repo's `docs/`) and shared vaults; forgetting one keeps its folder. */

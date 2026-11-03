@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createMockApi } from "../mockApi";
+import { createMockApi } from "@/mockApi";
 import { profileLetter, profileName } from "./profileStore";
 
 const t = (key: string) => `T:${key}`;

@@ -1,4 +1,4 @@
-import type { Api, PtyInfo, PtyProfile } from "../api";
+import type { Api, PtyInfo, PtyProfile } from "@/api";
 
 /** Output is acknowledged in steps this big; Rust pauses a terminal at 4 MB unacknowledged. */
 export const ACK_BYTES = 256 * 1024;

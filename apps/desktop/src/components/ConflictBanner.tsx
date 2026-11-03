@@ -1,6 +1,6 @@
 import { Button } from "@xdev/ui";
 import type { JSX } from "react";
-import { useI18n } from "../i18n";
+import { useI18n } from "@/i18n";
 import { WarnIcon } from "./FreshnessBanner";
 
 export function ConflictBanner(props: { onReload(): void; onKeep(): void }): JSX.Element {

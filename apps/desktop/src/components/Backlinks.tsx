@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type DocLink } from "../api";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type ApiError, type DocLink } from "@/api";
+import { useI18n } from "@/i18n";
 
 // Docs that link to `path`, as the index sees them on disk (unsaved edits elsewhere do not count yet).
 export function Backlinks(props: {

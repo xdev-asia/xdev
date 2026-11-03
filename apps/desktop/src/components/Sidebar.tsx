@@ -1,6 +1,6 @@
 import type { JSX, ReactNode } from "react";
-import type { DocEntry, StaleDoc } from "../api";
-import { useI18n } from "../i18n";
+import type { DocEntry, StaleDoc } from "@/api";
+import { useI18n } from "@/i18n";
 
 function StaleMark(props: { doc: StaleDoc | undefined }): JSX.Element | null {
   const { t } = useI18n();

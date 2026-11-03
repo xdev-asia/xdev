@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMockApi } from "../api";
+import { createMockApi } from "@/api";
 import { Sessions } from "./sessions";
 import { WorktreeStats, type FocusTarget } from "./stats";
 

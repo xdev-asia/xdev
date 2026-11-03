@@ -1,9 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { createMockApi, type Change } from "../api";
-import type { Changes } from "../changes/useChanges";
-import { I18nProvider } from "../i18n";
-import { DEMO_AI_EDIT, DEMO_COMMITS, DEMO_SEED } from "../mockApi";
+import { createMockApi, type Change } from "@/api";
+import type { Changes } from "@/changes/useChanges";
+import { I18nProvider } from "@/i18n";
+import { DEMO_AI_EDIT, DEMO_COMMITS, DEMO_SEED } from "@/mockApi";
 import { ChangesPanel, ChangeView } from "./ChangesPanel";
 
 function review(changes: Change[]): Changes {

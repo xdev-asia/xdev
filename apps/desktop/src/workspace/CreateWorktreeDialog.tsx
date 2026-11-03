@@ -1,8 +1,8 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import type { ApiError, RepoView } from "../api";
-import { useI18n } from "../i18n";
+import type { ApiError, RepoView } from "@/api";
+import { useI18n } from "@/i18n";
 
 // Mounted only while open, so every opening starts from blank fields.
 export function CreateWorktreeDialog(props: {

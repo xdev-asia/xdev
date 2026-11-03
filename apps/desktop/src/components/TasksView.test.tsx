@@ -1,9 +1,9 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi } from "../api";
-import { translate } from "../i18n";
-import { DEMO_POLICY_PATH } from "../mockTasks";
+import { createMockApi } from "@/api";
+import { translate } from "@/i18n";
+import { DEMO_POLICY_PATH } from "@/mockTasks";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DiffView } from "./DiffView";
 import { TasksView } from "./TasksView";
@@ -18,7 +18,7 @@ vi.mock("react", async (original) => ({
   },
   useEffect: (effect: () => void) => { hooks.effects.push(effect); },
 }));
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {

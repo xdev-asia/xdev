@@ -15,9 +15,9 @@ import {
   type SquadStatus,
   type SquadView as View,
   type TasksContext,
-} from "../api";
-import { relativeTime } from "../changes/changes";
-import { useI18n } from "../i18n";
+} from "@/api";
+import { relativeTime } from "@/changes/changes";
+import { useI18n } from "@/i18n";
 import { COMPACT, ProblemNote } from "./ChangesPanel";
 import { ConfirmDialog } from "./ConfirmDialog";
 

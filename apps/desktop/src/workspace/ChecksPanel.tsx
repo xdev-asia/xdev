@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError } from "../api";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type ApiError } from "@/api";
+import { useI18n } from "@/i18n";
 import type { PrStore } from "./prs";
 
 const REFRESH_MS = 30_000;

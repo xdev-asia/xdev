@@ -1,9 +1,9 @@
 import { createElement, useState } from "react";
 import type { JSX } from "react";
-import { profileName, useProfiles } from "../agents/profileStore";
-import { toApiError, type Api, type ApiError, type PtyInfo, type PtyProfile } from "../api";
-import { ConfirmDialog } from "../components/ConfirmDialog";
-import { useI18n } from "../i18n";
+import { profileName, useProfiles } from "@/agents/profileStore";
+import { toApiError, type Api, type ApiError, type PtyInfo, type PtyProfile } from "@/api";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useI18n } from "@/i18n";
 import type { PtyClient } from "./ptyClient";
 
 type Asking = { profile: PtyProfile; account: string | null; reason: string; retry: () => void; cancel: () => void };

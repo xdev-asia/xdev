@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { JSX } from "react";
-import { useI18n } from "../i18n";
+import { useI18n } from "@/i18n";
 
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
 const HINT = MAC ? "⌘ K" : "Ctrl K";

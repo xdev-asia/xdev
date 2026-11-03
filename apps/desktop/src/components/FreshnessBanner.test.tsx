@@ -1,9 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { createMockApi, type Commit, type Freshness } from "../api";
-import { parseFrontmatter, setVerified } from "../doc/frontmatter";
-import { I18nProvider } from "../i18n";
-import { DEMO_COMMITS, DEMO_SEED } from "../mockApi";
+import { createMockApi, type Commit, type Freshness } from "@/api";
+import { parseFrontmatter, setVerified } from "@/doc/frontmatter";
+import { I18nProvider } from "@/i18n";
+import { DEMO_COMMITS, DEMO_SEED } from "@/mockApi";
 import { ago, FreshnessBanner, verifiedInDraft } from "./FreshnessBanner";
 
 const NOW = 1_800_000_000;
