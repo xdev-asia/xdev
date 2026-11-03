@@ -4,10 +4,12 @@
 //! write over each other.
 
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::{AppHandle, State};
@@ -22,6 +24,7 @@ use xdev_workspace::{
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError, create_vault_at, load_git_settings};
+use crate::pty::{HookCommand, hook_command};
 use crate::settings::GitSettings;
 use crate::tasks::gate;
 
@@ -375,11 +378,103 @@ pub fn worktree_archive_run(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<HookRun, CmdError> {
-    let _ = (data_dir(&state)?, path);
+    archive_run(data_dir(&state)?, &path, ARCHIVE_TIMEOUT)
+}
+
+/// How long an archive script may run before it is killed.
+const ARCHIVE_TIMEOUT: Duration = Duration::from_secs(120);
+/// The most of its output kept.
+const MAX_HOOK_OUTPUT: usize = 64 * 1024;
+
+/// `worktree_archive_run` with the timeout as a parameter.
+fn archive_run(data: &Path, path: &Path, timeout: Duration) -> Result<HookRun, CmdError> {
+    match hook_command(data, path, HookKind::Archive)? {
+        None => Ok(HookRun {
+            ran: false,
+            code: None,
+            output: String::new(),
+        }),
+        Some(hook) => Ok(run_headless(hook, path, timeout)?),
+    }
+}
+
+/// Runs `hook` in `cwd` with no window and no input, stdout and stderr
+/// together in one buffer of at most `MAX_HOOK_OUTPUT` bytes. Past
+/// `timeout` the shell is killed and `code` is `None`.
+fn run_headless(hook: HookCommand, cwd: &Path, timeout: Duration) -> io::Result<HookRun> {
+    let mut cmd = Command::new(&hook.program);
+    cmd.args(&hook.args)
+        .envs(hook.env.iter().map(|(k, v)| (k, v)))
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let mut child = cmd.spawn()?;
+    let out = Arc::new(Mutex::new(Vec::new()));
+    let pipes: [Option<Box<dyn Read + Send>>; 2] = [
+        child
+            .stdout
+            .take()
+            .map(|r| Box::new(r) as Box<dyn Read + Send>),
+        child
+            .stderr
+            .take()
+            .map(|r| Box::new(r) as Box<dyn Read + Send>),
+    ];
+    let readers: Vec<_> = pipes
+        .into_iter()
+        .flatten()
+        .map(|mut pipe| {
+            let out = Arc::clone(&out);
+            thread::spawn(move || {
+                let mut buf = [0u8; 8192];
+                // Reads to the end past the cap, so the shell never blocks
+                // on a full pipe.
+                while let Ok(n @ 1..) = pipe.read(&mut buf) {
+                    let mut out = out.lock().unwrap_or_else(PoisonError::into_inner);
+                    let room = MAX_HOOK_OUTPUT.saturating_sub(out.len());
+                    out.extend_from_slice(&buf[..n.min(room)]);
+                }
+            })
+        })
+        .collect();
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break Some(status);
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            break None;
+        }
+        thread::sleep(Duration::from_millis(20));
+    };
+    // After a kill a child the shell started may still hold the pipes, so
+    // the readers are left to finish on their own.
+    if status.is_some() {
+        for reader in readers {
+            let _ = reader.join();
+        }
+    }
+    let bytes = out.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    let mut output = String::from_utf8_lossy(&bytes).trim_end().to_owned();
+    if status.is_none() {
+        if !output.is_empty() {
+            output.push('\n');
+        }
+        output.push_str(&format!("(stopped after {} s)", timeout.as_secs()));
+    }
     Ok(HookRun {
-        ran: false,
-        code: None,
-        output: String::new(),
+        ran: true,
+        code: status.and_then(|s| s.code()),
+        output,
     })
 }
 
@@ -1009,6 +1104,80 @@ mod tests {
         assert_eq!(
             code(dir_listing(&fx.data, stranger, "")),
             "worktree_unknown"
+        );
+    }
+
+    /// A data dir and a tracked repo at `<tmp>/xdev` with `archive` as its
+    /// local archive script.
+    fn archive_repo(archive: &str) -> (TempDir, PathBuf, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tmp.path().join("data");
+        let repo = tmp.path().join("xdev");
+        fs::create_dir_all(&repo).unwrap();
+        let mut reg = Registry::load(&data).unwrap();
+        reg.repos.push(xdev_workspace::RepoEntry {
+            id: "abc".into(),
+            short_name: "xdev".into(),
+            path: repo.clone(),
+            base_ref: "main".into(),
+            worktree_root: tmp.path().join("wt"),
+            local_archive: archive.into(),
+            ..xdev_workspace::RepoEntry::default()
+        });
+        reg.save(&data).unwrap();
+        (tmp, data, repo)
+    }
+
+    #[test]
+    fn archive_run_runs_the_script_and_keeps_its_output() {
+        let (_tmp, data, repo) = archive_repo("echo hi");
+        let run = archive_run(&data, &repo, ARCHIVE_TIMEOUT).unwrap();
+        assert_eq!((run.ran, run.code), (true, Some(0)));
+        assert_eq!(run.output, "hi");
+    }
+
+    #[test]
+    fn archive_run_without_a_script_does_not_run() {
+        let (_tmp, data, repo) = archive_repo("");
+        let run = archive_run(&data, &repo, ARCHIVE_TIMEOUT).unwrap();
+        assert_eq!((run.ran, run.code, run.output.as_str()), (false, None, ""));
+    }
+
+    #[test]
+    fn archive_run_refuses_an_untrusted_shared_script() {
+        let (_tmp, data, repo) = archive_repo("");
+        fs::write(
+            repo.join("xdev.toml"),
+            "[scripts]\narchive = \"echo bye\"\n",
+        )
+        .unwrap();
+        let err = archive_run(&data, &repo, ARCHIVE_TIMEOUT).unwrap_err();
+        assert_eq!(err.code, "hook_untrusted");
+    }
+
+    #[test]
+    fn run_headless_stops_a_script_past_its_timeout() {
+        let dir = tempfile::tempdir().unwrap();
+        let (program, args) = if cfg!(windows) {
+            (
+                "powershell.exe",
+                ["-NoProfile", "-Command", "Start-Sleep 30"],
+            )
+        } else {
+            ("/bin/sh", ["-c", "sleep 30", "sh"])
+        };
+        let hook = HookCommand {
+            program: program.into(),
+            args: args.map(String::from).to_vec(),
+            env: Vec::new(),
+        };
+        let run = run_headless(hook, dir.path(), Duration::from_millis(300)).unwrap();
+        assert!(run.ran);
+        assert_eq!(run.code, None);
+        assert!(
+            run.output.ends_with("(stopped after 0 s)"),
+            "{}",
+            run.output
         );
     }
 }
