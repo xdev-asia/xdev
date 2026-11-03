@@ -52,6 +52,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     WorktreeChange::export_all(cfg)?;
     WorktreeFileDiff::export_all(cfg)?;
     xdev_workspace::DirListing::export_all(cfg)?;
+    xdev_workspace::VaultView::export_all(cfg)?;
+    xdev_workspace::VaultKind::export_all(cfg)?;
     Ok(())
 }
 
