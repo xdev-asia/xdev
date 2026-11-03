@@ -11,6 +11,7 @@ mod session;
 mod settings;
 mod ship;
 mod squads;
+mod status;
 mod tasks;
 mod updater;
 mod workspace;
@@ -42,8 +43,10 @@ pub fn run() {
         .manage(pty::Ptys::default())
         .manage(workspace::WorkspaceLock::default())
         .manage(profiles::ProfilesLock::default())
+        .manage(status::Shown::default())
         .setup(|app| {
             updater::start(app.handle().clone());
+            status::listen_clicks(app.handle());
             // Without the watcher panes still run; they just show no status.
             if let Some(dir) = hooks_dir {
                 match hooks::watch(app.handle().clone(), dir) {
@@ -124,6 +127,12 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_ack,
             pty::pty_kill,
+            status::status_settings_get,
+            status::status_settings_put,
+            status::status_notify,
+            status::status_badge,
+            status::status_sound_set,
+            status::status_sound,
             profiles::profiles_list,
             profiles::profile_put,
             profiles::profile_remove,
