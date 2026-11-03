@@ -6,6 +6,7 @@ mod kit;
 mod links;
 mod profiles;
 mod pty;
+mod review;
 mod session;
 mod settings;
 mod ship;
@@ -133,6 +134,10 @@ pub fn run() {
             workspace::worktree_changes,
             workspace::worktree_stat,
             workspace::worktree_file_diff,
+            review::worktree_review,
+            review::worktree_review_file,
+            review::worktree_stage,
+            review::worktree_branches,
             workspace::worktree_commit,
             workspace::worktree_list_dir,
             ship::worktree_ship,
