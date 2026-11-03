@@ -93,7 +93,7 @@ describe("WorktreeStats", () => {
     stats.attach(api, live);
     stats.track([A]);
     const tab = live.open(A, "claude");
-    live.noteStarted(tab.id, { id: tab.id, pid: 1, program: "agent", agent: true, profile: "claude", permissions: "ask", account: null, hooks: true, hookEvents: ["prompt", "turn-done"] });
+    live.noteStarted(tab.id, { id: tab.id, pid: 1, program: "agent", agent: true, profile: "claude", permissions: "ask", account: null, hooks: true, hookEvents: ["prompt", "turn-done"], cli: "claude" });
     api.__hook(tab.id, "prompt");
     await settle();
     const before = read.mock.calls.length;

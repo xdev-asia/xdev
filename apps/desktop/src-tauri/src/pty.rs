@@ -10,7 +10,7 @@ use serde::Serialize;
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, State};
 use xdev_agent::{
-    Context, HookEvent, Launch, LaunchError, Permissions, Profile, Profiles, find_builtin,
+    Cli, Context, HookEvent, Launch, LaunchError, Permissions, Profile, Profiles, find_builtin,
     find_program, list_shells, resolve, wsl_distros,
 };
 use xdev_ai::Registry;
@@ -59,6 +59,9 @@ pub struct PtyInfo {
     // The hook events the launch reports (version gate, codex private home or
     // notify alone); the UI picks its caps from these.
     hook_events: Vec<HookEvent>,
+    // The CLI the profile runs, also for a custom profile; null for a shell
+    // or an unknown program.
+    cli: Option<Cli>,
 }
 
 /// Payload of the `pty://exit` event.
@@ -230,6 +233,7 @@ pub(crate) fn spawn_launch(
         account: launch.account,
         hooks: launch.hooks,
         hook_events: launch.hook_events,
+        cli: launch.cli,
     };
     map.insert(id, session);
     Ok(info)
@@ -424,6 +428,7 @@ mod tests {
         assert!(info.hooks);
         // An unknown claude: the two ungated events.
         assert_eq!(info.hook_events, [HookEvent::Prompt, HookEvent::TurnDone]);
+        assert_eq!(info.cli, Some(Cli::Claude));
         ptys.kill_all();
 
         // Turning hooks off is a different launch line: asked again.
