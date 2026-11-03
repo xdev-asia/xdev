@@ -152,6 +152,27 @@ mod tests {
         assert!(links.repos.contains_key("web"));
     }
 
+    /// The desktop passes `Vault::root()`, which is canonical (`\\?\E:\…` on
+    /// Windows); it must match the plain paths the registry holds.
+    #[test]
+    fn links_for_matches_a_canonical_vault_root() {
+        let mut fx = fixture();
+        let shared = fx._tmp.path().join("notes");
+        fs::create_dir(&shared).unwrap();
+        add_vault(&mut fx.reg, &shared).unwrap();
+        let root = xdev_core::Vault::open(&shared).unwrap().root().to_path_buf();
+        assert!(links_for(&fx.reg, &root).shared);
+
+        fs::create_dir(fx.feature.join("docs")).unwrap();
+        let root = xdev_core::Vault::open(fx.feature.join("docs"))
+            .unwrap()
+            .root()
+            .to_path_buf();
+        let links = links_for(&fx.reg, &root);
+        assert!(!links.shared);
+        assert_eq!(links.own.as_deref(), Some("api"));
+    }
+
     #[test]
     fn links_for_maps_other_repos_by_short_name() {
         let fx = fixture();

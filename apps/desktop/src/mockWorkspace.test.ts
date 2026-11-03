@@ -157,6 +157,7 @@ describe("mock workspace", () => {
     expect(repo.worktrees.map((w) => w.path)).toContain(outside.path);
     await expect(api.worktreeAdopt(outside.path)).rejects.toMatchObject({ code: "worktree_exists" });
     await expect(api.worktreeAdopt("/nowhere")).rejects.toMatchObject({ code: "worktree_unknown" });
+    await expect(api.worktreeAdopt("/demo/xdev")).rejects.toMatchObject({ code: "primary_worktree" });
   });
 
   it("vaultAdd refuses the same path twice", async () => {
@@ -171,6 +172,10 @@ describe("mock workspace", () => {
     await expect(api.vaultAdd("/demo/xdev/docs")).rejects.toMatchObject({ code: "vault_exists" });
     await expect(api.vaultAdd("relative")).rejects.toMatchObject({ code: "bad_path" });
     expect(await api.vaultList()).toHaveLength(2);
+    // Shared vaults come by name, whatever the order they were added in.
+    await api.vaultAdd("/demo/Alpha");
+    expect((await api.vaultList()).filter((v) => v.kind === "shared").map((v) => v.name)).toEqual(["Alpha", "xdev-internal"]);
+    await api.vaultForget("shared:/demo/Alpha");
     await api.vaultForget(shared.id);
     await expect(api.vaultForget(shared.id)).rejects.toMatchObject({ code: "vault_unknown" });
     await expect(api.vaultForget("repo:demo-xdev")).rejects.toMatchObject({ code: "vault_unknown" });
