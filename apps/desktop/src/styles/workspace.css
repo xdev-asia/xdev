@@ -718,6 +718,43 @@
   color: var(--text-2);
 }
 
+/* A repo row: its name, and the ⋯ button that opens the project menu. */
+.ws-repos {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-repo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.ws-repo-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-repo:hover .ws-wt-more,
+.ws-missing:hover .ws-wt-more {
+  opacity: 1;
+}
+
+.ws-missing {
+  position: relative;
+}
+
+.ws-missing .ws-wt-more,
+.ws-repo .ws-wt-more {
+  top: 3px;
+}
+
 .ws-missing .ws-wt-name {
   overflow: hidden;
   text-overflow: ellipsis;
