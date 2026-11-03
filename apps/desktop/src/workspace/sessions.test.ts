@@ -1,11 +1,24 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
-import { Sessions } from "./sessions";
+import type { PtyInfo } from "@/api";
+import { INTERRUPT_MS } from "./status";
+import { DONE_QUIET_MS, Sessions } from "./sessions";
 
 const A = "/demo/wt/xdev-oak";
 const B = "/demo/wt/xdev-elm";
 
 type Profile = string;
+
+const info = (id: string, hooks: boolean): PtyInfo => ({
+  id,
+  pid: 1,
+  program: "agent",
+  agent: true,
+  profile: "claude",
+  permissions: "ask",
+  account: null,
+  hooks,
+});
 
 async function spawn(sessions: Sessions, worktree: string, profile: Profile) {
   const tab = sessions.open(worktree, profile);
@@ -282,5 +295,217 @@ describe("Sessions", () => {
     live.setSplit(A, { dir: "right", second: four.id });
     await live.close(one.id);
     expect(live.split(A)).toBeNull();
+  });
+
+  it("turn_done_on_seen_pane_is_idle_and_quiet", () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    const tab = live.open(A, "claude");
+    live.noteStarted(tab.id, info(tab.id, true));
+    const heard = vi.fn();
+    live.onAttention(heard);
+    live.setSeen([tab.id]);
+    api.__hook(tab.id, "prompt");
+    expect(live.tabs(A)[0].status).toBe("working");
+    api.__hook(tab.id, "turn-done");
+    expect(live.tabs(A)[0]).toMatchObject({ status: "idle", unread: false });
+    expect(heard).not.toHaveBeenCalled();
+    expect(live.unread(A)).toBe(false);
+  });
+
+  it("turn_done_on_hidden_pane_is_unread", () => {
+    vi.useFakeTimers();
+    let t = 42;
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api, () => t));
+    const tab = live.open(A, "claude");
+    live.noteStarted(tab.id, info(tab.id, true));
+    const heard = vi.fn();
+    live.onAttention(heard);
+    api.__hook(tab.id, "prompt");
+    api.__hook(tab.id, "turn-done");
+    // Done, but news only once it stays done.
+    expect(live.tabs(A)[0]).toMatchObject({ status: "done", unread: false });
+    t += DONE_QUIET_MS - 1;
+    vi.advanceTimersByTime(DONE_QUIET_MS - 1);
+    expect(heard).not.toHaveBeenCalled();
+    t += 1;
+    vi.advanceTimersByTime(1);
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(live.tabs(A)[0]).toMatchObject({ status: "done", unread: true, unreadAt: 42 + DONE_QUIET_MS });
+    expect(live.unread(A)).toBe(true);
+    expect(live.unreadTabs().map((t) => t.id)).toEqual([tab.id]);
+    expect(live.dot(A)).toBe("done");
+    // Looking at it clears it and the finished turn rests.
+    live.setSeen([tab.id]);
+    expect(live.tabs(A)[0]).toMatchObject({ status: "idle", unread: false, unreadAt: null });
+    expect(live.unreadTabs()).toEqual([]);
+  });
+
+  it("one_transition_notifies_once", () => {
+    vi.useFakeTimers();
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    const tab = live.open(A, "claude");
+    live.noteStarted(tab.id, info(tab.id, true));
+    const heard = vi.fn();
+    const off = live.onAttention(heard);
+    api.__hook(tab.id, "needs-input");
+    api.__hook(tab.id, "needs-input");
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(heard.mock.calls[0][0]).toMatchObject({ id: tab.id, status: "needs-you" });
+    expect(heard.mock.calls[0][1]).toBe("needs-you");
+    api.__hook(tab.id, "turn-done");
+    vi.advanceTimersByTime(DONE_QUIET_MS);
+    expect(heard).toHaveBeenCalledTimes(2);
+    expect(heard.mock.calls[1][1]).toBe("done");
+    off();
+    api.__hook(tab.id, "needs-input");
+    expect(heard).toHaveBeenCalledTimes(2);
+  });
+
+  it("shells and closing worktrees ask for no one", async () => {
+    const api = createMockApi({});
+    await api.ptyApprove("claude", null);
+    let fire: (e: { id: string; code: number | null }) => void = () => {};
+    const realExit = api.onPtyExit.bind(api);
+    vi.spyOn(api, "onPtyExit").mockImplementation(async (cb) => {
+      fire = cb;
+      return realExit(cb);
+    });
+    const live = (sessions = new Sessions(api));
+    const heard = vi.fn();
+    live.onAttention(heard);
+    const shell = live.open(B, "shell");
+    fire({ id: shell.id, code: 1 });
+    expect(live.tabs(B)[0]).toMatchObject({ status: "failed", unread: false });
+    const agent = await spawn(live, A, "claude");
+    await live.closeWorktree(A);
+    expect(live.tabs(A)).toEqual([]);
+    expect(heard).not.toHaveBeenCalled();
+    // An agent that fails on its own does ask.
+    const other = live.open(B, "codex");
+    fire({ id: other.id, code: 2 });
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(heard.mock.calls[0][1]).toBe("failed");
+    expect(agent.id).not.toBe(other.id);
+  });
+
+  it("mark unread sticks until a pane is seen", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const one = live.open(A, "claude");
+    const two = live.open(B, "claude");
+    live.setSeen([one.id]);
+    const heard = vi.fn();
+    live.subscribe(heard);
+    live.markUnread(A);
+    expect(live.unread(A)).toBe(true);
+    expect(heard).toHaveBeenCalledTimes(1);
+    // Still looking at the same pane does not clear it.
+    live.setSeen([one.id]);
+    expect(live.unread(A)).toBe(true);
+    // Another worktree's pane does not either.
+    live.setSeen([two.id]);
+    expect(live.unread(A)).toBe(true);
+    live.setSeen([one.id]);
+    expect(live.unread(A)).toBe(false);
+  });
+
+  it("a title sets the name unless renamed", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "claude");
+    live.noteTitle(tab.id, "  fixing the parser  ");
+    expect(live.tabs(A)[0].title).toBe("fixing the parser");
+    const before = live.tabs(A);
+    live.noteTitle(tab.id, "fixing the parser");
+    expect(live.tabs(A)).toBe(before);
+    live.noteTitle(tab.id, "x".repeat(500));
+    expect(live.tabs(A)[0].title).toHaveLength(200);
+    live.rename(tab.id, "Parser");
+    live.noteTitle(tab.id, "something else");
+    expect(live.tabs(A)[0]).toMatchObject({ title: "Parser", renamed: true });
+    // A blank title clears an unnamed tab's title.
+    const other = live.open(A, "codex");
+    live.noteTitle(other.id, "busy");
+    live.noteTitle(other.id, "   ");
+    expect(live.tabs(A)[1].title).toBeNull();
+  });
+
+  it("hook caps come from the pty, and a turn-done tab needs no tick", () => {
+    vi.useFakeTimers();
+    let t = 10_000;
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api, () => t));
+    const tab = live.open(A, "codex");
+    live.noteStarted(tab.id, info(tab.id, true));
+    live.noteOutput(tab.id, 5);
+    expect(live.tabs(A)[0].status).toBe("working");
+    // codex ends its turn by hook, so quiet does not.
+    expect(vi.getTimerCount()).toBe(0);
+    t += 5000;
+    vi.advanceTimersByTime(5000);
+    expect(live.tabs(A)[0].status).toBe("working");
+    api.__hook(tab.id, "turn-done");
+    expect(live.tabs(A)[0].status).toBe("done");
+    t += DONE_QUIET_MS;
+    vi.advanceTimersByTime(DONE_QUIET_MS);
+    expect(vi.getTimerCount()).toBe(0);
+    // Without hooks, the same profile goes back to timing.
+    const plain = live.open(A, "codex");
+    live.noteStarted(plain.id, info(plain.id, false));
+    live.noteOutput(plain.id, 5);
+    expect(vi.getTimerCount()).toBe(1);
+    t += 3000;
+    vi.advanceTimersByTime(3000);
+    expect(live.tabs(A)[1].status).toBe("idle");
+  });
+
+  it("a done that goes back to work or is looked at is never announced", () => {
+    vi.useFakeTimers();
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    const tab = live.open(A, "claude");
+    live.noteStarted(tab.id, info(tab.id, true));
+    const heard = vi.fn();
+    live.onAttention(heard);
+    api.__hook(tab.id, "turn-done");
+    vi.advanceTimersByTime(500);
+    api.__hook(tab.id, "prompt");
+    vi.advanceTimersByTime(DONE_QUIET_MS);
+    expect(heard).not.toHaveBeenCalled();
+    api.__hook(tab.id, "turn-done");
+    live.setSeen([tab.id]);
+    vi.advanceTimersByTime(DONE_QUIET_MS);
+    expect(heard).not.toHaveBeenCalled();
+    expect(live.tabs(A)[0]).toMatchObject({ status: "idle", unread: false });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("escape on a hooked working pane settles idle after 500 ms and asks no one", () => {
+    vi.useFakeTimers();
+    let t = 1_000;
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api, () => t));
+    const tab = live.open(A, "claude");
+    live.noteStarted(tab.id, info(tab.id, true));
+    const heard = vi.fn();
+    live.onAttention(heard);
+    api.__hook(tab.id, "prompt");
+    live.noteInput(tab.id, "");
+    t += INTERRUPT_MS - 1;
+    vi.advanceTimersByTime(INTERRUPT_MS - 1);
+    expect(live.tabs(A)[0].status).toBe("working");
+    t += 1;
+    vi.advanceTimersByTime(1);
+    expect(live.tabs(A)[0]).toMatchObject({ status: "idle", unread: false });
+    // Ctrl-C followed at once by the turn end rests too.
+    api.__hook(tab.id, "prompt");
+    live.noteInput(tab.id, "");
+    t += 100;
+    api.__hook(tab.id, "turn-done");
+    vi.advanceTimersByTime(DONE_QUIET_MS);
+    expect(live.tabs(A)[0].status).toBe("idle");
+    expect(heard).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

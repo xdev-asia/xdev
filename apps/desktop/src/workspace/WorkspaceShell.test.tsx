@@ -12,7 +12,10 @@ import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { VaultNav } from "./VaultNav";
 import { SettingsView } from "@/settings/SettingsView";
+import { resetStatusSettings } from "@/status/statusSettings";
+import { BellMenu } from "./BellMenu";
 import { Sessions } from "./sessions";
+import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeList } from "./WorktreeList";
@@ -37,6 +40,9 @@ vi.mock("react", async (original) => {
     useSyncExternalStore: (subscribe: any, get: any, server?: any) => (hooks.active ? get() : react.useSyncExternalStore(subscribe, get, server)),
   };
 });
+// No audio in node; the shell is checked for asking, the sound itself in its own tests.
+const sound = vi.hoisted(() => ({ play: vi.fn(async () => true) }));
+vi.mock("@/status/sound", async (original) => ({ ...await original<typeof import("@/status/sound")>(), playStatusSound: sound.play }));
 // xterm needs a real canvas; the terminals are tested on their own.
 vi.mock("@/terminal/Terminal", () => ({ Terminal: () => null }));
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
@@ -51,8 +57,6 @@ function nodes(value: unknown): Node[] {
 const text = (node: Node): string => nodes(node.props.children).map(n => (typeof n.props.children === "string" ? n.props.children : "")).join("") + (typeof node.props.children === "string" ? node.props.children : "");
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
-// The shell's effects in order: the sessions store, the worktree list, the pull request of the selection.
-const EFFECTS = 3;
 
 async function harness(api = createMockApi({})) {
   const draw = () => {
@@ -65,7 +69,8 @@ async function harness(api = createMockApi({})) {
   const of = (type: unknown) => all().filter(n => n.type === type);
   const list = () => of(WorktreeList)[0];
   const nav = (label: string) => all().find(n => n.type === "button" && n.props.className?.includes("ws-nav-item") && text(n).includes(label))!;
-  const [start, load] = (draw(), hooks.effects.slice(-EFFECTS, -1));
+  // The shell's first two effects: the sessions store, then the worktree list.
+  const [start, load] = (draw(), hooks.effects.slice(0, 2));
   start();
   load();
   await tick();
@@ -78,8 +83,8 @@ function storage(seed: Record<string, string> = {}) {
   return { map, getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => void map.set(k, v), removeItem: (k: string) => void map.delete(k) };
 }
 
-beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; sound.play.mockClear(); resetStatusSettings(); });
+afterEach(() => { cleanups.splice(0).forEach((c) => c()); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 it("shell_renders_without_vault", async () => {
   const api = createMockApi({});
@@ -501,4 +506,111 @@ it("new worktree skips a default agent that is turned off", async () => {
   await api.profilesDefaults("ask", "codex", null);
   const view = await harness(api);
   expect(await createBirch(view)).toEqual([]);
+});
+
+// Runs the effects after the first two (the store and the list are up already) against a stubbed
+// window and document; hands back a way to fire their listeners.
+function attend(view: Awaited<ReturnType<typeof harness>>) {
+  const on = new Map<string, Set<(e: unknown) => void>>();
+  const target = {
+    addEventListener: (type: string, fn: (e: unknown) => void) => void (on.get(type) ?? on.set(type, new Set()).get(type)!).add(fn),
+    removeEventListener: (type: string, fn: (e: unknown) => void) => void on.get(type)?.delete(fn),
+  };
+  vi.stubGlobal("window", target);
+  vi.stubGlobal("document", { ...target, visibilityState: "visible", hasFocus: () => true, querySelector: () => null, querySelectorAll: () => [] });
+  hooks.effects = [];
+  view.draw();
+  for (const effect of hooks.effects.slice(2)) {
+    const cleanup = effect();
+    if (typeof cleanup === "function") cleanups.push(cleanup);
+  }
+  const fire = (type: string) => [...(on.get(type) ?? [])].forEach((fn) => fn({}));
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  // An agent tab with hooks in a worktree that is not on screen.
+  const tab = sessions.open(OAK, "claude");
+  sessions.noteStarted(tab.id, { id: tab.id, pid: 1, program: "agent", agent: true, profile: "claude", permissions: "ask", account: null, hooks: true });
+  return { fire, sessions, tab };
+}
+const OAK = "/demo/wt/xdev-oak";
+// Effects run by `attend`; undone after each test so no timer or listener reaches the next one.
+const cleanups: (() => void)[] = [];
+const settle = async () => { for (let i = 0; i < 6; i++) await tick(); };
+const bell = (view: Awaited<ReturnType<typeof harness>>) => nodes(view.all().find(n => n.type === "header")!.props.children).find(n => n.type === "button" && n.props["aria-haspopup"] === "menu")!;
+
+it("hidden worktree asking a question raises everything", async () => {
+  const api = createMockApi({});
+  const notify = vi.spyOn(api, "statusNotify");
+  const view = await harness(api);
+  const { tab } = attend(view);
+  expect(bell(view).props["aria-label"]).toBe(en("workspace.header.notifications"));
+
+  api.__hook(tab.id, "needs-input");
+  await settle();
+  // The row: glyph and bold name.
+  expect(view.list().props.dots[OAK]).toBe("needs-you");
+  expect(view.list().props.unread[OAK]).toBe(true);
+  // The bell counts it; the footer says one waits.
+  expect(bell(view).props["aria-label"]).toBe(en("status.bell.label", { count: 1 }));
+  expect(nodes(bell(view).props.children).find(n => n.props.className === "ws-bell-count")!.props.children).toBe("1");
+  expect(view.of(LiveWorkspaceFooter)[0].props.waiting).toBe(1);
+  // The OS hears the worktree and the tab, and the sound goes with it.
+  expect(notify).toHaveBeenCalledWith("oak", "Claude Code needs you", tab.id);
+  expect(sound.play).toHaveBeenCalledTimes(1);
+
+  // The bell lists the tab; its row goes there.
+  expect(view.of(BellMenu)).toHaveLength(0);
+  bell(view).props.onClick();
+  const menu = view.of(BellMenu)[0];
+  expect(menu.props.rows.map((r: { tab: { id: string }; worktree: string }) => [r.tab.id, r.worktree])).toEqual([[tab.id, "oak"]]);
+  menu.props.onJump(tab);
+  expect(view.list().props.selected).toBe(OAK);
+  expect(view.of(WorktreeTabs).find(n => n.props.worktree === OAK)!.props.front).toMatchObject({ id: tab.id });
+  expect(view.of(BellMenu)).toHaveLength(0);
+});
+
+it("a click on the notification, or a focus soon after it, goes to its pane", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  const { fire, tab } = attend(view);
+  api.__hook(tab.id, "needs-input");
+  await settle();
+  expect(api.__notifications.map(n => n.ptyId)).toEqual([tab.id]);
+
+  // The person clicked in the app first: the next focus is their own.
+  fire("pointerdown");
+  fire("focus");
+  expect(view.list().props.selected).toBe("/demo/xdev");
+
+  // A click that reaches the app goes there.
+  api.__clickNotification(tab.id);
+  expect(view.list().props.selected).toBe(OAK);
+});
+
+it("a focus soon after a notification goes to its pane", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  const { fire, tab } = attend(view);
+  api.__hook(tab.id, "needs-input");
+  await settle();
+  fire("focus");
+  expect(view.list().props.selected).toBe(OAK);
+});
+
+it("the bell and the sound follow the settings", async () => {
+  const api = createMockApi({});
+  const notify = vi.spyOn(api, "statusNotify");
+  const stored = await api.statusSettings();
+  await api.statusSettingsPut({ ...stored, bell: false, sound: false });
+  const view = await harness(api);
+  const { tab } = attend(view);
+  await settle();
+  api.__hook(tab.id, "needs-input");
+  await settle();
+  expect(notify).toHaveBeenCalledTimes(1);
+  expect(sound.play).not.toHaveBeenCalled();
+  // The bell is off: no count and no list, but the row still says it.
+  expect(bell(view).props.disabled).toBe(true);
+  expect(bell(view).props.title).toBe(en("status.bell.off"));
+  expect(nodes(bell(view).props.children).some(n => n.props.className === "ws-bell-count")).toBe(false);
+  expect(view.list().props.unread[OAK]).toBe(true);
 });
