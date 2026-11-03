@@ -57,6 +57,8 @@ serde_json = "1.0.154"
 sha2 = "0.10.9"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
+# The OS trash (Recycle Bin, Finder, freedesktop) for Delete in the file tree; never a hard delete.
+trash = { version = "5.2.9", default-features = false, features = ["coinit_apartmentthreaded"] }
 # Merging the codex config.toml into a private CODEX_HOME.
 toml = "1.1.8"
 # TypeScript for the types that cross the desktop IPC boundary; behind each
