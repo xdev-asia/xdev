@@ -1310,6 +1310,20 @@ button.ws-tree-row:focus-visible {
   flex: 1;
 }
 
+.ws-footer-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.ws-footer-link:hover {
+  color: var(--text-1);
+  text-decoration: underline;
+}
+
 .ws-waiting {
   display: flex;
   align-items: center;

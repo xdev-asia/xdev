@@ -4,6 +4,7 @@ import pkg from "../../package.json";
 import logo from "../../../../docs/brand/xdev-icon-512.png";
 import { toApiError, type Api, type ApiError, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "../api";
 import { DocsApp } from "../DocsApp";
+import type { KitTab } from "../components/AgentKitView";
 import { LanguageSwitch } from "../components/LanguageSwitch";
 import { useI18n } from "../i18n";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
@@ -51,6 +52,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [view, setView] = useState<View>("workspace");
   // The docs app mounts on first visit and then stays, so its editor state survives a switch.
   const [docsMounted, setDocsMounted] = useState(false);
+  // A request for the Agent kit to open a tab; a new `seq` is a new request.
+  const [kitOpen, setKitOpen] = useState<{ tab: KitTab; seq: number } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sessions, setSessions] = useState<Sessions | null>(null);
   const [creating, setCreating] = useState<Creating | null>(null);
@@ -200,6 +203,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   function show(next: View): void {
     setView(next);
     if (next === "docs") setDocsMounted(true);
+  }
+
+  function openUsage(): void {
+    setKitOpen((k) => ({ tab: "usage", seq: (k?.seq ?? 0) + 1 }));
+    show("docs");
+  }
+
+  // Types into the last live agent tab of the worktree. No Enter is sent, so the person reads it first.
+  async function sendToAgent(text: string): Promise<boolean> {
+    if (!sessions || !current) return false;
+    const live = sessions.tabs(current.path).filter((tab) => tab.agent && tab.status !== "failed" && tab.status !== "exited");
+    const tab = live[live.length - 1];
+    if (!tab) return false;
+    await tab.client.input(text);
+    return true;
   }
 
   // The docs app has the only search for now; it shows after this render, so its box is looked up then.
@@ -397,7 +415,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         </div>
 
         <div className="ws-docs" hidden={view !== "docs"}>
-          {docsMounted && <DocsApp />}
+          {docsMounted && <DocsApp kit={{ worktree: current?.path ?? null, open: kitOpen, onSendToAgent: sendToAgent }} />}
         </div>
       </div>
 
@@ -409,6 +427,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         // Tabs that wait on the person arrive with Plan 4; none exist yet.
         waiting={0}
         version={pkg.version}
+        onOpenUsage={openUsage}
         hidden={view === "docs"}
       />
 

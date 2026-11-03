@@ -1,0 +1,477 @@
+/* Agent kit: skills, memory, prompts and token usage.
+   Selection is a flat tint; marks are dots; nothing has a side stripe. */
+
+.kitview {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kitview[hidden] {
+  display: none;
+}
+
+/* The docs app does not remap the shared colour names, so the kit does it for itself. */
+.kit {
+  --x-color-bg: var(--bg-0);
+  --x-color-panel: var(--bg-1);
+  --x-color-surface: var(--bg-2);
+  --x-color-surface-2: var(--bg-3);
+  --x-color-line: var(--line);
+  --x-color-ink: var(--text-1);
+  --x-color-muted: var(--text-2);
+  --x-color-code-bg: var(--term);
+  --x-color-accent: var(--accent);
+  --x-color-signal: var(--signal);
+  --x-color-warn: var(--warn);
+  --x-color-warn-soft: var(--warn-bg);
+  --x-color-ok: var(--ok);
+  --x-color-danger: var(--danger);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-0);
+  color: var(--text-1);
+  font-size: 13px;
+}
+
+.kit-tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 8px 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.kit-tab {
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font: inherit;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.kit-tab:hover {
+  color: var(--text-1);
+}
+
+.kit-tab[aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  color: var(--text-1);
+}
+
+.kit-panel-host {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.kit-panel-host[hidden] {
+  display: none;
+}
+
+.kit-skills-tab,
+.kit-usage,
+.kit-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kit-bar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.kit-spacer {
+  flex: 1;
+}
+
+.kit-input {
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+  font: inherit;
+  color: var(--text-1);
+}
+
+.kit-textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.kit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-2);
+}
+
+.kit-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-1);
+}
+
+.kit-empty,
+.kit-note {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.kit-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.kit-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--signal);
+  cursor: pointer;
+}
+
+.kit-link:hover {
+  text-decoration: underline;
+}
+
+/* Tables */
+
+.kit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.kit-table th,
+.kit-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: start;
+  vertical-align: middle;
+}
+
+.kit-table th {
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.kit-table tbody tr:hover {
+  background: var(--bg-2);
+}
+
+.kit-num {
+  text-align: end;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+.kit-cut {
+  max-width: 28em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kit-name {
+  white-space: nowrap;
+}
+
+.kit-actions {
+  display: flex;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.kit-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.kit-dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-inline-end: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+
+.kit-dot[data-dot="duplicate"] {
+  background: var(--warn);
+}
+
+.kit-dot[data-dot="issue"],
+.kit-dot[data-dot="fail"] {
+  background: var(--danger);
+}
+
+.kit-dot[data-dot="pass"] {
+  background: var(--ok);
+}
+
+.kit-toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+}
+
+/* Memory */
+
+.kit-memory {
+  display: flex;
+  flex: 1;
+  gap: 16px;
+  min-height: 0;
+}
+
+.kit-side {
+  display: flex;
+  flex: 0 0 280px;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.kit-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.kit-load {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.kit-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kit-h {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.kit-files {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kit-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding-block: 5px;
+  padding-inline-end: 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  font: inherit;
+  color: var(--text-1);
+  text-align: start;
+  cursor: pointer;
+}
+
+.kit-file:hover {
+  background: var(--bg-1);
+}
+
+.kit-file[aria-current="true"] {
+  background: var(--bg-2);
+}
+
+.kit-file .kit-cut {
+  flex: 1;
+  min-width: 0;
+}
+
+.kit-path {
+  min-width: 0;
+  color: var(--text-2);
+}
+
+.kit-editor {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 240px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  overflow: auto;
+}
+
+.kit-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kit-issues li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kit-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Prompts */
+
+.kit-score {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.kit-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kit-check-list,
+.kit-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kit-check-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.kit-hint {
+  flex-basis: 100%;
+  padding-inline-start: 13px;
+  color: var(--text-2);
+}
+
+.kit-recent li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.kit-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Usage */
+
+.kit-switch {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.kit-switch-item[aria-pressed="true"] {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.kit-legend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: var(--text-2);
+}
+
+.kit-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kit-legend-total {
+  margin-inline-start: auto;
+}
+
+.kit-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.kit-chart {
+  width: 100%;
+  max-height: 240px;
+}
+
+.kit-chart-axis {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.kit-chart-label {
+  fill: var(--text-2);
+  font-size: 10px;
+}
+
+.kit-bar-input {
+  fill: var(--accent);
+  background: var(--accent);
+}
+
+.kit-bar-output {
+  fill: var(--text-2);
+  background: var(--text-2);
+}
+
+.kit-bar-cache {
+  fill: var(--text-3);
+  background: var(--text-3);
+}
