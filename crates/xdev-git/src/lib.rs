@@ -1,6 +1,7 @@
 //! Runs the `git` program for the vault's repo: pending changes, versions,
 //! history, commit and restore. Paths in and out are vault-relative with `/`.
 
+mod clone;
 mod commit;
 mod diff;
 mod gh;
@@ -15,6 +16,7 @@ mod worktree;
 
 use std::path::{Path, PathBuf};
 
+pub use clone::{CloneEvent, check_clone_url, clone_name, clone_repo, parse_progress};
 pub use gh::{
     Check, CheckBucket, GhExec, GhOutput, PrDraft, PrState, PrView, SystemGh, pr_checks, pr_create,
     pr_open_web, pr_view,
@@ -57,6 +59,10 @@ pub enum GitError {
     Hook { output: String },
     #[error("timeout")]
     Timeout,
+    #[error("not a clone URL xDev accepts: {0}")]
+    BadUrl(String),
+    #[error("cancelled")]
+    Cancelled,
     #[error("git {args} failed ({status:?}): {stderr}")]
     Failed {
         args: String,
@@ -83,6 +89,8 @@ impl GitError {
             GitError::NotGithub => "not_github",
             GitError::Gh(_) => "gh_failed",
             GitError::Hook { .. } => "hook_failed",
+            GitError::BadUrl(_) => "bad_arg",
+            GitError::Cancelled => "cancelled",
             GitError::BadId(_) | GitError::Timeout | GitError::Failed { .. } => "git",
             GitError::Io(_) => "io",
         }
