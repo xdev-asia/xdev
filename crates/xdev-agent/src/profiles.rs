@@ -9,6 +9,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
+use crate::flags::efforts;
+
 const FILE: &str = "profiles.json";
 const VERSION: u32 = 1;
 const DEFAULT_AGENT: &str = "claude";
@@ -441,6 +443,14 @@ fn checked(mut profile: Profile) -> Result<Profile, ProfileError> {
         None if profile.cli.is_some() => return Err(invalid("cli")),
         None => {}
     }
+    // Only a CLI with an effort flag takes one; the lists live in `flags`.
+    if let Some(effort) = profile.effort.as_deref()
+        && !profile
+            .cli
+            .is_some_and(|cli| efforts(cli).contains(&effort))
+    {
+        return Err(invalid("effort"));
+    }
     match profile.program.as_deref() {
         Some(program) if program.trim().is_empty() => return Err(invalid("program")),
         None if profile.cli.is_none() => return Err(invalid("program")),
@@ -650,6 +660,39 @@ mod tests {
         }];
         p.put(ok).unwrap();
         assert_eq!(p.get("aider").unwrap().env[0].value, "x=y");
+    }
+
+    #[test]
+    fn put_checks_the_effort_against_the_cli() {
+        let mut p = Profiles::default();
+        fn with_effort(p: &Profiles, id: &str, effort: &str) -> Profile {
+            let mut profile = p.get(id).cloned().unwrap_or_else(|| custom(id));
+            profile.effort = Some(effort.into());
+            profile
+        }
+        for (id, effort) in [
+            ("claude", "xhigh"),
+            ("claude", "max"),
+            ("codex", "low"),
+            ("codex", "high"),
+        ] {
+            let profile = with_effort(&p, id, effort);
+            p.put(profile).unwrap();
+        }
+        for (id, effort) in [
+            ("claude", "extreme"),
+            ("claude", ""),
+            ("codex", "xhigh"),
+            ("gemini", "low"),
+            ("aider", "low"),
+        ] {
+            let profile = with_effort(&p, id, effort);
+            assert_eq!(code(p.put(profile)), "invalid_profile", "{id} {effort}");
+        }
+        // The rejected ones changed nothing.
+        assert_eq!(p.get("claude").unwrap().effort.as_deref(), Some("max"));
+        assert_eq!(p.get("gemini").unwrap().effort, None);
+        assert!(p.get("aider").is_none());
     }
 
     #[test]
