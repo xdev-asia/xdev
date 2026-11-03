@@ -1138,7 +1138,28 @@ mod tests {
             ..xdev_workspace::RepoEntry::default()
         });
         reg.save(&data).unwrap();
+        // A plain `sh`, so no login profile runs; Windows' own default
+        // PowerShell already runs with `-NoProfile`.
+        if cfg!(unix) {
+            use_shell(&data, "sh");
+        }
         (tmp, data, repo)
+    }
+
+    /// Makes `id` the default shell in `data`; `sh` is added as a custom
+    /// shell running `/bin/sh`.
+    fn use_shell(data: &Path, id: &str) {
+        let mut profiles = xdev_agent::Profiles::load(data).unwrap();
+        if id == "sh" {
+            profiles.shells.push(xdev_agent::CustomShell {
+                id: "sh".into(),
+                name: "sh".into(),
+                program: "/bin/sh".into(),
+                args: Vec::new(),
+            });
+        }
+        profiles.default_shell = Some(id.into());
+        profiles.save(data).unwrap();
     }
 
     #[test]
@@ -1147,6 +1168,17 @@ mod tests {
         let run = archive_run(&data, &repo, ARCHIVE_TIMEOUT).unwrap();
         assert_eq!((run.ran, run.code), (true, Some(0)));
         assert_eq!(run.output, "hi");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn archive_run_in_cmd_runs_a_script_of_several_lines() {
+        // Joined into one line with ` & `, the block would not parse.
+        let (_tmp, data, repo) = archive_repo("if 1==1 (\n  echo yes\n)\nexit /b 3\n");
+        use_shell(&data, "cmd");
+        let run = archive_run(&data, &repo, ARCHIVE_TIMEOUT).unwrap();
+        assert_eq!(run.output, "yes");
+        assert_eq!(run.code, Some(3));
     }
 
     #[test]

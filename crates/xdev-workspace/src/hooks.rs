@@ -82,7 +82,17 @@ pub(crate) struct SharedFile {
 }
 
 /// `Ok(None)` when there is no file; `Err` is the reason it is not used.
+/// A link is refused, not followed: it could point outside the repo.
 pub(crate) fn read_file(path: &Path) -> Result<Option<SharedFile>, String> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_symlink() => {
+            return Err(format!("{FILE_NAME} is a link; only a plain file is read"));
+        }
+        Ok(meta) if !meta.is_file() => return Err(format!("{FILE_NAME} is not a file")),
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("{FILE_NAME}: {e}")),
+    }
     let file = match fs::File::open(path) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -526,6 +536,26 @@ mod tests {
         assert_eq!(hooks.setup.unwrap().text, "make");
         let file = read_file(&f.worktree.join(FILE_NAME)).unwrap().unwrap();
         assert_eq!(file.unknown, ["ports", "scripts.run"]);
+    }
+
+    #[test]
+    fn a_linked_file_is_refused() {
+        let f = fixture();
+        let outside = f.data.join("elsewhere.toml");
+        fs::create_dir_all(&f.data).unwrap();
+        fs::write(&outside, "[scripts]\nsetup = \"make\"\n").unwrap();
+        let link = f.worktree.join(FILE_NAME);
+        #[cfg(windows)]
+        let made = std::os::windows::fs::symlink_file(&outside, &link).is_ok();
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(&outside, &link).is_ok();
+        if !made {
+            eprintln!("skipped: cannot make a file link here");
+            return;
+        }
+        let hooks = f.hooks();
+        assert!(hooks.parse_error.unwrap().contains("link"));
+        assert_eq!(hooks.setup, None);
     }
 
     #[test]
