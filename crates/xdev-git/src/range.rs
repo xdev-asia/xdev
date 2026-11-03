@@ -20,6 +20,32 @@ impl Repo {
         Ok((status == Some(0)).then(|| String::from_utf8_lossy(&out).trim().to_owned()))
     }
 
+    /// The full id of the commit any ref name, remote branch or id names;
+    /// `None` when it names no commit. Input that git could read as an
+    /// option is refused before git sees it.
+    pub fn resolve_ref(&self, rev: &str) -> Result<Option<String>, GitError> {
+        if rev.is_empty() || rev.starts_with('-') || rev.chars().any(char::is_control) {
+            return Err(GitError::BadId(rev.to_owned()));
+        }
+        let rev = format!("{rev}^{{commit}}");
+        let (status, out) = run::run_status(
+            &self.workdir,
+            &["rev-parse", "--verify", "-q", "--end-of-options", &rev],
+            None,
+        )?;
+        Ok((status == Some(0)).then(|| String::from_utf8_lossy(&out).trim().to_owned()))
+    }
+
+    /// The best common ancestor of two refs or ids; `None` when they share
+    /// none or either names no commit.
+    pub fn merge_base(&self, a: &str, b: &str) -> Result<Option<String>, GitError> {
+        let (Some(a), Some(b)) = (self.resolve_ref(a)?, self.resolve_ref(b)?) else {
+            return Ok(None);
+        };
+        let (status, out) = run::run_status(&self.workdir, &["merge-base", &a, &b], None)?;
+        Ok((status == Some(0)).then(|| String::from_utf8_lossy(&out).trim().to_owned()))
+    }
+
     /// Commits in `since..HEAD` touching any entry, newest first, at most
     /// `limit`, and the total. Entries are repo-relative globs: `*` stays in
     /// a folder, `**` crosses folders, a plain name matches that file or
