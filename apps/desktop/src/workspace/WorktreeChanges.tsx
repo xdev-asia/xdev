@@ -200,13 +200,20 @@ export function WorktreeChanges(props: {
   };
 
   // s, u and Delete act on the focused row, each only in the group where it makes sense.
-  function rowKey(e: { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; preventDefault(): void }, file: string, group: "staged" | "changes"): void {
+  function rowKey(
+    e: { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; target?: unknown; preventDefault(): void },
+    file: string,
+    group: "staged" | "changes",
+  ): void {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       if (!blocked) void commit();
       return;
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // Keys typed into a control inside the row (the checkbox, or a field added later) are its own.
+    const target = e.target as { tagName?: string; isContentEditable?: boolean } | null | undefined;
+    if (target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName ?? ""))) return;
     if (e.key === "s" && group === "changes") void restage([file], true);
     else if (e.key === "u" && group === "staged") void restage([file], false);
     else if (e.key === "Delete" && group === "changes") askDiscard([file]);
