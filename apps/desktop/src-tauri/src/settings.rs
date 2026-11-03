@@ -258,12 +258,31 @@ impl Default for KeySettings {
 pub struct UiSettings {
     /// The root font scale, 0.5..=2.0; 1.0 is 100 %.
     pub zoom: f32,
+    /// Which tabs come back on start. A file from before it loads `All`.
+    pub restore: RestoreMode,
 }
 
 impl Default for UiSettings {
     fn default() -> Self {
-        UiSettings { zoom: 1.0 }
+        UiSettings {
+            zoom: 1.0,
+            restore: RestoreMode::All,
+        }
     }
+}
+
+/// Settings → Terminal → On start, reopen tabs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum RestoreMode {
+    /// Agent tabs resume their conversation; shell tabs start fresh.
+    #[default]
+    All,
+    /// Only agent tabs come back.
+    AgentsOnly,
+    /// Nothing comes back.
+    None,
 }
 
 impl UiSettings {
@@ -1093,7 +1112,14 @@ then sum up"
 
     #[test]
     fn zoom_clamps_to_its_range() {
-        let at = |zoom: f32| UiSettings { zoom }.clamped().zoom;
+        let at = |zoom: f32| {
+            UiSettings {
+                zoom,
+                ..UiSettings::default()
+            }
+            .clamped()
+            .zoom
+        };
         assert_eq!(at(0.1), 0.5);
         assert_eq!(at(3.0), 2.0);
         assert_eq!(at(1.25), 1.25);

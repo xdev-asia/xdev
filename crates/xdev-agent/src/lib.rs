@@ -35,7 +35,8 @@ pub use flags::{efforts, flags};
 pub use flow::RunOptions;
 pub use hooks::{
     DETAIL_MAX, HOOKS_DIR, HOOKS_OFF, HookDetail, HookEvent, HookLine, LINE_MAX, REPEAT_MS,
-    append_hook, append_hook_detail, hook_args, hook_file, hooks_off, set_hooks_off, valid_pty_id,
+    SESSION_MAX, append_hook, append_hook_detail, hook_args, hook_file, hooks_off, set_hooks_off,
+    valid_pty_id,
 };
 pub use launch::{Context, Launch, LaunchError, resolve};
 pub use profiles::{

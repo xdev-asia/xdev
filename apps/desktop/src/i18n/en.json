@@ -1582,5 +1582,12 @@
   "qcmd.page.deleteTitle": "Delete this command?",
   "qcmd.page.deleteBody": "\"{label}\" will be removed. This cannot be undone.",
   "qcmd.palette.run": "Run: {label}",
-  "qcmd.palette.new": "New quick command…"
+  "qcmd.palette.new": "New quick command…",
+  "layout.restored": "Restored {resumed} agent and {fresh} shell tabs",
+  "layout.undo": "Undo",
+  "layout.setting": "On start, reopen tabs",
+  "layout.setting.hint": "Agent tabs continue their own conversation; shell tabs start fresh in the same folder.",
+  "layout.mode.all": "All tabs",
+  "layout.mode.agentsOnly": "Agent tabs only",
+  "layout.mode.none": "Nothing"
 }
