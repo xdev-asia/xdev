@@ -5,6 +5,7 @@ mod commit;
 mod history;
 mod range;
 mod run;
+mod since;
 mod status;
 mod worktree;
 
