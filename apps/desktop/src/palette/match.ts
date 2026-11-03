@@ -17,9 +17,22 @@ const TITLE_WEIGHT = 1;
 const DETAIL_WEIGHT = 0.6;
 const KEYWORD_WEIGHT = 0.5;
 
-/** The words of a query: lowercased, without repeats, at most eight. */
+/**
+ * Lowercased, with accents dropped (đ becomes d). Each character folds on its own and keeps its
+ * length, so a hit range found in the folded text is the range in the original.
+ */
+export function fold(text: string): string {
+  let out = "";
+  for (const ch of text.toLowerCase()) {
+    const base = ch === "đ" ? "d" : ch.normalize("NFD").replace(/\p{M}/gu, "");
+    out += base.length === ch.length ? base : ch;
+  }
+  return out;
+}
+
+/** The words of a query: folded, without repeats, at most eight. */
 export function tokens(query: string): string[] {
-  return [...new Set(query.toLowerCase().split(/\s+/).filter(Boolean))].slice(0, MAX_TOKENS);
+  return [...new Set(fold(query).split(/\s+/).filter(Boolean))].slice(0, MAX_TOKENS);
 }
 
 const SEPARATORS = " -_/.·:";
@@ -34,8 +47,9 @@ function wordStart(text: string, i: number): boolean {
 }
 
 /** How well one query word matches one text, best tier first; null when it does not. */
-export function matchField(token: string, text: string): { score: number; hits: Range[] } | null {
-  const lower = text.toLowerCase();
+export function matchField(rawToken: string, text: string): { score: number; hits: Range[] } | null {
+  const lower = fold(text);
+  const token = fold(rawToken);
   const n = token.length;
   if (n === 0) return null;
   if (lower === token) return { score: EXACT, hits: [[0, n]] };
