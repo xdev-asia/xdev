@@ -514,6 +514,8 @@
   "error.gh_failed": "gh bị lỗi. Chi tiết hiện cùng thông báo lỗi.",
   "error.draft_failed": "Agent không soạn được nội dung này. Hãy tự viết.",
   "error.bad_sound": "Hãy chọn tệp wav, mp3 hoặc ogg, tối đa 1 MB.",
+  "error.hook_untrusted": "Script trong xdev.toml chưa được tin cậy, hoặc đã đổi từ lúc bạn tin cậy.",
+  "error.hook_none": "Repo này không có script cho việc đó.",
   "apps.terminal": "Terminal",
   "terminal.folder": "Thư mục",
   "terminal.pickFolder": "Chọn thư mục…",

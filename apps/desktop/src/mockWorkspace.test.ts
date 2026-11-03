@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createMockApi } from "./api";
+import { createMockApi, SETUP_PROFILE } from "./api";
 import { createMockWorkspace, DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE } from "./mockWorkspace";
 
 const FIRST = "/demo/wt/xdev-oak";
@@ -331,5 +331,40 @@ describe("mock review", () => {
     await expect(api.reviewNotesPut(FIRST, [{ ...note("f"), file: "../x" }])).rejects.toMatchObject({ code: "bad_note" });
     expect(await api.reviewNotes(FIRST)).toHaveLength(2);
     await expect(api.reviewNotes("/nowhere")).rejects.toMatchObject({ code: "worktree_unknown" });
+  });
+});
+
+describe("mock repo hooks", () => {
+  const seed = { ...DEMO_WORKSPACE, repoFiles: { "/demo/xdev": { setup: "pnpm i", archive: "echo bye", archiveOutput: "bye" } } };
+
+  it("reads the shared scripts untrusted until trusted by hash", async () => {
+    const api = createMockWorkspace(seed);
+    const hooks = await api.repoHooks(FIRST);
+    expect(hooks.setup).toMatchObject({ text: "pnpm i", shared: true, trusted: false });
+    await expect(api.worktreeArchiveRun(FIRST)).rejects.toMatchObject({ code: "hook_untrusted" });
+    await expect(api.repoHookTrust(FIRST, "archive", "stale")).rejects.toMatchObject({ code: "hook_untrusted" });
+    const after = await api.repoHookTrust(FIRST, "archive", hooks.archive!.hash);
+    expect(after.archive?.trusted).toBe(true);
+    expect(await api.worktreeArchiveRun(FIRST)).toEqual({ ran: true, code: 0, output: "bye" });
+  });
+
+  it("joins shared and local scripts as the source says", async () => {
+    const api = createMockWorkspace(seed);
+    await api.repoUpdate("demo-xdev", { scriptSource: "both", localSetup: "make" });
+    const hooks = await api.repoHooks(FIRST);
+    expect(hooks.setup?.text).toBe("pnpm i\nmake");
+    await api.repoUpdate("demo-xdev", { scriptSource: "local", localArchive: "" });
+    expect(await api.worktreeArchiveRun(FIRST)).toEqual({ ran: false, code: null, output: "" });
+  });
+
+  it("runs setup in the mock terminal and reports its exit", async () => {
+    const api = createMockApi({}, { workspace: seed });
+    await expect(api.ptySpawn("s", FIRST, SETUP_PROFILE, null, 80, 24, () => {})).rejects.toMatchObject({ code: "hook_untrusted" });
+    const hash = (await api.repoHooks(FIRST)).setup!.hash;
+    await api.repoHookTrust(FIRST, "setup", hash);
+    const exit = new Promise((resolve) => void api.onPtyExit(resolve));
+    const info = await api.ptySpawn("s", FIRST, SETUP_PROFILE, null, 80, 24, () => {});
+    expect(info.agent).toBe(false);
+    expect(await exit).toEqual({ id: "s", code: 0 });
   });
 });

@@ -1,5 +1,6 @@
 //! The desktop app's list of repos and the worktrees made from them.
 
+mod hooks;
 mod names;
 mod ops;
 mod registry;
@@ -10,6 +11,10 @@ use std::path::PathBuf;
 
 use xdev_git::GitError;
 
+pub use hooks::{
+    FILE_NAME, HookKind, HookRun, HookScript, RepoHooks, TRUST_FILE, detect_setup, hook_env,
+    hooks_for, trust, trust_hook,
+};
 pub use names::{PrefixIssue, normalize_prefix, prefix_issue};
 pub use ops::{
     BranchPrefix, CreateOptions, DirEntry, DirListing, RepoPatch, RepoView, WorktreeStat,
@@ -17,7 +22,9 @@ pub use ops::{
     list, list_dir, path_key, refresh_base, remove_worktree, set_pinned, stat, update_repo,
     valid_short_name,
 };
-pub use registry::{Registry, RepoEntry, VaultEntry, WorktreeMeta, repo_id};
+pub use registry::{
+    Registry, RepoEntry, ScriptSource, SetupPolicy, VaultEntry, WorktreeMeta, repo_id,
+};
 pub use vaults::{VaultKind, VaultView, add_vault, forget_vault, list_vaults, repo_docs_dir};
 
 /// The UI translates `code()`, never the message.
@@ -58,6 +65,13 @@ pub enum WorkspaceError {
     Primary(PathBuf),
     #[error("not a folder inside the worktree: {0}")]
     BadPath(String),
+    /// A shared script whose exact content the person has not trusted.
+    #[error("the {0} script from xdev.toml is not trusted")]
+    HookUntrusted(String),
+    #[error("no {0} script")]
+    NoHook(String),
+    #[error("the script failed with code {code:?}")]
+    HookFailed { code: Option<i32>, output: String },
 }
 
 impl WorkspaceError {
@@ -80,6 +94,9 @@ impl WorkspaceError {
             WorkspaceError::Dirty(_) => "worktree_dirty",
             WorkspaceError::Primary(_) => "primary_worktree",
             WorkspaceError::BadPath(_) => "bad_path",
+            WorkspaceError::HookUntrusted(_) => "hook_untrusted",
+            WorkspaceError::NoHook(_) => "hook_none",
+            WorkspaceError::HookFailed { .. } => "hook_failed",
         }
     }
 }

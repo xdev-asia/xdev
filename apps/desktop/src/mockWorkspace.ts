@@ -1,7 +1,7 @@
 import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
 import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
-import type { Api, ApiError, Check, Commit, DirEntry, DirListing, GitSettings, RepoView, ReviewNote, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, Check, Commit, DirEntry, DirListing, GitSettings, HookKind, HookScript, RepoHooks, RepoView, ReviewNote, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 
 type WorkspaceApi = Pick<
   Api,
@@ -9,6 +9,9 @@ type WorkspaceApi = Pick<
   | "repoAdd"
   | "repoForget"
   | "repoUpdate"
+  | "repoHooks"
+  | "repoHookTrust"
+  | "worktreeArchiveRun"
   | "worktreeAdopt"
   | "vaultList"
   | "vaultAdd"
@@ -69,7 +72,34 @@ export type MockWorkspaceSeed = {
   gitUserName?: string | null;
   // Settings → Git; the app's defaults when left out.
   git?: Partial<GitSettings>;
+  // `xdev.toml` by worktree path; a worktree without one falls back to its repo's primary path.
+  repoFiles?: Record<string, MockRepoFile>;
 };
+
+// A worktree's `xdev.toml` and what its scripts do when run; nothing is executed.
+export type MockRepoFile = {
+  setup?: string;
+  archive?: string;
+  waitForSetup?: boolean;
+  // The file does not parse: no shared scripts, this text as `parseError`.
+  parseError?: string;
+  // The setup command guessed from the files, offered when there is no setup.
+  detected?: string;
+  // Exit codes and output of the scripts; 0 and empty by default.
+  setupCode?: number;
+  archiveCode?: number;
+  archiveOutput?: string;
+};
+
+// What the mock terminal of `SETUP_PROFILE` prints and exits with.
+export type MockSetupRun = { text: string; code: number };
+
+// A stand-in for Rust's blake3 hex: the same text gives the same hash.
+function mockHash(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  return h.toString(16).padStart(8, "0");
+}
 
 // The fake remote of one worktree.
 type Remote = { tracked: boolean; ahead: number; behind: number; commits: Commit[] };
@@ -88,6 +118,10 @@ export const DEMO_WORKSPACE: MockWorkspaceSeed = {
       path: "/demo/xdev",
       baseRef: "main",
       worktreeRoot: "/demo/wt",
+      setupPolicy: "ask",
+      scriptSource: "auto",
+      localSetup: "",
+      localArchive: "",
       missing: false,
       worktrees: [
         worktree("/demo/xdev", "xdev", "main", true),
@@ -212,7 +246,10 @@ function demoDiff(file: string, kind: WorktreeChange["kind"]): WorktreeFileDiff 
 
 // In-memory workspace that follows the Rust commands: the same error codes and the same gate on
 // removing a worktree. Nothing is read from disk, so a new repo is only its primary checkout.
-export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE, emit: SettingsEmit = () => {}): WorkspaceApi {
+export function createMockWorkspace(
+  seed: MockWorkspaceSeed = DEMO_WORKSPACE,
+  emit: SettingsEmit = () => {},
+): WorkspaceApi & { __setupRun(cwd: string): Promise<MockSetupRun> } {
   const repos: RepoView[] = structuredClone(seed.repos);
   const changes = new Map<string, WorktreeChange[]>(Object.entries(structuredClone(seed.changes)));
   let commits = 0;
@@ -313,6 +350,42 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE, em
     return reject("hook_failed", out);
   }
 
+  const repoFiles = new Map<string, MockRepoFile>(Object.entries(structuredClone(seed.repoFiles ?? {})));
+  const trusted = new Set<string>();
+
+  // Shared, then a newline, then local, as the repo's script source says.
+  function scriptOf(repo: RepoView, kind: HookKind, shared: string, local: string): HookScript | null {
+    const source = repo.scriptSource === "auto" ? (local.trim() !== "" ? "local" : "shared") : repo.scriptSource;
+    const sharedPart = source === "local" ? "" : shared.trim() === "" ? "" : shared;
+    const localPart = source === "shared" ? "" : local.trim() === "" ? "" : local;
+    if (sharedPart === "" && localPart === "") return null;
+    const text = sharedPart && localPart ? `${sharedPart}\n${localPart}` : sharedPart || localPart;
+    const hash = sharedPart ? mockHash(sharedPart) : "";
+    return { text, shared: sharedPart !== "", hash, trusted: hash === "" || trusted.has(`${repo.id}:${kind}:${hash}`) };
+  }
+
+  function hooksOf(path: string): { repo: RepoView; file: MockRepoFile | undefined; hooks: RepoHooks } | null {
+    const found = findWorktree(path);
+    if (!found) return null;
+    const { repo } = found;
+    const file = repoFiles.get(path) ?? repoFiles.get(repo.path);
+    const parsed = file !== undefined && file.parseError === undefined ? file : undefined;
+    const setup = scriptOf(repo, "setup", parsed?.setup ?? "", repo.localSetup);
+    const archive = scriptOf(repo, "archive", parsed?.archive ?? "", repo.localArchive);
+    return {
+      repo,
+      file,
+      hooks: {
+        setup,
+        archive,
+        waitForSetup: parsed?.waitForSetup ?? false,
+        policy: repo.setupPolicy,
+        parseError: file?.parseError ?? null,
+        detected: setup === null ? (file?.detected ?? null) : null,
+      },
+    };
+  }
+
   function findWorktree(path: string): { repo: RepoView; wt: WorktreeView } | undefined {
     for (const repo of repos) {
       const wt = repo.worktrees.find((w) => w.path === path);
@@ -338,6 +411,10 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE, em
         path: root,
         baseRef: "main",
         worktreeRoot: `${root.replace(/[\/][^\/]*$/, "")}/wt`,
+        setupPolicy: "ask",
+        scriptSource: "auto",
+        localSetup: "",
+        localArchive: "",
         missing: false,
         worktrees: [worktree(root, shortName, "main", true)],
         found: [],
@@ -366,7 +443,40 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE, em
       if (shortName !== undefined) repo.shortName = shortName;
       if (baseRef !== undefined) repo.baseRef = baseRef;
       if (worktreeRoot !== undefined) repo.worktreeRoot = trimPath(worktreeRoot);
+      if (patch.setupPolicy !== undefined) repo.setupPolicy = patch.setupPolicy;
+      if (patch.scriptSource !== undefined) repo.scriptSource = patch.scriptSource;
+      if (patch.localSetup !== undefined) repo.localSetup = patch.localSetup;
+      if (patch.localArchive !== undefined) repo.localArchive = patch.localArchive;
       return structuredClone(repo);
+    },
+    async repoHooks(path) {
+      const found = hooksOf(path);
+      if (!found) return reject("worktree_unknown", path);
+      return found.hooks;
+    },
+    async repoHookTrust(path, kind, hash) {
+      const found = hooksOf(path);
+      if (!found) return reject("worktree_unknown", path);
+      const script = kind === "setup" ? found.hooks.setup : found.hooks.archive;
+      if (!script || !script.shared || script.hash !== hash) return reject("hook_untrusted", kind);
+      trusted.add(`${found.repo.id}:${kind}:${hash}`);
+      return hooksOf(path)!.hooks;
+    },
+    async worktreeArchiveRun(path) {
+      const found = hooksOf(path);
+      if (!found) return reject("worktree_unknown", path);
+      const script = found.hooks.archive;
+      if (!script) return { ran: false, code: null, output: "" };
+      if (!script.trusted) return reject("hook_untrusted", "archive");
+      return { ran: true, code: found.file?.archiveCode ?? 0, output: found.file?.archiveOutput ?? "" };
+    },
+    async __setupRun(cwd) {
+      const found = hooksOf(cwd);
+      if (!found) return reject("worktree_unknown", cwd);
+      const script = found.hooks.setup;
+      if (!script) return reject("hook_none", "setup");
+      if (!script.trusted) return reject("hook_untrusted", "setup");
+      return { text: script.text, code: found.file?.setupCode ?? 0 };
     },
     async worktreeAdopt(path) {
       if (repos.some((r) => r.path === path)) return reject("primary_worktree", path);
