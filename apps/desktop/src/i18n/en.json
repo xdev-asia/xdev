@@ -571,6 +571,7 @@
   "workspace.footer.meterUnknown": "{name}: usage unknown",
   "workspace.footer.window.five_hour": "5-hour",
   "workspace.footer.window.seven_day": "7-day",
+  "workspace.footer.update": "Update to {version}",
   "workspace.create.title": "New worktree",
   "workspace.create.body": "xDev makes a new branch and checks it out in its own folder beside the repository.",
   "workspace.create.repo": "Repository",

@@ -473,9 +473,12 @@ function browserApi(): Api {
   // The preview lands in the demo vault so the main layout is reachable without a dialog;
   // `?welcome` simulates a first launch instead.
   const firstRun = params.has("welcome");
+  // `?update=0.4.0` simulates a downloaded update, so the restart button can be previewed.
+  const pending = params.get("update");
   let seeded = false;
   return {
     ...mock,
+    updateStatus: async () => (pending ? { version: pending, notes: null } : null),
     lastVault: async () => (await mock.lastVault()) ?? (firstRun ? null : DEMO_ROOT),
     async openVault(path) {
       const docs = await mock.openVault(path);
