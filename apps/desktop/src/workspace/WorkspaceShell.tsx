@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type HookDetail, type HookKind, type RepoHooks, type PrView, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type OpenInApp, type OpenTarget, type HookDetail, type HookKind, type RepoHooks, type PrView, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
 import { DocsApp } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
@@ -12,6 +12,8 @@ import { PaletteHost } from "@/palette/PaletteHost";
 import { useKeymap, type ActionId } from "@/keys/keymap";
 import { setTerminalKeyHost, startDiagnosticToasts } from "@/keys/terminalKey";
 import { Toasts } from "./Toasts";
+import { pushToast } from "./toastStore";
+import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
 import { SettingsView } from "@/settings/SettingsView";
@@ -23,7 +25,10 @@ import { ChecksPanel } from "./ChecksPanel";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
+import { AddProjectDialog, parentOf } from "./AddProjectDialog";
+import { RemoveRepoDialog } from "./RemoveRepoDialog";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
+import { removeRepo } from "./removeRepo";
 import { VaultNav } from "./VaultNav";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { sendToAgentTab } from "./agentPrompt";
@@ -147,9 +152,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // Asks the front terminal of a worktree to take keyboard focus, as the palette closes.
   const [termFocus, setTermFocus] = useState<{ worktree: string; seq: number } | null>(null);
   const focusTerminal = (worktree: string) => setTermFocus((f) => ({ worktree, seq: (f?.seq ?? 0) + 1 }));
+  // The repo Remove from xDev asks about, and why the last try failed.
+  const [forgetting, setForgetting] = useState<{ repo: RepoView; error?: ApiError["code"] } | null>(null);
+  // The Add project dialog (Open folder… or Clone from URL).
+  const [adding, setAdding] = useState(false);
+  const [openInApps, setOpenInApps] = useState<OpenInApp[]>([]);
   const [settingsAt, setSettingsAt] = useState<{ section?: string; filter?: string; seq: number }>({ seq: 0 });
   // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
-  const dialogOpen = creating !== null || removing !== null;
+  const dialogOpen = creating !== null || removing !== null || adding;
   useJumpKey(useCallback(() => setJumpOpen((o) => (dialogOpen ? false : !o)), [dialogOpen]));
   // The worktrees in the order the sidebar draws them, which the worktree keys walk.
   const [order, setOrder] = useState<string[]>([]);
@@ -457,7 +467,63 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     { when: () => view === "workspace" && !dialogOpen && !jumpOpen },
   );
 
-  async function addRepo(): Promise<void> {
+  // The Open In apps for the worktree menu; read again when Settings changes them.
+  useEffect(() => {
+    const read = () => void api.openInSettings().then((s) => setOpenInApps(s.apps), () => {});
+    read();
+    return api.onSettingsChanged(({ sections }) => {
+      if (sections.includes("openIn")) read();
+    });
+  }, [api]);
+
+  // A failed open says why in a toast, with a way to the list of apps.
+  async function openIn(path: string, target: OpenTarget): Promise<void> {
+    try {
+      await api.openIn(path, target);
+    } catch (e) {
+      const err = toApiError(e);
+      const name = target.type === "app" ? (openInApps.find((a) => a.id === target.id)?.label ?? target.id) : t("openIn.fileManager");
+      pushToast({
+        text: err.code === "not_found" ? t("openIn.notFound", { name }) : t("openIn.failed", { name, message: err.detail ?? t(`error.${err.code}`) }),
+        actions: [{ label: t("openIn.editApps"), run: () => openSettings("openIn") }],
+      });
+    }
+  }
+
+  async function copy(text: string): Promise<void> {
+    if (!(await copyText(text))) pushToast({ text: t("worktreeMenu.copyFailed") });
+  }
+
+  // A shell tab in a worktree, from the row menu: the default shell when it is on, else the first one.
+  async function newTerminalIn(wt: WorktreeView): Promise<void> {
+    if (!sessions) return;
+    try {
+      const pv = await api.profiles();
+      const shell = pv.shells.some((s) => s.id === pv.defaultShell) ? pv.defaultShell : pv.shells[0]?.id;
+      if (!shell) return;
+      sessions.open(wt.path, shell);
+      select(wt);
+      show("workspace");
+      focusTerminal(wt.path);
+    } catch {
+      // The profile list did not load; the + menu of the tab strip still works.
+    }
+  }
+
+  async function forgetRepo(repo: RepoView): Promise<void> {
+    const code = await removeRepo({ forget: (id) => api.repoForget(id), closeWorktree: (path) => sessions?.closeWorktree(path) }, repo);
+    if (code) return setForgetting({ repo, error: code });
+    setForgetting(null);
+    await load();
+  }
+
+  function addRepo(): void {
+    setNotice(undefined);
+    setAdding(true);
+  }
+
+  async function addRepoFolder(): Promise<void> {
+    setAdding(false);
     setNotice(undefined);
     const path = await api.pickFolder().catch(() => null);
     if (!path) return;
@@ -468,6 +534,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     } catch (e) {
       setNotice(toApiError(e).code);
     }
+  }
+
+  async function repoCloned(repo: RepoView): Promise<void> {
+    setAdding(false);
+    await load();
+    if (repo.worktrees[0]) select(repo.worktrees[0]);
   }
 
   async function pin(wt: WorktreeView): Promise<void> {
@@ -870,6 +942,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             unread={unreadMap}
             onMarkUnread={(wt) => sessions?.markUnread(wt.path)}
             onMarkRead={(wt) => sessions?.markRead(wt.path)}
+            openInApps={openInApps}
+            onOpenIn={(path, target) => void openIn(path, target)}
+            onCopy={(text) => void copy(text)}
+            onNewTerminal={(wt) => void newTerminalIn(wt)}
+            onRepoSettings={(repo) => openSettings("repos", repo.id)}
+            onRemoveRepo={(repo) => setForgetting({ repo })}
           />
           </div>
         </aside>
@@ -1094,7 +1172,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           },
           openSettings,
           newWorktree: (name) => startCreate(undefined, name),
-          addRepo: () => void addRepo(),
+          addRepo,
           searchDocs: openSearch,
           toggleSidebar: () => setSidebarOpen((o) => !o),
           showDocs: () => show("docs"),
@@ -1121,6 +1199,25 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         />
       )}
       <Toasts />
+      {adding && (
+        <AddProjectDialog
+          api={api}
+          startFolder={parentOf(repos?.[repos.length - 1]?.path ?? "")}
+          onOpenFolder={() => void addRepoFolder()}
+          onCloned={(repo) => void repoCloned(repo)}
+          onCancel={() => setAdding(false)}
+        />
+      )}
+      {forgetting && (
+        <RemoveRepoDialog
+          name={forgetting.repo.shortName}
+          worktrees={forgetting.repo.worktrees.length}
+          tabs={forgetting.repo.worktrees.flatMap((w) => sessions?.tabs(w.path) ?? []).map((tab) => tab.title ?? tab.profileId)}
+          error={forgetting.error}
+          onConfirm={() => void forgetRepo(forgetting.repo)}
+          onCancel={() => setForgetting(null)}
+        />
+      )}
       {removing && (
         <RemoveWorktreeDialog
           worktree={removing.worktree}
