@@ -29,7 +29,9 @@ const HOMES: Home[] = [
 ];
 // What a demo repo holds on disk, for `kitPathsExist`.
 const DEMO_REPO_FILES = ["README.md", "package.json", "src/App.tsx", "src/main.tsx", "docs/guide.md", "CLAUDE.md"];
-const NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
+// The name rule of `xdev_ai::valid_name`: 1 to 32 of a-z, 0-9 and "-", no leading "-".
+const NAME = /^[a-z0-9][a-z0-9-]{0,31}$/;
+const REMOVED_ROOT = "/demo/data/kit/removed";
 const HISTORY_MAX = 1000;
 const DAY_MS = 86_400_000;
 
@@ -105,7 +107,7 @@ export function createMockKit(): KitApi {
   const skills = new Map<string, SkillRow>([
     [`${CLAUDE_HOME}/skills/review`, { name: "review", description: "Review a diff before it is merged", homeId: "own-claude" }],
     [`${CLAUDE_HOME}/skills/release-notes`, { name: "release-notes", description: "Draft the notes for a release", homeId: "own-claude" }],
-    [`${CODEX_HOME}/skills/review`, { name: "review", description: "Review a diff before it is merged", homeId: "own-codex" }],
+    [`${CODEX_HOME}/skills/review`, { name: "review", description: "Review a diff, then list what to retest", homeId: "own-codex" }],
     [`${CODEX_HOME}/skills/triage`, { name: "triage", description: "Sort new issues by urgency", homeId: "own-codex" }],
   ]);
   const files = new Map<string, string>([
@@ -142,7 +144,8 @@ export function createMockKit(): KitApi {
         duplicate: false,
       };
     });
-    for (const r of rows) r.duplicate = rows.some((o) => o !== r && o.name === r.name);
+    // As in Rust: one name with different bytes. The same bytes in two homes are one skill.
+    for (const r of rows) r.duplicate = rows.some((o) => o !== r && o.name === r.name && o.hash !== r.hash);
     return rows;
   }
 
@@ -187,7 +190,8 @@ export function createMockKit(): KitApi {
       const bad = checkTree(worktree);
       if (bad) return bad;
       const text = files.get(path);
-      if (text === undefined) return reject("not_found", path);
+      // A file that is not there is an I/O failure in Rust, not a code of its own.
+      if (text === undefined) return reject("io", path);
       return { text, stamp: stampOf(path, text) };
     },
     async kitWrite(path, text, stamp, worktree) {
@@ -207,15 +211,16 @@ export function createMockKit(): KitApi {
       if (!inRoots(from, worktree)) return reject("outside", from);
       if (!inRoots(to, worktree)) return reject("outside", to);
       const text = files.get(from);
-      if (text === undefined) return reject("not_found", from);
+      if (text === undefined) return reject("io", from);
       if (files.has(to)) return reject("changed");
       files.set(to, text);
     },
     async kitSkillCopy(dir, toSkillsDir, worktree) {
       const bad = checkTree(worktree);
       if (bad) return bad;
+      if (!inRoots(dir, worktree)) return reject("outside", dir);
       const row = skills.get(dir);
-      if (row === undefined) return reject("not_found", dir);
+      if (row === undefined) return reject("kit_bad_input", "not a skill folder");
       const target = newSkillDir(toSkillsDir);
       if (target === null) return reject("outside", toSkillsDir);
       const made = `${target}/${row.name}`;
@@ -229,9 +234,11 @@ export function createMockKit(): KitApi {
       if (bad) return bad;
       const target = newSkillDir(skillsDir);
       if (target === null) return reject("outside", skillsDir);
-      if (!NAME.test(name)) return reject("bad_arg", name);
+      if (!NAME.test(name)) return reject("bad_name", "bad skill name");
+      if (description.includes("\n")) return reject("kit_bad_input", "the description is one line");
       const dir = `${target}/${name}`;
-      if (skills.has(dir)) return reject("exists", dir);
+      // A name that is taken is a write with no stamp over a file, which Rust answers with `changed`.
+      if (skills.has(dir)) return reject("changed");
       const home = HOMES.find((h) => target.startsWith(`${h.path}/`));
       skills.set(dir, { name, description, homeId: home?.id ?? "" });
       return `${dir}/SKILL.md`;
@@ -239,21 +246,25 @@ export function createMockKit(): KitApi {
     async kitSkillRemove(dir, worktree) {
       const bad = checkTree(worktree);
       if (bad) return bad;
+      if (!inRoots(dir, worktree)) return reject("outside", dir);
       const row = skills.get(dir);
-      if (row === undefined) return reject("not_found", dir);
+      if (row === undefined) return reject("kit_bad_input", "not a skill folder");
       skills.delete(dir);
       moves += 1;
-      const aside = `/demo/data/kit/removed/${moves}/${row.name}`;
+      const aside = `${REMOVED_ROOT}/${moves}/${row.name}`;
       removed.set(aside, { dir, row });
       return aside;
     },
     async kitSkillRestore(aside, to, worktree) {
       const bad = checkTree(worktree);
       if (bad) return bad;
-      // A folder already at the target wins, as in Rust: restoring never overwrites.
-      if (skills.has(to)) return reject("changed");
+      // The order of Rust: the folder must be in the removed area and still there, then the
+      // target must be inside the roots, and a folder already at the target wins (never overwritten).
+      if (!aside.startsWith(`${REMOVED_ROOT}/`)) return reject("outside", aside);
       const gone = removed.get(aside);
-      if (gone === undefined) return reject("not_found", aside);
+      if (gone === undefined) return reject("kit_bad_input", "not a skill folder");
+      if (!inRoots(to, worktree)) return reject("outside", to);
+      if (skills.has(to)) return reject("changed");
       skills.set(to, gone.row);
       removed.delete(aside);
     },

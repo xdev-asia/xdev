@@ -477,6 +477,7 @@
   "error.primary_worktree": "The main checkout of a repository cannot be removed here.",
   "error.empty_message": "Write a commit message first.",
   "error.outside": "Outside the agent folders, or a linked file",
+  "error.kit_bad_input": "The agent kit refused this input. The details are shown with the error.",
   "apps.terminal": "Terminal",
   "terminal.folder": "Folder",
   "terminal.pickFolder": "Choose folder…",

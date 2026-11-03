@@ -36,7 +36,11 @@ impl From<KitError> for CmdError {
             KitError::Changed => "changed",
             KitError::Outside(_) => "outside",
             KitError::Io(_) => "io",
-            KitError::Parse(_) => "bad_arg",
+            KitError::Parse(ref m) => match m.as_str() {
+                "bad skill name" => "bad_name",
+                "not UTF-8 text" => "not_utf8",
+                _ => "kit_bad_input",
+            },
         };
         CmdError {
             code,
@@ -562,9 +566,32 @@ mod tests {
         let io = CmdError::from(KitError::Io("disk".into()));
         assert_eq!(io.code, "io");
         assert!(io.detail.unwrap().contains("disk"));
-        let parse = CmdError::from(KitError::Parse("bad skill name".into()));
-        assert_eq!(parse.code, "bad_arg");
-        assert!(parse.detail.unwrap().contains("bad skill name"));
+    }
+
+    #[test]
+    fn parse_errors_map_to_fitting_codes() {
+        let code = |m: &str| CmdError::from(KitError::Parse(m.into()));
+        assert_eq!(code("bad skill name").code, "bad_name");
+        assert_eq!(code("not UTF-8 text").code, "not_utf8");
+        for other in ["the description is one line", "not a skill folder", "expected value at line 1"] {
+            let e = code(other);
+            assert_eq!(e.code, "kit_bad_input");
+            assert!(e.detail.unwrap().contains(other));
+        }
+
+        // The same through the commands, with the messages xdev-kit really gives.
+        let f = fixture();
+        let skills = f.user_home.join(".claude").join("skills");
+        fs::create_dir_all(skills.join("plain")).unwrap();
+        let bad_name = f.ctx.skill_new(&s(&skills), "Bad Name", "x", None);
+        assert_eq!(bad_name.unwrap_err().code, "bad_name");
+        let two_lines = f.ctx.skill_new(&s(&skills), "ok", "a\nb", None);
+        assert_eq!(two_lines.unwrap_err().code, "kit_bad_input");
+        let not_skill = f.ctx.skill_remove(&s(&skills.join("plain")), None);
+        assert_eq!(not_skill.unwrap_err().code, "kit_bad_input");
+        let binary = f.user_home.join(".claude").join("blob.md");
+        fs::write(&binary, [0xff, 0xfe, 0x00]).unwrap();
+        assert_eq!(f.ctx.read(&s(&binary), None).unwrap_err().code, "not_utf8");
     }
 
     #[test]
@@ -698,7 +725,7 @@ mod tests {
             .ctx
             .skill_new(&s(&claude_skills), "../up", "d", None)
             .unwrap_err();
-        assert_eq!(bad.code, "bad_arg");
+        assert_eq!(bad.code, "bad_name");
     }
 
     #[test]
@@ -816,7 +843,10 @@ mod tests {
         let f = fixture();
         let path = f.user_home.join(".claude").join("history.jsonl");
         let filler = format!(r#"{{"display":"{}","timestamp":1}}"#, "x".repeat(1000));
-        let mut text = String::new();
+        // The first line is far outside the tail and has the newest time of all, so it
+        // comes first in the answer if, and only if, the whole file was read.
+        let mut text = String::from(r#"{"display":"head","timestamp":9000000000000}"#);
+        text.push('\n');
         while text.len() < HISTORY_TAIL_BYTES as usize + 5000 {
             text.push_str(&filler);
             text.push('\n');
@@ -824,10 +854,12 @@ mod tests {
         text.push_str(r#"{"display":"last","timestamp":9}"#);
         text.push('\n');
         fs::write(&path, text).unwrap();
-        let got = f.ctx.prompt_history(3);
+        let got = f.ctx.prompt_history(HISTORY_MAX);
         assert_eq!(got[0].text, "last");
+        assert!(got.iter().all(|p| p.text != "head"));
         // The cut line at the start of the tail is dropped, not half-parsed.
         assert!(got.iter().all(|p| p.text == "last" || p.text.len() == 1000));
+        assert!(got.len() > 1000 - 1);
     }
 
     #[test]
@@ -859,5 +891,29 @@ mod tests {
         let summary = f.ctx.usage("2026-11-03", "2026-11-03", true, 0).unwrap();
         let total: u64 = summary.days.iter().map(|(_, t)| t.sum()).sum();
         assert_eq!(total, 15);
+    }
+
+    #[test]
+    fn a_nonzero_offset_moves_a_log_line_to_the_next_day_key() {
+        let f = fixture();
+        let logs = f.user_home.join(".claude").join("projects").join("-work-demo");
+        fs::create_dir_all(&logs).unwrap();
+        // 20:30 UTC on the 3rd is 03:30 on the 4th at UTC+7.
+        fs::write(
+            logs.join("s1.jsonl"),
+            concat!(
+                r#"{"type":"assistant","cwd":"/work/demo","timestamp":"2026-11-03T20:30:00.000Z","message":{"id":"m1","model":"model-a","usage":{"input_tokens":10,"output_tokens":5}}}"#,
+                "
+"
+            ),
+        )
+        .unwrap();
+        let by_day = |s: &UsageSummary| -> Vec<(String, u64)> {
+            s.days.iter().map(|(d, t)| (d.clone(), t.sum())).filter(|(_, n)| *n > 0).collect()
+        };
+        let local = f.ctx.usage("2026-11-03", "2026-11-04", true, 420).unwrap();
+        assert_eq!(by_day(&local), [("2026-11-04".to_owned(), 15)]);
+        let utc = f.ctx.usage("2026-11-03", "2026-11-04", true, 0).unwrap();
+        assert_eq!(by_day(&utc), [("2026-11-03".to_owned(), 15)]);
     }
 }
