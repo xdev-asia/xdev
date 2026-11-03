@@ -78,9 +78,12 @@ it("lists worktrees grouped by repo with the primary first and no delete on it",
   expect(html).toContain(`aria-label="${en("workspace.pinned")}"`);
   expect(view.main("/demo/wt/xdev-oak").props["aria-current"]).toBe("true");
 
-  // The primary checkout has no menu at all: it can be neither pinned nor removed here.
-  expect(view.more("/demo/xdev")).toBeUndefined();
+  // The primary checkout can be pinned but never removed.
+  expect(view.more("/demo/xdev")).toBeDefined();
   view.main("/demo/xdev").props.onContextMenu(event);
+  expect(view.item(en("workspace.delete"))).toBeUndefined();
+  view.item(en("workspace.pin"))!.props.onClick();
+  expect(view.calls.pin.map(w => w.path)).toEqual(["/demo/xdev"]);
   expect(view.all().some(n => n.props.role === "menu")).toBe(false);
 
   view.main("/demo/wt/xdev-oak").props.onClick();
@@ -94,7 +97,7 @@ it("lists worktrees grouped by repo with the primary first and no delete on it",
 
   view.more("/demo/wt/xdev-elm")!.props.onClick();
   view.item(en("workspace.unpin"))!.props.onClick();
-  expect(view.calls.pin.map(w => w.path)).toEqual(["/demo/wt/xdev-elm"]);
+  expect(view.calls.pin.map(w => w.path)).toEqual(["/demo/xdev", "/demo/wt/xdev-elm"]);
 });
 
 it("new worktree and add repo call back", () => {
