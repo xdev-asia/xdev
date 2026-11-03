@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
 import { AgentsPage } from "./agents/AgentsPage";
 import { translate } from "@/i18n";
+import { NotificationsPage } from "./notifications/NotificationsPage";
 import { SECTIONS } from "./sections";
 import { SettingsView } from "./SettingsView";
 import { VaultsSettings } from "./VaultsSettings";
@@ -46,15 +47,20 @@ function view(initial?: string) {
 
 it("opens Agents first and switches to Vaults", () => {
   const v = view();
-  expect(SECTIONS.map((s) => s.id)).toEqual(["agents", "repos", "vaults"]);
-  expect(v.items().map((n) => n.props.children)).toEqual([en("settings.agents.title"), en("settings.repos.title"), en("settings.vaults.title")]);
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", undefined, undefined]);
+  expect(SECTIONS.map((s) => s.id)).toEqual(["agents", "notifications", "repos", "vaults"]);
+  expect(v.items().map((n) => n.props.children)).toEqual([
+    en("settings.agents.title"),
+    en("settings.notifications.title"),
+    en("settings.repos.title"),
+    en("settings.vaults.title"),
+  ]);
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", undefined, undefined, undefined]);
   expect(v.shown().type).toBe(AgentsPage);
   expect(v.shown().props.api).toBe(v.api);
   expect(v.shown().props.onChanged).toBe(v.onChanged);
 
-  v.items()[2].props.onClick();
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual([undefined, undefined, "page"]);
+  v.items()[3].props.onClick();
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual([undefined, undefined, undefined, "page"]);
   expect(v.shown().type).toBe(VaultsSettings);
   expect(v.body().props["aria-label"]).toBe(en("settings.vaults.title"));
 });
@@ -67,4 +73,14 @@ it("an unknown initial section falls back to the first", () => {
   expect(view("vaults").shown().type).toBe(VaultsSettings);
   hooks.values = [];
   expect(view("nope").shown().type).toBe(AgentsPage);
+});
+
+it("lists notifications after agents and opens its page", () => {
+  const v = view();
+  v.items()[1].props.onClick();
+  expect(v.items()[1].props["aria-current"]).toBe("page");
+  expect(v.shown().type).toBe(NotificationsPage);
+  expect(v.body().props["aria-label"]).toBe(en("settings.notifications.title"));
+  hooks.values = [];
+  expect(view("notifications").shown().type).toBe(NotificationsPage);
 });
