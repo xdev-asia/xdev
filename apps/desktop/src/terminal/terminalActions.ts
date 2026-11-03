@@ -27,26 +27,38 @@ export interface HandleDeps {
 
 /** A handle that reads its xterm on every call, so it stays valid across remounts. */
 export function createTerminalHandle(deps: HandleDeps): TerminalHandle {
-  // Contract stub: Lane B (B1, B4) fills these in.
-  void deps;
   return {
-    copy: async () => false,
-    paste: async () => {},
-    selectAll: () => {},
-    clear: () => {},
-    reset: () => {},
-    find: () => {},
-    hasSelection: () => false,
-    focus: () => {},
+    async copy() {
+      const term = deps.term();
+      if (!term?.hasSelection()) return false;
+      const text = term.getSelection();
+      return text ? copyText(text) : false;
+    },
+    async paste() {
+      if (!deps.term()) return;
+      const text = await navigator.clipboard?.readText().catch(() => "");
+      // Read again: the view may have gone while the clipboard answered.
+      if (text) deps.term()?.paste(text);
+    },
+    selectAll: () => deps.term()?.selectAll(),
+    clear: () => deps.term()?.clear(),
+    reset: () => deps.term()?.reset(),
+    find: () => deps.find(),
+    hasSelection: () => deps.term()?.hasSelection() ?? false,
+    focus: () => deps.term()?.focus(),
     lines: () => [],
   };
 }
 
-/** Writes text to the system clipboard; false when the webview refuses. */
+/** Writes text to the system clipboard (the writer copy-on-select uses); false when the webview refuses. */
 export async function copyText(text: string): Promise<boolean> {
-  // Contract stub: Lane B (B3).
-  void text;
-  return false;
+  if (!navigator.clipboard) return false;
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** The header of Copy Context. `exitCode` undefined means the program still runs. */
