@@ -225,6 +225,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     void loadStatusSettings(api);
   }, [api, view, focused]);
 
+  // With hooks off the marker drops every hook event, so open panes go back to timing.
+  useEffect(() => {
+    sessions?.setHooks(statusSettings.hooks);
+  }, [sessions, statusSettings.hooks]);
+
   // A pane nobody looks at that wants the person: OS notification, sound, and the jump back on a click.
   useEffect(() => {
     if (!sessions) return;
