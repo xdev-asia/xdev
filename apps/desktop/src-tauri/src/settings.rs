@@ -221,10 +221,6 @@ pub enum SettingsSection {
     Keys,
     Ui,
     /// `quickCommands` and their recently used order.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "emitted once the quick commands store lands")
-    )]
     QuickCommands,
 }
 

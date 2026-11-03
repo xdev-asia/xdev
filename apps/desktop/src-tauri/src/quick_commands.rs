@@ -3,12 +3,31 @@
 //! (`quickCommands`); a repo may also ship read-only ones in `xdev.toml`
 //! under `[[commands]]`, which run only once trusted.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
+use xdev_agent::Profiles;
+use xdev_workspace::{Registry, path_key};
 
+use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError};
+use crate::settings::SettingsSection;
+use crate::settings_store;
+use crate::workspace::bad_arg;
+
+/// The longest label, in characters once trimmed.
+pub const LABEL_MAX: usize = 80;
+/// The longest terminal command, in characters once its end is trimmed.
+pub const COMMAND_MAX: usize = 4000;
+/// The longest agent prompt, in UTF-8 bytes.
+pub const PROMPT_MAX: usize = 256 * 1024;
+/// All agent prompts together, in UTF-8 bytes, so `settings.json` stays
+/// small enough to read on every change.
+pub const PROMPTS_TOTAL_MAX: usize = 2 * 1024 * 1024;
+
+/// What every change here tells the windows.
+const SECTIONS: &[SettingsSection] = &[SettingsSection::QuickCommands];
 
 /// One saved command.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,6 +101,125 @@ pub struct FileCommands {
     pub errors: Vec<String>,
 }
 
+/// `item` as it would be stored, or `bad_arg` naming the first field that
+/// is wrong. `repos` are the registry's repo paths; a repo scope is stored
+/// with the registry's spelling of the path.
+fn checked(
+    item: QuickCommand,
+    repos: &[PathBuf],
+    profiles: &Profiles,
+) -> Result<QuickCommand, CmdError> {
+    let label = item.label.trim().to_owned();
+    if label.is_empty() || label.chars().count() > LABEL_MAX {
+        return Err(bad_arg("label"));
+    }
+    let scope = match item.scope {
+        QuickScope::Global => QuickScope::Global,
+        QuickScope::Repo { repo } => {
+            let key = path_key(Path::new(&repo));
+            let found = repos
+                .iter()
+                .find(|path| path_key(path) == key)
+                .ok_or_else(|| bad_arg("repo"))?;
+            QuickScope::Repo {
+                repo: found.to_string_lossy().into_owned(),
+            }
+        }
+    };
+    let action = match item.action {
+        QuickAction::Terminal {
+            command,
+            append_enter,
+        } => {
+            let command = command.trim_end().to_owned();
+            if command.is_empty() || command.chars().count() > COMMAND_MAX {
+                return Err(bad_arg("command"));
+            }
+            QuickAction::Terminal {
+                command,
+                append_enter,
+            }
+        }
+        QuickAction::Agent { profile, prompt } => {
+            if prompt.trim().is_empty() || prompt.len() > PROMPT_MAX {
+                return Err(bad_arg("prompt"));
+            }
+            if profiles.get(&profile).is_none() {
+                return Err(bad_arg("profile"));
+            }
+            QuickAction::Agent { profile, prompt }
+        }
+    };
+    Ok(QuickCommand {
+        id: item.id,
+        label,
+        scope,
+        action,
+    })
+}
+
+fn new_id() -> String {
+    format!("qc-{}", uuid::Uuid::new_v4())
+}
+
+/// Replaces the command with `item.id` in place, or adds `item` at the end
+/// (with a new id when it has none). Refuses when all prompts together
+/// would pass `PROMPTS_TOTAL_MAX`, leaving `list` as it was.
+fn upsert_into(
+    list: &mut Vec<QuickCommand>,
+    mut item: QuickCommand,
+) -> Result<QuickCommand, CmdError> {
+    if item.id.is_empty() {
+        item.id = new_id();
+    }
+    let mut next = list.clone();
+    match next.iter_mut().find(|c| c.id == item.id) {
+        Some(slot) => *slot = item.clone(),
+        None => next.push(item.clone()),
+    }
+    let prompts: usize = next
+        .iter()
+        .map(|c| match &c.action {
+            QuickAction::Agent { prompt, .. } => prompt.len(),
+            QuickAction::Terminal { .. } => 0,
+        })
+        .sum();
+    if prompts > PROMPTS_TOTAL_MAX {
+        return Err(bad_arg("prompts"));
+    }
+    *list = next;
+    Ok(item)
+}
+
+/// Moves `id` to position `to` (clamped) among the commands of its own
+/// scope; the others keep their places in the list.
+fn move_within(list: &mut [QuickCommand], id: &str, to: usize) -> Result<(), CmdError> {
+    let item = list
+        .iter()
+        .find(|c| c.id == id)
+        .cloned()
+        .ok_or_else(|| CmdError {
+            code: "not_found",
+            detail: Some(id.to_owned()),
+        })?;
+    let slots: Vec<usize> = list
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.scope == item.scope)
+        .map(|(i, _)| i)
+        .collect();
+    let mut order: Vec<QuickCommand> = slots
+        .iter()
+        .map(|&i| list[i].clone())
+        .filter(|c| c.id != id)
+        .collect();
+    order.insert(to.min(order.len()), item);
+    for (slot, c) in slots.into_iter().zip(order) {
+        list[slot] = c;
+    }
+    Ok(())
+}
+
 fn not_yet() -> CmdError {
     CmdError {
         code: "io",
@@ -92,8 +230,7 @@ fn not_yet() -> CmdError {
 /// Every saved command, in order: global and per repo together.
 #[tauri::command(async)]
 pub fn quick_commands_list(app: AppHandle) -> Result<Vec<QuickCommand>, CmdError> {
-    let _ = app;
-    Ok(Vec::new())
+    Ok(settings_store::read(&app).quick_commands)
 }
 
 /// Inserts at the end of its scope, or replaces the one with the same id in
@@ -104,21 +241,29 @@ pub fn quick_command_upsert(
     state: State<'_, AppState>,
     item: QuickCommand,
 ) -> Result<QuickCommand, CmdError> {
-    let _ = (app, state, item);
-    Err(not_yet())
+    let data = data_dir(&state)?;
+    let repos: Vec<PathBuf> = Registry::load(data)?
+        .repos
+        .into_iter()
+        .map(|r| r.path)
+        .collect();
+    let item = checked(item, &repos, &Profiles::load(data)?)?;
+    settings_store::try_write(&app, SECTIONS, |s| upsert_into(&mut s.quick_commands, item))
 }
 
+/// An unknown id is a no-op.
 #[tauri::command(async)]
 pub fn quick_command_delete(app: AppHandle, id: String) -> Result<(), CmdError> {
-    let _ = (app, id);
-    Err(not_yet())
+    settings_store::write(&app, SECTIONS, |s| s.quick_commands.retain(|c| c.id != id))?;
+    Ok(())
 }
 
 /// Moves the command to position `to` among the commands of its own scope.
 #[tauri::command(async)]
 pub fn quick_commands_move(app: AppHandle, id: String, to: usize) -> Result<(), CmdError> {
-    let _ = (app, id, to);
-    Err(not_yet())
+    settings_store::try_write(&app, SECTIONS, |s| {
+        move_within(&mut s.quick_commands, &id, to)
+    })
 }
 
 /// Records a run, for the recently used order.
@@ -160,6 +305,46 @@ pub fn repo_file_commands_trust(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::{self, Settings};
+    use crate::settings_store::SettingsStore;
+
+    fn terminal(id: &str, label: &str, scope: QuickScope) -> QuickCommand {
+        QuickCommand {
+            id: id.into(),
+            label: label.into(),
+            scope,
+            action: QuickAction::Terminal {
+                command: format!("echo {label}"),
+                append_enter: true,
+            },
+        }
+    }
+
+    fn repo(path: &str) -> QuickScope {
+        QuickScope::Repo { repo: path.into() }
+    }
+
+    fn labels(list: &[QuickCommand]) -> Vec<&str> {
+        list.iter().map(|c| c.label.as_str()).collect()
+    }
+
+    fn known() -> (Vec<PathBuf>, Profiles) {
+        (vec![PathBuf::from("E:/Codes/app")], Profiles::default())
+    }
+
+    fn store() -> (tempfile::TempDir, SettingsStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SettingsStore::new(dir.path().join(settings::FILE_NAME));
+        (dir, store)
+    }
+
+    /// What `quick_command_upsert` does once it has the registry and
+    /// profiles, short of the event.
+    fn upsert(store: &SettingsStore, item: QuickCommand) -> Result<QuickCommand, CmdError> {
+        let (repos, profiles) = known();
+        let item = checked(item, &repos, &profiles)?;
+        store.try_update(|s| upsert_into(&mut s.quick_commands, item))
+    }
 
     #[test]
     fn the_wire_shape_is_camel_case_and_tagged() {
@@ -210,5 +395,174 @@ mod tests {
                 append_enter: true
             }
         );
+    }
+
+    #[test]
+    fn every_change_names_the_quick_commands_section() {
+        assert_eq!(SECTIONS, &[SettingsSection::QuickCommands]);
+    }
+
+    #[test]
+    fn upsert_without_an_id_gets_a_new_one_at_the_end() {
+        let (_dir, store) = store();
+        let first = upsert(&store, terminal("", "  Tests  ", QuickScope::Global)).unwrap();
+        assert!(first.id.starts_with("qc-"), "{}", first.id);
+        assert_eq!(first.id.len(), "qc-".len() + 36);
+        assert_eq!(first.label, "Tests");
+        let second = upsert(&store, terminal("", "Lint", QuickScope::Global)).unwrap();
+        assert_ne!(first.id, second.id);
+        assert_eq!(labels(&store.read().quick_commands), ["Tests", "Lint"]);
+    }
+
+    #[test]
+    fn upsert_with_a_known_id_replaces_in_place() {
+        let (_dir, store) = store();
+        let a = upsert(&store, terminal("", "A", QuickScope::Global)).unwrap();
+        upsert(&store, terminal("", "B", QuickScope::Global)).unwrap();
+        let renamed = upsert(&store, terminal(&a.id, "A2", QuickScope::Global)).unwrap();
+        assert_eq!(renamed.id, a.id);
+        let list = store.read().quick_commands;
+        assert_eq!(labels(&list), ["A2", "B"]);
+        assert_eq!(list[0].id, a.id);
+    }
+
+    #[test]
+    fn bad_fields_are_refused_and_nothing_is_saved() {
+        let (_dir, store) = store();
+        let detail = |item: QuickCommand| upsert(&store, item).unwrap_err().detail.unwrap();
+        assert_eq!(
+            detail(terminal("", &"x".repeat(81), QuickScope::Global)),
+            "label"
+        );
+        assert_eq!(detail(terminal("", "   ", QuickScope::Global)), "label");
+        let command = |text: String| QuickCommand {
+            action: QuickAction::Terminal {
+                command: text,
+                append_enter: true,
+            },
+            ..terminal("", "Cmd", QuickScope::Global)
+        };
+        assert_eq!(detail(command("y".repeat(4001))), "command");
+        assert_eq!(detail(command("  \n ".into())), "command");
+        assert_eq!(
+            detail(terminal("", "Elsewhere", repo("E:/Codes/other"))),
+            "repo"
+        );
+        let agent = |profile: &str, prompt: String| QuickCommand {
+            action: QuickAction::Agent {
+                profile: profile.into(),
+                prompt,
+            },
+            ..terminal("", "Agent", QuickScope::Global)
+        };
+        assert_eq!(detail(agent("nobody", "Review".into())), "profile");
+        assert_eq!(detail(agent("claude", " \n".into())), "prompt");
+        assert_eq!(
+            detail(agent("claude", "p".repeat(PROMPT_MAX + 1))),
+            "prompt"
+        );
+        assert_eq!(
+            upsert(&store, agent("nobody", "x".into()))
+                .unwrap_err()
+                .code,
+            "bad_arg"
+        );
+        assert!(store.read().quick_commands.is_empty());
+
+        assert!(upsert(&store, terminal("", &"é".repeat(80), QuickScope::Global)).is_ok());
+        assert!(upsert(&store, command("y".repeat(4000))).is_ok());
+        assert!(upsert(&store, agent("claude", "Review".into())).is_ok());
+        assert_eq!(store.read().quick_commands.len(), 3);
+    }
+
+    #[test]
+    fn the_prompts_together_are_capped() {
+        let (_dir, store) = store();
+        let big = |label: &str| QuickCommand {
+            action: QuickAction::Agent {
+                profile: "claude".into(),
+                prompt: "p".repeat(PROMPT_MAX),
+            },
+            ..terminal("", label, QuickScope::Global)
+        };
+        let fits = PROMPTS_TOTAL_MAX / PROMPT_MAX;
+        for i in 0..fits {
+            upsert(&store, big(&format!("P{i}"))).unwrap();
+        }
+        let refused = upsert(&store, big("one more")).unwrap_err();
+        assert_eq!(refused.detail.as_deref(), Some("prompts"));
+        assert_eq!(store.read().quick_commands.len(), fits);
+    }
+
+    #[test]
+    fn a_repo_scope_is_stored_as_the_registry_spells_it() {
+        let (repos, profiles) = known();
+        let item = checked(terminal("", "T", repo("E:/Codes/app/")), &repos, &profiles).unwrap();
+        assert_eq!(item.scope, repo("E:/Codes/app"));
+    }
+
+    #[test]
+    fn a_terminal_command_keeps_its_lines_and_loses_only_its_trailing_space() {
+        let (repos, profiles) = known();
+        let item = QuickCommand {
+            action: QuickAction::Terminal {
+                command: "  cd web\npnpm dev \n\n".into(),
+                append_enter: false,
+            },
+            ..terminal("", "Dev", QuickScope::Global)
+        };
+        let stored = checked(item, &repos, &profiles).unwrap();
+        assert_eq!(
+            stored.action,
+            QuickAction::Terminal {
+                command: "  cd web\npnpm dev".into(),
+                append_enter: false
+            }
+        );
+    }
+
+    #[test]
+    fn delete_removes_only_that_command() {
+        let (_dir, store) = store();
+        let a = upsert(&store, terminal("", "A", QuickScope::Global)).unwrap();
+        upsert(&store, terminal("", "B", QuickScope::Global)).unwrap();
+        for id in [a.id.as_str(), "qc-none"] {
+            store
+                .update(|s| s.quick_commands.retain(|c| c.id != id))
+                .unwrap();
+        }
+        assert_eq!(labels(&store.read().quick_commands), ["B"]);
+    }
+
+    #[test]
+    fn move_reorders_only_within_the_same_scope() {
+        let mut list = vec![
+            terminal("g1", "G1", QuickScope::Global),
+            terminal("r1", "R1", repo("E:/a")),
+            terminal("g2", "G2", QuickScope::Global),
+            terminal("s1", "S1", repo("E:/b")),
+            terminal("g3", "G3", QuickScope::Global),
+            terminal("r2", "R2", repo("E:/a")),
+        ];
+        move_within(&mut list, "g3", 0).unwrap();
+        assert_eq!(labels(&list), ["G3", "R1", "G1", "S1", "G2", "R2"]);
+        move_within(&mut list, "r1", 99).unwrap();
+        assert_eq!(labels(&list), ["G3", "R2", "G1", "S1", "G2", "R1"]);
+        move_within(&mut list, "s1", 0).unwrap();
+        assert_eq!(labels(&list), ["G3", "R2", "G1", "S1", "G2", "R1"]);
+        let missing = move_within(&mut list, "nope", 0).unwrap_err();
+        assert_eq!(missing.code, "not_found");
+    }
+
+    #[test]
+    fn a_refused_move_saves_nothing() {
+        let (_dir, store) = store();
+        upsert(&store, terminal("", "A", QuickScope::Global)).unwrap();
+        let before: Settings = store.read();
+        let err = store
+            .try_update(|s| move_within(&mut s.quick_commands, "nope", 0))
+            .unwrap_err();
+        assert_eq!(err.code, "not_found");
+        assert_eq!(store.read(), before);
     }
 }
