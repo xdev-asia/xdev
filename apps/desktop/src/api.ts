@@ -41,14 +41,23 @@ import type {
   WorktreeStat,
   WorktreeView,
 } from "@xdev/bindings";
-import type { DirEntry, DirListing } from "@xdev/bindings";
+import type {
+  DirEntry,
+  DirListing,
+  Home,
+  KitText,
+  MemorySet,
+  PromptEntry,
+  Skill,
+  UsageSummary,
+} from "@xdev/bindings";
 import type { Target } from "./doc/frontmatter";
 import { toBytes } from "./terminal/ptyClient";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 
 export { createMockApi };
 export type { Target };
-export type { DirEntry, DirListing };
+export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
 
 // The IPC types come from Rust; see packages/bindings/README.md.
 export type {
@@ -173,7 +182,8 @@ export type ErrorCode =
   | "bad_ref"
   | "worktree_dirty"
   | "primary_worktree"
-  | "empty_message";
+  | "empty_message"
+  | "outside";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export interface Api {
@@ -297,6 +307,29 @@ export interface Api {
   // A to Z, `.git` left out, links listed as files and never followed, at most 2000 names with
   // `truncated` set past that. Rejects with `bad_path` for `..`, an absolute path or a link.
   worktreeListDir(path: string, dir: string): Promise<DirListing>;
+  // Agent kit. Every path is checked in Rust against the agent homes, the app data folder and
+  // `worktree` (a repo or worktree the workspace knows; any other rejects with `outside`).
+  kitHomes(): Promise<Home[]>;
+  kitSkills(worktree: string | null): Promise<Skill[]>;
+  kitMemory(worktree: string | null): Promise<MemorySet>;
+  kitRead(path: string, worktree: string | null): Promise<KitText>;
+  // `stamp` is the one `kitRead` gave (null for a new file); a file changed since rejects with
+  // `changed`. Resolves with the new stamp.
+  kitWrite(path: string, text: string, stamp: string | null, worktree: string | null): Promise<string>;
+  kitCopy(from: string, to: string, worktree: string | null): Promise<void>;
+  // Resolves with the new skill folder.
+  kitSkillCopy(dir: string, toSkillsDir: string, worktree: string | null): Promise<string>;
+  // Resolves with the path of the new SKILL.md.
+  kitSkillNew(skillsDir: string, name: string, description: string, worktree: string | null): Promise<string>;
+  // Moves the folder aside and resolves with where it went, for `kitSkillRestore`.
+  kitSkillRemove(dir: string, worktree: string | null): Promise<string>;
+  kitSkillRestore(removed: string, to: string, worktree: string | null): Promise<void>;
+  // Days are local `YYYY-MM-DD`; `refresh` reads the new session log bytes first.
+  kitUsage(sinceDay: string, untilDay: string, refresh: boolean): Promise<UsageSummary>;
+  // Whether each relative path exists under `root` (an agent home, repo or worktree).
+  kitPathsExist(root: string, paths: string[]): Promise<boolean[]>;
+  // Newest first, at most `limit` (and 1000).
+  kitPromptHistory(limit: number): Promise<PromptEntry[]>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -365,6 +398,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "worktree_dirty",
   "primary_worktree",
   "empty_message",
+  "outside",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -463,6 +497,21 @@ const tauriApi: Api = {
   worktreeCommit: (path, files, message) => call("worktree_commit", { path, files, message }),
   worktreeStat: (path) => call("worktree_stat", { path }),
   worktreeListDir: (path, dir) => call("worktree_list_dir", { path, dir }),
+  kitHomes: () => call("kit_homes"),
+  kitSkills: (worktree) => call("kit_skills", { worktree }),
+  kitMemory: (worktree) => call("kit_memory", { worktree }),
+  kitRead: (path, worktree) => call("kit_read", { path, worktree }),
+  kitWrite: (path, text, stamp, worktree) => call("kit_write", { path, text, stamp, worktree }),
+  kitCopy: (from, to, worktree) => call("kit_copy", { from, to, worktree }),
+  kitSkillCopy: (dir, toSkillsDir, worktree) => call("kit_skill_copy", { dir, toSkillsDir, worktree }),
+  kitSkillNew: (skillsDir, name, description, worktree) => call("kit_skill_new", { skillsDir, name, description, worktree }),
+  kitSkillRemove: (dir, worktree) => call("kit_skill_remove", { dir, worktree }),
+  kitSkillRestore: (removed, to, worktree) => call("kit_skill_restore", { removed, to, worktree }),
+  // The local offset (UTC+7 is 420) decides which day a log line belongs to.
+  kitUsage: (sinceDay, untilDay, refresh) =>
+    call("kit_usage", { sinceDay, untilDay, refresh, utcOffsetMinutes: -new Date().getTimezoneOffset() }),
+  kitPathsExist: (root, paths) => call("kit_paths_exist", { root, paths }),
+  kitPromptHistory: (limit) => call("kit_prompt_history", { limit }),
 };
 
 function browserApi(): Api {

@@ -6163,6 +6163,7 @@ dependencies = [
  "xdev-ai",
  "xdev-core",
  "xdev-git",
+ "xdev-kit",
  "xdev-policy",
  "xdev-pty",
  "xdev-workspace",

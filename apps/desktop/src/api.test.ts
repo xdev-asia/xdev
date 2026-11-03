@@ -579,3 +579,105 @@ it("routes account calls through Tauri and normalizes their errors", async () =>
     await expect(api.accounts()).rejects.toEqual({ code: "bad_registry" });
   } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
 });
+
+it("routes agent kit calls through Tauri with the argument names Rust expects", async () => {
+  vi.resetModules();
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    const calls = () => vi.mocked(invoke).mock.calls;
+    const last = () => calls()[calls().length - 1];
+
+    await api.kitHomes();
+    expect(last()).toEqual(["kit_homes", undefined]);
+    await api.kitSkills("/wt");
+    expect(last()).toEqual(["kit_skills", { worktree: "/wt" }]);
+    await api.kitSkills(null);
+    expect(last()).toEqual(["kit_skills", { worktree: null }]);
+    await api.kitMemory("/wt");
+    expect(last()).toEqual(["kit_memory", { worktree: "/wt" }]);
+    await api.kitRead("/a/CLAUDE.md", "/wt");
+    expect(last()).toEqual(["kit_read", { path: "/a/CLAUDE.md", worktree: "/wt" }]);
+    await api.kitWrite("/a/CLAUDE.md", "text", "stamp", null);
+    expect(last()).toEqual(["kit_write", { path: "/a/CLAUDE.md", text: "text", stamp: "stamp", worktree: null }]);
+    await api.kitWrite("/a/new.md", "text", null, "/wt");
+    expect(last()).toEqual(["kit_write", { path: "/a/new.md", text: "text", stamp: null, worktree: "/wt" }]);
+    await api.kitCopy("/a/x.md", "/b/x.md", null);
+    expect(last()).toEqual(["kit_copy", { from: "/a/x.md", to: "/b/x.md", worktree: null }]);
+    await api.kitSkillCopy("/a/skills/s", "/b/skills", "/wt");
+    expect(last()).toEqual(["kit_skill_copy", { dir: "/a/skills/s", toSkillsDir: "/b/skills", worktree: "/wt" }]);
+    await api.kitSkillNew("/a/skills", "name", "one line", null);
+    expect(last()).toEqual(["kit_skill_new", { skillsDir: "/a/skills", name: "name", description: "one line", worktree: null }]);
+    await api.kitSkillRemove("/a/skills/s", null);
+    expect(last()).toEqual(["kit_skill_remove", { dir: "/a/skills/s", worktree: null }]);
+    await api.kitSkillRestore("/data/kit/removed/1/s", "/a/skills/s", null);
+    expect(last()).toEqual(["kit_skill_restore", { removed: "/data/kit/removed/1/s", to: "/a/skills/s", worktree: null }]);
+    // The local offset is added here, so callers keep the three-argument form.
+    await api.kitUsage("2026-11-01", "2026-11-07", true);
+    expect(last()).toEqual([
+      "kit_usage",
+      { sinceDay: "2026-11-01", untilDay: "2026-11-07", refresh: true, utcOffsetMinutes: -new Date().getTimezoneOffset() },
+    ]);
+    await api.kitPathsExist("/wt", ["a.md", "b/c.md"]);
+    expect(last()).toEqual(["kit_paths_exist", { root: "/wt", paths: ["a.md", "b/c.md"] }]);
+    await api.kitPromptHistory(50);
+    expect(last()).toEqual(["kit_prompt_history", { limit: 50 }]);
+    expect(calls()).toHaveLength(15);
+
+    vi.mocked(invoke).mockRejectedValueOnce({ code: "outside" });
+    await expect(api.kitRead("/x", null)).rejects.toEqual({ code: "outside" });
+    vi.mocked(invoke).mockRejectedValueOnce({ code: "changed" });
+    await expect(api.kitWrite("/x", "t", "s", null)).rejects.toEqual({ code: "changed" });
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
+});
+
+describe("mock agent kit", () => {
+  it("has two homes, four skills with one duplicate, one stale memory line and seven days of usage", async () => {
+    const api = createMockApi({});
+    expect((await api.kitHomes()).map((h) => h.agent)).toEqual(["claude", "codex"]);
+    const skills = await api.kitSkills(null);
+    expect(skills).toHaveLength(4);
+    expect(skills.filter((s) => s.duplicate)).toHaveLength(2);
+    const memory = await api.kitMemory(null);
+    expect(memory.files.flatMap((f) => f.issues)).toHaveLength(1);
+    const usage = await api.kitUsage("2026-11-01", "2026-11-07", false);
+    expect(usage.days).toHaveLength(7);
+  });
+
+  it("saves with a stamp and refuses a stale one with changed", async () => {
+    const api = createMockApi({});
+    const [file] = (await api.kitMemory(null)).files;
+    const read = await api.kitRead(file.path, null);
+    const next = await api.kitWrite(file.path, "new text", read.stamp, null);
+    expect(next).not.toBe(read.stamp);
+    expect((await api.kitRead(file.path, null)).text).toBe("new text");
+    await expect(api.kitWrite(file.path, "again", read.stamp, null)).rejects.toEqual({ code: "changed" });
+    await expect(api.kitRead("/nowhere/x.md", null)).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("creates, copies, removes and restores a skill", async () => {
+    const api = createMockApi({});
+    const [home] = await api.kitHomes();
+    const skillsDir = `${home.path}/skills`;
+    const file = await api.kitSkillNew(skillsDir, "fresh", "A new one", null);
+    expect(file).toBe(`${skillsDir}/fresh/SKILL.md`);
+    expect((await api.kitSkills(null)).map((s) => s.name)).toContain("fresh");
+    await expect(api.kitSkillNew(skillsDir, "Bad Name", "x", null)).rejects.toMatchObject({ code: "bad_arg" });
+    const removed = await api.kitSkillRemove(`${skillsDir}/fresh`, null);
+    expect((await api.kitSkills(null)).map((s) => s.name)).not.toContain("fresh");
+    await api.kitSkillRestore(removed, `${skillsDir}/fresh`, null);
+    expect((await api.kitSkills(null)).map((s) => s.name)).toContain("fresh");
+    await expect(api.kitSkillRestore(removed, `${skillsDir}/fresh`, null)).rejects.toEqual({ code: "changed" });
+  });
+
+  it("reports which relative paths exist and gives a prompt history", async () => {
+    const api = createMockApi({});
+    const got = await api.kitPathsExist("/demo/xdev", ["README.md", "gone.md"]);
+    expect(got).toEqual([true, false]);
+    const history = await api.kitPromptHistory(2);
+    expect(history).toHaveLength(2);
+    expect(history[0].at).toBeGreaterThanOrEqual(history[1].at);
+  });
+});
