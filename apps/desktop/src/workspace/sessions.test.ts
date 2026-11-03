@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
 import type { HookEvent, PtyInfo } from "@/api";
 import { INTERRUPT_MS, STALE_MS } from "./status";
+import { addTab, leaves, paneOf, removeTab, splitPane, toggleExpand } from "./paneTree";
 import { DONE_QUIET_MS, Sessions } from "./sessions";
 
 const A = "/demo/wt/xdev-oak";
@@ -260,45 +261,96 @@ describe("Sessions", () => {
     expect(live.lastActivity(B)).toBeNull();
   });
 
-  it("split holds a pair of tabs and drops it when the second goes", async () => {
+  it("open adds to the focused pane and builds the layout", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    expect(live.layout(A)).toBeNull();
+    const one = live.open(A, "shell");
+    const two = live.open(A, "claude");
+    const l = live.layout(A)!;
+    expect(leaves(l).map((n) => (n.kind === "leaf" ? n.tabs : []))).toEqual([[one.id, two.id]]);
+    expect(live.layout(A)).toBe(l);
+    expect(live.layout(B)).toBeNull();
+    // A new tab lands in the focused pane.
+    live.setLayout(A, splitPane(l, l.focused, "right", live.open(A, "codex").id));
+    const three = live.tabs(A)[2];
+    expect(paneOf(live.layout(A)!, three.id)).toBe(live.layout(A)!.focused);
+    const four = live.open(A, "shell");
+    expect(paneOf(live.layout(A)!, four.id)).toBe(paneOf(live.layout(A)!, three.id));
+  });
+
+  it("setLayout tells listeners once and ignores the same value", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const one = live.open(A, "shell");
+    const heard = vi.fn();
+    live.subscribe(heard);
+    live.setLayout(A, live.layout(A));
+    expect(heard).not.toHaveBeenCalled();
+    live.setLayout(A, addTab(live.layout(A)!, "review:"));
+    expect(heard).toHaveBeenCalledTimes(1);
+    live.setLayout(A, null);
+    expect(live.layout(A)).toBeNull();
+    expect(one.id).toBeTruthy();
+  });
+
+  it("closing and exiting a tab remove it from the layout; the last one clears it", async () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const one = live.open(A, "shell");
+    const two = live.open(A, "claude");
+    live.setLayout(A, splitPane(live.layout(A)!, live.layout(A)!.focused, "down", live.open(A, "codex").id));
+    const three = live.tabs(A)[2];
+    await live.close(three.id);
+    expect(leaves(live.layout(A)!)).toHaveLength(1);
+    await live.close(two.id);
+    expect(paneOf(live.layout(A)!, one.id)).not.toBeNull();
+    expect(paneOf(live.layout(A)!, two.id)).toBeNull();
+    await live.close(one.id);
+    expect(live.layout(A)).toBeNull();
+  });
+
+  it("restart keeps the position in the layout", async () => {
     const live = (sessions = new Sessions(createMockApi({})));
     const one = live.open(A, "shell");
     const two = live.open(A, "claude");
     const three = live.open(A, "codex");
-    const heard = vi.fn();
-    live.subscribe(heard);
-    expect(live.split(A)).toBeNull();
+    let l = live.layout(A)!;
+    l = splitPane(removeTab(l, three.id)!, l.focused, "right", three.id);
+    live.setLayout(A, l);
+    const again = live.restart(three.id)!;
+    const after = live.layout(A)!;
+    expect(paneOf(after, again.id)).toBe(paneOf(l, three.id));
+    expect(paneOf(after, three.id)).toBeNull();
+    expect(leaves(after).map((n) => (n.kind === "leaf" ? n.tabs : []))).toEqual([[one.id, two.id], [again.id]]);
+  });
 
-    live.setSplit(A, { dir: "right", second: two.id });
-    expect(live.split(A)).toEqual({ dir: "right", second: two.id });
-    expect(live.split(A)).toBe(live.split(A));
-    expect(heard).toHaveBeenCalledTimes(1);
-    // Another worktree has none.
-    expect(live.split(B)).toBeNull();
-    // A tab that is not there is no split.
-    live.setSplit(A, { dir: "down", second: "nope" });
-    expect(live.split(A)).toBeNull();
-    // Clearing a split that is not set tells no one.
-    heard.mockClear();
-    live.setSplit(A, null);
-    expect(heard).not.toHaveBeenCalled();
+  it("visible is the active tab of each pane, or the expanded pane only", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const one = live.open(A, "shell");
+    expect(live.visible(B)).toEqual([]);
+    const two = live.open(A, "claude");
+    const three = live.open(A, "codex");
+    let l = live.layout(A)!;
+    l = splitPane(removeTab(l, three.id)!, l.focused, "right", three.id);
+    live.setLayout(A, l);
+    expect(live.visible(A)).toEqual([two.id, three.id]);
+    const first = paneOf(live.layout(A)!, one.id)!;
+    live.setLayout(A, toggleExpand(live.layout(A)!, first));
+    expect(live.visible(A)).toEqual([two.id]);
+    // The review tab is not a terminal.
+    live.setLayout(A, addTab(live.layout(A)!, "review:", first));
+    expect(live.visible(A)).toEqual([]);
+  });
 
-    live.setSplit(A, { dir: "down", second: two.id });
-    // Closing a third tab keeps it.
-    await live.close(three.id);
-    expect(live.split(A)).toEqual({ dir: "down", second: two.id });
-    // Starting the second again keeps it on the new pty.
-    const again = live.restart(two.id)!;
-    expect(live.split(A)).toEqual({ dir: "down", second: again.id });
-    await live.close(again.id);
-    expect(live.split(A)).toBeNull();
-    expect(live.tabs(A).map((t) => t.id)).toEqual([one.id]);
-
-    // Fewer than two tabs left drops it too.
-    const four = live.open(A, "claude");
-    live.setSplit(A, { dir: "right", second: four.id });
-    await live.close(one.id);
-    expect(live.split(A)).toBeNull();
+  it("setSeen and unread work with two panes on screen", async () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const one = live.open(A, "claude");
+    const two = live.open(A, "claude");
+    live.setLayout(A, splitPane(removeTab(live.layout(A)!, two.id)!, live.layout(A)!.focused, "right", two.id));
+    live.noteBell(one.id);
+    live.noteBell(two.id);
+    expect(live.tabs(A).every((t) => t.unread)).toBe(true);
+    live.setSeen(live.visible(A));
+    expect(live.tabs(A).some((t) => t.unread)).toBe(false);
+    expect(live.unread(A)).toBe(false);
   });
 
   it("turn_done_on_seen_pane_is_idle_and_quiet", () => {

@@ -235,3 +235,15 @@ export function equalize(l: PaneLayout): PaneLayout {
   const root = equalNode(l.root);
   return root === l.root ? l : { ...l, root };
 }
+
+/** Swaps a tab id for another in place (a restarted terminal keeps its position). */
+export function replaceTab(l: PaneLayout, oldId: string, newId: string): PaneLayout {
+  const pane = paneOf(l, oldId);
+  if (!pane || oldId === newId) return l;
+  const root = mapNode(l.root, pane, (n) =>
+    n.kind === "leaf"
+      ? { ...n, tabs: n.tabs.map((t) => (t === oldId ? newId : t)), active: n.active === oldId ? newId : n.active }
+      : n,
+  )!;
+  return { ...l, root };
+}
