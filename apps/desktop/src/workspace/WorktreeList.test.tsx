@@ -59,7 +59,20 @@ function harness() {
   const main = (path: string) => inRow(path).find(n => n.props.className === "ws-wt-main")!;
   const more = (path: string) => inRow(path).find(n => n.props.className === "ws-wt-more");
   const item = (label: string) => all().find(n => n.props.role === "menuitem" && n.props.children === label);
-  return { calls, all, html, row, main, more, item };
+  const menu = () => all().find(n => n.props.role === "menu");
+  return { calls, all, html, row, main, more, item, menu };
+}
+
+// A stand-in for the open menu's DOM: its items and the row's more button record focus.
+function dom(labels: string[]) {
+  const focused: string[] = [];
+  const el = (name: string) => ({ name, focus: () => void focused.push(name) });
+  const items = labels.map(el);
+  const more = el("more");
+  const menu = { querySelectorAll: () => items, parentElement: { querySelector: () => more } };
+  let prevented = 0;
+  const key = (key: string, on = 0) => ({ key, target: items[on], currentTarget: menu, preventDefault: () => void prevented++ });
+  return { focused, key, prevented: () => prevented };
 }
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; });
@@ -106,6 +119,50 @@ it("new worktree and add repo call back", () => {
   view.all().find(n => n.props.className === "ws-add-repo")!.props.onClick();
   expect(view.calls.create).toBe(1);
   expect(view.calls.add).toBe(1);
+});
+
+it("arrow keys move between menu items", () => {
+  const view = harness();
+  view.more("/demo/wt/xdev-oak")!.props.onClick();
+  const two = dom(["pin", "delete"]);
+  view.menu()!.props.onKeyDown(two.key("ArrowDown", 0));
+  view.menu()!.props.onKeyDown(two.key("ArrowDown", 1));
+  view.menu()!.props.onKeyDown(two.key("ArrowUp", 0));
+  view.menu()!.props.onKeyDown(two.key("Home", 1));
+  view.menu()!.props.onKeyDown(two.key("End", 0));
+  expect(two.focused).toEqual(["delete", "pin", "delete", "pin", "delete"]);
+  expect(two.prevented()).toBe(5);
+  expect(view.menu()).toBeDefined();
+
+  // The primary row has one item; the keys keep focus on it.
+  view.more("/demo/wt/xdev-oak")!.props.onClick();
+  view.more("/demo/xdev")!.props.onClick();
+  const one = dom(["pin"]);
+  for (const k of ["ArrowDown", "ArrowUp", "Home", "End"]) view.menu()!.props.onKeyDown(one.key(k));
+  expect(one.focused).toEqual(["pin", "pin", "pin", "pin"]);
+});
+
+it("Escape returns focus to the more button", () => {
+  const view = harness();
+  view.more("/demo/wt/xdev-oak")!.props.onClick();
+  const page = dom(["pin", "delete"]);
+  view.menu()!.props.onKeyDown(page.key("Escape", 1));
+  expect(page.focused).toEqual(["more"]);
+  expect(view.menu()).toBeUndefined();
+});
+
+it("Tab closes the menu", () => {
+  const view = harness();
+  view.main("/demo/wt/xdev-oak").props.onContextMenu(event);
+  const page = dom(["pin", "delete"]);
+  view.menu()!.props.onKeyDown(page.key("Tab"));
+  expect(view.menu()).toBeUndefined();
+  // Focus is not trapped: the browser's own Tab move goes ahead.
+  expect(page.prevented()).toBe(0);
+
+  view.main("/demo/wt/xdev-oak").props.onContextMenu(event);
+  view.all().find(n => n.props.className === "ws-menu-backdrop")!.props.onClick();
+  expect(view.menu()).toBeUndefined();
 });
 
 it("a repo group collapses", () => {

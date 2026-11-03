@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { JSX } from "react";
+import type { JSX, KeyboardEvent } from "react";
 import type { ApiError, RepoView, WorktreeView } from "../api";
 import { useI18n } from "../i18n";
 import type { TabStatus } from "./status";
@@ -34,6 +34,22 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const pick = (action: () => void) => {
     setMenu(null);
     action();
+  };
+  // Arrows, Home and End move between the items; Escape and Tab close the menu
+  // from the row's more button, so Tab goes on from there and is never trapped.
+  const menuKey = (e: KeyboardEvent<HTMLElement>) => {
+    const items = [...e.currentTarget.querySelectorAll<HTMLElement>("[role=menuitem]")];
+    const at = items.indexOf(e.target as HTMLElement);
+    const moves: Record<string, number> = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 };
+    const to = moves[e.key];
+    if (to !== undefined) {
+      e.preventDefault();
+      items[(to + items.length) % items.length]?.focus();
+    } else if (e.key === "Escape" || e.key === "Tab") {
+      if (e.key === "Escape") e.preventDefault();
+      e.currentTarget.parentElement?.querySelector<HTMLElement>(".ws-wt-more")?.focus();
+      setMenu(null);
+    }
   };
 
   // Rows are plain calls, not components, so the list keeps one set of hooks.
@@ -91,9 +107,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
               className="ws-menu"
               role="menu"
               aria-label={t("workspace.more", { name: wt.name })}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") setMenu(null);
-              }}
+              onKeyDown={menuKey}
             >
               <button type="button" role="menuitem" autoFocus onClick={() => pick(() => props.onPin(wt))}>
                 {wt.pinned ? t("workspace.unpin") : t("workspace.pin")}
