@@ -42,7 +42,13 @@ export function createTerminalHandle(deps: HandleDeps): TerminalHandle {
     },
     selectAll: () => deps.term()?.selectAll(),
     clear: () => deps.term()?.clear(),
-    reset: () => deps.term()?.reset(),
+    reset() {
+      const term = deps.term();
+      if (!term) return;
+      term.reset();
+      // Same size again, forced: the program redraws into the cleared screen.
+      void deps.client()?.resize(term.cols, term.rows, true).catch(() => {});
+    },
     find: () => deps.find(),
     hasSelection: () => deps.term()?.hasSelection() ?? false,
     focus: () => deps.term()?.focus(),

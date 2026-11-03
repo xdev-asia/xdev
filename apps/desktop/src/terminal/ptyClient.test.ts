@@ -45,6 +45,18 @@ describe("PtyClient", () => {
     client.dispose();
   });
 
+  it("a forced resize sends the same size again (after Reset Terminal)", async () => {
+    const api = createMockApi({});
+    const resize = vi.spyOn(api, "ptyResize");
+    const client = new PtyClient(api, "t3b");
+    await client.start("/demo", "shell", 80, 24, () => {});
+    await client.resize(100, 30);
+    await client.resize(100, 30, true);
+    expect(resize).toHaveBeenCalledTimes(2);
+    expect(resize).toHaveBeenLastCalledWith("t3b", 100, 30);
+    client.dispose();
+  });
+
   it("claude asks for approval first", async () => {
     const api = createMockApi({});
     const client = new PtyClient(api, "t4");
