@@ -916,5 +916,10 @@
   "checks.reason.gh_auth": "gh chưa đăng nhập. Chạy gh auth login rồi quay lại.",
   "checks.reason.not_github": "Remote này không nằm trên GitHub nên không có kết quả kiểm tra.",
   "ship.chip.label": "Pull request #{number}, {state}",
-  "ship.chip.labelChecks": "Pull request #{number}, {state}, {checks}"
+  "ship.chip.labelChecks": "Pull request #{number}, {state}, {checks}",
+  "workspace.tabs.agents": "Agent",
+  "workspace.tabs.shells": "Shell",
+  "workspace.tabs.skip": "skip",
+  "workspace.tabs.skipHint": "Agent này chạy mà không hỏi trước khi làm.",
+  "terminal.approve.skip": "Hồ sơ này chạy ở chế độ skip: agent làm mà không hỏi bạn. Chỉ cho phép lần chạy này; lần sau sẽ hỏi lại."
 }

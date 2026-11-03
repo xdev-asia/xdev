@@ -916,5 +916,10 @@
   "checks.reason.gh_auth": "gh is not signed in. Run gh auth login, then come back.",
   "checks.reason.not_github": "This remote is not on GitHub, so there are no checks to show.",
   "ship.chip.label": "Pull request #{number}, {state}",
-  "ship.chip.labelChecks": "Pull request #{number}, {state}, {checks}"
+  "ship.chip.labelChecks": "Pull request #{number}, {state}, {checks}",
+  "workspace.tabs.agents": "Agents",
+  "workspace.tabs.shells": "Shells",
+  "workspace.tabs.skip": "skip",
+  "workspace.tabs.skipHint": "This agent runs without asking before it acts.",
+  "terminal.approve.skip": "This profile runs in skip mode: the agent acts without asking you. This allows one start only; the next start asks again."
 }

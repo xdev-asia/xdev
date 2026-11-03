@@ -41,7 +41,16 @@ export function profileName(
   t: (key: string, vars?: Record<string, string | number>) => string,
 ): string {
   const found = view?.profiles.find((p) => p.profile.id === id)?.profile.name ?? view?.shells.find((s) => s.id === id)?.name;
-  return found ?? t(`terminal.profile.${id}`);
+  if (found !== undefined) return found;
+  // A profile removed since its tab opened has no label of its own: show the id.
+  const key = `terminal.profile.${id}`;
+  const label = t(key);
+  return label === key ? id : label;
+}
+
+/** The permissions a profile runs as now, per the view; `null` without a view or for an unknown id. */
+export function profilePermissions(view: ProfilesView | null, id: string): string | null {
+  return view?.profiles.find((p) => p.profile.id === id)?.permissions ?? null;
 }
 
 /** The letter on a profile's mark: `S` for shells, `C`/`X`/`G` for built-ins, else the first letter. */

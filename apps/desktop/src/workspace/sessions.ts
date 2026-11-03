@@ -1,4 +1,4 @@
-import type { Api, PtyProfile } from "@/api";
+import type { Api, PtyInfo, PtyProfile } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
 import { step, worktreeDot, type StatusEvent, type StatusState, type TabStatus } from "./status";
 
@@ -157,6 +157,15 @@ export class Sessions {
   /** The distinct profiles of a worktree's tabs, in tab order. */
   profilesOf(worktree: string): PtyProfile[] {
     return [...new Set(this.tabs(worktree).map((t) => t.profileId))];
+  }
+
+  /** Records what a tab's pty started as: its effective permissions and account. */
+  noteStarted(id: string, info: PtyInfo): void {
+    const entry = this.entries.get(id);
+    if (!entry || (entry.tab.permissions === info.permissions && entry.tab.account === info.account)) return;
+    entry.tab = { ...entry.tab, permissions: info.permissions, account: info.account };
+    this.cache.delete(entry.tab.worktree);
+    this.emit();
   }
 
   noteInput(id: string): void {
