@@ -957,5 +957,11 @@
   "review.note.undo": "Undo",
   "review.notes": "Notes ({count})",
   "review.notes.title": "All review notes",
-  "review.notes.none": "No notes yet. Press c on a line, or use the + in the gutter."
+  "review.notes.none": "No notes yet. Press c on a line, or use the + in the gutter.",
+  "review.send": "Send {count} notes",
+  "review.send.one": "Send {count} note",
+  "review.send.title": "Send notes to",
+  "review.send.includeSent": "Include sent notes",
+  "review.send.newTab": "New {name} tab",
+  "review.send.failed": "The notes were not sent: the agent did not start or its tab ended."
 }

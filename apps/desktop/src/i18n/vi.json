@@ -957,5 +957,11 @@
   "review.note.undo": "Hoàn tác",
   "review.notes": "Ghi chú ({count})",
   "review.notes.title": "Mọi ghi chú rà soát",
-  "review.notes.none": "Chưa có ghi chú. Nhấn c trên một dòng, hoặc dùng dấu + ở lề."
+  "review.notes.none": "Chưa có ghi chú. Nhấn c trên một dòng, hoặc dùng dấu + ở lề.",
+  "review.send": "Gửi {count} ghi chú",
+  "review.send.one": "Gửi {count} ghi chú",
+  "review.send.title": "Gửi ghi chú tới",
+  "review.send.includeSent": "Gồm cả ghi chú đã gửi",
+  "review.send.newTab": "Tab {name} mới",
+  "review.send.failed": "Chưa gửi được ghi chú: agent chưa khởi động hoặc tab đã kết thúc."
 }

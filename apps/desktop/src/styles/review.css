@@ -403,3 +403,18 @@
   gap: 8px;
   color: var(--text-2);
 }
+
+.rv-send-menu {
+  right: 0;
+  left: auto;
+}
+
+.rv-send-menu .rv-check {
+  padding: 5px 8px;
+}
+
+.rv-send-failed {
+  margin-left: 8px;
+  color: var(--danger);
+  font-size: 12px;
+}
