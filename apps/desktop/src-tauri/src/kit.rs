@@ -318,7 +318,10 @@ fn read_tail(path: &Path) -> Option<String> {
     if !cut {
         return Some(text);
     }
-    Some(text.split_once('\n').map_or_else(String::new, |(_, rest)| rest.to_owned()))
+    Some(
+        text.split_once('\n')
+            .map_or_else(String::new, |(_, rest)| rest.to_owned()),
+    )
 }
 
 /// One history line. Claude writes `display` and a time in milliseconds;
@@ -573,7 +576,11 @@ mod tests {
         let code = |m: &str| CmdError::from(KitError::Parse(m.into()));
         assert_eq!(code("bad skill name").code, "bad_name");
         assert_eq!(code("not UTF-8 text").code, "not_utf8");
-        for other in ["the description is one line", "not a skill folder", "expected value at line 1"] {
+        for other in [
+            "the description is one line",
+            "not a skill folder",
+            "expected value at line 1",
+        ] {
             let e = code(other);
             assert_eq!(e.code, "kit_bad_input");
             assert!(e.detail.unwrap().contains(other));
@@ -706,10 +713,7 @@ mod tests {
             .unwrap();
         assert!(Path::new(&made).ends_with("SKILL.md"));
         let dir = claude_skills.join("demo");
-        let copied = f
-            .ctx
-            .skill_copy(&s(&dir), &s(&codex_skills), None)
-            .unwrap();
+        let copied = f.ctx.skill_copy(&s(&dir), &s(&codex_skills), None).unwrap();
         assert!(Path::new(&copied).join("SKILL.md").is_file());
         let err = f
             .ctx
@@ -755,7 +759,13 @@ mod tests {
         fs::write(f.linked.join("CLAUDE.md"), "hi\n").unwrap();
         let skills = f.ctx.skills(Some(s(&f.linked))).unwrap();
         assert!(skills.iter().any(|k| k.name == "local"));
-        assert!(f.ctx.skills(None).unwrap().iter().all(|k| k.name != "local"));
+        assert!(
+            f.ctx
+                .skills(None)
+                .unwrap()
+                .iter()
+                .all(|k| k.name != "local")
+        );
         let memory = f.ctx.memory(Some(s(&f.linked))).unwrap();
         assert!(memory.files.iter().any(|m| m.path.ends_with("CLAUDE.md")));
         assert_eq!(
@@ -878,7 +888,11 @@ mod tests {
     #[test]
     fn usage_reads_session_logs_of_the_homes() {
         let f = fixture();
-        let logs = f.user_home.join(".claude").join("projects").join("-work-demo");
+        let logs = f
+            .user_home
+            .join(".claude")
+            .join("projects")
+            .join("-work-demo");
         fs::create_dir_all(&logs).unwrap();
         fs::write(
             logs.join("s1.jsonl"),
@@ -896,7 +910,11 @@ mod tests {
     #[test]
     fn a_nonzero_offset_moves_a_log_line_to_the_next_day_key() {
         let f = fixture();
-        let logs = f.user_home.join(".claude").join("projects").join("-work-demo");
+        let logs = f
+            .user_home
+            .join(".claude")
+            .join("projects")
+            .join("-work-demo");
         fs::create_dir_all(&logs).unwrap();
         // 20:30 UTC on the 3rd is 03:30 on the 4th at UTC+7.
         fs::write(
@@ -909,7 +927,11 @@ mod tests {
         )
         .unwrap();
         let by_day = |s: &UsageSummary| -> Vec<(String, u64)> {
-            s.days.iter().map(|(d, t)| (d.clone(), t.sum())).filter(|(_, n)| *n > 0).collect()
+            s.days
+                .iter()
+                .map(|(d, t)| (d.clone(), t.sum()))
+                .filter(|(_, n)| *n > 0)
+                .collect()
         };
         let local = f.ctx.usage("2026-11-03", "2026-11-04", true, 420).unwrap();
         assert_eq!(by_day(&local), [("2026-11-04".to_owned(), 15)]);

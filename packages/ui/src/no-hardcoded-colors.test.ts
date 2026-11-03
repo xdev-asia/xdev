@@ -9,6 +9,8 @@ const roots = [
   { dir: "apps/desktop/src", ext: /\.(ts|tsx|css)$/ },
 ];
 const colorLiteral = /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/;
+// The desktop token sheet is the one place raw colors are defined; everything else uses its names.
+const tokenSheets = new Set(["apps/desktop/src/styles/base.css"]);
 
 it("no color literals in component sources", () => {
   const offenders: string[] = [];
@@ -16,11 +18,12 @@ it("no color literals in component sources", () => {
     const abs = join(repo, dir);
     if (!existsSync(abs)) continue;
     for (const file of readdirSync(abs, { recursive: true }) as string[]) {
-      if (!ext.test(file) || file.endsWith(".test.ts")) continue;
+      const rel = `${dir}/${file.replaceAll("\\", "/")}`;
+      if (!ext.test(file) || /\.test\.tsx?$/.test(file) || tokenSheets.has(rel)) continue;
       readFileSync(join(abs, file), "utf8")
         .split("\n")
         .forEach((line, i) => {
-          if (colorLiteral.test(line)) offenders.push(`${dir}/${file}:${i + 1}`);
+          if (colorLiteral.test(line)) offenders.push(`${rel}:${i + 1}`);
         });
     }
   }
