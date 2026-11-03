@@ -65,6 +65,7 @@ export type { ReviewBaseKind } from "./ReviewBaseKind";
 export type { ReviewBranch } from "./ReviewBranch";
 export type { ReviewData } from "./ReviewData";
 export type { ReviewFile } from "./ReviewFile";
+export type { ReviewNote } from "./ReviewNote";
 export type { Role } from "./Role";
 export type { RouteRule } from "./RouteRule";
 export type { Routing } from "./Routing";
