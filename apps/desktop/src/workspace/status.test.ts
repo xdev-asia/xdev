@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INTERRUPT_MS, capsFor, isInterrupt, start, step, worktreeDot, type StatusState, type TabStatus } from "./status";
+import { INTERRUPT_MS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type StatusState, type TabStatus } from "./status";
 
 const idle = (): StatusState => start(capsFor(null, false));
 
@@ -207,5 +207,68 @@ describe("tab status", () => {
     expect(plain.interruptAt).toBeNull();
     const rest = step(start(capsFor("claude", true)), { kind: "input", at: 1, interrupt: true });
     expect(rest.interruptAt).toBeNull();
+  });
+
+  it("escape in needs-you settles idle after 500 ms of silence", () => {
+    let s = step(start(capsFor("claude", true)), { kind: "hook", event: "needs-input", at: 1000 });
+    s = step(s, { kind: "input", at: 2000, interrupt: true });
+    expect(s).toMatchObject({ status: "needs-you", interruptAt: 2000 });
+    expect(step(s, { kind: "tick", at: 2000 + INTERRUPT_MS - 1 }).status).toBe("needs-you");
+    expect(step(s, { kind: "tick", at: 2000 + INTERRUPT_MS })).toMatchObject({ status: "idle", cancelled: true });
+    // A hook inside the window wins: the dialog went on.
+    expect(step(s, { kind: "hook", event: "resume", at: 2100 })).toMatchObject({ status: "working", interruptAt: null });
+  });
+
+  it("an interrupt hook settles working and needs-you at once; done stays", () => {
+    const caps = capsFor("codex", true);
+    const working = step(start(caps), { kind: "hook", event: "prompt", at: 1 });
+    expect(step(working, { kind: "hook", event: "interrupt", at: 2 })).toMatchObject({ status: "idle", cancelled: true });
+    const asking = step(start(caps), { kind: "hook", event: "needs-input", at: 1 });
+    expect(step(asking, { kind: "hook", event: "interrupt", at: 2 }).status).toBe("idle");
+    const done = step(working, { kind: "hook", event: "turn-done", at: 2 });
+    expect(step(done, { kind: "hook", event: "interrupt", at: 3 }).status).toBe("done");
+  });
+
+  it("a turn-done with the interrupt flag is not done", () => {
+    const working = step(start(capsFor("claude", true)), { kind: "hook", event: "prompt", at: 1 });
+    const detail = { toolName: null, message: null, isInterrupt: true, error: null };
+    expect(step(working, { kind: "hook", event: "turn-done", at: 2, detail })).toMatchObject({ status: "idle", cancelled: true });
+  });
+
+  it("resume goes back to working; attention asks like needs-input", () => {
+    const caps = capsFor("claude", true);
+    let s = step(start(caps), { kind: "hook", event: "needs-input", at: 1 });
+    s = step(s, { kind: "hook", event: "resume", at: 2 });
+    expect(s.status).toBe("working");
+    s = step(s, { kind: "hook", event: "attention", at: 3 });
+    expect(s.status).toBe("needs-you");
+    // A resume after the turn ended or was stopped changes nothing.
+    const done = step(s, { kind: "hook", event: "turn-done", at: 4 });
+    expect(step(done, { kind: "hook", event: "resume", at: 5 }).status).toBe("done");
+    const stopped = step(step(s, { kind: "hook", event: "interrupt", at: 4 }), { kind: "hook", event: "resume", at: 5 });
+    expect(stopped.status).toBe("idle");
+  });
+
+  it("a failed turn is not the end of the pane", () => {
+    const caps = capsFor("claude", true);
+    let s = step(start(caps), { kind: "hook", event: "prompt", at: 1 });
+    s = step(s, { kind: "hook", event: "turn-failed", at: 2 });
+    expect(s).toMatchObject({ status: "failed", dead: false });
+    expect(step(s, { kind: "hook", event: "prompt", at: 3 }).status).toBe("working");
+    expect(step(s, { kind: "input", at: 3 }).status).toBe("idle");
+    // An exit is final.
+    const gone = step(s, { kind: "exit", code: 1 });
+    expect(gone).toMatchObject({ status: "failed", dead: true });
+    expect(step(gone, { kind: "hook", event: "prompt", at: 4 }).status).toBe("failed");
+  });
+
+  it("working with no event for 30 minutes goes idle, unannounced", () => {
+    let s = step(start(capsFor("claude", true)), { kind: "hook", event: "prompt", at: 1000 });
+    expect(step(s, { kind: "tick", at: 1000 + STALE_MS - 1 }).status).toBe("working");
+    expect(step(s, { kind: "tick", at: 1000 + STALE_MS })).toMatchObject({ status: "idle", cancelled: false });
+    // Any hook restarts the clock.
+    s = step(s, { kind: "hook", event: "resume", at: 5000 });
+    expect(step(s, { kind: "tick", at: 1000 + STALE_MS }).status).toBe("working");
+    expect(step(s, { kind: "tick", at: 5000 + STALE_MS }).status).toBe("idle");
   });
 });

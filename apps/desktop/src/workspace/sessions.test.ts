@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
 import type { PtyInfo } from "@/api";
-import { INTERRUPT_MS } from "./status";
+import { INTERRUPT_MS, STALE_MS } from "./status";
 import { DONE_QUIET_MS, Sessions } from "./sessions";
 
 const A = "/demo/wt/xdev-oak";
@@ -440,8 +440,8 @@ describe("Sessions", () => {
     live.noteStarted(tab.id, info(tab.id, true));
     live.noteOutput(tab.id, 5);
     expect(live.tabs(A)[0].status).toBe("working");
-    // codex ends its turn by hook, so quiet does not.
-    expect(vi.getTimerCount()).toBe(0);
+    // codex ends its turn by hook, so quiet does not: only the 30 minute stale timer waits.
+    expect(vi.getTimerCount()).toBe(1);
     t += 5000;
     vi.advanceTimersByTime(5000);
     expect(live.tabs(A)[0].status).toBe("working");
@@ -507,5 +507,153 @@ describe("Sessions", () => {
     expect(live.tabs(A)[0].status).toBe("idle");
     expect(heard).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  describe("plan 4b", () => {
+    const ESC = String.fromCharCode(27);
+    const ctrlC = String.fromCharCode(3);
+
+    function agent(now: () => number = () => 1_000, suppress = () => true, profile = "claude") {
+      vi.useFakeTimers();
+      const api = createMockApi({});
+      const live = (sessions = new Sessions(api, now, suppress));
+      const tab = live.open(A, profile);
+      live.noteStarted(tab.id, info(tab.id, true));
+      const heard = vi.fn();
+      live.onAttention(heard);
+      return { api, live, tab, heard };
+    }
+
+    it("escape on a needs-you pane settles idle after 500 ms, quietly", () => {
+      let t = 1_000;
+      const { api, live, tab, heard } = agent(() => t);
+      api.__hook(tab.id, "needs-input");
+      expect(heard).toHaveBeenCalledTimes(1);
+      live.noteInput(tab.id, ESC);
+      t += INTERRUPT_MS;
+      vi.advanceTimersByTime(INTERRUPT_MS);
+      expect(live.tabs(A)[0].status).toBe("idle");
+      expect(heard).toHaveBeenCalledTimes(1);
+      live.noteInput(tab.id, ctrlC);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("an interrupt hook settles at once without a notice", () => {
+      const { api, live, tab, heard } = agent(() => 1_000, undefined, "codex");
+      api.__hook(tab.id, "prompt");
+      api.__hook(tab.id, "interrupt");
+      expect(live.tabs(A)[0]).toMatchObject({ status: "idle", unread: false });
+      vi.advanceTimersByTime(DONE_QUIET_MS);
+      expect(heard).not.toHaveBeenCalled();
+      // A turn end that says it was an interrupt is no news either.
+      api.__hook(tab.id, "prompt");
+      api.__hook(tab.id, "turn-done", { toolName: null, message: null, isInterrupt: true, error: null });
+      vi.advanceTimersByTime(DONE_QUIET_MS);
+      expect(live.tabs(A)[0].status).toBe("idle");
+      expect(heard).not.toHaveBeenCalled();
+    });
+
+    it("hook detail reaches the listener; resume works after needs-input", () => {
+      const { api, live, tab, heard } = agent();
+      const detail = { toolName: "Bash", message: "Run rm?", isInterrupt: false, error: null };
+      api.__hook(tab.id, "needs-input", detail);
+      expect(heard).toHaveBeenLastCalledWith(expect.objectContaining({ id: tab.id }), "needs-you", detail);
+      expect(live.tabs(A)[0]).toMatchObject({ unread: true, unreadReason: "needs-you" });
+      api.__hook(tab.id, "resume");
+      expect(live.tabs(A)[0].status).toBe("working");
+      api.__hook(tab.id, "attention", { toolName: null, message: "Come back", isInterrupt: false, error: null });
+      expect(heard).toHaveBeenLastCalledWith(expect.anything(), "needs-you", expect.objectContaining({ message: "Come back" }));
+    });
+
+    it("turn-failed notifies as failed and the pane lives on", () => {
+      const { api, live, tab, heard } = agent();
+      const detail = { toolName: null, message: null, isInterrupt: false, error: "rate limit" };
+      api.__hook(tab.id, "prompt");
+      api.__hook(tab.id, "turn-failed", detail);
+      expect(heard).toHaveBeenLastCalledWith(expect.anything(), "failed", detail);
+      expect(live.tabs(A)[0]).toMatchObject({ status: "failed", unreadReason: "failed" });
+      expect(live.tabs(A)[0].exitCode).toBeUndefined();
+      api.__hook(tab.id, "prompt");
+      expect(live.tabs(A)[0].status).toBe("working");
+    });
+
+    it("a bell on an unseen pane is unread with the reason bell; a seen pane is quiet", () => {
+      const { live, tab, heard } = agent();
+      live.setSeen([tab.id]);
+      live.noteBell(tab.id);
+      expect(heard).not.toHaveBeenCalled();
+      expect(live.unread(A)).toBe(false);
+      live.setSeen([]);
+      live.noteBell(tab.id);
+      expect(heard).toHaveBeenCalledWith(expect.anything(), "bell", null);
+      expect(live.tabs(A)[0]).toMatchObject({ unread: true, unreadReason: "bell", status: "idle" });
+    });
+
+    it("a bell keeps an earlier reason", () => {
+      const { api, live, tab } = agent();
+      api.__hook(tab.id, "needs-input");
+      live.noteBell(tab.id);
+      expect(live.tabs(A)[0].unreadReason).toBe("needs-you");
+    });
+
+    it("suppressWhenFocused off: a seen pane notifies but is never unread", () => {
+      let on = false;
+      const { api, live, tab, heard } = agent(() => 1_000, () => on);
+      live.setSeen([tab.id]);
+      api.__hook(tab.id, "needs-input");
+      expect(heard).toHaveBeenCalledTimes(1);
+      expect(live.tabs(A)[0]).toMatchObject({ unread: false, status: "needs-you" });
+      api.__hook(tab.id, "resume");
+      api.__hook(tab.id, "turn-done");
+      // done on a seen pane rests as idle at once, yet is told after the quiet period.
+      expect(live.tabs(A)[0].status).toBe("idle");
+      vi.advanceTimersByTime(DONE_QUIET_MS);
+      expect(heard).toHaveBeenLastCalledWith(expect.anything(), "done", null);
+      expect(live.tabs(A)[0].unread).toBe(false);
+      live.noteBell(tab.id);
+      expect(heard).toHaveBeenLastCalledWith(expect.anything(), "bell", null);
+      expect(live.unread(A)).toBe(false);
+      // With it on, none of that is told.
+      on = true;
+      heard.mockClear();
+      api.__hook(tab.id, "prompt");
+      api.__hook(tab.id, "turn-done");
+      vi.advanceTimersByTime(DONE_QUIET_MS);
+      live.noteBell(tab.id);
+      expect(heard).not.toHaveBeenCalled();
+    });
+
+    it("working with no hook for 30 minutes goes idle and nobody is told", () => {
+      let t = 1_000;
+      const { api, live, tab, heard } = agent(() => t);
+      api.__hook(tab.id, "prompt");
+      t += STALE_MS - 1;
+      vi.advanceTimersByTime(STALE_MS - 1);
+      expect(live.tabs(A)[0].status).toBe("working");
+      // A hook restarts the clock.
+      api.__hook(tab.id, "resume");
+      t += STALE_MS - 1;
+      vi.advanceTimersByTime(STALE_MS - 1);
+      expect(live.tabs(A)[0].status).toBe("working");
+      t += 1;
+      vi.advanceTimersByTime(1);
+      expect(live.tabs(A)[0]).toMatchObject({ status: "idle", unread: false });
+      expect(heard).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("markRead clears a worktree's hand mark and its unread tabs; unreadWorktrees counts worktrees", () => {
+      const { api, live, tab } = agent();
+      const other = live.open(B, "claude");
+      api.__hook(tab.id, "needs-input");
+      live.markUnread(B);
+      expect(live.unreadWorktrees().sort()).toEqual([A, B].sort());
+      expect(live.unreadWorktrees((x) => x.unreadReason === "done")).toEqual([B]);
+      live.markRead(A);
+      live.markRead(B);
+      expect(live.unreadWorktrees()).toEqual([]);
+      expect(live.tabs(A)[0]).toMatchObject({ unread: false, unreadReason: null });
+      expect(other.unread).toBe(false);
+    });
   });
 });
