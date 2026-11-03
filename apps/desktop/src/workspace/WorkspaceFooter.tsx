@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import type { Api, Quota } from "../api";
 import { useI18n } from "../i18n";
 import { useQuota } from "../shell/useQuota";
+import { useUpdate, type Update } from "../shell/useUpdate";
 
 /** A meter above this share of its window shows in the warn colour. */
 export const WARN_PERCENT = 80;
@@ -58,13 +59,27 @@ function MeterItem(props: { meter: Meter }): JSX.Element {
   );
 }
 
-/** The bar under the workspace: branch, usage per account, agent counts and the app version. */
+/** A downloaded update: restart to apply it, progress while restarting, a retry after a failure. */
+function UpdateItem(props: { update: Update; onRestart?: () => void }): JSX.Element {
+  const { t } = useI18n();
+  const { update } = props;
+  if (update.status === "restarting") return <span className="ws-update-busy">{t("status.updating")}</span>;
+  return (
+    <button type="button" className="ws-update" title={update.notes ?? t("status.update", { version: update.version })} onClick={props.onRestart}>
+      {update.status === "failed" ? t("status.updateFailed") : t("workspace.footer.update", { version: update.version })}
+    </button>
+  );
+}
+
+/** The bar under the workspace: branch, usage per account, agent counts, the build version and a ready update. */
 export function WorkspaceFooter(props: {
   branch: string | null;
   running: number;
   waiting: number;
   quota: Quota[] | null;
   version: string;
+  update?: Update | null;
+  onRestartUpdate?: () => void;
   hidden?: boolean;
 }): JSX.Element {
   const { t } = useI18n();
@@ -90,11 +105,12 @@ export function WorkspaceFooter(props: {
         {t("workspace.footer.waiting", { count: props.waiting })}
       </span>
       <span className="ws-mono">{`v${props.version}`}</span>
+      {props.update && <UpdateItem update={props.update} onRestart={props.onRestartUpdate} />}
     </footer>
   );
 }
 
-/** The footer fed by the live quota; reading pauses while the footer is not on screen. */
+/** The footer fed by the live quota and update state; quota reading pauses while the footer is not on screen. */
 export function LiveWorkspaceFooter(props: {
   api: Api;
   branch: string | null;
@@ -105,5 +121,6 @@ export function LiveWorkspaceFooter(props: {
 }): JSX.Element {
   const { api, hidden, ...rest } = props;
   const quota = useQuota(api, hidden === true);
-  return <WorkspaceFooter {...rest} hidden={hidden} quota={quota} />;
+  const update = useUpdate(api);
+  return <WorkspaceFooter {...rest} hidden={hidden} quota={quota} update={update.state} onRestartUpdate={update.restart} />;
 }

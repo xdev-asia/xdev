@@ -58,6 +58,25 @@ it("meter at 80 % or more uses the warn class; unknown state shows a dash", () =
   expect(meterOf(account("blank", [["five_hour", null]])).percent).toBeNull();
 });
 
+it("a ready update shows a restart button with the new version; none without one", () => {
+  expect(render(null)).not.toContain("ws-update");
+  expect(render(null, { update: null })).not.toContain("ws-update");
+  const html = render(null, { update: { version: "0.4.0", notes: "Faster diffs", status: "ready" } });
+  expect(html).toMatch(/<button type="button" class="ws-update"[^>]*title="Faster diffs"/);
+  expect(html).toContain(en("workspace.footer.update", { version: "0.4.0" }));
+  // The build version stays next to it.
+  expect(html).toContain("v0.3.0");
+});
+
+it("restarting shows progress with no button; a failed restart offers a retry", () => {
+  const busy = render(null, { update: { version: "0.4.0", notes: null, status: "restarting" } });
+  expect(busy).toContain(en("status.updating"));
+  expect(busy).not.toContain("<button");
+  const failed = render(null, { update: { version: "0.4.0", notes: null, status: "failed" } });
+  expect(failed).toMatch(/<button type="button" class="ws-update"/);
+  expect(failed).toContain(en("status.updateFailed"));
+});
+
 it("no quota yet renders no meters and no error", () => {
   for (const quota of [null, []]) {
     const html = render(quota);

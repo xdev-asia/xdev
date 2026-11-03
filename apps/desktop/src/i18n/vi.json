@@ -571,6 +571,7 @@
   "workspace.footer.meterUnknown": "{name}: chưa rõ mức dùng",
   "workspace.footer.window.five_hour": "5 giờ",
   "workspace.footer.window.seven_day": "7 ngày",
+  "workspace.footer.update": "Cập nhật lên {version}",
   "workspace.create.title": "Worktree mới",
   "workspace.create.body": "xDev tạo một nhánh mới và checkout nó vào một thư mục riêng cạnh repo.",
   "workspace.create.repo": "Repo",

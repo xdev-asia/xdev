@@ -1300,6 +1300,37 @@ button.ws-tree-row:focus-visible {
   background: var(--warn);
 }
 
+/* A ready update: a flat accent tint with a full 1px border and a dot, never a side stripe. */
+.ws-update {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text-1);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ws-update::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.ws-update:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.ws-update-busy {
+  color: var(--text-2);
+}
+
 .ws-meters {
   display: flex;
   align-items: center;
