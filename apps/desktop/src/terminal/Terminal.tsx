@@ -9,14 +9,23 @@ import { toApiError, type Api, type ApiError, type PtyInfo, type PtyProfile } fr
 import { useI18n } from "../i18n";
 import { PtyClient } from "./ptyClient";
 
-/** One running pty in an xterm. Starts on mount, kills the pty on unmount. */
+/**
+ * One running pty in an xterm. Starts on mount. Kills the pty on unmount, unless the pty
+ * belongs to a `client` passed in: that one lives on with its owner.
+ */
 export function Terminal(props: {
   api: Api;
   id: string;
+  /** The tab's own client; without one the view makes and owns a client for `id`. */
+  client?: PtyClient;
   cwd: string;
   profile: PtyProfile;
   onStarted(info: PtyInfo): void;
   onError(error: ApiError): void;
+  /** Bytes of pty output, as they arrive. */
+  onOutput?(bytes: number): void;
+  /** The user typed into the terminal. */
+  onInput?(): void;
 }): JSX.Element {
   const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
@@ -65,29 +74,41 @@ export function Terminal(props: {
     };
     fitVisible();
 
-    const client = new PtyClient(props.api, props.id);
+    const owned = !props.client;
+    const client = props.client ?? new PtyClient(props.api, props.id);
     let alive = true;
-    term.onData((text) => void client.input(text).catch(() => {}));
+    term.onData((text) => {
+      handlers.current.onInput?.();
+      void client.input(text).catch(() => {});
+    });
     term.onResize(({ cols, rows }) => void client.resize(cols, rows).catch(() => {}));
-    client.start(props.cwd, props.profile, term.cols, term.rows, (bytes, rendered) => term.write(bytes, rendered)).then(
-      (info) => {
-        if (!alive) return;
-        handlers.current.onStarted(info);
-        term.focus();
-      },
-      (e: unknown) => alive && handlers.current.onError(toApiError(e)),
-    );
+    // A mount undone in the same tick (StrictMode in dev) starts nothing, so a shared client
+    // is started once, by the mount that stays.
+    void Promise.resolve().then(() => {
+      if (!alive) return;
+      client.start(props.cwd, props.profile, term.cols, term.rows, (bytes, rendered) => {
+        handlers.current.onOutput?.(bytes.length);
+        term.write(bytes, rendered);
+      }).then(
+        (info) => {
+          if (!alive) return;
+          handlers.current.onStarted(info);
+          term.focus();
+        },
+        (e: unknown) => alive && handlers.current.onError(toApiError(e)),
+      );
+    });
     const observer = new ResizeObserver(fitVisible);
     observer.observe(el);
 
     return () => {
       alive = false;
       observer.disconnect();
-      void client.dispose();
+      if (owned) void client.dispose();
       search.current = null;
       term.dispose();
     };
-  }, [props.api, props.id, props.cwd, props.profile]);
+  }, [props.api, props.id, props.client, props.cwd, props.profile]);
 
   return (
     <div className="terminal-pane">

@@ -13,6 +13,7 @@ use crate::pty::{PtyExit, PtyInfo};
 use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
 use crate::updater::UpdateInfo;
+use crate::workspace::{WorktreeChange, WorktreeFileDiff};
 
 /// Each type's dependencies are written with it, so only the roots are here.
 fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
@@ -45,6 +46,10 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     UpdateInfo::export_all(cfg)?;
     PtyInfo::export_all(cfg)?;
     PtyExit::export_all(cfg)?;
+    xdev_workspace::RepoView::export_all(cfg)?;
+    xdev_workspace::WorktreeView::export_all(cfg)?;
+    WorktreeChange::export_all(cfg)?;
+    WorktreeFileDiff::export_all(cfg)?;
     Ok(())
 }
 

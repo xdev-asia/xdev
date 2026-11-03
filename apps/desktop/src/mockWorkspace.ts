@@ -1,0 +1,172 @@
+import type { Api, ApiError, RepoView, WorktreeChange, WorktreeFileDiff, WorktreeView } from "./api";
+
+type WorkspaceApi = Pick<
+  Api,
+  | "workspaceList"
+  | "repoAdd"
+  | "repoForget"
+  | "worktreeCreate"
+  | "worktreePin"
+  | "worktreeRemove"
+  | "worktreeChanges"
+  | "worktreeFileDiff"
+  | "worktreeCommit"
+>;
+
+export type MockWorkspaceSeed = {
+  repos: RepoView[];
+  // Pending changes by worktree path.
+  changes: Record<string, WorktreeChange[]>;
+};
+
+const DEMO_START = "5555555555555555555555555555555555555555";
+
+function worktree(path: string, name: string, branch: string, primary: boolean): WorktreeView {
+  return { path, name, branch, head: DEMO_START, start: primary ? null : DEMO_START, primary, pinned: false, detached: false };
+}
+
+export const DEMO_WORKSPACE: MockWorkspaceSeed = {
+  repos: [
+    {
+      id: "demo-xdev",
+      shortName: "xdev",
+      path: "/demo/xdev",
+      baseRef: "main",
+      missing: false,
+      worktrees: [
+        worktree("/demo/xdev", "xdev", "main", true),
+        worktree("/demo/wt/xdev-oak", "oak", "oak", false),
+        worktree("/demo/wt/xdev-elm", "elm", "elm", false),
+      ],
+    },
+  ],
+  changes: {
+    "/demo/wt/xdev-oak": [
+      { path: "docs/old-notes.md", kind: "deleted" },
+      { path: "src/session.ts", kind: "modified" },
+      { path: "src/status.ts", kind: "added" },
+    ],
+  },
+};
+
+function reject(code: ApiError["code"], detail?: string): Promise<never> {
+  const error: ApiError = detail === undefined ? { code } : { code, detail };
+  return Promise.reject(error);
+}
+
+// Like the Rust `slug`: lowercase, spaces as `-`, only `[a-z0-9._/-]`, no leading `-` or `.`.
+function slug(name: string): string {
+  return [...name.toLowerCase()]
+    .map((c) => (/\s/.test(c) ? "-" : c))
+    .filter((c) => /[a-z0-9._/-]/.test(c))
+    .join("")
+    .replace(/^[-.]+/, "")
+    .slice(0, 48);
+}
+
+const WORDS = ["birch", "cedar", "fir", "maple", "pine", "willow"];
+
+function demoDiff(file: string, kind: WorktreeChange["kind"]): WorktreeFileDiff {
+  if (/\.(png|jpe?g|gif|ico)$/i.test(file)) return { old: null, new: null, skip: "binary" };
+  const old = `// ${file}\nexport const value = 1;\n`;
+  const next = `// ${file}\nexport const value = 2;\n`;
+  return { old: kind === "added" ? null : old, new: kind === "deleted" ? null : next, skip: null };
+}
+
+// In-memory workspace that follows the Rust commands: the same error codes and the same gate on
+// removing a worktree. Nothing is read from disk, so a new repo is only its primary checkout.
+export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): WorkspaceApi {
+  const repos: RepoView[] = structuredClone(seed.repos);
+  const changes = new Map<string, WorktreeChange[]>(Object.entries(structuredClone(seed.changes)));
+  let commits = 0;
+
+  function findWorktree(path: string): { repo: RepoView; wt: WorktreeView } | undefined {
+    for (const repo of repos) {
+      const wt = repo.worktrees.find((w) => w.path === path);
+      if (wt) return { repo, wt };
+    }
+    return undefined;
+  }
+
+  return {
+    async workspaceList() {
+      return structuredClone(repos);
+    },
+    async repoAdd(path) {
+      const root = path.trim().replace(/[\/]+$/, "");
+      if (root === "") return reject("no_repo");
+      if (repos.some((r) => r.path === root)) return reject("repo_exists", root);
+      const base = (root.split(/[\/]/).pop() ?? root).toLowerCase().replace(/[^a-z0-9._-]/g, "");
+      let shortName = base;
+      for (let n = 2; repos.some((r) => r.shortName === shortName); n++) shortName = `${base}-${n}`;
+      const repo: RepoView = {
+        id: `repo-${repos.length + 1}-${shortName}`,
+        shortName,
+        path: root,
+        baseRef: "main",
+        missing: false,
+        worktrees: [worktree(root, shortName, "main", true)],
+      };
+      repos.push(repo);
+      return structuredClone(repo);
+    },
+    async repoForget(id) {
+      const i = repos.findIndex((r) => r.id === id);
+      if (i < 0) return reject("repo_unknown", id);
+      for (const wt of repos[i].worktrees) changes.delete(wt.path);
+      repos.splice(i, 1);
+    },
+    async worktreeCreate(repoId, name, from) {
+      const repo = repos.find((r) => r.id === repoId);
+      if (!repo) return reject("repo_unknown", repoId);
+      const typed = name.trim();
+      const branch =
+        typed === "" ? (WORDS.find((w) => !repo.worktrees.some((x) => x.branch === w)) ?? `wt-${repo.worktrees.length}`) : slug(typed);
+      if (branch === "" || branch.includes("..") || branch.endsWith("/") || branch.endsWith(".lock")) return reject("bad_name", typed);
+      if (repo.worktrees.some((w) => w.branch === branch)) return reject("branch_exists", branch);
+      if (from !== null && from.trim() !== "" && /\s|\.\.|^-/.test(from.trim())) return reject("bad_ref", from.trim());
+      const folder = branch.replace(/\//g, "-");
+      const parent = repo.path.replace(/[\/][^\/]*$/, "");
+      const wt = worktree(`${parent}/wt/${repo.shortName}-${folder}`, folder, branch, false);
+      repo.worktrees.push(wt);
+      return structuredClone(wt);
+    },
+    async worktreePin(path, pinned) {
+      const found = findWorktree(path);
+      if (!found || found.wt.primary) return reject("worktree_unknown", path);
+      found.wt.pinned = pinned;
+    },
+    async worktreeRemove(path, force, confirmed) {
+      if (!confirmed) return reject("needs_approval", `remove ${path}`);
+      const found = findWorktree(path);
+      if (!found) return reject("worktree_unknown", path);
+      if (found.wt.primary) return reject("primary_worktree", path);
+      if (!force && (changes.get(path)?.length ?? 0) > 0) return reject("worktree_dirty", path);
+      found.repo.worktrees = found.repo.worktrees.filter((w) => w !== found.wt);
+      changes.delete(path);
+    },
+    async worktreeChanges(path) {
+      const found = findWorktree(path);
+      if (!found || found.wt.primary) return reject("worktree_unknown", path);
+      return structuredClone(changes.get(path) ?? []);
+    },
+    async worktreeFileDiff(path, file) {
+      const found = findWorktree(path);
+      if (!found || found.wt.primary) return reject("worktree_unknown", path);
+      const change = changes.get(path)?.find((c) => c.path === file);
+      if (!change) return reject("bad_arg", file);
+      return demoDiff(file, change.kind);
+    },
+    async worktreeCommit(path, files, message) {
+      const found = findWorktree(path);
+      if (!found || found.wt.primary) return reject("worktree_unknown", path);
+      if (message.trim() === "") return reject("empty_message");
+      const pending = changes.get(path) ?? [];
+      const rest = pending.filter((c) => !files.includes(c.path));
+      if (rest.length === pending.length) return null;
+      changes.set(path, rest);
+      commits += 1;
+      return commits.toString(16).padStart(40, "a");
+    },
+  };
+}

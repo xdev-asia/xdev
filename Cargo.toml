@@ -15,6 +15,7 @@ default-members = [
     "crates/xdev-policy",
     "crates/xdev-agent",
     "crates/xdev-pty",
+    "crates/xdev-workspace",
     "crates/xdev-cli",
 ]
 
@@ -36,6 +37,7 @@ xdev-policy = { path = "crates/xdev-policy" }
 xdev-pty = { path = "crates/xdev-pty" }
 xdev-store = { path = "crates/xdev-store" }
 xdev-vault = { path = "crates/xdev-vault" }
+xdev-workspace = { path = "crates/xdev-workspace" }
 
 blake3 = "1.8.7"
 dirs = "7.0.0"

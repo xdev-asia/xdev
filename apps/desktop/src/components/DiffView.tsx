@@ -59,7 +59,7 @@ export function DiffStats(props: { base: string; current: string }): JSX.Element
     <span className="diff-stats">
       <span className="diff-added" aria-hidden="true">+{added}</span>
       <span className="diff-removed" aria-hidden="true">−{removed}</span>
-      <span className="diff-stats-text">{t("diff.stats", { added, removed })}</span>
+      <span className="diff-stats-text">{t("diff.stats", { count: added, removed })}</span>
     </span>
   );
 }
