@@ -345,6 +345,7 @@ export function WorktreeTabs(props: {
               onError={(e) => failed(tab, e)}
               onOutput={(bytes) => sessions.noteOutput(tab.id, bytes)}
               onInput={(text) => sessions.noteInput(tab.id, text)}
+              onBell={() => sessions.noteBell(tab.id)}
               onTitle={(title) => {
                 sessions.noteTitle(tab.id, title);
                 const status = titleStatus(tab.cli, title);

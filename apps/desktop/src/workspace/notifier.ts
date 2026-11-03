@@ -1,5 +1,6 @@
-import type { Api, StatusSettings } from "@/api";
+import type { Api, HookDetail, StatusSettings } from "@/api";
 import type { useI18n } from "@/i18n";
+import { eventOn } from "@/status/statusSettings";
 import type { Attention, Tab } from "./sessions";
 
 type T = ReturnType<typeof useI18n>["t"];
@@ -21,6 +22,28 @@ export interface NotifierDeps {
   t: T;
 }
 
+/** Longest worktree name, whole title and body in an OS notification. */
+export const WORKTREE_MAX = 40;
+export const TITLE_MAX = 80;
+export const BODY_MAX = 180;
+
+function cut(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
+}
+
+/**
+ * The OS notification: worktree, tab (profile) and the state word in the title; in the body what the
+ * hook said (`message`, else `error` on a failure, else `toolName`), or nothing. Never the prompt:
+ * the hook file never holds it, and the terminal's own title is not used.
+ */
+export function noticeText(names: NoticeNames, status: Attention, detail: HookDetail | null, t: T): { title: string; body: string } {
+  const word = t(`status.word.${status}`);
+  const title = cut([cut(names.worktree, WORKTREE_MAX), names.tab, word].filter(Boolean).join(" · "), TITLE_MAX);
+  const said = detail?.message || (status === "failed" ? detail?.error : null) || detail?.toolName || "";
+  return { title, body: cut(said, BODY_MAX) };
+}
+
 /** Names for the notification text. Never the prompt: the tab name is the profile's, or one given by hand. */
 export interface NoticeNames {
   worktree: string;
@@ -29,7 +52,7 @@ export interface NoticeNames {
 
 export interface Notifier {
   /** A pane nobody looks at reached a state that asks for the person: OS notification, then sound. */
-  attention(tab: Tab, status: Attention, names: NoticeNames): Promise<void>;
+  attention(tab: Tab, status: Attention, names: NoticeNames, detail?: HookDetail | null): Promise<void>;
   /** The count of unread tabs; sent to the taskbar after `BADGE_DEBOUNCE_MS`, as 0 while the badge is off. */
   badge(count: number): void;
   /** The newest notification that reached the OS. */
@@ -49,7 +72,7 @@ export function createNotifier(deps: NotifierDeps): Notifier {
   let sentBadge: number | null = null;
   let disposed = false;
 
-  async function attention(tab: Tab, status: Attention, names: NoticeNames): Promise<void> {
+  async function attention(tab: Tab, status: Attention, names: NoticeNames, detail: HookDetail | null = null): Promise<void> {
     const at = deps.now();
     for (const [key, when] of recent) if (at - when >= COOLDOWN_MS) recent.delete(key);
     const key = `${tab.id}:${status}`;
@@ -57,11 +80,18 @@ export function createNotifier(deps: NotifierDeps): Notifier {
     // Taken before the first await, so a burst arriving together is told once.
     recent.set(key, at);
     const settings = await deps.settings();
+    // The master switch and the event's own switch gate every channel; then each channel has its own.
     if (disposed) return;
+    if (!eventOn(settings, status)) {
+      // Nothing was told, so the pane's next event is not held back by this one.
+      recent.delete(key);
+      return;
+    }
     let sent = false;
     if (settings.os) {
       try {
-        await deps.api.statusNotify(names.worktree, deps.t(`status.notify.${status}`, { name: names.tab }), tab.id);
+        const text = noticeText(names, status, detail, deps.t);
+        await deps.api.statusNotify(text.title, text.body, tab.id);
         sent = true;
         newest = jump = { ptyId: tab.id, at };
       } catch {

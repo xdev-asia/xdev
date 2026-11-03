@@ -3,14 +3,15 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import logo from "../../../../docs/brand/xdev-icon-512.png";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { toApiError, type Api, type ApiError, type Check, type PrView, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
+import { toApiError, type Api, type ApiError, type Check, type HookDetail, type PrView, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
 import { DocsApp } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useI18n } from "@/i18n";
 import { SettingsView } from "@/settings/SettingsView";
 import { playStatusSound } from "@/status/sound";
-import { loadStatusSettings, useStatusSettings } from "@/status/statusSettings";
+import { usePresence } from "@/status/presence";
+import { eventOn, getStatusSettings, loadStatusSettings, useStatusSettings } from "@/status/statusSettings";
 import { BellMenu, bellCount, type BellRow } from "./BellMenu";
 import { ChecksPanel } from "./ChecksPanel";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
@@ -104,7 +105,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // One store of terminal tabs for the whole shell. Made in an effect so a dev double mount
   // disposes the first one; disposing kills its ptys.
   useEffect(() => {
-    const store = new Sessions(api);
+    // A pane in view stays quiet unless the person turned that off in Settings; read again on each event.
+    const store = new Sessions(api, () => Date.now(), () => getStatusSettings().suppressWhenFocused);
     setSessions(store);
     stats.attach(api, store, typeof window === "undefined" ? undefined : window);
     return () => {
@@ -198,8 +200,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     };
   }, []);
 
-  // The panes the person looks at: the selected worktree's front pair, with the workspace up and the window focused.
-  const seenKey = focused && view === "workspace" && current ? (panes[current.path] ?? []).join(" ") : "";
+  // The panes the person looks at: the selected worktree's front pair, with the workspace up, the window
+  // focused and some trusted input in the last 180 s.
+  const present = usePresence();
+  const seenKey = focused && present && view === "workspace" && current ? (panes[current.path] ?? []).join(" ") : "";
   useEffect(() => {
     sessions?.setSeen(seenKey ? seenKey.split(" ") : []);
   }, [sessions, seenKey]);
@@ -221,7 +225,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       t: (key, vars) => live.t(key, vars),
     });
     live.notifier = notifier;
-    const offAttention = sessions.onAttention((tab, status) => void announce(notifier, tab, status));
+    const offAttention = sessions.onAttention((tab, status, detail) => void announce(notifier, tab, status, detail));
     let closed = false;
     let offClick: (() => void) | null = null;
     api
@@ -255,9 +259,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     };
   }, [api, sessions]);
 
-  // The bell and the taskbar badge count the unread tabs.
-  const unreadTabs = sessions?.unreadTabs() ?? [];
-  const unreadCount = unreadTabs.length;
+  // The bell lists the unread tabs and the taskbar badge counts the unread worktrees, both only for the
+  // events that are switched on (and none with the master switch off).
+  const counted = (tab: Tab) => eventOn(statusSettings, tab.unreadReason ?? "needs-you");
+  const unreadTabs = (sessions?.unreadTabs() ?? []).filter(counted);
+  const unreadCount = statusSettings.enabled ? (sessions?.unreadWorktrees(counted).length ?? 0) : 0;
   useEffect(() => {
     live.notifier?.badge(unreadCount);
   }, [sessions, unreadCount, statusSettings.badge]);
@@ -269,10 +275,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   // The notification text: the worktree, then the tab by its profile's name or the one given by
   // hand. Never the terminal's own title, which can carry what was typed.
-  async function announce(notifier: Notifier, tab: Tab, status: Attention): Promise<void> {
+  async function announce(notifier: Notifier, tab: Tab, status: Attention, detail: HookDetail | null): Promise<void> {
     const worktree = worktreeName(live.repos?.flatMap((r) => r.worktrees) ?? [], tab.worktree);
     const name = tab.renamed && tab.title ? tab.title : profileName(await api.profiles().catch(() => null), tab.profileId, live.t);
-    await notifier.attention(tab, status, { worktree, tab: name });
+    await notifier.attention(tab, status, { worktree, tab: name }, detail);
   }
 
   // Brings a tab's worktree up, puts the tab in front and gives its terminal the keys.
@@ -583,6 +589,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onAdopt={(wt) => void adopt(wt)}
             unread={unreadMap}
             onMarkUnread={(wt) => sessions?.markUnread(wt.path)}
+            onMarkRead={(wt) => sessions?.markRead(wt.path)}
           />
         </aside>
 

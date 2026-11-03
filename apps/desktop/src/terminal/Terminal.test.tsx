@@ -5,7 +5,7 @@ import { PtyClient } from "./ptyClient";
 import { Terminal } from "./Terminal";
 
 // The first ref is the xterm host; the rest keep their initial value.
-const hooks = vi.hoisted(() => ({ refs: 0, effects: [] as (() => void | (() => void))[] }));
+const hooks = vi.hoisted(() => ({ refs: 0, effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: (initial: unknown) => [initial, () => {}],
@@ -30,6 +30,9 @@ vi.mock("@xterm/xterm", () => ({
     onData() {}
     onResize() {}
     onTitleChange() {}
+    onBell(cb: () => void) {
+      hooks.bell = cb;
+    }
     write() {}
     focus() {}
     getSelection() {
@@ -107,4 +110,15 @@ it("without a client it owns one and kills its pty on unmount", async () => {
   cleanup();
   await tick();
   expect(kill).toHaveBeenCalledWith("own-1");
+});
+
+it("passes the terminal bell on", async () => {
+  const api = createMockApi({});
+  const onBell = vi.fn();
+  const { effect } = mount({ api, id: "bell-1", onBell });
+  const cleanup = effect() as () => void;
+  hooks.bell?.();
+  expect(onBell).toHaveBeenCalledTimes(1);
+  cleanup();
+  await tick();
 });

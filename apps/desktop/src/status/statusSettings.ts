@@ -18,6 +18,24 @@ export const STATUS_DEFAULTS: StatusSettings = {
   badge: true,
 };
 
+/** What can ask for the person: a state of the agent, or a terminal bell. */
+export type StatusEventKind = "needs-you" | "done" | "failed" | "bell";
+
+/** Whether the master switch and the switch of this event are both on. Every channel asks it first. */
+export function eventOn(settings: StatusSettings, event: StatusEventKind): boolean {
+  if (!settings.enabled) return false;
+  switch (event) {
+    case "needs-you":
+      return settings.onNeedsInput;
+    case "done":
+      return settings.onDone;
+    case "failed":
+      return settings.onFailed;
+    case "bell":
+      return settings.onBell;
+  }
+}
+
 // One copy for the whole window: the notifier, the bell and the settings page read the same one.
 let current: StatusSettings = STATUS_DEFAULTS;
 const listeners = new Set<() => void>();
