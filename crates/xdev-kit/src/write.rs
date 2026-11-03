@@ -2,9 +2,10 @@
 //! homes and the worktree first, and a save is refused when the file changed
 //! since it was read.
 
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -12,6 +13,7 @@ use serde::Serialize;
 use crate::{KitError, fnv1a_hex};
 
 const TMP_SUFFIX: &str = ".xdev-tmp";
+static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 const SKILL_FILE: &str = "SKILL.md";
 
 /// The folders a write may reach, and where removed skills go.
@@ -34,7 +36,9 @@ impl Roots {
 
     /// Where `path` is, or would be: its parent made canonical, plus its
     /// name. `Outside` unless that parent is under a root. A relative path,
-    /// or one with a `..` part, is `Outside`.
+    /// or one with a `..` part, is `Outside`; so is a path whose last part
+    /// exists and is a link (a file link, a folder link or a junction), since
+    /// it could lead out of the roots, or be replaced by a plain file.
     fn resolve(&self, path: &Path) -> Result<PathBuf, KitError> {
         let outside = || KitError::Outside(path.to_path_buf());
         if !path.is_absolute() || path.components().any(|c| c == Component::ParentDir) {
@@ -45,12 +49,22 @@ impl Roots {
         if !self.canonical().iter().any(|root| parent.starts_with(root)) {
             return Err(outside());
         }
-        Ok(parent.join(name))
+        let resolved = parent.join(name);
+        if is_link(&resolved) {
+            return Err(outside());
+        }
+        Ok(resolved)
     }
 
     fn removed_dir(&self) -> PathBuf {
         self.data_dir.join("kit").join("removed")
     }
+}
+
+/// `true` when `path` exists and is a link. A missing path is not one.
+fn is_link(path: &Path) -> bool {
+    path.symlink_metadata()
+        .is_ok_and(|meta| meta.file_type().is_symlink())
 }
 
 /// The canonical form of the deepest folder that exists, with the part that
@@ -108,24 +122,50 @@ pub fn write_checked(
     text: &str,
     stamp: Option<&str>,
 ) -> Result<String, KitError> {
+    write_checked_with(roots, path, text, stamp, &replace)
+}
+
+type ReplaceFn<'a> = &'a dyn Fn(&Path, &Path) -> Result<(), ReplaceError>;
+
+fn write_checked_with(
+    roots: &Roots,
+    path: &Path,
+    text: &str,
+    stamp: Option<&str>,
+    replace: ReplaceFn<'_>,
+) -> Result<String, KitError> {
     let path = roots.resolve(path)?;
     check_unchanged(&path, stamp)?;
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
     let tmp = sibling_tmp(&path);
+    let mut keep_tmp = false;
     let result = (|| {
-        let mut file = File::create(&tmp)?;
+        let mut file = OpenOptions::new().write(true).create_new(true).open(&tmp)?;
         file.write_all(text.as_bytes())?;
         file.sync_all()?;
         drop(file);
         // Again, as late as possible: the temp file took time to write.
         check_unchanged(&path, stamp)?;
-        replace(&tmp, &path)?;
+        if let Err(e) = replace(&tmp, &path) {
+            if e.target_lost {
+                // The old file is gone; the new text is all that is left.
+                keep_tmp = true;
+                return Err(KitError::Io(format!(
+                    "{}; the new text is kept in {}",
+                    e.error,
+                    tmp.display()
+                )));
+            }
+            return Err(e.error.into());
+        }
         Ok::<(), KitError>(())
     })();
     if let Err(e) = result {
-        let _ = fs::remove_file(&tmp);
+        if !keep_tmp {
+            let _ = fs::remove_file(&tmp);
+        }
         return Err(e);
     }
     let (_, fresh) = read_stamped(&path)?;
@@ -143,22 +183,54 @@ fn check_unchanged(path: &Path, stamp: Option<&str>) -> Result<(), KitError> {
     }
 }
 
+/// `<path>.xdev-tmp-<pid>-<counter>`: a name no other write of this process,
+/// or of another one, is likely to use.
 fn sibling_tmp(path: &Path) -> PathBuf {
     let mut name = path.as_os_str().to_owned();
-    name.push(TMP_SUFFIX);
+    name.push(format!(
+        "{TMP_SUFFIX}-{}-{}",
+        std::process::id(),
+        TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
     PathBuf::from(name)
 }
 
 /// Renames `tmp` over `target`. Windows renames over an existing file; when
 /// a platform will not, the target is removed and the rename tried again.
-fn replace(tmp: &Path, target: &Path) -> io::Result<()> {
-    match fs::rename(tmp, target) {
-        Err(_) if cfg!(windows) && target.is_file() => {
-            fs::remove_file(target)?;
-            fs::rename(tmp, target)
-        }
-        other => other,
+fn replace(tmp: &Path, target: &Path) -> Result<(), ReplaceError> {
+    replace_with(tmp, target, &|a, b| fs::rename(a, b), cfg!(windows))
+}
+
+struct ReplaceError {
+    error: io::Error,
+    /// The target was removed and the temp file did not take its place.
+    target_lost: bool,
+}
+
+fn replace_with(
+    tmp: &Path,
+    target: &Path,
+    rename: &dyn Fn(&Path, &Path) -> io::Result<()>,
+    fallback: bool,
+) -> Result<(), ReplaceError> {
+    let first = match rename(tmp, target) {
+        Ok(()) => return Ok(()),
+        Err(e) => e,
+    };
+    if !(fallback && target.is_file()) {
+        return Err(ReplaceError {
+            error: first,
+            target_lost: false,
+        });
     }
+    fs::remove_file(target).map_err(|error| ReplaceError {
+        error,
+        target_lost: false,
+    })?;
+    rename(tmp, target).map_err(|error| ReplaceError {
+        error,
+        target_lost: true,
+    })
 }
 
 /// Copies one file. An existing target is `Changed`.
@@ -246,6 +318,9 @@ pub fn remove_skill(roots: &Roots, dir: &Path) -> Result<PathBuf, KitError> {
 
 /// Moves a folder that `remove_skill` made back to `to`. An existing target is `Changed`.
 pub fn restore_skill(roots: &Roots, removed: &Path, to: &Path) -> Result<(), KitError> {
+    if is_link(removed) {
+        return Err(KitError::Outside(removed.to_path_buf()));
+    }
     let removed_canon = canonical_prefix(removed)?;
     let area = canonical_prefix(&roots.removed_dir())?;
     if !removed.is_absolute()
@@ -298,11 +373,23 @@ fn require_skill_dir(dir: &Path) -> Result<(), KitError> {
 /// A rename, or a copy and removal of the original when the two places are
 /// on different drives. The copy is whole before anything is removed.
 fn move_dir(from: &Path, to: &Path) -> Result<(), KitError> {
+    move_dir_with(from, to, &|a, b| fs::rename(a, b))
+}
+
+fn move_dir_with(
+    from: &Path,
+    to: &Path,
+    rename: &dyn Fn(&Path, &Path) -> io::Result<()>,
+) -> Result<(), KitError> {
     if let Some(dir) = to.parent() {
         fs::create_dir_all(dir)?;
     }
-    if fs::rename(from, to).is_ok() {
+    if rename(from, to).is_ok() {
         return Ok(());
+    }
+    // Never copy into, or clear, a folder this call did not make.
+    if to.symlink_metadata().is_ok() {
+        return Err(KitError::Changed);
     }
     if let Err(e) = copy_tree(from, to, false) {
         let _ = fs::remove_dir_all(to);
@@ -365,6 +452,227 @@ mod tests {
         }
     }
 
+    /// No file in `dir` has a name that starts with `<name>.xdev-tmp`.
+    fn assert_no_tmp_left(dir: &Path, name: &str) {
+        let prefix = format!("{name}.xdev-tmp");
+        let left: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with(&prefix))
+            .collect();
+        assert!(left.is_empty(), "temp files left: {left:?}");
+    }
+
+    /// Makes a link to a file; `false` when this machine does not allow it.
+    fn link_file(target: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(target, link);
+        #[cfg(windows)]
+        let made = std::os::windows::fs::symlink_file(target, link);
+        report_link(made)
+    }
+
+    /// Makes a link to a folder; `false` when this machine does not allow it.
+    fn link_dir(target: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(target, link);
+        #[cfg(windows)]
+        let made = std::os::windows::fs::symlink_dir(target, link);
+        report_link(made)
+    }
+
+    fn report_link(made: io::Result<()>) -> bool {
+        match made {
+            Ok(()) => true,
+            Err(e) => {
+                println!("note: cannot create a link here ({e}); the link test is skipped");
+                false
+            }
+        }
+    }
+
+    fn is_outside<T: std::fmt::Debug>(r: Result<T, KitError>) -> bool {
+        matches!(r, Err(KitError::Outside(_)))
+    }
+
+    #[test]
+    fn final_symlink_is_refused() {
+        let fx = fixture();
+        let elsewhere = tempfile::tempdir().unwrap();
+
+        // A file link inside the home that points out of the roots.
+        let secret = elsewhere.path().join("secret.md");
+        fs::write(&secret, "secret").unwrap();
+        let link = fx.home.join("link.md");
+        if !link_file(&secret, &link) {
+            return;
+        }
+        assert!(is_outside(read_for_edit(&fx.roots, &link)));
+        assert!(is_outside(write_checked(&fx.roots, &link, "no", None)));
+        assert!(is_outside(write_checked(
+            &fx.roots,
+            &link,
+            "no",
+            Some("1:2:3")
+        )));
+        assert_eq!(fs::read_to_string(&secret).unwrap(), "secret");
+        assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+
+        let plain = fx.home.join("plain.md");
+        fs::write(&plain, "plain").unwrap();
+        assert!(is_outside(copy_file(
+            &fx.roots,
+            &link,
+            &fx.home.join("c.md")
+        )));
+        assert!(!fx.home.join("c.md").exists());
+        assert!(is_outside(copy_file(&fx.roots, &plain, &link)));
+        assert_eq!(fs::read_to_string(&secret).unwrap(), "secret");
+
+        // A link that points at a file inside the roots is refused too.
+        let inner = fx.home.join("inner.md");
+        let inner_link = fx.home.join("inner-link.md");
+        fs::write(&inner, "inner").unwrap();
+        assert!(link_file(&inner, &inner_link));
+        assert!(is_outside(read_for_edit(&fx.roots, &inner_link)));
+
+        // The same kind of name that is not there yet is fine.
+        write_checked(&fx.roots, &fx.home.join("fresh.md"), "ok", None).unwrap();
+
+        // `new_skill`: the skill file is a link.
+        let skills = fx.home.join("skills");
+        fs::create_dir_all(skills.join("ls")).unwrap();
+        assert!(link_file(&secret, &skills.join("ls").join("SKILL.md")));
+        assert!(is_outside(new_skill(&fx.roots, &skills, "ls", "d")));
+        assert_eq!(fs::read_to_string(&secret).unwrap(), "secret");
+
+        // Skill folders that are links.
+        let real = elsewhere.path().join("real-skill");
+        fs::create_dir_all(&real).unwrap();
+        fs::write(real.join("SKILL.md"), "real").unwrap();
+        let dir_link = skills.join("linked");
+        if !link_dir(&real, &dir_link) {
+            return;
+        }
+        assert!(is_outside(remove_skill(&fx.roots, &dir_link)));
+        assert!(dir_link.symlink_metadata().is_ok());
+        assert!(real.join("SKILL.md").is_file());
+        assert!(is_outside(copy_skill_dir(
+            &fx.roots,
+            &dir_link,
+            &fx.home.join("other")
+        )));
+
+        let skill = fx.home.join("skills").join("demo");
+        fs::create_dir_all(&skill).unwrap();
+        fs::write(skill.join("SKILL.md"), "demo").unwrap();
+        let other = fx.home.join("other-skills");
+        fs::create_dir_all(&other).unwrap();
+        assert!(link_dir(&real, &other.join("demo")));
+        assert!(is_outside(copy_skill_dir(&fx.roots, &skill, &other)));
+
+        // `restore_skill`: the target is a link, or the removed folder is.
+        let removed = remove_skill(&fx.roots, &skill).unwrap();
+        assert!(is_outside(restore_skill(&fx.roots, &removed, &dir_link)));
+        let area_link = fx
+            .roots
+            .data_dir
+            .join("kit")
+            .join("removed")
+            .join("1")
+            .join("l");
+        fs::create_dir_all(area_link.parent().unwrap()).unwrap();
+        assert!(link_dir(&removed, &area_link));
+        assert!(is_outside(restore_skill(&fx.roots, &area_link, &skill)));
+        assert!(removed.join("SKILL.md").is_file());
+    }
+
+    #[test]
+    fn temp_name_is_unique_and_tagged() {
+        let path = Path::new("/x/CLAUDE.md");
+        let a = sibling_tmp(path);
+        let b = sibling_tmp(path);
+        assert_ne!(a, b);
+        let prefix = format!("CLAUDE.md.xdev-tmp-{}-", std::process::id());
+        for tmp in [&a, &b] {
+            let name = tmp.file_name().unwrap().to_string_lossy().into_owned();
+            assert!(name.starts_with(&prefix), "{name}");
+            assert!(name[prefix.len()..].parse::<u64>().is_ok(), "{name}");
+        }
+    }
+
+    #[test]
+    fn failed_second_rename_keeps_temp() {
+        let fx = fixture();
+        let file = fx.home.join("a.md");
+        fs::write(&file, "old").unwrap();
+        let fail = |_: &Path, _: &Path| -> io::Result<()> { Err(io::Error::other("no rename")) };
+
+        // `replace_with`: the first rename fails, the target is removed, the
+        // second fails; the caller learns that the target is gone.
+        let tmp = fx.home.join("a.md.xdev-tmp-0-0");
+        fs::write(&tmp, "new").unwrap();
+        let err = replace_with(&tmp, &file, &fail, true).unwrap_err();
+        assert!(err.target_lost);
+        assert!(!file.exists());
+        assert_eq!(fs::read_to_string(&tmp).unwrap(), "new");
+        fs::remove_file(&tmp).unwrap();
+
+        // `write_checked_with`: the new text stays in the temp file.
+        fs::write(&file, "old").unwrap();
+        let (_, stamp) = read_for_edit(&fx.roots, &file).unwrap();
+        let result = write_checked_with(&fx.roots, &file, "new text", Some(&stamp), &|t, p| {
+            replace_with(t, p, &fail, true)
+        });
+        assert!(matches!(result, Err(KitError::Io(_))), "{result:?}");
+        let kept: Vec<PathBuf> = fs::read_dir(&fx.home)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| {
+                p.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("a.md.xdev-tmp")
+            })
+            .collect();
+        assert_eq!(kept.len(), 1, "{kept:?}");
+        assert_eq!(fs::read_to_string(&kept[0]).unwrap(), "new text");
+
+        // Without the fallback the target is untouched and the temp is cleaned.
+        fs::remove_file(&kept[0]).unwrap();
+        fs::write(&file, "old").unwrap();
+        let (_, stamp) = read_for_edit(&fx.roots, &file).unwrap();
+        let result = write_checked_with(&fx.roots, &file, "new text", Some(&stamp), &|t, p| {
+            replace_with(t, p, &fail, false)
+        });
+        assert!(result.is_err());
+        assert_eq!(fs::read_to_string(&file).unwrap(), "old");
+        assert_no_tmp_left(&fx.home, "a.md");
+    }
+
+    #[test]
+    fn move_dir_fallback_never_removes_existing_target() {
+        let fx = fixture();
+        let from = fx.home.join("from");
+        let to = fx.home.join("to");
+        fs::create_dir_all(&from).unwrap();
+        fs::write(from.join("SKILL.md"), "from").unwrap();
+        fs::create_dir_all(&to).unwrap();
+        fs::write(to.join("keep.txt"), "keep").unwrap();
+        let fail = |_: &Path, _: &Path| -> io::Result<()> { Err(io::Error::other("other drive")) };
+
+        assert_eq!(move_dir_with(&from, &to, &fail), Err(KitError::Changed));
+        assert_eq!(fs::read_to_string(to.join("keep.txt")).unwrap(), "keep");
+        assert!(!to.join("SKILL.md").exists());
+        assert_eq!(fs::read_to_string(from.join("SKILL.md")).unwrap(), "from");
+
+        // With no target the copy fallback works and the original goes.
+        let fresh = fx.home.join("fresh");
+        move_dir_with(&from, &fresh, &fail).unwrap();
+        assert_eq!(fs::read_to_string(fresh.join("SKILL.md")).unwrap(), "from");
+        assert!(!from.exists());
+    }
+
     #[test]
     fn write_round_trip_returns_new_stamp() {
         let fx = fixture();
@@ -381,7 +689,7 @@ mod tests {
         assert_eq!(fresh, again);
         // And it lets the next save through.
         write_checked(&fx.roots, &file, "three", Some(&fresh)).unwrap();
-        assert!(!fx.home.join("CLAUDE.md.xdev-tmp").exists());
+        assert_no_tmp_left(&fx.home, "CLAUDE.md");
     }
 
     #[test]
@@ -395,7 +703,7 @@ mod tests {
         let err = write_checked(&fx.roots, &file, "stale save", Some(&stamp)).unwrap_err();
         assert_eq!(err, KitError::Changed);
         assert_eq!(fs::read_to_string(&file).unwrap(), "agent bytes");
-        assert!(!fx.home.join("CLAUDE.md.xdev-tmp").exists());
+        assert_no_tmp_left(&fx.home, "CLAUDE.md");
     }
 
     #[test]

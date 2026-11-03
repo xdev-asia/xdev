@@ -381,7 +381,8 @@ fn missing_index_targets(text: &str, dir: &Path) -> Vec<MemoryIssue> {
 }
 
 /// Absolute paths in backticks that do not exist. A span with a space or a
-/// glob character is not a path that can be checked, and is skipped.
+/// glob character is not a path that can be checked, and is skipped, and so is
+/// one that starts with a backslash or `//` (a network path; no lookup).
 fn missing_paths(text: &str) -> Vec<MemoryIssue> {
     let mut out = Vec::new();
     for (n, line) in outside_fences(text) {
@@ -389,7 +390,9 @@ fn missing_paths(text: &str) -> Vec<MemoryIssue> {
             let span = span.trim();
             let checkable = !span.is_empty()
                 && !span.contains(char::is_whitespace)
-                && !span.contains(['*', '?']);
+                && !span.contains(['*', '?'])
+                && !span.starts_with('\\')
+                && !span.starts_with("//");
             if checkable && Path::new(span).is_absolute() && !Path::new(span).exists() {
                 out.push(MemoryIssue {
                     line: n,
@@ -668,6 +671,13 @@ mod tests {
             }]
         );
         assert_eq!(find(&set, "a.md").kind, MemoryKind::AutoMemory);
+    }
+
+    #[test]
+    fn unc_path_is_not_checked() {
+        // A network path is never looked up: no issue, and no wait for a host.
+        let text = "See `\\\\no-such-host.invalid\\share\\file.txt` and `//no-such-host.invalid/share/f.txt`.\n";
+        assert!(missing_paths(text).is_empty());
     }
 
     #[test]
