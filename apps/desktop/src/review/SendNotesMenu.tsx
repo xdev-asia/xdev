@@ -9,6 +9,13 @@ import { notesPrompt, notesToSend } from "./notes";
 
 const isRunning = (tab: Tab) => tab.agent && tab.status !== "failed" && tab.status !== "exited";
 
+/** Tabs have no name of their own, so a tab reads as its profile name, numbered when several share one. */
+function tabLabel(tabs: Tab[], index: number, view: Parameters<typeof profileName>[0], t: Parameters<typeof profileName>[2]): string {
+  const name = profileName(view, tabs[index].profileId, t);
+  const same = tabs.filter((x) => x.profileId === tabs[index].profileId);
+  return same.length > 1 ? `${name} ${same.indexOf(tabs[index]) + 1}` : name;
+}
+
 /**
  * "Send N notes": a menu of the running agent tabs of the worktree and a new tab per agent that is
  * on and installed. The notes that were sent are marked once the prompt is typed in.
@@ -62,9 +69,9 @@ export function SendNotesMenu(props: {
             <input type="checkbox" checked={includeSent} onChange={() => setIncludeSent(!includeSent)} />
             <span>{t("review.send.includeSent")}</span>
           </label>
-          {tabs.map((tab) => (
+          {tabs.map((tab, i) => (
             <button key={tab.id} type="button" role="menuitem" data-tab={tab.id} onClick={() => void send({ tab: tab.id })}>
-              {profileName(view, tab.profileId, t)}
+              {tabLabel(tabs, i, view, t)}
             </button>
           ))}
           {fresh.map((id) => (
