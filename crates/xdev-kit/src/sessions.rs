@@ -69,12 +69,23 @@ impl SessionIndex {
     /// `<data_dir>/kit/sessions.json`; missing, unreadable or of another
     /// version gives an empty index.
     pub fn load(data_dir: &Path) -> Self {
-        let _ = index_path(data_dir);
-        Self::default()
+        fs::read(index_path(data_dir))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<SessionIndex>(&bytes).ok())
+            .filter(|index| index.version == VERSION)
+            .unwrap_or_default()
     }
 
     /// Atomic: written aside, then renamed over.
-    pub fn save(&self, _data_dir: &Path) -> Result<(), KitError> {
+    pub fn save(&self, data_dir: &Path) -> Result<(), KitError> {
+        let path = index_path(data_dir);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let bytes = serde_json::to_vec(self).map_err(|e| KitError::Parse(e.to_string()))?;
+        let tmp = path.with_extension("json.xdev-tmp");
+        fs::write(&tmp, bytes)?;
+        fs::rename(&tmp, &path)?;
         Ok(())
     }
 
@@ -175,9 +186,12 @@ impl SessionIndex {
         );
     }
 
-    /// Drops the sessions whose `last` is before `older_than_ms`, and their
-    /// file marks.
-    pub fn prune(&mut self, _older_than_ms: i64) {}
+    /// Drops the sessions whose `last` is before `older_than_ms`. Their file
+    /// marks stay, so an old log is not read again on each refresh; it comes
+    /// back when it is written to.
+    pub fn prune(&mut self, older_than_ms: i64) {
+        self.sessions.retain(|_, s| s.last >= older_than_ms);
+    }
 
     /// Every session with a message, newest `last` first.
     pub fn list(&self) -> Vec<&AgentSession> {
