@@ -11,6 +11,7 @@ import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { VaultNav } from "./VaultNav";
+import { PaletteHost } from "@/palette/PaletteHost";
 import { SettingsView } from "@/settings/SettingsView";
 import { Sessions } from "./sessions";
 import { WorkspaceShell } from "./WorkspaceShell";
@@ -501,4 +502,19 @@ it("new worktree skips a default agent that is turned off", async () => {
   await api.profilesDefaults("ask", "codex", null);
   const view = await harness(api);
   expect(await createBirch(view)).toEqual([]);
+});
+
+it("the header button opens the jump palette and its actions reach the shell", async () => {
+  const view = await harness();
+  expect(view.of(PaletteHost)[0].props.open).toBe(false);
+  view.of(HeaderSearch)[0].props.onJump();
+  expect(view.of(PaletteHost)[0].props.open).toBe(true);
+  view.of(PaletteHost)[0].props.onClose();
+  expect(view.of(PaletteHost)[0].props.open).toBe(false);
+  // A new worktree typed into the palette opens the dialog with that name.
+  view.of(PaletteHost)[0].props.actions.newWorktree("fix-it");
+  expect(view.of(CreateWorktreeDialog)[0].props.name).toBe("fix-it");
+  // Opening settings on a section shows that section.
+  view.of(PaletteHost)[0].props.actions.openSettings("repos");
+  expect(view.of(SettingsView)[0].props.initial).toBe("repos");
 });

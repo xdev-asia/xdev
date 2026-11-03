@@ -52,3 +52,25 @@ it("opens on Ctrl+K anywhere", () => {
   key(win, { key: "k", ctrlKey: true });
   expect(onOpen).toHaveBeenCalledTimes(2);
 });
+
+it("click calls onJump when set and shows Ctrl J", () => {
+  const onOpen = vi.fn();
+  const onJump = vi.fn();
+  const view = HeaderSearch({ onOpen, onJump }) as ReactElement<Record<string, any>>;
+  expect(renderToStaticMarkup(view)).toContain("Ctrl J");
+  view.props.onClick();
+  expect(onJump).toHaveBeenCalledTimes(1);
+  expect(onOpen).not.toHaveBeenCalled();
+});
+
+it("HeaderSearch keeps ctrl+k on onOpen with onJump set", () => {
+  const win = new EventTarget();
+  vi.stubGlobal("window", win);
+  const onOpen = vi.fn();
+  const onJump = vi.fn();
+  HeaderSearch({ onOpen, onJump });
+  hooks.effects.at(-1)!();
+  key(win, { key: "k", ctrlKey: true });
+  expect(onOpen).toHaveBeenCalledTimes(1);
+  expect(onJump).not.toHaveBeenCalled();
+});
