@@ -59,11 +59,7 @@ pub fn approx_tokens(bytes: u64) -> u64 {
 /// The homes on this machine, in the order Own, Env, Account. A folder seen
 /// twice is kept once, under the first source; a folder that is missing is
 /// left out.
-pub fn homes(
-    data_dir: &Path,
-    user_home: &Path,
-    env: &dyn Fn(&str) -> Option<String>,
-) -> Vec<Home> {
+pub fn homes(data_dir: &Path, user_home: &Path, env: &dyn Fn(&str) -> Option<String>) -> Vec<Home> {
     let mut found: Vec<Home> = Vec::new();
     let mut add = |id: String, agent: Agent, path: PathBuf, source: HomeSource| {
         let Ok(path) = path.canonicalize() else {
