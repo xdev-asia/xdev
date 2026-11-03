@@ -163,6 +163,112 @@
   cursor: default;
 }
 
+/* The bell: a count on the button and the list of unread tabs under it. */
+
+.ws-bell {
+  position: relative;
+  display: flex;
+}
+
+.ws-bell .ws-header-btn {
+  position: relative;
+}
+
+.ws-bell-count {
+  position: absolute;
+  top: 1px;
+  right: -2px;
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: var(--radius-l);
+  background: var(--warn);
+  color: var(--bg-0);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+
+.ws-bell-pop {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  max-height: 60vh;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-1) 16%, transparent);
+  outline: none;
+}
+
+.ws-bell-title {
+  margin: 0;
+  padding: 4px 8px 2px;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ws-bell-empty {
+  margin: 0;
+  padding: 10px 8px;
+  color: var(--text-3);
+}
+
+.ws-bell-list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.ws-bell-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-1);
+  text-align: left;
+}
+
+.ws-bell-row:hover,
+.ws-bell-row:focus-visible {
+  background: var(--bg-3);
+}
+
+.ws-bell-wt {
+  overflow: hidden;
+  max-width: 40%;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-bell-name {
+  flex: 1;
+  overflow: hidden;
+  min-width: 0;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-bell-state,
+.ws-bell-age {
+  flex-shrink: 0;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
 /* Body */
 
 .ws-body {

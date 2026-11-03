@@ -48,3 +48,52 @@ Task 7: complete
   `onMarkUnread(wt)`; unread row gets `ws-wt-unread` (bold) and the glyph label `workspace.unreadStatus`;
   "Mark unread" (`workspace.markUnread`) sits in the one menu opened by right-click and the more button, shown
   only when `onMarkUnread` is given (wired in Task 8 by WorkspaceShell).
+
+Task 8: complete
+- Store `@/status/statusSettings.ts` (API for the settings lane and anyone else):
+  - `STATUS_DEFAULTS: StatusSettings` (all on, `soundFile: null`, `volume: 60`; mirrors the Rust default).
+  - `getStatusSettings(): StatusSettings`, the last loaded or set value (defaults until the first load).
+  - `setStatusSettings(next: StatusSettings): void` stores a copy and tells subscribers; a value equal to the
+    current one is a no-op. The Settings page should call it with what `statusSettingsPut` returned.
+  - `loadStatusSettings(api: Pick<Api, "statusSettings">): Promise<StatusSettings>` reads from the desktop and
+    sets the store; on failure it keeps the last value and resolves with it.
+  - `subscribeStatusSettings(listener): () => void`, `useStatusSettings(): StatusSettings`
+    (useSyncExternalStore), `resetStatusSettings()` (tests only).
+- Live settings: the settings lane (feat/status-settings) calls `api.statusSettingsPut` itself and does not use the
+  store. So the notifier reads the stored settings again (`loadStatusSettings`) before every OS notification,
+  sound and badge send. The shell also reloads on a view change, on window focus/blur and on SettingsView
+  `onChanged`. The bell follows the store, so it updates on leaving Settings, not on each toggle.
+- `workspace/notifier.ts`: `createNotifier({ api, settings, play, now, t })` with `attention(tab, status, names)`,
+  `badge(count)`, `lastNotified()`, `takeFocusJump(now)`, `cancelFocusJump()`, `dispose()`.
+  `COOLDOWN_MS = 5000`, `BADGE_DEBOUNCE_MS = 200`, `FOCUS_JUMP_MS = 15000`.
+- Badge: unread tab count, sent 200 ms after it settles; same value not sent twice; 0 while `badge` is off.
+- Bell (`workspace/BellMenu.tsx`): header button with count (`bellCount`: "99+" above 99) and a menu of unread
+  tabs, newest `unreadAt` first: glyph, worktree, tab name (title, else profile), state, age. A row jumps to the
+  pane: select worktree, show workspace, `front` the tab, focus its xterm textarea. Escape / backdrop close.
+  With `bell` off the button is disabled (title `status.bell.off`), without count or list; rows still go bold.
+- Seen panes: `WorktreeTabs` gains `onPanes(ids)` (front tab + split partner, terminals only). The shell sends
+  `sessions.setSeen` the selected worktree's panes only while the window is focused and visible and the workspace
+  view is up; otherwise `[]`.
+- Notification click: `api.onStatusNotificationClick` jumps to the pane. R11 fallback: a window `focus` within
+  15 s of the newest sent notification jumps there once; a `pointerdown` (capture) in the app first cancels it,
+  as does a reported click.
+- WorktreeList gets `unread` and `onMarkUnread` (calls `sessions.markUnread`); footer `waiting` = agent tabs in
+  needs-you across worktrees.
+- Ruling 4 (cooldown): per key `${ptyId}:${status}`, 5 s, covering the OS notification and the sound together.
+  The key is taken before the first await, so a burst arriving together is told once. With `os` on, the sound
+  plays only when `statusNotify` resolved; with `os` off and `sound` on, it plays alone. sound.ts keeps its 2 s
+  floor (unchanged).
+- Ruling 5 (body): title = worktree name; body = `status.notify.<state>` with `{name}` = the profile name, or
+  the hand-given name when `renamed`. The terminal's OSC title is never used in the notification, because it
+  can carry the prompt.
+- i18n: `status.notify.{needs-you,done,failed}`, `status.bell.{label,label.one,title,empty,off,row}` (en + vi).
+- Tests: WorkspaceShell harness takes the first two effects (`slice(0, 2)`) and no longer counts them from the end.
+
+Open items
+- [Unverified] On Windows a toast click only reaches the app while the toast is on screen (backend finding). The
+  15 s focus fallback covers the rest. Not checked on a real desktop.
+- [Inference] If the person clicks straight into the xDev window (not the toast) within 15 s, window `focus` may
+  fire before `pointerdown`, so that click could still jump to the notified pane. Needs a check on a real window.
+- The Settings page could call `setStatusSettings(stored)` after `statusSettingsPut` so the bell and badge
+  follow each toggle at once (settings lane, not edited here).
+- `workspace.header.soon` is no longer used by the bell. It is left in place because other code may still use it.

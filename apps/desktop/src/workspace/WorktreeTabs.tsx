@@ -50,6 +50,8 @@ export function WorktreeTabs(props: {
   front?: { id: string; seq: number };
   /** Told which tab is in front, so the shell knows where a prompt from the Agent kit goes. */
   onShown?: (id: string | null) => void;
+  /** Told which terminal panes are on screen (the front tab and its split partner), so the shell knows what is seen. */
+  onPanes?: (ids: string[]) => void;
 }): JSX.Element {
   const { api, sessions, worktree, visible, reveal } = props;
   const { t } = useI18n();
@@ -97,6 +99,10 @@ export function WorktreeTabs(props: {
   const partner = split && at >= 0 ? partnerOf(tabs, at, split) : null;
   // Both panes of a split are visible; every other pane stays mounted and hidden.
   const visibleIds = partner ? [shown, partner] : [shown];
+  // A string, so the shell hears only when the pair on screen changes.
+  const paneKey = visibleIds.filter((id): id is string => !!id && !id.startsWith("file:")).join(" ");
+  const { onPanes } = props;
+  useEffect(() => onPanes?.(paneKey ? paneKey.split(" ") : []), [paneKey]);
   const canSplit = tabs.length >= 2 && at >= 0;
 
   const { view } = useProfiles();
