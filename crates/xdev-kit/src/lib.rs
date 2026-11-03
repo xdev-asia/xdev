@@ -4,6 +4,7 @@
 mod homes;
 mod memory;
 mod skills;
+mod usage;
 mod write;
 
 pub use homes::{Agent, Home, HomeSource, KitError, approx_tokens, homes};
@@ -11,6 +12,9 @@ pub use memory::{
     IssueKind, MemoryFile, MemoryIssue, MemoryKind, MemorySet, project_slug, scan_memory,
 };
 pub use skills::{Skill, SkillScope, scan_skills};
+pub use usage::{
+    FileMark, RefreshStats, SessionUsage, Tokens, UsageIndex, UsageQuery, UsageSummary, summarize,
+};
 pub use write::{
     Roots, copy_file, copy_skill_dir, new_skill, read_for_edit, remove_skill, restore_skill,
     write_checked,
