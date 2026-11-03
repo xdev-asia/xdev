@@ -10,6 +10,7 @@ use crate::flags::flags;
 use crate::hooks::hook_args;
 use crate::profiles::{Cli, Permissions, Profile, ProfileError, Profiles};
 use crate::shells::{ShellEntry, default_shell_id};
+use crate::version::{CliVersion, cli_version};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Launch {
@@ -38,11 +39,23 @@ impl Launch {
     /// mapped flags and the profile's args and before any startup wrapping,
     /// so the policy gate and the fingerprint see them. A shell, a custom
     /// program or a CLI without hooks is left as it is.
+    ///
+    /// The CLI is asked for its version first (once per program path), so
+    /// it gets only the hook events it knows.
     pub fn add_hooks(&mut self, xdev: &Path) {
+        let asks = matches!(self.cli, Some(Cli::Claude | Cli::Codex));
+        if asks && self.agent && !self.hooks {
+            let version = cli_version(&self.program);
+            self.add_hooks_with(xdev, version);
+        }
+    }
+
+    /// `add_hooks` for a CLI that reported `version` (`None`: unknown).
+    pub fn add_hooks_with(&mut self, xdev: &Path, version: Option<CliVersion>) {
         let Some(cli) = self.cli.filter(|_| self.agent && !self.hooks) else {
             return;
         };
-        let flags = hook_args(cli, xdev);
+        let flags = hook_args(cli, xdev, version);
         if !flags.is_empty() {
             self.args.extend(flags);
             self.hooks = true;
@@ -709,16 +722,37 @@ mod tests {
         c.startup = vec!["nvm use".into()];
         let mut l = run(&with(c), "claude", None, &found).unwrap();
         let xdev = Path::new("/opt/xdev");
-        l.add_hooks(xdev);
-        let hooks = hook_args(Cli::Claude, xdev);
+        let version = Some(CliVersion(2, 1, 317));
+        l.add_hooks_with(xdev, version);
+        let hooks = hook_args(Cli::Claude, xdev, version);
         assert_eq!(l.args[..1], ["--verbose"]);
         assert_eq!(l.args[1..], hooks[..]);
         assert!(l.hooks);
+        l.add_hooks_with(xdev, version);
         l.add_hooks(xdev);
         assert_eq!(l.args.len(), 3);
         // The startup wrapper carries them as the CLI's own args.
         let (_, wrapped) = l.command();
         assert!(!wrapped.is_empty());
+    }
+
+    #[test]
+    fn add_hooks_offers_an_unknown_claude_only_two_events() {
+        let p = Profiles::default();
+        let xdev = Path::new("/opt/xdev");
+        let mut unknown = run(&p, "claude", None, &found).unwrap();
+        // `found` points at a program that does not exist: no version.
+        unknown.add_hooks(xdev);
+        assert_eq!(
+            unknown.args[unknown.args.len() - 2..],
+            hook_args(Cli::Claude, xdev, None)[..]
+        );
+        let mut known = run(&p, "claude", None, &found).unwrap();
+        known.add_hooks_with(xdev, Some(CliVersion(2, 1, 317)));
+        assert_ne!(known.args, unknown.args);
+        let settings = known.args.last().unwrap();
+        assert!(settings.contains("PermissionRequest"));
+        assert!(!unknown.args.last().unwrap().contains("PermissionRequest"));
     }
 
     #[test]
