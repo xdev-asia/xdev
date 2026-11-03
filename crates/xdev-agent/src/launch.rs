@@ -4,11 +4,11 @@ use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use xdev_ai::{AiError, Provider, Registry, claude_command, codex_command};
+use xdev_ai::{AiError, Provider, Registry};
 
 use crate::flags::flags;
 use crate::profiles::{Cli, Permissions, Profile, ProfileError, Profiles};
-use crate::shells::{ShellEntry, default_shell_id, shell};
+use crate::shells::{ShellEntry, default_shell_id};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Launch {
@@ -190,45 +190,6 @@ fn resolve_shell(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
     })
 }
 
-pub fn launch(profile_id: &str) -> Result<Launch, LaunchError> {
-    launch_with(profile_id, |id| {
-        let command = if id == "claude" {
-            claude_command()?
-        } else {
-            codex_command()?
-        };
-        Ok(PathBuf::from(command.get_program()))
-    })
-}
-
-/// `find` locates an agent CLI by id; tests pass their own.
-pub fn launch_with(
-    profile_id: &str,
-    find: impl Fn(&str) -> Result<PathBuf, AiError>,
-) -> Result<Launch, LaunchError> {
-    let (program, args, agent) = match profile_id {
-        "shell" => {
-            let (program, args) = shell();
-            (program, args, false)
-        }
-        "claude" | "codex" => {
-            let program = find(profile_id).map_err(|e| LaunchError::NotInstalled(e.code()))?;
-            (program, Vec::new(), true)
-        }
-        _ => return Err(LaunchError::UnknownProfile),
-    };
-    Ok(Launch {
-        profile: profile_id.to_owned(),
-        program,
-        args,
-        env: Vec::new(),
-        agent,
-        permissions: Permissions::Ask,
-        account: None,
-        startup: Vec::new(),
-    })
-}
-
 /// Windows PowerShell running `lines`, then the program with its args, and
 /// exiting with the program's code (1 when the program never started). The
 /// script travels as base64 of UTF-16LE so no layer of command-line quoting
@@ -354,35 +315,6 @@ mod tests {
     use super::*;
     use crate::profiles::{Approvals, EnvVar, builtin};
     use crate::shells::ShellKind;
-
-    #[test]
-    fn unknown_profile_is_an_error() {
-        assert_eq!(launch("vim").unwrap_err().code(), "unknown_profile");
-    }
-
-    #[test]
-    fn shell_is_not_an_agent() {
-        let l = launch("shell").unwrap();
-        assert!(!l.agent && l.program.file_stem().is_some());
-    }
-
-    #[test]
-    fn claude_uses_the_found_program() {
-        let bin = PathBuf::from(r"C:\npm\claude.cmd");
-        let l = launch_with("claude", |id| {
-            assert_eq!(id, "claude");
-            Ok(bin.clone())
-        })
-        .unwrap();
-        assert_eq!(l.program, bin);
-        assert!(l.agent && l.args.is_empty());
-    }
-
-    #[test]
-    fn missing_codex_maps_to_no_codex() {
-        let err = launch_with("codex", |_| Err(AiError::NoCodex)).unwrap_err();
-        assert_eq!(err.code(), "no_codex");
-    }
 
     // --- resolve ---
 

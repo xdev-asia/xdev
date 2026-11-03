@@ -26,7 +26,7 @@ use xdev_policy::Verdict;
 pub use detect::{find_builtin, find_program};
 pub use flags::{efforts, flags};
 pub use flow::RunOptions;
-pub use launch::{Context, Launch, LaunchError, launch, launch_with, resolve};
+pub use launch::{Context, Launch, LaunchError, resolve};
 pub use profiles::{
     Approvals, Cli, CustomShell, EnvVar, Permissions, Profile, ProfileError, Profiles, builtin,
     valid_id,

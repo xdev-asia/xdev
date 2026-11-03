@@ -106,17 +106,6 @@ pub fn default_shell_id(profiles: &Profiles, shells: &[ShellEntry]) -> String {
         .to_owned()
 }
 
-/// The program and args of the plain `shell` id for the old `launch` entry
-/// points: no login flag on Unix.
-pub(crate) fn shell() -> (PathBuf, Vec<String>) {
-    if cfg!(windows) {
-        let entry = powershell();
-        (entry.program, entry.args)
-    } else {
-        (login_program(), Vec::new())
-    }
-}
-
 /// The distros `wsl.exe -l -q` lists. Empty when WSL is missing, when it
 /// fails or when it does not answer in 3 seconds.
 #[cfg(windows)]
