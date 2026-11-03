@@ -272,8 +272,9 @@ impl Default for UiSettings {
     }
 }
 
-/// Settings → Terminal → On start, reopen tabs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+/// Settings → Terminal → On start, reopen tabs. A value this build does not
+/// know reads as `All`, so it does not reset the zoom beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub enum RestoreMode {
@@ -284,6 +285,17 @@ pub enum RestoreMode {
     AgentsOnly,
     /// Nothing comes back.
     None,
+}
+
+impl<'de> serde::Deserialize<'de> for RestoreMode {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("agentsOnly") => RestoreMode::AgentsOnly,
+            Some("none") => RestoreMode::None,
+            _ => RestoreMode::All,
+        })
+    }
 }
 
 impl UiSettings {
@@ -1103,6 +1115,58 @@ then sum up"
         assert_eq!(at(1.25), 1.25);
         assert_eq!(at(f32::NAN), 1.0);
         assert_eq!(at(f32::INFINITY), 1.0);
+    }
+
+    #[test]
+    fn a_file_without_restore_loads_all() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(
+            &path,
+            format!(r#"{{"version":{VERSION},"ui":{{"zoom":1.5}}}}"#),
+        )
+        .unwrap();
+        let ui = load(&path).ui;
+        assert_eq!(ui.zoom, 1.5);
+        assert_eq!(ui.restore, RestoreMode::All);
+    }
+
+    #[test]
+    fn each_restore_mode_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        for (mode, text) in [
+            (RestoreMode::All, "all"),
+            (RestoreMode::AgentsOnly, "agentsOnly"),
+            (RestoreMode::None, "none"),
+        ] {
+            let settings = Settings {
+                ui: UiSettings {
+                    zoom: 1.25,
+                    restore: mode,
+                },
+                ..Settings::default()
+            };
+            save(&path, &settings).unwrap();
+            let json: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            assert_eq!(json["ui"]["restore"], text);
+            assert_eq!(load(&path).ui, settings.ui);
+        }
+    }
+
+    #[test]
+    fn an_unknown_restore_mode_reads_all_and_keeps_the_zoom() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        for restore in [r#""sometimes""#, "3", "null"] {
+            let text =
+                format!(r#"{{"version":{VERSION},"ui":{{"zoom":1.5,"restore":{restore}}}}}"#);
+            fs::write(&path, text).unwrap();
+            let ui = load(&path).ui;
+            assert_eq!(ui.zoom, 1.5, "{restore}");
+            assert_eq!(ui.restore, RestoreMode::All, "{restore}");
+        }
     }
 
     #[test]
