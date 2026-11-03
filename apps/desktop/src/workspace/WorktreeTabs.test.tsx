@@ -5,6 +5,7 @@ import { createMockApi, toApiError, type Api, type Profile, type ProfilesView, t
 import { translate } from "@/i18n";
 import { Terminal } from "@/terminal/Terminal";
 import { AgentIcon } from "./AgentIcon";
+import { CloseTabsDialog } from "./CloseTabsDialog";
 import { Sessions } from "./sessions";
 import { WorktreeTabs } from "./WorktreeTabs";
 
@@ -50,13 +51,13 @@ const en = (key: string, vars?: Record<string, string | number>) => translate("e
 const A = "/demo/wt/xdev-oak";
 const B = "/demo/wt/xdev-elm";
 
-function harness(api: Api, sessions: Sessions, worktree = A, visible = true) {
+function harness(api: Api, sessions: Sessions, worktree = A, visible = true, extra: Partial<Parameters<typeof WorktreeTabs>[0]> = {}) {
   const values: unknown[] = [];
   const draw = () => {
     hooks.values = values;
     hooks.cursor = 0;
     hooks.active = true;
-    try { return WorktreeTabs({ api, sessions, worktree, visible }); } finally { hooks.active = false; }
+    try { return WorktreeTabs({ api, sessions, worktree, visible, ...extra }); } finally { hooks.active = false; }
   };
   const all = () => nodes(draw());
   const html = () => renderToStaticMarkup(draw());
@@ -332,7 +333,7 @@ it("a split with one tab is disabled", () => {
   expect(live.split(A)).toBeNull();
   expect(layout(view).dir).toBeUndefined();
   // Every button carries a tooltip.
-  expect(view.labelled(en("workspace.tabs.split.right")).props.title).toBe(en("workspace.tabs.split.right"));
+  expect(view.labelled(en("workspace.tabs.split.right")).props.title).toBe(en("keys.hint", { label: en("workspace.tabs.split.right"), chord: "Ctrl+Shift+D" }));
   live.open(A, "claude");
   expect(view.labelled(en("workspace.tabs.split.right")).props["aria-disabled"]).toBe(false);
 });
@@ -536,7 +537,7 @@ it("ctrl_alt_t_opens_default_agent", async () => {
   expect(shown.listeners.size).toBe(1);
   // A held key repeats; only the first press counts, and other chords do nothing.
   shown.press({ repeat: true });
-  shown.press({ altKey: false });
+  shown.press({ altKey: false, shiftKey: true });
   shown.press({ key: "y", code: "KeyY" });
   expect(live.tabs(A)).toEqual([]);
   const e = shown.press();
@@ -546,4 +547,140 @@ it("ctrl_alt_t_opens_default_agent", async () => {
 
   shown.cleanup();
   expect(shown.listeners.size).toBe(0);
+});
+
+// ---- Workspace keys: tab and pane actions ----
+
+/** One key press against a fresh draw, so each press sees the state the last one left. */
+function press(view: ReturnType<typeof harness>, over: Partial<KeyboardEvent>) {
+  const k = keys(view);
+  const e = k.press({ ctrlKey: false, altKey: false, ...over });
+  k.cleanup();
+  return e;
+}
+const CTRL_T = { key: "t", code: "KeyT", ctrlKey: true };
+const CTRL_W = { key: "w", code: "KeyW", ctrlKey: true };
+const CTRL_TAB = { key: "Tab", code: "Tab", ctrlKey: true };
+const selected = (view: ReturnType<typeof harness>) =>
+  view.all().filter((n) => n.props.role === "tab" && n.props["aria-selected"] === true).map((n) => n.props["data-tab"]);
+
+it("ctrl_t_opens_the_default_shell_and_ctrl_w_closes_it", async () => {
+  const api = createMockApi({});
+  store.view = await api.profilesDefaults("ask", "codex", null);
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  const e = press(view, CTRL_T);
+  expect(e.preventDefault).toHaveBeenCalled();
+  expect(live.tabs(A).map((t) => t.profileId)).toEqual([store.view.defaultShell]);
+  expect(live.tabs(A)[0].agent).toBe(false);
+  press(view, CTRL_W);
+  expect(live.tabs(A)).toEqual([]);
+});
+
+it("ctrl_t_with_no_shell_opens_the_menu", async () => {
+  const api = createMockApi({});
+  store.view = { ...(await api.profilesDefaults("ask", "codex", null)), shells: [] };
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  expect(view.find((n) => n.props.role === "menu")).toBeUndefined();
+  press(view, CTRL_T);
+  expect(live.tabs(A)).toEqual([]);
+  expect(view.find((n) => n.props.role === "menu")).toBeDefined();
+});
+
+it("keys do nothing in a worktree that is not on screen", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const k = keys(harness(api, live, A, false));
+  expect(k.listeners.size).toBe(0);
+});
+
+it("ctrl_w_on_an_agent_asks_first", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const agent = live.open(A, "claude");
+  const view = harness(api, live);
+  const ask = () => view.find((n) => n.type === CloseTabsDialog);
+  expect(ask()).toBeUndefined();
+  press(view, CTRL_W);
+  expect(live.tabs(A)).toHaveLength(1);
+  // Cancel keeps it; confirm closes it.
+  ask()!.props.onCancel();
+  expect(ask()).toBeUndefined();
+  press(view, CTRL_W);
+  ask()!.props.onConfirm();
+  expect(live.tabs(A).map((t) => t.id)).not.toContain(agent.id);
+  expect(ask()).toBeUndefined();
+});
+
+it("ctrl_w_on_the_review_tab_closes_it", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live, A, true, { reveal: { file: "a.ts", seq: 1 } });
+  expect(selected(view)).toEqual(["review:"]);
+  press(view, CTRL_W);
+  expect(view.find((n) => n.props["data-tab"] === "review:")).toBeUndefined();
+});
+
+it("ctrl_tab_cycles_and_alt_n_picks_a_tab", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const [a, b, c] = ["shell", "shell", "shell"].map((p) => live.open(A, p as "shell").id);
+  const view = harness(api, live);
+  expect(selected(view)).toEqual([c]);
+  press(view, CTRL_TAB);
+  expect(selected(view)).toEqual([a]);
+  press(view, { ...CTRL_TAB, shiftKey: true });
+  expect(selected(view)).toEqual([c]);
+  press(view, { key: "2", code: "Digit2", altKey: true });
+  expect(selected(view)).toEqual([b]);
+  press(view, { key: "9", code: "Digit9", altKey: true });
+  expect(selected(view)).toEqual([c]);
+  // No fourth tab: the key goes on to the terminal.
+  const e = press(view, { key: "4", code: "Digit4", altKey: true });
+  expect(e.preventDefault).not.toHaveBeenCalled();
+  expect(selected(view)).toEqual([c]);
+});
+
+// A layout host over the real Sessions; the pane tree functions are the contract stubs here.
+function withLayout(live: Sessions, tabs: string[], active: string) {
+  const state = { layout: { root: { kind: "leaf", id: "p1", tabs, active }, focused: "p1", expanded: null } as unknown };
+  const setLayout = vi.fn((_w: string, next: unknown) => void (state.layout = next));
+  Object.assign(live, { layout: () => state.layout, setLayout });
+  return { state, setLayout };
+}
+
+it("with a layout, tab keys stay inside the focused pane", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const [a, b] = ["shell", "shell"].map((p) => live.open(A, p as "shell").id);
+  const c = live.open(A, "shell").id;
+  withLayout(live, [a, b], a);
+  const view = harness(api, live);
+  press(view, { ...CTRL_TAB });
+  expect(selected(view)).toEqual([b]);
+  press(view, { key: "9", code: "Digit9", altKey: true });
+  expect(selected(view)).toEqual([b]);
+  expect(c).toBeDefined();
+});
+
+it("pane actions call the layout and do nothing without one", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  live.open(A, "shell");
+  const view = harness(api, live);
+  const splitRight = { key: "D", code: "KeyD", ctrlKey: true, shiftKey: true };
+  expect(press(view, splitRight).preventDefault).not.toHaveBeenCalled();
+  expect(live.tabs(A)).toHaveLength(1);
+
+  const [{ id }] = live.tabs(A);
+  const { setLayout } = withLayout(live, [id], id);
+  expect(press(view, splitRight).preventDefault).toHaveBeenCalled();
+  // The new shell is a tab of its own, then the layout is replaced.
+  expect(live.tabs(A)).toHaveLength(2);
+  expect(setLayout).toHaveBeenCalled();
+  setLayout.mockClear();
+  press(view, { key: "Enter", code: "Enter", ctrlKey: true, shiftKey: true });
+  press(view, { key: "=", code: "Equal", ctrlKey: true, shiftKey: true });
+  expect(setLayout).toHaveBeenCalled();
 });
