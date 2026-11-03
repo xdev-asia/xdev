@@ -1,4 +1,4 @@
-import { useCallback, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { PTY_PROFILES, type Api, type ApiError, type PtyProfile } from "../api";
 import { useI18n } from "../i18n";
@@ -40,6 +40,8 @@ export function WorktreeTabs(props: {
   worktree: string;
   visible: boolean;
   reveal?: Reveal;
+  /** Told which tab is in front, so the shell knows where a prompt from the Agent kit goes. */
+  onShown?: (id: string | null) => void;
 }): JSX.Element {
   const { api, sessions, worktree, visible, reveal } = props;
   const { t } = useI18n();
@@ -69,6 +71,9 @@ export function WorktreeTabs(props: {
   // A closed tab hands the view to the newest terminal, else to the newest diff.
   const ids = [...tabs.map((tab) => tab.id), ...open.map((f) => fileTab(f.file))];
   const shown = pick && ids.includes(pick) ? pick : (tabs[tabs.length - 1]?.id ?? (open.length ? fileTab(open[open.length - 1].file) : null));
+
+  const { onShown } = props;
+  useEffect(() => onShown?.(shown), [shown]);
 
   // The split pairs the shown terminal with one other; a diff tab in front shows alone.
   const splitSnapshot = () => sessions.split(worktree);

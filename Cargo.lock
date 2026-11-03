@@ -6163,6 +6163,7 @@ dependencies = [
  "xdev-ai",
  "xdev-core",
  "xdev-git",
+ "xdev-kit",
  "xdev-policy",
  "xdev-pty",
  "xdev-workspace",
@@ -6187,6 +6188,18 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "ts-rs",
+]
+
+[[package]]
+name = "xdev-kit"
+version = "0.3.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "ts-rs",
+ "xdev-ai",
 ]
 
 [[package]]

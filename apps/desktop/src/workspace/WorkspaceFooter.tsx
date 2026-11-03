@@ -80,6 +80,8 @@ export function WorkspaceFooter(props: {
   version: string;
   update?: Update | null;
   onRestartUpdate?: () => void;
+  /** Opens the token usage in the Agent kit; the link shows only when this is given. */
+  onOpenUsage?: () => void;
   hidden?: boolean;
 }): JSX.Element {
   const { t } = useI18n();
@@ -94,6 +96,11 @@ export function WorkspaceFooter(props: {
             <MeterItem key={m.label} meter={m} />
           ))}
         </span>
+      )}
+      {props.onOpenUsage && (
+        <button type="button" className="ws-footer-link" data-action="token-usage" onClick={props.onOpenUsage}>
+          {t("kit.usage.link")}
+        </button>
       )}
       <span className="ws-footer-spacer" />
       <span className="ws-running">
@@ -117,6 +124,7 @@ export function LiveWorkspaceFooter(props: {
   running: number;
   waiting: number;
   version: string;
+  onOpenUsage?: () => void;
   hidden?: boolean;
 }): JSX.Element {
   const { api, hidden, ...rest } = props;

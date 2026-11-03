@@ -579,3 +579,165 @@ it("routes account calls through Tauri and normalizes their errors", async () =>
     await expect(api.accounts()).rejects.toEqual({ code: "bad_registry" });
   } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
 });
+
+it("routes agent kit calls through Tauri with the argument names Rust expects", async () => {
+  vi.resetModules();
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    const calls = () => vi.mocked(invoke).mock.calls;
+    const last = () => calls()[calls().length - 1];
+
+    await api.kitHomes();
+    expect(last()).toEqual(["kit_homes", undefined]);
+    await api.kitSkills("/wt");
+    expect(last()).toEqual(["kit_skills", { worktree: "/wt" }]);
+    await api.kitSkills(null);
+    expect(last()).toEqual(["kit_skills", { worktree: null }]);
+    await api.kitMemory("/wt");
+    expect(last()).toEqual(["kit_memory", { worktree: "/wt" }]);
+    await api.kitRead("/a/CLAUDE.md", "/wt");
+    expect(last()).toEqual(["kit_read", { path: "/a/CLAUDE.md", worktree: "/wt" }]);
+    await api.kitWrite("/a/CLAUDE.md", "text", "stamp", null);
+    expect(last()).toEqual(["kit_write", { path: "/a/CLAUDE.md", text: "text", stamp: "stamp", worktree: null }]);
+    await api.kitWrite("/a/new.md", "text", null, "/wt");
+    expect(last()).toEqual(["kit_write", { path: "/a/new.md", text: "text", stamp: null, worktree: "/wt" }]);
+    await api.kitCopy("/a/x.md", "/b/x.md", null);
+    expect(last()).toEqual(["kit_copy", { from: "/a/x.md", to: "/b/x.md", worktree: null }]);
+    await api.kitSkillCopy("/a/skills/s", "/b/skills", "/wt");
+    expect(last()).toEqual(["kit_skill_copy", { dir: "/a/skills/s", toSkillsDir: "/b/skills", worktree: "/wt" }]);
+    await api.kitSkillNew("/a/skills", "name", "one line", null);
+    expect(last()).toEqual(["kit_skill_new", { skillsDir: "/a/skills", name: "name", description: "one line", worktree: null }]);
+    await api.kitSkillRemove("/a/skills/s", null);
+    expect(last()).toEqual(["kit_skill_remove", { dir: "/a/skills/s", worktree: null }]);
+    await api.kitSkillRestore("/data/kit/removed/1/s", "/a/skills/s", null);
+    expect(last()).toEqual(["kit_skill_restore", { removed: "/data/kit/removed/1/s", to: "/a/skills/s", worktree: null }]);
+    // The local offset is added here, so callers keep the three-argument form. `getTimezoneOffset`
+    // is UTC minus local, so UTC+7 gives -420 and the command must get 420 (UTC-5 gives 300 and -300).
+    const zone = vi.spyOn(Date.prototype, "getTimezoneOffset");
+    try {
+      zone.mockReturnValue(-420);
+      await api.kitUsage("2026-11-01", "2026-11-07", true);
+      expect(last()).toEqual(["kit_usage", { sinceDay: "2026-11-01", untilDay: "2026-11-07", refresh: true, utcOffsetMinutes: 420 }]);
+      zone.mockReturnValue(300);
+      await api.kitUsage("2026-11-01", "2026-11-07", false);
+      expect(last()).toEqual(["kit_usage", { sinceDay: "2026-11-01", untilDay: "2026-11-07", refresh: false, utcOffsetMinutes: -300 }]);
+      zone.mockReturnValue(0);
+      await api.kitUsage("2026-11-01", "2026-11-07", false);
+      // `-0` is sent as `0`; adding 0 makes the check about the number, not the sign of zero.
+      expect((last()?.[1] as { utcOffsetMinutes: number }).utcOffsetMinutes + 0).toBe(0);
+    } finally {
+      zone.mockRestore();
+    }
+    await api.kitPathsExist("/wt", ["a.md", "b/c.md"]);
+    expect(last()).toEqual(["kit_paths_exist", { root: "/wt", paths: ["a.md", "b/c.md"] }]);
+    await api.kitPromptHistory(50);
+    expect(last()).toEqual(["kit_prompt_history", { limit: 50 }]);
+    expect(calls()).toHaveLength(17);
+
+    vi.mocked(invoke).mockRejectedValueOnce({ code: "outside" });
+    await expect(api.kitRead("/x", null)).rejects.toEqual({ code: "outside" });
+    vi.mocked(invoke).mockRejectedValueOnce({ code: "changed" });
+    await expect(api.kitWrite("/x", "t", "s", null)).rejects.toEqual({ code: "changed" });
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
+});
+
+describe("mock agent kit", () => {
+  it("has two homes, four skills with one duplicate, one stale memory line and seven days of usage", async () => {
+    const api = createMockApi({});
+    expect((await api.kitHomes()).map((h) => h.agent)).toEqual(["claude", "codex"]);
+    const skills = await api.kitSkills(null);
+    expect(skills).toHaveLength(4);
+    expect(skills.filter((s) => s.duplicate)).toHaveLength(2);
+    const memory = await api.kitMemory(null);
+    expect(memory.files.flatMap((f) => f.issues)).toHaveLength(1);
+    const usage = await api.kitUsage("2026-11-01", "2026-11-07", false);
+    expect(usage.days).toHaveLength(7);
+  });
+
+  it("saves with a stamp and refuses a stale one with changed", async () => {
+    const api = createMockApi({});
+    const [file] = (await api.kitMemory(null)).files;
+    const read = await api.kitRead(file.path, null);
+    const next = await api.kitWrite(file.path, "new text", read.stamp, null);
+    expect(next).not.toBe(read.stamp);
+    expect((await api.kitRead(file.path, null)).text).toBe("new text");
+    await expect(api.kitWrite(file.path, "again", read.stamp, null)).rejects.toEqual({ code: "changed" });
+    // Like Rust: a file that is not there is an `io` error, not `not_found`.
+    await expect(api.kitRead("/demo/home/.claude/gone.md", null)).rejects.toMatchObject({ code: "io" });
+  });
+
+  it("creates, copies, removes and restores a skill", async () => {
+    const api = createMockApi({});
+    const [home] = await api.kitHomes();
+    const skillsDir = `${home.path}/skills`;
+    const file = await api.kitSkillNew(skillsDir, "fresh", "A new one", null);
+    expect(file).toBe(`${skillsDir}/fresh/SKILL.md`);
+    expect((await api.kitSkills(null)).map((s) => s.name)).toContain("fresh");
+    const removed = await api.kitSkillRemove(`${skillsDir}/fresh`, null);
+    expect((await api.kitSkills(null)).map((s) => s.name)).not.toContain("fresh");
+    await api.kitSkillRestore(removed, `${skillsDir}/fresh`, null);
+    expect((await api.kitSkills(null)).map((s) => s.name)).toContain("fresh");
+  });
+
+  // Each case is what the Rust command answers for the same call (xdev-kit write.rs), so a view
+  // built against the mock branches on codes the real app returns.
+  it("rejects with the codes Rust uses", async () => {
+    const api = createMockApi({});
+    const [home, other] = await api.kitHomes();
+    const skillsDir = `${home.path}/skills`;
+    // Name rule of `xdev_ai::valid_name`: 1 to 32 of a-z, 0-9 and "-", no leading "-".
+    await api.kitSkillNew(skillsDir, "a".repeat(32), "limit", null);
+    for (const name of ["Bad Name", "", "-lead", "a".repeat(33)]) {
+      await expect(api.kitSkillNew(skillsDir, name, "x", null)).rejects.toMatchObject({ code: "bad_name" });
+    }
+    await expect(api.kitSkillNew(skillsDir, "two-lines", "a\nb", null)).rejects.toMatchObject({ code: "kit_bad_input" });
+    await expect(api.kitSkillNew("/elsewhere/skills", "fine", "x", null)).rejects.toMatchObject({ code: "outside" });
+    // A name that is taken is `changed` (a write with no stamp over a file), not `exists`.
+    await api.kitSkillNew(skillsDir, "taken", "x", null);
+    await expect(api.kitSkillNew(skillsDir, "taken", "x", null)).rejects.toEqual({ code: "changed" });
+    // A folder under a root that is not a skill is `kit_bad_input`; one outside every root is `outside`.
+    await expect(api.kitSkillRemove(`${skillsDir}/nothing-here`, null)).rejects.toMatchObject({ code: "kit_bad_input" });
+    await expect(api.kitSkillRemove("/elsewhere/skills/x", null)).rejects.toMatchObject({ code: "outside" });
+    await expect(api.kitSkillCopy(`${skillsDir}/nothing-here`, `${other.path}/skills`, null)).rejects.toMatchObject({ code: "kit_bad_input" });
+    await expect(api.kitSkillCopy(`${skillsDir}/taken`, "/elsewhere/skills", null)).rejects.toMatchObject({ code: "outside" });
+    await api.kitSkillCopy(`${skillsDir}/taken`, `${other.path}/skills`, null);
+    await expect(api.kitSkillCopy(`${skillsDir}/taken`, `${other.path}/skills`, null)).rejects.toEqual({ code: "changed" });
+    // Restore: a folder outside the removed area is `outside`; one inside it that is gone (already
+    // restored) is `kit_bad_input`; a taken target is `changed`.
+    const removed = await api.kitSkillRemove(`${skillsDir}/taken`, null);
+    await expect(api.kitSkillRestore("/elsewhere/removed/taken", `${skillsDir}/taken`, null)).rejects.toMatchObject({ code: "outside" });
+    await api.kitSkillNew(skillsDir, "taken", "again", null);
+    await expect(api.kitSkillRestore(removed, `${skillsDir}/taken`, null)).rejects.toEqual({ code: "changed" });
+    await api.kitSkillRestore(removed, `${skillsDir}/back`, null);
+    await expect(api.kitSkillRestore(removed, `${skillsDir}/again`, null)).rejects.toMatchObject({ code: "kit_bad_input" });
+    await expect(api.kitSkills("/not/a/worktree")).rejects.toMatchObject({ code: "outside" });
+  });
+
+  it("flags a duplicate only for one name with different bytes", async () => {
+    const api = createMockApi({});
+    const [home, other] = await api.kitHomes();
+    const reviews = (await api.kitSkills(null)).filter((s) => s.name === "review");
+    expect(reviews).toHaveLength(2);
+    expect(reviews[0].hash).not.toBe(reviews[1].hash);
+    expect(reviews.every((s) => s.duplicate)).toBe(true);
+    // The same bytes in two homes are one skill, not a conflict.
+    const made = await api.kitSkillCopy(`${home.path}/skills/release-notes`, `${other.path}/skills`, null);
+    const notes = (await api.kitSkills(null)).filter((s) => s.name === "release-notes");
+    expect(made).toBe(`${other.path}/skills/release-notes`);
+    expect(notes).toHaveLength(2);
+    expect(notes[0].hash).toBe(notes[1].hash);
+    expect(notes.some((s) => s.duplicate)).toBe(false);
+  });
+
+  it("reports which relative paths exist and gives a prompt history", async () => {
+    const api = createMockApi({});
+    const got = await api.kitPathsExist("/demo/xdev", ["README.md", "gone.md"]);
+    expect(got).toEqual([true, false]);
+    const history = await api.kitPromptHistory(2);
+    expect(history).toHaveLength(2);
+    expect(history[0].at).toBeGreaterThanOrEqual(history[1].at);
+  });
+});
