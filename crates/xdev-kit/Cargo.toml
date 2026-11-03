@@ -17,6 +17,7 @@ ts-rs = { workspace = true, optional = true }
 xdev-ai.workspace = true
 
 [dev-dependencies]
+dunce = "1.0.5"
 tempfile.workspace = true
 
 [lints]

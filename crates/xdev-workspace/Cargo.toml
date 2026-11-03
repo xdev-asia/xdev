@@ -18,6 +18,7 @@ ts-rs = { workspace = true, optional = true }
 xdev-git.workspace = true
 
 [dev-dependencies]
+dunce = "1.0.5"
 tempfile.workspace = true
 
 [lints]
