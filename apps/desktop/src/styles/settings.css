@@ -316,3 +316,13 @@
   align-items: center;
   gap: 6px;
 }
+
+/* Settings → Notifications: the volume slider, without the text-field box. */
+.notif-volume input[type="range"] {
+  max-width: 320px;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--accent);
+}

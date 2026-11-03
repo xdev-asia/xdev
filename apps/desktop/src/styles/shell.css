@@ -54,9 +54,7 @@
 .topbar-logo {
   flex: none;
   display: block;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
+  color: var(--accent);
 }
 
 .topbar-brand {

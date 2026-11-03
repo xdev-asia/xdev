@@ -14,6 +14,61 @@ pub struct Settings {
     /// defaults on its own, so it never costs the rest of the file.
     #[serde(default, deserialize_with = "lenient")]
     pub git: GitSettings,
+    /// Settings → Notifications; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub status: StatusSettings,
+}
+
+/// How agent status reaches the person. A channel fires only when `enabled`,
+/// its event switch and the channel switch are all on.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct StatusSettings {
+    // Master switch for every channel below.
+    pub enabled: bool,
+    // Which events notify.
+    pub on_needs_input: bool,
+    pub on_done: bool,
+    pub on_failed: bool,
+    // A terminal bell on a pane the person is not looking at.
+    pub on_bell: bool,
+    // No notification for a pane the person is looking at.
+    pub suppress_when_focused: bool,
+    // Agent launches get the per-process hook flags (new sessions only).
+    pub hooks: bool,
+    // OS notification for a pane the person is not looking at.
+    pub os: bool,
+    pub sound: bool,
+    // The person's own sound, copied under the data folder; `None` is the
+    // built-in beep.
+    pub sound_file: Option<String>,
+    // 0–100.
+    pub volume: u8,
+    // The header bell's count and list.
+    pub bell: bool,
+    // The taskbar or dock badge.
+    pub badge: bool,
+}
+
+impl Default for StatusSettings {
+    fn default() -> Self {
+        StatusSettings {
+            enabled: true,
+            on_needs_input: true,
+            on_done: true,
+            on_failed: true,
+            on_bell: false,
+            suppress_when_focused: true,
+            hooks: true,
+            os: true,
+            sound: true,
+            sound_file: None,
+            volume: 60,
+            bell: true,
+            badge: true,
+        }
+    }
 }
 
 /// What goes in front of new branch names.
@@ -92,9 +147,11 @@ impl GitSettings {
     }
 }
 
-fn lenient<'de, D>(de: D) -> Result<GitSettings, D::Error>
+/// One settings section: a value that does not parse becomes its defaults.
+fn lenient<'de, D, T>(de: D) -> Result<T, D::Error>
 where
     D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
 {
     let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
     Ok(serde_json::from_value(value).unwrap_or_default())
@@ -140,6 +197,12 @@ mod tests {
                 pr_generate_on_open: true,
                 pr_open_after_create: true,
             },
+            status: StatusSettings {
+                hooks: false,
+                sound_file: Some("C:/x/custom.wav".into()),
+                volume: 7,
+                ..StatusSettings::default()
+            },
         };
         save(&path, &settings).unwrap();
         assert_eq!(load(&path), settings);
@@ -179,6 +242,13 @@ mod tests {
         // A partial section keeps what it has.
         fs::write(&path, r#"{ "git": { "branchPrefix": "none" } }"#).unwrap();
         assert_eq!(load(&path).git.branch_prefix, BranchPrefixMode::None);
+
+        // So does a bad status section.
+        let raw = r#"{ "last_vault": "D:/docs", "status": { "volume": "loud" } }"#;
+        fs::write(&path, raw).unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.last_vault.as_deref(), Some("D:/docs"));
+        assert_eq!(loaded.status, StatusSettings::default());
     }
 
     #[test]
@@ -228,8 +298,70 @@ mod tests {
                 last_vault: Some("D:/docs".into()),
                 vault_prompted: false,
                 git: GitSettings::default(),
+                status: StatusSettings::default(),
             }
         );
+    }
+
+    #[test]
+    fn settings_without_status_load_with_hooks_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(&path, r#"{ "last_vault": "D:/docs" }"#).unwrap();
+        let status = load(&path).status;
+        assert_eq!(status, StatusSettings::default());
+        assert!(status.hooks && status.os && status.sound && status.bell && status.badge);
+        assert_eq!((status.volume, status.sound_file), (60, None));
+    }
+
+    #[test]
+    fn status_is_camel_case_and_fills_missing_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(
+            &path,
+            r#"{ "status": { "soundFile": "a.wav", "bell": false } }"#,
+        )
+        .unwrap();
+        let status = load(&path).status;
+        assert_eq!(
+            status,
+            StatusSettings {
+                sound_file: Some("a.wav".into()),
+                bell: false,
+                ..StatusSettings::default()
+            }
+        );
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(json["soundFile"], "a.wav");
+        assert_eq!(json["volume"], 60);
+    }
+
+    #[test]
+    fn a_4a_status_loads_the_4b_switches_at_their_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let old = r#"{ "status": { "hooks": false, "os": true, "sound": false,
+            "soundFile": null, "volume": 30, "bell": true, "badge": false } }"#;
+        fs::write(&path, old).unwrap();
+        let status = load(&path).status;
+        assert!(status.enabled && status.on_needs_input && status.on_done && status.on_failed);
+        assert!(!status.on_bell && status.suppress_when_focused);
+        assert_eq!(
+            (status.hooks, status.sound, status.volume, status.badge),
+            (false, false, 30, false)
+        );
+        let json = serde_json::to_value(&status).unwrap();
+        for key in [
+            "enabled",
+            "onNeedsInput",
+            "onDone",
+            "onFailed",
+            "onBell",
+            "suppressWhenFocused",
+        ] {
+            assert!(json[key].is_boolean(), "{key}");
+        }
     }
 
     #[test]

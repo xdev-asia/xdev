@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import pkg from "../../package.json";
-import logo from "../../../../docs/brand/xdev-icon-512.png";
-import { ProfilesProvider } from "@/agents/profileStore";
-import { toApiError, type Api, type ApiError, type Check, type PrView, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
+import { BrandMark } from "@/components/BrandMark";
+import { ProfilesProvider, profileName } from "@/agents/profileStore";
+import { toApiError, type Api, type ApiError, type Check, type HookDetail, type PrView, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
 import { DocsApp } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
@@ -11,6 +11,10 @@ import { useI18n } from "@/i18n";
 import { PaletteHost } from "@/palette/PaletteHost";
 import { useJumpKey } from "@/palette/useJumpKey";
 import { SettingsView } from "@/settings/SettingsView";
+import { playStatusSound } from "@/status/sound";
+import { usePresence } from "@/status/presence";
+import { eventOn, getStatusSettings, loadStatusSettings, useStatusSettings } from "@/status/statusSettings";
+import { BellMenu, bellCount, type BellRow } from "./BellMenu";
 import { ChecksPanel } from "./ChecksPanel";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { FileTree } from "./FileTree";
@@ -20,7 +24,8 @@ import { VaultNav } from "./VaultNav";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { sendToAgentTab } from "./agentPrompt";
 import { sendTarget } from "./sendTarget";
-import { Sessions } from "./sessions";
+import { createNotifier, type Notifier } from "./notifier";
+import { Sessions, type Attention, type Tab } from "./sessions";
 import { PrStore } from "./prs";
 import { WorktreeStats } from "./stats";
 import type { TabStatus } from "./status";
@@ -82,6 +87,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The files the Changes panel last listed; the Files tree marks them.
   const [changeList, setChangeList] = useState<{ worktree: string; list: WorktreeChange[] } | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab>("files");
+  // The window has the person: focused and not minimised. Only then is a pane on screen seen.
+  const [focused, setFocused] = useState(windowFocused);
+  // The terminal panes on screen in each worktree, as its tab strip reports them.
+  const [panes, setPanes] = useState<Record<string, string[]>>({});
+  const [bellOpen, setBellOpen] = useState(false);
+  const statusSettings = useStatusSettings();
+  // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
+  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, notifier: null as Notifier | null }));
 
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
@@ -103,7 +116,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // One store of terminal tabs for the whole shell. Made in an effect so a dev double mount
   // disposes the first one; disposing kills its ptys.
   useEffect(() => {
-    const store = new Sessions(api);
+    // A pane in view stays quiet unless the person turned that off in Settings; read again on each event.
+    const store = new Sessions(api, () => Date.now(), () => getStatusSettings().suppressWhenFocused);
     setSessions(store);
     stats.attach(api, store, typeof window === "undefined" ? undefined : window);
     return () => {
@@ -139,7 +153,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The live agent tab in front of a worktree, if any: where the Agent kit types.
   const target = (path: string | undefined) => (sessions && path ? sendTarget(sessions.tabs(path), shownTab[path] ?? null) : null);
   // A string, so an unchanged store reads as the same snapshot.
-  const signature = () => (sessions ? paths.map((p) => `${sessions.dot(p) ?? ""}:${working(sessions, p)}:${target(p)?.id ?? ""}`).join("|") : "");
+  const signature = () =>
+    sessions
+      ? paths.map((p) => `${sessions.dot(p) ?? ""}:${working(sessions, p)}:${waitingIn(sessions, p)}:${sessions.unread(p) ? "u" : ""}:${target(p)?.id ?? ""}`).join("|") +
+        `#${sessions.unreadTabs().map((tab) => `${tab.id}:${tab.status}:${tab.unreadAt}`).join(",")}`
+      : "";
   useSyncExternalStore(subscribe, signature, signature);
   useSyncExternalStore(stats.subscribe, stats.snapshot, stats.snapshot);
   useSyncExternalStore(useCallback((fn: () => void) => prs.subscribe(fn), [prs]), () => prs.snapshot(), () => prs.snapshot());
@@ -148,6 +166,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const activity: Record<string, number | null> = Object.fromEntries(paths.map((p) => [p, sessions?.lastActivity(p) ?? null]));
   const profiles: Record<string, PtyProfile[]> = Object.fromEntries(paths.map((p) => [p, sessions?.profilesOf(p) ?? []]));
   const running = sessions ? paths.reduce((n, p) => n + working(sessions, p), 0) : 0;
+  const waiting = sessions ? paths.reduce((n, p) => n + waitingIn(sessions, p), 0) : 0;
+  const unreadMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.unread(p) ?? false]));
 
   const all = repos?.flatMap((r) => r.worktrees) ?? [];
   // A stored path that no longer exists falls back to the first worktree.
@@ -177,6 +197,139 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     return () => window.removeEventListener("focus", again);
   }, [prs, currentPath]);
   const markedChanges = current && changeList?.worktree === current.path ? changeList.list : NO_CHANGES;
+
+  // Focus and visibility decide what is seen; a minimised or background window sees nothing.
+  useEffect(() => {
+    const update = () => setFocused(windowFocused());
+    window.addEventListener("focus", update);
+    window.addEventListener("blur", update);
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", update);
+    return () => {
+      window.removeEventListener("focus", update);
+      window.removeEventListener("blur", update);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", update);
+    };
+  }, []);
+
+  // The panes the person looks at: the selected worktree's front pair, with the workspace up, the window
+  // focused and some trusted input in the last 180 s.
+  const present = usePresence();
+  const seenKey = focused && present && view === "workspace" && current ? (panes[current.path] ?? []).join(" ") : "";
+  useEffect(() => {
+    sessions?.setSeen(seenKey ? seenKey.split(" ") : []);
+  }, [sessions, seenKey]);
+
+  // Settings stores its own switches; they are read again on leaving it, on coming back to the window
+  // and before every notification, so a change there applies without a restart.
+  useEffect(() => {
+    void loadStatusSettings(api);
+  }, [api, view, focused]);
+
+  // With hooks off the marker drops every hook event, so open panes go back to timing.
+  useEffect(() => {
+    sessions?.setHooks(statusSettings.hooks);
+  }, [sessions, statusSettings.hooks]);
+
+  // A pane nobody looks at that wants the person: OS notification, sound, and the jump back on a click.
+  useEffect(() => {
+    if (!sessions) return;
+    const notifier = createNotifier({
+      api,
+      settings: () => loadStatusSettings(api),
+      play: (settings, now) => playStatusSound(api, settings, now),
+      now: () => Date.now(),
+      t: (key, vars) => live.t(key, vars),
+    });
+    live.notifier = notifier;
+    const offAttention = sessions.onAttention((tab, status, detail) => void announce(notifier, tab, status, detail));
+    let closed = false;
+    let offClick: (() => void) | null = null;
+    api
+      .onStatusNotificationClick((id) => {
+        notifier.cancelFocusJump();
+        live.jump(id);
+      })
+      .then((off) => {
+        if (closed) off();
+        else offClick = off;
+      })
+      .catch(() => {});
+    // A click on a toast does not always reach the app (on Windows only while it is on screen), but
+    // the window does get the focus: one soon after a notification goes to its pane, unless the
+    // person clicked in the app first.
+    const onFocus = () => {
+      const id = notifier.takeFocusJump(Date.now());
+      if (id) live.jump(id);
+    };
+    const onPointer = () => notifier.cancelFocusJump();
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("pointerdown", onPointer, true);
+    return () => {
+      closed = true;
+      offClick?.();
+      offAttention();
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pointerdown", onPointer, true);
+      notifier.dispose();
+      if (live.notifier === notifier) live.notifier = null;
+    };
+  }, [api, sessions]);
+
+  // The bell lists the unread tabs and the taskbar badge counts the unread worktrees, both only for the
+  // events that are switched on (and none with the master switch off).
+  const counted = (tab: Tab) => eventOn(statusSettings, tab.unreadReason ?? "needs-you");
+  const unreadTabs = (sessions?.unreadTabs() ?? []).filter(counted);
+  const unreadCount = statusSettings.enabled ? (sessions?.unreadWorktrees(counted).length ?? 0) : 0;
+  useEffect(() => {
+    live.notifier?.badge(unreadCount);
+  }, [sessions, unreadCount, statusSettings.badge]);
+  const bellRows: BellRow[] = unreadTabs.map((tab) => ({
+    tab,
+    worktree: worktreeName(all, tab.worktree),
+    name: tab.title ?? profileName(null, tab.profileId, t),
+  }));
+
+  // The notification text: the worktree, then the tab by its profile's name or the one given by
+  // hand. Never the terminal's own title, which can carry what was typed.
+  async function announce(notifier: Notifier, tab: Tab, status: Attention, detail: HookDetail | null): Promise<void> {
+    const worktree = worktreeName(live.repos?.flatMap((r) => r.worktrees) ?? [], tab.worktree);
+    const name = tab.renamed && tab.title ? tab.title : profileName(await api.profiles().catch(() => null), tab.profileId, live.t);
+    await notifier.attention(tab, status, { worktree, tab: name }, detail);
+  }
+
+  // Brings a tab's worktree up, puts the tab in front and gives its terminal the keys.
+  function jumpTo(id: string): void {
+    if (!sessions) return;
+    const tab = sessions
+      .worktrees()
+      .flatMap((w) => sessions.tabs(w))
+      .find((x) => x.id === id);
+    const wt = tab ? all.find((w) => w.path === tab.worktree) : undefined;
+    if (!tab || !wt) return;
+    select(wt);
+    show("workspace");
+    setBellOpen(false);
+    setFront((f) => ({ worktree: wt.path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
+    // The pane shows after this render; its terminal is looked up then.
+    setTimeout(() => {
+      if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return;
+      const pane = [...document.querySelectorAll<HTMLElement>(".ws-tab-pane")].find((el) => el.dataset.tab === tab.id);
+      pane?.querySelector<HTMLElement>(".xterm-helper-textarea")?.focus();
+    }, 0);
+  }
+  live.repos = repos;
+  live.t = t;
+  live.jump = jumpTo;
+
+  function toggleBell(): void {
+    const next = !bellOpen;
+    setBellOpen(next);
+    if (!next) return;
+    setTimeout(() => {
+      if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
+      document.querySelector<HTMLElement>(".ws-bell-pop [role=menuitem], .ws-bell-pop")?.focus();
+    }, 0);
+  }
 
   function openFile(worktree: string, file: string): void {
     setReveal((r) => ({ worktree, file, seq: (r?.seq ?? 0) + 1 }));
@@ -342,7 +495,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             <path d="M9 4v16" />
           </svg>
         </button>
-        <img className="ws-logo" src={logo} alt="" width={18} height={18} />
+        <BrandMark className="ws-logo" size={18} />
         <span className="ws-brand">xDev</span>
         {/* The docs app shows its own folder, so the crumbs go with the workspace view. */}
         {view === "workspace" && currentRepo && current && (
@@ -360,13 +513,30 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         <div className="ws-header-center">
           <HeaderSearch onOpen={openSearch} onJump={() => setJumpOpen(true)} />
         </div>
-        {/* Nothing feeds notifications yet, so that button waits, disabled. */}
-        <button type="button" className="ws-icon-btn ws-header-btn" disabled aria-label={t("workspace.header.notifications")} title={t("workspace.header.soon")}>
-          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-          </svg>
-        </button>
+        {/* The bell: the unread tabs, newest first. Turned off in Settings it shows nothing. */}
+        <div className="ws-bell">
+          <button
+            type="button"
+            className="ws-icon-btn ws-header-btn"
+            disabled={!statusSettings.bell}
+            aria-label={statusSettings.bell && unreadCount > 0 ? t("status.bell.label", { count: unreadCount }) : t("workspace.header.notifications")}
+            title={statusSettings.bell ? t("workspace.header.notifications") : t("status.bell.off")}
+            aria-haspopup="menu"
+            aria-expanded={statusSettings.bell && bellOpen}
+            onClick={toggleBell}
+          >
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+              <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+            </svg>
+            {statusSettings.bell && unreadCount > 0 && (
+              <span className="ws-bell-count" aria-hidden="true">
+                {bellCount(unreadCount)}
+              </span>
+            )}
+          </button>
+          {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onClose={() => setBellOpen(false)} />}
+        </div>
         <button
           type="button"
           className="ws-icon-btn ws-header-btn"
@@ -442,6 +612,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onRemove={(wt) => setRemoving({ worktree: wt, dirty: false, busy: false })}
             onAddRepo={addRepo}
             onAdopt={(wt) => void adopt(wt)}
+            unread={unreadMap}
+            onMarkUnread={(wt) => sessions?.markUnread(wt.path)}
+            onMarkRead={(wt) => sessions?.markRead(wt.path)}
           />
         </aside>
 
@@ -456,6 +629,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   worktree={path}
                   visible={path === current?.path}
                   onShown={(id) => setShownTab((s) => (s[path] === id ? s : { ...s, [path]: id }))}
+                  onPanes={(ids) => setPanes((s) => (s[path]?.join(" ") === ids.join(" ") ? s : { ...s, [path]: ids }))}
                   reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq } : undefined}
                   front={front?.worktree === path ? { id: front.id, seq: front.seq } : undefined}
                   focusSeq={termFocus?.worktree === path ? termFocus.seq : undefined}
@@ -571,7 +745,17 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         </div>
 
         <div className="ws-settings" hidden={view !== "settings"}>
-          {view === "settings" && <SettingsView key={settingsAt.seq} api={api} initial={settingsAt.section} onChanged={() => void load()} />}
+          {view === "settings" && (
+            <SettingsView
+              key={settingsAt.seq}
+              api={api}
+              initial={settingsAt.section}
+              onChanged={() => {
+                void load();
+                void loadStatusSettings(api);
+              }}
+            />
+          )}
         </div>
       </div>
 
@@ -580,8 +764,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         api={api}
         branch={branch}
         running={running}
-        // Tabs that wait on the person arrive with Plan 4; none exist yet.
-        waiting={0}
+        waiting={waiting}
         version={pkg.version}
         onOpenUsage={openUsage}
         hidden={view === "docs"}
@@ -649,4 +832,19 @@ const NO_CHANGES: WorktreeChange[] = [];
 
 function working(sessions: Sessions, path: string): number {
   return sessions.tabs(path).filter((tab) => tab.agent && tab.status === "working").length;
+}
+
+/** Agent tabs of a worktree that wait on the person. */
+function waitingIn(sessions: Sessions, path: string): number {
+  return sessions.tabs(path).filter((tab) => tab.agent && tab.status === "needs-you").length;
+}
+
+/** The listed name of a worktree; the folder name when the list does not have it. */
+function worktreeName(list: WorktreeView[], path: string): string {
+  return list.find((w) => w.path === path)?.name ?? path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+function windowFocused(): boolean {
+  if (typeof document === "undefined") return true;
+  return document.visibilityState !== "hidden" && (typeof document.hasFocus !== "function" || document.hasFocus());
 }
