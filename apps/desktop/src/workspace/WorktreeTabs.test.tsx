@@ -3,8 +3,10 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, toApiError, type Api, type Profile, type ProfilesView, type PtyExit } from "@/api";
 import { translate } from "@/i18n";
+import { useKeymap } from "@/keys/keymap";
 import { Terminal } from "@/terminal/Terminal";
 import { AgentIcon } from "./AgentIcon";
+import { CloseTabsDialog } from "./CloseTabsDialog";
 import { Sessions } from "./sessions";
 import { addTab, leaves, paneOf, removeTab, resize, selectTab, splitPane, toggleExpand, type PaneLayout, type PaneNode } from "./paneTree";
 import { PaneView } from "./PaneView";
@@ -30,6 +32,10 @@ vi.mock("react", async (original) => {
     useCallback: (fn: any, deps: any) => (hooks.active ? fn : react.useCallback(fn, deps)),
     useSyncExternalStore: (subscribe: any, get: any, server?: any) => (hooks.active ? get() : react.useSyncExternalStore(subscribe, get, server)),
   };
+});
+vi.mock("@/keys/keymap", async (original) => {
+  const real = await original<typeof import("@/keys/keymap")>();
+  return { ...real, useKeymap: vi.fn(real.useKeymap) };
 });
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 // The profile view the tabs read; `null` is a store that has not loaded.
@@ -63,19 +69,19 @@ const en = (key: string, vars?: Record<string, string | number>) => translate("e
 const A = "/demo/wt/xdev-oak";
 const B = "/demo/wt/xdev-elm";
 
-function harness(api: Api, sessions: Sessions, worktree = A, visible = true) {
+function harness(api: Api, sessions: Sessions, worktree = A, visible = true, extra: Partial<Parameters<typeof WorktreeTabs>[0]> = {}) {
   const values: unknown[] = [];
   const draw = () => {
     hooks.values = values;
     hooks.cursor = 0;
     hooks.active = true;
-    try { return WorktreeTabs({ api, sessions, worktree, visible }); } finally { hooks.active = false; }
+    try { return WorktreeTabs({ api, sessions, worktree, visible, ...extra }); } finally { hooks.active = false; }
   };
   const drawFull = () => {
     hooks.values = values;
     hooks.cursor = 0;
     hooks.active = true;
-    try { return expand(WorktreeTabs({ api, sessions, worktree, visible })); } finally { hooks.active = false; }
+    try { return expand(WorktreeTabs({ api, sessions, worktree, visible, ...extra })); } finally { hooks.active = false; }
   };
   const all = () => nodes(drawFull());
   const html = () => renderToStaticMarkup(draw());
@@ -722,7 +728,7 @@ it("ctrl_alt_t_opens_default_agent", async () => {
   expect(shown.listeners.size).toBe(1);
   // A held key repeats; only the first press counts, and other chords do nothing.
   shown.press({ repeat: true });
-  shown.press({ altKey: false });
+  shown.press({ altKey: false, shiftKey: true });
   shown.press({ key: "y", code: "KeyY" });
   expect(live.tabs(A)).toEqual([]);
   const e = shown.press();
@@ -732,4 +738,288 @@ it("ctrl_alt_t_opens_default_agent", async () => {
 
   shown.cleanup();
   expect(shown.listeners.size).toBe(0);
+});
+
+// ---- Workspace keys: tab and pane actions ----
+
+/** One key press against a fresh draw, so each press sees the state the last one left. */
+function press(view: ReturnType<typeof harness>, over: Partial<KeyboardEvent>) {
+  const k = keys(view);
+  const e = k.press({ ctrlKey: false, altKey: false, ...over });
+  k.cleanup();
+  return e;
+}
+const CTRL_T = { key: "t", code: "KeyT", ctrlKey: true };
+const CTRL_W = { key: "w", code: "KeyW", ctrlKey: true };
+const CTRL_TAB = { key: "Tab", code: "Tab", ctrlKey: true };
+const selected = (view: ReturnType<typeof harness>) =>
+  view.all().filter((n) => n.props.role === "tab" && n.props["aria-selected"] === true).map((n) => n.props["data-tab"]);
+
+it("ctrl_t_opens_the_default_shell_and_ctrl_w_closes_it", async () => {
+  const api = createMockApi({});
+  store.view = await api.profilesDefaults("ask", "codex", null);
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  const e = press(view, CTRL_T);
+  expect(e.preventDefault).toHaveBeenCalled();
+  expect(live.tabs(A).map((t) => t.profileId)).toEqual([store.view.defaultShell]);
+  expect(live.tabs(A)[0].agent).toBe(false);
+  press(view, CTRL_W);
+  expect(live.tabs(A)).toEqual([]);
+});
+
+it("ctrl_t_with_no_shell_opens_the_menu", async () => {
+  const api = createMockApi({});
+  store.view = { ...(await api.profilesDefaults("ask", "codex", null)), shells: [] };
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  // No pane yet: no menu to open, so the key goes on (the empty view offers the launchers).
+  expect(press(view, CTRL_T).preventDefault).not.toHaveBeenCalled();
+  // With a pane, its `+` menu opens instead of a shell.
+  live.open(A, "claude");
+  expect(view.find((n) => n.props.role === "menu")).toBeUndefined();
+  expect(press(view, CTRL_T).preventDefault).toHaveBeenCalled();
+  expect(live.tabs(A)).toHaveLength(1);
+  expect(view.find((n) => n.props.role === "menu")).toBeDefined();
+});
+
+it("keys do nothing in a worktree that is not on screen", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const k = keys(harness(api, live, A, false));
+  expect(k.listeners.size).toBe(0);
+});
+
+it("ctrl_w_on_an_agent_asks_first", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const agent = live.open(A, "claude");
+  const view = harness(api, live);
+  const ask = () => view.find((n) => n.type === CloseTabsDialog);
+  expect(ask()).toBeUndefined();
+  press(view, CTRL_W);
+  expect(live.tabs(A)).toHaveLength(1);
+  // Cancel keeps it; confirm closes it.
+  ask()!.props.onCancel();
+  expect(ask()).toBeUndefined();
+  press(view, CTRL_W);
+  ask()!.props.onConfirm();
+  expect(live.tabs(A).map((t) => t.id)).not.toContain(agent.id);
+  expect(ask()).toBeUndefined();
+});
+
+it("ctrl_w_on_the_review_tab_closes_it", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live, A, true, { reveal: { file: "a.ts", seq: 1 } });
+  expect(selected(view)).toEqual(["review:"]);
+  press(view, CTRL_W);
+  expect(view.find((n) => n.props["data-tab"] === "review:")).toBeUndefined();
+});
+
+it("ctrl_tab_cycles_and_alt_n_picks_a_tab", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const [a, b, c] = ["shell", "shell", "shell"].map((p) => live.open(A, p as "shell").id);
+  const view = harness(api, live);
+  expect(selected(view)).toEqual([c]);
+  press(view, CTRL_TAB);
+  expect(selected(view)).toEqual([a]);
+  press(view, { ...CTRL_TAB, shiftKey: true });
+  expect(selected(view)).toEqual([c]);
+  press(view, { key: "2", code: "Digit2", altKey: true });
+  expect(selected(view)).toEqual([b]);
+  press(view, { key: "9", code: "Digit9", altKey: true });
+  expect(selected(view)).toEqual([c]);
+  // No fourth tab: the key goes on to the terminal.
+  const e = press(view, { key: "4", code: "Digit4", altKey: true });
+  expect(e.preventDefault).not.toHaveBeenCalled();
+  expect(selected(view)).toEqual([c]);
+});
+
+const CTRL_SHIFT_D = { key: "D", code: "KeyD", ctrlKey: true, shiftKey: true };
+const ALT_SHIFT_D = { key: "D", code: "KeyD", altKey: true, shiftKey: true };
+const CTRL_RB = { key: "]", code: "BracketRight", ctrlKey: true };
+const CTRL_LB = { key: "[", code: "BracketLeft", ctrlKey: true };
+const focusedLeaf = (live: Sessions) => {
+  const l = live.layout(A)!;
+  return leafOf(l, l.focused);
+};
+/** The handlers the last draw gave useKeymap; for an action with no default chord. */
+const handlers = (view: ReturnType<typeof harness>) => {
+  view.draw();
+  return vi.mocked(useKeymap).mock.lastCall![0];
+};
+
+it("tab keys stay inside the focused pane", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const { one, two, three } = threePanes(live);
+  // The top right pane gets a second tab, and the focus.
+  live.setLayout(A, selectTab(live.layout(A)!, two.id));
+  const four = live.open(A, "shell");
+  const view = harness(api, live);
+  expect(focusedLeaf(live).tabs).toEqual([two.id, four.id]);
+  expect(focusedLeaf(live).active).toBe(four.id);
+  press(view, CTRL_TAB);
+  expect(focusedLeaf(live).active).toBe(two.id);
+  press(view, { ...CTRL_TAB, shiftKey: true });
+  expect(focusedLeaf(live).active).toBe(four.id);
+  press(view, { key: "1", code: "Digit1", altKey: true });
+  expect(focusedLeaf(live).active).toBe(two.id);
+  press(view, { key: "9", code: "Digit9", altKey: true });
+  expect(focusedLeaf(live).active).toBe(four.id);
+  // Alt+3: this pane has two tabs, so the key goes on and focus stays in the pane.
+  expect(press(view, { key: "3", code: "Digit3", altKey: true }).preventDefault).not.toHaveBeenCalled();
+  expect(focusedLeaf(live).tabs).toEqual([two.id, four.id]);
+  expect(paneOf(live.layout(A)!, one.id)).not.toBe(live.layout(A)!.focused);
+  expect(paneOf(live.layout(A)!, three.id)).not.toBe(live.layout(A)!.focused);
+});
+
+it("ctrl_t_opens_the_shell_in_the_focused_pane", async () => {
+  const api = createMockApi({});
+  store.view = await api.profilesDefaults("ask", "codex", null);
+  const live = (sessions = new Sessions(api));
+  const { one } = threePanes(live);
+  live.setLayout(A, selectTab(live.layout(A)!, one.id));
+  const view = harness(api, live);
+  press(view, CTRL_T);
+  const opened = live.tabs(A).at(-1)!;
+  expect(opened.profileId).toBe(store.view.defaultShell);
+  expect(paneOf(live.layout(A)!, opened.id)).toBe(paneOf(live.layout(A)!, one.id));
+  expect(focusedLeaf(live).active).toBe(opened.id);
+  expect(leaves(live.layout(A)!)).toHaveLength(3);
+});
+
+it("split keys open the default shell in a new pane beside the focused one", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  // No tab, no pane: nothing to split, the key goes on.
+  expect(press(view, CTRL_SHIFT_D).preventDefault).not.toHaveBeenCalled();
+  expect(live.tabs(A)).toEqual([]);
+
+  const one = live.open(A, "shell");
+  expect(press(view, CTRL_SHIFT_D).preventDefault).toHaveBeenCalled();
+  let l = live.layout(A)!;
+  expect(live.tabs(A)).toHaveLength(2);
+  expect(leaves(l)).toHaveLength(2);
+  expect((l.root as Extract<PaneNode, { kind: "split" }>).dir).toBe("right");
+  const two = live.tabs(A)[1];
+  expect(l.focused).toBe(paneOf(l, two.id));
+  expect(paneOf(l, one.id)).not.toBe(paneOf(l, two.id));
+  // The new terminal is in front of the focused pane and takes the keyboard.
+  expect(view.terminals().find((n) => n.props.id === two.id)!.props.focusSeq).toBeGreaterThan(0);
+
+  press(view, ALT_SHIFT_D);
+  l = live.layout(A)!;
+  expect(leaves(l)).toHaveLength(3);
+  const three = live.tabs(A)[2];
+  expect(l.focused).toBe(paneOf(l, three.id));
+  // Down splits the pane of `two` only: the root stays a right split, its second child a down split.
+  const root = l.root as Extract<PaneNode, { kind: "split" }>;
+  expect(root.dir).toBe("right");
+  expect((root.children[1] as Extract<PaneNode, { kind: "split" }>).dir).toBe("down");
+});
+
+it("pane_next_and_prev_move_focus_and_give_the_terminal_the_keyboard", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const { one, two, three } = threePanes(live);
+  const view = harness(api, live);
+  const focusOf = (id: string) => view.terminals().find((n) => n.props.id === id)!.props.focusSeq;
+  expect(live.layout(A)!.focused).toBe(paneOf(live.layout(A)!, three.id));
+  // Reading order wraps: three -> one.
+  expect(press(view, CTRL_RB).preventDefault).toHaveBeenCalled();
+  expect(live.layout(A)!.focused).toBe(paneOf(live.layout(A)!, one.id));
+  expect(focusOf(one.id)).toBeGreaterThan(0);
+  expect(focusOf(three.id)).toBeUndefined();
+  press(view, CTRL_LB);
+  expect(live.layout(A)!.focused).toBe(paneOf(live.layout(A)!, three.id));
+  press(view, CTRL_LB);
+  expect(live.layout(A)!.focused).toBe(paneOf(live.layout(A)!, two.id));
+});
+
+it("pane_next_with_one_pane_lets_the_key_on", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  live.open(A, "shell");
+  const view = harness(api, live);
+  const before = live.layout(A);
+  expect(press(view, CTRL_RB).preventDefault).not.toHaveBeenCalled();
+  expect(live.layout(A)).toBe(before);
+});
+
+it("pane_expand_toggles_and_the_expansion_follows_focus", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const { one, three } = threePanes(live);
+  const view = harness(api, live);
+  const ENTER = { key: "Enter", code: "Enter", ctrlKey: true, shiftKey: true };
+  press(view, ENTER);
+  expect(live.layout(A)!.expanded).toBe(paneOf(live.layout(A)!, three.id));
+  expect(shownIds(view)).toEqual([three.id]);
+  // Moving focus moves the expansion: the focused pane is never a hidden one.
+  press(view, CTRL_RB);
+  expect(live.layout(A)!.expanded).toBe(paneOf(live.layout(A)!, one.id));
+  expect(shownIds(view)).toEqual([one.id]);
+  press(view, ENTER);
+  expect(live.layout(A)!.expanded).toBeNull();
+  expect(shownIds(view)).toHaveLength(3);
+});
+
+it("pane_equalize_evens_out_the_sizes", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  threePanes(live);
+  const rootOf = () => live.layout(A)!.root as Extract<PaneNode, { kind: "split" }>;
+  live.setLayout(A, resize(live.layout(A)!, rootOf().id, [0.8, 0.2]));
+  const view = harness(api, live);
+  expect(rootOf().sizes[0]).toBeCloseTo(0.8);
+  expect(press(view, { key: "=", code: "Equal", ctrlKey: true, shiftKey: true }).preventDefault).toHaveBeenCalled();
+  expect(rootOf().sizes).toEqual([0.5, 0.5]);
+});
+
+it("pane_close_closes_every_tab_of_the_focused_pane_after_asking_for_an_agent", async () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const { one, two, three } = threePanes(live);
+  const four = live.open(A, "shell");
+  const view = harness(api, live);
+  // The focused pane holds codex (an agent) and a shell: ask first.
+  expect(focusedLeaf(live).tabs).toEqual([three.id, four.id]);
+  const ask = () => view.find((n) => n.type === CloseTabsDialog);
+  expect(handlers(view)["pane.close"]!()).not.toBe(false);
+  expect(ask()).toBeDefined();
+  expect(live.tabs(A)).toHaveLength(4);
+  ask()!.props.onConfirm();
+  await tick();
+  expect(live.tabs(A).map((t) => t.id)).toEqual([one.id, two.id]);
+  expect(leaves(live.layout(A)!)).toHaveLength(2);
+  expect(ask()).toBeUndefined();
+});
+
+it("pane_close_of_shells_closes_at_once_and_with_no_pane_lets_the_key_on", async () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  expect(handlers(view)["pane.close"]!()).toBe(false);
+  const one = live.open(A, "shell");
+  live.open(A, "shell");
+  handlers(view)["pane.close"]!();
+  await tick();
+  expect(live.tabs(A)).toEqual([]);
+  expect(live.layout(A)).toBeNull();
+  expect(view.find((n) => n.type === CloseTabsDialog)).toBeUndefined();
+  expect(one.id).toBeDefined();
+});
+
+it("tooltips of the strip name the chord", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  live.open(A, "shell");
+  const view = harness(api, live);
+  expect(view.labelled(en("workspace.tabs.new")).props.title).toBe(en("keys.hint", { label: en("workspace.tabs.new"), chord: "Ctrl+T" }));
+  const close = view.find((n) => n.props.className === "ws-tab-close")!;
+  expect(close.props.title).toBe(en("keys.hint", { label: close.props["aria-label"], chord: "Ctrl+W" }));
 });
