@@ -253,6 +253,73 @@ it("the copy diff treats a missing target as a new file, whichever code says so"
   }
 });
 
+// --- A CRLF file opens clean and is saved with CRLF --------------------------------------------
+
+function crlfKit(files: Record<string, string>) {
+  const homes = [
+    { id: "a", agent: "claude" as const, path: "/h/a", source: "own" as const },
+    { id: "b", agent: "claude" as const, path: "/h/b", source: "own" as const },
+  ];
+  const source = "/h/a/CLAUDE.md";
+  const disk = new Map(Object.entries(files));
+  const api = {
+    ...createMockApi({}),
+    kitHomes: async () => homes,
+    kitMemory: async () => ({
+      files: [{ path: source, home_id: "a", kind: "instructions", parent: null, bytes: 6, tokens: 1, hash: "x", issues: [], differs_in: [] }],
+      load_tokens: 1,
+    }),
+    kitRead: async (path: string) => (disk.has(path) ? { text: disk.get(path)!, stamp: "s" } : Promise.reject({ code: "io" })),
+    kitWrite: vi.fn(async (path: string, text: string) => (disk.set(path, text), "s2")),
+  } as unknown as Api;
+  return { api, source, write: api.kitWrite as unknown as ReturnType<typeof vi.fn> };
+}
+
+/** What the editor does with the text it is given: its lines join with `\n`. */
+function editorEcho(all: Node[]) {
+  const ed = editor(all);
+  ed.props.onChange(String(ed.props.value).replace(/\r\n/g, "\n"));
+}
+
+it("a CRLF file opens clean, with Copy on", async () => {
+  const { api, source } = crlfKit({ "/h/a/CLAUDE.md": "a\r\nb\r\n" });
+  const { m } = await openFile(api, source);
+  editorEcho(m.all());
+  const all = m.all();
+  expect(all.some((n) => textOf(n) === en("kit.memory.dirty"))).toBe(false);
+  expect(byText(all, en("kit.memory.save"))!.props.disabled).toBe(true);
+  expect(byAction(all, "copy-other")!.props.disabled).toBe(false);
+});
+
+it("save, Keep mine and Copy write a CRLF file back with CRLF", async () => {
+  const { api, source, write } = crlfKit({ "/h/a/CLAUDE.md": "a\r\nb\r\n", "/h/b/CLAUDE.md": "a\r\nb\r\n" });
+  const { m } = await openFile(api, source);
+  editorEcho(m.all());
+
+  // The same text in the other home is the same, whatever its line ends.
+  byAction(m.all(), "copy-other")!.props.onClick();
+  await tick();
+  expect(m.all().some((n) => textOf(n) === en("kit.memory.copySame"))).toBe(true);
+  byText(m.all(), en("dialog.cancel"))!.props.onClick();
+
+  editor(m.all()).props.onChange("a\nb\nc\n");
+  byText(m.all(), en("kit.memory.save"))!.props.onClick();
+  await tick();
+  expect(write).toHaveBeenLastCalledWith(source, "a\r\nb\r\nc\r\n", "s", null);
+
+  editor(m.all()).props.onChange("a\nb\nc\nd\n");
+  const keep = m.all().find((n) => n.type === ConfirmDialog && n.props.title === en("kit.memory.keepTitle"))!;
+  keep.props.onConfirm();
+  await tick();
+  expect(write).toHaveBeenLastCalledWith(source, "a\r\nb\r\nc\r\nd\r\n", "s", null);
+
+  byAction(m.all(), "copy-other")!.props.onClick();
+  await tick();
+  byText(m.all(), en("kit.memory.copyGo", { count: 1 }))!.props.onClick();
+  await tick();
+  expect(write).toHaveBeenLastCalledWith("/h/b/CLAUDE.md", "a\r\nb\r\nc\r\nd\r\n", "s", null);
+});
+
 // --- An import outside the roots is listed, never opened ---------------------------------------
 
 it("an unread outside import is a plain row, and picking it never reads it", async () => {
