@@ -441,7 +441,6 @@
 
 .result[aria-selected="true"] {
   background: var(--x-color-signal-soft);
-  box-shadow: inset 2px 0 0 var(--x-color-signal);
 }
 
 .result-title {
