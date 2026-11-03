@@ -863,8 +863,10 @@ mod tests {
         let rust = serde_json::to_value(TerminalSettings::default()).unwrap();
         let rust = rust.as_object().unwrap();
 
+        // The declaration ts-rs writes to `packages/bindings`, built in memory: reading the file
+        // races `export_bindings`, which clears that folder while the tests run in parallel.
         let binding =
-            fs::read_to_string(root.join("packages/bindings/src/TerminalSettings.ts")).unwrap();
+            <TerminalSettings as ts_rs::TS>::decl(&ts_rs::Config::new().with_large_int("number"));
         for key in rust.keys() {
             assert!(binding.contains(&format!("{key}: ")), "binding lacks {key}");
         }
