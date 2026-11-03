@@ -6165,6 +6165,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tempfile",
  "ts-rs",
+ "uuid",
  "xdev-agent",
  "xdev-ai",
  "xdev-core",

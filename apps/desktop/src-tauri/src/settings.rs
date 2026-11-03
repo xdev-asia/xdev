@@ -4,6 +4,8 @@ use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::quick_commands::QuickCommand;
+
 /// The shape `save` writes. Bump it with a step in `MIGRATIONS` when a key
 /// is renamed or removed; a new field with a default needs neither.
 pub const VERSION: u32 = 1;
@@ -46,6 +48,17 @@ pub struct Settings {
     /// Window-wide view settings (zoom) until a General page exists.
     #[serde(default, deserialize_with = "lenient")]
     pub ui: UiSettings,
+    /// Settings → Quick commands, in the order the person keeps them. An
+    /// entry that does not parse is dropped on its own.
+    #[serde(default, rename = "quickCommands", deserialize_with = "lenient_items")]
+    pub quick_commands: Vec<QuickCommand>,
+    /// Ids of the recently run quick commands, newest first.
+    #[serde(
+        default,
+        rename = "quickCommandsRecent",
+        deserialize_with = "lenient_items"
+    )]
+    pub quick_commands_recent: Vec<String>,
 }
 
 /// Who gets a key that both the app and a focused terminal want.
@@ -214,6 +227,8 @@ pub enum SettingsSection {
     Terminal,
     Keys,
     Ui,
+    /// `quickCommands` and their recently used order.
+    QuickCommands,
 }
 
 /// What a `settings://changed` event carries.
@@ -362,6 +377,29 @@ where
     Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
+/// A list section: an entry that does not parse is left out, the rest kept;
+/// a value that is not a list reads as an empty one.
+fn lenient_items<'de, D, T>(de: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+    let serde_json::Value::Array(items) = value else {
+        return Ok(Vec::new());
+    };
+    Ok(items
+        .into_iter()
+        .filter_map(|item| match serde_json::from_value(item) {
+            Ok(item) => Some(item),
+            Err(e) => {
+                eprintln!("settings: dropped a list entry that does not parse: {e}");
+                None
+            }
+        })
+        .collect())
+}
+
 pub const FILE_NAME: &str = "settings.json";
 
 /// A missing or unreadable file means first launch; refusing to start over a
@@ -443,6 +481,7 @@ pub fn save(path: &Path, settings: &Settings) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::quick_commands::{QuickAction, QuickScope};
 
     #[test]
     fn settings_roundtrip() {
@@ -761,6 +800,100 @@ mod tests {
         let loaded = load(&path);
         assert_eq!(loaded.last_vault.as_deref(), Some("D:/docs"));
         assert_eq!(loaded.terminal, TerminalSettings::default());
+    }
+
+    fn quick(id: &str, label: &str) -> QuickCommand {
+        QuickCommand {
+            id: id.into(),
+            label: label.into(),
+            scope: QuickScope::Global,
+            action: QuickAction::Terminal {
+                command: "cargo test".into(),
+                append_enter: true,
+            },
+        }
+    }
+
+    #[test]
+    fn a_file_without_quick_commands_loads_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(&path, r#"{ "version": 1, "last_vault": "D:/docs" }"#).unwrap();
+        let loaded = load(&path);
+        assert!(loaded.quick_commands.is_empty());
+        assert_eq!(loaded.last_vault.as_deref(), Some("D:/docs"));
+    }
+
+    #[test]
+    fn quick_commands_round_trip_in_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let review = QuickCommand {
+            id: "qc-2".into(),
+            label: "Review".into(),
+            scope: QuickScope::Repo {
+                repo: "E:/Codes/x".into(),
+            },
+            action: QuickAction::Agent {
+                profile: "claude".into(),
+                prompt: "Review the diff
+then sum up"
+                    .into(),
+            },
+        };
+        let settings = Settings {
+            version: VERSION,
+            quick_commands: vec![quick("qc-3", "Tests"), review, quick("qc-1", "Lint")],
+            ..Settings::default()
+        };
+        save(&path, &settings).unwrap();
+        assert_eq!(load(&path), settings);
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("\"quickCommands\""), "{raw}");
+        assert!(raw.contains("\"appendEnter\": true"), "{raw}");
+    }
+
+    #[test]
+    fn a_bad_quick_command_drops_only_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let raw = r#"{
+            "version": 1,
+            "last_vault": "D:/docs",
+            "quickCommands": [
+                { "id": "qc-1", "label": "Tests", "scope": { "type": "global" },
+                  "action": { "type": "terminal", "command": "cargo test" } },
+                { "id": "qc-2", "label": "Odd", "scope": { "type": "global" },
+                  "action": { "type": "macro", "steps": [] } },
+                "not a command",
+                { "id": "qc-3", "label": "Lint", "scope": { "type": "global" },
+                  "action": { "type": "terminal", "command": "cargo test", "appendEnter": true } }
+            ]
+        }"#;
+        fs::write(&path, raw).unwrap();
+        let loaded = load(&path);
+        assert_eq!(
+            loaded.quick_commands,
+            vec![quick("qc-1", "Tests"), quick("qc-3", "Lint")]
+        );
+        assert_eq!(loaded.last_vault.as_deref(), Some("D:/docs"));
+
+        fs::write(&path, r#"{ "version": 1, "quickCommands": { "id": "x" } }"#).unwrap();
+        assert!(load(&path).quick_commands.is_empty());
+    }
+
+    #[test]
+    fn recent_quick_commands_keep_only_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(
+            &path,
+            r#"{ "version": 1, "quickCommandsRecent": ["qc-2", 7, "qc-1"] }"#,
+        )
+        .unwrap();
+        assert_eq!(load(&path).quick_commands_recent, ["qc-2", "qc-1"]);
+        fs::write(&path, r#"{ "version": 1 }"#).unwrap();
+        assert!(load(&path).quick_commands_recent.is_empty());
     }
 
     #[test]
