@@ -52,6 +52,23 @@ function host(over: Partial<PaletteHostProps> = {}) {
   return { actions, open, props, draw, palette, item };
 }
 
+it("lists Stage all and Discard all for the selected worktree and runs them", () => {
+  const stageAllChanges = vi.fn();
+  const discardAllChanges = vi.fn();
+  const h = host();
+  h.props.actions.stageAllChanges = stageAllChanges;
+  h.props.actions.discardAllChanges = discardAllChanges;
+  expect(h.item("act:stageAll").title).toBe(translate("en", "palette.action.stageAll"));
+  h.item("act:stageAll").run();
+  h.item("act:discardAll").run();
+  expect(stageAllChanges).toHaveBeenCalled();
+  expect(discardAllChanges).toHaveBeenCalled();
+  // Without a selected worktree there is nothing to act on.
+  const none = host({ current: null });
+  none.props.actions.stageAllChanges = stageAllChanges;
+  expect(none.palette().items.some((i) => i.id === "act:stageAll")).toBe(false);
+});
+
 it("builds tab, worktree, setting and action items", () => {
   const h = host();
   expect(h.draw().type).toBe(JumpPalette);

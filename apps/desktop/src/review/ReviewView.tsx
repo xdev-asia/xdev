@@ -4,6 +4,7 @@ import { toApiError, type Api, type ReviewData, type ReviewFile, type ReviewNote
 import type { Problem } from "@/changes/useChanges";
 import { ProblemNote } from "@/components/ChangesPanel";
 import { useI18n } from "@/i18n";
+import { onChangesTouched, touchChanges } from "@/workspace/changesBus";
 import type { Sessions } from "@/workspace/sessions";
 import type { TabStatus } from "@/workspace/status";
 import { BasePicker } from "./BasePicker";
@@ -42,6 +43,8 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
   const [seen, setSeen] = useState(0);
   const picked = useRef<string | null>(null);
   const loads = useRef(0);
+  // This view's own listener on the changes bus, so it does not read twice after its own stage.
+  const touched = useRef<(() => void) | undefined>(undefined);
   const running = useRef(0);
   const handles = useRef(new Map<string, DiffHandle>());
   // A jump into a file that is not drawn yet; it runs when that file registers.
@@ -106,8 +109,13 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
       if (!running.current) void load();
     };
     window.addEventListener("focus", again);
+    // The changes panel staged or discarded something.
+    const onTouched = () => void load();
+    touched.current = onTouched;
+    const stop = onChangesTouched(worktree, onTouched);
     return () => {
       window.removeEventListener("focus", again);
+      stop();
       loads.current++;
     };
   }, [api, worktree]);
@@ -146,6 +154,7 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
     setBusy(true);
     try {
       await api.worktreeStage(worktree, [file.path], staging);
+      touchChanges(worktree, touched.current);
       await load();
     } catch (e) {
       setProblem(toApiError(e));

@@ -8,6 +8,7 @@ import { FileDiff } from "@/review/FileDiff";
 import { ReviewView } from "@/review/ReviewView";
 import { DEFAULT_VIEW } from "@/review/viewOptions";
 import { translate } from "@/i18n";
+import { touchChanges, onChangesTouched } from "./changesBus";
 import { Sessions } from "./sessions";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { WorktreeChanges } from "./WorktreeChanges";
@@ -445,4 +446,400 @@ it("hook failure shows output and fix with agent sends it", async () => {
   await tick();
   expect(bare.html()).toContain("boom");
   expect(bare.html()).not.toContain(en("ship.hook.fix"));
+});
+
+// ---- Source control groups ----
+
+const mixed = [
+  { path: "docs/old-notes.md", staged: true, unstaged: false, untracked: false },
+  { path: "src/session.ts", staged: true, unstaged: true, untracked: false },
+  { path: "src/status.ts", staged: false, unstaged: true, untracked: true },
+];
+const group = (view: ReturnType<typeof changes>, name: string) => view.all().find((n) => n.props["data-group"] === name);
+const inGroup = (view: ReturnType<typeof changes>, name: string) =>
+  nodes(group(view, name)).filter((n) => n.type === "li").map((li) => nodes(li).find((n) => n.props.title && FILES.includes(n.props.title))!.props.title);
+const labelled = (root: Node | undefined, label: string) => nodes(root).find((n) => n.props["aria-label"] === label)!;
+
+it("splits the list into Staged and Changes, a file with both in both", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const view = changes(api);
+  await tick();
+  expect(inGroup(view, "staged")).toEqual(["docs/old-notes.md", "src/session.ts"]);
+  expect(inGroup(view, "changes")).toEqual(["src/session.ts", "src/status.ts"]);
+  const html = view.html();
+  expect(html).toContain(en("changes.group.staged"));
+  expect(html).toContain(en("changes.group.changes"));
+  // Each header shows its count.
+  expect(renderToStaticMarkup(group(view, "staged")!)).toContain("2");
+  expect(renderToStaticMarkup(group(view, "changes")!)).toContain("2");
+});
+
+it("hides an empty group", async () => {
+  const api = createMockApi({});
+  const view = changes(api);
+  await tick();
+  // Nothing staged in the mock: only Changes.
+  expect(group(view, "staged")).toBeUndefined();
+  expect(inGroup(view, "changes")).toEqual(FILES);
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(FILES.map((path) => ({ path, staged: true, unstaged: false, untracked: false })));
+  window.dispatchEvent(new Event("focus"));
+  await tick();
+  expect(group(view, "changes")).toBeUndefined();
+  expect(inGroup(view, "staged")).toEqual(FILES);
+});
+
+it("falls back to one Changes group when the stage state cannot be read", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockRejectedValue({ code: "git" });
+  const view = changes(api);
+  await tick();
+  expect(inGroup(view, "changes")).toEqual(FILES);
+  expect(group(view, "staged")).toBeUndefined();
+});
+
+it("Stage All stages every file of Changes, then reads again", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const stage = vi.spyOn(api, "worktreeStage").mockResolvedValue(undefined);
+  const list = vi.spyOn(api, "worktreeChanges");
+  const view = changes(api);
+  await tick();
+  const before = list.mock.calls.length;
+  labelled(group(view, "changes"), en("changes.stageAll")).props.onClick();
+  await tick();
+  expect(stage).toHaveBeenCalledWith(OAK, ["src/session.ts", "src/status.ts"], true);
+  expect(list.mock.calls.length).toBe(before + 1);
+});
+
+it("a stage here tells the review tab, and a stage there reads the list again", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  vi.spyOn(api, "worktreeStage").mockResolvedValue(undefined);
+  const list = vi.spyOn(api, "worktreeChanges");
+  const view = changes(api);
+  await tick();
+  const told = vi.fn();
+  onChangesTouched(OAK, told);
+  labelled(group(view, "changes"), en("changes.stageAll")).props.onClick();
+  await tick();
+  expect(told).toHaveBeenCalledTimes(1);
+  const before = list.mock.calls.length;
+  touchChanges(OAK);
+  await tick();
+  expect(list.mock.calls.length).toBe(before + 1);
+});
+
+it("Unstage All unstages every file of Staged", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const stage = vi.spyOn(api, "worktreeStage").mockResolvedValue(undefined);
+  const states = vi.spyOn(api, "worktreeStageState");
+  const view = changes(api);
+  await tick();
+  const before = states.mock.calls.length;
+  labelled(group(view, "staged"), en("changes.unstageAll")).props.onClick();
+  await tick();
+  expect(stage).toHaveBeenCalledWith(OAK, ["docs/old-notes.md", "src/session.ts"], false);
+  expect(states.mock.calls.length).toBe(before + 1);
+});
+
+it("a row stages or unstages one file and keeps its open button", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const stage = vi.spyOn(api, "worktreeStage").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  const rowIn = (name: string, path: string) => nodes(group(view, name)).filter((n) => n.type === "li").find((li) => nodes(li).some((n) => n.props.title === path))!;
+  labelled(rowIn("changes", "src/status.ts"), en("changes.stage", { path: "src/status.ts" })).props.onClick();
+  await tick();
+  expect(stage).toHaveBeenLastCalledWith(OAK, ["src/status.ts"], true);
+  labelled(rowIn("staged", "docs/old-notes.md"), en("changes.unstage", { path: "docs/old-notes.md" })).props.onClick();
+  await tick();
+  expect(stage).toHaveBeenLastCalledWith(OAK, ["docs/old-notes.md"], false);
+  // The row still opens the file.
+  nodes(rowIn("changes", "src/status.ts")).find((n) => n.props.className === "ws-change-open")!.props.onClick();
+  expect(view.onOpenFile).toHaveBeenCalledWith("src/status.ts");
+});
+
+it("shows the error of a failed stage and still reads again", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStage").mockRejectedValue({ code: "git", detail: "index.lock exists" });
+  const list = vi.spyOn(api, "worktreeChanges");
+  const view = changes(api);
+  await tick();
+  const before = list.mock.calls.length;
+  labelled(group(view, "changes"), en("changes.stageAll")).props.onClick();
+  await tick();
+  expect(view.html()).toContain("index.lock exists");
+  expect(list.mock.calls.length).toBe(before + 1);
+});
+
+// ---- Discard ----
+
+const dialog = (view: ReturnType<typeof changes>) => view.find((n) => n.type === ConfirmDialog && n.props.confirmLabel === en("changes.discard.confirm"))!;
+const rowOf = (view: ReturnType<typeof changes>, name: string, path: string) =>
+  nodes(group(view, name)).filter((n) => n.type === "li").find((li) => nodes(li).some((n) => n.props.title === path))!;
+const hasStagedBox = (view: ReturnType<typeof changes>) => nodes(dialog(view).props.children).find((n) => n.type === "input");
+
+it("offers Discard in Changes rows only, and asks before doing anything", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const discard = vi.spyOn(api, "worktreeDiscard").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  const label = (path: string) => en("changes.discard", { path });
+  expect(nodes(rowOf(view, "staged", "docs/old-notes.md")).some((n) => n.props["aria-label"] === label("docs/old-notes.md"))).toBe(false);
+  expect(dialog(view).props.open).toBe(false);
+  labelled(rowOf(view, "changes", "src/status.ts"), label("src/status.ts")).props.onClick();
+  expect(dialog(view).props.open).toBe(true);
+  expect(dialog(view).props.title).toBe(en("changes.discard.title", { path: "src/status.ts" }));
+  expect(dialog(view).props.body).toBe(en("changes.discard.body"));
+  expect(discard).not.toHaveBeenCalled();
+});
+
+it("cancel calls nothing and closes the dialog", async () => {
+  const api = createMockApi({});
+  const discard = vi.spyOn(api, "worktreeDiscard").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  labelled(group(view, "changes"), en("changes.discardAll")).props.onClick();
+  expect(dialog(view).props.open).toBe(true);
+  dialog(view).props.onCancel();
+  expect(dialog(view).props.open).toBe(false);
+  await tick();
+  expect(discard).not.toHaveBeenCalled();
+});
+
+it("confirming a file calls with confirmed set and without the staged flag", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const discard = vi.spyOn(api, "worktreeDiscard").mockResolvedValue(undefined);
+  const list = vi.spyOn(api, "worktreeChanges");
+  const view = changes(api);
+  await tick();
+  const before = list.mock.calls.length;
+  labelled(rowOf(view, "changes", "src/status.ts"), en("changes.discard", { path: "src/status.ts" })).props.onClick();
+  // Untracked: nothing staged to ask about.
+  expect(hasStagedBox(view)).toBeUndefined();
+  dialog(view).props.onConfirm();
+  await tick();
+  expect(discard).toHaveBeenCalledWith(OAK, ["src/status.ts"], false, true);
+  expect(dialog(view).props.open).toBe(false);
+  expect(list.mock.calls.length).toBe(before + 1);
+});
+
+it("the staged checkbox shows only for a staged file and is passed on", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const discard = vi.spyOn(api, "worktreeDiscard").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  labelled(rowOf(view, "changes", "src/session.ts"), en("changes.discard", { path: "src/session.ts" })).props.onClick();
+  const box = hasStagedBox(view)!;
+  expect(renderToStaticMarkup(dialog(view).props.children)).toContain(en("changes.discard.staged"));
+  expect(box.props.checked).toBe(false);
+  box.props.onChange();
+  expect(hasStagedBox(view)!.props.checked).toBe(true);
+  dialog(view).props.onConfirm();
+  await tick();
+  expect(discard).toHaveBeenCalledWith(OAK, ["src/session.ts"], true, true);
+  // A later dialog starts unchecked again.
+  labelled(rowOf(view, "changes", "src/session.ts"), en("changes.discard", { path: "src/session.ts" })).props.onClick();
+  expect(hasStagedBox(view)!.props.checked).toBe(false);
+});
+
+it("Discard All names the count and lists every file of Changes", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const discard = vi.spyOn(api, "worktreeDiscard").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  labelled(group(view, "changes"), en("changes.discardAll")).props.onClick();
+  expect(dialog(view).props.title).toBe(en("changes.discard.titleMany", { count: 2 }));
+  dialog(view).props.onConfirm();
+  await tick();
+  expect(discard).toHaveBeenCalledWith(OAK, ["src/session.ts", "src/status.ts"], false, true);
+});
+
+it("warns when an agent is working in the worktree", async () => {
+  const api = createMockApi({});
+  const quiet = changes(api);
+  await tick();
+  labelled(group(quiet, "changes"), en("changes.discardAll")).props.onClick();
+  expect(dialog(quiet).props.warning).toBeUndefined();
+
+  const busy = { dot: () => "working", tabs: () => [{ id: "a", agent: true, status: "working" }], subscribe: () => () => {} } as unknown as Sessions;
+  const view = changes(api, busy);
+  await tick();
+  labelled(group(view, "changes"), en("changes.discardAll")).props.onClick();
+  expect(dialog(view).props.warning).toBe(en("changes.discard.agent"));
+});
+
+it("warns while any agent is still mid-turn, even when another one's status is more urgent", async () => {
+  const api = createMockApi({});
+  // The worktree dot shows the most urgent tab, so a finished agent would hide a working one.
+  for (const [dot, statuses] of [
+    ["done", ["done", "working"]],
+    ["needs-you", ["needs-you"]],
+  ] as const) {
+    const tabs = statuses.map((status, i) => ({ id: `t${i}`, agent: true, status }));
+    const sessions = { dot: () => dot, tabs: () => tabs, subscribe: () => () => {} } as unknown as Sessions;
+    const view = changes(api, sessions);
+    await tick();
+    labelled(group(view, "changes"), en("changes.discardAll")).props.onClick();
+    expect(dialog(view).props.warning, dot).toBe(en("changes.discard.agent"));
+  }
+  // A shell tab that is busy is not an agent.
+  const shell = { dot: () => null, tabs: () => [{ id: "s", agent: false, status: "working" }], subscribe: () => () => {} } as unknown as Sessions;
+  const view = changes(api, shell);
+  await tick();
+  labelled(group(view, "changes"), en("changes.discardAll")).props.onClick();
+  expect(dialog(view).props.warning).toBeUndefined();
+});
+
+it("shows the policy's reason when discard is denied, and reads again", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeDiscard").mockRejectedValue({ code: "denied", detail: "discarding is off today" });
+  const list = vi.spyOn(api, "worktreeChanges");
+  const view = changes(api);
+  await tick();
+  const before = list.mock.calls.length;
+  labelled(group(view, "changes"), en("changes.discardAll")).props.onClick();
+  dialog(view).props.onConfirm();
+  await tick();
+  expect(view.html()).toContain("discarding is off today");
+  expect(list.mock.calls.length).toBe(before + 1);
+});
+
+it("never shows needs_approval, the dialog was the approval", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeDiscard").mockRejectedValue({ code: "needs_approval", detail: "asks" });
+  const view = changes(api);
+  await tick();
+  labelled(group(view, "changes"), en("changes.discardAll")).props.onClick();
+  dialog(view).props.onConfirm();
+  await tick();
+  expect(view.html()).not.toContain(en("error.needs_approval"));
+});
+
+// ---- Keyboard and palette hooks ----
+
+const press = (row: Node, key: string, extra: Record<string, unknown> = {}) => {
+  const event = { key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, preventDefault: vi.fn(), ...extra };
+  row.props.onKeyDown(event);
+  return event;
+};
+
+it("rows are focusable and s stages the focused Changes row", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const stage = vi.spyOn(api, "worktreeStage").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  const row = rowOf(view, "changes", "src/status.ts");
+  expect(row.props.tabIndex).toBe(0);
+  const event = press(row, "s");
+  await tick();
+  expect(event.preventDefault).toHaveBeenCalled();
+  expect(stage).toHaveBeenCalledWith(OAK, ["src/status.ts"], true);
+  // u on a Changes row does nothing.
+  stage.mockClear();
+  press(row, "u");
+  await tick();
+  expect(stage).not.toHaveBeenCalled();
+});
+
+it("u unstages the focused Staged row, and s there does nothing", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const stage = vi.spyOn(api, "worktreeStage").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  const row = rowOf(view, "staged", "docs/old-notes.md");
+  press(row, "s");
+  await tick();
+  expect(stage).not.toHaveBeenCalled();
+  press(row, "u");
+  await tick();
+  expect(stage).toHaveBeenCalledWith(OAK, ["docs/old-notes.md"], false);
+});
+
+it("Delete on a Changes row opens the discard confirm and calls nothing yet", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const discard = vi.spyOn(api, "worktreeDiscard").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  press(rowOf(view, "changes", "src/status.ts"), "Delete");
+  expect(dialog(view).props.open).toBe(true);
+  expect(dialog(view).props.title).toBe(en("changes.discard.title", { path: "src/status.ts" }));
+  expect(discard).not.toHaveBeenCalled();
+  // Delete in Staged is not a discard.
+  dialog(view).props.onCancel();
+  press(rowOf(view, "staged", "docs/old-notes.md"), "Delete");
+  expect(dialog(view).props.open).toBe(false);
+});
+
+it("s, u and Delete are left alone while focus is in a control inside the row", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const stage = vi.spyOn(api, "worktreeStage").mockResolvedValue(undefined);
+  const view = changes(api);
+  await tick();
+  for (const target of [{ tagName: "INPUT" }, { tagName: "TEXTAREA" }, { tagName: "SELECT" }, { tagName: "DIV", isContentEditable: true }]) {
+    const del = press(rowOf(view, "changes", "src/status.ts"), "Delete", { target });
+    expect(dialog(view).props.open, target.tagName).toBe(false);
+    expect(del.preventDefault).not.toHaveBeenCalled();
+    press(rowOf(view, "changes", "src/status.ts"), "s", { target });
+    press(rowOf(view, "staged", "docs/old-notes.md"), "u", { target });
+  }
+  await tick();
+  expect(stage).not.toHaveBeenCalled();
+  // On the row itself Delete still asks.
+  press(rowOf(view, "changes", "src/status.ts"), "Delete", { target: { tagName: "LI" } });
+  expect(dialog(view).props.open).toBe(true);
+});
+
+it("keys with a modifier are left alone, Ctrl+Enter commits", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const stage = vi.spyOn(api, "worktreeStage").mockResolvedValue(undefined);
+  const commit = vi.spyOn(api, "worktreeCommit").mockResolvedValue("abc");
+  const view = changes(api);
+  await tick();
+  const row = rowOf(view, "changes", "src/status.ts");
+  press(row, "s", { ctrlKey: true });
+  await tick();
+  expect(stage).not.toHaveBeenCalled();
+  // No message yet: the commit waits.
+  press(row, "Enter", { ctrlKey: true });
+  await tick();
+  expect(commit).not.toHaveBeenCalled();
+  view.message().props.onChange({ target: { value: "feat: x" } });
+  press(rowOf(view, "changes", "src/status.ts"), "Enter", { ctrlKey: true });
+  await tick();
+  expect(commit).toHaveBeenCalledWith(OAK, FILES, "feat: x");
+});
+
+it("hands the palette its Stage all and Discard all handlers", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  const stage = vi.spyOn(api, "worktreeStage").mockResolvedValue(undefined);
+  const register = vi.fn();
+  const view = changes(api, undefined, { register });
+  await tick();
+  expect(register).toHaveBeenCalledTimes(1);
+  const handlers = register.mock.calls[0][0];
+  // The list drew again after its load, as React would; the handlers see that draw.
+  view.draw();
+  handlers.stageAll();
+  await tick();
+  expect(stage).toHaveBeenCalledWith(OAK, ["src/session.ts", "src/status.ts"], true);
+  handlers.discardAll();
+  expect(dialog(view).props.open).toBe(true);
+  expect(dialog(view).props.title).toBe(en("changes.discard.titleMany", { count: 2 }));
+  // Leaving takes them back.
+  view.cleanups.forEach((c) => typeof c === "function" && c());
+  expect(register).toHaveBeenLastCalledWith(null);
 });

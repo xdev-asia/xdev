@@ -48,6 +48,7 @@ import type {
   ReviewBranch,
   ReviewData,
   ReviewNote,
+  StageState,
   WorktreeStat,
   WorktreeView,
   Check,
@@ -137,6 +138,7 @@ export type {
   ReviewData,
   ReviewFile,
   ReviewNote,
+  StageState,
   WorktreeSkip,
   WorktreeStat,
   WorktreeView,
@@ -440,6 +442,8 @@ export interface Api {
   // Whole files: stage them, or put the index back to HEAD.
   worktreeStage(path: string, files: string[], staged: boolean): Promise<void>;
   worktreeBranches(path: string): Promise<ReviewBranch[]>;
+  worktreeStageState(path: string): Promise<StageState[]>;
+  worktreeDiscard(path: string, files: string[], stagedToo: boolean, confirmed: boolean): Promise<void>;
   // Review notes of one worktree. A put replaces them all and rejects with `bad_note` when any is invalid.
   reviewNotes(path: string): Promise<ReviewNote[]>;
   reviewNotesPut(path: string, notes: ReviewNote[]): Promise<ReviewNote[]>;
@@ -704,6 +708,8 @@ const tauriApi: Api = {
   worktreeReviewFile: (path, base, file) => call("worktree_review_file", { path, base, file }),
   worktreeStage: (path, files, staged) => call("worktree_stage", { path, files, staged }),
   worktreeBranches: (path) => call("worktree_branches", { path }),
+  worktreeStageState: (path) => call("worktree_stage_state", { path }),
+  worktreeDiscard: (path, files, stagedToo, confirmed) => call("worktree_discard", { path, files, stagedToo, confirmed }),
   reviewNotes: (path) => call("review_notes_get", { path }),
   reviewNotesPut: (path, notes) => call("review_notes_put", { path, notes }),
   kitHomes: () => call("kit_homes"),

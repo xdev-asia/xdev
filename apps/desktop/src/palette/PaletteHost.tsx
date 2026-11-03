@@ -22,6 +22,10 @@ export interface PaletteActions {
   searchDocs(): void;
   toggleSidebar(): void;
   showDocs(): void;
+  /** Stage every change of the selected worktree; absent when it has no changes panel. */
+  stageAllChanges?(): void;
+  /** Opens the discard confirm for every change of the selected worktree. */
+  discardAllChanges?(): void;
 }
 
 export interface PaletteHostProps {
@@ -76,6 +80,8 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       searchDocs: () => actions.searchDocs(),
       toggleSidebar: () => actions.toggleSidebar(),
       showDocs: () => actions.showDocs(),
+      stageAll: current && actions.stageAllChanges ? () => actions.stageAllChanges?.() : undefined,
+      discardAll: current && actions.discardAllChanges ? () => actions.discardAllChanges?.() : undefined,
     };
     const worktreeOf = (path: string) => list.flatMap((r) => r.worktrees).find((w) => w.path === path);
     items = [

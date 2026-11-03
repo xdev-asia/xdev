@@ -90,6 +90,7 @@ export type { SquadItem } from "./SquadItem";
 export type { SquadRun } from "./SquadRun";
 export type { SquadStatus } from "./SquadStatus";
 export type { SquadView } from "./SquadView";
+export type { StageState } from "./StageState";
 export type { StaleDoc } from "./StaleDoc";
 export type { StatusSettings } from "./StatusSettings";
 export type { StatusState } from "./StatusState";

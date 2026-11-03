@@ -36,6 +36,8 @@ type WorkspaceApi = Pick<
   | "worktreeReviewFile"
   | "worktreeStage"
   | "worktreeBranches"
+  | "worktreeStageState"
+  | "worktreeDiscard"
   | "reviewNotes"
   | "reviewNotesPut"
 >;
@@ -477,6 +479,25 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
         else set.delete(f);
       }
       stagedFiles.set(path, set);
+    },
+    async worktreeStageState(path) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      return (changes.get(path) ?? []).map((c) => {
+        const staged = stagedFiles.get(path)?.has(c.path) ?? false;
+        return { path: c.path, staged, unstaged: !staged, untracked: !staged && c.kind === "added" };
+      });
+    },
+    async worktreeDiscard(path, files, stagedToo, confirmed) {
+      if (!confirmed) return reject("needs_approval", `discard ${files.length} file(s)`);
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const pending = changes.get(path) ?? [];
+      for (const f of files) if (!pending.some((c) => c.path === f)) return reject("bad_arg", f);
+      const set = stagedFiles.get(path) ?? new Set<string>();
+      // A staged file keeps its staged version unless the staged edits go too.
+      const gone = files.filter((f) => !set.has(f) || stagedToo);
+      for (const f of gone) set.delete(f);
+      stagedFiles.set(path, set);
+      changes.set(path, pending.filter((c) => !gone.includes(c.path)));
     },
     async worktreeBranches(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

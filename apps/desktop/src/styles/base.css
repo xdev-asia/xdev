@@ -258,6 +258,14 @@ kbd {
   line-height: 1.6;
 }
 
+.dialog-option {
+  display: flex;
+  align-items: center;
+  gap: var(--x-space-3);
+  margin: 0 0 var(--x-space-6);
+  color: var(--x-color-muted);
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
