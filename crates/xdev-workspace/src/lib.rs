@@ -1,5 +1,6 @@
 //! The desktop app's list of repos and the worktrees made from them.
 
+mod files;
 mod hooks;
 mod names;
 mod ops;
@@ -12,6 +13,10 @@ use std::path::PathBuf;
 
 use xdev_git::GitError;
 
+pub use files::{
+    Eol, FileKind, FileText, OsTrash, READ_MAX, Trash, WriteOutcome, create_entry, entry_path,
+    read_file, rename_entry, trash_entry, trash_entry_with, write_file,
+};
 pub use hooks::{
     FILE_NAME, HookKind, HookRun, HookScript, RepoHooks, TRUST_FILE, detect_setup, hook_env,
     hooks_for, trust, trust_hook,
@@ -70,6 +75,11 @@ pub enum WorkspaceError {
     Primary(PathBuf),
     #[error("not a folder inside the worktree: {0}")]
     BadPath(String),
+    /// A file or folder of that name is already there.
+    #[error("already exists: {0}")]
+    Exists(String),
+    #[error("not found: {0}")]
+    NotFound(String),
     /// A shared script whose exact content the person has not trusted.
     #[error("the {0} script from xdev.toml is not trusted")]
     HookUntrusted(String),
@@ -102,6 +112,8 @@ impl WorkspaceError {
             WorkspaceError::Dirty(_) => "worktree_dirty",
             WorkspaceError::Primary(_) => "primary_worktree",
             WorkspaceError::BadPath(_) => "bad_path",
+            WorkspaceError::Exists(_) => "exists",
+            WorkspaceError::NotFound(_) => "not_found",
             WorkspaceError::HookUntrusted(_) => "hook_untrusted",
             WorkspaceError::NoHook(_) => "hook_none",
             WorkspaceError::SetupSkipped => "setup_skipped",

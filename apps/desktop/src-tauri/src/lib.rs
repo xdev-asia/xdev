@@ -3,6 +3,7 @@ mod agent_sessions;
 #[cfg(test)]
 mod bindings;
 mod commands;
+mod files;
 mod hooks;
 mod keybindings;
 mod kit;
@@ -112,6 +113,8 @@ pub fn run() {
             open_in::open_in_settings,
             open_in::open_in_settings_put,
             open_in::open_in,
+            commands::editor_settings_get,
+            commands::editor_settings_put,
             keybindings::keybindings_read,
             keybindings::keybindings_write,
             keybindings::keybindings_reveal,
@@ -215,6 +218,12 @@ pub fn run() {
             review_notes::review_notes_put,
             workspace::worktree_commit,
             workspace::worktree_list_dir,
+            files::file_read,
+            files::file_write,
+            files::file_create,
+            files::file_rename,
+            files::file_trash,
+            files::file_reveal,
             ship::worktree_ship,
             ship::worktree_push,
             ship::worktree_pull,

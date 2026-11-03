@@ -15,7 +15,6 @@ use crate::commands::{AppState, CmdError};
 use crate::reveal::reveal;
 use crate::settings::{OpenInSettings, SettingsSection};
 use crate::settings_store;
-use crate::tasks::gate;
 use crate::workspace::{allowed, bad_arg, known_checkout};
 
 /// Where `open_in` sends a folder.
@@ -105,7 +104,7 @@ fn open_with(
                 cwd: path.to_owned(),
             };
             // The person picked the app from the menu: that is the approval.
-            allowed(gate(data)?.check_confirmed(&action, true))?;
+            allowed(data, &action, true)?;
             Launch::App {
                 program,
                 args: entry
