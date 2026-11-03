@@ -97,3 +97,16 @@ Worktree `wt/status-4b-backend`, branch `feat/status-4b-backend` from `feat/stat
 - For `attention` the arguments are never read as codex notify JSON and stdin is not read (a script's own
   stdin is not hook JSON). Last `--message` wins. Like every hook call: stdout empty, exit 0, the `.off`
   marker makes it a no-op.
+
+## Task 6: complete (C11/C17 settings defaults, per-pane notification tag)
+- Checked: `StatusSettings` is `#[serde(default, rename_all = "camelCase")]` with a hand `Default`; the 4b fields
+  `enabled`, `onNeedsInput`, `onDone`, `onFailed` (true), `onBell` (false), `suppressWhenFocused` (true) were
+  already there. New test `a_4a_status_loads_the_4b_switches_at_their_defaults`: a 4a-era status object keeps its
+  own values and gets the 4b switches at their defaults. No code change, so bindings unchanged.
+- Per-pane notification tag: NOT added. [Unverified/unsupported] tauri-plugin-notification 2.8.0 (the locked
+  version) has `group()` but its desktop backend documents "Only the title, body, icon, sound and the actions ...
+  are used on desktop; the scheduling and grouping options are ignored" (`desktop.rs` `show`), and `build()` never
+  passes a tag/group to notify-rust; there is no `tag` setter at all. So a newer notification for the same pane
+  cannot replace the older one on Windows/macOS/Linux through the plugin. Clicks still route per pane through
+  the existing `ptyId` extra / `Shown` map. Open: would need a native toast call (Windows `Tag`/`Group`) outside
+  the plugin.
