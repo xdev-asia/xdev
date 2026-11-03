@@ -107,3 +107,12 @@ it("the new tab actions show the keymap's chords", () => {
   expect(items.map((i) => i.hint)).toEqual([chordLabel("agent.new"), chordLabel("tab.new")]);
   expect(items[1].hint).toMatch(/T$/);
 });
+
+it("Terminal shows among the setting items", () => {
+  const onPick = vi.fn();
+  const items = settingItems(t, onPick);
+  const terminal = items.find((i) => i.id === "set:terminal")!;
+  expect(terminal).toMatchObject({ kind: "setting", title: t("settings.terminal.title") });
+  terminal.run();
+  expect(onPick).toHaveBeenCalledWith("terminal");
+});

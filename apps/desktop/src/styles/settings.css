@@ -326,3 +326,28 @@
   background: transparent;
   accent-color: var(--accent);
 }
+
+/* Settings → Terminal: the live preview line and the cursor style choice. */
+.term-preview {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-0);
+  color: var(--text-1);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.term-radios {
+  display: flex;
+  gap: 16px;
+}
+
+.term-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 400;
+  accent-color: var(--accent);
+}
