@@ -8,6 +8,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::ops::strip_prefix;
 use crate::registry::write_atomic;
 use crate::{Registry, RepoEntry, ScriptSource, SetupPolicy, WorkspaceError, path_key};
 
@@ -341,11 +342,23 @@ pub(crate) fn kind_name(kind: HookKind) -> &'static str {
 
 /// `XDEV_ROOT_PATH`, `XDEV_WORKTREE_PATH` and `XDEV_WORKSPACE_NAME` for a
 /// script run in `worktree`.
-pub fn hook_env(
-    _reg: &Registry,
-    _worktree: &Path,
-) -> Result<Vec<(String, String)>, WorkspaceError> {
-    Ok(Vec::new())
+pub fn hook_env(reg: &Registry, worktree: &Path) -> Result<Vec<(String, String)>, WorkspaceError> {
+    let repo = repo_of(reg, worktree)?;
+    let folder = worktree
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Ok(vec![
+        ("XDEV_ROOT_PATH".to_owned(), repo.path.display().to_string()),
+        (
+            "XDEV_WORKTREE_PATH".to_owned(),
+            worktree.display().to_string(),
+        ),
+        (
+            "XDEV_WORKSPACE_NAME".to_owned(),
+            strip_prefix(&folder, &repo.short_name),
+        ),
+    ])
 }
 
 /// A setup command guessed from the worktree's files; a lockfile wins.
@@ -720,5 +733,28 @@ mod tests {
         assert!(store.has("two", HookKind::Setup, "h2"));
         assert!(store.has("one", HookKind::Setup, "h3"));
         assert!(!store.has("one", HookKind::Setup, "h1"));
+    }
+
+    #[test]
+    fn hook_env_names_the_repo_and_the_worktree() {
+        let f = fixture();
+        let env = hook_env(&f.reg, &f.worktree).unwrap();
+        let get = |key: &str| {
+            env.iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.clone())
+                .unwrap()
+        };
+        assert_eq!(get("XDEV_ROOT_PATH"), f.primary.display().to_string());
+        assert_eq!(get("XDEV_WORKTREE_PATH"), f.worktree.display().to_string());
+        assert_eq!(get("XDEV_WORKSPACE_NAME"), "oak");
+        assert_eq!(env.len(), 3);
+
+        // The primary checkout keeps its folder name.
+        let env = hook_env(&f.reg, &f.primary).unwrap();
+        assert!(env.contains(&("XDEV_WORKSPACE_NAME".into(), "xdev".into())));
+
+        let err = hook_env(&f.reg, &f.data).unwrap_err();
+        assert_eq!(err.code(), "worktree_unknown");
     }
 }
