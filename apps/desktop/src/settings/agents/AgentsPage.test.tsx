@@ -153,3 +153,23 @@ it("custom_profile_has_no_account_or_permissions", async () => {
   expect(ed.field("account")).toBeUndefined();
   expect(ed.field("permissions")).toBeUndefined();
 });
+
+it("status_hooks_switch_saves_hooks_false", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "statusSettingsPut");
+  const sw = () => p.all().find((n) => n.props["data-field"] === "hooks")!;
+  expect(sw().props.role).toBe("switch");
+  expect(sw().props["aria-checked"]).toBe(true);
+  expect(p.all().some((n) => n.props.children === en("settings.agents.statusHooks.hint"))).toBe(true);
+  sw().props.onClick();
+  await tick();
+  expect(put).toHaveBeenCalledWith(expect.objectContaining({ hooks: false, os: true, sound: true, bell: true, badge: true, volume: 60 }));
+  expect(sw().props["aria-checked"]).toBe(false);
+  expect((await p.api.statusSettings()).hooks).toBe(false);
+});
+
+it("status_hooks_is_the_last_section", async () => {
+  const p = await page();
+  const groups = p.all().filter((n) => n.type === "h4" && n.props.className === "settings-group").map((n) => n.props.children);
+  expect(groups.at(-1)).toBe(en("settings.agents.statusHooks"));
+});
