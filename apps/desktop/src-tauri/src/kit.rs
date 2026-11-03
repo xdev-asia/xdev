@@ -84,14 +84,14 @@ fn path_string(path: &Path) -> String {
 }
 
 /// What every call needs: the app data dir and the user's home folder.
-struct Ctx {
-    data: PathBuf,
+pub(crate) struct Ctx {
+    pub(crate) data: PathBuf,
     user_home: PathBuf,
     env: fn(&str) -> Option<String>,
 }
 
 impl Ctx {
-    fn of(state: &AppState) -> Result<Ctx, CmdError> {
+    pub(crate) fn of(state: &AppState) -> Result<Ctx, CmdError> {
         let user_home = user_home_from(&process_env).ok_or(CmdError {
             code: "io",
             detail: Some("no home dir".into()),
@@ -103,7 +103,7 @@ impl Ctx {
         })
     }
 
-    fn homes(&self) -> Vec<Home> {
+    pub(crate) fn homes(&self) -> Vec<Home> {
         xdev_kit::homes(&self.data, &self.user_home, &self.env)
     }
 
