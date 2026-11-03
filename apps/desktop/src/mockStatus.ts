@@ -1,4 +1,4 @@
-import type { Api, ApiError, HookEvent, PtyHook, StatusSettings } from "./api";
+import type { Api, ApiError, HookDetail, HookEvent, PtyHook, StatusSettings } from "./api";
 
 type StatusApi = Pick<
   Api,
@@ -15,7 +15,7 @@ type StatusApi = Pick<
 
 export type MockStatus = StatusApi & {
   // Fires `pty://hook` the way an agent's hook would.
-  __hook(id: string, event: HookEvent): void;
+  __hook(id: string, event: HookEvent, detail?: HookDetail): void;
   // Fires a click on the status notification of `ptyId`.
   __clickNotification(ptyId: string): void;
   // What the app sent to the OS, newest last.
@@ -24,6 +24,12 @@ export type MockStatus = StatusApi & {
 };
 
 export const DEFAULT_STATUS: StatusSettings = {
+  enabled: true,
+  onNeedsInput: true,
+  onDone: true,
+  onFailed: true,
+  onBell: false,
+  suppressWhenFocused: true,
   hooks: true,
   os: true,
   sound: true,
@@ -80,8 +86,8 @@ export function createMockStatus(): MockStatus {
     async pickSoundFile() {
       return null;
     },
-    __hook(id, event) {
-      for (const cb of hooks) cb({ id, event, at: Date.now() });
+    __hook(id, event, detail) {
+      for (const cb of hooks) cb({ id, event, at: Date.now(), detail: detail ?? null });
     },
     __clickNotification(ptyId) {
       for (const cb of clicks) cb(ptyId);

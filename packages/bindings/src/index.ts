@@ -34,6 +34,7 @@ export type { FileStatus } from "./FileStatus";
 export type { Freshness } from "./Freshness";
 export type { Home } from "./Home";
 export type { HomeSource } from "./HomeSource";
+export type { HookDetail } from "./HookDetail";
 export type { HookEvent } from "./HookEvent";
 export type { IssueKind } from "./IssueKind";
 export type { KitText } from "./KitText";
