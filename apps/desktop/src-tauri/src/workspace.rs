@@ -221,14 +221,25 @@ fn is_binary(bytes: &[u8]) -> bool {
 }
 
 fn file_diff(data: &Path, path: &Path, file: &str) -> Result<WorktreeFileDiff, CmdError> {
+    inside(path, file).ok_or_else(|| bad_arg(file))?;
+    let start = start_of(data, path)?;
+    file_diff_at(path, file, &start)
+}
+
+/// `file` at the commit `start` and on disk now. The caller has checked
+/// that `path` is a known checkout and `start` a commit id.
+pub(crate) fn file_diff_at(
+    path: &Path,
+    file: &str,
+    start: &str,
+) -> Result<WorktreeFileDiff, CmdError> {
     let disk = inside(path, file).ok_or_else(|| bad_arg(file))?;
     if !parent_within(path, &disk)? {
         return Err(bad_arg(file));
     }
-    let start = start_of(data, path)?;
     let repo = Repo::discover(path)?;
     // Sized before it is read, so a large old file never sits in memory.
-    let old_size = repo.blob_size(&start, file)?;
+    let old_size = repo.blob_size(start, file)?;
     if old_size.is_some_and(|n| n > MAX_BYTES) {
         return Ok(skipped(Skip::TooLarge));
     }
@@ -246,7 +257,7 @@ fn file_diff(data: &Path, path: &Path, file: &str) -> Result<WorktreeFileDiff, C
         Err(e) => return Err(e.into()),
     };
     let old = match old_size {
-        Some(_) => repo.show(&start, file)?,
+        Some(_) => repo.show(start, file)?,
         None => None,
     };
     if [&old, &new].into_iter().flatten().any(|b| is_binary(b)) {

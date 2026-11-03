@@ -1,0 +1,206 @@
+import { markdown } from "@codemirror/lang-markdown";
+import { syntaxHighlighting } from "@codemirror/language";
+import { getChunks, MergeView, unifiedMergeView } from "@codemirror/merge";
+import type { Chunk } from "@codemirror/merge";
+import { EditorState, type Extension } from "@codemirror/state";
+import { EditorView, lineNumbers } from "@codemirror/view";
+import { useEffect, useRef, useState } from "react";
+import type { JSX } from "react";
+import { toApiError, type Api, type ReviewFile, type ReviewNote, type WorktreeFileDiff } from "@/api";
+import type { Problem } from "@/changes/useChanges";
+import { ProblemNote } from "@/components/ChangesPanel";
+import { diffTheme, DiffStats } from "@/components/DiffView";
+import { highlight, theme } from "@/components/Editor";
+import { useI18n, type I18n } from "@/i18n";
+import { noteExtension, setNotes, type NoteHandlers } from "./noteWidgets";
+import { ignoreWhitespaceDiff, onlyWhitespace, whitespaceSupported } from "./whitespace";
+import type { ViewOptions } from "./viewOptions";
+
+/** What the review view needs from a mounted diff: how many changes it has and a way to jump to one. */
+export type DiffHandle = { chunks(): number; goTo(chunk: number): void; goToLine(line: number): void };
+
+// Git's own letters, so they read the same in every language.
+const LETTER: Record<ReviewFile["kind"], string> = { added: "A", modified: "M", deleted: "D" };
+
+export type FileDiffProps = {
+  api: Api;
+  worktree: string;
+  /** The commit id the old side is read at. */
+  base: string;
+  file: ReviewFile;
+  opts: ViewOptions;
+  open: boolean;
+  /** Changes with each reload, so an open file reads again. */
+  rev: number;
+  /** A new value scrolls this file into view. */
+  revealSeq: number;
+  busy: boolean;
+  onToggle(path: string): void;
+  /** `stage` true stages the file's unstaged changes; false unstages its staged ones. */
+  onStage(file: ReviewFile, stage: boolean): void;
+  register(path: string, handle: DiffHandle | null): void;
+  onChunks(path: string, count: number): void;
+  /** This file's notes, drawn under their lines on the new side. */
+  notes: ReviewNote[];
+  handlers: NoteHandlers;
+  /** Told each time the file's new text is read (`null` when the file is gone), to re-anchor its notes. */
+  onRead(path: string, text: string | null): void;
+};
+
+type Built = { chunks(): readonly Chunk[]; goTo(chunk: number): void; goToLine(line: number): void; destroy(): void; notes(list: ReviewNote[]): void };
+
+function build(host: HTMLElement, diff: WorktreeFileDiff, opts: ViewOptions, label: string, notes: Extension): Built {
+  const oldText = diff.old ?? "";
+  const newText = diff.new ?? "";
+  const quiet = opts.ignoreWhitespace && whitespaceSupported(oldText, newText);
+  const diffConfig = quiet ? { override: ignoreWhitespaceDiff } : undefined;
+  const collapseUnchanged = opts.collapse ? { margin: 3, minSize: 6 } : undefined;
+  const common: Extension[] = [
+    ...(opts.lineNumbers ? [lineNumbers()] : []),
+    markdown(),
+    syntaxHighlighting(highlight),
+    ...(opts.wrap ? [EditorView.lineWrapping] : []),
+    EditorState.readOnly.of(true),
+    EditorView.editable.of(false),
+    EditorView.contentAttributes.of({ "aria-label": label }),
+    theme,
+    diffTheme,
+  ];
+  const jumpTo = (view: EditorView, pos: number) => {
+    const at = Math.min(pos, view.state.doc.length);
+    view.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at, { y: "center" }) });
+    view.dom.scrollIntoView?.({ block: "nearest" });
+  };
+  const jump = (view: EditorView, chunk: Chunk | undefined) => chunk && jumpTo(view, chunk.fromB);
+  const jumpLine = (view: EditorView, line: number) => jumpTo(view, view.state.doc.line(Math.min(Math.max(line, 1), view.state.doc.lines)).from);
+  if (opts.layout === "split") {
+    const merge = new MergeView({
+      parent: host,
+      a: { doc: oldText, extensions: common },
+      b: { doc: newText, extensions: [...common, notes] },
+      diffConfig,
+      collapseUnchanged,
+      highlightChanges: true,
+      gutter: true,
+    });
+    return {
+      chunks: () => merge.chunks,
+      goTo: (i) => jump(merge.b, merge.chunks[i]),
+      goToLine: (n) => jumpLine(merge.b, n),
+      destroy: () => merge.destroy(),
+      notes: (list) => merge.b.dispatch({ effects: setNotes.of(list) }),
+    };
+  }
+  const view = new EditorView({
+    parent: host,
+    state: EditorState.create({
+      doc: newText,
+      extensions: [...common, notes, unifiedMergeView({ original: oldText, mergeControls: false, syntaxHighlightDeletions: true, collapseUnchanged, diffConfig })],
+    }),
+  });
+  return {
+    chunks: () => getChunks(view.state)?.chunks ?? [],
+    goTo: (i) => jump(view, getChunks(view.state)?.chunks[i]),
+    goToLine: (n) => jumpLine(view, n),
+    destroy: () => view.destroy(),
+    notes: (list) => view.dispatch({ effects: setNotes.of(list) }),
+  };
+}
+
+/** The old diff when a reload read the same content, so the editors are not built again for nothing. */
+export function keepSame(prev: WorktreeFileDiff | null, next: WorktreeFileDiff): WorktreeFileDiff {
+  return prev && prev.old === next.old && prev.new === next.new && prev.skip === next.skip ? prev : next;
+}
+
+/** One file of the review: its header, and the diff itself while the file is open. */
+export function FileDiff(props: FileDiffProps): JSX.Element {
+  const { api, worktree, base, file, opts, open, rev, register, onChunks } = props;
+  const i18n: I18n = useI18n();
+  const { t } = i18n;
+  const [diff, setDiff] = useState<WorktreeFileDiff | null>(null);
+  const [problem, setProblem] = useState<Problem | null>(null);
+  const host = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLElement>(null);
+  const built = useRef<Built | null>(null);
+  // The widgets outlive a render, so they read the latest handlers and strings through these.
+  const live = useRef({ handlers: props.handlers, i18n });
+  live.current = { handlers: props.handlers, i18n };
+
+  // Only an open file reads its two sides.
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setProblem(null);
+    api.worktreeReviewFile(worktree, base, file.path).then(
+      (d) => {
+        if (!alive) return;
+        setDiff((prev) => keepSame(prev, d));
+        if (!d.skip) props.onRead(file.path, d.new);
+      },
+      (e) => alive && setProblem(toApiError(e)),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [api, worktree, base, file.path, open, rev]);
+
+  const shown = open && diff && !diff.skip ? diff : null;
+  useEffect(() => {
+    if (!shown || !host.current) return;
+    const ext = noteExtension({ file: file.path, handlers: () => live.current.handlers, i18n: () => live.current.i18n });
+    const made = build(host.current, shown, opts, t("diff.label"), ext);
+    made.notes(props.notes);
+    built.current = made;
+    const count = () => made.chunks().length;
+    register(file.path, { chunks: count, goTo: made.goTo, goToLine: made.goToLine });
+    onChunks(file.path, count());
+    return () => {
+      register(file.path, null);
+      built.current = null;
+      made.destroy();
+    };
+  }, [shown, opts.layout, opts.ignoreWhitespace, opts.collapse, opts.lineNumbers, opts.wrap, t]);
+
+  useEffect(() => {
+    built.current?.notes(props.notes);
+  }, [props.notes, shown, opts.layout, opts.ignoreWhitespace, opts.collapse, opts.lineNumbers, opts.wrap, t]);
+
+  // A reveal scrolls the file's section to the top of the list.
+  useEffect(() => {
+    if (props.revealSeq > 0) root.current?.scrollIntoView?.({ block: "start" });
+  }, [props.revealSeq]);
+
+  const blank = shown !== null && opts.ignoreWhitespace && onlyWhitespace(shown.old ?? "", shown.new ?? "");
+  return (
+    <section className="rv-file" data-path={file.path} ref={root}>
+      <header className="rv-file-head">
+        <button type="button" className="rv-file-toggle" aria-expanded={open} onClick={() => props.onToggle(file.path)}>
+          <span className="rv-caret" aria-hidden="true">
+            {open ? "▾" : "▸"}
+          </span>
+          <span className="rv-letter ws-mono" data-kind={file.kind} aria-hidden="true">
+            {LETTER[file.kind]}
+          </span>
+          <span className="rv-file-path ws-mono">{file.path}</span>
+        </button>
+        {shown && <DiffStats base={shown.old ?? ""} current={shown.new ?? ""} />}
+        {file.unstaged && (
+          <button type="button" className="rv-stage" disabled={props.busy} onClick={() => props.onStage(file, true)}>
+            {t("review.stage")}
+          </button>
+        )}
+        {file.staged && (
+          <button type="button" className="rv-stage" disabled={props.busy} onClick={() => props.onStage(file, false)}>
+            {t("review.unstage")}
+          </button>
+        )}
+      </header>
+      {open && problem && <ProblemNote problem={problem} />}
+      {open && diff?.skip === "binary" && <p className="ws-empty">{t("workspace.diff.binary")}</p>}
+      {open && diff?.skip === "too_large" && <p className="ws-empty">{t("workspace.diff.tooLarge")}</p>}
+      {blank && <p className="ws-empty">{t("review.whitespaceOnly")}</p>}
+      {open && !problem && !diff && <p className="ws-empty">{t("review.loading")}</p>}
+      {shown && <div className="rv-file-body editor diff" ref={host} />}
+    </section>
+  );
+}

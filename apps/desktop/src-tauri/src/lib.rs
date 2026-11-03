@@ -7,6 +7,8 @@ mod kit;
 mod links;
 mod profiles;
 mod pty;
+mod review;
+mod review_notes;
 mod session;
 mod settings;
 mod ship;
@@ -42,6 +44,7 @@ pub fn run() {
         .manage(updater::Pending::default())
         .manage(pty::Ptys::default())
         .manage(workspace::WorkspaceLock::default())
+        .manage(review_notes::ReviewNotesLock::default())
         .manage(profiles::ProfilesLock::default())
         .manage(status::Shown::default())
         .setup(|app| {
@@ -155,6 +158,12 @@ pub fn run() {
             workspace::worktree_changes,
             workspace::worktree_stat,
             workspace::worktree_file_diff,
+            review::worktree_review,
+            review::worktree_review_file,
+            review::worktree_stage,
+            review::worktree_branches,
+            review_notes::review_notes_get,
+            review_notes::review_notes_put,
             workspace::worktree_commit,
             workspace::worktree_list_dir,
             ship::worktree_ship,

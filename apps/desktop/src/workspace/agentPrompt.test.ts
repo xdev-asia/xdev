@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { pastePrompt, sendToAgentTab } from "./agentPrompt";
+import { pastePrompt, sendToAgentTab, sendToChosenTab } from "./agentPrompt";
 import type { Sessions, Tab } from "./sessions";
 import type { TabStatus } from "./status";
 
@@ -77,4 +77,28 @@ it("returns null after the timeout", async () => {
   await vi.advanceTimersByTimeAsync(30_000);
   expect(await result).toBeNull();
   expect(f.opened.client.input).not.toHaveBeenCalled();
+});
+
+it("sendToChosenTab types into the chosen running tab and never opens one", async () => {
+  const a = tab("a");
+  const b = tab("b");
+  const f = fake([a, b]);
+  expect(await sendToChosenTab(f.sessions, "/w", { tab: "a" }, "hi")).toBe(a);
+  expect(a.client.input).toHaveBeenCalledTimes(1);
+  expect(b.client.input).not.toHaveBeenCalled();
+  expect(f.open).not.toHaveBeenCalled();
+});
+
+it("sendToChosenTab gives up on a tab that ended, and waits for a new one", async () => {
+  vi.useFakeTimers();
+  const dead = tab("d", { status: "exited" });
+  const f = fake([dead]);
+  expect(await sendToChosenTab(f.sessions, "/w", { tab: "d" }, "hi")).toBeNull();
+  expect(dead.client.input).not.toHaveBeenCalled();
+
+  const result = sendToChosenTab(f.sessions, "/w", { profile: "codex" }, "hi");
+  expect(f.open).toHaveBeenCalledWith("/w", "codex");
+  f.set("working");
+  f.set("idle");
+  expect((await result)?.id).toBe("new");
 });
