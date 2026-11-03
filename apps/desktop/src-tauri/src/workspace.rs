@@ -171,22 +171,24 @@ fn remove_with(
     let action = Action::Delete {
         path: path.to_owned(),
     };
-    match gate(data)?.check_confirmed(&action, confirmed) {
-        Verdict::Allow => {}
-        Verdict::Ask { reason } => {
-            return Err(CmdError {
-                code: "needs_approval",
-                detail: Some(reason),
-            });
-        }
-        Verdict::Deny { reason } => {
-            return Err(CmdError {
-                code: "denied",
-                detail: Some(reason),
-            });
-        }
-    }
+    allowed(data, &action, confirmed)?;
     update(data, lock, |reg| remove_worktree(reg, path, force))
+}
+
+/// `Ok` when the policy gate lets `action` run; `confirmed` says the user
+/// already said yes to it. The gate writes the audit line.
+pub(crate) fn allowed(data: &Path, action: &Action, confirmed: bool) -> Result<(), CmdError> {
+    match gate(data)?.check_confirmed(action, confirmed) {
+        Verdict::Allow => Ok(()),
+        Verdict::Ask { reason } => Err(CmdError {
+            code: "needs_approval",
+            detail: Some(reason),
+        }),
+        Verdict::Deny { reason } => Err(CmdError {
+            code: "denied",
+            detail: Some(reason),
+        }),
+    }
 }
 
 /// The commit a linked worktree started from. The primary checkout has no
@@ -645,6 +647,13 @@ fn dir_listing(
     path: &Path,
     dir: &str,
 ) -> Result<xdev_workspace::DirListing, CmdError> {
+    known_checkout(data, path)?;
+    Ok(xdev_workspace::list_dir(&path.to_string_lossy(), dir)?)
+}
+
+/// `Ok` when `path` is a repo or a worktree the registry knows, the primary
+/// checkout too; `worktree_unknown` otherwise.
+pub(crate) fn known_checkout(data: &Path, path: &Path) -> Result<(), CmdError> {
     let key = path_key(path);
     let reg = Registry::load(data)?;
     let known = reg.repos.iter().any(|r| path_key(&r.path) == key)
@@ -652,7 +661,7 @@ fn dir_listing(
     if !known {
         return Err(WorkspaceError::WorktreeUnknown(path.to_owned()).into());
     }
-    Ok(xdev_workspace::list_dir(&path.to_string_lossy(), dir)?)
+    Ok(())
 }
 
 #[tauri::command(async)]

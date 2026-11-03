@@ -81,8 +81,16 @@ impl Default for EditorSettings {
 }
 
 impl EditorSettings {
+    pub const AUTOSAVE_MS: RangeInclusive<u32> = 250..=10_000;
+    pub const FONT_SIZE: RangeInclusive<u32> = 8..=32;
+    pub const TAB_SIZE: RangeInclusive<u32> = 1..=8;
+
     /// As stored: every number inside its range.
-    pub fn clamped(self) -> Self {
+    pub fn clamped(mut self) -> Self {
+        let within = |n: u32, r: &RangeInclusive<u32>| n.clamp(*r.start(), *r.end());
+        self.autosave_ms = within(self.autosave_ms, &Self::AUTOSAVE_MS);
+        self.font_size = within(self.font_size, &Self::FONT_SIZE);
+        self.tab_size = within(self.tab_size, &Self::TAB_SIZE);
         self
     }
 }
@@ -893,6 +901,119 @@ mod tests {
             ..TerminalSettings::default()
         };
         assert_eq!(fine.clone().clamped(), fine);
+    }
+
+    #[test]
+    fn editor_settings_round_trip_and_an_old_file_loads_their_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let editor = EditorSettings {
+            autosave: true,
+            autosave_ms: 2500,
+            font_size: 15,
+            word_wrap: true,
+            tab_size: 2,
+        };
+        save(
+            &path,
+            &Settings {
+                editor: editor.clone(),
+                ..Settings::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(load(&path).editor, editor);
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("\"autosaveMs\": 2500"), "{raw}");
+
+        fs::write(&path, r#"{ "version": 1, "last_vault": "D:/docs" }"#).unwrap();
+        assert_eq!(load(&path).editor, EditorSettings::default());
+        // A broken section loads its defaults and keeps the rest.
+        fs::write(
+            &path,
+            r#"{ "editor": { "tabSize": "wide" }, "ui": { "zoom": 1.5 } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.editor, EditorSettings::default());
+        assert_eq!(loaded.ui.zoom, 1.5);
+    }
+
+    #[test]
+    fn editor_clamps_to_its_ranges() {
+        let wild = EditorSettings {
+            autosave_ms: 0,
+            font_size: 200,
+            tab_size: 0,
+            ..EditorSettings::default()
+        }
+        .clamped();
+        assert_eq!(
+            (wild.autosave_ms, wild.font_size, wild.tab_size),
+            (250, 32, 1)
+        );
+        let high = EditorSettings {
+            autosave_ms: u32::MAX,
+            font_size: 1,
+            tab_size: 99,
+            ..EditorSettings::default()
+        }
+        .clamped();
+        assert_eq!(
+            (high.autosave_ms, high.font_size, high.tab_size),
+            (10_000, 8, 8)
+        );
+        let fine = EditorSettings {
+            autosave: true,
+            autosave_ms: 250,
+            font_size: 32,
+            word_wrap: true,
+            tab_size: 8,
+        };
+        assert_eq!(fine.clone().clamped(), fine);
+    }
+
+    /// `EDITOR_DEFAULTS` and `EDITOR_LIMITS` in the UI match Rust.
+    #[test]
+    fn editor_defaults_match_the_ui() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let rust = serde_json::to_value(EditorSettings::default()).unwrap();
+        let rust = rust.as_object().unwrap();
+        let binding =
+            fs::read_to_string(root.join("packages/bindings/src/EditorSettings.ts")).unwrap();
+        for key in rust.keys() {
+            assert!(binding.contains(&format!("{key}: ")), "binding lacks {key}");
+        }
+
+        let ui = fs::read_to_string(root.join("apps/desktop/src/files/editorDefaults.ts")).unwrap();
+        let body = ui
+            .split_once("EDITOR_DEFAULTS: EditorSettings = {")
+            .and_then(|(_, rest)| rest.split_once("};"))
+            .map(|(body, _)| body)
+            .expect("EDITOR_DEFAULTS literal");
+        let mut seen = Vec::new();
+        for line in body.lines().map(str::trim).filter(|l| !l.is_empty()) {
+            let (key, value) = line
+                .trim_end_matches(',')
+                .split_once(": ")
+                .unwrap_or_else(|| panic!("{line}"));
+            let got: serde_json::Value = serde_json::from_str(value).unwrap();
+            assert_eq!(Some(&got), rust.get(key), "{key}");
+            seen.push(key.to_owned());
+        }
+        seen.sort();
+        let mut keys: Vec<_> = rust.keys().cloned().collect();
+        keys.sort();
+        assert_eq!(seen, keys);
+
+        for (key, range) in [
+            ("autosaveMs", EditorSettings::AUTOSAVE_MS),
+            ("fontSize", EditorSettings::FONT_SIZE),
+            ("tabSize", EditorSettings::TAB_SIZE),
+        ] {
+            let want = format!("{key}: {{ min: {}, max: {} }}", range.start(), range.end());
+            assert!(ui.contains(&want), "UI lacks {want}");
+        }
     }
 
     /// `TERMINAL_DEFAULTS` in the UI and the generated binding name the same

@@ -10,6 +10,7 @@ mod kit;
 mod links;
 mod profiles;
 mod pty;
+mod reveal;
 mod review;
 mod review_notes;
 mod session;
