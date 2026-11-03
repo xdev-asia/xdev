@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ReviewNote } from "@/api";
-import { deleteNote, editNote, markSent, newNote, notesPrompt, notesToSend, reanchor } from "./notes";
+import { MAX_ANCHOR, deleteNote, editNote, markSent, newNote, notesPrompt, notesToSend, reanchor } from "./notes";
 
 const make = (over: Partial<ReviewNote> = {}): ReviewNote => ({ ...newNote("a.ts", 3, 3, "target", "fix it", 1, "n1"), ...over });
 const text = (...lines: string[]) => lines.join("\n") + "\n";
@@ -58,6 +58,36 @@ describe("reanchor", () => {
     expect(r.notes[0]).toMatchObject({ startLine: 4, line: 5, outdated: false });
     const gone = reanchor([note], "a.ts", text("0", "p", "x"));
     expect(gone.notes[0].outdated).toBe(true);
+  });
+});
+
+describe("reanchor with CRLF and big ranges", () => {
+  it("a CRLF file keeps its notes in place", () => {
+    const r = reanchor([make()], "a.ts", "x\r\ny\r\ntarget\r\nz\r\n");
+    expect(r.changed).toBe(false);
+    const cr = reanchor([make()], "a.ts", "x\ry\rtarget\rz\r");
+    expect(cr.changed).toBe(false);
+  });
+
+  it("an anchor made from CRLF text is stored with LF", () => {
+    expect(newNote("a.ts", 1, 2, "p\r\nq", "b", 1, "i").anchor).toBe("p\nq");
+  });
+
+  it("a long range keeps a bounded anchor that still places it", () => {
+    const lines = Array.from({ length: 400 }, (_, i) => `line number ${i} ${"x".repeat(20)}`);
+    const note = newNote("a.ts", 3, 402, lines.join("\n"), "b", 1, "big");
+    expect(note.anchor.length).toBeLessThanOrEqual(MAX_ANCHOR);
+    const file = ["a", "b", ...lines, "tail"];
+    expect(reanchor([note], "a.ts", text(...file)).changed).toBe(false);
+    const moved = reanchor([note], "a.ts", text("new", ...file));
+    expect(moved.notes[0]).toMatchObject({ startLine: 4, line: 403, outdated: false });
+    expect(reanchor([note], "a.ts", text("a", "b", "changed", ...lines.slice(1), "tail")).notes[0].outdated).toBe(true);
+  });
+
+  it("one very long line still matches", () => {
+    const long = "y".repeat(6000);
+    const note = newNote("a.ts", 2, 2, long, "b", 1, "l");
+    expect(reanchor([note], "a.ts", text("a", long, "c")).changed).toBe(false);
   });
 });
 

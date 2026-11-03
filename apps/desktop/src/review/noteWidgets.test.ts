@@ -23,9 +23,9 @@ it("a selection that ends at the start of a line stops on the line before", () =
   expect(rangeFromSelection(at(from, to))).toMatchObject({ startLine: 3, line: 4 });
 });
 
-it("long text is cut for the anchor", () => {
+it("the range keeps the whole text; newNote bounds it", () => {
   const state = EditorState.create({ doc: "x".repeat(5000) });
-  expect(rangeOfLines(state, 1, 1).anchor).toHaveLength(4000);
+  expect(rangeOfLines(state, 1, 1).anchor).toHaveLength(5000);
 });
 
 it("only c with no modifier and Ctrl+Shift+A open a note", () => {
