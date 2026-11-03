@@ -1,0 +1,242 @@
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { ReactElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { Button } from "@xdev/ui";
+import { createMockApi, type Api, type WorktreeView } from "../api";
+import { DiffView } from "../components/DiffView";
+import { translate } from "../i18n";
+import { Sessions } from "./sessions";
+import { WorktreeChanges } from "./WorktreeChanges";
+import { WorktreeDiff } from "./WorktreeDiff";
+import { WorktreeTabs } from "./WorktreeTabs";
+
+// Hooks are stubbed only while a component under test is called; each harness keeps its own.
+const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
+vi.mock("react", async (original) => {
+  const react = await original<typeof import("react")>();
+  const slot = (initial: unknown) => {
+    const index = hooks.cursor++;
+    const values = hooks.values;
+    if (!(index in values)) values[index] = typeof initial === "function" ? initial() : initial;
+    return { index, values };
+  };
+  const state = (initial: unknown) => {
+    const { index, values } = slot(initial);
+    return [values[index], (value: unknown) => { values[index] = typeof value === "function" ? value(values[index]) : value; }];
+  };
+  return {
+    ...react,
+    useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
+    useRef: (initial: any) => {
+      if (!hooks.active) return react.useRef(initial);
+      const { index, values } = slot(() => ({ current: initial }));
+      return values[index];
+    },
+    useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
+    useCallback: (fn: any, deps: any) => (hooks.active ? fn : react.useCallback(fn, deps)),
+    useSyncExternalStore: (subscribe: any, get: any, server?: any) => (hooks.active ? get() : react.useSyncExternalStore(subscribe, get, server)),
+  };
+});
+vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+// xterm needs a real canvas; the terminals are tested on their own.
+vi.mock("../terminal/Terminal", () => ({ Terminal: () => null }));
+
+type Node = ReactElement<Record<string, any>>;
+function nodes(value: unknown): Node[] {
+  if (Array.isArray(value)) return value.flatMap(nodes);
+  if (!value || typeof value !== "object" || !("props" in value)) return [];
+  const node = value as Node;
+  return [node, ...nodes(node.props.children)];
+}
+const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
+const OAK = "/demo/wt/xdev-oak";
+const START = "5555555555555555555555555555555555555555";
+const oak: WorktreeView = { path: OAK, name: "oak", branch: "oak", head: START, start: START, primary: false, pinned: false, detached: false };
+
+// Calls `render` with its own hook values; the first draw's effects run once, as on mount.
+function mount(render: () => unknown) {
+  const values: unknown[] = [];
+  const draw = () => {
+    hooks.values = values;
+    hooks.cursor = 0;
+    hooks.active = true;
+    try { return render(); } finally { hooks.active = false; }
+  };
+  const before = hooks.effects.length;
+  draw();
+  const cleanups = hooks.effects.slice(before).map((effect) => effect());
+  const all = () => nodes(draw());
+  const html = () => renderToStaticMarkup(draw() as ReactElement);
+  const find = (pick: (n: Node) => boolean) => all().find(pick);
+  return { draw, all, html, find, cleanups };
+}
+
+function changes(api: Api, sessions?: Sessions) {
+  const onOpenFile = vi.fn();
+  const onCount = vi.fn();
+  const view = mount(() => WorktreeChanges({ api, worktree: oak, sessions, onOpenFile, onCount }));
+  const rows = () => view.all().filter((n) => n.type === "li");
+  const row = (path: string) => rows().find((r) => nodes(r).some((n) => n.props.children === path))!;
+  const box = (path: string) => nodes(row(path)).find((n) => n.type === "input")!;
+  const commit = () => view.find((n) => n.type === Button)!;
+  const message = () => view.find((n) => n.type === "textarea")!;
+  return { ...view, onOpenFile, onCount, rows, row, box, commit, message };
+}
+
+let sessions: Sessions | null = null;
+beforeEach(() => {
+  hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false;
+  vi.stubGlobal("window", new EventTarget());
+});
+afterEach(() => { sessions?.dispose(); sessions = null; vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+it("lists changes with kind letters and all checked", async () => {
+  const api = createMockApi({});
+  const view = changes(api);
+  await tick();
+  const html = view.html();
+  for (const path of ["docs/old-notes.md", "src/session.ts", "src/status.ts"]) expect(html).toContain(path);
+  const letter = (path: string) => nodes(view.row(path)).find((n) => n.props["data-kind"])!.props.children;
+  expect([letter("docs/old-notes.md"), letter("src/session.ts"), letter("src/status.ts")]).toEqual(["D", "M", "A"]);
+  expect(view.rows().map((r) => nodes(r).find((n) => n.type === "input")!.props.checked)).toEqual([true, true, true]);
+  // The line counts come from each file's diff.
+  const modified = renderToStaticMarkup(view.row("src/session.ts"));
+  expect(modified).toContain("+1");
+  expect(modified).toContain("−1");
+  expect(html).toContain(en("workspace.changes.title", { count: 3 }));
+  expect(view.commit().props.children).toBe(en("workspace.changes.commit", { count: 3 }));
+  // Nothing to say yet.
+  expect(view.commit().props.disabled).toBe(true);
+  expect(view.onCount).toHaveBeenLastCalledWith(3);
+});
+
+it("opens a diff tab for a file", async () => {
+  const api = createMockApi({});
+  const view = changes(api);
+  await tick();
+  nodes(view.row("src/session.ts")).find((n) => n.type === "button")!.props.onClick();
+  expect(view.onOpenFile).toHaveBeenCalledWith("src/session.ts");
+
+  // The center opens it as a tab next to the terminals.
+  const live = (sessions = new Sessions(api));
+  const term = live.open(OAK, "shell");
+  const tabs = mount(() => WorktreeTabs({ api, sessions: live, worktree: OAK, visible: true, reveal: { file: "src/session.ts", seq: 1 } }));
+  const tab = tabs.find((n) => n.props.role === "tab" && n.props["data-tab"] === "file:src/session.ts")!;
+  expect(tab.props["aria-selected"]).toBe(true);
+  const pane = (id: string) => tabs.find((n) => n.props.role === "tabpanel" && n.props["data-tab"] === id)!;
+  expect(pane("file:src/session.ts").props.hidden).toBe(false);
+  expect(pane(term.id).props.hidden).toBe(true);
+  const diff = nodes(pane("file:src/session.ts")).find((n) => n.type === WorktreeDiff)!;
+  expect(diff.props).toMatchObject({ api, worktree: OAK, file: "src/session.ts" });
+
+  const shown = mount(() => WorktreeDiff(diff.props as Parameters<typeof WorktreeDiff>[0]));
+  await tick();
+  const editor = shown.find((n) => n.type === DiffView)!;
+  expect(editor.props).toEqual({ base: "// src/session.ts\nexport const value = 1;\n", current: "// src/session.ts\nexport const value = 2;\n" });
+
+  // Closing the diff hands the view back to the terminal.
+  tabs.find((n) => n.props["aria-label"] === en("workspace.tabs.close", { name: "session.ts" }))!.props.onClick();
+  expect(tabs.find((n) => n.props["data-tab"] === "file:src/session.ts")).toBeUndefined();
+  expect(pane(term.id).props.hidden).toBe(false);
+});
+
+it("commits only the checked files and refreshes", async () => {
+  const api = createMockApi({});
+  const commit = vi.spyOn(api, "worktreeCommit");
+  const list = vi.spyOn(api, "worktreeChanges");
+  const view = changes(api);
+  await tick();
+  view.box("docs/old-notes.md").props.onChange();
+  expect(view.box("docs/old-notes.md").props.checked).toBe(false);
+  expect(view.commit().props.children).toBe(en("workspace.changes.commit", { count: 2 }));
+  view.message().props.onChange({ target: { value: "   " } });
+  expect(view.commit().props.disabled).toBe(true);
+  view.message().props.onChange({ target: { value: "feat: status line" } });
+  expect(view.commit().props.disabled).toBe(false);
+
+  view.commit().props.onClick();
+  await tick();
+  expect(commit).toHaveBeenCalledWith(OAK, ["src/session.ts", "src/status.ts"], "feat: status line");
+  expect(list).toHaveBeenCalledTimes(2);
+  expect(view.rows()).toHaveLength(1);
+  expect(view.message().props.value).toBe("");
+  expect(view.onCount).toHaveBeenLastCalledWith(1);
+
+  // Coming back to the window looks again.
+  window.dispatchEvent(new Event("focus"));
+  await tick();
+  expect(list).toHaveBeenCalledTimes(3);
+  for (const cleanup of view.cleanups) if (typeof cleanup === "function") cleanup();
+  window.dispatchEvent(new Event("focus"));
+  await tick();
+  expect(list).toHaveBeenCalledTimes(3);
+});
+
+it("refreshes when a tab of the worktree goes from working to idle", async () => {
+  vi.useFakeTimers();
+  const api = createMockApi({});
+  const list = vi.spyOn(api, "worktreeChanges");
+  let clock = 1000;
+  const live = (sessions = new Sessions(api, () => clock));
+  const agent = live.open(OAK, "claude");
+  const other = live.open("/demo/wt/xdev-elm", "claude");
+  changes(api, live);
+  await tick();
+  expect(list).toHaveBeenCalledTimes(1);
+
+  live.noteOutput(agent.id, 10);
+  live.noteOutput(other.id, 10);
+  await tick();
+  expect(list).toHaveBeenCalledTimes(1);
+  clock += 3000;
+  await vi.advanceTimersByTimeAsync(1000);
+  await tick();
+  expect(live.tabs(OAK)[0].status).toBe("idle");
+  // Only this worktree's tab counts, and it counts once.
+  expect(list).toHaveBeenCalledTimes(2);
+});
+
+it("shows git_identity inline", async () => {
+  const api = createMockApi({});
+  const commit = vi.spyOn(api, "worktreeCommit").mockRejectedValueOnce({ code: "git_identity" });
+  const view = changes(api);
+  await tick();
+  view.message().props.onChange({ target: { value: "feat: status line" } });
+  view.commit().props.onClick();
+  await tick();
+  let html = view.html();
+  expect(html).toContain(en("error.git_identity"));
+  expect(html).toContain("git config --global user.name");
+  // The message stays for the next try.
+  expect(view.message().props.value).toBe("feat: status line");
+
+  commit.mockRejectedValueOnce({ code: "git", detail: "pre-commit hook failed" });
+  view.commit().props.onClick();
+  await tick();
+  html = view.html();
+  expect(html).not.toContain(en("error.git_identity"));
+  expect(html).toContain(en("error.git"));
+  expect(html).toContain("pre-commit hook failed");
+
+  commit.mockRejectedValueOnce({ code: "empty_message" });
+  view.commit().props.onClick();
+  await tick();
+  expect(view.html()).toContain(en("error.empty_message"));
+});
+
+it("shows the binary placeholder", async () => {
+  const api = createMockApi({});
+  const read = vi.spyOn(api, "worktreeFileDiff").mockResolvedValueOnce({ old: null, new: null, skip: "binary" });
+  const binary = mount(() => WorktreeDiff({ api, worktree: OAK, file: "docs/logo.png" }));
+  await tick();
+  expect(read).toHaveBeenCalledWith(OAK, "docs/logo.png");
+  expect(binary.html()).toContain(en("workspace.diff.binary"));
+  expect(binary.find((n) => n.type === DiffView)).toBeUndefined();
+
+  read.mockResolvedValueOnce({ old: null, new: null, skip: "too_large" });
+  const large = mount(() => WorktreeDiff({ api, worktree: OAK, file: "data/dump.sql" }));
+  await tick();
+  expect(large.html()).toContain(en("workspace.diff.tooLarge"));
+  expect(large.find((n) => n.type === DiffView)).toBeUndefined();
+});

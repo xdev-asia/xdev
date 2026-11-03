@@ -9,8 +9,9 @@ import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { Sessions } from "./sessions";
 import type { TabStatus } from "./status";
+import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeList } from "./WorktreeList";
-import { WorktreeTabs } from "./WorktreeTabs";
+import { WorktreeTabs, type Reveal } from "./WorktreeTabs";
 
 const SELECTED_KEY = "xdev.workspace.selected";
 
@@ -51,6 +52,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [notice, setNotice] = useState<ApiError["code"]>();
   // Worktrees shown so far; their tabs stay mounted, hidden, so a switch never stops a pty.
   const [visited, setVisited] = useState<string[]>([]);
+  // The file a diff tab should show, for the worktree that asked.
+  const [reveal, setReveal] = useState<(Reveal & { worktree: string }) | null>(null);
+  // How many files the Changes panel last listed, for the worktree it listed them for.
+  const [changeCount, setChangeCount] = useState<{ worktree: string; count: number } | null>(null);
 
   // One store of terminal tabs for the whole shell. Made in an effect so a dev double mount
   // disposes the first one.
@@ -92,6 +97,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const seen = current && !visited.includes(current.path) ? [...visited, current.path] : visited;
   if (seen !== visited) setVisited(seen);
   const mounted = seen.filter((p) => paths.includes(p));
+
+  const count = current && changeCount?.worktree === current.path ? changeCount.count : 0;
+
+  function openFile(worktree: string, file: string): void {
+    setReveal((r) => ({ worktree, file, seq: (r?.seq ?? 0) + 1 }));
+  }
 
   function select(wt: WorktreeView): void {
     setSelected(wt.path);
@@ -246,7 +257,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           <main className="ws-center" aria-label={t("workspace.center.label")}>
             {sessions &&
               mounted.map((path) => (
-                <WorktreeTabs key={path} api={api} sessions={sessions} worktree={path} visible={path === current?.path} />
+                <WorktreeTabs
+                  key={path}
+                  api={api}
+                  sessions={sessions}
+                  worktree={path}
+                  visible={path === current?.path}
+                  reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq } : undefined}
+                />
               ))}
             {!current && repos && (
               <div className="ws-center-empty">
@@ -254,7 +272,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               </div>
             )}
           </main>
-          {/* Task 10 fills Changes and adds its count badge. */}
           <aside className="ws-panel" aria-label={t("workspace.panel.label")}>
             <div className="ws-panel-tabs" role="tablist" aria-label={t("workspace.panel.label")}>
               <button
@@ -262,16 +279,32 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                 role="tab"
                 className="ws-panel-tab"
                 aria-selected="true"
-                aria-label={t("workspace.panel.changes")}
+                aria-label={count > 0 ? t("workspace.panel.changesCount", { count }) : t("workspace.panel.changes")}
                 title={t("workspace.panel.changes")}
               >
                 <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M6 3v12M18 9a3 3 0 1 0 0-.01M6 21a3 3 0 1 0 0-.01M18 12c0 4-6 3-9 6" />
                 </svg>
+                {count > 0 && (
+                  <span className="ws-panel-badge" aria-hidden="true">
+                    {count}
+                  </span>
+                )}
               </button>
             </div>
             <div className="ws-panel-body" role="tabpanel">
-              <p className="ws-empty">{t("workspace.panel.empty")}</p>
+              {current ? (
+                <WorktreeChanges
+                  key={current.path}
+                  api={api}
+                  worktree={current}
+                  sessions={sessions}
+                  onOpenFile={(file) => openFile(current.path, file)}
+                  onCount={(n) => setChangeCount({ worktree: current.path, count: n })}
+                />
+              ) : (
+                <p className="ws-empty">{t("workspace.panel.empty")}</p>
+              )}
             </div>
           </aside>
         </div>

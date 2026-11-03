@@ -8,6 +8,7 @@ import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { Sessions } from "./sessions";
 import { WorkspaceShell } from "./WorkspaceShell";
+import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeList } from "./WorktreeList";
 import { WorktreeTabs } from "./WorktreeTabs";
 
@@ -86,7 +87,8 @@ it("shell_renders_without_vault", async () => {
   // Nothing selected yet: the first worktree, the primary checkout on main.
   expect(html).toContain("⎇ main");
   expect(html).toContain(en("workspace.footer.running", { count: 0 }));
-  expect(html).toContain(en("workspace.panel.empty"));
+  // The main checkout has no changes list.
+  expect(html).toContain(en("workspace.changes.primary"));
   expect(view.of(DocsApp)).toHaveLength(0);
   expect(html).not.toContain("vault-dialog");
   expect(lastVault).not.toHaveBeenCalled();
@@ -237,4 +239,30 @@ it("switching worktrees keeps every visited worktree's tabs mounted", async () =
   expect(tabs()).toEqual([["/demo/xdev", false], ["/demo/wt/xdev-oak", false], ["/demo/wt/xdev-elm", true]]);
   // The hidden worktree still renders its terminal, so its pty keeps running.
   expect(view.html()).toContain(`data-tab="${oakTab.id}"`);
+});
+
+it("changes tab counts the worktree's files and opens a diff next to the terminals", async () => {
+  const view = await harness();
+  const panel = () => view.of(WorktreeChanges)[0];
+  const tab = () => view.all().find(n => n.props.className === "ws-panel-tab")!;
+  expect(panel().props.worktree.path).toBe("/demo/xdev");
+  expect(tab().props["aria-label"]).toBe(en("workspace.panel.changes"));
+
+  view.list().props.onSelect(view.worktree("oak"));
+  expect(panel().props.worktree.path).toBe("/demo/wt/xdev-oak");
+  expect(panel().props.sessions).toBe(view.of(WorktreeTabs)[0].props.sessions);
+  panel().props.onCount(3);
+  expect(tab().props["aria-label"]).toBe(en("workspace.panel.changesCount", { count: 3 }));
+  expect(renderToStaticMarkup(tab())).toContain(">3<");
+
+  const oak = () => view.of(WorktreeTabs).find(n => n.props.worktree === "/demo/wt/xdev-oak")!;
+  expect(oak().props.reveal).toBeUndefined();
+  panel().props.onOpenFile("src/session.ts");
+  expect(oak().props.reveal).toEqual({ file: "src/session.ts", seq: 1 });
+  panel().props.onOpenFile("src/session.ts");
+  expect(oak().props.reveal).toEqual({ file: "src/session.ts", seq: 2 });
+  // Other worktrees get no file, and their count is not this one's.
+  expect(view.of(WorktreeTabs).find(n => n.props.worktree === "/demo/xdev")!.props.reveal).toBeUndefined();
+  view.list().props.onSelect(view.worktree("elm"));
+  expect(tab().props["aria-label"]).toBe(en("workspace.panel.changes"));
 });
