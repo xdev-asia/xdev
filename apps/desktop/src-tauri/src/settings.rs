@@ -160,6 +160,33 @@ mod tests {
     }
 
     #[test]
+    fn a_4a_status_loads_the_4b_switches_at_their_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let old = r#"{ "status": { "hooks": false, "os": true, "sound": false,
+            "soundFile": null, "volume": 30, "bell": true, "badge": false } }"#;
+        fs::write(&path, old).unwrap();
+        let status = load(&path).status;
+        assert!(status.enabled && status.on_needs_input && status.on_done && status.on_failed);
+        assert!(!status.on_bell && status.suppress_when_focused);
+        assert_eq!(
+            (status.hooks, status.sound, status.volume, status.badge),
+            (false, false, 30, false)
+        );
+        let json = serde_json::to_value(&status).unwrap();
+        for key in [
+            "enabled",
+            "onNeedsInput",
+            "onDone",
+            "onFailed",
+            "onBell",
+            "suppressWhenFocused",
+        ] {
+            assert!(json[key].is_boolean(), "{key}");
+        }
+    }
+
+    #[test]
     fn missing_or_broken_file_loads_default() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(FILE_NAME);

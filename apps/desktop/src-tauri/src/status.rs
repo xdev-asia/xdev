@@ -191,9 +191,18 @@ pub fn status_settings_get(app: AppHandle) -> StatusSettings {
 #[tauri::command(async)]
 pub fn status_settings_put(
     app: AppHandle,
+    state: State<'_, AppState>,
     settings: StatusSettings,
 ) -> Result<StatusSettings, CmdError> {
-    put(&file_of(&app)?, settings).map_err(io_error)
+    let stored = put(&file_of(&app)?, settings).map_err(io_error)?;
+    // The marker `xdev agent-hook` checks, so switching hooks off also
+    // quiets panes launched while they were on. Best effort.
+    if let Some(local) = state.local_dir.as_deref()
+        && let Err(e) = xdev_agent::set_hooks_off(local, !stored.hooks)
+    {
+        eprintln!("hooks marker: {e}");
+    }
+    Ok(stored)
 }
 
 /// Best effort: a refused or failed notification is only logged.
