@@ -109,6 +109,7 @@ enum Command {
     AgentHook {
         event: agent_hook::Event,
         /// Whatever the CLI appends; codex `notify` passes its JSON last.
+        /// `attention --message <text>` shows the text with the attention.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         rest: Vec<String>,
     },
