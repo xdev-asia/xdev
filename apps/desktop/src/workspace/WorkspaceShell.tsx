@@ -2,11 +2,12 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import pkg from "../../package.json";
 import logo from "../../../../docs/brand/xdev-icon-512.png";
-import { toApiError, type Api, type ApiError, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "../api";
+import { toApiError, type Api, type ApiError, type Check, type PrView, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "../api";
 import { DocsApp } from "../DocsApp";
 import type { KitTab } from "../components/AgentKitView";
 import { LanguageSwitch } from "../components/LanguageSwitch";
 import { useI18n } from "../i18n";
+import { ChecksPanel } from "./ChecksPanel";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
@@ -42,7 +43,7 @@ function storeSelected(path: string): void {
 }
 
 type View = "workspace" | "docs";
-type PanelTab = "files" | "changes";
+type PanelTab = "files" | "changes" | "checks";
 type Creating = { repoId: string; busy: boolean; error?: ApiError["code"] };
 type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"] };
 
@@ -125,6 +126,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const signature = () => (sessions ? paths.map((p) => `${sessions.dot(p) ?? ""}:${working(sessions, p)}:${target(p)?.id ?? ""}`).join("|") : "");
   useSyncExternalStore(subscribe, signature, signature);
   useSyncExternalStore(stats.subscribe, stats.snapshot, stats.snapshot);
+  useSyncExternalStore(useCallback((fn: () => void) => prs.subscribe(fn), [prs]), () => prs.snapshot(), () => prs.snapshot());
 
   const dots: Record<string, TabStatus | null> = Object.fromEntries(paths.map((p) => [p, sessions?.dot(p) ?? null]));
   const activity: Record<string, number | null> = Object.fromEntries(paths.map((p) => [p, sessions?.lastActivity(p) ?? null]));
@@ -142,6 +144,22 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const mounted = seen.filter((p) => paths.includes(p));
 
   const count = current && changeCount?.worktree === current.path ? changeCount.count : 0;
+  // Failed and cancelled runs both count, as in `checksSummary`.
+  const failing = (current ? prs.get(current.path)?.checks ?? [] : []).filter((c) => c.bucket === "fail" || c.bucket === "cancel").length;
+  const prMap: Record<string, { pr: PrView | null; checks: Check[] | null }> = {};
+  for (const p of paths) {
+    const entry = prs.get(p);
+    if (entry) prMap[p] = { pr: entry.pr, checks: entry.checks };
+  }
+  const currentPath = current?.path;
+  // The pull request of the worktree in front, read when it is selected and when the window returns.
+  useEffect(() => {
+    if (!currentPath) return;
+    void prs.load(currentPath);
+    const again = () => void prs.load(currentPath);
+    window.addEventListener("focus", again);
+    return () => window.removeEventListener("focus", again);
+  }, [prs, currentPath]);
   const markedChanges = current && changeList?.worktree === current.path ? changeList.list : NO_CHANGES;
 
   function openFile(worktree: string, file: string): void {
@@ -341,6 +359,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             stats={stats.all()}
             activity={activity}
             profiles={profiles}
+            prs={prMap}
             now={Date.now()}
             notice={notice}
             onSelect={(wt) => {
@@ -413,6 +432,25 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   </span>
                 )}
               </button>
+              <button
+                type="button"
+                role="tab"
+                className="ws-panel-tab"
+                aria-selected={panelTab === "checks"}
+                aria-label={failing > 0 ? t("checks.tabFailing", { count: failing }) : t("checks.tab")}
+                title={t("checks.tab")}
+                onClick={() => setPanelTab("checks")}
+              >
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="m8.5 12.5 2.5 2.5 4.5-5" />
+                </svg>
+                {failing > 0 && (
+                  <span className="ws-panel-badge" data-tone="danger" aria-hidden="true">
+                    {failing}
+                  </span>
+                )}
+              </button>
             </div>
             {/* Both panels stay mounted, so the change list and the open folders survive a tab switch. */}
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "files"}>
@@ -441,6 +479,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   onChanges={(list) => setChangeList({ worktree: current.path, list })}
                   onFixWithAgent={(output) => void fixWithAgent(output)}
                 />
+              ) : (
+                <p className="ws-empty">{t("workspace.panel.empty")}</p>
+              )}
+            </div>
+            <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "checks"}>
+              {current ? (
+                <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} visible={panelTab === "checks"} />
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
               )}
