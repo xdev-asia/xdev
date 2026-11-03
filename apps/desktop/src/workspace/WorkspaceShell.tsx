@@ -385,6 +385,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     focusTerminal(wt.path);
     return true;
   }
+  // Keys that work in every view; the worktree keys below need the workspace.
+  useKeymap({
+    "sessions.open": () => {
+      show("workspace");
+      openSessionsPanel(null);
+    },
+  });
   useKeymap(
     {
       "worktree.next": () => worktreeKey({ step: 1 }),

@@ -100,6 +100,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("search.open", "app", ["Mod+K"]),
   def("settings.open", "app", ["Mod+,"]),
   def("settings.shortcuts", "app", []),
+  def("sessions.open", "app", []),
   def("quickCommands.open", "app", []),
 ];
 

@@ -22,6 +22,7 @@ import { WorkspaceShell } from "./WorkspaceShell";
 import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeList } from "./WorktreeList";
 import { WorktreeTabs } from "./WorktreeTabs";
+import { SessionsSidebar } from "@/agentSessions/SessionsSidebar";
 
 // Hooks are stubbed only while the shell itself is called; children rendered to markup use React's own.
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -52,7 +53,8 @@ vi.mock("@/palette/useJumpKey", () => ({ useJumpKey: (fn: () => void) => { jump.
 const keymap = vi.hoisted(() => ({ handlers: {} as Record<string, () => boolean | void>, when: (() => true) as () => boolean }));
 vi.mock("@/keys/keymap", async (original) => ({
   ...await original<typeof import("@/keys/keymap")>(),
-  useKeymap: (handlers: Record<string, () => boolean | void>, opts?: { when?: () => boolean }) => { keymap.handlers = handlers; keymap.when = opts?.when ?? (() => true); },
+  // A shell calls useKeymap more than once; the handlers add up, and `when` is the last call's.
+  useKeymap: (handlers: Record<string, () => boolean | void>, opts?: { when?: () => boolean }) => { keymap.handlers = { ...keymap.handlers, ...handlers }; keymap.when = opts?.when ?? (() => true); },
 }));
 // xterm needs a real canvas; the terminals are tested on their own.
 vi.mock("@/terminal/Terminal", () => ({ Terminal: () => null }));
@@ -751,4 +753,19 @@ it("worktree keys do nothing with no worktrees, and only while the workspace vie
   view.nav(en("workspace.nav.docs")).props.onClick();
   view.draw();
   expect(keymap.when()).toBe(false);
+});
+
+// ---- Global keys ----
+
+it("sessions.open shows the sessions view with the search box asked for focus", async () => {
+  const view = await harness();
+  view.nav(en("workspace.nav.docs")).props.onClick();
+  view.draw();
+  const before = view.of(SessionsSidebar)[0]?.props.focusSeq;
+  expect(keymap.handlers["sessions.open"]()).not.toBe(false);
+  view.draw();
+  const side = view.of(SessionsSidebar)[0];
+  expect(side.props.visible).toBe(true);
+  expect(side.props.focusSeq).toBeGreaterThan(before ?? 0);
+  expect(keymap.when()).toBe(true);
 });
