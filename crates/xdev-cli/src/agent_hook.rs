@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clap::ValueEnum;
 use serde_json::Value;
-use xdev_agent::{HOOKS_DIR, HookDetail, HookEvent, append_hook_detail, valid_pty_id};
+use xdev_agent::{HOOKS_DIR, HookDetail, HookEvent, append_hook_detail, hooks_off, valid_pty_id};
 
 /// The events a hook reports, as written on the command line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -59,11 +59,16 @@ pub fn run(event: Event, rest: &[String]) {
 }
 
 fn write(event: Event, rest: &[String]) -> Result<(), String> {
+    let local = xdev_core::local_dir().ok_or("no local data folder")?;
+    // Switched off (`xdev agent hooks off`, or the app's setting): a silent
+    // no-op, even for a pane launched while the hooks were on.
+    if hooks_off(&local) {
+        return Ok(());
+    }
     let id = std::env::var("XDEV_PTY_ID").map_err(|_| "XDEV_PTY_ID is not set".to_owned())?;
     if !valid_pty_id(&id) {
         return Err("XDEV_PTY_ID is not a pane id".to_owned());
     }
-    let local = xdev_core::local_dir().ok_or("no local data folder")?;
     let notify = rest.last().and_then(|arg| json_object(arg.as_bytes()));
     let input = match &notify {
         Some(_) => None,

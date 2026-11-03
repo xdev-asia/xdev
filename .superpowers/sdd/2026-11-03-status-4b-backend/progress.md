@@ -72,3 +72,21 @@ Worktree `wt/status-4b-backend`, branch `feat/status-4b-backend` from `feat/stat
   refresh that replaces auth.json by rename leaves the fresh token in `auth.json.unlinked-*` and relinks to
   the (possibly stale) real file [Unverified whether codex does that]; trust negative control (CX6) still open.
 - New deps (already in Cargo.lock): sha2 0.10.9, toml 1.1.8, winapi-util 0.1.11 (Windows only).
+
+## Task 4: complete (C8 `.off` marker + `xdev agent hooks`)
+- `xdev_agent::{HOOKS_OFF, hooks_off, set_hooks_off}`: marker `<local_dir>/hooks/.off` (empty file). `xdev agent-hook`
+  checks it first on every call (before XDEV_PTY_ID): present → silent no-op, nothing on stdout or stderr, exit 0.
+- `xdev agent hooks status|on|off [--json]`: prints `on`/`setting`/`marker` (tab lines, each `on|off`; `marker on` =
+  the marker is there) or `{"on","setting","marker"}`. `on` = setting && !marker. `on`: setting, then marker removed;
+  `off`: marker first (running panes quiet at once), then the setting.
+- Settings file: `xdev_core::config_dir()/settings.json` = `XDEV_DATA_DIR` if set, else `dirs::config_dir()/<APP_ID>`
+  (= tauri `app_config_dir`: Roaming on Windows, Application Support on macOS, `~/.config` on Linux). Only
+  `status.hooks` is touched; every other field is kept as JSON (`serde_json::Value`), written via tmp + rename.
+  Missing file → `{}`; not a JSON object → `error: bad_settings`, exit 1, file untouched (a partial `off` still
+  leaves the marker in place, which is the safe half).
+- Deviation (beyond the CLI): the desktop's `status_settings_put` also syncs the marker to `!status.hooks`
+  (best effort, logged), so turning hooks off in the app quiets panes already running too. Not at startup.
+- Decision: removing the marker is `fs::remove_file` in product code — it is an empty xDev-owned flag, never a
+  person's file; tests only ever touch temp dirs.
+- Caveat: with `XDEV_DATA_DIR` set, the CLI uses `<data_dir>/settings.json`, which the desktop does not (it always
+  uses `app_config_dir`); on Windows/macOS without the env var they are the same file.
