@@ -1,9 +1,12 @@
 import { tokensCss } from "@xdev/ui";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { api } from "./api";
 import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { I18nProvider } from "./i18n";
+import { loadStatusSettings } from "./status/statusSettings";
+import { loadTerminalSettings, startSettingsSync } from "./terminal/terminalSettings";
 import "./styles/base.css";
 import "./styles/welcome.css";
 import "./styles/shell.css";
@@ -22,6 +25,11 @@ import "./styles/settings.css";
 const style = document.createElement("style");
 style.textContent = tokensCss();
 document.head.prepend(style);
+
+// Shared copies load before the first pane; `settings://changed` keeps them current after that.
+void loadStatusSettings(api);
+void loadTerminalSettings(api);
+startSettingsSync(api);
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
