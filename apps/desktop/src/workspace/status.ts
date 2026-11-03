@@ -53,6 +53,8 @@ export const ECHO_MS = 250;
 export const QUIET_MS = 3000;
 /** After Escape or Ctrl-C on a hooked working pane, how long a hook has to say otherwise. */
 export const INTERRUPT_MS = 500;
+/** A finished turn is news only once the pane stayed done this long (R18). */
+export const DONE_QUIET_MS = 1500;
 /** A working hooked pane with no event for this long is stale: it rests as idle, unannounced. */
 export const STALE_MS = 30 * 60 * 1000;
 
@@ -122,8 +124,9 @@ function raw(s: StatusState, e: StatusEvent): StatusState {
         case "turn-failed":
           return { ...hooked, status: "failed", cancelled: false };
         case "resume":
-          // A tool ran or a question was answered: the turn goes on. A late one after a stop, or after
-          // the turn ended, says nothing new.
+          // A tool ran or a question was answered: the turn goes on, also while a done still settles
+          // (R18). A late one after a stop, a failure or a settled done says nothing new.
+          if (s.status === "done" && e.at - s.lastEvent < DONE_QUIET_MS) return { ...hooked, cancelled: false, status: "working" };
           if (waiting(s.status) && s.status !== "needs-you") return hooked;
           if (s.cancelled && s.status === "idle") return hooked;
           return { ...hooked, cancelled: false, status: "working" };
