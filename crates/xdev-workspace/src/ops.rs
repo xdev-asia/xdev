@@ -328,7 +328,7 @@ fn view_of(entry: &WorktreeEntry, short_name: &str, meta: Option<&WorktreeMeta>)
 }
 
 /// A folder name without its `<short_name>-` prefix.
-fn strip_prefix(folder: &str, short_name: &str) -> String {
+pub(crate) fn strip_prefix(folder: &str, short_name: &str) -> String {
     match folder.strip_prefix(&format!("{short_name}-")) {
         Some(rest) if !rest.is_empty() => rest.to_owned(),
         _ => folder.to_owned(),
