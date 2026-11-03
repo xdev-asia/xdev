@@ -4,6 +4,7 @@
 mod commit;
 mod history;
 mod range;
+mod remote;
 mod run;
 mod since;
 mod status;
@@ -12,6 +13,7 @@ mod worktree;
 use std::path::{Path, PathBuf};
 
 pub use history::Commit;
+pub use remote::{BaseRange, Upstream};
 pub use worktree::{NumStat, WorktreeEntry};
 
 /// The UI translates `code()`, never the message.
@@ -25,6 +27,16 @@ pub enum GitError {
     Identity,
     #[error("bad commit id: {0}")]
     BadId(String),
+    #[error("the repo has no remote to use")]
+    NoRemote,
+    #[error("the branch has no upstream")]
+    NoUpstream,
+    #[error("HEAD is detached")]
+    Detached,
+    #[error("push rejected: {0}")]
+    Rejected(String),
+    #[error("local and remote history have diverged")]
+    Diverged,
     #[error("timeout")]
     Timeout,
     #[error("git {args} failed ({status:?}): {stderr}")]
@@ -43,6 +55,11 @@ impl GitError {
             GitError::NoGit => "no_git",
             GitError::NoRepo => "no_repo",
             GitError::Identity => "git_identity",
+            GitError::NoRemote => "no_remote",
+            GitError::NoUpstream => "no_upstream",
+            GitError::Detached => "detached",
+            GitError::Rejected(_) => "push_rejected",
+            GitError::Diverged => "pull_diverged",
             GitError::BadId(_) | GitError::Timeout | GitError::Failed { .. } => "git",
             GitError::Io(_) => "io",
         }
