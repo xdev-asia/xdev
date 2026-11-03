@@ -63,6 +63,7 @@ describe("mock quick commands", () => {
     await expect(api.repoFileCommandsTrust(path, "stale")).rejects.toMatchObject({ code: "hook_untrusted" });
     expect(await api.repoFileCommandsTrust(path, listed.hash)).toMatchObject({ trusted: true });
     expect(await api.repoFileCommands("/demo/xdev")).toMatchObject({ trusted: true });
+    expect(await createMockApi({}).repoFileCommands(path)).toEqual({ trusted: false, hash: "", commands: [], errors: [] });
     await expect(api.repoFileCommands("/nowhere")).rejects.toMatchObject({ code: "worktree_unknown" });
   });
 });

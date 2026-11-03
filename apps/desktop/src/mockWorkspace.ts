@@ -393,11 +393,11 @@ export function createMockWorkspace(
 
   // Like `repo_file_commands`: listed even when untrusted; none when the file does not parse.
   function commandsOf(repo: RepoView, file: MockRepoFile | undefined): FileCommands {
-    if (file?.parseError !== undefined) return { trusted: true, hash: "", commands: [], errors: [file.parseError] };
+    if (file?.parseError !== undefined) return { trusted: false, hash: "", commands: [], errors: [file.parseError] };
     const commands = structuredClone(file?.commands ?? []);
     const errors = [...(file?.commandErrors ?? [])];
     const hash = commands.length > 0 ? mockHash(JSON.stringify(commands)) : "";
-    return { trusted: hash === "" || trusted.has(`${repo.id}:commands:${hash}`), hash, commands, errors };
+    return { trusted: hash !== "" && trusted.has(`${repo.id}:commands:${hash}`), hash, commands, errors };
   }
 
   function findWorktree(path: string): { repo: RepoView; wt: WorktreeView } | undefined {

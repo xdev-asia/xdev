@@ -8,7 +8,7 @@ import type { FileCommand } from "./FileCommand";
  */
 export type FileCommands = { 
 /**
- * No commands, or this `hash` is in the trust store.
+ * There are commands and this `hash` is in the trust store.
  */
 trusted: boolean, 
 /**

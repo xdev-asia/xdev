@@ -8,20 +8,23 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use xdev_agent::Profiles;
-use xdev_workspace::{Registry, path_key};
+use xdev_workspace::{
+    COMMAND_LABEL_MAX, COMMAND_PROMPT_MAX, COMMAND_TEXT_MAX, Registry, RepoAction, RepoCommands,
+    path_key, repo_commands, trust_commands,
+};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError};
 use crate::settings::SettingsSection;
 use crate::settings_store;
-use crate::workspace::bad_arg;
+use crate::workspace::{WorkspaceLock, bad_arg, clock, lock_guard};
 
-/// The longest label, in characters once trimmed.
-pub const LABEL_MAX: usize = 80;
+/// The longest label, in characters once trimmed; the same for `xdev.toml`.
+pub const LABEL_MAX: usize = COMMAND_LABEL_MAX;
 /// The longest terminal command, in characters once its end is trimmed.
-pub const COMMAND_MAX: usize = 4000;
+pub const COMMAND_MAX: usize = COMMAND_TEXT_MAX;
 /// The longest agent prompt, in UTF-8 bytes.
-pub const PROMPT_MAX: usize = 256 * 1024;
+pub const PROMPT_MAX: usize = COMMAND_PROMPT_MAX;
 /// All agent prompts together, in UTF-8 bytes, so `settings.json` stays
 /// small enough to read on every change.
 pub const PROMPTS_TOTAL_MAX: usize = 2 * 1024 * 1024;
@@ -91,7 +94,7 @@ pub struct FileCommand {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct FileCommands {
-    /// No commands, or this `hash` is in the trust store.
+    /// There are commands and this `hash` is in the trust store.
     pub trusted: bool,
     /// Blake3 hex of the `[[commands]]` part; empty when there is none.
     pub hash: String,
@@ -280,14 +283,48 @@ pub fn quick_commands_recent(app: AppHandle) -> Result<Vec<String>, CmdError> {
     Ok(Vec::new())
 }
 
+/// The file's commands as the UI runs them: a prompt without `agent` goes
+/// to the default agent.
+fn file_commands(found: RepoCommands, default_agent: &str) -> FileCommands {
+    FileCommands {
+        trusted: found.trusted,
+        hash: found.hash,
+        commands: found
+            .commands
+            .into_iter()
+            .map(|c| FileCommand {
+                label: c.label,
+                action: match c.action {
+                    RepoAction::Run { command, enter } => QuickAction::Terminal {
+                        command,
+                        append_enter: enter,
+                    },
+                    RepoAction::Prompt { agent, prompt } => QuickAction::Agent {
+                        profile: agent.unwrap_or_else(|| default_agent.to_owned()),
+                        prompt,
+                    },
+                },
+            })
+            .collect(),
+        errors: found.errors,
+    }
+}
+
+/// The default agent's id; the built-in one when the profiles do not read.
+fn default_agent(data: &Path) -> String {
+    Profiles::load(data).unwrap_or_default().default_agent
+}
+
 /// The `[[commands]]` of the worktree's `xdev.toml`. Read only.
 #[tauri::command(async)]
 pub fn repo_file_commands(
     state: State<'_, AppState>,
     worktree: PathBuf,
 ) -> Result<FileCommands, CmdError> {
-    let _ = (state, worktree);
-    Ok(FileCommands::default())
+    let data = data_dir(&state)?;
+    let reg = Registry::load(data)?;
+    let found = repo_commands(&reg, data, &worktree)?;
+    Ok(file_commands(found, &default_agent(data)))
 }
 
 /// Trusts the worktree's `[[commands]]` whose hash is `hash`;
@@ -295,11 +332,17 @@ pub fn repo_file_commands(
 #[tauri::command(async)]
 pub fn repo_file_commands_trust(
     state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
     worktree: PathBuf,
     hash: String,
 ) -> Result<FileCommands, CmdError> {
-    let _ = (state, worktree, hash);
-    Err(not_yet())
+    let data = data_dir(&state)?;
+    let (now_ms, _) = clock();
+    // The same writer lock as the scripts' trust: both share one file.
+    let _guard = lock_guard(&lock);
+    let reg = Registry::load(data)?;
+    let found = trust_commands(&reg, data, &worktree, &hash, now_ms)?;
+    Ok(file_commands(found, &default_agent(data)))
 }
 
 #[cfg(test)]
@@ -564,5 +607,59 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.code, "not_found");
         assert_eq!(store.read(), before);
+    }
+
+    #[test]
+    fn file_commands_map_to_actions_with_the_default_agent() {
+        use xdev_workspace::RepoCommand;
+        let found = RepoCommands {
+            trusted: true,
+            hash: "h".into(),
+            commands: vec![
+                RepoCommand {
+                    label: "Dev".into(),
+                    action: RepoAction::Run {
+                        command: "pnpm dev".into(),
+                        enter: false,
+                    },
+                },
+                RepoCommand {
+                    label: "Review".into(),
+                    action: RepoAction::Prompt {
+                        agent: None,
+                        prompt: "Review".into(),
+                    },
+                },
+                RepoCommand {
+                    label: "Ask".into(),
+                    action: RepoAction::Prompt {
+                        agent: Some("codex".into()),
+                        prompt: "Ask".into(),
+                    },
+                },
+            ],
+            errors: vec!["commands[3]: needs a label".into()],
+        };
+        let out = file_commands(found, "claude");
+        assert!(out.trusted);
+        assert_eq!(out.hash, "h");
+        assert_eq!(out.errors, ["commands[3]: needs a label"]);
+        assert_eq!(
+            out.commands.iter().map(|c| &c.action).collect::<Vec<_>>(),
+            [
+                &QuickAction::Terminal {
+                    command: "pnpm dev".into(),
+                    append_enter: false
+                },
+                &QuickAction::Agent {
+                    profile: "claude".into(),
+                    prompt: "Review".into()
+                },
+                &QuickAction::Agent {
+                    profile: "codex".into(),
+                    prompt: "Ask".into()
+                },
+            ]
+        );
     }
 }
