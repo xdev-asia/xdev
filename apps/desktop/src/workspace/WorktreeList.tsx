@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
 import type { ApiError, Check, PrView, PtyProfile, RepoView, WorktreeStat, WorktreeView } from "@/api";
 import { useI18n } from "@/i18n";
 import { profileLetter, profileName, useProfiles } from "@/agents/profileStore";
 import { ago } from "./ago";
-import { groupWorktrees, type Group } from "./groups";
+import { groupWorktrees, orderedWorktrees, type Group } from "./groups";
 import { checksSummary } from "./ship";
 import type { TabStatus } from "./status";
 import { StatusGlyph } from "./StatusGlyph";
@@ -19,6 +19,8 @@ interface Entry {
 }
 
 export interface WorktreeListProps {
+  /** Told the paths in the order they are drawn, collapsed groups left out; the worktree keys walk it. */
+  onOrder?(paths: string[]): void;
   /** Null while the first list is loading. */
   repos: RepoView[] | null;
   selected: string | null;
@@ -217,6 +219,9 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const many = (props.repos?.length ?? 0) > 1;
   const sections = groupWorktrees(entries, (path) => props.dots[path] ?? null);
   const gone = (props.repos ?? []).filter((repo) => repo.missing);
+  const order = orderedWorktrees(sections, collapsed);
+  const { onOrder } = props;
+  useEffect(() => onOrder?.(order), [order.join(",")]);
 
   const section = ({ group, items }: { group: Group; items: Entry[] }) => {
     const open = !collapsed.includes(group);

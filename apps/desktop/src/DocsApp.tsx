@@ -33,6 +33,7 @@ import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { SquadsView } from "./components/SquadsView";
 import { TasksView } from "./components/TasksView";
+import { docsShown } from "./keys/docsShown";
 import { TerminalView } from "./terminal/TerminalView";
 import { isDirty } from "./doc/docState";
 import { agentsEditable, parseFrontmatter, setAgents, setVerified } from "./doc/frontmatter";
@@ -288,6 +289,8 @@ function VaultView(props: { vault: Vault; kit?: KitHost; onChangeFolder(): Promi
         searchInput.current?.focus();
         searchInput.current?.select();
       } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "n") {
+        // The workspace keeps this view mounted while hidden; Ctrl+N is for the docs view only.
+        if (!docsShown()) return;
         e.preventDefault();
         startNewDoc();
       }

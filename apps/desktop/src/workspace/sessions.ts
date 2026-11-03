@@ -1,5 +1,6 @@
 import type { Api, HookDetail, PtyInfo, PtyProfile } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
+import { addTab, leaves, removeTab, replaceTab, single, type PaneLayout } from "./paneTree";
 import { DONE_QUIET_MS, INTERRUPT_MS, NO_CAPS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type Caps, type StatusEvent, type StatusState, type TabStatus } from "./status";
 
 /** The CLI behind a tab, for its hook caps and title rules; null for custom profiles and shells. */
@@ -39,12 +40,6 @@ export interface Tab {
   client: PtyClient;
 }
 
-/**
- * Two terminal tabs of a worktree shown together: the active tab and `second`, side by side
- * (`right`) or stacked (`down`). `null` is no split. One level only.
- */
-export type Split = { dir: "right" | "down"; second: string } | null;
-
 /** How long removing a worktree waits for its terminals to report their exit. */
 export const EXIT_WAIT_MS = 5000;
 const TICK_MS = 1000;
@@ -77,7 +72,7 @@ export function cliOf(profileId: PtyProfile): TabCli {
 export class Sessions {
   private readonly entries = new Map<string, Entry>();
   private readonly cache = new Map<string, Tab[]>();
-  private readonly splits = new Map<string, NonNullable<Split>>();
+  private readonly layouts = new Map<string, PaneLayout>();
   private readonly listeners = new Set<() => void>();
   private readonly waiting = new Map<string, () => void>();
   // Tabs being closed with their worktree: their exits are no news.
@@ -113,6 +108,8 @@ export class Sessions {
     const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli);
     this.entries.set(entry.tab.id, entry);
     this.cache.delete(worktree);
+    const layout = this.layouts.get(worktree);
+    this.layouts.set(worktree, layout ? addTab(layout, entry.tab.id) : single(entry.tab.id));
     this.emit();
     return entry.tab;
   }
@@ -132,9 +129,9 @@ export class Sessions {
     this.entries.clear();
     for (const [key, e] of kept) this.entries.set(key, e);
     this.cache.delete(old.tab.worktree);
-    // The new tab takes the old one's place in a split too.
-    const split = this.splits.get(old.tab.worktree);
-    if (split?.second === id) this.splits.set(old.tab.worktree, { ...split, second: next.tab.id });
+    // The new tab takes the old one's place in the layout.
+    const layout = this.layouts.get(old.tab.worktree);
+    if (layout) this.layouts.set(old.tab.worktree, replaceTab(layout, id, next.tab.id));
     this.sync();
     this.emit();
     void old.tab.client.dispose();
@@ -180,16 +177,29 @@ export class Sessions {
     return tabs;
   }
 
-  /** The split of a worktree's terminals; the same object until it changes. */
-  split(worktree: string): Split {
-    return this.splits.get(worktree) ?? null;
+  /** The pane layout of a worktree's tabs; the same object until it changes. `null` when it has none. */
+  layout(worktree: string): PaneLayout | null {
+    return this.layouts.get(worktree) ?? null;
   }
 
-  /** Sets or clears a worktree's split. A `second` that is not one of its tabs clears it. */
-  setSplit(worktree: string, split: Split): void {
-    if (split && this.tabs(worktree).some((t) => t.id === split.second)) this.splits.set(worktree, split);
-    else if (!this.splits.delete(worktree)) return;
+  /** Sets or clears a worktree's layout. Tell nobody when nothing changed. */
+  setLayout(worktree: string, next: PaneLayout | null): void {
+    const before = this.layouts.get(worktree) ?? null;
+    if (before === next) return;
+    if (next) this.layouts.set(worktree, next);
+    else this.layouts.delete(worktree);
     this.emit();
+  }
+
+  /**
+   * The terminals on screen in a worktree: the active tab of each pane, or of the expanded pane only.
+   * Ids that are not terminals (the review tab) are left out.
+   */
+  visible(worktree: string): string[] {
+    const layout = this.layouts.get(worktree);
+    if (!layout) return [];
+    const shown = leaves(layout).filter((n) => layout.expanded === null || n.id === layout.expanded);
+    return shown.flatMap((n) => (n.kind === "leaf" && this.entries.has(n.active) ? [n.active] : []));
   }
 
   /** Every worktree that has a tab, in the order its first tab opened. */
@@ -290,7 +300,7 @@ export class Sessions {
 
   /**
    * The panes the person looks at now (window focused, workspace shown, the selected worktree's
-   * front tab and its split partner). Each newly seen tab loses `unread`, a `done` one turns
+   * active tab of every pane). Each newly seen tab loses `unread`, a `done` one turns
    * idle, and its worktree's hand mark goes.
    */
   setSeen(tabIds: string[]): void {
@@ -378,7 +388,7 @@ export class Sessions {
     const entries = [...this.entries.values()];
     this.entries.clear();
     this.cache.clear();
-    this.splits.clear();
+    this.layouts.clear();
     for (const e of entries) void e.tab.client.dispose();
     for (const off of this.unlisten) void off.then((stop) => stop()).catch(() => {});
   }
@@ -504,9 +514,12 @@ export class Sessions {
       this.clear(this.stale, e.tab.id);
       this.entries.delete(e.tab.id);
       this.cache.delete(e.tab.worktree);
-      // Closing the second tab of a split unsplits; so does leaving fewer than two tabs.
-      const split = this.splits.get(e.tab.worktree);
-      if (split && (split.second === e.tab.id || this.tabs(e.tab.worktree).length < 2)) this.splits.delete(e.tab.worktree);
+      const layout = this.layouts.get(e.tab.worktree);
+      if (layout) {
+        const next = removeTab(layout, e.tab.id);
+        if (next) this.layouts.set(e.tab.worktree, next);
+        else this.layouts.delete(e.tab.worktree);
+      }
     }
     this.sync();
     this.emit();
