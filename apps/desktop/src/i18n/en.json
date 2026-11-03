@@ -535,6 +535,8 @@
   "workspace.panel.empty": "The changes of the selected worktree show here.",
   "workspace.tabs.label": "Open tabs",
   "workspace.tabs.new": "New tab",
+  "workspace.tabs.split.right": "Split right",
+  "workspace.tabs.split.down": "Split down",
   "workspace.tabs.close": "Close {name}",
   "workspace.tabs.empty": "Nothing runs in this worktree yet. Start a shell or an agent here.",
   "workspace.tabs.again": "Start again",

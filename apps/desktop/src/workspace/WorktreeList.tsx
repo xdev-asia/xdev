@@ -2,12 +2,10 @@ import { useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
 import type { ApiError, PtyProfile, RepoView, WorktreeStat, WorktreeView } from "../api";
 import { useI18n } from "../i18n";
+import { AGENT_LETTER } from "./AgentIcon";
 import { ago } from "./ago";
 import { groupWorktrees, type Group } from "./groups";
 import type { TabStatus } from "./status";
-
-/** The letter each agent profile shows on its chip. */
-const CHIP: Record<PtyProfile, string> = { shell: "S", claude: "C", codex: "X" };
 
 type T = ReturnType<typeof useI18n>["t"];
 
@@ -128,7 +126,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
             <span className="ws-wt-meta">
               {agents.map((p) => (
                 <span key={p} className="ws-chip" data-profile={p} title={t(`terminal.profile.${p}`)}>
-                  {CHIP[p]}
+                  {AGENT_LETTER[p]}
                 </span>
               ))}
               <span className="ws-wt-spacer" />

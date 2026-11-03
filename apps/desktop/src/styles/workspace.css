@@ -376,7 +376,7 @@
 
 .ws-wt-main[aria-current="true"] {
   background: var(--bg-3);
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 /* Border-box, so the padding that clears the menu button stays inside the row. */
@@ -710,9 +710,32 @@
   white-space: nowrap;
 }
 
-.ws-tab-icon {
-  font-size: 11px;
+/* The letter mark of an agent profile, on that profile's token color. */
+.ws-agent {
+  --agent-size: 16px;
+
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: var(--agent-size);
+  height: var(--agent-size);
+  border-radius: var(--radius-s);
+  background: var(--bg-3);
   color: var(--text-2);
+  font-family: var(--x-font-mono);
+  font-size: calc(var(--agent-size) * 0.62);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.ws-agent[data-profile="claude"] {
+  background: var(--orange-bg);
+  color: var(--orange);
+}
+
+.ws-agent[data-profile="codex"] {
+  background: var(--signal-bg);
+  color: var(--signal);
 }
 
 .ws-tab-glyph {
@@ -748,6 +771,25 @@
   color: var(--text-1);
 }
 
+.ws-tab-tools {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding: 0 4px;
+}
+
+.ws-tab-tools .ws-icon-btn[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ws-tab-tools .ws-icon-btn[aria-pressed="true"] {
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
 .ws-tab-add {
   position: relative;
   display: grid;
@@ -777,6 +819,35 @@
   overflow-wrap: anywhere;
 }
 
+/* The panes of one worktree: one shows, or two when it is split. */
+.ws-panes {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ws-panes:empty {
+  display: none;
+}
+
+.ws-panes[data-split="right"] {
+  flex-direction: row;
+}
+
+.ws-panes[data-split="down"] {
+  flex-direction: column;
+}
+
+/* Hidden panes stay between the two, so the divider goes on every visible pane after the first. */
+.ws-panes[data-split="right"] > .ws-tab-pane:not([hidden]) ~ .ws-tab-pane:not([hidden]) {
+  border-left: 1px solid var(--line);
+}
+
+.ws-panes[data-split="down"] > .ws-tab-pane:not([hidden]) ~ .ws-tab-pane:not([hidden]) {
+  border-top: 1px solid var(--line);
+}
+
 /* The terminal reads its colors from these, so it draws on the terminal background. */
 .ws-tab-pane {
   --x-color-surface: var(--term);
@@ -784,6 +855,7 @@
   display: flex;
   flex: 1;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
 }
 
