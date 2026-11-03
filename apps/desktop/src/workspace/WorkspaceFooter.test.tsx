@@ -39,6 +39,8 @@ it("one meter per account with the busiest window", () => {
   expect(html).toMatch(/role="meter"[^>]*aria-valuenow="7"/);
   expect(html).toContain("42%");
   expect(html).toContain("claude-2");
+  // The meter group is one tab stop, so the footer is in the focus order.
+  expect(html).toMatch(/class="ws-meters"[^>]*tabindex="0"/);
 });
 
 it("meter at 80 % or more uses the warn class; unknown state shows a dash", () => {
