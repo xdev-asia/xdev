@@ -922,5 +922,21 @@
   "workspace.tabs.skip": "skip",
   "workspace.tabs.skipHint": "This agent runs without asking before it acts.",
   "terminal.approve.skip": "This profile runs in skip mode: the agent acts without asking you. This allows one start only; the next start asks again.",
-  "workspace.tabs.restart": "Restart"
+  "workspace.tabs.restart": "Restart",
+  "palette.action.newWorktree": "New worktree",
+  "palette.action.newWorktree.keywords": "create add branch",
+  "palette.action.newAgentTab": "New agent tab",
+  "palette.action.newAgentTab.keywords": "create add open agent ai",
+  "palette.action.newShellTab": "New terminal tab",
+  "palette.action.newShellTab.keywords": "create add open shell console",
+  "palette.action.addRepo": "Add repo",
+  "palette.action.addRepo.keywords": "open clone project folder",
+  "palette.action.openSettings": "Open settings",
+  "palette.action.openSettings.keywords": "preferences options config",
+  "palette.action.searchDocs": "Search docs",
+  "palette.action.searchDocs.keywords": "find files commands",
+  "palette.action.toggleSidebar": "Toggle sidebar",
+  "palette.action.toggleSidebar.keywords": "hide show panel",
+  "palette.action.showDocs": "Show docs",
+  "palette.action.showDocs.keywords": "documentation notes vault"
 }

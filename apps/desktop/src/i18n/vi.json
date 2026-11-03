@@ -922,5 +922,21 @@
   "workspace.tabs.skip": "skip",
   "workspace.tabs.skipHint": "Agent này chạy mà không hỏi trước khi làm.",
   "terminal.approve.skip": "Hồ sơ này chạy ở chế độ skip: agent làm mà không hỏi bạn. Chỉ cho phép lần chạy này; lần sau sẽ hỏi lại.",
-  "workspace.tabs.restart": "Khởi động lại"
+  "workspace.tabs.restart": "Khởi động lại",
+  "palette.action.newWorktree": "Worktree mới",
+  "palette.action.newWorktree.keywords": "tạo thêm nhánh create add branch",
+  "palette.action.newAgentTab": "Tab agent mới",
+  "palette.action.newAgentTab.keywords": "tạo thêm mở agent ai create add open",
+  "palette.action.newShellTab": "Tab terminal mới",
+  "palette.action.newShellTab.keywords": "tạo thêm mở shell console create add open",
+  "palette.action.addRepo": "Thêm repo",
+  "palette.action.addRepo.keywords": "mở dự án thư mục open clone project folder",
+  "palette.action.openSettings": "Mở cài đặt",
+  "palette.action.openSettings.keywords": "tùy chọn cấu hình preferences options config",
+  "palette.action.searchDocs": "Tìm trong tài liệu",
+  "palette.action.searchDocs.keywords": "tìm tệp lệnh find files commands",
+  "palette.action.toggleSidebar": "Bật/tắt thanh bên",
+  "palette.action.toggleSidebar.keywords": "ẩn hiện hide show panel",
+  "palette.action.showDocs": "Mở tài liệu",
+  "palette.action.showDocs.keywords": "ghi chú kho documentation notes vault"
 }
