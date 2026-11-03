@@ -27,6 +27,7 @@ import {
 import { CloseTabsDialog } from "./CloseTabsDialog";
 import { bodyStyle, PaneView, paneRects } from "./PaneView";
 import { cliOf, type Sessions, type Tab, type TabCli } from "./sessions";
+import type { SetupGate } from "./setupGate";
 import { TabStrip, type MenuGroup, type StripItem } from "./TabStrip";
 import { cycleTab, nthTab } from "./tabNav";
 import { titleStatus } from "./titles";
@@ -66,6 +67,8 @@ export function WorktreeTabs(props: {
   onPanes?: (ids: string[]) => void;
   /** A new value puts keyboard focus in the terminal in front. */
   focusSeq?: number;
+  /** Holds agent launches while this worktree's setup tab runs. */
+  gate?: SetupGate;
 }): JSX.Element {
   const { api, sessions, worktree, visible, reveal } = props;
   const { t } = useI18n();
@@ -162,6 +165,13 @@ export function WorktreeTabs(props: {
     const at = sessions.layout(worktree);
     if (pane && at && at.focused !== pane) setLayout(focusPane(at, pane));
     return sessions.open(worktree, profile, null, cliFor(profile));
+  }
+
+  // An agent launch waits for the setup tab when the gate says so; a shell never does.
+  function launchGated(profile: PtyProfile, pane?: string): void {
+    const agent = !profile.startsWith("shell") && !profile.startsWith("xdev:");
+    if (agent && props.gate?.defer(worktree, () => void launch(profile, pane))) return;
+    launch(profile, pane);
   }
 
   // A new pane beside `pane`, with a new terminal in it.
@@ -264,7 +274,7 @@ export function WorktreeTabs(props: {
   const defaultAgent = view?.defaultAgent ?? FALLBACK_AGENTS[0];
   useKeymap(
     {
-      "agent.new": () => void launch(defaultAgent),
+      "agent.new": () => void launchGated(defaultAgent),
       "tab.new": () => newShell(),
       "tab.close": () => requestClose(shown ? [shown] : []),
       "tab.next": () => stepTab(1),
@@ -318,7 +328,7 @@ export function WorktreeTabs(props: {
         onCloseOthers={(id) => {
           for (const other of leaf.tabs) if (other !== id) closeTab(other);
         }}
-        onLaunch={(profile) => launch(profile, leaf.id)}
+        onLaunch={(profile) => launchGated(profile, leaf.id)}
         onSplit={(dir) => defaultShell !== null && splitWith(leaf.id, dir, defaultShell)}
         onSplitTab={(id, dir) => splitTab(leaf.id, id, dir)}
         onRename={(id, name) => sessions.rename(id, name)}
@@ -417,7 +427,7 @@ export function WorktreeTabs(props: {
           <p>{t("workspace.tabs.empty")}</p>
           <div className="ws-launch">
             {[...(defaultShell !== null ? [defaultShell] : []), ...agents].map((p) => (
-              <button key={p} type="button" className="btn-secondary" onClick={() => launch(p)}>
+              <button key={p} type="button" className="btn-secondary" onClick={() => launchGated(p)}>
                 {profileName(view, p, t)}
               </button>
             ))}

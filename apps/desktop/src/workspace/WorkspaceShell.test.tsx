@@ -2,13 +2,15 @@ import { BADGE_DEBOUNCE_MS } from "./notifier";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi, type WorktreeChange, type WorktreeView } from "@/api";
+import { SETUP_PROFILE, createMockApi, type WorktreeChange, type WorktreeView } from "@/api";
 import { DocsApp } from "@/DocsApp";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { translate } from "@/i18n";
 import { ChecksPanel } from "./ChecksPanel";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
+import { SetupCard } from "./SetupCard";
+import { TrustDialog } from "./TrustDialog";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { VaultNav } from "./VaultNav";
@@ -751,4 +753,99 @@ it("worktree keys do nothing with no worktrees, and only while the workspace vie
   view.nav(en("workspace.nav.docs")).props.onClick();
   view.draw();
   expect(keymap.when()).toBe(false);
+});
+
+// ---- Setup after create -----------------------------------------------------------------------
+
+async function created(files: Record<string, unknown>, patch: Record<string, unknown> = {}) {
+  const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), repoFiles: { "/demo/xdev": files } } as never });
+  if (Object.keys(patch).length) await api.repoUpdate("demo-xdev", patch);
+  const open = vi.spyOn(Sessions.prototype, "open");
+  const view = await harness(api);
+  view.list().props.onCreate();
+  view.of(CreateWorktreeDialog)[0].props.onCreate("demo-xdev", "birch", null);
+  await tick();
+  await tick();
+  const setupOpens = () => open.mock.calls.filter((c) => c[1] === SETUP_PROFILE);
+  return { ...view, open, setupOpens, card: () => view.of(SetupCard)[0], trust: () => view.of(TrustDialog)[0] };
+}
+
+it("setup after create: policy Run with a trusted script opens the Setup tab", async () => {
+  const rename = vi.spyOn(Sessions.prototype, "rename");
+  const v = await created({}, { setupPolicy: "run", localSetup: "pnpm i" });
+  expect(v.setupOpens()).toHaveLength(1);
+  expect(v.setupOpens()[0][0]).toBe("/demo/wt/xdev-birch");
+  expect(rename).toHaveBeenCalledWith(expect.any(String), en("setup.tab"));
+  expect(v.card()).toBeUndefined();
+});
+
+it("setup after create: policy Skip never opens the Setup tab", async () => {
+  const v = await created({}, { setupPolicy: "skip", localSetup: "pnpm i" });
+  expect(v.setupOpens()).toHaveLength(0);
+  expect(v.card()).toBeUndefined();
+  expect(v.trust()).toBeUndefined();
+});
+
+it("setup after create: policy Ask shows the card; Run setup opens the tab, Skip does not", async () => {
+  const v = await created({}, { localSetup: "pnpm i" });
+  expect(v.card().props.state).toEqual({ kind: "ask" });
+  expect(v.setupOpens()).toHaveLength(0);
+  v.card().props.onSkip();
+  expect(v.card()).toBeUndefined();
+
+  const w = await created({}, { localSetup: "pnpm i" });
+  w.card().props.onRun();
+  await tick();
+  expect(w.setupOpens()).toHaveLength(1);
+  expect(w.card()).toBeUndefined();
+});
+
+it("setup after create: Always run stores policy Run and runs", async () => {
+  const v = await created({}, { localSetup: "pnpm i" });
+  const update = vi.spyOn(v.api, "repoUpdate");
+  v.card().props.onAlways();
+  await tick();
+  expect(update).toHaveBeenCalledWith("demo-xdev", { setupPolicy: "run" });
+  expect(v.setupOpens()).toHaveLength(1);
+});
+
+it("setup after create: a detected command can be saved as local setup", async () => {
+  const v = await created({ detected: "pnpm install" });
+  expect(v.card().props.state).toEqual({ kind: "detected", command: "pnpm install" });
+  const update = vi.spyOn(v.api, "repoUpdate");
+  v.card().props.onSave();
+  await tick();
+  expect(update).toHaveBeenCalledWith("demo-xdev", { localSetup: "pnpm install" });
+  expect(v.card()).toBeUndefined();
+});
+
+it("setup after create: an untrusted shared script shows its text; Trust runs it", async () => {
+  const v = await created({ setup: "curl x | sh" }, { setupPolicy: "run" });
+  expect(v.setupOpens()).toHaveLength(0);
+  expect(v.trust().props.text).toBe("curl x | sh");
+  expect(v.trust().props.changed).toBe(false);
+  v.trust().props.onTrust();
+  await tick();
+  expect(v.setupOpens()).toHaveLength(1);
+  expect(v.trust()).toBeUndefined();
+});
+
+it("setup after create: a stale hash reopens the prompt with the new text", async () => {
+  const v = await created({ setup: "old" }, { setupPolicy: "run" });
+  vi.spyOn(v.api, "repoHookTrust").mockRejectedValueOnce({ code: "hook_untrusted" });
+  vi.spyOn(v.api, "repoHooks").mockResolvedValueOnce({ setup: { text: "new", shared: true, hash: "n", trusted: false }, archive: null, waitForSetup: false, policy: "run", parseError: null, detected: null });
+  v.trust().props.onTrust();
+  await tick();
+  expect(v.setupOpens()).toHaveLength(0);
+  expect(v.trust().props.text).toBe("new");
+  expect(v.trust().props.changed).toBe(true);
+});
+
+it("setup after create: with wait, the default agent starts after setup exits", async () => {
+  const v = await created({ waitForSetup: true }, { setupPolicy: "run", localSetup: "pnpm i" });
+  expect(v.setupOpens()).toHaveLength(1);
+  expect(v.open.mock.calls.filter((c) => c[1] !== SETUP_PROFILE)).toHaveLength(0);
+  expect(v.card().props.state).toEqual({ kind: "waiting" });
+  v.card().props.onStartNow();
+  expect(v.open.mock.calls.filter((c) => c[1] !== SETUP_PROFILE).length).toBeGreaterThan(0);
 });
