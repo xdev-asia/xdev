@@ -1,4 +1,4 @@
-import type { Api, ApiError, Check, Commit, DirEntry, DirListing, RepoView, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, Check, Commit, DirEntry, DirListing, RepoView, ReviewNote, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 
 type WorkspaceApi = Pick<
   Api,
@@ -32,6 +32,12 @@ type WorkspaceApi = Pick<
   | "worktreeDraftCommit"
   | "worktreeDraftPr"
   | "worktreeListDir"
+  | "worktreeReview"
+  | "worktreeReviewFile"
+  | "worktreeStage"
+  | "worktreeBranches"
+  | "reviewNotes"
+  | "reviewNotesPut"
 >;
 
 export type MockWorkspaceSeed = {
@@ -158,6 +164,29 @@ function folderName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
+const REVIEW_BRANCHES = [
+  { name: "main", remote: false },
+  { name: "develop", remote: false },
+  { name: "origin/main", remote: true },
+];
+
+// The Rust store's checks, so the mock refuses what the real one refuses.
+function firstBadNote(notes: ReviewNote[]): string | null {
+  if (notes.length > 500) return "too many notes";
+  const seen = new Set<string>();
+  for (const n of notes) {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(n.id)) return `bad id ${n.id}`;
+    if (seen.has(n.id)) return `duplicate id ${n.id}`;
+    seen.add(n.id);
+    if (n.startLine < 1 || n.startLine > n.line) return `bad lines in ${n.id}`;
+    const plain = n.file !== "" && !/[\:]/.test(n.file) && !n.file.startsWith("/") && n.file.split("/").every((p) => p !== "" && p !== "." && p !== "..");
+    if (!plain) return `bad file in ${n.id}`;
+    if (n.body.trim() === "" || n.body.length > 20_000) return `bad body in ${n.id}`;
+    if (n.anchor.length > 4_000) return `anchor too long in ${n.id}`;
+  }
+  return null;
+}
+
 const WORDS = ["birch", "cedar", "fir", "maple", "pine", "willow"];
 
 function demoDiff(file: string, kind: WorktreeChange["kind"]): WorktreeFileDiff {
@@ -195,6 +224,8 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
   const checks = new Map<string, Check[]>(Object.entries(structuredClone(seed.checks ?? {})));
   const hooks = new Map<string, string>(Object.entries(seed.hookFailure ?? {}));
   const remotes = new Map<string, Remote>();
+  const stagedFiles = new Map<string, Set<string>>();
+  const notes = new Map<string, ReviewNote[]>();
 
   function remoteOf(path: string): Remote {
     let r = remotes.get(path);
@@ -408,6 +439,59 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
       r.commits.unshift({ id, author: "demo", time: 1_700_000_000 + commits, message: message.trim().split("\n")[0] });
       if (r.tracked) r.ahead += 1;
       return id;
+    },
+    async worktreeReview(path, base) {
+      const found = findWorktree(path);
+      if (!found) return reject("worktree_unknown", path);
+      let ref: { kind: "start" | "ref"; name: string | null; id: string };
+      if (base === null) {
+        ref = { kind: "start", name: null, id: DEMO_START };
+      } else {
+        const name = base.trim();
+        const hex = /^[0-9a-f]{4,40}$/i.test(name);
+        if (name === "" || name.startsWith("-") || !(hex || REVIEW_BRANCHES.some((b) => b.name === name))) return reject("bad_ref", name);
+        ref = { kind: "ref", name, id: hex ? name.toLowerCase().padEnd(40, "0") : DEMO_START };
+      }
+      const pending = changes.get(path) ?? [];
+      const files = pending.map((c) => {
+        const staged = stagedFiles.get(path)?.has(c.path) ?? false;
+        return { path: c.path, kind: c.kind, staged, unstaged: !staged };
+      });
+      return { base: ref, branch: found.wt.branch, baseRef: found.repo.baseRef, files };
+    },
+    async worktreeReviewFile(path, base, file) {
+      const found = findWorktree(path);
+      if (!found) return reject("worktree_unknown", path);
+      if (!/^[0-9a-f]{4,64}$/i.test(base)) return reject("bad_ref", base);
+      const change = changes.get(path)?.find((c) => c.path === file);
+      if (!change) return reject("bad_arg", file);
+      return demoDiff(file, change.kind);
+    },
+    async worktreeStage(path, files, staged) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const pending = changes.get(path) ?? [];
+      for (const f of files) if (!pending.some((c) => c.path === f)) return reject("bad_arg", f);
+      const set = stagedFiles.get(path) ?? new Set<string>();
+      for (const f of files) {
+        if (staged) set.add(f);
+        else set.delete(f);
+      }
+      stagedFiles.set(path, set);
+    },
+    async worktreeBranches(path) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      return structuredClone(REVIEW_BRANCHES);
+    },
+    async reviewNotes(path) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      return structuredClone(notes.get(path) ?? []);
+    },
+    async reviewNotesPut(path, next) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const bad = firstBadNote(next);
+      if (bad !== null) return reject("bad_note", bad);
+      notes.set(path, structuredClone(next));
+      return structuredClone(next);
     },
     async worktreeShip(path) {
       return shipView(path);
