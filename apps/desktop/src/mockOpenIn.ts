@@ -50,7 +50,7 @@ export function createMockOpenIn(emit: SettingsEmit, repoAdd: Api["repoAdd"]): M
     async openInSettingsPut(v) {
       if (v.apps.length > OPEN_IN_LIMITS.apps) return reject("bad_arg", "apps");
       const ids = new Set(v.apps.map((a) => a.id));
-      if (ids.size !== v.apps.length) return reject("bad_arg", "id");
+      if (ids.size !== v.apps.length || v.apps.some((a) => a.id.trim() === "")) return reject("bad_arg", "id");
       for (const app of v.apps) {
         const field = badApp(app);
         if (field) return reject("bad_arg", field);
