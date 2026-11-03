@@ -1,10 +1,16 @@
-import type { Api, ApiError, DirEntry, DirListing, RepoView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, DirEntry, DirListing, RepoView, VaultView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 
 type WorkspaceApi = Pick<
   Api,
   | "workspaceList"
   | "repoAdd"
   | "repoForget"
+  | "repoUpdate"
+  | "worktreeAdopt"
+  | "vaultList"
+  | "vaultAdd"
+  | "vaultForget"
+  | "vaultCreateDocs"
   | "worktreeCreate"
   | "worktreePin"
   | "worktreeRemove"
@@ -19,6 +25,12 @@ export type MockWorkspaceSeed = {
   repos: RepoView[];
   // Pending changes by worktree path.
   changes: Record<string, WorktreeChange[]>;
+  // Worktrees made outside xDev, by repo id; they join `RepoView.found`.
+  found?: Record<string, WorktreeView[]>;
+  // Ids of the repos whose primary checkout has a `docs/` folder.
+  docs?: string[];
+  // Shared vault folders.
+  vaults?: string[];
 };
 
 const DEMO_START = "5555555555555555555555555555555555555555";
@@ -103,6 +115,26 @@ function demoStat(pending: WorktreeChange[]): WorktreeStat {
   return stat;
 }
 
+// R3: 1-40 characters, `[a-z0-9]` first, then `[a-z0-9._-]`.
+const SHORT_NAME = /^[a-z0-9][a-z0-9._-]{0,39}$/;
+
+function trimPath(path: string): string {
+  return path.trim().replace(/[\\/]+$/, "");
+}
+
+function isAbsolute(path: string): boolean {
+  return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
+}
+
+// Whether `path` is `base` or lies under it.
+function within(path: string, base: string): boolean {
+  return path === base || path.startsWith(`${base}/`);
+}
+
+function folderName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path;
+}
+
 const WORDS = ["birch", "cedar", "fir", "maple", "pine", "willow"];
 
 function demoDiff(file: string, kind: WorktreeChange["kind"]): WorktreeFileDiff {
@@ -118,6 +150,21 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
   const repos: RepoView[] = structuredClone(seed.repos);
   const changes = new Map<string, WorktreeChange[]>(Object.entries(structuredClone(seed.changes)));
   let commits = 0;
+  for (const repo of repos) repo.found = structuredClone(seed.found?.[repo.id] ?? repo.found);
+  const docs = new Set(seed.docs ?? []);
+  const shared: string[] = [...(seed.vaults ?? [])];
+
+  function repoVault(repo: RepoView): VaultView {
+    return { id: `repo:${repo.id}`, kind: "repo", path: `${repo.path}/docs`, name: repo.shortName, repoId: repo.id, exists: docs.has(repo.id) };
+  }
+
+  function sharedVault(path: string): VaultView {
+    return { id: `shared:${path}`, kind: "shared", path, name: folderName(path), repoId: null, exists: true };
+  }
+
+  function vaults(): VaultView[] {
+    return [...repos.map(repoVault), ...shared.map(sharedVault)];
+  }
 
   function findWorktree(path: string): { repo: RepoView; wt: WorktreeView } | undefined {
     for (const repo of repos) {
@@ -156,6 +203,58 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
       if (i < 0) return reject("repo_unknown", id);
       for (const wt of repos[i].worktrees) changes.delete(wt.path);
       repos.splice(i, 1);
+    },
+    async repoUpdate(id, patch) {
+      const repo = repos.find((r) => r.id === id);
+      if (!repo) return reject("repo_unknown", id);
+      const { shortName, baseRef, worktreeRoot } = patch;
+      if (shortName !== undefined) {
+        if (!SHORT_NAME.test(shortName)) return reject("bad_name", shortName);
+        if (repos.some((r) => r.id !== id && r.shortName === shortName)) return reject("short_name_taken", shortName);
+      }
+      if (baseRef !== undefined && (baseRef.trim() === "" || /\s|\.\.|^-/.test(baseRef))) return reject("bad_ref", baseRef);
+      if (worktreeRoot !== undefined && (!isAbsolute(worktreeRoot) || within(trimPath(worktreeRoot), repo.path))) {
+        return reject("bad_path", worktreeRoot);
+      }
+      if (shortName !== undefined) repo.shortName = shortName;
+      if (baseRef !== undefined) repo.baseRef = baseRef;
+      if (worktreeRoot !== undefined) repo.worktreeRoot = trimPath(worktreeRoot);
+      return structuredClone(repo);
+    },
+    async worktreeAdopt(path) {
+      if (findWorktree(path)) return reject("worktree_exists", path);
+      for (const repo of repos) {
+        const wt = repo.found.find((w) => w.path === path);
+        if (!wt) continue;
+        repo.found = repo.found.filter((w) => w !== wt);
+        const adopted: WorktreeView = { ...wt, start: wt.head, pinned: false };
+        repo.worktrees.push(adopted);
+        return structuredClone(adopted);
+      }
+      return reject("worktree_unknown", path);
+    },
+    async vaultList() {
+      return vaults();
+    },
+    async vaultAdd(path) {
+      const root = trimPath(path);
+      if (!isAbsolute(root)) return reject("bad_path", path);
+      if (vaults().some((v) => v.path === root)) return reject("vault_exists", root);
+      shared.push(root);
+      return sharedVault(root);
+    },
+    async vaultForget(id) {
+      const i = shared.findIndex((p) => sharedVault(p).id === id);
+      if (i < 0) return reject("vault_unknown", id);
+      shared.splice(i, 1);
+    },
+    async vaultCreateDocs(repoId, file, content) {
+      void content;
+      const repo = repos.find((r) => r.id === repoId);
+      if (!repo) return reject("repo_unknown", repoId);
+      if (/[/\\:]/.test(file) || file.length <= 3 || !file.endsWith(".md")) return reject("bad_path", file);
+      docs.add(repo.id);
+      return repoVault(repo);
     },
     async worktreeCreate(repoId, name, from) {
       const repo = repos.find((r) => r.id === repoId);
