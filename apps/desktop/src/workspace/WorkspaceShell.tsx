@@ -25,6 +25,7 @@ import { ChecksPanel } from "./ChecksPanel";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
+import { AddProjectDialog, parentOf } from "./AddProjectDialog";
 import { RemoveRepoDialog } from "./RemoveRepoDialog";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { removeRepo } from "./removeRepo";
@@ -153,10 +154,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const focusTerminal = (worktree: string) => setTermFocus((f) => ({ worktree, seq: (f?.seq ?? 0) + 1 }));
   // The repo Remove from xDev asks about, and why the last try failed.
   const [forgetting, setForgetting] = useState<{ repo: RepoView; error?: ApiError["code"] } | null>(null);
+  // The Add project dialog (Open folder… or Clone from URL).
+  const [adding, setAdding] = useState(false);
   const [openInApps, setOpenInApps] = useState<OpenInApp[]>([]);
   const [settingsAt, setSettingsAt] = useState<{ section?: string; filter?: string; seq: number }>({ seq: 0 });
   // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
-  const dialogOpen = creating !== null || removing !== null;
+  const dialogOpen = creating !== null || removing !== null || adding;
   useJumpKey(useCallback(() => setJumpOpen((o) => (dialogOpen ? false : !o)), [dialogOpen]));
   // The worktrees in the order the sidebar draws them, which the worktree keys walk.
   const [order, setOrder] = useState<string[]>([]);
@@ -514,7 +517,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     await load();
   }
 
-  async function addRepo(): Promise<void> {
+  function addRepo(): void {
+    setNotice(undefined);
+    setAdding(true);
+  }
+
+  async function addRepoFolder(): Promise<void> {
+    setAdding(false);
     setNotice(undefined);
     const path = await api.pickFolder().catch(() => null);
     if (!path) return;
@@ -525,6 +534,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     } catch (e) {
       setNotice(toApiError(e).code);
     }
+  }
+
+  async function repoCloned(repo: RepoView): Promise<void> {
+    setAdding(false);
+    await load();
+    if (repo.worktrees[0]) select(repo.worktrees[0]);
   }
 
   async function pin(wt: WorktreeView): Promise<void> {
@@ -1157,7 +1172,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           },
           openSettings,
           newWorktree: (name) => startCreate(undefined, name),
-          addRepo: () => void addRepo(),
+          addRepo,
           searchDocs: openSearch,
           toggleSidebar: () => setSidebarOpen((o) => !o),
           showDocs: () => show("docs"),
@@ -1184,6 +1199,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         />
       )}
       <Toasts />
+      {adding && (
+        <AddProjectDialog
+          api={api}
+          startFolder={parentOf(repos?.[repos.length - 1]?.path ?? "")}
+          onOpenFolder={() => void addRepoFolder()}
+          onCloned={(repo) => void repoCloned(repo)}
+          onCancel={() => setAdding(false)}
+        />
+      )}
       {forgetting && (
         <RemoveRepoDialog
           name={forgetting.repo.shortName}
