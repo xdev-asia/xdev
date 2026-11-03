@@ -8,6 +8,7 @@ import {
   neighbour,
   paneOf,
   removeTab,
+  replaceTab,
   resize,
   selectTab,
   single,
@@ -207,5 +208,13 @@ describe("paneTree", () => {
     const l = three();
     expect(paneOf(l, "zzz")).toBeNull();
     expect(paneOf(l, "a")).toBe(leaves(l)[0].id);
+  });
+
+  it("replaceTab swaps in place and keeps the active mark", () => {
+    const l = addTab(three(), "x", paneOf(three(), "a") ?? undefined);
+    const r = replaceTab(l, "b", "b2");
+    expect(paneOf(r, "b2")).toBe(paneOf(l, "b"));
+    expect(paneOf(r, "b")).toBeNull();
+    expect(replaceTab(r, "nope", "z")).toBe(r);
   });
 });
