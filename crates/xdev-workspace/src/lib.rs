@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use xdev_git::GitError;
 
 pub use ops::{
-    RepoView, WorktreeView, add_repo, create_worktree, forget_repo, list, remove_worktree,
-    set_pinned,
+    RepoView, WorktreeView, add_repo, create_worktree, forget_repo, list, path_key,
+    remove_worktree, set_pinned,
 };
 pub use registry::{Registry, RepoEntry, WorktreeMeta, repo_id};
 
