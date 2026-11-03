@@ -42,6 +42,7 @@ import { docFileName, newDocContent } from "./shell/newDoc";
 import { setUpVault } from "./shell/setUpVault";
 import { useQuota } from "./shell/useQuota";
 import { useUpdate } from "./shell/useUpdate";
+import { WorkspaceShell } from "./workspace/WorkspaceShell";
 import logo from "../../../docs/brand/xdev-icon-512.png";
 
 const SEARCH_DEBOUNCE_MS = 150;
@@ -55,7 +56,13 @@ function folderName(path: string): string {
   return path.split(/[/\\]/).filter(Boolean).pop() ?? path;
 }
 
+/** The whole app: the workspace shell, which hosts the docs app as one of its views. */
 export function App() {
+  return <WorkspaceShell api={api} />;
+}
+
+/** Docs & SDLC: the vault, its docs and the agents that work on them. */
+export function DocsApp() {
   const { t } = useI18n();
   const [booting, setBooting] = useState(true);
   const [vault, setVault] = useState<Vault | null>(null);
