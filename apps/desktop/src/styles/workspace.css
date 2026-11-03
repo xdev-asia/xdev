@@ -1510,3 +1510,44 @@ button.ws-tree-row:focus-visible {
     transition: none;
   }
 }
+
+.ws-amend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.ws-commit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-hook {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.ws-hook-output {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ws-hook-actions {
+  display: flex;
+  gap: 8px;
+}
