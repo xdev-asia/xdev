@@ -1,4 +1,4 @@
-import type { Api, ApiError, RepoView, WorktreeChange, WorktreeFileDiff, WorktreeView } from "./api";
+import type { Api, ApiError, DirEntry, DirListing, RepoView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 
 type WorkspaceApi = Pick<
   Api,
@@ -11,6 +11,8 @@ type WorkspaceApi = Pick<
   | "worktreeChanges"
   | "worktreeFileDiff"
   | "worktreeCommit"
+  | "worktreeStat"
+  | "worktreeListDir"
 >;
 
 export type MockWorkspaceSeed = {
@@ -49,6 +51,30 @@ export const DEMO_WORKSPACE: MockWorkspaceSeed = {
   },
 };
 
+// Files every demo worktree has on disk, before its own changes.
+const DEMO_FILES = ["README.md", "package.json", "src/App.tsx", "src/lib/format.ts", "src/main.tsx", "src/session.ts", "docs/guide.md", "docs/old-notes.md"];
+const LIST_CAP = 2000;
+
+// What the worktree holds on disk: the base files, plus added files, minus deleted ones.
+function demoFiles(pending: WorktreeChange[]): string[] {
+  const gone = new Set(pending.filter((c) => c.kind === "deleted").map((c) => c.path));
+  const added = pending.filter((c) => c.kind === "added").map((c) => c.path);
+  return [...new Set([...DEMO_FILES, ...added])].filter((f) => !gone.has(f));
+}
+
+function demoListing(files: string[], dir: string): DirListing | null {
+  const prefix = dir === "" ? "" : `${dir}/`;
+  const found = new Map<string, DirEntry>();
+  for (const file of files) {
+    if (!file.startsWith(prefix)) continue;
+    const [name, ...rest] = file.slice(prefix.length).split("/");
+    found.set(name, { name, dir: rest.length > 0 });
+  }
+  if (dir !== "" && found.size === 0) return null;
+  const entries = [...found.values()].sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  return { entries: entries.slice(0, LIST_CAP), truncated: entries.length > LIST_CAP };
+}
+
 function reject(code: ApiError["code"], detail?: string): Promise<never> {
   const error: ApiError = detail === undefined ? { code } : { code, detail };
   return Promise.reject(error);
@@ -62,6 +88,17 @@ function slug(name: string): string {
     .join("")
     .replace(/^[-.]+/, "")
     .slice(0, 48);
+}
+
+// Fixed line counts per kind, so the demo rows show numbers that follow the pending changes.
+function demoStat(pending: WorktreeChange[]): WorktreeStat {
+  const lines = { added: [3, 0], modified: [1, 1], deleted: [0, 2] } as const;
+  const stat: WorktreeStat = { files: pending.length, added: 0, removed: 0 };
+  for (const { kind } of pending) {
+    stat.added += lines[kind][0];
+    stat.removed += lines[kind][1];
+  }
+  return stat;
 }
 
 const WORDS = ["birch", "cedar", "fir", "maple", "pine", "willow"];
@@ -167,6 +204,19 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
       changes.set(path, rest);
       commits += 1;
       return commits.toString(16).padStart(40, "a");
+    },
+    async worktreeStat(path) {
+      const found = findWorktree(path);
+      if (!found) return reject("worktree_unknown", path);
+      return demoStat(found.wt.primary ? [] : (changes.get(path) ?? []));
+    },
+    async worktreeListDir(path, dir) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const plain = dir.split("/").every((part) => part !== ".." && part !== ".git" && !part.includes(":"));
+      if (dir.startsWith("/") || !plain) return reject("bad_path", dir);
+      const rel = dir.split("/").filter((part) => part !== "" && part !== ".").join("/");
+      const listing = demoListing(demoFiles(changes.get(path) ?? []), rel);
+      return listing ? structuredClone(listing) : reject("not_found", dir);
     },
   };
 }

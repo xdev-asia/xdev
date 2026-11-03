@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, toApiError, type Api, type PtyExit } from "../api";
 import { translate } from "../i18n";
 import { Terminal } from "../terminal/Terminal";
+import { AgentIcon } from "./AgentIcon";
 import { Sessions } from "./sessions";
 import { WorktreeTabs } from "./WorktreeTabs";
 
@@ -174,4 +175,128 @@ it("exited tab offers start again", async () => {
   expect(spawn).toHaveBeenCalledTimes(2);
   expect(spawn.mock.calls[1].slice(0, 3)).toEqual([again.id, A, "shell"]);
   expect(view.html()).not.toContain("Exited (code 1)");
+});
+
+// The panes of the split: the container and which tab panes are showing.
+function layout(view: ReturnType<typeof harness>) {
+  const panes = view.find((n) => n.type === "div" && n.props.className === "ws-panes")!;
+  const shownIds = view.all().filter((n) => n.props.role === "tabpanel" && !n.props.hidden).map((n) => n.props["data-tab"]);
+  return { dir: panes.props["data-split"] as string | undefined, shownIds };
+}
+const clickSplit = (view: ReturnType<typeof harness>, dir: "right" | "down") => view.labelled(en(`workspace.tabs.split.${dir}`)).props.onClick();
+const pickTab = (view: ReturnType<typeof harness>, id: string) => view.find((n) => n.props.role === "tab" && n.props["data-tab"] === id)!.props.onClick();
+
+it("shows the agent icon and status glyph on each tab", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  live.open(A, "claude");
+  live.open(A, "codex");
+  live.open(A, "shell");
+  const view = harness(api, live);
+  const tabs = view.all().filter((n) => n.props.role === "tab");
+  expect(tabs).toHaveLength(3);
+  for (const [i, profile] of (["claude", "codex", "shell"] as const).entries()) {
+    const inside = nodes(tabs[i].props.children);
+    // The mark and the status glyph sit in the same tab button.
+    expect(inside.find((n) => n.type === AgentIcon)!.props.profile).toBe(profile);
+    const glyph = inside.find((n) => n.props.role === "img")!;
+    expect(glyph.props["aria-label"]).toBe(en("workspace.tabs.status.idle"));
+  }
+  const html = view.html();
+  // The mark is decoration: the name next to it says the same.
+  expect(html).toContain('class="ws-agent" data-profile="claude"');
+  for (const letter of ["C", "X", "S"]) expect(html).toContain(`>${letter}</span>`);
+  expect(html.split("○")).toHaveLength(4);
+});
+
+it("split right shows the active tab and the next tab side by side", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const one = live.open(A, "shell");
+  const two = live.open(A, "claude");
+  const three = live.open(A, "codex");
+  const view = harness(api, live);
+  pickTab(view, one.id);
+  expect(layout(view)).toEqual({ dir: undefined, shownIds: [one.id] });
+
+  clickSplit(view, "right");
+  expect(live.split(A)).toEqual({ dir: "right", second: two.id });
+  expect(layout(view)).toEqual({ dir: "right", shownIds: [one.id, two.id] });
+  // Every terminal stays mounted; the third only hides.
+  expect(view.terminals().map((n) => n.props.id)).toEqual([one.id, two.id, three.id]);
+  expect(view.find((n) => n.props["data-tab"] === three.id && n.props.role === "tabpanel")!.props.hidden).toBe(true);
+  expect(view.labelled(en("workspace.tabs.split.right")).props["aria-pressed"]).toBe(true);
+
+  // Picking another tab brings it in beside the second.
+  pickTab(view, three.id);
+  expect(layout(view)).toEqual({ dir: "right", shownIds: [two.id, three.id] });
+  // Picking the second keeps the pair.
+  pickTab(view, two.id);
+  expect(layout(view).shownIds).toEqual([two.id, three.id]);
+});
+
+it("split down stacks them", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const one = live.open(A, "shell");
+  const two = live.open(A, "claude");
+  const view = harness(api, live);
+  // The newest tab shows, so its partner is the one before it.
+  clickSplit(view, "down");
+  expect(live.split(A)).toEqual({ dir: "down", second: one.id });
+  expect(layout(view)).toEqual({ dir: "down", shownIds: [one.id, two.id] });
+  // Turning it the other way keeps the two tabs.
+  clickSplit(view, "right");
+  expect(live.split(A)).toEqual({ dir: "right", second: one.id });
+  expect(layout(view)).toEqual({ dir: "right", shownIds: [one.id, two.id] });
+});
+
+it("split again with the same direction unsplits", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  live.open(A, "shell");
+  live.open(A, "claude");
+  const view = harness(api, live);
+  clickSplit(view, "right");
+  expect(live.split(A)).not.toBeNull();
+  clickSplit(view, "right");
+  expect(live.split(A)).toBeNull();
+  expect(layout(view).dir).toBeUndefined();
+  expect(layout(view).shownIds).toHaveLength(1);
+  expect(view.labelled(en("workspace.tabs.split.right")).props["aria-pressed"]).toBe(false);
+});
+
+it("closing the second tab of a split unsplits", async () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const one = live.open(A, "shell");
+  const two = live.open(A, "claude");
+  live.open(A, "codex");
+  const view = harness(api, live);
+  pickTab(view, one.id);
+  clickSplit(view, "right");
+  expect(live.split(A)?.second).toBe(two.id);
+  await live.close(two.id);
+  expect(live.split(A)).toBeNull();
+  expect(layout(view).dir).toBeUndefined();
+  expect(layout(view).shownIds).toEqual([one.id]);
+});
+
+it("a split with one tab is disabled", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  // No tab at all, then one.
+  for (const dir of ["right", "down"] as const) expect(view.labelled(en(`workspace.tabs.split.${dir}`)).props["aria-disabled"]).toBe(true);
+  live.open(A, "shell");
+  for (const dir of ["right", "down"] as const) {
+    expect(view.labelled(en(`workspace.tabs.split.${dir}`)).props["aria-disabled"]).toBe(true);
+    clickSplit(view, dir);
+  }
+  expect(live.split(A)).toBeNull();
+  expect(layout(view).dir).toBeUndefined();
+  // Every button carries a tooltip.
+  expect(view.labelled(en("workspace.tabs.split.right")).props.title).toBe(en("workspace.tabs.split.right"));
+  live.open(A, "claude");
+  expect(view.labelled(en("workspace.tabs.split.right")).props["aria-disabled"]).toBe(false);
 });
