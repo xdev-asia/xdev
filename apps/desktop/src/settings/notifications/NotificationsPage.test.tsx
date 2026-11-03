@@ -214,3 +214,16 @@ it("a failed load shows the error", async () => {
   await tick();
   expect(draw().find((n) => n.props.role === "alert")!.props.children).toBe(en("error.io"));
 });
+
+it("the suppress-when-focused switch is on by default and saves when toggled", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "statusSettingsPut");
+  const sup = () => nodes(p.all().find((n) => n.props["data-option"] === "suppressWhenFocused")).find((n) => n.props.role === "switch")!;
+  expect(sup().props["aria-checked"]).toBe(true);
+  expect(sup().props["aria-label"]).toBe(en("settings.notifications.suppressWhenFocused"));
+  sup().props.onClick();
+  await tick();
+  expect(put).toHaveBeenCalledWith(expect.objectContaining({ suppressWhenFocused: false }));
+  expect(sup().props["aria-checked"]).toBe(false);
+  expect(p.onSaved).toHaveBeenCalledWith(expect.objectContaining({ suppressWhenFocused: false }));
+});
