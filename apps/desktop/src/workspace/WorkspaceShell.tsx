@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
@@ -29,7 +29,7 @@ import { Sessions, type Attention, type Tab } from "./sessions";
 import { PrStore } from "./prs";
 import { WorktreeStats } from "./stats";
 import type { TabStatus } from "./status";
-import { WorktreeChanges } from "./WorktreeChanges";
+import { WorktreeChanges, type ChangesHandlers } from "./WorktreeChanges";
 import { WorktreeList } from "./WorktreeList";
 import { WorktreeTabs, type Reveal } from "./WorktreeTabs";
 
@@ -71,6 +71,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The tab in front of each worktree, which is where a prompt from the Agent kit is typed.
   const [shownTab, setShownTab] = useState<Record<string, string | null>>({});
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // The mounted changes panel's bulk actions, for the palette.
+  const changesHandlers = useRef<ChangesHandlers | null>(null);
+  const [changesReady, setChangesReady] = useState(false);
+  const registerChanges = useCallback((h: ChangesHandlers | null) => {
+    changesHandlers.current = h;
+    setChangesReady(h !== null);
+  }, []);
+  const runOnChanges = (run: (h: ChangesHandlers) => void) => {
+    setSidebarOpen(true);
+    setPanelTab("changes");
+    if (changesHandlers.current) run(changesHandlers.current);
+  };
   const [sessions, setSessions] = useState<Sessions | null>(null);
   const [creating, setCreating] = useState<Creating | null>(null);
   const [removing, setRemoving] = useState<Removing | null>(null);
@@ -720,6 +732,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   onCount={(n) => setChangeCount({ worktree: current.path, count: n })}
                   onChanges={(list) => setChangeList({ worktree: current.path, list })}
                   onFixWithAgent={(output) => void fixWithAgent(output)}
+                  register={registerChanges}
                 />
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
@@ -803,6 +816,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           searchDocs: openSearch,
           toggleSidebar: () => setSidebarOpen((o) => !o),
           showDocs: () => show("docs"),
+          stageAllChanges: changesReady ? () => runOnChanges((h) => h.stageAll()) : undefined,
+          discardAllChanges: changesReady ? () => runOnChanges((h) => h.discardAll()) : undefined,
         }}
       />
       {removing && (
