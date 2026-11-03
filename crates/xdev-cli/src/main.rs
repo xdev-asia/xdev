@@ -102,7 +102,7 @@ enum Command {
     #[command(name = "agent-hook", hide = true)]
     AgentHook {
         event: agent_hook::Event,
-        /// Whatever the CLI appends (Codex passes its JSON); ignored.
+        /// Whatever the CLI appends; codex `notify` passes its JSON last.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         rest: Vec<String>,
     },
@@ -127,8 +127,8 @@ fn main() -> ExitCode {
         }
         Err(e) => e.exit(),
     };
-    if let Command::AgentHook { event, .. } = cli.command {
-        agent_hook::run(event);
+    if let Command::AgentHook { event, rest } = cli.command {
+        agent_hook::run(event, &rest);
         return ExitCode::SUCCESS;
     }
     match run(cli.command) {
