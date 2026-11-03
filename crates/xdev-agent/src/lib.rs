@@ -2,6 +2,7 @@
 //! evidence kept and nothing merged until a person approves. A squad is a
 //! team of agents, one per seat, working one task together.
 
+mod flags;
 mod flow;
 mod id;
 mod launch;
@@ -20,8 +21,9 @@ use serde::{Deserialize, Serialize};
 use xdev_git::GitError;
 use xdev_policy::Verdict;
 
+pub use flags::{efforts, flags};
 pub use flow::RunOptions;
-pub use launch::{Launch, LaunchError, launch, launch_with};
+pub use launch::{Context, Launch, LaunchError, launch, launch_with, resolve};
 pub use profiles::{
     Approvals, Cli, CustomShell, EnvVar, Permissions, Profile, ProfileError, Profiles, builtin,
     valid_id,
