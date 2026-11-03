@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
 use xdev_git::{GitError, Repo, WorktreeEntry};
@@ -450,9 +450,210 @@ pub fn remove_worktree(reg: &mut Registry, path: &Path, force: bool) -> Result<(
     Ok(())
 }
 
+/// The most entries one folder listing carries.
+const MAX_ENTRIES: usize = 2000;
+
+/// One name in a folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct DirEntry {
+    pub name: String,
+    /// A real folder; a link is a file here, whatever it points at.
+    pub dir: bool,
+}
+
+/// One level of a worktree's files: folders first, then files, each A to Z
+/// ignoring case.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct DirListing {
+    pub entries: Vec<DirEntry>,
+    /// The folder held more than 2000 names; the rest are not sent.
+    pub truncated: bool,
+}
+
+fn is_git(name: &std::ffi::OsStr) -> bool {
+    name.eq_ignore_ascii_case(".git")
+}
+
+/// The folder `rel` names under `worktree`, when `rel` is plain (relative,
+/// no `..`, no drive or stream) and no part of it is a link or `.git`.
+fn dir_under(worktree: &str, rel: &str) -> Result<PathBuf, WorkspaceError> {
+    let bad = || WorkspaceError::BadPath(rel.to_owned());
+    let plain = Path::new(rel)
+        .components()
+        .all(|c| matches!(c, Component::Normal(_) | Component::CurDir));
+    // `a:stream` would name a stream of the folder, not a path.
+    if !plain || (cfg!(windows) && rel.contains(':')) {
+        return Err(bad());
+    }
+    let mut disk = PathBuf::from(worktree);
+    for part in Path::new(rel).components() {
+        let Component::Normal(name) = part else {
+            continue;
+        };
+        if is_git(name) {
+            return Err(bad());
+        }
+        disk.push(name);
+        // A link is not followed: it could lead anywhere on the disk.
+        if fs::symlink_metadata(&disk)?.is_symlink() {
+            return Err(bad());
+        }
+    }
+    Ok(disk)
+}
+
+/// The names in folder `rel` of `worktree` (`""` for its top). `.git` is left
+/// out and links are listed as files, never followed. A folder with more than
+/// 2000 names is cut after the first 2000 in order, with `truncated` set.
+pub fn list_dir(worktree: &str, rel: &str) -> Result<DirListing, WorkspaceError> {
+    let disk = dir_under(worktree, rel)?;
+    let mut entries = Vec::new();
+    for found in fs::read_dir(&disk)? {
+        let found = found?;
+        let name = found.file_name();
+        if is_git(&name) {
+            continue;
+        }
+        // The type of the entry itself: a link reads as a link, not as its target.
+        let dir = found.file_type()?.is_dir();
+        entries.push(DirEntry {
+            name: name.to_string_lossy().into_owned(),
+            dir,
+        });
+    }
+    entries.sort_by(|a, b| {
+        b.dir
+            .cmp(&a.dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    let truncated = entries.len() > MAX_ENTRIES;
+    entries.truncate(MAX_ENTRIES);
+    Ok(DirListing { entries, truncated })
+}
+
 #[cfg(test)]
 mod tests {
+    use std::process::Command;
+
+    use tempfile::TempDir;
+
     use super::*;
+
+    fn names(l: &DirListing) -> Vec<(&str, bool)> {
+        l.entries.iter().map(|e| (e.name.as_str(), e.dir)).collect()
+    }
+
+    #[test]
+    fn list_dir_sorts_folders_first_and_hides_git() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        for dir in [".git", "src", "Docs", "alpha"] {
+            fs::create_dir(root.join(dir)).unwrap();
+        }
+        for file in ["b.txt", "A.md", "Zed.rs", "c.txt", ".gitignore"] {
+            fs::write(root.join(file), "x").unwrap();
+        }
+        fs::write(root.join("src").join("m.rs"), "x").unwrap();
+        let top = list_dir(root.to_str().unwrap(), "").unwrap();
+        assert_eq!(
+            names(&top),
+            [
+                ("alpha", true),
+                ("Docs", true),
+                ("src", true),
+                (".gitignore", false),
+                ("A.md", false),
+                ("b.txt", false),
+                ("c.txt", false),
+                ("Zed.rs", false),
+            ]
+        );
+        assert!(!top.truncated);
+        let sub = list_dir(root.to_str().unwrap(), "src").unwrap();
+        assert_eq!(names(&sub), [("m.rs", false)]);
+        assert_eq!(list_dir(root.to_str().unwrap(), ".").unwrap(), top);
+    }
+
+    #[test]
+    fn list_dir_refuses_parent_and_absolute_paths() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().to_str().unwrap();
+        fs::create_dir(tmp.path().join("a")).unwrap();
+        let mut bad = vec![
+            "..",
+            "../x",
+            "/x",
+            "a/../..",
+            ".git",
+            "a/../.git",
+            ".GIT/hooks",
+        ];
+        if cfg!(windows) {
+            bad.extend(["C:\\x", "C:x", "..\\x", "a:stream"]);
+        }
+        for rel in bad {
+            let err = list_dir(root, rel).unwrap_err();
+            assert_eq!(err.code(), "bad_path", "{rel}");
+        }
+    }
+
+    #[test]
+    fn list_dir_caps_at_2000_and_flags_truncated() {
+        let tmp = TempDir::new().unwrap();
+        for n in 0..2005 {
+            fs::write(tmp.path().join(format!("f{n:04}.txt")), "").unwrap();
+        }
+        let l = list_dir(tmp.path().to_str().unwrap(), "").unwrap();
+        assert_eq!(l.entries.len(), 2000);
+        assert!(l.truncated);
+        assert_eq!(l.entries[0].name, "f0000.txt");
+        let exact = TempDir::new().unwrap();
+        for n in 0..2000 {
+            fs::write(exact.path().join(format!("f{n:04}.txt")), "").unwrap();
+        }
+        let l = list_dir(exact.path().to_str().unwrap(), "").unwrap();
+        assert_eq!((l.entries.len(), l.truncated), (2000, false));
+    }
+
+    /// Makes a folder link `link` to `target`; false when the system would not.
+    fn link_dir(link: &Path, target: &Path) -> bool {
+        #[cfg(windows)]
+        let made = Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(link)
+            .arg(target)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(target, link).is_ok();
+        made
+    }
+
+    #[test]
+    fn list_dir_does_not_follow_symlinks() {
+        let tmp = TempDir::new().unwrap();
+        let outside = tmp.path().join("outside");
+        let root = tmp.path().join("wt");
+        fs::create_dir(&outside).unwrap();
+        fs::create_dir(&root).unwrap();
+        fs::write(outside.join("x.txt"), "secret").unwrap();
+        if !link_dir(&root.join("link"), &outside) {
+            eprintln!("skipped: cannot make a folder link here");
+            return;
+        }
+        let root = root.to_str().unwrap();
+        let top = list_dir(root, "").unwrap();
+        assert_eq!(names(&top), [("link", false)]);
+        assert_eq!(list_dir(root, "link").unwrap_err().code(), "bad_path");
+        assert_eq!(list_dir(root, "link/sub").unwrap_err().code(), "bad_path");
+    }
 
     fn entry() -> RepoEntry {
         RepoEntry {

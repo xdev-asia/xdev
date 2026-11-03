@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import logo from "../../../../docs/brand/xdev-icon-512.png";
-import { toApiError, type Api, type ApiError, type RepoView, type WorktreeView } from "../api";
+import { toApiError, type Api, type ApiError, type RepoView, type WorktreeChange, type WorktreeView } from "../api";
 import { DocsApp } from "../DocsApp";
 import { LanguageSwitch } from "../components/LanguageSwitch";
 import { useI18n } from "../i18n";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
+import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { Sessions } from "./sessions";
@@ -34,6 +35,7 @@ function storeSelected(path: string): void {
 }
 
 type View = "workspace" | "docs";
+type PanelTab = "files" | "changes";
 type Creating = { repoId: string; busy: boolean; error?: ApiError["code"] };
 type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"] };
 
@@ -57,6 +59,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [reveal, setReveal] = useState<(Reveal & { worktree: string }) | null>(null);
   // How many files the Changes panel last listed, for the worktree it listed them for.
   const [changeCount, setChangeCount] = useState<{ worktree: string; count: number } | null>(null);
+  // The files the Changes panel last listed; the Files tree marks them.
+  const [changeList, setChangeList] = useState<{ worktree: string; list: WorktreeChange[] } | null>(null);
+  const [panelTab, setPanelTab] = useState<PanelTab>("files");
 
   // One store of terminal tabs for the whole shell. Made in an effect so a dev double mount
   // disposes the first one; disposing kills its ptys.
@@ -107,6 +112,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const mounted = seen.filter((p) => paths.includes(p));
 
   const count = current && changeCount?.worktree === current.path ? changeCount.count : 0;
+  const markedChanges = current && changeList?.worktree === current.path ? changeList.list : NO_CHANGES;
 
   function openFile(worktree: string, file: string): void {
     setReveal((r) => ({ worktree, file, seq: (r?.seq ?? 0) + 1 }));
@@ -311,11 +317,25 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                 type="button"
                 role="tab"
                 className="ws-panel-tab"
-                aria-selected="true"
+                aria-selected={panelTab === "files"}
+                aria-label={t("workspace.panel.files")}
+                title={t("workspace.panel.files")}
+                onClick={() => setPanelTab("files")}
+              >
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className="ws-panel-tab"
+                aria-selected={panelTab === "changes"}
                 aria-label={count > 0 ? t("workspace.panel.changesCount", { count }) : t("workspace.panel.changes")}
                 title={t("workspace.panel.changes")}
+                onClick={() => setPanelTab("changes")}
               >
-                <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M6 3v12M18 9a3 3 0 1 0 0-.01M6 21a3 3 0 1 0 0-.01M18 12c0 4-6 3-9 6" />
                 </svg>
                 {count > 0 && (
@@ -325,7 +345,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                 )}
               </button>
             </div>
-            <div className="ws-panel-body" role="tabpanel">
+            {/* Both panels stay mounted, so the change list and the open folders survive a tab switch. */}
+            <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "files"}>
+              {current ? (
+                <FileTree
+                  key={current.path}
+                  api={api}
+                  worktree={current.path}
+                  changes={markedChanges}
+                  onOpen={(file) => openFile(current.path, file)}
+                />
+              ) : (
+                <p className="ws-empty">{t("workspace.panel.empty")}</p>
+              )}
+            </div>
+            <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "changes"}>
               {current ? (
                 <WorktreeChanges
                   key={current.path}
@@ -334,6 +368,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   sessions={sessions}
                   onOpenFile={(file) => openFile(current.path, file)}
                   onCount={(n) => setChangeCount({ worktree: current.path, count: n })}
+                  onChanges={(list) => setChangeList({ worktree: current.path, list })}
                 />
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
@@ -380,6 +415,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     </div>
   );
 }
+
+// One array for every render, so an unlisted worktree does not look like a new list each time.
+const NO_CHANGES: WorktreeChange[] = [];
 
 function working(sessions: Sessions, path: string): number {
   return sessions.tabs(path).filter((tab) => tab.agent && tab.status === "working").length;
