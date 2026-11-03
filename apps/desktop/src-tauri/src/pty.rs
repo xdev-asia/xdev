@@ -136,12 +136,13 @@ fn hooks_now(app: &AppHandle) -> Option<PathBuf> {
 /// The launch of profile or shell `id`, from the stores in `data_dir`.
 /// `account` replaces the profile's own account (a restart keeps the tab's).
 /// With `hooks`, an agent CLI that has status hooks gets the flags that run
-/// that `xdev`.
+/// that `xdev`. With `resume`, the CLI continues that session (`add_resume`).
 pub(crate) fn launch_for(
     data_dir: &Path,
     id: &str,
     account: Option<&str>,
     hooks: Option<&Path>,
+    resume: Option<&str>,
 ) -> Result<Launch, CmdError> {
     let profiles = Profiles::load(data_dir).map_err(LaunchError::from)?;
     let accounts = Registry::load(data_dir)?;
@@ -164,10 +165,38 @@ pub(crate) fn launch_for(
         account,
     };
     let mut launch = resolve(id, &ctx)?;
+    if let Some(session) = resume {
+        add_resume(&mut launch, session)?;
+    }
     if let Some(xdev) = hooks {
         launch.add_hooks(xdev, data_dir);
     }
     Ok(launch)
+}
+
+/// The longest session id a resume takes.
+const RESUME_ID_MAX: usize = 128;
+
+/// Adds the args that make an agent CLI continue session `id`: Claude
+/// `--resume <id>` at the end; Codex the `resume <id>` subcommand first, as
+/// `codex resume` takes the same options as a plain launch. The id is
+/// `[A-Za-z0-9_-]`, at most 128 chars. A shell or a custom program cannot
+/// resume.
+pub(crate) fn add_resume(launch: &mut Launch, id: &str) -> Result<(), CmdError> {
+    let plain = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+    if id.is_empty() || id.len() > RESUME_ID_MAX || !id.chars().all(plain) || !launch.agent {
+        return Err(crate::workspace::bad_arg("resume"));
+    }
+    match launch.cli {
+        Some(Cli::Claude) => launch.args.extend(["--resume".to_owned(), id.to_owned()]),
+        Some(Cli::Codex) => {
+            launch
+                .args
+                .splice(0..0, ["resume".to_owned(), id.to_owned()]);
+        }
+        _ => return Err(crate::workspace::bad_arg("resume")),
+    }
+    Ok(())
 }
 
 /// Gates an agent, then starts `launch` in `cwd`.
@@ -422,13 +451,20 @@ pub fn pty_spawn(
     cols: u16,
     rows: u16,
     out: Channel<InvokeResponseBody>,
+    resume: Option<String>,
 ) -> Result<PtyInfo, CmdError> {
     let data = data_dir(&state)?;
     let launch = if profile_id == SETUP_PROFILE {
         setup_launch(data, &cwd)?
     } else {
         let hooks = hooks_now(&app);
-        launch_for(data, &profile_id, account.as_deref(), hooks.as_deref())?
+        launch_for(
+            data,
+            &profile_id,
+            account.as_deref(),
+            hooks.as_deref(),
+            resume.as_deref(),
+        )?
     };
     let exit_id = id.clone();
     spawn_launch(
@@ -458,10 +494,17 @@ pub fn pty_approve(
     ptys: State<'_, Ptys>,
     profile_id: String,
     account: Option<String>,
+    resume: Option<String>,
 ) -> Result<(), CmdError> {
     let data = data_dir(&state)?;
     let hooks = hooks_now(&app);
-    let launch = launch_for(data, &profile_id, account.as_deref(), hooks.as_deref())?;
+    let launch = launch_for(
+        data,
+        &profile_id,
+        account.as_deref(),
+        hooks.as_deref(),
+        resume.as_deref(),
+    )?;
     approve_launch(&ptys, data, &launch)
 }
 
@@ -570,7 +613,14 @@ mod tests {
         // Turning hooks off is a different launch line: asked again.
         let (plain, _) = start(&ptys, data.path(), "b", agent());
         assert_eq!(plain.unwrap_err().code, "needs_approval");
-        let shell = launch_for(data.path(), "shell", None, Some(Path::new("/opt/xdev"))).unwrap();
+        let shell = launch_for(
+            data.path(),
+            "shell",
+            None,
+            Some(Path::new("/opt/xdev")),
+            None,
+        )
+        .unwrap();
         assert!(!shell.hooks);
         assert!(!shell.args.iter().any(|a| a == "--settings"));
     }
@@ -772,7 +822,7 @@ mod tests {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
         ptys.passes().insert("keep".into());
-        let launch = launch_for(data.path(), "shell", None, None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
         start(&ptys, data.path(), "s", launch).0.unwrap();
         ptys.kill_all();
         assert_eq!(ptys.passes().len(), 1);
@@ -869,16 +919,101 @@ mod tests {
         assert_eq!(later.unwrap_err().code, "needs_approval");
     }
 
+    fn codex() -> Launch {
+        Launch {
+            profile: "codex".into(),
+            cli: Some(Cli::Codex),
+            ..with_extra_args(["--model", "m"])
+        }
+    }
+
+    fn tail(l: &Launch, n: usize) -> Vec<&str> {
+        l.args[l.args.len() - n..]
+            .iter()
+            .map(String::as_str)
+            .collect()
+    }
+
+    #[test]
+    fn a_claude_resume_appends_the_resume_flag() {
+        let mut l = with_extra_args(["--model", "m"]);
+        let before = l.args.clone();
+        add_resume(&mut l, "4f1c-9_ab").unwrap();
+        assert_eq!(l.args[..before.len()], before[..]);
+        assert_eq!(tail(&l, 2), ["--resume", "4f1c-9_ab"]);
+    }
+
+    #[test]
+    fn a_codex_resume_is_the_subcommand_before_the_other_args() {
+        let mut l = codex();
+        let before = l.args.clone();
+        add_resume(&mut l, "0199a-b").unwrap();
+        assert_eq!(l.args[..2], ["resume", "0199a-b"]);
+        assert_eq!(l.args[2..], before[..]);
+    }
+
+    #[test]
+    fn a_resume_needs_an_agent_cli_and_a_plain_id() {
+        let data = tempfile::tempdir().unwrap();
+        let mut shell = launch_for(data.path(), "shell", None, None, None).unwrap();
+        assert_eq!(add_resume(&mut shell, "abc").unwrap_err().code, "bad_arg");
+        let mut custom = Launch {
+            cli: None,
+            ..agent()
+        };
+        assert_eq!(add_resume(&mut custom, "abc").unwrap_err().code, "bad_arg");
+        for id in [
+            "",
+            "a b",
+            "a;b",
+            "../x",
+            "a
+b",
+            &"a".repeat(129),
+        ] {
+            let mut l = agent();
+            let err = add_resume(&mut l, id).unwrap_err();
+            assert_eq!(err.code, "bad_arg", "{id:?}");
+            assert_eq!(l.args, agent().args, "{id:?} left the args alone");
+        }
+        assert_eq!(
+            launch_for(data.path(), "shell", None, None, Some("abc"))
+                .unwrap_err()
+                .code,
+            "bad_arg"
+        );
+    }
+
+    #[test]
+    fn the_gate_sees_the_resume_args_and_asks_again() {
+        let data = tempfile::tempdir().unwrap();
+        let ptys = Ptys::default();
+        approve_launch(&ptys, data.path(), &agent()).unwrap();
+        let mut resumed = agent();
+        add_resume(&mut resumed, "s1").unwrap();
+        let Action::LaunchAgent { args, .. } = launch_action(&resumed) else {
+            panic!("an agent launch");
+        };
+        assert_eq!(args[args.len() - 2..], ["--resume", "s1"]);
+        let (first, _) = start(&ptys, data.path(), "a", resumed.clone());
+        assert_eq!(first.unwrap_err().code, "needs_approval");
+        approve_launch(&ptys, data.path(), &resumed).unwrap();
+        start(&ptys, data.path(), "a", resumed).0.unwrap();
+        ptys.kill_all();
+    }
+
     #[test]
     fn launch_for_reports_unknown_and_bad_stores() {
         let data = tempfile::tempdir().unwrap();
         assert_eq!(
-            launch_for(data.path(), "vim", None, None).unwrap_err().code,
+            launch_for(data.path(), "vim", None, None, None)
+                .unwrap_err()
+                .code,
             "unknown_profile"
         );
         std::fs::write(data.path().join("profiles.json"), "not json").unwrap();
         assert_eq!(
-            launch_for(data.path(), "claude", None, None)
+            launch_for(data.path(), "claude", None, None, None)
                 .unwrap_err()
                 .code,
             "bad_profiles"
@@ -889,7 +1024,7 @@ mod tests {
     fn shell_spawns_without_policy() {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
-        let launch = launch_for(data.path(), "shell", None, None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
         let (result, _) = start(&ptys, data.path(), "s", launch);
         assert!(!result.unwrap().agent);
         assert!(!data.path().join("audit.jsonl").exists());
@@ -900,7 +1035,7 @@ mod tests {
     fn duplicate_id_is_refused() {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
-        let launch = launch_for(data.path(), "shell", None, None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
         start(&ptys, data.path(), "d", launch.clone()).0.unwrap();
         let (again, _) = start(&ptys, data.path(), "d", launch);
         assert_eq!(again.unwrap_err().code, "pty_exists");
@@ -911,7 +1046,7 @@ mod tests {
     fn kill_all_ends_every_session() {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
-        let launch = launch_for(data.path(), "shell", None, None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
         let (one, rx1) = start(&ptys, data.path(), "1", launch.clone());
         let (two, rx2) = start(&ptys, data.path(), "2", launch);
         one.unwrap();
@@ -927,7 +1062,7 @@ mod tests {
     fn missing_cwd_is_not_found() {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
-        let launch = launch_for(data.path(), "shell", None, None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
         let err = spawn_launch(
             &ptys,
             data.path(),

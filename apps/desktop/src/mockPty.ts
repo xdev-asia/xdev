@@ -7,6 +7,7 @@ type PtyApi = Pick<Api, "ptySpawn" | "ptyApprove" | "ptyWrite" | "ptyResize" | "
 const PROMPT = "$ ";
 // `SETUP_PROFILE`, not imported: api.ts builds the mock api when it loads.
 const SETUP_PROFILE: typeof SetupProfile = "xdev:setup";
+const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 function reject(code: ApiError["code"], detail?: string): Promise<never> {
   const error: ApiError = detail === undefined ? { code } : { code, detail };
@@ -31,7 +32,7 @@ export function createMockPty(
   const exits = new Set<(exit: PtyExit) => void>();
 
   return {
-    async ptySpawn(id, cwd, profileId, account, _cols, _rows, onData) {
+    async ptySpawn(id, cwd, profileId, account, _cols, _rows, onData, resume) {
       if (profileId === SETUP_PROFILE) {
         if (ptys.has(id)) return reject("pty_exists");
         const run = await setupRun(cwd);
@@ -61,6 +62,8 @@ export function createMockPty(
       if (refused) return reject(refused);
       if (ptys.has(id)) return reject("pty_exists");
       const agent = !profileId.startsWith("shell");
+      // Like Rust: only an agent resumes, and the id is a plain token.
+      if (resume !== undefined && (!agent || !SESSION_ID.test(resume))) return reject("bad_arg", "resume");
       const permissions = agent ? (profiles.__permissions(profileId) ?? "ask") : "ask";
       if (agent) {
         // A skip launch is approved for one start only.
