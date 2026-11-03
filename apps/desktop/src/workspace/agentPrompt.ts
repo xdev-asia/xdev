@@ -1,3 +1,4 @@
+import type { PtyProfile } from "@/api";
 import type { Sessions, Tab } from "./sessions";
 import { sendTarget } from "./sendTarget";
 
@@ -37,6 +38,32 @@ export async function sendToAgentTab(
     tab = await ready(sessions, worktree, opened.id, wait.timeoutMs);
     if (!tab) return null;
   }
+  await tab.client.input(pastePrompt(text));
+  return tab;
+}
+
+/** Where a prompt goes: a running agent tab, or a new tab of a profile. */
+export type SendChoice = { tab: string } | { profile: PtyProfile };
+
+/**
+ * Types `text` into the tab the person chose. A new tab is given time to start first. Resolves the
+ * tab used, or `null` when the tab ended meanwhile or a new tab did not get ready in time.
+ */
+export async function sendToChosenTab(
+  sessions: Sessions,
+  worktree: string,
+  choice: SendChoice,
+  text: string,
+  wait: { timeoutMs: number } = { timeoutMs: AGENT_START_MS },
+): Promise<Tab | null> {
+  let tab: Tab | null;
+  if ("tab" in choice) {
+    tab = sessions.tabs(worktree).find((t) => t.id === choice.tab && running(t)) ?? null;
+  } else {
+    const opened = sessions.open(worktree, choice.profile);
+    tab = await ready(sessions, worktree, opened.id, wait.timeoutMs);
+  }
+  if (!tab) return null;
   await tab.client.input(pastePrompt(text));
   return tab;
 }

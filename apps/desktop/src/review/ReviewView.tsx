@@ -11,6 +11,7 @@ import { FileDiff, type DiffHandle } from "./FileDiff";
 import { nextChange, type ChangeAt } from "./navigate";
 import { sortNotes } from "./notes";
 import { noteLabel } from "./NoteCard";
+import { SendNotesMenu } from "./SendNotesMenu";
 import { useReviewNotes } from "./useReviewNotes";
 import { clampListWidth, readViewOptions, writeViewOptions, type ViewOptions } from "./viewOptions";
 
@@ -215,6 +216,7 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
             </div>
           )}
         </div>
+        <SendNotesMenu sessions={sessions} worktree={worktree} branch={data?.branch ?? null} notes={store.notes} markSent={store.markSent} />
         {store.removed && (
           <span className="rv-undo" role="status">
             {t("review.note.deleted")}
