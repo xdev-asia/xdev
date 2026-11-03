@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import type { Api } from "@/api";
+import { AgentsPage } from "./agents/AgentsPage";
 import { ReposSettings } from "./ReposSettings";
 import { VaultsSettings } from "./VaultsSettings";
 
@@ -17,6 +18,7 @@ export interface SettingsSection {
 
 // The left list of the Settings view, in order; another section is one more entry.
 export const SECTIONS: SettingsSection[] = [
+  { id: "agents", labelKey: "settings.agents.title", Component: AgentsPage },
   { id: "repos", labelKey: "settings.repos.title", Component: ReposSettings },
   { id: "vaults", labelKey: "settings.vaults.title", Component: VaultsSettings },
 ];

@@ -1,8 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
+import { AgentsPage } from "./agents/AgentsPage";
 import { translate } from "@/i18n";
-import { ReposSettings } from "./ReposSettings";
 import { SECTIONS } from "./sections";
 import { SettingsView } from "./SettingsView";
 import { VaultsSettings } from "./VaultsSettings";
@@ -44,23 +44,27 @@ function view(initial?: string) {
   return { api, onChanged, draw, items, body, shown };
 }
 
-it("opens Repos first and switches to Vaults", () => {
+it("opens Agents first and switches to Vaults", () => {
   const v = view();
-  expect(SECTIONS.map((s) => s.id)).toEqual(["repos", "vaults"]);
-  expect(v.items().map((n) => n.props.children)).toEqual([en("settings.repos.title"), en("settings.vaults.title")]);
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", undefined]);
-  expect(v.shown().type).toBe(ReposSettings);
+  expect(SECTIONS.map((s) => s.id)).toEqual(["agents", "repos", "vaults"]);
+  expect(v.items().map((n) => n.props.children)).toEqual([en("settings.agents.title"), en("settings.repos.title"), en("settings.vaults.title")]);
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", undefined, undefined]);
+  expect(v.shown().type).toBe(AgentsPage);
   expect(v.shown().props.api).toBe(v.api);
   expect(v.shown().props.onChanged).toBe(v.onChanged);
 
-  v.items()[1].props.onClick();
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual([undefined, "page"]);
+  v.items()[2].props.onClick();
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual([undefined, undefined, "page"]);
   expect(v.shown().type).toBe(VaultsSettings);
   expect(v.body().props["aria-label"]).toBe(en("settings.vaults.title"));
+});
+
+it("settings_button_opens_agents_page", () => {
+  expect(view("agents").shown().type).toBe(AgentsPage);
 });
 
 it("an unknown initial section falls back to the first", () => {
   expect(view("vaults").shown().type).toBe(VaultsSettings);
   hooks.values = [];
-  expect(view("nope").shown().type).toBe(ReposSettings);
+  expect(view("nope").shown().type).toBe(AgentsPage);
 });
