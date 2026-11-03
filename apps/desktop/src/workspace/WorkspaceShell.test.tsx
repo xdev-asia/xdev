@@ -7,10 +7,11 @@ import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { translate } from "@/i18n";
 import { ChecksPanel } from "./ChecksPanel";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
+import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
-import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { VaultNav } from "./VaultNav";
+import { PaletteHost } from "@/palette/PaletteHost";
 import { SettingsView } from "@/settings/SettingsView";
 import { Sessions } from "./sessions";
 import { WorkspaceShell } from "./WorkspaceShell";
@@ -37,6 +38,8 @@ vi.mock("react", async (original) => {
     useSyncExternalStore: (subscribe: any, get: any, server?: any) => (hooks.active ? get() : react.useSyncExternalStore(subscribe, get, server)),
   };
 });
+const jump = vi.hoisted(() => ({ toggle: null as null | (() => void) }));
+vi.mock("@/palette/useJumpKey", () => ({ useJumpKey: (fn: () => void) => { jump.toggle = fn; } }));
 // xterm needs a real canvas; the terminals are tested on their own.
 vi.mock("@/terminal/Terminal", () => ({ Terminal: () => null }));
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
@@ -501,4 +504,57 @@ it("new worktree skips a default agent that is turned off", async () => {
   await api.profilesDefaults("ask", "codex", null);
   const view = await harness(api);
   expect(await createBirch(view)).toEqual([]);
+});
+
+it("the header button opens the jump palette and its actions reach the shell", async () => {
+  const view = await harness();
+  expect(view.of(PaletteHost)[0].props.open).toBe(false);
+  view.of(HeaderSearch)[0].props.onJump();
+  expect(view.of(PaletteHost)[0].props.open).toBe(true);
+  view.of(PaletteHost)[0].props.onClose();
+  expect(view.of(PaletteHost)[0].props.open).toBe(false);
+  // A new worktree typed into the palette opens the dialog with that name.
+  view.of(PaletteHost)[0].props.actions.newWorktree("fix-it");
+  expect(view.of(CreateWorktreeDialog)[0].props.name).toBe("fix-it");
+  // Opening settings on a section shows that section.
+  view.of(PaletteHost)[0].props.actions.openSettings("repos");
+  expect(view.of(SettingsView)[0].props.initial).toBe("repos");
+});
+
+it("the header settings button drops a section the palette asked for", async () => {
+  const view = await harness();
+  const button = () => view.all().find(n => n.type === "button" && n.props["aria-label"] === en("workspace.header.settings"))!;
+  view.of(PaletteHost)[0].props.actions.openSettings("repos");
+  expect(view.of(SettingsView)[0].props.initial).toBe("repos");
+  view.nav(en("workspace.nav.workspace")).props.onClick();
+  button().props.onClick();
+  expect(view.of(SettingsView)[0].props.initial).toBeUndefined();
+});
+
+it("the palette's showWorkspace leaves settings", async () => {
+  const view = await harness();
+  view.of(PaletteHost)[0].props.actions.openSettings();
+  expect(view.of(SettingsView)).toHaveLength(1);
+  view.of(PaletteHost)[0].props.actions.showWorkspace();
+  expect(view.of(SettingsView)).toHaveLength(0);
+});
+
+it("ctrl+j does not open the palette over a worktree dialog", async () => {
+  const view = await harness();
+  view.of(PaletteHost)[0].props.actions.newWorktree();
+  expect(view.of(CreateWorktreeDialog)).toHaveLength(1);
+  view.draw();
+  jump.toggle!();
+  expect(view.of(PaletteHost)[0].props.open).toBe(false);
+  view.of(CreateWorktreeDialog)[0].props.onCancel();
+  view.draw();
+  jump.toggle!();
+  expect(view.of(PaletteHost)[0].props.open).toBe(true);
+  view.draw();
+  jump.toggle!();
+  view.list().props.onRemove(view.worktree("oak"));
+  expect(view.of(RemoveWorktreeDialog)).toHaveLength(1);
+  view.draw();
+  jump.toggle!();
+  expect(view.of(PaletteHost)[0].props.open).toBe(false);
 });

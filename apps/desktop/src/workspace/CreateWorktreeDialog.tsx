@@ -10,13 +10,15 @@ export function CreateWorktreeDialog(props: {
   repoId: string;
   busy: boolean;
   error?: ApiError["code"];
+  /** A name to start with, such as one typed into the jump palette. */
+  name?: string;
   onCreate(repoId: string, name: string, from: string | null): void;
   onCancel(): void;
 }): JSX.Element {
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const [repoId, setRepoId] = useState(props.repoId);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(props.name ?? "");
   const [from, setFrom] = useState("");
 
   useEffect(() => {
