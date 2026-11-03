@@ -1,7 +1,9 @@
 # 0007. One versioned WIT world, `xdev:api@1`, that only grows
 
-Status: proposed. Code: `xdev-api` (placeholder today).
+Status: Deferred (2026-11-02): not implemented; product focus moved to
+workspace agents (see 0013). Code: `xdev-api` (placeholder today).
 Date: 2026-11-02
+Note: no WIT package is published and no WebAssembly host exists.
 
 ## Context
 

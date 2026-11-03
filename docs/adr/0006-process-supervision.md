@@ -1,7 +1,10 @@
 # 0006. Process supervision: stop the whole tree
 
-Status: accepted. Code: `xdev_ai::process`, `xdev-agent` (`process`, `squad`).
+Status: accepted. Amended by 0013. Code: `xdev_ai::process`, `xdev-agent`
+(`process`, `squad`).
 Date: 2026-11-02
+Note (0013): PTY sessions take stdin from the person, not a closed pipe;
+stop is still `kill_tree` on tab close, worktree delete and app exit.
 
 ## Context
 

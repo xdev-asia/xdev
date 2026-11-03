@@ -1,7 +1,9 @@
 # 0008. Plugin UI in an opaque-origin iframe, talking only by `postMessage`
 
-Status: proposed.
+Status: Deferred (2026-11-02): not implemented; product focus moved to
+workspace agents (see 0013).
 Date: 2026-11-02
+Note: the shell has no app frame and no `xdev-app://` protocol.
 
 ## Context
 

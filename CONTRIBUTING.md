@@ -18,6 +18,7 @@ git commit -s -m "fix: describe the change"
 - UI colors, spacing and radii come from `packages/ui/tokens.json`. Do not hardcode them.
 - Do not copy code from projects under AGPL or other incompatible licenses.
 - Never commit secrets.
+- Do not name other products in code, UI strings or docs.
 
 ## Checks
 

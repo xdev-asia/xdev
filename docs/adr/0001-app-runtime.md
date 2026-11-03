@@ -1,7 +1,10 @@
 # 0001. App runtime: three trust tiers
 
-Status: accepted (direction).
+Status: Deferred (2026-11-02): not implemented; product focus moved to
+workspace agents (see 0013).
 Date: 2026-11-02
+Note: only the shell's own code runs today; no UI or Logic tier app is
+loaded. Kept as the design to resume from.
 
 ## Context
 

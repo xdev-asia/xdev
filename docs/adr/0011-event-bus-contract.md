@@ -1,7 +1,9 @@
 # 0011. Events are notifications: named topics, at-most-once, bounded queues
 
-Status: proposed. Code: `events` interface in `xdev-api`.
+Status: Deferred (2026-11-02): not implemented; product focus moved to
+workspace agents (see 0013). Code: `events` interface in `xdev-api`.
 Date: 2026-11-02
+Note: no event bus is built; the topic names here are not a public contract yet.
 
 ## Context
 

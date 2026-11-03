@@ -1,8 +1,10 @@
 # 0003. Agent execution: tasks on worktrees, runners behind a trait
 
-Status: accepted. Code: `xdev-agent`.
+Status: accepted. Amended by 0013. Code: `xdev-agent`.
 Date: 2026-11-02
 Amended by 0012 for where worktrees live.
+Note (0013): `trait Runner` is no longer the only path; agents also run as
+their real CLI in a PTY terminal.
 
 ## Context
 

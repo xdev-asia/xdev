@@ -1,7 +1,9 @@
 # 0010. Packs and the registry index are signed with ed25519, keys can rotate
 
-Status: proposed.
+Status: Deferred (2026-11-02): not implemented; product focus moved to
+workspace agents (see 0013).
 Date: 2026-11-02
+Note: no pack is signed or loaded, and the app fetches no registry index.
 
 ## Context
 
