@@ -6243,6 +6243,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "xdev-workspace"
+version = "0.3.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "ts-rs",
+ "xdev-git",
+]
+
+[[package]]
 name = "yoke"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
