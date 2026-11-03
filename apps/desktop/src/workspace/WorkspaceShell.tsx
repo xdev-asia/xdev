@@ -6,6 +6,7 @@ import { toApiError, type Api, type ApiError, type PtyProfile, type RepoView, ty
 import { DocsApp } from "../DocsApp";
 import { LanguageSwitch } from "../components/LanguageSwitch";
 import { useI18n } from "../i18n";
+import { SettingsView } from "../settings/SettingsView";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
@@ -37,7 +38,7 @@ function storeSelected(path: string): void {
   }
 }
 
-type View = "workspace" | "docs";
+type View = "workspace" | "docs" | "settings";
 type PanelTab = "files" | "changes";
 type Creating = { repoId: string; busy: boolean; error?: ApiError["code"] };
 type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"] };
@@ -249,14 +250,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         <div className="ws-header-center">
           <HeaderSearch onOpen={openSearch} />
         </div>
-        {/* Nothing feeds notifications yet and settings has no home, so both wait, disabled. */}
+        {/* Nothing feeds notifications yet, so that button waits, disabled. */}
         <button type="button" className="ws-icon-btn ws-header-btn" disabled aria-label={t("workspace.header.notifications")} title={t("workspace.header.soon")}>
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
             <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
             <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
           </svg>
         </button>
-        <button type="button" className="ws-icon-btn ws-header-btn" disabled aria-label={t("workspace.header.settings")} title={t("workspace.header.soon")}>
+        <button
+          type="button"
+          className="ws-icon-btn ws-header-btn"
+          aria-label={t("workspace.header.settings")}
+          title={t("workspace.header.settings")}
+          aria-pressed={view === "settings"}
+          onClick={() => show("settings")}
+        >
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
@@ -311,7 +319,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           />
         </aside>
 
-        <div className="ws-stage" hidden={view === "docs"}>
+        <div className="ws-stage" hidden={view !== "workspace"}>
           <main className="ws-center" aria-label={t("workspace.center.label")}>
             {sessions &&
               mounted.map((path) => (
@@ -398,6 +406,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
         <div className="ws-docs" hidden={view !== "docs"}>
           {docsMounted && <DocsApp />}
+        </div>
+
+        <div className="ws-settings" hidden={view !== "settings"}>
+          {view === "settings" && <SettingsView api={api} onChanged={() => void load()} />}
         </div>
       </div>
 
