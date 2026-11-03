@@ -17,6 +17,25 @@ use crate::workspace::bad_arg;
 /// The most rows one call returns.
 pub const LIMIT_MAX: u32 = 500;
 
+/// Sessions whose last activity is older are dropped on refresh. A constant
+/// until the settings store carries `agent_sessions.history_days`.
+pub const HISTORY_DAYS: u32 = 90;
+const HISTORY_DAYS_RANGE: std::ops::RangeInclusive<u32> = 1..=3650;
+const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// The unix ms before which a session falls out of a `days` window ending
+/// at `now_ms`; `days` is held to 1-3650.
+fn history_cutoff(now_ms: i64, days: u32) -> i64 {
+    let days = days.clamp(*HISTORY_DAYS_RANGE.start(), *HISTORY_DAYS_RANGE.end());
+    now_ms.saturating_sub(i64::from(days) * DAY_MS)
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+}
+
 /// Which sessions a query looks at, by the folder they ran in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -87,8 +106,9 @@ pub async fn agent_sessions(
         return Err(bad_arg("limit"));
     }
     let ctx = Ctx::of(&state)?;
+    let cutoff = refresh.then(|| history_cutoff(now_ms(), HISTORY_DAYS));
     tauri::async_runtime::spawn_blocking(move || {
-        sessions(&ctx.data, || ctx.homes(), &query, refresh)
+        sessions(&ctx.data, || ctx.homes(), &query, cutoff)
     })
     .await
     .map_err(|e| CmdError {
@@ -97,13 +117,14 @@ pub async fn agent_sessions(
     })?
 }
 
-/// Loads (or keeps) the index of `data`, refreshes it from `homes` when
-/// asked, and answers `query`.
+/// Loads (or keeps) the index of `data`, and answers `query`. With
+/// `refresh`, it first reads the logs of `homes`, drops the sessions last
+/// active before that cutoff (unix ms) and saves the index.
 fn sessions(
     data: &Path,
     homes: impl FnOnce() -> Vec<Home>,
     query: &SessionQuery,
-    refresh: bool,
+    refresh: Option<i64>,
 ) -> Result<Vec<SessionRow>, CmdError> {
     let mut guard = INDEX.lock().unwrap_or_else(PoisonError::into_inner);
     if guard.as_ref().is_none_or(|(dir, _)| dir != data) {
@@ -112,8 +133,9 @@ fn sessions(
     let Some((_, index)) = guard.as_mut() else {
         unreachable!("set just above");
     };
-    if refresh {
+    if let Some(cutoff) = refresh {
         index.refresh(&homes());
+        index.prune(cutoff);
         index.save(data)?;
     }
     let folders = Folders::of(&Registry::load(data)?);
