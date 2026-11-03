@@ -492,7 +492,7 @@ export class Sessions {
 
   /** The 1 s interval runs only while some tab is working and waits on quiet to end its turn. */
   private sync(): void {
-    const working = [...this.entries.values()].some((e) => e.state.status === "working" && !e.state.caps.turnDone);
+    const working = [...this.entries.values()].some((e) => e.state.status === "working" && !e.state.caps.prompt);
     if (working && !this.interval) {
       this.interval = setInterval(() => {
         const at = this.now();
