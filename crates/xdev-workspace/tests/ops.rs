@@ -5,8 +5,8 @@ use std::process::Command;
 use tempfile::TempDir;
 use xdev_git::Repo;
 use xdev_workspace::{
-    Registry, WorktreeStat, add_repo, create_worktree, forget_repo, list, remove_worktree,
-    set_pinned, stat,
+    Registry, RepoPatch, WorktreeStat, add_repo, create_worktree, forget_repo, list,
+    remove_worktree, set_pinned, stat, update_repo, valid_short_name,
 };
 
 /// Runs setup commands; never used for the code under test.
@@ -493,4 +493,193 @@ fn stat_refuses_unknown_worktree() {
     let other = main.path().join("nowhere");
     let err = stat(&reg, &other).unwrap_err();
     assert_eq!(err.code(), "worktree_unknown");
+}
+
+/// A second repo, added to `reg`; returns its id.
+fn add_second(reg: &mut Registry) -> (String, TestRepo) {
+    let other = repo_dir();
+    commit_all(other.path(), "two");
+    let id = add_repo(reg, other.path(), 0).unwrap().id;
+    (id, other)
+}
+
+#[test]
+fn update_changes_short_name_base_ref_and_root() {
+    let (mut reg, id, main) = registered();
+    git(main.path(), &["branch", "dev"]);
+    let abs_root = main.path().parent().unwrap().join("elsewhere");
+    let view = update_repo(
+        &mut reg,
+        &id,
+        RepoPatch {
+            short_name: Some("core".into()),
+            base_ref: Some("dev".into()),
+            worktree_root: Some(abs_root.clone()),
+        },
+    )
+    .unwrap();
+    assert_eq!(view.short_name, "core");
+    assert_eq!(view.base_ref, "dev");
+    assert_eq!(view.worktree_root, abs_root.to_string_lossy());
+    assert_eq!(reg.repos[0].short_name, "core");
+    assert_eq!(reg.repos[0].base_ref, "dev");
+    assert_eq!(reg.repos[0].worktree_root, abs_root);
+}
+
+#[test]
+fn update_with_an_empty_patch_changes_nothing() {
+    let (mut reg, id, _main) = registered();
+    let before = reg.clone();
+    let view = update_repo(&mut reg, &id, RepoPatch::default()).unwrap();
+    assert_eq!(reg, before);
+    assert_eq!(view.id, id);
+}
+
+#[test]
+fn update_keeps_the_own_short_name_and_refuses_unknown_repo() {
+    let (mut reg, id, _main) = registered();
+    let own = reg.repos[0].short_name.clone();
+    let patch = RepoPatch {
+        short_name: Some(own),
+        ..RepoPatch::default()
+    };
+    assert!(update_repo(&mut reg, &id, patch.clone()).is_ok());
+    assert_eq!(
+        update_repo(&mut reg, "nope", patch).unwrap_err().code(),
+        "repo_unknown"
+    );
+}
+
+#[test]
+fn update_refuses_taken_short_name() {
+    let (mut reg, a, _main) = registered();
+    let (b, _other) = add_second(&mut reg);
+    let a_name = reg
+        .repos
+        .iter()
+        .find(|r| r.id == a)
+        .unwrap()
+        .short_name
+        .clone();
+    let before = reg.clone();
+    let err = update_repo(
+        &mut reg,
+        &b,
+        RepoPatch {
+            short_name: Some(a_name),
+            ..RepoPatch::default()
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err.code(), "short_name_taken");
+    assert_eq!(reg, before);
+}
+
+#[test]
+fn update_refuses_bad_short_name() {
+    let (mut reg, id, _main) = registered();
+    let before = reg.clone();
+    let long = "a".repeat(41);
+    for bad in ["", "Xdev", "x:y", "a b", "-x", "a/b", long.as_str()] {
+        let err = update_repo(
+            &mut reg,
+            &id,
+            RepoPatch {
+                short_name: Some(bad.into()),
+                ..RepoPatch::default()
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err.code(), "bad_name", "{bad:?}");
+        assert_eq!(reg, before);
+    }
+}
+
+#[test]
+fn valid_short_names() {
+    for good in ["a", "xdev", "x.y_z-1", "0ab", &"a".repeat(40)] {
+        assert!(valid_short_name(good), "{good:?}");
+    }
+    for bad in ["", "Xdev", "x:y", "a b", "-x", ".x", "a/b", &"a".repeat(41)] {
+        assert!(!valid_short_name(bad), "{bad:?}");
+    }
+}
+
+#[test]
+fn update_refuses_unresolved_base_ref() {
+    let (mut reg, id, _main) = registered();
+    let before = reg.clone();
+    for bad in ["nope", "--upload-pack=x", ""] {
+        let err = update_repo(
+            &mut reg,
+            &id,
+            RepoPatch {
+                base_ref: Some(bad.into()),
+                ..RepoPatch::default()
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err.code(), "bad_ref", "{bad:?}");
+        assert_eq!(reg, before);
+    }
+}
+
+#[test]
+fn update_refuses_root_inside_primary_or_relative() {
+    let (mut reg, id, main) = registered();
+    let before = reg.clone();
+    for bad in [
+        main.path().join("wt"),
+        main.path().to_path_buf(),
+        PathBuf::from("wt"),
+    ] {
+        let err = update_repo(
+            &mut reg,
+            &id,
+            RepoPatch {
+                worktree_root: Some(bad.clone()),
+                ..RepoPatch::default()
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err.code(), "bad_path", "{bad:?}");
+        assert_eq!(reg, before);
+    }
+}
+
+#[test]
+fn update_writes_nothing_when_a_later_field_fails() {
+    let (mut reg, id, _main) = registered();
+    let before = reg.clone();
+    let err = update_repo(
+        &mut reg,
+        &id,
+        RepoPatch {
+            short_name: Some("core".into()),
+            base_ref: Some("nope".into()),
+            worktree_root: None,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err.code(), "bad_ref");
+    assert_eq!(reg, before);
+}
+
+#[test]
+fn update_root_applies_to_the_next_worktree_only() {
+    let (mut reg, id, main) = registered();
+    let first = create_worktree(&mut reg, &id, "one", None, 1, 0).unwrap();
+    let root = main.path().parent().unwrap().join("moved");
+    update_repo(
+        &mut reg,
+        &id,
+        RepoPatch {
+            worktree_root: Some(root.clone()),
+            ..RepoPatch::default()
+        },
+    )
+    .unwrap();
+    let second = create_worktree(&mut reg, &id, "two", None, 2, 0).unwrap();
+    assert!(Path::new(&second.path).starts_with(&root));
+    assert!(Path::new(&first.path).exists());
 }

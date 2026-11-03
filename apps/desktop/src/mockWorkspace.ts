@@ -34,6 +34,7 @@ export const DEMO_WORKSPACE: MockWorkspaceSeed = {
       shortName: "xdev",
       path: "/demo/xdev",
       baseRef: "main",
+      worktreeRoot: "/demo/wt",
       missing: false,
       worktrees: [
         worktree("/demo/xdev", "xdev", "main", true),
@@ -141,6 +142,7 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
         shortName,
         path: root,
         baseRef: "main",
+        worktreeRoot: `${root.replace(/[\/][^\/]*$/, "")}/wt`,
         missing: false,
         worktrees: [worktree(root, shortName, "main", true)],
       };

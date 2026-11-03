@@ -6,6 +6,10 @@ import type { WorktreeView } from "./WorktreeView";
  */
 export type RepoView = { id: string, shortName: string, path: string, baseRef: string, 
 /**
+ * The folder new worktrees of this repo go under.
+ */
+worktreeRoot: string, 
+/**
  * The folder is gone or no longer a repo; the entry stays so a
  * reconnected drive finds it again.
  */
