@@ -2,11 +2,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Button } from "@xdev/ui";
-import { createMockApi, type Api, type WorktreeChange, type WorktreeView } from "../api";
-import { DiffView } from "../components/DiffView";
-import { translate } from "../i18n";
+import { createMockApi, type Api, type WorktreeChange, type WorktreeView } from "@/api";
+import { DiffView } from "@/components/DiffView";
+import { translate } from "@/i18n";
 import { Sessions } from "./sessions";
-import { ConfirmDialog } from "../components/ConfirmDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeDiff } from "./WorktreeDiff";
 import { WorktreeTabs } from "./WorktreeTabs";
@@ -27,6 +27,8 @@ vi.mock("react", async (original) => {
   };
   return {
     ...react,
+    // The profile store is outside what these tests render; its context keeps the default.
+    useContext: (ctx: { _currentValue: unknown }) => ctx._currentValue,
     useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
     useRef: (initial: any) => {
       if (!hooks.active) return react.useRef(initial);
@@ -38,9 +40,9 @@ vi.mock("react", async (original) => {
     useSyncExternalStore: (subscribe: any, get: any, server?: any) => (hooks.active ? get() : react.useSyncExternalStore(subscribe, get, server)),
   };
 });
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 // xterm needs a real canvas; the terminals are tested on their own.
-vi.mock("../terminal/Terminal", () => ({ Terminal: () => null }));
+vi.mock("@/terminal/Terminal", () => ({ Terminal: () => null }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {

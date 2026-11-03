@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type WorktreeFileDiff } from "../api";
-import type { Problem } from "../changes/useChanges";
-import { ProblemNote } from "../components/ChangesPanel";
-import { DiffStats, DiffView } from "../components/DiffView";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type WorktreeFileDiff } from "@/api";
+import type { Problem } from "@/changes/useChanges";
+import { ProblemNote } from "@/components/ChangesPanel";
+import { DiffStats, DiffView } from "@/components/DiffView";
+import { useI18n } from "@/i18n";
 
 /** One file of a worktree against its last commit, read once when the tab opens. */
 export function WorktreeDiff(props: { api: Api; worktree: string; file: string }): JSX.Element {

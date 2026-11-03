@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { createMockApi } from "../api";
+import { createMockApi } from "@/api";
 import { PrStore } from "./prs";
 
 const OAK = "/demo/wt/xdev-oak";

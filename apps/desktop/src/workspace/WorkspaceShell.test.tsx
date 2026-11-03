@@ -1,17 +1,17 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi, type WorktreeChange, type WorktreeView } from "../api";
-import { DocsApp } from "../DocsApp";
-import { DEMO_WORKSPACE } from "../mockWorkspace";
-import { translate } from "../i18n";
+import { createMockApi, type WorktreeChange, type WorktreeView } from "@/api";
+import { DocsApp } from "@/DocsApp";
+import { DEMO_WORKSPACE } from "@/mockWorkspace";
+import { translate } from "@/i18n";
 import { ChecksPanel } from "./ChecksPanel";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { VaultNav } from "./VaultNav";
-import { SettingsView } from "../settings/SettingsView";
+import { SettingsView } from "@/settings/SettingsView";
 import { Sessions } from "./sessions";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { WorktreeChanges } from "./WorktreeChanges";
@@ -29,6 +29,8 @@ vi.mock("react", async (original) => {
   };
   return {
     ...react,
+    // The profile store is outside what these tests render; its context keeps the default.
+    useContext: (ctx: { _currentValue: unknown }) => ctx._currentValue,
     useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
     useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
     useCallback: (fn: any, deps: any) => (hooks.active ? fn : react.useCallback(fn, deps)),
@@ -36,8 +38,8 @@ vi.mock("react", async (original) => {
   };
 });
 // xterm needs a real canvas; the terminals are tested on their own.
-vi.mock("../terminal/Terminal", () => ({ Terminal: () => null }));
-vi.mock("../i18n", async (original) => ({ ...await original<typeof import("../i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/terminal/Terminal", () => ({ Terminal: () => null }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {
@@ -464,4 +466,39 @@ it("checks tab badge counts failing checks", async () => {
   expect(tab().props["aria-label"]).toBe(en("checks.tabFailing", { count: 2 }));
   expect(renderToStaticMarkup(tab())).toContain(">2<");
   expect(view.list().props.prs[oak].pr.number).toBe(5);
+});
+
+// Creates a worktree through the dialog; hands back the tabs it opened with.
+async function createBirch(view: Awaited<ReturnType<typeof harness>>) {
+  view.list().props.onCreate();
+  view.of(CreateWorktreeDialog)[0].props.onCreate("demo-xdev", "birch", null);
+  await tick();
+  await tick();
+  expect(view.list().props.selected).toBe("/demo/wt/xdev-birch");
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  return sessions.tabs("/demo/wt/xdev-birch").map(t => t.profileId);
+}
+
+it("new_worktree_opens_default_agent", async () => {
+  const api = createMockApi({});
+  await api.profilesDefaults("ask", "codex", null);
+  const view = await harness(api);
+  expect(await createBirch(view)).toEqual(["codex"]);
+});
+
+it("new_worktree_skips_uninstalled_default", async () => {
+  const api = createMockApi({});
+  // Gemini is not installed in the mock.
+  await api.profilesDefaults("ask", "gemini", null);
+  const view = await harness(api);
+  expect(await createBirch(view)).toEqual([]);
+});
+
+it("new worktree skips a default agent that is turned off", async () => {
+  const api = createMockApi({});
+  const codex = (await api.profiles()).profiles.find(p => p.profile.id === "codex")!.profile;
+  await api.profilePut({ ...codex, enabled: false });
+  await api.profilesDefaults("ask", "codex", null);
+  const view = await harness(api);
+  expect(await createBirch(view)).toEqual([]);
 });

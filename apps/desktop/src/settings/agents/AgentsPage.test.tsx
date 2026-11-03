@@ -1,0 +1,155 @@
+import { beforeEach, expect, it, vi } from "vitest";
+import type { ReactElement } from "react";
+import { createMockApi } from "@/api";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { translate } from "@/i18n";
+import { AgentsPage } from "./AgentsPage";
+import { ProfileEditor } from "./ProfileEditor";
+
+const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
+const store = vi.hoisted(() => ({ update: vi.fn(), reload: vi.fn(), view: null }));
+vi.mock("react", async (original) => {
+  const react = await original<typeof import("react")>();
+  const state = (initial: unknown) => {
+    // Slots are bound per draw, so an editor drawn with its own slots keeps them.
+    const index = hooks.cursor++;
+    const slots = hooks.values;
+    if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial;
+    return [slots[index], (value: unknown) => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
+  };
+  return {
+    ...react,
+    useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
+    useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
+  };
+});
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/agents/profileStore", async (original) => ({ ...await original<typeof import("@/agents/profileStore")>(), useProfiles: () => store }));
+
+type Node = ReactElement<Record<string, any>>;
+function nodes(value: unknown): Node[] {
+  if (Array.isArray(value)) return value.flatMap(nodes);
+  if (!value || typeof value !== "object" || !("props" in value)) return [];
+  const node = value as Node;
+  return [node, ...nodes(node.props.children)];
+}
+const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
+
+beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; store.update.mockReset(); });
+
+async function page() {
+  const api = createMockApi({});
+  const draw = () => {
+    hooks.cursor = 0;
+    hooks.active = true;
+    try { return AgentsPage({ api, onChanged: vi.fn() }); } finally { hooks.active = false; }
+  };
+  draw();
+  hooks.effects.splice(0).forEach((e) => e());
+  await tick();
+  const all = () => nodes(draw());
+  const row = (id: string) => all().find((n) => n.type === "li" && n.props["data-profile"] === id)!;
+  const button = (root: Node, label: string) => nodes(root).find((n) => n.type === "button" && n.props.children === label)!;
+  const editor = () => all().find((n) => n.type === ProfileEditor);
+  return { api, all, row, button, editor };
+}
+
+// Draws one editor element as a component of its own, with its own hook slots.
+function drawEditor(el: Node) {
+  const slots = { values: [] as unknown[] };
+  const draw = () => {
+    const saved = { values: hooks.values, cursor: hooks.cursor };
+    hooks.values = slots.values;
+    hooks.cursor = 0;
+    hooks.active = true;
+    try { return nodes(ProfileEditor(el.props as Parameters<typeof ProfileEditor>[0])); } finally {
+      hooks.active = false;
+      hooks.values = saved.values;
+      hooks.cursor = saved.cursor;
+    }
+  };
+  const field = (name: string) => draw().find((n) => n.props["data-field"] === name)!;
+  const type = (name: string, value: string) => field(name).props.onChange({ target: { value } });
+  const click = (label: string) => draw().find((n) => n.props.children === label)!.props.onClick();
+  return { draw, field, type, click };
+}
+
+it("toggling_off_saves_enabled_false", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "profilePut");
+  const sw = nodes(p.row("codex")).find((n) => n.props.role === "switch")!;
+  expect(sw.props["aria-checked"]).toBe(true);
+  sw.props.onClick();
+  await tick();
+  expect(put).toHaveBeenCalledWith(expect.objectContaining({ id: "codex", enabled: false }));
+  expect(store.update).toHaveBeenCalled();
+  expect(nodes(p.row("codex")).find((n) => n.props.role === "switch")!.props["aria-checked"]).toBe(false);
+});
+
+it("skip_needs_confirm", async () => {
+  const p = await page();
+  const defaults = vi.spyOn(p.api, "profilesDefaults");
+  const seg = p.all().find((n) => n.props.className === "agent-seg")!;
+  p.button(seg, en("settings.agents.approvals.skip")).props.onClick();
+  expect(defaults).not.toHaveBeenCalled();
+  const dialog = () => p.all().find((n) => n.type === ConfirmDialog)!;
+  expect(dialog().props.open).toBe(true);
+  dialog().props.onConfirm();
+  await tick();
+  expect(defaults).toHaveBeenCalledWith("skip", expect.any(String), expect.any(String));
+  expect(dialog().props.open).toBe(false);
+  expect(p.all().some((n) => n.props.className === "agent-skip")).toBe(true);
+});
+
+it("editor_parses_env_lines", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "profilePut");
+  p.button(p.row("claude"), en("settings.agents.edit")).props.onClick();
+  const ed = drawEditor(p.editor()!);
+  ed.type("env", "A=1\n\nB = 2");
+  ed.click(en("settings.agents.save"));
+  await tick();
+  expect(put).toHaveBeenCalledWith(expect.objectContaining({ id: "claude", env: [{ name: "A", value: "1" }, { name: "B", value: "2" }] }));
+  expect(p.editor()).toBeUndefined();
+});
+
+it("editor_rejects_env_line_without_equals", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "profilePut");
+  p.button(p.row("claude"), en("settings.agents.edit")).props.onClick();
+  const ed = drawEditor(p.editor()!);
+  ed.type("env", "A=1\nBROKEN");
+  ed.click(en("settings.agents.save"));
+  expect(put).not.toHaveBeenCalled();
+  expect(ed.draw().find((n) => n.props.role === "alert")!.props.children).toBe(en("error.invalid_profile"));
+});
+
+it("reset_calls_profile_reset", async () => {
+  const p = await page();
+  const reset = vi.spyOn(p.api, "profileReset");
+  p.button(p.row("claude"), en("settings.agents.edit")).props.onClick();
+  drawEditor(p.editor()!).click(en("settings.agents.reset"));
+  await tick();
+  expect(reset).toHaveBeenCalledWith("claude");
+  expect(p.editor()).toBeUndefined();
+});
+
+it("account_select_lists_only_matching_provider", async () => {
+  const p = await page();
+  const options = (id: string) => {
+    p.button(p.row(id), en("settings.agents.edit")).props.onClick();
+    const select = drawEditor(p.editor()!).field("account");
+    return nodes(select.props.children).filter((n) => n.type === "option").map((n) => n.props.value);
+  };
+  expect(options("claude")).toEqual(["", "claude-2", "claude-3", "old"]);
+  expect(options("codex")).toEqual(["", "codex-1"]);
+});
+
+it("custom_profile_has_no_account_or_permissions", async () => {
+  const p = await page();
+  p.button(p.all().find((n) => n.props.className === "settings-actions settings-actions-start")!, en("settings.agents.addProfile")).props.onClick();
+  const ed = drawEditor(p.editor()!);
+  expect(ed.field("account")).toBeUndefined();
+  expect(ed.field("permissions")).toBeUndefined();
+});

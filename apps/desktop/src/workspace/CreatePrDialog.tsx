@@ -1,8 +1,8 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type PrDraft, type PrView } from "../api";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type ApiError, type PrDraft, type PrView } from "@/api";
+import { useI18n } from "@/i18n";
 
 // Mounted only while open, so every opening starts from the given fields.
 export function CreatePrDialog(props: {

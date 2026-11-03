@@ -1,8 +1,8 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type ApiError, type RepoPatch, type RepoView } from "../api";
-import { useI18n } from "../i18n";
+import { toApiError, type ApiError, type RepoPatch, type RepoView } from "@/api";
+import { useI18n } from "@/i18n";
 import type { SettingsSectionProps } from "./sections";
 
 type Field = keyof Required<RepoPatch>;

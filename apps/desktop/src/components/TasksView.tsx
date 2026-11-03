@@ -1,9 +1,9 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type FileDiff, type Task, type TaskState, type TasksContext } from "../api";
-import { relativeTime } from "../changes/changes";
-import { useI18n } from "../i18n";
+import { toApiError, type Api, type ApiError, type FileDiff, type Task, type TaskState, type TasksContext } from "@/api";
+import { relativeTime } from "@/changes/changes";
+import { useI18n } from "@/i18n";
 import { COMPACT, ProblemNote } from "./ChangesPanel";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DiffView } from "./DiffView";

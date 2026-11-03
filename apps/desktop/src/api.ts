@@ -3,10 +3,12 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   Accounts,
+  Approvals,
   Account,
   Change,
   CmdError,
   Commit,
+  CustomShell,
   DocEntry,
   DocLink,
   Expected,
@@ -15,6 +17,8 @@ import type {
   Freshness,
   LoginStart,
   Models,
+  Profile,
+  ProfilesView,
   Provider,
   PtyExit,
   PtyInfo,
@@ -80,6 +84,13 @@ export type {
   Freshness,
   LoginStart,
   Models,
+  Approvals,
+  CustomShell,
+  Permissions,
+  Profile,
+  ProfileView,
+  ProfilesView,
+  ShellView,
   Provider,
   PtyExit,
   PtyInfo,
@@ -127,8 +138,8 @@ export type { Event as SquadEvent, FileStatus as ExportStatus, PlannedFile as Ex
 export const PROVIDERS: readonly Provider[] = ["claude", "codex"];
 
 // What a terminal tab can start; Rust maps each id to a program (`xdev_agent::launch`).
-export type PtyProfile = "shell" | "claude" | "codex";
-export const PTY_PROFILES: readonly PtyProfile[] = ["shell", "claude", "codex"];
+// A profile id: `shell`, a built-in (`claude`, `codex`, `gemini`), a custom id, or a `shell:` menu id.
+export type PtyProfile = string;
 
 // Rust builds `CmdError.code` from each crate's `code()` as a plain string, so the codes the UI
 // knows how to translate are listed here by hand.
@@ -194,6 +205,11 @@ export type ErrorCode =
   | "worktree_dirty"
   | "primary_worktree"
   | "empty_message"
+  | "bad_profiles"
+  | "invalid_profile"
+  | "builtin_profile"
+  | "profile_off"
+  | "not_installed"
   | "outside"
   | "kit_bad_input"
   | "short_name_taken"
@@ -305,8 +321,16 @@ export interface Api {
   staleDocs(): Promise<StaleDoc[]>;
   // A terminal per tab. Output arrives on `onData` until the tab calls `ptyKill`; an agent profile
   // rejects with `needs_approval` / `denied` until `ptyApprove` records it in the policy.
-  ptySpawn(id: string, cwd: string, profileId: PtyProfile, cols: number, rows: number, onData: (bytes: Uint8Array) => void): Promise<PtyInfo>;
-  ptyApprove(profileId: PtyProfile): Promise<void>;
+  ptySpawn(id: string, cwd: string, profileId: PtyProfile, account: string | null, cols: number, rows: number, onData: (bytes: Uint8Array) => void): Promise<PtyInfo>;
+  ptyApprove(profileId: PtyProfile, account: string | null): Promise<void>;
+  // Agent profiles and the shells of the `+` menu; each write returns the whole view.
+  profiles(): Promise<ProfilesView>;
+  profilePut(p: Profile): Promise<ProfilesView>;
+  profileRemove(id: string): Promise<ProfilesView>;
+  profileReset(id: string): Promise<ProfilesView>;
+  profilesDefaults(approvals: Approvals, defaultAgent: string, defaultShell: string | null): Promise<ProfilesView>;
+  shellPut(s: CustomShell): Promise<ProfilesView>;
+  shellRemove(id: string): Promise<ProfilesView>;
   ptyWrite(id: string, data: Uint8Array): Promise<void>;
   ptyResize(id: string, cols: number, rows: number): Promise<void>;
   // Output is paused once 4 MB are unacknowledged.
@@ -465,6 +489,11 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "worktree_dirty",
   "primary_worktree",
   "empty_message",
+  "bad_profiles",
+  "invalid_profile",
+  "builtin_profile",
+  "profile_off",
+  "not_installed",
   "outside",
   "kit_bad_input",
   "short_name_taken",
@@ -560,13 +589,20 @@ const tauriApi: Api = {
   exportWrite: (expected) => call("export_write", { expected }),
   docFreshness: (path) => call("doc_freshness", { path }),
   staleDocs: () => call("stale_docs"),
-  ptySpawn(id, cwd, profileId, cols, rows, onData) {
+  ptySpawn(id, cwd, profileId, account, cols, rows, onData) {
     // Rust sends raw bytes, which arrive as an ArrayBuffer.
     const out = new Channel<ArrayBuffer | number[]>();
     out.onmessage = (msg) => onData(toBytes(msg));
-    return call("pty_spawn", { id, cwd, profileId, cols, rows, out });
+    return call("pty_spawn", { id, cwd, profileId, account, cols, rows, out });
   },
-  ptyApprove: (profileId) => call("pty_approve", { profileId }),
+  ptyApprove: (profileId, account) => call("pty_approve", { profileId, account }),
+  profiles: () => call("profiles_list"),
+  profilePut: (profile) => call("profile_put", { profile }),
+  profileRemove: (id) => call("profile_remove", { id }),
+  profileReset: (id) => call("profile_reset", { id }),
+  profilesDefaults: (approvals, defaultAgent, defaultShell) => call("profiles_defaults", { approvals, defaultAgent, defaultShell }),
+  shellPut: (shell) => call("shell_put", { shell }),
+  shellRemove: (id) => call("shell_remove", { id }),
   ptyWrite: (id, data) => call("pty_write", { id, data: [...data] }),
   ptyResize: (id, cols, rows) => call("pty_resize", { id, cols, rows }),
   ptyAck: (id, n) => call("pty_ack", { id, n }),

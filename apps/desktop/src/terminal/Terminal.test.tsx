@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { createMockApi } from "../api";
-import { translate } from "../i18n";
+import { createMockApi } from "@/api";
+import { translate } from "@/i18n";
 import { PtyClient } from "./ptyClient";
 import { Terminal } from "./Terminal";
 
@@ -14,8 +14,8 @@ vi.mock("react", async (original) => ({
     hooks.effects.push(effect);
   },
 }));
-vi.mock("../i18n", async (original) => ({
-  ...(await original<typeof import("../i18n")>()),
+vi.mock("@/i18n", async (original) => ({
+  ...(await original<typeof import("@/i18n")>()),
   useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }),
 }));
 // xterm needs a real canvas; a stand-in with the calls the view makes.

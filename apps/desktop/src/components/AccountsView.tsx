@@ -1,7 +1,7 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useState } from "react";
-import { PROVIDERS, toApiError, type Account, type Accounts, type Api, type ApiError, type Provider, type Quota } from "../api";
-import { useI18n } from "../i18n";
+import { PROVIDERS, toApiError, type Account, type Accounts, type Api, type ApiError, type Provider, type Quota } from "@/api";
+import { useI18n } from "@/i18n";
 import { COMPACT, ProblemNote } from "./ChangesPanel";
 import { RoutingRules } from "./RoutingRules";
 

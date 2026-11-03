@@ -1,4 +1,4 @@
-import type { useI18n } from "../i18n";
+import type { useI18n } from "@/i18n";
 
 type T = ReturnType<typeof useI18n>["t"];
 

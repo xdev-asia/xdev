@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
-import type { Api } from "../api";
-import { useI18n } from "../i18n";
-import { MemoryTab } from "../kit/MemoryTab";
-import { PromptsTab } from "../kit/PromptsTab";
-import { SkillsTab } from "../kit/SkillsTab";
-import { UsageTab } from "../kit/UsageTab";
+import type { Api } from "@/api";
+import { useI18n } from "@/i18n";
+import { MemoryTab } from "@/kit/MemoryTab";
+import { PromptsTab } from "@/kit/PromptsTab";
+import { SkillsTab } from "@/kit/SkillsTab";
+import { UsageTab } from "@/kit/UsageTab";
 
 export type KitTab = "skills" | "memory" | "prompts" | "usage";
 

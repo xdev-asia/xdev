@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Check, PrView, ShipView } from "../api";
+import type { Check, PrView, ShipView } from "@/api";
 import { checksSummary, shipAction } from "./ship";
 
 const commit = { id: "a", author: "x", time: 1, message: "m" };

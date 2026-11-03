@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMockApi } from "../mockApi";
+import { createMockApi } from "@/mockApi";
 import { Sessions } from "./sessions";
 
 const A = "/demo/wt/xdev-oak";
 const B = "/demo/wt/xdev-elm";
 
-type Profile = "shell" | "claude" | "codex";
+type Profile = string;
 
 async function spawn(sessions: Sessions, worktree: string, profile: Profile) {
   const tab = sessions.open(worktree, profile);
@@ -34,6 +34,16 @@ describe("Sessions", () => {
     expect(live.tabs(B)).toEqual([]);
   });
 
+  it("restart_keeps_account", async () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    const tab = live.open(A, "claude", "work");
+    expect(tab.account).toBe("work");
+    const next = live.restart(tab.id)!;
+    expect(next).toMatchObject({ profileId: "claude", account: "work", agent: true });
+    expect(next.id).not.toBe(tab.id);
+  });
+
   it("dispose kills every tab it holds", async () => {
     const api = createMockApi({});
     const live = new Sessions(api);
@@ -59,7 +69,7 @@ describe("Sessions", () => {
 
   it("removing_a_worktree_kills_its_sessions_first", async () => {
     const api = createMockApi({});
-    await api.ptyApprove("claude");
+    await api.ptyApprove("claude", null);
     const live = (sessions = new Sessions(api));
     const a1 = await spawn(live, A, "shell");
     const a2 = await spawn(live, A, "claude");

@@ -1,7 +1,7 @@
 import type { JSX } from "react";
-import { countLabel } from "../changes/changes";
-import { useI18n } from "../i18n";
-import { APPS, type AppId } from "../shell/apps";
+import { countLabel } from "@/changes/changes";
+import { useI18n } from "@/i18n";
+import { APPS, type AppId } from "@/shell/apps";
 
 const ICONS: Record<AppId, JSX.Element> = {
   docs: (

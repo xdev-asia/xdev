@@ -1,4 +1,4 @@
-import type { Change } from "../api";
+import type { Change } from "@/api";
 
 export type Message = { key: string; vars?: Record<string, string | number> };
 

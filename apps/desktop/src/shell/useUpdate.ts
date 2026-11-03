@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Api } from "../api";
-import { useI18n } from "../i18n";
+import type { Api } from "@/api";
+import { useI18n } from "@/i18n";
 
 export type Update = { version: string; notes: string | null; status: "ready" | "restarting" | "failed" };
 
