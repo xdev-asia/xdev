@@ -382,7 +382,7 @@ mod tests {
 
     fn hooked() -> Launch {
         let mut l = agent();
-        l.add_hooks(Path::new("/opt/xdev"));
+        l.add_hooks_with(Path::new("/opt/xdev"), None);
         l
     }
 
@@ -411,7 +411,7 @@ mod tests {
         let l = hooked();
         assert_eq!(
             l.args[l.args.len() - 2..],
-            hook_args(Cli::Claude, Path::new("/opt/xdev"))[..]
+            hook_args(Cli::Claude, Path::new("/opt/xdev"), None)[..]
         );
         approve_launch(&ptys, data.path(), &l).unwrap();
         let (info, _) = start(&ptys, data.path(), "a", l);
@@ -430,7 +430,7 @@ mod tests {
     fn toggling_hooks_changes_the_fingerprint() {
         assert_ne!(print_of(&agent()), print_of(&hooked()));
         let mut moved = agent();
-        moved.add_hooks(Path::new("/elsewhere/xdev"));
+        moved.add_hooks_with(Path::new("/elsewhere/xdev"), None);
         assert_ne!(print_of(&hooked()), print_of(&moved));
     }
 

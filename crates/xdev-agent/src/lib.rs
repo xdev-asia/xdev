@@ -17,6 +17,7 @@ mod shells;
 mod squad;
 mod squad_run;
 mod store;
+mod version;
 
 use std::path::PathBuf;
 
@@ -28,8 +29,8 @@ pub use detect::{find_builtin, find_program};
 pub use flags::{efforts, flags};
 pub use flow::RunOptions;
 pub use hooks::{
-    DETAIL_MAX, HOOKS_DIR, HookDetail, HookEvent, HookLine, append_hook, hook_args, hook_file,
-    valid_pty_id,
+    DETAIL_MAX, HOOKS_DIR, HookDetail, HookEvent, HookLine, LINE_MAX, REPEAT_MS, append_hook,
+    append_hook_detail, hook_args, hook_file, valid_pty_id,
 };
 pub use launch::{Context, Launch, LaunchError, resolve};
 pub use profiles::{
@@ -50,6 +51,7 @@ pub use squad::{
 };
 pub use squad_run::{QuotaCheck, RunnerFor, SquadDeps};
 pub use store::TaskStore;
+pub use version::{CliVersion, cli_version};
 
 /// Tools an agent gets when the caller names none: file work only.
 pub const DEFAULT_TOOLS: [&str; 5] = ["Read", "Edit", "Write", "Grep", "Glob"];
