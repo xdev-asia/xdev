@@ -25,8 +25,8 @@ export function Terminal(props: {
   onError(error: ApiError): void;
   /** Bytes of pty output, as they arrive. */
   onOutput?(bytes: number): void;
-  /** The user typed into the terminal. */
-  onInput?(): void;
+  /** The user typed into the terminal; `text` is what was sent (Escape alone may stop a turn). */
+  onInput?(text: string): void;
 }): JSX.Element {
   const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
@@ -79,7 +79,7 @@ export function Terminal(props: {
     const client = props.client ?? new PtyClient(props.api, props.id);
     let alive = true;
     term.onData((text) => {
-      handlers.current.onInput?.();
+      handlers.current.onInput?.(text);
       void client.input(text).catch(() => {});
     });
     term.onResize(({ cols, rows }) => void client.resize(cols, rows).catch(() => {}));

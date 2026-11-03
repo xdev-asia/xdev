@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { step, worktreeDot, type StatusState, type TabStatus } from "./status";
+import { INTERRUPT_MS, capsFor, isInterrupt, start, step, worktreeDot, type StatusState, type TabStatus } from "./status";
 
-const idle = (): StatusState => ({ status: "idle", lastInput: 0, lastOutput: 0 });
+const idle = (): StatusState => start(capsFor(null, false));
 
 describe("tab status", () => {
   it("echo_after_keystroke_stays_idle", () => {
@@ -55,11 +55,157 @@ describe("tab status", () => {
     expect(s.status).toBe("failed");
   });
 
+  it("hook events drive a claude tab", () => {
+    let s = start(capsFor("claude", true));
+    s = step(s, { kind: "hook", event: "prompt", at: 1 }, false);
+    expect(s.status).toBe("working");
+    s = step(s, { kind: "hook", event: "needs-input", at: 2 }, false);
+    expect(s.status).toBe("needs-you");
+    s = step(s, { kind: "input", at: 3 }, false);
+    expect(s.status).toBe("working");
+    s = step(s, { kind: "hook", event: "turn-done", at: 4 }, false);
+    expect(s.status).toBe("done");
+    s = step(s, { kind: "seen", at: 5 }, true);
+    expect(s.status).toBe("idle");
+  });
+
+  it("claude with hooks does not wake on output alone", () => {
+    let s = start(capsFor("claude", true));
+    s = step(s, { kind: "output", at: 1000 });
+    expect(s.status).toBe("idle");
+    // Output still counts as activity.
+    expect(s.lastOutput).toBe(1000);
+  });
+
+  it("codex uses timing for working and the hook for done", () => {
+    let s = start(capsFor("codex", true));
+    s = step(s, { kind: "output", at: 1000 }, false);
+    expect(s.status).toBe("working");
+    // No quiet → idle while the hook reports the end.
+    s = step(s, { kind: "tick", at: 10_000 }, false);
+    expect(s.status).toBe("working");
+    s = step(s, { kind: "hook", event: "turn-done", at: 10_001 }, false);
+    expect(s.status).toBe("done");
+  });
+
+  it("turn done on a seen pane is idle at once", () => {
+    const s = step(start(capsFor("claude", true)), { kind: "hook", event: "turn-done", at: 1 }, true);
+    expect(s.status).toBe("idle");
+  });
+
+  it("timing_does_not_leave_done", () => {
+    for (const event of ["turn-done", "needs-input"] as const) {
+      for (const caps of [capsFor("claude", true), capsFor("codex", true), capsFor(null, false)]) {
+        let s = step(start(caps), { kind: "hook", event, at: 1000 });
+        const held = s.status;
+        s = step(s, { kind: "output", at: 2000 });
+        s = step(s, { kind: "tick", at: 6000 });
+        expect(s.status).toBe(held);
+        // An idle title is no news either.
+        s = step(s, { kind: "title", status: "idle", at: 7000 });
+        expect(s.status).toBe(held);
+      }
+    }
+  });
+
+  it("no hooks keeps today's timing", () => {
+    let s = start(capsFor(null, false));
+    s = step(s, { kind: "input", at: 1000 });
+    s = step(s, { kind: "output", at: 1100 });
+    expect(s.status).toBe("idle");
+    s = step(s, { kind: "output", at: 2000 });
+    expect(s.status).toBe("working");
+    s = step(s, { kind: "tick", at: 5000 });
+    expect(s.status).toBe("idle");
+    // Hook-less codex and claude are the same.
+    expect(capsFor("codex", false)).toEqual(capsFor(null, false));
+    expect(capsFor("claude", false)).toEqual(capsFor(null, true));
+  });
+
+  it("a title rule sets its status", () => {
+    let s = step(idle(), { kind: "title", status: "working", at: 1 });
+    expect(s.status).toBe("working");
+    s = step(s, { kind: "title", status: "needs-you", at: 2 });
+    expect(s.status).toBe("needs-you");
+    s = step(s, { kind: "input", at: 3 });
+    s = step(s, { kind: "title", status: "idle", at: 4 });
+    expect(s.status).toBe("idle");
+  });
+
+  it("exit 0 is exited, other codes failed", () => {
+    for (const caps of [capsFor("claude", true), capsFor(null, false)]) {
+      const busy = step(start(caps), { kind: "hook", event: "prompt", at: 1 });
+      expect(step(busy, { kind: "exit", code: 0 }).status).toBe("exited");
+      expect(step(busy, { kind: "exit", code: 1 }).status).toBe("failed");
+      expect(step(busy, { kind: "exit", code: null }).status).toBe("failed");
+      // A hook after the end changes nothing.
+      expect(step(step(busy, { kind: "exit", code: 0 }), { kind: "hook", event: "needs-input", at: 2 }).status).toBe("exited");
+    }
+  });
+
+  it("urgency puts needs-you first", () => {
+    expect(worktreeDot(["working", "done", "needs-you"])).toBe("needs-you");
+    expect(worktreeDot(["working", "done"])).toBe("done");
+    expect(worktreeDot(["done", "failed"])).toBe("failed");
+  });
+
   it("dot is the most urgent agent status", () => {
     expect(worktreeDot(["idle", "working"])).toBe("working");
     expect(worktreeDot(["working", "failed"])).toBe("failed");
     expect(worktreeDot(["exited", "idle"])).toBe("idle");
     expect(worktreeDot(["exited"])).toBe("exited");
     expect(worktreeDot([] as TabStatus[])).toBeNull();
+  });
+  it("hook data outranks titles on a hooked pane", () => {
+    // Before any hook, a title still counts.
+    let s = step(start(capsFor("claude", true)), { kind: "title", status: "working", at: 1 });
+    expect(s.status).toBe("working");
+    s = step(s, { kind: "hook", event: "needs-input", at: 2 });
+    expect(s.hooked).toBe(true);
+    s = step(s, { kind: "title", status: "working", at: 3 });
+    expect(s.status).toBe("needs-you");
+    // Without hooks, titles keep setting it.
+    let plain = step(idle(), { kind: "title", status: "needs-you", at: 1 });
+    plain = step(plain, { kind: "title", status: "working", at: 2 });
+    expect(plain.status).toBe("working");
+  });
+
+  it("an interrupt with no hook after it settles idle, not done", () => {
+    let s = step(start(capsFor("claude", true)), { kind: "hook", event: "prompt", at: 1000 });
+    s = step(s, { kind: "input", at: 2000, interrupt: true });
+    expect(s).toMatchObject({ status: "working", interruptAt: 2000 });
+    s = step(s, { kind: "tick", at: 2000 + INTERRUPT_MS - 1 });
+    expect(s.status).toBe("working");
+    s = step(s, { kind: "tick", at: 2000 + INTERRUPT_MS });
+    expect(s).toMatchObject({ status: "idle", interruptAt: null, cancelled: true });
+    // A late end of the stopped turn is not a finished turn.
+    s = step(s, { kind: "hook", event: "turn-done", at: 4000 });
+    expect(s.status).toBe("idle");
+    // The next prompt is a new turn that can finish.
+    s = step(s, { kind: "hook", event: "prompt", at: 5000 });
+    s = step(s, { kind: "hook", event: "turn-done", at: 6000 });
+    expect(s.status).toBe("done");
+  });
+
+  it("a turn end right after an interrupt rests; other hooks keep the turn", () => {
+    const working = step(start(capsFor("claude", true)), { kind: "hook", event: "prompt", at: 1000 });
+    const stopped = step(working, { kind: "input", at: 2000, interrupt: true });
+    expect(step(stopped, { kind: "hook", event: "turn-done", at: 2100 }).status).toBe("idle");
+    const asked = step(stopped, { kind: "hook", event: "needs-input", at: 2100 });
+    expect(asked).toMatchObject({ status: "needs-you", interruptAt: null });
+    const kept = step(stopped, { kind: "hook", event: "prompt", at: 2100 });
+    expect(step(kept, { kind: "tick", at: 3000 }).status).toBe("working");
+  });
+
+  it("an interrupt only counts on a hooked working pane", () => {
+    expect(isInterrupt("\x1b")).toBe(true);
+    expect(isInterrupt("\x03")).toBe(true);
+    // Arrow keys start with Escape but are not one.
+    expect(isInterrupt("\x1b[A")).toBe(false);
+    let plain = step(idle(), { kind: "output", at: 1000 });
+    plain = step(plain, { kind: "input", at: 2000, interrupt: true });
+    expect(plain.interruptAt).toBeNull();
+    const rest = step(start(capsFor("claude", true)), { kind: "input", at: 1, interrupt: true });
+    expect(rest.interruptAt).toBeNull();
   });
 });
