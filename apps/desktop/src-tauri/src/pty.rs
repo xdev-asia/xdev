@@ -256,6 +256,9 @@ mod tests {
             args,
             env: Vec::new(),
             agent: true,
+            permissions: xdev_agent::Permissions::Ask,
+            account: None,
+            startup: vec![],
         }
     }
 

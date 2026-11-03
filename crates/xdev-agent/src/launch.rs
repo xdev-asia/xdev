@@ -132,7 +132,14 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
             .ok_or(LaunchError::UnknownAccount)?;
         // The account's folder wins over a variable of the same name.
         let var = provider.home_var();
-        env.retain(|(name, _)| !name.eq_ignore_ascii_case(var));
+        // Variable names are case-insensitive on Windows only.
+        env.retain(|(key, _)| {
+            if cfg!(windows) {
+                !key.eq_ignore_ascii_case(var)
+            } else {
+                key != var
+            }
+        });
         env.push((var.to_owned(), entry.dir.clone().into_os_string()));
     }
 
@@ -213,17 +220,18 @@ fn on_path(name: &str) -> Option<PathBuf> {
 }
 
 /// Windows PowerShell running `lines`, then the program with its args, and
-/// exiting with the program's code. The script travels as base64 of UTF-16LE
-/// so no layer of command-line quoting touches it.
+/// exiting with the program's code (1 when the program never started). The
+/// script travels as base64 of UTF-16LE so no layer of command-line quoting
+/// touches it.
 fn wrap_powershell(lines: &[String], program: &str, args: &[String]) -> (PathBuf, Vec<String>) {
     let mut script = lines.join("; ");
     script.push_str("; & ");
     script.push_str(&ps_quote(program));
     for arg in args {
         script.push(' ');
-        script.push_str(&ps_quote(arg));
+        script.push_str(&ps_quote(&native_arg(arg)));
     }
-    script.push_str("; exit $LASTEXITCODE");
+    script.push_str("; exit $(if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE })");
     let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
     let args = ["-NoLogo", "-NoProfile", "-EncodedCommand"]
         .map(str::to_owned)
@@ -231,6 +239,46 @@ fn wrap_powershell(lines: &[String], program: &str, args: &[String]) -> (PathBuf
         .chain([base64(&utf16)])
         .collect();
     (PathBuf::from("powershell.exe"), args)
+}
+
+/// An argument as Windows PowerShell 5.1 must be given it so the program
+/// parses it back unchanged. PowerShell wraps most arguments with whitespace in
+/// double quotes and otherwise passes it as it is, without escaping any
+/// embedded `"`; so escape `"` as `\"`, double the backslashes before each
+/// `"` (and a trailing run, which would meet the closing quote), and write an
+/// empty argument as `""`.
+///
+/// Known gap, seen on 5.1: PowerShell decides itself whether to wrap, and an
+/// argument whose whitespace follows an odd number of quotes (`"a b"`) is
+/// passed unwrapped, so the program sees two arguments.
+fn native_arg(text: &str) -> String {
+    if text.is_empty() {
+        return "\"\"".to_owned();
+    }
+    let wrapped = text.contains(char::is_whitespace);
+    let mut out = String::with_capacity(text.len());
+    let mut slashes = 0;
+    for c in text.chars() {
+        match c {
+            '\\' => {
+                slashes += 1;
+                out.push(c);
+            }
+            '"' => {
+                out.extend(std::iter::repeat_n('\\', slashes + 1));
+                out.push(c);
+                slashes = 0;
+            }
+            _ => {
+                slashes = 0;
+                out.push(c);
+            }
+        }
+    }
+    if wrapped {
+        out.extend(std::iter::repeat_n('\\', slashes));
+    }
+    out
 }
 
 /// Single-quoted. PowerShell also reads the typographic single quotes as
@@ -519,7 +567,7 @@ mod tests {
         c.account = Some("work".into());
         c.env = vec![
             EnvVar {
-                name: "claude_config_dir".into(),
+                name: "CLAUDE_CONFIG_DIR".into(),
                 value: "other".into(),
             },
             EnvVar {
@@ -535,6 +583,26 @@ mod tests {
                 ("CLAUDE_CONFIG_DIR".to_owned(), "D".into())
             ]
         );
+    }
+
+    #[test]
+    fn env_names_match_case_only_on_windows() {
+        let mut c = builtin(Cli::Claude);
+        c.account = Some("work".into());
+        c.env = vec![EnvVar {
+            name: "claude_config_dir".into(),
+            value: "other".into(),
+        }];
+        let l = run(&with(c), "claude", None, &found).unwrap();
+        let home = ("CLAUDE_CONFIG_DIR".to_owned(), "D".into());
+        if cfg!(windows) {
+            assert_eq!(l.env, [home]);
+        } else {
+            assert_eq!(
+                l.env,
+                [("claude_config_dir".to_owned(), "other".into()), home]
+            );
+        }
     }
 
     #[test]
@@ -628,7 +696,7 @@ mod tests {
         assert_eq!(program, PathBuf::from("powershell.exe"));
         assert_eq!(
             decode_powershell(&wrapped),
-            r"cd x; & 'C:\Program Files\a''b.exe' 'it''s;rm'; exit $LASTEXITCODE"
+            r"cd x; & 'C:\Program Files\a''b.exe' 'it''s;rm'; exit $(if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE })"
         );
 
         let (shell, wrapped) = wrap_posix(Path::new("/bin/zsh"), &lines, "/opt/a b", &args);
@@ -645,10 +713,38 @@ mod tests {
         let (_, wrapped) = wrap_powershell(&lines, "p", &args);
         assert_eq!(
             decode_powershell(&wrapped),
-            "cd x; nvm use; & 'p' 'a\u{2019}\u{2019};b' ''; exit $LASTEXITCODE"
+            "cd x; nvm use; & 'p' 'a\u{2019}\u{2019};b' '\"\"'; exit $(if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE })"
         );
         let (_, wrapped) = wrap_posix(Path::new("/bin/sh"), &lines, "p", &args);
         assert_eq!(wrapped[2], "cd x\nnvm use\nexec 'p' 'a\u{2019};b' ''");
+    }
+
+    #[test]
+    fn powershell_args_survive_native_passing() {
+        let tail = "; exit $(if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE })";
+        let script = |args: &[&str]| {
+            let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
+            let (_, wrapped) = wrap_powershell(&["cd x".to_owned()], "p", &args);
+            decode_powershell(&wrapped)
+        };
+        // An embedded quote is escaped; an empty arg becomes `""`.
+        assert_eq!(
+            script(&[r#"say "hi""#, ""]),
+            format!(r#"cd x; & 'p' 'say \"hi\"' '""'{tail}"#)
+        );
+        // A quote without whitespace is escaped the same way.
+        assert_eq!(script(&[r#"a"b"#]), format!(r#"cd x; & 'p' 'a\"b'{tail}"#));
+        // Backslashes before a quote double; a trailing run doubles only
+        // when the arg gets wrapped in quotes (it has whitespace).
+        assert_eq!(
+            script(&[r#"a\"b"#, r"C:\dir\", r"C:\my dir\"]),
+            format!(r#"cd x; & 'p' 'a\\\"b' 'C:\dir\' 'C:\my dir\\'{tail}"#)
+        );
+        // Whitespace, quote and backslash together.
+        assert_eq!(
+            script(&[r#"x\\"y z\"#]),
+            format!(r#"cd x; & 'p' 'x\\\\\"y z\\'{tail}"#)
+        );
     }
 
     #[test]
