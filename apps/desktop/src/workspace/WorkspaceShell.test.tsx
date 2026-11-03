@@ -25,6 +25,8 @@ vi.mock("react", async (original) => {
   };
   return {
     ...react,
+    // The profile store is outside what these tests render; its context keeps the default.
+    useContext: (ctx: { _currentValue: unknown }) => ctx._currentValue,
     useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
     useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
     useCallback: (fn: any, deps: any) => (hooks.active ? fn : react.useCallback(fn, deps)),

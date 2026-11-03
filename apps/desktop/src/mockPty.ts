@@ -1,4 +1,5 @@
 import type { Api, ApiError, PtyExit, PtyProfile } from "./api";
+import type { MockProfiles } from "./mockProfiles";
 
 type PtyApi = Pick<Api, "ptySpawn" | "ptyApprove" | "ptyWrite" | "ptyResize" | "ptyAck" | "ptyKill" | "onPtyExit">;
 
@@ -11,35 +12,43 @@ function reject(code: ApiError["code"], detail?: string): Promise<never> {
 
 const encode = (text: string) => new TextEncoder().encode(text);
 
-/** An echo terminal: what is typed comes back, Enter starts a new prompt. Agents need approval once. */
-export function createMockPty(): PtyApi {
+/**
+ * An echo terminal: what is typed comes back, Enter starts a new prompt. Agents need approval
+ * once; an agent running as `skip` needs it before every start.
+ */
+export function createMockPty(profiles: Pick<MockProfiles, "__knows" | "__permissions">): PtyApi {
   // Like Rust, an exited terminal keeps its slot until `ptyKill`.
   const ptys = new Map<string, { onData: (bytes: Uint8Array) => void; line: string; exited: boolean }>();
   const approved = new Set<PtyProfile>();
+  const approvedOnce = new Set<PtyProfile>();
   const exits = new Set<(exit: PtyExit) => void>();
 
   return {
-    async ptySpawn(id, _cwd, profileId, _cols, _rows, onData) {
-      if (!["shell", "claude", "codex"].includes(profileId)) return reject("unknown_profile");
+    async ptySpawn(id, _cwd, profileId, account, _cols, _rows, onData) {
+      if (!profiles.__knows(profileId)) return reject("unknown_profile");
       if (ptys.has(id)) return reject("pty_exists");
-      const agent = profileId !== "shell";
-      if (agent && !approved.has(profileId)) {
-        return reject("needs_approval", `start ${profileId} in a terminal`);
+      const agent = !profileId.startsWith("shell");
+      const permissions = agent ? (profiles.__permissions(profileId) ?? "ask") : "ask";
+      if (agent) {
+        // A skip launch is approved for one start only.
+        const ok = permissions === "skip" ? approvedOnce.delete(profileId) : approved.has(profileId);
+        if (!ok) return reject("needs_approval", `start ${profileId} in a terminal`);
       }
       ptys.set(id, { onData, line: "", exited: false });
       onData(encode(`xDev demo terminal (${profileId})\r\n${PROMPT}`));
       return {
         id,
         pid: null,
-        program: profileId === "shell" ? "sh" : profileId,
+        program: agent ? profileId : "sh",
         agent,
         profile: profileId,
-        permissions: "ask",
-        account: null,
+        permissions,
+        account,
       };
     },
     async ptyApprove(profileId) {
-      approved.add(profileId);
+      if (profiles.__permissions(profileId) === "skip") approvedOnce.add(profileId);
+      else approved.add(profileId);
     },
     async ptyWrite(id, data) {
       const pty = ptys.get(id);

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import pkg from "../../package.json";
 import logo from "../../../../docs/brand/xdev-icon-512.png";
+import { ProfilesProvider } from "../agents/profileStore";
 import { toApiError, type Api, type ApiError, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "../api";
 import { DocsApp } from "../DocsApp";
 import { LanguageSwitch } from "../components/LanguageSwitch";
@@ -215,6 +216,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const removingRepo = removing ? repos?.find((r) => r.worktrees.some((w) => w.path === removing.worktree.path)) : undefined;
 
   return (
+    <ProfilesProvider api={api}>
     <div className="ws-shell">
       <header className="ws-header">
         <button
@@ -434,6 +436,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         />
       )}
     </div>
+    </ProfilesProvider>
   );
 }
 

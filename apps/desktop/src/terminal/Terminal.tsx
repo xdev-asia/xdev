@@ -20,6 +20,7 @@ export function Terminal(props: {
   client?: PtyClient;
   cwd: string;
   profile: PtyProfile;
+  account?: string | null;
   onStarted(info: PtyInfo): void;
   onError(error: ApiError): void;
   /** Bytes of pty output, as they arrive. */
@@ -89,7 +90,7 @@ export function Terminal(props: {
       client.start(props.cwd, props.profile, term.cols, term.rows, (bytes, rendered) => {
         handlers.current.onOutput?.(bytes.length);
         term.write(bytes, rendered);
-      }).then(
+      }, props.account ?? null).then(
         (info) => {
           if (!alive) return;
           handlers.current.onStarted(info);
@@ -108,7 +109,7 @@ export function Terminal(props: {
       search.current = null;
       term.dispose();
     };
-  }, [props.api, props.id, props.client, props.cwd, props.profile]);
+  }, [props.api, props.id, props.client, props.cwd, props.profile, props.account]);
 
   return (
     <div className="terminal-pane">

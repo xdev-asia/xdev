@@ -592,5 +592,11 @@
   "workspace.remove.forceNote": "Nếu vẫn xoá, nhánh do xDev tạo cũng bị xoá, kể cả khi nhánh có commit chưa có ở nơi nào khác.",
   "workspace.remove.confirm": "Xoá",
   "workspace.remove.force": "Vẫn xoá (mất phần chưa commit)",
-  "workspace.remove.busy": "Đang xoá…"
+  "workspace.remove.busy": "Đang xoá…",
+  "error.bad_profiles": "Không đọc được tệp hồ sơ đã lưu, nên đã giữ nguyên.",
+  "error.invalid_profile": "Hồ sơ hoặc shell này không hợp lệ.",
+  "error.builtin_profile": "Không thể xóa hồ sơ có sẵn.",
+  "error.profile_off": "Hồ sơ này đang tắt.",
+  "error.not_installed": "Chương trình này chưa được cài.",
+  "terminal.profile.gemini": "Gemini CLI"
 }

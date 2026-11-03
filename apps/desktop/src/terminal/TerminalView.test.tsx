@@ -9,6 +9,8 @@ import { TerminalView } from "./TerminalView";
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
 vi.mock("react", async (original) => ({
   ...await original<typeof import("react")>(),
+  // The profile store is outside what these tests render; its context keeps the default.
+  useContext: (ctx: { _currentValue: unknown }) => ctx._currentValue,
   useState: (initial: unknown) => {
     const index = hooks.cursor++;
     if (!(index in hooks.values)) hooks.values[index] = initial;
@@ -65,7 +67,7 @@ it("asks once on needs_approval, approves, then starts again", async () => {
 
   view.dialog().props.onConfirm();
   await tick();
-  expect(approve).toHaveBeenCalledWith("claude");
+  expect(approve).toHaveBeenCalledWith("claude", null);
   const second = view.terminal()!;
   expect(second.props.id).not.toBe(first.props.id);
 
