@@ -211,3 +211,149 @@ fn current_branch_none_when_detached() {
     git(dir.path(), &["checkout", "-q", "--detach"]);
     assert_eq!(repo.current_branch().unwrap(), None);
 }
+
+fn read(root: &Path, rel: &str) -> String {
+    fs::read_to_string(root.join(rel)).unwrap()
+}
+
+fn status(dir: &Path) -> String {
+    git(dir, &["status", "--porcelain"])
+}
+
+#[test]
+fn discard_reverts_a_modified_file() {
+    let dir = fixture();
+    write(dir.path(), "a.txt", "changed\n");
+    write(dir.path(), "b.txt", "keep me changed\n");
+    let repo = Repo::discover(dir.path()).unwrap();
+    repo.discard(&paths(&["a.txt"]), false).unwrap();
+    assert_eq!(read(dir.path(), "a.txt"), "a\n");
+    assert_eq!(read(dir.path(), "b.txt"), "keep me changed\n");
+}
+
+#[test]
+fn discard_restores_a_deleted_file() {
+    let dir = fixture();
+    fs::remove_file(dir.path().join("a.txt")).unwrap();
+    let repo = Repo::discover(dir.path()).unwrap();
+    repo.discard(&paths(&["a.txt"]), false).unwrap();
+    assert_eq!(read(dir.path(), "a.txt"), "a\n");
+}
+
+#[test]
+fn discard_keeps_the_staged_version_unless_asked() {
+    let dir = fixture();
+    write(dir.path(), "a.txt", "staged\n");
+    git(dir.path(), &["add", "a.txt"]);
+    write(dir.path(), "a.txt", "worktree\n");
+    let repo = Repo::discover(dir.path()).unwrap();
+
+    repo.discard(&paths(&["a.txt"]), false).unwrap();
+    assert_eq!(read(dir.path(), "a.txt"), "staged\n");
+    let s = state(&repo, "a.txt").unwrap();
+    assert!(s.staged && !s.unstaged);
+
+    repo.discard(&paths(&["a.txt"]), true).unwrap();
+    assert_eq!(read(dir.path(), "a.txt"), "a\n");
+    assert_eq!(status(dir.path()), "");
+}
+
+#[test]
+fn discard_deletes_untracked_files_only_those_listed() {
+    let dir = fixture();
+    write(dir.path(), "dir/one.txt", "1\n");
+    write(dir.path(), "dir/two.txt", "2\n");
+    write(dir.path(), "loose.txt", "x\n");
+    let repo = Repo::discover(dir.path()).unwrap();
+    repo.discard(&paths(&["dir/one.txt", "loose.txt"]), false)
+        .unwrap();
+    assert!(!dir.path().join("dir/one.txt").exists());
+    assert!(!dir.path().join("loose.txt").exists());
+    assert!(dir.path().join("dir/two.txt").exists());
+}
+
+#[test]
+fn discard_staged_new_file_removes_it() {
+    let dir = fixture();
+    write(dir.path(), "new.txt", "n\n");
+    git(dir.path(), &["add", "new.txt"]);
+    let repo = Repo::discover(dir.path()).unwrap();
+    repo.discard(&paths(&["new.txt"]), true).unwrap();
+    assert!(!dir.path().join("new.txt").exists());
+    assert_eq!(status(dir.path()), "");
+}
+
+#[test]
+fn discard_a_rename_restores_both_sides() {
+    let dir = fixture();
+    git(dir.path(), &["mv", "a.txt", "c.txt"]);
+    let repo = Repo::discover(dir.path()).unwrap();
+    repo.discard(&paths(&["c.txt"]), true).unwrap();
+    assert_eq!(read(dir.path(), "a.txt"), "a\n");
+    assert!(!dir.path().join("c.txt").exists());
+    assert_eq!(status(dir.path()), "");
+}
+
+#[test]
+fn discard_refuses_a_path_outside_the_repo() {
+    let dir = fixture();
+    let outside = dir
+        .path()
+        .parent()
+        .unwrap()
+        .join("xdev-discard-outside.txt");
+    fs::write(&outside, "keep\n").unwrap();
+    let repo = Repo::discover(dir.path()).unwrap();
+    for bad in ["../xdev-discard-outside.txt", "a/../../x"] {
+        assert!(repo.discard(&paths(&[bad]), true).is_err(), "{bad}");
+    }
+    assert!(outside.exists());
+    fs::remove_file(outside).unwrap();
+}
+
+#[test]
+fn discard_leaves_ignored_files_alone() {
+    let dir = fixture();
+    write(dir.path(), ".gitignore", "*.log\n");
+    commit_all(dir.path(), "ignore");
+    write(dir.path(), "x.log", "log\n");
+    let repo = Repo::discover(dir.path()).unwrap();
+    repo.discard(&paths(&["x.log"]), true).unwrap();
+    assert!(dir.path().join("x.log").exists());
+}
+
+#[test]
+fn discard_with_no_paths_does_nothing() {
+    let dir = fixture();
+    write(dir.path(), "a.txt", "changed\n");
+    let repo = Repo::discover(dir.path()).unwrap();
+    repo.discard(&[], true).unwrap();
+    assert_eq!(read(dir.path(), "a.txt"), "changed\n");
+}
+
+#[test]
+fn discard_before_the_first_commit() {
+    let dir = repo_dir();
+    write(dir.path(), "a.txt", "a\n");
+    write(dir.path(), "u.txt", "u\n");
+    git(dir.path(), &["add", "a.txt"]);
+    write(dir.path(), "a.txt", "a2\n");
+    let repo = Repo::discover(dir.path()).unwrap();
+    // Without staged_too the staged version stays.
+    repo.discard(&paths(&["a.txt"]), false).unwrap();
+    assert_eq!(read(dir.path(), "a.txt"), "a\n");
+    repo.discard(&paths(&["a.txt", "u.txt"]), true).unwrap();
+    assert!(!dir.path().join("a.txt").exists());
+    assert!(!dir.path().join("u.txt").exists());
+    assert_eq!(status(dir.path()), "");
+}
+
+#[test]
+fn stage_state_flags_untracked_files() {
+    let dir = fixture();
+    write(dir.path(), "new.txt", "n\n");
+    write(dir.path(), "a.txt", "a2\n");
+    let repo = Repo::discover(dir.path()).unwrap();
+    assert!(state(&repo, "new.txt").unwrap().untracked);
+    assert!(!state(&repo, "a.txt").unwrap().untracked);
+}

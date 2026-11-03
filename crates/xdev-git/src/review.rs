@@ -3,6 +3,7 @@
 //! and staging or unstaging whole files.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use crate::since::fields;
 use crate::{GitError, Repo, run};
@@ -130,8 +131,126 @@ impl Repo {
     /// Puts tracked `paths` back to the index version and deletes untracked ones.
     /// `staged_too`: also reset the index to `HEAD` first, so staged edits are lost as well.
     pub fn discard(&self, paths: &[String], staged_too: bool) -> Result<(), GitError> {
-        let _ = (paths, staged_too);
-        todo!("discard")
+        if paths.is_empty() {
+            return Ok(());
+        }
+        for path in paths {
+            let escapes = path.is_empty()
+                || Path::new(path).is_absolute()
+                || path.split(['/', '\\']).any(|part| part == "..");
+            if escapes {
+                return Err(GitError::Failed {
+                    args: "discard".to_owned(),
+                    status: None,
+                    stderr: format!("{path} is outside the repository"),
+                });
+            }
+        }
+        let states: BTreeMap<String, StageState> = self
+            .stage_state()?
+            .into_iter()
+            .map(|s| (s.path.clone(), s))
+            .collect();
+        let has_head = self.head()?.is_some();
+        // Paths git does not report (clean or ignored) are left alone.
+        let mut wanted: Vec<String> = paths
+            .iter()
+            .filter(|p| states.contains_key(p.as_str()))
+            .cloned()
+            .collect();
+        if staged_too && has_head {
+            // A rename is two index entries; losing one side alone would
+            // leave the other behind.
+            let renames = self.staged_renames()?;
+            for (old, new) in renames {
+                if wanted.contains(&new) && !wanted.contains(&old) {
+                    wanted.push(old);
+                } else if wanted.contains(&old) && !wanted.contains(&new) {
+                    wanted.push(new);
+                }
+            }
+        }
+        let untracked: Vec<String> = wanted
+            .iter()
+            .filter(|p| states.get(p.as_str()).is_some_and(|s| s.untracked))
+            .cloned()
+            .collect();
+        let tracked: Vec<String> = wanted
+            .iter()
+            .filter(|p| !untracked.contains(p))
+            .cloned()
+            .collect();
+        if !tracked.is_empty() {
+            if staged_too {
+                // Entries that `HEAD` does not have leave the index and the disk.
+                let in_head = self.in_head(&tracked, has_head)?;
+                let (known, added): (Vec<String>, Vec<String>) =
+                    tracked.into_iter().partition(|p| in_head.contains(p));
+                self.literal(
+                    &["restore", "--staged", "--worktree", "--source=HEAD"],
+                    &known,
+                )?;
+                self.literal(&["rm", "-f", "-q", "--ignore-unmatch"], &added)?;
+            } else {
+                self.literal(&["restore", "--worktree"], &tracked)?;
+            }
+        }
+        // Never `-d`: only the files that were named.
+        self.literal(&["clean", "-f", "-q"], &untracked)
+    }
+
+    /// `(old, new)` for each rename in the index, against `HEAD`.
+    fn staged_renames(&self) -> Result<Vec<(String, String)>, GitError> {
+        let out = run::run(
+            &self.root(),
+            &["diff", "--cached", "--name-status", "-M", "-z"],
+            None,
+        )?;
+        let mut parts = fields(&out);
+        let mut renames = Vec::new();
+        while let Some(status) = parts.next() {
+            if status.starts_with('R') || status.starts_with('C') {
+                if let (Some(old), Some(new)) = (parts.next(), parts.next())
+                    && status.starts_with('R')
+                {
+                    renames.push((old.to_owned(), new.to_owned()));
+                }
+            } else {
+                parts.next();
+            }
+        }
+        Ok(renames)
+    }
+
+    /// Which of `paths` are in `HEAD`.
+    fn in_head(&self, paths: &[String], has_head: bool) -> Result<Vec<String>, GitError> {
+        if !has_head {
+            return Ok(Vec::new());
+        }
+        let mut args = vec![
+            "--literal-pathspecs",
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "-z",
+            "HEAD",
+            "--",
+        ];
+        args.extend(paths.iter().map(String::as_str));
+        let out = run::run(&self.root(), &args, None)?;
+        Ok(fields(&out).map(str::to_owned).collect())
+    }
+
+    /// `git --literal-pathspecs args -- paths` from the top folder; nothing without paths.
+    fn literal(&self, args: &[&str], paths: &[String]) -> Result<(), GitError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let mut all = vec!["--literal-pathspecs"];
+        all.extend_from_slice(args);
+        all.push("--");
+        all.extend(paths.iter().map(String::as_str));
+        run::run(&self.root(), &all, None).map(drop)
     }
 
     /// Runs `args -- paths` from the top folder; nothing at all without paths.
