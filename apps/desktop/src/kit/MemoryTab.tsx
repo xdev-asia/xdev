@@ -16,6 +16,10 @@ const baseName = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? 
 /** An import outside every root: the scan lists it with no hash and never reads it, and neither does this view. */
 const unread = (file: MemoryFile) => file.hash === "";
 
+/** The editor holds `\n` lines; a file keeps the line ends it had on disk. */
+const lf = (text: string) => text.replace(/\r\n/g, "\n");
+const withEol = (text: string, eol: string) => (eol === "\n" ? text : text.replace(/\n/g, eol));
+
 /** How deep a file sits under the file that imports it. */
 function depthOf(file: MemoryFile, byPath: Map<string, MemoryFile>): number {
   let depth = 0;
@@ -107,6 +111,8 @@ interface Open {
   text: string;
   saved: string;
   stamp: string;
+  /** The file's line end on disk, put back on every write. */
+  eol: string;
 }
 
 export function MemoryTab(props: {
@@ -163,7 +169,9 @@ export function MemoryTab(props: {
     const mine = ++reading.current;
     try {
       const read = await api.kitRead(path, worktree);
-      if (mine === reading.current) setOpen({ path, text: read.text, saved: read.text, stamp: read.stamp });
+      const eol = read.text.includes("\r\n") ? "\r\n" : "\n";
+      const text = lf(read.text);
+      if (mine === reading.current) setOpen({ path, text, saved: text, stamp: read.stamp, eol });
     } catch (e) {
       if (mine === reading.current) setError(kitErr(e));
     }
@@ -185,7 +193,7 @@ export function MemoryTab(props: {
     setError(undefined);
     setNote(undefined);
     try {
-      const stamp = await api.kitWrite(current.path, current.text, current.stamp, worktree);
+      const stamp = await api.kitWrite(current.path, withEol(current.text, current.eol), current.stamp, worktree);
       setOpen((o) => (o && o.path === current.path ? { ...o, saved: current.text, stamp } : o));
       setChanged(false);
       setNote(t("kit.memory.saved"));
@@ -211,7 +219,7 @@ export function MemoryTab(props: {
     saving.current = true;
     try {
       const fresh = await api.kitRead(current.path, worktree);
-      const stamp = await api.kitWrite(current.path, current.text, fresh.stamp, worktree);
+      const stamp = await api.kitWrite(current.path, withEol(current.text, current.eol), fresh.stamp, worktree);
       setOpen({ ...current, saved: current.text, stamp });
       setChanged(false);
       setNote(t("kit.memory.saved"));
@@ -244,7 +252,7 @@ export function MemoryTab(props: {
       for (const target of targets) {
         try {
           const read = await api.kitRead(target.path, worktree);
-          rows.push({ target: target.path, label: target.label, base: read.text, stamp: read.stamp, same: read.text === open.text });
+          rows.push({ target: target.path, label: target.label, base: lf(read.text), stamp: read.stamp, same: lf(read.text) === open.text });
         } catch (e) {
           // A file that is not there is an I/O failure in Rust (`io`); `not_found` is the same thing by another name.
           const code = toApiError(e).code;
@@ -263,7 +271,7 @@ export function MemoryTab(props: {
     const todo = plan.filter((p) => !p.same);
     setBusy(true);
     try {
-      for (const row of todo) await api.kitWrite(row.target, open.text, row.stamp, worktree);
+      for (const row of todo) await api.kitWrite(row.target, withEol(open.text, open.eol), row.stamp, worktree);
       setNote(t("kit.memory.copyDone", { count: todo.length }));
       setPlan(null);
       setReloads((n) => n + 1);
