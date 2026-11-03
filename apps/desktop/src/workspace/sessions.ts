@@ -1,6 +1,6 @@
 import type { Api, HookDetail, PtyInfo, PtyProfile } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
-import { addTab, leaves, removeTab, replaceTab, single, type PaneLayout } from "./paneTree";
+import { addTab, leaves, paneOf, pinFirst, removeTab, replaceTab, single, splitPane, type PaneDir, type PaneLayout } from "./paneTree";
 import { DONE_QUIET_MS, INTERRUPT_MS, NO_CAPS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type Caps, type StatusEvent, type StatusState, type TabStatus } from "./status";
 
 /** The CLI behind a tab, for its hook caps and title rules; null for custom profiles and shells. */
@@ -11,6 +11,10 @@ export type TabCli = "claude" | "codex" | null;
  * marks it unread, and so does a terminal `bell`.
  */
 export type Attention = "needs-you" | "done" | "failed" | "bell";
+
+/** A tab's colour: one of ten theme tokens (`--x-tab-color-1` … `10`), or none. */
+export type TabColor = "none" | "c1" | "c2" | "c3" | "c4" | "c5" | "c6" | "c7" | "c8" | "c9" | "c10";
+export const TAB_COLORS: readonly TabColor[] = ["none", "c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10"];
 
 export interface Tab {
   id: string;
@@ -37,6 +41,9 @@ export interface Tab {
   renamed: boolean;
   /** The agent session id this tab resumed; null for a new session. */
   resumeOf: string | null;
+  /** Pinned tabs sort first and are skipped by Close Others and Close to the Right. */
+  pinned: boolean;
+  color: TabColor;
   /** Set once the pty exited; `null` when it was killed or its code is unknown. */
   exitCode?: number | null;
   client: PtyClient;
@@ -55,6 +62,8 @@ interface Entry {
   state: StatusState;
   /** What the launch reports; the state uses them only while hooks are on. */
   caps: Caps;
+  /** The program's last title (OSC 0/2), kept while the tab is named by hand. */
+  programTitle: string | null;
 }
 
 // Only an exit ends a tab: `failed` can also be a turn that failed, with the pty still alive.
@@ -151,6 +160,8 @@ export class Sessions {
     this.clear(this.announce, id);
     this.clear(this.stale, id);
     const next = this.entry(old.tab.worktree, old.tab.profileId, old.tab.account, old.tab.cli, old.tab.resumeOf, old.tab.title);
+    // The pin and colour belong to the slot, not to the pty.
+    next.tab = { ...next.tab, pinned: old.tab.pinned, color: old.tab.color };
     const kept = [...this.entries].map(([key, e]): [string, Entry] => (key === id ? [next.tab.id, next] : [key, e]));
     this.entries.clear();
     for (const [key, e] of kept) this.entries.set(key, e);
@@ -197,7 +208,8 @@ export class Sessions {
   tabs(worktree: string): Tab[] {
     let tabs = this.cache.get(worktree);
     if (!tabs) {
-      tabs = [...this.entries.values()].filter((e) => e.tab.worktree === worktree).map((e) => e.tab);
+      const all = [...this.entries.values()].filter((e) => e.tab.worktree === worktree).map((e) => e.tab);
+      tabs = [...all.filter((t) => t.pinned), ...all.filter((t) => !t.pinned)];
       this.cache.set(worktree, tabs);
     }
     return tabs;
@@ -311,17 +323,73 @@ export class Sessions {
   /** The terminal's title (OSC 0/2) names the tab, unless it was named by hand. */
   noteTitle(id: string, title: string): void {
     const entry = this.entries.get(id);
+    if (!entry) return;
     const next = title.trim().slice(0, TITLE_MAX) || null;
-    if (!entry || entry.tab.renamed || entry.tab.title === next) return;
+    entry.programTitle = next;
+    if (entry.tab.renamed || entry.tab.title === next) return;
     this.update(entry, { title: next });
   }
 
-  /** Names a tab by hand; later titles from the terminal no longer change it. */
+  /** Names a tab by hand; later titles from the terminal no longer change it. An alias of `setTitle`; blank is ignored. */
   rename(id: string, name: string): void {
+    if (name.trim()) this.setTitle(id, name);
+  }
+
+  /** Pins or unpins a tab; pinned tabs come first in `tabs()` and in their pane's strip, in the order they had. */
+  setPinned(id: string, pinned: boolean): void {
     const entry = this.entries.get(id);
-    const next = name.trim().slice(0, TITLE_MAX);
-    if (!entry || !next) return;
-    this.update(entry, { title: next, renamed: true });
+    if (!entry || entry.tab.pinned === pinned) return;
+    const worktree = entry.tab.worktree;
+    entry.tab = { ...entry.tab, pinned };
+    this.cache.delete(worktree);
+    const layout = this.layouts.get(worktree);
+    const pane = layout && paneOf(layout, id);
+    if (layout && pane) this.layouts.set(worktree, pinFirst(layout, pane, (t) => this.entries.get(t)?.tab.pinned ?? false));
+    this.emit();
+  }
+
+  setColor(id: string, color: TabColor): void {
+    const entry = this.entries.get(id);
+    if (!entry || !TAB_COLORS.includes(color) || entry.tab.color === color) return;
+    this.update(entry, { color });
+  }
+
+  /** A title set by the person; null or blank gives back the program's last title. */
+  setTitle(id: string, title: string | null): void {
+    const entry = this.entries.get(id);
+    if (!entry) return;
+    const next = title?.trim().slice(0, TITLE_MAX) || null;
+    const patch = next ? { title: next, renamed: true } : { title: entry.programTitle, renamed: false };
+    if (entry.tab.title === patch.title && entry.tab.renamed === patch.renamed) return;
+    this.update(entry, patch);
+  }
+
+  /** Moves a tab into a new pane beside its pane, focused. A tab alone in its pane stays (no-op). */
+  moveToSplit(id: string, dir: PaneDir): void {
+    const entry = this.entries.get(id);
+    if (!entry || !this.canMoveToSplit(id)) return;
+    const layout = this.layouts.get(entry.tab.worktree)!;
+    const pane = paneOf(layout, id)!;
+    const without = removeTab(layout, id);
+    if (without) this.setLayout(entry.tab.worktree, splitPane(without, pane, dir, id));
+  }
+
+  /** Whether `moveToSplit` would move the tab: it shares its pane with another tab. */
+  canMoveToSplit(id: string): boolean {
+    const entry = this.entries.get(id);
+    return !!entry && !!this.layouts.get(entry.tab.worktree) && (this.stripOf(id)?.length ?? 0) > 1;
+  }
+
+  /** Closes the other tabs of this tab's pane (the worktree's without a layout), except pinned ones. */
+  closeOthers(id: string): void {
+    const strip = this.stripOf(id);
+    if (strip) this.closeUnpinned(strip.filter((t) => t !== id));
+  }
+
+  /** Closes the tabs after this one in its pane's strip, except pinned ones. */
+  closeToRight(id: string): void {
+    const strip = this.stripOf(id);
+    if (strip) this.closeUnpinned(strip.slice(strip.indexOf(id) + 1));
   }
 
   /**
@@ -505,6 +573,27 @@ export class Sessions {
     timers.delete(id);
   }
 
+  /** The tab ids of the strip holding `id`: its pane's, or the worktree's without a layout. Null for an unknown id. */
+  private stripOf(id: string): string[] | null {
+    const entry = this.entries.get(id);
+    if (!entry) return null;
+    const layout = this.layouts.get(entry.tab.worktree);
+    const leaf = layout && leaves(layout).find((n) => n.kind === "leaf" && n.tabs.includes(id));
+    if (leaf && leaf.kind === "leaf") return leaf.tabs;
+    return this.tabs(entry.tab.worktree).map((t) => t.id);
+  }
+
+  /** Closes these tabs at once (one change) and kills their ptys; pinned ones and the review tab stay. */
+  private closeUnpinned(ids: string[]): void {
+    const entries = ids.flatMap((t) => {
+      const e = this.entries.get(t);
+      return e && !e.tab.pinned ? [e] : [];
+    });
+    if (!entries.length) return;
+    this.remove(entries);
+    for (const e of entries) void e.tab.client.dispose();
+  }
+
   private update(entry: Entry, patch: Partial<Tab>): void {
     entry.tab = { ...entry.tab, ...patch };
     this.cache.delete(entry.tab.worktree);
@@ -529,10 +618,12 @@ export class Sessions {
       title,
       renamed: false,
       resumeOf,
+      pinned: false,
+      color: "none",
       client: new PtyClient(this.api, id, resumeOf ?? undefined),
     };
     // Caps stay off until the pty says whether it got hook flags.
-    return { tab, state: start(), caps: NO_CAPS };
+    return { tab, state: start(), caps: NO_CAPS, programTitle: null };
   }
 
   private remove(entries: Entry[]): void {

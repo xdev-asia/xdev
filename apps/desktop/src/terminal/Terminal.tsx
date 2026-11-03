@@ -3,13 +3,33 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { useEffect, useRef, useState } from "react";
-import type { JSX } from "react";
+import { useEffect, useImperativeHandle, useRef, useState } from "react";
+import type { JSX, Ref } from "react";
 import { toApiError, type Api, type ApiError, type PtyInfo, type PtyProfile } from "@/api";
 import { useI18n } from "@/i18n";
 import { PtyClient } from "./ptyClient";
+import { createTerminalHandle } from "./terminalActions";
 import { getTerminalSettings, subscribeTerminalSettings } from "./terminalSettings";
 import { decodeOsc52Write, xtermOptions } from "./terminalOptions";
+
+/** What a menu, the palette or a shortcut can do to one terminal. Acts on the xterm; nothing goes to the pty unless said. */
+export interface TerminalHandle {
+  /** Copies the selection; false when nothing is selected. */
+  copy(): Promise<boolean>;
+  /** Clipboard text through xterm's paste, so bracketed paste applies. */
+  paste(): Promise<void>;
+  selectAll(): void;
+  /** `term.clear()`; nothing written to the pty. */
+  clear(): void;
+  /** `term.reset()`, then the size sent again so the program redraws; nothing written to the pty. */
+  reset(): void;
+  /** Opens the find bar, as Ctrl+F does. */
+  find(): void;
+  hasSelection(): boolean;
+  focus(): void;
+  /** The last `max` lines of the buffer, blank tail lines dropped (for Copy Context). */
+  lines(max: number): string[];
+}
 
 /**
  * One running pty in an xterm. Starts on mount. Kills the pty on unmount, unless the pty
@@ -35,6 +55,13 @@ export function Terminal(props: {
   onBell?(): void;
   /** A new value asks the terminal to take keyboard focus; the first value alone asks nothing. */
   focusSeq?: number;
+  /** Filled with this terminal's handle. */
+  handleRef?: Ref<TerminalHandle>;
+  /**
+   * A right click asks for the menu: always when right-click paste is off, Shift+right-click when it is on.
+   * Without it the right click is left to the webview, as before.
+   */
+  onMenu?: (at: { x: number; y: number }, handle: TerminalHandle) => void;
 }): JSX.Element {
   const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
@@ -46,6 +73,12 @@ export function Terminal(props: {
   // Callbacks change every render; the effect below runs once per pty.
   const handlers = useRef(props);
   handlers.current = props;
+  const clientRef = useRef<PtyClient | null>(null);
+  // One handle per view; it reads the live xterm on each call.
+  const handle = useRef(
+    createTerminalHandle({ term: () => xterm.current, client: () => clientRef.current, find: () => setFinding(true) }),
+  );
+  useImperativeHandle(props.handleRef, () => handle.current, []);
 
   // Declared before the pty effect, which owns the xterm this one focuses.
   useEffect(() => {
@@ -98,18 +131,26 @@ export function Terminal(props: {
     };
     fitVisible();
 
-    // The right click pastes when the setting is on; off, the event is left alone.
+    // R1: with right-click paste on, a plain right click pastes and Shift+right-click opens the menu;
+    // off, a right click opens the menu. Capture phase: xterm moves its textarea under the pointer.
     const onContextMenu = (e: MouseEvent) => {
-      if (!getTerminalSettings().rightClickPaste) return;
+      if (getTerminalSettings().rightClickPaste && !e.shiftKey) {
+        e.preventDefault();
+        void navigator.clipboard
+          ?.readText()
+          .then((text) => {
+            if (text) void client.input(text).catch(() => {});
+          })
+          .catch(() => {});
+        return;
+      }
+      const menu = handlers.current.onMenu;
+      if (!menu) return;
       e.preventDefault();
-      void navigator.clipboard
-        ?.readText()
-        .then((text) => {
-          if (text) void client.input(text).catch(() => {});
-        })
-        .catch(() => {});
+      e.stopPropagation();
+      menu({ x: e.clientX, y: e.clientY }, handle.current);
     };
-    el.addEventListener("contextmenu", onContextMenu);
+    el.addEventListener("contextmenu", onContextMenu, true);
     // A change in Settings applies to this pane at once, with no restart.
     const offSettings = subscribeTerminalSettings(() => {
       const next = xtermOptions(getTerminalSettings(), mono);
@@ -127,6 +168,7 @@ export function Terminal(props: {
 
     const owned = !props.client;
     const client = props.client ?? new PtyClient(props.api, props.id);
+    clientRef.current = client;
     let alive = true;
     term.onData((text) => {
       handlers.current.onInput?.(text);
@@ -157,11 +199,12 @@ export function Terminal(props: {
     return () => {
       alive = false;
       offSettings();
-      el.removeEventListener("contextmenu", onContextMenu);
+      el.removeEventListener("contextmenu", onContextMenu, true);
       observer.disconnect();
       if (owned) void client.dispose();
       search.current = null;
       xterm.current = null;
+      if (clientRef.current === client) clientRef.current = null;
       term.dispose();
     };
   }, [props.api, props.id, props.client, props.cwd, props.profile, props.account]);
