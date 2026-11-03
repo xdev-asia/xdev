@@ -2,21 +2,29 @@
 //! and its base, push, pull, sync, fetch, gated force push and amend.
 //! Each command returns a fresh `ShipView` so the UI never guesses.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tauri::State;
-use xdev_git::{BaseRange, Repo, Upstream};
-use xdev_policy::{Action, Verdict};
+use xdev_agent::{AgentError, Cancel, RunRequest, Runner};
+use xdev_ai::Provider;
+use xdev_git::{
+    BaseRange, Check, GhExec, PrDraft, PrView, Repo, SystemGh, Upstream, pr_checks, pr_create,
+    pr_open_web, pr_view,
+};
+use xdev_policy::{Action, Gate, Verdict};
 use xdev_workspace::{Registry, WorkspaceError, path_key};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError};
-use crate::tasks::gate;
+use crate::tasks::{gate, provider_runner};
 use crate::workspace::{bad_arg, inside, parent_within, start_of};
 
 /// Commits listed in `ShipView::range`.
 const RANGE_LIMIT: usize = 50;
+/// What a draft prompt carries of the changes; the rest is cut.
+const DRAFT_CAP: usize = 60_000;
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -178,12 +186,7 @@ fn amend_with(
     if message.trim().is_empty() {
         return Err(err("empty_message", None));
     }
-    for file in files {
-        let disk = inside(path, file).ok_or_else(|| bad_arg(file))?;
-        if !parent_within(path, &disk)? {
-            return Err(bad_arg(file));
-        }
-    }
+    checked_files(path, files)?;
     let start = start_of(data, path)?;
     let repo = Repo::discover(path)?;
     // Amending the start commit would rewrite the base's own history.
@@ -194,6 +197,263 @@ fn amend_with(
         return Err(err("amend_pushed", None));
     }
     Ok(repo.amend(files, message)?)
+}
+
+fn checked_files(path: &Path, files: &[String]) -> Result<(), CmdError> {
+    for file in files {
+        let disk = inside(path, file).ok_or_else(|| bad_arg(file))?;
+        if !parent_within(path, &disk)? {
+            return Err(bad_arg(file));
+        }
+    }
+    Ok(())
+}
+
+fn pr_with(gh: &dyn GhExec, path: &Path) -> Result<Option<PrView>, CmdError> {
+    Ok(pr_view(gh, path)?)
+}
+
+/// The base without its remote's name: `origin/main` -> `main`.
+fn plain_base(repo: &Repo, base_ref: &str) -> String {
+    let remote = repo
+        .current_branch()
+        .ok()
+        .flatten()
+        .and_then(|b| repo.remote_for(&b).ok());
+    match remote {
+        Some(r) => base_ref
+            .strip_prefix(&format!("{r}/"))
+            .unwrap_or(base_ref)
+            .to_owned(),
+        None => base_ref.to_owned(),
+    }
+}
+
+fn create_pr_with(
+    gh: &dyn GhExec,
+    repo: &Repo,
+    base_ref: &str,
+    draft: PrDraft,
+) -> Result<PrView, CmdError> {
+    let branch = repo
+        .current_branch()?
+        .ok_or_else(|| err("detached", None))?;
+    match repo.upstream()? {
+        Some(up) if up.ahead == 0 => {}
+        _ => return Err(err("not_pushed", None)),
+    }
+    let title = draft.title.trim();
+    if title.is_empty() {
+        return Err(err("empty_title", None));
+    }
+    let base = match draft.base.trim() {
+        "" => plain_base(repo, base_ref),
+        given => given.to_owned(),
+    };
+    if !repo.valid_branch_name(&base)? {
+        return Err(err("bad_ref", Some(base)));
+    }
+    let draft = PrDraft {
+        base,
+        title: title.to_owned(),
+        body: draft.body,
+        draft: draft.draft,
+    };
+    Ok(pr_create(gh, &repo.root(), &branch, &draft)?)
+}
+
+/// `text` cut to `max` bytes on a char boundary, with a marker when cut.
+fn cap(text: &str, max: usize) -> String {
+    if text.len() <= max {
+        return text.to_owned();
+    }
+    let mut end = max;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}\n[cut]\n", &text[..end])
+}
+
+/// Drops a surrounding code fence, with or without a language tag.
+fn unfence(answer: &str) -> String {
+    let text = answer.trim();
+    let Some(rest) = text.strip_prefix("```") else {
+        return text.to_owned();
+    };
+    let body = rest.split_once('\n').map_or("", |(_, b)| b).trim_end();
+    body.strip_suffix("```").unwrap_or(body).trim().to_owned()
+}
+
+/// Asks the agent, with no tools, and returns its unfenced answer.
+fn ask(runner: &dyn Runner, repo: &Repo, prompt: String) -> Result<String, CmdError> {
+    let req = RunRequest {
+        worktree: repo.root(),
+        prompt,
+        resume: None,
+        tools: vec![],
+        model: None,
+        cancel: Cancel::new(),
+    };
+    let failed = |detail: &str| err("draft_failed", Some(detail.to_owned()));
+    let outcome = runner.run(&req).map_err(|e| match &e {
+        AgentError::Runner(code) => failed(code),
+        other => failed(other.code()),
+    })?;
+    if outcome.is_error {
+        return Err(failed("agent_error"));
+    }
+    let answer = unfence(&outcome.result);
+    if answer.is_empty() {
+        return Err(failed("empty"));
+    }
+    Ok(answer)
+}
+
+fn draft_commit_with(
+    runner: &dyn Runner,
+    repo: &Repo,
+    files: &[String],
+) -> Result<String, CmdError> {
+    let mut changes = repo.diff_text(files)?;
+    // Untracked files are not in `git diff`; show them whole.
+    let untracked = repo.untracked()?;
+    for file in files.iter().filter(|f| untracked.contains(f)) {
+        let Ok(bytes) = fs::read(repo.root().join(file)) else {
+            continue;
+        };
+        if bytes.contains(&0) {
+            continue;
+        }
+        changes.push_str(&format!(
+            "\nNew file {file}:\n{}\n",
+            String::from_utf8_lossy(&bytes)
+        ));
+    }
+    let prompt = format!(
+        "Write a concise conventional commit message for the changes below. \
+         The subject line is at most 72 characters; add a short body only if it helps. \
+         Answer with the message only, no quotes and no commentary.\n\n{}",
+        cap(&changes, DRAFT_CAP)
+    );
+    ask(runner, repo, prompt)
+}
+
+fn draft_pr_with(runner: &dyn Runner, repo: &Repo, base: &str) -> Result<PrDraft, CmdError> {
+    // The plain name may exist only as a remote branch.
+    let remote = repo
+        .current_branch()?
+        .and_then(|b| repo.remote_for(&b).ok());
+    let mut candidates = vec![base.to_owned()];
+    candidates.extend(remote.map(|r| format!("{r}/{base}")));
+    let mut rev = None;
+    for c in candidates {
+        if repo.resolve_ref(&c)?.is_some() {
+            rev = Some(c);
+            break;
+        }
+    }
+    let rev = rev.ok_or_else(|| err("bad_ref", Some(base.to_owned())))?;
+    let data = format!(
+        "Commits:\n{}\nFiles:\n{}\nDiff:\n{}",
+        repo.range_subjects(&rev)?,
+        repo.range_stat(&rev)?,
+        repo.range_diff(&rev)?
+    );
+    let prompt = format!(
+        "Write a pull request title and description for merging the current branch into {base}. \
+         Put the title on the first line, then a blank line, then the description in Markdown. \
+         Answer with that only, no commentary.\n\n{}",
+        cap(&data, DRAFT_CAP)
+    );
+    let answer = ask(runner, repo, prompt)?;
+    let mut lines = answer.lines().skip_while(|l| l.trim().is_empty());
+    let first = lines.next().unwrap_or_default();
+    let title = first.trim_start_matches('#').trim();
+    let title = title.strip_prefix("Title:").unwrap_or(title).trim();
+    if title.is_empty() {
+        return Err(err("draft_failed", Some("empty".to_owned())));
+    }
+    let body = lines.collect::<Vec<_>>().join("\n").trim().to_owned();
+    Ok(PrDraft {
+        base: base.to_owned(),
+        title: title.to_owned(),
+        body,
+        draft: false,
+    })
+}
+
+/// A draft run goes through the same gate as a task's.
+fn draft_runner(data: &Path, path: &Path) -> Result<Box<dyn Runner>, CmdError> {
+    let action = Action::SpawnAgent {
+        provider: "claude".to_owned(),
+        account: None,
+        worktree: path.to_owned(),
+        tools: vec![],
+    };
+    match gate(data)?.check(&action) {
+        Verdict::Allow => {}
+        Verdict::Ask { reason } => return Err(err("needs_approval", Some(reason))),
+        Verdict::Deny { reason } => return Err(err("denied", Some(reason))),
+    }
+    Ok(provider_runner(Provider::Claude, None))
+}
+
+#[tauri::command(async)]
+pub fn worktree_pr(state: State<'_, AppState>, path: PathBuf) -> Result<Option<PrView>, CmdError> {
+    locate(data_dir(&state)?, &path)?;
+    pr_with(&SystemGh, &path)
+}
+
+#[tauri::command(async)]
+pub fn worktree_pr_create(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    draft: PrDraft,
+) -> Result<PrView, CmdError> {
+    let known = locate(data_dir(&state)?, &path)?;
+    create_pr_with(&SystemGh, &Repo::discover(&path)?, &known.base_ref, draft)
+}
+
+#[tauri::command(async)]
+pub fn worktree_pr_checks(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    number: u64,
+) -> Result<Vec<Check>, CmdError> {
+    locate(data_dir(&state)?, &path)?;
+    Ok(pr_checks(&SystemGh, &path, number)?)
+}
+
+#[tauri::command(async)]
+pub fn worktree_pr_open(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    checks: bool,
+) -> Result<(), CmdError> {
+    locate(data_dir(&state)?, &path)?;
+    Ok(pr_open_web(&SystemGh, &path, checks)?)
+}
+
+#[tauri::command(async)]
+pub fn worktree_draft_commit(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    files: Vec<String>,
+) -> Result<String, CmdError> {
+    let data = data_dir(&state)?;
+    locate(data, &path)?;
+    checked_files(&path, &files)?;
+    let runner = draft_runner(data, &path)?;
+    draft_commit_with(runner.as_ref(), &Repo::discover(&path)?, &files)
+}
+
+#[tauri::command(async)]
+pub fn worktree_draft_pr(state: State<'_, AppState>, path: PathBuf) -> Result<PrDraft, CmdError> {
+    let data = data_dir(&state)?;
+    let known = locate(data, &path)?;
+    let repo = Repo::discover(&path)?;
+    let runner = draft_runner(data, &path)?;
+    draft_pr_with(runner.as_ref(), &repo, &plain_base(&repo, &known.base_ref))
 }
 
 #[tauri::command(async)]
@@ -291,7 +551,10 @@ mod tests {
         fs::write(main.join("a.txt"), "one").unwrap();
         git(&main, &["add", "-A"]);
         git(&main, &["commit", "-q", "-m", "one"]);
-        git(&main, &["remote", "add", "origin", origin.to_str().unwrap()]);
+        git(
+            &main,
+            &["remote", "add", "origin", origin.to_str().unwrap()],
+        );
 
         let mut reg = Registry::load(&data).unwrap();
         let id = add_repo(&mut reg, &main, 0).unwrap().id;
@@ -489,5 +752,223 @@ mod tests {
             .into();
         assert_eq!(e.code, "hook_failed");
         assert!(e.detail.unwrap().contains("lint failed"));
+    }
+
+    use std::cell::RefCell;
+    use xdev_agent::RunOutcome;
+    use xdev_git::{GhOutput, GitError};
+
+    struct FakeGh {
+        calls: RefCell<Vec<Vec<String>>>,
+        script: RefCell<Vec<GhOutput>>,
+    }
+
+    impl FakeGh {
+        fn new(mut script: Vec<GhOutput>) -> FakeGh {
+            script.reverse();
+            FakeGh {
+                calls: RefCell::default(),
+                script: RefCell::new(script),
+            }
+        }
+    }
+
+    impl GhExec for FakeGh {
+        fn run(&self, _: &Path, args: &[&str], _: Option<&str>) -> Result<GhOutput, GitError> {
+            self.calls
+                .borrow_mut()
+                .push(args.iter().map(|a| a.to_string()).collect());
+            Ok(self.script.borrow_mut().pop().expect("scripted gh call"))
+        }
+    }
+
+    fn gh_out(status: i32, stdout: &str, stderr: &str) -> GhOutput {
+        GhOutput {
+            status: Some(status),
+            stdout: stdout.into(),
+            stderr: stderr.into(),
+        }
+    }
+
+    fn draft(title: &str) -> PrDraft {
+        PrDraft {
+            base: "main".into(),
+            title: title.into(),
+            body: "body".into(),
+            draft: false,
+        }
+    }
+
+    struct FakeRunner {
+        reqs: RefCell<Vec<RunRequest>>,
+        answer: Result<String, String>,
+    }
+
+    impl FakeRunner {
+        fn new(answer: Result<&str, &str>) -> FakeRunner {
+            FakeRunner {
+                reqs: RefCell::default(),
+                answer: answer.map(str::to_owned).map_err(str::to_owned),
+            }
+        }
+    }
+
+    impl Runner for FakeRunner {
+        fn run(&self, req: &RunRequest) -> Result<RunOutcome, AgentError> {
+            self.reqs.borrow_mut().push(req.clone());
+            match &self.answer {
+                Ok(text) => Ok(RunOutcome {
+                    session_id: None,
+                    cost_usd: None,
+                    is_error: false,
+                    result: text.clone(),
+                    context: None,
+                }),
+                Err(code) => Err(AgentError::Runner(code.clone())),
+            }
+        }
+    }
+
+    fn repo_of(fx: &Fixture) -> Repo {
+        Repo::discover(&fx.wt).unwrap()
+    }
+
+    #[test]
+    fn pr_none_without_pr() {
+        let gh = FakeGh::new(vec![gh_out(
+            1,
+            "",
+            "no pull requests found for branch \"feat\"",
+        )]);
+        assert_eq!(pr_with(&gh, Path::new(".")).unwrap(), None);
+    }
+
+    #[test]
+    fn create_pr_refuses_unpushed() {
+        let fx = fixture();
+        commit_file(&fx.wt, "b.txt", "two");
+        let gh = FakeGh::new(vec![]);
+        let repo = repo_of(&fx);
+        // No upstream.
+        assert_eq!(
+            code(create_pr_with(&gh, &repo, "origin/main", draft("T"))),
+            "not_pushed"
+        );
+        // Ahead of the upstream.
+        push_with(&fx.data, &fx.wt).unwrap();
+        commit_file(&fx.wt, "c.txt", "three");
+        assert_eq!(
+            code(create_pr_with(&gh, &repo, "origin/main", draft("T"))),
+            "not_pushed"
+        );
+        assert!(gh.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn create_pr_refuses_empty_title() {
+        let fx = fixture();
+        commit_file(&fx.wt, "b.txt", "two");
+        push_with(&fx.data, &fx.wt).unwrap();
+        let gh = FakeGh::new(vec![]);
+        assert_eq!(
+            code(create_pr_with(&gh, &repo_of(&fx), "main", draft("  "))),
+            "empty_title"
+        );
+        let mut bad = draft("T");
+        bad.base = "-x".into();
+        assert_eq!(
+            code(create_pr_with(&gh, &repo_of(&fx), "main", bad)),
+            "bad_ref"
+        );
+    }
+
+    #[test]
+    fn create_pr_uses_branch_as_head() {
+        let fx = fixture();
+        commit_file(&fx.wt, "b.txt", "two");
+        push_with(&fx.data, &fx.wt).unwrap();
+        let name = branch(&fx);
+        let view = format!(
+            r#"{{"number":3,"url":"https://x/pull/3","state":"OPEN","isDraft":false,"title":"T","baseRefName":"main","headRefName":"{name}"}}"#
+        );
+        let gh = FakeGh::new(vec![
+            gh_out(0, "https://x/pull/3\n", ""),
+            gh_out(0, &view, ""),
+        ]);
+        let pr = create_pr_with(&gh, &repo_of(&fx), "main", draft(" T ")).unwrap();
+        assert_eq!(pr.number, 3);
+        let calls = gh.calls.borrow();
+        let args = &calls[0];
+        let at = args.iter().position(|a| a == "--head").unwrap();
+        assert_eq!(args[at + 1], name);
+        assert!(args.contains(&"T".to_owned()));
+    }
+
+    #[test]
+    fn draft_commit_sends_diff_and_strips_fences() {
+        let fx = fixture();
+        fs::write(fx.wt.join("a.txt"), "changed line").unwrap();
+        fs::write(fx.wt.join("new.txt"), "brand new text").unwrap();
+        let runner = FakeRunner::new(Ok("```\nfix: x\n```"));
+        let files = vec!["a.txt".to_owned(), "new.txt".to_owned()];
+        let msg = draft_commit_with(&runner, &repo_of(&fx), &files).unwrap();
+        assert_eq!(msg, "fix: x");
+        let prompt = runner.reqs.borrow()[0].prompt.clone();
+        assert!(prompt.contains("+changed line"), "{prompt}");
+        assert!(prompt.contains("brand new text"), "{prompt}");
+    }
+
+    #[test]
+    fn draft_prompt_is_capped() {
+        let fx = fixture();
+        fs::write(fx.wt.join("big.txt"), "é".repeat(100_000)).unwrap();
+        let runner = FakeRunner::new(Ok("feat: big"));
+        draft_commit_with(&runner, &repo_of(&fx), &["big.txt".to_owned()]).unwrap();
+        let prompt = runner.reqs.borrow()[0].prompt.clone();
+        assert!(prompt.len() <= 61_000, "{}", prompt.len());
+        assert!(prompt.contains("[cut]"));
+    }
+
+    #[test]
+    fn draft_pr_splits_title_and_body() {
+        let fx = fixture();
+        commit_file(&fx.wt, "b.txt", "two lines");
+        let runner = FakeRunner::new(Ok("```markdown\n# Title: Add b\n\nAdds b.\n\n- one\n```"));
+        let base = locate(&fx.data, &fx.wt).unwrap().base_ref;
+        let d = draft_pr_with(&runner, &repo_of(&fx), &base).unwrap();
+        assert_eq!(d.title, "Add b");
+        assert_eq!(d.body, "Adds b.\n\n- one");
+        assert_eq!((d.base, d.draft), (base, false));
+        let prompt = runner.reqs.borrow()[0].prompt.clone();
+        assert!(
+            prompt.contains("b.txt") && prompt.contains("+two lines"),
+            "{prompt}"
+        );
+    }
+
+    #[test]
+    fn draft_runs_without_tools() {
+        let fx = fixture();
+        fs::write(fx.wt.join("a.txt"), "x").unwrap();
+        let runner = FakeRunner::new(Ok("fix: y"));
+        draft_commit_with(&runner, &repo_of(&fx), &["a.txt".to_owned()]).unwrap();
+        let req = runner.reqs.borrow()[0].clone();
+        assert!(req.tools.is_empty());
+        assert_eq!(req.model, None);
+    }
+
+    #[test]
+    fn draft_failure_is_draft_failed() {
+        let fx = fixture();
+        let runner = FakeRunner::new(Err("claude_missing"));
+        let e = draft_commit_with(&runner, &repo_of(&fx), &["a.txt".to_owned()]).unwrap_err();
+        assert_eq!(e.code, "draft_failed");
+        assert_eq!(e.detail.as_deref(), Some("claude_missing"));
+
+        let empty = FakeRunner::new(Ok("  "));
+        assert_eq!(
+            code(draft_commit_with(&empty, &repo_of(&fx), &[])),
+            "draft_failed"
+        );
     }
 }

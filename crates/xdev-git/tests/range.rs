@@ -289,3 +289,34 @@ fn resolve_ref_refuses_option_like_input() {
         );
     }
 }
+
+#[test]
+fn diff_text_and_range_helpers() {
+    let dir = repo_dir();
+    let root = dir.path();
+    write(root, "a.txt", "one\n");
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-q", "-m", "first"]);
+    git(root, &["branch", "base"]);
+    write(root, "b.txt", "two\n");
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-q", "-m", "second"]);
+    write(root, "a.txt", "changed\n");
+    let repo = Repo::discover(root).unwrap();
+
+    let diff = repo
+        .diff_text(&["a.txt".to_owned(), "-x.md".to_owned()])
+        .unwrap();
+    assert!(diff.contains("+changed"), "{diff}");
+    assert_eq!(repo.diff_text(&[]).unwrap(), "");
+
+    assert_eq!(repo.range_subjects("base").unwrap().trim(), "second");
+    assert!(repo.range_stat("base").unwrap().contains("b.txt"));
+    let patch = repo.range_diff("base").unwrap();
+    assert!(
+        patch.contains("+two") && !patch.contains("changed"),
+        "{patch}"
+    );
+    assert!(repo.range_diff("--bad").is_err());
+    assert!(repo.range_diff("nope").is_err());
+}

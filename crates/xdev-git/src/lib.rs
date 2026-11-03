@@ -2,6 +2,7 @@
 //! history, commit and restore. Paths in and out are vault-relative with `/`.
 
 mod commit;
+mod diff;
 mod gh;
 mod history;
 mod range;
