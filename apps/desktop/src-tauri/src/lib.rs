@@ -164,6 +164,19 @@ pub fn run() {
 }
 
 #[cfg(test)]
+pub(crate) mod test_dirs {
+    use tempfile::TempDir;
+
+    /// A temp dir under the long form of the temp path. Windows CI hands out
+    /// 8.3 names like `RUNNER~1`, and git reports long paths, so fixtures that
+    /// compare the two must start from the long form.
+    pub(crate) fn long_temp_dir(prefix: &str) -> TempDir {
+        let base = dunce::canonicalize(std::env::temp_dir()).unwrap();
+        TempDir::with_prefix_in(prefix, base).unwrap()
+    }
+}
+
+#[cfg(test)]
 mod tests {
     #[test]
     fn app_version_matches_core() {
