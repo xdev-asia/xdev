@@ -864,7 +864,13 @@ mod tests {
         let home = PathBuf::from(homes[0]);
         assert_ne!(home, real);
         assert!(home.join("hooks.json").is_file());
-        assert!(home.ends_with(Path::new("codex-home").join("default")));
+        assert!(home.parent().unwrap().ends_with("codex-home"));
+        assert!(
+            home.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("default-")
+        );
     }
 
     #[test]

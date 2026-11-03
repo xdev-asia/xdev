@@ -94,8 +94,10 @@ pub fn codex_hook_events(version: CliVersion) -> Vec<HookEvent> {
     events_of(offered(version).map(|h| h.writes))
 }
 
-/// The private home of `account` (`None`: the system default codex).
-pub fn private_codex_home(data_dir: &Path, account: Option<&str>) -> PathBuf {
+/// The private home of `account` (`None`: the system default codex) over the
+/// codex home `real_home`. Two profiles with their own `CODEX_HOME` and no
+/// account get two private homes, so neither links the other's `auth.json`.
+pub fn private_codex_home(data_dir: &Path, account: Option<&str>, real_home: &Path) -> PathBuf {
     let name = match account {
         // Account names are `[a-z0-9-]`, so they are folder names already;
         // `default` is kept for the default home.
@@ -103,7 +105,24 @@ pub fn private_codex_home(data_dir: &Path, account: Option<&str>) -> PathBuf {
         Some(name) => name,
         None => "default",
     };
-    data_dir.join(CODEX_HOME_DIR).join(name)
+    data_dir
+        .join(CODEX_HOME_DIR)
+        .join(format!("{name}-{}", home_key(real_home)))
+}
+
+/// 8 hex digits of the real home's path; case does not count on Windows.
+fn home_key(real_home: &Path) -> String {
+    let text = real_home.to_string_lossy();
+    let text = text.trim_end_matches(['/', '\\']);
+    let text = if cfg!(windows) {
+        text.replace('/', "\\").to_lowercase()
+    } else {
+        text.to_owned()
+    };
+    Sha256::digest(text.as_bytes())[..4]
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// Builds or refreshes the private home of `account` for a codex at
@@ -124,7 +143,7 @@ pub fn prepare_codex_home(
     if version < CODEX_HOOKS_SINCE {
         return Err(other("codex too old for hooks"));
     }
-    let home = private_codex_home(data_dir, account);
+    let home = private_codex_home(data_dir, account, real_home);
     if same_place(real_home, &data_dir.join(CODEX_HOME_DIR)) {
         return Err(other("CODEX_HOME is already a private home"));
     }
@@ -300,25 +319,48 @@ fn read_toml(path: &Path) -> io::Result<Option<toml::Table>> {
 
 /// Makes `link` a hard link to `real` unless it already is one. A file that
 /// is no longer the same (codex replaced it, say on a token refresh) is kept
-/// as `auth.json.unlinked-<ms>`, never deleted, and the link is made again.
-/// Neither file is opened for its content.
+/// as `auth.json.unlinked-<ms>-<pid>-<n>`, never deleted, and the link is
+/// made again. Neither file is opened for its content. Two launches at once
+/// may both link: the one that finds the link already made accepts it.
 fn link_auth(real: &Path, link: &Path) -> io::Result<()> {
     match fs::symlink_metadata(link) {
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return fs::hard_link(real, link),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return hard_link_or_same(real, link),
         Err(e) => return Err(e),
         Ok(_) => {}
     }
     if is_linked(real, link)? {
         return Ok(());
     }
+    match fs::rename(link, aside_name(link)) {
+        // The other launch set it aside first.
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        other => other?,
+    }
+    hard_link_or_same(real, link)
+}
+
+/// Links `link` to `real`; a `link` that is already that file is fine.
+fn hard_link_or_same(real: &Path, link: &Path) -> io::Result<()> {
+    match fs::hard_link(real, link) {
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists && is_linked(real, link)? => Ok(()),
+        other => other,
+    }
+}
+
+/// A free name to set a stale `auth.json` aside under, unique per call.
+fn aside_name(link: &Path) -> PathBuf {
+    static SEQ: AtomicU64 = AtomicU64::new(0);
     let ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_millis());
-    fs::rename(
-        link,
-        link.with_file_name(format!("auth.json.unlinked-{ms}")),
-    )?;
-    fs::hard_link(real, link)
+    let pid = std::process::id();
+    loop {
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let path = link.with_file_name(format!("auth.json.unlinked-{ms}-{pid}-{n}"));
+        if fs::symlink_metadata(&path).is_err() {
+            return path;
+        }
+    }
 }
 
 /// Whether `link` is still a hard link to `real`: the same file, so it has
@@ -492,19 +534,49 @@ mod tests {
     }
 
     #[test]
-    fn private_home_is_per_account_under_the_data_dir() {
+    fn private_home_is_per_account_and_real_home_under_the_data_dir() {
         let data = Path::new("/data");
-        assert_eq!(
-            private_codex_home(data, None),
-            data.join("codex-home").join("default")
-        );
-        assert_eq!(
-            private_codex_home(data, Some("work")),
-            data.join("codex-home").join("work")
-        );
-        assert_ne!(
-            private_codex_home(data, Some("default")),
-            private_codex_home(data, None)
+        let real = Path::new("/home/me/.codex");
+        let other = Path::new("/work/codex-home");
+        let name = |account, home| {
+            let path = private_codex_home(data, account, home);
+            assert_eq!(path.parent(), Some(data.join("codex-home").as_path()));
+            path.file_name().unwrap().to_string_lossy().into_owned()
+        };
+        assert!(name(None, real).starts_with("default-"));
+        assert!(name(Some("work"), real).starts_with("work-"));
+        assert_ne!(name(Some("default"), real), name(None, real));
+        // A profile's own CODEX_HOME gets its own private home, also without an account.
+        assert_ne!(name(None, real), name(None, other));
+        assert_eq!(name(None, real), name(None, real));
+    }
+
+    #[test]
+    fn a_link_another_launch_just_made_is_accepted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("auth.json");
+        fs::write(&real, "{}").unwrap();
+        let link = tmp.path().join("link.json");
+        fs::hard_link(&real, &link).unwrap();
+        // As if the other launch linked between our check and our link.
+        hard_link_or_same(&real, &link).unwrap();
+        assert!(is_linked(&real, &link).unwrap());
+        let stray = tmp.path().join("stray.json");
+        fs::write(&stray, "x").unwrap();
+        assert!(hard_link_or_same(&real, &stray).is_err());
+    }
+
+    #[test]
+    fn set_aside_names_never_collide() {
+        let link = Path::new("/h/auth.json");
+        let a = aside_name(link);
+        let b = aside_name(link);
+        assert_ne!(a, b);
+        assert!(
+            a.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("auth.json.unlinked-")
         );
     }
 
@@ -597,7 +669,12 @@ mod tests {
 
         let home = prepare_codex_home(&data, Some("work"), &real, &xdev(tmp.path()), NEW).unwrap();
         assert!(home.starts_with(dunce(&data)));
-        assert_eq!(home.file_name().unwrap(), "work");
+        assert!(
+            home.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("work-")
+        );
 
         let config: toml::Table =
             toml::from_str(&fs::read_to_string(home.join("config.toml")).unwrap()).unwrap();
