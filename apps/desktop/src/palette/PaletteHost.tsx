@@ -14,6 +14,8 @@ export interface PaletteActions {
   selectWorktree(wt: WorktreeView): void;
   /** Brings a tab to the front of its worktree. */
   frontTab(worktree: string, id: string): void;
+  /** Shows the workspace view, leaving settings or docs. */
+  showWorkspace(): void;
   openSettings(section?: string): void;
   newWorktree(name?: string): void;
   addRepo(): void;
@@ -58,6 +60,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
 
   function openTab(profile: string): void {
     if (!sessions || !current) return;
+    actions.showWorkspace();
     const tab = sessions.open(current.path, profile);
     actions.frontTab(current.path, tab.id);
   }

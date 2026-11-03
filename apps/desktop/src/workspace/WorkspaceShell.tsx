@@ -93,7 +93,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The jump palette, and the settings section it asked for; a new `seq` is a new request.
   const [jumpOpen, setJumpOpen] = useState(false);
   const [settingsAt, setSettingsAt] = useState<{ section?: string; seq: number }>({ seq: 0 });
-  useJumpKey(useCallback(() => setJumpOpen((o) => !o), []));
+  // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
+  const dialogOpen = creating !== null || removing !== null;
+  useJumpKey(useCallback(() => setJumpOpen((o) => (dialogOpen ? false : !o)), [dialogOpen]));
 
   // One store of terminal tabs for the whole shell. Made in an effect so a dev double mount
   // disposes the first one; disposing kills its ptys.
@@ -363,7 +365,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           aria-label={t("workspace.header.settings")}
           title={t("workspace.header.settings")}
           aria-pressed={view === "settings"}
-          onClick={() => show("settings")}
+          onClick={() => {
+            // The gear opens the first section, not one the palette asked for earlier.
+            setSettingsAt((s) => ({ seq: s.seq }));
+            show("settings");
+          }}
         >
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="3" />
@@ -595,6 +601,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             select(wt);
             show("workspace");
           },
+          showWorkspace: () => show("workspace"),
           frontTab: (worktree, id) => setFront((f) => ({ worktree, id, seq: (f?.seq ?? 0) + 1 })),
           openSettings: (section) => {
             setSettingsAt((s) => ({ section, seq: s.seq + 1 }));

@@ -37,7 +37,7 @@ beforeEach(() => {
 });
 
 function host(over: Partial<PaletteHostProps> = {}) {
-  const actions: PaletteActions = { selectWorktree: vi.fn(), frontTab: vi.fn(), openSettings: vi.fn(), newWorktree: vi.fn(), addRepo: vi.fn(), searchDocs: vi.fn(), toggleSidebar: vi.fn(), showDocs: vi.fn() };
+  const actions: PaletteActions = { selectWorktree: vi.fn(), frontTab: vi.fn(), showWorkspace: vi.fn(), openSettings: vi.fn(), newWorktree: vi.fn(), addRepo: vi.fn(), searchDocs: vi.fn(), toggleSidebar: vi.fn(), showDocs: vi.fn() };
   const open = vi.fn((worktree: string, profile: string) => tabOf("new1", worktree, profile, true));
   const tabs: Record<string, Tab[]> = { "/wt/oak": [tabOf("p1", "/wt/oak", "claude", true)], "/wt/elm": [tabOf("p2", "/wt/elm", "shell", false)] };
   const sessions = { tabs: (p: string) => tabs[p] ?? [], dot: () => null, lastActivity: () => null, open } as unknown as Sessions;
@@ -73,6 +73,18 @@ it("new agent tab opens the default agent in the current worktree", () => {
   expect(h.actions.frontTab).toHaveBeenCalledWith("/wt/oak", "new1");
   h.item("act:newShellTab").run();
   expect(h.open).toHaveBeenLastCalledWith("/wt/oak", "shell-pwsh");
+});
+
+it("new tabs show the workspace first, then front the tab", () => {
+  const h = host();
+  const order: string[] = [];
+  vi.mocked(h.actions.showWorkspace).mockImplementation(() => void order.push("show"));
+  h.open.mockImplementation((worktree: string, profile: string) => { order.push("open"); return tabOf("new1", worktree, profile, true); });
+  vi.mocked(h.actions.frontTab).mockImplementation(() => void order.push("front"));
+  h.item("act:newAgentTab").run();
+  expect(order).toEqual(["show", "open", "front"]);
+  h.item("act:newShellTab").run();
+  expect(h.actions.showWorkspace).toHaveBeenCalledTimes(2);
 });
 
 it("no current worktree hides the tab actions", () => {
