@@ -13,3 +13,16 @@ Task 2: complete
   the CLI has a mirror `agent_hook::Event` (ValueEnum) mapped `From` into `HookEvent`.
 - `agent-hook` is a hidden subcommand, handled in `main` before `run` (no folder side effects);
   clap parse errors on `agent-hook` (unknown event) also exit 0 with a stderr line.
+
+Task 3: complete
+- Extra spike: claude runs hook commands under bash on Windows ($BASH_VERSION set) → program is a POSIX
+  double-quoted word (`"`, `\`, `$`, backtick escaped), `\` → `/` on Windows only. Codex: TOML basic string.
+- `Launch` gains `cli: Option<Cli>` (plan) and also `hooks: bool` + `Launch::add_hooks(xdev)` (not in plan):
+  keeps the "did it get flags" fact next to the args so `PtyInfo.hooks` reads it.
+- `launch_for(data_dir, id, account, hooks: Option<&Path>)`: callers pass `hooks_now(app)`, which reads
+  settings.json at `settings_path(app)` (app_config_dir, where Settings already live; not data_dir) and
+  `cli_beside(current_exe)` → `hook_program(&StatusSettings, exe)` (R4). pty_spawn and pty_approve both use it,
+  so the approved fingerprint matches the spawned one.
+- `cli_beside` and `settings_path` made `pub(crate)`.
+- StatusSettings field comments are `//` (not `///`) so the TS file matches the contract (no field docs).
+- StatusSettings is camelCase on disk too (one serde shape for disk and IPC); missing fields default per field.

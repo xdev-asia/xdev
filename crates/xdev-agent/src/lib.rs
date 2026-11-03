@@ -27,7 +27,7 @@ use xdev_policy::Verdict;
 pub use detect::{find_builtin, find_program};
 pub use flags::{efforts, flags};
 pub use flow::RunOptions;
-pub use hooks::{HOOKS_DIR, HookEvent, HookLine, append_hook, hook_file, valid_pty_id};
+pub use hooks::{HOOKS_DIR, HookEvent, HookLine, append_hook, hook_args, hook_file, valid_pty_id};
 pub use launch::{Context, Launch, LaunchError, resolve};
 pub use profiles::{
     Approvals, Cli, CustomShell, EnvVar, Permissions, Profile, ProfileError, Profiles, builtin,
