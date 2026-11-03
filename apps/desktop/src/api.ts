@@ -43,6 +43,9 @@ import type {
   RepoView,
   WorktreeChange,
   WorktreeFileDiff,
+  ReviewBranch,
+  ReviewData,
+  ReviewNote,
   WorktreeStat,
   WorktreeView,
   Check,
@@ -123,6 +126,11 @@ export type {
   RepoView,
   WorktreeChange,
   WorktreeFileDiff,
+  ReviewBase,
+  ReviewBranch,
+  ReviewData,
+  ReviewFile,
+  ReviewNote,
   WorktreeSkip,
   WorktreeStat,
   WorktreeView,
@@ -202,6 +210,7 @@ export type ErrorCode =
   | "worktree_exists"
   | "branch_exists"
   | "bad_ref"
+  | "bad_note"
   | "worktree_dirty"
   | "primary_worktree"
   | "empty_message"
@@ -398,6 +407,17 @@ export interface Api {
   // A to Z, `.git` left out, links listed as files and never followed, at most 2000 names with
   // `truncated` set past that. Rejects with `bad_path` for `..`, an absolute path or a link.
   worktreeListDir(path: string, dir: string): Promise<DirListing>;
+  // Review: every change against a base. `base` null is the start (HEAD for the primary checkout); a
+  // branch, ref or commit id is compared from its merge base with HEAD. Rejects with `bad_ref`.
+  worktreeReview(path: string, base: string | null): Promise<ReviewData>;
+  // One file's two sides at `base`, which must be the commit id `worktreeReview` returned.
+  worktreeReviewFile(path: string, base: string, file: string): Promise<WorktreeFileDiff>;
+  // Whole files: stage them, or put the index back to HEAD.
+  worktreeStage(path: string, files: string[], staged: boolean): Promise<void>;
+  worktreeBranches(path: string): Promise<ReviewBranch[]>;
+  // Review notes of one worktree. A put replaces them all and rejects with `bad_note` when any is invalid.
+  reviewNotes(path: string): Promise<ReviewNote[]>;
+  reviewNotesPut(path: string, notes: ReviewNote[]): Promise<ReviewNote[]>;
   // Agent kit. Every path is checked in Rust against the agent homes, the app data folder and
   // `worktree` (a repo or worktree the workspace knows; any other rejects with `outside`).
   kitHomes(): Promise<Home[]>;
@@ -486,6 +506,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "worktree_exists",
   "branch_exists",
   "bad_ref",
+  "bad_note",
   "worktree_dirty",
   "primary_worktree",
   "empty_message",
@@ -638,6 +659,12 @@ const tauriApi: Api = {
   worktreeDraftCommit: (path, files) => call("worktree_draft_commit", { path, files }),
   worktreeDraftPr: (path) => call("worktree_draft_pr", { path }),
   worktreeListDir: (path, dir) => call("worktree_list_dir", { path, dir }),
+  worktreeReview: (path, base) => call("worktree_review", { path, base }),
+  worktreeReviewFile: (path, base, file) => call("worktree_review_file", { path, base, file }),
+  worktreeStage: (path, files, staged) => call("worktree_stage", { path, files, staged }),
+  worktreeBranches: (path) => call("worktree_branches", { path }),
+  reviewNotes: (path) => call("review_notes_get", { path }),
+  reviewNotesPut: (path, notes) => call("review_notes_put", { path, notes }),
   kitHomes: () => call("kit_homes"),
   kitSkills: (worktree) => call("kit_skills", { worktree }),
   kitMemory: (worktree) => call("kit_memory", { worktree }),

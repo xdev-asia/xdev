@@ -478,6 +478,7 @@
   "error.worktree_unknown": "xDev does not know that worktree.",
   "error.worktree_exists": "A folder for that worktree already exists.",
   "error.branch_exists": "A branch with that name already exists.",
+  "error.bad_note": "That review note could not be saved. Check its text and lines.",
   "error.bad_ref": "That starting point does not exist in the repository.",
   "error.worktree_dirty": "This worktree has uncommitted changes. Commit them, or remove it anyway to discard them.",
   "error.primary_worktree": "The main checkout of a repository cannot be removed here.",
