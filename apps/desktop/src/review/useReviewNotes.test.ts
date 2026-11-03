@@ -105,3 +105,39 @@ it("unused type keeps the import honest", () => {
   const n: ReviewNote = newNote("a.ts", 1, 1, "x", "b", 1, "id");
   expect(n.id).toBe("id");
 });
+
+it("writes nothing while the load failed, so earlier notes are not wiped", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "reviewNotes").mockRejectedValueOnce({ code: "io" });
+  const put = vi.spyOn(api, "reviewNotesPut");
+  const s = new NotesStore(api, OAK);
+  await s.load();
+  await s.add("a.ts", 1, 1, "x", "new");
+  await s.markSent(["nope"]);
+  await s.reanchorFile("a.ts", null);
+  expect(put).not.toHaveBeenCalled();
+  expect(s.snapshot()).toMatchObject({ notes: [], problem: { code: "io" } });
+});
+
+it("writes nothing before the load has returned", async () => {
+  const api = createMockApi({});
+  const put = vi.spyOn(api, "reviewNotesPut");
+  const s = new NotesStore(api, OAK);
+  const loading = s.load();
+  await s.add("a.ts", 1, 1, "x", "early");
+  expect(put).not.toHaveBeenCalled();
+  await loading;
+  await s.add("a.ts", 1, 1, "x", "late");
+  expect(put).toHaveBeenCalledTimes(1);
+});
+
+it("a later good load makes writes possible again", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "reviewNotes").mockRejectedValueOnce({ code: "io" });
+  const s = new NotesStore(api, OAK);
+  await s.load();
+  await s.load();
+  expect(s.snapshot().problem).toBeNull();
+  await s.add("a.ts", 1, 1, "x", "ok");
+  expect(s.snapshot().notes).toHaveLength(1);
+});
