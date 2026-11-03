@@ -84,7 +84,7 @@ fn probe(program: &Path) -> Option<CliVersion> {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    let mut child = cmd.spawn().ok()?;
+    let mut child = spawn(&mut cmd)?;
     let mut stdout = child.stdout.take()?;
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -104,6 +104,25 @@ fn probe(program: &Path) -> Option<CliVersion> {
     let _ = child.kill();
     let _ = child.wait();
     CliVersion::parse(&String::from_utf8_lossy(&bytes))
+}
+
+/// ETXTBSY, the same number on Linux and macOS.
+const TEXT_FILE_BUSY: i32 = 26;
+
+/// Spawns, trying again a few times while the program is busy. A program written a moment ago can
+/// still be open for writing in a child another thread has forked but not yet exec'd; that clears
+/// in a few milliseconds. Any other error is final, and the failure is cached by the caller.
+fn spawn(cmd: &mut Command) -> Option<std::process::Child> {
+    for _ in 0..5 {
+        match cmd.spawn() {
+            Ok(child) => return Some(child),
+            Err(e) if cfg!(unix) && e.raw_os_error() == Some(TEXT_FILE_BUSY) => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(_) => return None,
+        }
+    }
+    cmd.spawn().ok()
 }
 
 #[cfg(test)]
