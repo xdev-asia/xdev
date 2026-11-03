@@ -25,15 +25,31 @@ pub fn pick(taken: &HashSet<String>, seed: u64) -> String {
 }
 
 /// A branch name from what the user typed: lowercase, spaces as `-`, only
-/// `[a-z0-9._/-]`, no leading `-` or `.`, at most 48 characters.
+/// `[a-z0-9._/-]`, no leading `-`, `.` or `/`, at most 48 characters. No
+/// `//` or `..`, and no trailing `/`, `.`, `-` or `.lock`, which git refuses.
 pub fn slug(name: &str) -> String {
-    name.chars()
+    let mut out = String::new();
+    let kept = name
+        .chars()
         .flat_map(char::to_lowercase)
         .map(|c| if c.is_whitespace() { '-' } else { c })
         .filter(|c| matches!(c, 'a'..='z' | '0'..='9' | '.' | '_' | '/' | '-'))
-        .skip_while(|c| matches!(c, '-' | '.'))
-        .take(48)
-        .collect()
+        .skip_while(|c| matches!(c, '-' | '.' | '/'))
+        .take(48);
+    for c in kept {
+        if matches!(c, '/' | '.') && out.ends_with(c) {
+            continue;
+        }
+        out.push(c);
+    }
+    loop {
+        let trimmed = out.trim_end_matches(['/', '.', '-']);
+        let trimmed = trimmed.strip_suffix(".lock").unwrap_or(trimmed);
+        if trimmed.len() == out.len() {
+            return out;
+        }
+        out.truncate(trimmed.len());
+    }
 }
 
 #[cfg(test)]
@@ -75,5 +91,35 @@ mod tests {
         assert_eq!(slug("--..x"), "x");
         assert_eq!(slug("..."), "");
         assert_eq!(slug(&"a".repeat(60)).len(), 48);
+    }
+
+    #[test]
+    fn slug_never_ends_in_a_name_git_refuses() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ok = std::process::Command::new("git")
+            .current_dir(tmp.path())
+            .args(["init", "-q"])
+            .status()
+            .unwrap();
+        assert!(ok.success());
+        let repo = xdev_git::Repo::discover(tmp.path()).unwrap();
+
+        let slash_at_48 = format!("{}/{}", "a".repeat(47), "b".repeat(12));
+        assert_eq!(slash_at_48.chars().nth(47), Some('/'));
+        let cases = [
+            (slash_at_48.as_str(), "a".repeat(47)),
+            ("feature.lock", "feature".to_owned()),
+            ("x.lock.lock", "x".to_owned()),
+            ("x-.lock/", "x".to_owned()),
+            ("a//b..c", "a/b.c".to_owned()),
+            ("/x", "x".to_owned()),
+        ];
+        for (input, want) in cases {
+            let got = slug(input);
+            assert_eq!(got, want, "{input}");
+            assert!(repo.valid_branch_name(&got).unwrap(), "{input} -> {got}");
+        }
+        let ends = format!("{}x.lock", "a".repeat(43));
+        assert!(repo.valid_branch_name(&slug(&ends)).unwrap());
     }
 }
