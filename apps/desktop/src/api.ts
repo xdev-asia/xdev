@@ -35,6 +35,10 @@ import type {
   VaultChanged,
   VaultSetup,
   VcsState,
+  RepoView,
+  WorktreeChange,
+  WorktreeFileDiff,
+  WorktreeView,
 } from "@xdev/bindings";
 import type { Target } from "./doc/frontmatter";
 import { toBytes } from "./terminal/ptyClient";
@@ -86,6 +90,11 @@ export type {
   UpdateInfo,
   VaultSetup,
   VcsState,
+  RepoView,
+  WorktreeChange,
+  WorktreeFileDiff,
+  WorktreeSkip,
+  WorktreeView,
 } from "@xdev/bindings";
 // The UI's names for generated types.
 export type { Event as SquadEvent, FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
@@ -150,7 +159,17 @@ export type ErrorCode =
   | "pty_spawn"
   | "pty_resize"
   | "bad_arg"
-  | "unknown_profile";
+  | "unknown_profile"
+  | "registry_corrupt"
+  | "repo_exists"
+  | "repo_unknown"
+  | "worktree_unknown"
+  | "worktree_exists"
+  | "branch_exists"
+  | "bad_ref"
+  | "worktree_dirty"
+  | "primary_worktree"
+  | "empty_message";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export interface Api {
@@ -249,6 +268,25 @@ export interface Api {
   // An unknown id has already ended, so this never rejects.
   ptyKill(id: string): Promise<void>;
   onPtyExit(cb: (exit: PtyExit) => void): Promise<() => void>;
+  // Every repo the workspace knows, each with its primary checkout first; a repo whose folder is
+  // gone stays in the list as `missing`.
+  workspaceList(): Promise<RepoView[]>;
+  // Rejects with `repo_exists` for a repo that is already listed.
+  repoAdd(path: string): Promise<RepoView>;
+  // Only the entry goes; nothing on disk is touched.
+  repoForget(id: string): Promise<void>;
+  // A new branch and folder; a blank `name` gets a free word, a null `from` starts at the repo's
+  // base ref. Rejects with `bad_name`, `branch_exists`, `worktree_exists` or `bad_ref`.
+  worktreeCreate(repoId: string, name: string, from: string | null): Promise<WorktreeView>;
+  worktreePin(path: string, pinned: boolean): Promise<void>;
+  // Rejects with `needs_approval` until `confirmed`, then with `worktree_dirty` for uncommitted
+  // work until `force`, and with `primary_worktree` for the main checkout.
+  worktreeRemove(path: string, force: boolean, confirmed: boolean): Promise<void>;
+  // Against the commit the worktree started from.
+  worktreeChanges(path: string): Promise<WorktreeChange[]>;
+  worktreeFileDiff(path: string, file: string): Promise<WorktreeFileDiff>;
+  // The new commit's id, or null when none of `files` had a change. Rejects with `empty_message`.
+  worktreeCommit(path: string, files: string[], message: string): Promise<string | null>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -307,6 +345,16 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "pty_resize",
   "bad_arg",
   "unknown_profile",
+  "registry_corrupt",
+  "repo_exists",
+  "repo_unknown",
+  "worktree_unknown",
+  "worktree_exists",
+  "branch_exists",
+  "bad_ref",
+  "worktree_dirty",
+  "primary_worktree",
+  "empty_message",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -394,6 +442,15 @@ const tauriApi: Api = {
   ptyAck: (id, n) => call("pty_ack", { id, n }),
   ptyKill: (id) => call("pty_kill", { id }),
   onPtyExit: (cb) => listen<PtyExit>("pty://exit", (e) => cb(e.payload)),
+  workspaceList: () => call("workspace_list"),
+  repoAdd: (path) => call("repo_add", { path }),
+  repoForget: (id) => call("repo_forget", { id }),
+  worktreeCreate: (repoId, name, from) => call("worktree_create", { repoId, name, from }),
+  worktreePin: (path, pinned) => call("worktree_pin", { path, pinned }),
+  worktreeRemove: (path, force, confirmed) => call("worktree_remove", { path, force, confirmed }),
+  worktreeChanges: (path) => call("worktree_changes", { path }),
+  worktreeFileDiff: (path, file) => call("worktree_file_diff", { path, file }),
+  worktreeCommit: (path, files, message) => call("worktree_commit", { path, files, message }),
 };
 
 function browserApi(): Api {
