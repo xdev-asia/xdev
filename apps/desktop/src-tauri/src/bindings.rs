@@ -9,6 +9,7 @@ use ts_rs::{Config, TS};
 
 use crate::accounts::{Account, Accounts, LoginStart, Models};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
+use crate::kit::{KitText, PromptEntry};
 use crate::pty::{PtyExit, PtyInfo};
 use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
@@ -52,6 +53,12 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     WorktreeChange::export_all(cfg)?;
     WorktreeFileDiff::export_all(cfg)?;
     xdev_workspace::DirListing::export_all(cfg)?;
+    KitText::export_all(cfg)?;
+    PromptEntry::export_all(cfg)?;
+    xdev_kit::Home::export_all(cfg)?;
+    xdev_kit::Skill::export_all(cfg)?;
+    xdev_kit::MemorySet::export_all(cfg)?;
+    xdev_kit::UsageSummary::export_all(cfg)?;
     Ok(())
 }
 

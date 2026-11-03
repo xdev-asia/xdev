@@ -476,6 +476,7 @@
   "error.worktree_dirty": "This worktree has uncommitted changes. Commit them, or remove it anyway to discard them.",
   "error.primary_worktree": "The main checkout of a repository cannot be removed here.",
   "error.empty_message": "Write a commit message first.",
+  "error.outside": "That file is outside the folders xDev may change.",
   "apps.terminal": "Terminal",
   "terminal.folder": "Folder",
   "terminal.pickFolder": "Choose folder…",

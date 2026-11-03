@@ -476,6 +476,7 @@
   "error.worktree_dirty": "Worktree này có thay đổi chưa commit. Hãy commit chúng, hoặc vẫn xoá để bỏ chúng đi.",
   "error.primary_worktree": "Không thể xoá bản checkout chính của kho mã ở đây.",
   "error.empty_message": "Hãy viết nội dung commit trước.",
+  "error.outside": "Tệp này nằm ngoài các thư mục xDev được phép sửa.",
   "apps.terminal": "Terminal",
   "terminal.folder": "Thư mục",
   "terminal.pickFolder": "Chọn thư mục…",

@@ -23,6 +23,7 @@ xdev-agent.workspace = true
 xdev-ai.workspace = true
 xdev-core.workspace = true
 xdev-git.workspace = true
+xdev-kit.workspace = true
 xdev-policy.workspace = true
 xdev-pty.workspace = true
 xdev-workspace.workspace = true
@@ -34,6 +35,7 @@ ts-rs.workspace = true
 xdev-agent = { workspace = true, features = ["ts"] }
 xdev-ai = { workspace = true, features = ["ts"] }
 xdev-core = { workspace = true, features = ["ts"] }
+xdev-kit = { workspace = true, features = ["ts"] }
 xdev-workspace = { workspace = true, features = ["ts"] }
 
 [lints]

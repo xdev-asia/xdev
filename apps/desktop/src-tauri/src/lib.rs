@@ -2,6 +2,7 @@ mod accounts;
 #[cfg(test)]
 mod bindings;
 mod commands;
+mod kit;
 mod pty;
 mod session;
 mod settings;
@@ -117,6 +118,19 @@ pub fn run() {
             workspace::worktree_file_diff,
             workspace::worktree_commit,
             workspace::worktree_list_dir,
+            kit::kit_homes,
+            kit::kit_skills,
+            kit::kit_memory,
+            kit::kit_read,
+            kit::kit_write,
+            kit::kit_copy,
+            kit::kit_skill_copy,
+            kit::kit_skill_new,
+            kit::kit_skill_remove,
+            kit::kit_skill_restore,
+            kit::kit_usage,
+            kit::kit_paths_exist,
+            kit::kit_prompt_history,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
