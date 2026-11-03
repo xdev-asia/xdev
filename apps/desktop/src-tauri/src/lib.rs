@@ -53,10 +53,9 @@ pub fn run() {
             // The `.off` marker follows the stored setting from the start,
             // not only once the setting is saved. Best effort.
             if let (Some(file), Some(local)) = (commands::settings_path(app.handle()), &sync_local)
+                && let Err(e) = status::sync_hooks_marker(&file, local)
             {
-                if let Err(e) = status::sync_hooks_marker(&file, local) {
-                    eprintln!("hooks marker: {e}");
-                }
+                eprintln!("hooks marker: {e}");
             }
             status::listen_clicks(app.handle());
             // Without the watcher panes still run; they just show no status.
