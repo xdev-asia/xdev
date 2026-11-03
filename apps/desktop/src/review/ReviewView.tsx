@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ReviewData, type ReviewFile } from "@/api";
+import { toApiError, type Api, type ReviewData, type ReviewFile, type ReviewNote } from "@/api";
 import type { Problem } from "@/changes/useChanges";
 import { ProblemNote } from "@/components/ChangesPanel";
 import { useI18n } from "@/i18n";
@@ -9,11 +9,15 @@ import type { TabStatus } from "@/workspace/status";
 import { BasePicker } from "./BasePicker";
 import { FileDiff, type DiffHandle } from "./FileDiff";
 import { nextChange, type ChangeAt } from "./navigate";
+import { sortNotes } from "./notes";
+import { noteLabel } from "./NoteCard";
+import { useReviewNotes } from "./useReviewNotes";
 import { clampListWidth, readViewOptions, writeViewOptions, type ViewOptions } from "./viewOptions";
 
 // Past this many files the sections start closed, so opening the tab does not read them all.
 export const OPEN_LIMIT = 30;
 const STEP = 16;
+const firstLine = (text: string) => text.split(/\r?\n/, 1)[0];
 
 const storage = (): Storage | null => (typeof localStorage === "undefined" ? null : localStorage);
 const LETTER: Record<ReviewFile["kind"], string> = { added: "A", modified: "M", deleted: "D" };
@@ -41,6 +45,17 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
   const handles = useRef(new Map<string, DiffHandle>());
   const cursor = useRef<ChangeAt | null>(null);
   const drag = useRef<{ x: number; width: number } | null>(null);
+  const store = useReviewNotes(api, worktree);
+  const [listing, setListing] = useState(false);
+  // One array per file, kept while that file's notes are the same objects, so an untouched file is not redrawn.
+  const perFile = useRef(new Map<string, ReviewNote[]>());
+  const notesOf = (path: string): ReviewNote[] => {
+    const next = store.notes.filter((n) => n.file === path);
+    const old = perFile.current.get(path);
+    if (old && old.length === next.length && old.every((n, i) => n === next[i])) return old;
+    perFile.current.set(path, next);
+    return next;
+  };
 
   // A reveal opens its file and scrolls to it; taken during render so the frame that asks already shows it.
   if (reveal && reveal.seq !== seen) {
@@ -137,6 +152,14 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
     }
   }
 
+  // A note in the Notes list: open its file and bring the lines into view once the diff is drawn.
+  function jumpToNote(note: ReviewNote): void {
+    setListing(false);
+    show(note.file);
+    const handle = handles.current.get(note.file);
+    handle?.goToLine(note.line);
+  }
+
   function go(dir: 1 | -1): void {
     const list = files.map((f) => ({ path: f.path, chunks: counts[f.path] ?? 0 }));
     const at = nextChange(list, cursor.current, dir);
@@ -174,9 +197,36 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
         {flag("collapse", "review.opt.collapse")}
         {flag("lineNumbers", "review.opt.lineNumbers")}
         {flag("wrap", "review.opt.wrap")}
+        <div className="rv-notes">
+          <button type="button" className="rv-base-button" aria-haspopup="dialog" aria-expanded={listing} onClick={() => setListing(!listing)}>
+            {t("review.notes", { count: store.notes.length })}
+          </button>
+          {listing && (
+            <div className="rv-base-menu rv-notes-menu" role="dialog" aria-label={t("review.notes.title")}>
+              {store.notes.length === 0 && <p className="ws-empty">{t("review.notes.none")}</p>}
+              {sortNotes(store.notes).map((n) => (
+                <button key={n.id} type="button" onClick={() => jumpToNote(n)}>
+                  <span className="rv-note-label ws-mono">{noteLabel(n)}</span>
+                  {n.sentAt !== null && <span className="rv-mark rv-mark-sent">{t("review.note.sent")}</span>}
+                  {n.outdated && <span className="rv-mark rv-mark-outdated">{t("review.note.outdated")}</span>}
+                  <span className="rv-note-snippet">{firstLine(n.body)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {store.removed && (
+          <span className="rv-undo" role="status">
+            {t("review.note.deleted")}
+            <button type="button" onClick={() => void store.undo()}>
+              {t("review.note.undo")}
+            </button>
+          </span>
+        )}
         <span className="rv-count">{t("review.files", { count: files.length })}</span>
       </div>
       {problem && <ProblemNote problem={problem} />}
+      {store.problem && <ProblemNote problem={store.problem} />}
       {data && files.length === 0 && <p className="ws-empty">{t("review.empty")}</p>}
       {files.length > 0 && data && (
         <div className="rv-main">
@@ -235,6 +285,13 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
                   if (handle) handles.current.set(path, handle);
                   else handles.current.delete(path);
                 }}
+                notes={notesOf(f.path)}
+                handlers={{
+                  add: (range, body) => void store.add(f.path, range.startLine, range.line, range.anchor, body),
+                  edit: (id, body) => void store.edit(id, body),
+                  remove: (id) => void store.remove(id),
+                }}
+                onRead={(path, text) => void store.reanchorFile(path, text)}
                 onChunks={(path, count) => setCounts((c) => (c[path] === count ? c : { ...c, [path]: count }))}
               />
             ))}

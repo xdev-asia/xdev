@@ -944,5 +944,18 @@
   "review.files": "{count} tệp",
   "review.files.one": "{count} tệp",
   "review.list": "Các tệp đã đổi",
-  "review.resize": "Đổi độ rộng danh sách tệp"
+  "review.resize": "Đổi độ rộng danh sách tệp",
+  "review.note.placeholder": "Viết ghi chú cho agent (Markdown)",
+  "review.note.save": "Lưu",
+  "review.note.cancel": "Hủy",
+  "review.note.edit": "Sửa",
+  "review.note.delete": "Xóa",
+  "review.note.sent": "đã gửi",
+  "review.note.outdated": "lỗi thời",
+  "review.note.outdatedHint": "Dòng này đã đổi sau khi viết ghi chú.",
+  "review.note.deleted": "Đã xóa ghi chú.",
+  "review.note.undo": "Hoàn tác",
+  "review.notes": "Ghi chú ({count})",
+  "review.notes.title": "Mọi ghi chú rà soát",
+  "review.notes.none": "Chưa có ghi chú. Nhấn c trên một dòng, hoặc dùng dấu + ở lề."
 }

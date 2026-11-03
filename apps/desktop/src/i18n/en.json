@@ -944,5 +944,18 @@
   "review.files": "{count} files",
   "review.files.one": "{count} file",
   "review.list": "Changed files",
-  "review.resize": "Resize the file list"
+  "review.resize": "Resize the file list",
+  "review.note.placeholder": "Write a note for the agent (Markdown)",
+  "review.note.save": "Save",
+  "review.note.cancel": "Cancel",
+  "review.note.edit": "Edit",
+  "review.note.delete": "Delete",
+  "review.note.sent": "sent",
+  "review.note.outdated": "outdated",
+  "review.note.outdatedHint": "The line changed after this note was written.",
+  "review.note.deleted": "Note deleted.",
+  "review.note.undo": "Undo",
+  "review.notes": "Notes ({count})",
+  "review.notes.title": "All review notes",
+  "review.notes.none": "No notes yet. Press c on a line, or use the + in the gutter."
 }
