@@ -5,8 +5,8 @@ mod commands;
 mod kit;
 mod pty;
 mod session;
-mod ship;
 mod settings;
+mod ship;
 mod squads;
 mod tasks;
 mod updater;
@@ -126,6 +126,12 @@ pub fn run() {
             ship::worktree_fetch,
             ship::worktree_force_push,
             ship::worktree_amend,
+            ship::worktree_pr,
+            ship::worktree_pr_create,
+            ship::worktree_pr_checks,
+            ship::worktree_pr_open,
+            ship::worktree_draft_commit,
+            ship::worktree_draft_pr,
             kit::kit_homes,
             kit::kit_skills,
             kit::kit_memory,
