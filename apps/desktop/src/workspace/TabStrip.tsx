@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
 import type { PtyProfile } from "@/api";
 import { useI18n } from "@/i18n";
+import { withChord } from "@/keys/hint";
 import { AgentIcon } from "./AgentIcon";
 import type { PaneDir } from "./paneTree";
 import type { Tab } from "./sessions";
@@ -148,7 +149,7 @@ export function TabStrip(props: {
                 type="button"
                 className="ws-tab-close"
                 aria-label={t("workspace.tabs.close", { name: labelOf(item) })}
-                title={t("workspace.tabs.close", { name: labelOf(item) })}
+                title={withChord(t, t("workspace.tabs.close", { name: labelOf(item) }), "tab.close")}
                 onClick={() => props.onClose(item.id)}
               >
                 ×
@@ -162,7 +163,7 @@ export function TabStrip(props: {
           type="button"
           className="ws-icon-btn"
           aria-label={t("workspace.tabs.new")}
-          title={t("workspace.tabs.new")}
+          title={withChord(t, t("workspace.tabs.new"), "tab.new")}
           aria-haspopup="menu"
           aria-expanded={props.menuOpen}
           onClick={() => props.onMenu(!props.menuOpen)}

@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
 import { type Api, type ApiError, type PtyProfile } from "@/api";
 import { useI18n } from "@/i18n";
+import { useKeymap } from "@/keys/keymap";
 import { ReviewView } from "@/review/ReviewView";
 import { Terminal } from "@/terminal/Terminal";
 import { useApprovedStart } from "@/terminal/useApprovedStart";
@@ -11,19 +12,23 @@ import {
   equalize,
   focusPane,
   leaves,
+  neighbour,
   paneOf,
   removeTab,
   resize,
   selectTab,
   single,
   splitPane,
+  toggleExpand,
   type PaneDir,
   type PaneLayout,
   type PaneNode,
 } from "./paneTree";
+import { CloseTabsDialog } from "./CloseTabsDialog";
 import { bodyStyle, PaneView, paneRects } from "./PaneView";
 import { cliOf, type Sessions, type Tab, type TabCli } from "./sessions";
 import { TabStrip, type MenuGroup, type StripItem } from "./TabStrip";
+import { cycleTab, nthTab } from "./tabNav";
 import { titleStatus } from "./titles";
 
 // Offered while the profile view has not loaded: the built-in agents and the default shell.
@@ -66,6 +71,10 @@ export function WorktreeTabs(props: {
   const { t } = useI18n();
   // The pane whose `+` menu is open.
   const [menuPane, setMenuPane] = useState<string | null>(null);
+  // Tabs a key asked to close while an agent runs in one of them; null when nothing waits.
+  const [closing, setClosing] = useState<string[] | null>(null);
+  // Bumped when a key moves focus, so the terminal in front takes the keyboard.
+  const [kick, setKick] = useState(0);
   // Views started per tab; a retry after approval mounts a fresh view on the same pty id.
   const [attempts, setAttempts] = useState<Record<string, number>>({});
   const { ask, error, setError, dialog } = useApprovedStart(api);
@@ -137,7 +146,12 @@ export function WorktreeTabs(props: {
     { label: t("workspace.tabs.agents"), ids: [...agents] },
     { label: t("workspace.tabs.shells"), ids: shells },
   ].filter((g) => g.ids.length > 0);
-  const defaultShell = view?.defaultShell ?? FALLBACK_SHELL;
+  // The default shell: the profile view's, else its first; null when none is on.
+  const defaultShell: PtyProfile | null = view
+    ? shells.includes(view.defaultShell)
+      ? view.defaultShell
+      : (shells[0] ?? null)
+    : FALLBACK_SHELL;
 
   const setLayout = (next: PaneLayout | null) => sessions.setLayout(worktree, next);
 
@@ -172,21 +186,100 @@ export function WorktreeTabs(props: {
     if (layout) setLayout(removeTab(layout, REVIEW_TAB));
   }
 
-  // Ctrl+Alt+T opens the default agent, in the worktree on screen only. Taken in the capture
-  // phase so the terminal under focus does not also get the key.
+  const byId = new Map(tabs.map((tab) => [tab.id, tab]));
+
+  // ---- Keys: they act on the focused pane ----------------------------------------------------
+
+  // Puts `id` in front in its pane, focuses that pane, and gives its terminal the keyboard.
+  function go(id: string): void {
+    if (!layout) return;
+    setLayout(selectTab(layout, id));
+    setKick((k) => k + 1);
+  }
+
+  // A new tab of the default shell in the focused pane; with no shell on, the `+` menu of that pane.
+  function newShell(): boolean {
+    if (defaultShell === null) {
+      if (!layout) return false;
+      setMenuPane(layout.focused);
+      return true;
+    }
+    launch(defaultShell);
+    setKick((k) => k + 1);
+    return true;
+  }
+
+  function closeNow(targets: string[]): void {
+    for (const id of targets) closeTab(id);
+  }
+
+  // A key closes at once, unless an agent still runs in one of the tabs.
+  function requestClose(targets: string[]): boolean {
+    if (targets.length === 0) return false;
+    if (targets.some((id) => byId.get(id)?.agent && !ended(byId.get(id)!))) setClosing(targets);
+    else closeNow(targets);
+    return true;
+  }
+
+  function stepTab(step: 1 | -1): boolean {
+    const to = cycleTab(focusedLeaf?.tabs ?? [], shown, step);
+    if (to === null || to === shown) return false;
+    go(to);
+    return true;
+  }
+
+  function pickTab(n: number): boolean {
+    const to = nthTab(focusedLeaf?.tabs ?? [], n);
+    if (to === null) return false;
+    go(to);
+    return true;
+  }
+
+  function splitKey(dir: PaneDir): boolean {
+    if (!layout || defaultShell === null) return false;
+    splitWith(layout.focused, dir, defaultShell);
+    setKick((k) => k + 1);
+    return true;
+  }
+
+  // Focus moves to the next pane in reading order; an expansion follows it (focusPane does that).
+  function movePane(step: 1 | -1): boolean {
+    if (!layout) return false;
+    const to = neighbour(layout, layout.focused, step);
+    if (to === layout.focused) return false;
+    setLayout(focusPane(layout, to));
+    setKick((k) => k + 1);
+    return true;
+  }
+
+  // Expand or equalize: taken whenever there are panes, even when nothing changes.
+  function reshape(fn: (l: PaneLayout) => PaneLayout): boolean {
+    if (!layout) return false;
+    setLayout(fn(layout));
+    return true;
+  }
+
+  // Taken in the capture phase so the terminal under focus does not also get the key. This
+  // worktree listens only while it is on screen. A handler that returns false lets the key on.
   const defaultAgent = view?.defaultAgent ?? FALLBACK_AGENTS[0];
-  useEffect(() => {
-    if (!visible) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.repeat || !e.ctrlKey || !e.altKey || e.shiftKey || e.metaKey) return;
-      if (e.code !== "KeyT" && e.key.toLowerCase() !== "t") return;
-      e.preventDefault();
-      e.stopPropagation();
-      launch(defaultAgent);
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [visible, defaultAgent, sessions, worktree]);
+  useKeymap(
+    {
+      "agent.new": () => void launch(defaultAgent),
+      "tab.new": () => newShell(),
+      "tab.close": () => requestClose(shown ? [shown] : []),
+      "tab.next": () => stepTab(1),
+      "tab.prev": () => stepTab(-1),
+      ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`tab.select.${n}`, () => pickTab(n)])),
+      "pane.splitRight": () => splitKey("right"),
+      "pane.splitDown": () => splitKey("down"),
+      "pane.next": () => movePane(1),
+      "pane.prev": () => movePane(-1),
+      "pane.expand": () => reshape((l) => toggleExpand(l, l.focused)),
+      "pane.equalize": () => reshape(equalize),
+      "pane.close": () => requestClose(focusedLeaf?.tabs ?? []),
+    },
+    { when: () => visible },
+  );
 
   function failed(tab: Tab, e: ApiError): void {
     const tries = attempts[tab.id] ?? 0;
@@ -206,7 +299,6 @@ export function WorktreeTabs(props: {
     sessions.restart(tab.id);
   }
 
-  const byId = new Map(tabs.map((tab) => [tab.id, tab]));
   const stripOf = (leaf: Leaf) => {
     const items: StripItem[] = leaf.tabs.flatMap((id): StripItem[] => {
       if (id === REVIEW_TAB) return [{ id, tab: null }];
@@ -227,7 +319,7 @@ export function WorktreeTabs(props: {
           for (const other of leaf.tabs) if (other !== id) closeTab(other);
         }}
         onLaunch={(profile) => launch(profile, leaf.id)}
-        onSplit={(dir) => splitWith(leaf.id, dir, defaultShell)}
+        onSplit={(dir) => defaultShell !== null && splitWith(leaf.id, dir, defaultShell)}
         onSplitTab={(id, dir) => splitTab(leaf.id, id, dir)}
         onRename={(id, name) => sessions.rename(id, name)}
       />
@@ -307,7 +399,7 @@ export function WorktreeTabs(props: {
                   const status = titleStatus(tab.cli, title);
                   if (status) sessions.noteTitleStatus(tab.id, status);
                 }}
-                focusSeq={tab.id === shown ? props.focusSeq : undefined}
+                focusSeq={tab.id === shown ? (props.focusSeq ?? 0) + kick : undefined}
               />
             </div>
           );
@@ -324,7 +416,7 @@ export function WorktreeTabs(props: {
         <div className="ws-center-empty">
           <p>{t("workspace.tabs.empty")}</p>
           <div className="ws-launch">
-            {[defaultShell, ...agents].map((p) => (
+            {[...(defaultShell !== null ? [defaultShell] : []), ...agents].map((p) => (
               <button key={p} type="button" className="btn-secondary" onClick={() => launch(p)}>
                 {profileName(view, p, t)}
               </button>
@@ -333,6 +425,15 @@ export function WorktreeTabs(props: {
         </div>
       )}
       {dialog}
+      {closing && (
+        <CloseTabsDialog
+          onConfirm={() => {
+            closeNow(closing);
+            setClosing(null);
+          }}
+          onCancel={() => setClosing(null)}
+        />
+      )}
     </div>
   );
 }
