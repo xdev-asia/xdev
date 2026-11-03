@@ -5,8 +5,8 @@ use std::process::Command;
 use tempfile::TempDir;
 use xdev_git::Repo;
 use xdev_workspace::{
-    Registry, RepoPatch, WorktreeStat, add_repo, create_worktree, forget_repo, list,
-    remove_worktree, set_pinned, stat, update_repo, valid_short_name,
+    Registry, RepoPatch, WorkspaceError, WorktreeStat, add_repo, adopt_worktree, create_worktree,
+    forget_repo, list, path_key, remove_worktree, set_pinned, stat, update_repo, valid_short_name,
 };
 
 /// Runs setup commands; never used for the code under test.
@@ -80,7 +80,7 @@ fn names(reg: &mut Registry) -> Vec<String> {
 }
 
 #[test]
-fn add_repo_imports_existing_worktrees() {
+fn add_repo_still_imports_existing_worktrees() {
     let main = repo_dir();
     commit_all(main.path(), "one");
     git(
@@ -92,6 +92,7 @@ fn add_repo_imports_existing_worktrees() {
     assert_eq!(view.worktrees.len(), 2);
     assert!(view.worktrees[0].primary);
     assert_eq!(view.worktrees[1].branch.as_deref(), Some("hand"));
+    assert!(view.found.is_empty());
     assert!(!reg.worktrees[0].made_here);
 }
 
@@ -277,18 +278,141 @@ fn list_drops_meta_of_worktrees_removed_outside() {
     assert_eq!(reg.worktrees.len(), 0);
 }
 
-#[test]
-fn list_adopts_a_worktree_made_outside() {
-    let (mut reg, _id, main) = registered();
+/// Makes a linked worktree the way a person does in a terminal; returns its
+/// folder in git's spelling.
+fn outside_worktree(main: &Path, branch: &str) -> PathBuf {
     git(
-        main.path(),
-        &["worktree", "add", "-q", "-b", "late", "../late"],
+        main,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            branch,
+            &format!("../{branch}"),
+        ],
     );
-    let repos = list(&mut reg).unwrap();
-    assert_eq!(repos[0].worktrees.len(), 2);
-    assert_eq!(repos[0].worktrees[1].branch.as_deref(), Some("late"));
+    Repo::discover(main)
+        .unwrap()
+        .list_worktrees()
+        .unwrap()
+        .into_iter()
+        .find(|e| e.branch.as_deref() == Some(branch))
+        .unwrap()
+        .path
+}
+
+#[test]
+fn list_reports_unknown_worktree_as_found() {
+    let (mut reg, _id, main) = registered();
+    let outside = outside_worktree(main.path(), "late");
+    let key = path_key(&outside);
+    let views = list(&mut reg).unwrap();
+    assert_eq!(views[0].found.len(), 1);
+    let found = &views[0].found[0];
+    assert_eq!(found.branch.as_deref(), Some("late"));
+    assert_eq!(found.start, None);
+    assert!(!found.pinned);
+    assert!(!found.primary);
+    assert!(
+        views[0]
+            .worktrees
+            .iter()
+            .all(|w| path_key(Path::new(&w.path)) != key)
+    );
+    assert!(reg.worktrees.iter().all(|m| path_key(&m.path) != key));
+    // Asking again still does not record it.
+    assert_eq!(list(&mut reg).unwrap()[0].found.len(), 1);
+    assert!(reg.worktrees.is_empty());
+}
+
+#[test]
+fn found_is_sorted_by_path() {
+    let (mut reg, _id, main) = registered();
+    outside_worktree(main.path(), "zeta");
+    outside_worktree(main.path(), "alpha");
+    let found = &list(&mut reg).unwrap()[0].found;
+    let paths: Vec<&str> = found.iter().map(|w| w.path.as_str()).collect();
+    let mut sorted = paths.clone();
+    sorted.sort();
+    assert_eq!(paths.len(), 2);
+    assert_eq!(paths, sorted);
+}
+
+#[test]
+fn list_keeps_a_worktree_it_already_recorded_out_of_found() {
+    let (mut reg, id, _main) = registered();
+    create_worktree(&mut reg, &id, "mine", None, 1, 0).unwrap();
+    let views = list(&mut reg).unwrap();
+    assert!(views[0].found.is_empty());
+    assert_eq!(views[0].worktrees.len(), 2);
+}
+
+#[test]
+fn adopt_records_once() {
+    let (mut reg, _id, main) = registered();
+    let outside = outside_worktree(main.path(), "late");
+    let wt = adopt_worktree(&mut reg, &outside, 42).unwrap();
+    assert!(wt.start.is_some());
+    assert!(!wt.primary);
+    assert_eq!(wt.branch.as_deref(), Some("late"));
     assert_eq!(reg.worktrees.len(), 1);
     assert!(!reg.worktrees[0].made_here);
+    assert_eq!(reg.worktrees[0].created_ms, 42);
+    let views = list(&mut reg).unwrap();
+    assert!(views[0].found.is_empty());
+    assert_eq!(views[0].worktrees.len(), 2);
+    assert!(matches!(
+        adopt_worktree(&mut reg, &outside, 43),
+        Err(WorkspaceError::WorktreeExists(_))
+    ));
+    assert_eq!(reg.worktrees.len(), 1);
+}
+
+#[test]
+fn adopt_refuses_primary_and_unknown() {
+    let (mut reg, _id, main) = registered();
+    assert!(matches!(
+        adopt_worktree(&mut reg, main.path(), 1),
+        Err(WorkspaceError::Primary(_))
+    ));
+    let tmp = TempDir::new().unwrap();
+    assert!(matches!(
+        adopt_worktree(&mut reg, tmp.path(), 1),
+        Err(WorkspaceError::WorktreeUnknown(_))
+    ));
+    assert!(reg.worktrees.is_empty());
+}
+
+#[test]
+fn adopted_worktree_keeps_its_branch_on_remove() {
+    let (mut reg, _id, main) = registered();
+    let outside = outside_worktree(main.path(), "late");
+    adopt_worktree(&mut reg, &outside, 1).unwrap();
+    remove_worktree(&mut reg, &outside, false).unwrap();
+    assert!(
+        Repo::discover(main.path())
+            .unwrap()
+            .branch_exists("late")
+            .unwrap()
+    );
+}
+
+#[test]
+fn update_does_not_import_a_worktree_made_outside() {
+    let (mut reg, id, main) = registered();
+    outside_worktree(main.path(), "late");
+    let view = update_repo(
+        &mut reg,
+        &id,
+        RepoPatch {
+            short_name: Some("core".into()),
+            ..RepoPatch::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(view.found.len(), 1);
+    assert!(reg.worktrees.is_empty());
 }
 
 #[test]

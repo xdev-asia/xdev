@@ -13,4 +13,9 @@ worktreeRoot: string,
  * The folder is gone or no longer a repo; the entry stays so a
  * reconnected drive finds it again.
  */
-missing: boolean, worktrees: Array<WorktreeView>, };
+missing: boolean, worktrees: Array<WorktreeView>, 
+/**
+ * Live linked worktrees git lists that xDev has no record of, sorted by
+ * path. They stay here until `adopt_worktree`.
+ */
+found: Array<WorktreeView>, };
