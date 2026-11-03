@@ -13,7 +13,7 @@ use notify_debouncer_full::notify::{self, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, NoCache, new_debouncer_opt};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
-use xdev_agent::{HookDetail, HookEvent, HookLine, valid_pty_id};
+use xdev_agent::{HookDetail, HookEvent, HookLine, valid_pty_id, valid_session_id};
 
 /// A hook writes one short line; anything longer is not one of ours.
 const MAX_LINE: usize = 4096;
@@ -137,7 +137,7 @@ fn parse(id: &str, line: &[u8]) -> Option<PtyHook> {
         event: line.event,
         at: line.at,
         detail: line.detail,
-        session: line.session,
+        session: line.session.filter(|s| valid_session_id(s)),
     })
 }
 
@@ -261,6 +261,34 @@ mod tests {
     }
 
     #[test]
+    fn reader_passes_a_valid_session_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = file(dir.path());
+        let mut reader = HookReader::default();
+        append(
+            &path,
+            "{\"v\":1,\"event\":\"turn-done\",\"at\":3,\"session\":\"s-1\"}\n",
+        );
+        append(
+            &path,
+            "{\"v\":1,\"event\":\"turn-done\",\"at\":4,\"session\":\"a/b\"}\n",
+        );
+        append(&path, &line("turn-done", 5));
+        let with = PtyHook {
+            session: Some("s-1".into()),
+            ..hook(HookEvent::TurnDone, 3)
+        };
+        assert_eq!(
+            reader.read(&path),
+            [
+                with,
+                hook(HookEvent::TurnDone, 4),
+                hook(HookEvent::TurnDone, 5)
+            ]
+        );
+    }
+
+    #[test]
     fn reader_skips_a_long_line_still_being_written() {
         let dir = tempfile::tempdir().unwrap();
         let path = file(dir.path());
@@ -344,9 +372,14 @@ mod tests {
             let _ = tx.send(hook);
         })
         .unwrap();
-        xdev_agent::append_hook(dir.path(), ID, HookEvent::TurnDone, 7).unwrap();
+        xdev_agent::append_hook_detail(dir.path(), ID, HookEvent::TurnDone, 7, None, Some("s-7"))
+            .unwrap();
         let got = rx.recv_timeout(Duration::from_secs(10)).unwrap();
-        assert_eq!(got, hook(HookEvent::TurnDone, 7));
+        let want = PtyHook {
+            session: Some("s-7".into()),
+            ..hook(HookEvent::TurnDone, 7)
+        };
+        assert_eq!(got, want);
         assert!(rx.recv_timeout(Duration::from_millis(400)).is_err());
     }
 }

@@ -220,6 +220,7 @@ fn hook_keeps_only_whitelisted_fields() {
     assert_eq!(l.len(), 5);
     assert_eq!(l[0]["event"], "prompt");
     assert!(l[0].get("detail").is_none(), "{}", l[0]);
+    assert_eq!(l[0]["session"], "s1");
     assert_eq!(l[1]["detail"]["toolName"], "Bash");
     assert_eq!(l[2]["detail"]["message"], "All tests pass.");
     assert_eq!(l[3]["detail"]["error"], "model_not_found");
@@ -230,7 +231,7 @@ fn hook_keeps_only_whitelisted_fields() {
         let obj = line.as_object().unwrap();
         assert!(
             obj.keys()
-                .all(|k| ["v", "event", "at", "detail"].contains(&k.as_str()))
+                .all(|k| ["v", "event", "at", "detail", "session"].contains(&k.as_str()))
         );
         if let Some(d) = line.get("detail") {
             let mut keys: Vec<&String> = d.as_object().unwrap().keys().collect();
@@ -255,6 +256,37 @@ fn hook_reads_codex_notify_without_input_messages() {
     assert!(out.status.success() && out.stdout.is_empty(), "{out:?}");
     assert!(!hook_text(tmp.path()).contains("SECRET-PROMPT"));
     assert_eq!(lines(tmp.path())[0]["detail"]["message"], "Done here.");
+    // [Unverified] codex's thread id is the id `codex resume` takes.
+    assert_eq!(lines(tmp.path())[0]["session"], "th");
+}
+
+#[test]
+fn hook_keeps_the_agent_session_id() {
+    let tmp = tempfile::tempdir().unwrap();
+    json_hook(
+        tmp.path(),
+        "turn-done",
+        &serde_json::json!({
+            "session_id": "9f1c2d3e-0000-4000-8000-000000000001",
+            "hook_event_name": "Stop",
+            "last_assistant_message": "Done.",
+        }),
+    );
+    json_hook(
+        tmp.path(),
+        "turn-done",
+        &serde_json::json!({ "session_id": "../../etc/x", "hook_event_name": "Stop" }),
+    );
+    json_hook(
+        tmp.path(),
+        "turn-done",
+        &serde_json::json!({ "session_id": 7, "hook_event_name": "Stop" }),
+    );
+    let l = lines(tmp.path());
+    assert_eq!(l[0]["session"], "9f1c2d3e-0000-4000-8000-000000000001");
+    assert!(l[1].get("session").is_none(), "{}", l[1]);
+    assert!(l[2].get("session").is_none(), "{}", l[2]);
+    assert!(!hook_text(tmp.path()).contains("etc"));
 }
 
 #[test]
