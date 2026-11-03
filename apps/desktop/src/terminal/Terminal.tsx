@@ -27,6 +27,8 @@ export function Terminal(props: {
   onOutput?(bytes: number): void;
   /** The user typed into the terminal; `text` is what was sent (Escape alone may stop a turn). */
   onInput?(text: string): void;
+  /** The program set the terminal title (OSC 0 or 2). */
+  onTitle?(title: string): void;
 }): JSX.Element {
   const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
@@ -82,6 +84,7 @@ export function Terminal(props: {
       handlers.current.onInput?.(text);
       void client.input(text).catch(() => {});
     });
+    term.onTitleChange((title) => handlers.current.onTitle?.(title));
     term.onResize(({ cols, rows }) => void client.resize(cols, rows).catch(() => {}));
     // A mount undone in the same tick (StrictMode in dev) starts nothing, so a shared client
     // is started once, by the mount that stays.

@@ -31,3 +31,20 @@ Controller rulings (from the reference-app gap report), applied:
 - Ruling 3 (done debounce): a transition to `done` on an unseen agent pane arms a 1500 ms (`DONE_QUIET_MS`) timer;
   unread + `onAttention("done")` fire only if it is still done, unseen and not closing then. Any status change or a
   look cancels it. needs-you and failed announce at once.
+
+Task 7: complete
+- `workspace/titles.ts`: `TITLE_RULES` is empty on purpose (no real interactive titles recorded by the spike);
+  `titleStatus(cli, title, rules?)` matches per CLI. Terminal gains `onTitle(title)` (xterm `onTitleChange`);
+  WorktreeTabs calls `noteTitle` (tab label + tooltip, ellipsis) then `noteTitleStatus` with the rule result.
+- `workspace/StatusGlyph.tsx`: `StatusGlyph({ status, label })`. Deviation: it takes the translated `label` from
+  the caller instead of calling `useI18n` itself, so rows and tabs call it as a plain function in their loops.
+  Text only for needs-you (`?`, `--warn`) and done (check, `--ok`); working is a CSS spinner (`--signal` quarter,
+  static under reduced motion), failed / idle a dot (`--danger` / `--text-3`), exited a hollow ring. No stripe.
+- Plain shell tabs show no glyph (`status` passed as null for non-agent tabs). The old `.ws-tab-glyph` rules and
+  the text glyphs (`○`, `✕`, ...) are gone.
+- Unread: tab button `ws-tab-unread` (bold name), aria-label `workspace.tabs.unreadLabel` =
+  "{name}, {status}, unread" / "{name}, {status}, chưa xem" (status lower-cased, e.g. ", done, unread").
+- WorktreeList: glyph replaces the status dot; new optional props `unread: Record<path, boolean>` and
+  `onMarkUnread(wt)`; unread row gets `ws-wt-unread` (bold) and the glyph label `workspace.unreadStatus`;
+  "Mark unread" (`workspace.markUnread`) sits in the one menu opened by right-click and the more button, shown
+  only when `onMarkUnread` is given (wired in Task 8 by WorkspaceShell).
