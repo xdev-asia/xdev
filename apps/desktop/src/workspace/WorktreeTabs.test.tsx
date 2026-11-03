@@ -1,7 +1,9 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, toApiError, type Api, type Profile, type ProfilesView, type PtyExit } from "@/api";
+import { fileTabs } from "@/files/fileTabs";
+import { UnsavedDialog } from "@/files/UnsavedDialog";
 import { translate } from "@/i18n";
 import { useKeymap } from "@/keys/keymap";
 import { Terminal, type TerminalHandle } from "@/terminal/Terminal";
@@ -1227,4 +1229,96 @@ it("tooltips of the strip name the chord", () => {
   expect(view.labelled(en("workspace.tabs.new")).props.title).toBe(en("keys.hint", { label: en("workspace.tabs.new"), chord: "Ctrl+T" }));
   const close = view.find((n) => n.props.className === "ws-tab-close")!;
   expect(close.props.title).toBe(en("keys.hint", { label: close.props["aria-label"], chord: "Ctrl+W" }));
+});
+
+// ---- file tabs ----------------------------------------------------------------------------
+
+const readyFile = (worktree: string, rel: string, text = "one") => {
+  fileTabs.open(worktree, rel);
+  fileTabs.loaded(worktree, rel, { rel, text, kind: "text", size: text.length, hash: "h1", eol: "lf" });
+};
+
+describe("file tabs", () => {
+  beforeEach(() => fileTabs.reset());
+  afterEach(() => fileTabs.reset());
+
+  const stripItems = (view: ReturnType<typeof harness>) => view.find((n) => n.type === TabStrip)!.props.items as { id: string; file?: { rel: string; dirty: boolean } }[];
+
+  it("shows an open file as a tab with its name, a pane view and a dirty mark after an edit", () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    readyFile(A, "src/a.ts");
+    const view = harness(api, live);
+    expect(stripItems(view)).toEqual([{ id: "file:src/a.ts", tab: null, file: { rel: "src/a.ts", dirty: false } }]);
+    expect(view.find((n) => n.props["data-tab"] === "file:src/a.ts")).toBeDefined();
+    expect(view.html()).toContain("a.ts");
+    expect(view.html()).not.toContain("ws-tab-dirty");
+    fileTabs.edit(A, "src/a.ts", "two");
+    expect(view.html()).toContain("ws-tab-dirty");
+    expect(view.html()).toContain(en("files.dirty"));
+  });
+
+  it("keeps a file to its own worktree", () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    readyFile(A, "a.ts");
+    const other = harness(api, live, B);
+    expect(other.find((n) => n.type === TabStrip)).toBeUndefined();
+    expect(other.find((n) => n.props["data-tab"] === "file:a.ts")).toBeUndefined();
+  });
+
+  it("closes a clean tab at once", () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    readyFile(A, "a.ts");
+    const view = harness(api, live);
+    view.find((n) => n.type === TabStrip)!.props.onClose("file:a.ts");
+    expect(fileTabs.get(A, "a.ts")).toBeNull();
+    expect(view.find((n) => n.type === UnsavedDialog)).toBeUndefined();
+  });
+
+  it("asks before closing a dirty tab; Don't Save closes without a write", () => {
+    const api = createMockApi({});
+    const write = vi.spyOn(api, "fileWrite");
+    const live = (sessions = new Sessions(api));
+    readyFile(A, "a.ts");
+    fileTabs.edit(A, "a.ts", "changed");
+    const view = harness(api, live);
+    view.find((n) => n.type === TabStrip)!.props.onClose("file:a.ts");
+    const ask = () => view.find((n) => n.type === UnsavedDialog);
+    expect(ask()!.props.name).toBe("a.ts");
+    ask()!.props.onCancel();
+    expect(fileTabs.get(A, "a.ts")).not.toBeNull();
+    view.find((n) => n.type === TabStrip)!.props.onClose("file:a.ts");
+    ask()!.props.onDiscard();
+    expect(fileTabs.get(A, "a.ts")).toBeNull();
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("Save writes with the loaded hash, then closes", async () => {
+    const api = createMockApi({});
+    const write = vi.spyOn(api, "fileWrite").mockResolvedValue({ type: "saved", hash: "h2" });
+    const live = (sessions = new Sessions(api));
+    readyFile(A, "a.ts");
+    fileTabs.edit(A, "a.ts", "changed");
+    const view = harness(api, live);
+    view.find((n) => n.type === TabStrip)!.props.onClose("file:a.ts");
+    view.find((n) => n.type === UnsavedDialog)!.props.onSave();
+    await tick();
+    expect(write).toHaveBeenCalledWith(A, "a.ts", "changed", "lf", "h1");
+    expect(fileTabs.get(A, "a.ts")).toBeNull();
+  });
+
+  it("Save that meets a conflict keeps the tab", async () => {
+    const api = createMockApi({});
+    vi.spyOn(api, "fileWrite").mockResolvedValue({ type: "conflict", diskHash: "zz" });
+    const live = (sessions = new Sessions(api));
+    readyFile(A, "a.ts");
+    fileTabs.edit(A, "a.ts", "changed");
+    const view = harness(api, live);
+    view.find((n) => n.type === TabStrip)!.props.onClose("file:a.ts");
+    view.find((n) => n.type === UnsavedDialog)!.props.onSave();
+    await tick();
+    expect(fileTabs.get(A, "a.ts")).toMatchObject({ conflict: "zz" });
+  });
 });

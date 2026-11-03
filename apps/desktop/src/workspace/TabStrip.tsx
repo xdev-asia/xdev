@@ -4,6 +4,7 @@ import { profileName, useProfiles } from "@/agents/profileStore";
 import type { PtyProfile } from "@/api";
 import { useI18n } from "@/i18n";
 import { withChord } from "@/keys/hint";
+import { fileName } from "@/files/fileTabs";
 import { AgentIcon } from "./AgentIcon";
 import type { PaneDir } from "./paneTree";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
@@ -12,10 +13,12 @@ import { tabColorVar, tabMenuItems } from "./tabMenu";
 import type { TabStatus } from "./status";
 import { StatusGlyph } from "./StatusGlyph";
 
-/** One entry of a strip: a terminal tab, or the review tab (`tab` is null). */
+/** One entry of a strip: a terminal tab, or the review tab or a file tab (`tab` is null). */
 export interface StripItem {
   id: string;
   tab: Tab | null;
+  /** Set for a file tab: its path in the worktree and whether it has unsaved edits. */
+  file?: { rel: string; dirty: boolean };
 }
 
 export interface MenuGroup {
@@ -63,7 +66,7 @@ export function TabStrip(props: {
   // What the strip shows: the terminal's own title once it set one, else the profile.
   const shownName = (tab: Tab) => tab.title ?? name(tab);
   const statusLabel = (status: TabStatus) => t(`workspace.tabs.status.${status}`);
-  const labelOf = (item: StripItem) => (item.tab ? name(item.tab) : t("review.tab"));
+  const labelOf = (item: StripItem) => (item.tab ? name(item.tab) : item.file ? fileName(item.file.rel) : t("review.tab"));
 
   const menuItem = (key: string, label: string, run: () => void, extra?: { danger?: boolean; disabled?: boolean }) => (
     <button
@@ -176,7 +179,7 @@ export function TabStrip(props: {
                       ? t("workspace.tabs.unreadLabel", { name: shownName(tab), status: statusLabel(tab.status).toLocaleLowerCase() })
                       : undefined
                   }
-                  title={tab?.title ?? undefined}
+                  title={tab?.title ?? item.file?.rel}
                   onClick={() => props.onSelect(item.id)}
                   onDoubleClick={() => tab && setRenaming(item.id)}
                 >
@@ -210,6 +213,7 @@ export function TabStrip(props: {
                   )}
                 </button>
               )}
+              {item.file?.dirty && <span className="ws-tab-dirty" role="img" aria-label={t("files.dirty")} title={t("files.dirty")} />}
               {!tab?.pinned && (
               <button
                 type="button"

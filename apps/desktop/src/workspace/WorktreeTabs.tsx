@@ -2,6 +2,10 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
 import { type Api, type ApiError, type PtyProfile } from "@/api";
+import { FileView } from "@/files/FileView";
+import { fileName, fileTabId, fileTabRel, fileTabs, isDirty, isFileTab, useOpenFiles } from "@/files/fileTabs";
+import { saveFile } from "@/files/fileIO";
+import { UnsavedDialog } from "@/files/UnsavedDialog";
 import { useI18n } from "@/i18n";
 import { useKeymap } from "@/keys/keymap";
 import { ReviewView } from "@/review/ReviewView";
@@ -113,13 +117,21 @@ export function WorktreeTabs(props: {
   }
   // The layout with the review tab in or out of it: the same object when nothing changes. The store
   // catches up in the effect below.
-  const layout: PaneLayout | null = open
+  const withReview: PaneLayout | null = open
     ? stored
       ? addTab(stored, REVIEW_TAB)
       : single(REVIEW_TAB)
     : stored && paneOf(stored, REVIEW_TAB)
       ? removeTab(stored, REVIEW_TAB)
       : stored;
+  // The same for file tabs: the open files of the store are the tabs; a closed one leaves its pane.
+  const files = useOpenFiles(worktree);
+  const fileIds = new Set(files.map((f) => fileTabId(f.rel)));
+  let layout: PaneLayout | null = withReview;
+  for (const leaf of layout ? (leaves(layout) as Leaf[]) : []) {
+    for (const id of leaf.tabs) if (isFileTab(id) && !fileIds.has(id) && layout) layout = removeTab(layout, id);
+  }
+  for (const id of fileIds) layout = layout ? addTab(layout, id) : single(id);
   useEffect(() => {
     if (layout !== stored) sessions.setLayout(worktree, layout);
   }, [layout, stored, sessions, worktree]);
@@ -131,7 +143,7 @@ export function WorktreeTabs(props: {
   const shown = focusedLeaf?.active ?? null;
   const frontIds = new Set(panes.filter((n) => n.id in rects).map((n) => n.active));
   // A string, so the shell hears only when the set on screen changes.
-  const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB).join(" ");
+  const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB && !isFileTab(id)).join(" ");
   const { onShown, onPanes, front } = props;
   useEffect(() => onShown?.(shown), [shown]);
   useEffect(() => onPanes?.(paneKey ? paneKey.split(" ") : []), [paneKey]);
@@ -202,7 +214,17 @@ export function WorktreeTabs(props: {
     if (without) setLayout(splitPane(without, pane, dir, id));
   }
 
+  // The file tab whose Save / Don't Save / Cancel dialog is open.
+  const [unsaved, setUnsaved] = useState<string | null>(null);
+  const io = { api, store: fileTabs, t };
+
   function closeTab(id: string): void {
+    const rel = fileTabRel(id);
+    if (rel !== null) {
+      const entry = fileTabs.get(worktree, rel);
+      if (entry && isDirty(entry)) return void setUnsaved(rel);
+      return fileTabs.close(worktree, rel);
+    }
     if (id !== REVIEW_TAB) return void sessions.close(id);
     setReview(null);
     if (layout) setLayout(removeTab(layout, REVIEW_TAB));
@@ -350,6 +372,11 @@ export function WorktreeTabs(props: {
   const stripOf = (leaf: Leaf) => {
     const items: StripItem[] = leaf.tabs.flatMap((id): StripItem[] => {
       if (id === REVIEW_TAB) return [{ id, tab: null }];
+      const rel = fileTabRel(id);
+      if (rel !== null) {
+        const entry = files.find((f) => f.rel === rel);
+        return entry ? [{ id, tab: null, file: { rel, dirty: isDirty(entry) } }] : [];
+      }
       const tab = byId.get(id);
       return tab ? [{ id, tab }] : [];
     });
@@ -367,7 +394,7 @@ export function WorktreeTabs(props: {
         onCloseToRight={(id) => sessions.closeToRight(id)}
         onLaunch={(profile) => launchGated(profile, leaf.id)}
         onSplit={(dir) => defaultShell !== null && splitWith(leaf.id, dir, defaultShell)}
-        onMoveToSplit={(id, dir) => (id === REVIEW_TAB ? splitTab(leaf.id, id, dir) : sessions.moveToSplit(id, dir))}
+        onMoveToSplit={(id, dir) => (id === REVIEW_TAB || isFileTab(id) ? splitTab(leaf.id, id, dir) : sessions.moveToSplit(id, dir))}
         onPin={(id, pinned) => sessions.setPinned(id, pinned)}
         onCopyTabId={(id) => void copyText(id)}
         onChangeTitle={(id) => setTitling(id)}
@@ -462,6 +489,27 @@ export function WorktreeTabs(props: {
           );
         })}
 
+        {files.map((file) => {
+          const id = fileTabId(file.rel);
+          const at = placed(id);
+          return (
+            <div
+              key={id}
+              className="ws-tab-pane"
+              role="tabpanel"
+              data-tab={id}
+              hidden={at.hidden}
+              style={at.style}
+              onPointerDownCapture={() => {
+                const pane = layout ? paneOf(layout, id) : null;
+                if (layout && pane && layout.focused !== pane) setLayout(focusPane(layout, pane));
+              }}
+            >
+              <FileView api={api} worktree={worktree} rel={file.rel} />
+            </div>
+          );
+        })}
+
         {open && (
           <div className="ws-tab-pane" role="tabpanel" data-tab={REVIEW_TAB} hidden={reviewAt.hidden} style={reviewAt.style}>
             <ReviewView api={api} worktree={worktree} sessions={sessions} reveal={open} />
@@ -469,7 +517,7 @@ export function WorktreeTabs(props: {
         )}
       </div>
 
-      {tabs.length === 0 && !open && (
+      {tabs.length === 0 && !open && files.length === 0 && (
         <div className="ws-center-empty">
           <p>{t("workspace.tabs.empty")}</p>
           <div className="ws-launch">
@@ -493,6 +541,22 @@ export function WorktreeTabs(props: {
             setTitling(null);
           }}
           onCancel={() => setTitling(null)}
+        />
+      )}
+      {unsaved !== null && (
+        <UnsavedDialog
+          name={fileName(unsaved)}
+          onCancel={() => setUnsaved(null)}
+          onDiscard={() => {
+            fileTabs.close(worktree, unsaved);
+            setUnsaved(null);
+          }}
+          onSave={() => {
+            const rel = unsaved;
+            setUnsaved(null);
+            // Closes once the write went through; a conflict or a failure keeps the tab open.
+            void saveFile(io, worktree, rel).then((r) => r === "saved" && fileTabs.close(worktree, rel));
+          }}
         />
       )}
       {closing && (
