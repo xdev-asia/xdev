@@ -69,7 +69,7 @@ function mount(render: () => unknown) {
   return { draw, all, html, find, cleanups };
 }
 
-const tab = (id: string, over: Partial<Tab> = {}): Tab => ({ id, worktree: OAK, profileId: "claude", account: null, permissions: "ask", agent: true, cli: "claude", status: "idle", unread: false, unreadAt: null, unreadReason: null, title: null, renamed: false, client: { input: vi.fn(async () => {}) } as never, ...over });
+const tab = (id: string, over: Partial<Tab> = {}): Tab => ({ id, worktree: OAK, profileId: "claude", account: null, permissions: "ask", agent: true, cli: "claude", status: "idle", unread: false, unreadAt: null, unreadReason: null, title: null, renamed: false, pinned: false, color: "none", client: { input: vi.fn(async () => {}) } as never, ...over });
 const notes: ReviewNote[] = [
   newNote("a.ts", 1, 1, "x", "first", 1, "n1"),
   { ...newNote("b.ts", 2, 2, "y", "second", 2, "n2"), sentAt: 9 },

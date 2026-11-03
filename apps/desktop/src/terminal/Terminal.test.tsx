@@ -28,6 +28,9 @@ vi.mock("react", async (original) => ({
   useEffect: (effect: () => void | (() => void)) => {
     hooks.effects.push(effect);
   },
+  useImperativeHandle: (ref: { current: unknown } | null | undefined, create: () => unknown) => {
+    if (ref) ref.current = create();
+  },
 }));
 vi.mock("@/i18n", async (original) => ({
   ...(await original<typeof import("@/i18n")>()),
@@ -258,6 +261,28 @@ it("a right click pastes when on and does nothing when off", async () => {
   await tick();
   expect(event.preventDefault).toHaveBeenCalledTimes(1);
   expect(readText).toHaveBeenCalledTimes(1);
+});
+
+it("R1: Shift+right-click opens the menu when paste is on; a right click opens it when paste is off", async () => {
+  const { readText } = clipboard();
+  const onMenu = vi.fn();
+  const handleRef = { current: null as unknown };
+  const { effect } = mount({ api: createMockApi({}), id: "m-1", onMenu, handleRef: handleRef as never });
+  effect();
+  await tick();
+  const event = (shiftKey: boolean) => ({ shiftKey, clientX: 12, clientY: 34, preventDefault: vi.fn(), stopPropagation: vi.fn() });
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, rightClickPaste: true });
+  const shifted = event(true);
+  hooks.listeners.contextmenu(shifted);
+  await tick();
+  expect(shifted.preventDefault).toHaveBeenCalled();
+  expect(onMenu).toHaveBeenCalledWith({ x: 12, y: 34 }, handleRef.current);
+  expect(readText).not.toHaveBeenCalled();
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, rightClickPaste: false });
+  hooks.listeners.contextmenu(event(false));
+  await tick();
+  expect(onMenu).toHaveBeenCalledTimes(2);
+  expect(readText).not.toHaveBeenCalled();
 });
 
 it("OSC 52 writes the clipboard when on, nothing when off, and never reads", () => {
