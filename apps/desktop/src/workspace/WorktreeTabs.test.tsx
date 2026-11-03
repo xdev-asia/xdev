@@ -148,7 +148,8 @@ it("closing a tab kills its pty", async () => {
   view.button(en("terminal.profile.shell")).props.onClick();
   const [tab] = live.tabs(A);
   await run(view.terminals()[0]);
-  expect(view.html()).toContain("○");
+  // A plain shell has no status, so no glyph.
+  expect(view.html()).not.toContain("ws-glyph");
   view.labelled(en("workspace.tabs.close", { name: en("terminal.profile.shell") })).props.onClick();
   await tick();
   expect(kill).toHaveBeenCalledWith(tab.id);
@@ -171,7 +172,7 @@ it("exited tab offers start again", async () => {
   fire({ id: tab.id, code: 1 });
   const html = view.html();
   expect(html).toContain("Exited (code 1)");
-  expect(html).toContain("✕");
+  expect(html).not.toContain("ws-glyph");
 
   view.button(en("workspace.tabs.again")).props.onClick();
   const [again] = live.tabs(A);
@@ -207,14 +208,41 @@ it("shows the agent icon and status glyph on each tab", () => {
     const inside = nodes(tabs[i].props.children);
     // The mark and the status glyph sit in the same tab button.
     expect(inside.find((n) => n.type === AgentIcon)!.props.profile).toBe(profile);
-    const glyph = inside.find((n) => n.props.role === "img")!;
-    expect(glyph.props["aria-label"]).toBe(en("workspace.tabs.status.idle"));
+    const glyph = inside.find((n) => n.props.role === "img");
+    if (profile === "shell") {
+      // A plain shell has no status to show.
+      expect(glyph).toBeUndefined();
+    } else {
+      expect(glyph!.props["aria-label"]).toBe(en("workspace.tabs.status.idle"));
+      expect(glyph!.props["data-status"]).toBe("idle");
+    }
   }
   const html = view.html();
   // The mark is decoration: the name next to it says the same.
   expect(html).toContain('class="ws-agent" data-profile="claude"');
   for (const letter of ["C", "X", "S"]) expect(html).toContain(`>${letter}</span>`);
-  expect(html.split("○")).toHaveLength(4);
+  expect(html.split('class="ws-glyph"')).toHaveLength(3);
+  // No colored stripe: the glyph carries the state.
+  expect(html).not.toContain("ws-stripe");
+});
+
+it("an unread done tab is bold and says so", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const tab = live.open(A, "claude");
+  Object.assign(tab, { status: "done", unread: true });
+  const view = harness(api, live);
+  const button = view.find((n) => n.props.role === "tab" && n.props["data-tab"] === tab.id)!;
+  expect(button.props.className).toBe("ws-tab-main ws-tab-unread");
+  const name = en("terminal.profile.claude");
+  expect(button.props["aria-label"]).toBe(`${name}, done, unread`);
+  const vi_ = (key: string, vars?: Record<string, string>) => translate("vi", key, vars);
+  expect(vi_("workspace.tabs.unreadLabel", { name, status: vi_("workspace.tabs.status.done").toLocaleLowerCase() })).toBe(
+    `${name}, xong, chưa xem`,
+  );
+  const glyph = nodes(button.props.children).find((n) => n.props.role === "img")!;
+  expect(glyph.props["data-status"]).toBe("done");
+  expect(view.html()).toContain(">✓</span>");
 });
 
 it("split right shows the active tab and the next tab side by side", () => {
@@ -404,13 +432,13 @@ it("custom_profile_tab_uses_its_name", async () => {
   const [tab] = live.tabs(A);
   expect(tab.profileId).toBe("aider");
   const html = view.html();
-  expect(html).toContain("<span>Aider</span>");
+  expect(html).toContain('<span class="ws-tab-name">Aider</span>');
   expect(html).toContain(">A</span>");
   expect(view.labelled(en("workspace.tabs.close", { name: "Aider" }))).toBeDefined();
 
   // Once the profile is gone the tab falls back to its id.
   store.view = await api.profileRemove("aider");
-  expect(view.html()).toContain("<span>aider</span>");
+  expect(view.html()).toContain('<span class="ws-tab-name">aider</span>');
 });
 
 it("restart_of_disabled_profile_shows_error", async () => {
@@ -427,7 +455,7 @@ it("restart_of_disabled_profile_shows_error", async () => {
 
   // Codex is turned off while its tab sits exited.
   store.view = await api.profilePut({ ...(await profileOf(api, "codex")), enabled: false });
-  expect(view.html()).toContain(`<span>${en("terminal.profile.codex")}</span>`);
+  expect(view.html()).toContain(`<span class="ws-tab-name">${en("terminal.profile.codex")}</span>`);
   view.find((n) => n.type === "button" && n.props.className === "ws-tab-again")!.props.onClick();
   await run(view.terminals()[0]);
   await tick();

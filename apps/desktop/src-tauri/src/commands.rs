@@ -234,7 +234,7 @@ pub fn cli_path() -> Option<String> {
 }
 
 /// The installer ships the CLI next to the desktop exe.
-fn cli_beside(exe: &Path) -> Option<PathBuf> {
+pub(crate) fn cli_beside(exe: &Path) -> Option<PathBuf> {
     let cli = exe
         .parent()?
         .join(format!("xdev{}", std::env::consts::EXE_SUFFIX));

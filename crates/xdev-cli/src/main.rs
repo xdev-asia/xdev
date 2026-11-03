@@ -1,4 +1,6 @@
 mod accounts;
+mod agent;
+mod agent_hook;
 mod ai;
 mod context;
 mod mcp;
@@ -96,6 +98,21 @@ enum Command {
         #[command(subcommand)]
         command: squad::SquadCommand,
     },
+    /// Agent CLI integration: `hooks status|on|off`.
+    Agent {
+        #[command(subcommand)]
+        command: agent::AgentCommand,
+    },
+    /// Run by an agent CLI's hook: records the event for the xDev pane in
+    /// `XDEV_PTY_ID`. Always exits 0 and prints nothing to stdout.
+    #[command(name = "agent-hook", hide = true)]
+    AgentHook {
+        event: agent_hook::Event,
+        /// Whatever the CLI appends; codex `notify` passes its JSON last.
+        /// `attention --message <text>` shows the text with the attention.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        rest: Vec<String>,
+    },
 }
 
 /// What a command that ran to the end reports through the exit code.
@@ -108,7 +125,20 @@ enum Outcome {
 }
 
 fn main() -> ExitCode {
-    match run(Cli::parse().command) {
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        // A hook must never fail the agent's turn, not even on a bad call.
+        Err(e) if std::env::args().nth(1).as_deref() == Some(agent_hook::NAME) => {
+            eprintln!("xdev agent-hook: {}", e.kind());
+            return ExitCode::SUCCESS;
+        }
+        Err(e) => e.exit(),
+    };
+    if let Command::AgentHook { event, rest } = cli.command {
+        agent_hook::run(event, &rest);
+        return ExitCode::SUCCESS;
+    }
+    match run(cli.command) {
         Ok(Outcome::Ok) => ExitCode::SUCCESS,
         Ok(Outcome::Found) => ExitCode::from(1),
         Ok(Outcome::Exit(code)) => ExitCode::from(code),
@@ -133,8 +163,11 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         Command::Ai { command } => return ai::run(command, &data_dir),
         Command::Accounts { command } => return accounts::run(command, &data_dir),
         Command::Quota { json } => return accounts::run_quota(json, &data_dir),
+        Command::Agent { command } => return agent::run(command, &local_dir),
         Command::Task { command } => return task::run(command, &data_dir, &local_dir),
         Command::Squad { command } => return squad::run(command, &data_dir, &local_dir),
+        // Handled in `main` before any folder is touched.
+        Command::AgentHook { .. } => return Ok(Outcome::Ok),
         Command::Mcp { dir } => {
             let dir = dir.unwrap_or_else(|| {
                 let docs = PathBuf::from("docs");

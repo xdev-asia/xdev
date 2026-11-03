@@ -21,7 +21,9 @@ import type {
   ProfilesView,
   Provider,
   PtyExit,
+  PtyHook,
   PtyInfo,
+  StatusSettings,
   Quota,
   RouteRule,
   Routing,
@@ -97,7 +99,11 @@ export type {
   ShellView,
   Provider,
   PtyExit,
+  PtyHook,
   PtyInfo,
+  StatusSettings,
+  HookEvent,
+  HookDetail,
   Quota,
   RouteRule,
   Routing,
@@ -242,7 +248,8 @@ export type ErrorCode =
   | "gh_auth"
   | "not_github"
   | "gh_failed"
-  | "draft_failed";
+  | "draft_failed"
+  | "bad_sound";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = { shortName?: string; baseRef?: string; worktreeRoot?: string };
@@ -357,6 +364,24 @@ export interface Api {
   // An unknown id has already ended, so this never rejects.
   ptyKill(id: string): Promise<void>;
   onPtyExit(cb: (exit: PtyExit) => void): Promise<() => void>;
+  // A status line an agent's hook wrote for one terminal (`pty://hook`).
+  onPtyHook(cb: (hook: PtyHook) => void): Promise<() => void>;
+  // Status channels; `statusSettingsPut` clamps the volume to 0..100 and returns what was stored.
+  statusSettings(): Promise<StatusSettings>;
+  statusSettingsPut(settings: StatusSettings): Promise<StatusSettings>;
+  // An OS notification for one terminal; best effort, never rejects.
+  statusNotify(title: string, body: string, ptyId: string): Promise<void>;
+  // A click on a status notification, when the OS reports one.
+  onStatusNotificationClick(cb: (ptyId: string) => void): Promise<() => void>;
+  // The taskbar / dock badge; 0 clears it. Never rejects.
+  statusBadge(count: number): Promise<void>;
+  // Copies the person's own sound (wav, mp3 or ogg, at most 1 MiB) or clears it with null;
+  // rejects with `bad_sound`.
+  statusSoundSet(path: string | null): Promise<StatusSettings>;
+  // The own sound's bytes, or null when none is set or the file is gone.
+  statusSound(): Promise<Uint8Array | null>;
+  // Picks a sound file to pass to `statusSoundSet`; null when cancelled.
+  pickSoundFile(): Promise<string | null>;
   // Every repo the workspace knows, each with its primary checkout first; a repo whose folder is
   // gone stays in the list as `missing`.
   workspaceList(): Promise<RepoView[]>;
@@ -547,6 +572,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "not_github",
   "gh_failed",
   "draft_failed",
+  "bad_sound",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -644,6 +670,21 @@ const tauriApi: Api = {
   ptyAck: (id, n) => call("pty_ack", { id, n }),
   ptyKill: (id) => call("pty_kill", { id }),
   onPtyExit: (cb) => listen<PtyExit>("pty://exit", (e) => cb(e.payload)),
+  onPtyHook: (cb) => listen<PtyHook>("pty://hook", (e) => cb(e.payload)),
+  statusSettings: () => call("status_settings_get"),
+  statusSettingsPut: (settings) => call("status_settings_put", { settings }),
+  statusNotify: (title, body, ptyId) => call("status_notify", { title, body, ptyId }),
+  onStatusNotificationClick: (cb) => listen<{ ptyId: string }>("status://notification-click", (e) => cb(e.payload.ptyId)),
+  statusBadge: (count) => call("status_badge", { count }),
+  statusSoundSet: (path) => call("status_sound_set", { path }),
+  statusSound: async () => {
+    const bytes = await call<ArrayBuffer | number[] | null>("status_sound");
+    return bytes === null ? null : new Uint8Array(bytes);
+  },
+  pickSoundFile: async () => {
+    const picked = await open({ multiple: false, directory: false, filters: [{ name: "Sound", extensions: ["wav", "mp3", "ogg"] }] });
+    return typeof picked === "string" ? picked : null;
+  },
   workspaceList: () => call("workspace_list"),
   repoAdd: (path) => call("repo_add", { path }),
   repoForget: (id) => call("repo_forget", { id }),
