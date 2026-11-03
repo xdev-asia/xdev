@@ -467,3 +467,38 @@ it("checks tab badge counts failing checks", async () => {
   expect(renderToStaticMarkup(tab())).toContain(">2<");
   expect(view.list().props.prs[oak].pr.number).toBe(5);
 });
+
+// Creates a worktree through the dialog; hands back the tabs it opened with.
+async function createBirch(view: Awaited<ReturnType<typeof harness>>) {
+  view.list().props.onCreate();
+  view.of(CreateWorktreeDialog)[0].props.onCreate("demo-xdev", "birch", null);
+  await tick();
+  await tick();
+  expect(view.list().props.selected).toBe("/demo/wt/xdev-birch");
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  return sessions.tabs("/demo/wt/xdev-birch").map(t => t.profileId);
+}
+
+it("new_worktree_opens_default_agent", async () => {
+  const api = createMockApi({});
+  await api.profilesDefaults("ask", "codex", null);
+  const view = await harness(api);
+  expect(await createBirch(view)).toEqual(["codex"]);
+});
+
+it("new_worktree_skips_uninstalled_default", async () => {
+  const api = createMockApi({});
+  // Gemini is not installed in the mock.
+  await api.profilesDefaults("ask", "gemini", null);
+  const view = await harness(api);
+  expect(await createBirch(view)).toEqual([]);
+});
+
+it("new worktree skips a default agent that is turned off", async () => {
+  const api = createMockApi({});
+  const codex = (await api.profiles()).profiles.find(p => p.profile.id === "codex")!.profile;
+  await api.profilePut({ ...codex, enabled: false });
+  await api.profilesDefaults("ask", "codex", null);
+  const view = await harness(api);
+  expect(await createBirch(view)).toEqual([]);
+});

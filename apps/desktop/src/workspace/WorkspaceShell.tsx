@@ -226,9 +226,22 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       const wt = await api.worktreeCreate(repoId, name, from);
       setCreating(null);
       await load();
+      await openDefaultAgent(wt.path);
       select(wt);
     } catch (e) {
       setCreating({ repoId, busy: false, error: toApiError(e).code });
+    }
+  }
+
+  // A new worktree starts with the default agent when it is on and installed; else nothing opens.
+  async function openDefaultAgent(path: string): Promise<void> {
+    if (!sessions) return;
+    try {
+      const view = await api.profiles();
+      const found = view.profiles.find((p) => p.profile.id === view.defaultAgent);
+      if (found?.profile.enabled && found.installed) sessions.open(path, found.profile.id);
+    } catch {
+      // The worktree is made; it just opens empty.
     }
   }
 
