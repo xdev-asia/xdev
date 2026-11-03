@@ -43,7 +43,7 @@ import { docFileName, newDocContent } from "./shell/newDoc";
 import { setUpVault } from "./shell/setUpVault";
 import { useQuota } from "./shell/useQuota";
 import { useUpdate } from "./shell/useUpdate";
-import logo from "../../../docs/brand/xdev-icon-512.png";
+import { BrandMark } from "@/components/BrandMark";
 
 const SEARCH_DEBOUNCE_MS = 150;
 const SEARCH_LIMIT = 50;
@@ -434,7 +434,7 @@ function VaultView(props: { vault: Vault; kit?: KitHost; onChangeFolder(): Promi
     <div className="app" data-panel={panelOpen ? undefined : "off"}>
       <header className="topbar">
         <div className="topbar-vault" title={t("vault.label", { path: props.vault.path })}>
-          <img className="topbar-logo" src={logo} alt="" />
+          <BrandMark className="topbar-logo" size={20} />
           <span className="topbar-brand">{t("app.name")}</span>
           <span className="topbar-folder">
             <svg
