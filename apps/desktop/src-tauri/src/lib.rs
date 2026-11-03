@@ -8,6 +8,7 @@ mod settings;
 mod squads;
 mod tasks;
 mod updater;
+mod workspace;
 
 use commands::AppState;
 use tauri::Manager;
@@ -31,6 +32,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(updater::Pending::default())
         .manage(pty::Ptys::default())
+        .manage(workspace::WorkspaceLock::default())
         .setup(|app| {
             updater::start(app.handle().clone());
             Ok(())
@@ -104,6 +106,15 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_ack,
             pty::pty_kill,
+            workspace::workspace_list,
+            workspace::repo_add,
+            workspace::repo_forget,
+            workspace::worktree_create,
+            workspace::worktree_pin,
+            workspace::worktree_remove,
+            workspace::worktree_changes,
+            workspace::worktree_file_diff,
+            workspace::worktree_commit,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")

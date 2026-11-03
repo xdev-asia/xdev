@@ -1,0 +1,71 @@
+import { useEffect, useRef } from "react";
+import type { JSX } from "react";
+import type { ApiError, WorktreeView } from "../api";
+import { useI18n } from "../i18n";
+
+// Mounted only while open. `dirty` turns the confirm into the forced delete.
+export function RemoveWorktreeDialog(props: {
+  worktree: WorktreeView;
+  /** The repo's base ref, where a branch made here must be merged to go too. */
+  base: string;
+  dirty: boolean;
+  busy: boolean;
+  error?: ApiError["code"];
+  onConfirm(): void;
+  onCancel(): void;
+}): JSX.Element {
+  const { t } = useI18n();
+  const dialog = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const d = dialog.current;
+    if (d && !d.open) d.showModal();
+  }, []);
+
+  const wt = props.worktree;
+  return (
+    <dialog
+      ref={dialog}
+      className="dialog ws-dialog"
+      aria-labelledby="ws-remove-title"
+      onCancel={(e) => {
+        e.preventDefault();
+        if (!props.busy) props.onCancel();
+      }}
+    >
+      <h2 id="ws-remove-title" className="dialog-title">
+        {t("workspace.remove.title", { name: wt.name })}
+      </h2>
+      <p className="dialog-body">{t("workspace.remove.body")}</p>
+      <dl className="ws-facts">
+        <dt>{t("workspace.remove.folder")}</dt>
+        <dd className="ws-mono">{wt.path}</dd>
+        <dt>{t("workspace.remove.branch")}</dt>
+        <dd className="ws-mono">{wt.branch ?? t("workspace.detached")}</dd>
+      </dl>
+      {wt.branch && props.base && !props.dirty && <p className="dialog-body">{t("workspace.remove.branchNote", { base: props.base })}</p>}
+      {props.dirty && (
+        <>
+          <p className="error-text" role="alert">
+            {t("error.worktree_dirty")}
+          </p>
+          <p className="dialog-body">{t("workspace.remove.forceNote")}</p>
+        </>
+      )}
+      {props.error && (
+        <p className="error-text" role="alert">
+          {t(`error.${props.error}`)}
+        </p>
+      )}
+      <div className="dialog-actions">
+        {/* Cancel first and focused, so a stray Enter never deletes anything. */}
+        <button type="button" className="btn-secondary" autoFocus disabled={props.busy} onClick={props.onCancel}>
+          {t("dialog.cancel")}
+        </button>
+        <button type="button" className="ws-danger" disabled={props.busy} onClick={props.onConfirm}>
+          {props.busy ? t("workspace.remove.busy") : props.dirty ? t("workspace.remove.force") : t("workspace.remove.confirm")}
+        </button>
+      </div>
+    </dialog>
+  );
+}

@@ -6162,8 +6162,10 @@ dependencies = [
  "xdev-agent",
  "xdev-ai",
  "xdev-core",
+ "xdev-git",
  "xdev-policy",
  "xdev-pty",
+ "xdev-workspace",
 ]
 
 [[package]]
@@ -6240,6 +6242,19 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "xdev-workspace"
+version = "0.3.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "ts-rs",
+ "xdev-git",
 ]
 
 [[package]]

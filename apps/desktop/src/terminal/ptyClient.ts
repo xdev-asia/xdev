@@ -17,6 +17,7 @@ export class PtyClient {
   private readonly encoder = new TextEncoder();
   private started: Promise<unknown> = Promise.resolve();
   private disposed = false;
+  private live = false;
 
   constructor(
     private readonly api: Api,
@@ -50,7 +51,13 @@ export class PtyClient {
       write(bytes, () => this.rendered(bytes.length)),
     );
     this.size = [cols, rows];
+    this.live = true;
     return info;
+  }
+
+  /** True once a pty was spawned, so its kill reports an exit. */
+  get spawned(): boolean {
+    return this.live;
   }
 
   private rendered(length: number): void {

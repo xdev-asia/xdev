@@ -3,9 +3,9 @@ import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { PTY_PROFILES, toApiError, type Api, type ApiError, type PtyProfile } from "../api";
 import { COMPACT } from "../components/ChangesPanel";
-import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useI18n } from "../i18n";
 import { Terminal } from "./Terminal";
+import { useApprovedStart } from "./useApprovedStart";
 
 type Run = { id: string; cwd: string; profile: PtyProfile; approved: boolean };
 
@@ -19,8 +19,7 @@ export function TerminalView({ api }: { api: Api }): JSX.Element {
   const [profile, setProfile] = useState<PtyProfile>("shell");
   const [run, setRun] = useState<Run | null>(null);
   const [exit, setExit] = useState<{ id: string; code: number | null } | null>(null);
-  const [error, setError] = useState<ApiError | null>(null);
-  const [asking, setAsking] = useState<{ run: Run; reason: string } | null>(null);
+  const { ask, error, setError, dialog } = useApprovedStart(api);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -40,24 +39,7 @@ export function TerminalView({ api }: { api: Api }): JSX.Element {
 
   const failed = (failedRun: Run, e: ApiError) => {
     setRun(null);
-    // Approval is asked once per start; a second refusal is shown as is.
-    if (e.code === "needs_approval" && !failedRun.approved) {
-      setAsking({ run: failedRun, reason: e.detail ?? "" });
-      return;
-    }
-    setError(e);
-  };
-
-  const approve = async () => {
-    if (!asking) return;
-    const again = { ...asking.run, id: nextId(), approved: true };
-    setAsking(null);
-    try {
-      await api.ptyApprove(again.profile);
-      start(again);
-    } catch (e) {
-      setError(toApiError(e));
-    }
+    ask(failedRun.profile, e, failedRun.approved, () => start({ ...failedRun, id: nextId(), approved: true }));
   };
 
   const exited = run && exit?.id === run.id ? exit : null;
@@ -125,16 +107,7 @@ export function TerminalView({ api }: { api: Api }): JSX.Element {
       ) : (
         <p className="pane-empty terminal-empty">{t("terminal.empty")}</p>
       )}
-      <ConfirmDialog
-        open={asking !== null}
-        title={t("terminal.approve.title")}
-        body={
-          asking ? t("terminal.approve.body", { profile: t(`terminal.profile.${asking.run.profile}`), reason: asking.reason }) : ""
-        }
-        confirmLabel={t("terminal.approve.confirm")}
-        onConfirm={() => void approve()}
-        onCancel={() => setAsking(null)}
-      />
+      {dialog}
     </div>
   );
 }
