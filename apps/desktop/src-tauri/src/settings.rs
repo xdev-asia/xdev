@@ -14,7 +14,6 @@ pub const VERSION: u32 = 1;
 const MIGRATIONS: &[fn(&mut serde_json::Value)] = &[];
 const _: () = assert!(MIGRATIONS.len() as u32 + 1 == VERSION);
 /// Emitted after every settings write, with a `SettingsChanged` payload.
-#[allow(dead_code, reason = "contract: the settings store uses it")]
 pub const CHANGED_EVENT: &str = "settings://changed";
 
 /// Not `Eq`: `terminal.line_height` is an `f32`.
@@ -125,7 +124,6 @@ pub enum CursorStyle {
 }
 
 /// One part of the settings file, as a `settings://changed` event names it.
-#[allow(dead_code, reason = "contract: the settings store uses it")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -138,7 +136,6 @@ pub enum SettingsSection {
 }
 
 /// What a `settings://changed` event carries.
-#[allow(dead_code, reason = "contract: the settings store uses it")]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]

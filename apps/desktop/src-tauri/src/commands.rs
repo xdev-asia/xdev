@@ -14,6 +14,7 @@ use crate::accounts::data_dir;
 use crate::links::links_for;
 use crate::session::Shared;
 use crate::settings;
+use crate::settings::SettingsSection;
 use crate::settings_store;
 
 pub const CHANGED_EVENT: &str = "vault://changed";
@@ -76,7 +77,7 @@ pub fn open_vault(
 
     // Losing this only costs the user one folder pick on the next launch,
     // so it must not fail an open that worked.
-    let _ = settings_store::write(&app, |s| {
+    let _ = settings_store::write(&app, &[SettingsSection::Vault], |s| {
         s.last_vault = Some(path);
         s.vault_prompted = true;
     });
@@ -115,7 +116,7 @@ pub fn vault_setup(app: AppHandle) -> VaultSetup {
 /// Like `open_vault`, a lost save only means the offer shows once more.
 #[tauri::command(async)]
 pub fn dismiss_vault_prompt(app: AppHandle) {
-    let _ = settings_store::write(&app, |s| s.vault_prompted = true);
+    let _ = settings_store::write(&app, &[SettingsSection::Vault], |s| s.vault_prompted = true);
 }
 
 /// Settings → Git as stored; the defaults when nothing is.
@@ -136,7 +137,8 @@ pub fn set_git_settings(
     app: AppHandle,
     git: settings::GitSettings,
 ) -> Result<settings::GitSettings, CmdError> {
-    settings_store::write(&app, |s| s.git = git.normalized()).map(|s| s.git)
+    settings_store::write(&app, &[SettingsSection::Git], |s| s.git = git.normalized())
+        .map(|s| s.git)
 }
 
 /// Settings → Terminal as stored; the defaults when nothing is.
@@ -152,7 +154,10 @@ pub fn terminal_settings_put(
     app: AppHandle,
     settings: settings::TerminalSettings,
 ) -> Result<settings::TerminalSettings, CmdError> {
-    settings_store::write(&app, |s| s.terminal = settings.clamped()).map(|s| s.terminal)
+    settings_store::write(&app, &[SettingsSection::Terminal], |s| {
+        s.terminal = settings.clamped()
+    })
+    .map(|s| s.terminal)
 }
 
 /// The global git `user.name` that the git-username prefix shows; a repo's

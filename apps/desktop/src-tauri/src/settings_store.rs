@@ -9,10 +9,10 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::commands::CmdError;
-use crate::settings::{self, Settings, VERSION};
+use crate::settings::{self, CHANGED_EVENT, Settings, SettingsChanged, SettingsSection, VERSION};
 
 /// Lives in Tauri state from setup on; absent only when the OS gave no
 /// config folder.
@@ -62,16 +62,35 @@ pub fn read(app: &AppHandle) -> Settings {
     store(app).map(|s| s.read()).unwrap_or_default()
 }
 
-/// `SettingsStore::update` on the app's store, as a command error.
-pub fn write<F: FnOnce(&mut Settings)>(app: &AppHandle, f: F) -> Result<Settings, CmdError> {
+/// `SettingsStore::update` on the app's store, as a command error; once it
+/// is saved, every window hears which `sections` changed.
+pub fn write<F: FnOnce(&mut Settings)>(
+    app: &AppHandle,
+    sections: &[SettingsSection],
+    f: F,
+) -> Result<Settings, CmdError> {
     let store = store(app).ok_or_else(|| CmdError {
         code: "io",
         detail: Some("no app config folder".into()),
     })?;
-    store.update(f).map_err(|e| CmdError {
+    let saved = store.update(f).map_err(|e| CmdError {
         code: "io",
         detail: Some(e.to_string()),
-    })
+    })?;
+    emit_changed(app, sections);
+    Ok(saved)
+}
+
+fn changed(sections: &[SettingsSection]) -> SettingsChanged {
+    SettingsChanged {
+        sections: sections.to_vec(),
+    }
+}
+
+/// Tells every window, this one included, that `sections` were saved.
+/// Fails only once the app is shutting down; nobody is listening then.
+pub fn emit_changed(app: &AppHandle, sections: &[SettingsSection]) {
+    let _ = app.emit(CHANGED_EVENT, changed(sections));
 }
 
 #[cfg(test)]
@@ -85,6 +104,24 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = SettingsStore::new(dir.path().join("config").join(settings::FILE_NAME));
         (dir, store)
+    }
+
+    #[test]
+    fn the_changed_payload_names_the_sections() {
+        let json =
+            |sections: &[SettingsSection]| serde_json::to_string(&changed(sections)).unwrap();
+        assert_eq!(
+            json(&[SettingsSection::Status]),
+            r#"{"sections":["status"]}"#
+        );
+        assert_eq!(
+            json(&[
+                SettingsSection::Vault,
+                SettingsSection::Git,
+                SettingsSection::Terminal
+            ]),
+            r#"{"sections":["vault","git","terminal"]}"#
+        );
     }
 
     #[test]
