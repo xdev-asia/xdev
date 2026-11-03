@@ -104,6 +104,19 @@ fn inside(root: &Path, file: &str) -> Option<PathBuf> {
     joined.starts_with(root).then_some(joined)
 }
 
+/// Whether the folder holding `disk` is really inside `root`, links
+/// resolved. A folder that does not exist holds nothing to read, so it passes.
+fn parent_within(root: &Path, disk: &Path) -> Result<bool, CmdError> {
+    let Some(parent) = disk.parent() else {
+        return Ok(false);
+    };
+    match fs::canonicalize(parent) {
+        Ok(parent) => Ok(parent.starts_with(fs::canonicalize(root)?)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(true),
+        Err(e) => Err(e.into()),
+    }
+}
+
 /// Registry paths and the UI's agree in this form, as in the workspace crate.
 fn path_key(path: &Path) -> String {
     let text = path.to_string_lossy().replace('\\', "/");
@@ -219,6 +232,9 @@ fn is_binary(bytes: &[u8]) -> bool {
 
 fn file_diff(data: &Path, path: &Path, file: &str) -> Result<WorktreeFileDiff, CmdError> {
     let disk = inside(path, file).ok_or_else(|| bad_arg(file))?;
+    if !parent_within(path, &disk)? {
+        return Err(bad_arg(file));
+    }
     let start = start_of(data, path)?;
     let old = Repo::discover(path)?.show(&start, file)?;
     // A link is not followed: it could point anywhere on the disk.
@@ -257,7 +273,10 @@ fn commit_files(path: &Path, files: &[String], message: &str) -> Result<Option<S
         });
     }
     for file in files {
-        inside(path, file).ok_or_else(|| bad_arg(file))?;
+        let disk = inside(path, file).ok_or_else(|| bad_arg(file))?;
+        if !parent_within(path, &disk)? {
+            return Err(bad_arg(file));
+        }
     }
     Ok(Repo::discover(path)?.commit(files, message)?)
 }
@@ -454,6 +473,42 @@ mod tests {
             let r = file_diff(&fx.data, &fx.first, file);
             assert_eq!(code(r), "bad_arg", "{file}");
         }
+    }
+
+    /// A folder link `<worktree>/link` to a folder outside it holding `x.txt`;
+    /// `None` when the system would not make one.
+    fn linked_outside(fx: &Fixture) -> Option<()> {
+        let outside = fx.first.parent().unwrap().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("x.txt"), "secret").unwrap();
+        let link = fx.first.join("link");
+        #[cfg(windows)]
+        let made = Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&link)
+            .arg(&outside)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(&outside, &link).is_ok();
+        made.then_some(())
+    }
+
+    #[test]
+    fn paths_through_a_linked_folder_are_refused() {
+        let fx = fixture();
+        if linked_outside(&fx).is_none() {
+            eprintln!("skipped: cannot make a folder link here");
+            return;
+        }
+        assert_eq!(
+            code(file_diff(&fx.data, &fx.first, "link/x.txt")),
+            "bad_arg"
+        );
+        let files = ["link/x.txt".to_owned()];
+        assert_eq!(code(commit_files(&fx.first, &files, "m")), "bad_arg");
     }
 
     #[test]
