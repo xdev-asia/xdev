@@ -16,3 +16,17 @@ Worktree `wt/status-4b-backend`, branch `feat/status-4b-backend` from `feat/stat
   `needs-input` that is the file's last line. Decision: a time window, not "any repeat", so a second
   permission prompt after a denied one (no PostToolUse in between) still shows.
 - `append_hook_detail` also clips detail strings to DETAIL_MAX and keeps the line < 4096 bytes (R5).
+
+## Task 2: complete (C6 bounded stdin in `xdev agent-hook`)
+- CLI `Event` covers all 7 HookEvent values (kebab on the command line).
+- Hook JSON: codex `notify` payload = last argument when it parses as a JSON object; otherwise stdin,
+  skipped when a terminal, read up to 64 KiB, waited on at most 1 s (an over-cap input is cut, fails to
+  parse, so no detail). Junk/non-object input still writes the bare line.
+- Whitelist: `tool_name`, `message` (`last_assistant_message` stands in on turn-done), `is_interrupt`,
+  `error`; notify: only `last-assistant-message`. Never `prompt`, `input-messages`, `tool_input`, `cwd`,
+  `transcript_path`.
+- Notify turn filter: `UserPromptSubmit` (codex hooks) stores `turn_id` in `<local>/hooks/<id>.turn`
+  (the desktop watcher reads only `*.jsonl`, so it is ignored there); a notify whose `turn-id` differs
+  is dropped. No `.turn` file (old codex, notify only) → every payload counts.
+- Interpretation: "prints nothing" = stdout. A failure (bad/missing XDEV_PTY_ID, unknown event) still
+  prints one stderr line, as before 4b and as the existing tests require; exit is always 0.
