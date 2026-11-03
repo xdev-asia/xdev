@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { CSSProperties, JSX } from "react";
+import type { CSSProperties, JSX, ReactNode } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
 import type { PtyProfile } from "@/api";
 import { useI18n } from "@/i18n";
@@ -51,6 +51,8 @@ export function TabStrip(props: {
   onShowHistory?: (sessionId: string) => void;
   menuOpen: boolean;
   onMenu: (open: boolean) => void;
+  /** Drawn after the new-tab control (the Command button). */
+  trailing?: ReactNode;
 }): JSX.Element {
   const { items, active, groups } = props;
   const { t } = useI18n();
@@ -266,6 +268,7 @@ export function TabStrip(props: {
           <ContextMenu at={{ x: context.x, y: context.y }} items={contextItems(picked)} onClose={() => setContext(null)} />
         )}
       </div>
+      {props.trailing}
     </div>
   );
 }

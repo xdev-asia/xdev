@@ -49,6 +49,8 @@ import { WorktreeChanges, type ChangesHandlers } from "./WorktreeChanges";
 import { worktreeTarget } from "./groups";
 import { WorktreeList } from "./WorktreeList";
 import { WorktreeTabs, type Reveal } from "./WorktreeTabs";
+import { runWithToast } from "@/quickCommands/runUi";
+import { startQuickCommands } from "@/quickCommands/store";
 
 const SELECTED_KEY = "xdev.workspace.selected";
 
@@ -157,6 +159,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The Add project dialog (Open folder… or Clone from URL).
   const [adding, setAdding] = useState(false);
   const [openInApps, setOpenInApps] = useState<OpenInApp[]>([]);
+  // A new value asks the front pane to open its quick commands popover.
+  const [quickSeq, setQuickSeq] = useState(0);
   const [settingsAt, setSettingsAt] = useState<{ section?: string; filter?: string; seq: number }>({ seq: 0 });
   // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
   const dialogOpen = creating !== null || removing !== null || adding;
@@ -440,6 +444,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setRightOpen(true);
     setPanelTab(tab);
   }
+  useEffect(() => startQuickCommands(api), [api]);
   useKeymap({
     "sessions.open": () => {
       show("workspace");
@@ -447,6 +452,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     },
     "search.open": () => openSearch(),
     "settings.open": () => openSettings(),
+    "quickCommands.open": () => setQuickSeq((n) => n + 1),
     "settings.shortcuts": () => openSettings("keys"),
     "sidebar.left.toggle": () => setSidebarOpen((o) => !o),
     "sidebar.right.toggle": () => setRightOpen((o) => !o),
@@ -970,6 +976,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   focusSeq={termFocus?.worktree === path ? termFocus.seq : undefined}
                   onShowHistory={showInHistory}
                   gate={gate}
+                  repo={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.path ?? null}
+                  repoName={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.shortName ?? ""}
+                  quickSeq={path === current?.path ? quickSeq : undefined}
+                  onManageQuickCommands={() => openSettings("qcmd")}
                 />
               ))}
             {current && cardFor(current.path) && (
@@ -1183,6 +1193,20 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             jumpTo(confirmResume(sessions, { row, worktree: row.worktree }).id);
           },
           discardAllChanges: changesReady ? () => runOnChanges((h) => h.discardAll()) : undefined,
+          runQuickCommand: (cmd) => {
+            if (!sessions || !current) return;
+            const path = current.path;
+            const front = sessions.tabs(path).find((x) => x.id === shownTab[path]);
+            show("workspace");
+            void api
+              .profiles()
+              .then((v) => v.profiles.map((p) => p.profile.id))
+              .catch(() => undefined)
+              .then((profiles) =>
+                runWithToast(api, cmd, { sessions, worktree: path, tab: front && front.exitCode === undefined ? front : null, profiles, focus: () => focusTerminal(path) }, t),
+              );
+          },
+          newQuickCommand: () => openSettings("qcmd", "new"),
         }}
       />
       {trusting && (

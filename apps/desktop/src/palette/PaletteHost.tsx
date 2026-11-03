@@ -1,13 +1,14 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { useProfiles, profileName } from "@/agents/profileStore";
-import type { RepoView, SessionRow, WorktreeView } from "@/api";
+import type { QuickCommand, RepoView, SessionRow, WorktreeView } from "@/api";
 import type { AgentSessionsStore } from "@/agentSessions/store";
 import { useI18n } from "@/i18n";
+import { getQuickCommands, selectCommands, subscribeQuickCommands } from "@/quickCommands/store";
 import { copyContext } from "@/terminal/terminalActions";
 import { terminalOf } from "@/terminal/terminalRegistry";
 import type { Sessions } from "@/workspace/sessions";
-import { actionItems, sessionItems, settingItems, tabItems, worktreeItems, type ActionName, type Attention, type PaletteItem } from "./items";
+import { actionItems, quickCommandItems, sessionItems, settingItems, tabItems, worktreeItems, type ActionName, type Attention, type PaletteItem } from "./items";
 import { JumpPalette } from "./JumpPalette";
 import { RecentStore } from "./recent";
 
@@ -33,6 +34,10 @@ export interface PaletteActions {
   openSessions?(): void;
   /** Resumes a session of the current worktree in a new agent tab. */
   resumeSession?(row: SessionRow): void;
+  /** Runs a saved quick command in the current worktree. */
+  runQuickCommand?(cmd: QuickCommand): void;
+  /** Opens the new quick command dialog. */
+  newQuickCommand?(): void;
 }
 
 export interface PaletteHostProps {
@@ -72,6 +77,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
   }, [open, history]);
 
   const currentPath = current?.path ?? null;
+  const quick = useSyncExternalStore(subscribeQuickCommands, getQuickCommands, getQuickCommands);
   useEffect(() => {
     if (currentPath) recent.touch(`wt:${currentPath}`);
   }, [currentPath]);
@@ -119,6 +125,8 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
           void copyContext(handle, { title: front.title ?? profile, profile, path: current.path, branch: current.branch, exitCode: front.exitCode });
       }
     }
+    const repoOfCurrent = list.find((r) => r.worktrees.some((w) => w.path === currentPath));
+    const picked = selectCommands(quick, repoOfCurrent?.path ?? null);
     const worktreeOf = (path: string) => list.flatMap((r) => r.worktrees).find((w) => w.path === path);
     items = [
       ...tabItems(list, (path) => sessions?.tabs(path) ?? [], {
@@ -139,6 +147,9 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       }),
       ...settingItems(t, (id) => actions.openSettings(id)),
       ...actionItems(t, handlers),
+      ...(current && actions.runQuickCommand && actions.newQuickCommand
+        ? quickCommandItems([...picked.global, ...picked.project], repoOfCurrent?.shortName ?? "", t, { run: actions.runQuickCommand, create: actions.newQuickCommand })
+        : []),
       ...(actions.resumeSession ? sessionItems(rows, currentPath, t, actions.resumeSession) : []),
     ];
   }

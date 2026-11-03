@@ -1,5 +1,5 @@
 import { chordLabel } from "@/keys/keymap";
-import type { RepoView, SessionRow, WorktreeView } from "@/api";
+import type { QuickCommand, RepoView, SessionRow, WorktreeView } from "@/api";
 import { SECTIONS } from "@/settings/sections";
 import type { Tab } from "@/workspace/sessions";
 import type { TabStatus } from "@/workspace/status";
@@ -170,4 +170,32 @@ export function sessionItems(rows: SessionRow[], worktree: string | null, t: T, 
 export function validWorktreeName(name: string): boolean {
   const n = name.trim();
   return n.length > 0 && !/\s/.test(n) && !n.includes("..") && !n.startsWith("-");
+}
+
+/**
+ * One "Run: {label}" item per quick command visible in the worktree (the caller passes the global
+ * ones and those of its repo), plus "New quick command…". The scope is the detail.
+ */
+export function quickCommandItems(
+  cmds: readonly QuickCommand[],
+  repoName: string,
+  t: T,
+  acts: { run(cmd: QuickCommand): void; create(): void },
+): PaletteItem[] {
+  const runs = cmds.map((cmd): PaletteItem => ({
+    id: `qcmd:${cmd.id}`,
+    kind: "action",
+    title: t("qcmd.palette.run", { label: cmd.label }),
+    detail: cmd.scope.type === "global" ? t("qcmd.section.global") : repoName,
+    keywords: ["quick", "command", cmd.label],
+    run: () => acts.run(cmd),
+  }));
+  const create: PaletteItem = {
+    id: "qcmd:new",
+    kind: "action",
+    title: t("qcmd.palette.new"),
+    keywords: ["quick", "command", "new", "create"],
+    run: acts.create,
+  };
+  return [...runs, create];
 }

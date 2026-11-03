@@ -67,8 +67,8 @@ export async function sendToChosenTab(
   return tab;
 }
 
-// Resolves the tab at its first idle after it worked, or null at the timeout or when it ends.
-function ready(sessions: Sessions, worktree: string, id: string, timeoutMs: number): Promise<Tab | null> {
+/** Resolves the tab at its first idle after it worked, or null at the timeout or when it ends. */
+export function ready(sessions: Sessions, worktree: string, id: string, timeoutMs: number): Promise<Tab | null> {
   return new Promise((resolve) => {
     let worked = false;
     let off = () => {};
