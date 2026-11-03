@@ -93,6 +93,13 @@ it("stage and discard all are listed only when the worktree can run them", () =>
   expect(actionItems(t, { newWorktree: vi.fn() }).map((i) => i.id)).toEqual(["act:newWorktree"]);
 });
 
+it("tab and terminal actions are listed in order with their own titles", () => {
+  const f = vi.fn();
+  const items = actionItems(t, { copyTerminalContext: f, pinTab: f, clearTerminal: f, unpinTab: f, moveTabRight: f, resetTerminal: f });
+  expect(items.map((i) => i.id)).toEqual(["act:pinTab", "act:unpinTab", "act:moveTabRight", "act:clearTerminal", "act:resetTerminal", "act:copyTerminalContext"]);
+  expect(items.every((i) => i.title !== "" && !i.title.startsWith("palette.") && i.keywords!.length > 0)).toBe(true);
+});
+
 it("validWorktreeName", () => {
   expect(validWorktreeName("fix-login")).toBe(true);
   expect(validWorktreeName("feat/x")).toBe(true);

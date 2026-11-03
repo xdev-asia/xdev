@@ -8,6 +8,7 @@ import { ReviewView } from "@/review/ReviewView";
 import { Terminal, type TerminalHandle } from "@/terminal/Terminal";
 import { copyContext, copyText } from "@/terminal/terminalActions";
 import { terminalMenuItems } from "@/terminal/terminalMenu";
+import { registerTerminal } from "@/terminal/terminalRegistry";
 import { useApprovedStart } from "@/terminal/useApprovedStart";
 import { ContextMenu } from "@/ui/ContextMenu";
 import {
@@ -437,6 +438,10 @@ export function WorktreeTabs(props: {
                 }}
                 focusSeq={tab.id === shown ? (props.focusSeq ?? 0) + kick : undefined}
                 onMenu={(at, handle) => setTermMenu({ id: tab.id, at, handle })}
+                handleRef={(handle) => {
+                  registerTerminal(tab.id, handle);
+                  return () => registerTerminal(tab.id, null);
+                }}
               />
             </div>
           );
