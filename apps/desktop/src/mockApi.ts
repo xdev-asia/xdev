@@ -534,6 +534,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
   }
 
   const settingsHub = createSettingsHub();
+  const workspace = createMockWorkspace(options.workspace, settingsHub.emit);
   const api: MockApi = {
     ...createMockTasks({
       defaultRepo: repo ? DEMO_ROOT : null,
@@ -546,9 +547,9 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       runDelayMs: options.runDelayMs,
     }),
     ...profiles,
-    ...createMockPty(profiles),
+    ...createMockPty(profiles, (cwd) => workspace.__setupRun(cwd)),
     ...createMockStatus(settingsHub.emit),
-    ...createMockWorkspace(options.workspace, settingsHub.emit),
+    ...workspace,
     ...createMockSettings(settingsHub),
     ...createMockKit(),
     async accounts() { return structuredClone({ reservePercent: 30, accounts }); },

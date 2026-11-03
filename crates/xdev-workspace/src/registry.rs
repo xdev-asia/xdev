@@ -10,7 +10,7 @@ const FILE: &str = "workspace.json";
 const VERSION: u32 = 1;
 
 /// A repo the app was asked to track.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoEntry {
     pub id: String,
     pub short_name: String,
@@ -18,6 +18,44 @@ pub struct RepoEntry {
     pub base_ref: String,
     /// The folder new worktrees of this repo go under.
     pub worktree_root: PathBuf,
+    /// Whether a new worktree's setup script runs. Absent in older files.
+    #[serde(default)]
+    pub setup_policy: SetupPolicy,
+    /// Which scripts count: the shared `xdev.toml` ones, this machine's, or both.
+    #[serde(default)]
+    pub script_source: ScriptSource,
+    /// This machine's setup script. Typed in xDev, so it is trusted.
+    #[serde(default)]
+    pub local_setup: String,
+    /// This machine's archive script, run before a worktree is removed.
+    #[serde(default)]
+    pub local_archive: String,
+}
+
+/// Whether setup runs after a worktree is created.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum SetupPolicy {
+    /// The person decides on each create.
+    #[default]
+    Ask,
+    Run,
+    Skip,
+}
+
+/// Which script runs when both the repo file and this machine have one.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum ScriptSource {
+    /// `Local` when a local script exists, else `Shared`.
+    #[default]
+    Auto,
+    Shared,
+    Local,
+    /// The shared script, a newline, then the local one.
+    Both,
 }
 
 /// What the app knows about a linked worktree that git does not.
@@ -87,20 +125,26 @@ impl Registry {
         };
         let json =
             serde_json::to_vec_pretty(&out).map_err(|e| WorkspaceError::Corrupt(e.to_string()))?;
-        let tmp = data_dir.join(format!("{FILE}.tmp"));
-        // Flushed to disk before the rename, so the new name never points at
-        // a file whose contents are still in the cache.
-        let write = || -> std::io::Result<()> {
-            let mut file = fs::File::create(&tmp)?;
-            file.write_all(&json)?;
-            file.sync_all()?;
-            fs::rename(&tmp, data_dir.join(FILE))
-        };
-        write().inspect_err(|_| {
-            let _ = fs::remove_file(&tmp);
-        })?;
-        Ok(())
+        write_atomic(data_dir, FILE, &json)
     }
+}
+
+/// Writes `dir/name` through a temp file and a rename. Flushed to disk
+/// before the rename, so the name never points at a file whose contents are
+/// still in the cache.
+pub(crate) fn write_atomic(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), WorkspaceError> {
+    fs::create_dir_all(dir)?;
+    let tmp = dir.join(format!("{name}.tmp"));
+    let write = || -> std::io::Result<()> {
+        let mut file = fs::File::create(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        fs::rename(&tmp, dir.join(name))
+    };
+    write().inspect_err(|_| {
+        let _ = fs::remove_file(&tmp);
+    })?;
+    Ok(())
 }
 
 /// The path with `\` as `/`, lowercased on Windows where the file system
@@ -145,6 +189,7 @@ mod tests {
             path: "/r".into(),
             base_ref: "main".into(),
             worktree_root: "/wt".into(),
+            ..RepoEntry::default()
         });
         r.save(dir.path()).unwrap();
         assert_eq!(Registry::load(dir.path()).unwrap(), r);
@@ -165,6 +210,43 @@ mod tests {
         .unwrap();
         let r = Registry::load(dir.path()).unwrap();
         assert!(r.vaults.is_empty());
+    }
+
+    #[test]
+    fn loads_a_repo_without_script_settings_as_the_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("workspace.json"),
+            r#"{"version":1,"repos":[{"id":"abc","short_name":"xdev","path":"/r","base_ref":"main","worktree_root":"/wt"}],"worktrees":[]}"#,
+        )
+        .unwrap();
+        let r = Registry::load(dir.path()).unwrap();
+        let repo = &r.repos[0];
+        assert_eq!(repo.setup_policy, SetupPolicy::Ask);
+        assert_eq!(repo.script_source, ScriptSource::Auto);
+        assert_eq!(repo.local_setup, "");
+        assert_eq!(repo.local_archive, "");
+    }
+
+    #[test]
+    fn script_settings_survive_a_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut r = Registry::load(dir.path()).unwrap();
+        r.repos.push(RepoEntry {
+            id: "abc".into(),
+            short_name: "xdev".into(),
+            setup_policy: SetupPolicy::Run,
+            script_source: ScriptSource::Both,
+            local_setup: "make".into(),
+            local_archive: "echo bye".into(),
+            ..RepoEntry::default()
+        });
+        r.save(dir.path()).unwrap();
+        let text = std::fs::read_to_string(dir.path().join("workspace.json")).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(json["repos"][0]["setup_policy"], "run");
+        assert_eq!(json["repos"][0]["script_source"], "both");
+        assert_eq!(Registry::load(dir.path()).unwrap(), r);
     }
 
     #[test]

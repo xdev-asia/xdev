@@ -13,7 +13,7 @@ function wt(path: string, name: string, branch: string | null): WorktreeView {
 }
 
 function repo(id: string, shortName: string, worktrees: WorktreeView[], missing = false): RepoView {
-  return { id, shortName, path: `/r/${id}`, baseRef: "origin/main", worktreeRoot: "/wt", missing, worktrees, found: [] };
+  return { id, shortName, path: `/r/${id}`, baseRef: "origin/main", worktreeRoot: "/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", missing, worktrees, found: [] };
 }
 
 function tab(id: string, worktree: string, profileId: string, agent: boolean, status: Tab["status"] = "idle"): Tab {

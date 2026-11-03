@@ -10,12 +10,13 @@ use serde::Serialize;
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, State};
 use xdev_agent::{
-    Cli, Context, HookEvent, Launch, LaunchError, Permissions, Profile, Profiles, find_builtin,
-    find_program, list_shells, resolve, wsl_distros,
+    Cli, Context, HookEvent, Launch, LaunchError, Permissions, Profile, Profiles, ShellEntry,
+    ShellKind, default_shell_id, find_builtin, find_program, list_shells, resolve, wsl_distros,
 };
 use xdev_ai::Registry;
 use xdev_policy::{Action, Audited, Policy, Verdict, agent_fingerprint};
 use xdev_pty::{PtyError, Session, SpawnSpec};
+use xdev_workspace::{HookKind, Registry as Workspace, WorkspaceError, hook_env, hooks_for};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError, cli_beside};
@@ -39,6 +40,10 @@ impl From<PtyError> for CmdError {
         }
     }
 }
+
+/// The reserved profile id that runs the worktree's setup script, from
+/// `repo_hooks`, in the default shell.
+pub const SETUP_PROFILE: &str = "xdev:setup";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -278,6 +283,132 @@ fn launch_action(launch: &Launch) -> Action {
     }
 }
 
+/// The program and args that run `script` in `shell` and end with it.
+/// CMD runs one line, so the script's lines are joined with ` & `. A WSL
+/// shell runs it with `sh -lc` in its distro.
+pub(crate) fn setup_command(shell: &ShellEntry, script: &str) -> (PathBuf, Vec<String>) {
+    let own = |args: &[&str]| -> Vec<String> {
+        args.iter()
+            .map(|a| (*a).to_owned())
+            .chain([script.to_owned()])
+            .collect()
+    };
+    let args = match shell.kind {
+        ShellKind::Powershell => own(&["-NoLogo", "-NoProfile", "-Command"]),
+        ShellKind::Cmd => {
+            let line = script
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .collect::<Vec<_>>()
+                .join(" & ");
+            vec!["/D".to_owned(), "/C".to_owned(), line]
+        }
+        ShellKind::Wsl => shell
+            .args
+            .iter()
+            .cloned()
+            .chain(own(&["--exec", "sh", "-lc"]))
+            .collect(),
+        ShellKind::Login => own(&["-l", "-c"]),
+        ShellKind::Custom => own(&["-c"]),
+    };
+    (shell.program.clone(), args)
+}
+
+/// A hook script ready to run: the shell line, and `hook_env`.
+pub(crate) struct HookCommand {
+    pub program: PathBuf,
+    pub args: Vec<String>,
+    pub env: Vec<(String, OsString)>,
+}
+
+/// The `kind` script of the worktree at `cwd` as a command in the default
+/// shell; `None` when there is no script. Refuses an untrusted shared
+/// script. Not an agent: it passes the gate as a command the person
+/// confirmed by trusting the script or typing it.
+pub(crate) fn hook_command(
+    data_dir: &Path,
+    cwd: &Path,
+    kind: HookKind,
+) -> Result<Option<HookCommand>, CmdError> {
+    let reg = Workspace::load(data_dir)?;
+    let hooks = hooks_for(&reg, data_dir, cwd)?;
+    let (script, name) = match kind {
+        HookKind::Setup => (hooks.setup, "setup"),
+        HookKind::Archive => (hooks.archive, "archive"),
+    };
+    let Some(script) = script else {
+        return Ok(None);
+    };
+    if !script.trusted {
+        return Err(WorkspaceError::HookUntrusted(name.to_owned()).into());
+    }
+    let profiles = Profiles::load(data_dir).map_err(LaunchError::from)?;
+    // `wsl.exe` is asked only when the default shell is a distro.
+    let wsl = profiles
+        .default_shell
+        .as_deref()
+        .is_some_and(|id| id.starts_with("wsl:"));
+    let shells = list_shells(&profiles.shells, if wsl { distros() } else { &[] });
+    let id = default_shell_id(&profiles, &shells);
+    let shell = shells
+        .iter()
+        .find(|s| s.id == id)
+        .or(shells.first())
+        .ok_or(CmdError {
+            code: "not_found",
+            detail: Some("shell".to_owned()),
+        })?;
+    let (program, args) = setup_command(shell, &script.text);
+    let mut env: Vec<(String, OsString)> = hook_env(&reg, cwd)?
+        .into_iter()
+        .map(|(k, v)| (k, OsString::from(v)))
+        .collect();
+    if shell.kind == ShellKind::Wsl {
+        // Carries the variables into the distro, the paths translated.
+        let ours = "XDEV_ROOT_PATH/p:XDEV_WORKTREE_PATH/p:XDEV_WORKSPACE_NAME";
+        let joined = match std::env::var("WSLENV") {
+            Ok(theirs) if !theirs.is_empty() => format!("{theirs}:{ours}"),
+            _ => ours.to_owned(),
+        };
+        env.push(("WSLENV".to_owned(), joined.into()));
+    }
+    let gate = Audited::new(Policy::load(data_dir)?, data_dir);
+    let action = Action::RunCommand {
+        program: program.to_string_lossy().into_owned(),
+        args: args.clone(),
+        cwd: cwd.to_owned(),
+    };
+    if let Verdict::Deny { reason } = gate.check_confirmed(&action, true) {
+        return Err(CmdError {
+            code: "denied",
+            detail: Some(reason),
+        });
+    }
+    Ok(Some(HookCommand { program, args, env }))
+}
+
+/// The launch that runs the setup script of the worktree at `cwd` in a
+/// terminal; `hook_none` when it has none.
+pub(crate) fn setup_launch(data_dir: &Path, cwd: &Path) -> Result<Launch, CmdError> {
+    let HookCommand { program, args, env } = hook_command(data_dir, cwd, HookKind::Setup)?
+        .ok_or_else(|| WorkspaceError::NoHook("setup".to_owned()))?;
+    Ok(Launch {
+        profile: SETUP_PROFILE.to_owned(),
+        program,
+        args,
+        env,
+        agent: false,
+        permissions: Permissions::Ask,
+        account: None,
+        startup: Vec::new(),
+        cli: None,
+        hooks: false,
+        hook_events: Vec::new(),
+    })
+}
+
 #[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 pub fn pty_spawn(
@@ -293,8 +424,12 @@ pub fn pty_spawn(
     out: Channel<InvokeResponseBody>,
 ) -> Result<PtyInfo, CmdError> {
     let data = data_dir(&state)?;
-    let hooks = hooks_now(&app);
-    let launch = launch_for(data, &profile_id, account.as_deref(), hooks.as_deref())?;
+    let launch = if profile_id == SETUP_PROFILE {
+        setup_launch(data, &cwd)?
+    } else {
+        let hooks = hooks_now(&app);
+        launch_for(data, &profile_id, account.as_deref(), hooks.as_deref())?
+    };
     let exit_id = id.clone();
     spawn_launch(
         &ptys,
@@ -806,5 +941,89 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err.code, "not_found");
+    }
+
+    fn entry(kind: ShellKind, program: &str, args: &[&str]) -> ShellEntry {
+        ShellEntry {
+            id: "s".into(),
+            name: "S".into(),
+            kind,
+            program: program.into(),
+            args: args.iter().map(|a| (*a).to_owned()).collect(),
+        }
+    }
+
+    #[test]
+    fn setup_command_ends_each_shell_with_the_script() {
+        let script = "pnpm i\n\n  cargo fetch\n";
+        let ps = setup_command(
+            &entry(ShellKind::Powershell, "pwsh.exe", &["-NoLogo"]),
+            script,
+        );
+        assert_eq!(ps.0, PathBuf::from("pwsh.exe"));
+        assert_eq!(ps.1, ["-NoLogo", "-NoProfile", "-Command", script]);
+        let cmd = setup_command(&entry(ShellKind::Cmd, "cmd.exe", &[]), script);
+        assert_eq!(cmd.1, ["/D", "/C", "pnpm i & cargo fetch"]);
+        let wsl = setup_command(&entry(ShellKind::Wsl, "wsl.exe", &["-d", "Ubuntu"]), script);
+        assert_eq!(wsl.1, ["-d", "Ubuntu", "--exec", "sh", "-lc", script]);
+        let login = setup_command(&entry(ShellKind::Login, "/bin/zsh", &["-l"]), script);
+        assert_eq!(login.1, ["-l", "-c", script]);
+        let custom = setup_command(&entry(ShellKind::Custom, "fish", &[]), script);
+        assert_eq!(custom.1, ["-c", script]);
+    }
+
+    /// A data dir and a repo at `<tmp>/xdev` that the registry tracks.
+    struct SetupFixture {
+        _tmp: tempfile::TempDir,
+        data: PathBuf,
+        repo: PathBuf,
+    }
+
+    fn setup_fixture(local_setup: &str) -> SetupFixture {
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tmp.path().join("data");
+        let repo = tmp.path().join("xdev");
+        std::fs::create_dir_all(&repo).unwrap();
+        let mut reg = Workspace::load(&data).unwrap();
+        reg.repos.push(xdev_workspace::RepoEntry {
+            id: "abc".into(),
+            short_name: "xdev".into(),
+            path: repo.clone(),
+            base_ref: "main".into(),
+            worktree_root: tmp.path().join("wt"),
+            local_setup: local_setup.into(),
+            ..xdev_workspace::RepoEntry::default()
+        });
+        reg.save(&data).unwrap();
+        SetupFixture {
+            _tmp: tmp,
+            data,
+            repo,
+        }
+    }
+
+    #[test]
+    fn setup_launch_runs_the_local_script_in_the_default_shell() {
+        let f = setup_fixture("echo hi");
+        let l = setup_launch(&f.data, &f.repo).unwrap();
+        assert_eq!(l.profile, SETUP_PROFILE);
+        assert!(!l.agent);
+        assert_eq!(l.args.last().map(String::as_str), Some("echo hi"));
+        let env: HashMap<_, _> = l.env.iter().cloned().collect();
+        assert_eq!(
+            env["XDEV_ROOT_PATH"],
+            OsString::from(f.repo.display().to_string())
+        );
+        assert_eq!(env["XDEV_WORKSPACE_NAME"], OsString::from("xdev"));
+    }
+
+    #[test]
+    fn setup_launch_refuses_unknown_missing_and_untrusted() {
+        let f = setup_fixture("");
+        let code = |cwd: &Path| setup_launch(&f.data, cwd).unwrap_err().code;
+        assert_eq!(code(&f.data), "worktree_unknown");
+        assert_eq!(code(&f.repo), "hook_none");
+        std::fs::write(f.repo.join("xdev.toml"), "[scripts]\nsetup = \"make\"\n").unwrap();
+        assert_eq!(code(&f.repo), "hook_untrusted");
     }
 }

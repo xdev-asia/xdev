@@ -525,6 +525,7 @@ mod tests {
                 path: repo.clone(),
                 base_ref: "main".into(),
                 worktree_root: root.clone(),
+                ..RepoEntry::default()
             }],
             worktrees: vec![WorktreeMeta {
                 repo_id: "r1".into(),

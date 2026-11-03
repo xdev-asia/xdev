@@ -1,9 +1,12 @@
-import type { Api, ApiError, PtyExit, PtyProfile } from "./api";
+import type { Api, ApiError, PtyExit, PtyProfile, SETUP_PROFILE as SetupProfile } from "./api";
 import type { MockProfiles } from "./mockProfiles";
+import type { MockSetupRun } from "./mockWorkspace";
 
 type PtyApi = Pick<Api, "ptySpawn" | "ptyApprove" | "ptyWrite" | "ptyResize" | "ptyAck" | "ptyKill" | "onPtyExit">;
 
 const PROMPT = "$ ";
+// `SETUP_PROFILE`, not imported: api.ts builds the mock api when it loads.
+const SETUP_PROFILE: typeof SetupProfile = "xdev:setup";
 
 function reject(code: ApiError["code"], detail?: string): Promise<never> {
   const error: ApiError = detail === undefined ? { code } : { code, detail };
@@ -16,7 +19,11 @@ const encode = (text: string) => new TextEncoder().encode(text);
  * An echo terminal: what is typed comes back, Enter starts a new prompt. Agents need approval
  * once; an agent running as `skip` needs it before every start.
  */
-export function createMockPty(profiles: Pick<MockProfiles, "__launchError" | "__permissions">): PtyApi {
+export function createMockPty(
+  profiles: Pick<MockProfiles, "__launchError" | "__permissions">,
+  // The setup script of the worktree at `cwd`, for `SETUP_PROFILE`.
+  setupRun: (cwd: string) => Promise<MockSetupRun> = () => reject("hook_none", "setup"),
+): PtyApi {
   // Like Rust, an exited terminal keeps its slot until `ptyKill`.
   const ptys = new Map<string, { onData: (bytes: Uint8Array) => void; line: string; exited: boolean }>();
   const approved = new Set<PtyProfile>();
@@ -24,7 +31,32 @@ export function createMockPty(profiles: Pick<MockProfiles, "__launchError" | "__
   const exits = new Set<(exit: PtyExit) => void>();
 
   return {
-    async ptySpawn(id, _cwd, profileId, account, _cols, _rows, onData) {
+    async ptySpawn(id, cwd, profileId, account, _cols, _rows, onData) {
+      if (profileId === SETUP_PROFILE) {
+        if (ptys.has(id)) return reject("pty_exists");
+        const run = await setupRun(cwd);
+        ptys.set(id, { onData, line: "", exited: false });
+        onData(encode(`${run.text.replace(/\r?\n/g, "\r\n")}\r\n`));
+        // The script ends on its own, after the caller has the terminal.
+        setTimeout(() => {
+          const pty = ptys.get(id);
+          if (!pty || pty.exited) return;
+          pty.exited = true;
+          for (const cb of exits) cb({ id, code: run.code });
+        }, 0);
+        return {
+          id,
+          pid: null,
+          program: "sh",
+          agent: false,
+          profile: profileId,
+          permissions: "ask",
+          account: null,
+          hooks: false,
+          cli: null,
+          hookEvents: [],
+        };
+      }
       const refused = profiles.__launchError(profileId);
       if (refused) return reject(refused);
       if (ptys.has(id)) return reject("pty_exists");

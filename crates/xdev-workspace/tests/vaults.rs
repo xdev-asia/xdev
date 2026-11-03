@@ -17,6 +17,7 @@ fn with_repo() -> (TempDir, Registry, RepoEntry) {
         path: main,
         base_ref: "main".into(),
         worktree_root: tmp.path().join("wt"),
+        ..RepoEntry::default()
     };
     let mut reg = Registry::default();
     reg.repos.push(entry.clone());
