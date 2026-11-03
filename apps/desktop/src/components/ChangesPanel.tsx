@@ -56,6 +56,8 @@ export function ProblemNote(props: { problem: Problem }): JSX.Element {
         {code === "git_identity" && <pre className="commands">{IDENTITY_COMMANDS}</pre>}
         {/* For `git` the detail is git's own output (e.g. a failing hook), the only clue to what went wrong. */}
         {code === "git" && detail && <pre className="commands">{detail}</pre>}
+        {/* A denial carries the policy's own reason. */}
+        {code === "denied" && detail && <span>{detail}</span>}
       </div>
     </div>
   );

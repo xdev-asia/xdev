@@ -7,10 +7,12 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tauri::State;
 use xdev_git::{ChangeKind, Repo};
+use xdev_policy::{Action, Verdict};
 use xdev_workspace::{Registry, WorkspaceError, path_key};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError};
+use crate::tasks::gate;
 use crate::workspace::{WorktreeFileDiff, bad_arg, file_diff_at, inside, parent_within};
 
 /// The most branches the base picker lists.
@@ -68,6 +70,20 @@ pub struct ReviewData {
 pub struct ReviewBranch {
     pub name: String,
     pub remote: bool,
+}
+
+/// Where one changed path stands against the index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct StageState {
+    pub path: String,
+    /// The index differs from `HEAD`.
+    pub staged: bool,
+    /// The disk differs from the index, or the file is untracked.
+    pub unstaged: bool,
+    /// The file is not tracked at all.
+    pub untracked: bool,
 }
 
 /// A checkout the registry knows: its start commit (`None` for a primary
@@ -187,6 +203,58 @@ fn stage(data: &Path, path: &Path, files: &[String], staged: bool) -> Result<(),
     Ok(())
 }
 
+fn stage_state(data: &Path, path: &Path) -> Result<Vec<StageState>, CmdError> {
+    known(data, path)?;
+    Ok(Repo::discover(path)?
+        .stage_state()?
+        .into_iter()
+        .map(|s| StageState {
+            path: s.path,
+            staged: s.staged,
+            unstaged: s.unstaged,
+            untracked: s.untracked,
+        })
+        .collect())
+}
+
+fn discard(
+    data: &Path,
+    path: &Path,
+    files: &[String],
+    staged_too: bool,
+    confirmed: bool,
+) -> Result<(), CmdError> {
+    known(data, path)?;
+    for file in files {
+        let disk = inside(path, file).ok_or_else(|| bad_arg(file))?;
+        if !parent_within(path, &disk)? {
+            return Err(bad_arg(file));
+        }
+    }
+    let action = Action::Discard {
+        worktree: path.to_owned(),
+        paths: files.to_vec(),
+    };
+    match gate(data)?.check_confirmed(&action, confirmed) {
+        Verdict::Allow => {}
+        Verdict::Ask { reason } => {
+            return Err(CmdError {
+                code: "needs_approval",
+                detail: Some(reason),
+            });
+        }
+        Verdict::Deny { reason } => {
+            return Err(CmdError {
+                code: "denied",
+                detail: Some(reason),
+            });
+        }
+    }
+    // Git's own error text reaches the person through `CmdError`; no retry.
+    Repo::discover(path)?.discard(files, staged_too)?;
+    Ok(())
+}
+
 fn branches(data: &Path, path: &Path) -> Result<Vec<ReviewBranch>, CmdError> {
     known(data, path)?;
     Ok(Repo::discover(path)?
@@ -227,6 +295,27 @@ pub fn worktree_stage(
     staged: bool,
 ) -> Result<(), CmdError> {
     stage(data_dir(&state)?, &path, &files, staged)
+}
+
+/// Throws away uncommitted changes. Always gated: `confirmed` is the person's yes.
+#[tauri::command(async)]
+pub fn worktree_discard(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    files: Vec<String>,
+    staged_too: bool,
+    confirmed: bool,
+) -> Result<(), CmdError> {
+    discard(data_dir(&state)?, &path, &files, staged_too, confirmed)
+}
+
+/// Read-only: where every changed path stands against the index.
+#[tauri::command(async)]
+pub fn worktree_stage_state(
+    state: State<'_, AppState>,
+    path: PathBuf,
+) -> Result<Vec<StageState>, CmdError> {
+    stage_state(data_dir(&state)?, &path)
 }
 
 #[tauri::command(async)]
@@ -452,5 +541,113 @@ mod tests {
         let fx = fixture();
         let list = branches(&fx.data, &fx.wt).unwrap();
         assert!(list.iter().any(|b| b.name == "main" && !b.remote));
+    }
+
+    #[test]
+    fn stage_state_lists_each_path() {
+        let fx = fixture();
+        fs::write(
+            fx.wt.join("a.txt"),
+            "two
+",
+        )
+        .unwrap();
+        fs::write(
+            fx.wt.join("n.txt"),
+            "n
+",
+        )
+        .unwrap();
+        stage(&fx.data, &fx.wt, &["a.txt".to_owned()], true).unwrap();
+        let list = stage_state(&fx.data, &fx.wt).unwrap();
+        let a = list.iter().find(|s| s.path == "a.txt").unwrap();
+        assert!(a.staged && !a.unstaged && !a.untracked);
+        let n = list.iter().find(|s| s.path == "n.txt").unwrap();
+        assert!(!n.staged && n.unstaged && n.untracked);
+        assert_eq!(
+            code(stage_state(&fx.data, &fx.main.join("nope"))),
+            "worktree_unknown"
+        );
+    }
+
+    #[test]
+    fn discard_asks_then_runs_when_confirmed() {
+        let fx = fixture();
+        fs::write(
+            fx.wt.join("a.txt"),
+            "two
+",
+        )
+        .unwrap();
+        let files = vec!["a.txt".to_owned()];
+        let asked = discard(&fx.data, &fx.wt, &files, false, false);
+        let err = asked.unwrap_err();
+        assert_eq!(err.code, "needs_approval");
+        assert_eq!(
+            fs::read_to_string(fx.wt.join("a.txt")).unwrap(),
+            "two
+"
+        );
+
+        discard(&fx.data, &fx.wt, &files, false, true).unwrap();
+        assert_eq!(
+            fs::read_to_string(fx.wt.join("a.txt")).unwrap(),
+            "one
+"
+        );
+        let log = xdev_policy::read_audit(&fx.data).unwrap();
+        let verdicts: Vec<_> = log.iter().map(|e| &e.verdict).collect();
+        assert!(matches!(
+            verdicts[..],
+            [Verdict::Ask { .. }, Verdict::Allow]
+        ));
+        assert!(matches!(
+            &log[1].action,
+            Action::Discard { paths, .. } if paths == &files
+        ));
+    }
+
+    #[test]
+    fn discard_with_staged_too_resets_the_index() {
+        let fx = fixture();
+        fs::write(
+            fx.wt.join("a.txt"),
+            "two
+",
+        )
+        .unwrap();
+        let files = vec!["a.txt".to_owned()];
+        stage(&fx.data, &fx.wt, &files, true).unwrap();
+        discard(&fx.data, &fx.wt, &files, true, true).unwrap();
+        assert_eq!(
+            fs::read_to_string(fx.wt.join("a.txt")).unwrap(),
+            "one
+"
+        );
+        assert!(stage_state(&fx.data, &fx.wt).unwrap().is_empty());
+    }
+
+    #[test]
+    fn discard_refuses_path_outside_worktree_before_asking() {
+        let fx = fixture();
+        for file in ["../x", "", "a/../../x"] {
+            let r = discard(&fx.data, &fx.wt, &[file.to_owned()], true, true);
+            assert_eq!(code(r), "bad_arg", "{file}");
+        }
+        // Nothing was even checked against the policy.
+        assert!(xdev_policy::read_audit(&fx.data).is_err());
+    }
+
+    #[test]
+    fn discard_unknown_worktree() {
+        let fx = fixture();
+        let r = discard(
+            &fx.data,
+            &fx.main.join("nope"),
+            &["a.txt".to_owned()],
+            false,
+            true,
+        );
+        assert_eq!(code(r), "worktree_unknown");
     }
 }

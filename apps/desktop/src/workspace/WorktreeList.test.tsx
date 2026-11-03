@@ -6,11 +6,13 @@ import { translate } from "@/i18n";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { WorktreeList, type WorktreeListProps } from "./WorktreeList";
 
-const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0 }));
+const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
 vi.mock("react", async (original) => ({
   ...await original<typeof import("react")>(),
   // The profile store is outside what these tests render; its context keeps the default.
   useContext: (ctx: { _currentValue: unknown }) => ctx._currentValue,
+  // Effects do not run when the list is called as a function; the order it reports is checked below.
+  useEffect: (effect: () => void) => void hooks.effects.push(effect),
   useState: (initial: unknown) => {
     const index = hooks.cursor++;
     if (!(index in hooks.values)) hooks.values[index] = initial;
@@ -83,7 +85,7 @@ function dom(labels: string[]) {
   return { focused, key, prevented: () => prevented };
 }
 
-beforeEach(() => { hooks.values = []; hooks.cursor = 0; });
+beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; });
 
 it("lists worktrees by status group, keeps repo order inside one, and no delete on the primary", () => {
   const view = harness();
@@ -247,6 +249,19 @@ it("collapses a group on header click", () => {
   expect(head(view, "working").props["aria-expanded"]).toBe(false);
   head(view, "working").props.onClick();
   expect(view.html()).toContain("/demo/wt/xdev-oak");
+});
+
+it("reports the order it draws, without the rows of a collapsed group", () => {
+  const seen: string[][] = [];
+  const view = harness(DOTS, repos, { onOrder: (paths) => seen.push(paths) });
+  const reported = () => { hooks.effects = []; view.html(); hooks.effects.at(-1)!(); return seen.at(-1)!; };
+  const all = reported();
+  expect(all).toContain("/demo/wt/xdev-oak");
+  expect(all).toContain("/demo/wt/xdev-elm");
+  head(view, "working").props.onClick();
+  const rest = reported();
+  expect(rest).not.toContain("/demo/wt/xdev-oak");
+  expect(rest).toContain("/demo/wt/xdev-elm");
 });
 
 const NOW = 1_000_000_000;
