@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
+import { getStatusSettings, resetStatusSettings } from "@/status/statusSettings";
 import { CHANNELS, NotificationsPage } from "./NotificationsPage";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
@@ -35,13 +36,13 @@ const en = (key: string, vars?: Record<string, string | number>) => translate("e
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; sound.play.mockClear(); });
 
-async function page() {
+async function page(withOnSaved = true) {
   const api = createMockApi({});
   const onSaved = vi.fn();
   const draw = () => {
     hooks.cursor = 0;
     hooks.active = true;
-    try { return NotificationsPage({ api, onChanged: vi.fn(), onSaved }); } finally { hooks.active = false; }
+    try { return NotificationsPage({ api, onChanged: vi.fn(), onSaved: withOnSaved ? onSaved : undefined }); } finally { hooks.active = false; }
   };
   draw();
   hooks.effects.splice(0).forEach((e) => e());
@@ -76,6 +77,15 @@ it("toggling a channel saves it", async () => {
     expect(p.sw(c).props["aria-checked"]).toBe(false);
     expect(p.onSaved).toHaveBeenCalledWith(expect.objectContaining({ [c]: false }));
   }
+});
+
+it("without onSaved a save updates the shared status settings", async () => {
+  resetStatusSettings();
+  const p = await page(false);
+  p.sw("sound").props.onClick();
+  await tick();
+  expect(getStatusSettings().sound).toBe(false);
+  resetStatusSettings();
 });
 
 it("volume is saved clamped when the slider is let go", async () => {
