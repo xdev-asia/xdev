@@ -68,7 +68,7 @@ impl Repo {
 
 /// NUL-separated fields; a name that is not valid UTF-8 cannot cross the
 /// string-based API, so it is left out rather than mangled.
-fn fields(out: &[u8]) -> impl Iterator<Item = &str> {
+pub(crate) fn fields(out: &[u8]) -> impl Iterator<Item = &str> {
     out.split(|b| *b == 0)
         .filter(|f| !f.is_empty())
         .filter_map(|f| std::str::from_utf8(f).ok())
