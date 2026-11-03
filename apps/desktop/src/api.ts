@@ -56,6 +56,7 @@ import type {
 import type {
   DirEntry,
   DirListing,
+  GitSettings,
   Home,
   KitText,
   MemorySet,
@@ -138,6 +139,8 @@ export type {
   PrDraft,
   PrView,
   ShipView,
+  GitSettings,
+  BranchPrefixMode,
 } from "@xdev/bindings";
 // The UI's names for generated types.
 export type { Event as SquadEvent, FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
@@ -209,6 +212,7 @@ export type ErrorCode =
   | "worktree_unknown"
   | "worktree_exists"
   | "branch_exists"
+  | "bad_branch_prefix"
   | "bad_ref"
   | "bad_note"
   | "worktree_dirty"
@@ -301,6 +305,12 @@ export interface Api {
   // `prompt` is true until the first-run offer has been answered or any folder opened.
   vaultSetup(): Promise<VaultSetup>;
   dismissVaultPrompt(): Promise<void>;
+  // Settings → Git, stored in the app settings file. `setGitSettings` returns what was stored,
+  // with the custom prefix normalized.
+  gitSettings(): Promise<GitSettings>;
+  setGitSettings(git: GitSettings): Promise<GitSettings>;
+  // The global git `user.name` the git-username prefix shows; `null` when none is set.
+  gitUserName(): Promise<string | null>;
   // Writes `file` only into a new or empty folder; does not open it.
   createVault(path: string, file: string, content: string): Promise<void>;
   listDocs(): Promise<DocEntry[]>;
@@ -370,7 +380,8 @@ export interface Api {
   // Makes the repo's `docs/` with a starter doc; a folder with anything in it is left alone.
   vaultCreateDocs(repoId: string, file: string, content: string): Promise<VaultView>;
   // A new branch and folder; a blank `name` gets a free word, a null `from` starts at the repo's
-  // base ref. Rejects with `bad_name`, `branch_exists`, `worktree_exists` or `bad_ref`.
+  // base ref. Rejects with `bad_name`, `branch_exists`, `worktree_exists` or `bad_ref`, and with
+  // `bad_branch_prefix` when Settings → Git holds a custom prefix no branch name can start with.
   worktreeCreate(repoId: string, name: string, from: string | null): Promise<WorktreeView>;
   worktreePin(path: string, pinned: boolean): Promise<void>;
   // Rejects with `needs_approval` until `confirmed`, then with `worktree_dirty` for uncommitted
@@ -505,6 +516,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "worktree_unknown",
   "worktree_exists",
   "branch_exists",
+  "bad_branch_prefix",
   "bad_ref",
   "bad_note",
   "worktree_dirty",
@@ -588,6 +600,9 @@ const tauriApi: Api = {
   lastVault: () => call("last_vault"),
   vaultSetup: () => call("vault_setup"),
   dismissVaultPrompt: () => call("dismiss_vault_prompt"),
+  gitSettings: () => call("git_settings"),
+  setGitSettings: (git) => call("set_git_settings", { git }),
+  gitUserName: () => call("git_user_name"),
   createVault: (path, file, content) => call("create_vault", { path, file, content }),
   listDocs: () => call("list_docs"),
   readDoc: (path) => call("read_doc", { path }),

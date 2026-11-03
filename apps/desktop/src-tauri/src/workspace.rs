@@ -10,17 +10,18 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 use xdev_git::{ChangeKind, GitError, Repo};
 use xdev_policy::{Action, Verdict};
 use xdev_workspace::{
     Registry, RepoPatch, RepoView, VaultView, WorkspaceError, WorktreeStat, WorktreeView, add_repo,
-    add_vault, adopt_worktree, create_worktree, forget_repo, forget_vault, list, list_vaults,
-    path_key, remove_worktree, repo_docs_dir, set_pinned, stat, update_repo,
+    add_vault, adopt_worktree, create_worktree_with, forget_repo, forget_vault, list, list_vaults,
+    path_key, refresh_base, remove_worktree, repo_docs_dir, set_pinned, stat, update_repo,
 };
 
 use crate::accounts::data_dir;
-use crate::commands::{AppState, CmdError, create_vault_at};
+use crate::commands::{AppState, CmdError, create_vault_at, settings_path};
+use crate::settings::{self, GitSettings};
 use crate::tasks::gate;
 
 /// Files bigger than this are not read into the diff view.
@@ -401,17 +402,52 @@ pub fn vault_create_docs(
     vault_create_docs_in(data_dir(&state)?, &repo_id, &file, &content)
 }
 
+/// Names the branch and, when asked, refreshes the base first, as
+/// Settings → Git says.
 #[tauri::command(async)]
 pub fn worktree_create(
+    app: AppHandle,
     state: State<'_, AppState>,
     lock: State<'_, WorkspaceLock>,
     repo_id: String,
     name: String,
     from: Option<String>,
 ) -> Result<WorktreeView, CmdError> {
+    let git = settings_path(&app)
+        .map(|file| settings::load(&file).git)
+        .unwrap_or_default();
+    create_with(
+        data_dir(&state)?,
+        &lock,
+        &git,
+        &repo_id,
+        &name,
+        from.as_deref(),
+    )
+}
+
+fn create_with(
+    data: &Path,
+    lock: &WorkspaceLock,
+    git: &GitSettings,
+    repo_id: &str,
+    name: &str,
+    from: Option<&str>,
+) -> Result<WorktreeView, CmdError> {
+    if git.refresh_local_base_on_create {
+        // The fetch can take long, so the lock is held only to read the
+        // registry. A refresh that fails leaves the base as it was, and the
+        // worktree starts from that.
+        let reg = {
+            let _guard = lock_guard(lock);
+            Registry::load(data)?
+        };
+        let _ = refresh_base(&reg, repo_id, from);
+    }
+    let opts = git.create_options();
     let (now_ms, seed) = clock();
-    update(data_dir(&state)?, &lock, |reg| {
-        create_worktree(reg, &repo_id, &name, from.as_deref(), now_ms, seed)
+    update(data, lock, |reg| {
+        create_worktree_with(reg, repo_id, name, from, now_ms, seed, &opts)
     })
 }
 
@@ -562,6 +598,35 @@ mod tests {
         r.unwrap_err().code
     }
 
+    #[test]
+    fn create_with_names_the_branch_as_git_settings_say() {
+        use crate::settings::BranchPrefixMode;
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let id = Registry::load(&fx.data).unwrap().repos[0].id.clone();
+        let mut git = GitSettings {
+            branch_prefix: BranchPrefixMode::Custom,
+            branch_prefix_custom: "a b".into(),
+            refresh_local_base_on_create: false,
+        };
+        let err = create_with(&fx.data, &lock, &git, &id, "x", None).unwrap_err();
+        assert_eq!(err.code, "bad_branch_prefix");
+
+        git.branch_prefix_custom = "team".into();
+        let wt = create_with(&fx.data, &lock, &git, &id, "x", None).unwrap();
+        assert_eq!(wt.branch.as_deref(), Some("team/x"));
+
+        // `Test User` cannot start a branch name, so it is left out.
+        git.branch_prefix = BranchPrefixMode::GitUsername;
+        let wt = create_with(&fx.data, &lock, &git, &id, "y", None).unwrap();
+        assert_eq!(wt.branch.as_deref(), Some("y"));
+
+        // No remote to fetch from: the create still goes ahead.
+        git.branch_prefix = BranchPrefixMode::None;
+        git.refresh_local_base_on_create = true;
+        let wt = create_with(&fx.data, &lock, &git, &id, "z", None).unwrap();
+        assert_eq!(wt.branch.as_deref(), Some("z"));
+    }
     #[test]
     fn worktree_remove_asks_then_runs_when_confirmed() {
         let fx = fixture();

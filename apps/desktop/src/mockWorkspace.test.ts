@@ -33,6 +33,24 @@ describe("mock workspace", () => {
     await expect(api.worktreeCreate("nope", "x", null)).rejects.toMatchObject({ code: "repo_unknown" });
   });
 
+  it("names branches with the git settings prefix and stores the settings normalized", async () => {
+    const api = createMockWorkspace({ ...DEMO_WORKSPACE, gitUserName: "duy" });
+    const [repo] = await api.workspaceList();
+    expect(await api.gitUserName()).toBe("duy");
+    expect((await api.gitSettings()).branchPrefix).toBe("git-username");
+    const byUser = await api.worktreeCreate(repo.id, "one", null);
+    expect(byUser).toMatchObject({ branch: "duy/one", path: "/demo/wt/xdev-one" });
+
+    const saved = await api.setGitSettings({ branchPrefix: "custom", branchPrefixCustom: " /team//ui/ ", refreshLocalBaseOnCreate: true });
+    expect(saved).toEqual({ branchPrefix: "custom", branchPrefixCustom: "team/ui", refreshLocalBaseOnCreate: true });
+    expect((await api.worktreeCreate(repo.id, "two", null)).branch).toBe("team/ui/two");
+
+    await api.setGitSettings({ ...saved, branchPrefixCustom: "a b" });
+    await expect(api.worktreeCreate(repo.id, "three", null)).rejects.toMatchObject({ code: "bad_branch_prefix" });
+    await api.setGitSettings({ ...saved, branchPrefix: "none", branchPrefixCustom: "a b" });
+    expect((await api.worktreeCreate(repo.id, "three", null)).branch).toBe("three");
+  });
+
   it("gives a blank name a free word", async () => {
     const api = createMockWorkspace();
     const [repo] = await api.workspaceList();

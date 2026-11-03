@@ -125,6 +125,49 @@ pub fn dismiss_vault_prompt(app: AppHandle) {
     }
 }
 
+/// Settings → Git as stored; the defaults when nothing is.
+#[tauri::command(async)]
+pub fn git_settings(app: AppHandle) -> settings::GitSettings {
+    settings_path(&app)
+        .map(|file| settings::load(&file).git)
+        .unwrap_or_default()
+}
+
+/// Stores Settings → Git with the custom prefix normalized, and returns
+/// what was stored. An unusable prefix is kept; creating a worktree with it
+/// is what fails.
+#[tauri::command(async)]
+pub fn set_git_settings(
+    app: AppHandle,
+    git: settings::GitSettings,
+) -> Result<settings::GitSettings, CmdError> {
+    let file = settings_path(&app).ok_or_else(|| CmdError {
+        code: "io",
+        detail: Some("no app config folder".into()),
+    })?;
+    store_git_settings(&file, git)
+}
+
+fn store_git_settings(
+    file: &Path,
+    git: settings::GitSettings,
+) -> Result<settings::GitSettings, CmdError> {
+    let mut saved = settings::load(file);
+    saved.git = git.normalized();
+    settings::save(file, &saved).map_err(|e| CmdError {
+        code: "io",
+        detail: Some(e.to_string()),
+    })?;
+    Ok(saved.git)
+}
+
+/// The global git `user.name` that the git-username prefix shows; a repo's
+/// own `user.name` wins when a worktree is created.
+#[tauri::command(async)]
+pub fn git_user_name() -> Option<String> {
+    xdev_git::global_user_name().ok().flatten()
+}
+
 #[tauri::command(async)]
 pub fn create_vault(path: String, file: String, content: String) -> Result<(), CmdError> {
     create_vault_at(Path::new(&path), &file, &content)
@@ -362,7 +405,7 @@ pub fn export_write(
     Ok(written)
 }
 
-fn settings_path(app: &AppHandle) -> Option<PathBuf> {
+pub(crate) fn settings_path(app: &AppHandle) -> Option<PathBuf> {
     let dir = app.path().app_config_dir().ok()?;
     Some(dir.join(settings::FILE_NAME))
 }
@@ -377,6 +420,28 @@ mod tests {
 
     fn code_of(e: impl Into<CoreError>) -> &'static str {
         CmdError::from(e.into()).code
+    }
+
+    #[test]
+    fn git_settings_are_stored_normalized_beside_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join(settings::FILE_NAME);
+        let before = settings::Settings {
+            last_vault: Some("D:/docs".into()),
+            ..settings::Settings::default()
+        };
+        settings::save(&file, &before).unwrap();
+
+        let git = settings::GitSettings {
+            branch_prefix: settings::BranchPrefixMode::Custom,
+            branch_prefix_custom: " team//me/ ".into(),
+            refresh_local_base_on_create: true,
+        };
+        let stored = store_git_settings(&file, git).unwrap();
+        assert_eq!(stored.branch_prefix_custom, "team/me");
+        let loaded = settings::load(&file);
+        assert_eq!(loaded.git, stored);
+        assert_eq!(loaded.last_vault.as_deref(), Some("D:/docs"));
     }
 
     #[test]

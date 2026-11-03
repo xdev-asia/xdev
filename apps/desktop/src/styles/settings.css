@@ -273,3 +273,23 @@
   border-radius: var(--radius-s);
   background: var(--bg-1);
 }
+
+/* Settings → Git */
+.settings-git-modes {
+  align-self: flex-start;
+}
+
+.settings-git-row {
+  padding: 10px 0;
+}
+
+.settings-git-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-git-text .settings-hint {
+  color: var(--text-2);
+}

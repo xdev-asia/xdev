@@ -218,6 +218,18 @@ impl Repo {
     }
 }
 
+/// The global `user.name`, trimmed; `None` when unset or blank. Run from
+/// the temp folder, so no repo's own config is read.
+pub fn global_user_name() -> Result<Option<String>, GitError> {
+    let (status, out) = run::run_status(
+        &std::env::temp_dir(),
+        &["config", "--global", "--get", "user.name"],
+        None,
+    )?;
+    let name = String::from_utf8_lossy(&out).trim().to_owned();
+    Ok((status == Some(0) && !name.is_empty()).then_some(name))
+}
+
 fn utf8(path: &Path) -> Result<&str, GitError> {
     path.to_str().ok_or_else(|| {
         GitError::Io(io::Error::new(

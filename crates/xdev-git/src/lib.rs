@@ -22,7 +22,7 @@ pub use gh::{
 pub use history::Commit;
 pub use remote::{BaseRange, BaseRefresh, Upstream};
 pub use review::{Branch, StageState};
-pub use worktree::{NumStat, WorktreeEntry};
+pub use worktree::{NumStat, WorktreeEntry, global_user_name};
 
 /// The UI translates `code()`, never the message.
 #[derive(Debug, thiserror::Error)]

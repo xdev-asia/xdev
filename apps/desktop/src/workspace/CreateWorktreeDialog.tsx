@@ -14,6 +14,8 @@ export function CreateWorktreeDialog(props: {
   name?: string;
   onCreate(repoId: string, name: string, from: string | null): void;
   onCancel(): void;
+  /** Leaves the dialog for Settings → Git, where a refused branch prefix is fixed. */
+  onOpenGitSettings?(): void;
 }): JSX.Element {
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
@@ -94,6 +96,13 @@ export function CreateWorktreeDialog(props: {
           <p className="error-text" role="alert">
             {error}
           </p>
+        )}
+        {props.error === "bad_branch_prefix" && props.onOpenGitSettings && (
+          <div className="settings-actions settings-actions-start">
+            <button type="button" className="btn-secondary" disabled={props.busy} onClick={props.onOpenGitSettings}>
+              {t("workspace.create.openGitSettings")}
+            </button>
+          </div>
         )}
         <div className="dialog-actions">
           <button type="button" className="btn-secondary" disabled={props.busy} onClick={props.onCancel}>

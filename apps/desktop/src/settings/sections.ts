@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import type { Api } from "@/api";
 import { AgentsPage } from "./agents/AgentsPage";
+import { GitSettings } from "./GitSettings";
 import { ReposSettings } from "./ReposSettings";
 import { VaultsSettings } from "./VaultsSettings";
 
@@ -20,5 +21,6 @@ export interface SettingsSection {
 export const SECTIONS: SettingsSection[] = [
   { id: "agents", labelKey: "settings.agents.title", Component: AgentsPage },
   { id: "repos", labelKey: "settings.repos.title", Component: ReposSettings },
+  { id: "git", labelKey: "settings.git.title", Component: GitSettings },
   { id: "vaults", labelKey: "settings.vaults.title", Component: VaultsSettings },
 ];
