@@ -24,6 +24,8 @@ import type {
   PtyHook,
   PtyInfo,
   StatusSettings,
+  SettingsChanged,
+  TerminalSettings,
   Quota,
   RouteRule,
   Routing,
@@ -149,6 +151,11 @@ export type {
   ShipView,
   GitSettings,
   BranchPrefixMode,
+  TerminalSettings,
+  FontWeight,
+  CursorStyle,
+  SettingsSection,
+  SettingsChanged,
 } from "@xdev/bindings";
 // The UI's names for generated types.
 export type { Event as SquadEvent, FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
@@ -318,6 +325,11 @@ export interface Api {
   // with the custom prefix normalized.
   gitSettings(): Promise<GitSettings>;
   setGitSettings(git: GitSettings): Promise<GitSettings>;
+  // Settings -> Terminal; the put returns what was stored, with numbers clamped to their ranges.
+  terminalSettings(): Promise<TerminalSettings>;
+  terminalSettingsPut(s: TerminalSettings): Promise<TerminalSettings>;
+  /** Calls `listener` after any settings write, from this window or another. Returns the unsubscribe. */
+  onSettingsChanged(listener: (e: SettingsChanged) => void): () => void;
   // The global git `user.name` the git-username prefix shows; `null` when none is set.
   gitUserName(): Promise<string | null>;
   // Writes `file` only into a new or empty folder; does not open it.
@@ -632,6 +644,12 @@ const tauriApi: Api = {
   dismissVaultPrompt: () => call("dismiss_vault_prompt"),
   gitSettings: () => call("git_settings"),
   setGitSettings: (git) => call("set_git_settings", { git }),
+  terminalSettings: () => call("terminal_settings_get"),
+  terminalSettingsPut: (settings) => call("terminal_settings_put", { settings }),
+  onSettingsChanged: (listener) => {
+    const unlisten = listen<SettingsChanged>("settings://changed", (e) => listener(e.payload));
+    return () => void unlisten.then((stop) => stop());
+  },
   gitUserName: () => call("git_user_name"),
   createVault: (path, file, content) => call("create_vault", { path, file, content }),
   listDocs: () => call("list_docs"),

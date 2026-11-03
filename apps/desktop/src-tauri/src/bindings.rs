@@ -15,7 +15,7 @@ use crate::profiles::ProfilesView;
 use crate::pty::{PtyExit, PtyInfo};
 use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
-use crate::settings::{GitSettings, StatusSettings};
+use crate::settings::{GitSettings, SettingsChanged, StatusSettings, TerminalSettings};
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
@@ -57,6 +57,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     PtyInfo::export_all(cfg)?;
     PtyExit::export_all(cfg)?;
     StatusSettings::export_all(cfg)?;
+    TerminalSettings::export_all(cfg)?;
+    SettingsChanged::export_all(cfg)?;
     PtyHook::export_all(cfg)?;
     xdev_workspace::RepoView::export_all(cfg)?;
     xdev_workspace::WorktreeView::export_all(cfg)?;

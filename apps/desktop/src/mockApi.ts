@@ -21,6 +21,7 @@ import { estimateTokens, type ExportDoc, planExport } from "./mockExport";
 import { createMockKit } from "./mockKit";
 import { createMockProfiles } from "./mockProfiles";
 import { createMockPty } from "./mockPty";
+import { createMockSettings, createSettingsHub } from "./mockSettings";
 import { createMockStatus, type MockStatus } from "./mockStatus";
 import { createMockSquads } from "./mockSquads";
 import { createMockTasks } from "./mockTasks";
@@ -532,6 +533,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     };
   }
 
+  const settingsHub = createSettingsHub();
   const api: MockApi = {
     ...createMockTasks({
       defaultRepo: repo ? DEMO_ROOT : null,
@@ -545,8 +547,9 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     }),
     ...profiles,
     ...createMockPty(profiles),
-    ...createMockStatus(),
-    ...createMockWorkspace(options.workspace),
+    ...createMockStatus(settingsHub.emit),
+    ...createMockWorkspace(options.workspace, settingsHub.emit),
+    ...createMockSettings(settingsHub),
     ...createMockKit(),
     async accounts() { return structuredClone({ reservePercent: 30, accounts }); },
     async quota() { return structuredClone(quotas); },

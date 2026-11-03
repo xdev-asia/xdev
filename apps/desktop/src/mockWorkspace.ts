@@ -1,4 +1,5 @@
 import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
+import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import type { Api, ApiError, Check, Commit, DirEntry, DirListing, GitSettings, RepoView, ReviewNote, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 
@@ -211,7 +212,7 @@ function demoDiff(file: string, kind: WorktreeChange["kind"]): WorktreeFileDiff 
 
 // In-memory workspace that follows the Rust commands: the same error codes and the same gate on
 // removing a worktree. Nothing is read from disk, so a new repo is only its primary checkout.
-export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): WorkspaceApi {
+export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE, emit: SettingsEmit = () => {}): WorkspaceApi {
   const repos: RepoView[] = structuredClone(seed.repos);
   const changes = new Map<string, WorktreeChange[]>(Object.entries(structuredClone(seed.changes)));
   let commits = 0;
@@ -408,6 +409,7 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
     },
     async setGitSettings(next) {
       git = { ...next, branchPrefixCustom: normalizePrefix(next.branchPrefixCustom) };
+      emit(["git"]);
       return { ...git };
     },
     async gitUserName() {
