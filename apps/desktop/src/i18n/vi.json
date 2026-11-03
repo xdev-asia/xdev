@@ -1361,6 +1361,7 @@
   "keys.action.worktree.select.9": "Tới worktree 9",
   "termMenu.label": "Menu terminal",
   "termMenu.copy": "Sao chép",
+  "termMenu.quickCommands": "Lệnh nhanh",
   "termMenu.paste": "Dán",
   "termMenu.selectAll": "Chọn tất cả",
   "termMenu.quickCommands": "Lệnh nhanh",

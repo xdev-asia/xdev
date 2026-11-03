@@ -32,3 +32,15 @@ it("gives the same rows as context menu items, without Recent", () => {
   menu[0].run?.();
   expect(chosen).toEqual(["Review"]);
 });
+
+import { quickCommandsSubmenu } from "./submenu";
+
+it("the terminal submenu holds those rows, or one disabled line when there are none", () => {
+  const chosen: string[] = [];
+  const sub = quickCommandsSubmenu(sections, (r) => chosen.push(r.label));
+  expect(sub.labelKey).toBe("termMenu.quickCommands");
+  expect(sub.children?.map((c) => c.labelKey)).toEqual(["Review", "Lint", "Git status"]);
+  sub.children?.[0].run?.();
+  const empty = quickCommandsSubmenu([], () => {});
+  expect(empty.children).toEqual([{ id: "quickCommandsNone", labelKey: "qcmd.empty", disabled: true }]);
+});
