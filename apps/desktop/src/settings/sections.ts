@@ -4,6 +4,7 @@ import { AgentsPage } from "./agents/AgentsPage";
 import { GitSettings } from "./GitSettings";
 import { NotificationsPage } from "./notifications/NotificationsPage";
 import { ReposSettings } from "./ReposSettings";
+import { ShortcutsPage } from "./shortcuts/ShortcutsPage";
 import { TerminalPage } from "./TerminalPage";
 import { VaultsSettings } from "./VaultsSettings";
 
@@ -29,4 +30,5 @@ export const SECTIONS: SettingsSection[] = [
   { id: "repos", labelKey: "settings.repos.title", Component: ReposSettings },
   { id: "git", labelKey: "settings.git.title", Component: GitSettings },
   { id: "vaults", labelKey: "settings.vaults.title", Component: VaultsSettings },
+  { id: "keys", labelKey: "keys.title", Component: ShortcutsPage },
 ];
