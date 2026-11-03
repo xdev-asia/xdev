@@ -101,7 +101,8 @@ function raw(s: StatusState, e: StatusEvent): StatusState {
       }
       // A hooked turn that went silent for good rests quietly.
       if (s.status === "working" && s.caps.turnDone && e.at - s.lastEvent >= STALE_MS) return { ...s, status: "idle" };
-      return s.status === "working" && !s.caps.turnDone && e.at - s.lastOutput >= QUIET_MS ? { ...s, status: "idle" } : s;
+      // A pane whose launch does not report its prompt was woken by timing, so quiet ends it too.
+      return s.status === "working" && !s.caps.prompt && e.at - s.lastOutput >= QUIET_MS ? { ...s, status: "idle" } : s;
     case "exit":
       return { ...s, dead: true, status: e.code === 0 ? "exited" : "failed" };
     case "hook": {

@@ -440,17 +440,32 @@ describe("Sessions", () => {
     const api = createMockApi({});
     const live = (sessions = new Sessions(api, () => t));
     const tab = live.open(A, "codex");
-    // codex on notify alone: the turn end only.
-    live.noteStarted(tab.id, info(tab.id, ["turn-done"]));
+    // codex on its private home: the prompt starts the turn, the hook ends it.
+    live.noteStarted(tab.id, info(tab.id, ["prompt", "needs-input", "resume", "turn-done", "interrupt"]));
     live.noteOutput(tab.id, 5);
+    expect(live.tabs(A)[0].status).toBe("idle");
+    api.__hook(tab.id, "prompt");
     expect(live.tabs(A)[0].status).toBe("working");
-    // codex ends its turn by hook, so quiet does not: only the 30 minute stale timer waits.
+    // Quiet does not end a hooked turn: only the 30 minute stale timer waits.
     expect(vi.getTimerCount()).toBe(1);
     t += 5000;
     vi.advanceTimersByTime(5000);
     expect(live.tabs(A)[0].status).toBe("working");
     api.__hook(tab.id, "turn-done");
     expect(live.tabs(A)[0].status).toBe("done");
+    t += DONE_QUIET_MS;
+    vi.advanceTimersByTime(DONE_QUIET_MS);
+    expect(vi.getTimerCount()).toBe(0);
+    // codex on notify alone: timing woke it, so quiet ends it; the hook still says done.
+    const notify = live.open(A, "codex");
+    live.noteStarted(notify.id, info(notify.id, ["turn-done"]));
+    live.noteOutput(notify.id, 5);
+    expect(live.tabs(A)[1].status).toBe("working");
+    t += 3000;
+    vi.advanceTimersByTime(3000);
+    expect(live.tabs(A)[1].status).toBe("idle");
+    api.__hook(notify.id, "turn-done");
+    expect(live.tabs(A)[1].status).toBe("done");
     t += DONE_QUIET_MS;
     vi.advanceTimersByTime(DONE_QUIET_MS);
     expect(vi.getTimerCount()).toBe(0);
@@ -461,7 +476,7 @@ describe("Sessions", () => {
     expect(vi.getTimerCount()).toBe(1);
     t += 3000;
     vi.advanceTimersByTime(3000);
-    expect(live.tabs(A)[1].status).toBe("idle");
+    expect(live.tabs(A)[2].status).toBe("idle");
   });
 
   it("a done that goes back to work or is looked at is never announced", () => {

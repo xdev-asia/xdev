@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INTERRUPT_MS, NO_CAPS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type StatusState, type TabStatus } from "./status";
+import { INTERRUPT_MS, NO_CAPS, QUIET_MS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type StatusState, type TabStatus } from "./status";
 
 const idle = (): StatusState => start(capsFor([]));
 // What the backend reports: claude past the version gate, codex on its private home, codex on notify alone.
@@ -108,11 +108,17 @@ describe("tab status", () => {
     let s = start(capsFor(NOTIFY));
     s = step(s, { kind: "output", at: 1000 }, false);
     expect(s.status).toBe("working");
-    // No quiet → idle while the hook reports the end.
-    s = step(s, { kind: "tick", at: 10_000 }, false);
-    expect(s.status).toBe("working");
+    // Timing woke it, so quiet ends it: output alone (a redraw) does not hold it working for 30 min.
+    s = step(s, { kind: "tick", at: 1000 + QUIET_MS }, false);
+    expect(s.status).toBe("idle");
     s = step(s, { kind: "hook", event: "turn-done", at: 10_001 }, false);
     expect(s.status).toBe("done");
+  });
+
+  it("a pane that reports its prompt stays working through quiet", () => {
+    let s = step(start(capsFor(CLAUDE)), { kind: "hook", event: "prompt", at: 1000 }, false);
+    s = step(s, { kind: "tick", at: 1000 + QUIET_MS * 10 }, false);
+    expect(s.status).toBe("working");
   });
 
   it("turn done on a seen pane is idle at once", () => {
