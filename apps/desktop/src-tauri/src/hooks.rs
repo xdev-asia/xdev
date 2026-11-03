@@ -38,10 +38,12 @@ struct Pos {
     skipping: bool,
 }
 
-/// Reads the complete new lines of each hook file.
+/// Reads the complete new lines of each hook file. Offsets are kept per pane
+/// id, not per path: the watched folder is flat, and the OS may spell the
+/// same file another way (macOS reports `/private/var/...` for `/var/...`).
 #[derive(Debug, Default)]
 pub struct HookReader {
-    offsets: HashMap<PathBuf, Pos>,
+    offsets: HashMap<String, Pos>,
 }
 
 impl HookReader {
@@ -51,16 +53,15 @@ impl HookReader {
             return;
         };
         for entry in entries.flatten() {
-            let path = entry.path();
-            if pty_id_of(&path).is_none() {
+            let Some(id) = pty_id_of(&entry.path()) else {
                 continue;
-            }
+            };
             if let Ok(meta) = entry.metadata() {
                 let pos = Pos {
                     offset: meta.len(),
                     skipping: false,
                 };
-                self.offsets.insert(path, pos);
+                self.offsets.insert(id, pos);
             }
         }
     }
@@ -78,7 +79,7 @@ impl HookReader {
         let Ok(len) = handle.metadata().map(|m| m.len()) else {
             return Vec::new();
         };
-        let pos = self.offsets.entry(file.to_path_buf()).or_default();
+        let pos = self.offsets.entry(id.clone()).or_default();
         if len < pos.offset {
             *pos = Pos::default();
         }
@@ -307,6 +308,22 @@ mod tests {
         let outside = dir.path().join("x.jsonl");
         append(&outside, &line("prompt", 1));
         assert!(reader.read(&inner.join("..").join("x.jsonl")).is_empty());
+    }
+
+    #[test]
+    fn offsets_follow_the_pane_not_the_path_spelling() {
+        // macOS reports `/private/var/...` for a temp dir primed as
+        // `/var/...`; another spelling of the same file must not replay it.
+        let dir = tempfile::tempdir().unwrap();
+        let hooks = dir.path().join("hooks");
+        fs::create_dir(&hooks).unwrap();
+        append(&file(&hooks), &line("prompt", 1));
+        let mut reader = HookReader::default();
+        reader.prime(&hooks);
+        let alias = hooks.join("..").join("hooks").join(format!("{ID}.jsonl"));
+        assert!(reader.read(&alias).is_empty());
+        append(&file(&hooks), &line("turn-done", 2));
+        assert_eq!(reader.read(&alias), [hook(HookEvent::TurnDone, 2)]);
     }
 
     #[test]
