@@ -11,6 +11,7 @@ import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
+import { VaultNav } from "./VaultNav";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { Sessions } from "./sessions";
 import { WorktreeStats } from "./stats";
@@ -70,6 +71,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
   const [stats] = useState(() => new WorktreeStats());
+  // Bumped when a vault opens from the sidebar, so the docs app boots again on the new folder.
+  const [docsKey, setDocsKey] = useState(0);
 
   // One store of terminal tabs for the whole shell. Made in an effect so a dev double mount
   // disposes the first one; disposing kills its ptys.
@@ -156,6 +159,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setNotice(undefined);
     try {
       await api.worktreePin(wt.path, !wt.pinned);
+      await load();
+    } catch (e) {
+      setNotice(toApiError(e).code);
+    }
+  }
+
+  async function adopt(wt: WorktreeView): Promise<void> {
+    setNotice(undefined);
+    try {
+      await api.worktreeAdopt(wt.path);
       await load();
     } catch (e) {
       setNotice(toApiError(e).code);
@@ -298,6 +311,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               </svg>
               <span>{t("workspace.nav.docs")}</span>
             </button>
+            {view === "docs" && (
+              <VaultNav
+                api={api}
+                onOpened={() => {
+                  setDocsMounted(true);
+                  setDocsKey((k) => k + 1);
+                }}
+              />
+            )}
           </nav>
           <WorktreeList
             repos={repos}
@@ -316,6 +338,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onPin={(wt) => void pin(wt)}
             onRemove={(wt) => setRemoving({ worktree: wt, dirty: false, busy: false })}
             onAddRepo={addRepo}
+            onAdopt={(wt) => void adopt(wt)}
           />
         </aside>
 
@@ -405,7 +428,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         </div>
 
         <div className="ws-docs" hidden={view !== "docs"}>
-          {docsMounted && <DocsApp />}
+          {docsMounted && <DocsApp key={docsKey} />}
         </div>
 
         <div className="ws-settings" hidden={view !== "settings"}>
