@@ -13,7 +13,7 @@ import {
   type ShortcutFilter, type ShortcutRow,
 } from "./shortcutsModel";
 
-const GROUPS: ShortcutGroup[] = ["tabs", "panes", "worktrees", "agents", "terminal", "view", "panels", "docs", "app"];
+const GROUPS: ShortcutGroup[] = ["tabs", "panes", "worktrees", "agents", "terminal", "view", "panels", "docs", "editor", "app"];
 
 /** Settings → Shortcuts: every action with its chords, edited into `keybindings.json`. */
 export function ShortcutsPage(props: SettingsSectionProps): JSX.Element {

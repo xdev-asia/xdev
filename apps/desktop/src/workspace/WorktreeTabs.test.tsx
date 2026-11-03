@@ -1321,4 +1321,19 @@ describe("file tabs", () => {
     await tick();
     expect(fileTabs.get(A, "a.ts")).toMatchObject({ conflict: "zz" });
   });
+
+  it("the save key writes the shown file with its loaded hash; elsewhere it lets the key on", async () => {
+    const api = createMockApi({});
+    const write = vi.spyOn(api, "fileWrite").mockResolvedValue({ type: "saved", hash: "h2" });
+    const live = (sessions = new Sessions(api));
+    const none = harness(api, live);
+    expect(handlers(none)["file.save"]!()).toBe(false);
+    readyFile(A, "a.ts");
+    fileTabs.edit(A, "a.ts", "changed");
+    const view = harness(api, live);
+    expect(handlers(view)["file.save"]!()).toBe(true);
+    await tick();
+    expect(write).toHaveBeenCalledWith(A, "a.ts", "changed", "lf", "h1");
+    expect(fileTabs.get(A, "a.ts")).toMatchObject({ saved: "changed", hash: "h2" });
+  });
 });
