@@ -5,8 +5,9 @@ use std::process::Command;
 use tempfile::TempDir;
 use xdev_git::Repo;
 use xdev_workspace::{
-    Registry, RepoPatch, WorkspaceError, WorktreeStat, add_repo, adopt_worktree, create_worktree,
-    forget_repo, list, path_key, remove_worktree, set_pinned, stat, update_repo, valid_short_name,
+    BranchPrefix, CreateOptions, Registry, RepoPatch, WorkspaceError, WorktreeStat, add_repo,
+    adopt_worktree, create_worktree, create_worktree_with, forget_repo, list, path_key,
+    remove_worktree, set_pinned, stat, update_repo, valid_short_name,
 };
 
 /// Runs setup commands; never used for the code under test.
@@ -813,4 +814,111 @@ fn update_root_applies_to_the_next_worktree_only() {
     let second = create_worktree(&mut reg, &id, "two", None, 2, 0).unwrap();
     assert!(Path::new(&second.path).starts_with(&root));
     assert!(Path::new(&first.path).exists());
+}
+
+fn with_prefix(prefix: BranchPrefix) -> CreateOptions {
+    CreateOptions {
+        prefix,
+        ..CreateOptions::default()
+    }
+}
+
+#[test]
+fn custom_prefix_names_the_branch_but_not_the_folder() {
+    let (mut reg, id, main) = registered();
+    let opts = with_prefix(BranchPrefix::Custom(" /team//me/ ".into()));
+    let wt = create_worktree_with(&mut reg, &id, "Fix login", None, 1, 0, &opts).unwrap();
+    assert_eq!(wt.branch.as_deref(), Some("team/me/fix-login"));
+    assert_eq!(wt.name, "fix-login");
+    let folder = main
+        .path()
+        .parent()
+        .unwrap()
+        .join("wt")
+        .join("main-fix-login");
+    assert_eq!(path_key(Path::new(&wt.path)), path_key(&folder));
+}
+
+#[test]
+fn a_blank_name_gets_a_free_word_under_the_prefix() {
+    let (mut reg, id, main) = registered();
+    let opts = with_prefix(BranchPrefix::Custom("me".into()));
+    let a = create_worktree_with(&mut reg, &id, "", None, 1, 0, &opts).unwrap();
+    assert_eq!(a.branch, Some(format!("me/{}", a.name)));
+    let b = create_worktree_with(&mut reg, &id, "", None, 2, 0, &opts).unwrap();
+    assert_ne!(b.name, a.name);
+    // A word whose prefixed branch exists is skipped, even with its folder free.
+    git(main.path(), &["branch", "me/ash"]);
+    let c = create_worktree_with(&mut reg, &id, "", None, 3, 2, &opts).unwrap();
+    assert_eq!(c.name, "fir");
+}
+
+#[test]
+fn prefixed_branch_that_exists_is_refused() {
+    let (mut reg, id, main) = registered();
+    git(main.path(), &["branch", "me/taken"]);
+    let opts = with_prefix(BranchPrefix::Custom("me".into()));
+    let err = create_worktree_with(&mut reg, &id, "taken", None, 1, 0, &opts).unwrap_err();
+    assert_eq!(err.code(), "branch_exists");
+}
+
+#[test]
+fn a_bad_custom_prefix_is_refused_and_points_to_settings() {
+    let (mut reg, id, _main) = registered();
+    for bad in ["a b", "x..y", "-x", "x.", ".x", "x.lock", "a:b"] {
+        let opts = with_prefix(BranchPrefix::Custom(bad.into()));
+        let err = create_worktree_with(&mut reg, &id, "fix", None, 1, 0, &opts).unwrap_err();
+        assert_eq!(err.code(), "bad_branch_prefix", "{bad}");
+        assert!(
+            matches!(&err, WorkspaceError::BadPrefix(p) if p == bad.trim()),
+            "{bad}"
+        );
+    }
+    assert!(reg.worktrees.is_empty());
+}
+
+#[test]
+fn a_blank_custom_prefix_adds_nothing() {
+    let (mut reg, id, _main) = registered();
+    let opts = with_prefix(BranchPrefix::Custom(" / ".into()));
+    let wt = create_worktree_with(&mut reg, &id, "fix", None, 1, 0, &opts).unwrap();
+    assert_eq!(wt.branch.as_deref(), Some("fix"));
+}
+
+#[test]
+fn git_username_prefix_uses_the_repo_user_name() {
+    let (mut reg, id, main) = registered();
+    git(main.path(), &["config", "user.name", "duy"]);
+    let opts = with_prefix(BranchPrefix::GitUsername);
+    let wt = create_worktree_with(&mut reg, &id, "fix", None, 1, 0, &opts).unwrap();
+    assert_eq!(wt.branch.as_deref(), Some("duy/fix"));
+}
+
+#[test]
+fn an_unusable_git_username_is_skipped_silently() {
+    let (mut reg, id, main) = registered();
+    // `Test User` has a space, which no ref may hold.
+    let opts = with_prefix(BranchPrefix::GitUsername);
+    let wt = create_worktree_with(&mut reg, &id, "fix", None, 1, 0, &opts).unwrap();
+    assert_eq!(wt.branch.as_deref(), Some("fix"));
+    git(main.path(), &["config", "user.name", ""]);
+    let wt = create_worktree_with(&mut reg, &id, "two", None, 2, 0, &opts).unwrap();
+    assert_eq!(wt.branch.as_deref(), Some("two"));
+}
+
+#[test]
+fn no_prefix_strategy_adds_nothing() {
+    let (mut reg, id, main) = registered();
+    git(main.path(), &["config", "user.name", "duy"]);
+    let wt = create_worktree_with(
+        &mut reg,
+        &id,
+        "fix",
+        None,
+        1,
+        0,
+        &with_prefix(BranchPrefix::None),
+    )
+    .unwrap();
+    assert_eq!(wt.branch.as_deref(), Some("fix"));
 }

@@ -37,6 +37,15 @@ impl Repo {
         Ok((status == Some(0)).then(|| String::from_utf8_lossy(&out).trim().to_owned()))
     }
 
+    /// `user.name` as this repo sees it (its own config, then the global
+    /// one), trimmed; `None` when unset or blank.
+    pub fn user_name(&self) -> Result<Option<String>, GitError> {
+        let (status, out) =
+            run::run_status(&self.workdir, &["config", "--get", "user.name"], None)?;
+        let name = String::from_utf8_lossy(&out).trim().to_owned();
+        Ok((status == Some(0) && !name.is_empty()).then_some(name))
+    }
+
     /// No tracked file differs from `HEAD`, in the index or on disk, across
     /// the whole repo. Untracked files do not count: a merge that would
     /// overwrite one fails on its own.
