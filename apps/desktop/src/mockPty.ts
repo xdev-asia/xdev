@@ -28,7 +28,15 @@ export function createMockPty(): PtyApi {
       }
       ptys.set(id, { onData, line: "", exited: false });
       onData(encode(`xDev demo terminal (${profileId})\r\n${PROMPT}`));
-      return { id, pid: null, program: profileId === "shell" ? "sh" : profileId, agent };
+      return {
+        id,
+        pid: null,
+        program: profileId === "shell" ? "sh" : profileId,
+        agent,
+        profile: profileId,
+        permissions: "ask",
+        account: null,
+      };
     },
     async ptyApprove(profileId) {
       approved.add(profileId);
