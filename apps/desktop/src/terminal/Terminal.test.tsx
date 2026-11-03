@@ -29,6 +29,7 @@ vi.mock("@xterm/xterm", () => ({
     onSelectionChange() {}
     onData() {}
     onResize() {}
+    onTitleChange() {}
     write() {}
     focus() {}
     getSelection() {

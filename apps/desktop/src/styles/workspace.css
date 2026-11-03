@@ -163,6 +163,112 @@
   cursor: default;
 }
 
+/* The bell: a count on the button and the list of unread tabs under it. */
+
+.ws-bell {
+  position: relative;
+  display: flex;
+}
+
+.ws-bell .ws-header-btn {
+  position: relative;
+}
+
+.ws-bell-count {
+  position: absolute;
+  top: 1px;
+  right: -2px;
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: var(--radius-l);
+  background: var(--warn);
+  color: var(--bg-0);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+
+.ws-bell-pop {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  max-height: 60vh;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-1) 16%, transparent);
+  outline: none;
+}
+
+.ws-bell-title {
+  margin: 0;
+  padding: 4px 8px 2px;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ws-bell-empty {
+  margin: 0;
+  padding: 10px 8px;
+  color: var(--text-3);
+}
+
+.ws-bell-list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.ws-bell-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-1);
+  text-align: left;
+}
+
+.ws-bell-row:hover,
+.ws-bell-row:focus-visible {
+  background: var(--bg-3);
+}
+
+.ws-bell-wt {
+  overflow: hidden;
+  max-width: 40%;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-bell-name {
+  flex: 1;
+  overflow: hidden;
+  min-width: 0;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-bell-state,
+.ws-bell-age {
+  flex-shrink: 0;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
 /* Body */
 
 .ws-body {
@@ -779,17 +885,83 @@
   color: var(--signal);
 }
 
-.ws-tab-glyph {
-  font-size: 10px;
-  color: var(--text-2);
+/* The status glyph of a tab or worktree row. Shape carries the state, so no colored stripe:
+   working spins, needs-you is a "?", done a check, failed and idle a dot, exited a hollow ring. */
+.ws-glyph {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 
-.ws-tab-glyph[data-status="working"] {
-  color: var(--signal);
+.ws-glyph[data-status="working"] {
+  border: 1.5px solid var(--line);
+  border-top-color: var(--signal);
+  border-radius: 50%;
+  animation: ws-spin 0.9s linear infinite;
 }
 
-.ws-tab-glyph[data-status="failed"] {
-  color: var(--danger);
+.ws-glyph[data-status="needs-you"] {
+  color: var(--warn);
+}
+
+.ws-glyph[data-status="done"] {
+  color: var(--ok);
+}
+
+.ws-glyph[data-status="failed"]::before,
+.ws-glyph[data-status="idle"]::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  content: "";
+}
+
+.ws-glyph[data-status="failed"]::before {
+  background: var(--danger);
+}
+
+.ws-glyph[data-status="idle"]::before {
+  background: var(--text-3);
+}
+
+.ws-glyph[data-status="exited"]::before {
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--text-3);
+  border-radius: 50%;
+  content: "";
+}
+
+@keyframes ws-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A tab name: an OSC title can be long, so it ends in an ellipsis. */
+.ws-tab-name {
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Unread: a tab or worktree whose agent finished or asked while nobody looked. */
+.ws-tab-unread .ws-tab-name {
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.ws-wt-unread .ws-wt-name {
+  font-weight: 800;
+  color: var(--text-1);
 }
 
 /* An agent tab that runs without asking: a red dot and a pill. */
@@ -1543,6 +1715,11 @@ button.ws-tree-row:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .ws-pulse {
+    animation: none;
+  }
+
+  /* Still, the spinner stays a ring with one bright quarter. */
+  .ws-glyph[data-status="working"] {
     animation: none;
   }
 
