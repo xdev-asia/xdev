@@ -11,8 +11,8 @@ use xdev_git::GitError;
 
 pub use ops::{
     DirEntry, DirListing, RepoPatch, RepoView, WorktreeStat, WorktreeView, add_repo,
-    create_worktree, forget_repo, list, list_dir, path_key, remove_worktree, set_pinned, stat,
-    update_repo, valid_short_name,
+    adopt_worktree, create_worktree, forget_repo, list, list_dir, path_key, remove_worktree,
+    set_pinned, stat, update_repo, valid_short_name,
 };
 pub use registry::{Registry, RepoEntry, VaultEntry, WorktreeMeta, repo_id};
 

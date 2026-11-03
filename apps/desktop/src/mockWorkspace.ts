@@ -41,6 +41,7 @@ export const DEMO_WORKSPACE: MockWorkspaceSeed = {
         worktree("/demo/wt/xdev-oak", "oak", "oak", false),
         worktree("/demo/wt/xdev-elm", "elm", "elm", false),
       ],
+      found: [],
     },
   ],
   changes: {
@@ -145,6 +146,7 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
         worktreeRoot: `${root.replace(/[\/][^\/]*$/, "")}/wt`,
         missing: false,
         worktrees: [worktree(root, shortName, "main", true)],
+        found: [],
       };
       repos.push(repo);
       return structuredClone(repo);
