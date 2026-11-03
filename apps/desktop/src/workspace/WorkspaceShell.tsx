@@ -15,6 +15,7 @@ import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { sendToAgentTab } from "./agentPrompt";
 import { sendTarget } from "./sendTarget";
 import { Sessions } from "./sessions";
+import { PrStore } from "./prs";
 import { WorktreeStats } from "./stats";
 import type { TabStatus } from "./status";
 import { WorktreeChanges } from "./WorktreeChanges";
@@ -79,6 +80,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
   const [stats] = useState(() => new WorktreeStats());
+  // Pull requests and checks of every worktree, shared by the ship bar and the panels.
+  const [prs] = useState(() => new PrStore(api));
 
   // One store of terminal tabs for the whole shell. Made in an effect so a dev double mount
   // disposes the first one; disposing kills its ptys.
@@ -432,6 +435,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   api={api}
                   worktree={current}
                   sessions={sessions}
+                  prs={prs}
                   onOpenFile={(file) => openFile(current.path, file)}
                   onCount={(n) => setChangeCount({ worktree: current.path, count: n })}
                   onChanges={(list) => setChangeList({ worktree: current.path, list })}

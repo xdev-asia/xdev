@@ -7,7 +7,9 @@ import { ProblemNote } from "../components/ChangesPanel";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { diffStats } from "../components/DiffView";
 import { useI18n } from "../i18n";
+import type { PrStore } from "./prs";
 import type { Sessions } from "./sessions";
+import { ShipBar } from "./ShipBar";
 import type { TabStatus } from "./status";
 
 // Git's own letters, so they read the same in every language.
@@ -31,6 +33,8 @@ export function WorktreeChanges(props: {
   onFixWithAgent?(output: string): void;
   // After a commit or amend, so the ship bar reads again.
   onShipChanged?(): void;
+  // The shared store of pull requests; the ship bar shows only when it is given.
+  prs?: PrStore;
 }): JSX.Element {
   const { api, worktree, sessions } = props;
   const { t } = useI18n();
@@ -47,6 +51,9 @@ export function WorktreeChanges(props: {
   const [amend, setAmend] = useState(false);
   // The last amend was refused because the commit is pushed; waits for the person's answer.
   const [askPushed, setAskPushed] = useState(false);
+  // Bumped when the branch may have moved, so the ship bar reads again.
+  const [shipKey, setShipKey] = useState(0);
+  const field = useRef<HTMLTextAreaElement>(null);
   // Only the newest load may write, so a slow one never shows an older list.
   const loads = useRef(0);
   // The load still running, if any; a focus does not start another.
@@ -108,7 +115,10 @@ export function WorktreeChanges(props: {
     let before = statuses();
     return sessions.subscribe(() => {
       const now = statuses();
-      if ([...now].some(([id, status]) => status === "idle" && before.get(id) === "working")) void load();
+      if ([...now].some(([id, status]) => status === "idle" && before.get(id) === "working")) {
+        void load();
+        setShipKey((k) => k + 1);
+      }
       before = now;
     });
   }, [api, path, primary, sessions]);
@@ -134,6 +144,7 @@ export function WorktreeChanges(props: {
         setMessage("");
         setAmend(false);
         props.onShipChanged?.();
+        setShipKey((k) => k + 1);
       }
       await load();
     } catch (e) {
@@ -163,6 +174,17 @@ export function WorktreeChanges(props: {
       <strong className="ws-changes-title">
         {changes && changes.length > 0 ? t("workspace.changes.title", { count: changes.length }) : changes && t("workspace.changes.none")}
       </strong>
+      {props.prs && (
+        <ShipBar
+          api={api}
+          worktree={path}
+          checked={checked.length}
+          prs={props.prs}
+          refreshKey={shipKey}
+          onCommit={() => (message.trim() === "" ? field.current?.focus() : blocked ? undefined : void commit())}
+          onChanged={() => props.onShipChanged?.()}
+        />
+      )}
       {loadProblem && <ProblemNote problem={loadProblem} />}
       {problem && problem.code !== "hook_failed" && <ProblemNote problem={problem} />}
       {problem?.code === "hook_failed" && (
@@ -214,6 +236,7 @@ export function WorktreeChanges(props: {
       <label className="ws-commit-field">
         {t("workspace.changes.message")}
         <textarea
+          ref={field}
           className="ws-mono"
           rows={3}
           value={message}
