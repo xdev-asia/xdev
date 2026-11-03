@@ -706,3 +706,100 @@ fn stale_docs_lists_unlinked() {
         }]
     );
 }
+
+#[test]
+fn prefix_without_path_is_unlinked() {
+    let (dir, first) = setup();
+    let (api, _) = other_repo();
+    let mut registered = own_links("app");
+    registered
+        .repos
+        .insert("api".to_owned(), linked(api.path(), "main"));
+    for entry in ["api:", "api:/", "api:./"] {
+        write(
+            dir.path(),
+            "docs/a.md",
+            &doc(&format!("[\"{entry}\"]"), Some(&first), "A"),
+        );
+        let (vault, repo) = open(dir.path());
+        for links in [&Links::default(), &registered] {
+            let got = freshness(&vault, repo.as_ref(), links, "a.md").unwrap();
+            assert_eq!(got.covers, [entry], "{entry}");
+            assert_eq!(
+                (got.state, got.count, got.head),
+                (DocState::Unlinked, 0, None),
+                "{entry}"
+            );
+        }
+    }
+}
+
+#[test]
+fn unlinked_entry_has_no_head() {
+    let (dir, first) = setup();
+    write(
+        dir.path(),
+        "docs/only.md",
+        &doc("[nobody:src/**]", Some(&first), "Only"),
+    );
+    write(
+        dir.path(),
+        "docs/mixed.md",
+        &doc("[src/**, nobody:src/**]", Some(&first), "Mixed"),
+    );
+    let (vault, repo) = open(dir.path());
+    for path in ["only.md", "mixed.md"] {
+        let got = freshness(&vault, repo.as_ref(), &Links::default(), path).unwrap();
+        assert_eq!((got.state, got.head), (DocState::Unlinked, None), "{path}");
+    }
+}
+
+#[test]
+fn two_other_repos_have_no_head() {
+    let (api, [c1, ..]) = other_repo();
+    let (_own_tmp, own) = clone(api.path());
+    let (_web_tmp, web) = clone(api.path());
+    git(&web, &["checkout", "-q", "-B", "main", "origin/main"]);
+    write(
+        &own,
+        "docs/a.md",
+        &doc("[web:api/**, api:api/**]", Some(&c1), "A"),
+    );
+    let (vault, repo) = open(&own);
+    let mut links = own_links("app");
+    links.repos.insert("web".to_owned(), linked(&web, "main"));
+    links
+        .repos
+        .insert("api".to_owned(), linked(api.path(), "main"));
+    let got = freshness(&vault, repo.as_ref(), &links, "a.md").unwrap();
+    assert_eq!((got.state, got.count), (DocState::Stale, 2));
+    assert_eq!(got.head, None);
+}
+
+#[test]
+fn linked_repo_moved_away_is_unknown() {
+    let (dir, _) = setup();
+    let (api, [c1, ..]) = other_repo();
+    write(
+        dir.path(),
+        "docs/a.md",
+        &doc("[api:api/**]", Some(&c1), "A"),
+    );
+    let (vault, repo) = open(dir.path());
+    let mut links = own_links("app");
+    links
+        .repos
+        .insert("api".to_owned(), linked(api.path(), "main"));
+    // Gone after `links` was built; moved, not deleted.
+    let away = TempDir::new().unwrap();
+    fs::rename(api.path(), away.path().join("api")).unwrap();
+
+    let got = freshness(&vault, repo.as_ref(), &links, "a.md").unwrap();
+    assert_eq!(
+        (got.state, got.count, got.head),
+        (DocState::Unknown, 0, None)
+    );
+    let stale = stale_docs(&vault, repo.as_ref(), &links).unwrap();
+    assert_eq!(stale.len(), 1);
+    assert_eq!(stale[0].state, DocState::Unknown);
+}
