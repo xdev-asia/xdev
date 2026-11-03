@@ -84,7 +84,6 @@ export function WorktreeTabs(props: {
   repoName?: string;
   /** A new value opens the Command popover of the focused pane. */
   quickSeq?: number;
-  onNewQuickCommand?: () => void;
   onManageQuickCommands?: () => void;
 }): JSX.Element {
   const { api, sessions, worktree, visible, reveal } = props;
@@ -392,7 +391,6 @@ export function WorktreeTabs(props: {
             tab={leaf.active === REVIEW_TAB ? null : (byId.get(leaf.active ?? "") ?? null)}
             openSeq={layout?.focused === leaf.id ? props.quickSeq : undefined}
             onFocus={() => setKick((k) => k + 1)}
-            onNew={() => props.onNewQuickCommand?.()}
             onManage={() => props.onManageQuickCommands?.()}
           />
         }

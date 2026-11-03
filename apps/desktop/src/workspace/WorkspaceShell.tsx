@@ -900,7 +900,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   repo={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.path ?? null}
                   repoName={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.shortName ?? ""}
                   quickSeq={path === current?.path ? quickSeq : undefined}
-                  onNewQuickCommand={() => openSettings("qcmd", "new")}
                   onManageQuickCommands={() => openSettings("qcmd")}
                 />
               ))}
