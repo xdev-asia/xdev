@@ -3,14 +3,13 @@ import type { JSX } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
 import type { Api, FileCommands } from "@/api";
 import { useI18n } from "@/i18n";
-import { pushToast } from "@/workspace/toastStore";
 import { TrustDialog } from "@/workspace/TrustDialog";
 import type { Sessions, Tab } from "@/workspace/sessions";
 import type { Env, Row } from "./model";
 import { QuickCommandsButton } from "./QuickCommandsButton";
 import { QuickCommandsPopover } from "./QuickCommandsPopover";
 import { QuickCommandDialog, type RepoChoice } from "./QuickCommandDialog";
-import { runQuickCommand } from "./run";
+import { runWithToast } from "./runUi";
 import { trustFileCommands, useQuickCommands } from "./store";
 
 /** What the trust dialog shows: every command of the file as the person would run it. */
@@ -58,17 +57,20 @@ export function QuickCommandsControl(props: {
 
   async function run(row: Row, appendEnter?: false): Promise<void> {
     setOpen(false);
-    const res = await runQuickCommand(row.cmd, {
-      sessions,
-      worktree,
-      tab: live,
-      appendEnter,
-      trusted: q.file?.trusted,
-      profiles: env.profiles ?? undefined,
-      focus: props.onFocus,
-      used: (id) => void api.quickCommandUsed(id).catch(() => {}),
-    });
-    if (!res.ok) pushToast({ text: t(`qcmd.failed.${res.reason}`) });
+    await runWithToast(
+      api,
+      row.cmd,
+      {
+        sessions,
+        worktree,
+        tab: live,
+        appendEnter,
+        trusted: q.file?.trusted,
+        profiles: env.profiles ?? undefined,
+        focus: props.onFocus,
+      },
+      t,
+    );
   }
 
   async function trust(): Promise<void> {

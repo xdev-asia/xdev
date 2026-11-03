@@ -1475,5 +1475,7 @@
   "qcmd.page.moveDown": "Move down",
   "qcmd.page.copySuffix": " (copy)",
   "qcmd.page.deleteTitle": "Delete this command?",
-  "qcmd.page.deleteBody": "\"{label}\" will be removed. This cannot be undone."
+  "qcmd.page.deleteBody": "\"{label}\" will be removed. This cannot be undone.",
+  "qcmd.palette.run": "Run: {label}",
+  "qcmd.palette.new": "New quick command…"
 }
