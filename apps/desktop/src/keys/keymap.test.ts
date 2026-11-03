@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { actionOf, chordLabel, chordOf, DEFAULT_BINDINGS, useKeymap, type ActionId } from "./keymap";
+import { actionOf, actionsOf, chordLabel, chordOf, DEFAULT_BINDINGS, eventChord, useKeymap, type ActionId } from "./keymap";
 
 const hooks = vi.hoisted(() => ({ effects: [] as (() => void | (() => void))[] }));
 vi.mock("react", async (original) => ({
@@ -28,8 +28,19 @@ const PRESS: Record<string, Record<string, unknown>> = {
   "Ctrl+Shift+Up": { ctrlKey: true, shiftKey: true, code: "ArrowUp" },
   "Ctrl+Shift+Down": { ctrlKey: true, shiftKey: true, code: "ArrowDown" },
   "Ctrl+Alt+T": { ctrlKey: true, altKey: true, code: "KeyT" },
-  "Mod+J": { ctrlKey: true, code: "KeyJ" },
+  "Ctrl+J": { ctrlKey: true, code: "KeyJ" },
 };
+// The other default chords: a press built from the chord.
+const CODES: Record<string, string> = {
+  "=": "Equal", "-": "Minus", ",": "Comma", "[": "BracketLeft", "]": "BracketRight", Up: "ArrowUp", Down: "ArrowDown",
+};
+function pressOf(chord: string): Record<string, unknown> {
+  if (PRESS[chord]) return PRESS[chord];
+  const parts = chord.split("+");
+  const key = parts.pop()!;
+  const code = CODES[key] ?? (/^[A-Z]$/.test(key) ? `Key${key}` : /^[0-9]$/.test(key) ? `Digit${key}` : key);
+  return { ctrlKey: parts.includes("Ctrl"), altKey: parts.includes("Alt"), shiftKey: parts.includes("Shift"), code };
+}
 for (let n = 1; n <= 9; n++) {
   PRESS[`Alt+${n}`] = { altKey: true, code: `Digit${n}` };
   PRESS[`Ctrl+${n}`] = { ctrlKey: true, code: `Digit${n}` };
@@ -38,9 +49,29 @@ for (let n = 1; n <= 9; n++) {
 it("every default binding is reached by its chord off macOS", () => {
   for (const b of DEFAULT_BINDINGS) {
     const press = PRESS[b.chord];
-    expect(press, b.chord).toBeDefined();
-    expect(actionOf(ev(press), false), b.chord).toBe(b.action);
+    if (press) expect(actionOf(ev(press), false), b.chord).toBe(b.action);
+    expect(actionsOf(ev(pressOf(b.chord)), false), b.chord).toContain(b.action);
   }
+});
+
+it("a chord shared across scopes lists the global action first", () => {
+  expect(actionsOf(ev({ ctrlKey: true, code: "KeyK" }), false)).toEqual(["search.open", "terminal.clear", "docs.search"]);
+  expect(actionOf(ev({ ctrlKey: true, code: "KeyK" }), false)).toBe("search.open");
+});
+
+it("eventChord writes what normalizeChord writes", () => {
+  expect(eventChord(ev({ ctrlKey: true, shiftKey: true, code: "Equal" }), "win")).toBe("Ctrl+Shift+=");
+  expect(eventChord(ev({ metaKey: true, altKey: true, ctrlKey: true, shiftKey: true, code: "KeyD" }), "mac")).toBe("Ctrl+Alt+Shift+Cmd+D");
+  expect(eventChord(ev({ shiftKey: true, code: "Insert" }), "win")).toBe("Shift+Insert");
+  expect(eventChord(ev({ ctrlKey: true, code: "NumpadAdd" }), "linux")).toBe("Ctrl+NumpadAdd");
+  expect(eventChord(ev({ code: "F5" }), "win")).toBe("F5");
+  expect(eventChord(ev({ shiftKey: true, code: "KeyA" }), "win")).toBeNull();
+  expect(eventChord(ev({ metaKey: true, code: "KeyA" }), "win")).toBeNull();
+});
+
+it("macOS copy and paste in a terminal are Cmd+C and Cmd+V", () => {
+  expect(actionsOf(ev({ metaKey: true, code: "KeyC" }), true)).toEqual(["terminal.copy"]);
+  expect(actionsOf(ev({ ctrlKey: true, shiftKey: true, code: "KeyC" }), false)).toEqual(["terminal.copy"]);
 });
 
 it("on macOS Ctrl is Cmd, but Ctrl+Tab and Ctrl+Alt+T keep Ctrl", () => {
@@ -134,7 +165,7 @@ it("a modal dialog blocks every chord but the palette key", () => {
   const jump = vi.fn();
   const { press } = setup({ "tab.new": run, "palette.jump": jump }, undefined, true);
   press(PRESS["Ctrl+T"]);
-  press(PRESS["Mod+J"]);
+  press(PRESS["Ctrl+J"]);
   expect(run).not.toHaveBeenCalled();
   expect(jump).toHaveBeenCalledTimes(1);
 });

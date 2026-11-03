@@ -1,7 +1,9 @@
 ﻿// Workspace keymap: key chords to action ids.
 
 import { useEffect } from "react";
-import { IS_MAC } from "@/platform";
+import { IS_MAC, PLATFORM, type Platform } from "@/platform";
+import { normalizeChord } from "./keybindingsFile";
+import { defaultsFor, SHORTCUTS } from "./registry";
 
 type Digit = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
@@ -36,30 +38,27 @@ export type ActionId =
 
 export interface Binding {
   action: ActionId;
-  /** "Ctrl+Shift+D", "Mod+J". Mod is Ctrl, Cmd on macOS. */
+  /** Normalized, as `normalizeChord` writes it: "Ctrl+Shift+D", "Cmd+J" on macOS. */
   chord: string;
 }
 
-const DIGITS: Digit[] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+/** The platform whose keys apply: macOS when `mac`, else the platform this runs on (Windows on a Mac). */
+export function platformOf(mac: boolean): Platform {
+  if (mac) return "mac";
+  return PLATFORM === "mac" ? "win" : PLATFORM;
+}
 
-export const DEFAULT_BINDINGS: Binding[] = [
-  { action: "tab.new", chord: "Ctrl+T" },
-  { action: "tab.close", chord: "Ctrl+W" },
-  { action: "tab.next", chord: "Ctrl+Tab" },
-  { action: "tab.prev", chord: "Ctrl+Shift+Tab" },
-  ...DIGITS.map((n): Binding => ({ action: `tab.select.${n}`, chord: `Alt+${n}` })),
-  { action: "pane.splitRight", chord: "Ctrl+Shift+D" },
-  { action: "pane.splitDown", chord: "Alt+Shift+D" },
-  { action: "pane.next", chord: "Ctrl+]" },
-  { action: "pane.prev", chord: "Ctrl+[" },
-  { action: "pane.expand", chord: "Ctrl+Shift+Enter" },
-  { action: "pane.equalize", chord: "Ctrl+Shift+=" },
-  { action: "worktree.prev", chord: "Ctrl+Shift+Up" },
-  { action: "worktree.next", chord: "Ctrl+Shift+Down" },
-  ...DIGITS.map((n): Binding => ({ action: `worktree.select.${n}`, chord: `Ctrl+${n}` })),
-  { action: "agent.new", chord: "Ctrl+Alt+T" },
-  { action: "palette.jump", chord: "Mod+J" },
-];
+function defaultBindings(p: Platform): Binding[] {
+  return SHORTCUTS.flatMap((d) =>
+    defaultsFor(d, p).flatMap((raw) => {
+      const chord = normalizeChord(raw, p);
+      return chord === null ? [] : [{ action: d.id, chord }];
+    }),
+  );
+}
+
+/** The registry's default chords on this platform, normalized. */
+export const DEFAULT_BINDINGS: Binding[] = defaultBindings(PLATFORM);
 
 /** One chord of one action as it applies now: a default, or from `keybindings.json`. */
 export interface EffectiveBinding {
@@ -90,9 +89,20 @@ export function suspendKeymap(on: boolean): void {
   void on;
 }
 
+// `KeyboardEvent.code` to the key names chords use.
 const NAMED: Record<string, string> = {
   Tab: "Tab",
   Enter: "Enter",
+  NumpadEnter: "NumpadEnter",
+  Space: "Space",
+  Escape: "Escape",
+  Backspace: "Backspace",
+  Delete: "Delete",
+  Insert: "Insert",
+  Home: "Home",
+  End: "End",
+  PageUp: "PageUp",
+  PageDown: "PageDown",
   ArrowUp: "Up",
   ArrowDown: "Down",
   ArrowLeft: "Left",
@@ -100,6 +110,19 @@ const NAMED: Record<string, string> = {
   BracketLeft: "[",
   BracketRight: "]",
   Equal: "=",
+  Minus: "-",
+  Comma: ",",
+  Period: ".",
+  Slash: "/",
+  Backslash: "\\",
+  Semicolon: ";",
+  Quote: "'",
+  Backquote: "`",
+  NumpadAdd: "NumpadAdd",
+  NumpadSubtract: "NumpadSubtract",
+  NumpadMultiply: "NumpadMultiply",
+  NumpadDivide: "NumpadDivide",
+  NumpadDecimal: "NumpadDecimal",
 };
 
 function keyOf(e: KeyboardEvent): string | null {
@@ -108,6 +131,7 @@ function keyOf(e: KeyboardEvent): string | null {
   if (!code) return typeof e.key === "string" && /^[a-z0-9]$/i.test(e.key) ? e.key.toUpperCase() : null;
   if (/^Key[A-Z]$/.test(code)) return code.slice(3);
   if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  if (/^Numpad[0-9]$/.test(code) || /^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
   return NAMED[code] ?? null;
 }
 
@@ -128,39 +152,59 @@ export function chordOf(e: KeyboardEvent, mac: boolean): string | null {
   return [...parts, key].join("+");
 }
 
-// On macOS the Ctrl of a default chord is Cmd, as there; these keep the physical Ctrl (Ctrl+Tab is
-// the system's tab key, and Ctrl+Alt+T already was Ctrl before the keymap).
-const KEEPS_CTRL: ReadonlySet<ActionId> = new Set(["tab.next", "tab.prev", "agent.new"]);
-
-/** A binding chord in the form `chordOf` produces: Mod is Ctrl off macOS; Ctrl is Mod on macOS but for KEEPS_CTRL. */
-function normalize(chord: string, mac: boolean, action?: ActionId): string {
-  const parts = chord.split("+");
-  const key = parts.pop()!;
-  const swap = mac && !(action && KEEPS_CTRL.has(action));
-  const mods = new Set(parts.map((p) => (p === "Mod" && !mac ? "Ctrl" : p === "Ctrl" && swap ? "Mod" : p)));
-  return [...["Ctrl", "Mod", "Alt", "Shift"].filter((m) => mods.has(m)), key].join("+");
+/** The chord of `e` as `normalizeChord` writes it for `p`; null when it is no shortcut there. */
+export function eventChord(e: KeyboardEvent, p: Platform): string | null {
+  const key = keyOf(e);
+  if (key === null) return null;
+  if (e.metaKey && p !== "mac") return null;
+  const parts: string[] = [];
+  if (e.ctrlKey) parts.push("Ctrl");
+  if (e.altKey) parts.push("Alt");
+  if (e.shiftKey) parts.push("Shift");
+  if (e.metaKey) parts.push("Cmd");
+  return normalizeChord([...parts, key].join("+"), p);
 }
 
-function table(bindings: Binding[], mac: boolean): Map<string, ActionId> {
-  return new Map(bindings.map((b) => [normalize(b.chord, mac, b.action), b.action]));
+// Chord → actions, global ones first; one table per platform, built on first use.
+const TABLES = new Map<Platform, Map<string, ActionId[]>>();
+const SCOPE_RANK = { global: 0, terminal: 1, docs: 2 } as const;
+const SCOPE_OF = new Map(SHORTCUTS.map((d) => [d.id, d.scope]));
+
+function tableFor(p: Platform): Map<string, ActionId[]> {
+  let found = TABLES.get(p);
+  if (!found) {
+    found = new Map();
+    for (const b of defaultBindings(p)) found.set(b.chord, [...(found.get(b.chord) ?? []), b.action]);
+    for (const list of found.values()) list.sort((a, b) => SCOPE_RANK[SCOPE_OF.get(a)!] - SCOPE_RANK[SCOPE_OF.get(b)!]);
+    TABLES.set(p, found);
+  }
+  return found;
 }
 
-const TABLES = { mac: table(DEFAULT_BINDINGS, true), other: table(DEFAULT_BINDINGS, false) };
+/** Every action bound to the chord of `e`, global ones first. */
+export function actionsOf(e: KeyboardEvent, mac: boolean = IS_MAC): ActionId[] {
+  const p = platformOf(mac);
+  const chord = eventChord(e, p);
+  return chord === null ? [] : (tableFor(p).get(chord) ?? []);
+}
 
-/** The action a key event is bound to, if any. */
+/** The action a key event is bound to, if any; a global one before a scoped one. */
 export function actionOf(e: KeyboardEvent, mac: boolean = IS_MAC): ActionId | null {
-  const chord = chordOf(e, mac);
-  return chord === null ? null : ((mac ? TABLES.mac : TABLES.other).get(chord) ?? null);
+  return actionsOf(e, mac)[0] ?? null;
 }
+
+const GLYPHS: Record<string, string> = {
+  Ctrl: "⌃", Alt: "⌥", Shift: "⇧", Cmd: "⌘", Up: "↑", Down: "↓", Left: "←", Right: "→", Enter: "↵",
+};
 
 /** The chord of an action as shown to a person: "Ctrl+T", or "⌘T" on macOS. */
 export function chordLabel(action: ActionId, mac: boolean = IS_MAC): string | null {
-  const found = DEFAULT_BINDINGS.find((b) => b.action === action);
+  const p = platformOf(mac);
+  const found = defaultBindings(p).find((b) => b.action === action);
   if (!found) return null;
-  const parts = normalize(found.chord, mac, action).split("+");
+  const parts = found.chord.split("+");
   if (!mac) return parts.join("+");
-  const glyph: Record<string, string> = { Ctrl: "⌃", Mod: "⌘", Alt: "⌥", Shift: "⇧", Up: "↑", Down: "↓", Enter: "↵" };
-  return parts.map((p) => glyph[p] ?? p).join("");
+  return parts.map((part) => GLYPHS[part] ?? part).join("");
 }
 
 // The kept keys open the palette and a new agent; the dialog check does not apply to the palette,
@@ -186,10 +230,9 @@ export function useKeymap(
     if (opts?.when && !opts.when()) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.isComposing || e.keyCode === 229) return;
-      const action = actionOf(e);
-      if (action === null) return;
-      const handler = handlers[action];
-      if (!handler) return;
+      const action = actionsOf(e).find((a) => handlers[a]);
+      if (action === undefined) return;
+      const handler = handlers[action]!;
       if (opts?.when && !opts.when()) return;
       if (!WORKS_IN_DIALOG.has(action) && modalOpen()) return;
       // Held down, a chord is swallowed but does not fire again (Ctrl+W would close every tab).
