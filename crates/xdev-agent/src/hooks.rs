@@ -35,6 +35,31 @@ use crate::version::CliVersion;
 /// The folder under `local_dir` that holds one `<pty_id>.jsonl` per pane.
 pub const HOOKS_DIR: &str = "hooks";
 
+/// The file in [`HOOKS_DIR`] that turns every `xdev agent-hook` call into a
+/// no-op, so switching hooks off also quiets panes launched with them.
+pub const HOOKS_OFF: &str = ".off";
+
+/// Whether the [`HOOKS_OFF`] marker is there.
+pub fn hooks_off(local_dir: &Path) -> bool {
+    local_dir.join(HOOKS_DIR).join(HOOKS_OFF).is_file()
+}
+
+/// Creates (`off`) or removes the [`HOOKS_OFF`] marker; either is a no-op when
+/// already so. The marker is an empty file xDev owns, so removing it is safe.
+pub fn set_hooks_off(local_dir: &Path, off: bool) -> io::Result<()> {
+    let dir = local_dir.join(HOOKS_DIR);
+    let marker = dir.join(HOOKS_OFF);
+    if off {
+        fs::create_dir_all(&dir)?;
+        fs::write(marker, b"")
+    } else {
+        match fs::remove_file(marker) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            other => other,
+        }
+    }
+}
+
 /// What an agent's hook reported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -363,6 +388,20 @@ mod tests {
     use super::*;
 
     const NEW: Option<CliVersion> = Some(CliVersion(2, 1, 317));
+
+    #[test]
+    fn hooks_off_marker_round_trips_and_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!hooks_off(dir.path()));
+        set_hooks_off(dir.path(), false).unwrap();
+        set_hooks_off(dir.path(), true).unwrap();
+        set_hooks_off(dir.path(), true).unwrap();
+        assert!(hooks_off(dir.path()));
+        assert!(dir.path().join(HOOKS_DIR).join(HOOKS_OFF).is_file());
+        set_hooks_off(dir.path(), false).unwrap();
+        set_hooks_off(dir.path(), false).unwrap();
+        assert!(!hooks_off(dir.path()));
+    }
 
     fn claude_settings(version: Option<CliVersion>) -> serde_json::Value {
         let args = hook_args(Cli::Claude, Path::new("C:/x/xdev.exe"), version);

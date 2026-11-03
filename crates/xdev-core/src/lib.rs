@@ -9,7 +9,7 @@ mod links;
 mod review;
 mod sync;
 
-pub use data_dir::{APP_ID, data_dir, local_dir, move_indexes};
+pub use data_dir::{APP_ID, config_dir, data_dir, local_dir, move_indexes};
 pub use error::CoreError;
 pub use export::{ExportPlan, ExportedDoc, export_plan, export_root, export_write};
 pub use freshness::{
