@@ -6162,8 +6162,10 @@ dependencies = [
  "xdev-agent",
  "xdev-ai",
  "xdev-core",
+ "xdev-git",
  "xdev-policy",
  "xdev-pty",
+ "xdev-workspace",
 ]
 
 [[package]]
