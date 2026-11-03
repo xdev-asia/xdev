@@ -13,6 +13,8 @@ import {
   type SetupPolicy,
 } from "@/api";
 import { useI18n } from "@/i18n";
+import { RemoveRepoDialog } from "@/workspace/RemoveRepoDialog";
+import { removeRepo } from "@/workspace/removeRepo";
 import type { SettingsSectionProps } from "./sections";
 
 type Field = "shortName" | "baseRef" | "worktreeRoot" | "setupPolicy" | "scriptSource" | "localSetup" | "localArchive";
@@ -50,6 +52,8 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [failures, setFailures] = useState<Record<string, Failure>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  // The repo Remove from xDev asks about.
+  const [forgetting, setForgetting] = useState<{ repo: RepoView; error?: ApiError["code"] } | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<ApiError["code"]>();
 
@@ -58,6 +62,21 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
     // A repo whose file cannot be read just shows no shared scripts.
     if (path) api.repoHooks(path).then((h) => setHooks((all) => ({ ...all, [repo.id]: h })), () => {});
   }
+
+  // Terminals of the forgotten repo's worktrees close when the window reloads its list.
+  async function forget(repo: RepoView): Promise<void> {
+    const code = await removeRepo({ forget: (id) => api.repoForget(id), closeWorktree: () => {} }, repo);
+    if (code) return setForgetting({ repo, error: code });
+    setForgetting(null);
+    setRepos((list) => list?.filter((r) => r.id !== repo.id) ?? null);
+    props.onChanged();
+  }
+
+  // Repo settings… in the sidebar menu asks for this repo by id.
+  useEffect(() => {
+    if (!props.filter || !repos?.some((r) => r.id === props.filter)) return;
+    document.getElementById(`settings-repo-${props.filter}`)?.scrollIntoView?.({ block: "start" });
+  }, [repos === null, props.filter]);
 
   useEffect(() => {
     api.workspaceList().then(
@@ -231,6 +250,7 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
         return (
           <form
             key={repo.id}
+            id={`settings-repo-${repo.id}`}
             className="settings-card"
             aria-label={repo.shortName}
             onSubmit={(e) => {
@@ -321,6 +341,9 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
                   {t("settings.repos.saved")}
                 </span>
               )}
+              <button type="button" className="btn-secondary settings-remove" disabled={busy !== null} onClick={() => setForgetting({ repo })}>
+                {t("settings.repos.remove")}
+              </button>
               <Button type="submit" disabled={!changed || busy !== null}>
                 {busy === repo.id ? t("settings.repos.saving") : t("settings.repos.save")}
               </Button>
@@ -328,6 +351,16 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
           </form>
         );
       })}
+      {forgetting && (
+        <RemoveRepoDialog
+          name={forgetting.repo.shortName}
+          worktrees={forgetting.repo.worktrees.length}
+          tabs={[]}
+          error={forgetting.error}
+          onConfirm={() => void forget(forgetting.repo)}
+          onCancel={() => setForgetting(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { JSX, KeyboardEvent } from "react";
-import type { ApiError, Check, PrView, PtyProfile, RepoView, WorktreeStat, WorktreeView } from "@/api";
+import type { JSX } from "react";
+import type { ApiError, Check, OpenInApp, OpenTarget, PrView, PtyProfile, RepoView, WorktreeStat, WorktreeView } from "@/api";
 import { useI18n } from "@/i18n";
 import { profileLetter, profileName, useProfiles } from "@/agents/profileStore";
 import { ago } from "./ago";
@@ -8,6 +8,8 @@ import { groupWorktrees, orderedWorktrees, type Group } from "./groups";
 import { checksSummary } from "./ship";
 import type { TabStatus } from "./status";
 import { StatusGlyph } from "./StatusGlyph";
+import { projectMenuItems, worktreeMenuItems } from "./worktreeMenu";
+import { ContextMenu } from "@/ui/ContextMenu";
 
 type T = ReturnType<typeof useI18n>["t"];
 
@@ -51,46 +53,48 @@ export interface WorktreeListProps {
   onMarkUnread?(worktree: WorktreeView): void;
   /** Marks an unread worktree read; the menu offers it in place of "Mark unread" while the row is unread. */
   onMarkRead?(worktree: WorktreeView): void;
+  /** The Open In apps, in order; the Open in menu lists them above File Manager. */
+  openInApps?: OpenInApp[];
+  /** Opens a worktree or repo folder in an app or the file manager. */
+  onOpenIn?(path: string, target: OpenTarget): void;
+  /** Writes text to the clipboard (Copy Path, Copy Worktree Name, Copy Branch). */
+  onCopy?(text: string): void;
+  /** Opens a shell tab in the worktree; without it the Open in menu has no such item. */
+  onNewTerminal?(worktree: WorktreeView): void;
+  /** Opens Settings › Repos for the repo. */
+  onRepoSettings?(repo: RepoView): void;
+  /** Asks to forget the repo in xDev; without it the project menu has no Remove item. */
+  onRemoveRepo?(repo: RepoView): void;
+}
+
+/** The open menu: a worktree row or a repo, and where it opened. */
+type OpenMenu = { kind: "worktree" | "repo"; key: string; at: { x: number; y: number } };
+
+/** The corner under a button, where its menu opens. */
+function below(el: HTMLElement): { x: number; y: number } {
+  const box = el.getBoundingClientRect();
+  return { x: box.left, y: box.bottom };
 }
 
 /** The worktrees of every repo, split into sections by what their agents are doing. */
 export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const { t } = useI18n();
   const { view } = useProfiles();
-  // The worktree whose action menu is open.
-  const [menu, setMenu] = useState<string | null>(null);
+  // The worktree or repo whose menu is open.
+  const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [collapsed, setCollapsed] = useState<Group[]>([]);
   // The repos whose "Found outside xDev" group is open; all start closed.
   const [foundOpen, setFoundOpen] = useState<string[]>([]);
 
   const toggle = (group: Group) =>
     setCollapsed(collapsed.includes(group) ? collapsed.filter((c) => c !== group) : [...collapsed, group]);
-  const openMenu = (wt: WorktreeView) => setMenu(wt.path);
-  const pick = (action: () => void) => {
-    setMenu(null);
-    action();
-  };
-  // Arrows, Home and End move between the items; Escape and Tab close the menu
-  // from the row's more button, so Tab goes on from there and is never trapped.
-  const menuKey = (e: KeyboardEvent<HTMLElement>) => {
-    const items = [...e.currentTarget.querySelectorAll<HTMLElement>("[role=menuitem]")];
-    const at = items.indexOf(e.target as HTMLElement);
-    const moves: Record<string, number> = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 };
-    const to = moves[e.key];
-    if (to !== undefined) {
-      e.preventDefault();
-      items[(to + items.length) % items.length]?.focus();
-    } else if (e.key === "Escape" || e.key === "Tab") {
-      if (e.key === "Escape") e.preventDefault();
-      e.currentTarget.parentElement?.querySelector<HTMLElement>(".ws-wt-more")?.focus();
-      setMenu(null);
-    }
-  };
+  const apps = props.openInApps ?? [];
+  const copy = (text: string) => props.onCopy?.(text);
 
   // Rows are plain calls, not components, so the list keeps one set of hooks.
   const row = ({ wt, repo }: Entry) => {
     const status = props.dots[wt.path] ?? null;
-    const open = menu === wt.path;
+    const open = menu?.kind === "worktree" && menu.key === wt.path;
     const stat = props.stats?.[wt.path];
     const seen = props.activity?.[wt.path] ?? null;
     // Plain shells are not agents: only the agent profiles get a chip.
@@ -111,7 +115,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           onClick={() => props.onSelect(wt)}
           onContextMenu={(e) => {
             e.preventDefault();
-            openMenu(wt);
+            setMenu({ kind: "worktree", key: wt.path, at: { x: e.clientX, y: e.clientY } });
           }}
         >
           <span className="ws-wt-line">
@@ -174,42 +178,10 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           title={t("workspace.more", { name: wt.name })}
           aria-haspopup="menu"
           aria-expanded={open}
-          onClick={() => setMenu(open ? null : wt.path)}
+          onClick={(e) => setMenu({ kind: "worktree", key: wt.path, at: below(e.currentTarget) })}
         >
           ⋯
         </button>
-        {open && (
-          <>
-            <div className="ws-menu-backdrop" aria-hidden="true" onClick={() => setMenu(null)} />
-            <div
-              className="ws-menu"
-              role="menu"
-              aria-label={t("workspace.more", { name: wt.name })}
-              onKeyDown={menuKey}
-            >
-              <button type="button" role="menuitem" autoFocus onClick={() => pick(() => props.onPin(wt))}>
-                {wt.pinned ? t("workspace.unpin") : t("workspace.pin")}
-              </button>
-              {props.unread?.[wt.path] && props.onMarkRead ? (
-                <button type="button" role="menuitem" onClick={() => pick(() => props.onMarkRead?.(wt))}>
-                  {t("workspace.markRead")}
-                </button>
-              ) : (
-                props.onMarkUnread && (
-                  <button type="button" role="menuitem" onClick={() => pick(() => props.onMarkUnread?.(wt))}>
-                    {t("workspace.markUnread")}
-                  </button>
-                )
-              )}
-              {/* The primary checkout is the repo itself: it can be pinned but never removed. */}
-              {!wt.primary && (
-                <button type="button" role="menuitem" className="ws-menu-danger" onClick={() => pick(() => props.onRemove(wt))}>
-                  {t("workspace.delete")}
-                </button>
-              )}
-            </div>
-          </>
-        )}
       </li>
     );
   };
@@ -284,6 +256,59 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     );
   };
 
+  const projectMore = (repo: RepoView) => (
+    <button
+      type="button"
+      className="ws-wt-more ws-repo-more"
+      aria-label={t("project.more", { name: repo.shortName })}
+      title={t("project.more", { name: repo.shortName })}
+      aria-haspopup="menu"
+      aria-expanded={menu?.kind === "repo" && menu.key === repo.id}
+      onClick={(e) => setMenu({ kind: "repo", key: repo.id, at: below(e.currentTarget) })}
+    >
+      ⋯
+    </button>
+  );
+  const projectMenu = (repo: RepoView) => (e: { preventDefault(): void; clientX: number; clientY: number }) => {
+    e.preventDefault();
+    setMenu({ kind: "repo", key: repo.id, at: { x: e.clientX, y: e.clientY } });
+  };
+  const present = (props.repos ?? []).filter((repo) => !repo.missing);
+
+  // The menu of the open row or repo; null when what it was opened on has gone from the list.
+  const openMenuNode = () => {
+    if (!menu) return null;
+    let items;
+    if (menu.kind === "worktree") {
+      const wt = entries.find((e) => e.path === menu.key)?.wt;
+      if (!wt) return null;
+      items = worktreeMenuItems({
+        worktree: wt,
+        apps,
+        unread: props.unread?.[wt.path] === true,
+        openIn: (target) => props.onOpenIn?.(wt.path, target),
+        copy,
+        newTerminal: props.onNewTerminal && (() => props.onNewTerminal?.(wt)),
+        onPin: () => props.onPin(wt),
+        onMarkUnread: props.onMarkUnread && (() => props.onMarkUnread?.(wt)),
+        onMarkRead: props.onMarkRead && (() => props.onMarkRead?.(wt)),
+        onRemove: () => props.onRemove(wt),
+      });
+    } else {
+      const repo = props.repos?.find((r) => r.id === menu.key);
+      if (!repo) return null;
+      items = projectMenuItems({
+        path: repo.path,
+        apps,
+        openIn: (target) => props.onOpenIn?.(repo.path, target),
+        copy,
+        repoSettings: () => props.onRepoSettings?.(repo),
+        remove: () => props.onRemoveRepo?.(repo),
+      });
+    }
+    return <ContextMenu key={`${menu.kind}:${menu.key}`} at={menu.at} items={items} onClose={() => setMenu(null)} />;
+  };
+
   return (
     <div className="ws-worktrees">
       <div className="ws-section-head">
@@ -304,17 +329,28 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       <div className="ws-list">
         {props.repos?.length === 0 && <p className="ws-empty">{t("workspace.noRepos")}</p>}
         {sections.length > 0 && <ul className="ws-groups">{sections.map(section)}</ul>}
+        {present.length > 0 && (
+          <ul className="ws-repos" aria-label={t("project.heading")}>
+            {present.map((repo) => (
+              <li key={repo.id} className="ws-repo" data-repo={repo.id} title={repo.path} onContextMenu={projectMenu(repo)}>
+                <span className="ws-repo-name">{repo.shortName}</span>
+                {projectMore(repo)}
+              </li>
+            ))}
+          </ul>
+        )}
         {withFound.map(foundGroup)}
         {/* A repo whose folder is gone has no worktrees to list; it stays named so it can be found again. */}
         {gone.length > 0 && (
           <ul className="ws-missing-list">
             {gone.map((repo) => (
-              <li key={repo.id} className="ws-missing" title={repo.path}>
+              <li key={repo.id} className="ws-missing" title={repo.path} onContextMenu={projectMenu(repo)}>
                 <span className="ws-dot" data-dot="none" aria-hidden="true" />
                 <span className="ws-wt-name">{repo.shortName}</span>
                 <span className="ws-tag ws-tag-warn" title={t("workspace.missingTitle")}>
                   {t("workspace.missing")}
                 </span>
+                {projectMore(repo)}
               </li>
             ))}
           </ul>
@@ -325,6 +361,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           {t(`error.${props.notice}`)}
         </p>
       )}
+      {openMenuNode()}
       <div className="ws-sidebar-foot">
         <button type="button" className="ws-add-repo" onClick={() => props.onAddRepo()}>
           <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
