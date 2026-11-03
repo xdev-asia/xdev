@@ -76,6 +76,17 @@ export function cliOf(profileId: PtyProfile): TabCli {
   return profileId === "claude" || profileId === "codex" ? profileId : null;
 }
 
+/** What a closed tab leaves behind for "Reopen closed tab". */
+interface ClosedTab {
+  worktree: string;
+  profileId: PtyProfile;
+  account: string | null;
+  cli: TabCli;
+}
+
+/** How many closed tabs `reopenClosed` can give back. */
+export const CLOSED_KEPT = 10;
+
 /**
  * The terminal tabs of every worktree, alive for the whole app. Views read it through
  * `subscribe` + `tabs`, which hand back the same array until something changes.
@@ -100,6 +111,8 @@ export class Sessions {
   private readonly stale = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly unlisten: Promise<() => void>[];
   private hooksOn = true;
+  // Tabs the person closed, newest last.
+  private readonly closed: ClosedTab[] = [];
 
   constructor(
     private readonly api: Api,
@@ -179,8 +192,23 @@ export class Sessions {
   async close(id: string): Promise<void> {
     const entry = this.entries.get(id);
     if (!entry) return;
+    const { worktree, profileId, account, cli } = entry.tab;
+    this.closed.push({ worktree, profileId, account, cli });
+    if (this.closed.length > CLOSED_KEPT) this.closed.shift();
     this.remove([entry]);
     await entry.tab.client.dispose();
+  }
+
+  /**
+   * Opens a tab like the most recent one closed in `worktree` and forgets that one. An agent comes
+   * back as a fresh agent (resuming is the session history's job). `null` when none was closed.
+   */
+  reopenClosed(worktree: string): Tab | null {
+    let at = this.closed.length - 1;
+    while (at >= 0 && this.closed[at].worktree !== worktree) at--;
+    if (at < 0) return null;
+    const [last] = this.closed.splice(at, 1);
+    return this.open(last.worktree, last.profileId, last.account, last.cli);
   }
 
   /** Kills every tab of a worktree; resolves when each reported its exit, or after 5 s. */

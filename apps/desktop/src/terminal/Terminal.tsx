@@ -7,6 +7,7 @@ import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { JSX, Ref } from "react";
 import { toApiError, type Api, type ApiError, type PtyInfo, type PtyProfile } from "@/api";
 import { useI18n } from "@/i18n";
+import { appOwnsKey } from "@/keys/keymap";
 import { PtyClient } from "./ptyClient";
 import { createTerminalHandle } from "./terminalActions";
 import { getTerminalSettings, subscribeTerminalSettings } from "./terminalSettings";
@@ -106,12 +107,41 @@ export function Terminal(props: {
     // No opener plugin in the app: the webview hands the link to the system browser.
     term.loadAddon(new WebLinksAddon((_event, uri) => window.open(uri, "_blank", "noopener")));
     term.open(el);
+    // A chord the app owns (per the key policy) never reaches the program: a terminal action runs
+    // here, any other one has run in the window handler before xterm saw it.
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type === "keydown" && e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "f") {
-        setFinding(true);
-        return false;
+      if (e.type !== "keydown") return true;
+      const action = appOwnsKey(e);
+      if (action === null) return true;
+      switch (action) {
+        case "terminal.find":
+          setFinding(true);
+          break;
+        case "terminal.clear":
+          term.clear();
+          break;
+        case "terminal.selectAll":
+          term.selectAll();
+          break;
+        case "terminal.copy": {
+          const text = term.getSelection();
+          if (text) void navigator.clipboard?.writeText(text).catch(() => {});
+          break;
+        }
+        case "terminal.paste":
+          void navigator.clipboard
+            ?.readText()
+            .then((text) => {
+              if (text) term.paste(text);
+            })
+            .catch(() => {});
+          break;
+        default:
+          return false;
       }
-      return true;
+      // The browser's own paste or select-all would act as well.
+      e.preventDefault();
+      return false;
     });
     term.onSelectionChange(() => {
       const text = term.getSelection();

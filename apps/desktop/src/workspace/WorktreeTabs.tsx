@@ -288,6 +288,7 @@ export function WorktreeTabs(props: {
     {
       "agent.new": () => void launchGated(defaultAgent),
       "tab.new": () => newShell(),
+      "tab.reopenClosed": () => sessions.reopenClosed(worktree) !== null,
       "tab.close": () => requestClose(shown ? [shown] : []),
       "tab.next": () => stepTab(1),
       "tab.prev": () => stepTab(-1),

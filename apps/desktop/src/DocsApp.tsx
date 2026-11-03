@@ -33,7 +33,7 @@ import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { SquadsView } from "./components/SquadsView";
 import { TasksView } from "./components/TasksView";
-import { docsShown } from "./keys/docsShown";
+import { useKeymap } from "./keys/keymap";
 import { TerminalView } from "./terminal/TerminalView";
 import { isDirty } from "./doc/docState";
 import { agentsEditable, parseFrontmatter, setAgents, setVerified } from "./doc/frontmatter";
@@ -282,22 +282,14 @@ function VaultView(props: { vault: Vault; kit?: KitHost; onChangeFolder(): Promi
     };
   }, [query, revision]);
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        searchInput.current?.focus();
-        searchInput.current?.select();
-      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "n") {
-        // The workspace keeps this view mounted while hidden; Ctrl+N is for the docs view only.
-        if (!docsShown()) return;
-        e.preventDefault();
-        startNewDoc();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  // The keymap only runs these while the docs view is shown, though the workspace keeps it mounted.
+  useKeymap({
+    "docs.search": () => {
+      searchInput.current?.focus();
+      searchInput.current?.select();
+    },
+    "docs.new": () => startNewDoc(),
+  });
 
   useEffect(() => {
     // Approved or rejected (here or in a terminal): there is nothing left to diff, so back to the doc.

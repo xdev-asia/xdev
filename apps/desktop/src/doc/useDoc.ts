@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useKeymap } from "@/keys/keymap";
 import { toApiError, type Api } from "@/api";
 import { docReducer, initialDocState, isDirty, type DocAction, type DocState } from "./docState";
 
@@ -97,16 +98,7 @@ export function useDoc(api: Api): {
     [dispatch, saveNow],
   );
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        void saveNow();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [saveNow]);
+  useKeymap({ "docs.save": () => void saveNow() });
 
   useEffect(() => {
     let off: (() => void) | undefined;

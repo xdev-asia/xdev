@@ -24,6 +24,8 @@ import { WorkspaceShell } from "./WorkspaceShell";
 import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeList } from "./WorktreeList";
 import { WorktreeTabs } from "./WorktreeTabs";
+import { Toasts } from "./Toasts";
+import { SessionsSidebar } from "@/agentSessions/SessionsSidebar";
 
 // Hooks are stubbed only while the shell itself is called; children rendered to markup use React's own.
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -54,8 +56,11 @@ vi.mock("@/palette/useJumpKey", () => ({ useJumpKey: (fn: () => void) => { jump.
 const keymap = vi.hoisted(() => ({ handlers: {} as Record<string, () => boolean | void>, when: (() => true) as () => boolean }));
 vi.mock("@/keys/keymap", async (original) => ({
   ...await original<typeof import("@/keys/keymap")>(),
-  useKeymap: (handlers: Record<string, () => boolean | void>, opts?: { when?: () => boolean }) => { keymap.handlers = handlers; keymap.when = opts?.when ?? (() => true); },
+  // A shell calls useKeymap more than once; the handlers add up, and `when` is the last call's.
+  useKeymap: (handlers: Record<string, () => boolean | void>, opts?: { when?: () => boolean }) => { keymap.handlers = { ...keymap.handlers, ...handlers }; keymap.when = opts?.when ?? (() => true); },
 }));
+const termKey = vi.hoisted(() => ({ host: null as null | { t: (k: string) => string; openShortcuts: (a: string) => void } }));
+vi.mock("@/keys/terminalKey", async (original) => ({ ...await original<typeof import("@/keys/terminalKey")>(), setTerminalKeyHost: (h: typeof termKey.host) => { termKey.host = h; } }));
 // xterm needs a real canvas; the terminals are tested on their own.
 vi.mock("@/terminal/Terminal", () => ({ Terminal: () => null }));
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
@@ -914,4 +919,68 @@ it("delete: an untrusted archive script shows the trust prompt, then removes", a
   await tick();
   expect(v.trust()).toBeUndefined();
   expect(v.remove).toHaveBeenCalledOnce();
+});
+
+// ---- Global keys ----
+
+it("sessions.open shows the sessions view with the search box asked for focus", async () => {
+  const view = await harness();
+  view.nav(en("workspace.nav.docs")).props.onClick();
+  view.draw();
+  const before = view.of(SessionsSidebar)[0]?.props.focusSeq;
+  expect(keymap.handlers["sessions.open"]()).not.toBe(false);
+  view.draw();
+  const side = view.of(SessionsSidebar)[0];
+  expect(side.props.visible).toBe(true);
+  expect(side.props.focusSeq).toBeGreaterThan(before ?? 0);
+  expect(keymap.when()).toBe(true);
+});
+
+it("the toast host is mounted, and its Open Shortcuts button opens that page filtered to the action", async () => {
+  const view = await harness();
+  expect(view.of(Toasts)).toHaveLength(1);
+  view.draw();
+  // Every effect of a render; the one that registers the terminal key host is among them.
+  for (const effect of hooks.effects.slice(2)) {
+    try { effect(); } catch { /* the others need a window */ }
+  }
+  expect(termKey.host).not.toBeNull();
+  termKey.host!.openShortcuts("panel.sourceControl");
+  view.draw();
+  const settings = view.of(SettingsView)[0];
+  expect(settings.props.initial).toBe("keys");
+  expect(settings.props.filter).toBe("panel.sourceControl");
+});
+
+it("sidebar and panel keys toggle the left sidebar and the right panel", async () => {
+  const view = await harness();
+  const region = (cls: string) => view.all().find((n) => n.props.className === cls)!;
+  expect(region("ws-sidebar").props.hidden).toBe(false);
+  keymap.handlers["sidebar.left.toggle"]();
+  view.draw();
+  expect(region("ws-sidebar").props.hidden).toBe(true);
+  expect(region("ws-panel").props.hidden).toBe(false);
+  keymap.handlers["sidebar.right.toggle"]();
+  view.draw();
+  expect(region("ws-panel").props.hidden).toBe(true);
+  // A panel key reopens it on its tab; pressed again on that tab it closes.
+  keymap.handlers["panel.sourceControl"]();
+  view.draw();
+  expect(region("ws-panel").props.hidden).toBe(false);
+  keymap.handlers["panel.sourceControl"]();
+  view.draw();
+  expect(region("ws-panel").props.hidden).toBe(true);
+  keymap.handlers["panel.explorer"]();
+  view.draw();
+  expect(region("ws-panel").props.hidden).toBe(false);
+});
+
+it("settings and search keys open their views", async () => {
+  const view = await harness();
+  keymap.handlers["settings.shortcuts"]();
+  view.draw();
+  expect(view.of(SettingsView)[0].props.initial).toBe("keys");
+  keymap.handlers["search.open"]();
+  view.draw();
+  expect(view.of(DocsApp)).toHaveLength(1);
 });
