@@ -357,3 +357,138 @@ fn stage_state_flags_untracked_files() {
     assert!(state(&repo, "new.txt").unwrap().untracked);
     assert!(!state(&repo, "a.txt").unwrap().untracked);
 }
+
+#[test]
+fn discard_treats_glob_characters_literally() {
+    let dir = fixture();
+    write(dir.path(), "[ab].txt", "lit\n");
+    commit_all(dir.path(), "bracket");
+    write(dir.path(), "a.txt", "a2\n");
+    write(dir.path(), "b.txt", "b2\n");
+    write(dir.path(), "[ab].txt", "lit2\n");
+    let repo = Repo::discover(dir.path()).unwrap();
+    repo.discard(&paths(&["*.txt", "?.txt"]), true).unwrap();
+    assert_eq!(read(dir.path(), "a.txt"), "a2\n");
+    assert_eq!(read(dir.path(), "b.txt"), "b2\n");
+    repo.discard(&paths(&["[ab].txt"]), true).unwrap();
+    assert_eq!(read(dir.path(), "[ab].txt"), "lit\n");
+    assert_eq!(read(dir.path(), "a.txt"), "a2\n");
+    assert_eq!(read(dir.path(), "b.txt"), "b2\n");
+}
+
+#[test]
+fn discard_never_removes_an_untracked_folder() {
+    let dir = fixture();
+    write(dir.path(), "new/one.txt", "1\n");
+    write(dir.path(), "new/deep/two.txt", "2\n");
+    let repo = Repo::discover(dir.path()).unwrap();
+    repo.discard(&paths(&["new", "new/", "new/deep", "."]), true)
+        .unwrap();
+    assert!(dir.path().join("new/one.txt").exists());
+    assert!(dir.path().join("new/deep/two.txt").exists());
+}
+
+#[test]
+fn discard_leaves_a_nested_repository_alone() {
+    let dir = fixture();
+    let nested = dir.path().join("nested");
+    fs::create_dir_all(&nested).unwrap();
+    git(&nested, &["init", "-q"]);
+    write(&nested, "inner.txt", "inner\n");
+    let repo = Repo::discover(dir.path()).unwrap();
+    let listed: Vec<String> = repo
+        .stage_state()
+        .unwrap()
+        .into_iter()
+        .map(|s| s.path)
+        .collect();
+    repo.discard(&listed, true).unwrap();
+    repo.discard(&paths(&["nested", "nested/", "nested/inner.txt"]), true)
+        .unwrap();
+    assert!(nested.join("inner.txt").exists());
+    assert!(nested.join(".git").exists());
+}
+
+#[test]
+fn discard_leaves_a_submodule_checkout_alone() {
+    let sub = fixture();
+    let dir = fixture();
+    let url = sub.path().to_string_lossy().replace('\\', "/");
+    git(
+        dir.path(),
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "-q",
+            &url,
+            "sub",
+        ],
+    );
+    commit_all(dir.path(), "add sub");
+    write(&dir.path().join("sub"), "a.txt", "edited in sub\n");
+    write(&dir.path().join("sub"), "fresh.txt", "fresh\n");
+    let repo = Repo::discover(dir.path()).unwrap();
+    let listed: Vec<String> = repo
+        .stage_state()
+        .unwrap()
+        .into_iter()
+        .map(|s| s.path)
+        .collect();
+    let _ = repo.discard(&listed, true);
+    let _ = repo.discard(&paths(&["sub", "sub/a.txt", "sub/fresh.txt"]), true);
+    assert_eq!(read(&dir.path().join("sub"), "a.txt"), "edited in sub\n");
+    assert!(dir.path().join("sub/fresh.txt").exists());
+}
+
+#[test]
+fn discard_through_a_symlink_never_touches_its_target() {
+    let outside = TempDir::new().unwrap();
+    write(outside.path(), "target.txt", "outside\n");
+    write(outside.path(), "dir/inner.txt", "outside inner\n");
+    let dir = fixture();
+    #[cfg(windows)]
+    let made = std::os::windows::fs::symlink_file(
+        outside.path().join("target.txt"),
+        dir.path().join("link.txt"),
+    )
+    .and_then(|()| {
+        std::os::windows::fs::symlink_dir(outside.path().join("dir"), dir.path().join("linkdir"))
+    });
+    #[cfg(unix)]
+    let made = std::os::unix::fs::symlink(
+        outside.path().join("target.txt"),
+        dir.path().join("link.txt"),
+    )
+    .and_then(|()| {
+        std::os::unix::fs::symlink(outside.path().join("dir"), dir.path().join("linkdir"))
+    });
+    if made.is_err() {
+        eprintln!("symlinks unavailable here; skipped");
+        return;
+    }
+    let repo = Repo::discover(dir.path()).unwrap();
+    let listed: Vec<String> = repo
+        .stage_state()
+        .unwrap()
+        .into_iter()
+        .map(|s| s.path)
+        .collect();
+    let _ = repo.discard(&paths(&["linkdir/inner.txt", "linkdir"]), true);
+    let _ = repo.discard(&listed, true);
+    assert_eq!(read(outside.path(), "target.txt"), "outside\n");
+    assert_eq!(read(outside.path(), "dir/inner.txt"), "outside inner\n");
+}
+
+#[test]
+fn discard_refuses_drive_and_absolute_paths() {
+    let dir = fixture();
+    write(dir.path(), "a.txt", "changed\n");
+    let repo = Repo::discover(dir.path()).unwrap();
+    let abs = dir.path().join("a.txt").to_string_lossy().into_owned();
+    for bad in [abs.as_str(), "C:a.txt", "/a.txt", "\\a.txt"] {
+        let _ = repo.discard(&paths(&[bad]), true);
+    }
+    assert_eq!(read(dir.path(), "a.txt"), "changed\n");
+}
