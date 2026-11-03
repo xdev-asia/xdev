@@ -3,8 +3,8 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use notify_debouncer_full::notify::{RecommendedWatcher, RecursiveMode};
-use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
+use notify_debouncer_full::notify::{self, RecommendedWatcher, RecursiveMode};
+use notify_debouncer_full::{DebounceEventResult, Debouncer, NoCache, new_debouncer_opt};
 
 use crate::{VaultError, path};
 
@@ -13,8 +13,14 @@ use crate::{VaultError, path};
 const DEBOUNCE: Duration = Duration::from_millis(300);
 
 /// Watching stops when this is dropped.
+///
+/// `NoCache`, not the default file-id cache: on Windows and macOS that cache
+/// walks the whole tree when watching starts, which took 36 s on a 455k-file
+/// repo and held the vault open (and the window blank) until it finished.
+/// Only the file-id rename stitching is lost, and changes are reported by
+/// path anyway.
 pub struct VaultWatcher {
-    _debouncer: Debouncer<RecommendedWatcher, RecommendedCache>,
+    _debouncer: Debouncer<RecommendedWatcher, NoCache>,
 }
 
 pub(crate) fn start(
@@ -22,7 +28,7 @@ pub(crate) fn start(
     on_change: impl Fn(Vec<String>) + Send + 'static,
 ) -> Result<VaultWatcher, VaultError> {
     let watch_root = root.clone();
-    let mut debouncer = new_debouncer(DEBOUNCE, None, move |res: DebounceEventResult| {
+    let handler = move |res: DebounceEventResult| {
         // Errors are dropped: the caller re-syncs from disk on the next
         // change, which recovers anything a failed event would have carried.
         let Ok(events) = res else { return };
@@ -36,7 +42,14 @@ pub(crate) fn start(
         if !changed.is_empty() {
             on_change(changed.into_iter().collect());
         }
-    })
+    };
+    let mut debouncer = new_debouncer_opt::<_, RecommendedWatcher, NoCache>(
+        DEBOUNCE,
+        None,
+        handler,
+        NoCache::new(),
+        notify::Config::default(),
+    )
     .map_err(io::Error::other)?;
     debouncer
         .watch(&watch_root, RecursiveMode::Recursive)
