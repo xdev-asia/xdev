@@ -3,6 +3,10 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, type Api, type DirListing, type WorktreeChange } from "@/api";
 import { translate } from "@/i18n";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { NameDialog } from "@/files/NameDialog";
+import { onOpenFile, type OpenFileRequest } from "@/files/openFile";
+import { ContextMenu } from "@/ui/ContextMenu";
 import { FileTree } from "./FileTree";
 
 // Hooks are stubbed only while a component under test is called; each harness keeps its own.
@@ -138,10 +142,117 @@ it("opening a changed file calls onOpen", async () => {
   view.row("status.ts").props.onClick();
   expect(view.onOpen).toHaveBeenCalledTimes(1);
   expect(view.onOpen).toHaveBeenCalledWith("src/status.ts");
-  // A file with no change has no diff to open.
-  expect(view.row("App.tsx").type).toBe("div");
-  expect(view.row("App.tsx").props.onClick).toBeUndefined();
+  // A file with no change has no diff: it opens in an editor, not as a diff.
+  const opened: OpenFileRequest[] = [];
+  const stop = onOpenFile((r) => opened.push(r));
+  view.row("App.tsx").props.onClick();
+  stop();
+  expect(opened).toEqual([{ worktree: OAK, rel: "src/App.tsx" }]);
   expect(view.onOpen).toHaveBeenCalledTimes(1);
+});
+
+it("the filter keeps loaded names that match, and the folders above them", async () => {
+  const view = tree(createMockApi({}));
+  await tick();
+  view.row("src").props.onClick();
+  await tick();
+  view.all().find((n) => n.props["data-field"] === "filter")!.props.onChange({ target: { value: "app" } });
+  expect(view.rows().map(view.label)).toEqual(["src", "App.tsx"]);
+  view.all().find((n) => n.props["data-field"] === "filter")!.props.onChange({ target: { value: "" } });
+  expect(view.rows().length).toBeGreaterThan(2);
+});
+
+it("Collapse all closes every folder", async () => {
+  const view = tree(createMockApi({}));
+  await tick();
+  view.row("src").props.onClick();
+  await tick();
+  expect(view.row("src").props["aria-expanded"]).toBe(true);
+  view.all().find((n) => n.props["data-action"] === "collapse")!.props.onClick();
+  expect(view.row("src").props["aria-expanded"]).toBe(false);
+});
+
+it("Refresh reads the shown folders again", async () => {
+  const api = createMockApi({});
+  const list = vi.spyOn(api, "worktreeListDir");
+  const view = tree(api);
+  await tick();
+  expect(list).toHaveBeenCalledTimes(1);
+  view.all().find((n) => n.props["data-action"] === "refresh")!.props.onClick();
+  view.again(CHANGES);
+  await tick();
+  expect(list).toHaveBeenCalledTimes(2);
+});
+
+const menuOf = (view: ReturnType<typeof tree>) => view.all().find((n) => n.type === ContextMenu)?.props;
+const rightClick = (view: ReturnType<typeof tree>, name: string) =>
+  view.row(name).props.onContextMenu({ preventDefault() {}, stopPropagation() {}, clientX: 5, clientY: 6 });
+
+it("the file menu lists the actions, the folder menu has no Open", async () => {
+  const view = tree(createMockApi({}));
+  await tick();
+  rightClick(view, "README.md");
+  expect(menuOf(view)!.items.map((i: { id: string }) => i.id)).toEqual(["open", "copyPath", "copyRel", "sep1", "newFile", "newFolder", "rename", "delete", "sep2", "reveal"]);
+  menuOf(view)!.onClose();
+  expect(menuOf(view)).toBeUndefined();
+  rightClick(view, "docs");
+  expect(menuOf(view)!.items.map((i: { id: string }) => i.id)).not.toContain("open");
+});
+
+it("Delete asks first; Cancel calls nothing, Move to trash calls fileTrash", async () => {
+  const api = createMockApi({});
+  const trash = vi.spyOn(api, "fileTrash").mockResolvedValue(undefined);
+  const view = tree(api);
+  await tick();
+  rightClick(view, "README.md");
+  menuOf(view)!.items.find((i: { id: string }) => i.id === "delete").run();
+  const dialog = () => view.all().find((n) => n.type === ConfirmDialog)!.props;
+  expect(dialog().open).toBe(true);
+  expect(dialog().title).toBe(en("files.delete.title", { name: "README.md" }));
+  dialog().onCancel();
+  expect(dialog().open).toBe(false);
+  expect(trash).not.toHaveBeenCalled();
+  rightClick(view, "README.md");
+  menuOf(view)!.items.find((i: { id: string }) => i.id === "delete").run();
+  dialog().onConfirm();
+  await tick();
+  expect(trash).toHaveBeenCalledWith(OAK, "README.md");
+});
+
+it("New file asks for a name, refuses a bad one in words, then creates and opens it", async () => {
+  const api = createMockApi({});
+  const create = vi.spyOn(api, "fileCreate").mockResolvedValue(undefined);
+  const view = tree(api);
+  await tick();
+  view.row("src").props.onClick();
+  await tick();
+  rightClick(view, "src");
+  menuOf(view)!.items.find((i: { id: string }) => i.id === "newFile").run();
+  const dialog = () => view.all().find((n) => n.type === NameDialog)!.props;
+  expect(dialog().siblings).toContain("App.tsx");
+  dialog().onCancel();
+  expect(view.all().find((n) => n.type === NameDialog)).toBeUndefined();
+  expect(create).not.toHaveBeenCalled();
+  rightClick(view, "src");
+  menuOf(view)!.items.find((i: { id: string }) => i.id === "newFile").run();
+  dialog().onConfirm("new.ts");
+  await tick();
+  expect(create).toHaveBeenCalledWith(OAK, "src/new.ts", false);
+});
+
+it("Rename calls fileRename beside the old name", async () => {
+  const api = createMockApi({});
+  const rename = vi.spyOn(api, "fileRename").mockResolvedValue(undefined);
+  const view = tree(api);
+  await tick();
+  rightClick(view, "README.md");
+  menuOf(view)!.items.find((i: { id: string }) => i.id === "rename").run();
+  const dialog = view.all().find((n) => n.type === NameDialog)!.props;
+  expect(dialog.initial).toBe("README.md");
+  expect(dialog.siblings).not.toContain("README.md");
+  dialog.onConfirm("READ.md");
+  await tick();
+  expect(rename).toHaveBeenCalledWith(OAK, "README.md", "READ.md");
 });
 
 it("shows … when truncated", async () => {

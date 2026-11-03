@@ -7,7 +7,7 @@ import type { ActionId } from "./keymap";
 export type { Platform };
 
 export type ShortcutGroup =
-  | "tabs" | "panes" | "worktrees" | "agents" | "terminal" | "view" | "panels" | "docs" | "app";
+  | "tabs" | "panes" | "worktrees" | "agents" | "terminal" | "view" | "panels" | "docs" | "editor" | "app";
 
 export interface ShortcutDef {
   id: ActionId;
@@ -95,6 +95,8 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("docs.search", "docs", ["Mod+K"], DOCS),
   def("docs.new", "docs", ["Mod+N"], DOCS),
   def("docs.save", "docs", ["Mod+S"], DOCS),
+  // Editor: a file tab in front; the tabs view declines the key otherwise.
+  def("file.save", "editor", ["Mod+S"]),
   // App.
   def("palette.jump", "app", ["Mod+J"]),
   def("search.open", "app", ["Mod+K"]),

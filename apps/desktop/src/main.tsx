@@ -23,6 +23,7 @@ import "./styles/workspace.css";
 import "./styles/review.css";
 import "./styles/settings.css";
 import "./styles/quickCommands.css";
+import { startEditorSettingsSync } from "./files/editorSettings";
 import "./styles/agentSessions.css";
 
 const style = document.createElement("style");
@@ -33,6 +34,7 @@ document.head.prepend(style);
 void loadStatusSettings(api);
 void loadTerminalSettings(api);
 startSettingsSync(api);
+startEditorSettingsSync(api);
 // The shortcuts: keybindings.json over the defaults, and the terminal key policy.
 startBindingsSync(api);
 

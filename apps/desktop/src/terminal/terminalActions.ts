@@ -1,3 +1,4 @@
+import { copyText } from "@/ui/clipboard";
 import type { PtyClient } from "./ptyClient";
 import type { TerminalHandle } from "./Terminal";
 
@@ -62,16 +63,7 @@ export function createTerminalHandle(deps: HandleDeps): TerminalHandle {
   };
 }
 
-/** Writes text to the system clipboard (the writer copy-on-select uses); false when the webview refuses. */
-export async function copyText(text: string): Promise<boolean> {
-  if (!navigator.clipboard) return false;
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
-}
+export { copyText };
 
 /** The header of Copy Context. `exitCode` undefined means the program still runs. */
 export interface ContextInfo {
