@@ -15,7 +15,7 @@ use xdev_git::{ChangeKind, GitError, Repo};
 use xdev_policy::{Action, Gate, Verdict};
 use xdev_workspace::{
     Registry, RepoView, WorkspaceError, WorktreeView, add_repo, create_worktree, forget_repo, list,
-    remove_worktree, set_pinned,
+    path_key, remove_worktree, set_pinned,
 };
 
 use crate::accounts::data_dir;
@@ -114,17 +114,6 @@ fn parent_within(root: &Path, disk: &Path) -> Result<bool, CmdError> {
         Ok(parent) => Ok(parent.starts_with(fs::canonicalize(root)?)),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(true),
         Err(e) => Err(e.into()),
-    }
-}
-
-/// Registry paths and the UI's agree in this form, as in the workspace crate.
-fn path_key(path: &Path) -> String {
-    let text = path.to_string_lossy().replace('\\', "/");
-    let text = text.trim_end_matches('/');
-    if cfg!(windows) {
-        text.to_lowercase()
-    } else {
-        text.to_owned()
     }
 }
 
@@ -583,6 +572,18 @@ mod tests {
         assert_eq!(code(commit_files(&fx.first, &files, "  ")), "empty_message");
         let outside = ["../x".to_owned()];
         assert_eq!(code(commit_files(&fx.first, &outside, "m")), "bad_arg");
+    }
+
+    #[test]
+    fn path_key_is_the_workspace_crates() {
+        let key = |p: &str| xdev_workspace::path_key(Path::new(p));
+        assert_eq!(key("/r/wt/a/"), "/r/wt/a");
+        assert_eq!(key("/r/wt/a//"), "/r/wt/a");
+        if cfg!(windows) {
+            assert_eq!(key("C:\\R\\Wt\\A\\"), "c:/r/wt/a");
+        } else {
+            assert_eq!(key("/R/Wt"), "/R/Wt");
+        }
     }
 
     #[test]

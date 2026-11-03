@@ -39,8 +39,9 @@ pub struct WorktreeView {
     pub detached: bool,
 }
 
-/// Paths from git and from the registry compare in this form.
-fn path_key(path: &Path) -> String {
+/// Paths from git, the registry and the UI compare in this form: `/` as the
+/// separator, no trailing `/`, lowercased on Windows.
+pub fn path_key(path: &Path) -> String {
     normalize(path).trim_end_matches('/').to_owned()
 }
 
