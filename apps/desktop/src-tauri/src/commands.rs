@@ -163,39 +163,33 @@ pub fn terminal_settings_put(
 /// Settings → Shortcuts: the terminal policy and the hint toggle; the
 /// defaults when nothing is stored.
 #[tauri::command(async)]
-pub fn key_settings_get(_app: AppHandle) -> settings::KeySettings {
-    settings::KeySettings::default()
+pub fn key_settings_get(app: AppHandle) -> settings::KeySettings {
+    settings_store::read(&app).keys
 }
 
 /// Stores the key settings and returns what was stored.
 #[tauri::command(async)]
 pub fn key_settings_put(
-    _app: AppHandle,
-    _settings: settings::KeySettings,
+    app: AppHandle,
+    settings: settings::KeySettings,
 ) -> Result<settings::KeySettings, CmdError> {
-    Err(CmdError {
-        code: "io",
-        detail: Some("key settings: not implemented yet".into()),
-    })
+    settings_store::write(&app, &[SettingsSection::Keys], |s| s.keys = settings).map(|s| s.keys)
 }
 
 /// The window's view settings (zoom); the defaults when nothing is stored.
 #[tauri::command(async)]
-pub fn ui_settings_get(_app: AppHandle) -> settings::UiSettings {
-    settings::UiSettings::default()
+pub fn ui_settings_get(app: AppHandle) -> settings::UiSettings {
+    settings_store::read(&app).ui
 }
 
 /// Stores the view settings with the zoom clamped, and returns what was
 /// stored.
 #[tauri::command(async)]
 pub fn ui_settings_put(
-    _app: AppHandle,
-    _settings: settings::UiSettings,
+    app: AppHandle,
+    settings: settings::UiSettings,
 ) -> Result<settings::UiSettings, CmdError> {
-    Err(CmdError {
-        code: "io",
-        detail: Some("ui settings: not implemented yet".into()),
-    })
+    settings_store::write(&app, &[SettingsSection::Ui], |s| s.ui = settings.clamped()).map(|s| s.ui)
 }
 
 /// The global git `user.name` that the git-username prefix shows; a repo's
