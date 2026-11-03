@@ -5,9 +5,13 @@ use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Emitter, Manager, State};
 use xdev_core::{
-    Change, Commit, CoreError, DocEntry, DocLink, ExportPlan, Freshness, SearchHit, StaleDoc, Vault,
+    Change, Commit, CoreError, DocEntry, DocLink, ExportPlan, Freshness, Links, SearchHit,
+    StaleDoc, Vault,
 };
+use xdev_workspace::Registry;
 
+use crate::accounts::data_dir;
+use crate::links::links_for;
 use crate::session::Shared;
 use crate::settings;
 
@@ -128,7 +132,7 @@ pub fn create_vault(path: String, file: String, content: String) -> Result<(), C
 
 /// A folder that already has anything in it is the user's; only a fresh one
 /// gets the starter doc.
-fn create_vault_at(dir: &Path, file: &str, content: &str) -> Result<(), CmdError> {
+pub(crate) fn create_vault_at(dir: &Path, file: &str, content: &str) -> Result<(), CmdError> {
     // `:` too, so `C:x.md` or an NTFS stream name cannot escape `dir`.
     if file.contains(['/', '\\', ':']) || file.len() <= ".md".len() || !file.ends_with(".md") {
         return Err(CmdError {
@@ -291,16 +295,25 @@ pub fn backlinks(state: State<'_, AppState>, path: String) -> Result<Vec<DocLink
     state.session.with(|s| s.backlinks(&path))
 }
 
+/// Built per call from the registry, outside the session lock: a repo may be
+/// added or renamed between two calls, and git is asked for each of them.
+fn links_of(state: &AppState, vault: &Vault) -> Result<Links, CmdError> {
+    let reg = Registry::load(data_dir(state)?)?;
+    Ok(links_for(&reg, vault.root()))
+}
+
 #[tauri::command(async)]
 pub fn doc_freshness(state: State<'_, AppState>, path: String) -> Result<Freshness, CmdError> {
     let (vault, repo) = state.session.freshness_source()?;
-    Ok(xdev_core::freshness(&vault, repo.as_ref(), &path)?)
+    let links = links_of(&state, &vault)?;
+    Ok(xdev_core::freshness(&vault, repo.as_ref(), &links, &path)?)
 }
 
 #[tauri::command(async)]
 pub fn stale_docs(state: State<'_, AppState>) -> Result<Vec<StaleDoc>, CmdError> {
     let (vault, repo) = state.session.freshness_source()?;
-    Ok(xdev_core::stale_docs(&vault, repo.as_ref())?)
+    let links = links_of(&state, &vault)?;
+    Ok(xdev_core::stale_docs(&vault, repo.as_ref(), &links)?)
 }
 
 /// Outside the session lock: reading every doc and asking git for the repo

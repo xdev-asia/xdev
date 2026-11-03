@@ -1,4 +1,4 @@
-import { useCallback, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { profileName, useProfiles } from "../agents/profileStore";
 import { type Api, type ApiError, type PtyProfile } from "../api";
@@ -44,6 +44,10 @@ export function WorktreeTabs(props: {
   worktree: string;
   visible: boolean;
   reveal?: Reveal;
+  /** Brings a terminal tab to the front; a new `seq` is a new request. */
+  front?: { id: string; seq: number };
+  /** Told which tab is in front, so the shell knows where a prompt from the Agent kit goes. */
+  onShown?: (id: string | null) => void;
 }): JSX.Element {
   const { api, sessions, worktree, visible, reveal } = props;
   const { t } = useI18n();
@@ -55,6 +59,7 @@ export function WorktreeTabs(props: {
   // Open diff tabs; `seq` keys the view, so opening a file again reads it again.
   const [files, setFiles] = useState<Reveal[]>([]);
   const [revealed, setRevealed] = useState(0);
+  const [fronted, setFronted] = useState(0);
 
   // Taken during render, so the frame that asks for a file already shows it.
   let open = files;
@@ -67,12 +72,21 @@ export function WorktreeTabs(props: {
     setActive(pick);
   }
 
+  if (props.front && props.front.seq !== fronted) {
+    pick = props.front.id;
+    setFronted(props.front.seq);
+    setActive(pick);
+  }
+
   const subscribe = useCallback((listener: () => void) => sessions.subscribe(listener), [sessions]);
   const snapshot = () => sessions.tabs(worktree);
   const tabs = useSyncExternalStore(subscribe, snapshot, snapshot);
   // A closed tab hands the view to the newest terminal, else to the newest diff.
   const ids = [...tabs.map((tab) => tab.id), ...open.map((f) => fileTab(f.file))];
   const shown = pick && ids.includes(pick) ? pick : (tabs[tabs.length - 1]?.id ?? (open.length ? fileTab(open[open.length - 1].file) : null));
+
+  const { onShown } = props;
+  useEffect(() => onShown?.(shown), [shown]);
 
   // The split pairs the shown terminal with one other; a diff tab in front shows alone.
   const splitSnapshot = () => sessions.split(worktree);

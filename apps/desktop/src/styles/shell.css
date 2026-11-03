@@ -416,7 +416,8 @@
   border-color: transparent;
 }
 
-.docitem-stale[data-state="unknown"] {
+.docitem-stale[data-state="unknown"],
+.docitem-stale[data-state="unlinked"] {
   font-weight: 500;
   color: var(--x-color-muted);
   background: var(--x-color-surface-2);

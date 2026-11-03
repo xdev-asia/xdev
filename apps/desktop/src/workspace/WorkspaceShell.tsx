@@ -3,16 +3,23 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import logo from "../../../../docs/brand/xdev-icon-512.png";
 import { ProfilesProvider } from "../agents/profileStore";
-import { toApiError, type Api, type ApiError, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "../api";
+import { toApiError, type Api, type ApiError, type Check, type PrView, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "../api";
 import { DocsApp } from "../DocsApp";
+import type { KitTab } from "../components/AgentKitView";
 import { LanguageSwitch } from "../components/LanguageSwitch";
 import { useI18n } from "../i18n";
+import { SettingsView } from "../settings/SettingsView";
+import { ChecksPanel } from "./ChecksPanel";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
+import { VaultNav } from "./VaultNav";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
+import { sendToAgentTab } from "./agentPrompt";
+import { sendTarget } from "./sendTarget";
 import { Sessions } from "./sessions";
+import { PrStore } from "./prs";
 import { WorktreeStats } from "./stats";
 import type { TabStatus } from "./status";
 import { WorktreeChanges } from "./WorktreeChanges";
@@ -38,8 +45,8 @@ function storeSelected(path: string): void {
   }
 }
 
-type View = "workspace" | "docs";
-type PanelTab = "files" | "changes";
+type View = "workspace" | "docs" | "settings";
+type PanelTab = "files" | "changes" | "checks";
 type Creating = { repoId: string; busy: boolean; error?: ApiError["code"] };
 type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"] };
 
@@ -52,11 +59,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [view, setView] = useState<View>("workspace");
   // The docs app mounts on first visit and then stays, so its editor state survives a switch.
   const [docsMounted, setDocsMounted] = useState(false);
+  // A request for the Agent kit to open a tab; a new `seq` is a new request.
+  const [kitOpen, setKitOpen] = useState<{ tab: KitTab; seq: number } | null>(null);
+  // The tab in front of each worktree, which is where a prompt from the Agent kit is typed.
+  const [shownTab, setShownTab] = useState<Record<string, string | null>>({});
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sessions, setSessions] = useState<Sessions | null>(null);
   const [creating, setCreating] = useState<Creating | null>(null);
   const [removing, setRemoving] = useState<Removing | null>(null);
   const [notice, setNotice] = useState<ApiError["code"]>();
+  const [fixNote, setFixNote] = useState(false);
+  // A request to bring a tab to the front of its worktree; a new `seq` is a new request.
+  const [front, setFront] = useState<{ worktree: string; id: string; seq: number } | null>(null);
   // Worktrees shown so far; their tabs stay mounted, hidden, so a switch never stops a pty.
   const [visited, setVisited] = useState<string[]>([]);
   // The file a diff tab should show, for the worktree that asked.
@@ -70,6 +84,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
   const [stats] = useState(() => new WorktreeStats());
+  // Bumped when a vault opens from the sidebar, so the docs app boots again on the new folder.
+  const [docsKey, setDocsKey] = useState(0);
+  // Pull requests and checks of every worktree, shared by the ship bar and the panels.
+  const [prs] = useState(() => new PrStore(api));
 
   // One store of terminal tabs for the whole shell. Made in an effect so a dev double mount
   // disposes the first one; disposing kills its ptys.
@@ -107,10 +125,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   const paths = repos?.flatMap((r) => r.worktrees.map((w) => w.path)) ?? [];
   const subscribe = useCallback((listener: () => void) => sessions?.subscribe(listener) ?? (() => {}), [sessions]);
+  // The live agent tab in front of a worktree, if any: where the Agent kit types.
+  const target = (path: string | undefined) => (sessions && path ? sendTarget(sessions.tabs(path), shownTab[path] ?? null) : null);
   // A string, so an unchanged store reads as the same snapshot.
-  const signature = () => (sessions ? paths.map((p) => `${sessions.dot(p) ?? ""}:${working(sessions, p)}`).join("|") : "");
+  const signature = () => (sessions ? paths.map((p) => `${sessions.dot(p) ?? ""}:${working(sessions, p)}:${target(p)?.id ?? ""}`).join("|") : "");
   useSyncExternalStore(subscribe, signature, signature);
   useSyncExternalStore(stats.subscribe, stats.snapshot, stats.snapshot);
+  useSyncExternalStore(useCallback((fn: () => void) => prs.subscribe(fn), [prs]), () => prs.snapshot(), () => prs.snapshot());
 
   const dots: Record<string, TabStatus | null> = Object.fromEntries(paths.map((p) => [p, sessions?.dot(p) ?? null]));
   const activity: Record<string, number | null> = Object.fromEntries(paths.map((p) => [p, sessions?.lastActivity(p) ?? null]));
@@ -128,6 +149,22 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const mounted = seen.filter((p) => paths.includes(p));
 
   const count = current && changeCount?.worktree === current.path ? changeCount.count : 0;
+  // Failed and cancelled runs both count, as in `checksSummary`.
+  const failing = (current ? prs.get(current.path)?.checks ?? [] : []).filter((c) => c.bucket === "fail" || c.bucket === "cancel").length;
+  const prMap: Record<string, { pr: PrView | null; checks: Check[] | null }> = {};
+  for (const p of paths) {
+    const entry = prs.get(p);
+    if (entry) prMap[p] = { pr: entry.pr, checks: entry.checks };
+  }
+  const currentPath = current?.path;
+  // The pull request of the worktree in front, read when it is selected and when the window returns.
+  useEffect(() => {
+    if (!currentPath) return;
+    void prs.load(currentPath);
+    const again = () => void prs.load(currentPath);
+    window.addEventListener("focus", again);
+    return () => window.removeEventListener("focus", again);
+  }, [prs, currentPath]);
   const markedChanges = current && changeList?.worktree === current.path ? changeList.list : NO_CHANGES;
 
   function openFile(worktree: string, file: string): void {
@@ -160,6 +197,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     } catch (e) {
       setNotice(toApiError(e).code);
     }
+  }
+
+  async function adopt(wt: WorktreeView): Promise<void> {
+    setNotice(undefined);
+    try {
+      await api.worktreeAdopt(wt.path);
+      await load();
+    } catch (e) {
+      setNotice(toApiError(e).code);
+    }
+  }
+
+  // The docs app marks its status line while the open doc differs from disk; DocsApp.tsx stays as is.
+  function docsSaved(): boolean {
+    return typeof document === "undefined" || !document.querySelector(".ws-docs .doc-status[data-dirty]");
   }
 
   function startCreate(repoId?: string): void {
@@ -201,6 +253,34 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   function show(next: View): void {
     setView(next);
     if (next === "docs") setDocsMounted(true);
+  }
+
+  function openUsage(): void {
+    setKitOpen((k) => ({ tab: "usage", seq: (k?.seq ?? 0) + 1 }));
+    show("docs");
+  }
+
+  // The Kit shows a request once, then hands it back; a later mount of a host finds none waiting.
+  function kitOpened(seq: number): void {
+    setKitOpen((k) => (k && k.seq === seq ? null : k));
+  }
+
+  // Types into the tab in front when it is a live agent tab. No Enter is sent, so the person reads it first.
+  async function sendToAgent(text: string): Promise<boolean> {
+    const tab = target(current?.path);
+    if (!tab) return false;
+    await tab.client.input(text);
+    return true;
+  }
+
+  // Gives a failed commit hook's output to an agent of the worktree and brings its tab to the front.
+  async function fixWithAgent(output: string): Promise<void> {
+    if (!sessions || !current) return;
+    const path = current.path;
+    const prompt = `The git commit hook failed. Fix the problem it reports, then stop; do not commit.\n\n${output}`;
+    const tab = await sendToAgentTab(sessions, path, shownTab[path] ?? null, prompt);
+    setFixNote(!tab);
+    if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
   }
 
   // The docs app has the only search for now; it shows after this render, so its box is looked up then.
@@ -251,14 +331,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         <div className="ws-header-center">
           <HeaderSearch onOpen={openSearch} />
         </div>
-        {/* Nothing feeds notifications yet and settings has no home, so both wait, disabled. */}
+        {/* Nothing feeds notifications yet, so that button waits, disabled. */}
         <button type="button" className="ws-icon-btn ws-header-btn" disabled aria-label={t("workspace.header.notifications")} title={t("workspace.header.soon")}>
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
             <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
             <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
           </svg>
         </button>
-        <button type="button" className="ws-icon-btn ws-header-btn" disabled aria-label={t("workspace.header.settings")} title={t("workspace.header.soon")}>
+        <button
+          type="button"
+          className="ws-icon-btn ws-header-btn"
+          aria-label={t("workspace.header.settings")}
+          title={t("workspace.header.settings")}
+          aria-pressed={view === "settings"}
+          onClick={() => show("settings")}
+        >
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
@@ -292,6 +379,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               </svg>
               <span>{t("workspace.nav.docs")}</span>
             </button>
+            {view === "docs" && (
+              <VaultNav
+                api={api}
+                canOpen={docsSaved}
+                onOpened={() => {
+                  setDocsMounted(true);
+                  setDocsKey((k) => k + 1);
+                }}
+              />
+            )}
           </nav>
           <WorktreeList
             repos={repos}
@@ -300,6 +397,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             stats={stats.all()}
             activity={activity}
             profiles={profiles}
+            prs={prMap}
             now={Date.now()}
             notice={notice}
             onSelect={(wt) => {
@@ -310,10 +408,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onPin={(wt) => void pin(wt)}
             onRemove={(wt) => setRemoving({ worktree: wt, dirty: false, busy: false })}
             onAddRepo={addRepo}
+            onAdopt={(wt) => void adopt(wt)}
           />
         </aside>
 
-        <div className="ws-stage" hidden={view === "docs"}>
+        <div className="ws-stage" hidden={view !== "workspace"}>
           <main className="ws-center" aria-label={t("workspace.center.label")}>
             {sessions &&
               mounted.map((path) => (
@@ -323,13 +422,20 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   sessions={sessions}
                   worktree={path}
                   visible={path === current?.path}
+                  onShown={(id) => setShownTab((s) => (s[path] === id ? s : { ...s, [path]: id }))}
                   reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq } : undefined}
+                  front={front?.worktree === path ? { id: front.id, seq: front.seq } : undefined}
                 />
               ))}
             {!current && repos && (
               <div className="ws-center-empty">
                 <p>{t("workspace.center.none")}</p>
               </div>
+            )}
+            {fixNote && (
+              <p className="error-text ws-notice" role="alert">
+                {t("ship.fix.noTab")}
+              </p>
             )}
           </main>
           <aside className="ws-panel" aria-label={t("workspace.panel.label")}>
@@ -365,6 +471,25 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   </span>
                 )}
               </button>
+              <button
+                type="button"
+                role="tab"
+                className="ws-panel-tab"
+                aria-selected={panelTab === "checks"}
+                aria-label={failing > 0 ? t("checks.tabFailing", { count: failing }) : t("checks.tab")}
+                title={t("checks.tab")}
+                onClick={() => setPanelTab("checks")}
+              >
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="m8.5 12.5 2.5 2.5 4.5-5" />
+                </svg>
+                {failing > 0 && (
+                  <span className="ws-panel-badge" data-tone="danger" aria-hidden="true">
+                    {failing}
+                  </span>
+                )}
+              </button>
             </div>
             {/* Both panels stay mounted, so the change list and the open folders survive a tab switch. */}
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "files"}>
@@ -387,10 +512,19 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   api={api}
                   worktree={current}
                   sessions={sessions}
+                  prs={prs}
                   onOpenFile={(file) => openFile(current.path, file)}
                   onCount={(n) => setChangeCount({ worktree: current.path, count: n })}
                   onChanges={(list) => setChangeList({ worktree: current.path, list })}
+                  onFixWithAgent={(output) => void fixWithAgent(output)}
                 />
+              ) : (
+                <p className="ws-empty">{t("workspace.panel.empty")}</p>
+              )}
+            </div>
+            <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "checks"}>
+              {current ? (
+                <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} visible={panelTab === "checks"} />
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
               )}
@@ -399,7 +533,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         </div>
 
         <div className="ws-docs" hidden={view !== "docs"}>
-          {docsMounted && <DocsApp />}
+          {docsMounted && <DocsApp key={docsKey} kit={{ worktree: current?.path ?? null, open: kitOpen, onOpened: kitOpened, onSendToAgent: sendToAgent, canSend: target(current?.path) !== null }} />}
+        </div>
+
+        <div className="ws-settings" hidden={view !== "settings"}>
+          {view === "settings" && <SettingsView api={api} onChanged={() => void load()} />}
         </div>
       </div>
 
@@ -411,6 +549,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         // Tabs that wait on the person arrive with Plan 4; none exist yet.
         waiting={0}
         version={pkg.version}
+        onOpenUsage={openUsage}
         hidden={view === "docs"}
       />
 

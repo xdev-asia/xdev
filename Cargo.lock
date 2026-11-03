@@ -6150,6 +6150,7 @@ dependencies = [
 name = "xdev-desktop"
 version = "0.3.0"
 dependencies = [
+ "dunce",
  "serde",
  "serde_json",
  "tauri",
@@ -6163,6 +6164,7 @@ dependencies = [
  "xdev-ai",
  "xdev-core",
  "xdev-git",
+ "xdev-kit",
  "xdev-policy",
  "xdev-pty",
  "xdev-workspace",
@@ -6184,9 +6186,23 @@ name = "xdev-git"
 version = "0.3.0"
 dependencies = [
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "ts-rs",
+]
+
+[[package]]
+name = "xdev-kit"
+version = "0.3.0"
+dependencies = [
+ "dunce",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "ts-rs",
+ "xdev-ai",
 ]
 
 [[package]]
@@ -6249,6 +6265,7 @@ name = "xdev-workspace"
 version = "0.3.0"
 dependencies = [
  "blake3",
+ "dunce",
  "serde",
  "serde_json",
  "tempfile",

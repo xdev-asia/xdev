@@ -1,0 +1,24 @@
+[package]
+name = "xdev-kit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+ts = ["dep:ts-rs"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ts-rs = { workspace = true, optional = true }
+xdev-ai.workspace = true
+
+[dev-dependencies]
+dunce = "1.0.5"
+tempfile.workspace = true
+
+[lints]
+workspace = true

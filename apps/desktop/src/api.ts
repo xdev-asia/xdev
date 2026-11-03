@@ -38,21 +38,35 @@ import type {
   UpdateInfo,
   VaultChanged,
   VaultSetup,
+  VaultView,
   VcsState,
   RepoView,
   WorktreeChange,
   WorktreeFileDiff,
   WorktreeStat,
   WorktreeView,
+  Check,
+  PrDraft,
+  PrView,
+  ShipView,
 } from "@xdev/bindings";
-import type { DirEntry, DirListing } from "@xdev/bindings";
+import type {
+  DirEntry,
+  DirListing,
+  Home,
+  KitText,
+  MemorySet,
+  PromptEntry,
+  Skill,
+  UsageSummary,
+} from "@xdev/bindings";
 import type { Target } from "./doc/frontmatter";
 import { toBytes } from "./terminal/ptyClient";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 
 export { createMockApi };
 export type { Target };
-export type { DirEntry, DirListing };
+export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
 
 // The IPC types come from Rust; see packages/bindings/README.md.
 export type {
@@ -102,7 +116,9 @@ export type {
   TasksContext,
   TaskState,
   UpdateInfo,
+  VaultKind,
   VaultSetup,
+  VaultView,
   VcsState,
   RepoView,
   WorktreeChange,
@@ -110,6 +126,10 @@ export type {
   WorktreeSkip,
   WorktreeStat,
   WorktreeView,
+  Check,
+  PrDraft,
+  PrView,
+  ShipView,
 } from "@xdev/bindings";
 // The UI's names for generated types.
 export type { Event as SquadEvent, FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
@@ -189,8 +209,30 @@ export type ErrorCode =
   | "invalid_profile"
   | "builtin_profile"
   | "profile_off"
-  | "not_installed";
+  | "not_installed"
+  | "outside"
+  | "kit_bad_input"
+  | "short_name_taken"
+  | "vault_exists"
+  | "vault_unknown"
+  | "no_remote"
+  | "no_upstream"
+  | "push_rejected"
+  | "pull_diverged"
+  | "force_base"
+  | "nothing_to_amend"
+  | "amend_pushed"
+  | "hook_failed"
+  | "not_pushed"
+  | "empty_title"
+  | "gh_missing"
+  | "gh_auth"
+  | "not_github"
+  | "gh_failed"
+  | "draft_failed";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
+
+export type RepoPatch = { shortName?: string; baseRef?: string; worktreeRoot?: string };
 
 export interface Api {
   // The downloaded update waiting for a restart, if any; Rust checks and downloads on its own.
@@ -303,6 +345,21 @@ export interface Api {
   repoAdd(path: string): Promise<RepoView>;
   // Only the entry goes; nothing on disk is touched.
   repoForget(id: string): Promise<void>;
+  // Only the fields given change. Rejects with `bad_name` / `short_name_taken` for the short name,
+  // `bad_ref` for a base ref that does not resolve, `bad_path` for a worktree folder that is relative
+  // or inside the primary checkout; a refused patch saves nothing.
+  repoUpdate(id: string, patch: RepoPatch): Promise<RepoView>;
+  // Records a worktree from `RepoView.found`. Rejects with `worktree_exists` when it is already
+  // recorded and `worktree_unknown` when no repo has it.
+  worktreeAdopt(path: string): Promise<WorktreeView>;
+  // Repo vaults (each repo's `docs/`, `exists: false` when there is none) then shared vaults.
+  vaultList(): Promise<VaultView[]>;
+  // Rejects with `bad_path` for a folder that is not there, `vault_exists` for one already listed.
+  vaultAdd(path: string): Promise<VaultView>;
+  // Only the record goes; the folder stays. Rejects with `vault_unknown`.
+  vaultForget(id: string): Promise<void>;
+  // Makes the repo's `docs/` with a starter doc; a folder with anything in it is left alone.
+  vaultCreateDocs(repoId: string, file: string, content: string): Promise<VaultView>;
   // A new branch and folder; a blank `name` gets a free word, a null `from` starts at the repo's
   // base ref. Rejects with `bad_name`, `branch_exists`, `worktree_exists` or `bad_ref`.
   worktreeCreate(repoId: string, name: string, from: string | null): Promise<WorktreeView>;
@@ -317,10 +374,53 @@ export interface Api {
   worktreeCommit(path: string, files: string[], message: string): Promise<string | null>;
   // Line counts against the start ref (against HEAD for the primary checkout), untracked files included.
   worktreeStat(path: string): Promise<WorktreeStat>;
+  // Shipping: where the branch stands against its upstream and base. Push, pull, sync and fetch
+  // resolve with the new state. Push rejects with `no_remote`, `detached` or `push_rejected`; pull
+  // with `no_upstream` or `pull_diverged`; a commit or amend with `hook_failed` (detail is the hook output).
+  worktreeShip(path: string): Promise<ShipView>;
+  worktreePush(path: string): Promise<ShipView>;
+  worktreePull(path: string): Promise<ShipView>;
+  worktreeSync(path: string): Promise<ShipView>;
+  worktreeFetch(path: string): Promise<ShipView>;
+  // `expected` is the remote commit the caller saw; without `confirmed` this rejects with `needs_approval`.
+  worktreeForcePush(path: string, expected: string, confirmed: boolean): Promise<ShipView>;
+  // The new commit's id. Rejects with `nothing_to_amend`, or `amend_pushed` unless `confirmed`.
+  worktreeAmend(path: string, files: string[], message: string, confirmed: boolean): Promise<string>;
+  // Pull requests through the `gh` tool; null when the branch has none.
+  worktreePr(path: string): Promise<PrView | null>;
+  worktreePrCreate(path: string, draft: PrDraft): Promise<PrView>;
+  worktreePrChecks(path: string, number: number): Promise<Check[]>;
+  worktreePrOpen(path: string, checks: boolean): Promise<void>;
+  // Drafted texts; reject with `draft_failed`.
+  worktreeDraftCommit(path: string, files: string[]): Promise<string>;
+  worktreeDraftPr(path: string): Promise<PrDraft>;
   // One folder level of a worktree (`dir` is relative; "" is the top): folders first, then files,
   // A to Z, `.git` left out, links listed as files and never followed, at most 2000 names with
   // `truncated` set past that. Rejects with `bad_path` for `..`, an absolute path or a link.
   worktreeListDir(path: string, dir: string): Promise<DirListing>;
+  // Agent kit. Every path is checked in Rust against the agent homes, the app data folder and
+  // `worktree` (a repo or worktree the workspace knows; any other rejects with `outside`).
+  kitHomes(): Promise<Home[]>;
+  kitSkills(worktree: string | null): Promise<Skill[]>;
+  kitMemory(worktree: string | null): Promise<MemorySet>;
+  kitRead(path: string, worktree: string | null): Promise<KitText>;
+  // `stamp` is the one `kitRead` gave (null for a new file); a file changed since rejects with
+  // `changed`. Resolves with the new stamp.
+  kitWrite(path: string, text: string, stamp: string | null, worktree: string | null): Promise<string>;
+  kitCopy(from: string, to: string, worktree: string | null): Promise<void>;
+  // Resolves with the new skill folder.
+  kitSkillCopy(dir: string, toSkillsDir: string, worktree: string | null): Promise<string>;
+  // Resolves with the path of the new SKILL.md.
+  kitSkillNew(skillsDir: string, name: string, description: string, worktree: string | null): Promise<string>;
+  // Moves the folder aside and resolves with where it went, for `kitSkillRestore`.
+  kitSkillRemove(dir: string, worktree: string | null): Promise<string>;
+  kitSkillRestore(removed: string, to: string, worktree: string | null): Promise<void>;
+  // Days are local `YYYY-MM-DD`; `refresh` reads the new session log bytes first.
+  kitUsage(sinceDay: string, untilDay: string, refresh: boolean): Promise<UsageSummary>;
+  // Whether each relative path exists under `root` (an agent home, repo or worktree).
+  kitPathsExist(root: string, paths: string[]): Promise<boolean[]>;
+  // Newest first, at most `limit` (and 1000).
+  kitPromptHistory(limit: number): Promise<PromptEntry[]>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -394,6 +494,26 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "builtin_profile",
   "profile_off",
   "not_installed",
+  "outside",
+  "kit_bad_input",
+  "short_name_taken",
+  "vault_exists",
+  "vault_unknown",
+  "no_remote",
+  "no_upstream",
+  "push_rejected",
+  "pull_diverged",
+  "force_base",
+  "nothing_to_amend",
+  "amend_pushed",
+  "hook_failed",
+  "not_pushed",
+  "empty_title",
+  "gh_missing",
+  "gh_auth",
+  "not_github",
+  "gh_failed",
+  "draft_failed",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -491,6 +611,12 @@ const tauriApi: Api = {
   workspaceList: () => call("workspace_list"),
   repoAdd: (path) => call("repo_add", { path }),
   repoForget: (id) => call("repo_forget", { id }),
+  repoUpdate: (id, patch) => call("repo_update", { id, ...patch }),
+  worktreeAdopt: (path) => call("worktree_adopt", { path }),
+  vaultList: () => call("vault_list"),
+  vaultAdd: (path) => call("vault_add", { path }),
+  vaultForget: (id) => call("vault_forget", { id }),
+  vaultCreateDocs: (repoId, file, content) => call("vault_create_docs", { repoId, file, content }),
   worktreeCreate: (repoId, name, from) => call("worktree_create", { repoId, name, from }),
   worktreePin: (path, pinned) => call("worktree_pin", { path, pinned }),
   worktreeRemove: (path, force, confirmed) => call("worktree_remove", { path, force, confirmed }),
@@ -498,7 +624,35 @@ const tauriApi: Api = {
   worktreeFileDiff: (path, file) => call("worktree_file_diff", { path, file }),
   worktreeCommit: (path, files, message) => call("worktree_commit", { path, files, message }),
   worktreeStat: (path) => call("worktree_stat", { path }),
+  worktreeShip: (path) => call("worktree_ship", { path }),
+  worktreePush: (path) => call("worktree_push", { path }),
+  worktreePull: (path) => call("worktree_pull", { path }),
+  worktreeSync: (path) => call("worktree_sync", { path }),
+  worktreeFetch: (path) => call("worktree_fetch", { path }),
+  worktreeForcePush: (path, expected, confirmed) => call("worktree_force_push", { path, expected, confirmed }),
+  worktreeAmend: (path, files, message, confirmed) => call("worktree_amend", { path, files, message, confirmed }),
+  worktreePr: (path) => call("worktree_pr", { path }),
+  worktreePrCreate: (path, draft) => call("worktree_pr_create", { path, draft }),
+  worktreePrChecks: (path, number) => call("worktree_pr_checks", { path, number }),
+  worktreePrOpen: (path, checks) => call("worktree_pr_open", { path, checks }),
+  worktreeDraftCommit: (path, files) => call("worktree_draft_commit", { path, files }),
+  worktreeDraftPr: (path) => call("worktree_draft_pr", { path }),
   worktreeListDir: (path, dir) => call("worktree_list_dir", { path, dir }),
+  kitHomes: () => call("kit_homes"),
+  kitSkills: (worktree) => call("kit_skills", { worktree }),
+  kitMemory: (worktree) => call("kit_memory", { worktree }),
+  kitRead: (path, worktree) => call("kit_read", { path, worktree }),
+  kitWrite: (path, text, stamp, worktree) => call("kit_write", { path, text, stamp, worktree }),
+  kitCopy: (from, to, worktree) => call("kit_copy", { from, to, worktree }),
+  kitSkillCopy: (dir, toSkillsDir, worktree) => call("kit_skill_copy", { dir, toSkillsDir, worktree }),
+  kitSkillNew: (skillsDir, name, description, worktree) => call("kit_skill_new", { skillsDir, name, description, worktree }),
+  kitSkillRemove: (dir, worktree) => call("kit_skill_remove", { dir, worktree }),
+  kitSkillRestore: (removed, to, worktree) => call("kit_skill_restore", { removed, to, worktree }),
+  // The local offset (UTC+7 is 420) decides which day a log line belongs to.
+  kitUsage: (sinceDay, untilDay, refresh) =>
+    call("kit_usage", { sinceDay, untilDay, refresh, utcOffsetMinutes: -new Date().getTimezoneOffset() }),
+  kitPathsExist: (root, paths) => call("kit_paths_exist", { root, paths }),
+  kitPromptHistory: (limit) => call("kit_prompt_history", { limit }),
 };
 
 function browserApi(): Api {

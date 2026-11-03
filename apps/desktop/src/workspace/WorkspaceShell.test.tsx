@@ -3,11 +3,15 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, type WorktreeChange, type WorktreeView } from "../api";
 import { DocsApp } from "../DocsApp";
+import { DEMO_WORKSPACE } from "../mockWorkspace";
 import { translate } from "../i18n";
+import { ChecksPanel } from "./ChecksPanel";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
+import { VaultNav } from "./VaultNav";
+import { SettingsView } from "../settings/SettingsView";
 import { Sessions } from "./sessions";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { WorktreeChanges } from "./WorktreeChanges";
@@ -47,8 +51,8 @@ function nodes(value: unknown): Node[] {
 const text = (node: Node): string => nodes(node.props.children).map(n => (typeof n.props.children === "string" ? n.props.children : "")).join("") + (typeof node.props.children === "string" ? node.props.children : "");
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
-// The shell's effects in order: the sessions store, the worktree list.
-const EFFECTS = 2;
+// The shell's effects in order: the sessions store, the worktree list, the pull request of the selection.
+const EFFECTS = 3;
 
 async function harness(api = createMockApi({})) {
   const draw = () => {
@@ -61,7 +65,7 @@ async function harness(api = createMockApi({})) {
   const of = (type: unknown) => all().filter(n => n.type === type);
   const list = () => of(WorktreeList)[0];
   const nav = (label: string) => all().find(n => n.type === "button" && n.props.className?.includes("ws-nav-item") && text(n).includes(label))!;
-  const [start, load] = (draw(), hooks.effects.slice(-EFFECTS));
+  const [start, load] = (draw(), hooks.effects.slice(-EFFECTS, -1));
   start();
   load();
   await tick();
@@ -121,6 +125,67 @@ it("header has repo, branch, search, bell and settings", async () => {
   vi.useRealTimers();
   expect(query).toHaveBeenCalledWith(".ws-docs .search-input");
   expect(box.focus).toHaveBeenCalledTimes(1);
+});
+
+it("header settings button opens settings", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  const region = (cls: string) => view.all().find(n => n.props.className === cls)!;
+  const button = () => view.all().find(n => n.type === "button" && n.props["aria-label"] === en("workspace.header.settings"))!;
+  expect(button().props.disabled).toBeFalsy();
+  expect(button().props["aria-pressed"]).toBe(false);
+  expect(view.of(SettingsView)).toHaveLength(0);
+  expect(region("ws-settings").props.hidden).toBe(true);
+
+  button().props.onClick();
+  expect(button().props["aria-pressed"]).toBe(true);
+  expect(region("ws-settings").props.hidden).toBe(false);
+  expect(region("ws-stage").props.hidden).toBe(true);
+  const settings = view.of(SettingsView)[0];
+  expect(settings.props.api).toBe(api);
+  // A change in settings reloads the worktree list.
+  const list = vi.spyOn(api, "workspaceList");
+  settings.props.onChanged();
+  await tick();
+  expect(list).toHaveBeenCalledTimes(1);
+
+  view.nav(en("workspace.nav.workspace")).props.onClick();
+  expect(view.of(SettingsView)).toHaveLength(0);
+  expect(region("ws-stage").props.hidden).toBe(false);
+});
+
+it("adopting refreshes the list", async () => {
+  const spike: WorktreeView = { path: "/demo/elsewhere/spike", name: "spike", branch: "spike", head: "6666666666666666666666666666666666666666", start: null, primary: false, pinned: false, detached: false };
+  const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), found: { "demo-xdev": [spike] } } });
+  const view = await harness(api);
+  expect(view.list().props.repos[0].found).toHaveLength(1);
+  const adopt = vi.spyOn(api, "worktreeAdopt");
+  view.list().props.onAdopt(spike);
+  await tick();
+  expect(adopt).toHaveBeenCalledWith("/demo/elsewhere/spike");
+  expect(view.list().props.repos[0].found).toHaveLength(0);
+  expect(view.worktree("spike")?.path).toBe("/demo/elsewhere/spike");
+
+  // A second adopt of the same path is refused, and the reason shows in the list.
+  view.list().props.onAdopt(spike);
+  await tick();
+  expect(view.list().props.notice).toBe("worktree_exists");
+});
+
+it("opening a vault from the nav remounts docs", async () => {
+  const view = await harness();
+  expect(view.of(VaultNav)).toHaveLength(0);
+  view.nav(en("workspace.nav.docs")).props.onClick();
+  const [nav] = view.of(VaultNav);
+  expect(nav).toBeDefined();
+  const key = () => view.of(DocsApp)[0].key;
+  const before = key();
+  nav.props.onOpened("/demo/xdev/docs");
+  expect(view.of(DocsApp)).toHaveLength(1);
+  expect(key()).not.toBe(before);
+  // The vault list goes with the docs view.
+  view.nav(en("workspace.nav.workspace")).props.onClick();
+  expect(view.of(VaultNav)).toHaveLength(0);
 });
 
 it("docs nav mounts the docs app once and keeps the workspace mounted", async () => {
@@ -349,13 +414,13 @@ it("panel has Files and Changes icon tabs with a change badge", async () => {
   const files = () => tabs()[0];
   const changes = () => tabs()[1];
   // Icon buttons: a name for screen readers and no visible text.
-  expect(tabs().map(n => n.props["aria-label"])).toEqual([en("workspace.panel.files"), en("workspace.panel.changes")]);
+  expect(tabs().map(n => n.props["aria-label"])).toEqual([en("workspace.panel.files"), en("workspace.panel.changes"), en("checks.tab")]);
   expect(tabs().every(n => n.props.role === "tab" && n.type === "button")).toBe(true);
   expect(renderToStaticMarkup(files())).not.toContain("ws-panel-badge");
   // Files is the default tab, and the tree and the changes list are both mounted.
-  expect(tabs().map(n => n.props["aria-selected"])).toEqual([true, false]);
+  expect(tabs().map(n => n.props["aria-selected"])).toEqual([true, false, false]);
   const panels = () => view.all().filter(n => n.props.role === "tabpanel");
-  expect(panels().map(n => n.props.hidden)).toEqual([false, true]);
+  expect(panels().map(n => n.props.hidden)).toEqual([false, true, true]);
   expect(view.of(FileTree)).toHaveLength(1);
   expect(view.of(WorktreeChanges)).toHaveLength(1);
 
@@ -376,9 +441,29 @@ it("panel has Files and Changes icon tabs with a change badge", async () => {
   expect(oak().props.reveal).toEqual({ file: "src/session.ts", seq: 1 });
 
   changes().props.onClick();
-  expect(tabs().map(n => n.props["aria-selected"])).toEqual([false, true]);
-  expect(panels().map(n => n.props.hidden)).toEqual([true, false]);
+  expect(tabs().map(n => n.props["aria-selected"])).toEqual([false, true, false]);
+  expect(panels().map(n => n.props.hidden)).toEqual([true, false, true]);
   // Another worktree has its own list.
   view.list().props.onSelect(view.worktree("elm"));
   expect(view.of(FileTree)[0].props.changes).toEqual([]);
+});
+
+it("checks tab badge counts failing checks", async () => {
+  const oak = "/demo/wt/xdev-oak";
+  const pr = { number: 5, url: "https://example.test/pull/5", state: "open" as const, title: "t", base: "main", head: "oak" };
+  const checks = [
+    { name: "a", workflow: null, bucket: "fail" as const, link: null },
+    { name: "b", workflow: null, bucket: "cancel" as const, link: null },
+    { name: "c", workflow: null, bucket: "pass" as const, link: null },
+  ];
+  const view = await harness(createMockApi({}, { workspace: { ...DEMO_WORKSPACE, prs: { [oak]: pr }, checks: { [oak]: checks } } }));
+  const tab = () => view.all().find(n => n.props.className === "ws-panel-tab" && String(n.props["aria-label"]).startsWith(en("checks.tab")))!;
+  view.list().props.onSelect(view.worktree("oak"));
+  expect(tab().props["aria-label"]).toBe(en("checks.tab"));
+  expect(view.list().props.prs).toEqual({});
+  const store = view.of(ChecksPanel)[0].props.prs;
+  await store.load(oak, { checks: true });
+  expect(tab().props["aria-label"]).toBe(en("checks.tabFailing", { count: 2 }));
+  expect(renderToStaticMarkup(tab())).toContain(">2<");
+  expect(view.list().props.prs[oak].pr.number).toBe(5);
 });

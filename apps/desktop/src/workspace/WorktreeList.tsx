@@ -1,10 +1,11 @@
 import { useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
-import type { ApiError, PtyProfile, RepoView, WorktreeStat, WorktreeView } from "../api";
+import type { ApiError, Check, PrView, PtyProfile, RepoView, WorktreeStat, WorktreeView } from "../api";
 import { useI18n } from "../i18n";
 import { profileLetter, profileName, useProfiles } from "../agents/profileStore";
 import { ago } from "./ago";
 import { groupWorktrees, type Group } from "./groups";
+import { checksSummary } from "./ship";
 import type { TabStatus } from "./status";
 
 type T = ReturnType<typeof useI18n>["t"];
@@ -28,6 +29,8 @@ export interface WorktreeListProps {
   activity?: Record<string, number | null>;
   /** The profiles open in each worktree path, in tab order. */
   profiles?: Record<string, PtyProfile[]>;
+  /** The pull request and checks of each worktree path, once looked at. */
+  prs?: Record<string, { pr: PrView | null; checks: Check[] | null }>;
   /** The time the relative times count from; `Date.now()` when left out. */
   now?: number;
   /** Why the last repo or pin action failed. */
@@ -37,6 +40,8 @@ export interface WorktreeListProps {
   onPin(worktree: WorktreeView): void;
   onRemove(worktree: WorktreeView): void;
   onAddRepo(): void;
+  /** Takes a worktree made outside xDev into the list; without it the found rows have no button. */
+  onAdopt?(worktree: WorktreeView): void;
 }
 
 /** The worktrees of every repo, split into sections by what their agents are doing. */
@@ -46,6 +51,8 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   // The worktree whose action menu is open.
   const [menu, setMenu] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Group[]>([]);
+  // The repos whose "Found outside xDev" group is open; all start closed.
+  const [foundOpen, setFoundOpen] = useState<string[]>([]);
 
   const toggle = (group: Group) =>
     setCollapsed(collapsed.includes(group) ? collapsed.filter((c) => c !== group) : [...collapsed, group]);
@@ -80,6 +87,9 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     // Plain shells are not agents: only the agent profiles get a chip.
     const agents = (props.profiles?.[wt.path] ?? []).filter((p) => !p.startsWith("shell"));
     const counts = stat && (stat.added > 0 || stat.removed > 0) ? stat : null;
+    const found = props.prs?.[wt.path];
+    const pr = found?.pr ?? null;
+    const summary = pr && found?.checks ? checksSummary(found.checks) : null;
     return (
       <li key={wt.path} className="ws-wt" data-path={wt.path}>
         <button
@@ -118,7 +128,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
               {wt.branch ?? t("workspace.detached")}
             </span>
           </span>
-          {(agents.length > 0 || counts) && (
+          {(agents.length > 0 || counts || pr) && (
             <span className="ws-wt-meta">
               {agents.map((p) => (
                 <span key={p} className="ws-chip" data-profile={p} title={profileName(view, p, t)}>
@@ -132,7 +142,21 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
                   <span className="ws-stat-del">{`−${counts.removed}`}</span>
                 </span>
               )}
-              {/* The pull request badge goes here once a worktree has one. */}
+              {pr && (
+                <span
+                  className="ws-pr"
+                  role="img"
+                  aria-label={
+                    summary
+                      ? t("ship.chip.labelChecks", { number: pr.number, state: t(`checks.state.${pr.state}`).toLowerCase(), checks: t(`checks.summary.${summary}`) })
+                      : t("ship.chip.label", { number: pr.number, state: t(`checks.state.${pr.state}`).toLowerCase() })
+                  }
+                >
+                  <span className="ws-dot" data-pr={pr.state} aria-hidden="true" />
+                  {`#${pr.number}`}
+                  {summary && <span className="ws-dot" data-check={summary} aria-hidden="true" />}
+                </span>
+              )}
             </span>
           )}
         </button>
@@ -195,6 +219,50 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     );
   };
 
+  const withFound = (props.repos ?? []).filter((repo) => !repo.missing && repo.found.length > 0);
+  const foundGroup = (repo: RepoView) => {
+    const open = foundOpen.includes(repo.id);
+    return (
+      <div key={repo.id} className="ws-found" data-repo={repo.id}>
+        <button
+          type="button"
+          className="ws-group-head ws-found-head"
+          aria-expanded={open}
+          title={t("workspace.found.hint")}
+          onClick={() => setFoundOpen(open ? foundOpen.filter((id) => id !== repo.id) : [...foundOpen, repo.id])}
+        >
+          <svg aria-hidden="true" className="ws-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+          <span className="ws-group-name">{t("workspace.found.title", { count: repo.found.length })}</span>
+          {many && <span className="ws-tag">{repo.shortName}</span>}
+        </button>
+        {open && (
+          <ul className="ws-found-list">
+            {repo.found.map((wt) => (
+              <li key={wt.path} className="ws-found-row" title={wt.path}>
+                <span className="ws-found-text">
+                  <span className="ws-wt-name">{wt.name}</span>
+                  <span className="ws-wt-branch">{wt.branch ?? t("workspace.detached")}</span>
+                </span>
+                {props.onAdopt && (
+                  <button
+                    type="button"
+                    className="btn-secondary ws-found-adopt"
+                    aria-label={t("workspace.found.adoptLabel", { name: wt.name })}
+                    onClick={() => props.onAdopt?.(wt)}
+                  >
+                    {t("workspace.found.adopt")}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="ws-worktrees">
       <div className="ws-section-head">
@@ -215,6 +283,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       <div className="ws-list">
         {props.repos?.length === 0 && <p className="ws-empty">{t("workspace.noRepos")}</p>}
         {sections.length > 0 && <ul className="ws-groups">{sections.map(section)}</ul>}
+        {withFound.map(foundGroup)}
         {/* A repo whose folder is gone has no worktrees to list; it stays named so it can be found again. */}
         {gone.length > 0 && (
           <ul className="ws-missing-list">

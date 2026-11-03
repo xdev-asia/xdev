@@ -39,6 +39,12 @@ pub enum Action {
         args: Vec<String>,
         permissions: String,
     },
+    /// Replace a remote branch with the local one.
+    ForcePush {
+        worktree: PathBuf,
+        remote: String,
+        branch: String,
+    },
 }
 
 /// `Ask` stops until a person approves; nothing proceeds on silence.
@@ -163,6 +169,10 @@ impl Gate for Policy {
             }
             Action::Merge { .. } => rule_verdict(self.merge, "merge"),
             Action::Delete { .. } => rule_verdict(self.delete, "delete"),
+            // No rule can relax this: a person confirms every force push.
+            Action::ForcePush { .. } => Verdict::Ask {
+                reason: "force push always asks".to_owned(),
+            },
             Action::LaunchAgent {
                 profile,
                 program,

@@ -2,10 +2,13 @@ mod accounts;
 #[cfg(test)]
 mod bindings;
 mod commands;
+mod kit;
+mod links;
 mod profiles;
 mod pty;
 mod session;
 mod settings;
+mod ship;
 mod squads;
 mod tasks;
 mod updater;
@@ -118,6 +121,12 @@ pub fn run() {
             workspace::workspace_list,
             workspace::repo_add,
             workspace::repo_forget,
+            workspace::repo_update,
+            workspace::worktree_adopt,
+            workspace::vault_list,
+            workspace::vault_add,
+            workspace::vault_forget,
+            workspace::vault_create_docs,
             workspace::worktree_create,
             workspace::worktree_pin,
             workspace::worktree_remove,
@@ -126,6 +135,32 @@ pub fn run() {
             workspace::worktree_file_diff,
             workspace::worktree_commit,
             workspace::worktree_list_dir,
+            ship::worktree_ship,
+            ship::worktree_push,
+            ship::worktree_pull,
+            ship::worktree_sync,
+            ship::worktree_fetch,
+            ship::worktree_force_push,
+            ship::worktree_amend,
+            ship::worktree_pr,
+            ship::worktree_pr_create,
+            ship::worktree_pr_checks,
+            ship::worktree_pr_open,
+            ship::worktree_draft_commit,
+            ship::worktree_draft_pr,
+            kit::kit_homes,
+            kit::kit_skills,
+            kit::kit_memory,
+            kit::kit_read,
+            kit::kit_write,
+            kit::kit_copy,
+            kit::kit_skill_copy,
+            kit::kit_skill_new,
+            kit::kit_skill_remove,
+            kit::kit_skill_restore,
+            kit::kit_usage,
+            kit::kit_paths_exist,
+            kit::kit_prompt_history,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
@@ -135,6 +170,19 @@ pub fn run() {
                 updater::install_pending(app);
             }
         });
+}
+
+#[cfg(test)]
+pub(crate) mod test_dirs {
+    use tempfile::TempDir;
+
+    /// A temp dir under the long form of the temp path. Windows CI hands out
+    /// 8.3 names like `RUNNER~1`, and git reports long paths, so fixtures that
+    /// compare the two must start from the long form.
+    pub(crate) fn long_temp_dir(prefix: &str) -> TempDir {
+        let base = dunce::canonicalize(std::env::temp_dir()).unwrap();
+        TempDir::with_prefix_in(prefix, base).unwrap()
+    }
 }
 
 #[cfg(test)]

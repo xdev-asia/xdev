@@ -18,6 +18,7 @@ import type {
 import { extractTitle, parseFrontmatter } from "./doc/frontmatter";
 import { createResolver, parseLinks } from "./doc/links";
 import { estimateTokens, type ExportDoc, planExport } from "./mockExport";
+import { createMockKit } from "./mockKit";
 import { createMockProfiles } from "./mockProfiles";
 import { createMockPty } from "./mockPty";
 import { createMockSquads } from "./mockSquads";
@@ -544,6 +545,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...profiles,
     ...createMockPty(profiles),
     ...createMockWorkspace(options.workspace),
+    ...createMockKit(),
     async accounts() { return structuredClone({ reservePercent: 30, accounts }); },
     async quota() { return structuredClone(quotas); },
     async updateStatus() { return null; },
@@ -757,7 +759,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       const found: StaleDoc[] = [];
       for (const { path, title } of readable()) {
         const { state, count } = freshness(files.get(path)!);
-        if (state === "stale" || state === "unverified" || state === "unknown") found.push({ path, title, state, count });
+        if (state === "stale" || state === "unverified" || state === "unknown" || state === "unlinked") found.push({ path, title, state, count });
       }
       return found;
     },

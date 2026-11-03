@@ -15,6 +15,7 @@ import { useChanges, type Problem } from "./changes/useChanges";
 import { AccountsView } from "./components/AccountsView";
 import { ActivityBar } from "./components/ActivityBar";
 import { AgentContext } from "./components/AgentContext";
+import { AgentKitView, type KitHost } from "./components/AgentKitView";
 import { Backlinks } from "./components/Backlinks";
 import { ChangesPanel, ChangeView, ICON, Icon } from "./components/ChangesPanel";
 import { ConfirmDialog } from "./components/ConfirmDialog";
@@ -56,7 +57,7 @@ function folderName(path: string): string {
 }
 
 /** Docs & SDLC: the vault, its docs and the agents that work on them. */
-export function DocsApp() {
+export function DocsApp(props: { kit?: KitHost }) {
   const { t } = useI18n();
   const [booting, setBooting] = useState(true);
   const [vault, setVault] = useState<Vault | null>(null);
@@ -139,9 +140,10 @@ export function DocsApp() {
     <>
       {vault ? (
         // Keyed by path so switching folders starts with a clean editor and search state.
-        <VaultView key={vault.path} vault={vault} onChangeFolder={pickAndOpen} />
+        <VaultView key={vault.path} vault={vault} kit={props.kit} onChangeFolder={pickAndOpen} />
       ) : (
         <NoVaultView
+          kit={props.kit}
           failure={failure}
           busy={opening}
           onCreate={() => setCreating({ path: defaultPath })}
@@ -162,11 +164,14 @@ export function DocsApp() {
   );
 }
 
-function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
+function VaultView(props: { vault: Vault; kit?: KitHost; onChangeFolder(): Promise<void> }) {
   const { t } = useI18n();
   const doc = useDoc(api);
   const review = useChanges(api, doc.flush);
   const [app, setApp] = useState<AppId>("docs");
+  // Set once the Agent kit has been shown; from then on it stays mounted.
+  const kitSeen = useRef(false);
+  if (app === "kit") kitSeen.current = true;
   // The task a squad link asked Tasks to show.
   const [taskFocus, setTaskFocus] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -356,6 +361,15 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
     setSelected(path);
   }
 
+  // A request from the shell (the footer link) shows the Agent kit on the tab it names.
+  // The Kit hands the request back once it shows it, so a later mount finds none waiting.
+  const kitRequest = props.kit?.open ?? null;
+  useEffect(() => {
+    if (kitRequest) openApp("kit");
+    // `openApp` only sets state, so the request alone decides when this runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kitRequest]);
+
   function openApp(next: AppId) {
     // A diff belongs to Changes; elsewhere the main area goes back to the open doc.
     if (next !== "changes") setSelected(null);
@@ -524,6 +538,20 @@ function VaultView(props: { vault: Vault; onChangeFolder(): Promise<void> }) {
           />
         )}
         {app === "accounts" && <AccountsView api={api} />}
+        {/* Hidden rather than unmounted once shown, so an open file or a typed prompt survives. */}
+        {kitSeen.current && (
+          <div className="kitview" hidden={app !== "kit"}>
+            <AgentKitView
+              api={api}
+              worktree={props.kit?.worktree ?? null}
+              request={props.kit?.open}
+              onRequestHandled={props.kit?.onOpened}
+              onSendToAgent={props.kit?.onSendToAgent}
+              canSend={props.kit?.canSend}
+              onOpenContext={() => openApp("agents")}
+            />
+          </div>
+        )}
         {app === "agents" && (
           <AgentContext
             api={api}

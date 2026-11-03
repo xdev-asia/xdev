@@ -39,6 +39,12 @@ const ICONS: Record<AppId, JSX.Element> = {
       <circle cx="14.5" cy="13" r="1" />
     </>
   ),
+  kit: (
+    <>
+      <path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" />
+      <path d="M9 8V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3M4 13h16M11 13v2h2v-2" />
+    </>
+  ),
   accounts: (
     <>
       <circle cx="12" cy="8" r="4" />
