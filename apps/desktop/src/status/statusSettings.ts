@@ -62,6 +62,18 @@ export async function loadStatusSettings(api: Pick<Api, "statusSettings">): Prom
   return current;
 }
 
+/**
+ * Writes `patch` over the settings stored now, not over a copy read earlier: the other settings page
+ * and `xdev agent hooks on|off` write the same file. Returns what was stored.
+ */
+export async function patchStatusSettings(
+  api: Pick<Api, "statusSettings" | "statusSettingsPut">,
+  patch: Partial<StatusSettings>,
+): Promise<StatusSettings> {
+  const fresh = await api.statusSettings();
+  return api.statusSettingsPut({ ...fresh, ...patch });
+}
+
 export function subscribeStatusSettings(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
