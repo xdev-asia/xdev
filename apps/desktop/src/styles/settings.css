@@ -528,3 +528,19 @@
 .keys-rec-text[data-invalid] {
   color: var(--danger);
 }
+
+.openin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.openin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
