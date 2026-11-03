@@ -46,6 +46,45 @@ pub struct Settings {
     /// Window-wide view settings (zoom) until a General page exists.
     #[serde(default, deserialize_with = "lenient")]
     pub ui: UiSettings,
+    /// Settings → Editor, for file tabs; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub editor: EditorSettings,
+}
+
+/// How file tabs edit. Values outside the ranges below are clamped when
+/// stored.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct EditorSettings {
+    /// Off, as in the reference app.
+    pub autosave: bool,
+    /// The wait after the last edit, 250..=10_000.
+    pub autosave_ms: u32,
+    /// 8..=32.
+    pub font_size: u32,
+    pub word_wrap: bool,
+    /// Spaces for a new indent, 1..=8.
+    pub tab_size: u32,
+}
+
+impl Default for EditorSettings {
+    fn default() -> Self {
+        EditorSettings {
+            autosave: false,
+            autosave_ms: 1000,
+            font_size: 13,
+            word_wrap: false,
+            tab_size: 4,
+        }
+    }
+}
+
+impl EditorSettings {
+    /// As stored: every number inside its range.
+    pub fn clamped(self) -> Self {
+        self
+    }
 }
 
 /// Who gets a key that both the app and a focused terminal want.
@@ -214,6 +253,7 @@ pub enum SettingsSection {
     Terminal,
     Keys,
     Ui,
+    Editor,
 }
 
 /// What a `settings://changed` event carries.

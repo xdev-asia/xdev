@@ -18,7 +18,8 @@ use crate::pty::{PtyExit, PtyInfo};
 use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
-    GitSettings, KeySettings, SettingsChanged, StatusSettings, TerminalSettings, UiSettings,
+    EditorSettings, GitSettings, KeySettings, SettingsChanged, StatusSettings, TerminalSettings,
+    UiSettings,
 };
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
@@ -65,6 +66,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     SettingsChanged::export_all(cfg)?;
     KeySettings::export_all(cfg)?;
     UiSettings::export_all(cfg)?;
+    EditorSettings::export_all(cfg)?;
     KeybindingsText::export_all(cfg)?;
     KeybindingsChanged::export_all(cfg)?;
     PtyHook::export_all(cfg)?;
@@ -81,6 +83,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     StageState::export_all(cfg)?;
     ReviewNote::export_all(cfg)?;
     xdev_workspace::DirListing::export_all(cfg)?;
+    xdev_workspace::FileText::export_all(cfg)?;
+    xdev_workspace::WriteOutcome::export_all(cfg)?;
     ShipView::export_all(cfg)?;
     xdev_git::Upstream::export_all(cfg)?;
     xdev_git::BaseRange::export_all(cfg)?;
