@@ -16,7 +16,7 @@ use xdev_agent::{
 use xdev_ai::Registry;
 use xdev_policy::{Action, Audited, Policy, Verdict, agent_fingerprint};
 use xdev_pty::{PtyError, Session, SpawnSpec};
-use xdev_workspace::{Registry as Workspace, WorkspaceError, hook_env, hooks_for};
+use xdev_workspace::{HookKind, Registry as Workspace, WorkspaceError, hook_env, hooks_for};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError, cli_beside, settings_path};
@@ -315,16 +315,33 @@ pub(crate) fn setup_command(shell: &ShellEntry, script: &str) -> (PathBuf, Vec<S
     (shell.program.clone(), args)
 }
 
-/// The launch that runs the setup script of the worktree at `cwd` in the
-/// default shell, with `hook_env`. Not an agent: it passes the gate as a
-/// command the person confirmed by trusting the script or typing it.
-pub(crate) fn setup_launch(data_dir: &Path, cwd: &Path) -> Result<Launch, CmdError> {
+/// A hook script ready to run: the shell line, and `hook_env`.
+pub(crate) struct HookCommand {
+    pub program: PathBuf,
+    pub args: Vec<String>,
+    pub env: Vec<(String, OsString)>,
+}
+
+/// The `kind` script of the worktree at `cwd` as a command in the default
+/// shell; `None` when there is no script. Refuses an untrusted shared
+/// script. Not an agent: it passes the gate as a command the person
+/// confirmed by trusting the script or typing it.
+pub(crate) fn hook_command(
+    data_dir: &Path,
+    cwd: &Path,
+    kind: HookKind,
+) -> Result<Option<HookCommand>, CmdError> {
     let reg = Workspace::load(data_dir)?;
-    let script = hooks_for(&reg, data_dir, cwd)?
-        .setup
-        .ok_or_else(|| WorkspaceError::NoHook("setup".to_owned()))?;
+    let hooks = hooks_for(&reg, data_dir, cwd)?;
+    let (script, name) = match kind {
+        HookKind::Setup => (hooks.setup, "setup"),
+        HookKind::Archive => (hooks.archive, "archive"),
+    };
+    let Some(script) = script else {
+        return Ok(None);
+    };
     if !script.trusted {
-        return Err(WorkspaceError::HookUntrusted("setup".to_owned()).into());
+        return Err(WorkspaceError::HookUntrusted(name.to_owned()).into());
     }
     let profiles = Profiles::load(data_dir).map_err(LaunchError::from)?;
     // `wsl.exe` is asked only when the default shell is a distro.
@@ -368,6 +385,14 @@ pub(crate) fn setup_launch(data_dir: &Path, cwd: &Path) -> Result<Launch, CmdErr
             detail: Some(reason),
         });
     }
+    Ok(Some(HookCommand { program, args, env }))
+}
+
+/// The launch that runs the setup script of the worktree at `cwd` in a
+/// terminal; `hook_none` when it has none.
+pub(crate) fn setup_launch(data_dir: &Path, cwd: &Path) -> Result<Launch, CmdError> {
+    let HookCommand { program, args, env } = hook_command(data_dir, cwd, HookKind::Setup)?
+        .ok_or_else(|| WorkspaceError::NoHook("setup".to_owned()))?;
     Ok(Launch {
         profile: SETUP_PROFILE.to_owned(),
         program,
