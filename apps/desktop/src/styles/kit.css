@@ -475,3 +475,10 @@
   fill: var(--text-3);
   background: var(--text-3);
 }
+
+.kit-detail {
+  margin: 2px 0 0;
+  color: var(--text-3);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

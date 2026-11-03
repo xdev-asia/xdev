@@ -356,12 +356,13 @@ function VaultView(props: { vault: Vault; kit?: KitHost; onChangeFolder(): Promi
   }
 
   // A request from the shell (the footer link) shows the Agent kit on the tab it names.
-  const kitSeq = props.kit?.open?.seq ?? 0;
+  // The Kit hands the request back once it shows it, so a later mount finds none waiting.
+  const kitRequest = props.kit?.open ?? null;
   useEffect(() => {
-    if (kitSeq > 0) openApp("kit");
+    if (kitRequest) openApp("kit");
     // `openApp` only sets state, so the request alone decides when this runs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kitSeq]);
+  }, [kitRequest]);
 
   function openApp(next: AppId) {
     // A diff belongs to Changes; elsewhere the main area goes back to the open doc.
@@ -535,11 +536,12 @@ function VaultView(props: { vault: Vault; kit?: KitHost; onChangeFolder(): Promi
         {kitSeen.current && (
           <div className="kitview" hidden={app !== "kit"}>
             <AgentKitView
-              key={props.kit?.open?.seq ?? 0}
               api={api}
               worktree={props.kit?.worktree ?? null}
-              initialTab={props.kit?.open?.tab}
+              request={props.kit?.open}
+              onRequestHandled={props.kit?.onOpened}
               onSendToAgent={props.kit?.onSendToAgent}
+              canSend={props.kit?.canSend}
               onOpenContext={() => openApp("agents")}
             />
           </div>

@@ -82,10 +82,10 @@ export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; kit?
   const [app, setApp] = useState<AppId>("docs");
   const [taskFocus, setTaskFocus] = useState<string | null>(null);
   const quota = useQuota(api, app === "accounts");
-  const kitSeq = props.kit?.open?.seq ?? 0;
+  const kitRequest = props.kit?.open ?? null;
   useEffect(() => {
-    if (kitSeq > 0) setApp("kit");
-  }, [kitSeq]);
+    if (kitRequest) setApp("kit");
+  }, [kitRequest]);
   return (
     <div className="app" data-panel="off">
       <header className="topbar">
@@ -110,11 +110,12 @@ export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; kit?
           <TasksView key={taskFocus ?? ""} api={api} initial={taskFocus ?? undefined} />
         ) : app === "kit" ? (
           <AgentKitView
-            key={props.kit?.open?.seq ?? 0}
             api={api}
             worktree={props.kit?.worktree ?? null}
-            initialTab={props.kit?.open?.tab}
+            request={props.kit?.open}
+            onRequestHandled={props.kit?.onOpened}
             onSendToAgent={props.kit?.onSendToAgent}
+            canSend={props.kit?.canSend}
           />
         ) : app === "squads" ? (
           <SquadsView
