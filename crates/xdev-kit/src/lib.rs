@@ -4,12 +4,17 @@
 mod homes;
 mod memory;
 mod skills;
+mod write;
 
 pub use homes::{Agent, Home, HomeSource, KitError, approx_tokens, homes};
 pub use memory::{
     IssueKind, MemoryFile, MemoryIssue, MemoryKind, MemorySet, project_slug, scan_memory,
 };
 pub use skills::{Skill, SkillScope, scan_skills};
+pub use write::{
+    Roots, copy_file, copy_skill_dir, new_skill, read_for_edit, remove_skill, restore_skill,
+    write_checked,
+};
 
 /// FNV-1a, 64 bit, as 16 hex digits. It tells two files apart; it is not a
 /// security hash.
