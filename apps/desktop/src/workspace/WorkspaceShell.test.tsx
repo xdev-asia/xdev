@@ -7,6 +7,7 @@ import { DocsApp } from "@/DocsApp";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { translate } from "@/i18n";
 import { ChecksPanel } from "./ChecksPanel";
+import { AddProjectDialog } from "./AddProjectDialog";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { SetupCard } from "./SetupCard";
@@ -251,17 +252,27 @@ it("remembers the selected worktree and falls back to the first", async () => {
   expect(view.list().props.selected).toBe("/demo/xdev");
 });
 
-it("add repo picks a folder and shows the new repo", async () => {
+it("add repo opens the dialog; Open folder picks a folder and shows the new repo", async () => {
   const api = createMockApi({});
   const pick = vi.spyOn(api, "pickFolder").mockResolvedValueOnce(null).mockResolvedValueOnce("/code/notes");
   const add = vi.spyOn(api, "repoAdd");
   const view = await harness(api);
-  await view.list().props.onAddRepo();
-  await tick();
+  const openFolder = async () => {
+    view.list().props.onAddRepo();
+    await view.of(AddProjectDialog)[0].props.onOpenFolder();
+    await tick();
+  };
+  view.list().props.onAddRepo();
+  expect(view.of(AddProjectDialog)).toHaveLength(1);
+  expect(pick).not.toHaveBeenCalled();
+  view.of(AddProjectDialog)[0].props.onCancel();
+  expect(view.of(AddProjectDialog)).toHaveLength(0);
+
+  await openFolder();
+  expect(view.of(AddProjectDialog)).toHaveLength(0);
   expect(add).not.toHaveBeenCalled();
 
-  await view.list().props.onAddRepo();
-  await tick();
+  await openFolder();
   expect(pick).toHaveBeenCalledTimes(2);
   expect(add).toHaveBeenCalledWith("/code/notes");
   expect(view.list().props.repos.map((r: { shortName: string }) => r.shortName)).toEqual(["xdev", "notes"]);
@@ -270,10 +281,21 @@ it("add repo picks a folder and shows the new repo", async () => {
 
   // Adding it again keeps the list and says why.
   vi.spyOn(api, "pickFolder").mockResolvedValueOnce("/code/notes");
-  await view.list().props.onAddRepo();
-  await tick();
+  await openFolder();
   expect(view.list().props.repos).toHaveLength(2);
   expect(view.html()).toContain(en("error.repo_exists"));
+});
+
+it("a finished clone closes the dialog and selects the new repo", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  view.list().props.onAddRepo();
+  expect(view.of(AddProjectDialog)[0].props.startFolder).toBe("/demo");
+  const repo = await api.repoAdd("/code/cloned");
+  await view.of(AddProjectDialog)[0].props.onCloned(repo);
+  await tick();
+  expect(view.of(AddProjectDialog)).toHaveLength(0);
+  expect(view.list().props.selected).toBe("/code/cloned");
 });
 
 it("create shows branch_exists inline", async () => {
