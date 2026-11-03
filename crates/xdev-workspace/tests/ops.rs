@@ -3,11 +3,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use tempfile::TempDir;
-use xdev_git::Repo;
+use xdev_git::{BaseRefresh, Repo};
 use xdev_workspace::{
     BranchPrefix, CreateOptions, Registry, RepoPatch, WorkspaceError, WorktreeStat, add_repo,
     adopt_worktree, create_worktree, create_worktree_with, forget_repo, list, path_key,
-    remove_worktree, set_pinned, stat, update_repo, valid_short_name,
+    refresh_base, remove_worktree, set_pinned, stat, update_repo, valid_short_name,
 };
 
 /// Runs setup commands; never used for the code under test.
@@ -817,10 +817,7 @@ fn update_root_applies_to_the_next_worktree_only() {
 }
 
 fn with_prefix(prefix: BranchPrefix) -> CreateOptions {
-    CreateOptions {
-        prefix,
-        ..CreateOptions::default()
-    }
+    CreateOptions { prefix }
 }
 
 #[test]
@@ -921,4 +918,63 @@ fn no_prefix_strategy_adds_nothing() {
     )
     .unwrap();
     assert_eq!(wt.branch.as_deref(), Some("fix"));
+}
+
+/// A registered repo whose base branch tracks a bare local `origin`, and a
+/// second clone that has pushed one more commit to it. Returns that commit.
+/// Nothing here touches the network.
+fn behind_origin() -> (Registry, String, TestRepo, TempDir, String) {
+    let (reg, id, main) = registered();
+    let dir = main.path();
+    let branch = git(dir, &["symbolic-ref", "--short", "HEAD"])
+        .trim()
+        .to_owned();
+    let origin = long_temp_dir("ws origin ");
+    let url = origin.path().to_str().unwrap().to_owned();
+    git(origin.path(), &["init", "-q", "--bare"]);
+    git(dir, &["remote", "add", "origin", &url]);
+    git(dir, &["push", "-q", "-u", "origin", &branch]);
+
+    let other = origin.path().join("other");
+    git(origin.path(), &["clone", "-q", &url, "other"]);
+    init(&other);
+    let tip = commit_all(&other, "two");
+    git(&other, &["push", "-q", "origin", &branch]);
+    (reg, id, main, origin, tip)
+}
+
+#[test]
+fn refresh_base_moves_the_base_a_new_worktree_starts_from() {
+    let (mut reg, id, main, _origin, tip) = behind_origin();
+    assert_eq!(refresh_base(&reg, &id, None).unwrap(), BaseRefresh::Updated);
+    // The base checkout was clean, so it moved in place.
+    assert_eq!(git(main.path(), &["rev-parse", "HEAD"]).trim(), tip);
+    let wt = create_worktree(&mut reg, &id, "fresh", None, 0, 0).unwrap();
+    assert_eq!(wt.head.as_deref(), Some(tip.as_str()));
+}
+
+#[test]
+fn creating_a_worktree_fetches_nothing_by_itself() {
+    let (mut reg, id, main, _origin, tip) = behind_origin();
+    let before = git(main.path(), &["rev-parse", "HEAD"]).trim().to_owned();
+    let wt = create_worktree(&mut reg, &id, "stale", None, 0, 0).unwrap();
+    assert_eq!(wt.head.as_deref(), Some(before.as_str()));
+    assert_ne!(before, tip);
+}
+
+#[test]
+fn refresh_base_that_cannot_fetch_leaves_the_base_alone() {
+    let (reg, id, main, origin, _tip) = behind_origin();
+    let gone = origin.path().join("missing");
+    git(
+        main.path(),
+        &["remote", "set-url", "origin", gone.to_str().unwrap()],
+    );
+    let before = git(main.path(), &["rev-parse", "HEAD"]).trim().to_owned();
+    assert!(refresh_base(&reg, &id, None).is_err());
+    assert_eq!(git(main.path(), &["rev-parse", "HEAD"]).trim(), before);
+    assert!(matches!(
+        refresh_base(&reg, "nope", None),
+        Err(WorkspaceError::RepoUnknown(_))
+    ));
 }

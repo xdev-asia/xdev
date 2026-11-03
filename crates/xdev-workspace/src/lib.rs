@@ -14,7 +14,8 @@ pub use names::{PrefixIssue, normalize_prefix, prefix_issue};
 pub use ops::{
     BranchPrefix, CreateOptions, DirEntry, DirListing, RepoPatch, RepoView, WorktreeStat,
     WorktreeView, add_repo, adopt_worktree, create_worktree, create_worktree_with, forget_repo,
-    list, list_dir, path_key, remove_worktree, set_pinned, stat, update_repo, valid_short_name,
+    list, list_dir, path_key, refresh_base, remove_worktree, set_pinned, stat, update_repo,
+    valid_short_name,
 };
 pub use registry::{Registry, RepoEntry, VaultEntry, WorktreeMeta, repo_id};
 pub use vaults::{VaultKind, VaultView, add_vault, forget_vault, list_vaults, repo_docs_dir};

@@ -32,7 +32,132 @@ pub struct BaseRange {
     pub truncated: bool,
 }
 
+/// What `refresh_local_base` did with the local copy of a base.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BaseRefresh {
+    /// Fast-forwarded to the remote.
+    Updated,
+    /// Already at the remote.
+    UpToDate,
+    /// The base names no remote branch: a commit id, or a local branch
+    /// without an upstream.
+    NoRemote,
+    /// The remote was fetched, but there is no local branch to move.
+    NoLocal,
+    /// The local branch has commits the remote does not; left alone.
+    LocalCommits,
+    /// The local branch is checked out with uncommitted changes; left alone.
+    Dirty,
+}
+
 impl Repo {
+    /// Fetches the remote branch behind `base` and fast-forwards the local
+    /// branch of the same name to it. `base` is `<remote>/<branch>` (local
+    /// `<branch>` is moved) or a local branch with an upstream. A local
+    /// branch with its own commits, or checked out with changes, is never
+    /// touched; a clean checkout of it is fast-forwarded in place.
+    pub fn refresh_local_base(&self, base: &str) -> Result<BaseRefresh, GitError> {
+        let Some((remote, remote_branch, local)) = self.base_source(base)? else {
+            return Ok(BaseRefresh::NoRemote);
+        };
+        let spec = format!("refs/heads/{remote_branch}");
+        // The configured refspec also moves `refs/remotes/<remote>/<branch>`.
+        let out = run::run_long(&self.workdir, &["fetch", "-q", &remote, &spec])?;
+        if out.status != Some(0) {
+            return Err(failed("fetch", &out));
+        }
+        let fetched = self.resolve_ref("FETCH_HEAD")?.ok_or(GitError::NoRemote)?;
+        let Some(current) = self.resolve_ref(&format!("refs/heads/{local}"))? else {
+            return Ok(BaseRefresh::NoLocal);
+        };
+        if current == fetched {
+            return Ok(BaseRefresh::UpToDate);
+        }
+        let (status, _) = run::run_status(
+            &self.workdir,
+            &["merge-base", "--is-ancestor", &current, &fetched],
+            None,
+        )?;
+        if status != Some(0) {
+            return Ok(BaseRefresh::LocalCommits);
+        }
+        let checkout = self
+            .list_worktrees()?
+            .into_iter()
+            .find(|w| !w.prunable && w.branch.as_deref() == Some(local.as_str()));
+        if let Some(checkout) = checkout {
+            let there = Repo {
+                workdir: checkout.path,
+                prefix: String::new(),
+            };
+            if !there.is_clean()? {
+                return Ok(BaseRefresh::Dirty);
+            }
+            let out = run::run_output(
+                &there.workdir,
+                &["merge", "--ff-only", "-q", &fetched],
+                None,
+            )?;
+            if out.status != Some(0) {
+                return Err(failed("merge --ff-only", &out));
+            }
+            return Ok(BaseRefresh::Updated);
+        }
+        let full = format!("refs/heads/{local}");
+        run::run(
+            &self.workdir,
+            &["update-ref", &full, &fetched, &current],
+            None,
+        )?;
+        Ok(BaseRefresh::Updated)
+    }
+
+    /// `(remote, branch on the remote, local branch)` behind a base, or
+    /// `None` when it names no remote branch.
+    fn base_source(&self, base: &str) -> Result<Option<(String, String, String)>, GitError> {
+        if !self.valid_branch_name(base)? {
+            return Ok(None);
+        }
+        if self.branch_exists(base)? {
+            let remote = self.branch_config(base, "remote")?;
+            let merge = self.branch_config(base, "merge")?;
+            let (Some(remote), Some(merge)) = (remote, merge) else {
+                return Ok(None);
+            };
+            let Some(branch) = merge.strip_prefix("refs/heads/") else {
+                return Ok(None);
+            };
+            if remote == "." || !self.valid_branch_name(branch)? {
+                return Ok(None);
+            }
+            return Ok(Some((
+                plain_remote(remote)?,
+                branch.to_owned(),
+                base.to_owned(),
+            )));
+        }
+        // The longest remote name wins: `a/b/c` with remotes `a` and `a/b`.
+        let mut remotes = self.remote_names()?;
+        remotes.sort_by_key(|r| std::cmp::Reverse(r.len()));
+        for remote in remotes {
+            let Some(branch) = base
+                .strip_prefix(remote.as_str())
+                .and_then(|rest| rest.strip_prefix('/'))
+            else {
+                continue;
+            };
+            if !self.valid_branch_name(branch)? {
+                return Ok(None);
+            }
+            return Ok(Some((
+                plain_remote(remote)?,
+                branch.to_owned(),
+                branch.to_owned(),
+            )));
+        }
+        Ok(None)
+    }
+
     /// The remote a branch pushes to: its own `branch.<name>.remote` when
     /// set, else `origin` when it exists, else the only remote.
     pub fn remote_for(&self, branch: &str) -> Result<String, GitError> {

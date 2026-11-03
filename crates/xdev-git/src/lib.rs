@@ -20,7 +20,7 @@ pub use gh::{
     pr_open_web, pr_view,
 };
 pub use history::Commit;
-pub use remote::{BaseRange, Upstream};
+pub use remote::{BaseRange, BaseRefresh, Upstream};
 pub use review::{Branch, StageState};
 pub use worktree::{NumStat, WorktreeEntry};
 
