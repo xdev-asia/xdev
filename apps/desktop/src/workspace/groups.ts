@@ -31,3 +31,27 @@ export function groupWorktrees<T extends { path: string }>(
     return found.length > 0 ? [{ group, items: found }] : [];
   });
 }
+
+/** Paths in the order the sidebar draws them: group order, then list order, collapsed groups left out. */
+export function orderedWorktrees<T extends { path: string }>(
+  sections: { group: Group; items: T[] }[],
+  collapsed: readonly Group[] = [],
+): string[] {
+  return sections.filter((s) => !collapsed.includes(s.group)).flatMap((s) => s.items.map((item) => item.path));
+}
+
+/**
+ * The worktree a key asks for, in sidebar order: the next or previous one (wrapping; the first when
+ * `current` is not listed), or the Nth. Null when there is nothing to pick.
+ */
+export function worktreeTarget(
+  order: readonly string[],
+  current: string | null,
+  to: { step: 1 | -1 } | { nth: number },
+): string | null {
+  if (order.length === 0) return null;
+  if ("nth" in to) return order[to.nth - 1] ?? null;
+  const at = current === null ? -1 : order.indexOf(current);
+  if (at < 0) return order[0];
+  return order[(at + to.step + order.length) % order.length];
+}

@@ -9,6 +9,7 @@ import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useI18n } from "@/i18n";
 import { PaletteHost } from "@/palette/PaletteHost";
+import { useKeymap, type ActionId } from "@/keys/keymap";
 import { useJumpKey } from "@/palette/useJumpKey";
 import { SettingsView } from "@/settings/SettingsView";
 import { playStatusSound } from "@/status/sound";
@@ -30,6 +31,7 @@ import { PrStore } from "./prs";
 import { WorktreeStats } from "./stats";
 import type { TabStatus } from "./status";
 import { WorktreeChanges, type ChangesHandlers } from "./WorktreeChanges";
+import { worktreeTarget } from "./groups";
 import { WorktreeList } from "./WorktreeList";
 import { WorktreeTabs, type Reveal } from "./WorktreeTabs";
 
@@ -124,6 +126,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
   const dialogOpen = creating !== null || removing !== null;
   useJumpKey(useCallback(() => setJumpOpen((o) => (dialogOpen ? false : !o)), [dialogOpen]));
+  // The worktrees in the order the sidebar draws them, which the worktree keys walk.
+  const [order, setOrder] = useState<string[]>([]);
 
   // One store of terminal tabs for the whole shell. Made in an effect so a dev double mount
   // disposes the first one; disposing kills its ptys.
@@ -351,6 +355,24 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setSelected(wt.path);
     storeSelected(wt.path);
   }
+
+  // Ctrl+Shift+Up / Down and Ctrl+1..9: walk the worktrees as the sidebar draws them.
+  function worktreeKey(to: { step: 1 | -1 } | { nth: number }): boolean {
+    const path = worktreeTarget(order, current?.path ?? null, to);
+    const wt = path === null ? undefined : all.find((w) => w.path === path);
+    if (!wt) return false;
+    select(wt);
+    focusTerminal(wt.path);
+    return true;
+  }
+  useKeymap(
+    {
+      "worktree.next": () => worktreeKey({ step: 1 }),
+      "worktree.prev": () => worktreeKey({ step: -1 }),
+      ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`worktree.select.${n}` as ActionId, () => worktreeKey({ nth: n })])),
+    },
+    { when: () => view === "workspace" && !dialogOpen && !jumpOpen },
+  );
 
   async function addRepo(): Promise<void> {
     setNotice(undefined);
@@ -601,6 +623,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             )}
           </nav>
           <WorktreeList
+            onOrder={(paths) => setOrder((o) => (o.join(",") === paths.join(",") ? o : paths))}
             repos={repos}
             selected={current?.path ?? null}
             dots={dots}

@@ -13,6 +13,8 @@ import { Sessions } from "./sessions";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeTabs } from "./WorktreeTabs";
+import { PaneView } from "./PaneView";
+import { TabStrip } from "./TabStrip";
 
 // Hooks are stubbed only while a component under test is called; each harness keeps its own.
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -54,6 +56,16 @@ function nodes(value: unknown): Node[] {
   const node = value as Node;
   return [node, ...nodes(node.props.children)];
 }
+// The shallow draw leaves PaneView and TabStrip as elements; calling them (hooks stubbed) shows their tabs.
+function expand(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(expand);
+  if (!value || typeof value !== "object" || !("props" in value)) return value;
+  const node = value as Node;
+  if (node.type === PaneView || node.type === TabStrip) {
+    return { ...node, props: { ...node.props, children: expand((node.type as (p: unknown) => unknown)(node.props)) } };
+  }
+  return { ...node, props: { ...node.props, children: expand(node.props.children) } };
+}
 const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 const OAK = "/demo/wt/xdev-oak";
@@ -92,7 +104,13 @@ function mount(render: () => unknown) {
   const before = hooks.effects.length;
   draw();
   const cleanups = hooks.effects.slice(before).map((effect) => effect());
-  const all = () => nodes(draw());
+  const drawFull = () => {
+    hooks.values = values;
+    hooks.cursor = 0;
+    hooks.active = true;
+    try { return expand(render()); } finally { hooks.active = false; }
+  };
+  const all = () => nodes(drawFull());
   const html = () => renderToStaticMarkup(draw() as ReactElement);
   const find = (pick: (n: Node) => boolean) => all().find(pick);
   return { draw, all, html, find, cleanups };

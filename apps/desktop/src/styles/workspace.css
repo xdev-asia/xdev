@@ -1005,25 +1005,6 @@
   color: var(--text-1);
 }
 
-.ws-tab-tools {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-  padding: 0 4px;
-}
-
-.ws-tab-tools .ws-icon-btn[aria-disabled="true"] {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.ws-tab-tools .ws-icon-btn[aria-pressed="true"] {
-  background: var(--bg-3);
-  color: var(--text-1);
-}
-
 .ws-tab-add {
   position: relative;
   display: grid;
@@ -1053,9 +1034,13 @@
   overflow-wrap: anywhere;
 }
 
-/* The panes of one worktree: one shows, or two when it is split. */
+/* The panes of one worktree. The chrome (tab strips, handles, focus ring) is a tree under the
+   terminals, which sit in one flat list and are placed by an inline rect, so a pane that moves never
+   remounts its terminal. */
 .ws-panes {
-  display: flex;
+  --ws-strip-h: 34px;
+
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -1065,29 +1050,88 @@
   display: none;
 }
 
-.ws-panes[data-split="right"] {
+.ws-pane-tree {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  pointer-events: none;
+}
+
+.ws-split {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ws-split[data-dir="right"] {
   flex-direction: row;
 }
 
-.ws-panes[data-split="down"] {
+.ws-split[data-dir="down"] {
   flex-direction: column;
 }
 
-/* Hidden panes stay between the two, so the divider goes on every visible pane after the first. */
-.ws-panes[data-split="right"] > .ws-tab-pane:not([hidden]) ~ .ws-tab-pane:not([hidden]) {
-  border-left: 1px solid var(--line);
+.ws-pane {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  outline: 1px solid var(--line);
+  outline-offset: -1px;
 }
 
-.ws-panes[data-split="down"] > .ws-tab-pane:not([hidden]) ~ .ws-tab-pane:not([hidden]) {
-  border-top: 1px solid var(--line);
+.ws-split > .ws-pane,
+.ws-split > .ws-split {
+  flex: 0 0 auto;
+}
+
+.ws-pane[data-focused="true"] {
+  z-index: 1;
+  outline-color: var(--x-color-focus, var(--x-color-signal));
+}
+
+.ws-pane > .ws-tabstrip {
+  pointer-events: auto;
+}
+
+.ws-handle {
+  position: absolute;
+  z-index: 2;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.ws-split[data-dir="right"] > .ws-handle {
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  margin-left: -3px;
+  cursor: col-resize;
+}
+
+.ws-split[data-dir="down"] > .ws-handle {
+  right: 0;
+  left: 0;
+  height: 6px;
+  margin-top: -3px;
+  cursor: row-resize;
+}
+
+.ws-handle:hover {
+  background: var(--line);
 }
 
 /* The terminal reads its colors from these, so it draws on the terminal background. */
 .ws-tab-pane {
   --x-color-surface: var(--term);
 
+  position: absolute;
   display: flex;
-  flex: 1;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
@@ -2180,4 +2224,25 @@ button.ws-tree-row:focus-visible {
   margin-left: auto;
   color: var(--text-2);
   font-size: 11px;
+}
+
+/* The tab context menu opens where the pointer was. */
+.ws-tab-add .ws-menu.ws-menu-at {
+  position: fixed;
+}
+
+.ws-menu button[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ws-tab-rename {
+  width: 140px;
+  height: 24px;
+  margin: 0 6px;
+  padding: 0 6px;
+  border: 1px solid var(--x-color-signal);
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+  color: var(--text-1);
 }

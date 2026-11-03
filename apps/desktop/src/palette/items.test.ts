@@ -1,3 +1,4 @@
+import { chordLabel } from "@/keys/keymap";
 import { expect, it, vi } from "vitest";
 import type { RepoView, WorktreeView } from "@/api";
 import { translate } from "@/i18n";
@@ -99,4 +100,10 @@ it("validWorktreeName", () => {
   expect(validWorktreeName("two words")).toBe(false);
   expect(validWorktreeName("a..b")).toBe(false);
   expect(validWorktreeName("-x")).toBe(false);
+});
+
+it("the new tab actions show the keymap's chords", () => {
+  const items = actionItems(t, { newAgentTab: vi.fn(), newShellTab: vi.fn() });
+  expect(items.map((i) => i.hint)).toEqual([chordLabel("agent.new"), chordLabel("tab.new")]);
+  expect(items[1].hint).toMatch(/T$/);
 });

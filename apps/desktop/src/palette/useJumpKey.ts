@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useKeymap } from "@/keys/keymap";
 import { IS_MAC } from "@/platform";
 
 /**
@@ -11,18 +11,9 @@ export function isJumpKey(e: KeyboardEvent, mac: boolean = IS_MAC): boolean {
 }
 
 /**
- * Calls `onToggle` on the jump key. It is taken in the capture phase and stopped, so a focused
- * terminal never receives the line feed.
+ * Calls `onToggle` on the jump key: the `palette.jump` binding of the keymap, taken in the capture
+ * phase and stopped, so a focused terminal never receives the line feed.
  */
 export function useJumpKey(onToggle: () => void): void {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (!isJumpKey(e)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      onToggle();
-    }
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onToggle]);
+  useKeymap({ "palette.jump": () => onToggle() });
 }
