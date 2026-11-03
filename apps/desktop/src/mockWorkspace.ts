@@ -1,4 +1,5 @@
-import type { Api, ApiError, Check, Commit, DirEntry, DirListing, RepoView, ReviewNote, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
+import type { Api, ApiError, Check, Commit, DirEntry, DirListing, GitSettings, RepoView, ReviewNote, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 
 type WorkspaceApi = Pick<
   Api,
@@ -38,6 +39,9 @@ type WorkspaceApi = Pick<
   | "worktreeBranches"
   | "reviewNotes"
   | "reviewNotesPut"
+  | "gitSettings"
+  | "setGitSettings"
+  | "gitUserName"
 >;
 
 export type MockWorkspaceSeed = {
@@ -57,6 +61,10 @@ export type MockWorkspaceSeed = {
   hookFailure?: Record<string, string>;
   // Worktrees that already track a remote branch, with how far they have drifted.
   remotes?: Record<string, { ahead: number; behind: number }>;
+  // The global git `user.name`; none by default, so the git-username prefix adds nothing.
+  gitUserName?: string | null;
+  // Settings → Git; the app's defaults when left out.
+  git?: Partial<GitSettings>;
 };
 
 // The fake remote of one worktree.
@@ -189,6 +197,9 @@ function firstBadNote(notes: ReviewNote[]): string | null {
 
 const WORDS = ["birch", "cedar", "fir", "maple", "pine", "willow"];
 
+// `GitSettings::default()` in Rust.
+export const DEFAULT_GIT_SETTINGS: GitSettings = { branchPrefix: "git-username", branchPrefixCustom: "", refreshLocalBaseOnCreate: false };
+
 function demoDiff(file: string, kind: WorktreeChange["kind"]): WorktreeFileDiff {
   if (/\.(png|jpe?g|gif|ico)$/i.test(file)) return { old: null, new: null, skip: "binary" };
   const old = `// ${file}\nexport const value = 1;\n`;
@@ -205,6 +216,8 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
   for (const repo of repos) repo.found = structuredClone(seed.found?.[repo.id] ?? repo.found);
   const docs = new Set(seed.docs ?? []);
   const shared: string[] = [...(seed.vaults ?? [])];
+  let git: GitSettings = { ...DEFAULT_GIT_SETTINGS, ...seed.git };
+  const userName = seed.gitUserName ?? null;
 
   function repoVault(repo: RepoView): VaultView {
     return { id: `repo:${repo.id}`, kind: "repo", path: `${repo.path}/docs`, name: repo.shortName, repoId: repo.id, exists: docs.has(repo.id) };
@@ -383,16 +396,33 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
       docs.add(repo.id);
       return repoVault(repo);
     },
+    async gitSettings() {
+      return { ...git };
+    },
+    async setGitSettings(next) {
+      git = { ...next, branchPrefixCustom: normalizePrefix(next.branchPrefixCustom) };
+      return { ...git };
+    },
+    async gitUserName() {
+      return userName;
+    },
     async worktreeCreate(repoId, name, from) {
       const repo = repos.find((r) => r.id === repoId);
       if (!repo) return reject("repo_unknown", repoId);
+      // As `create_worktree_with`: the prefix names the branch, the folder keeps only the leaf.
+      const preview = previewPrefix(git, userName);
+      if (preview.kind === "invalid") return reject("bad_branch_prefix", normalizePrefix(git.branchPrefixCustom));
+      const prefixed = (leaf: string) => (preview.kind === "prefix" ? `${preview.prefix}/${leaf}` : leaf);
       const typed = name.trim();
-      const branch =
-        typed === "" ? (WORDS.find((w) => !repo.worktrees.some((x) => x.branch === w)) ?? `wt-${repo.worktrees.length}`) : slug(typed);
-      if (branch === "" || branch.includes("..") || branch.endsWith("/") || branch.endsWith(".lock")) return reject("bad_name", typed);
+      const leaf =
+        typed === ""
+          ? (WORDS.find((w) => !repo.worktrees.some((x) => x.branch === prefixed(w))) ?? `wt-${repo.worktrees.length}`)
+          : slug(typed);
+      const branch = prefixed(leaf);
+      if (leaf === "" || leaf.includes("..") || leaf.endsWith("/") || leaf.endsWith(".lock")) return reject("bad_name", typed);
       if (repo.worktrees.some((w) => w.branch === branch)) return reject("branch_exists", branch);
       if (from !== null && from.trim() !== "" && /\s|\.\.|^-/.test(from.trim())) return reject("bad_ref", from.trim());
-      const folder = branch.replace(/\//g, "-");
+      const folder = leaf.replace(/\//g, "-");
       const parent = repo.path.replace(/[\/][^\/]*$/, "");
       const wt = worktree(`${parent}/wt/${repo.shortName}-${folder}`, folder, branch, false);
       repo.worktrees.push(wt);

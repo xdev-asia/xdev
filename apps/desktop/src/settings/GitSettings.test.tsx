@@ -1,0 +1,111 @@
+import { beforeEach, expect, it, vi } from "vitest";
+import type { ReactElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createMockApi, type GitSettings as Git } from "@/api";
+import { translate } from "@/i18n";
+import { DEMO_WORKSPACE } from "@/mockWorkspace";
+import { GitSettings } from "./GitSettings";
+
+const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
+vi.mock("react", async (original) => {
+  const react = await original<typeof import("react")>();
+  const state = (initial: unknown) => {
+    const index = hooks.cursor++;
+    if (!(index in hooks.values)) hooks.values[index] = typeof initial === "function" ? initial() : initial;
+    return [hooks.values[index], (value: unknown) => { hooks.values[index] = typeof value === "function" ? value(hooks.values[index]) : value; }];
+  };
+  return {
+    ...react,
+    useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
+    useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
+  };
+});
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+
+type Node = ReactElement<Record<string, any>>;
+function nodes(value: unknown): Node[] {
+  if (Array.isArray(value)) return value.flatMap(nodes);
+  if (!value || typeof value !== "object" || !("props" in value)) return [];
+  const node = value as Node;
+  return [node, ...nodes(node.props.children)];
+}
+const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
+
+beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; });
+
+async function view(seed: { gitUserName?: string | null; git?: Partial<Git> } = {}) {
+  const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), ...seed } });
+  const draw = () => {
+    hooks.cursor = 0;
+    hooks.active = true;
+    try { return GitSettings({ api, onChanged: vi.fn() }); } finally { hooks.active = false; }
+  };
+  draw();
+  hooks.effects.forEach((e) => e());
+  await tick();
+  const all = () => nodes(draw());
+  const mode = (m: string) => all().find((n) => n.type === "button" && n.props["data-mode"] === m)!;
+  const input = () => all().find((n) => n.type === "input" && n.props.name === "branchPrefixCustom");
+  const feedback = () => all().find((n) => n.props.id === "settings-git-feedback");
+  const toggle = () => all().find((n) => n.props.role === "switch")!;
+  const type = (value: string) => input()!.props.onChange({ target: { value } });
+  return { api, all, mode, input, feedback, toggle, type, html: () => renderToStaticMarkup(draw()) };
+}
+
+it("defaults to the git username, read-only, and previews the branch name", async () => {
+  const v = await view({ gitUserName: "duy" });
+  expect(v.mode("git-username").props["aria-pressed"]).toBe(true);
+  expect(v.input()!.props).toMatchObject({ value: "duy", readOnly: true });
+  expect(v.feedback()!.props.children).toBe(en("settings.git.prefixWill", { prefix: "duy" }));
+  expect(v.toggle().props["aria-checked"]).toBe(false);
+  expect(v.html()).toContain(en("settings.git.refresh"));
+});
+
+it("says no git username is configured and no prefix will be applied", async () => {
+  const v = await view();
+  expect(v.input()!.props).toMatchObject({ value: "", placeholder: en("settings.git.noUserName") });
+  expect(v.feedback()!.props.children).toBe(en("settings.git.prefixNone"));
+});
+
+it("saves a custom prefix as typed, keeps the raw text and flags a bad one", async () => {
+  const v = await view();
+  const save = vi.spyOn(v.api, "setGitSettings");
+  v.mode("custom").props.onClick();
+  await tick();
+  expect(save).toHaveBeenLastCalledWith({ branchPrefix: "custom", branchPrefixCustom: "", refreshLocalBaseOnCreate: false });
+  expect(v.input()!.props).toMatchObject({ readOnly: false, placeholder: en("settings.git.customPlaceholder") });
+
+  // A trailing slash on the way to `team/ui` stays in the box.
+  v.type("team/");
+  expect(v.input()!.props.value).toBe("team/");
+  expect(v.feedback()!.props.children).toBe(en("settings.git.prefixWill", { prefix: "team" }));
+  v.type("team/ui");
+  await tick();
+  expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ branchPrefixCustom: "team/ui" }));
+  expect(await v.api.gitSettings()).toMatchObject({ branchPrefix: "custom", branchPrefixCustom: "team/ui" });
+
+  v.type("a..b");
+  expect(v.feedback()!.props).toMatchObject({ role: "alert", children: en("settings.git.issue.sequence") });
+  expect(v.input()!.props["aria-invalid"]).toBe(true);
+});
+
+it("hides the prefix field for none and stores the switch", async () => {
+  const v = await view({ git: { branchPrefix: "custom", branchPrefixCustom: "team" } });
+  expect(v.input()!.props.value).toBe("team");
+  v.mode("none").props.onClick();
+  v.toggle().props.onClick();
+  await tick();
+  expect(v.input()).toBeUndefined();
+  expect(v.toggle().props["aria-checked"]).toBe(true);
+  // Both changes land, in order: the later one builds on the earlier.
+  expect(await v.api.gitSettings()).toEqual({ branchPrefix: "none", branchPrefixCustom: "team", refreshLocalBaseOnCreate: true });
+});
+
+it("shows a failed save", async () => {
+  const v = await view();
+  vi.spyOn(v.api, "setGitSettings").mockRejectedValue({ code: "io", message: "disk" });
+  v.toggle().props.onClick();
+  await tick();
+  expect(v.all().find((n) => n.props.role === "alert")?.props.children).toBe(en("error.io"));
+});

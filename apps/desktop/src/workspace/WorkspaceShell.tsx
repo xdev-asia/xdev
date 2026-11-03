@@ -274,6 +274,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     }
   }
 
+  function openSettings(section?: string): void {
+    setSettingsAt((s) => ({ section, seq: s.seq + 1 }));
+    show("settings");
+  }
+
   function show(next: View): void {
     setView(next);
     if (next === "docs") setDocsMounted(true);
@@ -591,6 +596,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           name={creating.name}
           onCreate={(repoId, name, from) => void create(repoId, name, from)}
           onCancel={() => setCreating(null)}
+          onOpenGitSettings={() => {
+            setCreating(null);
+            openSettings("git");
+          }}
         />
       )}
       <PaletteHost
@@ -611,10 +620,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             setFront((f) => ({ worktree, id, seq: (f?.seq ?? 0) + 1 }));
             focusTerminal(worktree);
           },
-          openSettings: (section) => {
-            setSettingsAt((s) => ({ section, seq: s.seq + 1 }));
-            show("settings");
-          },
+          openSettings,
           newWorktree: (name) => startCreate(undefined, name),
           addRepo: () => void addRepo(),
           searchDocs: openSearch,

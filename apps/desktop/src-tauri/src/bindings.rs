@@ -14,6 +14,7 @@ use crate::profiles::ProfilesView;
 use crate::pty::{PtyExit, PtyInfo};
 use crate::review::{ReviewBranch, ReviewData};
 use crate::review_notes::ReviewNote;
+use crate::settings::GitSettings;
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
@@ -26,6 +27,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     Changed::export_all(cfg)?;
     VaultSetup::export_all(cfg)?;
     VcsState::export_all(cfg)?;
+    GitSettings::export_all(cfg)?;
     Expected::export_all(cfg)?;
     xdev_core::DocEntry::export_all(cfg)?;
     xdev_core::SearchHit::export_all(cfg)?;
