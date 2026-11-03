@@ -67,3 +67,13 @@ describe("Sessions.resume", () => {
     expect(live.tab("nope")).toBeNull();
   });
 });
+
+describe("Sessions.resumed", () => {
+  it("lists the tabs that resumed a session", () => {
+    const live = new Sessions(createMockApi({}));
+    live.open(A, "claude");
+    const tab = live.resume(A, "claude", null, "abc");
+    expect(live.resumed()).toEqual([tab]);
+    live.dispose();
+  });
+});

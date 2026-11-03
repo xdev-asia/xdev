@@ -130,6 +130,11 @@ export class Sessions {
     return entry.tab;
   }
 
+  /** Every tab that resumed an agent session, in the order they opened. */
+  resumed(): Tab[] {
+    return [...this.entries.values()].filter((e) => e.tab.resumeOf !== null).map((e) => e.tab);
+  }
+
   /** A tab by its pty id; `null` when it is gone. */
   tab(id: string): Tab | null {
     return this.entries.get(id)?.tab ?? null;
