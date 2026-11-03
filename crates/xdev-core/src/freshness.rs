@@ -73,15 +73,9 @@ pub struct Links {
 /// without leading `./` or `/`. Anything else, such as a name with capitals
 /// or an empty rest, is one unprefixed entry.
 pub fn split_prefix(entry: &str) -> (Option<&str>, &str) {
-    let Some((name, rest)) = entry.split_once(':') else {
+    let Some((name, mut rest)) = prefix_name(entry) else {
         return (None, entry);
     };
-    let mut bytes = name.bytes();
-    let lead = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
-    if !bytes.next().is_some_and(lead) || !bytes.all(|b| lead(b) || b".-_".contains(&b)) {
-        return (None, entry);
-    }
-    let mut rest = rest;
     while let Some(r) = rest.strip_prefix("./").or_else(|| rest.strip_prefix('/')) {
         rest = r;
     }
@@ -89,6 +83,16 @@ pub fn split_prefix(entry: &str) -> (Option<&str>, &str) {
         return (None, entry);
     }
     (Some(name), rest)
+}
+
+/// The part before the first `:` when it is a valid repo short name, and the
+/// rest as written.
+fn prefix_name(entry: &str) -> Option<(&str, &str)> {
+    let (name, rest) = entry.split_once(':')?;
+    let mut bytes = name.bytes();
+    let lead = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
+    (bytes.next().is_some_and(lead) && bytes.all(|b| lead(b) || b".-_".contains(&b)))
+        .then_some((name, rest))
 }
 
 /// Reads the saved file, so the answer follows saves rather than commits.
@@ -170,6 +174,8 @@ impl<'a> Groups<'a> {
         };
         for entry in covers {
             match split_prefix(entry) {
+                // `api:` names a repo but no path in it, so nothing answers.
+                (None, _) if prefix_name(entry).is_some() => groups.unlinked = true,
                 (None, rest) if !links.shared => groups.own.push(rest.to_owned()),
                 (Some(name), rest) if links.own.as_deref() == Some(name) => {
                     groups.own.push(rest.to_owned());
@@ -185,9 +191,13 @@ impl<'a> Groups<'a> {
 
     /// The commit "Mark verified" writes: the own `HEAD` when only own
     /// entries are covered, the base-ref commit when only one other repo is,
-    /// else none, since one `verified` cannot be right for two repos.
+    /// else none, since one `verified` cannot be right for two repos or for
+    /// an entry no repo answers for.
     fn head(&self, repo: Option<&Repo>, links: &Links) -> Result<Option<String>, CoreError> {
         let has_own = !self.own.is_empty();
+        if self.unlinked {
+            return Ok(None);
+        }
         if self.others.is_empty() {
             if links.shared && !has_own {
                 return Ok(None);
@@ -200,12 +210,9 @@ impl<'a> Groups<'a> {
         if has_own || self.others.len() > 1 {
             return Ok(None);
         }
-        let only = self.others.keys().next().and_then(|n| links.repos.get(*n));
-        match only {
-            Some(Some(linked)) => {
-                Ok(tolerate(linked.repo.resolve_ref(&linked.base_ref))?.flatten())
-            }
-            _ => Ok(None),
+        match self.others.keys().next().and_then(|n| usable(links, n)) {
+            Some(linked) => Ok(tolerate(linked.repo.resolve_ref(&linked.base_ref))?.flatten()),
+            None => Ok(None),
         }
     }
 }
@@ -251,9 +258,9 @@ fn check(
     }
     for (name, entries) in &groups.others {
         let left = limit.saturating_sub(tally.commits.len());
-        let part = match links.repos.get(*name) {
-            Some(Some(linked)) => linked_part(linked, entries, verified, left)?,
-            _ => None,
+        let part = match usable(links, name) {
+            Some(linked) => linked_part(linked, entries, verified, left)?,
+            None => None,
         };
         tally.add(part);
     }
@@ -283,6 +290,16 @@ fn own_part(
         return Ok(None);
     };
     tolerate(repo.commits_since(&since, entries, limit))
+}
+
+/// A registered repo whose folder is still there. One removed after `Links`
+/// was built reads as unknown rather than failing every doc.
+fn usable<'l>(links: &'l Links, name: &str) -> Option<&'l LinkedRepo> {
+    links
+        .repos
+        .get(name)?
+        .as_ref()
+        .filter(|linked| linked.repo.root().is_dir())
 }
 
 /// `verified..<base-ref commit>` in another repo's primary checkout; `None`
