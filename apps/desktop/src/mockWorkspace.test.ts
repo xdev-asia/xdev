@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMockApi } from "./api";
-import { createMockWorkspace } from "./mockWorkspace";
+import { createMockWorkspace, DEMO_WORKSPACE } from "./mockWorkspace";
 
 const FIRST = "/demo/wt/xdev-oak";
 
@@ -123,5 +123,34 @@ describe("mock workspace", () => {
     }
     await expect(api.worktreeListDir(FIRST, "nope")).rejects.toMatchObject({ code: "not_found" });
     await expect(api.worktreeListDir(FIRST, "README.md")).rejects.toMatchObject({ code: "not_found" });
+  });
+});
+
+describe("mock shipping", () => {
+  const files = ["src/session.ts"];
+
+  it("push clears ahead and sets upstream", async () => {
+    const api = createMockWorkspace();
+    expect((await api.worktreeShip(FIRST)).upstream).toBeNull();
+    await api.worktreeCommit(FIRST, files, "first");
+    expect((await api.worktreeShip(FIRST)).range?.commits).toHaveLength(1);
+    const pushed = await api.worktreePush(FIRST);
+    expect(pushed.upstream).toMatchObject({ ahead: 0, behind: 0, branch: "oak" });
+    expect(pushed.headPushed).toBe(true);
+    await api.worktreeCommit(FIRST, ["src/status.ts"], "second");
+    expect((await api.worktreeShip(FIRST)).upstream?.ahead).toBe(1);
+    expect((await api.worktreePush(FIRST)).upstream?.ahead).toBe(0);
+  });
+
+  it("force push needs confirmation", async () => {
+    const api = createMockWorkspace({ repos: DEMO_WORKSPACE.repos, changes: {}, remotes: { [FIRST]: { ahead: 1, behind: 1 } } });
+    await expect(api.worktreeForcePush(FIRST, "b", false)).rejects.toMatchObject({ code: "needs_approval" });
+    expect((await api.worktreeForcePush(FIRST, "b", true)).upstream).toMatchObject({ ahead: 0, behind: 0 });
+  });
+
+  it("hook failure rejects with hook_failed and output", async () => {
+    const api = createMockWorkspace({ ...DEMO_WORKSPACE, hookFailure: { [FIRST]: "lint failed" } });
+    await expect(api.worktreeCommit(FIRST, files, "x")).rejects.toMatchObject({ code: "hook_failed", detail: "lint failed" });
+    expect(await api.worktreeCommit(FIRST, files, "x")).not.toBeNull();
   });
 });

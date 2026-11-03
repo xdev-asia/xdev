@@ -1,4 +1,4 @@
-import type { Api, ApiError, DirEntry, DirListing, RepoView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, Check, Commit, DirEntry, DirListing, RepoView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 
 type WorkspaceApi = Pick<
   Api,
@@ -12,6 +12,19 @@ type WorkspaceApi = Pick<
   | "worktreeFileDiff"
   | "worktreeCommit"
   | "worktreeStat"
+  | "worktreeShip"
+  | "worktreePush"
+  | "worktreePull"
+  | "worktreeSync"
+  | "worktreeFetch"
+  | "worktreeForcePush"
+  | "worktreeAmend"
+  | "worktreePr"
+  | "worktreePrCreate"
+  | "worktreePrChecks"
+  | "worktreePrOpen"
+  | "worktreeDraftCommit"
+  | "worktreeDraftPr"
   | "worktreeListDir"
 >;
 
@@ -19,7 +32,17 @@ export type MockWorkspaceSeed = {
   repos: RepoView[];
   // Pending changes by worktree path.
   changes: Record<string, WorktreeChange[]>;
+  // Pull requests and their checks by worktree path.
+  prs?: Record<string, PrView>;
+  checks?: Record<string, Check[]>;
+  // The next commit or amend in that worktree is rejected with `hook_failed`; the text is the hook output.
+  hookFailure?: Record<string, string>;
+  // Worktrees that already track a remote branch, with how far they have drifted.
+  remotes?: Record<string, { ahead: number; behind: number }>;
 };
+
+// The fake remote of one worktree.
+type Remote = { tracked: boolean; ahead: number; behind: number; commits: Commit[] };
 
 const DEMO_START = "5555555555555555555555555555555555555555";
 
@@ -116,6 +139,76 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
   const repos: RepoView[] = structuredClone(seed.repos);
   const changes = new Map<string, WorktreeChange[]>(Object.entries(structuredClone(seed.changes)));
   let commits = 0;
+  let prNumber = 0;
+  const prs = new Map<string, PrView>(Object.entries(structuredClone(seed.prs ?? {})));
+  const checks = new Map<string, Check[]>(Object.entries(structuredClone(seed.checks ?? {})));
+  const hooks = new Map<string, string>(Object.entries(seed.hookFailure ?? {}));
+  const remotes = new Map<string, Remote>();
+
+  function remoteOf(path: string): Remote {
+    let r = remotes.get(path);
+    if (!r) {
+      const seeded = seed.remotes?.[path];
+      r = { tracked: seeded !== undefined, ahead: seeded?.ahead ?? 0, behind: seeded?.behind ?? 0, commits: [] };
+      remotes.set(path, r);
+    }
+    return r;
+  }
+
+  function commitId(): string {
+    commits += 1;
+    return commits.toString(16).padStart(40, "a");
+  }
+
+  function shipView(path: string): ShipView | Promise<never> {
+    const found = findWorktree(path);
+    if (!found) return reject("worktree_unknown", path);
+    const { wt, repo } = found;
+    const r = remoteOf(path);
+    const branch = wt.detached ? null : wt.branch;
+    const upstream =
+      r.tracked && branch !== null
+        ? { remote: "origin", branch, id: "b".repeat(40), ahead: r.ahead, behind: r.behind }
+        : null;
+    return {
+      branch,
+      base: repo.baseRef,
+      remote: "origin",
+      upstream,
+      headPushed: upstream !== null && r.ahead === 0,
+      atStart: r.commits.length === 0,
+      range: wt.primary ? null : { mergeBase: DEMO_START, added: r.commits.length * 3, removed: 0, commits: structuredClone(r.commits), truncated: false },
+    };
+  }
+
+  // Shared by push and sync: a push is rejected when the remote is ahead of us.
+  function doPush(path: string): ShipView | Promise<never> {
+    const view = shipView(path);
+    if (view instanceof Promise) return view;
+    if (view.branch === null) return reject("detached");
+    const r = remoteOf(path);
+    if (r.tracked && r.behind > 0) return reject("push_rejected", "non-fast-forward");
+    r.tracked = true;
+    r.ahead = 0;
+    return shipView(path);
+  }
+
+  function doPull(path: string): ShipView | Promise<never> {
+    const view = shipView(path);
+    if (view instanceof Promise) return view;
+    const r = remoteOf(path);
+    if (!r.tracked) return reject("no_upstream");
+    if (r.behind > 0 && r.ahead > 0) return reject("pull_diverged");
+    r.behind = 0;
+    return shipView(path);
+  }
+
+  function takeHook(path: string): Promise<never> | null {
+    const out = hooks.get(path);
+    if (out === undefined) return null;
+    hooks.delete(path);
+    return reject("hook_failed", out);
+  }
 
   function findWorktree(path: string): { repo: RepoView; wt: WorktreeView } | undefined {
     for (const repo of repos) {
@@ -201,9 +294,103 @@ export function createMockWorkspace(seed: MockWorkspaceSeed = DEMO_WORKSPACE): W
       const pending = changes.get(path) ?? [];
       const rest = pending.filter((c) => !files.includes(c.path));
       if (rest.length === pending.length) return null;
+      const hook = takeHook(path);
+      if (hook) return hook;
       changes.set(path, rest);
-      commits += 1;
-      return commits.toString(16).padStart(40, "a");
+      const id = commitId();
+      const r = remoteOf(path);
+      r.commits.unshift({ id, author: "demo", time: 1_700_000_000 + commits, message: message.trim().split("\n")[0] });
+      if (r.tracked) r.ahead += 1;
+      return id;
+    },
+    async worktreeShip(path) {
+      return shipView(path);
+    },
+    async worktreePush(path) {
+      return doPush(path);
+    },
+    async worktreePull(path) {
+      return doPull(path);
+    },
+    async worktreeSync(path) {
+      const pulled = doPull(path);
+      if (pulled instanceof Promise) return pulled;
+      return doPush(path);
+    },
+    async worktreeFetch(path) {
+      return shipView(path);
+    },
+    async worktreeForcePush(path, _expected, confirmed) {
+      if (!confirmed) return reject("needs_approval", `force push ${path}`);
+      const view = shipView(path);
+      if (view instanceof Promise) return view;
+      if (view.upstream === null) return reject("no_upstream");
+      if (view.branch === view.base) return reject("force_base", view.branch ?? "");
+      const r = remoteOf(path);
+      r.ahead = 0;
+      r.behind = 0;
+      return shipView(path);
+    },
+    async worktreeAmend(path, files, message, confirmed) {
+      const found = findWorktree(path);
+      if (!found || found.wt.primary) return reject("worktree_unknown", path);
+      if (message.trim() === "") return reject("empty_message");
+      const r = remoteOf(path);
+      if (r.commits.length === 0) return reject("nothing_to_amend");
+      const pushed = r.tracked && r.ahead === 0;
+      if (pushed && !confirmed) return reject("amend_pushed");
+      const hook = takeHook(path);
+      if (hook) return hook;
+      const pending = changes.get(path) ?? [];
+      changes.set(path, pending.filter((c) => !files.includes(c.path)));
+      const id = commitId();
+      r.commits[0] = { ...r.commits[0], id, message: message.trim().split("\n")[0] };
+      if (pushed) {
+        // The rewritten commit is no longer the remote's: both sides now hold one the other lacks.
+        r.ahead = 1;
+        r.behind = 1;
+      }
+      return id;
+    },
+    async worktreePr(path) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      return structuredClone(prs.get(path) ?? null);
+    },
+    async worktreePrCreate(path, draft) {
+      const view = shipView(path);
+      if (view instanceof Promise) return view;
+      if (view.branch === null) return reject("detached");
+      if (!view.headPushed) return reject("not_pushed");
+      if (draft.title.trim() === "") return reject("empty_title");
+      prNumber += 1;
+      const pr: PrView = {
+        number: prNumber,
+        url: `https://example.test/pull/${prNumber}`,
+        state: draft.draft ? "draft" : "open",
+        title: draft.title,
+        base: draft.base,
+        head: view.branch,
+      };
+      prs.set(path, pr);
+      return structuredClone(pr);
+    },
+    async worktreePrChecks(path, number) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      return prs.get(path)?.number === number ? structuredClone(checks.get(path) ?? []) : [];
+    },
+    async worktreePrOpen(path) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (!prs.has(path)) return reject("not_pushed");
+    },
+    async worktreeDraftCommit(path, files) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      return `Update ${files.length} ${files.length === 1 ? "file" : "files"}`;
+    },
+    async worktreeDraftPr(path) {
+      const found = findWorktree(path);
+      if (!found) return reject("worktree_unknown", path);
+      const subject = remoteOf(path).commits[0]?.message ?? found.wt.branch;
+      return { base: found.repo.baseRef, title: subject, body: `Changes from ${found.wt.branch}.`, draft: false };
     },
     async worktreeStat(path) {
       const found = findWorktree(path);
