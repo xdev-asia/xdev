@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 import type { JSX } from "react";
 import { useI18n } from "@/i18n";
+import { IS_MAC as MAC } from "@/platform";
 
-const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
 const HINT = MAC ? "⌘ K" : "Ctrl K";
 const JUMP_HINT = MAC ? "⌘ J" : "Ctrl J";
 
