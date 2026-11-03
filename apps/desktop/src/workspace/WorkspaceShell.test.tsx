@@ -5,6 +5,7 @@ import { createMockApi, type WorktreeView } from "../api";
 import { DocsApp } from "../DocsApp";
 import { translate } from "../i18n";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
+import { HeaderSearch } from "./HeaderSearch";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { Sessions } from "./sessions";
 import { WorkspaceShell } from "./WorkspaceShell";
@@ -93,6 +94,30 @@ it("shell_renders_without_vault", async () => {
   expect(html).not.toContain("vault-dialog");
   expect(lastVault).not.toHaveBeenCalled();
   expect(setup).not.toHaveBeenCalled();
+});
+
+it("header has repo, branch, search, bell and settings", async () => {
+  const view = await harness();
+  const box = { focus: vi.fn(), select: vi.fn() };
+  const query = vi.fn(() => box);
+  vi.stubGlobal("document", { querySelector: query });
+  const header = view.all().find(n => n.type === "header")!;
+  const inHeader = nodes(header.props.children);
+  const crumbs = inHeader.filter(n => String(n.props.className ?? "").includes("ws-crumb") && !String(n.props.className).includes("sep")).map(text);
+  expect(crumbs).toEqual(["xdev", "main"]);
+  expect(inHeader.filter(n => n.type === HeaderSearch)).toHaveLength(1);
+  const named = (label: string) => inHeader.find(n => n.type === "button" && n.props["aria-label"] === label);
+  expect(named(en("workspace.header.notifications"))).toBeDefined();
+  expect(named(en("workspace.header.settings"))).toBeDefined();
+  // The search opens the docs app, the only search there is for now.
+  expect(view.of(DocsApp)).toHaveLength(0);
+  vi.useFakeTimers();
+  inHeader.find(n => n.type === HeaderSearch)!.props.onOpen();
+  expect(view.of(DocsApp)).toHaveLength(1);
+  vi.runAllTimers();
+  vi.useRealTimers();
+  expect(query).toHaveBeenCalledWith(".ws-docs .search-input");
+  expect(box.focus).toHaveBeenCalledTimes(1);
 });
 
 it("docs nav mounts the docs app once and keeps the workspace mounted", async () => {
