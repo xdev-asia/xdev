@@ -146,3 +146,18 @@ it("shows the parse error of xdev.toml", async () => {
   const v = await view({ "/demo/xdev": { parseError: "line 2: expected '='" } });
   expect(v.html()).toContain("line 2: expected &#x27;=&#x27;");
 });
+
+it("Remove from xDev opens the dialog; confirm forgets the repo and tells the window", async () => {
+  const v = await view();
+  const forget = vi.spyOn(v.api, "repoForget");
+  const remove = v.all().find((n) => n.type === "button" && n.props.children === en("settings.repos.remove"))!;
+  remove.props.onClick();
+  const dialog = v.all().find((n) => n.props.onConfirm && n.props.onCancel)!;
+  expect(dialog.props.name).toBe("xdev");
+  expect(forget).not.toHaveBeenCalled();
+  dialog.props.onConfirm();
+  await tick();
+  expect(forget).toHaveBeenCalledWith("demo-xdev");
+  expect(v.onChanged).toHaveBeenCalledTimes(1);
+  expect(v.all().some((n) => n.type === "form" && n.key === "demo-xdev")).toBe(false);
+});
