@@ -517,6 +517,7 @@
   "error.hook_untrusted": "The script from xdev.toml is not trusted yet, or it changed since you trusted it.",
   "error.hook_none": "This repo has no script for that.",
   "error.setup_skipped": "Setup is turned off for this repo in Settings → Repos.",
+  "error.cancelled": "The clone was cancelled.",
   "apps.terminal": "Terminal",
   "terminal.folder": "Folder",
   "terminal.pickFolder": "Choose folder…",

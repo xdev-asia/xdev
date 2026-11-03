@@ -129,23 +129,6 @@ fn create_if_missing(path: &Path) -> io::Result<bool> {
     }
 }
 
-/// Opens `dir` in the system file manager. The app has no other "reveal"
-/// helper; this one does not wait for the file manager to close.
-fn open_folder(dir: &Path) -> io::Result<()> {
-    #[cfg(windows)]
-    let program = "explorer.exe";
-    #[cfg(target_os = "macos")]
-    let program = "open";
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let program = "xdg-open";
-    let mut child = std::process::Command::new(program).arg(dir).spawn()?;
-    // Reaped off the command thread; explorer's exit code means nothing.
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    Ok(())
-}
-
 /// The file's text, `None` when it is missing, and where it lives.
 #[tauri::command(async)]
 pub fn keybindings_read(app: AppHandle) -> Result<KeybindingsText, CmdError> {
@@ -181,7 +164,7 @@ pub fn keybindings_reveal(app: AppHandle) -> Result<(), CmdError> {
     let path = file_path(&app)?;
     create_if_missing(&path).map_err(io_err)?;
     let dir = path.parent().ok_or_else(|| io_err("no folder"))?;
-    open_folder(dir).map_err(io_err)
+    crate::reveal::reveal(dir, false).map_err(io_err)
 }
 
 /// Watching stops when this is dropped; kept in app state for the app's life.

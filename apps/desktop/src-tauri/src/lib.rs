@@ -7,9 +7,11 @@ mod hooks;
 mod keybindings;
 mod kit;
 mod links;
+mod open_in;
 mod profiles;
 mod pty;
 mod quick_commands;
+mod reveal;
 mod review;
 mod review_notes;
 mod session;
@@ -49,6 +51,7 @@ pub fn run() {
         .manage(updater::Pending::default())
         .manage(pty::Ptys::default())
         .manage(workspace::WorkspaceLock::default())
+        .manage(workspace::Clones::default())
         .manage(review_notes::ReviewNotesLock::default())
         .manage(profiles::ProfilesLock::default())
         .manage(status::Shown::default())
@@ -106,6 +109,9 @@ pub fn run() {
             commands::key_settings_put,
             commands::ui_settings_get,
             commands::ui_settings_put,
+            open_in::open_in_settings,
+            open_in::open_in_settings_put,
+            open_in::open_in,
             keybindings::keybindings_read,
             keybindings::keybindings_write,
             keybindings::keybindings_reveal,
@@ -183,6 +189,9 @@ pub fn run() {
             workspace::workspace_list,
             workspace::repo_add,
             workspace::repo_forget,
+            workspace::repo_clone,
+            workspace::repo_clone_cancel,
+            workspace::repo_clone_name,
             workspace::repo_update,
             workspace::repo_hooks,
             workspace::repo_hook_trust,
