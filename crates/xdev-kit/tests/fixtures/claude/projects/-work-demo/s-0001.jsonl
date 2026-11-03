@@ -1,0 +1,5 @@
+{"type":"user","cwd":"/work/demo","timestamp":"2026-11-02T10:00:00.000Z","message":{"role":"user","content":"SECRET-PROMPT-ALPHA"}}
+{"type":"assistant","cwd":"/work/demo","timestamp":"2026-11-02T10:00:05.000Z","message":{"id":"msg_01","model":"model-a","role":"assistant","content":[{"type":"text","text":"SECRET-REPLY-BETA"}],"usage":{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":30,"cache_creation_input_tokens":40}}}
+{"type":"assistant","cwd":"/work/demo","timestamp":"2026-11-02T10:00:06.000Z","message":{"id":"msg_01","model":"model-a","role":"assistant","content":[{"type":"text","text":"SECRET-REPLY-BETA"}],"usage":{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":30,"cache_creation_input_tokens":40}}}
+{"type":"summary","summary":"SECRET-SUMMARY"}
+{"type":"assistant","cwd":"/work/demo","timestamp":"2026-11-03T09:00:00.000Z","message":{"id":"msg_02","model":"model-b","role":"assistant","content":[],"usage":{"input_tokens":1,"output_tokens":2,"cache_read_input_tokens":3,"cache_creation_input_tokens":4}}}
