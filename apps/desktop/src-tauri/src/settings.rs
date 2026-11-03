@@ -46,6 +46,50 @@ pub struct Settings {
     /// Window-wide view settings (zoom) until a General page exists.
     #[serde(default, deserialize_with = "lenient")]
     pub ui: UiSettings,
+    /// Settings → Open In Apps: the programs a worktree can be opened in.
+    #[serde(default, deserialize_with = "lenient")]
+    pub open_in: OpenInSettings,
+}
+
+/// The apps the Open in menu lists, in order.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct OpenInSettings {
+    /// At most `MAX_APPS`.
+    pub apps: Vec<OpenInApp>,
+}
+
+impl Default for OpenInSettings {
+    /// VS Code alone, as in the reference app.
+    fn default() -> Self {
+        OpenInSettings {
+            apps: vec![OpenInApp {
+                id: "vscode".into(),
+                label: "VS Code".into(),
+                command: "code".into(),
+                args: Vec::new(),
+            }],
+        }
+    }
+}
+
+/// One program the Open in menu can start with a folder. xDev never builds a
+/// shell line from it: the program gets `args` and then the folder, each as
+/// its own argument.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct OpenInApp {
+    /// `vscode` for the default, `app-<uuid>` for the person's own.
+    pub id: String,
+    /// 1..=40 characters.
+    pub label: String,
+    /// A program name or an absolute path, 1..=260 characters, no arguments.
+    pub command: String,
+    /// Arguments before the folder: at most 8, each at most 200 characters.
+    #[serde(default)]
+    pub args: Vec<String>,
 }
 
 /// Who gets a key that both the app and a focused terminal want.
@@ -214,6 +258,7 @@ pub enum SettingsSection {
     Terminal,
     Keys,
     Ui,
+    OpenIn,
 }
 
 /// What a `settings://changed` event carries.

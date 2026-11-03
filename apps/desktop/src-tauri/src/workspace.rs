@@ -12,6 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
+use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 use xdev_ai::process::{kill_tree, own_group};
 use xdev_git::{ChangeKind, GitError, Repo};
@@ -319,6 +320,61 @@ pub fn repo_forget(
     id: String,
 ) -> Result<(), CmdError> {
     update(data_dir(&state)?, &lock, |reg| forget_repo(reg, &id))
+}
+
+/// What `repo_clone` sends on its channel while git runs.
+// Lane B builds these in repo_clone; the contract only declares them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum CloneProgress {
+    /// A git progress phase such as `Receiving objects`.
+    Phase {
+        phase: String,
+        percent: Option<u8>,
+    },
+    /// Cloned and added to the workspace.
+    Done {
+        repo: RepoView,
+    },
+    Error {
+        message: String,
+    },
+}
+
+/// Clones `url` into `parent/name` (the name from the URL when `None`) and
+/// adds it as a repo. `id` names the run for `repo_clone_cancel`.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn repo_clone(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    url: String,
+    parent: PathBuf,
+    name: Option<String>,
+    id: String,
+    on_event: Channel<CloneProgress>,
+) -> Result<(), CmdError> {
+    let _ = (state, lock, url, parent, name, id, on_event);
+    Err(CmdError {
+        code: "io",
+        detail: Some("repo_clone is not implemented yet".into()),
+    })
+}
+
+/// Stops the clone named `id`; nothing when it is not running.
+#[tauri::command]
+pub fn repo_clone_cancel(id: String) -> Result<(), CmdError> {
+    let _ = id;
+    Ok(())
+}
+
+/// The folder name a clone of `url` gets: `xdev` for `.../xdev.git`.
+#[tauri::command]
+pub fn repo_clone_name(url: String) -> Result<String, CmdError> {
+    let _ = url;
+    Err(bad_arg("repo_clone_name is not implemented yet"))
 }
 
 #[tauri::command(async)]

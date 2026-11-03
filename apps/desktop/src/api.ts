@@ -30,6 +30,9 @@ import type {
   KeybindingsChanged,
   KeybindingsText,
   UiSettings,
+  OpenInSettings,
+  OpenTarget,
+  CloneProgress,
   Quota,
   RouteRule,
   Routing,
@@ -181,6 +184,10 @@ export type {
   TerminalKeyPolicy,
   UiSettings,
   KeybindingsText,
+  OpenInApp,
+  OpenInSettings,
+  OpenTarget,
+  CloneProgress,
 } from "@xdev/bindings";
 // The UI's names for generated types.
 export type { Event as SquadEvent, FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
@@ -286,7 +293,8 @@ export type ErrorCode =
   | "bad_sound"
   | "hook_untrusted"
   | "hook_none"
-  | "setup_skipped";
+  | "setup_skipped"
+  | "cancelled";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -465,6 +473,23 @@ export interface Api {
   // `bad_ref` for a base ref that does not resolve, `bad_path` for a worktree folder that is relative
   // or inside the primary checkout; a refused patch saves nothing.
   repoUpdate(id: string, patch: RepoPatch): Promise<RepoView>;
+  // Open in. Settings → Open In Apps; the put rejects with `bad_arg` (at most 8 apps, unique ids,
+  // label 1..=40 chars, command 1..=260 chars without arguments, at most 8 args of 200 chars) and
+  // returns what was stored.
+  openInSettings(): Promise<OpenInSettings>;
+  openInSettingsPut(v: OpenInSettings): Promise<OpenInSettings>;
+  // Opens a known repo or worktree folder in an Open In app or the file manager. Rejects with
+  // `worktree_unknown`, `not_found` (no such app id, or its program is missing; the detail names
+  // it), `needs_approval` / `denied` from the policy.
+  openIn(path: string, target: OpenTarget): Promise<void>;
+  // Clones `url` into `parent/name` (the name from the URL when null) and adds it as a repo; the
+  // events end with `done` or `error`. `id` names the run for `repoCloneCancel`. Rejects with
+  // `bad_arg` for a refused URL, `exists` when the folder is there, `cancelled` after a cancel; a
+  // partly cloned folder goes to the trash.
+  repoClone(url: string, parent: string, name: string | null, id: string, onEvent: (e: CloneProgress) => void): Promise<void>;
+  repoCloneCancel(id: string): Promise<void>;
+  // The folder name a clone gets: `xdev` for `https://host/a/xdev.git`; `bad_arg` when there is none.
+  repoCloneName(url: string): Promise<string>;
   // The setup and archive scripts of a worktree: `xdev.toml` in it (else in the primary checkout)
   // joined with the repo's local scripts by its script source. A bad file is `parseError`, not a rejection.
   repoHooks(path: string): Promise<RepoHooks>;
@@ -663,6 +688,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "hook_untrusted",
   "hook_none",
   "setup_skipped",
+  "cancelled",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -792,6 +818,16 @@ const tauriApi: Api = {
   workspaceList: () => call("workspace_list"),
   repoAdd: (path) => call("repo_add", { path }),
   repoForget: (id) => call("repo_forget", { id }),
+  openInSettings: () => call("open_in_settings"),
+  openInSettingsPut: (v) => call("open_in_settings_put", { v }),
+  openIn: (path, target) => call("open_in", { path, target }),
+  repoClone(url, parent, name, id, onEvent) {
+    const channel = new Channel<CloneProgress>();
+    channel.onmessage = onEvent;
+    return call("repo_clone", { url, parent, name, id, onEvent: channel });
+  },
+  repoCloneCancel: (id) => call("repo_clone_cancel", { id }),
+  repoCloneName: (url) => call("repo_clone_name", { url }),
   repoUpdate: (id, patch) => call("repo_update", { id, ...patch }),
   repoHooks: (path) => call("repo_hooks", { path }),
   repoHookTrust: (path, kind, hash) => call("repo_hook_trust", { path, kind, hash }),
