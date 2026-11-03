@@ -2246,3 +2246,16 @@ button.ws-tree-row:focus-visible {
   background: var(--bg-1);
   color: var(--text-1);
 }
+
+.ws-script {
+  max-height: 240px;
+  margin: 12px 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--term);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
