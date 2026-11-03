@@ -247,3 +247,13 @@ export function replaceTab(l: PaneLayout, oldId: string, newId: string): PaneLay
   )!;
   return { ...l, root };
 }
+
+/** Puts the pinned tabs of `pane` first, each group keeping its order. Same reference when the order holds. */
+export function pinFirst(l: PaneLayout, pane: string, pinned: (tabId: string) => boolean): PaneLayout {
+  const leaf = findLeaf(l, pane);
+  if (!leaf) return l;
+  const tabs = [...leaf.tabs.filter(pinned), ...leaf.tabs.filter((t) => !pinned(t))];
+  if (tabs.every((t, i) => t === leaf.tabs[i])) return l;
+  const root = mapNode(l.root, pane, (n) => (n.kind === "leaf" ? { ...n, tabs } : n))!;
+  return { ...l, root };
+}
