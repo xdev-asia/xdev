@@ -1,5 +1,6 @@
 mod accounts;
 mod agent_sessions;
+mod atomic;
 #[cfg(test)]
 mod bindings;
 mod commands;

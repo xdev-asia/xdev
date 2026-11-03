@@ -6,7 +6,6 @@
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -14,6 +13,7 @@ use notify_debouncer_full::notify::{self, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, NoCache, new_debouncer_opt};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::atomic::write_atomic;
 use crate::commands::CmdError;
 
 pub const FILE_NAME: &str = "keybindings.json";
@@ -91,25 +91,7 @@ fn write_at(path: &Path, text: &str) -> Result<(), CmdError> {
             detail: Some(format!("keybindings.json is over {MAX_BYTES} bytes")),
         });
     }
-    let dir = path.parent().ok_or_else(|| io_err("no folder"))?;
-    fs::create_dir_all(dir).map_err(io_err)?;
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let tmp = dir.join(format!(
-        ".{FILE_NAME}-{}-{}.tmp",
-        std::process::id(),
-        SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
-    let result = (|| {
-        let mut f = File::create_new(&tmp)?;
-        f.write_all(text.as_bytes())?;
-        f.sync_all()?;
-        drop(f);
-        fs::rename(&tmp, path)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&tmp);
-    }
-    result.map_err(io_err)
+    write_atomic(path, text.as_bytes()).map_err(io_err)
 }
 
 /// Writes the empty version-1 file when there is none; never overwrites.
