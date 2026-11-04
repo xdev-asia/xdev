@@ -1614,5 +1614,12 @@
   "search.files.more": "More matches in this file are not shown",
   "search.files.collapseAll": "Collapse all",
   "search.files.clear": "Clear search results",
-  "search.files.noWorktree": "Open a worktree to search its files."
+  "search.files.noWorktree": "Open a worktree to search its files.",
+  "usage.popover.window.five_hour": "5-hour",
+  "usage.popover.window.seven_day": "Weekly",
+  "usage.popover.reset.none": "Reset time unknown",
+  "usage.popover.reset.now": "Resetting now",
+  "usage.popover.reset.minutes": "Resets in {minutes} min",
+  "usage.popover.reset.hours": "Resets in {hours} h {minutes} min",
+  "usage.popover.reset.at": "Resets {when}"
 }
