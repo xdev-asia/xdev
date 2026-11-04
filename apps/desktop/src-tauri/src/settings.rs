@@ -1569,6 +1569,45 @@ then sum up"
     }
 
     #[test]
+    fn agents_settings_default_to_ask_and_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        // Missing section, missing key, an unknown value, a wrong type.
+        for text in [
+            "{}",
+            r#"{ "agents": {} }"#,
+            r#"{ "agents": { "accountSwitch": "bogus" } }"#,
+            r#"{ "agents": 3 }"#,
+        ] {
+            fs::write(&path, text).unwrap();
+            assert_eq!(
+                load(&path).agents.account_switch,
+                SwitchRunning::Ask,
+                "{text}"
+            );
+        }
+        for (value, json) in [
+            (SwitchRunning::Ask, "ask"),
+            (SwitchRunning::Restart, "restart"),
+            (SwitchRunning::Keep, "keep"),
+        ] {
+            let agents = AgentsSettings {
+                account_switch: value,
+            };
+            assert_eq!(
+                serde_json::to_value(&agents).unwrap(),
+                serde_json::json!({ "accountSwitch": json })
+            );
+            fs::write(
+                &path,
+                format!(r#"{{ "agents": {{ "accountSwitch": "{json}" }} }}"#),
+            )
+            .unwrap();
+            assert_eq!(load(&path).agents, agents);
+        }
+    }
+
+    #[test]
     fn navigation_and_diff_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(FILE_NAME);
