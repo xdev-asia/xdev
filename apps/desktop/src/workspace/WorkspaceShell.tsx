@@ -1664,6 +1664,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           name={creating.name}
           agents={creating.agents}
           defaultAgent={creating.defaultAgent}
+          namePreview={api.worktreeNamePreview}
           onCreate={(repoId, name, from, extra) => create(repoId, name, from, extra)}
           onCancel={() => setCreating(null)}
         />

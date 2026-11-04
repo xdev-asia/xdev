@@ -294,6 +294,14 @@ it("add repo opens the dialog; Open folder picks a folder and shows the new repo
   expect(view.html()).toContain(en("error.repo_exists"));
 });
 
+it("the create dialog gets the name preview from the api", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  view.list().props.onCreate();
+  const preview = view.of(CreateWorktreeDialog)[0].props.namePreview;
+  expect(await preview("demo-xdev", "oak")).toMatchObject({ branch: "oak-2", suffixed: true });
+});
+
 it("a created Git project closes the dialog and is selected; a folder is listed", async () => {
   const api = createMockApi({});
   const view = await harness(api);

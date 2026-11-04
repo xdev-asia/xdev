@@ -972,6 +972,7 @@
   "workspace.create.repo": "Repo",
   "workspace.create.name": "Tên",
   "workspace.create.namePlaceholder": "tự đặt",
+  "createWorktree.preview.willBe": "Sẽ được tạo thành {folder} trên nhánh {branch}",
   "workspace.create.nameHint": "Cũng là tên nhánh. Để trống thì xDev tự đặt tên.",
   "workspace.create.from": "Từ",
   "workspace.create.confirm": "Tạo",
