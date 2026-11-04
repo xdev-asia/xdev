@@ -16,6 +16,7 @@ import { folderMenuItems, groupMenuItems, projectMenuItems, worktreeMenuItems } 
 import { dropMove, flattenRepos, moveTarget, nestRows, pinnedEntries, visibleEntries, type Move, type NestRow, type WtEntry } from "./sidebarModel";
 import { RepoBadge } from "./RepoBadge";
 import { SidebarFilters } from "./SidebarFilters";
+import { SidebarOptions } from "./SidebarOptions";
 import { WorkItemChip } from "./WorkItemChip";
 import { ContextMenu } from "@/ui/ContextMenu";
 
@@ -682,6 +683,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       <div className="ws-section-head">
         <h2>{t("workspace.heading")}</h2>
         {props.onPrefs && <SidebarFilters prefs={prefs} hidden={shown.hidden} onPrefs={props.onPrefs} />}
+        {props.onPrefs && <SidebarOptions prefs={prefs} onPrefs={props.onPrefs} />}
         <button
           type="button"
           className="ws-icon-btn"
