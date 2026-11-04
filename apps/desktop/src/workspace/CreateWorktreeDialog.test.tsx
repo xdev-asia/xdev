@@ -75,3 +75,17 @@ it("the name field is followed by the preview slot", () => {
   const all = nodes(CreateWorktreeDialog({ repos, repoId: repos[0].id, onCreate: vi.fn(), onCancel: vi.fn() }));
   expect(all.some((n) => n.type === PreviewHint)).toBe(true);
 });
+
+it("carries the note, which the shell saves as the comment", () => {
+  expect(buildCreate({ ...BLANK, note: "  check the footer  " })?.extra).toMatchObject({ note: "check the footer" });
+  expect(buildCreate({ ...BLANK, note: "   " })?.extra).not.toHaveProperty("note");
+  expect(buildCreate(BLANK)?.extra).not.toHaveProperty("note");
+});
+
+it("keeps Advanced closed and offers Create more", () => {
+  const repos = DEMO_WORKSPACE.repos;
+  const all = nodes(CreateWorktreeDialog({ repos, repoId: repos[0].id, agents: AGENTS, onCreate: vi.fn(), onCancel: vi.fn() }));
+  const adv = all.find((n) => n.props.title === translate("en", "workspace.create.advanced"));
+  expect(adv?.props.defaultExpanded).toBe(false);
+  expect(all.some((n) => n.props.label === translate("en", "workspace.create.createMore"))).toBe(true);
+});
