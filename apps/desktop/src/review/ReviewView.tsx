@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { TreeView, pathRows } from "@xdev-asia/ui";
 import type { JSX } from "react";
 import { toApiError, type Api, type ReviewData, type ReviewFile, type ReviewNote } from "@/api";
 import type { Problem } from "@/changes/useChanges";
@@ -57,6 +58,8 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
   const drag = useRef<{ x: number; width: number } | null>(null);
   const store = useReviewNotes(api, worktree);
   const [listing, setListing] = useState(false);
+  // Folder ids (`path/`) of the tree that are folded; local to this view.
+  const [closed, setClosed] = useState<string[]>([]);
   // One array per file, kept while that file's notes are the same objects, so an untouched file is not redrawn.
   const perFile = useRef(new Map<string, ReviewNote[]>());
   const notesOf = (path: string): ReviewNote[] => {
@@ -247,6 +250,13 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
         {flag("collapse", "review.opt.collapse")}
         {flag("lineNumbers", "review.opt.lineNumbers")}
         {flag("wrap", "review.opt.wrap")}
+        <div className="rv-layout" role="group" aria-label={t("review.view")}>
+          {([false, true] as const).map((tree) => (
+            <button key={String(tree)} type="button" data-view={tree ? "tree" : "list"} aria-pressed={opts.tree === tree} onClick={() => setOption({ tree })}>
+              {t(tree ? "review.view.tree" : "review.view.list")}
+            </button>
+          ))}
+        </div>
         <button type="button" className="rv-base-button" data-act="save-default" disabled={!unsaved} onClick={() => void saveDefault()}>
           {t("review.opt.saveDefault")}
         </button>
@@ -285,15 +295,26 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
       {files.length > 0 && data && (
         <div className="rv-main">
           <nav className="rv-list" style={{ width }} aria-label={t("review.list")}>
-            {files.map((f) => (
-              <button key={f.path} type="button" className="rv-list-item" data-path={f.path} title={f.path} onClick={() => show(f.path)}>
-                <span className="rv-letter ws-mono" data-kind={f.kind} aria-hidden="true">
-                  {LETTER[f.kind]}
-                </span>
-                <span className="rv-list-path ws-mono">{f.path}</span>
-                {f.staged && <span className="rv-dot" data-partial={f.unstaged} title={t("review.staged")} />}
-              </button>
-            ))}
+            {opts.tree ? (
+              <TreeView
+                rows={pathRows(files.map((f) => ({ path: f.path, mark: f.kind })), new Set(closed))}
+                labels={{ tree: t("review.tree"), changed: t("review.tree.changed"), marks: { added: t("review.kind.added"), modified: t("review.kind.modified"), deleted: t("review.kind.deleted") } }}
+                onToggle={(id) => setClosed(closed.includes(id) ? closed.filter((c) => c !== id) : [...closed, id])}
+                onOpen={show}
+              />
+            ) : (
+              <>
+              {files.map((f) => (
+                <button key={f.path} type="button" className="rv-list-item" data-path={f.path} title={f.path} onClick={() => show(f.path)}>
+                  <span className="rv-letter ws-mono" data-kind={f.kind} aria-hidden="true">
+                    {LETTER[f.kind]}
+                  </span>
+                  <span className="rv-list-path ws-mono">{f.path}</span>
+                  {f.staged && <span className="rv-dot" data-partial={f.unstaged} title={t("review.staged")} />}
+                </button>
+              ))}
+              </>
+            )}
           </nav>
           <div
             className="rv-resize"

@@ -2152,5 +2152,13 @@
   "settings.git.groupOrder": "Thứ tự nhóm kiểm soát mã nguồn",
   "settings.git.groupOrder.changes-first": "Thay đổi trước",
   "settings.git.groupOrder.staged-first": "Đã stage trước",
-  "settings.git.groupOrderHint": "Xung đột luôn nằm trên cùng."
+  "settings.git.groupOrderHint": "Xung đột luôn nằm trên cùng.",
+  "review.view": "Danh sách tệp",
+  "review.view.list": "Danh sách",
+  "review.view.tree": "Cây",
+  "review.tree": "Tệp thay đổi theo thư mục",
+  "review.tree.changed": "Có thay đổi",
+  "review.kind.added": "Thêm mới",
+  "review.kind.modified": "Đã sửa",
+  "review.kind.deleted": "Đã xóa"
 }

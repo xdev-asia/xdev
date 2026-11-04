@@ -18,3 +18,7 @@ Task 6: complete (cardModel, WorktreeList draws from prefs; compact CSS). i18n k
 ## Task 8: complete
 - Setting in Settings > Git, catalog entry git.groupOrder, WorktreeChanges draws conflicts, then the chosen order.
 - Behaviour change (R5): staged was drawn first before; the default is now changes-first. Flag in the PR text.
+
+## Task 9: complete
+- ViewOptions.tree seeded from DiffSettings.fileTree; List/Tree toggle in the review bar; TreeView + pathRows; Save as default writes fileTree.
+- No CSS needed: TreeView brings its own styles.

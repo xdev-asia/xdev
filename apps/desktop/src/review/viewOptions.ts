@@ -7,6 +7,8 @@ export type ViewOptions = {
   collapse: boolean;
   lineNumbers: boolean;
   wrap: boolean;
+  /** The file list is a folder tree. */
+  tree: boolean;
   listWidth: number;
 };
 
@@ -21,6 +23,7 @@ export const DEFAULT_VIEW: ViewOptions = {
   collapse: true,
   lineNumbers: true,
   wrap: false,
+  tree: false,
   listWidth: LIST_DEFAULT,
 };
 
@@ -41,13 +44,14 @@ export function readViewOptions(storage: Reader): ViewOptions {
     raw = null;
   }
   const o = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-  const flag = (k: "ignoreWhitespace" | "collapse" | "lineNumbers" | "wrap"): boolean => (typeof o[k] === "boolean" ? o[k] : DEFAULT_VIEW[k]);
+  const flag = (k: "ignoreWhitespace" | "collapse" | "lineNumbers" | "wrap" | "tree"): boolean => (typeof o[k] === "boolean" ? o[k] : DEFAULT_VIEW[k]);
   return {
     layout: o.layout === "split" ? "split" : "inline",
     ignoreWhitespace: flag("ignoreWhitespace"),
     collapse: flag("collapse"),
     lineNumbers: flag("lineNumbers"),
     wrap: flag("wrap"),
+    tree: flag("tree"),
     listWidth: typeof o.listWidth === "number" ? clampListWidth(o.listWidth) : LIST_DEFAULT,
   };
 }
@@ -73,14 +77,15 @@ export function fromDiffSettings(d: DiffSettings, local: LocalView = LOCAL_DEFAU
     ignoreWhitespace: d.ignoreWhitespace,
     collapse: d.collapseUnchanged,
     wrap: d.wordWrap,
+    tree: d.fileTree,
     lineNumbers: local.lineNumbers,
     listWidth: clampListWidth(local.listWidth),
   };
 }
 
-/** The diff settings that "Save as default" stores for `o`; `fileTree` is not a view option and stays as it was. */
+/** The diff settings that "Save as default" stores for `o`; `fileTree` is the tree toggle. */
 export function toDiffSettings(o: ViewOptions, base: DiffSettings): DiffSettings {
-  return { ...base, defaultView: o.layout, ignoreWhitespace: o.ignoreWhitespace, collapseUnchanged: o.collapse, wordWrap: o.wrap };
+  return { ...base, defaultView: o.layout, ignoreWhitespace: o.ignoreWhitespace, collapseUnchanged: o.collapse, wordWrap: o.wrap, fileTree: o.tree };
 }
 
 export function readLocalView(storage: Reader): LocalView {
