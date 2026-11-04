@@ -52,6 +52,15 @@ pub fn random_43() -> Result<String, getrandom::Error> {
     Ok(b64url(&bytes))
 }
 
+/// (verifier bytes, state bytes) for `Session::begin`, from the OS random source.
+pub fn random_pair() -> Result<([u8; 32], [u8; 32]), getrandom::Error> {
+    let mut verifier = [0u8; 32];
+    let mut state = [0u8; 32];
+    getrandom::fill(&mut verifier)?;
+    getrandom::fill(&mut state)?;
+    Ok((verifier, state))
+}
+
 pub struct PkcePair {
     pub verifier: Secret,
     pub challenge: String,
@@ -109,6 +118,13 @@ mod tests {
             );
         }
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn random_pair_gives_two_different_values() {
+        let (a, b) = random_pair().unwrap();
+        assert_ne!(a, b);
+        assert_ne!(a, [0u8; 32]);
     }
 
     #[test]

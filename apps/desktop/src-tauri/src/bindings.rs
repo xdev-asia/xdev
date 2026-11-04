@@ -30,10 +30,12 @@ use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
 use crate::updater::UpdateInfo;
 use crate::workspace::{CloneProgress, WorktreeChange, WorktreeCreated, WorktreeFileDiff};
+use ::xdev_id::XdevIdState;
 
 /// Each type's dependencies are written with it, so only the roots are here.
 fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     CmdError::export_all(cfg)?;
+    XdevIdState::export_all(cfg)?;
     Changed::export_all(cfg)?;
     VaultSetup::export_all(cfg)?;
     VcsState::export_all(cfg)?;

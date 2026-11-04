@@ -31,6 +31,7 @@ mod status;
 mod tasks;
 mod updater;
 mod workspace;
+mod xdev_id;
 
 use commands::AppState;
 use tauri::Manager;
@@ -45,20 +46,31 @@ pub fn run() {
     // `XDEV_LOCAL_DIR` exactly like the CLI and both share one index.
     let data_dir = xdev_core::data_dir();
     let local_dir = xdev_core::local_dir();
-    if let (Some(data), Some(local)) = (&data_dir, &local_dir) {
-        xdev_core::move_indexes(data, local);
-    }
+    // Moved in `setup`: a second instance exits during plugin init and must not run it.
+    let index_dirs = data_dir.clone().zip(local_dir.clone());
+    let dev_flag = std::env::var("XDEV_DEV_DEEP_LINK").ok();
     let sync_local = local_dir.clone();
     let ptyd_local = local_dir.clone();
     let endpoint_local = local_dir.clone();
     let hooks_dir = local_dir
         .as_ref()
         .map(|local| local.join(xdev_agent::HOOKS_DIR));
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // Must be the first plugin: a second instance exits during its init, before anything
+    // else runs. With the deep-link feature the link already went to `on_open_url`.
+    if xdev_id::single_instance_on(cfg!(debug_assertions), dev_flag.as_deref()) {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            xdev_id::focus_main(app);
+        }));
+    }
+    builder
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .manage(updater::Pending::default())
+        .manage(xdev_id::XdevIdHub::production())
         // Terminals wait until the start below has picked where they run.
         .manage(pty::Ptys::pending())
         .manage(workspace::WorkspaceLock::default())
@@ -70,6 +82,10 @@ pub fn run() {
         .manage(cli_verbs::CliHub::default())
         .manage(keybindings::LastSent::default())
         .setup(move |app| {
+            if let Some((data, local)) = &index_dirs {
+                xdev_core::move_indexes(data, local);
+            }
+            xdev_id::start(app.handle());
             updater::start(app.handle().clone());
             workspace::start_sweep(app.handle());
             // Every settings read and write goes through this store.
@@ -352,6 +368,13 @@ pub fn run() {
             quick_commands::repo_file_commands_trust,
             cli_verbs::cli_tabs_report,
             cli_verbs::cli_approve,
+            xdev_id::xdev_id_state,
+            xdev_id::xdev_id_sign_in,
+            xdev_id::xdev_id_paste,
+            xdev_id::xdev_id_cancel,
+            xdev_id::xdev_id_sign_out,
+            xdev_id::xdev_id_refresh,
+            xdev_id::xdev_id_manage,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
@@ -394,5 +417,29 @@ mod tests {
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         assert_eq!(conf["identifier"], xdev_core::APP_ID);
+    }
+
+    #[test]
+    fn deep_link_scheme_is_xdev() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(
+            conf["plugins"]["deep-link"]["desktop"]["schemes"],
+            serde_json::json!(["xdev"])
+        );
+    }
+
+    #[test]
+    fn csp_allows_data_images_only() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let csp = conf["app"]["security"]["csp"].as_str().unwrap();
+        let img = csp
+            .split(';')
+            .map(str::trim)
+            .find(|d| d.starts_with("img-src"))
+            .unwrap();
+        assert_eq!(img, "img-src 'self' data:");
+        assert!(!img.contains("https:") && !img.contains('*'));
     }
 }

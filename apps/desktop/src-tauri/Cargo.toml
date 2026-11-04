@@ -18,8 +18,11 @@ notify-debouncer-full.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = [] }
+tauri-plugin-deep-link = "2.6.3"
 tauri-plugin-dialog = "2.8.4"
 tauri-plugin-notification = "2.6.0"
+tauri-plugin-opener = "2.7.2"
+tauri-plugin-single-instance = { version = "2.5.5", features = ["deep-link"] }
 tauri-plugin-updater = "2.14.1"
 uuid = { version = "1.29", features = ["v4"] }
 trash.workspace = true
@@ -27,6 +30,7 @@ xdev-agent.workspace = true
 xdev-ai.workspace = true
 xdev-core.workspace = true
 xdev-git.workspace = true
+xdev-id.workspace = true
 xdev-ipc.workspace = true
 xdev-kit.workspace = true
 xdev-policy.workspace = true
@@ -42,6 +46,7 @@ xdev-agent = { workspace = true, features = ["ts"] }
 xdev-ai = { workspace = true, features = ["ts"] }
 xdev-core = { workspace = true, features = ["ts"] }
 xdev-git = { workspace = true, features = ["ts"] }
+xdev-id = { workspace = true, features = ["ts", "test-util"] }
 xdev-kit = { workspace = true, features = ["ts"] }
 xdev-pty = { workspace = true, features = ["ts"] }
 xdev-workspace = { workspace = true, features = ["ts"] }
