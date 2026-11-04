@@ -1,7 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { RepoView, SidebarItem, WorktreeView } from "@/api";
+import type { RepoView, SidebarItem, SidebarPrefs, WorktreeView } from "@/api";
+import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { translate } from "@/i18n";
 import { ago } from "./ago";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
@@ -584,4 +585,66 @@ it("a worktree the CLI changed shows a by CLI chip beside its status", () => {
   expect(kids.indexOf("ws-wt-cli")).toBe(kids.indexOf("ws-chip ws-wt-status") + 1);
   // Others have none.
   expect(view.all().filter((n) => n.props.className === "ws-wt-cli")).toHaveLength(1);
+});
+
+const prefsWith = (extra: Partial<SidebarPrefs>): SidebarPrefs => ({ ...SIDEBAR_PREFS_DEFAULTS, ...extra });
+
+it("a compact row has no sub line and no meta line", () => {
+  const view = withData({ prefs: prefsWith({ compactCards: true }) });
+  const oak = nodes(view.row("/demo/wt/xdev-oak").props.children);
+  expect(oak.some(n => n.props.className === "ws-wt-sub")).toBe(false);
+  expect(oak.some(n => n.props.className === "ws-wt-meta")).toBe(false);
+  // The line counts and the time stay inline on the one line.
+  expect(oak.some(n => n.props.className === "ws-stat")).toBe(true);
+  expect(oak.some(n => n.props.className === "ws-wt-time")).toBe(true);
+  expect(view.all().find(n => n.props.className === "ws-worktrees")!.props["data-layout"]).toBe("compact");
+});
+
+it("a detailed row drops the part whose property is off", () => {
+  const on = withData();
+  expect(part(on, "/demo/wt/xdev-oak", "ws-wt-branch")).toHaveLength(1);
+  const off = withData({ prefs: prefsWith({ card: { ...SIDEBAR_PREFS_DEFAULTS.card, branch: false, time: false, diffStat: false } }) });
+  expect(part(off, "/demo/wt/xdev-oak", "ws-wt-branch")).toHaveLength(0);
+  expect(nodes(off.row("/demo/wt/xdev-oak").props.children).some(n => n.props.className === "ws-wt-time")).toBe(false);
+  expect(nodes(off.row("/demo/wt/xdev-oak").props.children).some(n => n.props.className === "ws-stat")).toBe(false);
+  expect(off.all().find(n => n.props.className === "ws-worktrees")!.props["data-layout"]).toBeUndefined();
+});
+
+it("group by project draws a section per repo, in repo order", () => {
+  const view = harness(DOTS, repos, { prefs: prefsWith({ groupBy: "project" }) });
+  const keys = view.all().filter(n => n.props.className === "ws-group").map(n => n.props["data-group"]);
+  expect(keys).toEqual(["project:demo-xdev", "project:repo-2-notes"]);
+});
+
+it("group by none draws the rows without a heading", () => {
+  const view = harness(DOTS, repos, { prefs: prefsWith({ groupBy: "none" }) });
+  expect(view.all().filter(n => n.props.className === "ws-group-head" && n.props["data-group"] !== "pinned")).toHaveLength(0);
+  expect(view.html()).toContain("/demo/wt/xdev-oak");
+});
+
+it("group by status and by pull request use their own keys, and a fold is scoped to the mode", () => {
+  const prs = { "/demo/wt/xdev-oak": { pr: { number: 7, url: "u", state: "open" as const, title: "t", base: "main", head: "h" }, checks: [] } };
+  const view = harness(DOTS, repos, { prefs: prefsWith({ groupBy: "pr" }), prs });
+  const keys = view.all().filter(n => n.props.className === "ws-group").map(n => n.props["data-group"]);
+  expect(keys).toContain("pr:open");
+  expect(keys).toContain("pr:none");
+  const status = harness(DOTS, repos, { prefs: prefsWith({ groupBy: "status" }) });
+  expect(status.all().filter(n => n.props.className === "ws-group").map(n => n.props["data-group"])).toContain("status:none");
+});
+
+it("sort recent changes the order passed to onOrder", () => {
+  const seen: string[][] = [];
+  const activity = { "/demo/wt/xdev-elm": NOW - 1000, "/demo/wt/xdev-oak": NOW - 9000 };
+  const order = (sort: "manual" | "recent") => {
+    const view = harness(DOTS, repos, { prefs: prefsWith({ groupBy: "none", sort }), activity, onOrder: (p) => seen.push(p) });
+    hooks.effects = [];
+    view.html();
+    hooks.effects.at(-1)!();
+    return seen.at(-1)!;
+  };
+  const manual = order("manual");
+  const recent = order("recent");
+  expect(recent.indexOf("/demo/wt/xdev-elm")).toBeLessThan(recent.indexOf("/demo/wt/xdev-oak"));
+  expect(recent.slice(0, 2)).toEqual(["/demo/wt/xdev-elm", "/demo/wt/xdev-oak"]);
+  expect([...recent].sort()).toEqual([...manual].sort());
 });

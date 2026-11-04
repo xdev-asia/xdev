@@ -3278,3 +3278,19 @@ button.ws-tree-row:focus-visible {
   color: var(--x-color-warn);
   font-size: 0.9em;
 }
+
+/* Compact cards: one line; the line counts and the pull request sit after the name and never shrink. */
+.ws-worktrees[data-layout="compact"] .ws-wt-line {
+  gap: 6px;
+}
+
+.ws-worktrees[data-layout="compact"] .ws-wt-line .ws-stat,
+.ws-worktrees[data-layout="compact"] .ws-wt-line .ws-pr {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+/* No grouping: the rows stand without a heading. */
+.ws-group-bare > .ws-wts {
+  margin-top: 0;
+}
