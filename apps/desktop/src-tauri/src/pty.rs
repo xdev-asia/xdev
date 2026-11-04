@@ -296,6 +296,22 @@ impl Ptys {
         self.cwds.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// The terminals this app holds, each with the pid at its root and the folder it
+    /// started in. A terminal without a pid or a folder is left out.
+    #[allow(dead_code)] // read by the port scan once it is wired
+    pub(crate) fn roots(&self) -> Vec<xdev_ports::PtyRoot> {
+        let cwds = self.cwds().clone();
+        self.map()
+            .iter()
+            .filter_map(|(id, handle)| {
+                Some(xdev_ports::PtyRoot {
+                    pid: handle.pid()?,
+                    worktree: cwds.get(id)?.clone(),
+                })
+            })
+            .collect()
+    }
+
     /// The folder the PTY `id` started in; none for an unknown id.
     pub(crate) fn cwd_of(&self, id: &str) -> Option<PathBuf> {
         self.cwds().get(id).cloned()
@@ -1146,6 +1162,40 @@ mod tests {
         assert_eq!(meta["profile"], "claude");
         assert_eq!(meta["worktree"], std::env::temp_dir().display().to_string());
         assert_eq!(meta["info"]["agent"], true);
+    }
+
+    #[test]
+    fn roots_pair_a_pid_with_the_folder_each_terminal_started_in() {
+        let ptys = Ptys::default();
+        // FakePty reports pid 4242; `Held` has none.
+        ptys.map().insert("a".into(), Box::new(FakePty));
+        ptys.map().insert("b".into(), Box::new(FakePty));
+        ptys.map().insert(
+            "nopid".into(),
+            Box::new(Held {
+                killed: Arc::default(),
+                outlives: false,
+            }),
+        );
+        ptys.map().insert("nocwd".into(), Box::new(FakePty));
+        ptys.cwds().insert("a".into(), PathBuf::from("/w/a"));
+        ptys.cwds().insert("b".into(), PathBuf::from("/w/b"));
+        ptys.cwds().insert("nopid".into(), PathBuf::from("/w/c"));
+        let mut roots = ptys.roots();
+        roots.sort_by(|x, y| x.worktree.cmp(&y.worktree));
+        assert_eq!(
+            roots,
+            vec![
+                xdev_ports::PtyRoot {
+                    pid: 4242,
+                    worktree: PathBuf::from("/w/a")
+                },
+                xdev_ports::PtyRoot {
+                    pid: 4242,
+                    worktree: PathBuf::from("/w/b")
+                },
+            ]
+        );
     }
 
     /// Records whether it was killed; `outlives` stands for a service PTY.

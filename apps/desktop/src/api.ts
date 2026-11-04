@@ -16,6 +16,7 @@ import type {
   ReadTab,
   WorkerChanged,
   AwakeView,
+  PortScan,
   KeepAwake,
   SwitchRunning,
   Approvals,
@@ -188,6 +189,7 @@ export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill
 export type { Agent, AgentSession, SessionQuery, SessionRow, SessionSearchStatus };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, AwakeView, KeepAwake, SwitchRunning };
+export type { PortEvidence, PortKind, PortProtocol, PortScan, WorkspacePort } from "@xdev/bindings";
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase };
@@ -1040,6 +1042,12 @@ export interface Api {
   // Reports whether any agent tab is working; the backend decides in `agent` mode.
   keepAwakeAgents(working: boolean): Promise<AwakeView>;
   onKeepAwakeChanged(cb: (v: AwakeView) => void): Promise<() => void>;
+  // Ports: one scan of the local listeners for these worktrees (`force` skips the back-off wait), stopping
+  // the process behind a port id, opening its URL in the OS browser, and a terminal printing a new URL.
+  portsScan(worktrees: string[], force: boolean): Promise<PortScan>;
+  portsStop(worktrees: string[], id: string): Promise<PortScan>;
+  portsOpen(id: string): Promise<void>;
+  onPortsAdvertised(cb: (worktree: string) => void): Promise<() => void>;
   usageSettings(): Promise<UsageSettings>;
   usageSettingsPut(v: UsageSettings): Promise<UsageSettings>;
 
@@ -1527,6 +1535,10 @@ const tauriApi: Api = {
   keepAwakeSet: (mode) => call("keep_awake_set", { mode }),
   keepAwakeAgents: (working) => call("keep_awake_agents", { working }),
   onKeepAwakeChanged: (cb) => listen<AwakeView>("keep-awake://changed", (e) => cb(e.payload)),
+  portsScan: (worktrees, force) => call("ports_scan", { worktrees, force }),
+  portsStop: (worktrees, id) => call("ports_stop", { worktrees, id }),
+  portsOpen: (id) => call("ports_open", { id }),
+  onPortsAdvertised: (cb) => listen<{ worktree: string }>("ports://advertised", (e) => cb(e.payload.worktree)),
   usageSettings: () => call("usage_settings_get"),
   usageSettingsPut: (settings) => call("usage_settings_put", { settings }),
   layoutLoad: () => call("layout_load"),

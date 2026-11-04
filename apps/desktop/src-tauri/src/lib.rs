@@ -22,6 +22,7 @@ mod orch_pump;
 mod orch_skill;
 mod orch_sweep;
 mod orchestration;
+mod ports;
 mod power;
 mod profiles;
 mod prs;
@@ -95,6 +96,7 @@ pub fn run() {
         .manage(files::Searches::default())
         .manage(status::Shown::default())
         .manage(power::Awake::default())
+        .manage(ports::Ports::default())
         .manage(cli_verbs::CliHub::default())
         .manage(orchestration::OrchHub::default())
         .manage(keybindings::LastSent::default())
@@ -307,6 +309,9 @@ pub fn run() {
             power::keep_awake_get,
             power::keep_awake_set,
             power::keep_awake_agents,
+            ports::ports_scan,
+            ports::ports_stop,
+            ports::ports_open,
             pty::pty_spawn,
             pty::pty_approve,
             pty::pty_write,
