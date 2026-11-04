@@ -20,7 +20,8 @@ pub use clone::{CloneEvent, check_clone_url, clone_name, clone_repo, parse_progr
 pub use gh::{
     Check, CheckBucket, GhExec, GhOutput, ISSUE_BODY_MAX, ISSUE_LIMIT_MAX, Issue, IssueComment,
     IssueDetail, IssueQuery, IssueState, PrDraft, PrState, PrView, SystemGh, issue_list,
-    issue_view, parse_issue_ref, pr_checks, pr_create, pr_open_web, pr_view, repo_name,
+    issue_open_web, issue_view, parse_issue_ref, pr_checks, pr_create, pr_open_web, pr_view,
+    repo_name,
 };
 pub use history::Commit;
 pub use remote::{BaseRange, BaseRefresh, Upstream};

@@ -6,7 +6,7 @@ use std::sync::{Mutex, OnceLock};
 
 use tauri::State;
 use xdev_git::{
-    GhExec, GitError, Issue, IssueDetail, IssueQuery, SystemGh, issue_list,
+    GhExec, GitError, Issue, IssueDetail, IssueQuery, SystemGh, issue_list, issue_open_web,
     issue_view as gh_issue_view, parse_issue_ref, repo_name,
 };
 use xdev_workspace::{Registry, WorkspaceError};
@@ -46,6 +46,10 @@ fn view_with(
     number: u64,
 ) -> Result<IssueDetail, CmdError> {
     Ok(gh_issue_view(gh, &main_path(data, repo_id)?, number)?)
+}
+
+fn open_with(gh: &dyn GhExec, data: &Path, repo_id: &str, number: u64) -> Result<(), CmdError> {
+    Ok(issue_open_web(gh, &main_path(data, repo_id)?, number)?)
 }
 
 fn resolve_with(
@@ -98,6 +102,15 @@ pub fn issue_view(
     number: u64,
 ) -> Result<IssueDetail, CmdError> {
     view_with(&SystemGh, data_dir(&state)?, &repo_id, number)
+}
+
+#[tauri::command(async)]
+pub fn issue_open(
+    state: State<'_, AppState>,
+    repo_id: String,
+    number: u64,
+) -> Result<(), CmdError> {
+    open_with(&SystemGh, data_dir(&state)?, &repo_id, number)
 }
 
 /// Parses `text` and reads the issue; an issue URL of another repo is
@@ -184,6 +197,14 @@ mod tests {
             5
         );
         assert_eq!(fake.calls.borrow()[1][..3], ["issue", "view", "5"]);
+    }
+
+    #[test]
+    fn open_runs_the_web_view_in_the_main_checkout() {
+        let (_tmp, data) = fixture("r-open");
+        let fake = Fake::new(vec![(0, "", "")]);
+        open_with(&fake, &data, "r-open", 3).unwrap();
+        assert_eq!(fake.calls.borrow()[0], ["issue", "view", "3", "--web"]);
     }
 
     #[test]
