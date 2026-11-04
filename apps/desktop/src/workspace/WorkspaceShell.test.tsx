@@ -1231,11 +1231,11 @@ it("Manage accounts in the usage popover shows the docs view on the Accounts app
   expect(view.of(DocsApp)[0].props.appRequest).toEqual({ app: "accounts", seq: 2 });
 });
 
-it("Usage details in the usage popover asks the Kit for the usage tab", async () => {
+it("Usage details in the usage popover opens the Stats & Usage settings section", async () => {
   const view = await harness();
   view.of(LiveWorkspaceFooter)[0].props.onOpenUsage();
   view.draw();
-  expect(view.of(DocsApp)[0].props.kit.open).toMatchObject({ tab: "usage" });
+  expect(view.of(SettingsView)[0].props.initial).toBe("usage");
 });
 
 // Ctrl+Shift+Backspace, selection and branch review.

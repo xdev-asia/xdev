@@ -108,3 +108,28 @@ it("the old token usage link stays next to the meter button", () => {
 it("no meters, no usage button", () => {
   expect(render(null, { onToggleUsage: () => {} })).not.toContain('data-action="usage"');
 });
+
+it("Remaining shows what is left: 30 % for 70 % used, in the number, the bar and the title", () => {
+  const html = render([account("claude-2", [["five_hour", 70]])], { display: "remaining" });
+  expect(html).toContain("30%");
+  expect(html).not.toContain("70%");
+  expect(html).toMatch(/role="meter"[^>]*aria-valuenow="30"/);
+  expect(html).toMatch(/class="ws-meter-fill" style="width:30%"/);
+  expect(html).toContain(en("workspace.footer.meterTitle", { name: "claude-2", window: en("workspace.footer.window.five_hour"), percent: 30, state: en("usage.stats.left") }));
+  const used = render([account("claude-2", [["five_hour", 70]])]);
+  expect(used).toContain("70%");
+  expect(used).toContain(en("usage.stats.used"));
+});
+
+it("the warning stays on 80 % used in both modes: 85 % used warns in Remaining, 79 % does not", () => {
+  const hot = render([account("hot", [["five_hour", 85]])], { display: "remaining" });
+  expect(hot).toContain("ws-meter-warn");
+  expect(hot).toContain("15%");
+  expect(render([account("calm", [["five_hour", 79]])], { display: "remaining" })).not.toContain("ws-meter-warn");
+});
+
+it("a meter past 100 % used shows 0 % left", () => {
+  const html = render([account("over", [["five_hour", 130]])], { display: "remaining" });
+  expect(html).toMatch(/role="meter"[^>]*aria-valuenow="0"/);
+  expect(html).toContain("0%");
+});
