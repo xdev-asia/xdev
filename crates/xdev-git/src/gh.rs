@@ -292,6 +292,58 @@ pub fn run_failed_log(gh: &dyn GhExec, cwd: &Path, link: &str) -> Result<Option<
     Ok(Some(format!("[cut]\n{}", &log[start..])))
 }
 
+/// Every login `gh auth status` lists, in its order. A login whose token
+/// failed is left out: no call could run as it. Empty when `gh` is signed in
+/// nowhere, or when its text is not one this parser knows; only a missing
+/// `gh` (or a timeout) is an error.
+pub fn gh_logins(gh: &dyn GhExec) -> Result<Vec<GhLogin>, GitError> {
+    let out = gh.run(Path::new("."), &["auth", "status"], None)?;
+    // Newer gh writes the report to stdout, older ones to stderr.
+    let text = format!("{}\n{}", out.stdout, out.stderr);
+    let mut logins: Vec<GhLogin> = Vec::new();
+    let mut marked = false;
+    // Whether the last account line was a usable login.
+    let mut last_ok = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(rest) = line
+            .strip_prefix('\u{2713}')
+            .map(str::trim_start)
+            .and_then(|l| l.strip_prefix("Logged in to "))
+        {
+            // `<host> account <user> (<store>)`, or `<host> as <user> (<store>)` before gh 2.40.
+            let mut words = rest.split_whitespace();
+            let (Some(host), Some(sep), Some(user)) = (words.next(), words.next(), words.next())
+            else {
+                last_ok = false;
+                continue;
+            };
+            last_ok = matches!(sep, "account" | "as");
+            if last_ok {
+                logins.push(GhLogin {
+                    host: host.to_owned(),
+                    user: user.to_owned(),
+                    active: false,
+                });
+            }
+        } else if line.contains("Failed to log in to ") {
+            last_ok = false;
+        } else if let Some(value) = line.strip_prefix("- Active account:") {
+            marked = true;
+            if last_ok && let Some(login) = logins.last_mut() {
+                login.active = value.trim() == "true";
+            }
+        }
+    }
+    if !marked {
+        // No marker: one login per host, and that one is the active one.
+        for login in &mut logins {
+            login.active = true;
+        }
+    }
+    Ok(logins)
+}
+
 pub fn pr_open_web(gh: &dyn GhExec, cwd: &Path, checks: bool) -> Result<(), GitError> {
     let sub = if checks { "checks" } else { "view" };
     ok(gh.run(cwd, &["pr", sub, "--web"], None)?)?;
@@ -1037,5 +1089,117 @@ mod tests {
             run_failed_log(&fake, cwd(), link),
             Err(GitError::GhAuth)
         ));
+    }
+
+    // Recorded from `gh auth status`; the exact text differs between gh versions.
+    const STATUS_ONE: &str = "github.com
+  \u{2713} Logged in to github.com account octocat (keyring)
+  - Active account: true
+  - Git operations protocol: https
+  - Token: gho_************************************
+  - Token scopes: 'gist', 'read:org', 'repo'
+";
+    const STATUS_TWO: &str = "github.com
+  \u{2713} Logged in to github.com account work-me (keyring)
+  - Active account: true
+  - Git operations protocol: https
+  - Token: gho_************************************
+
+  \u{2713} Logged in to github.com account me (keyring)
+  - Active account: false
+  - Git operations protocol: ssh
+  - Token: gho_************************************
+
+git.corp.example
+  \u{2713} Logged in to git.corp.example account corp-me (keyring)
+  - Active account: true
+";
+    // Before gh 2.40: one login per host, no active marker, on stderr.
+    const STATUS_OLD: &str = "github.com
+  \u{2713} Logged in to github.com as octocat (oauth_token)
+  \u{2713} Git operations for github.com configured to use https protocol.
+  \u{2713} Token: *******************
+";
+    const STATUS_BROKEN: &str = "github.com
+  X Failed to log in to github.com account stale (keyring)
+  - Active account: true
+  - The token in keyring is invalid.
+
+  \u{2713} Logged in to github.com account fine (keyring)
+  - Active account: false
+";
+
+    fn login(host: &str, user: &str, active: bool) -> GhLogin {
+        GhLogin {
+            host: host.into(),
+            user: user.into(),
+            active,
+        }
+    }
+
+    #[test]
+    fn gh_logins_reads_one_host_one_user() {
+        let fake = Fake::new(vec![out(0, STATUS_ONE, "")]);
+        assert_eq!(
+            gh_logins(&fake).unwrap(),
+            vec![login("github.com", "octocat", true)]
+        );
+        assert_eq!(fake.calls.borrow()[0].0, ["auth", "status"]);
+    }
+
+    #[test]
+    fn gh_logins_reads_every_host_and_user_with_the_active_marker() {
+        let fake = Fake::new(vec![out(0, STATUS_TWO, "")]);
+        assert_eq!(
+            gh_logins(&fake).unwrap(),
+            vec![
+                login("github.com", "work-me", true),
+                login("github.com", "me", false),
+                login("git.corp.example", "corp-me", true),
+            ]
+        );
+    }
+
+    #[test]
+    fn gh_logins_reads_the_old_format_from_stderr() {
+        let fake = Fake::new(vec![out(0, "", STATUS_OLD)]);
+        assert_eq!(
+            gh_logins(&fake).unwrap(),
+            vec![login("github.com", "octocat", true)]
+        );
+    }
+
+    #[test]
+    fn gh_logins_skips_a_login_whose_token_failed() {
+        let fake = Fake::new(vec![out(1, STATUS_BROKEN, "")]);
+        assert_eq!(
+            gh_logins(&fake).unwrap(),
+            vec![login("github.com", "fine", false)]
+        );
+    }
+
+    #[test]
+    fn gh_logins_is_empty_when_not_logged_in_or_unreadable() {
+        let fake = Fake::new(vec![
+            out(
+                1,
+                "",
+                "You are not logged into any GitHub hosts. To log in, run: gh auth login\n",
+            ),
+            out(0, "something new and unexpected\n", ""),
+        ]);
+        assert_eq!(gh_logins(&fake).unwrap(), vec![]);
+        assert_eq!(gh_logins(&fake).unwrap(), vec![]);
+    }
+
+    #[test]
+    fn gh_logins_passes_on_a_missing_gh() {
+        struct Gone;
+        impl GhExec for Gone {
+            fn run(&self, _: &Path, _: &[&str], _: Option<&str>) -> Result<GhOutput, GitError> {
+                Err(GitError::GhMissing)
+            }
+        }
+        assert!(matches!(gh_logins(&Gone), Err(GitError::GhMissing)));
     }
 }
