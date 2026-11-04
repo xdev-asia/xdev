@@ -25,8 +25,9 @@ import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
 import { startAutoRename } from "./autoRename";
 import { startAutoTabTitle } from "./autoTabTitle";
+import { startAutoSleep } from "./autoSleep";
 import { startKeepAwakeReport } from "@/status/keepAwake";
-import { currentCloseWindow, openRestoredFile, restoreLayout, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
+import { currentCloseWindow, openRestoredFile, restoreLayout, sessionFallback, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
@@ -128,6 +129,9 @@ type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?:
 };
 
 /** The app frame: repos and worktrees on the left, the selected worktree in the middle. */
+/** How often the auto sleep check runs. */
+const AUTO_SLEEP_TICK_MS = 60_000;
+
 export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
@@ -443,10 +447,30 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const running = sessions ? paths.reduce((n, p) => n + working(sessions, p), 0) : 0;
   const waiting = sessions ? paths.reduce((n, p) => n + waitingIn(sessions, p), 0) : 0;
   const unreadMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.unread(p) ?? false]));
+  const sleepableMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.tabs(p).some((t) => !t.asleep) ?? false]));
+  const asleepMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.asleep(p) ?? false]));
 
   const all = repos?.flatMap((r) => r.worktrees) ?? [];
   // A stored path that no longer exists falls back to the first worktree.
   const current = all.find((w) => w.path === selected) ?? all[0] ?? null;
+
+  // Auto sleep: once a minute, tabs of finished agents that nobody looks at and that went quiet sleep.
+  // The inputs sit in a ref, so a worktree switch does not restart the timer; the settings are read on each tick.
+  const sleepLive = useRef({ paths, current: current?.path ?? null });
+  sleepLive.current = { paths, current: current?.path ?? null };
+  useEffect(() => {
+    if (!sessions) return;
+    return startAutoSleep({
+      tickMs: AUTO_SLEEP_TICK_MS,
+      settings: () => api.agentsSettings(),
+      tabs: () => sleepLive.current.paths.flatMap((p) => sessions.tabs(p)),
+      // The worktree on screen is never touched.
+      onScreen: () => new Set(sleepLive.current.current ? sessions.tabs(sleepLive.current.current).map((t) => t.id) : []),
+      lastOutput: (id) => sessions.lastOutput(id),
+      now: () => Date.now(),
+      sleep: (id) => sessions.hibernate(id, sessionFallback(api)),
+    });
+  }, [api, sessions]);
   const currentRepo = repos?.find((r) => r.worktrees.some((w) => w.path === current?.path)) ?? null;
   const branch = current ? (current.branch ?? t("workspace.detached")) : null;
   // Noted during render, so the first frame of a worktree already has its tabs.
@@ -1611,6 +1635,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onAddRepo={addRepo}
             onAdopt={(wt) => void adopt(wt)}
             unread={unreadMap}
+            asleep={asleepMap}
+            sleepable={sleepableMap}
+            onSleep={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api), all.filter((c) => c.parent === wt.path).map((c) => c.path))}
+            onWake={(wt) => [wt.path, ...all.filter((c) => c.parent === wt.path).map((c) => c.path)].forEach((p) => sessions?.wakeWorktree(p))}
             onMarkUnread={(wt) => sessions?.markUnread(wt.path)}
             onMarkRead={(wt) => sessions?.markRead(wt.path)}
             openInApps={openInApps}

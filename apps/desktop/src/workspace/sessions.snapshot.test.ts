@@ -27,6 +27,17 @@ describe("Sessions.snapshot", () => {
     expect(drawn).toBeGreaterThan(0);
   });
 
+  it("a sleeping tab is saved asleep, with its session and without a pty id or byte count", async () => {
+    const s = make();
+    const tab = s.resume(A, "claude", null, "sess-1", "Fix it");
+    const next = (await s.hibernate(tab.id, async () => null))!;
+    const t1 = s.snapshot().worktrees[A].tabs.t1;
+    expect(t1).toMatchObject({ kind: "terminal", asleep: true, agentSession: "sess-1", title: "Fix it" });
+    expect(t1).not.toHaveProperty("ptyId");
+    expect(t1).not.toHaveProperty("seq");
+    expect(s.tab(next.id)?.asleep).toBe(true);
+  });
+
   it("is empty without tabs", () => {
     expect(make().snapshot()).toEqual({ version: 1, savedAt: 1000, worktrees: {} });
   });

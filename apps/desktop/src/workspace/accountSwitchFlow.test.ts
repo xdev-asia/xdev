@@ -3,6 +3,7 @@ import { createMockApi } from "@/mockApi";
 import type { SwitchRunning } from "@/api";
 import { ownAccount, Sessions, type Tab } from "./sessions";
 import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
+import { AGENTS_SETTINGS_DEFAULTS } from "@/mockSettings";
 
 const WT = "/demo/wt/xdev-oak";
 // What the terminal view does for a restarted tab: starts its pty, which reports the account it got.
@@ -24,7 +25,7 @@ describe("account switch flow", () => {
   async function setup(policy: SwitchRunning) {
     const api = createMockApi({});
     await api.ptyApprove("claude", null);
-    await api.agentsSettingsPut({ accountSwitch: policy, keepAwake: "off", autoTabTitle: false });
+    await api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, accountSwitch: policy });
     const live = (sessions = new Sessions(api));
     const notify = vi.fn();
     const ask = vi.fn<(p: PendingSwitch) => void>();

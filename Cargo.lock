@@ -6238,6 +6238,7 @@ dependencies = [
  "xdev-kit",
  "xdev-policy",
  "xdev-pty",
+ "xdev-store",
  "xdev-workspace",
 ]
 
