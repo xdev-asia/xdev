@@ -8,15 +8,23 @@ export function countdownText(remainingMs: number): string {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
+/** What the strip needs besides the lifetime: the auto-close setting and whether the tab has a running agent. */
+export interface StripContext {
+  autoClose: boolean;
+  running: boolean;
+}
+
 /**
- * What the strip over a worker's terminal shows. Nothing for a tab that is no worker or one that is
- * kept open. A worker that has not finished, or that works again after finishing (its close time is
- * cleared), shows the rule; a finished one with a close time shows the countdown.
+ * What the strip over a worker's terminal shows. Nothing for a tab that is no worker, one that is
+ * kept open, or any worker while auto-close is off. A finished worker with a close time shows the
+ * countdown. With no close time the rule shows while the agent runs (a worker that works again after
+ * finishing has its close time cleared); with no running agent either (a start that failed) nothing
+ * will close the tab, so nothing shows.
  */
-export function stripState(lifetime: WorkerLifetime | null, nowMs: number): StripState {
-  if (lifetime === null || lifetime.kept) return { kind: "hidden" };
-  if (!lifetime.finished || lifetime.closesAtMs === null) return { kind: "running" };
-  return { kind: "finished", countdown: countdownText(lifetime.closesAtMs - nowMs) };
+export function stripState(lifetime: WorkerLifetime | null, nowMs: number, ctx: StripContext): StripState {
+  if (lifetime === null || lifetime.kept || !ctx.autoClose) return { kind: "hidden" };
+  if (lifetime.finished && lifetime.closesAtMs !== null) return { kind: "finished", countdown: countdownText(lifetime.closesAtMs - nowMs) };
+  return ctx.running ? { kind: "running" } : { kind: "hidden" };
 }
 
 /** Whether the strip needs a one-second tick: only while a countdown runs. */

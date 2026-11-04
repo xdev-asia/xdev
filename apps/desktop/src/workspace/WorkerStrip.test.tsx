@@ -25,7 +25,7 @@ it("renders nothing for a tab that is no worker", async () => {
 it("shows the rule for a running worker and the countdown for a finished one", async () => {
   const api = createMockApi({});
   api.__orchSetLifetime("t1", { kept: false, closesAtMs: null, finished: false });
-  const m = mount(Strip, () => ({ api, tab: "t1", now: () => 0 }));
+  const m = mount(Strip, () => ({ api, tab: "t1", now: () => 0, running: true }));
   expect(banner(await m.settle())!.props.title).toBe(en("orchestration.worker.running"));
   api.__orchSetLifetime("t1", { kept: false, closesAtMs: 102_000, finished: true });
   api.__orchWorkerChanged({ tab: "t1" });
@@ -46,4 +46,19 @@ it("Keep open hides the strip at once and a change event for another tab does no
   await new Promise((r) => setTimeout(r, 0));
   api.__orchWorkerChanged({ tab: "other" });
   expect(banner(m.all())).toBeUndefined();
+});
+
+it("is hidden when auto-close is off", async () => {
+  const api = createMockApi({});
+  await api.orchestrationSettingsPut({ nestedWorkerMaxDepth: 1, workerAutoClose: false });
+  api.__orchSetLifetime("t1", { kept: false, closesAtMs: null, finished: false });
+  const m = mount(Strip, () => ({ api, tab: "t1", now: () => 0, running: true }));
+  expect(banner(await m.settle())).toBeUndefined();
+});
+
+it("is hidden for a worker with no running agent that has not finished", async () => {
+  const api = createMockApi({});
+  api.__orchSetLifetime("t1", { kept: false, closesAtMs: null, finished: false });
+  const m = mount(Strip, () => ({ api, tab: "t1", now: () => 0, running: false }));
+  expect(banner(await m.settle())).toBeUndefined();
 });

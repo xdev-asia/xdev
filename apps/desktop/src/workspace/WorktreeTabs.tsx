@@ -572,7 +572,7 @@ export function WorktreeTabs(props: {
                   </button>
                 </div>
               )}
-              <WorkerStrip api={api} tab={tab.id} />
+              <WorkerStrip api={api} tab={tab.id} running={running(tab)} />
               {(everFront.has(tab.id) || !sessions.deferred(tab.id)) && <Terminal
                 key={`${tab.id}:${attempts[tab.id] ?? 0}`}
                 api={api}
