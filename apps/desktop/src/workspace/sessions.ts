@@ -203,11 +203,12 @@ export class Sessions {
     const report: RestoreReport = { resumed: 0, fresh: 0, skipped: [], opened: [] };
     if (this.restored) return report;
     this.restored = true;
-    if (mode === "none" || !s || s.version !== LAYOUT_VERSION || typeof s.worktrees !== "object" || !s.worktrees) return report;
+    if (!s || s.version !== LAYOUT_VERSION || typeof s.worktrees !== "object" || !s.worktrees) return report;
     // Tabs whose pty still runs in the terminal service come back attached to it, before any resume.
-    const state = (await this.api.ptydStatus().catch(() => null))?.state;
+    // Under `none` only the sleeping tabs come back, and they start nothing.
+    const state = mode === "none" ? undefined : (await this.api.ptydStatus().catch(() => null))?.state;
     const attach = state === "running" || state === "old-version";
-    const found = await this.api.accounts().catch(() => null);
+    const found = mode === "none" ? null : await this.api.accounts().catch(() => null);
     this.restoreActive = found ? new Map(PROVIDERS.map((p): [string, string | null] => [p, found.active.find((a) => a.provider === p)?.name ?? null])) : null;
     for (const [worktree, one] of Object.entries(s.worktrees)) {
       if (options.known && !options.known(worktree)) {
@@ -238,6 +239,12 @@ export class Sessions {
         else if (snap.kind === "file") {
           const ok = await (options.openFile?.(worktree, snap.rel) ?? Promise.resolve(false)).catch(() => false);
           if (ok) files.add(key);
+        } else if (snap.kind === "terminal" && snap.asleep === true) {
+          const tab = this.restoreAsleep(worktree, snap, report);
+          ids.set(key, tab.id);
+          opened.push(tab.id);
+        } else if (mode === "none") {
+          continue;
         } else if (snap.kind === "terminal") {
           const tab = (attach && (await this.attachTerminal(worktree, snap, report))) || (await this.restoreTerminal(worktree, snap, mode, fallback, report));
           if (!tab) continue;
@@ -307,6 +314,18 @@ export class Sessions {
     this.emit();
     if (exited) this.apply(id, { kind: "exit", code: exited.code });
     return entry.tab;
+  }
+
+  /** One sleeping terminal tab of a snapshot: no pty, no attach, and the session it wakes with. */
+  private restoreAsleep(worktree: string, snap: Extract<TabSnapshot, { kind: "terminal" }>, report: RestoreReport): Tab {
+    const cli = snap.cli === undefined ? cliOf(snap.profileId) : snap.cli;
+    const account = restoredAccount(snap, cli, null);
+    const id = snap.agent ? snap.agentSession : null;
+    const tab = id ? this.resume(worktree, snap.profileId, account, id, snap.title, cli) : this.open(worktree, snap.profileId, account, cli);
+    const color = TAB_COLORS.includes(snap.color) ? snap.color : "none";
+    this.update(this.entries.get(tab.id)!, { asleep: true, title: snap.title, renamed: snap.renamed === true, pinned: snap.pinned === true, color, openedAt: snap.openedAt, accountSource: snap.accountSource ?? null });
+    report.asleep = (report.asleep ?? 0) + 1;
+    return this.entries.get(tab.id)!.tab;
   }
 
   /** One terminal tab of a snapshot, or null when `mode` or a missing session leaves it out. */
