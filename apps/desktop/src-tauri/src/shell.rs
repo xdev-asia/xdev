@@ -3,7 +3,8 @@
 //! links. The tray is `tray.rs`, the macOS menu `app_menu.rs`.
 
 use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -14,6 +15,10 @@ use crate::commands::CmdError;
 
 use crate::settings::{OnQuit, SettingsSection, ShellSettings};
 use crate::settings_store;
+
+/// How long a quit waits for the webview to answer its close request before
+/// the app leaves without it (a frozen or reloading page never answers).
+const CLOSE_ACK_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// The label of the one app window.
 const MAIN: &str = "main";
@@ -192,6 +197,10 @@ pub struct ShellState {
     pub quitting: Mutex<Option<QuitMode>>,
     pub attention: AtomicBool,
     pub labels: Mutex<ShellLabels>,
+    /// The webview answered the close request of the quit in flight.
+    pub close_ack: AtomicBool,
+    /// Counts quits, so a timer of an earlier one cannot end a later one.
+    pub quit_seq: AtomicU64,
 }
 
 impl ShellState {
@@ -238,6 +247,12 @@ pub fn on_quit_for(mode: Option<QuitMode>, setting: OnQuit) -> OnQuit {
     }
 }
 
+/// Whether the fallback timer of quit `seq` must end the app now: the webview
+/// never answered the close, and that same quit is still in flight.
+fn fallback_due(acked: bool, quitting: Option<QuitMode>, seq: u64, current: u64) -> bool {
+    !acked && quitting.is_some() && seq == current
+}
+
 /// The quit in flight, read as the app exits.
 pub fn quit_mode(app: &AppHandle) -> Option<QuitMode> {
     app.try_state::<ShellState>().and_then(|s| s.quitting())
@@ -252,6 +267,7 @@ pub fn shell_close_requested(
     notice_title: String,
     notice_body: String,
 ) -> CloseRequest {
+    state.close_ack.store(true, Ordering::SeqCst);
     let shell = settings_store::read(&app).shell;
     let request = close_request(Os::current(), &shell, state.quitting());
     let intent = request.intent;
@@ -289,7 +305,25 @@ pub fn shell_quit(app: AppHandle, mode: QuitMode) {
 
 /// [`shell_quit`] for Rust callers (the tray and the native menu).
 pub fn quit(app: &AppHandle, mode: QuitMode) {
-    app.state::<ShellState>().set_quitting(Some(mode));
+    let state = app.state::<ShellState>();
+    state.set_quitting(Some(mode));
+    state.close_ack.store(false, Ordering::SeqCst);
+    let seq = state.quit_seq.fetch_add(1, Ordering::SeqCst) + 1;
+    // A webview that never runs its close listener must not stop the quit. Once it answered, the
+    // quit dialog may take as long as the person needs.
+    let timer_app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(CLOSE_ACK_TIMEOUT);
+        let state = timer_app.state::<ShellState>();
+        if fallback_due(
+            state.close_ack.load(Ordering::SeqCst),
+            state.quitting(),
+            seq,
+            state.quit_seq.load(Ordering::SeqCst),
+        ) {
+            timer_app.exit(0);
+        }
+    });
     let Some(window) = app.get_webview_window(MAIN) else {
         // No window to ask: leave now.
         app.exit(0);
@@ -434,6 +468,19 @@ mod tests {
         assert_eq!(r.mode, Some(QuitMode::EndAll));
         let r = close_request(Os::Windows, &s, None);
         assert_eq!((r.intent, r.mode), (CloseIntent::Hide, None));
+    }
+
+    #[test]
+    fn the_fallback_ends_only_an_unanswered_quit_still_in_flight() {
+        let q = Some(QuitMode::Quit);
+        // Nobody answered, same quit, still quitting: leave.
+        assert!(fallback_due(false, q, 4, 4));
+        // The webview answered: the dialog may take as long as it needs.
+        assert!(!fallback_due(true, q, 4, 4));
+        // The person cancelled.
+        assert!(!fallback_due(false, None, 4, 4));
+        // A newer quit started: the old timer is stale.
+        assert!(!fallback_due(false, q, 4, 5));
     }
 
     #[test]
