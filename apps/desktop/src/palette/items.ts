@@ -5,7 +5,7 @@ import { SECTIONS } from "@/settings/sections";
 import type { Tab } from "@/workspace/sessions";
 import type { TabStatus } from "@/workspace/status";
 
-export type PaletteKind = "tab" | "worktree" | "setting" | "action";
+export type PaletteKind = "tab" | "chat" | "worktree" | "task" | "setting" | "action";
 /** What an agent wants from the person; supplied by the status feature when it exists. */
 export type Attention = "needs-you" | "done";
 export type ItemStatus = TabStatus | Attention;
@@ -23,6 +23,8 @@ export interface PaletteItem {
   activity?: number | null;
   /** Tabs and worktrees: the worktree path they belong to. */
   worktree?: string;
+  /** The repo folder, for the project scope. Settings and actions have none. */
+  repo?: string;
   /** Tabs: the position in open order, for stable ordering. */
   order?: number;
   /** Left out until the trimmed query has at least this many characters. */

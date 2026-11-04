@@ -20,6 +20,8 @@ export interface JumpPaletteProps {
 
 const ICONS: Record<PaletteKind, string> = {
   tab: "M4 5h16v14H4zM8 10l3 2-3 2M13 14h3",
+  chat: "M4 5h16v11H9l-5 4zM8 10h8",
+  task: "M5 5h14v14H5zM9 12l2 2 4-4",
   worktree: "M6 4v10M6 14a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM6 4a2 2 0 1 0 0 .01M18 8a2 2 0 1 0 0 .01M18 10c0 4-6 3-12 4",
   setting: "M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6",
   action: "M13 3 5 13h6l-1 8 8-10h-6z",
