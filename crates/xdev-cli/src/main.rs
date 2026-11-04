@@ -5,6 +5,7 @@ mod ai;
 mod app;
 mod context;
 mod mcp;
+mod orch;
 mod squad;
 mod task;
 
@@ -117,6 +118,9 @@ enum Command {
         #[command(subcommand)]
         command: app::TerminalCommand,
     },
+    /// Coordinate agents in other tabs: runs, tasks, workers and mail.
+    #[command(alias = "orch")]
+    Orchestration(orch::OrchArgs),
     /// Run by an agent CLI's hook: records the event for the xDev pane in
     /// `XDEV_PTY_ID`. Always exits 0 and prints nothing to stdout.
     #[command(name = "agent-hook", hide = true)]
@@ -156,6 +160,7 @@ fn main() -> ExitCode {
         Command::Status(a) => app::AppCommand::Status(a),
         Command::Worktree { command } => app::AppCommand::Worktree(command),
         Command::Terminal { command } => app::AppCommand::Terminal(command),
+        Command::Orchestration(a) => app::AppCommand::Orchestration(Box::new(a)),
         other => return finish(run(other)),
     };
     // The app verbs need only the local folder, where the endpoint lives.
@@ -198,6 +203,7 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         // Handled in `main` before any folder is touched.
         Command::AgentHook { .. }
         | Command::Status(_)
+        | Command::Orchestration(_)
         | Command::Worktree { .. }
         | Command::Terminal { .. } => return Ok(Outcome::Ok),
         Command::Mcp { dir } => {

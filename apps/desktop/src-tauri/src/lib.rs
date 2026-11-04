@@ -3,6 +3,7 @@ mod agent_sessions;
 mod atomic;
 #[cfg(test)]
 mod bindings;
+mod cli_path;
 mod cli_verbs;
 mod commands;
 mod endpoint;
@@ -14,6 +15,7 @@ mod kit;
 mod layout;
 mod links;
 mod open_in;
+mod orchestration;
 mod profiles;
 mod pty;
 mod ptyd;
@@ -68,6 +70,7 @@ pub fn run() {
         .manage(files::Searches::default())
         .manage(status::Shown::default())
         .manage(cli_verbs::CliHub::default())
+        .manage(orchestration::OrchHub::default())
         .manage(keybindings::LastSent::default())
         .setup(move |app| {
             updater::start(app.handle().clone());
@@ -166,6 +169,14 @@ pub fn run() {
             commands::agents_settings_put,
             commands::usage_settings_get,
             commands::usage_settings_put,
+            orchestration::orchestration_settings_get,
+            orchestration::orchestration_settings_put,
+            orchestration::orchestration_skill_status,
+            orchestration::orchestration_skill_install,
+            orchestration::orchestration_worker_lifetime,
+            orchestration::orchestration_worker_keep_open,
+            orchestration::orchestration_worker_opened,
+            orchestration::orchestration_read_answer,
             keybindings::keybindings_read,
             keybindings::keybindings_write,
             keybindings::keybindings_reveal,

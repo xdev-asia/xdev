@@ -1,6 +1,19 @@
-import type { Api, CliAsk, CliOpenTab, TabReport } from "./api";
+import type { Api, CliAsk, CliOpenTab, ReadTab, SkillStatus, TabReport, WorkerChanged, WorkerClose, WorkerLifetime, WorkerOpen, WorkerOpenOutcome } from "./api";
 
-type CliApi = Pick<Api, "cliTabsReport" | "cliApprove" | "onWorkspaceChanged" | "onCliOpenTab" | "onCliAsk">;
+type CliApi = Pick<
+  Api,
+  | "cliTabsReport" | "cliApprove" | "onWorkspaceChanged" | "onCliOpenTab" | "onCliAsk"
+  | "orchestrationSkillStatus"
+  | "orchestrationSkillInstall"
+  | "orchestrationWorkerLifetime"
+  | "orchestrationWorkerKeepOpen"
+  | "orchestrationWorkerOpened"
+  | "orchestrationReadAnswer"
+  | "onOrchestrationOpenWorker"
+  | "onOrchestrationCloseWorker"
+  | "onOrchestrationReadTab"
+  | "onOrchestrationWorkerChanged"
+>;
 
 export type MockCli = CliApi & {
   // Every `cliTabsReport` call, oldest first.
@@ -11,7 +24,18 @@ export type MockCli = CliApi & {
   __cliWorkspaceChanged(): void;
   __cliOpenTab(e: CliOpenTab): void;
   __cliAsk(e: CliAsk): void;
+  // Orchestration: what the backend would send, and what the UI answered it.
+  __orchOpenWorker(e: WorkerOpen): void;
+  __orchCloseWorker(e: WorkerClose): void;
+  __orchReadTab(e: ReadTab): void;
+  __orchWorkerChanged(e: WorkerChanged): void;
+  __orchOpened(): { dispatch: string; outcome: WorkerOpenOutcome }[];
+  __orchReads(): { request: number; text: string }[];
+  __orchSetLifetime(tab: string, v: WorkerLifetime | null): void;
+  __orchInstalls(): boolean[];
 };
+
+const SKILL_DEFAULT: SkillStatus = { installed: false, edited: false, canonical: "~/.agents/skills/xdev-orchestration", agents: [], installCommand: "xdev skills install" };
 
 /** The app CLI's side of the demo: no endpoint, so a test plays the CLI through the `__cli` hooks. */
 export function createMockCli(): MockCli {
@@ -20,6 +44,15 @@ export function createMockCli(): MockCli {
   const changed = new Set<() => void>();
   const opens = new Set<(e: CliOpenTab) => void>();
   const asks = new Set<(e: CliAsk) => void>();
+  const openWorker = new Set<(e: WorkerOpen) => void>();
+  const closeWorker = new Set<(e: WorkerClose) => void>();
+  const readTab = new Set<(e: ReadTab) => void>();
+  const workerChanged = new Set<(e: WorkerChanged) => void>();
+  const opened: { dispatch: string; outcome: WorkerOpenOutcome }[] = [];
+  const reads: { request: number; text: string }[] = [];
+  const installs: boolean[] = [];
+  const lifetimes = new Map<string, WorkerLifetime>();
+  let skill: SkillStatus = { ...SKILL_DEFAULT };
   const on = <T>(set: Set<T>, cb: T) => {
     set.add(cb);
     return () => void set.delete(cb);
@@ -40,6 +73,52 @@ export function createMockCli(): MockCli {
     async onCliAsk(cb) {
       return on(asks, cb);
     },
+    async orchestrationSkillStatus() {
+      return structuredClone(skill);
+    },
+    async orchestrationSkillInstall(force = false) {
+      installs.push(force);
+      skill = { ...skill, installed: true, edited: false };
+      return structuredClone(skill);
+    },
+    async orchestrationWorkerLifetime(tab) {
+      const v = lifetimes.get(tab);
+      return v ? { ...v } : null;
+    },
+    async orchestrationWorkerKeepOpen(tab, keep) {
+      const next = { ...(lifetimes.get(tab) ?? { kept: false, closesAtMs: null, finished: false }), kept: keep };
+      lifetimes.set(tab, next);
+      return { ...next };
+    },
+    async orchestrationWorkerOpened(dispatch, outcome) {
+      opened.push({ dispatch, outcome: structuredClone(outcome) });
+    },
+    async orchestrationReadAnswer(request, text) {
+      reads.push({ request, text });
+    },
+    async onOrchestrationOpenWorker(cb) {
+      return on(openWorker, cb);
+    },
+    async onOrchestrationCloseWorker(cb) {
+      return on(closeWorker, cb);
+    },
+    async onOrchestrationReadTab(cb) {
+      return on(readTab, cb);
+    },
+    async onOrchestrationWorkerChanged(cb) {
+      return on(workerChanged, cb);
+    },
+    __orchOpenWorker: (e) => [...openWorker].forEach((cb) => cb(structuredClone(e))),
+    __orchCloseWorker: (e) => [...closeWorker].forEach((cb) => cb(structuredClone(e))),
+    __orchReadTab: (e) => [...readTab].forEach((cb) => cb(structuredClone(e))),
+    __orchWorkerChanged: (e) => [...workerChanged].forEach((cb) => cb(structuredClone(e))),
+    __orchOpened: () => structuredClone(opened),
+    __orchReads: () => structuredClone(reads),
+    __orchSetLifetime(tab, v) {
+      if (v) lifetimes.set(tab, structuredClone(v));
+      else lifetimes.delete(tab);
+    },
+    __orchInstalls: () => [...installs],
     __cliReports: () => structuredClone(reports),
     __cliAnswers: () => structuredClone(answers),
     __cliWorkspaceChanged: () => [...changed].forEach((cb) => cb()),
