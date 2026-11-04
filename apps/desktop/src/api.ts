@@ -404,6 +404,8 @@ export type RepoPatch = {
   scriptSource?: ScriptSource;
   localSetup?: string;
   localArchive?: string;
+  // A folder relative to the primary checkout; "" goes back to the default "docs".
+  docsDir?: string;
 };
 
 // The `ptySpawn` profile id that runs the worktree's setup script in the default shell. Rejects
