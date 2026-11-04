@@ -488,7 +488,27 @@ pub struct TerminalSettings {
     /// The service's output ring per PTY, in MB, 1..=16.
     #[serde(deserialize_with = "lenient_ring_mb")]
     pub ring_mb: u8,
+    /// "app" or a built-in scheme id; `[a-z0-9-]{1,40}`, anything else is "app".
+    pub theme: String,
+    pub gpu: TerminalGpu,
+    pub bell: TerminalBell,
+    /// Control chars dropped, at most 64 chars; empty reads as `DEFAULT_WORD_SEPARATORS`.
+    pub word_separators: String,
+    /// 0.5..=3.0.
+    pub scroll_sensitivity: f32,
+    /// 1.0..=10.0; xterm applies it with Alt held.
+    pub fast_scroll_sensitivity: f32,
+    /// 1.0..=21.0; 1 is off.
+    pub minimum_contrast: f32,
+    pub focus_follows_mouse: bool,
 }
+
+/// The default double-click word separators, the reference app's.
+pub const DEFAULT_WORD_SEPARATORS: &str = " ()[]{}',\"`";
+/// Most chars the word separators keep.
+pub const WORD_SEPARATORS_MAX: usize = 64;
+/// The theme id that means the xDev tokens.
+pub const THEME_APP: &str = "app";
 
 impl Default for TerminalSettings {
     fn default() -> Self {
@@ -506,6 +526,14 @@ impl Default for TerminalSettings {
             service: true,
             on_quit: OnQuit::Keep,
             ring_mb: 2,
+            theme: THEME_APP.into(),
+            gpu: TerminalGpu::Auto,
+            bell: TerminalBell::None,
+            word_separators: DEFAULT_WORD_SEPARATORS.into(),
+            scroll_sensitivity: 1.15,
+            fast_scroll_sensitivity: 5.0,
+            minimum_contrast: 1.0,
+            focus_follows_mouse: false,
         }
     }
 }
@@ -515,6 +543,9 @@ impl TerminalSettings {
     pub const LINE_HEIGHT: RangeInclusive<f32> = 1.0..=2.0;
     pub const MAX_SCROLLBACK: u32 = 100_000;
     pub const RING_MB: RangeInclusive<u8> = 1..=16;
+    pub const SCROLL: RangeInclusive<f32> = 0.5..=3.0;
+    pub const FAST_SCROLL: RangeInclusive<f32> = 1.0..=10.0;
+    pub const CONTRAST: RangeInclusive<f32> = 1.0..=21.0;
 
     /// As stored: every number inside its range.
     pub fn clamped(mut self) -> Self {
@@ -565,6 +596,28 @@ pub enum CursorStyle {
     Block,
     Bar,
     Underline,
+}
+
+/// Settings → Terminal → "GPU acceleration": the WebGL renderer or the DOM one.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum TerminalGpu {
+    #[default]
+    Auto,
+    On,
+    Off,
+}
+
+/// Settings → Terminal → "Bell": what a pane does on BEL.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum TerminalBell {
+    #[default]
+    None,
+    Visual,
+    Sound,
 }
 
 /// One part of the settings file, as a `settings://changed` event names it.
@@ -1290,6 +1343,14 @@ mod tests {
             service: false,
             on_quit: OnQuit::Ask,
             ring_mb: 8,
+            theme: "tokyo-night".into(),
+            gpu: TerminalGpu::Off,
+            bell: TerminalBell::Visual,
+            word_separators: " /".into(),
+            scroll_sensitivity: 2.5,
+            fast_scroll_sensitivity: 8.0,
+            minimum_contrast: 4.5,
+            focus_follows_mouse: true,
         };
         let settings = Settings {
             terminal: terminal.clone(),
@@ -1303,6 +1364,18 @@ mod tests {
         assert!(raw.contains("\"fontWeight\": \"medium\""), "{raw}");
         assert!(raw.contains("\"onQuit\": \"ask\""), "{raw}");
         assert!(raw.contains("\"ringMb\": 8"), "{raw}");
+        for want in [
+            "\"theme\": \"tokyo-night\"",
+            "\"gpu\": \"off\"",
+            "\"bell\": \"visual\"",
+            "\"wordSeparators\": \" /\"",
+            "\"scrollSensitivity\": 2.5",
+            "\"fastScrollSensitivity\": 8.0",
+            "\"minimumContrast\": 4.5",
+            "\"focusFollowsMouse\": true",
+        ] {
+            assert!(raw.contains(want), "{want} in {raw}");
+        }
 
         // A bad terminal section costs only itself.
         fs::write(

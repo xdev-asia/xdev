@@ -17,7 +17,18 @@ export const TERMINAL_DEFAULTS: TerminalSettings = {
   service: true,
   onQuit: "keep",
   ringMb: 2,
+  theme: "app",
+  gpu: "auto",
+  bell: "none",
+  wordSeparators: " ()[]{}',\"`",
+  scrollSensitivity: 1.15,
+  fastScrollSensitivity: 5,
+  minimumContrast: 1,
+  focusFollowsMouse: false,
 };
+
+// The double-click word separators when none are set (`DEFAULT_WORD_SEPARATORS` in Rust).
+export const DEFAULT_WORD_SEPARATORS = " ()[]{}',\"`";
 
 // The ranges Rust clamps a stored value to (`TerminalSettings::clamped`).
 export const TERMINAL_LIMITS = {
@@ -25,9 +36,19 @@ export const TERMINAL_LIMITS = {
   lineHeight: { min: 1, max: 2 },
   scrollback: { min: 0, max: 100000 },
   ringMb: { min: 1, max: 16 },
+  scrollSensitivity: { min: 0.5, max: 3 },
+  fastScrollSensitivity: { min: 1, max: 10 },
+  minimumContrast: { min: 1, max: 21 },
 } as const;
 
 const clamp = (n: number, { min, max }: { min: number; max: number }) => Math.max(min, Math.min(max, n));
+// NaN reads as the default, as in Rust.
+const clampOr = (n: number, range: { min: number; max: number }, fallback: number) =>
+  Number.isFinite(n) ? clamp(n, range) : fallback;
+
+const THEME_ID = /^[a-z0-9-]{1,40}$/;
+// Control characters (C0, DEL, C1) are dropped, as in Rust.
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/g;
 
 /** What Rust stores for `s`: numbers inside their ranges, whole where Rust keeps integers. */
 export function clampTerminalSettings(s: TerminalSettings): TerminalSettings {
@@ -37,5 +58,14 @@ export function clampTerminalSettings(s: TerminalSettings): TerminalSettings {
     lineHeight: clamp(s.lineHeight, TERMINAL_LIMITS.lineHeight),
     scrollback: clamp(Math.round(s.scrollback), TERMINAL_LIMITS.scrollback),
     ringMb: clamp(Math.round(s.ringMb), TERMINAL_LIMITS.ringMb),
+    theme: THEME_ID.test(s.theme) ? s.theme : TERMINAL_DEFAULTS.theme,
+    wordSeparators: [...s.wordSeparators.replace(CONTROL, "")].slice(0, 64).join("") || DEFAULT_WORD_SEPARATORS,
+    scrollSensitivity: clampOr(s.scrollSensitivity, TERMINAL_LIMITS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity),
+    fastScrollSensitivity: clampOr(
+      s.fastScrollSensitivity,
+      TERMINAL_LIMITS.fastScrollSensitivity,
+      TERMINAL_DEFAULTS.fastScrollSensitivity,
+    ),
+    minimumContrast: clampOr(s.minimumContrast, TERMINAL_LIMITS.minimumContrast, TERMINAL_DEFAULTS.minimumContrast),
   };
 }
