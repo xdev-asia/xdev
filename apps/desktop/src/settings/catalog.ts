@@ -168,6 +168,10 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   // Shortcuts and quick commands: the page keeps its own list search, so one entry each.
   e("keys.page", "keys.title", ["shortcut", "keybinding", "hotkey", "chord", "phím tắt", "phim tat"]),
   e("qcmd.page", "qcmd.title", ["quick", "command", "script", "alias", "lệnh nhanh", "lenh nhanh"]),
+  // Diagnostics
+  e("diagnostics.export", "diagnostics.export.title", ["diagnostics", "export", "bundle", "chẩn đoán", "chan doan", "xuất", "xuat"]),
+  e("diagnostics.logs", "diagnostics.logs.title", ["diagnostics", "log", "logs", "nhật ký", "nhat ky"]),
+  e("diagnostics.crash", "diagnostics.crash.title", ["diagnostics", "crash", "report", "sự cố", "su co", "chẩn đoán", "chan doan"]),
 ];
 
 /** The longest query searched, in bytes after trim; longer input is cut. */

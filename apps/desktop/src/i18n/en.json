@@ -3284,5 +3284,19 @@
   "automations.delete.cancel": "Cancel",
   "automations.delete.toast.skip": "We'll skip this confirmation next time.",
   "automations.delete.toast.hint": "You can change this in Settings.",
-  "automations.delete.toast.action": "Open Settings"
+  "automations.delete.toast.action": "Open Settings",
+  "settings.diagnostics.title": "Diagnostics",
+  "settings.diagnostics.lead": "Collect what you need to report a problem. Secrets and home paths are removed first.",
+  "diagnostics.export.title": "Export diagnostics",
+  "diagnostics.export.body": "Save the app log, crash reports and startup steps to one file.",
+  "diagnostics.export.button": "Export…",
+  "diagnostics.export.done": "Diagnostics saved to {path} ({kb} KB)",
+  "diagnostics.export.reveal": "Show logs",
+  "diagnostics.export.failed": "Could not save the diagnostics file",
+  "diagnostics.logs.title": "App log",
+  "diagnostics.logs.body": "Open the folder that holds the rotating log.",
+  "diagnostics.logs.button": "Show logs",
+  "diagnostics.crash.title": "Last crash report",
+  "diagnostics.crash.body": "Read and copy the most recent report.",
+  "diagnostics.crash.button": "View report"
 }

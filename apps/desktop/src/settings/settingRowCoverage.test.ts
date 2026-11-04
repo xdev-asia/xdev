@@ -22,6 +22,7 @@ const PAGES: Record<string, string[]> = {
   vaults: ["VaultsSettings.tsx"],
   keys: ["shortcuts/ShortcutsPage.tsx"],
   qcmd: ["quickCommands/QuickCommandsPage.tsx"],
+  diagnostics: ["DiagnosticsPage.tsx"],
 };
 const here = dirname(fileURLToPath(import.meta.url));
 const USED = /(?:<SettingRow\s+id=|settingShown\(\s*[\w.]+\s*,\s*)(?:"([^"]+)"|\{?`([^`$]+)\$\{)/g;

@@ -29,6 +29,7 @@ import "./styles/usageStats.css";
 import "./styles/quickCommands.css";
 import "katex/dist/katex.min.css";
 import "./styles/preview-files.css";
+import "./styles/diagnostics.css";
 import { startEditorSettingsSync } from "./files/editorSettings";
 import { startNavigationSettingsSync } from "./settings/navigationSettings";
 import { startAutomationsSettingsSync } from "./settings/automationsSettings";

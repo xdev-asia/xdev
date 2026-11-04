@@ -3284,5 +3284,19 @@
   "automations.delete.cancel": "Hủy",
   "automations.delete.toast.skip": "Lần sau chúng tôi sẽ bỏ qua bước xác nhận này.",
   "automations.delete.toast.hint": "Bạn có thể thay đổi điều này trong Cài đặt.",
-  "automations.delete.toast.action": "Mở Cài đặt"
+  "automations.delete.toast.action": "Mở Cài đặt",
+  "settings.diagnostics.title": "Chẩn đoán",
+  "settings.diagnostics.lead": "Thu thập thông tin để báo lỗi. Bí mật và đường dẫn thư mục cá nhân được loại bỏ trước.",
+  "diagnostics.export.title": "Xuất chẩn đoán",
+  "diagnostics.export.body": "Lưu nhật ký ứng dụng, báo cáo sự cố và các bước khởi động vào một tệp.",
+  "diagnostics.export.button": "Xuất…",
+  "diagnostics.export.done": "Đã lưu chẩn đoán tại {path} ({kb} KB)",
+  "diagnostics.export.reveal": "Mở nhật ký",
+  "diagnostics.export.failed": "Không lưu được tệp chẩn đoán",
+  "diagnostics.logs.title": "Nhật ký ứng dụng",
+  "diagnostics.logs.body": "Mở thư mục chứa nhật ký xoay vòng.",
+  "diagnostics.logs.button": "Mở nhật ký",
+  "diagnostics.crash.title": "Báo cáo sự cố gần nhất",
+  "diagnostics.crash.body": "Xem và sao chép báo cáo mới nhất.",
+  "diagnostics.crash.button": "Xem báo cáo"
 }

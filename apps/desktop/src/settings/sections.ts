@@ -4,6 +4,7 @@ import { AccountPage } from "./account/AccountPage";
 import { AgentsPage } from "./agents/AgentsPage";
 import { AppearancePage } from "./AppearancePage";
 import { AutomationsSettingsPage } from "./AutomationsSettingsPage";
+import { DiagnosticsPage } from "./DiagnosticsPage";
 import { EditorPage } from "./EditorPage";
 import { GeneralPage } from "./GeneralPage";
 import { GitSettings } from "./GitSettings";
@@ -64,4 +65,5 @@ export const SECTIONS: SettingsSection[] = [
   { id: "vaults", labelKey: "settings.vaults.title", Component: VaultsSettings },
   { id: "keys", labelKey: "keys.title", Component: ShortcutsPage },
   { id: "qcmd", labelKey: "qcmd.title", Component: QuickCommandsPage },
+  { id: "diagnostics", labelKey: "settings.diagnostics.title", Component: DiagnosticsPage },
 ];
