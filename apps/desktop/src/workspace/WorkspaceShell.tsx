@@ -72,6 +72,7 @@ import { BulkBar } from "./BulkBar";
 import { BulkRemoveDialog } from "./BulkRemoveDialog";
 import { ReviewBranchesDialog } from "./ReviewBranchesDialog";
 import { isDeleteKey, typingIn } from "./deleteKey";
+import { IS_MAC } from "@/platform";
 import { WorktreeTabs, type Reveal } from "./WorktreeTabs";
 import { runWithToast } from "@/quickCommands/runUi";
 import { startQuickCommands } from "@/quickCommands/store";
@@ -276,7 +277,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }, [api]);
 
   useEffect(() => {
-    const mac = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
+    const mac = IS_MAC;
     const onKey = (e: KeyboardEvent) => {
       if (!isDeleteKey(e, mac) || typingIn(e.target)) return;
       e.preventDefault();
