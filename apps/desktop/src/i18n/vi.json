@@ -2187,5 +2187,7 @@
   "settings.general.updates.channel": "Kênh phát hành",
   "settings.general.updates.channel.stable": "Ổn định",
   "settings.general.updates.channel.rc": "Bản thử nghiệm",
-  "settings.general.updates.channelHint": "Bản thử nghiệm ra trước bản ổn định và có thể còn lỗi."
+  "settings.general.updates.channelHint": "Bản thử nghiệm ra trước bản ổn định và có thể còn lỗi.",
+  "shell.tray.tooltip": "xDev",
+  "shell.tray.notice": "xDev vẫn đang chạy trong khay hệ thống."
 }
