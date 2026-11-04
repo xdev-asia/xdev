@@ -2,8 +2,10 @@
 //! `.gitignore`, skips `.git` and never follows a link out of the worktree.
 
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use ignore::WalkBuilder;
 use ignore::overrides::{Override, OverrideBuilder};
@@ -11,6 +13,7 @@ use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 
 use crate::WorkspaceError;
+use crate::files::{BINARY_SNIFF, READ_MAX};
 
 /// `list_files` stops here and sets `truncated`.
 pub const LIST_MAX: usize = 50_000;
@@ -218,22 +221,167 @@ pub fn search_text(
     cancel: &AtomicBool,
     sink: &mut dyn FnMut(SearchEvent),
 ) -> Result<(), WorkspaceError> {
-    let compiled = match compile(Path::new(worktree), q) {
+    search_capped(Path::new(worktree), q, cancel, sink, HIT_MAX)
+}
+
+/// A `Batch` goes out once it holds this many files…
+const BATCH_FILES: usize = 50;
+/// …or this long after the last one, whichever comes first.
+const BATCH_EVERY: Duration = Duration::from_millis(100);
+
+fn search_capped(
+    root: &Path,
+    q: &SearchQuery,
+    cancel: &AtomicBool,
+    sink: &mut dyn FnMut(SearchEvent),
+    hit_max: usize,
+) -> Result<(), WorkspaceError> {
+    let started = Instant::now();
+    let Compiled { re, filter } = match compile(root, q) {
         Ok(c) => c,
         Err(message) => {
             sink(SearchEvent::Error { message });
             return Ok(());
         }
     };
-    // The walk itself comes with the next step.
-    let _ = (cancel, &compiled.re, &compiled.filter);
+    let cancelled = || cancel.load(Ordering::SeqCst);
+    let mut pending: Vec<FileHits> = Vec::new();
+    let mut sent_at = Instant::now();
+    let (mut files, mut hits, mut truncated) = (0u32, 0usize, false);
+    for (path, rel) in walk(root, Some(filter))? {
+        if cancelled() {
+            return Ok(());
+        }
+        let Some(text) = read_text(&path) else {
+            continue;
+        };
+        let (found, full) = search_file(&re, &text, rel, hit_max - hits);
+        if let Some(found) = found {
+            files += 1;
+            hits += found.hits.len();
+            pending.push(found);
+        }
+        if full {
+            truncated = true;
+            break;
+        }
+        if !pending.is_empty() && (pending.len() >= BATCH_FILES || sent_at.elapsed() >= BATCH_EVERY)
+        {
+            sink(SearchEvent::Batch {
+                files: std::mem::take(&mut pending),
+            });
+            sent_at = Instant::now();
+        }
+    }
+    if cancelled() {
+        return Ok(());
+    }
+    if !pending.is_empty() {
+        sink(SearchEvent::Batch { files: pending });
+    }
     sink(SearchEvent::Done {
-        files: 0,
-        hits: 0,
-        truncated: false,
-        ms: 0,
+        files,
+        hits: u32::try_from(hits).unwrap_or(u32::MAX),
+        truncated,
+        ms: u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX),
     });
     Ok(())
+}
+
+/// The text of a file worth searching: `None` past `READ_MAX`, for a binary
+/// file (a NUL in its head, as the file tab tells one) or one that cannot be
+/// read. Text that is not UTF-8 is searched with replacement chars.
+fn read_text(path: &Path) -> Option<String> {
+    if fs::metadata(path).ok()?.len() > READ_MAX {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    fs::File::open(path)
+        .ok()?
+        .take(READ_MAX + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    // It grew since the check.
+    if bytes.len() as u64 > READ_MAX || bytes[..bytes.len().min(BINARY_SNIFF)].contains(&0) {
+        return None;
+    }
+    Some(match String::from_utf8(bytes) {
+        Ok(text) => text,
+        Err(e) => String::from_utf8_lossy(e.as_bytes()).into_owned(),
+    })
+}
+
+/// The matching lines of one file, at most `PER_FILE_MAX` and `room`; the
+/// flag tells that `room` ran out with a match left over.
+fn search_file(re: &Regex, text: &str, rel: String, room: usize) -> (Option<FileHits>, bool) {
+    let mut found = FileHits {
+        rel,
+        hits: Vec::new(),
+        more: false,
+    };
+    let mut full = false;
+    for (i, line) in text.split('\n').enumerate() {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        let Some(hit) = line_hit(re, line, i) else {
+            continue;
+        };
+        if found.hits.len() == room {
+            full = true;
+            break;
+        }
+        if found.hits.len() == PER_FILE_MAX {
+            found.more = true;
+            break;
+        }
+        found.hits.push(hit);
+    }
+    ((!found.hits.is_empty()).then_some(found), full)
+}
+
+/// Line `i` (0-based) as a hit when `re` matches in it, clipped to
+/// `LINE_CLIP` chars around the first match, ranges in chars.
+fn line_hit(re: &Regex, line: &str, i: usize) -> Option<LineHit> {
+    // Byte ranges to char ranges, counting chars once along the line.
+    let mut ranges = Vec::new();
+    let (mut byte_at, mut char_at) = (0, 0);
+    for m in re.find_iter(line) {
+        if m.is_empty() {
+            continue;
+        }
+        char_at += line[byte_at..m.start()].chars().count();
+        let start = char_at;
+        char_at += m.as_str().chars().count();
+        byte_at = m.end();
+        ranges.push((start, char_at));
+    }
+    let &(first_start, first_end) = ranges.first()?;
+    let total = char_at + line[byte_at..].chars().count();
+    let (from, text) = if total <= LINE_CLIP {
+        (0, line.to_owned())
+    } else {
+        let centre = first_start + (first_end - first_start) / 2;
+        let from = centre
+            .saturating_sub(LINE_CLIP / 2)
+            .min(first_start)
+            .min(total - LINE_CLIP);
+        (from, line.chars().skip(from).take(LINE_CLIP).collect())
+    };
+    let to = from + LINE_CLIP;
+    let ranges = ranges
+        .into_iter()
+        .filter(|&(s, e)| s < to && e > from)
+        .map(|(s, e)| (s.max(from) - from, e.min(to) - from))
+        .map(|(s, e)| (to_u32(s), to_u32(e)))
+        .collect();
+    Some(LineHit {
+        line: to_u32(i + 1),
+        text,
+        ranges,
+    })
+}
+
+fn to_u32(n: usize) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]
@@ -454,5 +602,261 @@ mod tests {
         );
         // An include glob does not bring back what .gitignore leaves out.
         assert_eq!(files(&["*.log"], &[]), Vec::<String>::new());
+    }
+
+    /// Every event of a search of `root` for `q` with `hit_max`.
+    fn run(root: &Path, q: &SearchQuery, hit_max: usize) -> Vec<SearchEvent> {
+        let mut seen = Vec::new();
+        search_capped(
+            root,
+            q,
+            &AtomicBool::new(false),
+            &mut |e| seen.push(e),
+            hit_max,
+        )
+        .unwrap();
+        seen
+    }
+
+    /// The files of every `Batch`, by `rel`, and the `Done` at the end.
+    fn split(seen: Vec<SearchEvent>) -> (Vec<FileHits>, Option<(u32, u32, bool)>) {
+        let mut files = Vec::new();
+        let mut done = None;
+        for e in seen {
+            assert!(done.is_none(), "an event after done");
+            match e {
+                SearchEvent::Batch { files: f } => files.extend(f),
+                SearchEvent::Done {
+                    files,
+                    hits,
+                    truncated,
+                    ..
+                } => done = Some((files, hits, truncated)),
+                SearchEvent::Error { message } => panic!("error: {message}"),
+            }
+        }
+        files.sort_by(|a, b| a.rel.cmp(&b.rel));
+        (files, done)
+    }
+
+    fn hit(line: u32, text: &str, ranges: &[(u32, u32)]) -> LineHit {
+        LineHit {
+            line,
+            text: text.into(),
+            ranges: ranges.to_vec(),
+        }
+    }
+
+    #[test]
+    fn search_text_sends_hits_by_file_then_done() {
+        let tmp = tree();
+        put(tmp.path(), "a.txt", "under\nnothing\ndir_under and under\n");
+        put(tmp.path(), "b/c.txt", "UNDER\n");
+        put(tmp.path(), "target/x.txt", "under\n");
+        put(tmp.path(), ".git/under", "under\n");
+        let (files, done) = split(run(tmp.path(), &query("under"), HIT_MAX));
+        assert_eq!(
+            files,
+            vec![
+                FileHits {
+                    rel: "a.txt".into(),
+                    hits: vec![
+                        hit(1, "under", &[(0, 5)]),
+                        hit(3, "dir_under and under", &[(4, 9), (14, 19)]),
+                    ],
+                    more: false,
+                },
+                FileHits {
+                    rel: "b/c.txt".into(),
+                    hits: vec![hit(1, "UNDER", &[(0, 5)])],
+                    more: false,
+                },
+            ]
+        );
+        assert_eq!(done, Some((2, 3, false)));
+        let mut seen = Vec::new();
+        search_text(
+            root(&tmp),
+            &query("under"),
+            &AtomicBool::new(false),
+            &mut |e| seen.push(e),
+        )
+        .unwrap();
+        assert_eq!(split(seen).0, files);
+    }
+
+    #[test]
+    fn regex_and_whole_word_reach_the_lines() {
+        let tmp = TempDir::new().unwrap();
+        put(tmp.path(), "a.rs", "fn dir_under() {}\nlet under = 1;\n");
+        let re = SearchQuery {
+            regex: true,
+            ..query(r"fn \w+_under")
+        };
+        assert_eq!(split(run(tmp.path(), &re, HIT_MAX)).1, Some((1, 1, false)));
+        let word = SearchQuery {
+            whole_word: true,
+            ..query("under")
+        };
+        let (files, _) = split(run(tmp.path(), &word, HIT_MAX));
+        assert_eq!(files[0].hits, vec![hit(2, "let under = 1;", &[(4, 9)])]);
+    }
+
+    #[test]
+    fn a_file_keeps_per_file_max_lines_and_says_more() {
+        let tmp = TempDir::new().unwrap();
+        put(tmp.path(), "many.txt", &"x\n".repeat(PER_FILE_MAX + 5));
+        let (files, done) = split(run(tmp.path(), &query("x"), HIT_MAX));
+        assert_eq!(files[0].hits.len(), PER_FILE_MAX);
+        assert!(files[0].more);
+        assert_eq!(done, Some((1, PER_FILE_MAX as u32, false)));
+    }
+
+    #[test]
+    fn the_hit_cap_stops_the_search_and_says_truncated() {
+        let tmp = TempDir::new().unwrap();
+        for i in 0..5 {
+            put(tmp.path(), &format!("f{i}.txt"), "x\nx\nx\n");
+        }
+        let (files, done) = split(run(tmp.path(), &query("x"), 7));
+        let total: usize = files.iter().map(|f| f.hits.len()).sum();
+        assert_eq!(total, 7);
+        assert_eq!(done, Some((3, 7, true)));
+        // Exactly the cap is not truncated.
+        assert_eq!(
+            split(run(tmp.path(), &query("x"), 15)).1,
+            Some((5, 15, false))
+        );
+    }
+
+    #[test]
+    fn a_cancel_stops_the_search_without_done() {
+        let tmp = TempDir::new().unwrap();
+        for i in 0..(BATCH_FILES * 3) {
+            put(tmp.path(), &format!("f{i:03}.txt"), "x\n");
+        }
+        let cancel = AtomicBool::new(false);
+        let mut seen = Vec::new();
+        search_text(root(&tmp), &query("x"), &cancel, &mut |e| {
+            cancel.store(true, Ordering::SeqCst);
+            seen.push(e);
+        })
+        .unwrap();
+        assert_eq!(seen.len(), 1, "{seen:?}");
+        assert!(matches!(seen[0], SearchEvent::Batch { .. }));
+        // Set before it starts: nothing at all.
+        let mut none = Vec::new();
+        search_text(root(&tmp), &query("x"), &AtomicBool::new(true), &mut |e| {
+            none.push(e)
+        })
+        .unwrap();
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn batches_hold_at_most_batch_files() {
+        let tmp = TempDir::new().unwrap();
+        let n = BATCH_FILES * 2 + 1;
+        for i in 0..n {
+            put(tmp.path(), &format!("f{i:03}.txt"), "x\n");
+        }
+        let seen = run(tmp.path(), &query("x"), HIT_MAX);
+        for e in &seen {
+            if let SearchEvent::Batch { files } = e {
+                assert!(!files.is_empty() && files.len() <= BATCH_FILES);
+            }
+        }
+        assert_eq!(split(seen).1, Some((n as u32, n as u32, false)));
+    }
+
+    #[test]
+    fn crlf_lines_lose_the_cr() {
+        let tmp = TempDir::new().unwrap();
+        put(tmp.path(), "w.txt", "foo\r\nbar foo\r\n");
+        let (files, _) = split(run(tmp.path(), &query("foo"), HIT_MAX));
+        assert_eq!(
+            files[0].hits,
+            vec![hit(1, "foo", &[(0, 3)]), hit(2, "bar foo", &[(4, 7)])]
+        );
+    }
+
+    #[test]
+    fn binary_and_large_files_are_skipped() {
+        let tmp = TempDir::new().unwrap();
+        put(tmp.path(), "small.txt", "needle\n");
+        fs::write(tmp.path().join("bin.dat"), b"needle\0\n").unwrap();
+        let mut text = "needle\n".repeat(10);
+        text.push_str(&" ".repeat(3 * 1024 * 1024));
+        fs::write(tmp.path().join("big.txt"), text).unwrap();
+        let (files, done) = split(run(tmp.path(), &query("needle"), HIT_MAX));
+        let rels: Vec<_> = files.iter().map(|f| f.rel.as_str()).collect();
+        assert_eq!(rels, vec!["small.txt"]);
+        assert_eq!(done, Some((1, 1, false)));
+    }
+
+    #[test]
+    fn ranges_count_chars_not_bytes() {
+        let tmp = TempDir::new().unwrap();
+        put(tmp.path(), "vi.txt", "Tiếng Việt có dấu\n");
+        let (files, _) = split(run(tmp.path(), &query("việt"), HIT_MAX));
+        assert_eq!(files[0].hits, vec![hit(1, "Tiếng Việt có dấu", &[(6, 10)])]);
+    }
+
+    #[test]
+    fn a_long_line_is_clipped_around_the_first_match() {
+        let tmp = TempDir::new().unwrap();
+        let line = format!("{}ếneedle{}", "a".repeat(700), "b".repeat(700));
+        put(tmp.path(), "long.txt", &format!("{line}\n"));
+        let (files, _) = split(run(tmp.path(), &query("needle"), HIT_MAX));
+        let h = &files[0].hits[0];
+        assert_eq!(h.text.chars().count(), LINE_CLIP);
+        let (s, e) = h.ranges[0];
+        let got: String = h
+            .text
+            .chars()
+            .skip(s as usize)
+            .take((e - s) as usize)
+            .collect();
+        assert_eq!(got, "needle");
+        assert!((LINE_CLIP / 2 - 10..LINE_CLIP / 2).contains(&(s as usize)));
+        // Near the end the window stops at the end of the line.
+        let tail = format!("{}needle", "a".repeat(1000));
+        put(tmp.path(), "long.txt", &format!("{tail}\n"));
+        let (files, _) = split(run(tmp.path(), &query("needle"), HIT_MAX));
+        let h = &files[0].hits[0];
+        assert!(h.text.ends_with("needle"));
+        assert_eq!(h.ranges, vec![(LINE_CLIP as u32 - 6, LINE_CLIP as u32)]);
+    }
+
+    #[test]
+    fn globs_cannot_reach_out_of_the_worktree() {
+        let tmp = TempDir::new().unwrap();
+        let wt = tmp.path().join("wt");
+        put(&wt, "in.txt", "needle\n");
+        put(tmp.path(), "out.txt", "needle\n");
+        for include in ["../*", "../out.txt", "/**", "**/*"] {
+            let q = SearchQuery {
+                include: vec![include.into()],
+                ..query("needle")
+            };
+            let (files, _) = split(run(&wt, &q, HIT_MAX));
+            assert!(
+                files.iter().all(|f| f.rel == "in.txt"),
+                "{include}: {files:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn search_text_refuses_a_missing_worktree() {
+        let tmp = TempDir::new().unwrap();
+        let gone = tmp.path().join("gone");
+        let r = search_text(
+            gone.to_str().unwrap(),
+            &query("x"),
+            &AtomicBool::new(false),
+            &mut |_| {},
+        );
+        assert!(r.is_err());
     }
 }
