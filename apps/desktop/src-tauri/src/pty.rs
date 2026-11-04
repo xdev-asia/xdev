@@ -7,9 +7,10 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
+use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, State};
 use xdev_agent::{
@@ -18,6 +19,7 @@ use xdev_agent::{
 };
 use xdev_ai::Registry;
 use xdev_policy::{Action, Audited, Policy, Verdict, agent_fingerprint};
+use xdev_pty::client::Sink;
 use xdev_pty::proto::SessionInfo;
 use xdev_pty::{PtyError, Session, SpawnSpec};
 use xdev_workspace::{
@@ -26,6 +28,7 @@ use xdev_workspace::{
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError, cli_beside};
+use crate::ptyd::{self, LocalHost, PtyHost};
 use crate::settings::StatusSettings;
 use crate::settings_store;
 
@@ -51,7 +54,7 @@ impl From<PtyError> for CmdError {
 /// `repo_hooks`, in the default shell.
 pub const SETUP_PROFILE: &str = "xdev:setup";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct PtyInfo {
@@ -101,7 +104,6 @@ pub struct PtyAttached {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "kebab-case")]
-#[allow(dead_code)] // The service host reports the other states.
 pub enum PtydState {
     /// Settings → Terminal → "Terminal service" is off: in the app, as before.
     Off,
@@ -124,7 +126,6 @@ pub struct PtydStatus {
 }
 
 /// One live PTY, in the app (`Session`) or in the service.
-#[allow(dead_code)] // `Ptys` holds these once the service host lands.
 pub trait PtyHandle: Send + Sync {
     fn write(&self, d: Vec<u8>);
     fn resize(&self, c: u16, r: u16) -> Result<(), PtyError>;
@@ -151,17 +152,70 @@ impl PtyHandle for Session {
     }
 }
 
-#[derive(Default)]
 pub struct Ptys {
-    sessions: Mutex<HashMap<String, Session>>,
+    sessions: Mutex<HashMap<String, Box<dyn PtyHandle>>>,
     /// Fingerprints of skip-mode launches a person has just approved. A start
     /// takes its fingerprint out, so each approval covers one start.
     passes: Mutex<HashSet<String>>,
+    /// None until the start has picked one from the setting and the service.
+    host: Mutex<Option<(Arc<dyn PtyHost>, PtydStatus)>>,
+    host_set: Condvar,
 }
 
+impl Default for Ptys {
+    /// In the app, as with the service off; tests start from here.
+    fn default() -> Ptys {
+        let ptys = Ptys::pending();
+        ptys.set_host(
+            Arc::new(LocalHost),
+            ptyd::status(PtydState::Off, None, None),
+        );
+        ptys
+    }
+}
+
+/// How long a spawn waits for the start to pick a host: the service's own
+/// start wait, and a little more.
+const HOST_WAIT: Duration = Duration::from_secs(8);
+
 impl Ptys {
-    fn map(&self) -> MutexGuard<'_, HashMap<String, Session>> {
+    fn map(&self) -> MutexGuard<'_, HashMap<String, Box<dyn PtyHandle>>> {
         self.sessions.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// No host yet: terminals wait for `set_host`.
+    pub(crate) fn pending() -> Ptys {
+        Ptys {
+            sessions: Mutex::default(),
+            passes: Mutex::default(),
+            host: Mutex::new(None),
+            host_set: Condvar::new(),
+        }
+    }
+
+    /// The host and its status; the app's own when none was set in time.
+    pub(crate) fn host_status(&self) -> (Arc<dyn PtyHost>, PtydStatus) {
+        let guard = self.host.lock().unwrap_or_else(PoisonError::into_inner);
+        let (guard, _) = self
+            .host_set
+            .wait_timeout_while(guard, HOST_WAIT, |h| h.is_none())
+            .unwrap_or_else(PoisonError::into_inner);
+        guard.clone().unwrap_or_else(|| {
+            let reason = Some("ptyd_unreachable".to_owned());
+            (
+                Arc::new(LocalHost) as Arc<dyn PtyHost>,
+                ptyd::status(PtydState::Fallback, None, reason),
+            )
+        })
+    }
+
+    pub(crate) fn host(&self) -> Arc<dyn PtyHost> {
+        self.host_status().0
+    }
+
+    pub(crate) fn set_host(&self, host: Arc<dyn PtyHost>, status: PtydStatus) {
+        *self.host.lock().unwrap_or_else(PoisonError::into_inner) = Some((host, status));
+        self.host_set.notify_all();
     }
 
     fn passes(&self) -> MutexGuard<'_, HashSet<String>> {
@@ -177,8 +231,8 @@ impl Ptys {
         }
     }
 
-    fn with<T>(&self, id: &str, f: impl FnOnce(&Session) -> T) -> Result<T, CmdError> {
-        self.map().get(id).map(f).ok_or(CmdError {
+    fn with<T>(&self, id: &str, f: impl FnOnce(&dyn PtyHandle) -> T) -> Result<T, CmdError> {
+        self.map().get(id).map(|h| f(h.as_ref())).ok_or(CmdError {
             code: "pty_unknown",
             detail: None,
         })
@@ -321,18 +375,9 @@ pub(crate) fn spawn_launch(
     let (program, args) = launch.command();
     let mut env = launch.env;
     env.push(("XDEV_PTY_ID".to_owned(), OsString::from(&id)));
-    let spec = SpawnSpec {
-        program: program.clone(),
-        args,
-        env,
-        cwd,
-        cols,
-        rows,
-    };
-    let session = Session::spawn(spec, on_output, on_exit)?;
-    let info = PtyInfo {
+    let mut info = PtyInfo {
         id: id.clone(),
-        pid: session.pid(),
+        pid: None,
         program: program.display().to_string(),
         agent: launch.agent,
         profile: launch.profile,
@@ -342,7 +387,28 @@ pub(crate) fn spawn_launch(
         hook_events: launch.hook_events,
         cli: launch.cli,
     };
-    map.insert(id, session);
+    // What the service lists the PTY with; `info` comes back on attach.
+    let meta = serde_json::json!({
+        "worktree": cwd.display().to_string(),
+        "tabId": id,
+        "profile": info.profile,
+        "info": info,
+    });
+    let spec = SpawnSpec {
+        program,
+        args,
+        env,
+        cwd,
+        cols,
+        rows,
+    };
+    let sink = Sink {
+        on_output: Box::new(on_output),
+        on_exit: Box::new(on_exit),
+    };
+    let handle = ptys.host().spawn(&id, spec, meta, sink)?;
+    info.pid = handle.pid();
+    map.insert(id, handle);
     Ok(info)
 }
 
@@ -638,9 +704,11 @@ pub fn pty_ack(ptys: State<'_, Ptys>, id: String, n: usize) -> Result<(), CmdErr
 // Off the main thread: ending a process tree waits on taskkill and the console.
 #[tauri::command(async)]
 pub fn pty_kill(ptys: State<'_, Ptys>, id: String) {
-    // Dropping the session kills it; an unknown id has already ended.
-    let session = ptys.map().remove(&id);
-    drop(session);
+    // An unknown id has already ended. A service PTY ends only on `kill`.
+    let handle = ptys.map().remove(&id);
+    if let Some(handle) = handle {
+        handle.kill();
+    }
 }
 
 /// Reattaches a tab to the service's PTY `id`; the channel replays its ring
@@ -697,8 +765,7 @@ fn unreachable_service() -> CmdError {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, mpsc};
-    use std::time::Duration;
+    use std::sync::mpsc;
 
     use super::*;
     use xdev_agent::{Cli, hook_args};
@@ -735,6 +802,62 @@ mod tests {
         let mut l = agent();
         l.add_hooks_with(Path::new("/opt/xdev"), None, None);
         l
+    }
+
+    /// Records each spawn it is asked for; nothing runs.
+    #[derive(Default)]
+    struct FakeHost {
+        spawns: Mutex<Vec<(String, serde_json::Value)>>,
+    }
+
+    struct FakePty;
+
+    impl PtyHandle for FakePty {
+        fn write(&self, _: Vec<u8>) {}
+        fn resize(&self, _: u16, _: u16) -> Result<(), PtyError> {
+            Ok(())
+        }
+        fn ack(&self, _: usize) {}
+        fn kill(&self) {}
+        fn pid(&self) -> Option<u32> {
+            Some(4242)
+        }
+    }
+
+    impl PtyHost for FakeHost {
+        fn spawn(
+            &self,
+            id: &str,
+            _spec: SpawnSpec,
+            meta: serde_json::Value,
+            _sink: Sink,
+        ) -> Result<Box<dyn PtyHandle>, CmdError> {
+            self.spawns.lock().unwrap().push((id.to_owned(), meta));
+            Ok(Box::new(FakePty))
+        }
+    }
+
+    #[test]
+    fn the_gate_runs_before_the_host_hears_of_a_spawn() {
+        let data = tempfile::tempdir().unwrap();
+        let ptys = Ptys::default();
+        let host = Arc::new(FakeHost::default());
+        ptys.set_host(host.clone(), ptyd::status(PtydState::Running, None, None));
+        let (first, _) = start(&ptys, data.path(), "a", agent());
+        assert_eq!(first.unwrap_err().code, "needs_approval");
+        assert!(host.spawns.lock().unwrap().is_empty());
+
+        approve_launch(&ptys, data.path(), &agent()).unwrap();
+        let info = start(&ptys, data.path(), "a", agent()).0.unwrap();
+        assert_eq!(info.pid, Some(4242));
+        let spawns = host.spawns.lock().unwrap();
+        assert_eq!(spawns.len(), 1);
+        let (id, meta) = &spawns[0];
+        assert_eq!(id, "a");
+        assert_eq!(meta["tabId"], "a");
+        assert_eq!(meta["profile"], "claude");
+        assert_eq!(meta["worktree"], std::env::temp_dir().display().to_string());
+        assert_eq!(meta["info"]["agent"], true);
     }
 
     #[test]
