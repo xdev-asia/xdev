@@ -474,8 +474,6 @@ export interface Api {
   // The downloaded update waiting for a restart, if any; Rust checks and downloads on its own.
   updateStatus(): Promise<UpdateInfo | null>;
   onUpdateReady(cb: (update: UpdateInfo) => void): Promise<() => void>;
-  // Restarts the app once installed, so it resolves only when there was nothing to install.
-  restartToUpdate(): Promise<void>;
   // The version of this build.
   appVersion(): Promise<string>;
   // An OS notification; the text comes from here so it follows the UI language.
@@ -1092,7 +1090,6 @@ function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 const tauriApi: Api = {
   updateStatus: () => call("update_status"),
   onUpdateReady: (cb) => listen<UpdateInfo>("update-ready", (e) => cb(e.payload)),
-  restartToUpdate: () => call("update_restart"),
   appVersion: () => getVersion(),
   notifyUpdate: (title, body) => call("update_notify", { title, body }),
   updateCheck: (rc) => call("update_check", { rc }),

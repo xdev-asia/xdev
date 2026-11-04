@@ -153,7 +153,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_version,
             updater::update_status,
-            updater::update_restart,
             updater::update_notify,
             shell::shell_close_requested,
             shell::shell_quit,
