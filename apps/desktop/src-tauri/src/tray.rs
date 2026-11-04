@@ -2,6 +2,8 @@
 //! closed, macOS shows a menu bar icon. Linux has none. The decisions (which
 //! items, whether to exist, how the attention dot looks) are plain functions;
 //! the part that talks to the OS exists only where a tray does.
+// Linux has no tray: the plain functions are used by the tests only there.
+#![cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 
 use crate::settings::ShellSettings;
 use crate::shell::Os;
