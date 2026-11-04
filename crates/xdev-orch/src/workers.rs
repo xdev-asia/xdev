@@ -133,6 +133,11 @@ impl Store {
     /// as dispatched. The task must be ready; a failed start hands it back,
     /// a broken breaker leaves it failed.
     pub fn worker_begin(&self, plan: &StartPlan, now_ms: i64) -> Result<Dispatch, OrchError> {
+        self.atomic(|s| s.worker_begin_unit(plan, now_ms))
+    }
+
+    /// One unit of [`Store::worker_begin`].
+    fn worker_begin_unit(&self, plan: &StartPlan, now_ms: i64) -> Result<Dispatch, OrchError> {
         let task = self.task_get(&plan.task_id)?;
         if task.run_id != plan.run_id {
             return Err(OrchError::bad_request(format!(
@@ -216,6 +221,16 @@ impl Store {
 
     /// Records how the start went and answers with the receipt.
     pub fn worker_started(
+        &self,
+        dispatch_id: &str,
+        result: StartResult,
+        now_ms: i64,
+    ) -> Result<WorkerReceipt, OrchError> {
+        self.atomic(|s| s.worker_started_unit(dispatch_id, result, now_ms))
+    }
+
+    /// One unit of [`Store::worker_started`].
+    fn worker_started_unit(
         &self,
         dispatch_id: &str,
         result: StartResult,
@@ -355,6 +370,18 @@ impl Store {
     /// the tasks that waited on it are promoted and the tab gets its closing
     /// time. A worker already settled is left as it is.
     pub fn worker_settle(
+        &self,
+        dispatch_id: &str,
+        outcome: WorkerState,
+        result: Option<&str>,
+        auto_close: bool,
+        now_ms: i64,
+    ) -> Result<Worker, OrchError> {
+        self.atomic(|s| s.worker_settle_unit(dispatch_id, outcome, result, auto_close, now_ms))
+    }
+
+    /// One unit of [`Store::worker_settle`].
+    fn worker_settle_unit(
         &self,
         dispatch_id: &str,
         outcome: WorkerState,
