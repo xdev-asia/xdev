@@ -46,6 +46,9 @@ const clamp = (n: number, { min, max }: { min: number; max: number }) => Math.ma
 const clampOr = (n: number, range: { min: number; max: number }, fallback: number) =>
   Number.isFinite(n) ? clamp(n, range) : fallback;
 
+// The theme id that means the xDev tokens (`THEME_APP` in Rust).
+export const THEME_APP = "app";
+
 const THEME_ID = /^[a-z0-9-]{1,40}$/;
 // Control characters (C0, DEL, C1) are dropped, as in Rust.
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/g;
