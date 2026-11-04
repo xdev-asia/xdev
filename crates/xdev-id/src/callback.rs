@@ -52,7 +52,7 @@ pub fn parse_callback(raw: &str) -> Result<Callback, &'static str> {
             "code" => &mut code,
             "state" => &mut state,
             "error" => &mut error,
-            _ => continue,
+            _ => return Err(E_LINK),
         };
         if slot.replace(value.into_owned()).is_some() {
             return Err(E_LINK);
@@ -114,9 +114,6 @@ mod tests {
         assert!(is_code(parse_callback(&format!("  \n{}\r\n", good()))));
         assert!(is_code(parse_callback(&good().replacen("xdev", "XDEV", 1))));
         assert!(is_code(parse_callback(&link(&format!(
-            "code={CODE}&state={STATE}&extra=1"
-        )))));
-        assert!(is_code(parse_callback(&link(&format!(
             "state={STATE}&code={CODE}"
         )))));
     }
@@ -162,6 +159,7 @@ mod tests {
             )),
             link(&format!("error=other&state={STATE}")),
             link(&format!("code={CODE}&error=access_denied&state={STATE}")),
+            link(&format!("code={CODE}&state={STATE}&extra=1")),
         ] {
             assert_eq!(parse_callback(&bad).err(), Some(E_LINK), "{bad}");
         }
