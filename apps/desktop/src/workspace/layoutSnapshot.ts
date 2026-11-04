@@ -1,6 +1,6 @@
 import type { PtyProfile, RestoreMode } from "@/api";
 import { leaves, removeTab, replaceTab, type PaneLayout } from "./paneTree";
-import type { Tab, TabCli, TabColor } from "./sessions";
+import { ownAccount, type Tab, type TabCli, type TabColor } from "./sessions";
 
 // What `layout.json` holds: per worktree, its pane layout and enough of each tab to open it again.
 // The UI owns this shape; the backend checks only `version` and size (plan R3).
@@ -117,7 +117,8 @@ export function toSnapshot(layout: PaneLayout, tabOf: (id: string) => Tab | null
     tabs[to] = {
       kind: "terminal",
       profileId: tab.profileId,
-      account: tab.account,
+      // Only a pick of the tab itself: the profile's or the active account is looked up again at the next start.
+      account: ownAccount(tab),
       cli: tab.cli,
       title: tab.title,
       renamed: tab.renamed,
