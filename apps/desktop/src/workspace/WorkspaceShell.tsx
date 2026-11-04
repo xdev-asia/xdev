@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type OpenInApp, type OpenTarget, type HookDetail, type HookKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
 import { DocsApp } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
@@ -94,7 +94,7 @@ type PanelTab = "files" | "search" | "changes" | "checks";
 type Creating = { repoId: string; name?: string; agents: AgentChoice[]; defaultAgent: string | null };
 type Editing = { worktree: WorktreeView; busy: boolean; error?: ApiError["code"] };
 type SetupCardAt = { kind: "detected"; command: string; repoId: string } | { kind: "ask"; repoId: string };
-type TrustAsk = { path: string; repoId: string; kind: HookKind; text: string; hash: string; changed: boolean; busy: boolean; error?: ApiError["code"] };
+type TrustAsk = { path: string; repoId: string; kind: ScriptKind; text: string; hash: string; changed: boolean; busy: boolean; error?: ApiError["code"] };
 type BulkState = { mode: "delete" | "archive"; worktrees: WorktreeView[]; dirty: Record<string, boolean>; busy: boolean; result?: BulkResult };
 type Review = { repoId: string | null; busy: boolean; error?: ApiError["code"] };
 type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"]; archiving?: boolean; failed?: { code: number | null; output: string } };
@@ -149,7 +149,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [pending] = useState(
     () =>
       new PendingCreates({
-        create: (repoId, name, from) => afterCreate.current.api.worktreeCreate(repoId, name, from),
+        create: (repoId, name, from) => afterCreate.current.api.worktreeCreate(repoId, name, from).then((made) => made.worktree),
         // Cancel was the go-ahead; a fresh worktree is clean, so its branch goes too.
         remove: (path, force) => afterCreate.current.api.worktreeRemove(path, force, true).finally(() => afterCreate.current.reload()),
         onCreated: (wt, args) => afterCreate.current.created(wt, args),
@@ -954,7 +954,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     dropCard(path);
   }
 
-  function askTrust(path: string, repoId: string, hooks: RepoHooks, changed: boolean, kind: HookKind = "setup"): void {
+  function askTrust(path: string, repoId: string, hooks: RepoHooks, changed: boolean, kind: ScriptKind = "setup"): void {
     const script = hooks[kind];
     if (!script) return;
     setTrusting({ path, repoId, kind, text: script.text, hash: script.hash, changed, busy: false });

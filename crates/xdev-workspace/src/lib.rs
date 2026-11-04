@@ -9,6 +9,7 @@ mod ops;
 mod registry;
 mod repo_commands;
 mod search;
+mod shared;
 mod vaults;
 
 use std::io;
@@ -25,8 +26,8 @@ pub use groups::{
     group_remove, set_order, sidebar,
 };
 pub use hooks::{
-    FILE_NAME, HookKind, HookRun, HookScript, RepoHooks, TRUST_FILE, detect_setup, hook_env,
-    hooks_for, trust, trust_hook,
+    DefaultTab, FILE_NAME, HookKind, HookRun, HookScript, RepoHooks, SHARED_MAX, TABS_MAX,
+    TRUST_FILE, detect_setup, hook_env, hooks_for, trust, trust_hook,
 };
 pub use kept::{
     ARCHIVE_DAYS, KeptBranch, KeptReason, KeptView, archive_worktree, kept_delete, kept_keep,
@@ -51,6 +52,7 @@ pub use search::{
     FileHits, FileList, HIT_MAX, LINE_CLIP, LIST_MAX, LineHit, PER_FILE_MAX, SearchEvent,
     SearchQuery, list_files, search_text,
 };
+pub use shared::Linked;
 pub use vaults::{VaultKind, VaultView, add_vault, forget_vault, list_vaults, repo_docs_dir};
 
 /// The UI translates `code()`, never the message.

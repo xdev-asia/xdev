@@ -4,7 +4,7 @@ import type { JSX } from "react";
 import {
   toApiError,
   type ApiError,
-  type HookKind,
+  type ScriptKind,
   type HookScript,
   type RepoHooks,
   type RepoPatch,
@@ -29,7 +29,7 @@ const FIELDS: Field[] = ["shortName", "baseRef", "worktreeRoot", "setupPolicy", 
 const VERBATIM: Field[] = ["localSetup", "localArchive"];
 const POLICIES: SetupPolicy[] = ["ask", "run", "skip"];
 const SOURCES: ScriptSource[] = ["auto", "shared", "local", "both"];
-const KINDS: HookKind[] = ["setup", "archive"];
+const KINDS: ScriptKind[] = ["setup", "archive"];
 
 // The worktree whose `xdev.toml` is shown: the first one the repo has.
 function hooksPath(repo: RepoView): string | null {
@@ -139,7 +139,7 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
   }
 
   // Trusts the hash that is shown. When the file changed since (the call is refused), the new text is shown instead.
-  async function trust(repo: RepoView, kind: HookKind, script: HookScript): Promise<void> {
+  async function trust(repo: RepoView, kind: ScriptKind, script: HookScript): Promise<void> {
     const path = hooksPath(repo);
     if (!path) return;
     try {

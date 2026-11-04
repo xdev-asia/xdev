@@ -20,7 +20,7 @@ use xdev_ai::process::{kill_tree, own_group};
 use xdev_git::{ChangeKind, GitError, Repo};
 use xdev_policy::{Action, Verdict};
 use xdev_workspace::{
-    DetailsPatch, FolderEntry, HookKind, HookRun, Registry, Removed, RepoHooks, RepoPatch,
+    DetailsPatch, FolderEntry, HookKind, HookRun, Linked, Registry, Removed, RepoHooks, RepoPatch,
     RepoView, ScriptSource, SetupPolicy, SidebarItem, VaultView, WorkspaceError, WorktreeStat,
     WorktreeView, add_repo, add_vault, adopt_worktree, archive_worktree, create_worktree_with,
     forget_repo, forget_vault, hooks_for, kept_delete, list, list_vaults, path_key, refresh_base,
@@ -69,6 +69,16 @@ impl From<io::Error> for CmdError {
 pub struct WorktreeChange {
     pub path: String,
     pub kind: ChangeKind,
+}
+
+/// What `worktree_create` returns: the new worktree and what linking its
+/// shared paths did.
+#[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeCreated {
+    pub worktree: WorktreeView,
+    pub shared: Vec<Linked>,
 }
 
 /// Why a file's two sides are not sent. Named apart in TypeScript from the
@@ -636,7 +646,7 @@ pub fn repo_hooks(state: State<'_, AppState>, path: PathBuf) -> Result<RepoHooks
     Ok(hooks_for(&Registry::load(data)?, data, &path)?)
 }
 
-/// Trusts the shared script of `kind` whose hash is `hash`; `hook_untrusted`
+/// Trusts the shared script, shared paths or tabs of `kind` whose hash is `hash`; `hook_untrusted`
 /// when the file no longer holds that script.
 #[tauri::command(async)]
 pub fn repo_hook_trust(
@@ -852,7 +862,7 @@ pub fn worktree_create(
     repo_id: String,
     name: String,
     from: Option<String>,
-) -> Result<WorktreeView, CmdError> {
+) -> Result<WorktreeCreated, CmdError> {
     let git = load_git_settings(&app);
     create_with(
         data_dir(&state)?,
@@ -871,7 +881,7 @@ fn create_with(
     repo_id: &str,
     name: &str,
     from: Option<&str>,
-) -> Result<WorktreeView, CmdError> {
+) -> Result<WorktreeCreated, CmdError> {
     if git.refresh_local_base_on_create {
         // The fetch can take long, so the lock is held only to read the
         // registry. A refresh that fails leaves the base as it was, and the
@@ -885,7 +895,11 @@ fn create_with(
     let opts = git.create_options();
     let (now_ms, seed) = clock();
     update(data, lock, |reg| {
-        create_worktree_with(reg, repo_id, name, from, now_ms, seed, &opts)
+        let worktree = create_worktree_with(reg, repo_id, name, from, now_ms, seed, &opts)?;
+        Ok(WorktreeCreated {
+            worktree,
+            shared: Vec::new(),
+        })
     })
 }
 
@@ -1197,18 +1211,24 @@ mod tests {
         assert_eq!(err.code, "bad_branch_prefix");
 
         git.branch_prefix_custom = "team".into();
-        let wt = create_with(&fx.data, &lock, &git, &id, "x", None).unwrap();
+        let wt = create_with(&fx.data, &lock, &git, &id, "x", None)
+            .unwrap()
+            .worktree;
         assert_eq!(wt.branch.as_deref(), Some("team/x"));
 
         // `Test User` cannot start a branch name, so it is left out.
         git.branch_prefix = BranchPrefixMode::GitUsername;
-        let wt = create_with(&fx.data, &lock, &git, &id, "y", None).unwrap();
+        let wt = create_with(&fx.data, &lock, &git, &id, "y", None)
+            .unwrap()
+            .worktree;
         assert_eq!(wt.branch.as_deref(), Some("y"));
 
         // No remote to fetch from: the create still goes ahead.
         git.branch_prefix = BranchPrefixMode::None;
         git.refresh_local_base_on_create = true;
-        let wt = create_with(&fx.data, &lock, &git, &id, "z", None).unwrap();
+        let wt = create_with(&fx.data, &lock, &git, &id, "z", None)
+            .unwrap()
+            .worktree;
         assert_eq!(wt.branch.as_deref(), Some("z"));
     }
     #[test]
