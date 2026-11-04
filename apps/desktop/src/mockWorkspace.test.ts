@@ -465,11 +465,14 @@ describe("mock repo hooks", () => {
   it("checks the sparse folders", async () => {
     const api = createMockWorkspace();
     const [repo] = await api.workspaceList();
-    for (const bad of ["../out", "/abs", "-x", "a\\..\\b"]) {
+    for (const bad of ["../out", "/abs", "-x", "a\\..\\b", "a//b", "a/./b", "C:x", "a\u0007", "\\abs"]) {
       await expect(api.worktreeCreate(repo.id, "s", null, { existing: null, sparse: [bad] })).rejects.toMatchObject({ code: "bad_sparse" });
     }
     await expect(api.worktreeCreate(repo.id, "s", null, { existing: null, sparse: Array.from({ length: 51 }, (_, i) => `d${i}`) })).rejects.toMatchObject({ code: "bad_sparse" });
     expect((await api.worktreeCreate(repo.id, "s", null, { existing: null, sparse: ["src", "docs/api"] })).worktree.branch).toBe("s");
+    // Duplicates count once, so 51 entries of which one repeats are fine.
+    const dup = [...Array.from({ length: 50 }, (_, i) => `d${i}`), "d0", "./d1/"];
+    expect((await api.worktreeCreate(repo.id, "s3", null, { existing: null, sparse: dup })).worktree.branch).toBe("s3");
     // Blank entries are skipped, as the desktop does.
     expect((await api.worktreeCreate(repo.id, "s2", null, { existing: null, sparse: [" ", ""] })).worktree.branch).toBe("s2");
   });

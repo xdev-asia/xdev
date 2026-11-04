@@ -292,6 +292,22 @@ function isAbsolute(path: string): boolean {
   return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
 }
 
+// As `names::sparse_dirs`: blanks skipped, duplicates counted once, at most 50 folders; none may be
+// absolute, start with `-`, hold a control char, have an empty, `.` or `..` part, or a `:` second char.
+function sparseOk(dirs: string[]): boolean {
+  const seen = new Set<string>();
+  for (const raw of dirs) {
+    let d = raw.trim().replace(/\\/g, "/");
+    while (d.startsWith("./")) d = d.slice(2);
+    d = d.replace(/\/+$/, "");
+    if (d === "") continue;
+    const bad = d.startsWith("-") || d.startsWith("/") || [...d][1] === ":" || /\p{Cc}/u.test(d) || d.split("/").some((p) => p === "" || p === "." || p === "..");
+    if (bad) return false;
+    seen.add(d);
+  }
+  return seen.size <= 50;
+}
+
 // Whether `path` is `base` or lies under it.
 function within(path: string, base: string): boolean {
   return path === base || path.startsWith(`${base}/`);
@@ -770,11 +786,8 @@ export function createMockWorkspace(
     async worktreeCreate(repoId, name, from, request) {
       const repo = repos.find((r) => r.id === repoId);
       if (!repo) return reject("repo_unknown", repoId);
-      // As `names::sparse_dirs`: at most 50 relative folders, none empty, with `..` or a leading `-`.
       const sparse = request?.sparse ?? [];
-      if (sparse.length > 50 || sparse.some((d) => d.trim() !== "" && (d.trim().startsWith("-") || isAbsolute(d.trim()))) || sparse.some((d) => d.split(/[\\/]/).includes(".."))) {
-        return reject("bad_sparse", sparse.join(", "));
-      }
+      if (!sparseOk(sparse)) return reject("bad_sparse", sparse.join(", "));
       const existing = request?.existing?.trim() ?? "";
       if (existing !== "") {
         // A local branch only: the base branches and the ones kept after an archive.
