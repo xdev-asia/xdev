@@ -8,6 +8,7 @@ import { saveFile } from "@/files/fileIO";
 import { UnsavedDialog } from "@/files/UnsavedDialog";
 import { useI18n } from "@/i18n";
 import { useKeymap } from "@/keys/keymap";
+import { useNavigationSettings } from "@/settings/navigationSettings";
 import { buildSections } from "@/quickCommands/model";
 import { QuickCommandsControl } from "@/quickCommands/QuickCommandsControl";
 import { runWithToast } from "@/quickCommands/runUi";
@@ -42,7 +43,7 @@ import { bodyStyle, PaneView, paneRects } from "./PaneView";
 import { cliOf, type Sessions, type Tab, type TabCli } from "./sessions";
 import type { SetupGate } from "./setupGate";
 import { TabStrip, type MenuGroup, type StripItem } from "./TabStrip";
-import { cycleTab, nthTab } from "./tabNav";
+import { cycleTab, mruOrder, nthTab } from "./tabNav";
 import { TabTitleDialog } from "./TabTitleDialog";
 import { titleStatus } from "./titles";
 
@@ -53,6 +54,11 @@ const FALLBACK_SHELL: PtyProfile = "shell";
 // Only an exit ends a tab; a turn that failed (status failed) still has its pty.
 const ended = (tab: Tab) => tab.exitCode !== undefined;
 
+// An agent that is busy or waiting for the person; nothing tells whether a plain shell has a child process.
+const running = (tab: Tab) => tab.agent && !ended(tab) && (tab.status === "working" || tab.status === "needs-you");
+
+type CloseReason = "running" | "pinned";
+
 // The review tab's id; terminal tabs use their pty id, which never has a colon.
 const REVIEW_TAB = "review:";
 
@@ -60,6 +66,9 @@ type Leaf = Extract<PaneNode, { kind: "leaf" }>;
 
 /** A file to show in the review tab; a new `seq` asks for it again. */
 export type Reveal = { file: string; seq: number };
+
+// Ctrl+Tab keeps walking the same list until the focus has rested this long (R4).
+export const MRU_SETTLE_MS = 600;
 
 /**
  * The terminal tabs of one worktree, laid out as a tree of panes. Every terminal stays mounted while
@@ -96,10 +105,13 @@ export function WorktreeTabs(props: {
 }): JSX.Element {
   const { api, sessions, worktree, visible, reveal } = props;
   const { t } = useI18n();
+  const navigation = useNavigationSettings();
+  // A Ctrl+Tab walk in progress: the frozen MRU list and where in it the focus is.
+  const [walk] = useState(() => ({ current: null as { list: string[]; at: number; timer: ReturnType<typeof setTimeout> } | null }));
   // The pane whose `+` menu is open.
   const [menuPane, setMenuPane] = useState<string | null>(null);
-  // Tabs a key asked to close while an agent runs in one of them; null when nothing waits.
-  const [closing, setClosing] = useState<string[] | null>(null);
+  // A close that waits for a yes: what it asks about, and what to do on confirm; null when nothing waits.
+  const [closing, setClosing] = useState<{ reason: CloseReason; run: () => void } | null>(null);
   // The tab whose title dialog is open, and the terminal menu (tab, pointer, that terminal's handle).
   const [titling, setTitling] = useState<string | null>(null);
   const [termMenu, setTermMenu] = useState<{ id: string; at: { x: number; y: number }; handle: TerminalHandle } | null>(null);
@@ -161,6 +173,12 @@ export function WorktreeTabs(props: {
   const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB && !isFileTab(id)).join(" ");
   const { onShown, onPanes, front } = props;
   useEffect(() => onShown?.(shown), [shown]);
+  // The focus order for MRU; a walk records only where it ends, not the tabs it passed (R4).
+  const [shownNow] = useState(() => ({ current: shown }));
+  shownNow.current = shown;
+  useEffect(() => {
+    if (shown && !walk.current) sessions.noteFocused(worktree, shown);
+  }, [shown, sessions, worktree]);
   useEffect(() => onPanes?.(paneKey ? paneKey.split(" ") : []), [paneKey]);
 
   // The shell asks for a tab to come to the front, and a reveal for the review tab to.
@@ -272,17 +290,47 @@ export function WorktreeTabs(props: {
     for (const id of targets) closeTab(id);
   }
 
-  // A key closes at once, unless an agent still runs in one of the tabs.
-  function requestClose(targets: string[]): boolean {
+  // What closing `targets` has to ask about, with the navigation settings applied; null when nothing.
+  function closeReason(targets: string[]): CloseReason | null {
+    const found = targets.flatMap((id) => byId.get(id) ?? []);
+    if (navigation.confirmCloseRunning && found.some(running)) return "running";
+    if (navigation.confirmClosePinned && found.some((tab) => tab.pinned)) return "pinned";
+    return null;
+  }
+
+  // Closes at once, unless a tab is pinned or runs an agent and its setting asks first. `run` is what a
+  // yes does; Close Others and Close to the Right pass their own, since Sessions leaves pinned tabs out.
+  function requestClose(targets: string[], run: () => void = () => closeNow(targets)): boolean {
     if (targets.length === 0) return false;
-    if (targets.some((id) => byId.get(id)?.agent && !ended(byId.get(id)!))) setClosing(targets);
-    else closeNow(targets);
+    const reason = closeReason(targets);
+    if (reason) setClosing({ reason, run });
+    else run();
     return true;
   }
 
   function stepTab(step: 1 | -1): boolean {
-    const to = cycleTab(focusedLeaf?.tabs ?? [], shown, step);
+    const strip = focusedLeaf?.tabs ?? [];
+    if (navigation.tabOrder !== "mru") {
+      const to = cycleTab(strip, shown, step);
+      if (to === null || to === shown) return false;
+      go(to);
+      return true;
+    }
+    // MRU: the list is taken when the walk starts and kept until the focus settles.
+    const held = walk.current;
+    const list = held?.list ?? mruOrder(strip, sessions.recentTabs(worktree));
+    const from = held ? held.at : shown === null ? -1 : list.indexOf(shown);
+    const to = cycleTab(list, from < 0 ? null : list[from], step);
     if (to === null || to === shown) return false;
+    clearTimeout(held?.timer);
+    walk.current = {
+      list,
+      at: list.indexOf(to),
+      timer: setTimeout(() => {
+        walk.current = null;
+        if (shownNow.current) sessions.noteFocused(worktree, shownNow.current);
+      }, MRU_SETTLE_MS),
+    };
     go(to);
     return true;
   }
@@ -425,9 +473,15 @@ export function WorktreeTabs(props: {
         menuOpen={menuPane === leaf.id}
         onMenu={(isOpen) => setMenuPane(isOpen ? leaf.id : null)}
         onSelect={(id) => layout && setLayout(selectTab(layout, id))}
-        onClose={closeTab}
-        onCloseOthers={(id) => sessions.closeOthers(id)}
-        onCloseToRight={(id) => sessions.closeToRight(id)}
+        onClose={(id) => void requestClose([id])}
+        onCloseOthers={(id) => {
+          const rest = leaf.tabs.filter((t) => t !== id && !byId.get(t)?.pinned);
+          requestClose(rest, () => sessions.closeOthers(id));
+        }}
+        onCloseToRight={(id) => {
+          const rest = leaf.tabs.slice(leaf.tabs.indexOf(id) + 1).filter((t) => !byId.get(t)?.pinned);
+          requestClose(rest, () => sessions.closeToRight(id));
+        }}
         onLaunch={(profile) => launchGated(profile, leaf.id)}
         onSplit={(dir) => defaultShell !== null && splitWith(leaf.id, dir, defaultShell)}
         onMoveToSplit={(id, dir) => (id === REVIEW_TAB || isFileTab(id) ? splitTab(leaf.id, id, dir) : sessions.moveToSplit(id, dir))}
@@ -610,8 +664,9 @@ export function WorktreeTabs(props: {
       )}
       {closing && (
         <CloseTabsDialog
+          reason={closing.reason}
           onConfirm={() => {
-            closeNow(closing);
+            closing.run();
             setClosing(null);
           }}
           onCancel={() => setClosing(null)}

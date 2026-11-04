@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import type { Api } from "@/api";
 import { AgentsPage } from "./agents/AgentsPage";
 import { EditorPage } from "./EditorPage";
+import { GeneralPage } from "./GeneralPage";
 import { GitSettings } from "./GitSettings";
 import { OpenInPage } from "./OpenInPage";
 import { NotificationsPage } from "./notifications/NotificationsPage";
@@ -20,6 +21,8 @@ export interface SettingsSectionProps {
   arg?: string;
   // The settings search; set while a query is typed or a palette item asked for one control.
   filter?: SettingsFilter;
+  // Switches the Settings view to another section (General links to Open In Apps).
+  openSection?(id: string): void;
 }
 
 export interface SettingsFilter {
@@ -38,6 +41,7 @@ export interface SettingsSection {
 
 // The left list of the Settings view, in order; another section is one more entry.
 export const SECTIONS: SettingsSection[] = [
+  { id: "general", labelKey: "settings.general.title", Component: GeneralPage },
   { id: "agents", labelKey: "settings.agents.title", Component: AgentsPage },
   { id: "notifications", labelKey: "settings.notifications.title", Component: NotificationsPage },
   { id: "terminal", labelKey: "settings.terminal.title", Component: TerminalPage },

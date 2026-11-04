@@ -19,6 +19,12 @@ export function SettingsView(props: { api: Api; onChanged(): void; initial?: str
   let filter: SettingsFilter | undefined;
   if (found.active) filter = { query, ids: found.ids };
   else if (props.target) filter = { query: "", ids: new Set(SETTING_ENTRIES.map((e) => e.id)), target: props.target };
+  // A section's link to another one (General → Open In Apps); a typed query would hide the target, so it clears.
+  const openSection = (id: string) => {
+    if (!SECTIONS.some((s) => s.id === id)) return;
+    setQuery("");
+    setActive(id);
+  };
   return (
     <div className="settings">
       <nav className="settings-nav" aria-label={t("settings.label")}>
@@ -38,7 +44,7 @@ export function SettingsView(props: { api: Api; onChanged(): void; initial?: str
       </nav>
       {section ? (
         <section className="settings-body" aria-label={t(section.labelKey)}>
-          <section.Component key={section.id} api={props.api} onChanged={props.onChanged} arg={props.arg} filter={filter} />
+          <section.Component key={section.id} api={props.api} onChanged={props.onChanged} arg={props.arg} filter={filter} openSection={openSection} />
           {props.target && !found.active && <RevealSetting id={props.target} />}
         </section>
       ) : (

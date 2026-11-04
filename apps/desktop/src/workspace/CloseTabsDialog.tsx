@@ -2,8 +2,9 @@ import { useEffect, useRef } from "react";
 import type { JSX } from "react";
 import { useI18n } from "@/i18n";
 
-// Mounted only while open: asks before a key closes a tab or pane with an agent still running.
-export function CloseTabsDialog(props: { onConfirm(): void; onCancel(): void }): JSX.Element {
+// Mounted only while open: asks before a close that ends a running agent or a pinned tab.
+export function CloseTabsDialog(props: { reason?: "running" | "pinned"; onConfirm(): void; onCancel(): void }): JSX.Element {
+  const key = props.reason === "pinned" ? "panes.closePinned" : "panes.closeAgent";
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
 
@@ -25,16 +26,16 @@ export function CloseTabsDialog(props: { onConfirm(): void; onCancel(): void }):
       }}
     >
       <h2 id="ws-close-title" className="dialog-title">
-        {t("panes.closeAgent.title")}
+        {t(`${key}.title`)}
       </h2>
-      <p className="dialog-body">{t("panes.closeAgent.body")}</p>
+      <p className="dialog-body">{t(`${key}.body`)}</p>
       <div className="dialog-actions">
         {/* Cancel first and focused, so a stray Enter never ends an agent. */}
         <button type="button" className="btn-secondary" autoFocus onClick={props.onCancel}>
           {t("dialog.cancel")}
         </button>
         <button type="button" className="ws-danger" onClick={props.onConfirm}>
-          {t("panes.closeAgent.confirm")}
+          {t(`${key}.confirm`)}
         </button>
       </div>
     </dialog>

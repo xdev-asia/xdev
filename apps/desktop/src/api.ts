@@ -81,6 +81,7 @@ import type {
   AgentSession,
   DirEntry,
   DirListing,
+  DiffSettings,
   EditorSettings,
   Eol,
   FileHits,
@@ -91,6 +92,7 @@ import type {
   Home,
   KitText,
   MemorySet,
+  NavigationSettings,
   PromptEntry,
   SearchEvent,
   SearchQuery,
@@ -110,7 +112,7 @@ export { createMockApi };
 export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
 export type { Agent, AgentSession, SessionQuery, SessionRow };
-export type { EditorSettings, Eol, FileText, WriteOutcome };
+export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FileKind } from "@xdev/bindings";
 export type { RestoreMode } from "@xdev/bindings";
@@ -725,6 +727,11 @@ export interface Api {
   // Settings → Editor; the put returns what was stored, with numbers clamped to their ranges.
   editorSettings(): Promise<EditorSettings>;
   editorSettingsPut(v: EditorSettings): Promise<EditorSettings>;
+  // Settings → General: Navigation and Diff; each put returns what was stored.
+  navigationSettings(): Promise<NavigationSettings>;
+  navigationSettingsPut(v: NavigationSettings): Promise<NavigationSettings>;
+  diffSettings(): Promise<DiffSettings>;
+  diffSettingsPut(v: DiffSettings): Promise<DiffSettings>;
 
   // Layout
   // The tabs and splits saved for the next start (`<data_dir>/layout.json`); null when none is saved
@@ -1070,6 +1077,10 @@ const tauriApi: Api = {
   filesSearchCancel: (id) => call("files_search_cancel", { id }),
   editorSettings: () => call("editor_settings_get"),
   editorSettingsPut: (settings) => call("editor_settings_put", { settings }),
+  navigationSettings: () => call("navigation_settings_get"),
+  navigationSettingsPut: (settings) => call("navigation_settings_put", { settings }),
+  diffSettings: () => call("diff_settings_get"),
+  diffSettingsPut: (settings) => call("diff_settings_put", { settings }),
   layoutLoad: () => call("layout_load"),
   layoutSave: (snapshot) => call("layout_save", { snapshot }),
 };
