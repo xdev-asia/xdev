@@ -2,6 +2,7 @@ mod accounts;
 mod agent;
 mod agent_hook;
 mod ai;
+mod app;
 mod context;
 mod mcp;
 mod squad;
@@ -105,6 +106,19 @@ enum Command {
     },
     /// Run by an agent CLI's hook: records the event for the xDev pane in
     /// `XDEV_PTY_ID`. Always exits 0 and prints nothing to stdout.
+    /// The running app: version, worktree in front, tab counts. Exit 3
+    /// when xDev is not running.
+    Status(app::StatusArgs),
+    /// Worktrees of the running app: `ps`, `current`, `create`, `set`.
+    Worktree {
+        #[command(subcommand)]
+        command: app::WorktreeCommand,
+    },
+    /// Terminal tabs of the running app: `list`, `wait`.
+    Terminal {
+        #[command(subcommand)]
+        command: app::TerminalCommand,
+    },
     #[command(name = "agent-hook", hide = true)]
     AgentHook {
         event: agent_hook::Event,
@@ -138,7 +152,22 @@ fn main() -> ExitCode {
         agent_hook::run(event, &rest);
         return ExitCode::SUCCESS;
     }
-    match run(cli.command) {
+    let app_cmd = match cli.command {
+        Command::Status(a) => app::AppCommand::Status(a),
+        Command::Worktree { command } => app::AppCommand::Worktree(command),
+        Command::Terminal { command } => app::AppCommand::Terminal(command),
+        other => return finish(run(other)),
+    };
+    // The app verbs need only the local folder, where the endpoint lives.
+    let Some(local) = local_dir() else {
+        eprintln!("error: io");
+        return ExitCode::from(1);
+    };
+    ExitCode::from(app::run(&app_cmd, &local.join("app"), app::PREFIX))
+}
+
+fn finish(outcome: Result<Outcome, &'static str>) -> ExitCode {
+    match outcome {
         Ok(Outcome::Ok) => ExitCode::SUCCESS,
         Ok(Outcome::Found) => ExitCode::from(1),
         Ok(Outcome::Exit(code)) => ExitCode::from(code),
@@ -167,7 +196,10 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         Command::Task { command } => return task::run(command, &data_dir, &local_dir),
         Command::Squad { command } => return squad::run(command, &data_dir, &local_dir),
         // Handled in `main` before any folder is touched.
-        Command::AgentHook { .. } => return Ok(Outcome::Ok),
+        Command::AgentHook { .. }
+        | Command::Status(_)
+        | Command::Worktree { .. }
+        | Command::Terminal { .. } => return Ok(Outcome::Ok),
         Command::Mcp { dir } => {
             let dir = dir.unwrap_or_else(|| {
                 let docs = PathBuf::from("docs");

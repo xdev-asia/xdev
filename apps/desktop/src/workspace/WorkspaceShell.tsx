@@ -55,6 +55,8 @@ import { openDefaultTabs } from "./defaultTabs";
 import { failedLinks } from "./linkReport";
 import { decideSetup, hasPending, pendingLists, type PendingLists } from "./setupFlow";
 import { SetupGate } from "./setupGate";
+import { startCliReport } from "./cliReport";
+import { startCliEvents } from "./cliEvents";
 import { TrustDialog } from "./TrustDialog";
 import { QuitDialog } from "./QuitDialog";
 import { askQuit, type QuitAsk, type QuitChoice } from "./quitGuard";
@@ -208,7 +210,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [bellOpen, setBellOpen] = useState(false);
   const statusSettings = useStatusSettings();
   // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
-  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null }));
+  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {} }));
 
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
@@ -550,6 +552,24 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setFront((f) => ({ worktree: wt.path, id: fileTabId(req.rel), seq: (f?.seq ?? 0) + 1 }));
   };
   useEffect(() => onOpenFile((req) => live.openFileTab(req)), [live]);
+  live.selected = current?.path ?? null;
+  live.reload = () => void load();
+  // `xdev worktree create --agent/--prompt`: the profile opens unfocused and gets the prompt once setup lets agents start.
+  live.cliOpen = (worktree, profile, prompt) => void openDefaultAgent(worktree, profile || undefined, prompt ?? undefined);
+  // The app CLI: the tabs as `xdev terminal` sees them, and what its endpoint asks of the window.
+  useEffect(() => {
+    if (!sessions) return;
+    const reporter = startCliReport(api, sessions, () => live.selected);
+    live.cliPoke = reporter.poke;
+    const stopEvents = startCliEvents(api, { reload: () => live.reload(), openTab: (w, p, prompt) => live.cliOpen(w, p, prompt), t: (key, vars) => live.t(key, vars) });
+    return () => {
+      reporter.stop();
+      stopEvents();
+      live.cliPoke = () => {};
+    };
+  }, [api, sessions]);
+  const selectedPath = current?.path ?? null;
+  useEffect(() => live.cliPoke(), [selectedPath]);
   useEffect(() => onOpenFile((req) => recentFiles.touch(req.worktree, req.rel)), []);
   // Ctrl+Enter in quick open: the file goes into a new pane to the right of the focused one.
   function openFileSide(worktree: string, rel: string, line?: number): void {
