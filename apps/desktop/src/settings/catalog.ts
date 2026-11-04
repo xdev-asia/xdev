@@ -7,7 +7,78 @@ export type SettingEntry = {
   keywords: readonly string[]; // English and Vietnamese words, lower case
 };
 
-export const SETTING_ENTRIES: readonly SettingEntry[] = [];
+const e = (id: string, titleKey: string, keywords: string[], descriptionKey?: string): SettingEntry => ({
+  id,
+  section: id.slice(0, id.indexOf(".")),
+  titleKey,
+  keywords,
+  ...(descriptionKey ? { descriptionKey } : {}),
+});
+
+/**
+ * Every control of every page, in page order. A control a page shows without an entry here fails
+ * the coverage test (SettingRow.test.tsx). Keywords carry both English and Vietnamese words: the
+ * search does not fold diacritics.
+ */
+export const SETTING_ENTRIES: readonly SettingEntry[] = [
+  // Agents
+  e("agents.approvals", "settings.agents.approvals", ["permission", "ask", "skip", "yolo", "phê duyệt", "phe duyet", "quyền", "quyen"]),
+  e("agents.defaultAgent", "settings.agents.defaultAgent", ["default", "agent", "mặc định", "mac dinh"]),
+  e("agents.defaultShell", "settings.agents.defaultShell", ["default", "shell", "mặc định", "mac dinh"]),
+  e("agents.profiles", "settings.agents.profiles", ["claude", "codex", "gemini", "profile", "enable", "hồ sơ", "ho so"]),
+  e("agents.shells", "settings.agents.shells", ["shell", "bash", "powershell", "zsh", "program", "args"]),
+  e("agents.statusHooks", "settings.agents.statusHooks.label", ["hooks", "status", "trạng thái", "trang thai"], "settings.agents.statusHooks.what"),
+  // Notifications
+  e("notifications.enabled", "settings.notifications.enabled", ["notify", "alert", "master", "thông báo", "thong bao"], "settings.notifications.enabledHint"),
+  e("notifications.onNeedsInput", "settings.notifications.onNeedsInput", ["input", "waiting", "cần nhập", "can nhap"], "settings.notifications.onNeedsInputHint"),
+  e("notifications.onDone", "settings.notifications.onDone", ["finish", "complete", "xong", "hoàn thành", "hoan thanh"], "settings.notifications.onDoneHint"),
+  e("notifications.onFailed", "settings.notifications.onFailed", ["error", "fail", "lỗi", "loi"], "settings.notifications.onFailedHint"),
+  e("notifications.onBell", "settings.notifications.onBell", ["bell", "chuông", "chuong"], "settings.notifications.onBellHint"),
+  e("notifications.suppressWhenFocused", "settings.notifications.suppressWhenFocused", ["focus", "quiet", "tiêu điểm", "tieu diem"], "settings.notifications.suppressWhenFocusedHint"),
+  e("notifications.channels", "settings.notifications.channels", ["os", "sound", "bell", "badge", "âm thanh", "am thanh"], "settings.notifications.channelsHint"),
+  e("notifications.sound", "settings.notifications.soundGroup", ["volume", "beep", "âm lượng", "am luong", "tiếng", "tieng"], "settings.notifications.soundFileHint"),
+  // Terminal
+  e("terminal.fontFamily", "settings.terminal.fontFamily", ["font", "typeface", "phông", "phong", "chữ", "chu"], "settings.terminal.fontFamilyHint"),
+  e("terminal.fontSize", "settings.terminal.fontSize", ["font", "zoom", "cỡ chữ", "co chu", "phông", "phong"]),
+  e("terminal.fontWeight", "settings.terminal.fontWeight", ["font", "bold", "đậm", "dam"]),
+  e("terminal.lineHeight", "settings.terminal.lineHeight", ["spacing", "dòng", "dong", "giãn", "gian"]),
+  e("terminal.cursorStyle", "settings.terminal.cursorStyle", ["cursor", "block", "bar", "underline", "con trỏ", "con tro"]),
+  e("terminal.cursorBlink", "settings.terminal.cursorBlink", ["cursor", "blink", "nhấp nháy", "nhap nhay"]),
+  e("terminal.scrollback", "settings.terminal.scrollback", ["buffer", "history", "lines", "lịch sử", "lich su"], "settings.terminal.scrollbackHint"),
+  e("terminal.copyOnSelect", "settings.terminal.copyOnSelect", ["clipboard", "copy", "select", "sao chép", "sao chep"]),
+  e("terminal.rightClickPaste", "settings.terminal.rightClickPaste", ["clipboard", "paste", "mouse", "dán", "dan"]),
+  e("terminal.osc52Clipboard", "settings.terminal.osc52Clipboard", ["clipboard", "osc52", "osc 52"], "settings.terminal.osc52ClipboardHint"),
+  e("terminal.restore", "layout.setting", ["restore", "layout", "session", "khôi phục", "khoi phuc", "bố cục", "bo cuc"], "layout.setting.hint"),
+  e("terminal.reset", "settings.terminal.reset", ["defaults", "reset", "đặt lại", "dat lai"]),
+  // Editor
+  e("editor.autosave", "files.settings.autosave", ["save", "tự động lưu", "tu dong luu"], "files.settings.autosaveHint"),
+  e("editor.wordWrap", "files.settings.wordWrap", ["wrap", "xuống dòng", "xuong dong"]),
+  e("editor.autosaveMs", "files.settings.autosaveMs", ["save", "delay", "milliseconds", "độ trễ", "do tre"]),
+  e("editor.fontSize", "files.settings.fontSize", ["font", "cỡ chữ", "co chu", "phông", "phong"]),
+  e("editor.tabSize", "files.settings.tabSize", ["tab", "indent", "thụt lề", "thut le"], "files.settings.tabSizeHint"),
+  // Repositories (the same fields on every repo card)
+  e("repos.shortName", "settings.repos.shortName", ["name", "repo", "tên", "ten"], "settings.repos.shortNameNote"),
+  e("repos.baseRef", "settings.repos.baseRef", ["base", "branch", "main", "nhánh", "nhanh"], "settings.repos.baseRefHint"),
+  e("repos.worktreeRoot", "settings.repos.worktreeRoot", ["folder", "directory", "path", "thư mục", "thu muc"], "settings.repos.worktreeRootHint"),
+  e("repos.scriptPolicy", "settings.repos.scripts.policy", ["setup", "script", "run", "kịch bản", "kich ban"]),
+  e("repos.scriptSource", "settings.repos.scripts.source", ["setup", "script", "shared", "local", "kịch bản", "kich ban"]),
+  e("repos.localScripts", "settings.repos.scripts", ["setup", "archive", "script", "kịch bản", "kich ban"], "settings.repos.scripts.localHint"),
+  e("repos.sharedScripts", "settings.repos.scripts.shared", ["trust", "script", "tin cậy", "tin cay"], "settings.repos.scripts.trustNote"),
+  // Open in
+  e("openIn.apps", "openIn.title", ["editor", "vscode", "app", "command", "args", "mở bằng", "mo bang"], "openIn.intro"),
+  // Git
+  e("git.prefix", "settings.git.prefix", ["branch", "name", "username", "nhánh", "nhanh", "tiền tố", "tien to"]),
+  e("git.compare", "settings.git.compare", ["diff", "upstream", "base", "so sánh", "so sanh"], "settings.git.compareHint"),
+  e("git.refresh", "settings.git.refresh", ["fetch", "pull", "base", "create", "làm mới", "lam moi"], "settings.git.refreshHint"),
+  e("git.ai", "settings.git.ai.show", ["ai", "commit", "message", "source control"], "settings.git.ai.showHint"),
+  e("git.pr", "settings.git.pr.title", ["pull request", "draft", "pr"]),
+  // Vaults
+  e("vaults.repo", "settings.vaults.repo", ["docs", "notes", "repo", "tài liệu", "tai lieu"]),
+  e("vaults.shared", "settings.vaults.shared", ["docs", "notes", "add", "forget", "folder", "tài liệu", "tai lieu", "chia sẻ", "chia se"]),
+  // Shortcuts and quick commands: the page keeps its own list search, so one entry each.
+  e("keys.page", "keys.title", ["shortcut", "keybinding", "hotkey", "chord", "phím tắt", "phim tat"]),
+  e("qcmd.page", "qcmd.title", ["quick", "command", "script", "alias", "lệnh nhanh", "lenh nhanh"]),
+];
 
 /** The longest query searched, in bytes after trim; longer input is cut. */
 export const QUERY_MAX = 2048;
