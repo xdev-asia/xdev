@@ -6,6 +6,7 @@ mod logs;
 mod memory;
 mod sessions;
 mod skills;
+mod transcripts;
 mod usage;
 mod usage_report;
 mod write;
@@ -17,6 +18,7 @@ pub use memory::{
 };
 pub use sessions::{AgentSession, SessionIndex};
 pub use skills::{Skill, SkillScope, scan_skills};
+pub use transcripts::{TextRole, TranscriptEvent, TranscriptText, scan_transcripts};
 pub use usage::{
     RefreshStats, SessionUsage, Tokens, UsageIndex, UsageQuery, UsageSummary, summarize,
 };

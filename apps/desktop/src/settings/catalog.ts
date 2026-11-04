@@ -1,3 +1,5 @@
+import { PLATFORM, type Platform } from "@/platform";
+
 /** One searchable control (or list) of a Settings page. */
 export type SettingEntry = {
   id: string; // "terminal.fontSize"; unique; [a-zA-Z0-9.]+
@@ -5,6 +7,7 @@ export type SettingEntry = {
   titleKey: string; // i18n key the page already shows
   descriptionKey?: string;
   keywords: readonly string[]; // English and Vietnamese words, lower case
+  platforms?: readonly Platform[]; // only these platforms show the control; all when left out
 };
 
 const e = (id: string, titleKey: string, keywords: string[], descriptionKey?: string): SettingEntry => ({
@@ -14,6 +17,9 @@ const e = (id: string, titleKey: string, keywords: string[], descriptionKey?: st
   keywords,
   ...(descriptionKey ? { descriptionKey } : {}),
 });
+
+/** The entry, shown on `platforms` only. */
+const only = (platforms: readonly Platform[], entry: SettingEntry): SettingEntry => ({ ...entry, platforms });
 
 /**
  * Every control of every page, in page order. A control a page shows without an entry here fails
@@ -27,15 +33,29 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("general.nav.confirmCloseRunning", "settings.general.confirmCloseRunning", ["close", "running", "agent", "process", "confirm", "đóng", "dong", "đang chạy", "dang chay", "xác nhận", "xac nhan"], "settings.general.confirmCloseRunningHint"),
   e("general.nav.askBeforeDeleteWorktree", "settings.general.askBeforeDeleteWorktree", ["delete", "remove", "worktree", "ask", "confirm", "xoá", "xoa", "xóa", "hỏi", "hoi"]),
   e("general.language", "language.label", ["language", "locale", "english", "vietnamese", "ngôn ngữ", "ngon ngu", "tiếng việt", "tieng viet"]),
-  e("general.theme", "settings.general.theme", ["theme", "appearance", "dark", "light", "system", "mode", "giao diện", "giao dien", "tối", "toi", "sáng", "sang", "chế độ", "che do"], "settings.general.themeHint"),
   e("general.zoom", "settings.general.zoom", ["zoom", "scale", "size", "thu phóng", "thu phong", "phóng to", "phong to"]),
   e("general.restore", "layout.setting", ["restore", "layout", "session", "reopen", "khôi phục", "khoi phuc", "bố cục", "bo cuc"], "layout.setting.hint"),
+  only(["win"], e("general.minimizeToTray", "settings.general.minimizeToTray", ["tray", "minimize", "close", "background", "notification area", "khay", "thu nhỏ", "thu nho", "đóng", "dong", "nền", "nen"], "settings.general.minimizeToTrayHint")),
+  only(["mac"], e("general.menuBarIcon", "settings.general.menuBarIcon", ["menu bar", "tray", "icon", "status", "thanh menu", "biểu tượng", "bieu tuong"], "settings.general.menuBarIconHint")),
   e("general.openIn", "settings.general.openIn", ["open in", "apps", "ide", "mở bằng", "mo bang", "ứng dụng", "ung dung"]),
+  e("general.updates", "settings.general.updates", ["update", "version", "upgrade", "check", "restart", "cập nhật", "cap nhat", "phiên bản", "phien ban", "kiểm tra", "kiem tra"], "settings.general.updates.idle"),
+  e("general.updateChannel", "settings.general.updates.channel", ["update", "channel", "release candidate", "rc", "stable", "beta", "kênh", "kenh", "ổn định", "on dinh", "thử nghiệm", "thu nghiem"], "settings.general.updates.channelHint"),
   e("general.diffView", "settings.general.diffView", ["diff", "inline", "split", "side by side", "view", "chế độ", "che do", "tách", "tach"]),
   e("general.diff.ignoreWhitespace", "settings.general.ignoreWhitespace", ["diff", "whitespace", "space", "khoảng trắng", "khoang trang"]),
   e("general.diff.collapseUnchanged", "settings.general.collapseUnchanged", ["diff", "collapse", "unchanged", "thu gọn", "thu gon"]),
   e("general.diff.wordWrap", "settings.general.wordWrap", ["diff", "wrap", "long lines", "xuống dòng", "xuong dong"]),
   e("general.diff.fileTree", "settings.general.fileTree", ["diff", "file tree", "tree", "cây", "cay", "tệp", "tep"], "settings.general.fileTreeHint"),
+  // Appearance
+  e("appearance.theme", "settings.appearance.theme", ["theme", "appearance", "dark", "light", "system", "mode", "giao diện", "giao dien", "chủ đề", "chu de", "tối", "toi", "sáng", "sang", "chế độ", "che do"], "settings.appearance.themeHint"),
+  e("appearance.font", "settings.appearance.font", ["font", "typeface", "text", "family", "phông", "phong", "chữ", "chu", "kiểu chữ", "kieu chu"], "settings.appearance.fontHint"),
+  e("appearance.sidebar", "settings.appearance.sidebar", ["sidebar", "tint", "tinted", "colour", "color", "thanh bên", "thanh ben", "ánh màu", "anh mau"], "settings.appearance.sidebarHint"),
+  e("appearance.editorTheme", "settings.appearance.editor", ["editor", "diff", "theme", "light", "dark", "colours", "colors", "trình soạn thảo", "trinh soan thao", "màu", "mau"], "settings.appearance.editorHint"),
+  e("appearance.statusBar.branch", "settings.appearance.statusBar.branch", ["status bar", "footer", "branch", "thanh trạng thái", "thanh trang thai", "nhánh", "nhanh"]),
+  e("appearance.statusBar.tokenUsage", "settings.appearance.statusBar.tokenUsage", ["status bar", "footer", "token", "usage", "quota", "thanh trạng thái", "thanh trang thai", "mức dùng", "muc dung"]),
+  e("appearance.statusBar.agents", "settings.appearance.statusBar.agents", ["status bar", "footer", "agent", "agents", "thanh trạng thái", "thanh trang thai"]),
+  e("appearance.statusBar.version", "settings.appearance.statusBar.version", ["status bar", "footer", "version", "thanh trạng thái", "thanh trang thai", "phiên bản", "phien ban"]),
+  e("appearance.terminalLink", "settings.appearance.terminalLink", ["terminal", "colours", "colors", "scheme", "schemes", "import", "màu", "mau", "bảng màu", "bang mau"]),
+  e("appearance.usageLink", "settings.appearance.usageLink", ["usage", "credentials", "quota", "sign in", "mức dùng", "muc dung", "đăng nhập", "dang nhap"]),
   // Agents
   e("agents.approvals", "settings.agents.approvals", ["permission", "ask", "skip", "yolo", "phê duyệt", "phe duyet", "quyền", "quyen"]),
   e("agents.defaultAgent", "settings.agents.defaultAgent", ["default", "agent", "mặc định", "mac dinh"]),
@@ -43,6 +63,10 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("agents.profiles", "settings.agents.profiles", ["claude", "codex", "gemini", "profile", "enable", "hồ sơ", "ho so"]),
   e("agents.shells", "settings.agents.shells", ["shell", "bash", "powershell", "zsh", "program", "args"]),
   e("agents.accountSwitch", "settings.agents.accountSwitch.label", ["account", "switch", "restart", "keep", "ask", "running", "agent", "tài khoản", "tai khoan", "chuyển", "chuyen", "khởi động lại", "khoi dong lai", "giữ", "giu"], "settings.agents.accountSwitch.hint"),
+  e("agents.keepAwake", "settings.agents.keepAwake.label", ["awake", "sleep", "keep", "power", "caffeinate", "agent", "ngủ", "ngu", "thức", "thuc", "giữ máy", "giu may"], "settings.agents.keepAwake.hint"),
+  e("agents.autoTabTitle", "settings.agents.autoTabTitle.label", ["tab", "title", "name", "prompt", "rename", "tên", "ten", "tiêu đề", "tieu de"], "settings.agents.autoTabTitle.hint"),
+  e("agents.sessionSearch", "settings.agents.sessionSearch.label", ["search", "session", "conversation", "history", "index", "tìm kiếm", "tim kiem", "phiên", "phien", "hội thoại", "hoi thoai", "chỉ mục", "chi muc"], "settings.agents.sessionSearch.hint"),
+  e("agents.autoSleep", "settings.agents.autoSleep.label", ["sleep", "auto", "idle", "hibernate", "agent", "tab", "minutes", "ngủ", "ngu", "tự động", "tu dong", "nhàn rỗi", "nhan roi", "phút", "phut"], "settings.agents.autoSleep.hint"),
   e("agents.statusHooks", "settings.agents.statusHooks.label", ["hooks", "status", "trạng thái", "trang thai"], "settings.agents.statusHooks.what"),
   // Stats & Usage
   e("usage.display", "settings.usage.display", ["usage", "percent", "percentage", "used", "remaining", "left", "meter", "footer", "đã dùng", "da dung", "còn lại", "con lai", "phần trăm", "phan tram"], "settings.usage.displayHint"),
@@ -50,6 +74,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("usage.footer.codex", "settings.usage.footer.codex", ["footer", "meter", "codex", "usage", "quota", "thanh", "mức dùng", "muc dung", "chân trang", "chan trang"]),
   e("usage.scan.claude", "settings.usage.scan.claude", ["stats", "logs", "scan", "read", "claude", "session", "thống kê", "thong ke", "đọc log", "doc log", "nhật ký", "nhat ky"], "settings.usage.scanHint"),
   e("usage.scan.codex", "settings.usage.scan.codex", ["stats", "logs", "scan", "read", "codex", "session", "thống kê", "thong ke", "đọc log", "doc log", "nhật ký", "nhat ky"], "settings.usage.scanHint"),
+  e("usage.credentials", "settings.usage.credentials.group", ["credentials", "sign in", "login", "account", "token", "expired", "claude", "codex", "đăng nhập", "dang nhap", "tài khoản", "tai khoan", "hết hạn", "het han"]),
   e("usage.cacheTimer", "settings.usage.cacheTimer", ["cache", "timer", "countdown", "prompt cache", "claude", "tab", "đồng hồ", "dong ho", "đếm ngược", "dem nguoc", "bộ nhớ đệm", "bo nho dem"], "settings.usage.cacheTimerHint"),
   e("usage.cacheTtl", "settings.usage.cacheTtl", ["cache", "lifetime", "ttl", "5 minutes", "1 hour", "thời hạn", "thoi han", "5 phút", "5 phut", "1 giờ", "1 gio"]),
   // Notifications
@@ -69,6 +94,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("terminal.cursorStyle", "settings.terminal.cursorStyle", ["cursor", "block", "bar", "underline", "con trỏ", "con tro"]),
   e("terminal.cursorBlink", "settings.terminal.cursorBlink", ["cursor", "blink", "nhấp nháy", "nhap nhay"]),
   e("terminal.theme", "settings.terminal.theme.label", ["theme", "colour", "color", "scheme", "dark", "light", "màu", "mau", "giao diện", "giao dien", "bảng màu", "bang mau"], "settings.terminal.theme.hint"),
+  e("terminal.themeImport", "settings.terminal.import.button", ["theme", "import", "scheme", "colour", "color", "file", "json", "nhập", "nhap", "giao diện", "giao dien", "bảng màu", "bang mau"], "settings.terminal.import.hint"),
   e("terminal.gpu", "settings.terminal.render.gpu", ["gpu", "webgl", "renderer", "acceleration", "dom", "tăng tốc", "tang toc", "hiển thị", "hien thi"], "settings.terminal.render.gpuHint"),
   e("terminal.minimumContrast", "settings.terminal.render.contrast", ["contrast", "readable", "accessibility", "tương phản", "tuong phan", "màu", "mau"], "settings.terminal.render.contrastHint"),
   e("terminal.scrollSensitivity", "settings.terminal.interaction.scroll", ["scroll", "speed", "wheel", "cuộn", "cuon", "tốc độ", "toc do"]),
@@ -170,4 +196,9 @@ export function searchSettings(
   });
   hits.sort((a, b) => b.score - a.score || a.at - b.at);
   return hits.map(({ entry, score }) => ({ entry, score }));
+}
+
+/** The entries this platform shows; the search and the palette use these. */
+export function entriesFor(platform: Platform = PLATFORM): SettingEntry[] {
+  return SETTING_ENTRIES.filter((x) => !x.platforms || x.platforms.includes(platform));
 }

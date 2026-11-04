@@ -1,14 +1,19 @@
-import { applyTheme, resolveTheme, systemPrefersDark, watchSystemTheme, type MatchMediaLike, type ThemePreference } from "@xdev-asia/ui";
-import type { Api } from "@/api";
+import { applyTheme, applyUiFont, resolveTheme, systemPrefersDark, watchSystemTheme, type FontRoot, type MatchMediaLike, type ThemePreference } from "@xdev-asia/ui";
+import type { Api, UiSettings } from "@/api";
+import { setEditorPrefs, setPaintedTheme } from "./editorTheme";
+import { setStatusBarItems } from "./statusBarItems";
 
-// The app side of light / dark / system: the setting lives in `UiSettings.theme`; the helpers are xdev-ui's.
+// The app side of appearance: light / dark / system, the UI font and the sidebar look live in `UiSettings`; the helpers are xdev-ui's.
 
 /** localStorage key of the last known preference, read before the first render. */
 export const THEME_CACHE_KEY = "xdev.theme";
 
+/** localStorage key of the last known UI font name, read before the first render. */
+export const FONT_CACHE_KEY = "xdev.uiFont";
+
 const PREFERENCES: readonly string[] = ["system", "dark", "light"];
 
-type Root = Parameters<typeof applyTheme>[0];
+type Root = Parameters<typeof applyTheme>[0] & Partial<FontRoot>;
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
 
 export type ThemeEnv = {
@@ -50,10 +55,34 @@ function writeCache(pref: ThemePreference): void {
   }
 }
 
+/** The cached UI font name, or "" when there is none or storage fails. */
+export function readCachedFont(): string {
+  try {
+    return theEnv().storage()?.getItem(FONT_CACHE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeFontCache(name: string): void {
+  try {
+    theEnv().storage()?.setItem(FONT_CACHE_KEY, name);
+  } catch {
+    // Storage is only a head start for the next start; the setting is the truth.
+  }
+}
+
+function paintFont(name: string): void {
+  const root = theEnv().root;
+  if (root.style) applyUiFont({ style: root.style }, name);
+}
+
 function paint(): void {
   const e = theEnv();
   const dark = e.matchMedia ? systemPrefersDark(e.matchMedia) : true;
-  applyTheme(e.root, resolveTheme(preference, dark));
+  const resolved = resolveTheme(preference, dark);
+  applyTheme(e.root, resolved);
+  setPaintedTheme(resolved);
 }
 
 /** The preference now in force. */
@@ -76,18 +105,34 @@ export function setThemePreference(pref: ThemePreference): void {
 }
 
 /**
- * Before the first render: applies the cached preference so the window does not flash. With no cache
- * the `data-theme="dark"` in index.html stays.
+ * Applies the appearance settings: the theme (and its system watch), the UI font and the sidebar
+ * look (`data-sidebar` on the root), hands the editor pick to `useEditorTheme` and the footer items to `useStatusBarItems`. The font is cached so the next start paints it before the
+ * first render.
+ */
+export function applyAppearance(ui: Pick<UiSettings, "theme" | "uiFont" | "sidebar" | "editorThemeLight" | "editorThemeDark"> & Partial<Pick<UiSettings, "statusBar">>): void {
+  setThemePreference(ui.theme);
+  setEditorPrefs(ui);
+  if (ui.statusBar) setStatusBarItems(ui.statusBar);
+  paintFont(ui.uiFont);
+  writeFontCache(ui.uiFont);
+  theEnv().root.setAttribute("data-sidebar", ui.sidebar === "tinted" ? "tinted" : "default");
+}
+
+/**
+ * Before the first render: applies the cached preference and font so the window does not flash. With
+ * no cache the `data-theme="dark"` in index.html and the default font stay.
  */
 export function applyCachedTheme(): void {
   const cached = readCachedTheme();
   if (cached) setThemePreference(cached);
+  const font = readCachedFont();
+  if (font) paintFont(font);
 }
 
-/** Reads the stored preference and applies it; a failed read leaves what is shown. */
+/** Reads the stored appearance and applies it; a failed read leaves what is shown. */
 export async function loadTheme(api: Pick<Api, "uiSettingsGet">): Promise<void> {
   const s = await api.uiSettingsGet().catch(() => null);
-  if (s) setThemePreference(s.theme);
+  if (s) applyAppearance(s);
 }
 
 /** Loads the setting, and again whenever `settings://changed` names `ui`. Returns the unsubscribe. */

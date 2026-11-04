@@ -487,3 +487,72 @@ fn remove_fresh_worktree_leaves_no_record_or_folder() {
     // Gone already is fine.
     repo.remove_fresh_worktree(&path).unwrap();
 }
+
+#[test]
+fn fetch_pull_makes_the_local_branch_and_never_overwrites() {
+    let remote = TempDir::with_prefix("remote ").unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    let dir = repo_dir();
+    fs::write(dir.path().join("a.txt"), "a\n").unwrap();
+    let base = commit_all(dir.path(), "A");
+    git(
+        dir.path(),
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    git(
+        dir.path(),
+        &["push", "-q", "origin", "HEAD:refs/heads/main"],
+    );
+    fs::write(dir.path().join("b.txt"), "b\n").unwrap();
+    let tip = commit_all(dir.path(), "B");
+    git(
+        dir.path(),
+        &["push", "-q", "origin", &format!("{tip}:refs/pull/7/head")],
+    );
+    git(dir.path(), &["reset", "-q", "--hard", &base]);
+    let repo = Repo::discover(dir.path()).unwrap();
+    repo.fetch_pull(7, "feat/seven").unwrap();
+    assert_eq!(git(dir.path(), &["rev-parse", "feat/seven"]).trim(), tip);
+    // A branch that diverged is refused, not forced.
+    git(dir.path(), &["branch", "-f", "other", &base]);
+    fs::write(dir.path().join("c.txt"), "c\n").unwrap();
+    let local = commit_all(dir.path(), "C");
+    git(dir.path(), &["branch", "-f", "other", &local]);
+    assert!(repo.fetch_pull(7, "other").is_err());
+    assert_eq!(git(dir.path(), &["rev-parse", "other"]).trim(), local);
+    assert!(repo.fetch_pull(7, "-bad").is_err());
+}
+
+#[test]
+fn sparse_set_limits_a_linked_worktree_only() {
+    let dir = repo_dir();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::create_dir_all(dir.path().join("docs")).unwrap();
+    fs::write(dir.path().join("src/a.txt"), "a\n").unwrap();
+    fs::write(dir.path().join("docs/d.txt"), "d\n").unwrap();
+    fs::write(dir.path().join("root.txt"), "r\n").unwrap();
+    let base = commit_all(dir.path(), "A");
+    let parent = TempDir::with_prefix("wt parent ").unwrap();
+    let wt = parent.path().join("wt");
+    let repo = Repo::discover(dir.path()).unwrap();
+    repo.add_worktree_no_checkout(&wt, Some("task"), Some(&base))
+        .unwrap();
+    let there = Repo::discover(&wt).unwrap();
+    there.sparse_set(&["src".to_owned()]).unwrap();
+    assert!(wt.join("src/a.txt").exists());
+    assert!(wt.join("root.txt").exists());
+    assert!(!wt.join("docs").exists());
+    assert_eq!(git(&wt, &["status", "--porcelain"]).trim(), "");
+    // The main checkout is still full.
+    assert!(dir.path().join("docs/d.txt").exists());
+    assert_eq!(git(dir.path(), &["status", "--porcelain"]).trim(), "");
+    // An existing branch works without `-b`.
+    git(dir.path(), &["branch", "old", &base]);
+    let wt2 = parent.path().join("wt2");
+    repo.add_worktree_no_checkout(&wt2, Some("old"), None)
+        .unwrap();
+    assert!(
+        repo.add_worktree_no_checkout(&parent.path().join("w3"), Some("nope"), None)
+            .is_err()
+    );
+}

@@ -18,6 +18,7 @@ default-members = [
     "crates/xdev-agent",
     "crates/xdev-pty",
     "crates/xdev-ipc",
+    "crates/xdev-awake",
     "crates/xdev-workspace",
     "crates/xdev-cli",
 ]
@@ -37,6 +38,7 @@ xdev-export = { path = "crates/xdev-export" }
 xdev-git = { path = "crates/xdev-git" }
 xdev-id = { path = "crates/xdev-id" }
 xdev-ipc = { path = "crates/xdev-ipc" }
+xdev-awake = { path = "crates/xdev-awake" }
 xdev-kit = { path = "crates/xdev-kit" }
 xdev-mcp = { path = "crates/xdev-mcp" }
 xdev-policy = { path = "crates/xdev-policy" }

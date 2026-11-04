@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
+import { Button } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { BellMenu, bellCount, type BellRow } from "./BellMenu";
 import type { Tab } from "./sessions";
@@ -51,4 +52,17 @@ it("bell count shows 99+", () => {
   expect(bellCount(1)).toBe("1");
   expect(bellCount(99)).toBe("99");
   expect(bellCount(120)).toBe("99+");
+});
+
+it("View activity calls onViewActivity, and is absent without the prop", () => {
+  let n = 0;
+  const tree = nodes(BellMenu({ rows: [], now: NOW, onJump() {}, onViewActivity: () => void n++, onClose() {} }));
+  const button = tree.find((x) => x.props.className === "ws-bell-activity")!;
+  expect(button.type).toBe(Button);
+  expect(button.props.variant).toBe("secondary");
+  expect(button.props.type).toBe("button");
+  expect(button.props.children).toBe(en("status.bell.viewActivity"));
+  button.props.onClick();
+  expect(n).toBe(1);
+  expect(nodes(BellMenu({ rows: [], now: NOW, onJump() {}, onClose() {} })).some((x) => x.props.className === "ws-bell-activity")).toBe(false);
 });

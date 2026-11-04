@@ -1,5 +1,6 @@
 import type { Api, OnQuit, PtydState } from "@/api";
 import type { Tab } from "./sessions";
+import { type CloseWindow, type LayoutSaver, watchWindowClose } from "./layoutPersist";
 
 /** What the quit question names: the live tabs, and the ones working right now. */
 export interface QuitAsk {
@@ -40,4 +41,41 @@ export async function askQuit(
   if (choice === "cancel") return false;
   await api.ptydQuitChoice(choice === "end").catch(() => {});
   return true;
+}
+
+/**
+ * The whole close guard: the shell decides first. `hide` means it already hid the window to the
+ * tray, so the close stops here (false). Otherwise `ask` runs the quit question; on a cancel the
+ * shell is told, so a quit it started does not stay in flight.
+ */
+export async function guardClose(
+  api: Pick<Api, "shellCloseRequested" | "shellQuitCancelled">,
+  notice: { title: string; body: string },
+  ask: () => Promise<boolean>,
+): Promise<boolean> {
+  const request = await api.shellCloseRequested(notice.title, notice.body).catch(() => ({ intent: "close" as const, mode: null }));
+  if (request.intent === "hide") return false;
+  // "Quit and end terminals" was confirmed before the close began: asking again would ignore its answer.
+  if (request.mode === "end-all") return true;
+  let go: boolean;
+  try {
+    go = await ask();
+  } catch {
+    // The question broke: close and keep the quit mode (end-all must still end, restart still restart).
+    return true;
+  }
+  if (!go) await api.shellQuitCancelled().catch(() => {});
+  return go;
+}
+
+/**
+ * The one close listener, set up once at mount: the saver is looked up when the close fires, so a
+ * close before the layout restore finished (welcome screen, no repos) is still guarded.
+ */
+export function installCloseGuard(
+  win: CloseWindow | null,
+  saver: () => Pick<LayoutSaver, "flush"> | null,
+  guard: () => Promise<boolean>,
+): () => void {
+  return watchWindowClose({ flush: async () => void (await saver()?.flush()) }, win, guard);
 }
