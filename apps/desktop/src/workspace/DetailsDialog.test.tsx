@@ -3,7 +3,9 @@ import type { ReactElement } from "react";
 import { translate } from "@/i18n";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { NO_DETAILS } from "./worktreeDetails";
+import { createMockApi } from "@/mockApi";
 import { DetailsDialog, detailsPatch } from "./DetailsDialog";
+import { linkedRows, pastedItem } from "./LinkedWorkSearch";
 
 vi.mock("react", async (original) => {
   const react = await original<typeof import("react")>();
@@ -39,6 +41,24 @@ it("does not save while the work item link is unusable", () => {
 });
 
 it("shows bad_parent from the server", () => {
-  const all = nodes(DetailsDialog({ worktree: wt, siblings: [], busy: false, error: "bad_parent", onSave: vi.fn(), onCancel: vi.fn() }));
+  const all = nodes(DetailsDialog({ api: createMockApi({}), repoId: "r", worktree: wt, siblings: [], busy: false, error: "bad_parent", onSave: vi.fn(), onCancel: vi.fn() }));
   expect(all.find((n) => n.props.role === "alert")?.props.children).toBe(translate("en", "error.bad_parent"));
+});
+
+it("puts the picked pull request, with its title, into the patch", () => {
+  const picked = { ...SAME, itemUrl: "https://github.com/acme/app/pull/12", itemKind: "pr" as const, itemTitle: "Fix the footer" };
+  expect(detailsPatch(wt, picked)).toEqual({ item: { kind: "pr", url: "https://github.com/acme/app/pull/12", title: "Fix the footer" } });
+});
+
+it("removes the link by saving item null", () => {
+  const linked = { ...wt, item: { kind: "pr" as const, url: "https://github.com/acme/app/pull/12", title: "Fix" } };
+  expect(detailsPatch(linked, { ...SAME, itemUrl: "", itemTitle: null })).toEqual({ item: null });
+});
+
+it("lists pull requests, then issues, and reads a pasted link's kind", () => {
+  const issue = { number: 3, url: "https://github.com/acme/app/issues/3", state: "open", title: "Bug" } as never;
+  const pr = { number: 12, url: "https://github.com/acme/app/pull/12", state: "open", title: "Fix" } as never;
+  expect(linkedRows([issue], [pr]).map((r) => [r.item.kind, r.meta])).toEqual([["pr", "#12 · open"], ["issue", "#3 · open"]]);
+  expect(pastedItem(" https://github.com/acme/app/issues/3 ")).toEqual({ kind: "issue", url: "https://github.com/acme/app/issues/3", title: null });
+  expect(pastedItem("bug footer")).toBeNull();
 });

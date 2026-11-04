@@ -1,4 +1,4 @@
-import type { Issue, IssueDetail, IssueQuery, WorkItem } from "@/api";
+import type { Issue, IssueDetail, IssueQuery, PrQuery, WorkItem } from "@/api";
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -44,6 +44,11 @@ export function issueWorkItem(issue: Issue): WorkItem {
 /** An `IssueQuery` with every field set; the bindings have no optional fields. */
 export function issueQuery(patch: Partial<IssueQuery> = {}): IssueQuery {
   return { state: null, assigneeMe: false, search: null, limit: null, ...patch };
+}
+
+/** A `PrQuery` with every field set; the bindings have no optional fields. */
+export function prQuery(patch: Partial<PrQuery> = {}): PrQuery {
+  return { state: null, mine: false, needsReview: false, search: null, limit: null, ...patch };
 }
 
 /** `name`, or `name-2`, `name-3` ... the first one not in `taken`. */
