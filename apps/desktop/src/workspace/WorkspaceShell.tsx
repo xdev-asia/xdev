@@ -65,7 +65,7 @@ import { TrustDialog } from "./TrustDialog";
 import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
 import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
 import { QuitDialog } from "./QuitDialog";
-import { askQuit, type QuitAsk, type QuitChoice } from "./quitGuard";
+import { askQuit, guardClose, type QuitAsk, type QuitChoice } from "./quitGuard";
 import { getTerminalSettings } from "@/terminal/terminalSettings";
 import { createNotifier, type Notifier } from "./notifier";
 import { AgentSessionsStore } from "@/agentSessions/store";
@@ -344,20 +344,22 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         if (!saver.current) return;
         stopCloseWatch.current();
         stopCloseWatch.current = watchWindowClose(saver.current, win, () =>
-          askQuit(
-            api,
-            () => getTerminalSettings().onQuit,
-            () => sessions.worktrees().flatMap((w) => sessions.tabs(w)),
-            (ask) =>
-              new Promise<QuitChoice>((resolve) =>
-                setQuitting({
-                  ask,
-                  answer: (choice) => {
-                    setQuitting(null);
-                    resolve(choice);
-                  },
-                }),
-              ),
+          guardClose(api, { title: live.t("shell.tray.tooltip"), body: live.t("shell.tray.notice") }, () =>
+            askQuit(
+              api,
+              () => getTerminalSettings().onQuit,
+              () => sessions.worktrees().flatMap((w) => sessions.tabs(w)),
+              (ask) =>
+                new Promise<QuitChoice>((resolve) =>
+                  setQuitting({
+                    ask,
+                    answer: (choice) => {
+                      setQuitting(null);
+                      resolve(choice);
+                    },
+                  }),
+                ),
+            ),
           ),
         );
       });

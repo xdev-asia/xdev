@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
-import { askQuit, quitAsk } from "./quitGuard";
+import { askQuit, guardClose, quitAsk } from "./quitGuard";
 import { Sessions } from "./sessions";
 
 const A = "/demo/wt/xdev-oak";
@@ -53,5 +53,40 @@ describe("askQuit", () => {
     expect(await askQuit(api, () => "ask", () => [tab], async () => "keep")).toBe(true);
     expect(api.__quitChoice()).toBe(false);
     expect(await askQuit(api, () => "ask", () => [tab], async () => "cancel")).toBe(false);
+  });
+});
+
+describe("guardClose", () => {
+  const notice = { title: "xDev", body: "xDev is still running in the system tray." };
+
+  it("asks the shell first and stands down when it hid the window", async () => {
+    const api = createMockApi({});
+    api.__closeIntent("hide");
+    const ask = vi.fn(async () => true);
+    expect(await guardClose(api, notice, ask)).toBe(false);
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it("goes on to the quit question on a close, and lets it end the app", async () => {
+    const api = createMockApi({});
+    const ask = vi.fn(async () => true);
+    expect(await guardClose(api, notice, ask)).toBe(true);
+    expect(ask).toHaveBeenCalledOnce();
+  });
+
+  it("tells the shell when the person cancels, so it stops treating the close as a quit", async () => {
+    const api = createMockApi({});
+    await api.shellQuit("end-all");
+    expect(api.__quitMode()).toBe("end-all");
+    expect(await guardClose(api, notice, async () => false)).toBe(false);
+    expect(api.__quitMode()).toBeNull();
+  });
+
+  it("closes when the shell does not answer", async () => {
+    const api = createMockApi({});
+    api.shellCloseRequested = async () => {
+      throw new Error("no shell");
+    };
+    expect(await guardClose(api, notice, async () => true)).toBe(true);
   });
 });

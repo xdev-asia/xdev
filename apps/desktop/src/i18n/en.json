@@ -2187,5 +2187,7 @@
   "settings.general.updates.channel": "Release channel",
   "settings.general.updates.channel.stable": "Stable",
   "settings.general.updates.channel.rc": "Release candidate",
-  "settings.general.updates.channelHint": "Release candidates come before a stable release and may have bugs."
+  "settings.general.updates.channelHint": "Release candidates come before a stable release and may have bugs.",
+  "shell.tray.tooltip": "xDev",
+  "shell.tray.notice": "xDev is still running in the system tray."
 }

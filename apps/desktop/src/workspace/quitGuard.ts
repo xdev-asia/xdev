@@ -41,3 +41,20 @@ export async function askQuit(
   await api.ptydQuitChoice(choice === "end").catch(() => {});
   return true;
 }
+
+/**
+ * The whole close guard: the shell decides first. `hide` means it already hid the window to the
+ * tray, so the close stops here (false). Otherwise `ask` runs the quit question; on a cancel the
+ * shell is told, so a quit it started does not stay in flight.
+ */
+export async function guardClose(
+  api: Pick<Api, "shellCloseRequested" | "shellQuitCancelled">,
+  notice: { title: string; body: string },
+  ask: () => Promise<boolean>,
+): Promise<boolean> {
+  const intent = await api.shellCloseRequested(notice.title, notice.body).catch(() => "close" as const);
+  if (intent === "hide") return false;
+  const go = await ask();
+  if (!go) await api.shellQuitCancelled().catch(() => {});
+  return go;
+}
