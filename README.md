@@ -40,11 +40,12 @@ The `xdev` CLI ships as a separate archive per target on the same page. Installe
 
 | Path | What |
 |---|---|
-| `crates/` | Rust core: `xdev-core`, `xdev-vault`, `xdev-store`, `xdev-git`, `xdev-export`, `xdev-mcp`, `xdev-ai`, `xdev-agent`, `xdev-policy`, `xdev-api`, `xdev-cli` |
+| `crates/` | Rust core: `xdev-core`, `xdev-workspace`, `xdev-pty`, `xdev-agent`, `xdev-kit`, `xdev-git`, `xdev-vault`, `xdev-store`, `xdev-export`, `xdev-mcp`, `xdev-ai`, `xdev-policy`, `xdev-api`, `xdev-cli`. Map: [docs/architecture.md](docs/architecture.md) |
 | `apps/desktop` | Tauri 2 + React desktop app |
 | `app-packs/` | Apps that install into the shell (`docs`, `adr`). Deferred: placeholder manifests, no plugin host (ADR 0001) |
 | `packages/ui` | Design tokens and shared components |
 | `packages/bindings` | TypeScript types generated from Rust (`cargo test -p xdev-desktop export_bindings`) |
+| `docs/architecture.md` | How the pieces fit: crates, agent tabs, where data lives |
 | `docs/adr/` | Architecture decisions |
 | `docs/guide/` | User guides |
 
