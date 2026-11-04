@@ -1,3 +1,5 @@
+import { PLATFORM, type Platform } from "@/platform";
+
 /** One searchable control (or list) of a Settings page. */
 export type SettingEntry = {
   id: string; // "terminal.fontSize"; unique; [a-zA-Z0-9.]+
@@ -5,6 +7,7 @@ export type SettingEntry = {
   titleKey: string; // i18n key the page already shows
   descriptionKey?: string;
   keywords: readonly string[]; // English and Vietnamese words, lower case
+  platforms?: readonly Platform[]; // only these platforms show the control; all when left out
 };
 
 const e = (id: string, titleKey: string, keywords: string[], descriptionKey?: string): SettingEntry => ({
@@ -14,6 +17,9 @@ const e = (id: string, titleKey: string, keywords: string[], descriptionKey?: st
   keywords,
   ...(descriptionKey ? { descriptionKey } : {}),
 });
+
+/** The entry, shown on `platforms` only. */
+const only = (platforms: readonly Platform[], entry: SettingEntry): SettingEntry => ({ ...entry, platforms });
 
 /**
  * Every control of every page, in page order. A control a page shows without an entry here fails
@@ -30,7 +36,11 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("general.theme", "settings.general.theme", ["theme", "appearance", "dark", "light", "system", "mode", "giao diện", "giao dien", "tối", "toi", "sáng", "sang", "chế độ", "che do"], "settings.general.themeHint"),
   e("general.zoom", "settings.general.zoom", ["zoom", "scale", "size", "thu phóng", "thu phong", "phóng to", "phong to"]),
   e("general.restore", "layout.setting", ["restore", "layout", "session", "reopen", "khôi phục", "khoi phuc", "bố cục", "bo cuc"], "layout.setting.hint"),
+  only(["win"], e("general.minimizeToTray", "settings.general.minimizeToTray", ["tray", "minimize", "close", "background", "notification area", "khay", "thu nhỏ", "thu nho", "đóng", "dong", "nền", "nen"], "settings.general.minimizeToTrayHint")),
+  only(["mac"], e("general.menuBarIcon", "settings.general.menuBarIcon", ["menu bar", "tray", "icon", "status", "thanh menu", "biểu tượng", "bieu tuong"], "settings.general.menuBarIconHint")),
   e("general.openIn", "settings.general.openIn", ["open in", "apps", "ide", "mở bằng", "mo bang", "ứng dụng", "ung dung"]),
+  e("general.updates", "settings.general.updates", ["update", "version", "upgrade", "check", "restart", "cập nhật", "cap nhat", "phiên bản", "phien ban", "kiểm tra", "kiem tra"], "settings.general.updates.idle"),
+  e("general.updateChannel", "settings.general.updates.channel", ["update", "channel", "release candidate", "rc", "stable", "beta", "kênh", "kenh", "ổn định", "on dinh", "thử nghiệm", "thu nghiem"], "settings.general.updates.channelHint"),
   e("general.diffView", "settings.general.diffView", ["diff", "inline", "split", "side by side", "view", "chế độ", "che do", "tách", "tach"]),
   e("general.diff.ignoreWhitespace", "settings.general.ignoreWhitespace", ["diff", "whitespace", "space", "khoảng trắng", "khoang trang"]),
   e("general.diff.collapseUnchanged", "settings.general.collapseUnchanged", ["diff", "collapse", "unchanged", "thu gọn", "thu gon"]),
@@ -167,4 +177,9 @@ export function searchSettings(
   });
   hits.sort((a, b) => b.score - a.score || a.at - b.at);
   return hits.map(({ entry, score }) => ({ entry, score }));
+}
+
+/** The entries this platform shows; the search and the palette use these. */
+export function entriesFor(platform: Platform = PLATFORM): SettingEntry[] {
+  return SETTING_ENTRIES.filter((x) => !x.platforms || x.platforms.includes(platform));
 }

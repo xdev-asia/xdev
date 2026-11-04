@@ -7,11 +7,18 @@ import { getThemePreference, resetThemeForTests } from "@/ui/theme";
 import { getZoom, resetZoomForTests } from "@/ui/zoom";
 import { ThemeSwitch } from "@xdev-asia/ui";
 import { GeneralPage } from "./GeneralPage";
+import { INITIAL_CHECK } from "@/shell/useUpdateCheck";
+import { UpdatesSetting, UpdatesView } from "./UpdatesSetting";
 import { RestoreSetting } from "./RestoreSetting";
-import { SETTING_ENTRIES } from "./catalog";
+import { entriesFor, SETTING_ENTRIES } from "./catalog";
 import type { SettingsFilter } from "./sections";
 import { SettingGroup, SettingRow } from "./SettingRow";
 
+const plat = vi.hoisted(() => ({ value: "win" as "win" | "mac" | "linux" }));
+vi.mock("@/platform", () => ({
+  get PLATFORM() { return plat.value; },
+  get IS_MAC() { return plat.value === "mac"; },
+}));
 const i18n = vi.hoisted(() => ({ locale: "en" as "en" | "vi", setLocale: vi.fn() }));
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
 vi.mock("react", async (original) => {
@@ -45,6 +52,7 @@ beforeEach(() => {
   hooks.effects = [];
   hooks.active = false;
   i18n.locale = "en";
+  plat.value = "win";
   i18n.setLocale.mockClear();
   resetZoomForTests();
 });
@@ -153,11 +161,14 @@ it("holds the restore setting and a link to Open In apps", async () => {
 
 it("every General catalog entry has a row on the page", async () => {
   const p = await page(vi.fn());
+  // The Updates rows are drawn by the child component, so they are read from its view.
+  const updates = nodes(UpdatesView({ version: null, state: INITIAL_CHECK, channel: null, busy: false, onCheck() {}, onRestart() {}, onChannel() {}, t: (k) => k })).filter((n) => n.type === SettingRow);
   const shown = new Set([
+    ...updates.map((n) => n.props.id),
     ...p.all().filter((n) => n.type === SettingRow).map((n) => n.props.id),
     ...p.all().filter((n) => n.props["data-setting-id"]).map((n) => n.props["data-setting-id"]),
   ]);
-  const ids = SETTING_ENTRIES.filter((e) => e.section === "general").map((e) => e.id);
+  const ids = entriesFor().filter((e) => e.section === "general").map((e) => e.id);
   expect(ids.length).toBeGreaterThan(0);
   for (const id of ids) expect(shown.has(id), id).toBe(true);
   expect(p.all().find((n) => n.type === SettingRow && n.props.id === "general.restore")!.props.children.type).toBe(RestoreSetting);
@@ -168,7 +179,7 @@ it("a search keeps only the matching controls and the groups that hold them", as
   expect(p.all().some((n) => n.props["data-switch"] === "wordWrap")).toBe(true);
   expect(p.all().some((n) => n.props["data-switch"] === "confirmClosePinned")).toBe(false);
   const groups = p.all().filter((n) => n.type === SettingGroup);
-  expect(groups.map((g) => SettingGroup(g.props as Parameters<typeof SettingGroup>[0]) !== null)).toEqual([false, false, true]);
+  expect(groups.map((g) => SettingGroup(g.props as Parameters<typeof SettingGroup>[0]) !== null)).toEqual([false, false, false, false, true]);
   const zoom = p.all().find((n) => n.type === SettingRow && n.props.id === "general.zoom")!;
   expect(SettingRow(zoom.props as Parameters<typeof SettingRow>[0])).toBeNull();
 });
@@ -182,4 +193,35 @@ it("the language row shows the current language and changes it through setLocale
   select.props.onChange({ target: { value: "en" } });
   expect(i18n.setLocale).toHaveBeenCalledWith("en");
   expect(SETTING_ENTRIES.find((x) => x.id === "general.language")).toMatchObject({ section: "general", titleKey: "language.label" });
+});
+
+it("Windows shows Minimize to tray and writes it through the shell settings", async () => {
+  const p = await page();
+  expect(p.all().some((n) => n.props["data-switch"] === "menuBarIcon")).toBe(false);
+  expect(p.sw("minimizeToTray").props["aria-checked"]).toBe(false);
+  await p.sw("minimizeToTray").props.onClick();
+  expect(await p.api.shellSettings()).toMatchObject({ minimizeToTray: true, menuBarIcon: true });
+  expect(p.sw("minimizeToTray").props["aria-checked"]).toBe(true);
+});
+
+it("macOS shows Show menu bar icon, on by default, and writes it", async () => {
+  plat.value = "mac";
+  const p = await page();
+  expect(p.all().some((n) => n.props["data-switch"] === "minimizeToTray")).toBe(false);
+  expect(p.sw("menuBarIcon").props["aria-checked"]).toBe(true);
+  await p.sw("menuBarIcon").props.onClick();
+  expect(await p.api.shellSettings()).toMatchObject({ menuBarIcon: false, minimizeToTray: false });
+});
+
+it("Linux has no window group", async () => {
+  plat.value = "linux";
+  const p = await page();
+  expect(p.all().some((n) => n.props["data-switch"] === "minimizeToTray" || n.props["data-switch"] === "menuBarIcon")).toBe(false);
+  expect(p.all().some((n) => n.type === "h4" && n.props.children === translate("en", "settings.general.window"))).toBe(false);
+});
+
+it("the Updates group is on every platform", async () => {
+  plat.value = "linux";
+  const p = await page();
+  expect(p.all().some((n) => n.type === UpdatesSetting)).toBe(true);
 });

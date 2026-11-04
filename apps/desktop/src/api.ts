@@ -1,3 +1,4 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -474,6 +475,8 @@ export interface Api {
   onUpdateReady(cb: (update: UpdateInfo) => void): Promise<() => void>;
   // Restarts the app once installed, so it resolves only when there was nothing to install.
   restartToUpdate(): Promise<void>;
+  // The version of this build.
+  appVersion(): Promise<string>;
   // An OS notification; the text comes from here so it follows the UI language.
   notifyUpdate(title: string, body: string): Promise<void>;
   // A check the person asked for; `rc` also stores the release candidate channel. Resolves with where
@@ -1089,6 +1092,7 @@ const tauriApi: Api = {
   updateStatus: () => call("update_status"),
   onUpdateReady: (cb) => listen<UpdateInfo>("update-ready", (e) => cb(e.payload)),
   restartToUpdate: () => call("update_restart"),
+  appVersion: () => getVersion(),
   notifyUpdate: (title, body) => call("update_notify", { title, body }),
   updateCheck: (rc) => call("update_check", { rc }),
   updatePhase: () => call("update_phase"),
@@ -1365,14 +1369,14 @@ const tauriApi: Api = {
 
 function browserApi(): Api {
   const params = new URLSearchParams(location.search);
-  const mock = createMockApi(DEMO_SEED, { repo: !params.has("norepo"), commits: DEMO_COMMITS, runDelayMs: 4000 });
+  // `?update=0.4.0` simulates a downloaded update, so the restart button can be previewed.
+  const pending = params.get("update");
+  const mock = createMockApi(DEMO_SEED, { repo: !params.has("norepo"), commits: DEMO_COMMITS, runDelayMs: 4000, update: pending });
   // Lets the preview simulate an AI agent or another editor from the devtools console.
   Object.assign(window, { xdevMock: mock });
   // The preview lands in the demo vault so the main layout is reachable without a dialog;
   // `?welcome` simulates a first launch instead.
   const firstRun = params.has("welcome");
-  // `?update=0.4.0` simulates a downloaded update, so the restart button can be previewed.
-  const pending = params.get("update");
   let seeded = false;
   return {
     ...mock,
