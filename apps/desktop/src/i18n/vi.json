@@ -2174,6 +2174,7 @@
   "settings.orchestration.skill.state.notInstalled": "Chưa cài",
   "settings.orchestration.skill.install": "Cài đặt",
   "settings.orchestration.skill.installing": "Đang cài…",
+  "settings.orchestration.skill.replace": "Thay bản đã sửa",
   "settings.orchestration.skill.recheck": "Kiểm tra lại",
   "settings.orchestration.skill.copyCommand": "Sao chép lệnh cài đặt",
   "settings.orchestration.skill.copied": "Đã sao chép",

@@ -2174,6 +2174,7 @@
   "settings.orchestration.skill.state.notInstalled": "Not installed",
   "settings.orchestration.skill.install": "Install",
   "settings.orchestration.skill.installing": "Installing…",
+  "settings.orchestration.skill.replace": "Replace edited copy",
   "settings.orchestration.skill.recheck": "Re-check",
   "settings.orchestration.skill.copyCommand": "Copy install command",
   "settings.orchestration.skill.copied": "Copied",

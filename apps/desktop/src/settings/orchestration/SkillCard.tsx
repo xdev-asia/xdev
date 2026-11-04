@@ -13,6 +13,8 @@ export function SkillCard(props: {
   /** An error code to show inline, from the last install or re-check. */
   error?: string;
   onInstall(): void;
+  /** Installs over an edited copy (the old one is backed up). */
+  onReplace?(): void;
   onRecheck(): void;
   onCopyCommand(): void;
 }): JSX.Element {
@@ -28,6 +30,11 @@ export function SkillCard(props: {
         <Button type="button" data-act="install" disabled={props.busy} aria-busy={props.busy} onClick={props.onInstall}>
           {props.busy ? t("settings.orchestration.skill.installing") : t("settings.orchestration.skill.install")}
         </Button>
+        {state === "edited" && props.onReplace && (
+          <Button type="button" variant="secondary" data-act="replace" disabled={props.busy} onClick={props.onReplace}>
+            {t("settings.orchestration.skill.replace")}
+          </Button>
+        )}
         <Button type="button" variant="secondary" data-act="recheck" disabled={props.busy} onClick={props.onRecheck}>
           {t("settings.orchestration.skill.recheck")}
         </Button>
