@@ -95,7 +95,7 @@ impl Helper {
     }
 }
 
-#[cfg_attr(windows, allow(dead_code))]
+#[cfg_attr(any(windows, unix), allow(dead_code))]
 enum Kind {
     #[cfg(windows)]
     Windows(win::Request),
