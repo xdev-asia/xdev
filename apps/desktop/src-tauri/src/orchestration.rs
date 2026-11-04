@@ -132,6 +132,23 @@ pub struct OrchHub {
     /// Bumped on every new message; `check --wait` sleeps on it.
     pub mail: Condvar,
     pub mail_gen: Mutex<u64>,
+    /// Mailboxes a `check --wait` is sleeping on, with how many.
+    waiters: Mutex<HashMap<String, u32>>,
+}
+
+/// How long `check --wait` sleeps when the CLI sends no timeout.
+pub const WAIT_DEFAULT_MS: u64 = 120_000;
+/// The longest a wait may be asked to last.
+pub const WAIT_MAX_MS: u64 = 1_800_000;
+
+fn wait_param(req: &Request) -> Duration {
+    let ms = req
+        .params
+        .get("timeoutMs")
+        .and_then(Value::as_u64)
+        .unwrap_or(WAIT_DEFAULT_MS)
+        .min(WAIT_MAX_MS);
+    Duration::from_millis(ms)
 }
 
 impl OrchHub {
@@ -151,6 +168,57 @@ impl OrchHub {
             Some(store) => f(store),
             None => Err(OrchError::new("store", "the store is not open")),
         }
+    }
+
+    /// Sleeps until mail is announced, `timeout` passes or `gone` says the
+    /// caller hung up. `ready` is asked after the generation is read, so mail
+    /// written in between is never slept through. While it sleeps, `address`
+    /// is a waiter: the pump leaves that mailbox alone.
+    pub fn wait_mail(
+        &self,
+        address: &str,
+        timeout: Duration,
+        gone: &dyn Fn() -> bool,
+        mut ready: impl FnMut() -> Result<bool, OrchError>,
+    ) -> Result<bool, OrchError> {
+        let deadline = std::time::Instant::now() + timeout;
+        *self
+            .waiters
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .entry(address.to_owned())
+            .or_insert(0) += 1;
+        let out = (|| loop {
+            let seen = *self.mail_gen.lock().unwrap_or_else(PoisonError::into_inner);
+            if ready()? {
+                return Ok(true);
+            }
+            let now = std::time::Instant::now();
+            if now >= deadline || gone() {
+                return Ok(false);
+            }
+            let slice = (deadline - now).min(Duration::from_millis(200));
+            let guard = self.mail_gen.lock().unwrap_or_else(PoisonError::into_inner);
+            if *guard == seen {
+                let _ = self.mail.wait_timeout(guard, slice);
+            }
+        })();
+        let mut waiters = self.waiters.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(n) = waiters.get_mut(address) {
+            *n -= 1;
+            if *n == 0 {
+                waiters.remove(address);
+            }
+        }
+        out
+    }
+
+    /// Whether a `check --wait` is sleeping on `address`.
+    pub fn has_waiter(&self, address: &str) -> bool {
+        self.waiters
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains_key(address)
     }
 
     /// Wakes every `check --wait` and the pump: new mail was written.
@@ -317,7 +385,7 @@ pub fn handle(
     ctx: &Ctx<'_>,
     req: &Request,
     caller: &Caller,
-    _gone: &dyn Fn() -> bool,
+    gone: &dyn Fn() -> bool,
 ) -> Result<Value, AppError> {
     let verb = req
         .method
@@ -460,10 +528,26 @@ pub fn handle(
                 all: flag(req, "all"),
                 types,
             };
-            let got = ctx.orch.with_store(ctx.data, |s| {
-                let me = s.identity(acting.tab.as_deref(), acting.run.as_deref())?;
-                s.check(&me.address, &opts, ctx.now_ms)
+            let me = ctx.orch.with_store(ctx.data, |s| {
+                s.identity(acting.tab.as_deref(), acting.run.as_deref())
             })?;
+            if flag(req, "wait") {
+                let peek_all = xdev_orch::CheckOpts {
+                    peek: true,
+                    ..opts.clone()
+                };
+                ctx.orch.wait_mail(&me.address, wait_param(req), gone, || {
+                    ctx.orch.with_store(ctx.data, |s| {
+                        Ok(!s
+                            .check(&me.address, &peek_all, ctx.now_ms)?
+                            .messages
+                            .is_empty())
+                    })
+                })?;
+            }
+            let got = ctx
+                .orch
+                .with_store(ctx.data, |s| s.check(&me.address, &opts, ctx.now_ms))?;
             to_value(&got)
         }
         "inbox" => {
@@ -631,6 +715,72 @@ mod tests {
         let back = call("p-lead", "check", json!({"types": ["status"]})).unwrap();
         assert_eq!(back["messages"][0]["subject"], "Re: q");
         assert_eq!(back["messages"][0]["threadId"], msg["id"]);
+    }
+
+    #[test]
+    fn check_wait_sleeps_until_mail_arrives_or_the_timeout_passes() {
+        let f = crate::cli_verbs::tests::fixture();
+        let call =
+            |tab: &str, m: &str, p: Value| f.call(Some(tab), &format!("orchestration.{m}"), p);
+        let run = call("p-lead", "run-create", json!({"objective": "o"})).unwrap();
+        let to = format!("run:{}", run["id"].as_str().unwrap());
+
+        let t0 = std::time::Instant::now();
+        let none = call("p-lead", "check", json!({"wait": true, "timeoutMs": 300})).unwrap();
+        assert!(none["messages"].as_array().unwrap().is_empty());
+        assert!(t0.elapsed() >= Duration::from_millis(250));
+
+        call("p-child", "run-use", json!({"id": run["id"]})).unwrap();
+        std::thread::scope(|sc| {
+            sc.spawn(|| {
+                std::thread::sleep(Duration::from_millis(300));
+                call("p-child", "send", json!({"to": to, "body": "late"})).unwrap();
+            });
+            let t0 = std::time::Instant::now();
+            let got = call(
+                "p-lead",
+                "check",
+                json!({"wait": true, "timeoutMs": 10_000}),
+            )
+            .unwrap();
+            assert_eq!(got["messages"][0]["body"], "late");
+            assert!(t0.elapsed() < Duration::from_secs(5));
+        });
+        // Mail already there: no sleep at all.
+        call("p-child", "send", json!({"to": to, "body": "now"})).unwrap();
+        let t0 = std::time::Instant::now();
+        let got = call(
+            "p-lead",
+            "check",
+            json!({"wait": true, "timeoutMs": 10_000}),
+        )
+        .unwrap();
+        assert_eq!(got["messages"][0]["body"], "now");
+        assert!(t0.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_waiter_is_registered_while_it_sleeps_and_a_hangup_ends_the_wait() {
+        let hub = OrchHub::default();
+        let hung_up = std::sync::atomic::AtomicBool::new(false);
+        std::thread::scope(|sc| {
+            let waiting = sc.spawn(|| {
+                hub.wait_mail(
+                    "run:r",
+                    Duration::from_secs(30),
+                    &|| hung_up.load(Ordering::Relaxed),
+                    || Ok(false),
+                )
+            });
+            let t0 = std::time::Instant::now();
+            while !hub.has_waiter("run:r") {
+                assert!(t0.elapsed() < Duration::from_secs(5), "never registered");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            hung_up.store(true, Ordering::Relaxed);
+            assert!(!waiting.join().unwrap().unwrap());
+        });
+        assert!(!hub.has_waiter("run:r"));
     }
 
     #[test]

@@ -624,6 +624,12 @@ mod endpoint_tests {
         assert_eq!(wait, Duration::from_secs(60) + WAIT_MARGIN);
         assert_eq!(answer_limit("status", &json!({})), ANSWER_WAIT);
         assert_eq!(answer_limit("terminal.wait", &json!({})), ANSWER_WAIT);
+        for verb in ["check", "ask", "worker-start"] {
+            let m = format!("orchestration.{verb}");
+            let limit = answer_limit(&m, &json!({ "timeoutMs": 90_000 }));
+            assert_eq!(limit, Duration::from_secs(90) + WAIT_MARGIN, "{verb}");
+            assert_eq!(answer_limit(&m, &json!({})), ANSWER_WAIT, "{verb}");
+        }
     }
 
     #[test]
