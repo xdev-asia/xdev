@@ -10,11 +10,12 @@ import {
 
 const ctx = (platform: Platform, over: Partial<KeyContext> = {}): KeyContext => ({
   platform,
-  optionAsAlt: "off",
+  optionAsAlt: "both",
   optionSide: 0,
   kittyFlags: 0,
   modifyOtherKeys: 0,
-  fullScreenNonAgent: false,
+  alternateScreen: false,
+  agent: true,
   ...over,
 });
 const key = (k: string, mods: Partial<Record<"meta" | "ctrl" | "alt" | "shift", boolean>> = {}, extra: Partial<KeyLike> = {}): KeyLike => ({
@@ -53,12 +54,22 @@ describe("Enter", () => {
     }
   });
 
-  it("Ctrl+Enter sends CR on Windows without kitty, ESC[13;5u elsewhere", () => {
+  it("Ctrl+Enter is a CSI u sequence only when the program asked for kitty or modifyOtherKeys", () => {
     const e = key("Enter", { ctrl: true });
-    expect(sent(e, ctx("win"))).toBe("\r");
-    expect(sent(e, ctx("win", { kittyFlags: 1 }))).toBe("\x1b[13;5u");
-    expect(sent(e, ctx("mac"))).toBe("\x1b[13;5u");
-    expect(sent(e, ctx("linux"))).toBe("\x1b[13;5u");
+    for (const p of PLATFORMS) {
+      expect(sent(e, ctx(p))).toBeNull();
+      expect(sent(e, ctx(p, { kittyFlags: 1 }))).toBe("\x1b[13;5u");
+      expect(sent(e, ctx(p, { modifyOtherKeys: 2 }))).toBe("\x1b[27;5;13~");
+    }
+  });
+
+  it("Shift+Enter in a plain shell is left to xterm, in an agent pane it is ESC CR", () => {
+    const e = key("Enter", { shift: true });
+    for (const p of PLATFORMS) {
+      expect(sent(e, ctx(p, { agent: false }))).toBeNull();
+      expect(sent(e, ctx(p, { agent: true }))).toBe("\x1b\r");
+      expect(sent(e, ctx(p, { agent: false, kittyFlags: 1 }))).toBe("\x1b[13;2u");
+    }
   });
 
   it("plain Enter and other combinations are left to xterm", () => {
@@ -71,8 +82,9 @@ describe("Enter", () => {
 });
 
 describe("Backspace and Delete", () => {
-  it("Ctrl+Backspace deletes a word everywhere", () => {
-    for (const p of PLATFORMS) expect(sent(key("Backspace", { ctrl: true }), ctx(p))).toBe("\x17");
+  it("Ctrl+Backspace deletes a word on macOS and Linux, Windows is left to xterm", () => {
+    for (const p of ["mac", "linux"] as const) expect(sent(key("Backspace", { ctrl: true }), ctx(p))).toBe("\x17");
+    expect(sent(key("Backspace", { ctrl: true }), ctx("win"))).toBeNull();
   });
 
   it("Cmd+Backspace and Cmd+Delete are macOS only", () => {
@@ -96,7 +108,7 @@ describe("Backspace and Delete", () => {
     expect(sent(e, ctx("mac"))).toBe("\x1bd");
     expect(sent(e, ctx("mac", { kittyFlags: 1 }))).toBeNull();
     expect(sent(key("Delete", { alt: true }, { code: "NumpadDecimal" }), ctx("mac"))).toBeNull();
-    expect(sent(e, ctx("mac", { fullScreenNonAgent: true }))).toBeNull();
+    expect(sent(e, ctx("mac", { alternateScreen: true, agent: false }))).toBeNull();
     expect(sent(e, ctx("linux"))).toBeNull();
     expect(sent(e, ctx("win"))).toBeNull();
   });
@@ -181,13 +193,18 @@ describe("Option as Alt (macOS)", () => {
     expect(sent(opt("KeyB", true), left)).toBeNull();
   });
 
-  it("off: B, F and D still send, the rest composes", () => {
+  it("off: no Option capture at all, Option+key and the Alt rewrites go to the system", () => {
     const off = ctx("mac", { optionAsAlt: "off" });
-    expect(sent(opt("KeyB"), off)).toBe("\x1bb");
-    expect(sent(opt("KeyF"), off)).toBe("\x1bf");
-    expect(sent(opt("KeyD"), off)).toBe("\x1bd");
-    expect(sent(opt("KeyB", true), off)).toBeNull();
-    expect(sent(opt("KeyE"), off)).toBeNull();
+    for (const c of ["KeyB", "KeyF", "KeyD", "KeyE"]) expect(sent(opt(c), off)).toBeNull();
+    expect(sent(key("ArrowLeft", { alt: true }), off)).toBeNull();
+    expect(sent(key("Backspace", { alt: true }), off)).toBeNull();
+    expect(sent(key("Delete", { alt: true }), off)).toBeNull();
+  });
+
+  it("left with the right side held: B, F and D still send, the rest composes", () => {
+    const c = ctx("mac", { optionAsAlt: "left", optionSide: 2 });
+    expect(sent(opt("KeyB"), c)).toBe("\x1bb");
+    expect(sent(opt("KeyE"), c)).toBeNull();
   });
 
   it("a Dead key composes unless the configured side owns it", () => {
@@ -241,5 +258,36 @@ describe("option side tracker", () => {
     t.down({ key: "Shift", location: 1 });
     t.down({ key: "Alt", location: 0 });
     expect(t.get()).toBe(0);
+  });
+});
+
+describe("plain shell versus agent and the alternate screen", () => {
+  it("a plain shell on Linux and Windows keeps xterm's encoding for every rewrite", () => {
+    for (const p of ["linux", "win"] as const) {
+      const c = ctx(p, { agent: false });
+      for (const e of [
+        key("ArrowLeft", { alt: true }),
+        key("ArrowRight", { ctrl: true }),
+        key("Backspace", { alt: true }),
+        key("Backspace", { ctrl: true }),
+        key("Enter", { shift: true }),
+      ])
+        expect(sent(e, c)).toBeNull();
+    }
+  });
+
+  it("macOS line editing and word moves apply in a shell on the main screen only", () => {
+    const main = ctx("mac", { agent: false });
+    const alt = ctx("mac", { agent: false, alternateScreen: true });
+    expect(sent(key("ArrowLeft", { meta: true }), main)).toBe("\x01");
+    expect(sent(key("ArrowLeft", { alt: true }), main)).toBe("\x1bb");
+    for (const e of [key("ArrowLeft", { meta: true }), key("ArrowLeft", { alt: true }), key("Backspace", { meta: true }), key("ArrowUp", { meta: true })])
+      expect(resolveTerminalKey(e, alt)).toBeNull();
+  });
+
+  it("an agent keeps the rewrites on the alternate screen", () => {
+    const c = ctx("linux", { agent: true, alternateScreen: true });
+    expect(sent(key("ArrowLeft", { alt: true }), c)).toBe("\x1bb");
+    expect(sent(key("Enter", { shift: true }), c)).toBe("\x1b\r");
   });
 });

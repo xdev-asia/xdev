@@ -90,6 +90,8 @@ export function Terminal(props: {
   const clientRef = useRef<PtyClient | null>(null);
   // The quoting kind of the running program, known once the pty has started.
   const shellKind = useRef<ShellKind>("unknown");
+  // An agent CLI runs in the pane; until the pty reports it, a non-shell profile is taken as one.
+  const isAgent = useRef(props.profile !== "shell");
   const tRef = useRef(t);
   tRef.current = t;
   // A paste that saved nothing says why; the others are silent.
@@ -182,7 +184,8 @@ export function Terminal(props: {
           optionSide: optionSides.get(),
           kittyFlags: modes.kittyFlags(),
           modifyOtherKeys: modes.modifyOtherKeys(),
-          fullScreenNonAgent: term.buffer.active.type === "alternate" && handlers.current.profile === "shell",
+          alternateScreen: term.buffer.active.type === "alternate",
+          agent: isAgent.current,
         });
         if (resolved === null) return true;
         if (resolved.type === "scroll") {
@@ -322,6 +325,7 @@ export function Terminal(props: {
       }, props.account ?? null, { truncated: t("ptyd.truncated") }).then(
         (info) => {
           if (!alive) return;
+          isAgent.current = info.agent;
           shellKind.current = shellKindFor(info.program, info.agent, PLATFORM === "win");
           handlers.current.onStarted(info);
           term.focus();
