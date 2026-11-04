@@ -109,6 +109,8 @@ pub enum MenuAction {
 /// The payload of the `shell://menu` event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
+// Only the macOS native menu sends it; elsewhere it exists for the bindings.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub struct MenuEvent {
     pub action: MenuAction,
 }
@@ -193,6 +195,8 @@ impl Default for ShellLabels {
 #[derive(Default)]
 pub struct ShellState {
     pub quitting: Mutex<Option<QuitMode>>,
+    /// Read by the tray, which Linux does not have.
+    #[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
     pub attention: AtomicBool,
     pub labels: Mutex<ShellLabels>,
     /// The webview answered the close request of the quit in flight.
