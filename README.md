@@ -4,22 +4,23 @@
 
 [![CI](https://github.com/xdev-asia/xdev/actions/workflows/ci.yml/badge.svg)](https://github.com/xdev-asia/xdev/actions/workflows/ci.yml)
 
-Local-first project knowledge for humans and AI agents.
+Local-first agentic IDE. Run Claude Code, Codex and other coding agents side by side, each in its own git worktree, with the editor, git review and project context in one window.
 
-Your Markdown files stay the source of truth. xDev indexes them, flags docs that went stale after code changed, exports agent context (AGENTS.md, CLAUDE.md, GEMINI.md, Cursor rules), and serves them over MCP.
+Your code, Markdown docs and git stay the source of truth. xDev keeps nothing in the cloud: agents run in local terminals with your own accounts.
 
-> Status: early preview (0.1). Builds are unsigned; expect breaking changes.
+> Status: early preview (0.5). Builds are unsigned; expect breaking changes.
 
 ## What works today
 
 | Area | What |
 |---|---|
-| Docs | Open a folder of Markdown, edit with live preview, full-text search, wiki links and backlinks |
-| History | Changes against git `HEAD`, review and commit from the app, per-file history |
-| Stale docs | `xdev check` reports broken links and docs that went stale or were never verified |
-| Agent context | `xdev export` writes AGENTS.md, CLAUDE.md, GEMINI.md and a Cursor rule; `xdev mcp` serves the docs over MCP stdio |
-| Tasks | A coding agent works in its own git worktree; you review the evidence and diff, then approve or discard |
-| Accounts | Claude Code accounts and quota on this machine; API keys in the OS keychain; local Ollama models (CLI only: `xdev ai models`) |
+| Worktrees | One worktree per task, created in the background from a branch or a GitHub issue (`#N`); branch prefixes, setup and archive scripts (`xdev.toml`), shared paths, archive and restore |
+| Agents and terminals | Agent and shell tabs in split panes; Claude Code and Codex status (working, needs you, done) through hooks; notifications, sound and taskbar badge; session history and resume; layouts come back after restart |
+| Editor | File tabs with a CodeMirror editor, file explorer, quick open (`Mod+P`), search in files, jump palette (`Ctrl+J`) |
+| Review and git | Diff against a chosen base, stage and unstage, line and range notes sent to an agent tab, commit, pull request defaults; AI recipes for commit, PR and branch text |
+| Docs and context | Markdown with live preview, wiki links and backlinks; `xdev check` flags stale docs; `xdev export` writes AGENTS.md, CLAUDE.md, GEMINI.md and a Cursor rule; `xdev mcp` serves docs and context packs over MCP |
+| Accounts and usage | Claude Code accounts and quota on this machine, token usage per session, API keys in the OS keychain, local Ollama models for embeddings |
+| Settings | General, agents, terminal, git, notifications, shortcuts (`keybindings.json`), Open In apps, quick commands; settings search |
 
 Guides: [status and notifications](docs/guide/status-and-notifications.md). All guides: [docs/guide](docs/guide/README.md).
 
