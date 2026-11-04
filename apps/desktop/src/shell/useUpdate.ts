@@ -4,7 +4,7 @@ import { useI18n } from "@/i18n";
 
 export type Update = { version: string; notes: string | null; status: "ready" | "restarting" | "failed" };
 
-export type UpdateStep = { kind: "ready"; version: string; notes: string | null } | { kind: "restarting" } | { kind: "failed" } | { kind: "none" };
+export type UpdateStep = { kind: "ready"; version: string; notes: string | null } | { kind: "restarting" } | { kind: "failed" } | { kind: "handed" } | { kind: "none" };
 
 export function nextUpdate(current: Update | null, step: UpdateStep): Update | null {
   switch (step.kind) {
@@ -15,6 +15,9 @@ export function nextUpdate(current: Update | null, step: UpdateStep): Update | n
       return current && { ...current, status: "restarting" };
     case "failed":
       return current && { ...current, status: "failed" };
+    case "handed":
+      // The quit guard has the restart now; if the person cancels there, the button is back.
+      return current && { ...current, status: "ready" };
     case "none":
       return null;
   }
@@ -61,9 +64,10 @@ export function useUpdate(api: Api): { state: Update | null; restart(): void } {
   }, [api, t]);
   const restart = useCallback(() => {
     setState((s) => nextUpdate(s, { kind: "restarting" }));
-    // Success restarts the app; resolving means nothing was pending any more.
-    api.restartToUpdate().then(
-      () => setState((s) => nextUpdate(s, { kind: "none" })),
+    // The restart goes through the same quit guard as a click on the close button; the quit installs
+    // the pending update and starts the app again.
+    api.shellQuit("restart").then(
+      () => setState((s) => nextUpdate(s, { kind: "handed" })),
       () => setState((s) => nextUpdate(s, { kind: "failed" })),
     );
   }, [api]);

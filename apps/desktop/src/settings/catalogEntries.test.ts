@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import en from "@/i18n/en.json";
 import vi from "@/i18n/vi.json";
-import { SETTING_ENTRIES } from "./catalog";
+import { entriesFor, SETTING_ENTRIES } from "./catalog";
 import { SECTIONS } from "./sections";
 
 describe("SETTING_ENTRIES", () => {
@@ -42,4 +42,16 @@ describe("the appearance links and the usage credentials", () => {
       expect(SETTING_ENTRIES.find((x) => x.id === id)?.section, id).toBe(section);
     }
   });
+});
+
+it("the tray row is for Windows, the menu bar row for macOS, and the rest of the shell rows for all", () => {
+  const find = (id: string) => SETTING_ENTRIES.find((x) => x.id === id);
+  expect(find("general.minimizeToTray")?.platforms).toEqual(["win"]);
+  expect(find("general.menuBarIcon")?.platforms).toEqual(["mac"]);
+  expect(find("general.updates")?.platforms).toBeUndefined();
+  expect(find("general.updateChannel")?.platforms).toBeUndefined();
+  expect(entriesFor("linux").map((x) => x.id)).not.toContain("general.minimizeToTray");
+  expect(entriesFor("mac").map((x) => x.id)).toContain("general.menuBarIcon");
+  expect(entriesFor("mac").map((x) => x.id)).not.toContain("general.minimizeToTray");
+  expect(entriesFor("win").map((x) => x.id)).toContain("general.minimizeToTray");
 });

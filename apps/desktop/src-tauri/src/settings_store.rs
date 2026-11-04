@@ -170,6 +170,14 @@ mod tests {
     }
 
     #[test]
+    fn a_shell_put_names_its_section() {
+        assert_eq!(
+            serde_json::to_string(&changed(&[SettingsSection::Shell])).unwrap(),
+            r#"{"sections":["shell"]}"#
+        );
+    }
+
+    #[test]
     fn a_usage_put_names_its_section() {
         assert_eq!(
             serde_json::to_string(&changed(&[SettingsSection::Usage])).unwrap(),

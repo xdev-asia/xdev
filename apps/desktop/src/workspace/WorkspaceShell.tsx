@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type CreateRequest, type PrSummary } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type CreateRequest, type PrSummary, type MenuAction } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
@@ -27,7 +27,7 @@ import { startAutoRename } from "./autoRename";
 import { startAutoTabTitle } from "./autoTabTitle";
 import { startAutoSleep } from "./autoSleep";
 import { startKeepAwakeReport } from "@/status/keepAwake";
-import { currentCloseWindow, openRestoredFile, restoreLayout, sessionFallback, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
+import { currentCloseWindow, openRestoredFile, restoreLayout, sessionFallback, startLayoutSave, undoRestore } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
@@ -71,7 +71,12 @@ import { TrustDialog } from "./TrustDialog";
 import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
 import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
 import { QuitDialog } from "./QuitDialog";
-import { askQuit, type QuitAsk, type QuitChoice } from "./quitGuard";
+import { AboutDialog } from "./AboutDialog";
+import { checkForUpdates, HelpButton, type HelpPick, runHelpPick } from "./HelpMenu";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { runMenuAction } from "@/shell/menuActions";
+import { useShellLabels } from "@/shell/shellLabels";
+import { askQuit, guardClose, installCloseGuard, type QuitAsk, type QuitChoice } from "./quitGuard";
 import { getTerminalSettings } from "@/terminal/terminalSettings";
 import { createNotifier, type Notifier } from "./notifier";
 import { AgentSessionsStore } from "@/agentSessions/store";
@@ -205,6 +210,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [trusting, setTrusting] = useState<TrustAsk | null>(null);
   // "On quit: Ask": the question shown while the window waits to close.
   const [quitting, setQuitting] = useState<{ ask: QuitAsk; answer(choice: QuitChoice): void } | null>(null);
+  // The About dialog (its version, once known) and the "quit and end terminals" confirmation.
+  const [about, setAbout] = useState<string | null>(null);
+  const [confirmEndAll, setConfirmEndAll] = useState(false);
   const [gate] = useState(() => new SetupGate());
   // Which remove is current; a Cancel during the archive run bumps it so the late result is dropped.
   const removeRun = useRef(0);
@@ -348,7 +356,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const restoreStarted = useRef(false);
   const saver = useRef<ReturnType<typeof startLayoutSave> | null>(null);
   const flushOnClose = useRef(() => saver.current?.flush());
-  const stopCloseWatch = useRef<() => void>(() => {});
   useEffect(() => {
     if (!sessions || !repos || repos.length === 0 || restoreStarted.current) return;
     restoreStarted.current = true;
@@ -360,27 +367,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       if (!restoreStarted.current) return;
       saver.current = startLayoutSave(api, sessions);
       if (typeof window !== "undefined") window.addEventListener("beforeunload", flushOnClose.current);
-      void currentCloseWindow().then((win) => {
-        if (!saver.current) return;
-        stopCloseWatch.current();
-        stopCloseWatch.current = watchWindowClose(saver.current, win, () =>
-          askQuit(
-            api,
-            () => getTerminalSettings().onQuit,
-            () => sessions.worktrees().flatMap((w) => sessions.tabs(w)),
-            (ask) =>
-              new Promise<QuitChoice>((resolve) =>
-                setQuitting({
-                  ask,
-                  answer: (choice) => {
-                    setQuitting(null);
-                    resolve(choice);
-                  },
-                }),
-              ),
-          ),
-        );
-      });
       if (!got || got.report.opened.length === 0) return;
       const { resumed, fresh, opened } = got.report;
       pushToast({
@@ -389,14 +375,49 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       });
     });
   }, [sessions, repos]);
+  // The close guard, set up once at mount: it looks the saver and the tabs up when a close fires, so it
+  // also works on the welcome screen, with no repos, and while the layout restore still runs.
+  const sessionsNow = useRef<Sessions | null>(null);
+  sessionsNow.current = sessions;
+  useEffect(() => {
+    let stopped = false;
+    let stop = () => {};
+    void currentCloseWindow().then((win) => {
+      if (stopped) return;
+      stop = installCloseGuard(
+        win,
+        () => saver.current,
+        () =>
+          guardClose(api, { title: live.t("shell.tray.tooltip"), body: live.t("shell.tray.notice") }, () =>
+            askQuit(
+              api,
+              () => getTerminalSettings().onQuit,
+              () => sessionsNow.current?.worktrees().flatMap((w) => sessionsNow.current?.tabs(w) ?? []) ?? [],
+              (ask) =>
+                new Promise<QuitChoice>((resolve) =>
+                  setQuitting({
+                    ask,
+                    answer: (choice) => {
+                      setQuitting(null);
+                      resolve(choice);
+                    },
+                  }),
+                ),
+            ),
+          ),
+      );
+    });
+    return () => {
+      stopped = true;
+      stop();
+    };
+  }, [api]);
   useEffect(() => {
     const close = flushOnClose.current;
     return () => {
       restoreStarted.current = false;
       saver.current?.stop();
       saver.current = null;
-      stopCloseWatch.current();
-      stopCloseWatch.current = () => {};
       if (typeof window !== "undefined") window.removeEventListener("beforeunload", close);
     };
   }, [sessions]);
@@ -751,6 +772,32 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setPanelTab(tab);
   }
   useEffect(() => startQuickCommands(api), [api]);
+  useShellLabels(api);
+  // Native menu and tray items; the latest handlers run through a ref so the listener binds once.
+  const menuRun = useRef<(action: MenuAction) => void>(() => {});
+  menuRun.current = (action) =>
+    runMenuAction(action, {
+      openSettings: () => openSettings(),
+      openShortcuts: () => openSettings("keys"),
+      openUpdates,
+      confirmQuitEndAll: () => setConfirmEndAll(true),
+      zoom: (delta) => void stepZoom(api, delta),
+      toggleLeftSidebar: () => setSidebarOpen((o) => !o),
+      toggleRightSidebar: () => setRightOpen((o) => !o),
+      openAbout: () => openAbout(),
+    });
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let gone = false;
+    void api.onMenuAction((action) => menuRun.current(action)).then((un) => {
+      if (gone) un();
+      else off = un;
+    });
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, [api]);
   useKeymap({
     "sessions.open": () => {
       show("workspace");
@@ -1338,6 +1385,19 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     }
   }
 
+  function openAbout(): void {
+    void api.appVersion().then(setAbout, () => setAbout(""));
+  }
+
+  /** Help, tray and native menu "Check for updates": shows the page, and starts the check (a check already running is joined). */
+  function openUpdates(): void {
+    checkForUpdates({ openSettings, api });
+  }
+
+  function pickHelp(pick: HelpPick): void {
+    runHelpPick(pick, { openSettings: (page) => openSettings(page), openUpdates, openAbout, api });
+  }
+
   function openSettings(section?: string, arg?: string, target?: string): void {
     setSettingsAt((s) => ({ section, arg, target, seq: s.seq + 1 }));
     show("settings");
@@ -1477,6 +1537,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           </button>
           {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onViewActivity={() => { setBellOpen(false); setSidebarOpen(true); setSideView("activity"); setActivityAsk((a) => ({ tab: "feed", seq: a.seq + 1 })); }} onClose={() => setBellOpen(false)} />}
         </div>
+        <HelpButton onPick={pickHelp} />
         <button
           type="button"
           className="ws-icon-btn ws-header-btn"
@@ -2026,6 +2087,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         />
       )}
       {quitting && <QuitDialog ask={quitting.ask} onChoose={quitting.answer} />}
+      {about !== null && <AboutDialog version={about} onLink={(link) => void api.helpOpen(link)} onClose={() => setAbout(null)} />}
+      <ConfirmDialog
+        open={confirmEndAll}
+        title={t("shell.quitEndAll.title")}
+        body={t("shell.quitEndAll.body")}
+        confirmLabel={t("shell.quitEndAll.confirm")}
+        onConfirm={() => {
+          setConfirmEndAll(false);
+          void api.shellQuit("end-all");
+        }}
+        onCancel={() => setConfirmEndAll(false)}
+      />
       <Toasts />
       {adding && (
         <AddProjectDialog

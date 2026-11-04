@@ -81,6 +81,68 @@ pub struct Settings {
     /// Settings → Stats & Usage; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub usage: UsageSettings,
+    /// Settings → General, Window and Updates groups; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub shell: ShellSettings,
+}
+
+/// Which update feed the app follows.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum UpdateChannel {
+    #[default]
+    Stable,
+    /// Release candidates, ahead of the stable release.
+    Rc,
+}
+
+/// An unknown value is the default, as for `TabOrder`.
+impl<'de> serde::Deserialize<'de> for UpdateChannel {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = String::deserialize(d)?;
+        Ok(match v.as_str() {
+            "rc" => Self::Rc,
+            _ => Self::Stable,
+        })
+    }
+}
+
+/// Settings → General: Window and Updates groups.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct ShellSettings {
+    /// Windows only: closing the window hides it to the tray.
+    pub minimize_to_tray: bool,
+    /// macOS only: the menu bar icon; on unless the person turned it off.
+    pub menu_bar_icon: bool,
+    /// Set once the "still running in the tray" notice was shown. Only the
+    /// shell sets it; a `put` keeps the stored value.
+    pub tray_notice_shown: bool,
+    pub update_channel: UpdateChannel,
+}
+
+impl Default for ShellSettings {
+    fn default() -> Self {
+        Self {
+            minimize_to_tray: false,
+            menu_bar_icon: true,
+            tray_notice_shown: false,
+            update_channel: UpdateChannel::Stable,
+        }
+    }
+}
+
+impl ShellSettings {
+    /// What `shell_settings_put` stores: the person's switches, with the
+    /// notice flag kept from `stored`.
+    pub fn for_put(self, stored: &ShellSettings) -> Self {
+        Self {
+            tray_notice_shown: stored.tray_notice_shown,
+            ..self
+        }
+    }
 }
 
 /// What happens to the agent tabs that run under the old active account
@@ -1046,6 +1108,7 @@ pub enum SettingsSection {
     Diff,
     Agents,
     Usage,
+    Shell,
 }
 
 /// What a `settings://changed` event carries.
@@ -2655,6 +2718,76 @@ then sum up"
         };
         assert_eq!(odd.normalized().cache_ttl_ms, CACHE_TTL_SHORT_MS);
         assert_eq!(usage.clone().normalized(), usage);
+    }
+
+    #[test]
+    fn shell_settings_default_and_stay_lenient() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let want = ShellSettings::default();
+        assert!(!want.minimize_to_tray);
+        assert!(want.menu_bar_icon);
+        assert!(!want.tray_notice_shown);
+        assert_eq!(want.update_channel, UpdateChannel::Stable);
+        for text in [
+            "{}",
+            r#"{ "shell": {} }"#,
+            r#"{ "shell": 3 }"#,
+            r#"{ "shell": { "updateChannel": "nightly" } }"#,
+            r#"{ "shell": { "updateChannel": 7 } }"#,
+        ] {
+            fs::write(&path, text).unwrap();
+            assert_eq!(load(&path).shell, want, "{text}");
+        }
+        // A broken shell section keeps the other sections.
+        fs::write(
+            &path,
+            r#"{ "shell": [1], "agents": { "accountSwitch": "keep" } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.shell, want);
+        assert_eq!(loaded.agents.account_switch, SwitchRunning::Keep);
+    }
+
+    #[test]
+    fn shell_settings_round_trip_with_camel_case_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let shell = ShellSettings {
+            minimize_to_tray: true,
+            menu_bar_icon: false,
+            tray_notice_shown: true,
+            update_channel: UpdateChannel::Rc,
+        };
+        let json = serde_json::to_value(&shell).unwrap();
+        assert_eq!(json["minimizeToTray"], true);
+        assert_eq!(json["menuBarIcon"], false);
+        assert_eq!(json["trayNoticeShown"], true);
+        assert_eq!(json["updateChannel"], "rc");
+        fs::write(&path, format!(r#"{{ "shell": {json} }}"#)).unwrap();
+        assert_eq!(load(&path).shell, shell);
+    }
+
+    #[test]
+    fn a_shell_put_keeps_the_stored_notice_flag() {
+        let stored = ShellSettings {
+            tray_notice_shown: true,
+            ..ShellSettings::default()
+        };
+        let incoming = ShellSettings {
+            minimize_to_tray: true,
+            tray_notice_shown: false,
+            ..ShellSettings::default()
+        };
+        let put = incoming.for_put(&stored);
+        assert!(put.tray_notice_shown);
+        assert!(put.minimize_to_tray);
+        assert!(
+            !ShellSettings::default()
+                .for_put(&ShellSettings::default())
+                .tray_notice_shown
+        );
     }
 
     #[test]

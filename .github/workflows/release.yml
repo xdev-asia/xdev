@@ -4,10 +4,22 @@ name: Release
 # Commits). Merging that PR tags the version, builds and signs every platform,
 # then publishes the release, which is when installs see the update.
 # A manual run builds every platform without signing, to test the matrix.
+# A manual run with `rc_version` set builds and signs a release candidate in
+# the `release` environment and writes rc-latest/latest.json (ADR 0005); it
+# publishes only with `rc_publish` too, and never on a push.
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      rc_version:
+        description: "Release candidate version, such as 0.6.0-rc.1. Empty: unsigned matrix test."
+        type: string
+        default: ""
+      rc_publish:
+        description: "Upload the candidate to the rc-latest release. Off: only attach latest.json to the run."
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -80,8 +92,9 @@ jobs:
             bundles: appimage,deb
     runs-on: ${{ matrix.os }}
     # The updater key lives only in this environment, which needs a reviewer
-    # before a job can read it (ADR 0005). Manual runs stay outside it.
-    environment: ${{ github.event_name == 'push' && 'release' || '' }}
+    # before a job can read it (ADR 0005). Manual runs stay outside it, except
+    # a release candidate run, which signs.
+    environment: ${{ (github.event_name == 'push' || inputs.rc_version != '') && 'release' || '' }}
     defaults:
       run:
         shell: bash
@@ -131,11 +144,19 @@ jobs:
 
       - name: Check submodule
         shell: bash
-        run: test -f packages/xdev-ui/package.json || { echo "run: git submodule update --init --recursive"; exit 1; }
+        run: |
+          test -f packages/xdev-ui/package.json || { echo "run: git submodule update --init --recursive"; exit 1; }
 
       - run: corepack pnpm install --frozen-lockfile
 
       - run: cargo build --release -p xdev-cli --locked --target ${{ matrix.target }}
+
+      - name: Check the release candidate version
+        if: github.event_name == 'workflow_dispatch' && inputs.rc_version != ''
+        run: |
+          [[ "$RC_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] || { echo "::error::rc_version must look like 0.6.0-rc.1"; exit 1; }
+        env:
+          RC_VERSION: ${{ inputs.rc_version }}
 
       # Updates are signed with the updater key; the installers themselves are
       # not OS code-signed yet (Windows unsigned, macOS ad-hoc "-"), so
@@ -149,8 +170,13 @@ jobs:
           if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
             args+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
           fi
+          # A candidate must report its own version, or it would offer itself again.
+          if [ -n "$RC_VERSION" ]; then
+            args+=(--config "{\"version\":\"$RC_VERSION\"}")
+          fi
           corepack pnpm tauri build "${args[@]}"
         env:
+          RC_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.rc_version || '' }}
           APPLE_SIGNING_IDENTITY: "-"
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -241,3 +267,74 @@ jobs:
 
       - run: gh release upload "$TAG" dist/* --clobber
       - run: gh release edit "$TAG" --draft=false --latest
+
+  # A release candidate: the same signed bundles, listed in rc-latest/latest.json,
+  # which only installs on the RC channel read. Manual runs only. Without
+  # `rc_publish` it is a dry run: latest.json is attached to the run, nothing is
+  # uploaded. The release is a prerelease and never "latest", so the stable
+  # endpoint (releases/latest/download) does not move.
+  rc-latest:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.rc_version != ''
+    runs-on: ubuntu-latest
+    # The bundles were signed in this environment; publishing them waits for the same reviewer.
+    environment: release
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RC_VERSION: ${{ inputs.rc_version }}
+      RC_TAG: rc-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Write latest.json
+        run: |
+          base="https://github.com/$GH_REPO/releases/download/$RC_TAG"
+          platforms='{}'
+          add() {
+            f=$(compgen -G "dist/$2" | head -n1)
+            if [ -z "$f" ] || [ ! -f "$f.sig" ]; then
+              echo "::error::no signed updater bundle for $1 ($2)"
+              exit 1
+            fi
+            platforms=$(jq --arg k "$1" --arg url "$base/$(basename "$f")" \
+              --arg sig "$(tr -d '\n' < "$f.sig")" \
+              '.[$k] = {url: $url, signature: $sig}' <<< "$platforms")
+          }
+          add windows-x86_64 '*_x64-setup.exe'
+          add windows-aarch64 '*_arm64-setup.exe'
+          add darwin-aarch64 'xDev-aarch64-apple-darwin.app.tar.gz'
+          add linux-x86_64 '*_amd64.AppImage'
+          add linux-aarch64 '*_aarch64.AppImage'
+          jq -n \
+            --arg version "$RC_VERSION" \
+            --arg notes "https://github.com/$GH_REPO/releases/tag/$RC_TAG" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson platforms "$platforms" \
+            '{version: $version, notes: $notes, pub_date: $date, platforms: $platforms}' \
+            > dist/latest.json
+          cat dist/latest.json
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rc-latest-json
+          path: dist/latest.json
+          if-no-files-found: error
+
+      - name: Publish rc-latest
+        if: inputs.rc_publish
+        run: |
+          if gh release view "$RC_TAG" >/dev/null 2>&1; then
+            # Old candidates carry other file names; the release holds only this one.
+            gh release view "$RC_TAG" --json assets --jq '.assets[].name' | while read -r name; do
+              gh release delete-asset "$RC_TAG" "$name" --yes
+            done
+          else
+            gh release create "$RC_TAG" --target "$GITHUB_SHA" --prerelease --latest=false               --title "Release candidate" --notes "The newest release candidate. Read by installs on the release candidate channel only."
+          fi
+          gh release upload "$RC_TAG" dist/* --clobber
