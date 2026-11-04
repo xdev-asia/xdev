@@ -40,6 +40,10 @@ pub trait Blocker: Send {
     fn hold(&mut self) -> Result<(), String>;
     /// Gives the request back. Safe to call when nothing is held.
     fn release(&mut self);
+    /// Whether the request is still in force; false when its helper has died since `hold`.
+    fn is_held(&mut self) -> bool {
+        true
+    }
     /// False when this machine has no way to hold a request.
     fn available(&self) -> bool {
         true
@@ -66,6 +70,10 @@ impl Inner {
 
     /// Brings the OS request in line with the mode and the working flag.
     fn reconcile(&mut self) {
+        // A helper that died since the last call no longer holds anything.
+        if self.held && !self.blocker.is_held() {
+            self.held = false;
+        }
         let want = wants_awake(self.mode, self.working) && !self.failed;
         if want && !self.held {
             match self.blocker.hold() {
@@ -151,6 +159,9 @@ impl Blocker for OsBlocker {
     }
     fn release(&mut self) {
         self.0.release();
+    }
+    fn is_held(&mut self) -> bool {
+        self.0.is_held()
     }
     fn available(&self) -> bool {
         self.0.available()
@@ -256,7 +267,7 @@ pub fn keep_awake_set(
     Ok(now)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn keep_awake_agents(app: AppHandle, awake: State<'_, Awake>, working: bool) -> AwakeView {
     let before = awake.view();
     let now = awake.set_working(working);
@@ -268,7 +279,7 @@ pub fn keep_awake_agents(app: AppHandle, awake: State<'_, Awake>, working: bool)
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
     #[derive(Default)]
     struct Counts {
@@ -279,11 +290,13 @@ mod tests {
     struct Fake {
         counts: Arc<Counts>,
         fail: bool,
+        alive: Arc<AtomicBool>,
     }
 
     impl Blocker for Fake {
         fn hold(&mut self) -> Result<(), String> {
             self.counts.holds.fetch_add(1, Ordering::SeqCst);
+            self.alive.store(true, Ordering::SeqCst);
             if self.fail {
                 Err("no".to_owned())
             } else {
@@ -293,15 +306,40 @@ mod tests {
         fn release(&mut self) {
             self.counts.releases.fetch_add(1, Ordering::SeqCst);
         }
+        fn is_held(&mut self) -> bool {
+            self.alive.load(Ordering::SeqCst)
+        }
     }
 
     fn awake(fail: bool) -> (Awake, Arc<Counts>) {
+        let (a, c, _) = awake_with_life(fail);
+        (a, c)
+    }
+
+    fn awake_with_life(fail: bool) -> (Awake, Arc<Counts>, Arc<AtomicBool>) {
         let counts = Arc::new(Counts::default());
+        let alive = Arc::new(AtomicBool::new(true));
         let fake = Fake {
             counts: counts.clone(),
             fail,
+            alive: alive.clone(),
         };
-        (Awake::new(Box::new(fake)), counts)
+        (Awake::new(Box::new(fake)), counts, alive)
+    }
+
+    #[test]
+    fn a_helper_that_died_later_is_held_again_on_the_next_working_change() {
+        let (a, c, alive) = awake_with_life(false);
+        assert!(!a.set_mode(KeepAwake::Agent).held);
+        assert!(a.set_working(true).held);
+        assert_eq!(n(&c.holds), 1);
+        // The helper dies; the next report finds it gone and holds again.
+        alive.store(false, Ordering::SeqCst);
+        assert!(a.set_working(true).held);
+        assert_eq!(n(&c.holds), 2);
+        // A helper that stays alive is not held twice.
+        assert!(a.set_working(true).held);
+        assert_eq!(n(&c.holds), 2);
     }
 
     fn n(a: &AtomicU32) -> u32 {
