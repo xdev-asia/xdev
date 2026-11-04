@@ -1,0 +1,27 @@
+[
+  {
+    "assignees": [
+      {"id": "MDQ6VXNlcjE=", "login": "octocat", "name": "The Octocat", "isBot": false}
+    ],
+    "author": {"id": "MDQ6VXNlcjI=", "is_bot": false, "login": "hubot", "name": "Hubot"},
+    "labels": [
+      {"id": "LA_1", "name": "bug", "description": "Something is broken", "color": "d73a4a"},
+      {"id": "LA_2", "name": "ui", "description": "", "color": "0075ca"}
+    ],
+    "number": 123,
+    "state": "OPEN",
+    "title": "Footer meter overflows",
+    "updatedAt": "2026-11-03T09:15:00Z",
+    "url": "https://github.com/acme/app/issues/123"
+  },
+  {
+    "assignees": [],
+    "author": {"id": "MDQ6VXNlcjM=", "is_bot": true, "login": "app/dependabot"},
+    "labels": [],
+    "number": 7,
+    "state": "CLOSED",
+    "title": "Bump deps",
+    "updatedAt": "2026-10-01T00:00:00Z",
+    "url": "https://github.com/acme/app/issues/7"
+  }
+]

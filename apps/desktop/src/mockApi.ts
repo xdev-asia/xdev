@@ -20,6 +20,7 @@ import { createResolver, parseLinks } from "./doc/links";
 import { estimateTokens, type ExportDoc, planExport } from "./mockExport";
 import { createMockAgentSessions } from "./mockAgentSessions";
 import { createMockQuickCommands } from "./mockQuickCommands";
+import { createMockIssues } from "./mockIssues";
 import { createMockKit } from "./mockKit";
 import { createMockLayout } from "./mockLayout";
 import { createMockOpenIn, type MockOpenIn } from "./mockOpenIn";
@@ -551,6 +552,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockPty(profiles, (cwd) => workspace.__setupRun(cwd)),
     ...createMockStatus(settingsHub.emit),
     ...workspace,
+    ...createMockIssues(),
     ...createMockSettings(settingsHub),
     ...createMockKeybindings(options.keybindings ?? null),
     ...createMockKit(),

@@ -16,6 +16,11 @@ use crate::GitError;
 const TIMEOUT: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(20);
 const PR_FIELDS: &str = "number,url,state,isDraft,title,baseRefName,headRefName";
+const ISSUE_FIELDS: &str = "number,url,state,title,labels,assignees,author,updatedAt";
+/// Most issues one list call returns.
+pub const ISSUE_LIMIT_MAX: u32 = 200;
+/// Chars kept of an issue body or a comment; the rest is cut.
+pub const ISSUE_BODY_MAX: usize = 64 * 1024;
 
 pub struct GhOutput {
     pub status: Option<i32>,
@@ -235,6 +240,235 @@ pub fn pr_checks(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<Vec<Check>,
 pub fn pr_open_web(gh: &dyn GhExec, cwd: &Path, checks: bool) -> Result<(), GitError> {
     let sub = if checks { "checks" } else { "view" };
     ok(gh.run(cwd, &["pr", sub, "--web"], None)?)?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum IssueState {
+    Open,
+    Closed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct Issue {
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
+    pub number: u64,
+    pub url: String,
+    pub state: IssueState,
+    pub title: String,
+    pub labels: Vec<String>,
+    pub assignees: Vec<String>,
+    pub author: Option<String>,
+    /// RFC 3339 as `gh` prints it.
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct IssueComment {
+    pub author: Option<String>,
+    pub body: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct IssueDetail {
+    pub issue: Issue,
+    pub body: String,
+    pub comments: Vec<IssueComment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct IssueQuery {
+    /// `None` reads as open.
+    pub state: Option<IssueState>,
+    pub assignee_me: bool,
+    /// Passed as `--search`; at most 256 chars.
+    pub search: Option<String>,
+    /// Default 100, capped at `ISSUE_LIMIT_MAX`.
+    pub limit: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct RawNamed {
+    #[serde(default)]
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct RawLogin {
+    #[serde(default)]
+    login: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawIssue {
+    number: u64,
+    url: String,
+    state: String,
+    title: String,
+    #[serde(default)]
+    labels: Vec<RawNamed>,
+    #[serde(default)]
+    assignees: Vec<RawLogin>,
+    author: Option<RawLogin>,
+    #[serde(default)]
+    updated_at: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawComment {
+    author: Option<RawLogin>,
+    #[serde(default)]
+    body: String,
+    #[serde(default)]
+    created_at: String,
+}
+
+#[derive(Deserialize)]
+struct RawIssueDetail {
+    #[serde(flatten)]
+    issue: RawIssue,
+    #[serde(default)]
+    body: String,
+    #[serde(default)]
+    comments: Vec<RawComment>,
+}
+
+fn login(l: Option<RawLogin>) -> Option<String> {
+    l.map(|l| l.login).filter(|l| !l.is_empty())
+}
+
+impl From<RawIssue> for Issue {
+    fn from(raw: RawIssue) -> Issue {
+        Issue {
+            number: raw.number,
+            url: raw.url,
+            state: if raw.state.eq_ignore_ascii_case("closed") {
+                IssueState::Closed
+            } else {
+                IssueState::Open
+            },
+            title: raw.title,
+            labels: raw.labels.into_iter().map(|l| l.name).collect(),
+            assignees: raw.assignees.into_iter().map(|a| a.login).collect(),
+            author: login(raw.author),
+            updated_at: raw.updated_at,
+        }
+    }
+}
+
+/// Cuts to `ISSUE_BODY_MAX` chars.
+fn cut_body(mut text: String) -> String {
+    if let Some((i, _)) = text.char_indices().nth(ISSUE_BODY_MAX) {
+        text.truncate(i);
+    }
+    text
+}
+
+const DEFAULT_ISSUE_LIMIT: u32 = 100;
+const SEARCH_MAX: usize = 256;
+
+pub fn issue_list(gh: &dyn GhExec, cwd: &Path, q: &IssueQuery) -> Result<Vec<Issue>, GitError> {
+    let limit = q
+        .limit
+        .unwrap_or(DEFAULT_ISSUE_LIMIT)
+        .clamp(1, ISSUE_LIMIT_MAX)
+        .to_string();
+    let search: Option<String> = q
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.chars().take(SEARCH_MAX).collect());
+    let mut args = vec!["issue", "list", "--json", ISSUE_FIELDS, "--limit", &limit];
+    if q.state == Some(IssueState::Closed) {
+        args.extend(["--state", "closed"]);
+    }
+    if q.assignee_me {
+        args.extend(["--assignee", "@me"]);
+    }
+    if let Some(s) = &search {
+        args.extend(["--search", s]);
+    }
+    let out = ok(gh.run(cwd, &args, None)?)?;
+    let raw: Vec<RawIssue> = serde_json::from_str(&out.stdout).map_err(parse_error)?;
+    Ok(raw.into_iter().map(Issue::from).collect())
+}
+
+pub fn issue_view(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<IssueDetail, GitError> {
+    let number = number.to_string();
+    let fields = format!("{ISSUE_FIELDS},body,comments");
+    let out = gh.run(cwd, &["issue", "view", &number, "--json", &fields], None)?;
+    if out.status != Some(0) {
+        if out.stderr.contains("Could not resolve to an issue") {
+            return Err(GitError::IssueNotFound);
+        }
+        return Err(classify(&out));
+    }
+    let raw: RawIssueDetail = serde_json::from_str(&out.stdout).map_err(parse_error)?;
+    Ok(IssueDetail {
+        issue: raw.issue.into(),
+        body: cut_body(raw.body),
+        comments: raw
+            .comments
+            .into_iter()
+            .map(|c| IssueComment {
+                author: login(c.author),
+                body: cut_body(c.body),
+                created_at: c.created_at,
+            })
+            .collect(),
+    })
+}
+
+/// `owner/repo` of the repo `cwd` belongs to, as GitHub names it.
+pub fn repo_name(gh: &dyn GhExec, cwd: &Path) -> Result<String, GitError> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Raw {
+        name_with_owner: String,
+    }
+    let out = ok(gh.run(cwd, &["repo", "view", "--json", "nameWithOwner"], None)?)?;
+    let raw: Raw = serde_json::from_str(&out.stdout).map_err(parse_error)?;
+    Ok(raw.name_with_owner)
+}
+
+/// "#123", "123", or "https://github.com/<owner>/<repo>/issues/123" gives
+/// (`owner/repo` or `None`, 123).
+pub fn parse_issue_ref(text: &str) -> Option<(Option<String>, u64)> {
+    let text = text.trim();
+    let number = |s: &str| {
+        let digits = !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+        s.parse::<u64>().ok().filter(|n| digits && *n > 0)
+    };
+    if let Some(rest) = text.strip_prefix("https://github.com/") {
+        let parts: Vec<&str> = rest.trim_end_matches('/').split('/').collect();
+        return match parts.as_slice() {
+            [owner, repo, "issues", n] if !owner.is_empty() && !repo.is_empty() => {
+                number(n).map(|n| (Some(format!("{owner}/{repo}")), n))
+            }
+            _ => None,
+        };
+    }
+    number(text.strip_prefix('#').unwrap_or(text)).map(|n| (None, n))
+}
+
+/// Opens the issue in the browser through `gh`.
+pub fn issue_open_web(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<(), GitError> {
+    let number = number.to_string();
+    ok(gh.run(cwd, &["issue", "view", &number, "--web"], None)?)?;
     Ok(())
 }
 
@@ -506,5 +740,185 @@ mod tests {
         let err = pr_view(&fake, cwd()).unwrap_err();
         assert_eq!(err.code(), "gh_failed");
         assert!(matches!(err, GitError::Gh(ref s) if s == "boom"));
+    }
+
+    #[test]
+    fn parse_issue_ref_reads_numbers_and_urls() {
+        for text in ["#12", "12", " #12 "] {
+            assert_eq!(parse_issue_ref(text), Some((None, 12)), "{text}");
+        }
+        let url = Some((Some("o/r".to_owned()), 12));
+        assert_eq!(parse_issue_ref("https://github.com/o/r/issues/12"), url);
+        assert_eq!(parse_issue_ref("https://github.com/o/r/issues/12/"), url);
+    }
+
+    #[test]
+    fn parse_issue_ref_refuses_the_rest() {
+        for text in [
+            "https://github.com/o/r/pull/12",
+            "#0",
+            "0",
+            "99999999999999999999",
+            "",
+            "#",
+            "#1x",
+            "-3",
+            "https://example.com/o/r/issues/12",
+            "https://github.com/o/r/issues/12/files",
+        ] {
+            assert_eq!(parse_issue_ref(text), None, "{text}");
+        }
+    }
+
+    const LIST_FIXTURE: &str = include_str!("../fixtures/issue_list.json");
+    const VIEW_FIXTURE: &str = include_str!("../fixtures/issue_view.json");
+
+    fn args_of(fake: &Fake) -> Vec<String> {
+        fake.calls.borrow()[0].0.clone()
+    }
+
+    #[test]
+    fn issue_list_default_args_and_fixture() {
+        let fake = Fake::new(vec![out(0, LIST_FIXTURE, "")]);
+        let issues = issue_list(&fake, cwd(), &IssueQuery::default()).unwrap();
+        assert_eq!(
+            args_of(&fake),
+            ["issue", "list", "--json", ISSUE_FIELDS, "--limit", "100"]
+        );
+        assert_eq!(issues.len(), 2);
+        assert_eq!(issues[0].number, 123);
+        assert_eq!(issues[0].state, IssueState::Open);
+        assert_eq!(issues[0].labels, ["bug", "ui"]);
+        assert_eq!(issues[0].assignees, ["octocat"]);
+        assert_eq!(issues[0].author.as_deref(), Some("hubot"));
+        assert_eq!(issues[0].updated_at, "2026-11-03T09:15:00Z");
+        assert_eq!(issues[1].state, IssueState::Closed);
+        assert!(issues[1].labels.is_empty() && issues[1].assignees.is_empty());
+    }
+
+    #[test]
+    fn issue_list_args_follow_the_query() {
+        let fake = Fake::new(vec![out(0, "[]", "")]);
+        let q = IssueQuery {
+            state: Some(IssueState::Closed),
+            assignee_me: true,
+            search: Some("  footer  ".into()),
+            limit: Some(9999),
+        };
+        issue_list(&fake, cwd(), &q).unwrap();
+        assert_eq!(
+            args_of(&fake),
+            [
+                "issue",
+                "list",
+                "--json",
+                ISSUE_FIELDS,
+                "--limit",
+                "200",
+                "--state",
+                "closed",
+                "--assignee",
+                "@me",
+                "--search",
+                "footer"
+            ]
+        );
+    }
+
+    #[test]
+    fn issue_list_cuts_search_and_ignores_blank() {
+        let fake = Fake::new(vec![out(0, "[]", ""), out(0, "[]", "")]);
+        let long = IssueQuery {
+            search: Some("é".repeat(300)),
+            limit: Some(0),
+            ..IssueQuery::default()
+        };
+        issue_list(&fake, cwd(), &long).unwrap();
+        let a = args_of(&fake);
+        assert_eq!(a[5], "1");
+        assert_eq!(a.last().unwrap().chars().count(), 256);
+        let blank = IssueQuery {
+            search: Some("   ".into()),
+            ..IssueQuery::default()
+        };
+        issue_list(&fake, cwd(), &blank).unwrap();
+        assert!(!fake.calls.borrow()[1].0.contains(&"--search".to_owned()));
+    }
+
+    #[test]
+    fn issue_list_failure_is_classified() {
+        let fake = Fake::new(vec![out(4, "", "run: gh auth login")]);
+        let err = issue_list(&fake, cwd(), &IssueQuery::default()).unwrap_err();
+        assert_eq!(err.code(), "gh_auth");
+        let fake = Fake::new(vec![out(0, "not json", "")]);
+        let err = issue_list(&fake, cwd(), &IssueQuery::default()).unwrap_err();
+        assert_eq!(err.code(), "gh_failed");
+    }
+
+    #[test]
+    fn issue_view_reads_the_fixture() {
+        let fake = Fake::new(vec![out(0, VIEW_FIXTURE, "")]);
+        let d = issue_view(&fake, cwd(), 123).unwrap();
+        assert_eq!(
+            args_of(&fake),
+            [
+                "issue",
+                "view",
+                "123",
+                "--json",
+                "number,url,state,title,labels,assignees,author,updatedAt,body,comments"
+            ]
+        );
+        assert_eq!(d.issue.number, 123);
+        assert!(d.body.starts_with("The meter wraps"));
+        assert_eq!(d.comments.len(), 1);
+        assert_eq!(d.comments[0].author.as_deref(), Some("octocat"));
+        assert_eq!(d.comments[0].body, "Looking at it.");
+        assert_eq!(d.comments[0].created_at, "2026-11-03T10:00:00Z");
+    }
+
+    #[test]
+    fn issue_view_cuts_long_bodies_by_chars() {
+        let body = "é".repeat(ISSUE_BODY_MAX + 10);
+        let json = format!(
+            r#"{{"number":1,"url":"u","state":"OPEN","title":"t","labels":[],"assignees":[],"author":null,"updatedAt":"x","body":"{body}","comments":[{{"author":null,"body":"{body}","createdAt":"y"}}]}}"#
+        );
+        let fake = Fake::new(vec![out(0, &json, "")]);
+        let d = issue_view(&fake, cwd(), 1).unwrap();
+        assert_eq!(d.body.chars().count(), ISSUE_BODY_MAX);
+        assert_eq!(d.comments[0].body.chars().count(), ISSUE_BODY_MAX);
+        assert_eq!(d.comments[0].author, None);
+    }
+
+    #[test]
+    fn issue_view_not_found() {
+        let fake = Fake::new(vec![out(
+            1,
+            "",
+            "GraphQL: Could not resolve to an issue or pull request with the number of 99. (repository.issue)",
+        )]);
+        assert_eq!(
+            issue_view(&fake, cwd(), 99).unwrap_err().code(),
+            "issue_not_found"
+        );
+    }
+
+    #[test]
+    fn repo_name_reads_name_with_owner() {
+        let fake = Fake::new(vec![out(0, r#"{"nameWithOwner":"acme/app"}"#, "")]);
+        assert_eq!(repo_name(&fake, cwd()).unwrap(), "acme/app");
+        assert_eq!(args_of(&fake), ["repo", "view", "--json", "nameWithOwner"]);
+    }
+
+    #[test]
+    fn issue_open_web_runs_view_web() {
+        let fake = Fake::new(vec![out(0, "", "")]);
+        issue_open_web(&fake, cwd(), 12).unwrap();
+        assert_eq!(args_of(&fake), ["issue", "view", "12", "--web"]);
+        let fake = Fake::new(vec![out(1, "", "boom")]);
+        assert_eq!(
+            issue_open_web(&fake, cwd(), 12).unwrap_err().code(),
+            "gh_failed"
+        );
     }
 }
