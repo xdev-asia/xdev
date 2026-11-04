@@ -1,4 +1,4 @@
-import type { Api, ApiError, PtyExit, PtyProfile, SETUP_PROFILE as SetupProfile } from "./api";
+import type { Api, ApiError, PtyExit, PtyInfo, PtyProfile, PtydStatus, SessionInfo, SETUP_PROFILE as SetupProfile } from "./api";
 import type { MockProfiles } from "./mockProfiles";
 import type { MockSetupRun } from "./mockWorkspace";
 
@@ -17,8 +17,29 @@ type PtyApi = Pick<
   | "ptydEnd"
   | "ptydEndAll"
   | "ptydRestart"
+  | "ptydQuitChoice"
   | "onPtydStatus"
 >;
+
+/** A pty the demo's terminal service holds, as a test seeds it. */
+export interface MockHeld {
+  id: string;
+  /** What it printed while no tab was attached; replayed from the attach's `fromSeq`. */
+  output?: string;
+  info?: Partial<PtyInfo>;
+  meta?: SessionInfo["meta"];
+  /** The ring dropped this many bytes from the front. */
+  lost?: number;
+}
+
+export type MockPtyd = {
+  // Moves the demo's terminal service to `status` and fires `ptyd://status`.
+  __ptydSet(status: Partial<PtydStatus> & Pick<PtydStatus, "state">): void;
+  // A pty the service runs with no tab attached, as after a restart of the app.
+  __ptydHold(held: MockHeld): void;
+  // The last `ptydQuitChoice` answer; null when none was given.
+  __quitChoice(): boolean | null;
+};
 
 const PROMPT = "$ ";
 // `SETUP_PROFILE`, not imported: api.ts builds the mock api when it loads.
@@ -40,12 +61,42 @@ export function createMockPty(
   profiles: Pick<MockProfiles, "__launchError" | "__permissions">,
   // The setup script of the worktree at `cwd`, for `SETUP_PROFILE`.
   setupRun: (cwd: string) => Promise<MockSetupRun> = () => reject("hook_none", "setup"),
-): PtyApi {
+): PtyApi & MockPtyd {
   // Like Rust, an exited terminal keeps its slot until `ptyKill`.
   const ptys = new Map<string, { onData: (bytes: Uint8Array) => void; line: string; exited: boolean }>();
   const approved = new Set<PtyProfile>();
   const approvedOnce = new Set<PtyProfile>();
   const exits = new Set<(exit: PtyExit) => void>();
+  // The demo has no terminal service until a test says so: terminals run in the app.
+  let status: PtydStatus = { state: "off", serviceVersion: null, reason: null };
+  const statusListeners = new Set<(s: PtydStatus) => void>();
+  const held = new Map<string, MockHeld & { info: PtyInfo; startedMs: number }>();
+  let quitChoice: boolean | null = null;
+  const serviceUp = () => status.state === "running" || status.state === "old-version";
+  const setStatus = (next: PtydStatus) => {
+    status = next;
+    for (const cb of statusListeners) cb({ ...status });
+  };
+  const shellInfo = (id: string): PtyInfo => ({
+    id,
+    pid: null,
+    program: "sh",
+    agent: false,
+    profile: "shell",
+    permissions: "ask",
+    account: null,
+    hooks: false,
+    cli: null,
+    hookEvents: [],
+  });
+  const end = (id: string) => {
+    held.delete(id);
+    const pty = ptys.get(id);
+    if (pty && !pty.exited) {
+      pty.exited = true;
+      for (const cb of exits) cb({ id, code: null });
+    }
+  };
 
   return {
     async ptySpawn(id, cwd, profileId, account, _cols, _rows, onData, resume) {
@@ -153,19 +204,63 @@ export function createMockPty(
       exits.add(cb);
       return () => exits.delete(cb);
     },
-    // The demo has no terminal service: terminals run in the app.
-    ptyAttach: () => reject("pty_gone"),
+    async ptyAttach(id, fromSeq, onData) {
+      const pty = held.get(id);
+      if (!serviceUp() || !pty) return reject("pty_gone");
+      if (ptys.has(id)) return reject("pty_exists");
+      const bytes = encode(pty.output ?? "");
+      const lost = pty.lost ?? 0;
+      // `fromSeq` counts from the pty's first byte; the ring starts `lost` bytes in.
+      const start = Math.max(fromSeq, lost);
+      const seq = Math.min(start, lost + bytes.length);
+      ptys.set(id, { onData, line: "", exited: false });
+      const replay = bytes.slice(seq - lost);
+      if (replay.length) setTimeout(() => onData(replay), 0);
+      return { info: { ...pty.info, id }, seq, truncated: fromSeq < lost };
+    },
     async ptydStatus() {
-      return { state: "off", serviceVersion: null, reason: null };
+      return { ...status };
     },
     async ptydSessions() {
-      return [];
+      if (!serviceUp()) return [];
+      return [...held.values()].map((p) => ({
+        id: p.id,
+        pid: p.info.pid,
+        program: p.info.program,
+        cwd: p.meta?.worktree ?? "/demo",
+        startedMs: p.startedMs,
+        lastOutputMs: p.startedMs,
+        lastInputMs: p.startedMs,
+        meta: p.meta ?? { tabId: p.id, profile: p.info.profile },
+        attached: ptys.has(p.id),
+        exited: null,
+      }));
     },
-    ptydEnd: () => reject("ptyd_unreachable"),
-    ptydEndAll: () => reject("ptyd_unreachable"),
-    ptydRestart: () => reject("ptyd_unreachable"),
-    async onPtydStatus() {
-      return () => {};
+    async ptydEnd(id) {
+      if (!serviceUp()) return reject("ptyd_unreachable");
+      end(id);
     },
+    async ptydEndAll() {
+      if (!serviceUp()) return reject("ptyd_unreachable");
+      for (const id of [...held.keys()]) end(id);
+    },
+    async ptydRestart() {
+      for (const id of [...held.keys()]) end(id);
+      setStatus({ state: "running", serviceVersion: "demo", reason: null });
+    },
+    async ptydQuitChoice(endAll) {
+      quitChoice = endAll;
+    },
+    async onPtydStatus(cb) {
+      statusListeners.add(cb);
+      return () => statusListeners.delete(cb);
+    },
+    __ptydSet(next) {
+      setStatus({ serviceVersion: null, reason: null, ...next });
+    },
+    __ptydHold(h) {
+      held.set(h.id, { ...h, info: { ...shellInfo(h.id), ...h.info }, startedMs: Date.now() });
+    },
+    __quitChoice: () => quitChoice,
   };
 }
