@@ -91,6 +91,8 @@ interface ClosedTab {
 
 /** How many closed tabs `reopenClosed` can give back. */
 export const CLOSED_KEPT = 10;
+/** How many tabs of a worktree the focus order remembers. */
+const RECENT_KEPT = 50;
 
 /**
  * The terminal tabs of every worktree, alive for the whole app. Views read it through
@@ -100,6 +102,7 @@ export class Sessions {
   private readonly entries = new Map<string, Entry>();
   private readonly cache = new Map<string, Tab[]>();
   private readonly layouts = new Map<string, PaneLayout>();
+  private readonly recent = new Map<string, string[]>();
   private readonly listeners = new Set<() => void>();
   private readonly waiting = new Map<string, () => void>();
   // Tabs being closed with their worktree: their exits are no news.
@@ -367,6 +370,18 @@ export class Sessions {
   /** The pane layout of a worktree's tabs; the same object until it changes. `null` when it has none. */
   layout(worktree: string): PaneLayout | null {
     return this.layouts.get(worktree) ?? null;
+  }
+
+  /** Tab ids of a worktree, the one focused last first; they may include tabs that have since closed. */
+  recentTabs(worktree: string): readonly string[] {
+    return this.recent.get(worktree) ?? [];
+  }
+
+  /** `id` came to the front of the focused pane. Nobody is told: only Ctrl+Tab reads the list. */
+  noteFocused(worktree: string, id: string): void {
+    const list = this.recent.get(worktree) ?? [];
+    if (list[0] === id) return;
+    this.recent.set(worktree, [id, ...list.filter((t) => t !== id)].slice(0, RECENT_KEPT));
   }
 
   /** Sets or clears a worktree's layout. Tell nobody when nothing changed. */

@@ -1,6 +1,7 @@
 import type { Api, DiffSettings, EditorSettings, KeySettings, NavigationSettings, SettingsChanged, SettingsSection, TerminalSettings, UiSettings } from "./api";
 import { clampEditorSettings, EDITOR_DEFAULTS } from "./files/editorDefaults";
 import { KEY_SETTINGS_DEFAULTS } from "./keys/bindingsStore";
+import { DIFF_DEFAULTS, NAVIGATION_DEFAULTS } from "./settings/generalDefaults";
 import { clampTerminalSettings, TERMINAL_DEFAULTS } from "./settings/terminalDefaults";
 
 /** Called by a mock's settings write, the way Rust emits `settings://changed`. */
@@ -28,21 +29,7 @@ export { KEY_SETTINGS_DEFAULTS };
 export const UI_SETTINGS_DEFAULTS: UiSettings = { zoom: 1, restore: "all" };
 export const ZOOM_LIMITS = { min: 0.5, max: 2 } as const;
 
-/** `NavigationSettings::default()` in Rust. */
-export const NAVIGATION_DEFAULTS: NavigationSettings = {
-  tabOrder: "mru",
-  confirmClosePinned: true,
-  confirmCloseRunning: true,
-  askBeforeDeleteWorktree: true,
-};
-/** `DiffSettings::default()` in Rust. */
-export const DIFF_DEFAULTS: DiffSettings = {
-  defaultView: "inline",
-  ignoreWhitespace: false,
-  collapseUnchanged: true,
-  wordWrap: false,
-  fileTree: false,
-};
+export { DIFF_DEFAULTS, NAVIGATION_DEFAULTS };
 
 export type SettingsHub = { emit: SettingsEmit; onSettingsChanged: Api["onSettingsChanged"] };
 

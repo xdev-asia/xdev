@@ -8,6 +8,7 @@ import { saveFile } from "@/files/fileIO";
 import { UnsavedDialog } from "@/files/UnsavedDialog";
 import { useI18n } from "@/i18n";
 import { useKeymap } from "@/keys/keymap";
+import { useNavigationSettings } from "@/settings/navigationSettings";
 import { buildSections } from "@/quickCommands/model";
 import { QuickCommandsControl } from "@/quickCommands/QuickCommandsControl";
 import { runWithToast } from "@/quickCommands/runUi";
@@ -42,7 +43,7 @@ import { bodyStyle, PaneView, paneRects } from "./PaneView";
 import { cliOf, type Sessions, type Tab, type TabCli } from "./sessions";
 import type { SetupGate } from "./setupGate";
 import { TabStrip, type MenuGroup, type StripItem } from "./TabStrip";
-import { cycleTab, nthTab } from "./tabNav";
+import { cycleTab, mruOrder, nthTab } from "./tabNav";
 import { TabTitleDialog } from "./TabTitleDialog";
 import { titleStatus } from "./titles";
 
@@ -60,6 +61,9 @@ type Leaf = Extract<PaneNode, { kind: "leaf" }>;
 
 /** A file to show in the review tab; a new `seq` asks for it again. */
 export type Reveal = { file: string; seq: number };
+
+// Ctrl+Tab keeps walking the same list until the focus has rested this long (R4).
+export const MRU_SETTLE_MS = 600;
 
 /**
  * The terminal tabs of one worktree, laid out as a tree of panes. Every terminal stays mounted while
@@ -96,6 +100,9 @@ export function WorktreeTabs(props: {
 }): JSX.Element {
   const { api, sessions, worktree, visible, reveal } = props;
   const { t } = useI18n();
+  const navigation = useNavigationSettings();
+  // A Ctrl+Tab walk in progress: the frozen MRU list and where in it the focus is.
+  const [walk] = useState(() => ({ current: null as { list: string[]; at: number; timer: ReturnType<typeof setTimeout> } | null }));
   // The pane whose `+` menu is open.
   const [menuPane, setMenuPane] = useState<string | null>(null);
   // Tabs a key asked to close while an agent runs in one of them; null when nothing waits.
@@ -161,6 +168,12 @@ export function WorktreeTabs(props: {
   const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB && !isFileTab(id)).join(" ");
   const { onShown, onPanes, front } = props;
   useEffect(() => onShown?.(shown), [shown]);
+  // The focus order for MRU; a walk records only where it ends, not the tabs it passed (R4).
+  const [shownNow] = useState(() => ({ current: shown }));
+  shownNow.current = shown;
+  useEffect(() => {
+    if (shown && !walk.current) sessions.noteFocused(worktree, shown);
+  }, [shown, sessions, worktree]);
   useEffect(() => onPanes?.(paneKey ? paneKey.split(" ") : []), [paneKey]);
 
   // The shell asks for a tab to come to the front, and a reveal for the review tab to.
@@ -281,8 +294,28 @@ export function WorktreeTabs(props: {
   }
 
   function stepTab(step: 1 | -1): boolean {
-    const to = cycleTab(focusedLeaf?.tabs ?? [], shown, step);
+    const strip = focusedLeaf?.tabs ?? [];
+    if (navigation.tabOrder !== "mru") {
+      const to = cycleTab(strip, shown, step);
+      if (to === null || to === shown) return false;
+      go(to);
+      return true;
+    }
+    // MRU: the list is taken when the walk starts and kept until the focus settles.
+    const held = walk.current;
+    const list = held?.list ?? mruOrder(strip, sessions.recentTabs(worktree));
+    const from = held ? held.at : shown === null ? -1 : list.indexOf(shown);
+    const to = cycleTab(list, from < 0 ? null : list[from], step);
     if (to === null || to === shown) return false;
+    clearTimeout(held?.timer);
+    walk.current = {
+      list,
+      at: list.indexOf(to),
+      timer: setTimeout(() => {
+        walk.current = null;
+        if (shownNow.current) sessions.noteFocused(worktree, shownNow.current);
+      }, MRU_SETTLE_MS),
+    };
     go(to);
     return true;
   }

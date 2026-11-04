@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import { toApiError, type ApiError, type DiffSettings, type NavigationSettings } from "@/api";
 import { useI18n } from "@/i18n";
 import { clampZoom, getZoom, stepZoom, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from "@/ui/zoom";
+import { setNavigationSettings } from "./navigationSettings";
 import { RestoreSetting } from "./RestoreSetting";
 import type { SettingsSectionProps } from "./sections";
 
@@ -44,7 +45,12 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
     }
   }
   const patchNavigation = (change: Partial<NavigationSettings>) =>
-    navigation && write(async () => setNavigation(await api.navigationSettingsPut({ ...navigation, ...change })));
+    navigation && write(async () => {
+      const stored = await api.navigationSettingsPut({ ...navigation, ...change });
+      setNavigation(stored);
+      // The open tab strips read the shared copy, so the change applies without a reload.
+      setNavigationSettings(stored);
+    });
   const patchDiff = (change: Partial<DiffSettings>) =>
     diff && write(async () => setDiff(await api.diffSettingsPut({ ...diff, ...change })));
   // A step from the level the window shows; `0` resets to 100 %.
