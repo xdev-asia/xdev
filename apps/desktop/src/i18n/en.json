@@ -1890,5 +1890,13 @@
   "review.opt.saveDefault": "Save as default",
   "panes.closePinned.title": "Close a pinned tab?",
   "panes.closePinned.body": "A pinned tab is one you wanted to keep. Closing it ends its terminal.",
-  "panes.closePinned.confirm": "Close"
+  "panes.closePinned.confirm": "Close",
+  "cli.ask": "{who} wants to {verb} {target}.",
+  "cli.ask.set": "change the details of",
+  "cli.ask.create": "make a worktree under",
+  "cli.ask.external": "A script outside xDev",
+  "cli.ask.allow": "Allow",
+  "cli.ask.deny": "Deny",
+  "cli.mark": "by CLI",
+  "cli.mark.title": "Changed by the xdev CLI {ago}"
 }

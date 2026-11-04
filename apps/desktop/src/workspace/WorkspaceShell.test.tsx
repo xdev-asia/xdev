@@ -1345,3 +1345,20 @@ it("a second Start worktree on the same issue takes the -2 name", async () => {
   await settle();
   expect(view.list().props.selected).toBe("/demo/wt/xdev-1-footer-meter-overflows-2");
 });
+
+it("reports its tabs to the app CLI and follows the endpoint's events", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  const { sessions, tab } = attend(view);
+  await vi.waitFor(() => expect(api.__cliReports().at(-1)?.tabs.map((t) => t.id)).toContain(tab.id));
+  // A registry change from the CLI loads the sidebar again.
+  const list = vi.spyOn(api, "workspaceSidebar");
+  api.__cliWorkspaceChanged();
+  await settle();
+  expect(list).toHaveBeenCalledTimes(1);
+  // `--agent` opens the profile in that worktree, not in front.
+  const before = sessions.tabs(OAK).length;
+  api.__cliOpenTab({ worktree: OAK, profile: "claude", prompt: null });
+  await vi.waitFor(() => expect(sessions.tabs(OAK)).toHaveLength(before + 1));
+  expect(sessions.tabs(OAK).at(-1)?.profileId).toBe("claude");
+});
