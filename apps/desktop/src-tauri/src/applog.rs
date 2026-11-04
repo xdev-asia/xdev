@@ -122,7 +122,7 @@ impl Rotating {
 
 static LOG: OnceLock<Rotating> = OnceLock::new();
 
-fn home_dir() -> Option<PathBuf> {
+pub(crate) fn home_dir() -> Option<PathBuf> {
     std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
         .map(PathBuf::from)

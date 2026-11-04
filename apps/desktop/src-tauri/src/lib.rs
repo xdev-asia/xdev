@@ -12,6 +12,7 @@ mod cli_path;
 mod cli_verbs;
 mod clipboard;
 mod commands;
+mod crash;
 mod endpoint;
 mod file_watch;
 mod files;
