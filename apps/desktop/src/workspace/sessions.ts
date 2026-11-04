@@ -351,7 +351,7 @@ export class Sessions {
   restart(id: string): Tab | null {
     const old = this.entries.get(id);
     if (!old) return null;
-    return this.replace(old, old.tab.account, old.tab.resumeOf, old.tab.agentSession);
+    return this.replace(old, ownAccount(old.tab), old.tab.resumeOf, old.tab.agentSession);
   }
 
   /**

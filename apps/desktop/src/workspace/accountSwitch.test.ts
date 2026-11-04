@@ -95,6 +95,12 @@ describe("Sessions keep the account source", () => {
     expect(next).toMatchObject({ account: "claude-2", accountSource: "tab" });
   });
 
+  it("restart of a tab that follows the active account starts with no override", async () => {
+    const api = createMockApi({});
+    const { live, tab: t } = await started(api);
+    expect(live.restart(t.id)).toMatchObject({ account: null, accountSource: "active" });
+  });
+
   it("restart keeps a tab's own account as its own", async () => {
     const api = createMockApi({});
     const { live, tab: t } = await started(api, { account: "claude-3", source: "tab" });
