@@ -50,3 +50,16 @@ fn the_old_subcommands_still_run_without_the_app() {
     let out = xdev(dir.path(), &["agent", "hooks", "status"]);
     assert_ne!(out.status.code(), Some(3), "{out:?}");
 }
+
+#[test]
+fn each_app_verb_has_its_own_help() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = xdev(dir.path(), &["status", "--help"]);
+    let help = String::from_utf8_lossy(&out.stdout);
+    assert!(help.starts_with("The running app"), "{help}");
+    assert!(!help.contains("agent CLI's hook"), "{help}");
+    let out = xdev(dir.path(), &["--help"]);
+    let help = String::from_utf8_lossy(&out.stdout);
+    assert!(!help.contains("agent CLI's hook"), "{help}");
+    assert!(help.contains("The running app"), "{help}");
+}

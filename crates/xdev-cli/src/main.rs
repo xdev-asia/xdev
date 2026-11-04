@@ -104,8 +104,6 @@ enum Command {
         #[command(subcommand)]
         command: agent::AgentCommand,
     },
-    /// Run by an agent CLI's hook: records the event for the xDev pane in
-    /// `XDEV_PTY_ID`. Always exits 0 and prints nothing to stdout.
     /// The running app: version, worktree in front, tab counts. Exit 3
     /// when xDev is not running.
     Status(app::StatusArgs),
@@ -119,6 +117,8 @@ enum Command {
         #[command(subcommand)]
         command: app::TerminalCommand,
     },
+    /// Run by an agent CLI's hook: records the event for the xDev pane in
+    /// `XDEV_PTY_ID`. Always exits 0 and prints nothing to stdout.
     #[command(name = "agent-hook", hide = true)]
     AgentHook {
         event: agent_hook::Event,
