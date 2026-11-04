@@ -2,7 +2,7 @@ import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
 import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
-import type { Api, ApiError, Check, Commit, DirEntry, DirListing, FileCommand, FileCommands, GitSettings, HookKind, HookScript, RepoHooks, RepoView, ReviewNote, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, Check, Commit, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 type WorkspaceApi = Pick<
@@ -24,6 +24,18 @@ type WorkspaceApi = Pick<
   | "worktreeCreate"
   | "worktreePin"
   | "worktreeRemove"
+  | "worktreeArchive"
+  | "worktreeDetails"
+  | "worktreeRestore"
+  | "keptKeep"
+  | "branchDelete"
+  | "workspaceSidebar"
+  | "sidebarOrder"
+  | "groupPut"
+  | "groupRemove"
+  | "groupMove"
+  | "folderAdd"
+  | "folderForget"
   | "worktreeChanges"
   | "worktreeFileDiff"
   | "worktreeCommit"
@@ -78,7 +90,18 @@ export type MockWorkspaceSeed = {
   git?: Partial<GitSettings>;
   // `xdev.toml` by worktree path; a worktree without one falls back to its repo's primary path.
   repoFiles?: Record<string, MockRepoFile>;
+  // Branches kept after an archive or delete, plain folders, groups and the top-level order.
+  kept?: KeptBranch[];
+  folders?: FolderEntry[];
+  groups?: RepoGroup[];
+  order?: string[];
 };
+
+// `ARCHIVE_DAYS` in Rust: archived entries show under Archived this long.
+const ARCHIVE_MS = 7 * 86_400_000;
+// `TITLE_MAX` and `COMMENT_MAX` in Rust.
+const TITLE_MAX = 120;
+const COMMENT_MAX = 2000;
 
 // A worktree's `xdev.toml` and what its scripts do when run; nothing is executed.
 export type MockRepoFile = {
@@ -259,6 +282,49 @@ export function createMockWorkspace(
   const shared: string[] = [...(seed.vaults ?? [])];
   let git: GitSettings = { ...DEFAULT_GIT_SETTINGS, ...seed.git };
   const userName = seed.gitUserName ?? null;
+  let kept: KeptBranch[] = structuredClone(seed.kept ?? []);
+  let folders: FolderEntry[] = structuredClone(seed.folders ?? []);
+  let groups: RepoGroup[] = structuredClone(seed.groups ?? []);
+  let order: string[] = [...(seed.order ?? [])];
+  let groupSeq = 0;
+
+  // Like `top_ids` in Rust: `order` first, then repos, folders and groups in the order added;
+  // group members are not top-level.
+  function topIds(): string[] {
+    const grouped = new Set(groups.flatMap((g) => g.members));
+    const known = new Set([...repos.map((r) => r.id), ...folders.map((f) => f.id)].filter((id) => !grouped.has(id)));
+    for (const g of groups) known.add(g.id);
+    const ids: string[] = [];
+    for (const id of [...order, ...repos.map((r) => r.id), ...folders.map((f) => f.id), ...groups.map((g) => g.id)]) {
+      if (known.has(id) && !ids.includes(id)) ids.push(id);
+    }
+    return ids;
+  }
+
+  function forgetId(id: string) {
+    for (const g of groups) g.members = g.members.filter((m) => m !== id);
+    order = order.filter((i) => i !== id);
+  }
+
+  function keep(repo: RepoView, wt: WorktreeView, reason: KeptReason) {
+    if (wt.branch === null) return null;
+    const entry: KeptBranch = { repoId: repo.id, branch: wt.branch, path: wt.path, keptMs: Date.now(), reason, title: wt.title, comment: wt.comment, status: wt.status, item: wt.item };
+    kept = [...kept.filter((k) => !(k.repoId === repo.id && k.branch === wt.branch)), entry];
+    return structuredClone(entry);
+  }
+
+  // Like `leaving` and `drop_folder` in Rust: the gate, the checks, then the folder goes.
+  function leave(path: string, force: boolean, confirmed: boolean): Promise<{ repo: RepoView; wt: WorktreeView }> {
+    if (!confirmed) return reject("needs_approval", `remove ${path}`);
+    const found = findWorktree(path);
+    if (!found) return reject("worktree_unknown", path);
+    if (found.wt.primary) return reject("primary_worktree", path);
+    if (!force && (changes.get(path)?.length ?? 0) > 0) return reject("worktree_dirty", path);
+    found.repo.worktrees = found.repo.worktrees.filter((w) => w !== found.wt);
+    for (const w of found.repo.worktrees) if (w.parent === path) w.parent = null;
+    changes.delete(path);
+    return Promise.resolve(found);
+  }
 
   function repoVault(repo: RepoView): VaultView {
     return { id: `repo:${repo.id}`, kind: "repo", path: `${repo.path}/docs`, name: repo.shortName, repoId: repo.id, exists: docs.has(repo.id) };
@@ -440,6 +506,8 @@ export function createMockWorkspace(
       if (i < 0) return reject("repo_unknown", id);
       for (const wt of repos[i].worktrees) changes.delete(wt.path);
       repos.splice(i, 1);
+      kept = kept.filter((k) => k.repoId !== id);
+      forgetId(id);
     },
     async repoUpdate(id, patch) {
       const repo = repos.find((r) => r.id === id);
@@ -579,14 +647,138 @@ export function createMockWorkspace(
       if (!found || found.wt.primary) return reject("worktree_unknown", path);
       found.wt.pinned = pinned;
     },
+    // The mock has no commits of its own on a branch, so a branch made by the app counts as
+    // merged and goes; an imported one (made by hand) is kept.
     async worktreeRemove(path, force, confirmed) {
-      if (!confirmed) return reject("needs_approval", `remove ${path}`);
+      const wasDetached = findWorktree(path)?.wt.detached ?? true;
+      const { repo, wt } = await leave(path, force, confirmed);
+      if (wasDetached || wt.branch === null) return { deletedBranch: null, kept: null };
+      if (force || wt.madeBy === "app") return { deletedBranch: wt.branch, kept: null };
+      return { deletedBranch: null, kept: keep(repo, wt, "deleted") };
+    },
+    async worktreeArchive(path, force, confirmed) {
+      const found = findWorktree(path);
+      if (confirmed && found && !found.wt.primary && (found.wt.detached || found.wt.branch === null) && !force) return reject("detached", path);
+      const { repo, wt } = await leave(path, force, confirmed);
+      return { deletedBranch: null, kept: wt.detached ? null : keep(repo, wt, "archived") };
+    },
+    async worktreeDetails(path, patch) {
       const found = findWorktree(path);
       if (!found) return reject("worktree_unknown", path);
       if (found.wt.primary) return reject("primary_worktree", path);
-      if (!force && (changes.get(path)?.length ?? 0) > 0) return reject("worktree_dirty", path);
-      found.repo.worktrees = found.repo.worktrees.filter((w) => w !== found.wt);
-      changes.delete(path);
+      const title = patch.title === undefined ? found.wt.title : patch.title?.trim() || null;
+      const comment = patch.comment ?? found.wt.comment;
+      if ([...(title ?? "")].length > TITLE_MAX || [...comment].length > COMMENT_MAX) return reject("bad_details", path);
+      if (patch.item) {
+        if (!/^https?:\/\/\S+$/.test(patch.item.url)) return reject("bad_item", patch.item.url);
+      }
+      if (patch.parent !== undefined && patch.parent !== null) {
+        const parent = found.repo.worktrees.find((w) => w.path === patch.parent);
+        const hasChildren = found.repo.worktrees.some((w) => w.parent === path);
+        if (!parent || parent.primary || parent === found.wt || parent.parent !== null || hasChildren) return reject("bad_parent", patch.parent);
+      }
+      found.wt.title = title;
+      found.wt.comment = comment;
+      if (patch.status !== undefined) found.wt.status = patch.status;
+      if (patch.parent !== undefined) found.wt.parent = patch.parent;
+      if (patch.item !== undefined) found.wt.item = structuredClone(patch.item);
+    },
+    async worktreeRestore(repoId, branch) {
+      const entry = kept.find((k) => k.repoId === repoId && k.branch === branch);
+      const repo = repos.find((r) => r.id === repoId);
+      if (!entry || !repo) return reject("kept_unknown", `${repoId} ${branch}`);
+      const taken = (p: string) => repos.some((r) => r.worktrees.some((w) => w.path === p));
+      let path = entry.path;
+      for (let n = 2; taken(path); n++) path = `${entry.path}-${n}`;
+      const wt: WorktreeView = { ...worktree(path, path.split("/").pop() ?? branch, branch, false), title: entry.title, comment: entry.comment, status: entry.status, item: entry.item };
+      repo.worktrees.push(wt);
+      kept = kept.filter((k) => k !== entry);
+      return structuredClone(wt);
+    },
+    async keptKeep(repoId, branch) {
+      if (!kept.some((k) => k.repoId === repoId && k.branch === branch)) return reject("kept_unknown", `${repoId} ${branch}`);
+      kept = kept.filter((k) => !(k.repoId === repoId && k.branch === branch));
+    },
+    async branchDelete(repoId, branch, confirmed) {
+      if (!repos.some((r) => r.id === repoId)) return reject("repo_unknown", repoId);
+      if (!kept.some((k) => k.repoId === repoId && k.branch === branch)) return reject("kept_unknown", `${repoId} ${branch}`);
+      if (!confirmed) return reject("needs_approval", `delete branch ${branch}`);
+      kept = kept.filter((k) => !(k.repoId === repoId && k.branch === branch));
+    },
+    async workspaceSidebar() {
+      const now = Date.now();
+      const item = (id: string): SidebarItem | null => {
+        const repo = repos.find((r) => r.id === id);
+        if (repo) {
+          const views = kept
+            .filter((k) => k.repoId === id)
+            .sort((a, b) => a.keptMs - b.keptMs)
+            .map((entry) => ({ entry: structuredClone(entry), ahead: 0, archivedShown: entry.reason === "archived" && now - entry.keptMs < ARCHIVE_MS }));
+          return { kind: "repo", repo: structuredClone(repo), kept: views };
+        }
+        const folder = folders.find((f) => f.id === id);
+        return folder ? { kind: "folder", folder: structuredClone(folder) } : null;
+      };
+      return topIds().flatMap((id): SidebarItem[] => {
+        const group = groups.find((g) => g.id === id);
+        if (group) return [{ kind: "group", group: structuredClone(group), items: group.members.flatMap((m) => item(m) ?? []) }];
+        const one = item(id);
+        return one ? [one] : [];
+      });
+    },
+    async sidebarOrder(ids) {
+      order = [...ids];
+      order = topIds();
+    },
+    async groupPut(id, name) {
+      const trimmed = name.trim();
+      if (trimmed === "") return reject("bad_name", name);
+      if (id !== null) {
+        const group = groups.find((g) => g.id === id);
+        if (!group) return reject("group_unknown", id);
+        group.name = trimmed;
+        return id;
+      }
+      const newId = `group-${++groupSeq}`;
+      order = [...topIds(), newId];
+      groups.push({ id: newId, name: trimmed, members: [] });
+      return newId;
+    },
+    async groupRemove(id) {
+      const group = groups.find((g) => g.id === id);
+      if (!group) return reject("group_unknown", id);
+      const top = topIds();
+      const at = top.indexOf(id);
+      top.splice(at, 1, ...group.members);
+      groups = groups.filter((g) => g !== group);
+      order = top;
+      order = topIds();
+    },
+    async groupMove(member, group, index) {
+      if (!repos.some((r) => r.id === member) && !folders.some((f) => f.id === member)) return reject("repo_unknown", member);
+      const target = group === null ? null : groups.find((g) => g.id === group);
+      if (target === undefined) return reject("group_unknown", group ?? "");
+      const top = topIds().filter((i) => i !== member);
+      for (const g of groups) g.members = g.members.filter((m) => m !== member);
+      if (target) target.members.splice(Math.min(index, target.members.length), 0, member);
+      else top.splice(Math.min(index, top.length), 0, member);
+      order = top;
+      order = topIds();
+    },
+    async folderAdd(path) {
+      const root = path.trim().replace(/[\/]+$/, "");
+      if (root === "") return reject("not_found", path);
+      const taken = repos.some((r) => r.path === root || r.worktrees.some((w) => w.path === root)) || folders.some((f) => f.path === root);
+      if (taken) return reject("folder_exists", root);
+      const folder: FolderEntry = { id: `folder-${mockHash(root)}`, path: root, name: folderName(root) };
+      order = [...topIds(), folder.id];
+      folders.push(folder);
+      return structuredClone(folder);
+    },
+    async folderForget(id) {
+      if (!folders.some((f) => f.id === id)) return reject("folder_unknown", id);
+      folders = folders.filter((f) => f.id !== id);
+      forgetId(id);
     },
     async worktreeChanges(path) {
       const found = findWorktree(path);

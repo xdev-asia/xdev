@@ -261,6 +261,7 @@ pub fn forget_repo(reg: &mut Registry, id: &str) -> Result<(), WorkspaceError> {
     reg.repos.retain(|r| r.id != id);
     reg.worktrees.retain(|m| m.repo_id != id);
     reg.kept.retain(|k| k.repo_id != id);
+    crate::groups::forget_id(reg, id);
     Ok(())
 }
 

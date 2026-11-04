@@ -1,6 +1,7 @@
 //! The desktop app's list of repos and the worktrees made from them.
 
 mod files;
+mod groups;
 mod hooks;
 mod kept;
 mod names;
@@ -17,6 +18,10 @@ use xdev_git::GitError;
 pub use files::{
     Eol, FileKind, FileText, OsTrash, READ_MAX, Trash, WriteOutcome, create_entry, entry_path,
     read_file, rename_entry, trash_entry, trash_entry_with, write_file,
+};
+pub use groups::{
+    FolderEntry, RepoGroup, SidebarItem, folder_add, folder_forget, group_move, group_put,
+    group_remove, set_order, sidebar,
 };
 pub use hooks::{
     FILE_NAME, HookKind, HookRun, HookScript, RepoHooks, TRUST_FILE, detect_setup, hook_env,
@@ -110,6 +115,13 @@ pub enum WorkspaceError {
     Detached(PathBuf),
     #[error("no kept branch {branch} in repo {repo_id}")]
     KeptUnknown { repo_id: String, branch: String },
+    #[error("unknown group: {0}")]
+    GroupUnknown(String),
+    #[error("unknown folder: {0}")]
+    FolderUnknown(String),
+    /// Already listed as a folder, a repo or a worktree.
+    #[error("folder already listed: {0}")]
+    FolderExists(String),
 }
 
 impl WorkspaceError {
@@ -143,6 +155,9 @@ impl WorkspaceError {
             WorkspaceError::BadItem(_) => "bad_item",
             WorkspaceError::Detached(_) => "detached",
             WorkspaceError::KeptUnknown { .. } => "kept_unknown",
+            WorkspaceError::GroupUnknown(_) => "group_unknown",
+            WorkspaceError::FolderUnknown(_) => "folder_unknown",
+            WorkspaceError::FolderExists(_) => "folder_exists",
         }
     }
 }
