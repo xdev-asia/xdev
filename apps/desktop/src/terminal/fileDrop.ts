@@ -6,7 +6,7 @@ export type DropEvent = {
   position?: { x: number; y: number };
 };
 
-type DropTarget = { write(data: string): Promise<void>; ready(): boolean; focus(): void; shell(): ShellKind };
+type DropTarget = { write(data: string): Promise<void>; ready(): boolean; focus(): void; shell(): ShellKind; bracketed(): boolean };
 
 const DROP_CLASS = "terminal-drop";
 
@@ -61,7 +61,7 @@ export function startFileDrop(deps: {
     if (e.type !== "drop") return mark(pane?.[0] ?? null);
     mark(null);
     if (!pane || !e.paths?.length || !pane[1].ready()) return;
-    const { payloads, rejected } = dropPayloads(e.paths, pane[1].shell());
+    const { payloads, rejected } = dropPayloads(e.paths, pane[1].shell(), pane[1].bracketed());
     if (rejected > 0) deps.onRejected(rejected);
     try {
       for (const data of payloads) await pane[1].write(data);

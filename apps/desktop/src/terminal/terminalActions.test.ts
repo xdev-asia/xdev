@@ -11,6 +11,7 @@ function fakeTerm(over: Partial<XTermLike> = {}, buffer: string[] = []) {
     getSelection: vi.fn(() => selection),
     hasSelection: vi.fn(() => selection.length > 0),
     paste: vi.fn(),
+    modes: { bracketedPasteMode: true },
     selectAll: vi.fn(),
     clear: vi.fn(),
     reset: vi.fn(),

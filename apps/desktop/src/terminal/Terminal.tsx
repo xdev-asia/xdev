@@ -114,6 +114,7 @@ export function Terminal(props: {
       client: () => clientRef.current,
       find: () => openFindRef.current(),
       saveImage: () => handlers.current.api.clipboardImageSave(),
+      shell: () => shellKind.current,
       pasted: (result) => reportPasteRef.current(result),
     }),
   );
@@ -248,6 +249,8 @@ export function Terminal(props: {
           saveImage: () => handlers.current.api.clipboardImageSave(),
           pasteText: (text) => client.input(text),
           writeRaw: (data) => client.input(data),
+          shell: () => shellKind.current,
+          bracketedMode: () => term.modes.bracketedPasteMode,
         }).then((result) => reportPasteRef.current(result), () => {});
         return;
       }
@@ -334,6 +337,7 @@ export function Terminal(props: {
       ready: () => client.spawned,
       focus: () => term.focus(),
       shell: () => shellKind.current,
+      bracketed: () => term.modes.bracketedPasteMode,
     });
 
     return () => {
