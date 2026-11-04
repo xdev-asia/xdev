@@ -7,6 +7,7 @@ import { TokenTable } from "@/kit/UsageTab";
 import { UsageChart } from "@/kit/UsageChart";
 import { rangeDays, type UsageRange } from "@/kit/usageRange";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
+import { CACHE_TTL_LONG_MS, CACHE_TTL_SHORT_MS } from "./usageDefaults";
 import type { SettingsSectionProps } from "./sections";
 import { setUsageSettings } from "./usageSettings";
 
@@ -18,6 +19,8 @@ const AGENTS: Agent[] = ["claude", "codex"];
 export const DISPLAYS: UsageDisplay[] = ["used", "remaining"];
 // Catalog ids of the page's settings, per group; a switch adds its provider (`usage.footer.claude`).
 const FOOTER_IDS = ["usage.display", ...AGENTS.map((a) => `usage.footer.${a}`)];
+const CACHE_IDS = ["usage.cacheTimer", "usage.cacheTtl"];
+export const CACHE_TTLS = [CACHE_TTL_SHORT_MS, CACHE_TTL_LONG_MS] as const;
 const SCAN_IDS = AGENTS.map((a) => `usage.scan.${a}`);
 
 /** Settings → Stats & Usage: what the agents on this machine spent, from their local logs. */
@@ -279,6 +282,29 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
             <ul className="settings-list">
               {AGENTS.map((a) => settingShown(filter, `usage.scan.${a}`) && sw(`usage.scan.${a}`, t(`settings.usage.scan.${a}`), settings.scan[a], () => void flip("scan", a), t("settings.usage.scanHint")))}
             </ul>
+          </SettingGroup>
+          <SettingGroup ids={CACHE_IDS} filter={filter}>
+            <h4 className="settings-group">{t("settings.usage.cacheGroup")}</h4>
+            <ul className="settings-list">
+              {settingShown(filter, "usage.cacheTimer") &&
+                sw("usage.cacheTimer", t("settings.usage.cacheTimer"), settings.cacheTimer, () => void patch({ cacheTimer: !settings.cacheTimer }), t("settings.usage.cacheTimerHint"))}
+            </ul>
+            {settings.cacheTimer && (
+              <SettingRow id="usage.cacheTtl" filter={filter}>
+                <div className="ws-fields">
+                  <div className="ws-field" role="radiogroup" aria-label={t("settings.usage.cacheTtl")}>
+                    <span>{t("settings.usage.cacheTtl")}</span>
+                    <div className="segmented">
+                      {CACHE_TTLS.map((ms) => (
+                        <button key={ms} type="button" role="radio" data-cache-ttl={ms} aria-checked={settings.cacheTtlMs === ms} onClick={() => void patch({ cacheTtlMs: ms })}>
+                          {t(ms === CACHE_TTL_LONG_MS ? "settings.usage.cacheTtl.long" : "settings.usage.cacheTtl.short")}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </SettingRow>
+            )}
           </SettingGroup>
         </>
       )}

@@ -1927,5 +1927,14 @@
   "settings.usage.scan.codex": "Đọc log Codex",
   "settings.usage.scanHint": "Thống kê đọc log phiên trên máy này. Tắt cho đến khi bạn bật.",
   "usage.stats.used": "đã dùng",
-  "usage.stats.left": "còn lại"
+  "usage.stats.left": "còn lại",
+  "usage.cacheTimer.title": "Prompt cache: còn {time}",
+  "usage.cacheTimer.cold": "nguội",
+  "usage.cacheTimer.coldTitle": "Prompt cache có thể đã hết hạn; lượt sau sẽ gửi lại toàn bộ prompt.",
+  "settings.usage.cacheGroup": "Prompt cache",
+  "settings.usage.cacheTimer": "Đồng hồ cache trên tab Claude",
+  "settings.usage.cacheTimerHint": "Đếm ngược từ lúc tab Claude chuyển sang xong hoặc rảnh. Chỉ là gợi ý, không phải trạng thái cache thật của agent.",
+  "settings.usage.cacheTtl": "Thời hạn cache",
+  "settings.usage.cacheTtl.short": "5 phút",
+  "settings.usage.cacheTtl.long": "1 giờ"
 }

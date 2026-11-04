@@ -158,3 +158,18 @@ it("a search for remaining or con lai finds the display row", () => {
     expect(runSearch(q, t, (s) => s).ids.has("usage.display"), q).toBe(true);
   }
 });
+
+it("the cache timer switch stores its flag, and the lifetime row shows only while it is on", async () => {
+  const { api, m } = await open();
+  const ttl = (all: Node[]) => all.filter((n) => n.props["data-cache-ttl"] !== undefined);
+  expect(ttl(m.all())).toHaveLength(0);
+  toggle(m.all(), "usage.cacheTimer").props.onClick();
+  await tick();
+  await m.settle();
+  expect((await api.usageSettings()).cacheTimer).toBe(true);
+  expect(ttl(m.all())).toHaveLength(2);
+  ttl(m.all()).find((n) => n.props["data-cache-ttl"] === 3_600_000)!.props.onClick();
+  await tick();
+  expect((await api.usageSettings()).cacheTtlMs).toBe(3_600_000);
+  expect(getUsageSettings().cacheTtlMs).toBe(3_600_000);
+});

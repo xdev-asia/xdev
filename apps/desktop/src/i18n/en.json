@@ -1927,5 +1927,14 @@
   "settings.usage.scan.codex": "Read Codex logs",
   "settings.usage.scanHint": "Stats read the session logs on this machine. Off until you turn it on.",
   "usage.stats.used": "used",
-  "usage.stats.left": "left"
+  "usage.stats.left": "left",
+  "usage.cacheTimer.title": "Prompt cache: {time} left",
+  "usage.cacheTimer.cold": "cold",
+  "usage.cacheTimer.coldTitle": "The prompt cache has likely expired; the next turn sends the full prompt again.",
+  "settings.usage.cacheGroup": "Prompt cache",
+  "settings.usage.cacheTimer": "Cache timer on Claude tabs",
+  "settings.usage.cacheTimerHint": "Counts down from the moment a Claude tab went done or idle. A hint, not the agent's real cache state.",
+  "settings.usage.cacheTtl": "Cache lifetime",
+  "settings.usage.cacheTtl.short": "5 minutes",
+  "settings.usage.cacheTtl.long": "1 hour"
 }
