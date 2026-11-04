@@ -138,6 +138,8 @@ pub struct OrchHub {
     /// Set when the pump should look again; see [`OrchHub::kick_pump`].
     kick: Mutex<bool>,
     kicked: Condvar,
+    /// `worker_auto_close` as last stored; none until first read.
+    auto_close: Mutex<Option<bool>>,
 }
 
 /// How long `check --wait` sleeps when the CLI sends no timeout.
@@ -250,6 +252,23 @@ impl OrchHub {
         std::mem::take(&mut *guard)
     }
 
+    /// `worker_auto_close`, read with `load` only the first time.
+    pub fn auto_close(&self, load: impl FnOnce() -> bool) -> bool {
+        *self
+            .auto_close
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get_or_insert_with(load)
+    }
+
+    /// The settings changed: the sweeper uses `on` from now on.
+    pub fn set_auto_close(&self, on: bool) {
+        *self
+            .auto_close
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(on);
+    }
+
     pub fn next_read(&self) -> u64 {
         self.next_read.fetch_add(1, Ordering::Relaxed) + 1
     }
@@ -347,10 +366,14 @@ pub fn orchestration_settings_put(
     settings: OrchestrationSettings,
 ) -> Result<OrchestrationSettings, CmdError> {
     let settings = settings.normalized();
-    settings_store::write(&app, &[SettingsSection::Orchestration], |s| {
+    let stored = settings_store::write(&app, &[SettingsSection::Orchestration], |s| {
         s.orchestration = settings;
     })
-    .map(|s| s.orchestration)
+    .map(|s| s.orchestration)?;
+    use tauri::Manager;
+    app.state::<OrchHub>()
+        .set_auto_close(stored.worker_auto_close);
+    Ok(stored)
 }
 
 /// What the skill card shows.
