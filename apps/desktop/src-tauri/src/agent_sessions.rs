@@ -89,6 +89,50 @@ pub struct SessionRow {
     pub repo: Option<String>,
     /// False when no profile can launch the session's home, or its folder is gone.
     pub resumable: bool,
+    /// A snippet of the conversation text that matched, HTML-escaped with
+    /// `<mark>` around the hits; `None` for a match in the metadata only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub hit: Option<String>,
+}
+
+/// What the text index holds, for Settings → Agents.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSearchStatus {
+    pub enabled: bool,
+    pub sessions: u32,
+    pub messages: u32,
+    /// Unix ms of the last index update.
+    pub updated_at: Option<i64>,
+    pub indexing: bool,
+}
+
+/// The state of the text index; counts stay zero until the index is built.
+#[tauri::command(async)]
+pub fn session_search_status(app: tauri::AppHandle) -> Result<SessionSearchStatus, CmdError> {
+    let enabled = crate::settings_store::read(&app).agents.session_search;
+    Ok(SessionSearchStatus {
+        enabled,
+        sessions: 0,
+        messages: 0,
+        updated_at: None,
+        indexing: false,
+    })
+}
+
+/// Turns the search off, then deletes the text index.
+#[tauri::command(async)]
+pub fn session_search_clear(
+    app: tauri::AppHandle,
+) -> Result<crate::settings::AgentsSettings, CmdError> {
+    let mut agents = crate::settings_store::read(&app).agents;
+    agents.session_search = false;
+    crate::settings_store::write(&app, &[crate::settings::SettingsSection::Agents], |s| {
+        s.agents = agents
+    })
+    .map(|s| s.agents)
 }
 
 /// The index of the last data dir asked for, kept between calls so a list
@@ -288,6 +332,7 @@ fn select(
             session: s.clone(),
             worktree: found.map(|(f, _)| f.to_string()),
             repo: found.map(|(_, r)| r.to_string()),
+            hit: None,
         })
         .collect()
 }

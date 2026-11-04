@@ -4,4 +4,16 @@ import type { SwitchRunning } from "./SwitchRunning";
 /**
  * Settings → Agents.
  */
-export type AgentsSettings = { accountSwitch: SwitchRunning, };
+export type AgentsSettings = { accountSwitch: SwitchRunning, 
+/**
+ * Experimental: finished agent tabs sleep after `sleep_after_min` idle minutes.
+ */
+autoSleep: boolean, 
+/**
+ * Idle minutes before an agent tab sleeps, held to `SLEEP_AFTER_MIN_RANGE`.
+ */
+sleepAfterMin: number, 
+/**
+ * Consent to index agent conversations on this computer.
+ */
+sessionSearch: boolean, };

@@ -5,6 +5,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { translate } from "@/i18n";
 import { AgentsPage } from "./AgentsPage";
 import { ProfileEditor } from "./ProfileEditor";
+import { AGENTS_SETTINGS_DEFAULTS } from "@/mockSettings";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
 const store = vi.hoisted(() => ({ update: vi.fn(), reload: vi.fn(), view: null }));
@@ -197,7 +198,7 @@ it("account_switch_select_shows_the_stored_policy_and_saves_a_change", async () 
   const put = vi.spyOn(p.api, "agentsSettingsPut");
   field().props.onChange({ target: { value: "keep" } });
   await tick();
-  expect(put).toHaveBeenCalledWith({ accountSwitch: "keep" });
+  expect(put).toHaveBeenCalledWith({ ...AGENTS_SETTINGS_DEFAULTS, accountSwitch: "keep" });
   expect(field().props.value).toBe("keep");
   expect((await p.api.agentsSettings()).accountSwitch).toBe("keep");
 });
@@ -228,7 +229,7 @@ it("account_switch_policy_follows_a_settings_change_from_elsewhere", async () =>
   const p = await page();
   // The page's own draw collected two effects now; the second one subscribes.
   expect(p.all().find((n) => n.props["data-field"] === "accountSwitch")!.props.value).toBe("ask");
-  await p.api.agentsSettingsPut({ accountSwitch: "restart" });
+  await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, accountSwitch: "restart" });
   await tick();
   expect(p.all().find((n) => n.props["data-field"] === "accountSwitch")!.props.value).toBe("restart");
 });

@@ -8,7 +8,7 @@ use std::path::Path;
 use ts_rs::{Config, TS};
 
 use crate::accounts::{Account, Accounts, LoginStart, Models};
-use crate::agent_sessions::{SessionQuery, SessionRow};
+use crate::agent_sessions::{SessionQuery, SessionRow, SessionSearchStatus};
 use crate::cli_verbs::{CliAsk, CliOpenTab, TabReport};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
 use crate::hooks::PtyHook;
@@ -142,6 +142,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     crate::kit::UsageReportArgs::export_all(cfg)?;
     SessionQuery::export_all(cfg)?;
     SessionRow::export_all(cfg)?;
+    SessionSearchStatus::export_all(cfg)?;
     xdev_workspace::VaultView::export_all(cfg)?;
     xdev_workspace::VaultKind::export_all(cfg)?;
     QuickCommand::export_all(cfg)?;

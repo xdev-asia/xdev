@@ -41,7 +41,12 @@ export const ZOOM_LIMITS = { min: 0.5, max: 2 } as const;
 
 export { DIFF_DEFAULTS, NAVIGATION_DEFAULTS, USAGE_DEFAULTS };
 /** `AgentsSettings::default()` in Rust: a switch asks about running tabs. */
-export const AGENTS_SETTINGS_DEFAULTS: AgentsSettings = { accountSwitch: "ask" };
+export const AGENTS_SETTINGS_DEFAULTS: AgentsSettings = {
+  accountSwitch: "ask",
+  autoSleep: false,
+  sleepAfterMin: 30,
+  sessionSearch: false,
+};
 
 export type SettingsHub = { emit: SettingsEmit; onSettingsChanged: Api["onSettingsChanged"] };
 

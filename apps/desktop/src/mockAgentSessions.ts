@@ -1,6 +1,8 @@
 import type { AgentSession, Api, ApiError, SessionQuery, SessionRow } from "./api";
 
-type AgentSessionsApi = Pick<Api, "agentSessions">;
+import { AGENTS_SETTINGS_DEFAULTS } from "./mockSettings";
+
+type AgentSessionsApi = Pick<Api, "agentSessions" | "sessionSearchStatus" | "sessionSearchClear">;
 
 const LIMIT_MAX = 500;
 const HOUR_MS = 3_600_000;
@@ -60,6 +62,12 @@ function matches(row: SessionRow, words: string[]): boolean {
 /** A fixed list of sessions across two repos, filtered, sorted and cut like Rust does. */
 export function createMockAgentSessions(now: () => number = () => Date.now()): AgentSessionsApi {
   return {
+    async sessionSearchStatus() {
+      return { enabled: false, sessions: 0, messages: 0, updatedAt: null, indexing: false };
+    },
+    async sessionSearchClear() {
+      return { ...AGENTS_SETTINGS_DEFAULTS };
+    },
     async agentSessions(query: SessionQuery, _refresh: boolean) {
       if (query.limit > LIMIT_MAX) return reject("bad_arg", "limit");
       const words = (query.text ?? "").toLowerCase().split(/\s+/).filter(Boolean);
