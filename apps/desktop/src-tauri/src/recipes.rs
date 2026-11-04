@@ -84,6 +84,22 @@ mod tests {
         expected: String,
     }
 
+    /// The UI lists the variables of each recipe in `settings/recipes/index.ts`; the two must agree.
+    #[test]
+    fn the_variable_lists_match_the_ui() {
+        let ui = include_str!("../../src/settings/recipes/index.ts");
+        for (id, vars) in [
+            ("branchName", BRANCH_VARS.as_slice()),
+            ("resolveConflicts", CONFLICT_VARS.as_slice()),
+            ("commitMessage", COMMIT_VARS.as_slice()),
+        ] {
+            let quoted: Vec<String> = vars.iter().map(|v| format!("\"{v}\"")).collect();
+            let line = format!("{id}: [{}]", quoted.join(", "));
+            let multi = ui.contains(&format!("{id}: [\n    {}", quoted.join(",\n    ")));
+            assert!(ui.contains(&line) || multi, "{id}: {line}");
+        }
+    }
+
     #[test]
     fn render_follows_the_shared_table() {
         let cases: Vec<Case> =
