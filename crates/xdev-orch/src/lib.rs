@@ -8,9 +8,11 @@ pub mod model;
 pub mod runs;
 pub mod skills;
 pub mod store;
+pub mod tasks;
 
 pub use error::OrchError;
 pub use model::*;
 pub use runs::RunDetail;
 pub use skills::{SKILL_NAME, SkillAgent, SkillStatus, SkillTarget};
 pub use store::Store;
+pub use tasks::{BRIEF_CHARS, NewTask, TaskFilter, brief};
