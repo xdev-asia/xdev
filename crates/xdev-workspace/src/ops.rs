@@ -68,6 +68,10 @@ pub struct WorktreeView {
     pub made_by: MadeBy,
     /// On the repo's base branch (by its short name).
     pub default_branch: bool,
+    /// When the app CLI last created or changed it; absent when it never did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub set_by_cli_ms: Option<i64>,
 }
 
 /// Paths from git, the registry and the UI compare in this form: `/` as the
@@ -389,6 +393,7 @@ pub(crate) fn view_of(
         item: meta.and_then(|m| m.item.clone()),
         made_by: meta.map(|m| m.made_by).unwrap_or_default(),
         default_branch: default.is_some() && entry.branch.as_deref() == default,
+        set_by_cli_ms: meta.and_then(|m| m.set_by_cli_ms),
     }
 }
 

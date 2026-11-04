@@ -94,6 +94,9 @@ import type {
   ScriptSource,
   QuickCommand,
   FileCommands,
+  CliAsk,
+  CliOpenTab,
+  TabReport,
 } from "@xdev/bindings";
 import type {
   AgentSession,
@@ -137,6 +140,7 @@ export type { Agent, AgentSession, SessionQuery, SessionRow };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, SwitchRunning };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
+export type { CliAsk, CliOpenTab, TabReport };
 export type { FileKind } from "@xdev/bindings";
 export type { RestoreMode } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
@@ -839,6 +843,18 @@ export interface Api {
   // Replaces the saved layout. Rejects with `bad_arg` when `version` is not `LAYOUT_VERSION` and
   // `too_large` past 1 MiB.
   layoutSave(snapshot: LayoutSnapshot): Promise<void>;
+  // The app CLI (`xdev status | worktree | terminal`). The UI owns the tab states: it reports every
+  // tab (and the worktree in front) when they change, and `xdev terminal wait` reads them.
+  cliTabsReport(tabs: TabReport[], selected: string | null): Promise<void>;
+  // The person's answer to a `cli://ask`; an unknown or late request is ignored.
+  cliApprove(request: number, allow: boolean): Promise<void>;
+  // The CLI changed the registry (`workspace://changed`): the sidebar loads again.
+  onWorkspaceChanged(cb: () => void): Promise<() => void>;
+  // `xdev worktree create --agent/--prompt` (`cli://open-tab`): open `profile` (empty: the default
+  // agent) in `worktree` without focusing it, and type `prompt` once it is ready.
+  onCliOpenTab(cb: (e: CliOpenTab) => void): Promise<() => void>;
+  // A CLI write that needs the person (`cli://ask`); answer with `cliApprove`.
+  onCliAsk(cb: (e: CliAsk) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -1215,6 +1231,11 @@ const tauriApi: Api = {
   agentsSettingsPut: (settings) => call("agents_settings_put", { settings }),
   layoutLoad: () => call("layout_load"),
   layoutSave: (snapshot) => call("layout_save", { snapshot }),
+  cliTabsReport: (tabs, selected) => call("cli_tabs_report", { tabs, selected }),
+  cliApprove: (request, allow) => call("cli_approve", { request, allow }),
+  onWorkspaceChanged: (cb) => listen("workspace://changed", () => cb()),
+  onCliOpenTab: (cb) => listen<CliOpenTab>("cli://open-tab", (e) => cb(e.payload)),
+  onCliAsk: (cb) => listen<CliAsk>("cli://ask", (e) => cb(e.payload)),
 };
 
 function browserApi(): Api {
