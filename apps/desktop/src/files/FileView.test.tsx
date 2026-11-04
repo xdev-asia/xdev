@@ -3,8 +3,12 @@ import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
 import { CodeEditor } from "./CodeEditor";
+import { EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import { conflictChange, conflictDecorations } from "./conflictDecorations";
+import { parseConflicts } from "./conflictMarkers";
 import { FileView } from "./FileView";
-import { fileTabs } from "./fileTabs";
+import { fileTabs, isDirty } from "./fileTabs";
 
 const hooks = vi.hoisted(() => ({ active: false, effects: [] as (() => void)[] }));
 vi.mock("react", async (original) => {
@@ -102,4 +106,43 @@ it("reads the file once while it is loading", () => {
   expect(all.some((n) => n.props.children === en("files.loading"))).toBe(true);
   hooks.effects.forEach((e) => e());
   expect(read).toHaveBeenCalledWith(W, "a.ts");
+});
+
+const CONFLICTED = ["a", "<<<<<<< HEAD", "ours", "=======", "theirs", ">>>>>>> feature", "z"].join("\n");
+
+// The bar is a widget of the editor's state; without a DOM it is read from the decorations the editor would draw.
+const bars = (editor: Node): number => {
+  const state = EditorState.create({ doc: editor.props.value, extensions: [conflictDecorations(() => ({ bar: () => "bar", current: "c", incoming: "i", both: "b" }), editor.props.rel)] });
+  let count = 0;
+  for (const source of state.facet(EditorView.decorations)) {
+    const set = typeof source === "function" ? source(null as unknown as EditorView) : source;
+    for (const it = set.iter(); it.value; it.next()) if (it.value.spec.widget) count++;
+  }
+  return count;
+};
+
+it("a file with conflict markers reaches the editor with its text, so the conflict bar shows", () => {
+  ready({ text: CONFLICTED });
+  const editor = draw(createMockApi({})).find((n) => n.type === CodeEditor)!;
+  expect(editor.props.rel).toBe("a.ts");
+  expect(bars(editor)).toBe(1);
+  fileTabs.reset();
+  ready();
+  expect(bars(draw(createMockApi({})).find((n) => n.type === CodeEditor)!)).toBe(0);
+});
+
+it("accepting a side edits the buffer and marks the tab dirty, without writing", () => {
+  const api = createMockApi({});
+  const write = vi.spyOn(api, "fileWrite");
+  ready({ text: CONFLICTED });
+  expect(isDirty(fileTabs.get(W, "a.ts")!)).toBe(false);
+  const editor = draw(api).find((n) => n.type === CodeEditor)!;
+  const state = EditorState.create({ doc: editor.props.value });
+  const next = state.update({ changes: conflictChange(state, parseConflicts(editor.props.value)[0], "incoming") }).state.doc.toString();
+  editor.props.onChange(next);
+  expect(fileTabs.get(W, "a.ts")!.text).toBe("a\ntheirs\nz");
+  expect(isDirty(fileTabs.get(W, "a.ts")!)).toBe(true);
+  expect(write).not.toHaveBeenCalled();
+  // The conflict is settled: the next draw has no bar.
+  expect(bars(draw(api).find((n) => n.type === CodeEditor)!)).toBe(0);
 });
