@@ -33,7 +33,7 @@ function setup(over: { scale?: number } = {}) {
 }
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
-function pane(over: { ready?: boolean; shell?: ShellKind; write?: (d: string) => Promise<void> } = {}) {
+function pane(over: { ready?: boolean; shell?: ShellKind; bracketed?: boolean; write?: (d: string) => Promise<void> } = {}) {
   const el = {};
   const h = host([el]);
   const calls: string[] = [];
@@ -41,6 +41,7 @@ function pane(over: { ready?: boolean; shell?: ShellKind; write?: (d: string) =>
     write: vi.fn(over.write ?? (async (d: string) => void calls.push(`write:${d}`))),
     ready: () => over.ready ?? true,
     shell: () => over.shell ?? "posix",
+    bracketed: () => over.bracketed ?? true,
     focus: vi.fn(() => void calls.push("focus")),
   };
   const off = registerDropTarget(h as never, target);

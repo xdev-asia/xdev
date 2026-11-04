@@ -125,6 +125,11 @@ describe("dropPayloads", () => {
     expect(dropPayloads(["C:\\My Files\\a.png"], "powershell").payloads).toEqual([`${OPEN}'C:\\My Files\\a.png'${CLOSE} `]);
   });
 
+  it("with bracketed paste off an image is a plain quoted word like any other path", () => {
+    expect(dropPayloads(["/a/shot.png", "/my dir/b.png"], "posix", false).payloads).toEqual(["/a/shot.png ", "/my\\ dir/b.png "]);
+    expect(dropPayloads(["C:\\a\\shot.png"], "cmd", false).payloads).toEqual(["C:\\a\\shot.png "]);
+  });
+
   it("refuses a path with a control byte, image or not, and counts it", () => {
     expect(dropPayloads(["/a/b\x07.png", "/a/c\nid", "/ok"], "posix")).toEqual({ payloads: ["/ok "], rejected: 2 });
     expect(dropPayloads(["/a b"], "unknown")).toEqual({ payloads: [], rejected: 1 });

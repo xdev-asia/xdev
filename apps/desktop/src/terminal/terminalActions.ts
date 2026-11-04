@@ -1,5 +1,6 @@
 import { copyText } from "@/ui/clipboard";
 import { pasteClipboard, type PasteResult } from "./clipboardPaste";
+import type { ShellKind } from "./pathPaste";
 import type { PtyClient } from "./ptyClient";
 import type { TerminalHandle } from "./Terminal";
 
@@ -13,6 +14,7 @@ export interface XTermLike {
   getSelection(): string;
   hasSelection(): boolean;
   paste(text: string): void;
+  modes: { bracketedPasteMode: boolean };
   selectAll(): void;
   clear(): void;
   reset(): void;
@@ -27,6 +29,8 @@ export interface HandleDeps {
   find(): void;
   /** The clipboard image as a saved PNG path; absent: images are not pasted. */
   saveImage?(): Promise<string | null>;
+  /** The quoting kind of the running program; unknown when absent. */
+  shell?(): ShellKind;
   /** How a paste ended, for the toast. */
   pasted?(result: PasteResult): void;
 }
@@ -52,6 +56,8 @@ export function createTerminalHandle(deps: HandleDeps): TerminalHandle {
           if (!client) throw new Error("no pty");
           await client.input(data);
         },
+        shell: () => deps.shell?.() ?? "unknown",
+        bracketedMode: () => deps.term()?.modes.bracketedPasteMode ?? false,
       });
       deps.pasted?.(result);
     },

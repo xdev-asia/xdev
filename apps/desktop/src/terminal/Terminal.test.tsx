@@ -10,7 +10,7 @@ import { TERMINAL_SCHEMES } from "./terminalThemes";
 import { resetTerminalSettingsForTests, setTerminalSettings, TERMINAL_DEFAULTS } from "./terminalSettings";
 
 // The first ref is the xterm host; the rest keep their initial value.
-const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[], searchOpts: undefined as unknown, platform: "win" as string, csi: {} as Record<string, (p: unknown[]) => boolean>, bufType: "normal" }));
+const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[], searchOpts: undefined as unknown, platform: "win" as string, csi: {} as Record<string, (p: unknown[]) => boolean>, bufType: "normal", bracketedMode: true }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: (initial: unknown) => [initial, () => {}],
@@ -84,6 +84,11 @@ vi.mock("@xterm/xterm", () => ({
       },
       registerEscHandler() {
         return { dispose() {} };
+      },
+    };
+    modes = {
+      get bracketedPasteMode() {
+        return hooks.bracketedMode;
       },
     };
     buffer = {
@@ -389,6 +394,23 @@ it("a right click with an image on the clipboard writes its saved path as a brac
   hooks.listeners.contextmenu({ preventDefault: vi.fn() });
   await tick();
   expect(input).toHaveBeenCalledWith("img-1", new TextEncoder().encode("[200~/tmp/xdev-paste.png[201~"));
+  setMockClipboardImage(null);
+});
+
+it("a right click image paste is a plain quoted word while bracketed paste mode is off", async () => {
+  vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn(), readText: vi.fn(async () => "") } });
+  setMockClipboardImage("/tmp/xdev-paste.png");
+  hooks.bracketedMode = false;
+  const api = createMockApi({});
+  const input = vi.spyOn(api, "ptyWrite");
+  const { effect } = mount({ api, id: "img-2" });
+  effect();
+  await tick();
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, rightClickPaste: true });
+  hooks.listeners.contextmenu({ preventDefault: vi.fn() });
+  await tick();
+  hooks.bracketedMode = true;
+  expect(input).toHaveBeenCalledWith("img-2", new TextEncoder().encode("/tmp/xdev-paste.png "));
   setMockClipboardImage(null);
 });
 

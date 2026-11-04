@@ -72,11 +72,15 @@ export function bracketed(text: string): string {
 }
 
 /**
- * One write per dropped path, in order. An image goes in as a bracketed paste (an agent CLI reads
- * it as an attachment), anything else as a quoted word. A space follows each, except between two
+ * One write per dropped path, in order. An image goes in as a bracketed paste when the program
+ * turned that mode on (an agent CLI reads it as an attachment), anything else as a quoted word. A space follows each, except between two
  * images pasted as they are. A path that cannot be quoted safely is left out and counted.
  */
-export function dropPayloads(paths: readonly string[], kind: ShellKind): { payloads: string[]; rejected: number } {
+export function dropPayloads(
+  paths: readonly string[],
+  kind: ShellKind,
+  bracketedMode = true,
+): { payloads: string[]; rejected: number } {
   const parts: { data: string; rawImage: boolean }[] = [];
   let rejected = 0;
   for (const path of paths) {
@@ -85,7 +89,7 @@ export function dropPayloads(paths: readonly string[], kind: ShellKind): { paylo
       rejected++;
       continue;
     }
-    if (isImagePath(path)) parts.push({ data: bracketed(word), rawImage: word === path });
+    if (isImagePath(path) && bracketedMode) parts.push({ data: bracketed(word), rawImage: word === path });
     else parts.push({ data: word, rawImage: false });
   }
   const payloads = parts.map((part, i) => (part.rawImage && parts[i + 1]?.rawImage ? part.data : `${part.data} `));
