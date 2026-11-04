@@ -9,7 +9,7 @@ import { dayRange, displayPath, homeLabel, relativeFolder, totalOf, type Tokens 
 type Range = 7 | 30;
 
 /** One table of names and their tokens: input, output, cache and the total. */
-function TokenTable(props: { title: string; rows: Array<[string, Tokens]> }): JSX.Element {
+export function TokenTable(props: { title: string; rows: Array<[string, Tokens]> }): JSX.Element {
   const { t } = useI18n();
   return (
     <section className="kit-block" aria-label={props.title}>

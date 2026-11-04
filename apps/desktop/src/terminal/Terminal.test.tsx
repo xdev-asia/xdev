@@ -4,10 +4,11 @@ import { translate } from "@/i18n";
 import { resetBindingsForTests, setKeySettings } from "@/keys/bindingsStore";
 import { PtyClient } from "./ptyClient";
 import { Terminal } from "./Terminal";
+import { TERMINAL_SCHEMES } from "./terminalThemes";
 import { resetTerminalSettingsForTests, setTerminalSettings, TERMINAL_DEFAULTS } from "./terminalSettings";
 
 // The first ref is the xterm host; the rest keep their initial value.
-const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[] }));
+const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[], searchOpts: undefined as unknown }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: (initial: unknown) => [initial, () => {}],
@@ -20,6 +21,7 @@ vi.mock("react", async (original) => ({
           ? {
               clientWidth: 0,
               clientHeight: 0,
+              classList: { add() {}, remove() {} },
               addEventListener: (name: string, cb: (e: unknown) => void) => void (hooks.listeners[name] = cb),
               removeEventListener: (name: string) => void delete hooks.listeners[name],
             }
@@ -89,9 +91,20 @@ vi.mock("@xterm/xterm", () => ({
   },
 }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() { hooks.fits++; } } }));
-vi.mock("@xterm/addon-search", () => ({ SearchAddon: class { findNext() {} findPrevious() {} } }));
+vi.mock("@xterm/addon-search", () => ({ SearchAddon: class { constructor(opts?: unknown) { hooks.searchOpts = opts; } findNext() {} findPrevious() {} } }));
 vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: class {} }));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+// The renderer has its own tests; here only what the pane asks of it.
+vi.mock("./terminalRenderer", () => ({
+  attachRenderer: (_term: unknown, gpu: string) => {
+    hooks.renderer.push(`attach:${gpu}`);
+    return {
+      set: (next: string) => void hooks.renderer.push(`set:${next}`),
+      active: () => "dom",
+      dispose: () => void hooks.renderer.push("dispose"),
+    };
+  },
+}));
 
 const tick = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
@@ -132,6 +145,7 @@ beforeEach(() => {
   resetBindingsForTests();
   hooks.listeners = {};
   hooks.pasted = [];
+  hooks.renderer = [];
   resetTerminalSettingsForTests();
   vi.stubGlobal("getComputedStyle", () => ({ getPropertyValue: () => "" }));
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
@@ -234,14 +248,59 @@ it("builds the xterm options from the stored settings", () => {
   expect(hooks.options).toMatchObject({ fontSize: 17, scrollback: 42, cursorStyle: "bar", fontWeight: "500", cursorBlink: true });
 });
 
+it("the stored theme builds the xterm and the pane takes its background", () => {
+  const pane = { style: { background: "" }, classList: { add() {}, remove() {} }, addEventListener() {}, removeEventListener() {} };
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, theme: "dracula", wordSeparators: " /" });
+  const { effect } = mount({ api: createMockApi({}), id: "th-1" });
+  (hooks.store[0].current as { parentElement?: unknown }).parentElement = pane;
+  effect();
+  const dracula = TERMINAL_SCHEMES.find((x) => x.id === "dracula")!;
+  expect(hooks.options.theme).toEqual(dracula.colors);
+  expect(hooks.options.wordSeparator).toBe(" /");
+  expect(pane.style.background).toBe(dracula.colors.background);
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, theme: "app" });
+  // The app theme: the tokens (empty here), so the pane drops its own background.
+  expect(pane.style.background).toBe("");
+});
+
+it("the pane attaches the renderer after open, follows the gpu setting and disposes it", () => {
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, gpu: "on" });
+  const { effect } = mount({ api: createMockApi({}), id: "gpu-1" });
+  const cleanup = effect() as () => void;
+  expect(hooks.renderer).toEqual(["attach:on"]);
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, gpu: "off" });
+  expect(hooks.renderer).toEqual(["attach:on", "set:off"]);
+  cleanup();
+  expect(hooks.renderer.at(-1)).toBe("dispose");
+});
+
 it("a store change updates the options and fits again", async () => {
   const { effect } = mount({ api: createMockApi({}), id: "o-2" });
   (hooks.store[0].current as { clientWidth: number }).clientWidth = 800;
   (hooks.store[0].current as { clientHeight: number }).clientHeight = 600;
   const cleanup = effect() as () => void;
   const before = hooks.fits;
-  setTerminalSettings({ ...TERMINAL_DEFAULTS, fontSize: 20, lineHeight: 1.4 });
-  expect(hooks.options).toMatchObject({ fontSize: 20, lineHeight: 1.4 });
+  setTerminalSettings({
+    ...TERMINAL_DEFAULTS,
+    fontSize: 20,
+    lineHeight: 1.4,
+    theme: "nord",
+    wordSeparators: " /",
+    scrollSensitivity: 2,
+    fastScrollSensitivity: 8,
+    minimumContrast: 4.5,
+  });
+  expect(hooks.options).toMatchObject({
+    fontSize: 20,
+    lineHeight: 1.4,
+    wordSeparator: " /",
+    scrollSensitivity: 2,
+    fastScrollSensitivity: 8,
+    minimumContrastRatio: 4.5,
+  });
+  expect((hooks.options.theme as { background: string }).background).toBe(
+    TERMINAL_SCHEMES.find((x) => x.id === "nord")?.colors.background,
+  );
   expect(hooks.fits).toBe(before + 1);
   cleanup();
   // A disposed pane no longer listens.
@@ -392,4 +451,52 @@ it("under terminal first the keys a TUI uses reach the program", () => {
   // Ctrl+K no longer clears (it yields); the global search is what is left on that chord.
   expect(handler(key({ ctrlKey: true, code: "KeyK" }))).toBe(false);
   expect(hooks.calls).toEqual([]);
+});
+
+it("the bell cue follows the setting and onBell still fires", () => {
+  const classes = new Set<string>();
+  const pane = {
+    style: { background: "" },
+    classList: { add: (c: string) => void classes.add(c), remove: (c: string) => void classes.delete(c) },
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  const onBell = vi.fn();
+  const { effect } = mount({ api: createMockApi({}), id: "b-1", onBell });
+  (hooks.store[0].current as { parentElement?: unknown }).parentElement = pane;
+  effect();
+  hooks.bell?.();
+  expect(onBell).toHaveBeenCalledTimes(1);
+  expect(classes.has("terminal-bell")).toBe(false);
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, bell: "visual" });
+  hooks.bell?.();
+  expect(onBell).toHaveBeenCalledTimes(2);
+  expect(classes.has("terminal-bell")).toBe(true);
+});
+
+it("mouseenter focuses the xterm only when focus follows mouse is on", () => {
+  const { effect } = mount({ api: createMockApi({}), id: "f-1" });
+  const cleanup = effect() as () => void;
+  const before = hooks.focused;
+  hooks.listeners.mouseenter?.({});
+  expect(hooks.focused).toBe(before);
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, focusFollowsMouse: true });
+  hooks.listeners.mouseenter?.({});
+  expect(hooks.focused).toBe(before + 1);
+  cleanup();
+  expect(hooks.listeners.mouseenter).toBeUndefined();
+});
+
+it("builds the xterm with the proposed API on and the search addon with a highlight limit", () => {
+  const { effect } = mount({ api: createMockApi({}), id: "s-1" });
+  effect();
+  expect(hooks.options.allowProposedApi).toBe(true);
+  expect(hooks.searchOpts).toEqual({ highlightLimit: 1000 });
+});
+
+it("Ctrl+F opens the find bar through the key handler", () => {
+  const { effect } = mount({ api: createMockApi({}), id: "s-2" });
+  effect();
+  const e = { type: "keydown", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, key: "f", code: "KeyF", preventDefault: vi.fn() } as unknown as KeyboardEvent;
+  expect(hooks.keyHandler?.(e)).toBe(false);
 });

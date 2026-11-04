@@ -50,6 +50,14 @@ pub enum Action {
         worktree: PathBuf,
         paths: Vec<String>,
     },
+    /// A worktree verb of the app CLI (`op` is `create` or `set`) on
+    /// `worktree`, from a caller whose `scope` is `own`, `family`, `other`
+    /// or `external`. The scope is a label, not an identity.
+    CliWorktree {
+        op: String,
+        worktree: PathBuf,
+        scope: String,
+    },
 }
 
 /// `Ask` stops until a person approves; nothing proceeds on silence.
@@ -182,6 +190,19 @@ impl Gate for Policy {
             Action::Discard { .. } => Verdict::Ask {
                 reason: "discarding changes always asks".to_owned(),
             },
+            // The caller's own worktree, and a create or set in its family
+            // (the endpoint sends `family` only for writes downwards), pass;
+            // anything else is the person's call.
+            Action::CliWorktree { op, scope, .. } => {
+                let family = scope == "family" && (op == "create" || op == "set");
+                if scope == "own" || family {
+                    Verdict::Allow
+                } else {
+                    Verdict::Ask {
+                        reason: format!("cli worktree {op} from scope {scope} asks"),
+                    }
+                }
+            }
             Action::LaunchAgent {
                 profile,
                 program,
@@ -285,6 +306,17 @@ impl<G: Gate> Audited<G> {
             Verdict::Ask { .. } if confirmed => self.logged(action, Verdict::Allow),
             verdict => self.logged(action, verdict),
         }
+    }
+
+    /// Records that a person refused, or never answered, an action that
+    /// asked; nothing is saved as a standing refusal.
+    pub fn refused(&self, action: &Action, reason: &str) -> Verdict {
+        self.logged(
+            action,
+            Verdict::Deny {
+                reason: reason.to_owned(),
+            },
+        )
     }
 
     fn logged(&self, action: &Action, verdict: Verdict) -> Verdict {

@@ -6,7 +6,7 @@ import { runQuickCommand, type RunContext } from "./run";
 afterEach(() => vi.useRealTimers());
 
 function tab(id: string, over: Partial<Tab> = {}): Tab {
-  return { id, worktree: "/w", profileId: "shell", account: null, permissions: "ask", agent: false, status: "idle", cli: null, unread: false, unreadAt: null, unreadReason: null, title: null, renamed: false, resumeOf: null, agentSession: null, openedAt: 0, pinned: false, color: "none", client: { input: vi.fn(async () => {}) } as never, ...over };
+  return { id, worktree: "/w", profileId: "shell", account: null, accountSource: null, permissions: "ask", agent: false, status: "idle", cli: null, unread: false, unreadAt: null, unreadReason: null, title: null, renamed: false, resumeOf: null, agentSession: null, openedAt: 0, pinned: false, color: "none", client: { input: vi.fn(async () => {}) } as never, ...over };
 }
 
 function fake(initial: Tab[] = []) {

@@ -23,6 +23,8 @@ export function patchReact(react: typeof import("react")): typeof import("react"
       };
       return [hooks.values[index], set];
     }) as typeof react.useState,
+    useSyncExternalStore: ((subscribe: unknown, get: () => unknown, server?: () => unknown) =>
+      hooks.active ? get() : (react.useSyncExternalStore as (...a: unknown[]) => unknown)(subscribe, get, server)) as typeof react.useSyncExternalStore,
     useRef: ((initial: unknown) => {
       if (!hooks.active) return react.useRef(initial);
       const index = slot({ current: initial });

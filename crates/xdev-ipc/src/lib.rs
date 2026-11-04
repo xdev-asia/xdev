@@ -53,6 +53,13 @@ pub struct Endpoint {
 /// the other way round. Users of the crate put it in their own file names.
 pub const CHANNEL: &str = if cfg!(debug_assertions) { "-dev" } else { "" };
 
+/// The app endpoint's folder (token, `endpoint.json`) under the app's local
+/// dir; the app and the `xdev` CLI both use it. A debug build has its own
+/// (`app-dev`), so a dev CLI never talks to a release app, nor the other way round.
+pub fn app_dir(local: &Path) -> PathBuf {
+    local.join(format!("app{CHANNEL}"))
+}
+
 /// `<prefix>-<user key>-v<major>`; a pipe name on Windows, `<dir>/<prefix>.sock`
 /// elsewhere. A debug build has its own name, so it never meets a release service.
 pub fn endpoint(dir: &Path, prefix: &str, major: u32) -> Endpoint {
@@ -596,5 +603,12 @@ mod tests {
         assert!(!token_eq("abcd", "abc"));
         assert!(!token_eq("", "a"));
         assert!(token_eq("", ""));
+    }
+
+    #[test]
+    fn the_app_dir_is_per_channel() {
+        let dir = app_dir(Path::new("local"));
+        assert_eq!(dir, Path::new("local").join(format!("app{CHANNEL}")));
+        assert_eq!(dir.ends_with("app-dev"), cfg!(debug_assertions));
     }
 }

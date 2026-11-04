@@ -1,12 +1,34 @@
 import type { ITerminalOptions } from "@xterm/xterm";
 import type { TerminalSettings } from "@/api";
+import { terminalTheme } from "./terminalThemes";
 
 type LiveOptions = Required<
-  Pick<ITerminalOptions, "fontFamily" | "fontSize" | "fontWeight" | "lineHeight" | "cursorStyle" | "cursorBlink" | "scrollback">
+  Pick<
+    ITerminalOptions,
+    | "fontFamily"
+    | "fontSize"
+    | "fontWeight"
+    | "lineHeight"
+    | "cursorStyle"
+    | "cursorBlink"
+    | "scrollback"
+    | "theme"
+    | "wordSeparator"
+    | "scrollSensitivity"
+    | "fastScrollSensitivity"
+    | "minimumContrastRatio"
+  >
 >;
 
-/** The xterm options a `TerminalSettings` sets. An empty family falls back to the `--x-font-mono` token. */
-export function xtermOptions(s: TerminalSettings, mono: string | undefined): LiveOptions {
+/**
+ * The xterm options a `TerminalSettings` sets. An empty family falls back to the `--x-font-mono`
+ * token; `token` reads a CSS custom property for the `app` theme.
+ */
+export function xtermOptions(
+  s: TerminalSettings,
+  mono: string | undefined,
+  token: (name: string) => string | undefined,
+): LiveOptions {
   return {
     fontFamily: s.fontFamily.trim() || mono || "monospace",
     fontSize: s.fontSize,
@@ -15,6 +37,11 @@ export function xtermOptions(s: TerminalSettings, mono: string | undefined): Liv
     cursorStyle: s.cursorStyle,
     cursorBlink: s.cursorBlink,
     scrollback: s.scrollback,
+    theme: terminalTheme(s.theme, token),
+    wordSeparator: s.wordSeparators,
+    scrollSensitivity: s.scrollSensitivity,
+    fastScrollSensitivity: s.fastScrollSensitivity,
+    minimumContrastRatio: s.minimumContrast,
   };
 }
 
