@@ -35,6 +35,7 @@ import { ChecksPanel } from "./ChecksPanel";
 import { IssuesPanel } from "@/issues/IssuesPanel";
 import { CreateWorktreeDialog, type AgentChoice, type CreateExtra } from "./CreateWorktreeDialog";
 import { DetailsDialog } from "./DetailsDialog";
+import { RenameBranchDialog } from "./RenameBranchDialog";
 import { PendingCreates, type CreateArgs } from "./pendingCreates";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
@@ -187,6 +188,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const removeRun = useRef(0);
   const [removing, setRemoving] = useState<Removing | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
+  const [renaming, setRenaming] = useState<WorktreeView | null>(null);
   const [notice, setNotice] = useState<ApiError["code"]>();
   const [fixNote, setFixNote] = useState(false);
   // A request to bring a tab to the front of its worktree; a new `seq` is a new request.
@@ -233,7 +235,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [quickSeq, setQuickSeq] = useState(0);
   const [settingsAt, setSettingsAt] = useState<{ section?: string; arg?: string; target?: string; seq: number }>({ seq: 0 });
   // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
-  const dialogOpen = creating !== null || removing !== null || adding || groupName !== null || editing !== null || bulk !== null || review !== null;
+  const dialogOpen = creating !== null || removing !== null || adding || groupName !== null || editing !== null || renaming !== null || bulk !== null || review !== null;
   useJumpKey(useCallback(() => setJumpOpen((o) => (dialogOpen ? false : !o)), [dialogOpen]));
   // The worktrees in the order the sidebar draws them, which the worktree keys walk.
   const [order, setOrder] = useState<string[]>([]);
@@ -1438,6 +1440,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onRestore={(repoId, branch) => void sidebarCall(() => api.worktreeRestore(repoId, branch))}
             onArchive={(wt) => void archive(wt)}
             onEditDetails={(wt) => setEditing({ worktree: wt, busy: false })}
+            onRenameBranch={(wt) => setRenaming(wt)}
             onCopyLink={(url) => {
               void copy(url);
               pushToast({ text: t("workItem.copied") });
@@ -1860,6 +1863,17 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           error={editing.error}
           onSave={(patch) => void saveDetails(patch)}
           onCancel={() => setEditing(null)}
+        />
+      )}
+      {renaming && (
+        <RenameBranchDialog
+          api={api}
+          worktree={renaming}
+          onRenamed={() => {
+            setRenaming(null);
+            void load();
+          }}
+          onClose={() => setRenaming(null)}
         />
       )}
       {bulk && (
