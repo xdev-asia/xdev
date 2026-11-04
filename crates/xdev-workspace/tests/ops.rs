@@ -5,9 +5,10 @@ use std::process::Command;
 use tempfile::TempDir;
 use xdev_git::{BaseRefresh, Repo};
 use xdev_workspace::{
-    BranchPrefix, CreateOptions, Registry, RepoPatch, ScriptSource, SetupPolicy, WorkspaceError,
-    WorktreeStat, add_repo, adopt_worktree, create_worktree, create_worktree_with, forget_repo,
-    list, path_key, refresh_base, remove_worktree, set_pinned, stat, update_repo, valid_short_name,
+    BranchPrefix, CreateOptions, Registry, RepoPatch, STAGING, ScriptSource, SetupPolicy, Trash,
+    WorkspaceError, WorktreeStat, add_repo, adopt_worktree, create_worktree, create_worktree_with,
+    forget_repo, list, name_preview, path_key, refresh_base, remove_worktree, set_pinned, stat,
+    sweep_with, update_repo, valid_short_name,
 };
 #[cfg(unix)]
 use xdev_workspace::{archive_worktree, create_worktree_linked};
@@ -1106,4 +1107,212 @@ fn a_real_change_still_blocks_remove_and_keeps_the_links() {
     assert!(matches!(err, WorkspaceError::Dirty(_)));
     assert!(path.join("node_modules/x").is_file());
     main_is_intact(&main);
+}
+
+fn suffixing() -> CreateOptions {
+    CreateOptions {
+        suffix: true,
+        ..CreateOptions::default()
+    }
+}
+
+fn make(
+    reg: &mut Registry,
+    id: &str,
+    name: &str,
+    opts: &CreateOptions,
+) -> xdev_workspace::WorktreeView {
+    create_worktree_with(reg, id, name, None, 1, 0, opts).unwrap()
+}
+
+#[test]
+fn taken_branch_gets_a_suffix_and_the_typed_title() {
+    let (mut reg, id, _main) = registered();
+    let first = make(&mut reg, &id, "feat one", &suffixing());
+    assert_eq!(first.branch.as_deref(), Some("feat-one"));
+    assert_eq!(first.title, None);
+    let second = make(&mut reg, &id, "feat one", &suffixing());
+    assert_eq!(second.branch.as_deref(), Some("feat-one-2"));
+    assert!(second.path.ends_with("-feat-one-2"));
+    assert_eq!(second.title.as_deref(), Some("feat one"));
+    let third = make(&mut reg, &id, "feat one", &suffixing());
+    assert_eq!(third.branch.as_deref(), Some("feat-one-3"));
+    assert_eq!(third.title.as_deref(), Some("feat one"));
+}
+
+#[test]
+fn taken_folder_only_gets_a_suffix() {
+    let (mut reg, id, _main) = registered();
+    let root = list(&mut reg).unwrap()[0].worktree_root.clone();
+    let repo = list(&mut reg).unwrap()[0].short_name.clone();
+    fs::create_dir_all(Path::new(&root).join(format!("{repo}-hand"))).unwrap();
+    let view = make(&mut reg, &id, "hand", &suffixing());
+    assert_eq!(view.branch.as_deref(), Some("hand-2"));
+}
+
+#[test]
+fn a_branch_without_a_worktree_also_counts_as_taken() {
+    let (mut reg, id, main) = registered();
+    git(main.path(), &["branch", "side"]);
+    let view = make(&mut reg, &id, "side", &suffixing());
+    assert_eq!(view.branch.as_deref(), Some("side-2"));
+}
+
+#[test]
+fn ninety_nine_taken_is_branch_exists() {
+    let (mut reg, id, main) = registered();
+    git(main.path(), &["branch", "busy"]);
+    for n in 2..=99 {
+        git(main.path(), &["branch", &format!("busy-{n}")]);
+    }
+    let err = create_worktree_with(&mut reg, &id, "busy", None, 1, 0, &suffixing()).unwrap_err();
+    assert!(matches!(err, WorkspaceError::BranchExists(b) if b == "busy"));
+}
+
+#[test]
+fn a_full_length_name_keeps_its_suffix() {
+    let (mut reg, id, _main) = registered();
+    let name = "a".repeat(60);
+    let first = make(&mut reg, &id, &name, &suffixing());
+    assert_eq!(first.branch.as_deref().map(str::len), Some(48));
+    let second = make(&mut reg, &id, &name, &suffixing());
+    let branch = second.branch.unwrap();
+    assert_eq!(branch.len(), 48);
+    assert!(branch.ends_with("-2"));
+}
+
+#[test]
+fn suffix_off_keeps_the_errors() {
+    let (mut reg, id, _main) = registered();
+    make(&mut reg, &id, "dup", &CreateOptions::default());
+    let err = create_worktree_with(&mut reg, &id, "dup", None, 1, 0, &CreateOptions::default())
+        .unwrap_err();
+    assert!(matches!(err, WorkspaceError::BranchExists(_)));
+}
+
+#[test]
+fn blank_name_still_picks_a_free_word_without_a_title() {
+    let (mut reg, id, _main) = registered();
+    let a = make(&mut reg, &id, "", &suffixing());
+    let b = make(&mut reg, &id, "  ", &suffixing());
+    assert_ne!(a.branch, b.branch);
+    assert_eq!(a.title, None);
+    assert_eq!(b.title, None);
+}
+
+#[test]
+fn an_emoji_in_the_typed_name_is_kept_as_the_title() {
+    let (mut reg, id, _main) = registered();
+    let view = make(&mut reg, &id, "🚀 launch", &suffixing());
+    assert_eq!(view.branch.as_deref(), Some("launch"));
+    assert_eq!(view.title.as_deref(), Some("🚀 launch"));
+}
+
+#[test]
+fn preview_shows_the_name_a_create_would_get_and_makes_nothing() {
+    let (mut reg, id, _main) = registered();
+    let free = name_preview(&reg, &id, "feat one", &suffixing()).unwrap();
+    assert_eq!(free.branch, "feat-one");
+    assert!(!free.suffixed);
+    make(&mut reg, &id, "feat one", &suffixing());
+    let taken = name_preview(&reg, &id, "feat one", &suffixing()).unwrap();
+    assert_eq!(taken.branch, "feat-one-2");
+    assert!(taken.folder.ends_with("-feat-one-2"));
+    assert!(taken.suffixed);
+    assert_eq!(list(&mut reg).unwrap()[0].worktrees.len(), 2);
+    let blank = name_preview(&reg, &id, "  ", &suffixing()).unwrap();
+    assert!(!blank.suffixed && blank.branch.is_empty());
+    let err = name_preview(&reg, &id, "...", &suffixing()).unwrap_err();
+    assert_eq!(err.code(), "bad_name");
+    let err = name_preview(&reg, &id, "feat one", &CreateOptions::default()).unwrap_err();
+    assert_eq!(err.code(), "branch_exists");
+}
+
+fn staging_root(reg: &mut Registry) -> PathBuf {
+    Path::new(&list(reg).unwrap()[0].worktree_root).join(STAGING)
+}
+
+#[test]
+fn a_made_worktree_leaves_no_staging_entry_and_git_lists_the_final_path() {
+    let (mut reg, id, main) = registered();
+    let view = make(&mut reg, &id, "final", &suffixing());
+    assert!(!staging_root(&mut reg).exists());
+    assert!(Path::new(&view.path).join("a.txt").exists());
+    let listed = git(main.path(), &["worktree", "list", "--porcelain"]);
+    assert!(
+        listed.contains(&format!("worktree {}", view.path)),
+        "{listed}"
+    );
+    assert!(!listed.contains(STAGING));
+}
+
+#[test]
+fn the_staging_folder_is_never_found_or_imported() {
+    let (mut reg, id, main) = registered();
+    let stage = staging_root(&mut reg).join("123-abc");
+    git(
+        main.path(),
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "half",
+            stage.to_str().unwrap(),
+        ],
+    );
+    let view = &list(&mut reg).unwrap()[0];
+    assert!(view.found.is_empty());
+    assert_eq!(view.worktrees.len(), 1);
+    // A repo added while a create is staging does not import it either.
+    let mut fresh = Registry::default();
+    let added = add_repo(&mut fresh, main.path(), 0).unwrap();
+    assert_eq!(added.worktrees.len(), 1);
+    assert!(fresh.worktrees.is_empty());
+    assert!(!id.is_empty());
+}
+
+/// Deletes for real: the test has no trash.
+struct Remove;
+
+impl Trash for Remove {
+    fn trash(&self, path: &Path) -> std::io::Result<()> {
+        fs::remove_dir_all(path)
+    }
+}
+
+#[test]
+fn sweep_takes_stale_staging_worktrees_and_keeps_fresh_ones() {
+    let (mut reg, _id, main) = registered();
+    let stage = staging_root(&mut reg).join("123-abc");
+    git(
+        main.path(),
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "half",
+            stage.to_str().unwrap(),
+        ],
+    );
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    // Fresh: kept.
+    assert!(sweep_with(&reg, now, &Remove).is_empty());
+    assert!(stage.exists());
+    // Two hours on: swept, its record and its empty branch with it.
+    let swept = sweep_with(&reg, now + 2 * 60 * 60 * 1000, &Remove);
+    assert_eq!(swept, vec![stage.clone()]);
+    assert!(!stage.exists());
+    assert!(!staging_root(&mut reg).exists());
+    let listed = git(main.path(), &["worktree", "list", "--porcelain"]);
+    assert!(!listed.contains(STAGING));
+    assert!(
+        git(main.path(), &["branch", "--list", "half"])
+            .trim()
+            .is_empty()
+    );
 }

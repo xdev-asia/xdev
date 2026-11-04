@@ -26,7 +26,7 @@ pub use gh::{
 pub use history::Commit;
 pub use remote::{BaseRange, BaseRefresh, Upstream};
 pub use review::{Branch, StageState};
-pub use worktree::{NumStat, WorktreeEntry, global_user_name};
+pub use worktree::{NumStat, WorktreeEntry, global_user_name, valid_branch_name};
 
 /// The UI translates `code()`, never the message.
 #[derive(Debug, thiserror::Error)]
@@ -151,6 +151,19 @@ impl Repo {
 
     pub fn init(dir: &Path) -> Result<Repo, GitError> {
         run::run(dir, &["init", "-q"], None)?;
+        Repo::discover(dir)
+    }
+
+    /// `git init` with `branch` as the first branch. Git older than 2.28
+    /// does not know `--initial-branch`: it gets a plain `init` and `HEAD`
+    /// is pointed at the branch by hand.
+    pub fn init_on(dir: &Path, branch: &str) -> Result<Repo, GitError> {
+        let flag = format!("--initial-branch={branch}");
+        if run::run(dir, &["init", "-q", &flag], None).is_err() {
+            run::run(dir, &["init", "-q"], None)?;
+            let full = format!("refs/heads/{branch}");
+            run::run(dir, &["symbolic-ref", "HEAD", &full], None)?;
+        }
         Repo::discover(dir)
     }
 

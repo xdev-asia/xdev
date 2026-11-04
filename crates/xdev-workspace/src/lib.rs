@@ -1,5 +1,6 @@
 //! The desktop app's list of repos and the worktrees made from them.
 
+mod create;
 mod files;
 mod groups;
 mod hooks;
@@ -10,6 +11,7 @@ mod registry;
 mod repo_commands;
 mod search;
 mod shared;
+mod staging;
 mod vaults;
 
 use std::io;
@@ -17,6 +19,7 @@ use std::path::PathBuf;
 
 use xdev_git::GitError;
 
+pub use create::{CreateProject, Created, PROJECT_NAME_MAX, ProjectKind, create_project};
 pub use files::{
     Eol, FileKind, FileText, OsTrash, READ_MAX, Trash, WriteOutcome, create_entry, entry_path,
     read_file, rename_entry, trash_entry, trash_entry_with, write_file,
@@ -33,13 +36,13 @@ pub use kept::{
     ARCHIVE_DAYS, KeptBranch, KeptReason, KeptView, archive_worktree, kept_delete, kept_keep,
     kept_list, restore_worktree,
 };
-pub use names::{PrefixIssue, normalize_prefix, prefix_issue};
+pub use names::{PrefixIssue, SUFFIX_MAX, normalize_prefix, prefix_issue, suffixed};
 pub use ops::{
     BranchPrefix, COMMENT_MAX, CreateOptions, DetailsPatch, DirEntry, DirListing, ITEM_URL_MAX,
-    Removed, RepoPatch, RepoView, TITLE_MAX, WorktreeStat, WorktreeView, add_repo, adopt_worktree,
-    create_worktree, create_worktree_linked, create_worktree_with, forget_repo, list, list_dir,
-    path_key, refresh_base, remove_worktree, set_details, set_pinned, stat, update_repo,
-    valid_short_name,
+    NamePreview, Removed, RepoPatch, RepoView, TITLE_MAX, WorktreeStat, WorktreeView, add_repo,
+    adopt_worktree, create_worktree, create_worktree_linked, create_worktree_with, forget_repo,
+    list, list_dir, name_preview, path_key, refresh_base, remove_worktree, set_details, set_pinned,
+    stat, update_repo, valid_short_name,
 };
 pub use registry::{
     MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, VaultEntry, WorkItem, WorkItemKind,
@@ -54,6 +57,7 @@ pub use search::{
     SearchQuery, list_files, search_text,
 };
 pub use shared::{Linked, SharedError, link_shared, unlink_shared, validate as validate_shared};
+pub use staging::{STAGING, staging_dir, sweep, sweep_with};
 pub use vaults::{VaultKind, VaultView, add_vault, forget_vault, list_vaults, repo_docs_dir};
 
 /// The UI translates `code()`, never the message.

@@ -294,6 +294,32 @@ it("add repo opens the dialog; Open folder picks a folder and shows the new repo
   expect(view.html()).toContain(en("error.repo_exists"));
 });
 
+it("the create dialog gets the name preview from the api", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  view.list().props.onCreate();
+  const preview = view.of(CreateWorktreeDialog)[0].props.namePreview;
+  expect(await preview("demo-xdev", "oak")).toMatchObject({ branch: "oak-2", suffixed: true });
+});
+
+it("a created Git project closes the dialog and is selected; a folder is listed", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  view.list().props.onAddRepo();
+  const git = await api.repoCreate({ parent: "/code", name: "fresh", kind: "git", branch: "", firstCommit: true });
+  await view.of(AddProjectDialog)[0].props.onCreated(git);
+  await tick();
+  expect(view.of(AddProjectDialog)).toHaveLength(0);
+  expect(view.list().props.selected).toBe("/code/fresh");
+  view.list().props.onAddRepo();
+  const folder = await api.repoCreate({ parent: "/code", name: "scratch", kind: "folder", branch: "", firstCommit: false });
+  await view.of(AddProjectDialog)[0].props.onCreated(folder);
+  await tick();
+  expect(view.of(AddProjectDialog)).toHaveLength(0);
+  expect(view.list().props.selected).toBe("/code/fresh");
+  expect((await api.workspaceSidebar()).some((i) => i.kind === "folder" && i.folder.name === "scratch")).toBe(true);
+});
+
 it("a finished clone closes the dialog and selects the new repo", async () => {
   const api = createMockApi({});
   const view = await harness(api);
@@ -318,13 +344,13 @@ it("create closes the dialog at once; a failure stays as a row with Retry and Di
   expect(markup).toContain('placeholder="auto"');
   expect(markup).toContain('placeholder="main"');
 
-  dialog().props.onCreate("demo-xdev", "oak", null);
+  dialog().props.onCreate("demo-xdev", "...", null);
   expect(view.of(CreateWorktreeDialog)).toHaveLength(0);
-  expect(view.list().props.pending).toMatchObject([{ name: "oak", state: "running" }]);
+  expect(view.list().props.pending).toMatchObject([{ name: "...", state: "running" }]);
   await tick();
-  expect(create).toHaveBeenCalledWith("demo-xdev", "oak", null);
+  expect(create).toHaveBeenCalledWith("demo-xdev", "...", null);
   const [failed] = view.list().props.pending;
-  expect(failed).toMatchObject({ name: "oak", state: "failed", error: { code: "branch_exists" } });
+  expect(failed).toMatchObject({ name: "...", state: "failed", error: { code: "bad_name" } });
   view.list().props.onRetryCreate(failed.id);
   await tick();
   expect(create).toHaveBeenCalledTimes(2);

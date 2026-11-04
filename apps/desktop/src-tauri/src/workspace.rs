@@ -15,17 +15,18 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use xdev_ai::process::{kill_tree, own_group};
 use xdev_git::{ChangeKind, GitError, Repo};
 use xdev_policy::{Action, Verdict};
 use xdev_workspace::{
-    CreateOptions, DetailsPatch, FolderEntry, HookKind, HookRun, Linked, Registry, Removed,
-    RepoHooks, RepoPatch, RepoView, ScriptSource, SetupPolicy, SidebarItem, VaultView,
-    WorkspaceError, WorktreeStat, WorktreeView, add_repo, add_vault, adopt_worktree,
-    archive_worktree, create_worktree_linked, forget_repo, forget_vault, hooks_for, kept_delete,
-    list, list_vaults, path_key, refresh_base, remove_worktree, repo_docs_dir, restore_worktree,
-    set_details, set_order, set_pinned, shared_to_link, sidebar, stat, trust_hook, update_repo,
+    CreateOptions, CreateProject, Created, DetailsPatch, FolderEntry, HookKind, HookRun, Linked,
+    NamePreview, Registry, Removed, RepoHooks, RepoPatch, RepoView, ScriptSource, SetupPolicy,
+    SidebarItem, VaultView, WorkspaceError, WorktreeStat, WorktreeView, add_repo, add_vault,
+    adopt_worktree, archive_worktree, create_project, create_worktree_linked, forget_repo,
+    forget_vault, hooks_for, kept_delete, list, list_vaults, name_preview, path_key, refresh_base,
+    remove_worktree, repo_docs_dir, restore_worktree, set_details, set_order, set_pinned,
+    shared_to_link, sidebar, stat, trust_hook, update_repo,
 };
 
 use crate::accounts::data_dir;
@@ -160,6 +161,30 @@ fn update<T>(
         reg.save(data)?;
     }
     Ok(out)
+}
+
+/// Clears the staging folders a crash left behind, under the workspace lock
+/// so no create is staging at the same time. What was removed.
+fn sweep_staging(data: &Path, lock: &WorkspaceLock, now_ms: i64) -> Result<Vec<PathBuf>, CmdError> {
+    let _guard = lock_guard(lock);
+    let reg = Registry::load(data)?;
+    Ok(xdev_workspace::sweep(&reg, now_ms))
+}
+
+/// Runs `sweep_staging` once, on a thread of its own: a large repo's git
+/// calls must not hold up the window. Best effort.
+pub fn start_sweep(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let state = app.state::<AppState>();
+        let lock = app.state::<WorkspaceLock>();
+        let Ok(data) = data_dir(&state) else {
+            return;
+        };
+        if let Err(e) = sweep_staging(data, &lock, clock().0) {
+            eprintln!("staging sweep: {}", e.code);
+        }
+    });
 }
 
 /// Milliseconds since the epoch, and the nanoseconds as a seed for names.
@@ -449,6 +474,20 @@ pub fn repo_clone(
         });
     }
     result.map(drop)
+}
+
+/// Makes a new project under `req.parent` and lists it. A Git project is
+/// added like a checkout, a plain folder as a sidebar folder.
+#[tauri::command(async)]
+pub fn repo_create(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    req: CreateProject,
+) -> Result<Created, CmdError> {
+    let (now_ms, _) = clock();
+    update(data_dir(&state)?, &lock, |reg| {
+        create_project(reg, &req, now_ms)
+    })
 }
 
 /// Stops the clone named `id`; nothing when it is not running.
@@ -903,6 +942,23 @@ fn create_with(
             create_worktree_linked(reg, repo_id, name, from, now_ms, seed, &opts)?;
         Ok(WorktreeCreated { worktree, shared })
     })
+}
+
+/// What a typed name would become, for the create dialog; makes nothing.
+#[tauri::command(async)]
+pub fn worktree_name_preview(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    repo_id: String,
+    name: String,
+) -> Result<NamePreview, CmdError> {
+    let git = load_git_settings(&app);
+    let reg = {
+        let _guard = lock_guard(&lock);
+        Registry::load(data_dir(&state)?)?
+    };
+    Ok(name_preview(&reg, &repo_id, &name, &git.create_options())?)
 }
 
 #[tauri::command(async)]
@@ -1520,6 +1576,99 @@ mod tests {
         } else {
             assert_eq!(key("/R/Wt"), "/R/Wt");
         }
+    }
+
+    #[test]
+    fn repo_create_adds_a_folder_and_a_git_repo_through_the_lock() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let parent = fx._tmp.path().join("projects");
+        fs::create_dir(&parent).unwrap();
+        let req = |name: &str, kind| CreateProject {
+            parent: parent.clone(),
+            name: name.to_owned(),
+            kind,
+            branch: String::new(),
+            first_commit: false,
+        };
+        let now = clock().0;
+        let made = update(&fx.data, &lock, |reg| {
+            create_project(reg, &req("notes", xdev_workspace::ProjectKind::Folder), now)
+        })
+        .unwrap();
+        assert!(matches!(made, Created::Folder { .. }));
+        let made = update(&fx.data, &lock, |reg| {
+            create_project(reg, &req("code", xdev_workspace::ProjectKind::Git), now)
+        })
+        .unwrap();
+        let Created::Git { repo } = made else {
+            panic!("git expected");
+        };
+        assert_eq!(repo.base_ref, "main");
+        let saved = Registry::load(&fx.data).unwrap();
+        assert_eq!(saved.folders.len(), 1);
+        assert!(saved.repos.iter().any(|r| r.id == repo.id));
+
+        // A refused request saves nothing.
+        let err = update(&fx.data, &lock, |reg| {
+            create_project(reg, &req("a/b", xdev_workspace::ProjectKind::Folder), now)
+        })
+        .unwrap_err();
+        assert_eq!(err.code, "bad_name");
+        assert_eq!(Registry::load(&fx.data).unwrap().folders.len(), 1);
+    }
+
+    #[test]
+    fn create_with_suffixes_a_taken_name_and_title_keeps_the_typed_text() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let git = GitSettings::default();
+        let id = Registry::load(&fx.data).unwrap().repos[0].id.clone();
+        let first = create_with(&fx.data, &lock, &git, &id, "feat one", None).unwrap();
+        let second = create_with(&fx.data, &lock, &git, &id, "feat one", None).unwrap();
+        assert_ne!(first.worktree.branch, second.worktree.branch);
+        assert!(second.worktree.branch.as_deref().unwrap().ends_with("-2"));
+        assert_eq!(second.worktree.title.as_deref(), Some("feat one"));
+    }
+
+    #[test]
+    fn name_preview_reads_only() {
+        let fx = fixture();
+        let id = Registry::load(&fx.data).unwrap().repos[0].id.clone();
+        let reg = Registry::load(&fx.data).unwrap();
+        let opts = GitSettings::default().create_options();
+        let free = name_preview(&reg, &id, "first-new", &opts).unwrap();
+        assert!(!free.suffixed);
+        // `first` already exists in the fixture.
+        let taken = name_preview(&reg, &id, "first", &opts).unwrap();
+        assert!(taken.suffixed);
+        assert!(taken.branch.ends_with("-2"));
+        assert_eq!(Registry::load(&fx.data).unwrap(), reg);
+    }
+
+    #[test]
+    fn sweep_staging_runs_through_the_lock_and_keeps_fresh_entries() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let reg = Registry::load(&fx.data).unwrap();
+        let stage = reg.repos[0].worktree_root.join(".xdev-preparing/1-a");
+        git(
+            &fx.main,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "half",
+                stage.to_str().unwrap(),
+            ],
+        );
+        assert!(
+            sweep_staging(&fx.data, &lock, clock().0)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(stage.exists());
     }
 
     #[test]

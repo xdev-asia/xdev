@@ -24,6 +24,25 @@ pub fn pick(taken: &HashSet<String>, seed: u64) -> String {
         .unwrap_or_default()
 }
 
+/// The longest slug `slug` makes.
+const SLUG_MAX: usize = 48;
+
+/// The most `-n` tries a typed name gets before it is `BranchExists`.
+pub const SUFFIX_MAX: u32 = 99;
+
+/// `leaf` for `n` = 1, else `leaf-n`; the leaf is cut so the whole fits the
+/// 48-character slug cap, and the suffix stays.
+pub fn suffixed(leaf: &str, n: u32) -> String {
+    if n <= 1 {
+        return leaf.to_owned();
+    }
+    let tail = format!("-{n}");
+    let keep = SLUG_MAX.saturating_sub(tail.len());
+    let cut: String = leaf.chars().take(keep).collect();
+    // The cut may end on a character git refuses in front of the suffix.
+    format!("{}{tail}", cut.trim_end_matches(['/', '.', '-']))
+}
+
 /// A branch name from what the user typed: lowercase, spaces as `-`, only
 /// `[a-z0-9._/-]`, no leading `-`, `.` or `/`, at most 48 characters. No
 /// `//` or `..`, and no trailing `/`, `.`, `-` or `.lock`, which git refuses.
@@ -35,7 +54,7 @@ pub fn slug(name: &str) -> String {
         .map(|c| if c.is_whitespace() { '-' } else { c })
         .filter(|c| matches!(c, 'a'..='z' | '0'..='9' | '.' | '_' | '/' | '-'))
         .skip_while(|c| matches!(c, '-' | '.' | '/'))
-        .take(48);
+        .take(SLUG_MAX);
     for c in kept {
         if matches!(c, '/' | '.') && out.ends_with(c) {
             continue;
@@ -112,6 +131,25 @@ pub enum PrefixIssue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn suffixed_counts_from_two_and_keeps_the_suffix_inside_the_cap() {
+        assert_eq!(suffixed("feat-one", 1), "feat-one");
+        assert_eq!(suffixed("feat-one", 2), "feat-one-2");
+        assert_eq!(suffixed("feat-one", 99), "feat-one-99");
+        let long = "a".repeat(48);
+        let two = suffixed(&long, 2);
+        assert_eq!(two.len(), 48);
+        assert!(two.ends_with("a-2"));
+        let nine = suffixed(&long, 99);
+        assert_eq!(nine.len(), 48);
+        assert!(nine.ends_with("-99"));
+        // A cut that lands on a separator does not leave `.-2` or `/-2`.
+        let edge = format!("{}.b", "a".repeat(45));
+        assert_eq!(suffixed(&edge, 2), format!("{}-2", "a".repeat(45)));
+        // Every result is a slug of itself.
+        assert_eq!(slug(&nine), nine);
+    }
 
     #[test]
     fn normalize_prefix_trims_and_tidies_slashes() {

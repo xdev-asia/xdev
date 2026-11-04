@@ -84,9 +84,17 @@ impl Repo {
             .any(|name| dir.join(name).is_file())
     }
 
+    /// A commit with no changes, for a new repo that has nothing to commit
+    /// yet. Returns the new `HEAD`. `Identity` when git has no author.
+    pub fn commit_empty(&self, message: &str) -> Result<String, GitError> {
+        self.check_identity()?;
+        self.commit_cmd(&["commit", "-q", "--allow-empty", "-F", "-"], &[], message)?;
+        self.rev_head()
+    }
+
     /// Checked up front: git's own error for this is only told apart by its
     /// (translated) message.
-    fn check_identity(&self) -> Result<(), GitError> {
+    pub(crate) fn check_identity(&self) -> Result<(), GitError> {
         let (status, _) = run::run_status(&self.workdir, &["var", "GIT_AUTHOR_IDENT"], None)?;
         if status != Some(0) {
             return Err(GitError::Identity);
