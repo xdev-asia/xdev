@@ -596,9 +596,13 @@ pub fn handle(
         }
     };
     let text = answer.to_string();
-    ctx.orch.with_store(ctx.data, |s| {
+    let put = ctx.orch.with_store(ctx.data, |s| {
         s.receipt_put(&id, &req.method, &text, ctx.now_ms)
-    })?;
+    });
+    if let Err(e) = put {
+        let _ = ctx.orch.with_store(ctx.data, |s| s.receipt_release(&id));
+        return Err(e.into());
+    }
     Ok(answer)
 }
 
@@ -2202,6 +2206,31 @@ line", "title": "A"}),
             json!({"id": "nope", "retryRequest": "req-3"}),
         );
         assert_ne!(r.unwrap_err().code, "request_running");
+    }
+
+    #[test]
+    fn a_failed_receipt_put_gives_the_id_back() {
+        let f = crate::cli_verbs::tests::fixture();
+        let call = |id: &str| {
+            f.call(
+                Some("p-lead"),
+                "orchestration.run-create",
+                json!({"objective": "o", "retryRequest": id}),
+            )
+        };
+        call("req-0").unwrap();
+        // Storing an answer fails (a trigger stands in for a full disk).
+        rusqlite::Connection::open(f.data.join("orchestration.db"))
+            .unwrap()
+            .execute_batch(
+                "CREATE TRIGGER no_answers BEFORE UPDATE ON receipts
+                 BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+            )
+            .unwrap();
+        assert!(call("req-4").is_err());
+        // The id is not left reserved: a retry runs, it is not `request_running`.
+        let again = call("req-4");
+        assert_ne!(again.unwrap_err().code, "request_running");
     }
 
     #[test]
