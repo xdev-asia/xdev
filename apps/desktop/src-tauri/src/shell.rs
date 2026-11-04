@@ -253,6 +253,35 @@ fn fallback_due(acked: bool, quitting: Option<QuitMode>, seq: u64, current: u64)
     !acked && quitting.is_some() && seq == current
 }
 
+/// What to do with an exit request the runtime raises.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitAction {
+    /// Let the app exit.
+    Allow,
+    /// Hold the exit and run it through the quit guard.
+    Guard,
+}
+
+/// An exit asked for by the OS (macOS Dock Quit, a logout) has no `code` and no
+/// quit in flight while the window still exists: it goes through the quit guard
+/// like a click on the close button. Every other exit goes on.
+pub fn exit_action(code: Option<i32>, quitting: Option<QuitMode>, has_window: bool) -> ExitAction {
+    if code.is_none() && quitting.is_none() && has_window {
+        ExitAction::Guard
+    } else {
+        ExitAction::Allow
+    }
+}
+
+/// Called for `RunEvent::ExitRequested`: holds an OS quit and routes it through [`quit`].
+pub fn exit_requested(app: &AppHandle, code: Option<i32>, api: &tauri::ExitRequestApi) {
+    let has_window = app.get_webview_window(MAIN).is_some();
+    if exit_action(code, quit_mode(app), has_window) == ExitAction::Guard {
+        api.prevent_exit();
+        quit(app, QuitMode::Quit);
+    }
+}
+
 /// The quit in flight, read as the app exits.
 pub fn quit_mode(app: &AppHandle) -> Option<QuitMode> {
     app.try_state::<ShellState>().and_then(|s| s.quitting())
@@ -468,6 +497,19 @@ mod tests {
         assert_eq!(r.mode, Some(QuitMode::EndAll));
         let r = close_request(Os::Windows, &s, None);
         assert_eq!((r.intent, r.mode), (CloseIntent::Hide, None));
+    }
+
+    #[test]
+    fn an_exit_the_os_asked_for_goes_through_the_guard() {
+        let q = Some(QuitMode::Quit);
+        // Dock Quit or logout: no code, no quit in flight, the window is there.
+        assert_eq!(exit_action(None, None, true), ExitAction::Guard);
+        // Our own `app.exit(0)`.
+        assert_eq!(exit_action(Some(0), None, true), ExitAction::Allow);
+        // The quit guard already runs.
+        assert_eq!(exit_action(None, q, true), ExitAction::Allow);
+        // The last window is gone: the quit was answered.
+        assert_eq!(exit_action(None, None, false), ExitAction::Allow);
     }
 
     #[test]

@@ -384,6 +384,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
         .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
+                shell::exit_requested(app, *code, api);
+            }
             if let tauri::RunEvent::Exit = event {
                 tray::remove(app);
                 let mode = shell::quit_mode(app);
