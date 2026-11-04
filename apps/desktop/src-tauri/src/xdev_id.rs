@@ -174,7 +174,7 @@ impl XdevIdHub {
 
     fn load_avatar(&self, image: Option<&str>, notify: Notify) {
         let Some(image) = image else { return };
-        let Some(data) = ::xdev_id::fetch_avatar(&*self.http, image) else {
+        let Some(data) = ::xdev_id::fetch_avatar(&*self.http, image, &self.base) else {
             return;
         };
         if self.lock().set_avatar(Some(data)) {

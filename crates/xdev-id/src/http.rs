@@ -159,8 +159,8 @@ pub fn sign_out(t: &dyn Transport, base: &str, token: &Secret) {
 }
 
 /// The avatar as a `data:` URL, or `None` when the host, type or size is not allowed.
-pub fn fetch_avatar(t: &dyn Transport, image: &str) -> Option<String> {
-    if !avatar_allowed(image) {
+pub fn fetch_avatar(t: &dyn Transport, image: &str, server: &str) -> Option<String> {
+    if !avatar_allowed(image, server) {
         return None;
     }
     let req = Request {
@@ -390,17 +390,17 @@ mod tests {
         let url = "https://avatars.githubusercontent.com/u/1";
         let t = fake(vec![png(200, "image/png")]);
         assert_eq!(
-            fetch_avatar(&t, url).as_deref(),
+            fetch_avatar(&t, url, BASE).as_deref(),
             Some("data:image/png;base64,YWJj")
         );
         assert_eq!(t.requests()[0].url, url);
         assert!(t.requests()[0].bearer.is_none());
-        assert!(fetch_avatar(&fake(vec![png(404, "image/png")]), url).is_none());
-        assert!(fetch_avatar(&fake(vec![png(200, "image/svg+xml")]), url).is_none());
-        assert!(fetch_avatar(&fake(vec![Err(Offline)]), url).is_none());
+        assert!(fetch_avatar(&fake(vec![png(404, "image/png")]), url, BASE).is_none());
+        assert!(fetch_avatar(&fake(vec![png(200, "image/svg+xml")]), url, BASE).is_none());
+        assert!(fetch_avatar(&fake(vec![Err(Offline)]), url, BASE).is_none());
         // A disallowed host is never requested.
         let t = fake(vec![png(200, "image/png")]);
-        assert!(fetch_avatar(&t, "https://evil.test/a.png").is_none());
+        assert!(fetch_avatar(&t, "https://evil.test/a.png", BASE).is_none());
         assert!(t.requests().is_empty());
     }
 }
