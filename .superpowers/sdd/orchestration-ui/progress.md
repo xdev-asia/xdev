@@ -32,3 +32,10 @@ Base 0755c35 (B0). Backend tasks (B1-B15) live on feat/orchestration; this lane 
 - 1 s tick only while the countdown runs. A finished worker with `closesAtMs = null` (working again) shows the rule text again.
 - Open item: the strip does not read `workerAutoClose`; it relies on the backend returning no lifetime / no `closesAtMs` when auto-close is off. With auto-close off the rule text would still say "Closes 2 minutes after it finishes" -> backend should return `null` for the lifetime or the UI should read the setting (decide at merge).
 - Banner is warn-toned (xdev-ui has no neutral variant); per plan.
+
+## Task 6: complete
+- i18n keys (en + vi, same keys) were added in task 2 (`settings.orchestration.*`) and cover `orchestration.worker.*`; this task adds the open-failure toast (`openFailedToast`, title + stage) wired in `WorkspaceShell`, and relies on the existing parity, `no-hardcoded-colors` and `theme-tokens` tests (green); the new CSS only uses existing vars (`--line`, `--bg-2`, `--text-2`, `--radius-s`).
+- Fixed a flaky readiness-budget assertion (clock injected).
+
+## Task 7: skipped (optional)
+- No cheap path: the B0 contract has `orchestrationWorkerLifetime(tab)` only (no worker-list / task-to-tab lookup). A `task_<id>` link provider needs a backend lookup such as `orchestration.worker-list`; add after B8 if wanted.

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
 import type { WorkerOpen } from "@/api";
-import { openWorker, readTab, startOrchestrationEvents, type OrchestrationHost } from "./orchestrationEvents";
+import { translate } from "@/i18n";
+import { getToasts, resetToastsForTests } from "./toastStore";
+import { openFailedToast, openWorker, readTab, startOrchestrationEvents, type OrchestrationHost } from "./orchestrationEvents";
 import type { Tab } from "./sessions";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -28,7 +30,7 @@ function host(over: Partial<OrchestrationHost> = {}) {
 
 describe("openWorker", () => {
   it("opens a background tab with the given id and title, sends the preamble, answers ok", async () => {
-    const { h, open, send } = host();
+    const { h, open, send } = host({ now: () => 5 });
     const api = createMockApi({});
     expect(await openWorker(api, h, OPEN)).toEqual({ kind: "ok" });
     expect(open).toHaveBeenCalledWith("/w/a", "claude", null, undefined, { id: "tab-1", title: "worker-task_1", background: true });
@@ -160,5 +162,21 @@ describe("startOrchestrationEvents", () => {
     api.__orchOpenWorker(OPEN);
     await flush();
     expect(open).not.toHaveBeenCalled();
+  });
+});
+
+describe("openFailedToast", () => {
+  it("names the worker and the stage, in both languages", () => {
+    resetToastsForTests();
+    const t = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
+    openFailedToast(OPEN, "agent_readiness", t);
+    expect(getToasts().map((x) => x.text)).toEqual(["Could not open worker worker-task_1: the agent was not ready in time"]);
+    for (const stage of ["terminal_create", "setup_start", "agent_readiness", "setup_wait", "dispatch_input"]) {
+      for (const locale of ["en", "vi"] as const) {
+        const key = `orchestration.worker.stage.${stage}`;
+        expect(translate(locale, key), `${locale} ${key}`).not.toBe(key);
+      }
+    }
+    resetToastsForTests();
   });
 });
