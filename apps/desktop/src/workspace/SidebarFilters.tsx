@@ -18,7 +18,7 @@ export function SidebarFilters(props: { prefs: SidebarPrefs; hidden: number; onP
           type="button"
           className="ws-filters-hidden"
           title={t("filters.clear")}
-          onClick={() => props.onPrefs({ hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false })}
+          onClick={() => props.onPrefs({ ...props.prefs, hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false })}
         >
           {t("filters.hidden", { count: props.hidden })}
         </button>

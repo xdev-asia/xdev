@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { createMockApi } from "./api";
-import { DIFF_DEFAULTS, NAVIGATION_DEFAULTS } from "./mockSettings";
+import { DIFF_DEFAULTS, NAVIGATION_DEFAULTS, SIDEBAR_PREFS_DEFAULTS } from "./mockSettings";
 
 it("starts navigation and diff from the defaults the backend stores", async () => {
   const api = createMockApi({});
@@ -66,4 +66,12 @@ it("the mock usage report follows the scan switches and keeps tracking-since acr
   const all = await api.kitUsageReport({ ...base, sinceDay: null });
   expect(all.tracking_since).toBe(claude.tracking_since);
   expect(all.summary.days.length).toBeGreaterThan(claude.summary.days.length);
+});
+
+it("carries the sidebar layout through a prefs put", async () => {
+  const api = createMockApi({});
+  expect(await api.sidebarPrefsGet()).toEqual(SIDEBAR_PREFS_DEFAULTS);
+  const next = { ...SIDEBAR_PREFS_DEFAULTS, groupBy: "pr" as const, sort: "recent" as const, compactCards: true, card: { ...SIDEBAR_PREFS_DEFAULTS.card, time: false } };
+  expect(await api.sidebarPrefsPut(next)).toEqual(next);
+  expect(await api.sidebarPrefsGet()).toEqual(next);
 });

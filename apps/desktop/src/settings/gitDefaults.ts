@@ -14,6 +14,7 @@ export const DEFAULT_GIT_SETTINGS: GitSettings = {
   prGenerateOnOpen: false,
   prOpenAfterCreate: false,
   autoRenameBranch: true,
+  sourceControlGroupOrder: "changes-first",
   recipes: {
     commitMessage: { ...DEFAULT_RECIPE, args: [] },
     pullRequest: { ...DEFAULT_RECIPE, args: [] },

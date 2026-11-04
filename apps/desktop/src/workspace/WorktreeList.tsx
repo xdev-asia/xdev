@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import type { ApiError, Check, FolderEntry, KeptView, OpenInApp, OpenTarget, PrView, PtyProfile, RepoGroup, RepoView, SidebarItem, SidebarPrefs, WorktreeStat, WorktreeView } from "@/api";
+import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { useI18n } from "@/i18n";
 import { profileLetter, profileName, useProfiles } from "@/agents/profileStore";
 import { ago } from "./ago";
@@ -20,8 +21,6 @@ type T = ReturnType<typeof useI18n>["t"];
 
 type Entry = WtEntry;
 
-/** No filter on: every row shows. */
-const NO_FILTERS: SidebarPrefs = { hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false };
 
 export interface WorktreeListProps {
   /** Told the paths in the order they are drawn, collapsed groups left out; the worktree keys walk it. */
@@ -130,7 +129,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const [pinnedShut, setPinnedShut] = useState(false);
   // The id being dragged in the project list.
   const [dragging, setDragging] = useState<string | null>(null);
-  const prefs = props.prefs ?? NO_FILTERS;
+  const prefs = props.prefs ?? SIDEBAR_PREFS_DEFAULTS;
   const tree = props.items;
   // The repos whose "Found outside xDev" group is open; all start closed.
   const [foundOpen, setFoundOpen] = useState<string[]>([]);
