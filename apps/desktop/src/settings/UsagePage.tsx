@@ -3,12 +3,14 @@ import type { JSX } from "react";
 import { Badge, Heatmap } from "@xdev-asia/ui";
 import { toApiError, type Agent, type ApiError, type UsageDisplay, type UsageReport, type UsageScope, type UsageSettings } from "@/api";
 import { useI18n } from "@/i18n";
-import { displayPath, formatCount, totalOf, type Tokens } from "@/kit/kitUi";
+import { displayPath, formatCount, localDay, totalOf, type Tokens } from "@/kit/kitUi";
+import type { ShareCardData } from "@/kit/shareCard";
 import { TokenTable } from "@/kit/UsageTab";
 import { UsageChart } from "@/kit/UsageChart";
 import { rangeDays, type UsageRange } from "@/kit/usageRange";
 import { RECENT_DAYS, bestDay, cacheReuse, formatCost, recentDays } from "@/kit/usageStats";
 import { UsageRecentSessions } from "./UsageRecentSessions";
+import { UsageShare } from "./UsageShare";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import { CACHE_TTL_LONG_MS, CACHE_TTL_SHORT_MS } from "./usageDefaults";
 import type { SettingsSectionProps } from "./sections";
@@ -133,6 +135,20 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
   const reuse = provider === "claude" && claudeTokens !== undefined ? cacheReuse(claudeTokens) : null;
   const heat = provider === "overview" ? recentDays(days, RECENT_DAYS, new Date()) : [];
   const best = provider === "overview" ? bestDay(days) : null;
+  // The card is for one agent: Overview mixes them and has none.
+  const shareData: ShareCardData | null =
+    report === undefined || provider === "overview"
+      ? null
+      : {
+          provider,
+          range,
+          untilDay: localDay(new Date()),
+          cost: report.cost,
+          tokens,
+          topModel: report.summary.by_model[0]?.[0] ?? null,
+          sessions: report.sessions,
+          days,
+        };
 
   return (
     <div className="settings-page usage-page">
@@ -202,6 +218,7 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
           </select>
         </label>
         <div className="settings-actions settings-actions-start">
+          {shareData !== null && !empty && <UsageShare api={api} data={shareData} />}
           <button
             type="button"
             className="btn-secondary"
