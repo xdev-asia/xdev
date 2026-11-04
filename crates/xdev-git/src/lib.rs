@@ -3,6 +3,7 @@
 
 mod clone;
 mod commit;
+mod conflict;
 mod diff;
 mod gh;
 mod history;
@@ -17,6 +18,7 @@ mod worktree;
 use std::path::{Path, PathBuf};
 
 pub use clone::{CloneEvent, check_clone_url, clone_name, clone_repo, parse_progress};
+pub use conflict::{ConflictOp, ConflictState};
 pub use gh::{
     Check, CheckBucket, GhExec, GhOutput, ISSUE_BODY_MAX, ISSUE_LIMIT_MAX, Issue, IssueComment,
     IssueDetail, IssueQuery, IssueState, PrDraft, PrState, PrView, SystemGh, issue_list,

@@ -594,6 +594,20 @@ pub fn worktree_draft_pr(
     )
 }
 
+/// A branch name for the work of `session` (else the latest session of the
+/// worktree), from the branch-name recipe's agent or the first words of the
+/// prompt. Makes no change; Settings → Git, auto rename, does not apply.
+#[tauri::command(async)]
+pub fn worktree_suggest_branch(
+    _app: AppHandle,
+    _state: State<'_, AppState>,
+    _path: PathBuf,
+    _session: Option<String>,
+) -> Result<String, CmdError> {
+    // Contract stub; B4 fills it in.
+    Err(err("unsupported", None))
+}
+
 /// Settings → Git: count the range against the upstream.
 fn against_upstream(app: &AppHandle) -> bool {
     load_git_settings(app).compare_against_upstream

@@ -36,13 +36,13 @@ pub use kept::{
     ARCHIVE_DAYS, KeptBranch, KeptReason, KeptView, archive_worktree, kept_delete, kept_keep,
     kept_list, restore_worktree,
 };
-pub use names::{PrefixIssue, SUFFIX_MAX, normalize_prefix, prefix_issue, suffixed};
+pub use names::{PrefixIssue, SUFFIX_MAX, from_work, normalize_prefix, prefix_issue, suffixed};
 pub use ops::{
     BranchPrefix, COMMENT_MAX, CreateOptions, DetailsPatch, DirEntry, DirListing, ITEM_URL_MAX,
     NamePreview, Removed, RepoPatch, RepoView, TITLE_MAX, WorktreeStat, WorktreeView, add_repo,
     adopt_worktree, create_worktree, create_worktree_linked, create_worktree_with, forget_repo,
-    list, list_dir, name_preview, path_key, refresh_base, remove_worktree, set_details, set_pinned,
-    stat, update_repo, valid_short_name,
+    list, list_dir, name_preview, path_key, refresh_base, remove_worktree, rename_branch,
+    set_details, set_pinned, stat, update_repo, valid_short_name,
 };
 pub use registry::{
     MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, VaultEntry, WorkItem, WorkItemKind,
@@ -134,6 +134,9 @@ pub enum WorkspaceError {
     /// Already listed as a folder, a repo or a worktree.
     #[error("folder already listed: {0}")]
     FolderExists(String),
+    /// The branch has an upstream; renaming it would break the pull request.
+    #[error("the branch has an upstream: {0}")]
+    BranchPushed(String),
 }
 
 impl WorkspaceError {
@@ -170,6 +173,7 @@ impl WorkspaceError {
             WorkspaceError::GroupUnknown(_) => "group_unknown",
             WorkspaceError::FolderUnknown(_) => "folder_unknown",
             WorkspaceError::FolderExists(_) => "folder_exists",
+            WorkspaceError::BranchPushed(_) => "branch_pushed",
         }
     }
 }

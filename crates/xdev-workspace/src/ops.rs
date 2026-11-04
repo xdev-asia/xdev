@@ -68,6 +68,9 @@ pub struct WorktreeView {
     pub made_by: MadeBy,
     /// On the repo's base branch (by its short name).
     pub default_branch: bool,
+    /// The branch name was picked by the app and may still be renamed from
+    /// the first prompt.
+    pub auto_name: bool,
 }
 
 /// Paths from git, the registry and the UI compare in this form: `/` as the
@@ -389,6 +392,7 @@ pub(crate) fn view_of(
         item: meta.and_then(|m| m.item.clone()),
         made_by: meta.map(|m| m.made_by).unwrap_or_default(),
         default_branch: default.is_some() && entry.branch.as_deref() == default,
+        auto_name: meta.is_some_and(|m| m.auto_name),
     }
 }
 
@@ -873,6 +877,19 @@ pub fn create_worktree_linked(
     );
     reg.worktrees.push(meta);
     Ok((view, linked))
+}
+
+/// Renames the branch of the worktree at `path` to `leaf` under the same
+/// prefix, taking `-2`, `-3`, … when `leaf` is taken. The folder never
+/// moves. Refused with an upstream (`BranchPushed`) or a detached `HEAD`.
+pub fn rename_branch(
+    _reg: &mut Registry,
+    path: &Path,
+    _leaf: &str,
+    _opts: &CreateOptions,
+) -> Result<WorktreeView, WorkspaceError> {
+    // Contract stub; B3 fills it in.
+    Err(WorkspaceError::WorktreeUnknown(path.to_owned()))
 }
 
 /// How many times, and how far apart, the move out of staging is tried.
