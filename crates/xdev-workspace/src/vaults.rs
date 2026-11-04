@@ -156,3 +156,25 @@ pub fn forget_vault(reg: &mut Registry, id: &str) -> Result<(), WorkspaceError> 
     reg.vaults.remove(idx);
     Ok(())
 }
+
+/// Adopts the folder the old single `last_vault` setting held as a shared
+/// vault. Nothing happens for `None`, an empty path, a path already
+/// registered or a repo's docs folder. The folder need not exist: a vault on
+/// a drive that is away lists as not existing. Returns whether the registry
+/// changed, so running it again returns `false`.
+pub fn adopt_last_vault(reg: &mut Registry, last: Option<&Path>) -> bool {
+    let Some(path) = last.filter(|p| !p.as_os_str().is_empty()) else {
+        return false;
+    };
+    let key = path_key(path);
+    let known = reg.vaults.iter().any(|v| path_key(&v.path) == key)
+        || reg.repos.iter().any(|r| path_key(&repo_docs_dir(r)) == key);
+    if known {
+        return false;
+    }
+    reg.vaults.push(VaultEntry {
+        id: repo_id(path),
+        path: path.to_owned(),
+    });
+    true
+}

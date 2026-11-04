@@ -205,3 +205,48 @@ fn add_refuses_a_custom_repo_docs_folder() {
     let err = add_vault(&mut reg, &custom).unwrap_err();
     assert_eq!(err.code(), "vault_exists");
 }
+
+#[test]
+fn adopt_last_vault_adds_a_missing_path_as_shared() {
+    use xdev_workspace::adopt_last_vault;
+    let (tmp, mut reg, _) = with_repo();
+    let notes = tmp.path().join("notes");
+    fs::create_dir(&notes).unwrap();
+    assert!(adopt_last_vault(&mut reg, Some(&notes)));
+    assert_eq!(reg.vaults.len(), 1);
+    assert_eq!(reg.vaults[0].path, notes);
+    assert_eq!(reg.vaults[0].id, repo_id(&notes));
+    // A second run changes nothing.
+    assert!(!adopt_last_vault(&mut reg, Some(&notes)));
+    assert_eq!(reg.vaults.len(), 1);
+}
+
+#[test]
+fn adopt_last_vault_does_nothing_for_none_duplicates_and_repo_docs() {
+    use xdev_workspace::adopt_last_vault;
+    let (tmp, mut reg, mut entry) = with_repo();
+    let before = reg.clone();
+    assert!(!adopt_last_vault(&mut reg, None));
+    assert!(!adopt_last_vault(&mut reg, Some(Path::new(""))));
+    // The default docs folder of a repo, then a custom one.
+    assert!(!adopt_last_vault(&mut reg, Some(&repo_docs_dir(&entry))));
+    entry.docs_dir = Some("handbook".into());
+    reg.repos[0] = entry.clone();
+    let before_custom = reg.clone();
+    assert!(!adopt_last_vault(&mut reg, Some(&repo_docs_dir(&entry))));
+    assert_eq!(reg, before_custom);
+    reg.repos[0].docs_dir = None;
+    assert_eq!(reg, before);
+
+    // Already registered, spelled another way on Windows.
+    let notes = tmp.path().join("notes");
+    fs::create_dir(&notes).unwrap();
+    add_vault(&mut reg, &notes).unwrap();
+    let held = reg.clone();
+    assert!(!adopt_last_vault(&mut reg, Some(&notes)));
+    if cfg!(windows) {
+        let upper = notes.to_string_lossy().to_uppercase();
+        assert!(!adopt_last_vault(&mut reg, Some(Path::new(&upper))));
+    }
+    assert_eq!(reg, held);
+}
