@@ -213,6 +213,21 @@ function slug(name: string): string {
     .slice(0, 48);
 }
 
+// As `names::suffixed`: `leaf` for n = 1, else `leaf-n`, the leaf cut so the whole fits the 48-char cap.
+function suffixedLeaf(leaf: string, n: number): string {
+  if (n <= 1) return leaf;
+  const tail = `-${n}`;
+  return `${leaf.slice(0, 48 - tail.length).replace(/[/.-]+$/, "")}${tail}`;
+}
+
+// As `create::name_ok`: one plain folder name on every system.
+const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+function projectNameOk(name: string): boolean {
+  if ([...name].length === 0 || [...name].length > 100 || name === "." || name === "..") return false;
+  if (/[/\\:*?"<>|\u0000-\u001f\u007f]/.test(name) || name.endsWith(".")) return false;
+  return !RESERVED.test(name.split(".")[0].trimEnd());
+}
+
 // Fixed line counts per kind, so the demo rows show numbers that follow the pending changes.
 function demoStat(pending: WorktreeChange[]): WorktreeStat {
   const lines = { added: [3, 0], modified: [1, 1], deleted: [0, 2] } as const;
@@ -501,35 +516,62 @@ export function createMockWorkspace(
 
   const { tree, ...files } = createMockFiles((path) => (findWorktree(path) ? demoFiles(changes.get(path) ?? []) : null));
 
+
+  async function addFolder(path: string): Promise<FolderEntry> {
+    const root = path.trim().replace(/[\/]+$/, "");
+    if (root === "") return reject("not_found", path);
+    const taken = repos.some((r) => r.path === root || r.worktrees.some((w) => w.path === root)) || folders.some((f) => f.path === root);
+    if (taken) return reject("folder_exists", root);
+    const folder: FolderEntry = { id: `folder-${mockHash(root)}`, path: root, name: folderName(root) };
+    order = [...topIds(), folder.id];
+    folders.push(folder);
+    return structuredClone(folder);
+  }
+
+  async function addRepo(path: string): Promise<RepoView> {
+    const root = path.trim().replace(/[\/]+$/, "");
+    if (root === "") return reject("no_repo");
+    if (repos.some((r) => r.path === root)) return reject("repo_exists", root);
+    const base = (root.split(/[\/]/).pop() ?? root).toLowerCase().replace(/[^a-z0-9._-]/g, "");
+    let shortName = base;
+    for (let n = 2; repos.some((r) => r.shortName === shortName); n++) shortName = `${base}-${n}`;
+    const repo: RepoView = {
+      id: `repo-${repos.length + 1}-${shortName}`,
+      shortName,
+      path: root,
+      baseRef: "main",
+      worktreeRoot: `${root.replace(/[\/][^\/]*$/, "")}/wt`,
+      setupPolicy: "ask",
+      scriptSource: "auto",
+      localSetup: "",
+      localArchive: "",
+      missing: false,
+      worktrees: [worktree(root, shortName, "main", true)],
+      found: [],
+    };
+    repos.push(repo);
+    return structuredClone(repo);
+  }
+
+  // The branch, folder and title a typed name gets, as `name_typed` in Rust: the first of `leaf`, `leaf-2`, …
+  // (cut to 48 characters, suffix kept) whose branch and folder are free; `null` after 99 tries.
+  function nameTyped(repo: RepoView, leaf: string, prefixed: (leaf: string) => string): { leaf: string; branch: string; folder: string; suffixed: boolean } | null {
+    const parent = repo.path.replace(/[\/][^\/]*$/, "");
+    const taken = (branch: string, folder: string) => [...repo.worktrees, ...repo.found].some((w) => w.branch === branch || w.path === `${parent}/wt/${repo.shortName}-${folder}`);
+    for (let n = 1; n <= 99; n++) {
+      const candidate = suffixedLeaf(leaf, n);
+      const folder = candidate.replace(/\//g, "-");
+      if (!taken(prefixed(candidate), folder)) return { leaf: candidate, branch: prefixed(candidate), folder, suffixed: n > 1 };
+    }
+    return null;
+  }
+
   return {
     ...files,
     async workspaceList() {
       return structuredClone(repos);
     },
-    async repoAdd(path) {
-      const root = path.trim().replace(/[\/]+$/, "");
-      if (root === "") return reject("no_repo");
-      if (repos.some((r) => r.path === root)) return reject("repo_exists", root);
-      const base = (root.split(/[\/]/).pop() ?? root).toLowerCase().replace(/[^a-z0-9._-]/g, "");
-      let shortName = base;
-      for (let n = 2; repos.some((r) => r.shortName === shortName); n++) shortName = `${base}-${n}`;
-      const repo: RepoView = {
-        id: `repo-${repos.length + 1}-${shortName}`,
-        shortName,
-        path: root,
-        baseRef: "main",
-        worktreeRoot: `${root.replace(/[\/][^\/]*$/, "")}/wt`,
-        setupPolicy: "ask",
-        scriptSource: "auto",
-        localSetup: "",
-        localArchive: "",
-        missing: false,
-        worktrees: [worktree(root, shortName, "main", true)],
-        found: [],
-      };
-      repos.push(repo);
-      return structuredClone(repo);
-    },
+    repoAdd: addRepo,
     async repoForget(id) {
       const i = repos.findIndex((r) => r.id === id);
       if (i < 0) return reject("repo_unknown", id);
@@ -667,13 +709,15 @@ export function createMockWorkspace(
         typed === ""
           ? (WORDS.find((w) => !repo.worktrees.some((x) => x.branch === prefixed(w))) ?? `wt-${repo.worktrees.length}`)
           : slug(typed);
-      const branch = prefixed(leaf);
       if (leaf === "" || leaf.includes("..") || leaf.endsWith("/") || leaf.endsWith(".lock")) return reject("bad_name", typed);
-      if (repo.worktrees.some((w) => w.branch === branch)) return reject("branch_exists", branch);
       if (from !== null && from.trim() !== "" && /\s|\.\.|^-/.test(from.trim())) return reject("bad_ref", from.trim());
-      const folder = leaf.replace(/\//g, "-");
+      // As the desktop: a taken name is made as `name-2`, and the row keeps what was typed.
+      const named = nameTyped(repo, leaf, prefixed);
+      if (!named) return reject("branch_exists", prefixed(leaf));
+      const { branch, folder } = named;
       const parent = repo.path.replace(/[\/][^\/]*$/, "");
       const wt = worktree(`${parent}/wt/${repo.shortName}-${folder}`, folder, branch, false);
+      if (typed !== "" && (named.suffixed || /\p{Extended_Pictographic}/u.test(typed))) wt.title = [...typed].slice(0, TITLE_MAX).join("");
       repo.worktrees.push(wt);
       // As `shared_to_link`: the primary checkout's list, and only when it is trusted.
       const lists = listsOf(repo, repoFiles.get(repo.path));
@@ -685,12 +729,37 @@ export function createMockWorkspace(
         : [];
       return { worktree: structuredClone(wt), shared };
     },
-    // Filled in by the mock task of the plan.
-    async repoCreate() {
-      return reject("not_found", "repoCreate");
+    async repoCreate(req) {
+      const name = req.name.trim();
+      if (!projectNameOk(name)) return reject("bad_name", req.name);
+      const parent = trimPath(req.parent);
+      if (!isAbsolute(parent)) return reject("not_found", req.parent);
+      const path = `${parent}/${name}`;
+      if (repos.some((r) => r.path === path) || folders.some((f) => f.path === path)) return reject("exists", path);
+      if (req.kind === "folder") return { kind: "folder", folder: await addFolder(path) };
+      const branch = req.branch.trim() === "" ? "main" : req.branch.trim();
+      if (/[\s~^:?*[\\]|\.\.|^-|\/$|\.lock$/.test(branch)) return reject("bad_name", branch);
+      const repo = await addRepo(path);
+      const added = repos.find((r) => r.id === repo.id)!;
+      added.baseRef = branch;
+      added.worktrees[0].branch = branch;
+      // A repo with no commit has nothing for a worktree to start from; the mock keeps the head empty.
+      if (!req.firstCommit) added.worktrees[0].head = null;
+      return { kind: "git", repo: structuredClone(added) };
     },
-    async worktreeNamePreview() {
-      return reject("not_found", "worktreeNamePreview");
+    async worktreeNamePreview(repoId, name) {
+      const repo = repos.find((r) => r.id === repoId);
+      if (!repo) return reject("repo_unknown", repoId);
+      const typed = name.trim();
+      if (typed === "") return { branch: "", folder: "", suffixed: false };
+      const preview = previewPrefix(git, userName);
+      if (preview.kind === "invalid") return reject("bad_branch_prefix", normalizePrefix(git.branchPrefixCustom));
+      const prefixed = (leaf: string) => (preview.kind === "prefix" ? `${preview.prefix}/${leaf}` : leaf);
+      const leaf = slug(typed);
+      if (leaf === "" || leaf.includes("..") || leaf.endsWith("/") || leaf.endsWith(".lock")) return reject("bad_name", typed);
+      const named = nameTyped(repo, leaf, prefixed);
+      if (!named) return reject("branch_exists", prefixed(leaf));
+      return { branch: named.branch, folder: `${repo.shortName}-${named.folder}`, suffixed: named.suffixed };
     },
     async worktreePin(path, pinned) {
       const found = findWorktree(path);
@@ -815,16 +884,7 @@ export function createMockWorkspace(
       order = top;
       order = topIds();
     },
-    async folderAdd(path) {
-      const root = path.trim().replace(/[\/]+$/, "");
-      if (root === "") return reject("not_found", path);
-      const taken = repos.some((r) => r.path === root || r.worktrees.some((w) => w.path === root)) || folders.some((f) => f.path === root);
-      if (taken) return reject("folder_exists", root);
-      const folder: FolderEntry = { id: `folder-${mockHash(root)}`, path: root, name: folderName(root) };
-      order = [...topIds(), folder.id];
-      folders.push(folder);
-      return structuredClone(folder);
-    },
+    folderAdd: addFolder,
     async folderForget(id) {
       if (!folders.some((f) => f.id === id)) return reject("folder_unknown", id);
       folders = folders.filter((f) => f.id !== id);
