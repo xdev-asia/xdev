@@ -67,6 +67,8 @@ export function TerminalLookSection(props: TerminalSectionProps): JSX.Element {
     try {
       await api.terminalThemeRemove(id);
       await loadCustomSchemes(api);
+      // A terminal still pointing at the removed scheme goes back to the app colours.
+      if (current.theme === id) await patch({ theme: THEME_APP });
     } catch (e) {
       setListError(toApiError(e).code);
     }
@@ -150,7 +152,7 @@ export function TerminalLookSection(props: TerminalSectionProps): JSX.Element {
                       variant="secondary"
                       data-remove={s.id}
                       aria-label={t("settings.terminal.import.removeNamed", { name: s.name })}
-                      disabled={busy}
+                      disabled={busy || importBusy}
                       onClick={() => void removeScheme(s.id)}
                     >
                       {t("settings.terminal.import.remove")}

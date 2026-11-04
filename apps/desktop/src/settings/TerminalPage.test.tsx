@@ -366,6 +366,28 @@ it("Remove trashes the scheme and the list reloads", async () => {
   expect(getCustomSchemes()).toEqual([]);
 });
 
+it("removing the scheme the terminal uses puts the theme back to app", async () => {
+  // The mock imports the demo file as this id.
+  const p = await page({ theme: "custom-graphite-dark" });
+  const imported = await p.api.terminalThemeImport((await p.api.pickFile(["json"]))!, "fail");
+  expect(imported.id).toBe("custom-graphite-dark");
+  const other = { ...imported, id: "custom-other", name: "Other" };
+  setCustomSchemes([imported, other]);
+  // Removing a scheme the terminal does not use leaves the theme alone.
+  p.all().find((n) => n.props["data-remove"] === other.id)!.props.onClick();
+  await tick();
+  expect((await p.api.terminalSettings()).theme).toBe(imported.id);
+  p.all().find((n) => n.props["data-remove"] === imported.id)!.props.onClick();
+  await tick();
+  expect((await p.api.terminalSettings()).theme).toBe("app");
+});
+
+it("Remove is enabled when nothing is busy", async () => {
+  const p = await page();
+  setCustomSchemes([mine]);
+  expect(p.all().find((n) => n.props["data-remove"] === mine.id)!.props.disabled).toBe(false);
+});
+
 it("Import theme picks a file, previews it, and the dialog imports on the answer", async () => {
   const p = await page();
   const pick = vi.spyOn(p.api, "pickFile");
