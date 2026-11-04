@@ -2,9 +2,6 @@
 //! rotated at 5 MiB across three files. Every message is redacted before it
 //! is written. A failure to log is never an error for the caller.
 
-// Some of it is first used by the diagnostics bundle and crash store.
-#![allow(dead_code)]
-
 use crate::redact::redact_text;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -139,12 +136,6 @@ pub(crate) fn init(local: Option<&Path>) {
             home_dir(),
         ));
     }
-}
-
-/// The folder the log lives in, once `init` had one.
-pub(crate) fn dir() -> Option<PathBuf> {
-    LOG.get()
-        .and_then(|l| l.path.parent().map(Path::to_path_buf))
 }
 
 fn log(level: &str, target: &str, msg: &str) {

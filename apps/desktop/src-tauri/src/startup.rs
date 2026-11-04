@@ -3,9 +3,6 @@
 //! diagnostics file carries the report. Steps also go to the app log.
 //! `XDEV_STARTUP_DIAGNOSTICS=1` prints each step to stderr too.
 
-// Some of it is first used by the commands.
-#![allow(dead_code)]
-
 use crate::applog;
 use serde::{Deserialize, Serialize};
 use std::path::Path;

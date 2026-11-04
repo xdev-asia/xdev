@@ -77,6 +77,9 @@ pub fn run() {
     let index_dirs = data_dir.clone().zip(local_dir.clone());
     let dev_flag = std::env::var("XDEV_DEV_DEEP_LINK").ok();
     applog::init(local_dir.as_deref());
+    // The ring is shared with the hook, which may run on any thread.
+    let crumbs = std::sync::Arc::new(crash::Breadcrumbs::default());
+    crash::install_panic_hook(local_dir.clone(), crumbs.clone());
     let sync_local = local_dir.clone();
     let ptyd_local = local_dir.clone();
     let endpoint_local = local_dir.clone();
@@ -127,6 +130,7 @@ pub fn run() {
                 automations::window_gone(window.app_handle());
             }
         })
+        .manage(crumbs)
         .setup(move |app| {
             if let Some((data, local)) = &index_dirs {
                 xdev_core::move_indexes(data, local);
@@ -583,6 +587,16 @@ pub fn run() {
             automations::automation_ui_ready,
             automations::automation_dispatch_result,
             automations::automation_run_finish,
+            crash::crash_record_render,
+            crash::crash_breadcrumb,
+            crash::crash_take_pending,
+            crash::crash_latest,
+            crash::crash_dismiss,
+            startup::startup_report,
+            startup::startup_mark,
+            startup::app_relaunch,
+            diag_bundle::diagnostics_export,
+            diag_bundle::diagnostics_reveal_logs,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
@@ -647,6 +661,15 @@ mod tests {
         plugins.sort_unstable();
         plugins.dedup();
         assert_eq!(plugins.len(), all, "{chain}");
+    }
+
+    #[test]
+    fn capability_allows_the_save_dialog() {
+        let caps: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        let allowed = caps["permissions"].as_array().unwrap();
+        assert!(allowed.iter().any(|p| p == "dialog:allow-save"));
+        assert!(allowed.iter().any(|p| p == "dialog:allow-open"));
     }
 
     #[test]

@@ -3,9 +3,6 @@
 //! startup report and the crash reports. Nothing is uploaded; the person
 //! reads the file before they share it.
 
-// Some of it is first used by the commands.
-#![allow(dead_code)]
-
 use crate::commands::CmdError;
 use crate::crash::CrashReport;
 use crate::redact::{redact_text, redact_value};

@@ -3,9 +3,6 @@
 //! sit in `<local>/crash-reports.json` (at most five, newest first) and carry
 //! the last 30 breadcrumbs, so a report shows what happened just before.
 
-// Some of it is first used by the commands.
-#![allow(dead_code)]
-
 use crate::commands::CmdError;
 use crate::redact::redact_text;
 use serde::{Deserialize, Serialize};
@@ -425,6 +422,67 @@ pub fn install_panic_hook(local: Option<PathBuf>, crumbs: Arc<Breadcrumbs>) {
         }));
         previous(info);
     }));
+}
+
+// ---- commands -------------------------------------------------------------
+
+fn store_file(app: &tauri::AppHandle) -> Result<PathBuf, CmdError> {
+    use tauri::Manager;
+    let state = app.state::<crate::commands::AppState>();
+    Ok(store_path(crate::accounts::local_dir(&state)?))
+}
+
+/// A boundary caught a render error: keep a report and answer it so the UI
+/// can show it at once.
+#[tauri::command]
+pub fn crash_record_render(
+    app: tauri::AppHandle,
+    crash: RenderCrash,
+) -> Result<Option<CrashReport>, CmdError> {
+    use tauri::Manager;
+    let path = store_file(&app)?;
+    let home = crate::applog::home_dir();
+    let report = render_report(
+        &crash,
+        app.state::<Arc<Breadcrumbs>>().snapshot(),
+        uuid::Uuid::new_v4().to_string(),
+        crate::workspace::clock().0,
+        home.as_deref(),
+    );
+    crate::applog::error(
+        "render",
+        &format!("{} in {}: {}", crash.name, crash.boundary, crash.message),
+    );
+    record(&path, report.clone())?;
+    Ok(Some(report))
+}
+
+#[tauri::command]
+pub fn crash_breadcrumb(app: tauri::AppHandle, name: String, data: Vec<CrashDetail>) {
+    use tauri::Manager;
+    app.state::<Arc<Breadcrumbs>>().push(
+        crate::workspace::clock().0,
+        &name,
+        &data,
+        crate::applog::home_dir().as_deref(),
+    );
+}
+
+/// The newest pending report, once: it is marked dismissed as it is taken.
+#[tauri::command]
+pub fn crash_take_pending(app: tauri::AppHandle) -> Result<Option<CrashReport>, CmdError> {
+    take_pending(&store_file(&app)?)
+}
+
+/// The newest report of any status.
+#[tauri::command]
+pub fn crash_latest(app: tauri::AppHandle) -> Result<Option<CrashReport>, CmdError> {
+    latest(&store_file(&app)?)
+}
+
+#[tauri::command]
+pub fn crash_dismiss(app: tauri::AppHandle, id: String) -> Result<(), CmdError> {
+    dismiss(&store_file(&app)?, &id)
 }
 
 #[cfg(test)]

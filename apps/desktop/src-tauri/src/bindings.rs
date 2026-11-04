@@ -18,6 +18,7 @@ use crate::automations::{
 use crate::cli_verbs::{CliAsk, CliOpenTab, TabReport};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
 use crate::file_watch::FsChanged;
+use crate::crash::{CrashReport, RenderCrash};
 use crate::hooks::PtyHook;
 use crate::keybindings::{KeybindingsChanged, KeybindingsText};
 use crate::kit::{KitText, PromptEntry};
@@ -42,6 +43,7 @@ use crate::settings::{
 use crate::shell::{CloseIntent, CloseRequest, HelpLink, MenuEvent, QuitMode, ShellLabels};
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
+use crate::startup::StartupReport;
 use crate::tasks::{FileDiff, TasksContext};
 use crate::terminal_themes::{CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview};
 use crate::updater::{UpdateInfo, UpdatePhase};
@@ -56,6 +58,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     XdevIdState::export_all(cfg)?;
     ::xdev_id::XdevIdServer::export_all(cfg)?;
     ::xdev_id::ServerSource::export_all(cfg)?;
+    CrashReport::export_all(cfg)?;
+    RenderCrash::export_all(cfg)?;
+    StartupReport::export_all(cfg)?;
     Changed::export_all(cfg)?;
     VaultSetup::export_all(cfg)?;
     VcsState::export_all(cfg)?;

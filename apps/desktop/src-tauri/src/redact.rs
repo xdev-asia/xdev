@@ -2,9 +2,6 @@
 //! reports and the diagnostics file. One place, so every sink hides the same
 //! things. Redacting twice gives the same output as redacting once.
 
-// Some of it is first used by the diagnostics bundle and crash store.
-#![allow(dead_code)]
-
 use regex::{Captures, Regex};
 use serde_json::Value;
 use std::path::Path;
