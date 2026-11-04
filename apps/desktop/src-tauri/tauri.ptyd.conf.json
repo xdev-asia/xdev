@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
-    "externalBin": ["binaries/xdev-ptyd"]
+    "externalBin": ["binaries/xdev-ptyd", "binaries/xdev"]
   }
 }
