@@ -1,6 +1,9 @@
-import type { Api, ApiError, Issue, IssueDetail } from "./api";
+import type { Api, ApiError, Issue, IssueDetail, PrSummary, ProjectSummary } from "./api";
 
-type IssuesApi = Pick<Api, "issuesList" | "issueView" | "issueResolve" | "issueOpen">;
+type IssuesApi = Pick<
+  Api,
+  "issuesList" | "issueView" | "issueResolve" | "issueOpen" | "issueCreate" | "prsList" | "prGet" | "prOpen" | "prBranch" | "projectsList" | "projectOpen"
+>;
 
 /** The repo the mock's issue URLs belong to. */
 export const MOCK_ISSUE_REPO = "example/demo";
@@ -35,27 +38,91 @@ const DETAILS: Record<number, Pick<IssueDetail, "body" | "comments">> = {
   3: { body: "Done in the last release.", comments: [] },
 };
 
+function pr(number: number, title: string, state: PrSummary["state"], head: string, author: string, hoursAgo: number, fork = false): PrSummary {
+  return {
+    number, title, state, head, author, fork,
+    url: `https://github.com/${MOCK_ISSUE_REPO}/pull/${number}`,
+    base: "main",
+    updatedAt: new Date(NOW - hoursAgo * 3_600_000).toISOString(),
+  };
+}
+
+// #11 is the one `needsReview` finds; #13 comes from a fork.
+const PRS: PrSummary[] = [
+  pr(10, "Fix the footer meter", "open", "fix-footer", "me", 3),
+  pr(11, "Add a dark theme", "draft", "dark-theme", "octocat", 20),
+  pr(12, "Bump the build tools", "merged", "bump-tools", "hubot", 300),
+  pr(13, "Typo in the readme", "open", "patch-1", "stranger", 50, true),
+];
+const NEEDS_REVIEW = new Set([11]);
+
+const PROJECTS: ProjectSummary[] = [
+  { number: 1, title: "Roadmap", url: "https://github.com/example/projects/1", closed: false, items: 12 },
+  { number: 2, title: "Launch week", url: "https://github.com/example/projects/2", closed: true, items: 4 },
+];
+
 /** Three fixed issues, one closed; the demo user is `me`. Filters like `gh issue list`. */
 export function createMockIssues(): IssuesApi {
+  // New issues of this instance, shown before the fixed ones.
+  const made: Issue[] = [];
+  const all = () => [...made, ...ISSUES];
   return {
     async issuesList(_repoId, query) {
       const wantClosed = query.state === "closed";
       const search = (query.search ?? "").trim().toLowerCase();
       const limit = Math.min(Math.max(query.limit ?? 100, 1), 200);
       return structuredClone(
-        ISSUES.filter((i) => (i.state === "closed") === wantClosed)
+        all().filter((i) => (i.state === "closed") === wantClosed)
           .filter((i) => !query.assigneeMe || i.assignees.includes("me"))
           .filter((i) => search === "" || i.title.toLowerCase().includes(search) || i.labels.some((l) => l.toLowerCase().includes(search)))
           .slice(0, limit),
       );
     },
     async issueView(_repoId, number) {
-      const found = ISSUES.find((i) => i.number === number);
+      const found = all().find((i) => i.number === number);
       if (!found) return reject("issue_not_found");
-      return structuredClone({ issue: found, ...DETAILS[number] });
+      return structuredClone({ issue: found, ...(DETAILS[number] ?? { body: "", comments: [] }) });
     },
     async issueOpen(_repoId, number) {
-      if (!ISSUES.some((i) => i.number === number)) return reject("issue_not_found");
+      if (!all().some((i) => i.number === number)) return reject("issue_not_found");
+    },
+    async issueCreate(_repoId, draft) {
+      const title = draft.title.trim();
+      if (title === "" || [...title].length > 256) return reject("bad_draft");
+      const next = issue(Math.max(...all().map((i) => i.number)) + 1, title, "open", [], [], 0);
+      next.author = "me";
+      made.unshift(next);
+      return structuredClone(next);
+    },
+    async prsList(_repoId, query) {
+      const state = query.state ?? "open";
+      const search = (query.search ?? "").trim().toLowerCase();
+      const limit = Math.min(Math.max(query.limit ?? 100, 1), 200);
+      return structuredClone(
+        PRS.filter((p) => state === "all" || (state === "open" ? p.state === "open" || p.state === "draft" : p.state === state))
+          .filter((p) => !query.mine || p.author === "me")
+          .filter((p) => !query.needsReview || NEEDS_REVIEW.has(p.number))
+          .filter((p) => search === "" || p.title.toLowerCase().includes(search))
+          .slice(0, limit),
+      );
+    },
+    async prGet(_repoId, number) {
+      const found = PRS.find((p) => p.number === number);
+      return found ? structuredClone(found) : reject("pr_not_found");
+    },
+    async prOpen(_repoId, number) {
+      if (!PRS.some((p) => p.number === number)) return reject("pr_not_found");
+    },
+    async prBranch(_repoId, number) {
+      const found = PRS.find((p) => p.number === number);
+      if (!found) return reject("pr_not_found");
+      return found.fork ? `pr-${number}` : found.head;
+    },
+    async projectsList() {
+      return structuredClone(PROJECTS);
+    },
+    async projectOpen(_repoId, number) {
+      if (!PROJECTS.some((p) => p.number === number)) return reject("not_found");
     },
     async issueResolve(_repoId, text) {
       const t = text.trim();
@@ -63,7 +130,7 @@ export function createMockIssues(): IssuesApi {
       if (url && url[1].toLowerCase() !== MOCK_ISSUE_REPO) return reject("issue_other_repo", url[1]);
       const digits = url ? url[2] : /^#?(\d+)$/.exec(t)?.[1];
       const number = digits === undefined ? 0 : Number(digits);
-      return structuredClone(ISSUES.find((i) => i.number === number) ?? null);
+      return structuredClone(all().find((i) => i.number === number) ?? null);
     },
   };
 }

@@ -767,9 +767,31 @@ export function createMockWorkspace(
     async gitUserName() {
       return userName;
     },
-    async worktreeCreate(repoId, name, from) {
+    async worktreeCreate(repoId, name, from, request) {
       const repo = repos.find((r) => r.id === repoId);
       if (!repo) return reject("repo_unknown", repoId);
+      // As `names::sparse_dirs`: at most 50 relative folders, none empty, with `..` or a leading `-`.
+      const sparse = request?.sparse ?? [];
+      if (sparse.length > 50 || sparse.some((d) => d.trim() === "" || d.startsWith("-") || isAbsolute(d) || d.split(/[\\/]/).includes(".."))) {
+        return reject("bad_sparse", sparse.join(", "));
+      }
+      const existing = request?.existing?.trim() ?? "";
+      if (existing !== "") {
+        // A local branch only: the base branches and the ones kept after an archive.
+        const local = [...REVIEW_BRANCHES.filter((b) => !b.remote).map((b) => b.name), ...kept.filter((k) => k.repoId === repo.id).map((k) => k.branch)];
+        if (!local.includes(existing)) return reject("bad_ref", existing);
+        if (repo.worktrees.some((x) => x.branch === existing)) return reject("branch_in_use", existing);
+        const typedName = name.trim();
+        const folder = slug(typedName === "" ? (existing.split("/").pop() ?? existing) : typedName);
+        if (folder === "") return reject("bad_name", typedName);
+        const parentDir = repo.path.replace(/[\/][^\/]*$/, "");
+        // `madeBy: "cli"` keeps the branch on remove, as `made_here: false` does in the desktop.
+        const wt = { ...worktree(`${parentDir}/wt/${repo.shortName}-${folder}`, folder, existing, false), madeBy: "cli" as const };
+        wt.autoName = false;
+        if (typedName !== "") wt.title = typedName;
+        repo.worktrees.push(wt);
+        return { worktree: structuredClone(wt), shared: [] };
+      }
       // As `create_worktree_with`: the prefix names the branch, the folder keeps only the leaf.
       const preview = previewPrefix(git, userName);
       if (preview.kind === "invalid") return reject("bad_branch_prefix", normalizePrefix(git.branchPrefixCustom));
