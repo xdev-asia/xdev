@@ -1639,5 +1639,8 @@
   "settings.general.wordWrap": "Ngắt dòng dài",
   "settings.general.fileTree": "Hiện cây tệp trong diff gộp",
   "settings.general.fileTreeHint": "Đã lưu; cây tệp sẽ có ở bản sau.",
-  "settings.general.saveAsDefault": "Lưu làm mặc định"
+  "settings.general.saveAsDefault": "Lưu làm mặc định",
+  "panes.closePinned.title": "Đóng tab đã ghim?",
+  "panes.closePinned.body": "Tab đã ghim là tab bạn muốn giữ. Đóng sẽ kết thúc terminal của nó.",
+  "panes.closePinned.confirm": "Đóng"
 }
