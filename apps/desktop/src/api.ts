@@ -320,6 +320,10 @@ export type ErrorCode =
   | "not_found"
   | "outside_vault"
   | "no_vault"
+  | "share_too_large"
+  | "share_bad_image"
+  | "share_clipboard"
+  | "share_open"
   | "io"
   | "not_utf8"
   | "too_large"
@@ -932,6 +936,10 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "not_found",
   "outside_vault",
   "no_vault",
+  "share_too_large",
+  "share_bad_image",
+  "share_clipboard",
+  "share_open",
   "io",
   "not_utf8",
   "too_large",
