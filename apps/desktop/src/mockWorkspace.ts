@@ -51,6 +51,7 @@ type WorkspaceApi = Pick<
   | "worktreePrCreate"
   | "worktreePrChecks"
   | "worktreePrOpen"
+  | "worktreeCheckLog"
   | "worktreeDraftCommit"
   | "worktreeDraftPr"
   | "worktreeListDir"
@@ -964,6 +965,10 @@ export function createMockWorkspace(
     async worktreePrOpen(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);
       if (!prs.has(path)) return reject("gh_failed");
+    },
+    async worktreeCheckLog(path) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      return null;
     },
     async worktreeDraftCommit(path, files) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

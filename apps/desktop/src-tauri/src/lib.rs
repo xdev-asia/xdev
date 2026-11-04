@@ -15,6 +15,7 @@ mod open_in;
 mod profiles;
 mod pty;
 mod quick_commands;
+mod recipes;
 mod reveal;
 mod review;
 mod review_notes;
@@ -270,6 +271,7 @@ pub fn run() {
             issues::issue_open,
             ship::worktree_draft_commit,
             ship::worktree_draft_pr,
+            ship::worktree_check_log,
             kit::kit_homes,
             kit::kit_skills,
             kit::kit_memory,

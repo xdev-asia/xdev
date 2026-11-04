@@ -93,6 +93,8 @@ import type {
   FileList,
   FileText,
   GitSettings,
+  GitRecipes,
+  Recipe,
   LineHit,
   Home,
   KitText,
@@ -214,6 +216,8 @@ export type {
   IssueState,
   ShipView,
   GitSettings,
+  GitRecipes,
+  Recipe,
   BranchPrefixMode,
   TerminalSettings,
   FontWeight,
@@ -343,6 +347,7 @@ export type ErrorCode =
   | "issue_not_found"
   | "issue_other_repo"
   | "draft_failed"
+  | "unsupported_agent"
   | "bad_sound"
   | "hook_untrusted"
   | "hook_none"
@@ -644,6 +649,9 @@ export interface Api {
   issueResolve(repoId: string, text: string): Promise<Issue | null>;
   // Opens the issue in the browser through `gh`.
   issueOpen(repoId: string, number: number): Promise<void>;
+  // The log of the failed job behind a check's link (capped), for the Fix checks recipe; null when
+  // `gh` cannot give it.
+  worktreeCheckLog(path: string, link: string): Promise<string | null>;
   // Drafted texts; reject with `draft_failed`.
   worktreeDraftCommit(path: string, files: string[]): Promise<string>;
   worktreeDraftPr(path: string): Promise<PrDraft>;
@@ -857,6 +865,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "issue_not_found",
   "issue_other_repo",
   "draft_failed",
+  "unsupported_agent",
   "bad_sound",
   "hook_untrusted",
   "hook_none",
@@ -1053,6 +1062,7 @@ const tauriApi: Api = {
   issueView: (repoId, number) => call("issue_view", { repoId, number }),
   issueResolve: (repoId, text) => call("issue_resolve", { repoId, text }),
   issueOpen: (repoId, number) => call("issue_open", { repoId, number }),
+  worktreeCheckLog: (path, link) => call("worktree_check_log", { path, link }),
   worktreeDraftCommit: (path, files) => call("worktree_draft_commit", { path, files }),
   worktreeDraftPr: (path) => call("worktree_draft_pr", { path }),
   worktreeListDir: (path, dir) => call("worktree_list_dir", { path, dir }),

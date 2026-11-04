@@ -44,7 +44,7 @@ import { removeRepo } from "./removeRepo";
 import { VaultNav } from "./VaultNav";
 import type { AppId } from "@/shell/apps";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
-import { sendToAgentTab } from "./agentPrompt";
+import { sendCheckFix, sendFix } from "./fixAgent";
 import { sendTarget } from "./sendTarget";
 import { SetupCard, type SetupCardState } from "./SetupCard";
 import { decideSetup } from "./setupFlow";
@@ -1112,12 +1112,20 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     return true;
   }
 
-  // Gives a failed commit hook's output to an agent of the worktree and brings its tab to the front.
-  async function fixWithAgent(output: string): Promise<void> {
+  // Gives a failed commit hook's output to an agent of the worktree, as its recipe says, and brings its tab to the front.
+  async function fixWithAgent(id: "fixCommitFailure" | "fixPushFailure", output: string, branch = current?.branch ?? ""): Promise<void> {
     if (!sessions || !current) return;
     const path = current.path;
-    const prompt = `The git commit hook failed. Fix the problem it reports, then stop; do not commit.\n\n${output}`;
-    const tab = await sendToAgentTab(sessions, path, shownTab[path] ?? null, prompt);
+    const tab = await sendFix(api, sessions, path, shownTab[path] ?? null, id, { branch, output });
+    setFixNote(!tab);
+    if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
+  }
+
+  // Gives a failed check, with its log when there is one, to an agent of the worktree.
+  async function fixCheck(check: Check): Promise<void> {
+    if (!sessions || !current) return;
+    const path = current.path;
+    const tab = await sendCheckFix(api, sessions, path, shownTab[path] ?? null, current.branch ?? "", check);
     setFixNote(!tab);
     if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
   }
@@ -1533,7 +1541,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   onOpenFile={(file) => openFile(current.path, file)}
                   onCount={(n) => setChangeCount({ worktree: current.path, count: n })}
                   onChanges={(list) => setChangeList({ worktree: current.path, list })}
-                  onFixWithAgent={(output) => void fixWithAgent(output)}
+                  onFixWithAgent={(output) => void fixWithAgent("fixCommitFailure", output)}
+                  onFixPush={(output, branch) => void fixWithAgent("fixPushFailure", output, branch)}
+                  onOpenGitSettings={() => openSettings("git")}
                   register={registerChanges}
                 />
               ) : (
@@ -1542,7 +1552,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             </div>
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "checks"}>
               {current ? (
-                <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} visible={panelTab === "checks"} />
+                <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} visible={panelTab === "checks"} onFix={(check) => fixCheck(check)} />
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
               )}

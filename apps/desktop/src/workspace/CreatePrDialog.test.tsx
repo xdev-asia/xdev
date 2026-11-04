@@ -164,6 +164,25 @@ it("starts from the draft default and drafts with the agent on open when asked",
   expect(view.title().props.value).toBe("feat: one");
 });
 
+it("an agent the recipe cannot use shows the problem with a link to Settings → Git", async () => {
+  const api = createMockApi({});
+  const onOpenGitSettings = vi.fn();
+  vi.spyOn(api, "worktreeDraftPr").mockRejectedValueOnce({ code: "unsupported_agent", detail: "gemini" });
+  const view = dialog(api, { onOpenGitSettings });
+  view.agent().props.onClick();
+  await tick();
+  expect(view.html()).toContain(en("error.unsupported_agent"));
+  const link = view.find((n) => n.props["data-open-settings"] === "git")!;
+  expect(link.props.children).toBe(en("recipes.openSettings"));
+  link.props.onClick();
+  expect(onOpenGitSettings).toHaveBeenCalledOnce();
+  // Another failure has no link, and neither does a dialog that cannot open Settings.
+  vi.spyOn(api, "worktreeDraftPr").mockRejectedValueOnce({ code: "draft_failed" });
+  view.agent().props.onClick();
+  await tick();
+  expect(view.find((n) => n.props["data-open-settings"] === "git")).toBeUndefined();
+});
+
 it("hides the agent and never drafts on open without the agent actions", async () => {
   const api = createMockApi({});
   const drafting = vi.spyOn(api, "worktreeDraftPr");

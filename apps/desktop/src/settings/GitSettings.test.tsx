@@ -5,6 +5,7 @@ import { createMockApi, type GitSettings as Git } from "@/api";
 import { translate } from "@/i18n";
 import { DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE } from "@/mockWorkspace";
 import { GitSettings } from "./GitSettings";
+import { RecipesEditor } from "./recipes/RecipesEditor";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
 vi.mock("react", async (original) => {
@@ -138,4 +139,19 @@ it("shows a failed save", async () => {
   v.toggle().props.onClick();
   await tick();
   expect(v.all().find((n) => n.props.role === "alert")?.props.children).toBe(en("error.io"));
+});
+
+it("shows the recipes with the agent actions, and saves an edit through the git settings", async () => {
+  const v = await view();
+  const editor = () => v.all().find((n) => n.type === RecipesEditor)!;
+  expect(editor()).toBeDefined();
+  const save = vi.spyOn(v.api, "setGitSettings");
+  const recipes = structuredClone(DEFAULT_GIT_SETTINGS.recipes);
+  recipes.commitMessage.template = "Use conventional commits.\n{basePrompt}";
+  editor().props.onChange(recipes);
+  await tick();
+  expect(save).toHaveBeenLastCalledWith({ ...DEFAULT_GIT_SETTINGS, recipes });
+  v.ai().props.onClick();
+  await tick();
+  expect(v.all().find((n) => n.type === RecipesEditor)).toBeUndefined();
 });

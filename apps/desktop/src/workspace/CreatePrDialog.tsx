@@ -2,6 +2,7 @@ import { Button } from "@xdev/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type ApiError, type PrDraft, type PrView } from "@/api";
+import { isRecipeProblem } from "@/components/ChangesPanel";
 import { useI18n } from "@/i18n";
 
 // Mounted only while open, so every opening starts from the given fields.
@@ -13,6 +14,8 @@ export function CreatePrDialog(props: {
   onClose(): void;
   // Settings → Git. Without `ai` the agent button is hidden.
   ai?: boolean;
+  // Opens Settings → Git, where the recipe's agent is chosen; offered when the agent is the problem.
+  onOpenGitSettings?(): void;
   // Runs the agent once on open.
   generateOnOpen?: boolean;
   // Opens the new pull request in the browser.
@@ -109,7 +112,15 @@ export function CreatePrDialog(props: {
         {error && (
           <p className="error-text" role="alert">
             {t(`error.${error.code}`)}
-            {["git", "push_rejected", "gh_failed", "draft_failed"].includes(error.code) && error.detail ? ` ${error.detail}` : ""}
+            {["git", "push_rejected", "gh_failed", "draft_failed", "denied"].includes(error.code) && error.detail ? ` ${error.detail}` : ""}
+            {props.onOpenGitSettings && isRecipeProblem(error.code) && (
+              <>
+                {" "}
+                <button type="button" className="ws-ship-link" data-open-settings="git" onClick={props.onOpenGitSettings}>
+                  {t("recipes.openSettings")}
+                </button>
+              </>
+            )}
           </p>
         )}
         <div className="dialog-actions">

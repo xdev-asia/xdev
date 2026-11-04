@@ -38,6 +38,10 @@ export function WorktreeChanges(props: {
   onFixWithAgent?(output: string): void;
   // After a commit or amend, so the ship bar reads again.
   onShipChanged?(): void;
+  // The Fix button of a failed push: its output and the branch.
+  onFixPush?(output: string, branch: string): void;
+  // Opens Settings → Git; offered with a draft's agent problem.
+  onOpenGitSettings?(): void;
   // The shared store of pull requests; the ship bar shows only when it is given.
   prs?: PrStore;
   // Gives the palette handlers for the list's bulk actions, and takes them back on unmount.
@@ -379,10 +383,12 @@ export function WorktreeChanges(props: {
           git={git}
           onCommit={() => (message.trim() === "" ? field.current?.focus() : blocked ? undefined : void commit())}
           onChanged={() => props.onShipChanged?.()}
+          onFixPush={props.onFixPush}
+          onOpenGitSettings={props.onOpenGitSettings}
         />
       )}
       {loadProblem && <ProblemNote problem={loadProblem} />}
-      {problem && problem.code !== "hook_failed" && <ProblemNote problem={problem} />}
+      {problem && problem.code !== "hook_failed" && <ProblemNote problem={problem} onOpenSettings={props.onOpenGitSettings} />}
       {problem?.code === "hook_failed" && (
         <div className="ws-hook" role="alert">
           <span>{t("error.hook_failed")}</span>

@@ -166,6 +166,7 @@ impl TaskStore {
             resume,
             tools,
             model: opts.model.clone(),
+            args: Vec::new(),
             cancel: Cancel::new(),
         };
         let result = runner.run(&req);
