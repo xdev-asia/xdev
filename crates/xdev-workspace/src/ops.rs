@@ -7,6 +7,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde::{Deserialize, Deserializer, Serialize};
+use unicode_segmentation::UnicodeSegmentation;
 use xdev_git::{BaseRefresh, GhAccount, GitError, Repo, WorktreeEntry};
 
 use crate::hooks;
@@ -14,8 +15,9 @@ use crate::kept::{KeptBranch, KeptReason, keep};
 use crate::registry::normalize;
 use crate::staging;
 use crate::{
-    Linked, MadeBy, Registry, RepoEntry, RepoIcon, ScriptSource, SetupPolicy, WorkItem, WorkStatus,
-    WorkspaceError, WorktreeMeta, link_shared, names, repo_id, unlink_shared,
+    ISSUE_COMMAND_MAX, Linked, MadeBy, REPO_COLORS, Registry, RepoEntry, RepoIcon, ScriptSource,
+    SetupPolicy, WorkItem, WorkStatus, WorkspaceError, WorktreeMeta, link_shared, names, repo_id,
+    unlink_shared,
 };
 
 /// A repo as the sidebar shows it.
@@ -219,6 +221,32 @@ pub fn valid_short_name(name: &str) -> bool {
         && chars.all(|c| matches!(c, 'a'..='z' | '0'..='9' | '.' | '_' | '-'))
 }
 
+/// A `REPO_COLORS` name, or `#rgb` / `#rrggbb`.
+fn valid_color(color: &str) -> bool {
+    match color.strip_prefix('#') {
+        Some(hex) => matches!(hex.len(), 3 | 6) && hex.bytes().all(|b| b.is_ascii_hexdigit()),
+        None => REPO_COLORS.contains(&color),
+    }
+}
+
+/// Exactly one grapheme of at most 16 bytes that draws as an emoji: a
+/// pictograph, a flag, or a keycap. A letter, even an accented one, is not.
+fn valid_emoji(text: &str) -> bool {
+    if text.len() > 16 {
+        return false;
+    }
+    let mut clusters = text.graphemes(true);
+    let (Some(cluster), None) = (clusters.next(), clusters.next()) else {
+        return false;
+    };
+    cluster.contains('\u{20e3}')
+        || cluster.chars().any(|c| {
+            matches!(c as u32,
+                0x1F000..=0x1FAFF | 0x2190..=0x2BFF | 0x00A9 | 0x00AE | 0x203C | 0x2049
+                | 0x2122 | 0x2139 | 0x3030 | 0x303D | 0x3297 | 0x3299)
+        })
+}
+
 /// Changes a repo's short name, base ref or worktree folder. Every field is
 /// checked before any is written, so a refusal leaves the repo as it was.
 /// Existing worktrees are neither moved nor renamed.
@@ -253,6 +281,21 @@ pub fn update_repo(
             Err(e) => return Err(e.into()),
         }
     }
+    if let Some(Some(color)) = &patch.color
+        && !valid_color(color)
+    {
+        return Err(WorkspaceError::BadColor(color.clone()));
+    }
+    if let Some(Some(RepoIcon::Emoji { value })) = &patch.icon
+        && !valid_emoji(value)
+    {
+        return Err(WorkspaceError::BadIcon(value.clone()));
+    }
+    if let Some(text) = &patch.local_issue_command
+        && text.len() > ISSUE_COMMAND_MAX
+    {
+        return Err(WorkspaceError::TooLarge("issue command".to_owned()));
+    }
     if let Some(root) = &patch.worktree_root {
         let key = path_key(root);
         let primary = path_key(&old.path);
@@ -281,6 +324,18 @@ pub fn update_repo(
     }
     if let Some(script) = patch.local_archive {
         entry.local_archive = script;
+    }
+    if let Some(color) = patch.color {
+        entry.color = color;
+    }
+    if let Some(icon) = patch.icon {
+        entry.icon = icon;
+    }
+    if let Some(account) = patch.gh_account {
+        entry.gh_account = account;
+    }
+    if let Some(text) = patch.local_issue_command {
+        entry.local_issue_command = text;
     }
     let worktrees = reg.worktrees.clone();
     let view = sync_repo(reg, idx, 0, false);

@@ -73,6 +73,7 @@ toml = "1.1.8"
 # TypeScript for the types that cross the desktop IPC boundary; behind each
 # crate's `ts` feature so the CLI never builds it.
 ts-rs = "12.0.1"
+unicode-segmentation = "1"
 # One blocking HTTPS call; rustls with its bundled roots, no async runtime.
 ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 # A file's link count and identity on Windows, without unsafe code here.
