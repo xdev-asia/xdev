@@ -87,6 +87,9 @@ pub struct Wake {
     pub unread: u32,
     /// The newest unread message (its `seq`).
     pub latest_seq: i64,
+    /// The run to name in `check --run`: set only for a coordinator's
+    /// mailbox when its tab coordinates more than one run.
+    pub run: Option<String>,
 }
 
 fn preview(body: &str, full: bool) -> String {
@@ -384,11 +387,23 @@ impl Store {
                 None
             };
             if let Some(tab) = tab {
+                let run = match address.strip_prefix("run:") {
+                    Some(r) => {
+                        let runs: i64 = self.conn.query_row(
+                            "SELECT COUNT(*) FROM runs WHERE coordinator_tab = ?1",
+                            [&tab],
+                            |r| r.get(0),
+                        )?;
+                        (runs > 1).then(|| r.to_owned())
+                    }
+                    None => None,
+                };
                 out.push(Wake {
                     address,
                     tab,
                     unread,
                     latest_seq,
+                    run,
                 });
             }
         }
@@ -635,6 +650,19 @@ mod tests {
         s.check("dispatch:disp_a", &CheckOpts::default(), 5)
             .unwrap();
         assert_eq!(s.wake_targets().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_coordinator_of_more_than_one_run_is_woken_with_the_run() {
+        let (s, lead) = world();
+        let a = s.identity(Some("tab_a"), None).unwrap();
+        let w = note(&lead.address, MessageType::Status, "x");
+        s.send(&a, &w, 1, &nobody).unwrap();
+        assert_eq!(s.wake_targets().unwrap()[0].run, None);
+        s.run_create("other", Some("lead"), 2).unwrap();
+        let got = s.wake_targets().unwrap();
+        assert_eq!(got[0].address, lead.address);
+        assert_eq!(got[0].run.as_deref(), Some(lead.run_id.as_str()));
     }
 
     #[test]

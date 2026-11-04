@@ -57,13 +57,10 @@ pub struct StopEdge {
     pub tab: String,
 }
 
-fn pointer_text(unread: u32) -> String {
-    let what = if unread == 1 {
-        "1 unread message".to_owned()
-    } else {
-        format!("{unread} unread messages")
-    };
-    format!("[xdev] {what} for you. Run `xdev orchestration check` and handle them.")
+/// The plan's wake line; `run` names the run for a coordinator of several.
+fn pointer_text(unread: u32, run: Option<&str>) -> String {
+    let run = run.map(|r| format!(" --run {r}")).unwrap_or_default();
+    format!("You have {unread} orchestration message(s). Run `xdev orchestration check{run}`.")
 }
 
 fn is_idle(t: &TabReport) -> bool {
@@ -103,7 +100,7 @@ impl Pump {
                 address: w.address.clone(),
                 tab: w.tab.clone(),
                 seq: w.latest_seq,
-                text: pointer_text(w.unread),
+                text: pointer_text(w.unread, w.run.as_deref()),
             });
         }
         out
@@ -238,6 +235,7 @@ mod tests {
             tab: tab.to_owned(),
             unread,
             latest_seq: seq,
+            run: None,
         }
     }
 
@@ -253,10 +251,26 @@ mod tests {
         let got = pump.plan(&wakes, &tabs, &nobody, 10_000);
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].tab, "t1");
-        assert!(got[0].text.contains("2 unread messages"));
-        assert!(got[0].text.contains("xdev orchestration check"));
+        assert_eq!(
+            got[0].text,
+            "You have 2 orchestration message(s). Run `xdev orchestration check`."
+        );
         // The same mail is not pointed at again, however long it waits.
         assert!(pump.plan(&wakes, &tabs, &nobody, 99_000).is_empty());
+    }
+
+    #[test]
+    fn a_coordinator_of_several_runs_is_told_which_run() {
+        let pump = Pump::default();
+        let wakes = [Wake {
+            run: Some("run_r1".to_owned()),
+            ..wake("run:run_r1", "t1", 1, 3)
+        }];
+        let got = pump.plan(&wakes, &[tab("t1", "idle", false)], &nobody, 1_000);
+        assert_eq!(
+            got[0].text,
+            "You have 1 orchestration message(s). Run `xdev orchestration check --run run_r1`."
+        );
     }
 
     #[test]
