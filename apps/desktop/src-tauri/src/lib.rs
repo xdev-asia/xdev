@@ -14,6 +14,7 @@ mod kit;
 mod layout;
 mod links;
 mod open_in;
+mod power;
 mod profiles;
 mod pty;
 mod ptyd;
@@ -68,6 +69,7 @@ pub fn run() {
         .manage(profiles::ProfilesLock::default())
         .manage(files::Searches::default())
         .manage(status::Shown::default())
+        .manage(power::Awake::default())
         .manage(cli_verbs::CliHub::default())
         .manage(keybindings::LastSent::default())
         .setup(move |app| {
@@ -76,6 +78,15 @@ pub fn run() {
             // Every settings read and write goes through this store.
             if let Some(file) = commands::settings_path(app.handle()) {
                 app.manage(settings_store::SettingsStore::new(file));
+            }
+            // The OS request follows the stored mode from the start. Off the main thread: a
+            // helper is watched for an early exit, which takes a moment.
+            {
+                let app = app.handle().clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let mode = settings_store::read(&app).agents.keep_awake;
+                    power::apply_mode(&app, mode);
+                });
             }
             workspace::start_migrations(app.handle());
             // Off the main thread: starting the service may take a moment.
@@ -228,6 +239,9 @@ pub fn run() {
             squads::squad_resume,
             squads::squad_stop,
             squads::squad_events,
+            power::keep_awake_get,
+            power::keep_awake_set,
+            power::keep_awake_agents,
             pty::pty_spawn,
             pty::pty_approve,
             pty::pty_write,
@@ -364,6 +378,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 let on_quit = settings_store::read(app).terminal.on_quit;
                 app.state::<pty::Ptys>().quit(on_quit);
+                app.state::<power::Awake>().release();
                 if let Some(running) = app.try_state::<endpoint::Running>() {
                     running.stop();
                 }

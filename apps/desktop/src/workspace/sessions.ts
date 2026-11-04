@@ -46,8 +46,12 @@ export interface Tab {
   title: string | null;
   /** Named by hand: later titles from the terminal leave the name alone. */
   renamed: boolean;
+  /** `title` is the one made from the first prompt (not by hand, not the program's). */
+  autoTitled: boolean;
   /** The agent session id this tab resumed; null for a new session. */
   resumeOf: string | null;
+  /** The agent session id this tab was forked from; null otherwise. Its first launch forks, a restart does not. */
+  forkOf: string | null;
   /** The agent's own session id, from its hooks (latest wins) or the resumed id; null until known. */
   agentSession: string | null;
   /** When the tab was opened or resumed, in ms. */
@@ -75,6 +79,8 @@ interface Entry {
   caps: Caps;
   /** The program's last title (OSC 0/2), kept while the tab is named by hand. */
   programTitle: string | null;
+  /** A title made from the first prompt; shown unless the tab was named by hand. */
+  autoTitle: string | null;
 }
 
 // Only an exit ends a tab: `failed` can also be a turn that failed, with the pty still alive.
@@ -120,6 +126,7 @@ export class Sessions {
   private seen = new Set<string>();
   private readonly marked = new Set<string>();
   private readonly attention = new Set<(tab: Tab, status: Attention, detail: HookDetail | null) => void>();
+  private readonly statusListeners = new Set<(tab: Tab, from: TabStatus, to: TabStatus, at: number) => void>();
   private interval: ReturnType<typeof setInterval> | null = null;
   // One-shot timers per tab: an interrupt settling, a done waiting to be announced.
   private readonly settle = new Map<string, ReturnType<typeof setTimeout>>();
@@ -172,6 +179,21 @@ export class Sessions {
    */
   resume(worktree: string, profileId: PtyProfile, account: string | null, sessionId: string, title: string | null = null, cli?: TabCli): Tab {
     const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, sessionId, title);
+    this.entries.set(entry.tab.id, entry);
+    this.cache.delete(worktree);
+    const layout = this.layouts.get(worktree);
+    this.layouts.set(worktree, layout ? addTab(layout, entry.tab.id) : single(entry.tab.id));
+    this.emit();
+    return entry.tab;
+  }
+
+  /**
+   * Opens an agent tab that continues a copy of the CLI session `sourceId` under a new session id (the
+   * source stays as it is). The new id is unknown until the agent's hooks report it, so `agentSession`
+   * is null until then and a layout saved before that has nothing to resume.
+   */
+  fork(worktree: string, profileId: PtyProfile, account: string | null, sourceId: string, title: string | null = null, cli?: TabCli): Tab {
+    const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, null, title, crypto.randomUUID(), sourceId);
     this.entries.set(entry.tab.id, entry);
     this.cache.delete(worktree);
     const layout = this.layouts.get(worktree);
@@ -291,9 +313,11 @@ export class Sessions {
       agentSession: snap.agentSession,
       openedAt: snap.openedAt,
       renamed: snap.renamed === true,
+      autoTitled: snap.autoTitled === true && snap.renamed !== true,
       pinned: snap.pinned === true,
       color,
     };
+    if (snap.autoTitled === true && snap.title) entry.autoTitle = snap.title;
     this.entries.set(id, entry);
     const exited = this.attaching.get(id);
     this.attaching.delete(id);
@@ -332,7 +356,9 @@ export class Sessions {
     const entry = this.entries.get(tab.id)!;
     const color = TAB_COLORS.includes(snap.color) ? snap.color : "none";
     this.lazy.add(tab.id);
-    this.update(entry, { title: snap.title, renamed: snap.renamed === true, pinned: snap.pinned === true, color });
+    const auto = snap.autoTitled === true && snap.renamed !== true && !!snap.title;
+    if (snap.autoTitled === true && snap.title) entry.autoTitle = snap.title;
+    this.update(entry, { title: snap.title, renamed: snap.renamed === true, autoTitled: auto, pinned: snap.pinned === true, color });
     return entry.tab;
   }
 
@@ -358,7 +384,9 @@ export class Sessions {
   restart(id: string): Tab | null {
     const old = this.entries.get(id);
     if (!old) return null;
-    return this.replace(old, ownAccount(old.tab), old.tab.resumeOf, old.tab.agentSession);
+    // A forked tab continues its own session once the hooks gave its id; a second fork would copy again.
+    const resume = old.tab.forkOf === null ? old.tab.resumeOf : old.tab.agentSession;
+    return this.replace(old, ownAccount(old.tab), resume, old.tab.agentSession);
   }
 
   /**
@@ -383,7 +411,9 @@ export class Sessions {
     this.clear(this.stale, id);
     const next = this.entry(old.tab.worktree, old.tab.profileId, account, old.tab.cli, resumeOf, old.tab.title);
     // The pin and colour belong to the slot, not to the pty; so does the agent's session id, which a restart must not lose.
-    next.tab = { ...next.tab, accountSource: old.tab.accountSource, pinned: old.tab.pinned, color: old.tab.color, agentSession };
+    next.tab = { ...next.tab, accountSource: old.tab.accountSource, pinned: old.tab.pinned, color: old.tab.color, agentSession, renamed: old.tab.renamed, autoTitled: old.tab.autoTitled && !old.tab.renamed };
+    // The auto title is the slot's too: the new pty keeps it, and the title the user clears to returns to it.
+    next.autoTitle = old.autoTitle;
     const kept = [...this.entries].map(([key, e]): [string, Entry] => (key === id ? [next.tab.id, next] : [key, e]));
     this.entries.clear();
     for (const [key, e] of kept) this.entries.set(key, e);
@@ -587,8 +617,20 @@ export class Sessions {
     if (!entry) return;
     const next = title.trim().slice(0, TITLE_MAX) || null;
     entry.programTitle = next;
-    if (entry.tab.renamed || entry.tab.title === next) return;
+    if (entry.tab.renamed || entry.tab.autoTitled || entry.tab.title === next) return;
     this.update(entry, { title: next });
+  }
+
+  /** A short title made from the first prompt. It beats the program's title and loses to a name by hand. */
+  setAutoTitle(id: string, title: string): void {
+    const entry = this.entries.get(id);
+    const next = title.trim().slice(0, TITLE_MAX);
+    if (!entry || !next) return;
+    // A name by hand stays; the auto title is not kept behind it.
+    if (entry.tab.renamed) return;
+    entry.autoTitle = next;
+    if (entry.tab.autoTitled && entry.tab.title === next) return;
+    this.update(entry, { title: next, autoTitled: true });
   }
 
   /** Names a tab by hand; later titles from the terminal no longer change it. An alias of `setTitle`; blank is ignored. */
@@ -620,8 +662,10 @@ export class Sessions {
     const entry = this.entries.get(id);
     if (!entry) return;
     const next = title?.trim().slice(0, TITLE_MAX) || null;
-    const patch = next ? { title: next, renamed: true } : { title: entry.programTitle, renamed: false };
-    if (entry.tab.title === patch.title && entry.tab.renamed === patch.renamed) return;
+    const patch = next
+      ? { title: next, renamed: true, autoTitled: false }
+      : { title: entry.autoTitle ?? entry.programTitle, renamed: false, autoTitled: entry.autoTitle !== null };
+    if (entry.tab.title === patch.title && entry.tab.renamed === patch.renamed && entry.tab.autoTitled === patch.autoTitled) return;
     this.update(entry, patch);
   }
 
@@ -725,6 +769,12 @@ export class Sessions {
     return () => this.attention.delete(listener);
   }
 
+  /** Called for every status change of an agent tab, its exit included: the tab, the old and new status, and when. */
+  onStatus(listener: (tab: Tab, from: TabStatus, to: TabStatus, at: number) => void): () => void {
+    this.statusListeners.add(listener);
+    return () => this.statusListeners.delete(listener);
+  }
+
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -782,6 +832,7 @@ export class Sessions {
       // Any change ends a done that was still settling.
       this.clear(this.announce, id);
       this.update(entry, { status: next.status, ...exit });
+      if (entry.tab.agent) for (const l of [...this.statusListeners]) l(entry.tab, before.status, next.status, this.now());
     }
     // Only agents ask for the person; a closing tab's exit is expected.
     const quiet = seen && this.suppressWhenFocused();
@@ -864,7 +915,7 @@ export class Sessions {
     this.emit();
   }
 
-  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null, id: string = crypto.randomUUID()): Entry {
+  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null, id: string = crypto.randomUUID(), forkOf: string | null = null): Entry {
     const tab: Tab = {
       id,
       worktree,
@@ -881,15 +932,17 @@ export class Sessions {
       unreadReason: null,
       title,
       renamed: false,
+      autoTitled: false,
       resumeOf,
+      forkOf,
       agentSession: resumeOf,
       openedAt: this.now(),
       pinned: false,
       color: "none",
-      client: new PtyClient(this.api, id, resumeOf ?? undefined),
+      client: new PtyClient(this.api, id, forkOf ?? resumeOf ?? undefined, forkOf !== null),
     };
     // Caps stay off until the pty says whether it got hook flags.
-    return { tab, state: start(), caps: NO_CAPS, programTitle: null };
+    return { tab, state: start(), caps: NO_CAPS, programTitle: null, autoTitle: null };
   }
 
   private remove(entries: Entry[]): void {

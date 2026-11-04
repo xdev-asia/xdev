@@ -28,6 +28,7 @@ import { createMockCli, type MockCli } from "./mockCli";
 import { createMockOpenIn, type MockOpenIn } from "./mockOpenIn";
 import { createMockProfiles } from "./mockProfiles";
 import { createMockThemes, type MockThemes } from "./mockThemes";
+import { createMockPower } from "./mockPower";
 import { createMockPty, type MockPtyd } from "./mockPty";
 import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
 import { createMockSettings, createSettingsHub } from "./mockSettings";
@@ -547,6 +548,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
   const settingsHub = createSettingsHub();
   const settingsApi = createMockSettings(settingsHub);
   const themes = createMockThemes(undefined, settingsHub.emit);
+  const power = createMockPower(settingsApi);
   const workspace = createMockWorkspace(options.workspace, settingsHub.emit);
   const api: MockApi = {
     ...createMockTasks({
@@ -566,10 +568,12 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       (provider) => active.find((a) => a.provider === provider)?.name ?? null,
     ),
     ...createMockStatus(settingsHub.emit),
+    ...power,
     ...workspace,
     ...createMockIssues(),
     ...settingsApi,
     ...themes,
+    agentsSettingsPut: power.agentsSettingsPut,
     ...createMockKeybindings(options.keybindings ?? null),
     ...createMockKit(async () => (await settingsApi.usageSettings()).scan),
     ...createMockOpenIn(settingsHub.emit, workspace.repoAdd),

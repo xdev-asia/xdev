@@ -15,6 +15,7 @@ use crate::hooks::PtyHook;
 use crate::keybindings::{KeybindingsChanged, KeybindingsText};
 use crate::kit::{KitText, PromptEntry};
 use crate::open_in::OpenTarget;
+use crate::power::AwakeView;
 use crate::profiles::ProfilesView;
 use crate::pty::{PtyAttached, PtyExit, PtyInfo, PtydStatus};
 use crate::quick_commands::{FileCommands, QuickCommand};
@@ -92,6 +93,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     NavigationSettings::export_all(cfg)?;
     DiffSettings::export_all(cfg)?;
     AgentsSettings::export_all(cfg)?;
+    AwakeView::export_all(cfg)?;
     UsageSettings::export_all(cfg)?;
     KeybindingsText::export_all(cfg)?;
     KeybindingsChanged::export_all(cfg)?;

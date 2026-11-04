@@ -24,6 +24,8 @@ import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
 import { startAutoRename } from "./autoRename";
+import { startAutoTabTitle } from "./autoTabTitle";
+import { startKeepAwakeReport } from "@/status/keepAwake";
 import { currentCloseWindow, openRestoredFile, restoreLayout, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
@@ -34,6 +36,8 @@ import { playStatusSound } from "@/status/sound";
 import { usePresence } from "@/status/presence";
 import { eventOn, getStatusSettings, loadStatusSettings, useStatusSettings } from "@/status/statusSettings";
 import { BellMenu, bellCount, type BellRow } from "./BellMenu";
+import { ActivityPanel, type ActivityTab } from "@/activity/ActivityPanel";
+import { ActivityFeed } from "@/activity/feed";
 import { ChecksPanel } from "./ChecksPanel";
 import { IssuesPanel } from "@/issues/IssuesPanel";
 import { CreateWorktreeDialog, type AgentChoice, type CreateExtra } from "./CreateWorktreeDialog";
@@ -164,7 +168,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [sessions, setSessions] = useState<Sessions | null>(null);
   // The agent session history, and which of the two sidebar views shows.
   const [history, setHistory] = useState<AgentSessionsStore | null>(null);
-  const [sideView, setSideView] = useState<"worktrees" | "sessions">("worktrees");
+  const [sideView, setSideView] = useState<"worktrees" | "sessions" | "activity">("worktrees");
+  const [feed] = useState(() => new ActivityFeed());
+  const [activityAsk, setActivityAsk] = useState<{ tab: ActivityTab; seq: number }>({ tab: "threads", seq: 0 });
   // A new `seq` asks the sessions panel for the search box, or to mark one session.
   const [sessionsAsk, setSessionsAsk] = useState<{ seq: number; focus: boolean; reveal: { key: string; seq: number } | null }>({ seq: 0, focus: false, reveal: null });
   const [creating, setCreating] = useState<Creating | null>(null);
@@ -321,6 +327,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       reload: () => renameLive.current.reload(),
       toast: pushToast,
     });
+  }, [api, sessions]);
+
+  // Agent tabs take a short title from their first prompt when Settings → Agents asks for it.
+  useEffect(() => {
+    if (!sessions) return;
+    return startAutoTabTitle({ api, sessions });
   }, [api, sessions]);
 
   // Layout restore: once per run, after the registry is known and before the saver starts (a saver that
@@ -488,6 +500,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => {
     sessions?.setHooks(statusSettings.hooks);
   }, [sessions, statusSettings.hooks]);
+
+  // The Activity feed records every status change of the agent tabs.
+  useEffect(() => {
+    if (!sessions) return;
+    return feed.follow(sessions);
+  }, [feed, sessions]);
+
+  // Whether an agent works, for the keep-awake mode "while agents work".
+  useEffect(() => {
+    if (!sessions) return;
+    return startKeepAwakeReport(api, sessions);
+  }, [api, sessions]);
 
   // A pane nobody looks at that wants the person: OS notification, sound, and the jump back on a click.
   useEffect(() => {
@@ -1408,7 +1432,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               </span>
             )}
           </button>
-          {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onClose={() => setBellOpen(false)} />}
+          {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onViewActivity={() => { setBellOpen(false); setSidebarOpen(true); setSideView("activity"); setActivityAsk((a) => ({ tab: "feed", seq: a.seq + 1 })); }} onClose={() => setBellOpen(false)} />}
         </div>
         <button
           type="button"
@@ -1467,7 +1491,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             )}
           </nav>
           <div className="ws-side-tabs" role="group" aria-label={t("agentSessions.tabs.label")}>
-            {(["worktrees", "sessions"] as const).map((v) => (
+            {(["worktrees", "sessions", "activity"] as const).map((v) => (
               <button key={v} type="button" className="ws-side-tab" aria-pressed={sideView === v} onClick={() => setSideView(v)}>
                 {t(`agentSessions.tab.${v}`)}
               </button>
@@ -1490,6 +1514,17 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   select(wt);
                   show("workspace");
                 }}
+              />
+            </div>
+          )}
+          {sessions && (
+            <div className="ws-side-view" hidden={sideView !== "activity"}>
+              <ActivityPanel
+                sessions={sessions}
+                feed={feed}
+                names={Object.fromEntries(all.map((w) => [w.path, { name: worktreeName(all, w.path), branch: w.branch ?? null }]))}
+                ask={activityAsk}
+                onJump={jumpTo}
               />
             </div>
           )}
@@ -1591,6 +1626,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   repoName={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.shortName ?? ""}
                   quickSeq={path === current?.path ? quickSeq : undefined}
                   onManageQuickCommands={() => openSettings("qcmd")}
+                  worktrees={all.map((w) => ({ path: w.path, label: worktreeName(all, w.path) }))}
+                  onJump={jumpTo}
                 />
               ))}
             {current && cardFor(current.path) && (

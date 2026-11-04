@@ -75,3 +75,11 @@ it("carries the sidebar layout through a prefs put", async () => {
   expect(await api.sidebarPrefsPut(next)).toEqual(next);
   expect(await api.sidebarPrefsGet()).toEqual(next);
 });
+
+it("starts the agents settings with keep awake off and no generated tab titles", async () => {
+  const api = createMockApi({});
+  expect(await api.agentsSettings()).toEqual({ accountSwitch: "ask", keepAwake: "off", autoTabTitle: false });
+  const next = { accountSwitch: "keep" as const, keepAwake: "agent" as const, autoTabTitle: true };
+  expect(await api.agentsSettingsPut(next)).toEqual(next);
+  expect(await api.agentsSettings()).toEqual(next);
+});
