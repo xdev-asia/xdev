@@ -1,5 +1,6 @@
 mod accounts;
 mod agent_sessions;
+mod app_menu;
 mod atomic;
 #[cfg(test)]
 mod bindings;
@@ -27,11 +28,13 @@ mod review_notes;
 mod session;
 mod settings;
 mod settings_store;
+mod shell;
 mod ship;
 mod squads;
 mod status;
 mod tasks;
 mod terminal_themes;
+mod tray;
 mod updater;
 mod workspace;
 
@@ -61,7 +64,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(updater::Pending::default())
+        .manage(updater::Phase::default())
+        .manage(shell::ShellState::default())
         // Terminals wait until the start below has picked where they run.
         .manage(pty::Ptys::pending())
         .manage(workspace::WorkspaceLock::default())
@@ -73,6 +79,13 @@ pub fn run() {
         .manage(power::Awake::default())
         .manage(cli_verbs::CliHub::default())
         .manage(keybindings::LastSent::default())
+        .on_window_event(|window, event| {
+            if window.label() == "main"
+                && let tauri::WindowEvent::Focused(true) = event
+            {
+                shell::window_focused(window.app_handle());
+            }
+        })
         .setup(move |app| {
             updater::start(app.handle().clone());
             workspace::start_sweep(app.handle());
@@ -90,6 +103,9 @@ pub fn run() {
                 });
             }
             workspace::start_migrations(app.handle());
+            tray::sync(app.handle());
+            app_menu::listen(app.handle());
+            app_menu::install(app.handle());
             // Off the main thread: starting the service may take a moment.
             {
                 let app = app.handle().clone();
@@ -150,8 +166,17 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_version,
             updater::update_status,
-            updater::update_restart,
             updater::update_notify,
+            shell::shell_close_requested,
+            shell::shell_quit,
+            shell::shell_quit_cancelled,
+            shell::shell_labels_set,
+            shell::tray_attention,
+            shell::help_open,
+            shell::window_reload,
+            shell::window_devtools_toggle,
+            updater::update_check,
+            updater::update_phase,
             commands::open_vault,
             commands::last_vault,
             commands::git_settings,
@@ -179,6 +204,8 @@ pub fn run() {
             commands::agents_settings_put,
             commands::usage_settings_get,
             commands::usage_settings_put,
+            commands::shell_settings_get,
+            commands::shell_settings_put,
             keybindings::keybindings_read,
             keybindings::keybindings_write,
             keybindings::keybindings_reveal,
@@ -386,8 +413,13 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
         .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
+                shell::exit_requested(app, *code, api);
+            }
             if let tauri::RunEvent::Exit = event {
-                let on_quit = settings_store::read(app).terminal.on_quit;
+                tray::remove(app);
+                let mode = shell::quit_mode(app);
+                let on_quit = shell::on_quit_for(mode, settings_store::read(app).terminal.on_quit);
                 app.state::<pty::Ptys>().quit(on_quit);
                 app.state::<power::Awake>().release();
                 if let Some(running) = app.try_state::<endpoint::Running>() {
@@ -396,6 +428,10 @@ pub fn run() {
                 // Every `terminal wait` ends with `app_stopped`.
                 app.state::<cli_verbs::CliHub>().board.stop();
                 updater::install_pending(app);
+                if mode == Some(shell::QuitMode::Restart) {
+                    // Never returns: the process starts again from the installed build.
+                    tauri::process::restart(&app.env());
+                }
             }
         });
 }

@@ -83,3 +83,12 @@ it("starts the agents settings with keep awake off and no generated tab titles",
   expect(await api.agentsSettingsPut(next)).toEqual(next);
   expect(await api.agentsSettings()).toEqual(next);
 });
+
+it("emits the shell section on a shell settings put through the mock api", async () => {
+  const api = createMockApi({});
+  const seen = vi.fn();
+  api.onSettingsChanged((e) => seen(e.sections));
+  const stored = await api.shellSettingsPut({ ...(await api.shellSettings()), minimizeToTray: true });
+  expect(stored.minimizeToTray).toBe(true);
+  expect(seen).toHaveBeenCalledWith(["shell"]);
+});

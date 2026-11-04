@@ -1,3 +1,4 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -62,6 +63,15 @@ import type {
   Task,
   TasksContext,
   UpdateInfo,
+  UpdatePhase,
+  UpdateChannel,
+  ShellSettings,
+  ShellLabels,
+  CloseIntent,
+  CloseRequest,
+  QuitMode,
+  HelpLink,
+  MenuAction,
   VaultChanged,
   VaultSetup,
   VaultView,
@@ -170,6 +180,7 @@ export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, W
 export type { AccountSource, ActiveAccount, AgentsSettings, AwakeView, KeepAwake, SwitchRunning };
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
+export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase };
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { CliAsk, CliOpenTab, TabReport };
 export type { RestoreMode } from "@xdev/bindings";
@@ -492,10 +503,34 @@ export interface Api {
   // The downloaded update waiting for a restart, if any; Rust checks and downloads on its own.
   updateStatus(): Promise<UpdateInfo | null>;
   onUpdateReady(cb: (update: UpdateInfo) => void): Promise<() => void>;
-  // Restarts the app once installed, so it resolves only when there was nothing to install.
-  restartToUpdate(): Promise<void>;
+  // The version of this build.
+  appVersion(): Promise<string>;
   // An OS notification; the text comes from here so it follows the UI language.
   notifyUpdate(title: string, body: string): Promise<void>;
+  // A check the person asked for; `rc` also stores the release candidate channel. Resolves with where
+  // the check ended, and `onUpdatePhase` follows every step of it and of the background checks.
+  updateCheck(rc: boolean): Promise<UpdatePhase>;
+  updatePhase(): Promise<UpdatePhase>;
+  onUpdatePhase(cb: (phase: UpdatePhase) => void): Promise<() => void>;
+  // Settings → General, Window and Updates groups; the put returns what was stored.
+  shellSettings(): Promise<ShellSettings>;
+  shellSettingsPut(settings: ShellSettings): Promise<ShellSettings>;
+  // Asked from the window close handler: `hide` means Rust hid the window to the tray, `close` means
+  // go on to the quit guard. The notice text is what Rust shows the first time it hides.
+  shellCloseRequested(noticeTitle: string, noticeBody: string): Promise<CloseRequest>;
+  // Every quit goes through here; the window closes and the quit guard asks as for the close button.
+  shellQuit(mode: QuitMode): Promise<void>;
+  // The person said no in the quit guard.
+  shellQuitCancelled(): Promise<void>;
+  // The tray and native menu strings in the UI language.
+  shellLabelsSet(labels: ShellLabels): Promise<void>;
+  // A native menu or tray item the webview acts on.
+  onMenuAction(cb: (action: MenuAction) => void): Promise<() => void>;
+  helpOpen(link: HelpLink): Promise<void>;
+  // Lights the tray dot when the window is hidden or minimized.
+  trayAttention(): Promise<void>;
+  windowReload(): Promise<void>;
+  windowDevtoolsToggle(): Promise<void>;
   accounts(): Promise<Accounts>;
   quota(): Promise<Quota[]>;
   // With `dir`, an existing config folder is registered as is (a hive
@@ -1129,8 +1164,22 @@ function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 const tauriApi: Api = {
   updateStatus: () => call("update_status"),
   onUpdateReady: (cb) => listen<UpdateInfo>("update-ready", (e) => cb(e.payload)),
-  restartToUpdate: () => call("update_restart"),
+  appVersion: () => getVersion(),
   notifyUpdate: (title, body) => call("update_notify", { title, body }),
+  updateCheck: (rc) => call("update_check", { rc }),
+  updatePhase: () => call("update_phase"),
+  onUpdatePhase: (cb) => listen<UpdatePhase>("update-phase", (e) => cb(e.payload)),
+  shellSettings: () => call("shell_settings_get"),
+  shellSettingsPut: (settings) => call("shell_settings_put", { settings }),
+  shellCloseRequested: (noticeTitle, noticeBody) => call("shell_close_requested", { noticeTitle, noticeBody }),
+  shellQuit: (mode) => call("shell_quit", { mode }),
+  shellQuitCancelled: () => call("shell_quit_cancelled"),
+  shellLabelsSet: (labels) => call("shell_labels_set", { labels }),
+  onMenuAction: (cb) => listen<{ action: MenuAction }>("shell://menu", (e) => cb(e.payload.action)),
+  helpOpen: (link) => call("help_open", { link }),
+  trayAttention: () => call("tray_attention"),
+  windowReload: () => call("window_reload"),
+  windowDevtoolsToggle: () => call("window_devtools_toggle"),
   accounts: () => call("accounts_list"),
   quota: () => call("accounts_quota"),
   addAccount: (name, provider, dir) => call("account_add", { name, provider, dir: dir ?? null }),
@@ -1414,14 +1463,14 @@ const tauriApi: Api = {
 
 function browserApi(): Api {
   const params = new URLSearchParams(location.search);
-  const mock = createMockApi(DEMO_SEED, { repo: !params.has("norepo"), commits: DEMO_COMMITS, runDelayMs: 4000 });
+  // `?update=0.4.0` simulates a downloaded update, so the restart button can be previewed.
+  const pending = params.get("update");
+  const mock = createMockApi(DEMO_SEED, { repo: !params.has("norepo"), commits: DEMO_COMMITS, runDelayMs: 4000, update: pending });
   // Lets the preview simulate an AI agent or another editor from the devtools console.
   Object.assign(window, { xdevMock: mock });
   // The preview lands in the demo vault so the main layout is reachable without a dialog;
   // `?welcome` simulates a first launch instead.
   const firstRun = params.has("welcome");
-  // `?update=0.4.0` simulates a downloaded update, so the restart button can be previewed.
-  const pending = params.get("update");
   let seeded = false;
   return {
     ...mock,

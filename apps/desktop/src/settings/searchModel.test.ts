@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { translate } from "@/i18n";
-import { SETTING_ENTRIES } from "./catalog";
+import { entriesFor } from "./catalog";
 import { runSearch } from "./searchModel";
 
 const t = (k: string) => translate("en", k);
@@ -9,7 +9,7 @@ const title = (s: string) => t(`${s === "editor" ? "files.settings" : s === "ope
 it("an empty query keeps every entry and every section", () => {
   const r = runSearch("", t, title);
   expect(r.active).toBe(false);
-  expect(r.ids.size).toBe(SETTING_ENTRIES.length);
+  expect(r.ids.size).toBe(entriesFor().length);
   expect(r.best).toBeNull();
 });
 
