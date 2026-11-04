@@ -233,15 +233,17 @@ export class Sessions {
     const ids = new Map<string, string>();
     const files = new Set<string>();
     const opened: string[] = [];
+    // Under `none` nothing comes back but the sleeping tabs; the files and the review only come along with them.
+    const keep = mode !== "none" || Object.values(one.tabs).some((t) => t?.kind === "terminal" && t.asleep === true);
     for (const leaf of leaves(one.layout)) {
       if (leaf.kind !== "leaf") continue;
       for (const key of leaf.tabs) {
         const snap = one.tabs[key];
         if (!snap) continue;
-        if (snap.kind === "review") files.add(key);
-        else if (snap.kind === "file") {
-          const ok = await (options.openFile?.(worktree, snap.rel) ?? Promise.resolve(false)).catch(() => false);
-          if (ok) files.add(key);
+        if (snap.kind === "review" || snap.kind === "file") {
+          if (!keep) continue;
+          if (snap.kind === "review") files.add(key);
+          else if (await (options.openFile?.(worktree, snap.rel) ?? Promise.resolve(false)).catch(() => false)) files.add(key);
         } else if (snap.kind === "terminal" && snap.asleep === true) {
           const tab = this.restoreAsleep(worktree, snap, report);
           ids.set(key, tab.id);
