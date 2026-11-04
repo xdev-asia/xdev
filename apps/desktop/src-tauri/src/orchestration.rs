@@ -269,6 +269,39 @@ fn text_param(req: &Request, key: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+fn strings_param(req: &Request, key: &str) -> Vec<String> {
+    req.params
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn flag(req: &Request, key: &str) -> bool {
+    req.params
+        .get(key)
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// A unit enum named in a param (`--status ready`).
+fn enum_param<T: serde::de::DeserializeOwned>(
+    req: &Request,
+    key: &str,
+) -> Result<Option<T>, AppError> {
+    match text_param(req, key) {
+        None => Ok(None),
+        Some(name) => xdev_orch::store::enum_from(&name)
+            .map(Some)
+            .map_err(|_| AppError::new("bad_request", format!("unknown {key} {name}"))),
+    }
+}
+
 fn to_value<T: Serialize>(v: &T) -> Result<Value, AppError> {
     serde_json::to_value(v).map_err(|e| AppError::new("store", e.to_string()))
 }
@@ -321,6 +354,46 @@ pub fn handle(
                 s.run_show(&id)
             })?;
             to_value(&detail)
+        }
+        "task-create" => {
+            let spec = text_param(req, "spec").unwrap_or_default();
+            let new = xdev_orch::NewTask {
+                title: text_param(req, "title"),
+                spec,
+                deps: strings_param(req, "deps"),
+                parent: text_param(req, "parent"),
+            };
+            let task = ctx.orch.with_store(ctx.data, |s| {
+                let run = s.run_resolve(acting.run.as_deref(), acting.tab.as_deref())?;
+                s.task_create(&run.id, new, ctx.now_ms)
+            })?;
+            to_value(&task)
+        }
+        "task-list" => {
+            let filter = xdev_orch::TaskFilter {
+                status: enum_param(req, "status")?,
+                ready: flag(req, "ready"),
+            };
+            let mut tasks = ctx.orch.with_store(ctx.data, |s| {
+                let run = s.run_resolve(acting.run.as_deref(), acting.tab.as_deref())?;
+                s.task_list(&run.id, &filter)
+            })?;
+            if flag(req, "brief") {
+                for t in &mut tasks {
+                    t.spec = xdev_orch::brief(&t.spec);
+                }
+            }
+            to_value(&tasks)
+        }
+        "task-update" => {
+            let id = text_param(req, "id")
+                .ok_or_else(|| AppError::new("bad_request", "task-update needs a task id"))?;
+            let status = enum_param(req, "status")?;
+            let result = text_param(req, "result");
+            let task = ctx.orch.with_store(ctx.data, |s| {
+                s.task_update(&id, status, result.as_deref(), ctx.now_ms)
+            })?;
+            to_value(&task)
         }
         other => Err(AppError::new(
             "unsupported",
@@ -421,5 +494,43 @@ mod tests {
         let version = hub.with_store(dir.path(), |s| s.version()).unwrap();
         assert_eq!(version, 1);
         assert!(dir.path().join("orchestration.db").is_file());
+    }
+
+    #[test]
+    fn task_verbs_build_a_dag_in_the_current_run() {
+        let f = crate::cli_verbs::tests::fixture();
+        let t = |m: &str, p: Value| f.call(Some("p-lead"), &format!("orchestration.{m}"), p);
+        assert_eq!(
+            t("task-create", json!({"spec": "a"})).unwrap_err().code,
+            "no_run"
+        );
+        t("run-create", json!({"objective": "o"})).unwrap();
+        let a = t(
+            "task-create",
+            json!({"spec": "first
+line", "title": "A"}),
+        )
+        .unwrap();
+        assert_eq!(a["status"], "ready");
+        let b = t("task-create", json!({"spec": "b", "deps": [a["id"]]})).unwrap();
+        assert_eq!(b["status"], "pending");
+        let bad = t("task-create", json!({"spec": "c", "deps": ["task_nope"]}));
+        assert_eq!(bad.unwrap_err().code, "bad_request");
+
+        let ready = t("task-list", json!({"ready": true, "brief": true})).unwrap();
+        assert_eq!(ready.as_array().unwrap().len(), 1);
+        assert_eq!(ready[0]["spec"], "first line");
+        let badf = t("task-list", json!({"status": "nonsense"}));
+        assert_eq!(badf.unwrap_err().code, "bad_request");
+
+        t(
+            "task-update",
+            json!({"id": a["id"], "status": "completed", "result": "ok"}),
+        )
+        .unwrap();
+        let pending = t("task-list", json!({"status": "ready"})).unwrap();
+        assert_eq!(pending[0]["id"], b["id"]);
+        let again = t("task-update", json!({"id": a["id"], "status": "failed"}));
+        assert_eq!(again.unwrap_err().code, "invalid_transition");
     }
 }

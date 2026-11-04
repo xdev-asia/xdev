@@ -118,7 +118,7 @@ pub(crate) fn enum_text<T: Serialize>(v: &T) -> String {
 }
 
 /// The enum a stored name stands for.
-pub(crate) fn enum_from<T: DeserializeOwned>(s: &str) -> Result<T, OrchError> {
+pub fn enum_from<T: DeserializeOwned>(s: &str) -> Result<T, OrchError> {
     serde_json::from_value(serde_json::Value::String(s.to_owned()))
         .map_err(|e| OrchError::new("store", format!("bad stored value {s}: {e}")))
 }
