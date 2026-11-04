@@ -1071,7 +1071,7 @@ fn terminal_target(ctx: &Ctx<'_>, t: &str) -> Result<crate::cli_verbs::TabReport
 /// How long the UI gets, on top of the readiness wait, to answer `open-worker`.
 const OPEN_SLACK_MS: u64 = if cfg!(test) { 50 } else { 10_000 };
 /// How long a worker's tab gets to show its agent when the CLI sends no timeout.
-const READY_DEFAULT_MS: u64 = 120_000;
+const READY_DEFAULT_MS: u64 = 60_000;
 
 /// `worker-start`: records a dispatch, opens (or reuses) a tab, hands it the
 /// preamble and answers with a receipt. The store is never held while the UI
@@ -1638,6 +1638,8 @@ line", "title": "A"}),
             format!("worker-{}", r["taskId"].as_str().unwrap())
         );
         assert_eq!(open["setup"], "inherit");
+        // With no --timeout the agent gets a minute to show itself.
+        assert_eq!(open["readyTimeoutMs"], 60_000);
         assert!(open["worktree"].as_str().unwrap().ends_with("lead"));
         assert!(
             open["prompt"]
