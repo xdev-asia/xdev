@@ -129,4 +129,25 @@ describe("Sessions sleep", () => {
     await live.close(next.id);
     expect(live.tabs(A)).toEqual([]);
   });
+
+  it("never puts a working agent to sleep, also when it starts working during the lookup", async () => {
+    const live = (s = new Sessions(createMockApi({}), () => 1_000));
+    const busy = agent(live, A, "busy-1");
+    const resting = agent(live, A, "rest-1");
+    live.noteOutput(busy.id, 10);
+    expect(live.tab(busy.id)?.status).toBe("working");
+    expect(await live.hibernate(busy.id, none)).toBeNull();
+    await live.sleepWorktree(A, none);
+    expect(live.tab(busy.id)?.asleep).toBeUndefined();
+    expect(live.tabs(A).filter((t) => t.asleep).map((t) => t.agentSession)).toEqual(["rest-1"]);
+    expect(live.tab(resting.id)).toBeNull();
+    // Status changes while the fallback runs.
+    const late = live.open(B, "claude");
+    const next = await live.hibernate(late.id, async () => {
+      live.noteOutput(late.id, 10);
+      return "found-2";
+    });
+    expect(next).toBeNull();
+    expect(live.tab(late.id)?.asleep).toBeUndefined();
+  });
 });

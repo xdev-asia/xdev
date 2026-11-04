@@ -81,6 +81,9 @@ interface Entry {
 
 // Only an exit ends a tab: `failed` can also be a turn that failed, with the pty still alive.
 const ended = (tab: Tab) => tab.exitCode !== undefined;
+/** An agent that works or waits for the user must not be put to sleep. */
+const busy = (tab: Tab): boolean => tab.agent && (tab.status === "working" || tab.status === "needs-you");
+
 const asks = (status: TabStatus): status is Exclude<Attention, "bell"> =>
   status === "needs-you" || status === "done" || status === "failed";
 
@@ -400,17 +403,18 @@ export class Sessions {
   /**
    * Puts a tab to sleep: its pty is killed, the slot and its pin, colour and title stay, and an agent
    * keeps the session id it wakes with (the fallback looks one up when the hooks never sent it). The
-   * tab gets a new id and no terminal starts for it until `wake`. `null` for an unknown id.
+   * tab gets a new id and no terminal starts for it until `wake`. `null` for an unknown id and for an agent that is working or needs the user.
    */
   async hibernate(id: string, fallback: SessionFallback = async () => null): Promise<Tab | null> {
     const old = this.entries.get(id);
     if (!old) return null;
     if (old.tab.asleep) return old.tab;
+    if (busy(old.tab)) return null;
     let session = old.tab.agentSession ?? old.tab.resumeOf;
     if (!session && old.tab.agent && old.tab.cli) session = await fallback(old.tab.worktree, old.tab.cli, old.tab.openedAt).catch(() => null);
     // The tab may have closed or been replaced while the fallback ran.
     const live = this.entries.get(id);
-    if (!live) return null;
+    if (!live || live.tab.asleep || busy(live.tab)) return null;
     const next = this.replace(live, ownAccount(live.tab), session, session);
     this.update(this.entries.get(next.id)!, { asleep: true });
     return this.entries.get(next.id)!.tab;
