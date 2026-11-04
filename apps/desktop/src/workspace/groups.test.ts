@@ -84,6 +84,12 @@ it("groupBy status follows the work statuses, then no status; empty groups are l
   ]);
 });
 
+it("an id outside the fixed list lands in none instead of throwing", () => {
+  const odd = [ent("a", "r1", "bogus" as never)];
+  expect(() => groupBy(odd, "status", ctx)).not.toThrow();
+  expect(shape(groupBy(odd, "status", ctx))).toEqual([["status:none", ["a"]]]);
+});
+
 it("groupBy pr follows the pull request state, then none", () => {
   expect(shape(groupBy(list, "pr", ctx))).toEqual([
     ["pr:open", ["a", "c"]],
