@@ -561,6 +561,31 @@ it("new_worktree_opens_default_agent", async () => {
   expect(await createBirch(view)).toEqual(["codex"]);
 });
 
+it("a create with extras opens the picked agent, keeps it as the default and saves the details once", async () => {
+  const api = createMockApi({});
+  await api.profilesDefaults("ask", "codex", null);
+  const details = vi.spyOn(api, "worktreeDetails");
+  const view = await harness(api);
+  view.list().props.onCreate();
+  await tick();
+  view.draw();
+  view.of(CreateWorktreeDialog)[0].props.onCreate("demo-xdev", "rocket-birch", null, {
+    title: "🚀 birch",
+    agent: "claude",
+    setDefault: true,
+    parent: null,
+    item: { kind: "issue", url: "https://x.test/i/7", title: null },
+  });
+  await tick();
+  await tick();
+  await tick();
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  expect(sessions.tabs("/demo/wt/xdev-rocket-birch").map(t => t.profileId)).toEqual(["claude"]);
+  expect((await api.profiles()).defaultAgent).toBe("claude");
+  expect(details).toHaveBeenCalledTimes(1);
+  expect(details.mock.calls[0][1]).toEqual({ title: "🚀 birch", item: { kind: "issue", url: "https://x.test/i/7", title: null } });
+});
+
 it("new_worktree_skips_uninstalled_default", async () => {
   const api = createMockApi({});
   // Gemini is not installed in the mock.
