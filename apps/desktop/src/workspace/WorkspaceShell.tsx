@@ -1239,6 +1239,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
   }
 
+  // Gives the conflicts of the operation in progress to an agent of the worktree, as its recipe says.
+  async function resolveConflicts(vars: Record<string, string>): Promise<void> {
+    if (!sessions || !current) return;
+    const path = current.path;
+    const tab = await sendFix(api, sessions, path, shownTab[path] ?? null, "resolveConflicts", vars);
+    setFixNote(!tab);
+    if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
+  }
+
   // Gives a failed check, with its log when there is one, to an agent of the worktree.
   async function fixCheck(check: Check): Promise<void> {
     if (!sessions || !current) return;
@@ -1669,6 +1678,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   onChanges={(list) => setChangeList({ worktree: current.path, list })}
                   onFixWithAgent={(output) => void fixWithAgent("fixCommitFailure", output)}
                   onFixPush={(output, branch) => void fixWithAgent("fixPushFailure", output, branch)}
+                  onResolveConflicts={(vars) => void resolveConflicts(vars)}
                   onOpenGitSettings={() => openSettings("git")}
                   register={registerChanges}
                 />

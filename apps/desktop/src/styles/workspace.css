@@ -3102,3 +3102,35 @@ button.ws-tree-row:focus-visible {
   color: var(--text-2);
   white-space: nowrap;
 }
+
+/* The operation in progress: a plain bar, no coloured stripe. */
+.ws-conflict-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.ws-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ws-conflict-actions [data-danger] {
+  color: var(--danger);
+}
+
+.ws-conflict-files {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  max-height: 160px;
+  overflow: auto;
+  color: var(--text-2);
+}
