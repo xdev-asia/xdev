@@ -50,6 +50,8 @@ export interface Tab {
   autoTitled: boolean;
   /** The agent session id this tab resumed; null for a new session. */
   resumeOf: string | null;
+  /** The agent session id this tab was forked from; null otherwise. Its first launch forks, a restart does not. */
+  forkOf: string | null;
   /** The agent's own session id, from its hooks (latest wins) or the resumed id; null until known. */
   agentSession: string | null;
   /** When the tab was opened or resumed, in ms. */
@@ -177,6 +179,21 @@ export class Sessions {
    */
   resume(worktree: string, profileId: PtyProfile, account: string | null, sessionId: string, title: string | null = null, cli?: TabCli): Tab {
     const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, sessionId, title);
+    this.entries.set(entry.tab.id, entry);
+    this.cache.delete(worktree);
+    const layout = this.layouts.get(worktree);
+    this.layouts.set(worktree, layout ? addTab(layout, entry.tab.id) : single(entry.tab.id));
+    this.emit();
+    return entry.tab;
+  }
+
+  /**
+   * Opens an agent tab that continues a copy of the CLI session `sourceId` under a new session id (the
+   * source stays as it is). The new id is unknown until the agent's hooks report it, so `agentSession`
+   * is null until then and a layout saved before that has nothing to resume.
+   */
+  fork(worktree: string, profileId: PtyProfile, account: string | null, sourceId: string, title: string | null = null, cli?: TabCli): Tab {
+    const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, null, title, crypto.randomUUID(), sourceId);
     this.entries.set(entry.tab.id, entry);
     this.cache.delete(worktree);
     const layout = this.layouts.get(worktree);
@@ -367,7 +384,9 @@ export class Sessions {
   restart(id: string): Tab | null {
     const old = this.entries.get(id);
     if (!old) return null;
-    return this.replace(old, ownAccount(old.tab), old.tab.resumeOf, old.tab.agentSession);
+    // A forked tab continues its own session once the hooks gave its id; a second fork would copy again.
+    const resume = old.tab.forkOf === null ? old.tab.resumeOf : old.tab.agentSession;
+    return this.replace(old, ownAccount(old.tab), resume, old.tab.agentSession);
   }
 
   /**
@@ -894,7 +913,7 @@ export class Sessions {
     this.emit();
   }
 
-  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null, id: string = crypto.randomUUID()): Entry {
+  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null, id: string = crypto.randomUUID(), forkOf: string | null = null): Entry {
     const tab: Tab = {
       id,
       worktree,
@@ -913,11 +932,12 @@ export class Sessions {
       renamed: false,
       autoTitled: false,
       resumeOf,
+      forkOf,
       agentSession: resumeOf,
       openedAt: this.now(),
       pinned: false,
       color: "none",
-      client: new PtyClient(this.api, id, resumeOf ?? undefined),
+      client: new PtyClient(this.api, id, forkOf ?? resumeOf ?? undefined, forkOf !== null),
     };
     // Caps stay off until the pty says whether it got hook flags.
     return { tab, state: start(), caps: NO_CAPS, programTitle: null, autoTitle: null };

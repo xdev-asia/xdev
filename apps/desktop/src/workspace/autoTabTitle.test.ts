@@ -21,7 +21,7 @@ it("tabTitleFromPrompt: first line, folded spaces, at most six words and forty c
 });
 
 function tab(over: Partial<Tab> = {}): Tab {
-  return { id: "t1", worktree: PATH, profileId: "claude", account: null, accountSource: null, permissions: "ask", agent: true, status: "working", cli: "claude", unread: false, unreadAt: null, unreadReason: null, title: null, renamed: false, autoTitled: false, resumeOf: null, agentSession: "abc", openedAt: 0, pinned: false, color: "none", client: {} as never, ...over };
+  return { id: "t1", worktree: PATH, profileId: "claude", account: null, accountSource: null, permissions: "ask", agent: true, status: "working", cli: "claude", unread: false, unreadAt: null, unreadReason: null, title: null, renamed: false, autoTitled: false, resumeOf: null, forkOf: null, agentSession: "abc", openedAt: 0, pinned: false, color: "none", client: {} as never, ...over };
 }
 
 function setup(opts: { on?: boolean; titles?: (string | null)[] } = {}) {

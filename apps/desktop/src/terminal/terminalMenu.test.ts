@@ -4,7 +4,7 @@ import type { Tab } from "@/workspace/sessions";
 import type { TerminalHandle } from "./Terminal";
 import { terminalMenuItems, type TerminalMenuContext } from "./terminalMenu";
 
-function setup(over: { selection?: boolean; paneId?: string | null; agent?: boolean } = {}) {
+function setup(over: { selection?: boolean; paneId?: string | null; agent?: boolean; fork?: boolean; session?: string | null } = {}) {
   const calls: string[] = [];
   const handle: TerminalHandle = {
     copy: async () => { calls.push("copy"); return true; },
@@ -19,7 +19,7 @@ function setup(over: { selection?: boolean; paneId?: string | null; agent?: bool
   };
   const ctx: TerminalMenuContext = {
     handle,
-    tab: { id: "t1", agent: over.agent ?? false } as Tab,
+    tab: { id: "t1", agent: over.agent ?? false, agentSession: over.session === undefined ? null : over.session } as Tab,
     paneId: over.paneId === undefined ? "p1" : over.paneId,
     split: (dir) => void calls.push(`split:${dir}`),
     setTitle: () => void calls.push("setTitle"),
@@ -27,6 +27,7 @@ function setup(over: { selection?: boolean; paneId?: string | null; agent?: bool
     copyContext: () => void calls.push("copyContext"),
     copyTerminalId: () => void calls.push("copyTerminalId"),
     copyPaneId: () => void calls.push("copyPaneId"),
+    ...(over.fork ? { forkSession: () => void calls.push("forkSession") } : {}),
   };
   const items = terminalMenuItems(ctx);
   const find = (id: string) => items.find((i) => i.id === id) as MenuItem;
@@ -46,9 +47,18 @@ it("lists the items in the reference order, separated into groups", () => {
   expect(items.filter((i) => i.kind !== "separator").every((i) => i.labelKey.startsWith("termMenu."))).toBe(true);
 });
 
-it("an agent tab gets the same items: Fork Agent Session is P2", () => {
-  expect(setup({ agent: true }).items.map((i) => i.id)).toEqual(setup().items.map((i) => i.id));
-  expect(setup({ agent: true }).items.some((i) => /fork/i.test(i.id))).toBe(false);
+it("Fork session sits after Quick Commands and before Copy Context; it is hidden when the context has none", () => {
+  expect(setup({ agent: true }).items.some((i) => i.id === "forkSession")).toBe(false);
+  const ids = setup({ agent: true, fork: true, session: "abc" }).items.map((i) => i.id);
+  expect(ids.indexOf("forkSession")).toBe(ids.indexOf("copyContext") - 1);
+});
+
+it("Fork session is disabled while the tab has no session id, and runs the context's fork", () => {
+  expect(setup({ agent: true, fork: true, session: null }).find("forkSession").disabled).toBe(true);
+  const on = setup({ agent: true, fork: true, session: "abc" });
+  expect(on.find("forkSession").disabled).toBeFalsy();
+  on.find("forkSession").run!();
+  expect(on.calls).toEqual(["forkSession"]);
 });
 
 it("Copy is disabled without a selection", () => {
