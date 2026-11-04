@@ -13,6 +13,7 @@ mod cli_verbs;
 mod clipboard;
 mod commands;
 mod crash;
+mod diag_bundle;
 mod endpoint;
 mod file_watch;
 mod files;

@@ -69,7 +69,7 @@ fn io_err(e: impl ToString) -> CmdError {
     }
 }
 
-fn file_path(app: &AppHandle) -> Result<PathBuf, CmdError> {
+pub(crate) fn file_path(app: &AppHandle) -> Result<PathBuf, CmdError> {
     Ok(app.path().app_config_dir().map_err(io_err)?.join(FILE_NAME))
 }
 
