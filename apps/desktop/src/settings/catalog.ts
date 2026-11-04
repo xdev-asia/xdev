@@ -44,6 +44,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("agents.shells", "settings.agents.shells", ["shell", "bash", "powershell", "zsh", "program", "args"]),
   e("agents.accountSwitch", "settings.agents.accountSwitch.label", ["account", "switch", "restart", "keep", "ask", "running", "agent", "tài khoản", "tai khoan", "chuyển", "chuyen", "khởi động lại", "khoi dong lai", "giữ", "giu"], "settings.agents.accountSwitch.hint"),
   e("agents.sessionSearch", "settings.agents.sessionSearch.label", ["search", "session", "conversation", "history", "index", "tìm kiếm", "tim kiem", "phiên", "phien", "hội thoại", "hoi thoai", "chỉ mục", "chi muc"], "settings.agents.sessionSearch.hint"),
+  e("agents.autoSleep", "settings.agents.autoSleep.label", ["sleep", "auto", "idle", "hibernate", "agent", "tab", "minutes", "ngủ", "ngu", "tự động", "tu dong", "nhàn rỗi", "nhan roi", "phút", "phut"], "settings.agents.autoSleep.hint"),
   e("agents.statusHooks", "settings.agents.statusHooks.label", ["hooks", "status", "trạng thái", "trang thai"], "settings.agents.statusHooks.what"),
   // Stats & Usage
   e("usage.display", "settings.usage.display", ["usage", "percent", "percentage", "used", "remaining", "left", "meter", "footer", "đã dùng", "da dung", "còn lại", "con lai", "phần trăm", "phan tram"], "settings.usage.displayHint"),

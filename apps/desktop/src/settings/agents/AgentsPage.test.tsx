@@ -293,3 +293,30 @@ it("session_search_strings_exist_in_both_languages", async () => {
   expect(keys.length).toBeGreaterThanOrEqual(8);
   for (const k of keys) expect(vi_).toHaveProperty(k);
 });
+
+// Auto sleep: off until the person turns it on; the minutes are held to 1..1440.
+const field = (p: Awaited<ReturnType<typeof page>>, name: string) => p.all().find((n) => n.props["data-field"] === name)!;
+
+it("auto_sleep_switch_puts_the_flag_and_the_minutes_field_commits_a_clamped_value", async () => {
+  const p = await page();
+  expect(field(p, "autoSleep").props.checked).toBe(false);
+  expect(field(p, "sleepAfterMin").props.value).toBe("30");
+  const put = vi.spyOn(p.api, "agentsSettingsPut");
+  field(p, "autoSleep").props.onChange({ target: { checked: true } });
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...AGENTS_SETTINGS_DEFAULTS, autoSleep: true });
+  expect(field(p, "autoSleep").props.checked).toBe(true);
+
+  field(p, "sleepAfterMin").props.onChange({ target: { value: "5000" } });
+  field(p, "sleepAfterMin").props.onBlur();
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...AGENTS_SETTINGS_DEFAULTS, autoSleep: true, sleepAfterMin: 1440 });
+  expect(field(p, "sleepAfterMin").props.value).toBe("1440");
+
+  // Text that is not a number leaves the setting as it was.
+  field(p, "sleepAfterMin").props.onChange({ target: { value: "abc" } });
+  field(p, "sleepAfterMin").props.onBlur();
+  await tick();
+  expect(put).toHaveBeenCalledTimes(2);
+  expect(field(p, "sleepAfterMin").props.value).toBe("1440");
+});
