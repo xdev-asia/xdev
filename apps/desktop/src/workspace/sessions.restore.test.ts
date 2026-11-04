@@ -132,3 +132,32 @@ describe("Sessions.restore lazy start", () => {
     s.dispose();
   });
 });
+
+describe("Sessions.restore: worktrees that are not loaded", () => {
+  let sessions: Sessions | null = null;
+  const make = () => (sessions = new Sessions(createMockApi({})));
+  afterEach(() => {
+    sessions?.dispose();
+    sessions = null;
+  });
+
+  it("a worktree of a missing repo keeps its entry across saves", async () => {
+    const s = make();
+    const saved = snap({ [GONE]: one({ t1: shell() }), [B]: one({ t1: shell() }) });
+    await s.restore(saved, "all", never, { known: (w) => w !== GONE, carry: () => true });
+    expect(Object.keys(s.snapshot().worktrees).sort()).toEqual([B, GONE].sort());
+    expect(Object.keys(s.snapshot().worktrees).sort()).toEqual([B, GONE].sort());
+    expect(s.snapshot().worktrees[GONE]).toEqual(saved.worktrees[GONE]);
+  });
+
+  it("an entry the registry says is gone is dropped, and so is one removed later", async () => {
+    const s = make();
+    await s.restore(snap({ [GONE]: one({ t1: shell() }) }), "all", never, { known: () => false });
+    expect(s.snapshot().worktrees).toEqual({});
+    const t = make();
+    await t.restore(snap({ [GONE]: one({ t1: shell() }) }), "all", never, { known: () => false, carry: () => true });
+    expect(Object.keys(t.snapshot().worktrees)).toEqual([GONE]);
+    t.dropCarried(GONE);
+    expect(t.snapshot().worktrees).toEqual({});
+  });
+});

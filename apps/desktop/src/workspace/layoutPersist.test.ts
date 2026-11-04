@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
 import { LAYOUT_VERSION } from "./layoutSnapshot";
-import { restoreLayout, SAVE_DEBOUNCE_MS, sessionFallback, startLayoutSave, undoRestore } from "./layoutPersist";
+import { restoreLayout, SAVE_DEBOUNCE_MS, sessionFallback, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
 import { Sessions } from "./sessions";
 
 const A = "/demo/wt/xdev-oak";
@@ -45,6 +45,48 @@ describe("layout save", () => {
     expect(save).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(SAVE_DEBOUNCE_MS * 2);
     expect(save).toHaveBeenCalledTimes(1);
+    saver.stop();
+  });
+});
+
+describe("window close", () => {
+  let sessions: Sessions | null = null;
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    sessions?.dispose();
+    sessions = null;
+    vi.useRealTimers();
+  });
+
+  it("a close request flushes the pending save; stopping removes the listener", async () => {
+    const api = createMockApi({});
+    const save = vi.spyOn(api, "layoutSave");
+    const s = (sessions = new Sessions(api));
+    const saver = startLayoutSave(api, s);
+    let handler: (() => void | Promise<void>) | null = null;
+    const unlisten = vi.fn();
+    const win = {
+      onCloseRequested: async (h: () => void | Promise<void>) => {
+        handler = h;
+        return unlisten;
+      },
+    };
+    const stop = watchWindowClose(saver, win);
+    await Promise.resolve();
+    await Promise.resolve();
+    s.open(A, "shell");
+    await handler!();
+    expect(save).toHaveBeenCalledTimes(1);
+    stop();
+    expect(unlisten).toHaveBeenCalledTimes(1);
+    saver.stop();
+  });
+
+  it("is a no-op without a window", () => {
+    const api = createMockApi({});
+    const s = (sessions = new Sessions(api));
+    const saver = startLayoutSave(api, s);
+    expect(() => watchWindowClose(saver, null)()).not.toThrow();
     saver.stop();
   });
 });

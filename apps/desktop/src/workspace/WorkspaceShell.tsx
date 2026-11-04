@@ -20,7 +20,7 @@ import { recentFiles } from "@/search/recentFiles";
 import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
-import { openRestoredFile, restoreLayout, startLayoutSave, undoRestore } from "./layoutPersist";
+import { currentCloseWindow, openRestoredFile, restoreLayout, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
@@ -207,6 +207,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       if (!list.some((r) => r.missing)) {
         const kept = new Set(list.flatMap((r) => r.worktrees.map((w) => w.path)));
         for (const path of sessions?.worktrees() ?? []) if (!kept.has(path)) void sessions?.closeWorktree(path);
+        // The registry is complete here, so a saved layout of a worktree it does not list is gone for good.
+        for (const path of sessions?.carriedWorktrees() ?? []) if (!kept.has(path)) sessions?.dropCarried(path);
       }
     } catch (e) {
       setNotice(toApiError(e).code);
@@ -224,15 +226,23 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const restoreStarted = useRef(false);
   const saver = useRef<ReturnType<typeof startLayoutSave> | null>(null);
   const flushOnClose = useRef(() => saver.current?.flush());
+  const stopCloseWatch = useRef<() => void>(() => {});
   useEffect(() => {
     if (!sessions || !repos || repos.length === 0 || restoreStarted.current) return;
     restoreStarted.current = true;
     const known = new Set(repos.flatMap((r) => r.worktrees.map((w) => w.path)));
-    void restoreLayout(api, sessions, (w) => known.has(w), openRestoredFile(api, fileTabs)).then((got) => {
+    // A missing repo lists no worktrees though they may still exist: then the unknown ones stay saved.
+    const incomplete = repos.some((r) => r.missing);
+    void restoreLayout(api, sessions, (w) => known.has(w), openRestoredFile(api, fileTabs), () => incomplete).then((got) => {
       // The store was replaced (dev double mount) while the restore ran: this run is over.
       if (!restoreStarted.current) return;
       saver.current = startLayoutSave(api, sessions);
       if (typeof window !== "undefined") window.addEventListener("beforeunload", flushOnClose.current);
+      void currentCloseWindow().then((win) => {
+        if (!saver.current) return;
+        stopCloseWatch.current();
+        stopCloseWatch.current = watchWindowClose(saver.current, win);
+      });
       if (!got || got.report.opened.length === 0) return;
       const { resumed, fresh, opened } = got.report;
       pushToast({
@@ -247,6 +257,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       restoreStarted.current = false;
       saver.current?.stop();
       saver.current = null;
+      stopCloseWatch.current();
+      stopCloseWatch.current = () => {};
       if (typeof window !== "undefined") window.removeEventListener("beforeunload", close);
     };
   }, [sessions]);
@@ -788,6 +800,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       }
       setRemoving({ worktree, dirty, busy: true });
       await sessions?.closeWorktree(worktree.path);
+      sessions?.dropCarried(worktree.path);
       await api.worktreeRemove(worktree.path, dirty, true);
       setRemoving(null);
       await load();

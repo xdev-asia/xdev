@@ -67,6 +67,11 @@ export interface RestoreOptions {
   /** Whether a worktree is still in the registry; left out, every worktree is. */
   known?: (worktree: string) => boolean;
   /** Opens a file tab again; true when the file is there, false (or a throw) when it is gone. Left out, file tabs are dropped. */
+  /**
+   * Whether the saved entry of a worktree that is not known is kept for later saves. True when the
+   * registry may be incomplete (a repo is missing); left out, such entries are dropped.
+   */
+  carry?: (worktree: string) => boolean;
   openFile?: (worktree: string, rel: string) => Promise<boolean>;
 }
 
