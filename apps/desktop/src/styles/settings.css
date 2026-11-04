@@ -690,3 +690,18 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Settings → Terminal → Theme: the 16 ANSI colours of the chosen scheme. */
+.term-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0 0 12px;
+}
+
+.term-swatch {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+}

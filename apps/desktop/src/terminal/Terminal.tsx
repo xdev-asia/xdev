@@ -12,6 +12,9 @@ import { PtyClient } from "./ptyClient";
 import { createTerminalHandle } from "./terminalActions";
 import { getTerminalSettings, subscribeTerminalSettings } from "./terminalSettings";
 import { decodeOsc52Write, xtermOptions } from "./terminalOptions";
+import { TerminalFind } from "./TerminalFind";
+import { createBell } from "./terminalBell";
+import { attachRenderer } from "./terminalRenderer";
 
 /** What a menu, the palette or a shortcut can do to one terminal. Acts on the xterm; nothing goes to the pty unless said. */
 export interface TerminalHandle {
@@ -69,15 +72,24 @@ export function Terminal(props: {
   const search = useRef<SearchAddon | null>(null);
   const xterm = useRef<XTerm | null>(null);
   const seen = useRef(props.focusSeq);
-  const [finding, setFinding] = useState(false);
-  const [query, setQuery] = useState("");
+  // The find bar: open or not, what it opens with, and a counter that re-focuses it (Ctrl+F while open).
+  const [find, setFind] = useState({ open: false, initial: "", seq: 0 });
+  const lastQuery = useRef("");
   // Callbacks change every render; the effect below runs once per pty.
   const handlers = useRef(props);
   handlers.current = props;
   const clientRef = useRef<PtyClient | null>(null);
+  // Opens the find bar, or focuses it when open. A one-line selection becomes the query.
+  const openFind = () => {
+    const selected = xterm.current?.getSelection() ?? "";
+    const seed = selected && !/[\r\n]/.test(selected) ? selected : lastQuery.current;
+    setFind((f) => ({ open: true, initial: f.open ? f.initial : seed, seq: f.seq + 1 }));
+  };
+  const openFindRef = useRef(openFind);
+  openFindRef.current = openFind;
   // One handle per view; it reads the live xterm on each call.
   const handle = useRef(
-    createTerminalHandle({ term: () => xterm.current, client: () => clientRef.current, find: () => setFinding(true) }),
+    createTerminalHandle({ term: () => xterm.current, client: () => clientRef.current, find: () => openFindRef.current() }),
   );
   useImperativeHandle(props.handleRef, () => handle.current, []);
 
@@ -94,12 +106,18 @@ export function Terminal(props: {
     const css = getComputedStyle(el);
     const color = (name: string) => css.getPropertyValue(name).trim() || undefined;
     const mono = color("--x-font-mono");
-    const term = new XTerm({
-      ...xtermOptions(getTerminalSettings(), mono),
-      theme: { background: color("--x-color-surface"), foreground: color("--x-color-ink") },
-    });
+    const initial = xtermOptions(getTerminalSettings(), mono, color);
+    // Proposed API: search decorations (and with them the match count) need it.
+    const term = new XTerm({ ...initial, allowProposedApi: true });
+    // The pane and the padding around the host take the theme's background (the app theme: the CSS one).
+    const pane = el.parentElement;
+    const paint = (background: string | undefined) => {
+      if (pane) pane.style.background = background && getTerminalSettings().theme !== "app" ? background : "";
+    };
+    paint(initial.theme.background);
+    const bell = createBell(pane ?? el);
     const fit = new FitAddon();
-    const finder = new SearchAddon();
+    const finder = new SearchAddon({ highlightLimit: 1000 });
     search.current = finder;
     xterm.current = term;
     term.loadAddon(fit);
@@ -107,6 +125,8 @@ export function Terminal(props: {
     // No opener plugin in the app: the webview hands the link to the system browser.
     term.loadAddon(new WebLinksAddon((_event, uri) => window.open(uri, "_blank", "noopener")));
     term.open(el);
+    // WebGL or DOM, as Settings says; after `open`, which the addon needs.
+    const renderer = attachRenderer(term, getTerminalSettings().gpu);
     // A chord the app owns (per the key policy) never reaches the program: a terminal action runs
     // here, any other one has run in the window handler before xterm saw it.
     term.attachCustomKeyEventHandler((e) => {
@@ -115,7 +135,7 @@ export function Terminal(props: {
       if (action === null) return true;
       switch (action) {
         case "terminal.find":
-          setFinding(true);
+          openFindRef.current();
           break;
         case "terminal.clear":
           term.clear();
@@ -181,9 +201,16 @@ export function Terminal(props: {
       menu({ x: e.clientX, y: e.clientY }, handle.current);
     };
     el.addEventListener("contextmenu", onContextMenu, true);
+    // Focus follows the mouse when set, unless the find bar's input has the focus.
+    const onMouseEnter = () => {
+      if (!getTerminalSettings().focusFollowsMouse) return;
+      if (typeof document !== "undefined" && document.activeElement?.closest?.(".terminal-find")) return;
+      term.focus();
+    };
+    el.addEventListener("mouseenter", onMouseEnter);
     // A change in Settings applies to this pane at once, with no restart.
     const offSettings = subscribeTerminalSettings(() => {
-      const next = xtermOptions(getTerminalSettings(), mono);
+      const next = xtermOptions(getTerminalSettings(), mono, color);
       term.options.fontFamily = next.fontFamily;
       term.options.fontSize = next.fontSize;
       term.options.fontWeight = next.fontWeight;
@@ -191,6 +218,13 @@ export function Terminal(props: {
       term.options.cursorStyle = next.cursorStyle;
       term.options.cursorBlink = next.cursorBlink;
       term.options.scrollback = next.scrollback;
+      term.options.theme = next.theme;
+      paint(next.theme.background);
+      term.options.wordSeparator = next.wordSeparator;
+      term.options.scrollSensitivity = next.scrollSensitivity;
+      term.options.fastScrollSensitivity = next.fastScrollSensitivity;
+      term.options.minimumContrastRatio = next.minimumContrastRatio;
+      renderer.set(getTerminalSettings().gpu);
       fitVisible();
       // A font that has not loaded yet measures wrong; measure again when it has.
       if (typeof document !== "undefined") void document.fonts?.ready.then(() => alive && fitVisible());
@@ -205,7 +239,10 @@ export function Terminal(props: {
       void client.input(text).catch(() => {});
     });
     term.onTitleChange((title) => handlers.current.onTitle?.(title));
-    term.onBell(() => handlers.current.onBell?.());
+    term.onBell(() => {
+      bell.ring(getTerminalSettings().bell);
+      handlers.current.onBell?.();
+    });
     term.onResize(({ cols, rows }) => void client.resize(cols, rows).catch(() => {}));
     // A mount undone in the same tick (StrictMode in dev) starts nothing, so a shared client
     // is started once, by the mount that stays.
@@ -229,7 +266,10 @@ export function Terminal(props: {
     return () => {
       alive = false;
       offSettings();
+      renderer.dispose();
+      bell.dispose();
       el.removeEventListener("contextmenu", onContextMenu, true);
+      el.removeEventListener("mouseenter", onMouseEnter);
       observer.disconnect();
       if (owned) void client.dispose();
       search.current = null;
@@ -241,24 +281,15 @@ export function Terminal(props: {
 
   return (
     <div className="terminal-pane">
-      {finding && (
-        <input
-          className="terminal-find"
-          type="search"
-          autoFocus
-          aria-label={t("terminal.search")}
-          placeholder={t("terminal.search")}
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            search.current?.findNext(e.target.value, { incremental: true });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              if (e.shiftKey) search.current?.findPrevious(query);
-              else search.current?.findNext(query);
-            }
-            if (e.key === "Escape") setFinding(false);
+      {find.open && search.current && (
+        <TerminalFind
+          search={search.current}
+          initial={find.initial}
+          focusSeq={find.seq}
+          onQuery={(q) => void (lastQuery.current = q)}
+          onClose={() => {
+            setFind((f) => ({ ...f, open: false }));
+            xterm.current?.focus();
           }}
         />
       )}

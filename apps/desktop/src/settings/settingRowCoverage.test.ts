@@ -10,7 +10,7 @@ const PAGES: Record<string, string[]> = {
   general: ["GeneralPage.tsx"],
   agents: ["agents/AgentsPage.tsx"],
   notifications: ["notifications/NotificationsPage.tsx"],
-  terminal: ["TerminalPage.tsx"],
+  terminal: ["TerminalPage.tsx", "terminal/TerminalLookSection.tsx", "terminal/TerminalBehaviourSection.tsx"],
   editor: ["EditorPage.tsx"],
   repos: ["ReposSettings.tsx"],
   openIn: ["OpenInPage.tsx"],
