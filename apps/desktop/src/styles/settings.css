@@ -596,6 +596,7 @@
   background: var(--bg-0);
   color: var(--text-1);
   font: inherit;
+  font-weight: 400;
 }
 
 .settings-search-input:focus-visible {
@@ -659,9 +660,6 @@
     animation: none;
     outline: 1px solid var(--signal);
   }
-}
-
-  font-weight: 400;
 }
 
 .ws-field textarea.ws-mono {
