@@ -24,7 +24,7 @@ describe("account switch flow", () => {
   async function setup(policy: SwitchRunning) {
     const api = createMockApi({});
     await api.ptyApprove("claude", null);
-    await api.agentsSettingsPut({ accountSwitch: policy });
+    await api.agentsSettingsPut({ accountSwitch: policy, keepAwake: "off", autoTabTitle: false });
     const live = (sessions = new Sessions(api));
     const notify = vi.fn();
     const ask = vi.fn<(p: PendingSwitch) => void>();

@@ -207,3 +207,35 @@
 .as-error {
   margin: 6px 12px;
 }
+
+/* Activity view: the agent threads and the feed. Tokens only. */
+.act-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.act-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.act-list {
+  flex: 1;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.act-group {
+  padding: 8px 8px 2px;
+  color: var(--text-3);
+  font-size: 11px;
+  text-transform: none;
+}

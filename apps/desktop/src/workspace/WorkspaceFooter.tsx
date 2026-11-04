@@ -6,6 +6,7 @@ import { useUsageSettings } from "@/settings/usageSettings";
 import { ALL_ITEMS, useStatusBarItems } from "@/ui/statusBarItems";
 import { useQuota } from "@/shell/useQuota";
 import { useUpdate, type Update } from "@/shell/useUpdate";
+import { KeepAwakeItem } from "./KeepAwakeItem";
 import { UsagePopover } from "./UsagePopover";
 import { footerQuota, shownPercent } from "./usageModel";
 
@@ -98,6 +99,8 @@ export function WorkspaceFooter(props: {
   usageButtonRef?: Ref<HTMLButtonElement>;
   /** Which of xDev's own items show (Settings > Appearance); all by default. The update notice and the meters are not items. */
   items?: StatusBarItems;
+  /** The keep-awake item, shown before the version. */
+  keepAwake?: ReactNode;
   hidden?: boolean;
 }): JSX.Element {
   const { t } = useI18n();
@@ -150,6 +153,7 @@ export function WorkspaceFooter(props: {
           </span>
         </>
       )}
+      {props.keepAwake}
       {items.version && <span className="ws-mono">{`v${props.version}`}</span>}
       {props.update && <UpdateItem update={props.update} onRestart={props.onRestartUpdate} />}
     </footer>
@@ -240,6 +244,7 @@ export function LiveWorkspaceFooter(props: {
       usageOpen={open}
       usagePopover={popover}
       usageButtonRef={button}
+      keepAwake={<KeepAwakeItem api={api} />}
     />
   );
 }

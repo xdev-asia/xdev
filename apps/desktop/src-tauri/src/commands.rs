@@ -281,8 +281,7 @@ pub fn agents_settings_put(
     app: AppHandle,
     settings: settings::AgentsSettings,
 ) -> Result<settings::AgentsSettings, CmdError> {
-    settings_store::write(&app, &[SettingsSection::Agents], |s| s.agents = settings)
-        .map(|s| s.agents)
+    crate::power::put_agents(&app, settings)
 }
 
 /// Settings → Stats & Usage as stored; the defaults when nothing is.

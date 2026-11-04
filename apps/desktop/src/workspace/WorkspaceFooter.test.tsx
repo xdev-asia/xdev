@@ -188,3 +188,10 @@ it("shows the update notice even with every item off", () => {
   expect(html).toContain("ws-update");
   expect(html).not.toContain("⎇");
 });
+
+it("shows the keep-awake item before the version", () => {
+  const html = render(null, { keepAwake: createElement("span", { id: "awake" }) });
+  expect(html.indexOf('id="awake"')).toBeGreaterThan(-1);
+  expect(html.indexOf('id="awake"')).toBeLessThan(html.indexOf("v0.3.0"));
+  expect(render(null)).not.toContain('id="awake"');
+});

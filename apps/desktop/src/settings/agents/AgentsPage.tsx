@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
+import { RadioGroup, Switch } from "@xdev-asia/ui";
 import {
   toApiError,
   type Account,
   type AgentsSettings,
   type ApiError,
   type Approvals,
+  type KeepAwake,
   type SwitchRunning,
   type ProfilesView,
   type ProfileView,
@@ -21,6 +23,7 @@ import { freeId } from "./agentForm";
 import { ProfileEditor } from "./ProfileEditor";
 import { ShellsSection } from "./ShellsSection";
 
+const KEEP_AWAKE_CHOICES: readonly KeepAwake[] = ["off", "agent", "on"];
 const SWITCH_CHOICES: readonly SwitchRunning[] = ["ask", "restart", "keep"];
 
 /** Settings → Agents: the Approvals switch, defaults, agent profiles, shells and Status hooks. */
@@ -56,6 +59,16 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
       }),
     [api],
   );
+
+  async function saveAgents(patch: Partial<AgentsSettings>): Promise<void> {
+    if (!switchPolicy) return;
+    setError(undefined);
+    try {
+      setSwitchPolicy(await api.agentsSettingsPut({ ...switchPolicy, ...patch }));
+    } catch (e) {
+      setError(toApiError(e).code);
+    }
+  }
 
   async function pickSwitch(next: SwitchRunning): Promise<void> {
     if (!switchPolicy || next === switchPolicy.accountSwitch) return;
@@ -290,6 +303,34 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
         </label>
       </div>
       <p className="settings-empty">{t(`settings.agents.accountSwitch.${switchPolicy?.accountSwitch ?? "ask"}Hint`)}</p>
+      </SettingRow>
+
+      <SettingRow id="agents.keepAwake" filter={filter}>
+      <h4 className="settings-group">{t("settings.agents.keepAwake")}</h4>
+      <RadioGroup
+        name="keepAwake"
+        label={t("settings.agents.keepAwake.label")}
+        orientation="vertical"
+        value={switchPolicy?.keepAwake ?? "off"}
+        disabled={!switchPolicy}
+        onChange={(value) => {
+          if (switchPolicy && value !== switchPolicy.keepAwake) void saveAgents({ keepAwake: value as KeepAwake });
+        }}
+        options={KEEP_AWAKE_CHOICES.map((c) => ({ value: c, label: t(`settings.agents.keepAwake.${c}`), hint: t(`settings.agents.keepAwake.${c}Hint`) }))}
+      />
+      <p className="settings-empty">{t("settings.agents.keepAwake.hint")}</p>
+      </SettingRow>
+
+      <SettingRow id="agents.autoTabTitle" filter={filter}>
+      <h4 className="settings-group">{t("settings.agents.autoTabTitle")}</h4>
+      <Switch
+        data-field="autoTabTitle"
+        label={t("settings.agents.autoTabTitle.label")}
+        checked={switchPolicy?.autoTabTitle ?? false}
+        disabled={!switchPolicy}
+        onChange={(e) => void saveAgents({ autoTabTitle: e.target.checked })}
+      />
+      <p className="settings-empty">{t("settings.agents.autoTabTitle.hint")}</p>
       </SettingRow>
 
       <SettingRow id="agents.statusHooks" filter={filter}>

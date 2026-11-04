@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { RadioGroup, Switch } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { AgentsPage } from "./AgentsPage";
 import { ProfileEditor } from "./ProfileEditor";
@@ -197,7 +198,7 @@ it("account_switch_select_shows_the_stored_policy_and_saves_a_change", async () 
   const put = vi.spyOn(p.api, "agentsSettingsPut");
   field().props.onChange({ target: { value: "keep" } });
   await tick();
-  expect(put).toHaveBeenCalledWith({ accountSwitch: "keep" });
+  expect(put).toHaveBeenCalledWith({ accountSwitch: "keep", keepAwake: "off", autoTabTitle: false });
   expect(field().props.value).toBe("keep");
   expect((await p.api.agentsSettings()).accountSwitch).toBe("keep");
 });
@@ -228,7 +229,42 @@ it("account_switch_policy_follows_a_settings_change_from_elsewhere", async () =>
   const p = await page();
   // The page's own draw collected two effects now; the second one subscribes.
   expect(p.all().find((n) => n.props["data-field"] === "accountSwitch")!.props.value).toBe("ask");
-  await p.api.agentsSettingsPut({ accountSwitch: "restart" });
+  await p.api.agentsSettingsPut({ accountSwitch: "restart", keepAwake: "off", autoTabTitle: false });
   await tick();
   expect(p.all().find((n) => n.props["data-field"] === "accountSwitch")!.props.value).toBe("restart");
+});
+
+it("keep_awake_radio_shows_the_stored_mode_and_saves_a_change_with_the_other_fields", async () => {
+  const p = await page();
+  const group = () => p.all().find((n) => n.type === RadioGroup && n.props.name === "keepAwake")!;
+  expect(group().props.value).toBe("off");
+  expect(group().props.options.map((o: { value: string }) => o.value)).toEqual(["off", "agent", "on"]);
+  const put = vi.spyOn(p.api, "agentsSettingsPut");
+  group().props.onChange("agent");
+  await tick();
+  expect(put).toHaveBeenCalledWith({ accountSwitch: "ask", keepAwake: "agent", autoTabTitle: false });
+  expect(group().props.value).toBe("agent");
+  put.mockClear();
+  group().props.onChange("agent");
+  await tick();
+  expect(put).not.toHaveBeenCalled();
+});
+
+it("auto_tab_title_switch_follows_the_stored_flag_and_saves_a_toggle", async () => {
+  const p = await page();
+  const sw = () => p.all().find((n) => n.type === Switch && n.props["data-field"] === "autoTabTitle")!;
+  expect(sw().props.checked).toBe(false);
+  const put = vi.spyOn(p.api, "agentsSettingsPut");
+  sw().props.onChange({ target: { checked: true } });
+  await tick();
+  expect(put).toHaveBeenCalledWith({ accountSwitch: "ask", keepAwake: "off", autoTabTitle: true });
+  expect(sw().props.checked).toBe(true);
+});
+
+it("keep_awake_and_tab_title_strings_exist_in_both_languages", async () => {
+  const en_ = (await import("@/i18n/en.json")).default as Record<string, string>;
+  const vi_ = (await import("@/i18n/vi.json")).default as Record<string, string>;
+  const keys = Object.keys(en_).filter((k) => k.startsWith("settings.agents.keepAwake") || k.startsWith("settings.agents.autoTabTitle"));
+  expect(keys.length).toBeGreaterThanOrEqual(8);
+  for (const k of keys) expect(vi_).toHaveProperty(k);
 });
