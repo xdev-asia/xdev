@@ -46,8 +46,9 @@ pub struct Endpoint {
     path: PathBuf,
 }
 
-/// A debug build never meets a release service, nor the other way round.
-const CHANNEL: &str = if cfg!(debug_assertions) { "-dev" } else { "" };
+/// `-dev` in a debug build: a debug build never meets a release service, nor
+/// the other way round. Users of the crate put it in their own file names.
+pub const CHANNEL: &str = if cfg!(debug_assertions) { "-dev" } else { "" };
 
 /// `<prefix>-<user key>-v<major>`; a pipe name on Windows, `<dir>/<prefix>.sock`
 /// elsewhere. A debug build has its own name, so it never meets a release service.

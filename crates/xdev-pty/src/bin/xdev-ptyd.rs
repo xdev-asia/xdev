@@ -1,5 +1,6 @@
-//! The terminal service: `xdev-ptyd --dir <local dir>/ptyd [--ring-mb N]
-//! [--prefix P]`; the prefix is for tests that must not meet a real service.
+//! The terminal service: `xdev-ptyd --dir <service dir> [--ring-mb N]
+//! [--prefix P]`, the dir being `client::service_dir`; the prefix is for
+//! tests that must not meet a real service.
 //! The app starts it detached; it ends 15 s after its last PTY and client.
 
 // No console window of its own on Windows; its children get pseudo consoles.
