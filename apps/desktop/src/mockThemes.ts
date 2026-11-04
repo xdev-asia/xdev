@@ -112,7 +112,7 @@ function numbered(base: string, n: number): string {
 export function createMockThemes(files: Record<string, unknown> = fixtures, emit: SettingsEmit = () => {}): MockThemes {
   const stored = new Map<string, CustomScheme>();
   const parsed = (path: string): Parsed => {
-    if (!(path in files)) throw fail("io", "not found");
+    if (!(path in files)) throw fail("not_found");
     const raw = files[path];
     return parseThemeFile(typeof raw === "string" ? raw : JSON.stringify(raw));
   };
@@ -136,7 +136,7 @@ export function createMockThemes(files: Record<string, unknown> = fixtures, emit
       const { scheme } = parsed(path);
       let id = scheme.id;
       if (stored.has(id)) {
-        if (onTaken === "fail") throw fail("theme_name_taken");
+        if (onTaken === "fail") throw fail("theme_name_taken", stored.get(id)!.name);
         if (onTaken === "keepBoth") {
           const base = id.slice("custom-".length);
           for (let n = 2; ; n++) {

@@ -29,6 +29,7 @@ it("names the field of a bad file and never echoes a path", async () => {
   expect(await code(themes.terminalThemePreview("/demo/themes/broken.json"))).toEqual({ code: "theme_invalid", detail: "foreground" });
   const missing = await code(themes.terminalThemePreview("/nowhere/secret.json"));
   expect(JSON.stringify(missing)).not.toContain("secret");
+  expect(missing).toEqual({ code: "not_found" });
   expect(() => parseThemeFile("x".repeat(70 * 1024))).toThrow(expect.objectContaining({ code: "theme_too_large" }));
 });
 
@@ -39,7 +40,8 @@ it("import follows the clash mode: fail, replace, keep both", async () => {
   expect(first.id).toBe("custom-graphite-dark");
   expect(emit).toHaveBeenLastCalledWith(["terminal"]);
   expect((await themes.terminalThemePreview(GRAPHITE)).nameTaken).toBe(true);
-  expect((await code(themes.terminalThemeImport(GRAPHITE, "fail"))).code).toBe("theme_name_taken");
+  // The error names the stored scheme as the person knows it, not its slug.
+  expect(await code(themes.terminalThemeImport(GRAPHITE, "fail"))).toEqual({ code: "theme_name_taken", detail: first.name });
   expect((await themes.terminalThemeImport(GRAPHITE, "replace")).id).toBe(first.id);
   expect((await themes.terminalThemeImport(GRAPHITE, "keepBoth")).id).toBe("custom-graphite-dark-2");
   expect((await themes.terminalThemeImport(GRAPHITE, "keepBoth")).id).toBe("custom-graphite-dark-3");
