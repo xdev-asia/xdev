@@ -2842,3 +2842,81 @@ button.ws-tree-row:focus-visible {
 .ws-meters-btn[aria-expanded="true"] {
   color: var(--text-1);
 }
+
+.ws-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
+.ws-issues-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.ws-issues-states {
+  display: flex;
+  gap: 4px;
+}
+
+.ws-issues-states [aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--text-1);
+}
+
+.ws-issues-mine {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-2);
+}
+
+.ws-issues-search {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-1);
+  font-size: 12px;
+}
+
+.ws-issues-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-issue {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.ws-issue-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.ws-issue-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.ws-issue[data-state="closed"] .ws-checks-title {
+  color: var(--text-2);
+}
