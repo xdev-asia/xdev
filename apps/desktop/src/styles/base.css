@@ -11,6 +11,7 @@
   --text-3: #62626c;
   --term: #09090b;
   --accent: #2f62e6;
+  --brand-agent: #ff7a3d;
   --signal: #5bd8ff;
   --signal-bg: rgba(91, 216, 255, 0.12);
   --warn: #f2b544;
@@ -45,6 +46,7 @@
   --text-3: #8a8a94;
   --term: #fafafb;
   --accent: #2453d6;
+  --brand-agent: #ff7a3d;
   --signal: #0670a0;
   --signal-bg: rgba(6, 112, 160, 0.1);
   --warn: #8a5200;

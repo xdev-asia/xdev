@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { PaletteItem } from "./items";
-import { rank, type Row } from "./rank";
+import { FILTERS, rank, type Row } from "./rank";
 
 const noop = () => {};
 const tab = (id: string, status: PaletteItem["status"], order: number, title = id): PaletteItem => ({ id: `tab:${id}`, kind: "tab", title, status, order, worktree: "/wt/a", run: noop });
@@ -8,7 +8,7 @@ const wt = (name: string, activity: number | null = null): PaletteItem => ({ id:
 const set = (id: string, title: string): PaletteItem => ({ id: `set:${id}`, kind: "setting", title, run: noop });
 const act = (id: string, title: string): PaletteItem => ({ id: `act:${id}`, kind: "action", title, run: noop });
 
-const base = { query: "", filter: "all" as const, current: { worktree: null, tab: null }, recent: () => null, extra: {}, canCreate: false, now: 1_000_000_000 };
+const base = { query: "", filter: "all" as const, current: { worktree: null, tab: null }, recent: () => null, extra: {}, canCreate: false, now: 1_000_000_000, scope: null };
 const ids = (rows: Row[]) => rows.flatMap((r) => (r.type === "item" ? [r.item.id] : []));
 const labels = (rows: Row[]) => rows.flatMap((r) => (r.type === "header" ? [r.label] : []));
 
@@ -92,4 +92,56 @@ it("an item with minQuery stays out until the query is long enough", () => {
   expect(ids(rank({ ...base, items, query: "b", filter: "other" }))).toEqual([]);
   expect(ids(rank({ ...base, items, query: "br" }))).toEqual(["set:git.prefix"]);
   expect(ids(rank({ ...base, items, query: "", filter: "other" }))).toEqual(["set:git"]);
+});
+
+const chat = (key: string, last: number, repo = "/r/x", title = key): PaletteItem => ({ id: `chat:${key}`, kind: "chat", title, activity: last, worktree: `/wt/${key}`, repo, run: noop });
+const task = (id: string, title: string, repo?: string): PaletteItem => ({ id: `task:${id}`, kind: "task", title, minQuery: 1, repo, run: noop });
+
+it("empty query: live tabs then past chats under one header", () => {
+  const items = [chat("c1", 10), chat("c2", 30), tab("p1", "idle", 0)];
+  const rows = rank({ ...base, items });
+  expect(ids(rows)).toEqual(["tab:p1", "chat:c2", "chat:c1"]);
+  expect(labels(rows)).toEqual(["recentTabs"]);
+});
+
+it("empty query: chats fill the first section up to 6 rows", () => {
+  const items = [tab("p1", "idle", 0), tab("p2", "idle", 1), ...Array.from({ length: 10 }, (_, i) => chat(`c${i}`, i))];
+  expect(ids(rank({ ...base, items })).filter((i) => i.startsWith("chat:"))).toEqual(["chat:c9", "chat:c8", "chat:c7", "chat:c6"]);
+});
+
+it("typed: a chat ranks under the tab header after an equal live tab", () => {
+  const items = [chat("c1", 99, "/r/x", "fix"), tab("t", "idle", 0, "fix"), chat("c2", 5, "/r/x", "fix")];
+  const rows = rank({ ...base, items, query: "fix" });
+  expect(labels(rows)).toEqual(["tabs"]);
+  expect(ids(rows)).toEqual(["tab:t", "chat:c1", "chat:c2"]);
+});
+
+it("the task filter lists tasks on an empty query; the all filter hides them", () => {
+  const items = [task("k1", "Add login"), wt("w")];
+  const rows = rank({ ...base, items, filter: "task" });
+  expect(ids(rows)).toEqual(["task:k1"]);
+  expect(labels(rows)).toEqual(["tasks"]);
+  expect(ids(rank({ ...base, items }))).not.toContain("task:k1");
+});
+
+it("typed: tasks show in their own section after worktrees", () => {
+  const items = [task("k1", "login flow"), wt("login"), set("s", "Login")];
+  expect(labels(rank({ ...base, items, query: "login" }))).toEqual(["worktrees", "tasks", "other"]);
+});
+
+it("scope drops other repos' rows but keeps settings and actions", () => {
+  const inX = { ...wt("a"), repo: "/r/x" };
+  const inY = { ...wt("b"), repo: "/r/y" };
+  const items = [inX, inY, chat("c1", 1, "/r/y"), chat("c2", 2, "/r/x"), task("k", "x", "/r/y"), task("k2", "x", undefined), set("s", "S"), act("a", "A")];
+  const rows = rank({ ...base, items, query: "", scope: "/r/x", filter: "all" });
+  expect(ids(rows)).toEqual(["chat:c2", "wt:/wt/a"]);
+  const typed = ids(rank({ ...base, items, query: "x", scope: "/r/x" }));
+  expect(typed).not.toContain("task:k");
+  expect(typed).not.toContain("task:k2");
+  const other = ids(rank({ ...base, items, filter: "other", scope: "/r/x" }));
+  expect(other).toEqual(["set:s", "act:a"]);
+});
+
+it("FILTERS order", () => {
+  expect(FILTERS).toEqual(["all", "tab", "worktree", "task", "other"]);
 });

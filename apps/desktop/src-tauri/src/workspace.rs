@@ -163,6 +163,40 @@ fn update<T>(
     Ok(out)
 }
 
+/// Adopts the old single `last_vault` setting as a shared vault. Runs once at
+/// start; a second run finds the vault already listed and does nothing.
+/// `last_vault` is cleared in U9, once DocsView no longer boots from it.
+pub fn migrate_last_vault(
+    data: &Path,
+    lock: &WorkspaceLock,
+    settings: &crate::settings_store::SettingsStore,
+) -> Result<bool, CmdError> {
+    let Some(last) = settings.read().last_vault else {
+        return Ok(false);
+    };
+    let adopted = update(data, lock, |reg| {
+        Ok(xdev_workspace::adopt_last_vault(
+            reg,
+            Some(Path::new(&last)),
+        ))
+    })?;
+    Ok(adopted)
+}
+
+/// `migrate_last_vault` at start. Best effort: a failure leaves the setting
+/// in place for the next launch.
+pub fn start_migrations(app: &AppHandle) {
+    let (Some(data), Some(store)) = (
+        app.state::<AppState>().data_dir.clone(),
+        crate::settings_store::store(app),
+    ) else {
+        return;
+    };
+    if let Err(e) = migrate_last_vault(&data, &app.state::<WorkspaceLock>(), &store) {
+        eprintln!("last vault migration: {}", e.code);
+    }
+}
+
 /// Clears the staging folders a crash left behind, under the workspace lock
 /// so no create is staging at the same time. What was removed.
 fn sweep_staging(data: &Path, lock: &WorkspaceLock, now_ms: i64) -> Result<Vec<PathBuf>, CmdError> {
@@ -432,7 +466,7 @@ pub enum CloneProgress {
     },
     /// Cloned and added to the workspace.
     Done {
-        repo: RepoView,
+        repo: Box<RepoView>,
     },
     Error {
         message: String,
@@ -595,7 +629,9 @@ fn clone_with(
     });
     match added {
         Ok(repo) => {
-            send(CloneProgress::Done { repo: repo.clone() });
+            send(CloneProgress::Done {
+                repo: Box::new(repo.clone()),
+            });
             Ok(repo)
         }
         Err(mut e) => {
@@ -665,6 +701,7 @@ pub fn repo_update(
     script_source: Option<ScriptSource>,
     local_setup: Option<String>,
     local_archive: Option<String>,
+    docs_dir: Option<String>,
 ) -> Result<RepoView, CmdError> {
     let patch = RepoPatch {
         short_name,
@@ -674,6 +711,7 @@ pub fn repo_update(
         script_source,
         local_setup,
         local_archive,
+        docs_dir,
     };
     update(data_dir(&state)?, &lock, |reg| update_repo(reg, &id, patch))
 }
@@ -1762,6 +1800,60 @@ mod tests {
     }
 
     #[test]
+    fn migrate_last_vault_adopts_once_and_keeps_the_setting() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let shared = fx.main.parent().unwrap().join("old notes");
+        fs::create_dir(&shared).unwrap();
+        let file = fx.main.parent().unwrap().join("settings.json");
+        let store = crate::settings_store::SettingsStore::new(file);
+        store
+            .update(|s| s.last_vault = Some(shared.to_string_lossy().into_owned()))
+            .unwrap();
+
+        assert!(migrate_last_vault(&fx.data, &lock, &store).unwrap());
+        assert_eq!(
+            store.read().last_vault.as_deref(),
+            Some(shared.to_string_lossy().as_ref())
+        );
+        let reg = Registry::load(&fx.data).unwrap();
+        assert_eq!(reg.vaults.len(), 1);
+        assert_eq!(reg.vaults[0].path, shared);
+
+        // Nothing is left to do the second time.
+        assert!(!migrate_last_vault(&fx.data, &lock, &store).unwrap());
+        assert_eq!(Registry::load(&fx.data).unwrap(), reg);
+
+        // A path that is a repo's docs folder is not adopted.
+        let docs = fx.main.join("docs");
+        store
+            .update(|s| s.last_vault = Some(docs.to_string_lossy().into_owned()))
+            .unwrap();
+        assert!(!migrate_last_vault(&fx.data, &lock, &store).unwrap());
+        assert!(store.read().last_vault.is_some());
+        assert_eq!(Registry::load(&fx.data).unwrap(), reg);
+    }
+
+    #[test]
+    fn vault_create_docs_uses_the_repo_docs_dir() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let id = Registry::load(&fx.data).unwrap().repos[0].id.clone();
+        let patch = RepoPatch {
+            docs_dir: Some("handbook/en".to_owned()),
+            ..RepoPatch::default()
+        };
+        update(&fx.data, &lock, |reg| update_repo(reg, &id, patch)).unwrap();
+        let view = vault_create_docs_in(&fx.data, &id, "Start.md", "# Hi").unwrap();
+        assert!(view.exists);
+        assert_eq!(
+            fs::read_to_string(fx.main.join("handbook/en/Start.md")).unwrap(),
+            "# Hi"
+        );
+        assert!(!fx.main.join("docs").exists());
+    }
+
+    #[test]
     fn adopt_through_lock_records_the_worktree_once() {
         let fx = fixture();
         let lock = WorkspaceLock::default();
@@ -2084,7 +2176,12 @@ mod tests {
         assert_eq!(repo.short_name, "origin");
         let reg = Registry::load(&fx.data).unwrap();
         assert!(reg.repos.iter().any(|r| r.id == repo.id));
-        assert_eq!(events.last(), Some(&CloneProgress::Done { repo }));
+        assert_eq!(
+            events.last(),
+            Some(&CloneProgress::Done {
+                repo: Box::new(repo)
+            })
+        );
         assert!(trashed.0.borrow().is_empty());
     }
 

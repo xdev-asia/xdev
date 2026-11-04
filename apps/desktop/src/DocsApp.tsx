@@ -58,7 +58,7 @@ function folderName(path: string): string {
 }
 
 /** Docs & SDLC: the vault, its docs and the agents that work on them. */
-export type AppRequest = { app: AppId; seq: number };
+export type AppRequest = { app: AppId; seq: number; task?: string };
 
 export function DocsApp(props: { kit?: KitHost; appRequest?: AppRequest | null }) {
   const { t } = useI18n();
@@ -168,7 +168,7 @@ export function DocsApp(props: { kit?: KitHost; appRequest?: AppRequest | null }
   );
 }
 
-function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: AppRequest | null; onChangeFolder(): Promise<void> }) {
+export function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: AppRequest | null; onChangeFolder(): Promise<void> }) {
   const { t } = useI18n();
   const doc = useDoc(api);
   const review = useChanges(api, doc.flush);
@@ -177,7 +177,9 @@ function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: AppRequest
   const kitSeen = useRef(false);
   if (app === "kit") kitSeen.current = true;
   // The task a squad link asked Tasks to show.
-  const [taskFocus, setTaskFocus] = useState<string | null>(null);
+  // `seq` bumps on each focus, so picking the same task again remounts Tasks on it.
+  const [taskFocus, setTaskFocusState] = useState<{ id: string; seq: number } | null>(null);
+  const setTaskFocus = (id: string) => setTaskFocusState((f) => ({ id, seq: (f?.seq ?? 0) + 1 }));
   const [selected, setSelected] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [rejecting, setRejecting] = useState<Change[] | null>(null);
@@ -371,7 +373,10 @@ function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: AppRequest
   // A request from the shell (the usage popover) shows the app it names.
   const appSeq = props.appRequest?.seq;
   useEffect(() => {
-    if (props.appRequest) openApp(props.appRequest.app);
+    if (!props.appRequest) return;
+    // A task in the request is the `onOpenTask` path: focus it, then show Tasks.
+    if (props.appRequest.task) setTaskFocus(props.appRequest.task);
+    openApp(props.appRequest.app);
     // Only a new request runs this; `openApp` just sets state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appSeq]);
@@ -533,7 +538,7 @@ function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: AppRequest
         )}
       </aside>
       <main className="main">
-        {app === "tasks" && <TasksView key={taskFocus ?? ""} api={api} initial={taskFocus ?? undefined} />}
+        {app === "tasks" && <TasksView key={taskFocus ? `${taskFocus.id}:${taskFocus.seq}` : ""} api={api} initial={taskFocus?.id} />}
         {app === "squads" && (
           <SquadsView
             api={api}

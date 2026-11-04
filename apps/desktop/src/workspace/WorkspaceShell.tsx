@@ -4,11 +4,13 @@ import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
 import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail } from "@/api";
-import { DocsApp } from "@/DocsApp";
+import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useI18n } from "@/i18n";
 import { PaletteHost } from "@/palette/PaletteHost";
+import { NavButtons } from "@/nav/NavButtons";
+import { useNavHistory } from "@/nav/useNavHistory";
 import { useKeymap, type ActionId } from "@/keys/keymap";
 import { setTerminalKeyHost, startDiagnosticToasts } from "@/keys/terminalKey";
 import { startAutosave } from "@/files/autosave";
@@ -54,6 +56,8 @@ import { failedLinks } from "./linkReport";
 import { decideSetup, hasPending, pendingLists, type PendingLists } from "./setupFlow";
 import { SetupGate } from "./setupGate";
 import { TrustDialog } from "./TrustDialog";
+import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
+import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
 import { QuitDialog } from "./QuitDialog";
 import { askQuit, type QuitAsk, type QuitChoice } from "./quitGuard";
 import { getTerminalSettings } from "@/terminal/terminalSettings";
@@ -133,7 +137,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // A request for the Agent kit to open a tab; a new `seq` is a new request.
   const [kitOpen, setKitOpen] = useState<{ tab: KitTab; seq: number } | null>(null);
   // A request for the docs view to show one of its apps (the usage popover asks for Accounts).
-  const [appRequest, setAppRequest] = useState<{ app: AppId; seq: number } | null>(null);
+  const [appRequest, setAppRequest] = useState<AppRequest | null>(null);
   // The tab in front of each worktree, which is where a prompt from the Agent kit is typed.
   const [shownTab, setShownTab] = useState<Record<string, string | null>>({});
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -353,6 +357,31 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       if (typeof window !== "undefined") window.removeEventListener("beforeunload", close);
     };
   }, [sessions]);
+
+  // The active account changed (Accounts, the usage popover, a removal): the running agent tabs that
+  // follow it are restarted, kept or asked about by the `agents.accountSwitch` setting.
+  // Switches queue: a second one while the dialog is open waits its turn instead of replacing the first.
+  const [switches, setSwitching] = useState<PendingSwitch[]>([]);
+  const switching = switches[0] ?? null;
+  useEffect(() => {
+    if (!sessions) return;
+    const watcher = watchAccountSwitch({
+      api,
+      sessions,
+      notify: (key, vars) => pushToast({ text: live.t(key, vars) }),
+      ask: (p) => setSwitching((q) => [...q, p]),
+    });
+    return () => watcher.stop();
+  }, [api, sessions]);
+  async function answerSwitch(pending: PendingSwitch, restart: string[] | null, remember: boolean): Promise<void> {
+    setSwitching((q) => q.filter((p) => p !== pending));
+    if (remember) {
+      // "Don't ask again" stores what was chosen; a failed write only means it asks again.
+      const current = await api.agentsSettings().catch(() => null);
+      if (current) await api.agentsSettingsPut({ ...current, accountSwitch: restart ? "restart" : "keep" }).catch(() => {});
+    }
+    if (restart && sessions) await restartTabs({ api, sessions, notify: (key, vars) => pushToast({ text: live.t(key, vars) }) }, pending, restart);
+  }
 
   const paths = repos?.flatMap((r) => r.worktrees.map((w) => w.path)) ?? [];
   const subscribe = useCallback((listener: () => void) => sessions?.subscribe(listener) ?? (() => {}), [sessions]);
@@ -577,6 +606,24 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     storeSelected(wt.path);
   }
 
+  // Back / forward through the worktrees visited; always ends in the workspace view.
+  const nav = useNavHistory({
+    current: current?.path ?? null,
+    tab: current ? (shownTab[current.path] ?? null) : null,
+    alive: (path) => all.some((w) => w.path === path),
+    go: (entry) => {
+      const wt = all.find((w) => w.path === entry.worktree);
+      if (!wt) return;
+      select(wt);
+      show("workspace");
+      if (entry.tab && sessions?.tabs(wt.path).some((x) => x.id === entry.tab)) {
+        const id = entry.tab;
+        setFront((f) => ({ worktree: wt.path, id, seq: (f?.seq ?? 0) + 1 }));
+      }
+      focusTerminal(wt.path);
+    },
+  });
+
   // Ctrl+Shift+Up / Down and Ctrl+1..9: walk the worktrees as the sidebar draws them.
   function worktreeKey(to: { step: 1 | -1 } | { nth: number }): boolean {
     const path = worktreeTarget(order, current?.path ?? null, to);
@@ -627,6 +674,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     "settings.open": () => openSettings(),
     "quickCommands.open": () => setQuickSeq((n) => n + 1),
     "settings.shortcuts": () => openSettings("keys"),
+    "worktree.history.back": () => nav.back(),
+    "worktree.history.forward": () => nav.forward(),
     "sidebar.left.toggle": () => setSidebarOpen((o) => !o),
     "sidebar.right.toggle": () => setRightOpen((o) => !o),
     "panel.explorer": () => panelKey("files"),
@@ -1188,8 +1237,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (next === "docs") setDocsMounted(true);
   }
 
+  // Usage details & history live on the Stats & Usage settings page; the Kit app keeps its own tab.
   function openUsage(): void {
-    setKitOpen((k) => ({ tab: "usage", seq: (k?.seq ?? 0) + 1 }));
+    openSettings("usage");
+  }
+
+  function openTask(id: string): void {
+    setAppRequest((r) => ({ app: "tasks", task: id, seq: (r?.seq ?? 0) + 1 }));
     show("docs");
   }
 
@@ -1260,6 +1314,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             <path d="M9 4v16" />
           </svg>
         </button>
+        <NavButtons canBack={nav.canBack} canForward={nav.canForward} onBack={nav.back} onForward={nav.forward} />
         <BrandMark className="ws-logo" size={18} />
         <span className="ws-brand">xDev</span>
         {/* The docs app shows its own folder, so the crumbs go with the workspace view. */}
@@ -1703,6 +1758,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         version={pkg.version}
         onOpenUsage={openUsage}
         onManageAccounts={openAccounts}
+        onUseAccount={(provider, name) =>
+          void api.accountActivate(provider, name).catch((e) => pushToast({ text: t("accounts.switch.failed", { code: toApiError(e).code }) }))
+        }
         hidden={view === "docs"}
       />
 
@@ -1741,9 +1799,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         repos={repos}
         sessions={sessions}
         history={history}
+        tasks={() => api.tasks()}
         current={current}
         shownTab={current ? shownTab[current.path] ?? null : null}
         actions={{
+          openTask,
           selectWorktree: (wt) => {
             select(wt);
             show("workspace");
@@ -1801,6 +1861,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             // Without the lists the flow goes on: setup cards, setup itself.
             if (ask.kind === "lists") void setupAfterCreate(ask.path, ask.repoId, true);
           }}
+        />
+      )}
+      {switching && sessions && (
+        <AccountSwitchDialog
+          provider={switching.provider}
+          from={switching.from}
+          to={switching.to}
+          rows={switching.tabIds.flatMap((id): SwitchRow[] => {
+            const tab = sessions.tab(id);
+            if (!tab) return [];
+            const name = tab.title ?? profileName(null, tab.profileId, t);
+            return [{ id, label: `${name} · ${tab.worktree.split(/[\\/]/).filter(Boolean).pop() ?? tab.worktree}`, working: tab.status === "working" }];
+          })}
+          onRestart={(ids, remember) => void answerSwitch(switching, ids, remember)}
+          onKeep={(remember) => void answerSwitch(switching, null, remember)}
         />
       )}
       {quitting && <QuitDialog ask={quitting.ask} onChoose={quitting.answer} />}

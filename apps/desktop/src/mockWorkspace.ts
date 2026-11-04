@@ -155,6 +155,7 @@ export const DEMO_WORKSPACE: MockWorkspaceSeed = {
       scriptSource: "auto",
       localSetup: "",
       localArchive: "",
+      docsDir: "docs",
       missing: false,
       worktrees: [
         worktree("/demo/xdev", "xdev", "main", true),
@@ -241,6 +242,16 @@ function demoStat(pending: WorktreeChange[]): WorktreeStat {
 
 // R3: 1-40 characters, `[a-z0-9]` first, then `[a-z0-9._-]`.
 const SHORT_NAME = /^[a-z0-9][a-z0-9._-]{0,39}$/;
+
+// The docs folder as the backend keeps it: "/" separators, no "." parts, "" for the default.
+// `null` for a root, a drive or a ".." part.
+function docsDirOf(raw: string): string | null {
+  const text = raw.trim().replace(/\\/g, "/");
+  if (text.startsWith("/") || /^[A-Za-z]:/.test(text)) return null;
+  const parts = text.split("/").filter((p) => p !== "" && p !== ".");
+  if (parts.includes("..") || (text !== "" && parts.length === 0)) return null;
+  return parts.join("/");
+}
 
 function trimPath(path: string): string {
   return path.trim().replace(/[\\/]+$/, "");
@@ -352,7 +363,7 @@ export function createMockWorkspace(
   }
 
   function repoVault(repo: RepoView): VaultView {
-    return { id: `repo:${repo.id}`, kind: "repo", path: `${repo.path}/docs`, name: repo.shortName, repoId: repo.id, exists: docs.has(repo.id) };
+    return { id: `repo:${repo.id}`, kind: "repo", path: `${repo.path}/${repo.docsDir}`, name: repo.shortName, repoId: repo.id, exists: docs.has(repo.id) };
   }
 
   function sharedVault(path: string): VaultView {
@@ -545,6 +556,7 @@ export function createMockWorkspace(
       scriptSource: "auto",
       localSetup: "",
       localArchive: "",
+      docsDir: "docs",
       missing: false,
       worktrees: [worktree(root, shortName, "main", true)],
       found: [],
@@ -584,6 +596,8 @@ export function createMockWorkspace(
       const repo = repos.find((r) => r.id === id);
       if (!repo) return reject("repo_unknown", id);
       const { shortName, baseRef, worktreeRoot } = patch;
+      const docsDir = patch.docsDir === undefined ? undefined : docsDirOf(patch.docsDir);
+      if (docsDir === null) return reject("bad_path", patch.docsDir ?? "");
       if (shortName !== undefined) {
         if (!SHORT_NAME.test(shortName)) return reject("bad_name", shortName);
         if (repos.some((r) => r.id !== id && r.shortName === shortName)) return reject("short_name_taken", shortName);
@@ -595,6 +609,7 @@ export function createMockWorkspace(
       if (shortName !== undefined) repo.shortName = shortName;
       if (baseRef !== undefined) repo.baseRef = baseRef;
       if (worktreeRoot !== undefined) repo.worktreeRoot = trimPath(worktreeRoot);
+      if (docsDir !== undefined) repo.docsDir = docsDir === "" ? "docs" : docsDir;
       if (patch.setupPolicy !== undefined) repo.setupPolicy = patch.setupPolicy;
       if (patch.scriptSource !== undefined) repo.scriptSource = patch.scriptSource;
       if (patch.localSetup !== undefined) repo.localSetup = patch.localSetup;

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX, ReactNode, Ref } from "react";
-import type { Accounts, Api, Quota } from "@/api";
+import type { Accounts, Api, Provider, Quota, UsageDisplay } from "@/api";
 import { useI18n } from "@/i18n";
+import { useUsageSettings } from "@/settings/usageSettings";
 import { useQuota } from "@/shell/useQuota";
 import { useUpdate, type Update } from "@/shell/useUpdate";
 import { UsagePopover } from "./UsagePopover";
+import { footerQuota, shownPercent } from "./usageModel";
 
 /** A meter above this share of its window shows in the warn colour. */
 export const WARN_PERCENT = 80;
@@ -32,14 +34,16 @@ export function meterOf(q: Quota): Meter {
   return { label: q.name, percent: Math.round(best), window };
 }
 
-function MeterItem(props: { meter: Meter }): JSX.Element {
+function MeterItem(props: { meter: Meter; display: UsageDisplay }): JSX.Element {
   const { t } = useI18n();
   const { label, percent, window } = props.meter;
   const known = percent !== null;
+  // The number follows the display setting; the warning stays on the share used (80 %).
+  const shown = known ? shownPercent(percent, props.display) : 0;
   const name = window ? t(`workspace.footer.window.${window}`) : "";
   // An unknown window key shows as itself.
   const windowName = name.startsWith("workspace.footer.window.") ? window : name;
-  const title = known ? t("workspace.footer.meterTitle", { name: label, window: windowName, percent }) : t("workspace.footer.meterUnknown", { name: label });
+  const title = known ? t("workspace.footer.meterTitle", { name: label, window: windowName, percent: shown, state: t(props.display === "remaining" ? "usage.stats.left" : "usage.stats.used") }) : t("workspace.footer.meterUnknown", { name: label });
   return (
     <span className={`ws-meter${known && percent >= WARN_PERCENT ? " ws-meter-warn" : ""}`} title={title}>
       <span className="ws-meter-name">{label}</span>
@@ -50,13 +54,13 @@ function MeterItem(props: { meter: Meter }): JSX.Element {
           aria-label={title}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuenow={Math.min(100, percent)}
-          aria-valuetext={`${percent}%`}
+          aria-valuenow={Math.min(100, shown)}
+          aria-valuetext={`${shown}%`}
         >
-          <span className="ws-meter-fill" style={{ width: `${Math.min(100, percent)}%` }} />
+          <span className="ws-meter-fill" style={{ width: `${Math.min(100, shown)}%` }} />
         </span>
       ) : null}
-      <span className="ws-meter-pct">{known ? `${percent}%` : "–"}</span>
+      <span className="ws-meter-pct">{known ? `${shown}%` : "–"}</span>
     </span>
   );
 }
@@ -79,6 +83,8 @@ export function WorkspaceFooter(props: {
   running: number;
   waiting: number;
   quota: Quota[] | null;
+  /** Used (default) or Remaining: the number the meters show. */
+  display?: UsageDisplay;
   version: string;
   update?: Update | null;
   onRestartUpdate?: () => void;
@@ -92,6 +98,7 @@ export function WorkspaceFooter(props: {
   hidden?: boolean;
 }): JSX.Element {
   const { t } = useI18n();
+  const display = props.display ?? "used";
   const meters = (props.quota ?? []).map(meterOf);
   return (
     <footer className="ws-footer" hidden={props.hidden}>
@@ -109,14 +116,14 @@ export function WorkspaceFooter(props: {
             onClick={props.onToggleUsage}
           >
             {meters.map((m) => (
-              <MeterItem key={m.label} meter={m} />
+              <MeterItem key={m.label} meter={m} display={display} />
             ))}
           </button>
         ) : (
           // One tab stop, so the footer is in the focus order and the meters are read out.
           <span className="ws-meters" role="group" aria-label={t("workspace.footer.usage")} tabIndex={0}>
             {meters.map((m) => (
-              <MeterItem key={m.label} meter={m} />
+              <MeterItem key={m.label} meter={m} display={display} />
             ))}
           </span>
         ))}
@@ -151,9 +158,11 @@ export function LiveWorkspaceFooter(props: {
   onOpenUsage?: () => void;
   /** Opens the Accounts app. */
   onManageAccounts?: () => void;
+  /** Makes an account the active one of its provider; the "Use" action shows only when this is given. */
+  onUseAccount?: (provider: Provider, name: string) => void;
   hidden?: boolean;
 }): JSX.Element {
-  const { api, hidden, onManageAccounts, ...rest } = props;
+  const { api, hidden, onManageAccounts, onUseAccount, ...rest } = props;
   const { quota, loading, refresh } = useQuota(api, hidden === true);
   const update = useUpdate(api);
   const [open, setOpen] = useState(false);
@@ -161,16 +170,22 @@ export function LiveWorkspaceFooter(props: {
   const button = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(false);
 
-  // The accounts give the order and the provider; they are read each time the popover opens.
+  const usage = useUsageSettings();
+  // The accounts give the order and the provider; they are read on mount, for the footer's provider
+  // switches, again each time the popover opens, and when the `onAccountsChanged` listener fires.
   useEffect(() => {
-    if (!open) return;
     let stale = false;
-    api.accounts().then(
-      (found) => !stale && setAccounts(found),
-      () => !stale && setAccounts(null),
-    );
+    const read = () =>
+      api.accounts().then(
+        (found) => !stale && setAccounts(found),
+        () => !stale && setAccounts(null),
+      );
+    void read();
+    // A switch (here or in Accounts) moves the active mark while the popover stays open.
+    const unlisten = api.onAccountsChanged(() => void read());
     return () => {
       stale = true;
+      void unlisten.then((off) => off(), () => {});
     };
   }, [api, open]);
   // Closing hands the focus back to the meters button.
@@ -189,6 +204,7 @@ export function LiveWorkspaceFooter(props: {
       quota={quota}
       accounts={accounts}
       loading={loading}
+      display={usage.display}
       onRefresh={refresh}
       onOpenDetails={() => {
         close();
@@ -198,6 +214,7 @@ export function LiveWorkspaceFooter(props: {
         close();
         onManageAccounts?.();
       }}
+      onUse={onUseAccount}
       onClose={close}
     />
   );
@@ -205,7 +222,8 @@ export function LiveWorkspaceFooter(props: {
     <WorkspaceFooter
       {...rest}
       hidden={hidden}
-      quota={quota}
+      quota={quota === null ? null : footerQuota(quota, accounts, usage.footer)}
+      display={usage.display}
       update={update.state}
       onRestartUpdate={update.restart}
       onToggleUsage={() => setOpen((v) => !v)}

@@ -31,8 +31,8 @@ const submit = { preventDefault() {} };
 // The view's effects in order: the list, the open squad, accounts, polling.
 const EFFECTS = 4;
 
-async function harness(api = createMockApi({})) {
-  const draw = () => { hooks.cursor = 0; return SquadsView({ api, onOpenTask: () => {} }); };
+async function harness(api = createMockApi({}), defaultRepo?: string | null) {
+  const draw = () => { hooks.cursor = 0; return SquadsView({ api, defaultRepo, onOpenTask: () => {} }); };
   const html = () => renderToStaticMarkup(draw());
   const all = () => nodes(draw());
   const button = (text: string) => all().find(n => n.props.children === text && n.props.onClick)!;
@@ -198,4 +198,14 @@ it("creates a squad with one account per seat", async () => {
   ], null);
   await view.reload();
   expect(view.html()).toContain("New team");
+});
+
+it.each([["/p/shared", "/p/shared"], [null, null]] as const)("a new squad goes to the host repo %s, else the app default", async (host, expected) => {
+  const view = await harness(createMockApi({}), host);
+  view.button(en("squads.new")).props.onClick();
+  const form = () => view.all().find(n => n.type === "form" && n.props["aria-label"] === en("squads.new"))!;
+  nodes(form()).filter(n => n.type === "input")[0].props.onChange({ target: { value: "Team" } });
+  const create = vi.spyOn(view.api, "newSquad");
+  await form().props.onSubmit(submit); await tick();
+  expect(create).toHaveBeenCalledWith("Team", expected ?? (await view.api.tasksContext()).defaultRepo, expect.any(Array), null);
 });
