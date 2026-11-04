@@ -163,10 +163,9 @@ fn update<T>(
     Ok(out)
 }
 
-/// Adopts the old single `last_vault` setting as a shared vault, then clears
-/// it, so the vault list is the only place vaults live. Runs once at start;
-/// a second run finds nothing to do. The setting is cleared only once the
-/// registry holds the vault, so a failed save keeps the person's folder.
+/// Adopts the old single `last_vault` setting as a shared vault. Runs once at
+/// start; a second run finds the vault already listed and does nothing.
+/// `last_vault` is cleared in U9, once DocsView no longer boots from it.
 pub fn migrate_last_vault(
     data: &Path,
     lock: &WorkspaceLock,
@@ -181,12 +180,6 @@ pub fn migrate_last_vault(
             Some(Path::new(&last)),
         ))
     })?;
-    settings
-        .update(|s| s.last_vault = None)
-        .map_err(|e| CmdError {
-            code: "io",
-            detail: Some(e.to_string()),
-        })?;
     Ok(adopted)
 }
 
@@ -1807,7 +1800,7 @@ mod tests {
     }
 
     #[test]
-    fn migrate_last_vault_adopts_once_and_clears_the_setting() {
+    fn migrate_last_vault_adopts_once_and_keeps_the_setting() {
         let fx = fixture();
         let lock = WorkspaceLock::default();
         let shared = fx.main.parent().unwrap().join("old notes");
@@ -1819,7 +1812,10 @@ mod tests {
             .unwrap();
 
         assert!(migrate_last_vault(&fx.data, &lock, &store).unwrap());
-        assert_eq!(store.read().last_vault, None);
+        assert_eq!(
+            store.read().last_vault.as_deref(),
+            Some(shared.to_string_lossy().as_ref())
+        );
         let reg = Registry::load(&fx.data).unwrap();
         assert_eq!(reg.vaults.len(), 1);
         assert_eq!(reg.vaults[0].path, shared);
@@ -1828,13 +1824,13 @@ mod tests {
         assert!(!migrate_last_vault(&fx.data, &lock, &store).unwrap());
         assert_eq!(Registry::load(&fx.data).unwrap(), reg);
 
-        // A path that is a repo's docs folder is cleared, not adopted.
+        // A path that is a repo's docs folder is not adopted.
         let docs = fx.main.join("docs");
         store
             .update(|s| s.last_vault = Some(docs.to_string_lossy().into_owned()))
             .unwrap();
         assert!(!migrate_last_vault(&fx.data, &lock, &store).unwrap());
-        assert_eq!(store.read().last_vault, None);
+        assert!(store.read().last_vault.is_some());
         assert_eq!(Registry::load(&fx.data).unwrap(), reg);
     }
 
