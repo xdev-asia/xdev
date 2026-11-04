@@ -6183,6 +6183,7 @@ dependencies = [
  "xdev-agent",
  "xdev-ai",
  "xdev-core",
+ "xdev-ipc",
  "xdev-mcp",
  "xdev-policy",
 ]
