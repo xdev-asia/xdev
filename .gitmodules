@@ -1,0 +1,3 @@
+[submodule "packages/xdev-ui"]
+	path = packages/xdev-ui
+	url = https://github.com/xdev-asia/xdev-ui.git
