@@ -339,11 +339,23 @@ jobs:
         if: inputs.rc_publish
         run: |
           if gh release view "$RC_TAG" >/dev/null 2>&1; then
+            # latest.json goes first, so it never lists files that are gone.
+            gh release delete-asset "$RC_TAG" latest.json --yes || true
             # Old candidates carry other file names; the release holds only this one.
             gh release view "$RC_TAG" --json assets --jq '.assets[].name' | while read -r name; do
               gh release delete-asset "$RC_TAG" "$name" --yes
             done
+            # --target only applies on create, so move the tag to this commit.
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$RC_TAG" \
+              -f sha="$GITHUB_SHA" -F force=true
           else
-            gh release create "$RC_TAG" --target "$GITHUB_SHA" --prerelease --latest=false               --title "Release candidate" --notes "The newest release candidate. Read by installs on the release candidate channel only."
+            gh release create "$RC_TAG" --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "Release candidate" \
+              --notes "The newest release candidate. Read by installs on the release candidate channel only."
           fi
-          gh release upload "$RC_TAG" dist/* --clobber
+          # latest.json goes last, in its own command: it points at files that exist.
+          for f in dist/*; do
+            [ "$(basename "$f")" = latest.json ] && continue
+            gh release upload "$RC_TAG" "$f" --clobber
+          done
+          gh release upload "$RC_TAG" dist/latest.json --clobber
