@@ -8,7 +8,7 @@ import { TERMINAL_SCHEMES } from "./terminalThemes";
 import { resetTerminalSettingsForTests, setTerminalSettings, TERMINAL_DEFAULTS } from "./terminalSettings";
 
 // The first ref is the xterm host; the rest keep their initial value.
-const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[] }));
+const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[] }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: (initial: unknown) => [initial, () => {}],
@@ -93,6 +93,17 @@ vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() { hooks.fits++; } }
 vi.mock("@xterm/addon-search", () => ({ SearchAddon: class { findNext() {} findPrevious() {} } }));
 vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: class {} }));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+// The renderer has its own tests; here only what the pane asks of it.
+vi.mock("./terminalRenderer", () => ({
+  attachRenderer: (_term: unknown, gpu: string) => {
+    hooks.renderer.push(`attach:${gpu}`);
+    return {
+      set: (next: string) => void hooks.renderer.push(`set:${next}`),
+      active: () => "dom",
+      dispose: () => void hooks.renderer.push("dispose"),
+    };
+  },
+}));
 
 const tick = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
@@ -133,6 +144,7 @@ beforeEach(() => {
   resetBindingsForTests();
   hooks.listeners = {};
   hooks.pasted = [];
+  hooks.renderer = [];
   resetTerminalSettingsForTests();
   vi.stubGlobal("getComputedStyle", () => ({ getPropertyValue: () => "" }));
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
@@ -248,6 +260,17 @@ it("the stored theme builds the xterm and the pane takes its background", () => 
   setTerminalSettings({ ...TERMINAL_DEFAULTS, theme: "app" });
   // The app theme: the tokens (empty here), so the pane drops its own background.
   expect(pane.style.background).toBe("");
+});
+
+it("the pane attaches the renderer after open, follows the gpu setting and disposes it", () => {
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, gpu: "on" });
+  const { effect } = mount({ api: createMockApi({}), id: "gpu-1" });
+  const cleanup = effect() as () => void;
+  expect(hooks.renderer).toEqual(["attach:on"]);
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, gpu: "off" });
+  expect(hooks.renderer).toEqual(["attach:on", "set:off"]);
+  cleanup();
+  expect(hooks.renderer.at(-1)).toBe("dispose");
 });
 
 it("a store change updates the options and fits again", async () => {

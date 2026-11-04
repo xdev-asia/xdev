@@ -12,6 +12,7 @@ import { PtyClient } from "./ptyClient";
 import { createTerminalHandle } from "./terminalActions";
 import { getTerminalSettings, subscribeTerminalSettings } from "./terminalSettings";
 import { decodeOsc52Write, xtermOptions } from "./terminalOptions";
+import { attachRenderer } from "./terminalRenderer";
 
 /** What a menu, the palette or a shortcut can do to one terminal. Acts on the xterm; nothing goes to the pty unless said. */
 export interface TerminalHandle {
@@ -111,6 +112,8 @@ export function Terminal(props: {
     // No opener plugin in the app: the webview hands the link to the system browser.
     term.loadAddon(new WebLinksAddon((_event, uri) => window.open(uri, "_blank", "noopener")));
     term.open(el);
+    // WebGL or DOM, as Settings says; after `open`, which the addon needs.
+    const renderer = attachRenderer(term, getTerminalSettings().gpu);
     // A chord the app owns (per the key policy) never reaches the program: a terminal action runs
     // here, any other one has run in the window handler before xterm saw it.
     term.attachCustomKeyEventHandler((e) => {
@@ -201,6 +204,7 @@ export function Terminal(props: {
       term.options.scrollSensitivity = next.scrollSensitivity;
       term.options.fastScrollSensitivity = next.fastScrollSensitivity;
       term.options.minimumContrastRatio = next.minimumContrastRatio;
+      renderer.set(getTerminalSettings().gpu);
       fitVisible();
       // A font that has not loaded yet measures wrong; measure again when it has.
       if (typeof document !== "undefined") void document.fonts?.ready.then(() => alive && fitVisible());
@@ -239,6 +243,7 @@ export function Terminal(props: {
     return () => {
       alive = false;
       offSettings();
+      renderer.dispose();
       el.removeEventListener("contextmenu", onContextMenu, true);
       observer.disconnect();
       if (owned) void client.dispose();
