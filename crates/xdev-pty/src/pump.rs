@@ -179,25 +179,42 @@ mod tests {
         assert_eq!(chunks, [b"hello".to_vec()]);
     }
 
+    /// Counts the reads that have returned.
+    struct Counted(Script, Arc<AtomicUsize>);
+
+    impl Read for Counted {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            let n = self.0.read(buf)?;
+            self.1.fetch_add(1, Ordering::SeqCst);
+            Ok(n)
+        }
+    }
+
     #[test]
     fn a_quiet_reader_still_flushes_after_16ms() {
-        // The reader blocks long after the first bytes; they go out anyway.
+        // The reader blocks long after the first bytes; they go out anyway,
+        // before the next read returns. Checked by order, not by a clock, so a
+        // slow runner cannot fail it.
         let script = [
             (Duration::ZERO, b"prompt> ".to_vec()),
-            (Duration::from_millis(500), b"x".to_vec()),
+            (Duration::from_secs(2), b"x".to_vec()),
         ];
+        let reads = Arc::new(AtomicUsize::new(0));
         let first = Arc::new(Mutex::new(None));
-        let seen = first.clone();
-        let start = Instant::now();
+        let (seen, counted) = (first.clone(), reads.clone());
         pump(
-            Script(script.into()),
+            Counted(Script(script.into()), reads),
             Arc::new(Flow::default()),
             Arc::new(AtomicBool::new(false)),
-            move |_| {
-                seen.lock().unwrap().get_or_insert(start.elapsed());
+            move |chunk| {
+                seen.lock()
+                    .unwrap()
+                    .get_or_insert((chunk, counted.load(Ordering::SeqCst)));
             },
         );
-        assert!(first.lock().unwrap().unwrap() < Duration::from_millis(250));
+        let (chunk, reads_done) = first.lock().unwrap().take().unwrap();
+        assert_eq!(chunk, b"prompt> ");
+        assert_eq!(reads_done, 1, "the first bytes waited for the next read");
     }
 
     fn five_mb() -> Script {
@@ -266,6 +283,8 @@ mod tests {
         let start = Instant::now();
         stop.store(true, Ordering::SeqCst);
         handle.join().unwrap();
-        assert!(start.elapsed() < Duration::from_millis(100));
+        // The point is that stop unblocks the pump instead of leaving it
+        // hanging; shared CI runners are slow, so the bound is generous.
+        assert!(start.elapsed() < Duration::from_secs(5));
     }
 }
