@@ -89,6 +89,22 @@ it("renames on the first prompt of an agent tab and says so with an Undo", async
   expect(s.toasts[0].actions![0].label).toBe("branchRename.undo");
 });
 
+it("keeps a name the user gave while the suggestion was running", async () => {
+  for (const renamed of [wt({ autoName: false, branch: "mine" }), wt({ branch: "mine" })]) {
+    const s = setup();
+    const rename = vi.spyOn(s.api, "worktreeRenameBranch");
+    let answer!: (name: string) => void;
+    vi.spyOn(s.api, "worktreeSuggestBranch").mockImplementation(() => new Promise<string>((r) => (answer = r)));
+    s.set({ status: "working", agentSession: "sess-1" });
+    await s.settle();
+    s.setWorktrees([renamed]);
+    answer("fix-the-footer-usage");
+    await s.settle();
+    expect(rename).not.toHaveBeenCalled();
+    expect(s.toasts).toEqual([]);
+  }
+});
+
 it("asks for the suggestion of the tab's own session", async () => {
   const s = setup();
   const suggest = vi.spyOn(s.api, "worktreeSuggestBranch");

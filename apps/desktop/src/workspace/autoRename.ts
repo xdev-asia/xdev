@@ -64,6 +64,9 @@ export function startAutoRename(deps: AutoRenameDeps): () => void {
       const git = await api.gitSettings();
       if (!shouldRename(wt, git, new Set())) return;
       const name = await api.worktreeSuggestBranch(path, session);
+      // The suggestion can take a while; a name the user gave in the meantime stays.
+      const now = deps.worktrees().find((w) => w.path === path);
+      if (stopped || !now?.autoName || now.branch !== wt.branch) return;
       const view = await api.worktreeRenameBranch(path, name);
       if (stopped) return;
       deps.reload();
