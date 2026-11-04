@@ -67,3 +67,11 @@ it("the mock usage report follows the scan switches and keeps tracking-since acr
   expect(all.tracking_since).toBe(claude.tracking_since);
   expect(all.summary.days.length).toBeGreaterThan(claude.summary.days.length);
 });
+
+it("starts the agents settings with keep awake off and no generated tab titles", async () => {
+  const api = createMockApi({});
+  expect(await api.agentsSettings()).toEqual({ accountSwitch: "ask", keepAwake: "off", autoTabTitle: false });
+  const next = { accountSwitch: "keep" as const, keepAwake: "agent" as const, autoTabTitle: true };
+  expect(await api.agentsSettingsPut(next)).toEqual(next);
+  expect(await api.agentsSettings()).toEqual(next);
+});

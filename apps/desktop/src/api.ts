@@ -6,6 +6,8 @@ import type {
   AccountSource,
   ActiveAccount,
   AgentsSettings,
+  AwakeView,
+  KeepAwake,
   SwitchRunning,
   Approvals,
   Account,
@@ -149,7 +151,7 @@ export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
 export type { Agent, AgentSession, SessionQuery, SessionRow };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
-export type { AccountSource, ActiveAccount, AgentsSettings, SwitchRunning };
+export type { AccountSource, ActiveAccount, AgentsSettings, AwakeView, KeepAwake, SwitchRunning };
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
@@ -572,9 +574,9 @@ export interface Api {
   // A terminal per tab. Output arrives on `onData` until the tab calls `ptyKill`; an agent profile
   // rejects with `needs_approval` / `denied` until `ptyApprove` records it in the policy.
   // `resume` is an agent session id (A-Z, a-z, 0-9, `_`, `-`): the CLI continues that session.
-  ptySpawn(id: string, cwd: string, profileId: PtyProfile, account: string | null, cols: number, rows: number, onData: (bytes: Uint8Array) => void, resume?: string): Promise<PtyInfo>;
-  // Approves the launch `ptySpawn` was refused for; pass the same `resume`, as it is part of the launch line.
-  ptyApprove(profileId: PtyProfile, account: string | null, resume?: string): Promise<void>;
+  ptySpawn(id: string, cwd: string, profileId: PtyProfile, account: string | null, cols: number, rows: number, onData: (bytes: Uint8Array) => void, resume?: string, fork?: boolean): Promise<PtyInfo>;
+  // Approves the launch `ptySpawn` was refused for; pass the same `resume` and `fork`, as they are part of the launch line.
+  ptyApprove(profileId: PtyProfile, account: string | null, resume?: string, fork?: boolean): Promise<void>;
   // Agent profiles and the shells of the `+` menu; each write returns the whole view.
   profiles(): Promise<ProfilesView>;
   profilePut(p: Profile): Promise<ProfilesView>;
@@ -886,6 +888,12 @@ export interface Api {
   // Settings → Agents; the put returns what was stored.
   agentsSettings(): Promise<AgentsSettings>;
   agentsSettingsPut(v: AgentsSettings): Promise<AgentsSettings>;
+  // Keep computer awake: the stored mode, whether an OS request is held, whether this machine can hold one.
+  keepAwake(): Promise<AwakeView>;
+  keepAwakeSet(mode: KeepAwake): Promise<AwakeView>;
+  // Reports whether any agent tab is working; the backend decides in `agent` mode.
+  keepAwakeAgents(working: boolean): Promise<AwakeView>;
+  onKeepAwakeChanged(cb: (v: AwakeView) => void): Promise<() => void>;
   usageSettings(): Promise<UsageSettings>;
   usageSettingsPut(v: UsageSettings): Promise<UsageSettings>;
 
@@ -1125,13 +1133,13 @@ const tauriApi: Api = {
   exportWrite: (expected) => call("export_write", { expected }),
   docFreshness: (path) => call("doc_freshness", { path }),
   staleDocs: () => call("stale_docs"),
-  ptySpawn(id, cwd, profileId, account, cols, rows, onData, resume) {
+  ptySpawn(id, cwd, profileId, account, cols, rows, onData, resume, fork) {
     // Rust sends raw bytes, which arrive as an ArrayBuffer.
     const out = new Channel<ArrayBuffer | number[]>();
     out.onmessage = (msg) => onData(toBytes(msg));
-    return call("pty_spawn", { id, cwd, profileId, account, cols, rows, out, resume: resume ?? null });
+    return call("pty_spawn", { id, cwd, profileId, account, cols, rows, out, resume: resume ?? null, fork: fork ?? null });
   },
-  ptyApprove: (profileId, account, resume) => call("pty_approve", { profileId, account, resume: resume ?? null }),
+  ptyApprove: (profileId, account, resume, fork) => call("pty_approve", { profileId, account, resume: resume ?? null, fork: fork ?? null }),
   profiles: () => call("profiles_list"),
   profilePut: (profile) => call("profile_put", { profile }),
   profileRemove: (id) => call("profile_remove", { id }),
@@ -1295,6 +1303,10 @@ const tauriApi: Api = {
   diffSettingsPut: (settings) => call("diff_settings_put", { settings }),
   agentsSettings: () => call("agents_settings_get"),
   agentsSettingsPut: (settings) => call("agents_settings_put", { settings }),
+  keepAwake: () => call("keep_awake_get"),
+  keepAwakeSet: (mode) => call("keep_awake_set", { mode }),
+  keepAwakeAgents: (working) => call("keep_awake_agents", { working }),
+  onKeepAwakeChanged: (cb) => listen<AwakeView>("keep-awake://changed", (e) => cb(e.payload)),
   usageSettings: () => call("usage_settings_get"),
   usageSettingsPut: (settings) => call("usage_settings_put", { settings }),
   layoutLoad: () => call("layout_load"),

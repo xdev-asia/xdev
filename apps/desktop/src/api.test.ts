@@ -757,3 +757,21 @@ describe("mock agent kit", () => {
     expect(history[0].at).toBeGreaterThanOrEqual(history[1].at);
   });
 });
+
+it("sends the fork flag and the keep awake calls to Tauri, null when absent", async () => {
+  vi.resetModules();
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined), Channel: class { onmessage: unknown } }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    await api.ptyApprove("claude", null);
+    await api.ptyApprove("claude", null, "s1", true);
+    await api.keepAwake(); await api.keepAwakeSet("agent"); await api.keepAwakeAgents(true);
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["pty_approve", { profileId: "claude", account: null, resume: null, fork: null }],
+      ["pty_approve", { profileId: "claude", account: null, resume: "s1", fork: true }],
+      ["keep_awake_get", undefined], ["keep_awake_set", { mode: "agent" }], ["keep_awake_agents", { working: true }],
+    ]);
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
+});

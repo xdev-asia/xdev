@@ -104,6 +104,26 @@ pub enum SwitchRunning {
 #[serde(default, rename_all = "camelCase")]
 pub struct AgentsSettings {
     pub account_switch: SwitchRunning,
+    /// Whether the OS may sleep; an unknown stored value reads as `Off`.
+    #[serde(deserialize_with = "lenient")]
+    pub keep_awake: KeepAwake,
+    /// Whether an agent tab is titled from its session's first prompt.
+    #[serde(deserialize_with = "lenient")]
+    pub auto_tab_title: bool,
+}
+
+/// Settings → Agents → Keep computer awake.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum KeepAwake {
+    /// Always asks the OS not to sleep.
+    On,
+    /// Asks only while an agent tab works.
+    Agent,
+    /// Never asks.
+    #[default]
+    Off,
 }
 
 /// Prompt cache lifetime, 5 minutes.
@@ -2122,10 +2142,13 @@ then sum up"
         ] {
             let agents = AgentsSettings {
                 account_switch: value,
+                ..AgentsSettings::default()
             };
             assert_eq!(
                 serde_json::to_value(&agents).unwrap(),
-                serde_json::json!({ "accountSwitch": json })
+                serde_json::json!({
+                    "accountSwitch": json, "keepAwake": "off", "autoTabTitle": false
+                })
             );
             fs::write(
                 &path,
@@ -2134,6 +2157,34 @@ then sum up"
             .unwrap();
             assert_eq!(load(&path).agents, agents);
         }
+        // The two newer fields default, round trip and stay lenient.
+        let defaults = AgentsSettings::default();
+        assert_eq!(defaults.keep_awake, KeepAwake::Off);
+        assert!(!defaults.auto_tab_title);
+        for (value, json) in [
+            (KeepAwake::On, "on"),
+            (KeepAwake::Agent, "agent"),
+            (KeepAwake::Off, "off"),
+        ] {
+            let agents = AgentsSettings {
+                keep_awake: value,
+                auto_tab_title: true,
+                ..AgentsSettings::default()
+            };
+            let text = serde_json::to_string(&serde_json::json!({ "agents": agents })).unwrap();
+            assert!(text.contains(&format!(r#""keepAwake":"{json}""#)));
+            fs::write(&path, text).unwrap();
+            assert_eq!(load(&path).agents, agents);
+        }
+        fs::write(
+            &path,
+            r#"{ "agents": { "accountSwitch": "keep", "keepAwake": "bogus", "autoTabTitle": 3 } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path).agents;
+        assert_eq!(loaded.keep_awake, KeepAwake::Off);
+        assert!(!loaded.auto_tab_title);
+        assert_eq!(loaded.account_switch, SwitchRunning::Keep);
     }
 
     #[test]
