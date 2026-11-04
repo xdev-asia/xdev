@@ -1,7 +1,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import type {
   Accounts,
   AccountSource,
@@ -160,6 +160,7 @@ import type {
   TabReport,
   CrashDetail,
   CrashReport,
+  DiagnosticsExport,
   RenderCrash,
   StartupReport,
   StartupStep,
@@ -265,7 +266,7 @@ export type { AiKeyStatus } from "@xdev/bindings";
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { CliAsk, CliOpenTab, TabReport };
 export type { OrchestrationSettings, SkillStatus, WorkerLifetime, WorkerOpen, WorkerOpenOutcome, WorkerClose, ReadTab, WorkerChanged };
-export type { Breadcrumb, CrashDetail, CrashReport, RenderCrash, StartupReport, StartupStep } from "@xdev/bindings";
+export type { Breadcrumb, CrashDetail, CrashReport, DiagnosticsExport, RenderCrash, StartupReport, StartupStep } from "@xdev/bindings";
 export type { RestoreMode } from "@xdev/bindings";
 export type { Theme, EditorTheme, SidebarLook, StatusBarItems } from "@xdev/bindings";
 export type { CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview } from "@xdev/bindings";
@@ -1332,12 +1333,13 @@ export interface Api {
   startupMark(step: StartupStep): Promise<void>;
   // Restarts the app.
   appRelaunch(): Promise<void>;
-  // Writes the redacted diagnostics file to `path`; returns its size in bytes. Rejects with `diag_write`.
-  diagnosticsExport(path: string): Promise<number>;
+  // Opens a native save dialog (in Rust, so the path never comes from the webview), writes the redacted
+  // diagnostics file there and returns where it went; null when cancelled. Rejects with `diag_write`.
+  diagnosticsExport(defaultName: string): Promise<DiagnosticsExport | null>;
+  // Shows an exported `.ndjson` file in the file manager.
+  diagnosticsRevealExport(path: string): Promise<void>;
   // Opens the folder of the app log.
   diagnosticsRevealLogs(): Promise<void>;
-  // Asks where to save the diagnostics file; null when cancelled.
-  pickDiagnosticsPath(defaultName: string): Promise<string | null>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -1913,12 +1915,9 @@ const tauriApi: Api = {
   startupReport: () => call("startup_report"),
   startupMark: (step) => call("startup_mark", { step }),
   appRelaunch: () => call("app_relaunch"),
-  diagnosticsExport: (path) => call("diagnostics_export", { path }),
+  diagnosticsExport: (defaultName) => call("diagnostics_export", { defaultName }),
+  diagnosticsRevealExport: (path) => call("diagnostics_reveal_export", { path }),
   diagnosticsRevealLogs: () => call("diagnostics_reveal_logs"),
-  async pickDiagnosticsPath(defaultName) {
-    const picked = await save({ defaultPath: defaultName, filters: [{ name: "Diagnostics", extensions: ["ndjson"] }] });
-    return typeof picked === "string" ? picked : null;
-  },
 };
 
 const DEMO_CRASH: CrashReport = {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CrashReport } from "@xdev/bindings";
-import { createMockCrash, MAX_BREADCRUMBS, MAX_REPORTS, MOCK_DIAGNOSTICS_PATH } from "./mockCrash";
+import { createMockCrash, MAX_BREADCRUMBS, MAX_REPORTS } from "./mockCrash";
 
 const render = (n: number) => ({
   boundary: "surface",
@@ -67,11 +67,11 @@ describe("mock crash store", () => {
     expect((await m.startupReport()).steps.every((s) => s.ok)).toBe(true);
     m.__startupFail("settings", "bad");
     expect((await m.startupReport()).steps.find((s) => s.id === "settings")).toMatchObject({ ok: false, detail: "bad" });
-    const path = await m.pickDiagnosticsPath("x.ndjson");
-    expect(path).toBe(MOCK_DIAGNOSTICS_PATH);
-    await m.diagnosticsExport(path!);
+    expect(await m.diagnosticsExport("x.ndjson")).toEqual({ path: "/demo/x.ndjson", bytes: 1024 });
+    m.__cancelNextExport();
+    expect(await m.diagnosticsExport("y.ndjson")).toBeNull();
     await m.appRelaunch();
-    expect(m.__exports()).toEqual([MOCK_DIAGNOSTICS_PATH]);
+    expect(m.__exports()).toEqual(["/demo/x.ndjson"]);
     expect(m.__relaunches()).toBe(1);
   });
 });

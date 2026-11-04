@@ -56,6 +56,7 @@ export type { DefaultAgent } from "./DefaultAgent";
 export type { DefaultTab } from "./DefaultTab";
 export type { Describe } from "./Describe";
 export type { DetailsPatch } from "./DetailsPatch";
+export type { DiagnosticsExport } from "./DiagnosticsExport";
 export type { DiffSettings } from "./DiffSettings";
 export type { DiffView } from "./DiffView";
 export type { DirEntry } from "./DirEntry";

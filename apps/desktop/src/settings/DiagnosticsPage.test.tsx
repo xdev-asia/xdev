@@ -34,26 +34,34 @@ it("a search hides the rows that are not hits", () => {
   expect(html).not.toContain('data-setting-id="diagnostics.crash"');
 });
 
-it("names the file after the day", () => {
-  expect(diagnosticsFileName(new Date("2026-11-04T10:00:00Z"))).toBe("xdev-diagnostics-2026-11-04.json");
+it("names the file after the second, as ndjson", () => {
+  expect(diagnosticsFileName(new Date(2026, 10, 4, 9, 5, 7))).toBe("xdev-diagnostics-20261104-090507.ndjson");
 });
 
 it("a cancelled save does nothing", async () => {
   const api = createMockCrash();
   const before = getToasts().length;
-  await exportDiagnostics(api, async () => null, t);
+  api.__cancelNextExport();
+  await exportDiagnostics(api, t);
   expect(api.__exports()).toEqual([]);
   expect(getToasts().length).toBe(before);
 });
 
-it("a saved export toasts with a reveal action", async () => {
+it("a saved export toasts with an action that shows the saved file", async () => {
   const api = createMockCrash();
-  await exportDiagnostics(api, async () => "C:/tmp/d.json", t);
-  expect(api.__exports()).toEqual(["C:/tmp/d.json"]);
+  await exportDiagnostics(api, t, new Date(2026, 10, 4, 9, 5, 7));
+  const path = "/demo/xdev-diagnostics-20261104-090507.ndjson";
+  expect(api.__exports()).toEqual([path]);
   const toast = getToasts().at(-1)!;
-  expect(toast.text).toContain("C:/tmp/d.json");
+  expect(toast.text).toContain(path);
+  expect(toast.actions[0].label).toBe(t("diagnostics.export.reveal"));
   toast.actions[0].run();
-  expect(api.__logReveals()).toBe(1);
+  expect(api.__exportReveals()).toEqual([path]);
+  expect(api.__logReveals()).toBe(0);
+});
+
+it("the reveal label says folder", () => {
+  expect(t("diagnostics.export.reveal")).toBe("Show in folder");
 });
 
 it("a failed export toasts the error", async () => {
@@ -61,6 +69,6 @@ it("a failed export toasts the error", async () => {
   api.diagnosticsExport = async () => {
     throw new Error("disk full");
   };
-  await exportDiagnostics(api, async () => "C:/tmp/d.json", t);
+  await exportDiagnostics(api, t);
   expect(getToasts().at(-1)!.text).toBe(t("diagnostics.export.failed"));
 });

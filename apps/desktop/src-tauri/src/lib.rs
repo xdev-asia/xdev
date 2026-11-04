@@ -597,6 +597,7 @@ pub fn run() {
             startup::app_relaunch,
             diag_bundle::diagnostics_export,
             diag_bundle::diagnostics_reveal_logs,
+            diag_bundle::diagnostics_reveal_export,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
@@ -664,11 +665,12 @@ mod tests {
     }
 
     #[test]
-    fn capability_allows_the_save_dialog() {
+    fn capability_keeps_the_save_dialog_in_rust() {
         let caps: serde_json::Value =
             serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
         let allowed = caps["permissions"].as_array().unwrap();
-        assert!(allowed.iter().any(|p| p == "dialog:allow-save"));
+        // The save dialog opens from Rust, so the webview needs no permission.
+        assert!(!allowed.iter().any(|p| p == "dialog:allow-save"));
         assert!(allowed.iter().any(|p| p == "dialog:allow-open"));
     }
 

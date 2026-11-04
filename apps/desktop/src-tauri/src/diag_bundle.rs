@@ -7,8 +7,18 @@ use crate::commands::CmdError;
 use crate::crash::CrashReport;
 use crate::redact::{redact_text, redact_value};
 use crate::startup::StartupReport;
+use serde::Serialize;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
+
+/// What an export answers: where the file went and how big it is.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticsExport {
+    pub path: String,
+    pub bytes: u64,
+}
 
 pub(crate) const SCHEMA_VERSION: u32 = 1;
 /// The whole file; log records go first when it is too large.
@@ -142,8 +152,32 @@ fn diag_error(detail: impl ToString) -> CmdError {
     }
 }
 
-/// Writes the bundle to `path`; answers the bytes written.
+fn is_ndjson(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("ndjson"))
+}
+
+/// The suggested file name: only a plain name, always ending in `.ndjson`.
+pub(crate) fn export_file_name(suggested: &str) -> String {
+    let name = Path::new(suggested)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| !n.is_empty())
+        .unwrap_or("xdev-diagnostics");
+    if is_ndjson(Path::new(name)) {
+        name.to_string()
+    } else {
+        format!("{name}.ndjson")
+    }
+}
+
+/// Writes the bundle to `path`; answers the bytes written. Only an
+/// `.ndjson` file is ever written, so the command cannot overwrite other
+/// files.
 pub(crate) fn write_bundle(path: &Path, input: &BundleInput) -> Result<u64, CmdError> {
+    if !is_ndjson(path) {
+        return Err(diag_error("the diagnostics file must end in .ndjson"));
+    }
     let text = build_bundle(input, MAX_BYTES);
     crate::atomic::write_atomic(path, text.as_bytes()).map_err(diag_error)?;
     Ok(text.len() as u64)
@@ -181,10 +215,44 @@ fn collect(app: &tauri::AppHandle) -> BundleInput {
     }
 }
 
-/// Writes the diagnostics file to `path`; answers its size in bytes.
+/// Asks where to save, in a native dialog opened here so the path never
+/// comes from the webview, then writes the file. `None` means the person
+/// cancelled.
 #[tauri::command(async)]
-pub fn diagnostics_export(app: tauri::AppHandle, path: String) -> Result<u64, CmdError> {
-    write_bundle(Path::new(&path), &collect(&app))
+pub fn diagnostics_export(
+    app: tauri::AppHandle,
+    default_name: String,
+) -> Result<Option<DiagnosticsExport>, CmdError> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = app
+        .dialog()
+        .file()
+        .set_file_name(export_file_name(&default_name))
+        .add_filter("Diagnostics", &["ndjson"])
+        .blocking_save_file();
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let mut path = picked.into_path().map_err(diag_error)?;
+    if !is_ndjson(&path) {
+        path.set_extension("ndjson");
+    }
+    let bytes = write_bundle(&path, &collect(&app))?;
+    Ok(Some(DiagnosticsExport {
+        path: path.to_string_lossy().into_owned(),
+        bytes,
+    }))
+}
+
+/// Shows an exported file in the file manager. Only an existing `.ndjson`
+/// file is accepted.
+#[tauri::command]
+pub fn diagnostics_reveal_export(path: String) -> Result<(), CmdError> {
+    let path = PathBuf::from(path);
+    if !is_ndjson(&path) || !path.is_file() {
+        return Err(diag_error("not a diagnostics file"));
+    }
+    crate::reveal::reveal(&path, true).map_err(diag_error)
 }
 
 /// Opens the folder the app log lives in.
@@ -326,6 +394,35 @@ mod tests {
         assert_eq!(iso(0), "1970-01-01T00:00:00Z");
         assert_eq!(iso(1_794_000_000_000), "2026-11-06T21:20:00Z");
         assert_eq!(iso(951_782_400_000 + 86_399_000), "2000-02-29T23:59:59Z");
+    }
+
+    #[test]
+    fn only_an_ndjson_file_is_written() {
+        let dir = long_temp_dir("bundle");
+        let victim = dir.path().join("settings.json");
+        std::fs::write(&victim, "keep").unwrap();
+        let err = write_bundle(&victim, &input()).unwrap_err();
+        assert_eq!(err.code, "diag_write");
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+        assert!(write_bundle(&dir.path().join("a.NDJSON"), &input()).is_ok());
+    }
+
+    #[test]
+    fn the_suggested_name_is_a_plain_ndjson_name() {
+        assert_eq!(export_file_name("a.ndjson"), "a.ndjson");
+        assert_eq!(export_file_name("a.json"), "a.json.ndjson");
+        assert_eq!(export_file_name("../../x/evil"), "evil.ndjson");
+        assert_eq!(export_file_name(""), "xdev-diagnostics.ndjson");
+    }
+
+    #[test]
+    fn revealing_a_file_that_is_not_an_export_is_refused() {
+        let dir = long_temp_dir("bundle");
+        let other = dir.path().join("x.txt");
+        std::fs::write(&other, "x").unwrap();
+        assert!(diagnostics_reveal_export(other.to_string_lossy().into_owned()).is_err());
+        let missing = dir.path().join("none.ndjson");
+        assert!(diagnostics_reveal_export(missing.to_string_lossy().into_owned()).is_err());
     }
 
     #[test]

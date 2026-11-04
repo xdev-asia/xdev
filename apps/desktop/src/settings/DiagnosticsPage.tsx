@@ -10,27 +10,29 @@ import type { SettingsSectionProps } from "./sections";
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
 
-/** The default file name of an export, stamped with the day. */
+/** The default file name of an export: `xdev-diagnostics-YYYYMMDD-HHMMSS.ndjson`, local time. */
 export function diagnosticsFileName(now: Date = new Date()): string {
-  return `xdev-diagnostics-${now.toISOString().slice(0, 10)}.json`;
+  const p = (n: number) => String(n).padStart(2, "0");
+  const day = `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}`;
+  const time = `${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
+  return `xdev-diagnostics-${day}-${time}.ndjson`;
 }
 
 /**
- * Asks where to save, writes the redacted bundle and says so in a toast. Cancel does nothing; a
- * failure is an error toast. Never throws.
+ * Asks Rust to open the save dialog and write the redacted bundle, then says so in a toast. Cancel
+ * does nothing; a failure is an error toast. Never throws.
  */
 export async function exportDiagnostics(
-  api: Pick<Api, "diagnosticsExport" | "diagnosticsRevealLogs">,
-  pick: () => Promise<string | null>,
+  api: Pick<Api, "diagnosticsExport" | "diagnosticsRevealExport">,
   t: T,
+  now: Date = new Date(),
 ): Promise<void> {
   try {
-    const path = await pick();
-    if (!path) return;
-    const bytes = await api.diagnosticsExport(path);
+    const saved = await api.diagnosticsExport(diagnosticsFileName(now));
+    if (!saved) return;
     pushToast({
-      text: t("diagnostics.export.done", { path, kb: Math.max(1, Math.round(bytes / 1024)) }),
-      actions: [{ label: t("diagnostics.export.reveal"), run: () => void api.diagnosticsRevealLogs().catch(() => {}) }],
+      text: t("diagnostics.export.done", { path: saved.path, kb: Math.max(1, Math.round(saved.bytes / 1024)) }),
+      actions: [{ label: t("diagnostics.export.reveal"), run: () => void api.diagnosticsRevealExport(saved.path).catch(() => {}) }],
     });
   } catch {
     pushToast({ text: t("diagnostics.export.failed") });
@@ -45,7 +47,7 @@ export function DiagnosticsPage(props: SettingsSectionProps): JSX.Element {
   const run = async () => {
     setBusy(true);
     try {
-      await exportDiagnostics(api, () => api.pickDiagnosticsPath(diagnosticsFileName()), t);
+      await exportDiagnostics(api, t);
     } finally {
       setBusy(false);
     }

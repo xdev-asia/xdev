@@ -12,8 +12,8 @@ type CrashApi = Pick<
   | "startupMark"
   | "appRelaunch"
   | "diagnosticsExport"
+  | "diagnosticsRevealExport"
   | "diagnosticsRevealLogs"
-  | "pickDiagnosticsPath"
 >;
 
 export type MockCrash = CrashApi & {
@@ -27,13 +27,16 @@ export type MockCrash = CrashApi & {
   __relaunches(): number;
   // How often `diagnosticsRevealLogs` ran.
   __logReveals(): number;
+  // The paths `diagnosticsRevealExport` was asked to show, in order.
+  __exportReveals(): string[];
+  // The next `diagnosticsExport` is cancelled, as if the person closed the dialog.
+  __cancelNextExport(): void;
 };
 
 /** `MAX_REPORTS` and `MAX_BREADCRUMBS` in `crash.rs`. */
 export const MAX_REPORTS = 5;
 export const MAX_BREADCRUMBS = 30;
 const RELATED_MS = 5000;
-export const MOCK_DIAGNOSTICS_PATH = "/demo/xdev-diagnostics.ndjson";
 
 const STEPS = [
   "data_dir",
@@ -58,6 +61,8 @@ export function createMockCrash(): MockCrash {
   const exports: string[] = [];
   let relaunches = 0;
   let logReveals = 0;
+  const exportReveals: string[] = [];
+  let cancelNext = false;
 
   const add = (r: CrashReport) => {
     reports = [r, ...reports].slice(0, MAX_REPORTS);
@@ -132,20 +137,29 @@ export function createMockCrash(): MockCrash {
     async appRelaunch() {
       relaunches += 1;
     },
-    async diagnosticsExport(path) {
+    async diagnosticsExport(defaultName) {
+      if (cancelNext) {
+        cancelNext = false;
+        return null;
+      }
+      const path = `/demo/${defaultName}`;
       exports.push(path);
-      return 1024;
+      return { path, bytes: 1024 };
+    },
+    async diagnosticsRevealExport(path) {
+      exportReveals.push(path);
     },
     async diagnosticsRevealLogs() {
       logReveals += 1;
-    },
-    async pickDiagnosticsPath() {
-      return MOCK_DIAGNOSTICS_PATH;
     },
     __crash: (report) => add(structuredClone(report)),
     __startupFail: (id, detail) => upsertStep({ id, ok: false, ms: 0, detail }),
     __exports: () => [...exports],
     __relaunches: () => relaunches,
     __logReveals: () => logReveals,
+    __exportReveals: () => [...exportReveals],
+    __cancelNextExport: () => {
+      cancelNext = true;
+    },
   };
 }
