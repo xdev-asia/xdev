@@ -49,6 +49,7 @@ import { cycleTab, mruOrder, nthTab } from "./tabNav";
 import { TabTitleDialog } from "./TabTitleDialog";
 import { titleStatus } from "./titles";
 import { PtydBanner } from "@/terminal/PtydBanner";
+import { WorkerStrip } from "./WorkerStrip";
 
 // Offered while the profile view has not loaded: the built-in agents and the default shell.
 const FALLBACK_AGENTS: readonly PtyProfile[] = ["claude", "codex"];
@@ -571,6 +572,7 @@ export function WorktreeTabs(props: {
                   </button>
                 </div>
               )}
+              <WorkerStrip api={api} tab={tab.id} />
               {(everFront.has(tab.id) || !sessions.deferred(tab.id)) && <Terminal
                 key={`${tab.id}:${attempts[tab.id] ?? 0}`}
                 api={api}

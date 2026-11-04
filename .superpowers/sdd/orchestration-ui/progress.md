@@ -26,3 +26,9 @@ Base 0755c35 (B0). Backend tasks (B1-B15) live on feat/orchestration; this lane 
 - Readiness budget = `readyTimeoutMs` minus the time spent waiting for setup.
 - A failed open leaves the already opened tab in place for inspection.
 - Same dispatch id twice while in flight = one open, one answer.
+
+## Task 5: complete
+- `workspace/workerLifetime.ts` (pure `stripState`, `countdownText` ceil to whole second, `keepOpen` optimistic with re-read), `WorkerStrip.tsx` (xdev-ui `Banner` + secondary Keep open), mounted in `WorktreeTabs.tsx` above the Terminal in every terminal tab pane (it renders nothing without a lifetime; reads once at mount and on `worker-changed` for its tab).
+- 1 s tick only while the countdown runs. A finished worker with `closesAtMs = null` (working again) shows the rule text again.
+- Open item: the strip does not read `workerAutoClose`; it relies on the backend returning no lifetime / no `closesAtMs` when auto-close is off. With auto-close off the rule text would still say "Closes 2 minutes after it finishes" -> backend should return `null` for the lifetime or the UI should read the setting (decide at merge).
+- Banner is warn-toned (xdev-ui has no neutral variant); per plan.
