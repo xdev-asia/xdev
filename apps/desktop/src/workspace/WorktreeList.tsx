@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@xdev-asia/ui";
 import type { JSX } from "react";
-import type { ApiError, Check, FolderEntry, KeptView, OpenInApp, OpenTarget, PrView, PtyProfile, RepoGroup, RepoView, SidebarItem, SidebarPrefs, WorktreeStat, WorktreeView } from "@/api";
+import type { ApiError, Check, FolderEntry, KeptView, OpenInApp, OpenTarget, PrView, PtyProfile, RepoGroup, RepoView, SidebarItem, SidebarPrefs, WorkStatus, WorktreeStat, WorktreeView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { useI18n } from "@/i18n";
 import { profileLetter, profileName, useProfiles } from "@/agents/profileStore";
@@ -13,6 +13,7 @@ import type { PendingCreate } from "./pendingCreates";
 import { checksSummary } from "./ship";
 import type { TabStatus } from "./status";
 import { StatusGlyph } from "./StatusGlyph";
+import { childrenOf, parentCandidates, parentOf } from "./lineage";
 import { folderMenuItems, groupMenuItems, projectMenuItems, worktreeMenuItems } from "./worktreeMenu";
 import { dropMove, flattenRepos, moveTarget, nestRows, pinnedEntries, visibleEntries, type Move, type NestRow, type WtEntry } from "./sidebarModel";
 import { RepoBadge } from "./RepoBadge";
@@ -52,6 +53,14 @@ export interface WorktreeListProps {
   /** Opens the review of the branches a repo kept. */
   onReviewBranches?(repoId: string): void;
   onEditDetails?(worktree: WorktreeView): void;
+  /** Opens the parent picker; without it the menu has no lineage items. */
+  onSetParent?(worktree: WorktreeView): void;
+  /** Clears a worktree's parent. */
+  onRemoveParent?(worktree: WorktreeView): void;
+  /** Opens the delete dialog with the nested worktrees ticked. */
+  onDeleteNested?(worktree: WorktreeView): void;
+  /** Sets the work status (null clears it); without it the menu has no Move to status. */
+  onMoveStatus?(worktree: WorktreeView, status: WorkStatus | null): void;
   onRenameBranch?(worktree: WorktreeView): void;
   onArchive?(worktree: WorktreeView): void;
   /** A click on a work item chip: the shell copies the URL. */
@@ -639,6 +648,20 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       moveToGroup: props.onGroupMove && ((group: string | null) => props.onGroupMove?.(id, group, group === null ? (tree ?? []).length : 0)),
       newGroup: props.onNewGroup,
     });
+    // The parent items; Open is offered only while the parent row is in the list.
+    const lineageMenu = (wt: WorktreeView, repo: RepoView) => {
+      const parent = parentOf(wt, repo.worktrees);
+      const parentShown = parent !== null && shownPaths.has(parent.path);
+      return {
+        parentPath: parent?.path ?? null,
+        canSetParent: parentCandidates(wt, repo.worktrees).length > 0,
+        onSetParent: props.onSetParent && (() => props.onSetParent?.(wt)),
+        onOpenParent: parentShown && parent ? () => props.onSelect(parent) : undefined,
+        onRemoveParent: props.onRemoveParent && (() => props.onRemoveParent?.(wt)),
+        children: childrenOf(wt, repo.worktrees).length,
+        onDeleteNested: props.onDeleteNested && (() => props.onDeleteNested?.(wt)),
+      };
+    };
     if (menu.kind === "worktree") {
       const wt = entries.find((e) => e.path === menu.key)?.wt;
       if (!wt) return null;
@@ -654,6 +677,8 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         onMarkRead: props.onMarkRead && (() => props.onMarkRead?.(wt)),
         onRemove: () => props.onRemove(wt),
         onEditDetails: props.onEditDetails && (() => props.onEditDetails?.(wt)),
+        ...lineageMenu(wt, entries.find((e) => e.path === menu.key)!.repo),
+        onMoveStatus: props.onMoveStatus && ((status: WorkStatus | null) => props.onMoveStatus?.(wt, status)),
         onRenameBranch: props.onRenameBranch && (() => props.onRenameBranch?.(wt)),
         onArchive: props.onArchive && (() => props.onArchive?.(wt)),
         asleep: props.asleep?.[wt.path] === true,

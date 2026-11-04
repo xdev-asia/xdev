@@ -701,3 +701,37 @@ it("a sleeping worktree shows a badge and its menu offers Wake; an awake one off
   expect(woke).toEqual(["/demo/wt/xdev-oak"]);
   expect(slept).toEqual(["/demo/xdev"]);
 });
+
+it("the menu of a child row has the lineage items; the parent's has Delete with nested worktrees", () => {
+  const [xdev] = repos();
+  const [a, b] = xdev.worktrees.filter(w => !w.primary);
+  const nested = { ...xdev, worktrees: xdev.worktrees.map(w => (w.path === b.path ? { ...w, parent: a.path, pinned: false } : w)) };
+  const dots = { [a.path]: "idle", [b.path]: "idle" } as typeof DOTS;
+  const done = { parent: [] as string[], removed: [] as string[], nested: [] as string[], status: [] as unknown[] };
+  const view = harness(dots, repos, {
+    items: [asItem(nested)],
+    onSetParent: (w) => void done.parent.push(w.path),
+    onRemoveParent: (w) => void done.removed.push(w.path),
+    onDeleteNested: (w) => void done.nested.push(w.path),
+    onMoveStatus: (w, s) => void done.status.push([w.path, s]),
+  });
+  view.main(b.path).props.onContextMenu(event);
+  expect(view.item("setParent")!.labelKey).toBe("lineage.change");
+  view.item("setParent")!.run!();
+  view.item("removeParent")!.run!();
+  view.item("openParent")!.run!();
+  view.item("status:todo")!.run!();
+  expect(view.item("status:none")!.checked).toBe(true);
+  expect(view.item("deleteNested")).toBeUndefined();
+  expect(done.parent).toEqual([b.path]);
+  expect(done.removed).toEqual([b.path]);
+  expect(view.calls.select.map(w => w.path)).toEqual([a.path]);
+  expect(done.status).toEqual([[b.path, "todo"]]);
+
+  view.main(a.path).props.onContextMenu(event);
+  expect(view.item("setParent")!.labelKey).toBe("lineage.set");
+  expect(view.item("setParent")!.disabled).toBe(true);
+  expect(view.item("openParent")).toBeUndefined();
+  view.item("deleteNested")!.run!();
+  expect(done.nested).toEqual([a.path]);
+});

@@ -49,6 +49,8 @@ import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { AddProjectDialog, parentOf } from "./AddProjectDialog";
 import { RemoveRepoDialog } from "./RemoveRepoDialog";
+import { ParentPickerDialog } from "./ParentPickerDialog";
+import { parentCandidates } from "./lineage";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { removeRepo } from "./removeRepo";
 import { VaultNav } from "./VaultNav";
@@ -133,6 +135,8 @@ type Review = { repoId: string | null; busy: boolean; error?: ApiError["code"] }
 type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"]; archiving?: boolean; failed?: { code: number | null; output: string };
   /** Removed without asking (Settings → General): the dialog stays hidden until something needs an answer. */
   quiet?: boolean;
+  /** Opened from "Delete with nested worktrees": the nested tick starts on. */
+  nested?: boolean;
 };
 
 /** The app frame: repos and worktrees on the left, the selected worktree in the middle. */
@@ -223,6 +227,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [removing, setRemoving] = useState<Removing | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [renaming, setRenaming] = useState<WorktreeView | null>(null);
+  const [parentFor, setParentFor] = useState<{ worktree: WorktreeView; candidates: WorktreeView[] } | null>(null);
   const [notice, setNotice] = useState<ApiError["code"]>();
   const [fixNote, setFixNote] = useState(false);
   // A request to bring a tab to the front of its worktree; a new `seq` is a new request.
@@ -1044,9 +1049,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // deleting a worktree" off it runs at once with the dialog's defaults (keep the branch, no force,
   // nested worktrees kept); the dialog still shows when the worktree is dirty, the archive script
   // fails or needs trust, or the removal errors. Bulk delete keeps its own dialog.
-  function startRemove(wt: WorktreeView): void {
-    const next: Removing = { worktree: wt, dirty: false, busy: false };
-    if (askBeforeDeleteWorktree) return setRemoving(next);
+  function startRemove(wt: WorktreeView, opts: { nested?: boolean } = {}): void {
+    const next: Removing = { worktree: wt, dirty: false, busy: false, nested: opts.nested };
+    if (askBeforeDeleteWorktree || opts.nested) return setRemoving(next);
     const quiet: Removing = { ...next, quiet: true };
     setRemoving(quiet);
     void remove(false, false, quiet);
@@ -1218,6 +1223,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       }
     } catch (e) {
       setNotice(toApiError(e).code);
+    }
+  }
+
+  // The parent picker and the row menu's lineage and status items write straight through `worktreeDetails`.
+  async function setDetails(wt: WorktreeView, patch: DetailsPatch, failure: string): Promise<void> {
+    try {
+      await api.worktreeDetails(wt.path, patch);
+      await load();
+    } catch {
+      pushToast({ text: failure });
     }
   }
 
@@ -1700,6 +1715,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onRestore={(repoId, branch) => void sidebarCall(() => api.worktreeRestore(repoId, branch))}
             onArchive={(wt) => void archive(wt)}
             onEditDetails={(wt) => setEditing({ worktree: wt, busy: false })}
+            onSetParent={(wt) => setParentFor({ worktree: wt, candidates: parentCandidates(wt, repos?.find((r) => r.worktrees.some((w) => w.path === wt.path))?.worktrees ?? []) })}
+            onRemoveParent={(wt) => void setDetails(wt, { parent: null }, t("lineage.error"))}
+            onDeleteNested={(wt) => startRemove(wt, { nested: true })}
+            onMoveStatus={(wt, status) => {
+              if (status !== wt.status) void setDetails(wt, { status }, t("lineage.error"));
+            }}
             onRenameBranch={(wt) => setRenaming(wt)}
             onCopyLink={(url) => {
               void copy(url);
@@ -2174,6 +2195,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           onCancel={() => setEditing(null)}
         />
       )}
+      {parentFor && (
+        <ParentPickerDialog
+          worktree={parentFor.worktree}
+          candidates={parentFor.candidates}
+          onPick={(path) => {
+            const wt = parentFor.worktree;
+            setParentFor(null);
+            void setDetails(wt, { parent: path }, t("lineage.error"));
+          }}
+          onCancel={() => setParentFor(null)}
+        />
+      )}
       {renaming && (
         <RenameBranchDialog
           api={api}
@@ -2219,6 +2252,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           onConfirm={(nested) => void remove(removing.failed !== undefined, nested)}
           onArchive={() => void archiveRemoving()}
           children={all.filter((c) => c.parent === removing.worktree.path).length}
+          nestedDefault={removing.nested}
           onCancel={() => {
             removeRun.current++;
             setRemoving(null);
