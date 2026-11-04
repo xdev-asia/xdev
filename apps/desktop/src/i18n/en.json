@@ -988,6 +988,7 @@
   "repoFile.tab.item": "{title}: {command}",
   "repoFile.trust.confirm": "Trust",
   "repoFile.trust.note": "Trust covers exactly these lists. A change to the file asks again.",
+  "repoFile.linkFailed": "Not linked into the new worktree:\n{paths}",
   "setup.card.label": "Worktree setup",
   "setup.card.detected": "A setup command was detected for this worktree:",
   "setup.card.save": "Save as local setup",

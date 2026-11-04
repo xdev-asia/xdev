@@ -11,7 +11,7 @@ import { AddProjectDialog } from "./AddProjectDialog";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { BulkRemoveDialog } from "./BulkRemoveDialog";
-import { getToasts } from "./toastStore";
+import { dismissToast, getToasts } from "./toastStore";
 import { SetupCard } from "./SetupCard";
 import { TrustDialog } from "./TrustDialog";
 import { FileTree } from "./FileTree";
@@ -910,6 +910,35 @@ it("setup after create: an untrusted shared script shows its text; Trust runs it
   await tick();
   expect(v.setupOpens()).toHaveLength(1);
   expect(v.trust()).toBeUndefined();
+});
+
+it("link report: a toast lists shared paths that did not link, with the error; all linked says nothing", async () => {
+  const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), repoFiles: { "/demo/xdev": { shared: ["node_modules", ".env.local"], linkErrors: { ".env.local": "missing in the main checkout" } } } } as never });
+  const view = await harness(api);
+  // Trust the list first so the next create links it.
+  const primary = DEMO_WORKSPACE.repos[0].worktrees[0].path;
+  await api.repoHookTrust(primary, "shared", (await api.repoHooks(primary)).sharedHash!);
+  view.list().props.onCreate();
+  view.of(CreateWorktreeDialog)[0].props.onCreate("demo-xdev", "birch", null);
+  await tick();
+  await tick();
+  const texts = getToasts().map((x) => x.text);
+  expect(texts).toHaveLength(1);
+  expect(texts[0]).toContain(".env.local: missing in the main checkout");
+  expect(texts[0]).not.toContain("node_modules");
+  for (const x of getToasts()) dismissToast(x.id);
+});
+
+it("link report: nothing to say when the list is not trusted", async () => {
+  const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), repoFiles: { "/demo/xdev": { shared: ["node_modules"] } } } as never });
+  const before = getToasts().length;
+  const view = await harness(api);
+  view.list().props.onCreate();
+  view.of(CreateWorktreeDialog)[0].props.onCreate("demo-xdev", "birch", null);
+  await tick();
+  await tick();
+  expect(getToasts().filter((x) => x.text.includes("node_modules"))).toHaveLength(0);
+  expect(getToasts().length).toBe(before);
 });
 
 const LISTS = { shared: ["node_modules", ".env.local"], tabs: [{ title: "dev", color: "#4a9", command: "pnpm dev" }] };
