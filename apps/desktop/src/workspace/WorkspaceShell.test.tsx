@@ -318,13 +318,13 @@ it("create closes the dialog at once; a failure stays as a row with Retry and Di
   expect(markup).toContain('placeholder="auto"');
   expect(markup).toContain('placeholder="main"');
 
-  dialog().props.onCreate("demo-xdev", "oak", null);
+  dialog().props.onCreate("demo-xdev", "...", null);
   expect(view.of(CreateWorktreeDialog)).toHaveLength(0);
-  expect(view.list().props.pending).toMatchObject([{ name: "oak", state: "running" }]);
+  expect(view.list().props.pending).toMatchObject([{ name: "...", state: "running" }]);
   await tick();
-  expect(create).toHaveBeenCalledWith("demo-xdev", "oak", null);
+  expect(create).toHaveBeenCalledWith("demo-xdev", "...", null);
   const [failed] = view.list().props.pending;
-  expect(failed).toMatchObject({ name: "oak", state: "failed", error: { code: "branch_exists" } });
+  expect(failed).toMatchObject({ name: "...", state: "failed", error: { code: "bad_name" } });
   view.list().props.onRetryCreate(failed.id);
   await tick();
   expect(create).toHaveBeenCalledTimes(2);

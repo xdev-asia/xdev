@@ -28,7 +28,8 @@ describe("mock workspace", () => {
     expect(wt).toMatchObject({ branch: "fix-login", name: "fix-login", primary: false, pinned: false });
     expect(wt.path).toBe("/demo/wt/xdev-fix-login");
     expect((await api.workspaceList())[0].worktrees.map((w) => w.branch)).toContain("fix-login");
-    await expect(api.worktreeCreate(repo.id, "fix login", null)).rejects.toMatchObject({ code: "branch_exists" });
+    // The desktop never refuses a taken name: it is made as `fix-login-2`.
+    expect((await api.worktreeCreate(repo.id, "fix login", null)).worktree.branch).toBe("fix-login-2");
     await expect(api.worktreeCreate(repo.id, "...", null)).rejects.toMatchObject({ code: "bad_name" });
     await expect(api.worktreeCreate(repo.id, "x", "a b")).rejects.toMatchObject({ code: "bad_ref" });
     await expect(api.worktreeCreate("nope", "x", null)).rejects.toMatchObject({ code: "repo_unknown" });
@@ -393,5 +394,55 @@ describe("mock repo hooks", () => {
     await api.repoHookTrust(FIRST, "setup", (await api.repoHooks(FIRST)).setup!.hash);
     await api.repoUpdate("demo-xdev", { setupPolicy: "skip" });
     await expect(api.ptySpawn("s", FIRST, SETUP_PROFILE, null, 80, 24, () => {})).rejects.toMatchObject({ code: "setup_skipped" });
+  });
+
+  it("makes a taken name as -2, -3 and keeps the typed text as the title", async () => {
+    const api = createMockWorkspace();
+    const [repo] = await api.workspaceList();
+    const first = (await api.worktreeCreate(repo.id, "feat one", null)).worktree;
+    expect(first).toMatchObject({ branch: "feat-one", title: null });
+    const second = (await api.worktreeCreate(repo.id, "feat one", null)).worktree;
+    expect(second).toMatchObject({ branch: "feat-one-2", title: "feat one", path: "/demo/wt/xdev-feat-one-2" });
+    expect((await api.worktreeCreate(repo.id, "feat one", null)).worktree.branch).toBe("feat-one-3");
+    const long = "a".repeat(60);
+    await api.worktreeCreate(repo.id, long, null);
+    expect((await api.worktreeCreate(repo.id, long, null)).worktree.branch).toBe(`${"a".repeat(46)}-2`);
+    expect((await api.worktreeCreate(repo.id, "🚀 launch", null)).worktree).toMatchObject({ branch: "launch", title: "🚀 launch" });
+  });
+
+  it("previews the name a create would get, without making anything", async () => {
+    const api = createMockWorkspace();
+    const [repo] = await api.workspaceList();
+    expect(await api.worktreeNamePreview(repo.id, "feat one")).toEqual({ branch: "feat-one", folder: "xdev-feat-one", suffixed: false });
+    await api.worktreeCreate(repo.id, "feat one", null);
+    expect(await api.worktreeNamePreview(repo.id, "feat one")).toEqual({ branch: "feat-one-2", folder: "xdev-feat-one-2", suffixed: true });
+    expect(await api.worktreeNamePreview(repo.id, "  ")).toEqual({ branch: "", folder: "", suffixed: false });
+    await expect(api.worktreeNamePreview(repo.id, "...")).rejects.toMatchObject({ code: "bad_name" });
+    await expect(api.worktreeNamePreview("nope", "x")).rejects.toMatchObject({ code: "repo_unknown" });
+    expect((await api.workspaceList())[0].worktrees.map((w) => w.branch)).not.toContain("feat-one-2");
+  });
+
+  it("creates a git project named after the request, with its branch", async () => {
+    const api = createMockWorkspace();
+    const made = await api.repoCreate({ parent: "/code", name: " demo ", kind: "git", branch: "", firstCommit: true });
+    if (made.kind !== "git") throw new Error("git expected");
+    expect(made.repo).toMatchObject({ shortName: "demo", path: "/code/demo", baseRef: "main" });
+    expect((await api.workspaceList()).map((r) => r.shortName)).toContain("demo");
+    const trunk = await api.repoCreate({ parent: "/code/", name: "other", kind: "git", branch: "trunk", firstCommit: false });
+    if (trunk.kind !== "git") throw new Error("git expected");
+    expect(trunk.repo.baseRef).toBe("trunk");
+    expect(trunk.repo.worktrees[0]).toMatchObject({ branch: "trunk", head: null });
+  });
+
+  it("creates a plain folder in the sidebar and refuses bad requests", async () => {
+    const api = createMockWorkspace();
+    const made = await api.repoCreate({ parent: "/code", name: "notes", kind: "folder", branch: "", firstCommit: false });
+    expect(made).toMatchObject({ kind: "folder", folder: { path: "/code/notes", name: "notes" } });
+    expect((await api.workspaceSidebar()).some((i) => i.kind === "folder" && i.folder.name === "notes")).toBe(true);
+    const req = (name: string, over = {}) => ({ parent: "/code", name, kind: "git" as const, branch: "", firstCommit: true, ...over });
+    for (const bad of ["", "a/b", "CON", "nul.txt", "x:", "dots."]) await expect(api.repoCreate(req(bad))).rejects.toMatchObject({ code: "bad_name" });
+    await expect(api.repoCreate(req("x", { branch: "a b" }))).rejects.toMatchObject({ code: "bad_name" });
+    await expect(api.repoCreate(req("notes"))).rejects.toMatchObject({ code: "exists" });
+    await expect(api.repoCreate(req("x", { parent: "relative" }))).rejects.toMatchObject({ code: "not_found" });
   });
 });
