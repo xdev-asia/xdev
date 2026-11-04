@@ -2128,5 +2128,17 @@
   "keepAwake.hint.off": "The computer sleeps as it normally does.",
   "keepAwake.hint.agent": "Stays awake while an agent is working.",
   "keepAwake.hint.on": "Stays awake while xDev is open.",
-  "keepAwake.unsupported": "This computer has no way to stay awake from xDev."
+  "keepAwake.unsupported": "This computer has no way to stay awake from xDev.",
+  "settings.agents.keepAwake": "Keep computer awake",
+  "settings.agents.keepAwake.label": "When the computer would go to sleep",
+  "settings.agents.keepAwake.hint": "Blocks sleep only; the screen may still turn off. The footer shows the current mode and changes it.",
+  "settings.agents.keepAwake.off": "Off",
+  "settings.agents.keepAwake.agent": "While agents work",
+  "settings.agents.keepAwake.on": "Always",
+  "settings.agents.keepAwake.offHint": "The computer sleeps as it normally does.",
+  "settings.agents.keepAwake.agentHint": "Stays awake while an agent tab is working.",
+  "settings.agents.keepAwake.onHint": "Stays awake while xDev is open.",
+  "settings.agents.autoTabTitle": "Tab titles",
+  "settings.agents.autoTabTitle.label": "Name agent tabs from the first prompt",
+  "settings.agents.autoTabTitle.hint": "A tab you have not renamed gets a short title taken from its first prompt. A name you give always wins."
 }

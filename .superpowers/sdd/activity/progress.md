@@ -12,3 +12,6 @@ Tasks B3+B4: complete, one commit. Deviation: the OS blockers live in a new crat
 - `status/keepAwake.ts`: `startAgentsReport` (edge-only, dispose reports false), `startKeepAwakeReport` over `Sessions`.
 - `workspace/KeepAwakeItem.tsx`: `KeepAwakeView` (Popover + RadioGroup, unsupported text) and stateful `KeepAwakeItem`; footer slot `keepAwake` before the version; report started in `WorkspaceShell` beside the notifier.
 - i18n `keepAwake.*` in en and vi.
+
+## Task U2: complete
+- `agents.keepAwake` (xdev-ui RadioGroup) and `agents.autoTabTitle` (xdev-ui Switch) rows in `AgentsPage.tsx`, one shared `saveAgents` that keeps the other fields; catalog entries with en and vi search words; i18n `settings.agents.keepAwake*` and `settings.agents.autoTabTitle*`.
