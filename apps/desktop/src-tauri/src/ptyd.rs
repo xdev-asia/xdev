@@ -244,6 +244,15 @@ pub(crate) fn start_host(app: &AppHandle, local_dir: Option<&Path>) {
 }
 
 fn ptys_set(app: &AppHandle, host: Arc<dyn PtyHost>, status: PtydStatus) {
+    if status.state == PtydState::Fallback {
+        crate::applog::warn(
+            "ptyd",
+            &format!(
+                "terminal service unavailable: {}",
+                status.reason.as_deref().unwrap_or("unknown")
+            ),
+        );
+    }
     app.state::<Ptys>().set_host(host, status.clone());
     let _ = app.emit(STATUS_EVENT, status);
 }

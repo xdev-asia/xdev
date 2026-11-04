@@ -49,6 +49,7 @@ mod settings_store;
 mod shell;
 mod ship;
 mod squads;
+mod startup;
 mod status;
 mod tasks;
 mod terminal_themes;
@@ -114,6 +115,7 @@ pub fn run() {
         .manage(cli_verbs::CliHub::default())
         .manage(orchestration::OrchHub::default())
         .manage(keybindings::LastSent::default())
+        .manage(startup::Startup::from_env())
         .on_window_event(|window, event| {
             if window.label() == "main"
                 && let tauri::WindowEvent::Focused(true) = event
@@ -127,6 +129,28 @@ pub fn run() {
         .setup(move |app| {
             if let Some((data, local)) = &index_dirs {
                 xdev_core::move_indexes(data, local);
+            }
+            let boot = app.state::<startup::Startup>();
+            // A report the app could not read is a problem to show, not a
+            // reason to stop.
+            if let Some(local) = &sync_local {
+                boot.run("data_dir", || startup::check_writable(local));
+                boot.run("logs", || startup::check_writable(&local.join("logs")));
+                boot.run("crash_store", || {
+                    crash::load(&crash::store_path(local))
+                        .map(|_| ())
+                        .map_err(|e| e.detail.unwrap_or_default())
+                });
+            } else {
+                boot.mark(startup::StartupStep {
+                    id: "data_dir".into(),
+                    ok: false,
+                    ms: 0,
+                    detail: Some("no local data folder".into()),
+                });
+            }
+            if let Some(file) = commands::settings_path(app.handle()) {
+                boot.run("settings", || startup::check_settings(&file));
             }
             updater::start(app.handle().clone());
             workspace::start_sweep(app.handle());
@@ -157,14 +181,28 @@ pub fn run() {
             {
                 let app = app.handle().clone();
                 let local = ptyd_local.clone();
-                std::thread::spawn(move || ptyd::start_host(&app, local.as_deref()));
+                std::thread::spawn(move || {
+                    let began = std::time::Instant::now();
+                    ptyd::start_host(&app, local.as_deref());
+                    let status = app.state::<pty::Ptys>().host_status().1;
+                    let fell_back = status.state == pty::PtydState::Fallback;
+                    app.state::<startup::Startup>().mark(startup::StartupStep {
+                        id: "ptyd".into(),
+                        ok: !fell_back,
+                        ms: startup::ms_of(began.elapsed()),
+                        detail: fell_back.then(|| status.reason.unwrap_or_default()),
+                    });
+                });
             }
             // The `.off` marker follows the stored setting from the start,
             // not only once the setting is saved. Best effort.
-            if let (Some(store), Some(local)) = (settings_store::store(app.handle()), &sync_local)
-                && let Err(e) = status::sync_hooks_marker(&store, local)
-            {
-                applog::warn("hooks marker", &e.to_string());
+            if let (Some(store), Some(local)) = (settings_store::store(app.handle()), &sync_local) {
+                boot.run("hooks_marker", || {
+                    status::sync_hooks_marker(&store, local)
+                        .map(|_| ())
+                        .inspect_err(|e| applog::warn("hooks marker", &e.to_string()))
+                        .map_err(|e| e.to_string())
+                });
             }
             status::listen_clicks(app.handle());
             orchestration::start_pump(app.handle().clone());
@@ -176,35 +214,53 @@ pub fn run() {
                     app: app.handle().clone(),
                 });
                 let now = workspace::clock().0;
-                match endpoint::start(
-                    &xdev_ipc::app_dir(local),
-                    endpoint::PREFIX,
-                    xdev_core::version(),
-                    now,
-                    handler,
-                ) {
-                    Ok(running) => {
-                        app.manage(running);
+                boot.run("endpoint", || {
+                    match endpoint::start(
+                        &xdev_ipc::app_dir(local),
+                        endpoint::PREFIX,
+                        xdev_core::version(),
+                        now,
+                        handler,
+                    ) {
+                        Ok(running) => {
+                            app.manage(running);
+                            Ok(())
+                        }
+                        Err(e) => {
+                            applog::warn("app endpoint", &e.to_string());
+                            Err(e.to_string())
+                        }
                     }
-                    Err(e) => applog::warn("app endpoint", &e.to_string()),
-                }
+                });
             }
             // Without it an edit on disk shows only after a restart.
             let last = app.state::<keybindings::LastSent>().inner().clone();
-            match keybindings::watch(app.handle().clone(), last) {
-                Ok(watcher) => {
-                    app.manage(watcher);
-                }
-                Err(e) => applog::warn("keybindings watcher", &e.to_string()),
-            }
-            // Without the watcher panes still run; they just show no status.
-            if let Some(dir) = hooks_dir {
-                match hooks::watch(app.handle().clone(), dir) {
+            boot.run("keybindings_watcher", || {
+                match keybindings::watch(app.handle().clone(), last) {
                     Ok(watcher) => {
                         app.manage(watcher);
+                        Ok(())
                     }
-                    Err(e) => applog::warn("hook watcher", &e.to_string()),
+                    Err(e) => {
+                        applog::warn("keybindings watcher", &e.to_string());
+                        Err(e.to_string())
+                    }
                 }
+            });
+            // Without the watcher panes still run; they just show no status.
+            if let Some(dir) = hooks_dir {
+                boot.run("hooks_watcher", || {
+                    match hooks::watch(app.handle().clone(), dir) {
+                        Ok(watcher) => {
+                            app.manage(watcher);
+                            Ok(())
+                        }
+                        Err(e) => {
+                            applog::warn("hook watcher", &e.to_string());
+                            Err(e.to_string())
+                        }
+                    }
+                });
             }
             Ok(())
         })
