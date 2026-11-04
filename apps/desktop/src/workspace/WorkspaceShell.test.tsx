@@ -457,15 +457,15 @@ it("panel has Files and Changes icon tabs with a change badge", async () => {
   const view = await harness();
   const tabs = () => view.all().filter(n => n.props.className === "ws-panel-tab");
   const files = () => tabs()[0];
-  const changes = () => tabs()[1];
+  const changes = () => tabs()[2];
   // Icon buttons: a name for screen readers and no visible text.
-  expect(tabs().map(n => n.props["aria-label"])).toEqual([en("workspace.panel.files"), en("workspace.panel.changes"), en("checks.tab")]);
+  expect(tabs().map(n => n.props["aria-label"])).toEqual([en("workspace.panel.files"), en("search.files.tab"), en("workspace.panel.changes"), en("checks.tab")]);
   expect(tabs().every(n => n.props.role === "tab" && n.type === "button")).toBe(true);
   expect(renderToStaticMarkup(files())).not.toContain("ws-panel-badge");
   // Files is the default tab, and the tree and the changes list are both mounted.
-  expect(tabs().map(n => n.props["aria-selected"])).toEqual([true, false, false]);
+  expect(tabs().map(n => n.props["aria-selected"])).toEqual([true, false, false, false]);
   const panels = () => view.all().filter(n => n.props.role === "tabpanel");
-  expect(panels().map(n => n.props.hidden)).toEqual([false, true, true]);
+  expect(panels().map(n => n.props.hidden)).toEqual([false, true, true, true]);
   expect(view.of(FileTree)).toHaveLength(1);
   expect(view.of(WorktreeChanges)).toHaveLength(1);
 
@@ -486,8 +486,8 @@ it("panel has Files and Changes icon tabs with a change badge", async () => {
   expect(oak().props.reveal).toEqual({ file: "src/session.ts", seq: 1 });
 
   changes().props.onClick();
-  expect(tabs().map(n => n.props["aria-selected"])).toEqual([false, true, false]);
-  expect(panels().map(n => n.props.hidden)).toEqual([true, false, true]);
+  expect(tabs().map(n => n.props["aria-selected"])).toEqual([false, false, true, false]);
+  expect(panels().map(n => n.props.hidden)).toEqual([true, true, false, true]);
   // Another worktree has its own list.
   view.list().props.onSelect(view.worktree("elm"));
   expect(view.of(FileTree)[0].props.changes).toEqual([]);
