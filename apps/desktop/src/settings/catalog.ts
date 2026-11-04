@@ -21,6 +21,19 @@ const e = (id: string, titleKey: string, keywords: string[], descriptionKey?: st
  * search does not fold diacritics.
  */
 export const SETTING_ENTRIES: readonly SettingEntry[] = [
+  // General
+  e("general.tabOrder", "settings.general.tabOrder", ["ctrl+tab", "tab", "order", "recent", "mru", "thứ tự", "thu tu", "gần đây", "gan day"], "settings.general.tabOrderHint"),
+  e("general.nav.confirmClosePinned", "settings.general.confirmClosePinned", ["close", "pinned", "confirm", "đóng", "dong", "ghim", "xác nhận", "xac nhan"]),
+  e("general.nav.confirmCloseRunning", "settings.general.confirmCloseRunning", ["close", "running", "agent", "process", "confirm", "đóng", "dong", "đang chạy", "dang chay", "xác nhận", "xac nhan"], "settings.general.confirmCloseRunningHint"),
+  e("general.nav.askBeforeDeleteWorktree", "settings.general.askBeforeDeleteWorktree", ["delete", "remove", "worktree", "ask", "confirm", "xoá", "xoa", "xóa", "hỏi", "hoi"]),
+  e("general.zoom", "settings.general.zoom", ["zoom", "scale", "size", "thu phóng", "thu phong", "phóng to", "phong to"]),
+  e("general.restore", "layout.setting", ["restore", "layout", "session", "reopen", "khôi phục", "khoi phuc", "bố cục", "bo cuc"], "layout.setting.hint"),
+  e("general.openIn", "settings.general.openIn", ["open in", "apps", "ide", "mở bằng", "mo bang", "ứng dụng", "ung dung"]),
+  e("general.diffView", "settings.general.diffView", ["diff", "inline", "split", "side by side", "view", "chế độ", "che do", "tách", "tach"]),
+  e("general.diff.ignoreWhitespace", "settings.general.ignoreWhitespace", ["diff", "whitespace", "space", "khoảng trắng", "khoang trang"]),
+  e("general.diff.collapseUnchanged", "settings.general.collapseUnchanged", ["diff", "collapse", "unchanged", "thu gọn", "thu gon"]),
+  e("general.diff.wordWrap", "settings.general.wordWrap", ["diff", "wrap", "long lines", "xuống dòng", "xuong dong"]),
+  e("general.diff.fileTree", "settings.general.fileTree", ["diff", "file tree", "tree", "cây", "cay", "tệp", "tep"], "settings.general.fileTreeHint"),
   // Agents
   e("agents.approvals", "settings.agents.approvals", ["permission", "ask", "skip", "yolo", "phê duyệt", "phe duyet", "quyền", "quyen"]),
   e("agents.defaultAgent", "settings.agents.defaultAgent", ["default", "agent", "mặc định", "mac dinh"]),
@@ -48,7 +61,6 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("terminal.copyOnSelect", "settings.terminal.copyOnSelect", ["clipboard", "copy", "select", "sao chép", "sao chep"]),
   e("terminal.rightClickPaste", "settings.terminal.rightClickPaste", ["clipboard", "paste", "mouse", "dán", "dan"]),
   e("terminal.osc52Clipboard", "settings.terminal.osc52Clipboard", ["clipboard", "osc52", "osc 52"], "settings.terminal.osc52ClipboardHint"),
-  e("terminal.restore", "layout.setting", ["restore", "layout", "session", "khôi phục", "khoi phuc", "bố cục", "bo cuc"], "layout.setting.hint"),
   e("terminal.reset", "settings.terminal.reset", ["defaults", "reset", "đặt lại", "dat lai"]),
   // Editor
   e("editor.autosave", "files.settings.autosave", ["save", "tự động lưu", "tu dong luu"], "files.settings.autosaveHint"),

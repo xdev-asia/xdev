@@ -6,6 +6,9 @@ import { DIFF_DEFAULTS, NAVIGATION_DEFAULTS } from "@/mockSettings";
 import { getZoom, resetZoomForTests } from "@/ui/zoom";
 import { GeneralPage } from "./GeneralPage";
 import { RestoreSetting } from "./RestoreSetting";
+import { SETTING_ENTRIES } from "./catalog";
+import type { SettingsFilter } from "./sections";
+import { SettingGroup, SettingRow } from "./SettingRow";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
 vi.mock("react", async (original) => {
@@ -41,12 +44,12 @@ beforeEach(() => {
   resetZoomForTests();
 });
 
-async function page(openSection?: (id: string) => void) {
+async function page(openSection?: (id: string) => void, filter?: SettingsFilter) {
   const api = createMockApi({});
   const draw = () => {
     hooks.cursor = 0;
     hooks.active = true;
-    try { return GeneralPage({ api, onChanged: vi.fn(), openSection }); } finally { hooks.active = false; }
+    try { return GeneralPage({ api, onChanged: vi.fn(), openSection, filter }); } finally { hooks.active = false; }
   };
   draw();
   hooks.effects.splice(0).forEach((e) => e());
@@ -127,4 +130,26 @@ it("holds the restore setting and a link to Open In apps", async () => {
   expect(p.all().some((n) => n.type === RestoreSetting)).toBe(true);
   p.by("data-act", "open-in").props.onClick();
   expect(open).toHaveBeenCalledWith("openIn");
+});
+
+it("every General catalog entry has a row on the page", async () => {
+  const p = await page(vi.fn());
+  const shown = new Set([
+    ...p.all().filter((n) => n.type === SettingRow).map((n) => n.props.id),
+    ...p.all().filter((n) => n.props["data-setting-id"]).map((n) => n.props["data-setting-id"]),
+  ]);
+  const ids = SETTING_ENTRIES.filter((e) => e.section === "general").map((e) => e.id);
+  expect(ids.length).toBeGreaterThan(0);
+  for (const id of ids) expect(shown.has(id), id).toBe(true);
+  expect(p.all().find((n) => n.type === SettingRow && n.props.id === "general.restore")!.props.children.type).toBe(RestoreSetting);
+});
+
+it("a search keeps only the matching controls and the groups that hold them", async () => {
+  const p = await page(vi.fn(), { query: "wrap", ids: new Set(["general.diff.wordWrap"]) });
+  expect(p.all().some((n) => n.props["data-switch"] === "wordWrap")).toBe(true);
+  expect(p.all().some((n) => n.props["data-switch"] === "confirmClosePinned")).toBe(false);
+  const groups = p.all().filter((n) => n.type === SettingGroup);
+  expect(groups.map((g) => SettingGroup(g.props as Parameters<typeof SettingGroup>[0]) !== null)).toEqual([false, false, true]);
+  const zoom = p.all().find((n) => n.type === SettingRow && n.props.id === "general.zoom")!;
+  expect(SettingRow(zoom.props as Parameters<typeof SettingRow>[0])).toBeNull();
 });

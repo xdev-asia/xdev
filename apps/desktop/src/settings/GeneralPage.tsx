@@ -5,6 +5,7 @@ import { useI18n } from "@/i18n";
 import { clampZoom, getZoom, stepZoom, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from "@/ui/zoom";
 import { setNavigationSettings } from "./navigationSettings";
 import { RestoreSetting } from "./RestoreSetting";
+import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
 export const TAB_ORDERS: NavigationSettings["tabOrder"][] = ["mru", "sequential"];
@@ -12,11 +13,15 @@ export const DIFF_VIEWS: DiffSettings["defaultView"][] = ["inline", "split"];
 export const NAVIGATION_SWITCHES = ["confirmClosePinned", "confirmCloseRunning", "askBeforeDeleteWorktree"] as const;
 export const DIFF_SWITCHES = ["ignoreWhitespace", "collapseUnchanged", "wordWrap", "fileTree"] as const;
 // 50 % … 200 % in steps of `ZOOM_STEP`.
+// Catalog ids of the page, per group; a switch adds its key (`general.nav.confirmClosePinned`).
+const NAVIGATION_IDS = ["general.tabOrder", ...NAVIGATION_SWITCHES.map((k) => `general.nav.${k}`)];
+const WORKSPACE_IDS = ["general.zoom", "general.restore", "general.openIn"];
+const DIFF_IDS = ["general.diffView", ...DIFF_SWITCHES.map((k) => `general.diff.${k}`)];
 export const ZOOM_LEVELS: number[] = Array.from({ length: Math.round((ZOOM_MAX - ZOOM_MIN) / ZOOM_STEP) + 1 }, (_, i) => clampZoom(ZOOM_MIN + i * ZOOM_STEP));
 
 /** Settings → General: navigation, workspace and diff preferences of the whole app. */
 export function GeneralPage(props: SettingsSectionProps): JSX.Element {
-  const { api, openSection } = props;
+  const { api, openSection, filter } = props;
   const { t } = useI18n();
   const [navigation, setNavigation] = useState<NavigationSettings | null>(null);
   const [diff, setDiff] = useState<DiffSettings | null>(null);
@@ -57,8 +62,8 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
   const pickZoom = (next: number | null) =>
     write(async () => setZoom(await stepZoom(api, next === null ? 0 : clampZoom(next) - getZoom())));
 
-  const sw = (key: string, label: string, on: boolean, flip: () => void, hint?: string) => (
-    <li className="settings-item" data-switch={key} key={key}>
+  const sw = (id: string, key: string, label: string, on: boolean, flip: () => void, hint?: string) => (
+    <li className="settings-item" data-switch={key} data-setting-id={id} key={key}>
       <div className="settings-item-text">
         <strong>{label}</strong>
         {hint && <span className="settings-path">{hint}</span>}
@@ -79,9 +84,11 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
         </p>
       )}
 
+      <SettingGroup ids={NAVIGATION_IDS} filter={filter}>
       <h4 className="settings-group">{t("settings.general.navigation")}</h4>
       {navigation && (
         <>
+          <SettingRow id="general.tabOrder" filter={filter}>
           <div className="ws-fields">
             <div className="ws-field" role="radiogroup" aria-label={t("settings.general.tabOrder")}>
               <span>{t("settings.general.tabOrder")}</span>
@@ -103,15 +110,19 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
               <small className="settings-hint">{t("settings.general.tabOrderHint")}</small>
             </div>
           </div>
+          </SettingRow>
           <ul className="settings-list">
             {NAVIGATION_SWITCHES.map((k) =>
-              sw(k, t(`settings.general.${k}`), navigation[k], () => void patchNavigation({ [k]: !navigation[k] }), k === "confirmCloseRunning" ? t("settings.general.confirmCloseRunningHint") : undefined),
+              settingShown(filter, `general.nav.${k}`) && sw(`general.nav.${k}`, k, t(`settings.general.${k}`), navigation[k], () => void patchNavigation({ [k]: !navigation[k] }), k === "confirmCloseRunning" ? t("settings.general.confirmCloseRunningHint") : undefined),
             )}
           </ul>
         </>
       )}
+      </SettingGroup>
 
+      <SettingGroup ids={WORKSPACE_IDS} filter={filter}>
       <h4 className="settings-group">{t("settings.general.workspace")}</h4>
+      <SettingRow id="general.zoom" filter={filter}>
       <div className="ws-fields">
         <label className="ws-field">
           <span>{t("settings.general.zoom")}</span>
@@ -129,18 +140,26 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
           </button>
         </div>
       </div>
-      <RestoreSetting api={api} />
+      </SettingRow>
+      <SettingRow id="general.restore" filter={filter}>
+        <RestoreSetting api={api} />
+      </SettingRow>
       {openSection && (
-        <div className="settings-actions settings-actions-start">
-          <button type="button" className="btn-secondary" data-act="open-in" onClick={() => openSection("openIn")}>
-            {t("settings.general.openIn")}
-          </button>
-        </div>
+        <SettingRow id="general.openIn" filter={filter}>
+          <div className="settings-actions settings-actions-start">
+            <button type="button" className="btn-secondary" data-act="open-in" onClick={() => openSection("openIn")}>
+              {t("settings.general.openIn")}
+            </button>
+          </div>
+        </SettingRow>
       )}
+      </SettingGroup>
 
+      <SettingGroup ids={DIFF_IDS} filter={filter}>
       <h4 className="settings-group">{t("settings.general.diff")}</h4>
       {diff && (
         <>
+          <SettingRow id="general.diffView" filter={filter}>
           <div className="ws-fields">
             <div className="ws-field" role="radiogroup" aria-label={t("settings.general.diffView")}>
               <span>{t("settings.general.diffView")}</span>
@@ -161,11 +180,13 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
               </div>
             </div>
           </div>
+          </SettingRow>
           <ul className="settings-list">
-            {DIFF_SWITCHES.map((k) => sw(k, t(`settings.general.${k}`), diff[k], () => void patchDiff({ [k]: !diff[k] }), k === "fileTree" ? t("settings.general.fileTreeHint") : undefined))}
+            {DIFF_SWITCHES.map((k) => settingShown(filter, `general.diff.${k}`) && sw(`general.diff.${k}`, k, t(`settings.general.${k}`), diff[k], () => void patchDiff({ [k]: !diff[k] }), k === "fileTree" ? t("settings.general.fileTreeHint") : undefined))}
           </ul>
         </>
       )}
+      </SettingGroup>
     </div>
   );
 }

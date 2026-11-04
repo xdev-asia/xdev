@@ -1138,6 +1138,22 @@ it("ctrl+shift+backspace opens the delete dialog for the open worktree; two sele
   expect(view.of(BulkRemoveDialog)).toHaveLength(1);
 });
 
+it("with askBeforeDeleteWorktree off, ctrl+shift+backspace deletes the open worktree without a dialog", async () => {
+  setNavigationSettings({ ...NAVIGATION_DEFAULTS, askBeforeDeleteWorktree: false });
+  const api = createMockApi({});
+  const remove = vi.spyOn(api, "worktreeRemove");
+  const view = await harness(api);
+  const { fire } = attend(view);
+  view.list().props.onSelect(view.worktree("elm"));
+  await settle();
+  view.draw();
+  fire("keydown", DEL_KEY);
+  await settle();
+  expect(remove).toHaveBeenCalledWith("/demo/wt/xdev-elm", false, true);
+  expect(view.of(RemoveWorktreeDialog)).toHaveLength(0);
+  expect(view.worktree("elm")).toBeUndefined();
+});
+
 it("a delete that kept a branch offers a review", async () => {
   const api = createMockApi({});
   const kept = { repoId: "demo-xdev", branch: "oak", path: "/x", keptMs: 1, reason: "deleted", title: null, comment: "", status: null, item: null };
