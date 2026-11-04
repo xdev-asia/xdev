@@ -11,7 +11,7 @@ vi.mock("@/i18n", async (original) => ({
   useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }),
 }));
 
-const html = (filter?: string) => renderToStaticMarkup(createElement(ShortcutsPage, { api: createMockApi({}), onChanged() {}, filter }));
+const html = (arg?: string) => renderToStaticMarkup(createElement(ShortcutsPage, { api: createMockApi({}), onChanged() {}, arg }));
 beforeEach(() => resetBindingsForTests());
 
 it("lists the groups, the chips with counts, the policy and the hints switch", () => {

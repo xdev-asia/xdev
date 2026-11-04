@@ -5,7 +5,7 @@ import { useI18n } from "@/i18n";
 import { SECTIONS } from "./sections";
 
 /** Settings: the list of sections on the left, the chosen one on the right. */
-export function SettingsView(props: { api: Api; onChanged(): void; initial?: string; filter?: string }): JSX.Element {
+export function SettingsView(props: { api: Api; onChanged(): void; initial?: string; arg?: string }): JSX.Element {
   const { t } = useI18n();
   const [active, setActive] = useState(() => (SECTIONS.some((s) => s.id === props.initial) ? props.initial! : SECTIONS[0].id));
   const section = SECTIONS.find((s) => s.id === active) ?? SECTIONS[0];
@@ -27,7 +27,7 @@ export function SettingsView(props: { api: Api; onChanged(): void; initial?: str
         ))}
       </nav>
       <section className="settings-body" aria-label={t(section.labelKey)}>
-        <Component key={section.id} api={props.api} onChanged={props.onChanged} filter={props.filter} />
+        <Component key={section.id} api={props.api} onChanged={props.onChanged} arg={props.arg} />
       </section>
     </div>
   );
