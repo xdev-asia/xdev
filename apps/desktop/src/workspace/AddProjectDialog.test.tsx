@@ -33,13 +33,13 @@ const en = (key: string) => translate("en", key);
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; });
 
-type CloneApi = Pick<Api, "repoClone" | "repoCloneCancel" | "repoCloneName" | "pickFolder">;
+type CloneApi = Pick<Api, "repoClone" | "repoCloneCancel" | "repoCloneName" | "repoCreate" | "pickFolder">;
 
 async function view(over: Partial<CloneApi> = {}, startFolder = "/code") {
   const base = createMockApi({});
-  const api: CloneApi = { repoClone: base.repoClone, repoCloneCancel: base.repoCloneCancel, repoCloneName: base.repoCloneName, pickFolder: base.pickFolder, ...over };
-  const spies = { clone: vi.spyOn(api, "repoClone"), cancel: vi.spyOn(api, "repoCloneCancel"), name: vi.spyOn(api, "repoCloneName") };
-  const handlers = { onOpenFolder: vi.fn(), onCloned: vi.fn(), onCancel: vi.fn() };
+  const api: CloneApi = { repoClone: base.repoClone, repoCloneCancel: base.repoCloneCancel, repoCloneName: base.repoCloneName, repoCreate: base.repoCreate, pickFolder: base.pickFolder, ...over };
+  const spies = { create: vi.spyOn(api, "repoCreate"), clone: vi.spyOn(api, "repoClone"), cancel: vi.spyOn(api, "repoCloneCancel"), name: vi.spyOn(api, "repoCloneName") };
+  const handlers = { onOpenFolder: vi.fn(), onCloned: vi.fn(), onCreated: vi.fn(), onCancel: vi.fn() };
   const draw = () => {
     hooks.cursor = 0;
     hooks.active = true;
@@ -51,10 +51,12 @@ async function view(over: Partial<CloneApi> = {}, startFolder = "/code") {
   const press = async (key: string, value: string) => { all().find((n) => n.props[key] === value)!.props.onClick(); await tick(); };
   const submit = async () => { all().find((n) => n.type === "form")!.props.onSubmit({ preventDefault() {} }); await tick(); };
   const clone = () => all().find((n) => n.props.type === "submit")!;
+  const radio = (value: string) => all().find((n) => n.props.type === "radio" && n.props.value === value)!;
+  const check = async (name: string, checked: boolean) => { input(name).props.onChange({ target: { checked } }); await tick(); };
   const text = () => JSON.stringify(draw().props.children);
   draw();
   hooks.effects.forEach((e) => e());
-  return { api, spies, handlers, all, input, type, press, submit, clone, text };
+  return { api, spies, handlers, all, input, type, press, submit, clone, radio, check, text };
 }
 const toClone = async (v: Awaited<ReturnType<typeof view>>) => { await v.press("data-choice", "clone"); };
 
@@ -198,4 +200,102 @@ it("Cancel during a clone calls repoCloneCancel with the run's id and returns to
   // With nothing running, Cancel closes the dialog.
   await v.press("data-act", "cancel");
   expect(v.handlers.onCancel).toHaveBeenCalledOnce();
+});
+
+const toCreate = async (v: Awaited<ReturnType<typeof view>>) => { await v.press("data-choice", "create"); };
+const alerts = (v: Awaited<ReturnType<typeof view>>) => v.all().filter((n) => n.props.role === "alert").map((n) => n.props.children);
+
+it("offers Create new as a third choice", async () => {
+  const v = await view();
+  expect(v.text()).toContain(en("addProject.create.choice"));
+  await toCreate(v);
+  expect(v.input("folder").props.value).toBe("/code");
+  expect(v.input("name").props.value).toBe("");
+  expect(v.clone().props.disabled).toBe(true);
+  expect(v.radio("git").props.checked).toBe(true);
+  expect(v.radio("folder").props.checked).toBe(false);
+  expect(v.input("branch").props.placeholder).toBe("main");
+  expect(v.input("firstCommit").props.checked).toBe(true);
+});
+
+it("Choose… fills the Create folder from the picker", async () => {
+  const pickFolder = vi.fn().mockResolvedValueOnce("/work");
+  const v = await view({ pickFolder });
+  await toCreate(v);
+  await v.press("data-act", "choose");
+  expect(v.input("folder").props.value).toBe("/work");
+});
+
+it("Create sends the trimmed request and hands over what was made", async () => {
+  const v = await view();
+  await toCreate(v);
+  await v.type("name", " demo ");
+  await v.type("branch", " trunk ");
+  await v.check("firstCommit", false);
+  await v.submit();
+  expect(v.spies.create).toHaveBeenCalledWith({ parent: "/code", name: "demo", kind: "git", branch: "trunk", firstCommit: false });
+  expect(v.handlers.onCreated).toHaveBeenCalledOnce();
+  expect(v.handlers.onCreated.mock.calls[0][0]).toMatchObject({ kind: "git", repo: { path: "/code/demo", baseRef: "trunk" } });
+});
+
+it("a plain folder hides the Git options and is created as a folder", async () => {
+  const v = await view();
+  await toCreate(v);
+  await v.type("name", "notes");
+  v.radio("folder").props.onChange();
+  await tick();
+  expect(v.all().some((n) => n.type === "input" && n.props.name === "branch")).toBe(false);
+  await v.submit();
+  expect(v.spies.create).toHaveBeenCalledWith(expect.objectContaining({ kind: "folder", name: "notes" }));
+  expect(v.handlers.onCreated.mock.calls[0][0]).toMatchObject({ kind: "folder", folder: { path: "/code/notes" } });
+});
+
+it("a refused name or folder shows under its field; the form stays", async () => {
+  const v = await view();
+  await toCreate(v);
+  await v.type("name", "a/b");
+  await v.submit();
+  expect(alerts(v)).toEqual([en("addProject.create.error.bad_name")]);
+  expect(v.input("name").props.value).toBe("a/b");
+  expect(v.clone().props.disabled).toBe(false);
+  expect(v.handlers.onCreated).not.toHaveBeenCalled();
+  await v.type("name", "demo");
+  await v.type("folder", "relative");
+  await v.submit();
+  expect(alerts(v)).toEqual([en("addProject.create.error.not_found")]);
+});
+
+it("a missing git identity is told under the form with what stayed on disk", async () => {
+  const repoCreate = vi.fn(async () => { throw { code: "git_identity" }; });
+  const v = await view({ repoCreate: repoCreate as unknown as Api["repoCreate"] });
+  await toCreate(v);
+  await v.type("name", "demo");
+  await v.submit();
+  expect(alerts(v)).toEqual([en("addProject.create.error.git_identity")]);
+  expect(v.input("name").props.value).toBe("demo");
+});
+
+it("Create is busy while it runs and an unknown error falls back to the shared text", async () => {
+  let fail!: (e: unknown) => void;
+  const repoCreate = vi.fn(() => new Promise<never>((_, r) => { fail = r; }));
+  const v = await view({ repoCreate: repoCreate as unknown as Api["repoCreate"] });
+  await toCreate(v);
+  await v.type("name", "demo");
+  const pending = v.submit();
+  await tick();
+  expect(v.clone().props.disabled).toBe(true);
+  expect(v.input("name").props.disabled).toBe(true);
+  fail({ code: "io" });
+  await pending;
+  await tick();
+  expect(alerts(v)).toEqual([en("error.io")]);
+  expect(v.clone().props.disabled).toBe(false);
+});
+
+it("Cancel on the Create form returns to the choices", async () => {
+  const v = await view();
+  await toCreate(v);
+  await v.press("data-act", "back");
+  expect(v.text()).toContain(en("addProject.openFolder"));
+  expect(v.handlers.onCancel).not.toHaveBeenCalled();
 });

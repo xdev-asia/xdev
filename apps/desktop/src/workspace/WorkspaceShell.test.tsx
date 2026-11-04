@@ -294,6 +294,24 @@ it("add repo opens the dialog; Open folder picks a folder and shows the new repo
   expect(view.html()).toContain(en("error.repo_exists"));
 });
 
+it("a created Git project closes the dialog and is selected; a folder is listed", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  view.list().props.onAddRepo();
+  const git = await api.repoCreate({ parent: "/code", name: "fresh", kind: "git", branch: "", firstCommit: true });
+  await view.of(AddProjectDialog)[0].props.onCreated(git);
+  await tick();
+  expect(view.of(AddProjectDialog)).toHaveLength(0);
+  expect(view.list().props.selected).toBe("/code/fresh");
+  view.list().props.onAddRepo();
+  const folder = await api.repoCreate({ parent: "/code", name: "scratch", kind: "folder", branch: "", firstCommit: false });
+  await view.of(AddProjectDialog)[0].props.onCreated(folder);
+  await tick();
+  expect(view.of(AddProjectDialog)).toHaveLength(0);
+  expect(view.list().props.selected).toBe("/code/fresh");
+  expect((await api.workspaceSidebar()).some((i) => i.kind === "folder" && i.folder.name === "scratch")).toBe(true);
+});
+
 it("a finished clone closes the dialog and selects the new repo", async () => {
   const api = createMockApi({});
   const view = await harness(api);

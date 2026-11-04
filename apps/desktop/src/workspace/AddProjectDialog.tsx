@@ -1,10 +1,13 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, JSX } from "react";
-import { toApiError, type Api, type RepoView } from "@/api";
+import { toApiError, type Api, type Created, type ProjectKind, type RepoView } from "@/api";
 import { useI18n } from "@/i18n";
 
-type CloneApi = Pick<Api, "repoClone" | "repoCloneCancel" | "repoCloneName" | "pickFolder">;
+type CloneApi = Pick<Api, "repoClone" | "repoCloneCancel" | "repoCloneName" | "repoCreate" | "pickFolder">;
+
+/** Which field a refused Create points at; the rest show under the form. */
+const CREATE_FIELD: Record<string, "name" | "folder"> = { bad_name: "name", exists: "name", not_found: "folder" };
 
 /** The folder holding `path`, without a trailing separator; "" when there is none. */
 export function parentOf(path: string): string {
@@ -21,9 +24,10 @@ export function progressLine(p: { phase: string; percent: number | null }): stri
 }
 
 /**
- * Add project: Open folder… (an existing checkout) or Clone from URL. A clone shows its phase and
- * percent, can be cancelled, and on `done` hands the new repo to `onCloned`. A failed clone keeps
- * the form with the message. Mounted only while open.
+ * Add project: Open folder… (an existing checkout), Clone from URL or Create new. A clone shows its
+ * phase and percent, can be cancelled, and on `done` hands the new repo to `onCloned`. A failed clone
+ * keeps the form with the message. Create new makes a Git repository or a plain folder and hands it
+ * to `onCreated`. Mounted only while open.
  */
 export function AddProjectDialog(props: {
   api: CloneApi;
@@ -31,12 +35,13 @@ export function AddProjectDialog(props: {
   startFolder: string;
   onOpenFolder(): void;
   onCloned(repo: RepoView): void;
+  onCreated(created: Created): void;
   onCancel(): void;
 }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
-  const [mode, setMode] = useState<"choose" | "clone">("choose");
+  const [mode, setMode] = useState<"choose" | "clone" | "create">("choose");
   const [url, setUrl] = useState("");
   const [folder, setFolder] = useState(props.startFolder);
   const [name, setName] = useState("");
@@ -45,6 +50,11 @@ export function AddProjectDialog(props: {
   const [progress, setProgress] = useState<{ phase: string; percent: number | null } | null>(null);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [kind, setKind] = useState<ProjectKind>("git");
+  const [branch, setBranch] = useState("");
+  const [firstCommit, setFirstCommit] = useState(true);
+  // Where a refused Create points: the Name or Folder field, or under the form.
+  const [fieldError, setFieldError] = useState<{ field: "name" | "folder" | "form"; code: string }>();
   // The run in flight and the newest Name lookup, read from callbacks that outlive a render.
   const [run] = useState(() => ({ id: "", lookups: 0, runs: 0, message: undefined as string | undefined }));
 
@@ -98,12 +108,39 @@ export function AddProjectDialog(props: {
     setProgress(null);
   }
 
+  async function create(e?: FormEvent): Promise<void> {
+    e?.preventDefault();
+    if (busy || !folder.trim() || !name.trim()) return;
+    setBusy(true);
+    setFieldError(undefined);
+    try {
+      const created = await api.repoCreate({ parent: folder.trim(), name: name.trim(), kind, branch: branch.trim(), firstCommit });
+      props.onCreated(created);
+    } catch (err) {
+      const { code } = toApiError(err);
+      setFieldError({ field: CREATE_FIELD[code] ?? "form", code });
+      setBusy(false);
+    }
+  }
+
+  function back(): void {
+    setMode("choose");
+    setFieldError(undefined);
+    setError(undefined);
+  }
+
   // Cancel stops a running clone and stays in the form; with nothing running it closes the dialog.
   function cancel(): void {
     if (busy) void api.repoCloneCancel(run.id).catch(() => undefined);
     else props.onCancel();
   }
 
+  const createReady = !busy && folder.trim() !== "" && name.trim() !== "";
+  // Create has its own wording: the shared `bad_name` and `exists` texts are about account names.
+  const createError = (code: string): string => {
+    const own = `addProject.create.error.${code}`;
+    return t(own) === own ? t(`error.${code}`) : t(own);
+  };
   const ready = !busy && url.trim() !== "" && folder.trim() !== "" && name.trim() !== "";
 
   return (
@@ -130,6 +167,9 @@ export function AddProjectDialog(props: {
             <button type="button" className="btn-secondary" data-choice="clone" onClick={() => setMode("clone")}>
               {t("addProject.cloneFromUrl")}
             </button>
+            <button type="button" className="btn-secondary" data-choice="create" onClick={() => setMode("create")}>
+              {t("addProject.create.choice")}
+            </button>
           </div>
           <div className="dialog-actions">
             <button type="button" className="btn-secondary" onClick={props.onCancel}>
@@ -137,6 +177,69 @@ export function AddProjectDialog(props: {
             </button>
           </div>
         </>
+      ) : mode === "create" ? (
+        <form onSubmit={(e) => void create(e)}>
+          <div className="ws-fields">
+            <div className="ws-field" role="group" aria-labelledby="ws-create-folder-label">
+              <span id="ws-create-folder-label">{t("addProject.folder")}</span>
+              <div className="settings-row">
+                <input name="folder" className="ws-mono" autoFocus spellCheck={false} disabled={busy} value={folder} onChange={(e) => setFolder(e.target.value)} />
+                <button type="button" className="btn-secondary" data-act="choose" disabled={busy} onClick={() => void choose()}>
+                  {t("addProject.choose")}
+                </button>
+              </div>
+              {fieldError?.field === "folder" && (
+                <span className="error-text" role="alert">
+                  {createError(fieldError.code)}
+                </span>
+              )}
+            </div>
+            <label className="ws-field">
+              <span>{t("addProject.name")}</span>
+              <input name="name" className="ws-mono" spellCheck={false} disabled={busy} value={name} onChange={(e) => setName(e.target.value)} />
+              {fieldError?.field === "name" && (
+                <span className="error-text" role="alert">
+                  {createError(fieldError.code)}
+                </span>
+              )}
+            </label>
+            <div className="ws-field" role="radiogroup" aria-labelledby="ws-create-kind-label">
+              <span id="ws-create-kind-label">{t("addProject.create.kind")}</span>
+              {(["git", "folder"] as const).map((k) => (
+                <label key={k} className="ws-radio">
+                  <input type="radio" name="kind" value={k} disabled={busy} checked={kind === k} onChange={() => setKind(k)} />
+                  <span>{t(`addProject.create.kind.${k}`)}</span>
+                </label>
+              ))}
+            </div>
+            {kind === "git" && (
+              <details className="ws-advanced">
+                <summary>{t("addProject.create.advanced")}</summary>
+                <label className="ws-field">
+                  <span>{t("addProject.create.branch")}</span>
+                  <input name="branch" className="ws-mono" placeholder="main" spellCheck={false} disabled={busy} value={branch} onChange={(e) => setBranch(e.target.value)} />
+                </label>
+                <label className="ws-radio">
+                  <input type="checkbox" name="firstCommit" disabled={busy} checked={firstCommit} onChange={(e) => setFirstCommit(e.target.checked)} />
+                  <span>{t("addProject.create.firstCommit")}</span>
+                </label>
+              </details>
+            )}
+          </div>
+          {fieldError?.field === "form" && (
+            <p className="error-text" role="alert">
+              {createError(fieldError.code)}
+            </p>
+          )}
+          <div className="dialog-actions">
+            <button type="button" className="btn-secondary" data-act="back" disabled={busy} onClick={back}>
+              {t("dialog.cancel")}
+            </button>
+            <Button type="submit" disabled={!createReady}>
+              {t("addProject.create.submit")}
+            </Button>
+          </div>
+        </form>
       ) : (
         <form onSubmit={(e) => void clone(e)}>
           <div className="ws-fields">
