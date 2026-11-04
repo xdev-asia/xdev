@@ -7,3 +7,8 @@ Task B1: complete (contract: KeepAwake/AwakeView, AgentsSettings fields, power.r
 Task B2: complete (Awake state machine in power.rs; trait Blocker gained a provided `available()` so a machine with no mechanism reports supported=false before any hold; Default blocker is Unavailable until B3).
 
 Tasks B3+B4: complete, one commit. Deviation: the OS blockers live in a new crate crates/xdev-awake (the desktop crate inherits the workspace `unsafe_code = forbid`; xdev-ipc's pattern of a crate with deny). Linux uses systemd-inhibit around a small sh loop that exits when the app or the inhibitor dies (no `sleep infinity` leak after a crash); macOS caffeinate -i -w <pid>; Windows PowerCreateRequest/PowerSetRequest(SystemRequired). keep_awake_get dropped its unused AppHandle param (TS call unchanged). Cargo clippy prints 25 warnings, none from power.rs/xdev-awake (pre-existing).
+
+## Task U1: complete
+- `status/keepAwake.ts`: `startAgentsReport` (edge-only, dispose reports false), `startKeepAwakeReport` over `Sessions`.
+- `workspace/KeepAwakeItem.tsx`: `KeepAwakeView` (Popover + RadioGroup, unsupported text) and stateful `KeepAwakeItem`; footer slot `keepAwake` before the version; report started in `WorkspaceShell` beside the notifier.
+- i18n `keepAwake.*` in en and vi.

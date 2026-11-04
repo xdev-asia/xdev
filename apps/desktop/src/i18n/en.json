@@ -2119,5 +2119,14 @@
   "settings.usage.cacheTimerHint": "Counts down from the moment a Claude tab went done or idle. A hint, not the agent's real cache state.",
   "settings.usage.cacheTtl": "Cache lifetime",
   "settings.usage.cacheTtl.short": "5 minutes",
-  "settings.usage.cacheTtl.long": "1 hour"
+  "settings.usage.cacheTtl.long": "1 hour",
+  "keepAwake.title": "Keep computer awake",
+  "keepAwake.item": "Awake: {mode}",
+  "keepAwake.mode.off": "off",
+  "keepAwake.mode.agent": "while agents work",
+  "keepAwake.mode.on": "always",
+  "keepAwake.hint.off": "The computer sleeps as it normally does.",
+  "keepAwake.hint.agent": "Stays awake while an agent is working.",
+  "keepAwake.hint.on": "Stays awake while xDev is open.",
+  "keepAwake.unsupported": "This computer has no way to stay awake from xDev."
 }

@@ -2119,5 +2119,14 @@
   "settings.usage.cacheTimerHint": "Đếm ngược từ lúc tab Claude chuyển sang xong hoặc rảnh. Chỉ là gợi ý, không phải trạng thái cache thật của agent.",
   "settings.usage.cacheTtl": "Thời hạn cache",
   "settings.usage.cacheTtl.short": "5 phút",
-  "settings.usage.cacheTtl.long": "1 giờ"
+  "settings.usage.cacheTtl.long": "1 giờ",
+  "keepAwake.title": "Giữ máy không ngủ",
+  "keepAwake.item": "Thức: {mode}",
+  "keepAwake.mode.off": "tắt",
+  "keepAwake.mode.agent": "khi agent chạy",
+  "keepAwake.mode.on": "luôn luôn",
+  "keepAwake.hint.off": "Máy ngủ như bình thường.",
+  "keepAwake.hint.agent": "Giữ máy thức khi có agent đang chạy.",
+  "keepAwake.hint.on": "Giữ máy thức khi xDev đang mở.",
+  "keepAwake.unsupported": "Máy này không có cách giữ thức từ xDev."
 }
