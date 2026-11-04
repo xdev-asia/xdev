@@ -39,6 +39,11 @@ fn child_codex_run() {
             .map(str::to_owned)
             .collect(),
         model: std::env::var("XDEV_TEST_MODEL").ok(),
+        args: std::env::var("XDEV_TEST_ARGS")
+            .unwrap_or_default()
+            .split_whitespace()
+            .map(str::to_owned)
+            .collect(),
         cancel: Cancel::new(),
     };
     let result = match runner.run(&req) {
@@ -69,6 +74,7 @@ fn child(envs: &[(&str, OsString)]) -> Value {
         "XDEV_TEST_RESUME",
         "XDEV_TEST_TOOLS",
         "XDEV_TEST_MODEL",
+        "XDEV_TEST_ARGS",
     ] {
         cmd.env_remove(v);
     }
@@ -251,6 +257,22 @@ fn resume_passes_sandbox_as_config_and_read_only_tools() {
             .canonicalize()
             .unwrap(),
         s.worktree.canonicalize().unwrap()
+    );
+}
+
+#[test]
+fn extra_args_go_after_the_model_and_before_the_prompt() {
+    let s = setup(EVENTS);
+    let mut envs = s.envs.clone();
+    envs.push(("XDEV_TEST_MODEL", "gpt-mini".into()));
+    envs.push(("XDEV_TEST_ARGS", "-c model_reasoning_effort=low".into()));
+    child(&envs);
+    assert_eq!(
+        args(&s),
+        format!(
+            "exec --json --skip-git-repo-check -s read-only -m gpt-mini -c model_reasoning_effort=low -C {} -- {PROMPT}",
+            s.worktree.display()
+        )
     );
 }
 
