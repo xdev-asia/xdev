@@ -15,6 +15,7 @@ mod kit;
 mod layout;
 mod links;
 mod open_in;
+mod orch_pump;
 mod orchestration;
 mod profiles;
 mod pty;
@@ -94,6 +95,7 @@ pub fn run() {
                 eprintln!("hooks marker: {e}");
             }
             status::listen_clicks(app.handle());
+            orchestration::start_pump(app.handle().clone());
             // The `xdev` CLI's way in; without it the app runs as before.
             if let Some(local) = &endpoint_local {
                 let handler = std::sync::Arc::new(cli_verbs::AppVerbs {

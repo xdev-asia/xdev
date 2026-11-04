@@ -17,7 +17,7 @@ pub mod workers;
 
 pub use error::OrchError;
 pub use gates::AskAnswer;
-pub use mail::{CheckOpts, Identity, InboxRow, NewMessage, SendReceipt};
+pub use mail::{CheckOpts, Identity, InboxRow, NewMessage, SendReceipt, Wake};
 pub use model::*;
 pub use preamble::{PreambleInput, SPEC_BUDGET, build as build_preamble};
 pub use runs::RunDetail;
