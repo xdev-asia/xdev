@@ -53,6 +53,14 @@ The `xdev` CLI ships as a separate archive per target on the same page. Installe
 
 Requirements: Rust (see `rust-toolchain.toml`), Node 24, pnpm via corepack. On Windows you also need the MSVC C++ build tools.
 
+The design system `@xdev-asia/ui` installs from GitHub Packages, which needs a GitHub token with `read:packages` (see `.npmrc`):
+
+```sh
+gh auth refresh -h github.com -s read:packages                          # once
+echo '//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}' >> ~/.npmrc     # once
+export GITHUB_TOKEN=$(gh auth token)
+```
+
 ```sh
 corepack pnpm install
 corepack pnpm -r test
