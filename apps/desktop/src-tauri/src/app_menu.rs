@@ -271,7 +271,7 @@ mod native {
             Some(Route::Quit) => shell::quit(app, QuitMode::Quit),
             Some(Route::Help(link)) => {
                 if let Err(e) = shell::open_help(app, link) {
-                    eprintln!("help link failed: {e}");
+                    eprintln!("help link failed: {e:?}");
                 }
             }
             None => {}
