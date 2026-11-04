@@ -75,7 +75,7 @@ pub struct Hello {
     pub caller: Option<Caller>,
 }
 
-/// `<local_dir>/app/endpoint.json`, written at start and removed at a clean exit.
+/// `xdev_ipc::app_dir(<local_dir>)/endpoint.json`, written at start and removed at a clean exit.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EndpointFile {
@@ -161,11 +161,6 @@ pub trait Handler: Send + Sync + 'static {
         caller: &Caller,
         gone: &dyn Fn() -> bool,
     ) -> Result<Value, AppError>;
-}
-
-/// The folder of the endpoint's token and `endpoint.json`.
-pub fn app_dir(local_dir: &Path) -> PathBuf {
-    local_dir.join("app")
 }
 
 /// A listening endpoint; `stop` removes `endpoint.json`.
