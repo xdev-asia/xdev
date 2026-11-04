@@ -1,6 +1,6 @@
 {
   "app.name": "xDev",
-  "app.tagline": "Local-first project knowledge for humans and AI agents.",
+  "app.tagline": "Local-first agentic IDE: run coding agents side by side, each in its own worktree.",
   "app.crash.title": "Something went wrong in this window.",
   "app.crash.reload": "Reload",
   "vault.change": "Change folder",
