@@ -1587,6 +1587,7 @@
   "agentSessions.tab.sessions": "Phiên",
   "agentSessions.tabs.label": "Chế độ xem thanh bên",
   "agentSessions.search.placeholder": "Tìm phiên theo tiêu đề, thư mục, nhánh…",
+  "sessionSearch.placeholder": "Tìm phiên theo tiêu đề, thư mục, nhánh và nội dung hội thoại…",
   "agentSessions.search.label": "Tìm phiên",
   "agentSessions.scope.label": "Hiện phiên từ",
   "agentSessions.scope.worktree": "Worktree này",

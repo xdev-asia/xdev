@@ -34,6 +34,19 @@ describe("AgentSessionsStore", () => {
     expect(store.state.rows.map((r) => r.session.id)).toEqual(["0b1e6f3a-demo-0001"]);
   });
 
+  it("a content hit reaches the rows only after the person turned the search on", async () => {
+    const api = createMockApi({});
+    store = new AgentSessionsStore(api, null);
+    await store.setQuery({ text: "backslash" });
+    expect(store.state.rows).toEqual([]);
+    expect(store.state.contentSearch).toBe(false);
+    await api.agentsSettingsPut({ ...(await api.agentsSettings()), sessionSearch: true });
+    await store.setQuery({ text: "backslash" });
+    expect(store.state.contentSearch).toBe(true);
+    expect(store.state.rows).toHaveLength(1);
+    expect(store.state.rows[0].hit).toBe("The <mark>backslash</mark> in the fixture path breaks the glob");
+  });
+
   it("tells subscribers and hands the same state until something changes", async () => {
     store = new AgentSessionsStore(createMockApi({}), null);
     const heard = vi.fn();
