@@ -50,10 +50,11 @@ async function view(seed: { gitUserName?: string | null; git?: Partial<Git> } = 
   const input = () => all().find((n) => n.type === "input" && n.props.name === "branchPrefixCustom");
   const feedback = () => all().find((n) => n.props.id === "settings-git-feedback");
   const toggle = () => all().find((n) => n.props.role === "switch" && n.props["aria-labelledby"] === "settings-git-refresh")!;
+  const rename = () => all().find((n) => n.props.role === "switch" && n.props["aria-labelledby"] === "settings-git-autorename")!;
   const ai = () => all().find((n) => n.props.role === "switch" && n.props["aria-labelledby"] === "settings-git-ai")!;
   const check = (name: string) => all().find((n) => n.type === "input" && n.props.type === "checkbox" && n.props.name === name);
   const type = (value: string) => input()!.props.onChange({ target: { value } });
-  return { api, all, mode, input, feedback, toggle, ai, check, type, html: () => renderToStaticMarkup(draw()) };
+  return { api, all, mode, input, feedback, toggle, rename, ai, check, type, html: () => renderToStaticMarkup(draw()) };
 }
 
 it("defaults to the git username, read-only, and previews the branch name", async () => {
@@ -143,7 +144,8 @@ it("shows a failed save", async () => {
 
 it("shows the recipes with the agent actions, and saves an edit through the git settings", async () => {
   const v = await view();
-  const editor = () => v.all().find((n) => n.type === RecipesEditor)!;
+  // The Source Control editor lists its own recipes; the Advanced one lists only the branch name.
+  const editor = () => v.all().find((n) => n.type === RecipesEditor && !n.props.ids)!;
   expect(editor()).toBeDefined();
   const save = vi.spyOn(v.api, "setGitSettings");
   const recipes = structuredClone(DEFAULT_GIT_SETTINGS.recipes);
@@ -153,5 +155,31 @@ it("shows the recipes with the agent actions, and saves an edit through the git 
   expect(save).toHaveBeenLastCalledWith({ ...DEFAULT_GIT_SETTINGS, recipes });
   v.ai().props.onClick();
   await tick();
-  expect(v.all().find((n) => n.type === RecipesEditor)).toBeUndefined();
+  expect(v.all().find((n) => n.type === RecipesEditor && !n.props.ids)).toBeUndefined();
+});
+
+it("turns auto rename on by default, stores the switch, and keeps the branch name recipe under Advanced", async () => {
+  const v = await view();
+  expect(v.rename().props["aria-checked"]).toBe(true);
+  v.rename().props.onClick();
+  await tick();
+  expect(v.rename().props["aria-checked"]).toBe(false);
+  expect(await v.api.gitSettings()).toMatchObject({ autoRenameBranch: false });
+
+  const advanced = v.all().find((n) => n.type === "details" && n.props["data-advanced"] === "branch-name")!;
+  expect(nodes(advanced).find((n) => n.type === "summary")!.props.children).toBe(en("settings.git.autoRename.advanced"));
+  const editor = nodes(advanced).find((n) => n.type === RecipesEditor)!;
+  expect(editor.props.ids).toEqual(["branchName"]);
+  const recipes = structuredClone(DEFAULT_GIT_SETTINGS.recipes);
+  recipes.branchName.template = "Short name for: {firstPrompt}";
+  editor.props.onChange(recipes);
+  await tick();
+  expect(await v.api.gitSettings()).toMatchObject({ recipes: { branchName: { template: "Short name for: {firstPrompt}" } } });
+});
+
+it("keeps the auto rename switch while the agent actions are off", async () => {
+  const v = await view();
+  v.ai().props.onClick();
+  await tick();
+  expect(v.rename()).toBeDefined();
 });

@@ -999,6 +999,22 @@ pub fn worktree_name_preview(
     Ok(name_preview(&reg, &repo_id, &name, &git.create_options())?)
 }
 
+/// Renames the branch of a worktree, keeping its prefix; see
+/// `xdev_workspace::rename_branch`.
+#[tauri::command(async)]
+pub fn worktree_rename_branch(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    path: PathBuf,
+    name: String,
+) -> Result<WorktreeView, CmdError> {
+    let opts = load_git_settings(&app).create_options();
+    update(data_dir(&state)?, &lock, |reg| {
+        xdev_workspace::rename_branch(reg, &path, &name, &opts)
+    })
+}
+
 #[tauri::command(async)]
 pub fn worktree_pin(
     state: State<'_, AppState>,

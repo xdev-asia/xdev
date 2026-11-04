@@ -160,6 +160,23 @@ fn blank_name_gets_a_free_word() {
 }
 
 #[test]
+fn only_a_blank_name_marks_the_worktree_auto_named() {
+    let (mut reg, id, _main) = registered();
+    let auto = create_worktree(&mut reg, &id, "", None, 1, 7).unwrap();
+    assert!(auto.auto_name);
+    assert!(reg.worktrees[0].auto_name);
+    let typed = create_worktree(&mut reg, &id, "typed-name", None, 2, 7).unwrap();
+    assert!(!typed.auto_name);
+    assert!(!reg.worktrees[1].auto_name);
+    // An older registry file has no such field and reads false.
+    let old: xdev_workspace::WorktreeMeta = serde_json::from_str(
+        r#"{"repo_id":"r","path":"/p","start":"s","pinned":false,"created_ms":0,"made_here":true}"#,
+    )
+    .unwrap();
+    assert!(!old.auto_name);
+}
+
+#[test]
 fn create_refuses_existing_branch_bad_ref_and_bad_name() {
     let (mut reg, id, main) = registered();
     git(main.path(), &["branch", "taken"]);

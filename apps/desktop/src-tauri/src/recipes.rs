@@ -23,6 +23,14 @@ pub const PR_VARS: [&str; 9] = [
     "linkedIssue",
 ];
 
+/// What a branch name template can name.
+pub const BRANCH_VARS: [&str; 3] = ["basePrompt", "firstPrompt", "assistantMessage"];
+
+/// What a conflict resolution template can name.
+// The prompt is built in the UI (`RECIPE_VARS.resolveConflicts`); this is the shared list.
+#[allow(dead_code)]
+pub const CONFLICT_VARS: [&str; 5] = ["basePrompt", "branch", "operation", "files", "onto"];
+
 /// `template` with each `{name}` that `vars` lists replaced by its value.
 /// An unknown `{name}` stays as written; `{{` and `}}` are the braces
 /// themselves; a value is never expanded again. The TypeScript renderer
@@ -74,6 +82,22 @@ mod tests {
         template: String,
         vars: std::collections::BTreeMap<String, String>,
         expected: String,
+    }
+
+    /// The UI lists the variables of each recipe in `settings/recipes/index.ts`; the two must agree.
+    #[test]
+    fn the_variable_lists_match_the_ui() {
+        let ui = include_str!("../../src/settings/recipes/index.ts");
+        for (id, vars) in [
+            ("branchName", BRANCH_VARS.as_slice()),
+            ("resolveConflicts", CONFLICT_VARS.as_slice()),
+            ("commitMessage", COMMIT_VARS.as_slice()),
+        ] {
+            let quoted: Vec<String> = vars.iter().map(|v| format!("\"{v}\"")).collect();
+            let line = format!("{id}: [{}]", quoted.join(", "));
+            let multi = ui.contains(&format!("{id}: [\n    {}", quoted.join(",\n    ")));
+            assert!(ui.contains(&line) || multi, "{id}: {line}");
+        }
     }
 
     #[test]

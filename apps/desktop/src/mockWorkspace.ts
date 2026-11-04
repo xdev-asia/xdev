@@ -2,8 +2,9 @@ import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
 import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
-import type { Api, ApiError, Check, Commit, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, Check, Commit, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
+import { fromWork } from "@/workspace/branchName";
 
 type WorkspaceApi = Pick<
   Api,
@@ -63,6 +64,11 @@ type WorkspaceApi = Pick<
   | "worktreeBranches"
   | "worktreeStageState"
   | "worktreeDiscard"
+  | "worktreeRenameBranch"
+  | "worktreeSuggestBranch"
+  | "worktreeConflicts"
+  | "worktreeConflictContinue"
+  | "worktreeConflictAbort"
   | "reviewNotes"
   | "reviewNotesPut"
   | "gitSettings"
@@ -98,6 +104,11 @@ export type MockWorkspaceSeed = {
   folders?: FolderEntry[];
   groups?: RepoGroup[];
   order?: string[];
+  // Worktrees stopped in the middle of a merge, rebase, cherry-pick or revert, by path. The files are
+  // the unmerged ones and should be among the worktree's pending changes.
+  conflicts?: Record<string, ConflictState>;
+  // The first prompt of an agent session, by session id; a worktree path stands for its latest.
+  prompts?: Record<string, string>;
 };
 
 // `ARCHIVE_DAYS` in Rust: archived entries show under Archived this long.
@@ -381,6 +392,7 @@ export function createMockWorkspace(
   const hooks = new Map<string, string>(Object.entries(seed.hookFailure ?? {}));
   const remotes = new Map<string, Remote>();
   const stagedFiles = new Map<string, Set<string>>();
+  const conflicts = new Map<string, ConflictState>(Object.entries(structuredClone(seed.conflicts ?? {})));
   const notes = new Map<string, ReviewNote[]>();
 
   function remoteOf(path: string): Remote {
@@ -732,6 +744,7 @@ export function createMockWorkspace(
       const { branch, folder } = named;
       const parent = repo.path.replace(/[\/][^\/]*$/, "");
       const wt = worktree(`${parent}/wt/${repo.shortName}-${folder}`, folder, branch, false);
+      wt.autoName = typed === "";
       if (typed !== "" && (named.suffixed || /\p{Extended_Pictographic}/u.test(typed))) wt.title = [...typed].slice(0, TITLE_MAX).join("");
       repo.worktrees.push(wt);
       // As `shared_to_link`: the primary checkout's list, and only when it is trusted.
@@ -970,12 +983,15 @@ export function createMockWorkspace(
         else set.delete(f);
       }
       stagedFiles.set(path, set);
+      // Staging an unmerged file is what marks it resolved.
+      const open = conflicts.get(path);
+      if (open && staged) open.files = open.files.filter((f) => !files.includes(f));
     },
     async worktreeStageState(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);
       return (changes.get(path) ?? []).map((c) => {
         const staged = stagedFiles.get(path)?.has(c.path) ?? false;
-        return { path: c.path, staged, unstaged: !staged, untracked: !staged && c.kind === "added" };
+        return { path: c.path, staged, unstaged: !staged, untracked: !staged && c.kind === "added", conflicted: conflicts.get(path)?.files.includes(c.path) ?? false };
       });
     },
     async worktreeDiscard(path, files, stagedToo, confirmed) {
@@ -989,6 +1005,53 @@ export function createMockWorkspace(
       for (const f of gone) set.delete(f);
       stagedFiles.set(path, set);
       changes.set(path, pending.filter((c) => !gone.includes(c.path)));
+    },
+    // As `rename_branch`: the prefix stays, a taken leaf takes `-2`, the folder never moves.
+    async worktreeRenameBranch(path, name) {
+      const found = findWorktree(path);
+      if (!found) return reject("worktree_unknown", path);
+      const { repo, wt } = found;
+      if (wt.primary) return reject("primary_worktree", path);
+      if (wt.branch === null) return reject("detached", path);
+      if (remoteOf(path).tracked) return reject("branch_pushed", wt.branch);
+      const cut = wt.branch.lastIndexOf("/");
+      const prefix = cut < 0 ? "" : wt.branch.slice(0, cut + 1);
+      const leaf = slug(name);
+      if (leaf === "" || leaf.includes("..") || leaf.endsWith("/") || leaf.endsWith(".lock")) return reject("bad_name", name);
+      let chosen: string | null = null;
+      for (let n = 1; n <= 99 && chosen === null; n++) {
+        const candidate = suffixedLeaf(leaf, n);
+        const taken = [...repo.worktrees, ...repo.found].some((w) => w !== wt && w.branch === `${prefix}${candidate}`);
+        if (!taken) chosen = candidate;
+      }
+      if (chosen === null) return reject("branch_exists", `${prefix}${leaf}`);
+      wt.branch = `${prefix}${chosen}`;
+      wt.autoName = false;
+      if (wt.title === null) wt.title = chosen.replace(/[-_/]/g, " ").slice(0, TITLE_MAX);
+      return structuredClone(wt);
+    },
+    async worktreeSuggestBranch(path, session) {
+      const prompt = seed.prompts?.[session ?? path] ?? seed.prompts?.[path];
+      const name = fromWork(prompt ?? "");
+      return name === "" ? reject("bad_name", path) : name;
+    },
+    async worktreeConflicts(path) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      return structuredClone(conflicts.get(path) ?? null);
+    },
+    async worktreeConflictContinue(path) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const state = conflicts.get(path);
+      if (!state) return reject("no_conflict", path);
+      if (state.files.length > 0) return reject("still_conflicted", path);
+      conflicts.delete(path);
+    },
+    async worktreeConflictAbort(path, confirmed) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const state = conflicts.get(path);
+      if (!state) return reject("no_conflict", path);
+      if (!confirmed) return reject("needs_approval", `abort ${state.op}`);
+      conflicts.delete(path);
     },
     async worktreeBranches(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);
