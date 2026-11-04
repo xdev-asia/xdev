@@ -105,6 +105,9 @@ export class Sessions {
   private readonly recent = new Map<string, string[]>();
   private readonly listeners = new Set<() => void>();
   private readonly waiting = new Map<string, () => void>();
+  // Restored tabs whose attach is in flight: the service can report an exit before the attach
+  // returns, and such an exit waits here until the tab is registered.
+  private readonly attaching = new Map<string, { code: number | null } | null>();
   // Tabs being closed with their worktree: their exits are no news.
   private readonly closing = new Set<string>();
   // The panes the person looks at now, and the worktrees marked unread by hand.
@@ -256,9 +259,12 @@ export class Sessions {
     if (typeof id !== "string" || !id || this.entries.has(id)) return null;
     const cli = snap.cli === undefined ? cliOf(snap.profileId) : snap.cli;
     const entry = this.entry(worktree, snap.profileId, snap.account, cli, null, snap.title, id);
+    const from = typeof snap.seq === "number" && snap.seq >= 0 ? snap.seq : 0;
+    this.attaching.set(id, null);
     try {
-      await entry.tab.client.attach(typeof snap.seq === "number" && snap.seq >= 0 ? snap.seq : 0);
+      await entry.tab.client.attach(from);
     } catch {
+      this.attaching.delete(id);
       return null;
     }
     const color = TAB_COLORS.includes(snap.color) ? snap.color : "none";
@@ -272,12 +278,15 @@ export class Sessions {
       color,
     };
     this.entries.set(id, entry);
+    const exited = this.attaching.get(id);
+    this.attaching.delete(id);
     this.cache.delete(worktree);
     const layout = this.layouts.get(worktree);
     this.layouts.set(worktree, layout ? addTab(layout, id) : single(id));
     this.lazy.add(id);
     report.attached = (report.attached ?? 0) + 1;
     this.emit();
+    if (exited) this.apply(id, { kind: "exit", code: exited.code });
     return entry.tab;
   }
 
@@ -702,7 +711,10 @@ export class Sessions {
       this.waiting.get(id)?.();
       this.waiting.delete(id);
     }
-    if (!entry) return;
+    if (!entry) {
+      if (event.kind === "exit" && this.attaching.has(id)) this.attaching.set(id, { code: event.code });
+      return;
+    }
     this.advance(entry, event);
     this.sync();
   }
