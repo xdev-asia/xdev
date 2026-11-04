@@ -30,7 +30,7 @@ it("a settings change that names usage reloads, another section does not", async
   await api.usageSettingsPut({ ...USAGE_DEFAULTS, display: "remaining" });
   await vi.waitFor(() => expect(getUsageSettings().display).toBe("remaining"), { timeout: 5_000 });
   expect(read).toHaveBeenCalledTimes(1);
-  await api.navigationSettingsPut({ tabOrder: "sequential", confirmClosePinned: true, confirmCloseRunning: true, askBeforeDeleteWorktree: true });
+  await api.navigationSettingsPut({ tabOrder: "sequential", confirmClosePinned: true, confirmCloseRunning: true, askBeforeDeleteWorktree: true, alwaysForceDeleteWorktrees: false, alwaysDeleteKeptBranches: false });
   await Promise.resolve();
   expect(read).toHaveBeenCalledTimes(1);
   stop();

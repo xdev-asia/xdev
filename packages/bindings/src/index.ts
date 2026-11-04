@@ -130,6 +130,7 @@ export type { Profile } from "./Profile";
 export type { ProfileView } from "./ProfileView";
 export type { ProfilesView } from "./ProfilesView";
 export type { ProjectKind } from "./ProjectKind";
+export type { ProjectOrder } from "./ProjectOrder";
 export type { ProjectSummary } from "./ProjectSummary";
 export type { PromptEntry } from "./PromptEntry";
 export type { Provider } from "./Provider";
