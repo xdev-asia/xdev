@@ -155,13 +155,20 @@ export class Sessions {
     ];
   }
 
-  /** `cli` comes from the profile view; left out, the built-in ids `claude` and `codex` name their own. */
-  open(worktree: string, profileId: PtyProfile, account: string | null = null, cli?: TabCli): Tab {
-    const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli);
+  /**
+   * `cli` comes from the profile view; left out, the built-in ids `claude` and `codex` name their own.
+   * `opts` is for a tab somebody else asked for (an orchestration worker): `id` and `title` are given
+   * (the title is a hand name, so the terminal's own title does not replace it), and `background`
+   * adds the tab behind the pane's active one. The selected worktree is the caller's to keep.
+   */
+  open(worktree: string, profileId: PtyProfile, account: string | null = null, cli?: TabCli, opts: { id?: string; title?: string; background?: boolean } = {}): Tab {
+    if (opts.id && this.entries.has(opts.id)) throw new Error("tab id in use");
+    const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, null, opts.title ?? null, opts.id);
+    if (opts.title !== undefined) entry.tab = { ...entry.tab, renamed: true };
     this.entries.set(entry.tab.id, entry);
     this.cache.delete(worktree);
     const layout = this.layouts.get(worktree);
-    this.layouts.set(worktree, layout ? addTab(layout, entry.tab.id) : single(entry.tab.id));
+    this.layouts.set(worktree, layout ? addTab(layout, entry.tab.id, undefined, { activate: opts.background !== true }) : single(entry.tab.id));
     this.emit();
     return entry.tab;
   }

@@ -53,6 +53,41 @@ describe("Sessions", () => {
     expect(live.tabs(B)).toEqual([]);
   });
 
+  it("opens a tab with a given id and title, as a hand name", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "shell", null, undefined, { id: "worker-tab-1", title: "worker-task_ab12" });
+    expect(tab).toMatchObject({ id: "worker-tab-1", title: "worker-task_ab12", renamed: true });
+    expect(live.tabs(A).map((t) => t.id)).toEqual(["worker-tab-1"]);
+  });
+
+  it("refuses a tab id that is in use and keeps the live tab", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const first = live.open(A, "shell", null, undefined, { id: "w1" });
+    expect(() => live.open(A, "claude", null, undefined, { id: "w1" })).toThrow("tab id in use");
+    expect(live.tab("w1")).toBe(first);
+    expect(live.tabs(A)).toHaveLength(1);
+  });
+
+  it("a background tab joins the pane without becoming its active tab", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const first = live.open(A, "shell");
+    const worker = live.open(A, "claude", null, undefined, { id: "w1", title: "worker-x", background: true });
+    const pane = leaves(live.layout(A)!)[0] as { tabs: string[]; active: string };
+    expect(pane.tabs).toEqual([first.id, worker.id]);
+    expect(pane.active).toBe(first.id);
+    // Without background the new tab is active, as before.
+    const third = live.open(A, "shell");
+    expect((leaves(live.layout(A)!)[0] as { active: string }).active).toBe(third.id);
+  });
+
+  it("a background tab in a worktree with no tabs is its only tab; other worktrees are untouched", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    live.open(B, "shell");
+    const worker = live.open(A, "shell", null, undefined, { id: "w1", background: true });
+    expect((leaves(live.layout(A)!)[0] as { active: string }).active).toBe(worker.id);
+    expect(live.tabs(B)).toHaveLength(1);
+  });
+
   it("restart_keeps_account", async () => {
     const api = createMockApi({});
     const live = (sessions = new Sessions(api));
