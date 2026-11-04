@@ -31,7 +31,7 @@ export async function restartTabs(deps: SwitchDeps, pending: PendingSwitch, ids:
     const tab = sessions.tab(id);
     if (!tab) continue;
     let fresh = false;
-    const session = tab.agentSession;
+    const session = tab.agentSession ?? tab.resumeOf;
     if (session !== null) {
       try {
         await api.accountCarrySession(pending.provider, pending.from, pending.to, session, tab.worktree);
