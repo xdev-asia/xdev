@@ -330,7 +330,7 @@ export function WorktreeChanges(props: {
     }
   }
 
-  async function commit(confirmed = false): Promise<void> {
+  async function commit(confirmed = false, push = false): Promise<void> {
     setBusy(true);
     setProblem(null);
     setAskPushed(false);
@@ -343,6 +343,16 @@ export function WorktreeChanges(props: {
         setAmend(false);
         props.onShipChanged?.();
         setShipKey((k) => k + 1);
+        // The push is its own step: a failure keeps the commit and shows the push's error.
+        if (push) {
+          try {
+            await api.worktreePush(path);
+          } catch (e) {
+            setProblem(toApiError(e));
+          }
+          props.onShipChanged?.();
+          setShipKey((k) => k + 1);
+        }
       }
       await load();
     } catch (e) {
@@ -472,6 +482,8 @@ export function WorktreeChanges(props: {
           refreshKey={shipKey}
           git={git}
           onCommit={() => (message.trim() === "" ? field.current?.focus() : blocked ? undefined : void commit())}
+          onCommitPush={() => (blocked ? undefined : void commit(false, true))}
+          commitBlocked={blocked}
           onChanged={() => props.onShipChanged?.()}
           onFixPush={props.onFixPush}
           onOpenGitSettings={props.onOpenGitSettings}

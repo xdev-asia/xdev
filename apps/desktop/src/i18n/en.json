@@ -1157,6 +1157,7 @@
   "ship.more.sync": "Sync",
   "ship.more.fetch": "Fetch",
   "ship.more.force": "Force push (with lease)…",
+  "ship.more.commitPush": "Commit and push",
   "ship.force.title": "Force push?",
   "ship.force.body": "Replace {remote}/{branch} ({id}) with your branch? Commits only on the remote are lost.",
   "ship.force.confirm": "Force push",
