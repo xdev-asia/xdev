@@ -580,6 +580,49 @@ it("routes account calls through Tauri and normalizes their errors", async () =>
   } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
 });
 
+it("routes pull request, project, issue create and create request calls with the names Rust expects", async () => {
+  vi.resetModules();
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    const query = { state: "merged" as const, mine: true, needsReview: false, search: null, limit: 20 };
+    const draft = { title: "T", body: "B" };
+    await api.prsList("r", query); await api.prGet("r", 7); await api.prOpen("r", 7); await api.prBranch("r", 7); await api.prBranchDiscard("r", "pr-7");
+    await api.projectsList("r"); await api.projectOpen("r", 2); await api.issueCreate("r", draft);
+    await api.worktreeCreate("r", "n", null); await api.worktreeCreate("r", "n", "main", { existing: "b", sparse: ["src"] });
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["prs_list", { repoId: "r", query }], ["pr_get", { repoId: "r", number: 7 }], ["pr_open", { repoId: "r", number: 7 }],
+      ["pr_branch", { repoId: "r", number: 7 }], ["pr_branch_discard", { repoId: "r", branch: "pr-7" }], ["projects_list", { repoId: "r" }], ["project_open", { repoId: "r", number: 2 }],
+      ["issue_create", { repoId: "r", draft }],
+      ["worktree_create", { repoId: "r", name: "n", from: null, request: null }],
+      ["worktree_create", { repoId: "r", name: "n", from: "main", request: { existing: "b", sparse: ["src"] } }],
+    ]);
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
+});
+
+it("routes shell and update calls through Tauri with the argument names Rust expects", async () => {
+  vi.resetModules();
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    const settings = { minimizeToTray: true, menuBarIcon: true, trayNoticeShown: false, updateChannel: "rc" as const };
+    await api.shellSettings(); await api.shellSettingsPut(settings);
+    await api.shellCloseRequested("xDev", "Still running"); await api.shellQuit("end-all"); await api.shellQuitCancelled();
+    await api.helpOpen("docs"); await api.trayAttention(); await api.windowReload(); await api.windowDevtoolsToggle();
+    await api.updateCheck(true); await api.updatePhase();
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["shell_settings_get", undefined], ["shell_settings_put", { settings }],
+      ["shell_close_requested", { noticeTitle: "xDev", noticeBody: "Still running" }], ["shell_quit", { mode: "end-all" }], ["shell_quit_cancelled", undefined],
+      ["help_open", { link: "docs" }], ["tray_attention", undefined], ["window_reload", undefined], ["window_devtools_toggle", undefined],
+      ["update_check", { rc: true }], ["update_phase", undefined],
+    ]);
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
+});
+
 it("sends the docs folder of a repo update to Tauri as docsDir", async () => {
   vi.resetModules();
   vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
@@ -756,4 +799,22 @@ describe("mock agent kit", () => {
     expect(history).toHaveLength(2);
     expect(history[0].at).toBeGreaterThanOrEqual(history[1].at);
   });
+});
+
+it("sends the fork flag and the keep awake calls to Tauri, null when absent", async () => {
+  vi.resetModules();
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined), Channel: class { onmessage: unknown } }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    await api.ptyApprove("claude", null);
+    await api.ptyApprove("claude", null, "s1", true);
+    await api.keepAwake(); await api.keepAwakeSet("agent"); await api.keepAwakeAgents(true);
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["pty_approve", { profileId: "claude", account: null, resume: null, fork: null }],
+      ["pty_approve", { profileId: "claude", account: null, resume: "s1", fork: true }],
+      ["keep_awake_get", undefined], ["keep_awake_set", { mode: "agent" }], ["keep_awake_agents", { working: true }],
+    ]);
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
 });

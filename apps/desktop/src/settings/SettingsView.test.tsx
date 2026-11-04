@@ -49,9 +49,10 @@ function view(initial?: string) {
 
 it("opens General first and switches to Vaults", () => {
   const v = view();
-  expect(SECTIONS.map((s) => s.id)).toEqual(["general", "agents", "orchestration", "usage", "notifications", "terminal", "editor", "repos", "openIn", "git", "vaults", "keys", "qcmd"]);
+  expect(SECTIONS.map((s) => s.id)).toEqual(["general", "appearance", "agents", "orchestration", "usage", "notifications", "terminal", "editor", "repos", "openIn", "git", "vaults", "keys", "qcmd"]);
   expect(v.items().map((n) => n.props.children)).toEqual([
     en("settings.general.title"),
+    en("settings.appearance.title"),
     en("settings.agents.title"),
     en("settings.orchestration.title"),
     en("settings.usage.title"),
@@ -138,7 +139,7 @@ it("a query keeps only the sections with hits, with their hit count", () => {
   const v = search();
   v.box().props.onChange("font");
   const items = v.items();
-  expect(items.map((n) => n.props.children[0])).toEqual([en("settings.terminal.title"), en("files.settings.title")]);
+  expect(items.map((n) => n.props.children[0])).toEqual([en("settings.appearance.title"), en("settings.terminal.title"), en("files.settings.title")]);
   expect(items.every((n) => typeof n.props.children[1] === "object")).toBe(true);
 });
 

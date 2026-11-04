@@ -230,6 +230,11 @@
   color: var(--text-3);
 }
 
+.ws-bell-activity {
+  width: 100%;
+  margin-top: 4px;
+}
+
 .ws-bell-list {
   display: flex;
   flex-direction: column;
@@ -293,6 +298,11 @@
   min-height: 0;
   border-right: 1px solid var(--line);
   background: var(--bg-1);
+}
+
+/* Settings > Appearance > Left sidebar > Tinted: `applyAppearance` sets data-sidebar on the root. */
+[data-sidebar="tinted"] .ws-sidebar {
+  background: var(--side-tint);
 }
 
 .ws-nav {
@@ -3012,6 +3022,14 @@ button.ws-tree-row:focus-visible {
   min-width: 0;
 }
 
+.ws-item-linked {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ws-issues {
   display: flex;
   flex-direction: column;
@@ -3317,4 +3335,26 @@ button.ws-tree-row:focus-visible {
   margin: 0;
   border-radius: 0;
   border-width: 0 0 1px;
+}
+
+.ws-awake {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-awake-unsupported {
+  margin: 0;
+  max-width: 240px;
+  color: var(--text-2);
+}
+
+/* Hand off dialog: a label above each picker. Tokens only. */
+.ws-handoff-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  color: var(--text-2);
+  font-size: 12px;
 }

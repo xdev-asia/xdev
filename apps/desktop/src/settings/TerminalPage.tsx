@@ -230,7 +230,7 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
       </ul>
       </SettingGroup>
 
-      <TerminalLookSection current={current} busy={busy} patch={patch} filter={filter} />
+      <TerminalLookSection api={api} current={current} busy={busy} patch={patch} filter={filter} />
       <TerminalBehaviourSection current={current} busy={busy} patch={patch} filter={filter} />
 
       <SettingRow id="terminal.scrollback" filter={filter}>

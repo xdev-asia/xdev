@@ -45,6 +45,8 @@ export class PtyClient {
     readonly id: string,
     /** An agent session id the pty continues (`--resume`); a restart of the client keeps it. */
     private readonly resume?: string,
+    /** The pty forks `resume` into a new session instead of continuing it; only its first launch does. */
+    private readonly fork?: boolean,
   ) {}
 
   /**
@@ -158,6 +160,7 @@ export class PtyClient {
       // Acked once the terminal has drawn it, so a slow view pauses the pty.
       write(bytes, () => this.rendered(bytes.length)),
       this.resume,
+      this.fork,
     );
     this.size = [cols, rows];
     this.live = true;

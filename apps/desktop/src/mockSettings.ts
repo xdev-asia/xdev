@@ -60,12 +60,37 @@ export const SIDEBAR_PREFS_DEFAULTS: SidebarPrefs = {
 
 export { KEY_SETTINGS_DEFAULTS };
 /** `UiSettings::default()` in Rust, and the range `ui_settings_put` clamps the zoom to. */
-export const UI_SETTINGS_DEFAULTS: UiSettings = { zoom: 1, restore: "all", theme: "system" };
+export const UI_SETTINGS_DEFAULTS: UiSettings = {
+  zoom: 1,
+  restore: "all",
+  theme: "system",
+  uiFont: "",
+  editorThemeLight: "app",
+  editorThemeDark: "app",
+  sidebar: "default",
+  statusBar: { branch: true, tokenUsage: true, agents: true, version: true },
+};
+/** `UI_FONT_MAX` in Rust. */
+export const UI_FONT_MAX = 120;
+
+/** `clean_ui_font` in Rust: control characters dropped, trimmed, cut to `UI_FONT_MAX` characters. */
+export function cleanUiFont(raw: string): string {
+  // eslint-disable-next-line no-control-regex
+  const kept = raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim();
+  return Array.from(kept).slice(0, UI_FONT_MAX).join("").trim();
+}
 export const ZOOM_LIMITS = { min: 0.5, max: 2 } as const;
 
 export { DIFF_DEFAULTS, NAVIGATION_DEFAULTS, USAGE_DEFAULTS };
 /** `AgentsSettings::default()` in Rust: a switch asks about running tabs. */
-export const AGENTS_SETTINGS_DEFAULTS: AgentsSettings = { accountSwitch: "ask" };
+export const AGENTS_SETTINGS_DEFAULTS: AgentsSettings = {
+  accountSwitch: "ask",
+  keepAwake: "off",
+  autoTabTitle: false,
+  autoSleep: false,
+  sleepAfterMin: 30,
+  sessionSearch: false,
+};
 
 /** `OrchestrationSettings::default()` in Rust, and the range the depth is clamped to. */
 export const ORCHESTRATION_DEFAULTS: OrchestrationSettings = { nestedWorkerMaxDepth: 1, workerAutoClose: true };
@@ -122,7 +147,13 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
     },
     async uiSettingsPut(next) {
       const zoom = Number.isFinite(next.zoom) ? next.zoom : UI_SETTINGS_DEFAULTS.zoom;
-      ui = { zoom: Math.max(ZOOM_LIMITS.min, Math.min(ZOOM_LIMITS.max, zoom)), restore: next.restore, theme: next.theme };
+      ui = {
+        ...UI_SETTINGS_DEFAULTS,
+        ...next,
+        zoom: Math.max(ZOOM_LIMITS.min, Math.min(ZOOM_LIMITS.max, zoom)),
+        uiFont: cleanUiFont(next.uiFont ?? ""),
+        statusBar: { ...UI_SETTINGS_DEFAULTS.statusBar, ...next.statusBar },
+      };
       hub.emit(["ui"]);
       return { ...ui };
     },

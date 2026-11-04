@@ -4,6 +4,8 @@ mod context;
 mod migrations;
 pub use context::{ContextPack, ContextSection, EmbedStats, Embedder, Section, split_sections};
 mod query;
+mod session_search;
+pub use session_search::{SessionTextHit, SessionTextIndex, StoredText, remove_session_index};
 
 use std::fs;
 use std::path::Path;

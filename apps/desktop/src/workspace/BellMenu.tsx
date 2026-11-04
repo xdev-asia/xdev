@@ -1,4 +1,5 @@
 import type { JSX, KeyboardEvent } from "react";
+import { Button } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
 import { ago } from "./ago";
 import type { Tab } from "./sessions";
@@ -18,9 +19,9 @@ export function bellCount(count: number): string {
 
 /**
  * The bell's list: every unread tab, newest first, with its worktree, name, state and age.
- * A row jumps to that pane. Escape or a click outside closes it.
+ * A row jumps to that pane. "View activity" opens the Activity feed. Escape or a click outside closes it.
  */
-export function BellMenu(props: { rows: BellRow[]; now: number; onJump(tab: Tab): void; onClose(): void }): JSX.Element {
+export function BellMenu(props: { rows: BellRow[]; now: number; onJump(tab: Tab): void; onViewActivity?(): void; onClose(): void }): JSX.Element {
   const { t } = useI18n();
   const rows = [...props.rows].sort((a, b) => (b.tab.unreadAt ?? 0) - (a.tab.unreadAt ?? 0));
 
@@ -63,6 +64,11 @@ export function BellMenu(props: { rows: BellRow[]; now: number; onJump(tab: Tab)
               );
             })}
           </div>
+        )}
+        {props.onViewActivity && (
+          <Button variant="secondary" type="button" className="ws-bell-activity" onClick={props.onViewActivity}>
+            {t("status.bell.viewActivity")}
+          </Button>
         )}
       </div>
     </>

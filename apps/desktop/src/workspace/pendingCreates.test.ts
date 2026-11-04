@@ -96,3 +96,47 @@ describe("PendingCreates", () => {
     expect(t.remove).toHaveBeenCalledTimes(1);
   });
 });
+
+it("takes back the branch a pull request fetched when its failed create is dismissed, not on retry", async () => {
+  const discard = vi.fn(async () => undefined);
+  const create = vi.fn().mockRejectedValue({ code: "bad_ref" });
+  const jobs = new PendingCreates({ create, remove: vi.fn(), onCreated: vi.fn(), discard });
+  const id = jobs.start({ repoId: "r", name: "pr-7", from: null, request: { existing: "pr-7", sparse: [] }, discardBranch: "pr-7" });
+  await settle();
+  expect(discard).not.toHaveBeenCalled();
+  jobs.retry(id);
+  await settle();
+  expect(discard).not.toHaveBeenCalled();
+  jobs.dismiss(id);
+  expect(discard).toHaveBeenCalledWith("r", "pr-7");
+  // A create without a fetched branch discards nothing.
+  const plain = jobs.start({ repoId: "r", name: "a", from: null });
+  await settle();
+  jobs.dismiss(plain);
+  expect(discard).toHaveBeenCalledTimes(1);
+});
+
+it("takes the branch back too when a cancelled create then fails", async () => {
+  const discard = vi.fn(async () => undefined);
+  let reject: (e: unknown) => void = () => {};
+  const create = vi.fn(() => new Promise<never>((_, r) => { reject = r; }));
+  const jobs = new PendingCreates({ create, remove: vi.fn(), onCreated: vi.fn(), discard });
+  const id = jobs.start({ repoId: "r", name: "pr-7", from: null, discardBranch: "pr-7" });
+  jobs.cancel(id);
+  expect(discard).not.toHaveBeenCalled();
+  reject({ code: "bad_ref" });
+  await settle();
+  expect(discard).toHaveBeenCalledWith("r", "pr-7");
+});
+
+it("hands the request to create, again on retry", async () => {
+  const request = { existing: "develop", sparse: ["src"] };
+  const create = vi.fn().mockRejectedValueOnce({ code: "branch_in_use" }).mockResolvedValue({ path: "/w/a" });
+  const jobs = new PendingCreates({ create, remove: vi.fn(), onCreated: vi.fn() });
+  const id = jobs.start({ repoId: "r", name: "a", from: null, request });
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(create).toHaveBeenCalledWith("r", "a", null, request);
+  jobs.retry(id);
+  expect(create).toHaveBeenLastCalledWith("r", "a", null, request);
+});

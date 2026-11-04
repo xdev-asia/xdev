@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { translate } from "@/i18n";
-import { SETTING_ENTRIES } from "./catalog";
+import { entriesFor } from "./catalog";
 import { runSearch } from "./searchModel";
 
 const t = (k: string) => translate("en", k);
@@ -9,17 +9,17 @@ const title = (s: string) => t(`${s === "editor" ? "files.settings" : s === "ope
 it("an empty query keeps every entry and every section", () => {
   const r = runSearch("", t, title);
   expect(r.active).toBe(false);
-  expect(r.ids.size).toBe(SETTING_ENTRIES.length);
+  expect(r.ids.size).toBe(entriesFor().length);
   expect(r.best).toBeNull();
 });
 
-it("font finds the terminal and editor rows only", () => {
+it("font finds the appearance, terminal and editor rows only", () => {
   const r = runSearch("font", t, title);
   expect(r.active).toBe(true);
   expect(r.ids.has("terminal.fontSize")).toBe(true);
   expect(r.ids.has("editor.fontSize")).toBe(true);
   expect(r.ids.has("git.prefix")).toBe(false);
-  expect([...r.counts.keys()].sort()).toEqual(["editor", "terminal"]);
+  expect([...r.counts.keys()].sort()).toEqual(["appearance", "editor", "terminal"]);
   expect(r.counts.get("terminal")).toBeGreaterThan(1);
 });
 
