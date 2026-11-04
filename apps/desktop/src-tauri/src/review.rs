@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tauri::State;
-use xdev_git::{ChangeKind, ConflictState, Repo};
-use xdev_policy::{Action, Verdict};
+use xdev_git::{ChangeKind, ConflictState, GitError, Repo};
+use xdev_policy::{Action, Audited, Gate, Verdict};
 use xdev_workspace::{Registry, WorkspaceError, path_key};
 
 use crate::accounts::data_dir;
@@ -258,6 +258,55 @@ fn discard(
     Ok(())
 }
 
+fn conflicts(data: &Path, path: &Path) -> Result<Option<ConflictState>, CmdError> {
+    known(data, path)?;
+    Ok(Repo::discover(path)?.conflict_state()?)
+}
+
+fn conflict_continue(data: &Path, path: &Path) -> Result<(), CmdError> {
+    known(data, path)?;
+    let repo = Repo::discover(path)?;
+    let state = repo.conflict_state()?.ok_or(GitError::NoConflict)?;
+    // `still_conflicted` when a file is unmerged; git is not asked.
+    repo.conflict_continue(state.op)?;
+    Ok(())
+}
+
+/// Abort throws the resolution work in progress away, so it is a discard of
+/// the unmerged files to the policy and needs the person's yes.
+fn conflict_abort<G: Gate>(
+    gate: &Audited<G>,
+    data: &Path,
+    path: &Path,
+    confirmed: bool,
+) -> Result<(), CmdError> {
+    known(data, path)?;
+    let repo = Repo::discover(path)?;
+    // Nothing in progress is reported before anything is asked.
+    let state = repo.conflict_state()?.ok_or(GitError::NoConflict)?;
+    let action = Action::Discard {
+        worktree: path.to_owned(),
+        paths: state.files,
+    };
+    match gate.check_confirmed(&action, confirmed) {
+        Verdict::Allow => {}
+        Verdict::Ask { reason } => {
+            return Err(CmdError {
+                code: "needs_approval",
+                detail: Some(reason),
+            });
+        }
+        Verdict::Deny { reason } => {
+            return Err(CmdError {
+                code: "denied",
+                detail: Some(reason),
+            });
+        }
+    }
+    repo.conflict_abort(state.op)?;
+    Ok(())
+}
+
 fn branches(data: &Path, path: &Path) -> Result<Vec<ReviewBranch>, CmdError> {
     known(data, path)?;
     Ok(Repo::discover(path)?
@@ -324,39 +373,31 @@ pub fn worktree_stage_state(
 /// Read-only: the merge, rebase, cherry-pick or revert in progress, if any.
 #[tauri::command(async)]
 pub fn worktree_conflicts(
-    _state: State<'_, AppState>,
-    _path: PathBuf,
+    state: State<'_, AppState>,
+    path: PathBuf,
 ) -> Result<Option<ConflictState>, CmdError> {
-    // Contract stub; B5 fills it in.
-    Ok(None)
+    conflicts(data_dir(&state)?, &path)
 }
 
 /// Finishes the operation in progress once no file is unmerged.
 #[tauri::command(async)]
 pub fn worktree_conflict_continue(
-    _state: State<'_, AppState>,
-    _path: PathBuf,
+    state: State<'_, AppState>,
+    path: PathBuf,
 ) -> Result<(), CmdError> {
-    // Contract stub; B5 fills it in.
-    Err(CmdError {
-        code: "no_conflict",
-        detail: None,
-    })
+    conflict_continue(data_dir(&state)?, &path)
 }
 
 /// Gives the operation up. A discard of the resolution work in progress, so
 /// gated and confirmed like `worktree_discard`.
 #[tauri::command(async)]
 pub fn worktree_conflict_abort(
-    _state: State<'_, AppState>,
-    _path: PathBuf,
-    _confirmed: bool,
+    state: State<'_, AppState>,
+    path: PathBuf,
+    confirmed: bool,
 ) -> Result<(), CmdError> {
-    // Contract stub; B5 fills it in.
-    Err(CmdError {
-        code: "no_conflict",
-        detail: None,
-    })
+    let data = data_dir(&state)?;
+    conflict_abort(&gate(data)?, data, &path, confirmed)
 }
 
 #[tauri::command(async)]
@@ -609,6 +650,112 @@ mod tests {
             code(stage_state(&fx.data, &fx.main.join("nope"))),
             "worktree_unknown"
         );
+    }
+
+    /// Makes `wt` stop in the middle of a merge of `topic` into its branch.
+    fn merge_conflict(fx: &Fixture) {
+        git(&fx.wt, &["checkout", "-q", "-b", "topic"]);
+        fs::write(fx.wt.join("a.txt"), "topic\n").unwrap();
+        git(&fx.wt, &["commit", "-q", "-am", "topic"]);
+        git(&fx.wt, &["checkout", "-q", "-"]);
+        fs::write(fx.wt.join("a.txt"), "mine\n").unwrap();
+        git(&fx.wt, &["commit", "-q", "-am", "mine"]);
+        let out = Command::new("git")
+            .current_dir(&fx.wt)
+            .args(["merge", "topic"])
+            .output()
+            .unwrap();
+        assert!(!out.status.success());
+    }
+
+    struct FixedGate(Verdict);
+
+    impl Gate for FixedGate {
+        fn check(&self, _: &Action) -> Verdict {
+            self.0.clone()
+        }
+    }
+
+    #[test]
+    fn conflicts_reports_the_operation_and_none_when_clean() {
+        let fx = fixture();
+        assert_eq!(conflicts(&fx.data, &fx.wt).unwrap(), None);
+        merge_conflict(&fx);
+        let state = conflicts(&fx.data, &fx.wt).unwrap().unwrap();
+        assert_eq!(state.op, xdev_git::ConflictOp::Merge);
+        assert_eq!(state.files, ["a.txt"]);
+        assert_eq!(
+            code(conflicts(&fx.data, &fx.main.join("nope"))),
+            "worktree_unknown"
+        );
+    }
+
+    #[test]
+    fn stage_state_marks_the_conflicted_file() {
+        let fx = fixture();
+        merge_conflict(&fx);
+        let list = stage_state(&fx.data, &fx.wt).unwrap();
+        assert!(list.iter().find(|s| s.path == "a.txt").unwrap().conflicted);
+    }
+
+    #[test]
+    fn continue_waits_for_the_last_file_then_finishes() {
+        let fx = fixture();
+        assert_eq!(code(conflict_continue(&fx.data, &fx.wt)), "no_conflict");
+        merge_conflict(&fx);
+        assert_eq!(
+            code(conflict_continue(&fx.data, &fx.wt)),
+            "still_conflicted"
+        );
+        assert!(conflicts(&fx.data, &fx.wt).unwrap().is_some());
+        fs::write(fx.wt.join("a.txt"), "both\n").unwrap();
+        git(&fx.wt, &["add", "a.txt"]);
+        conflict_continue(&fx.data, &fx.wt).unwrap();
+        assert_eq!(conflicts(&fx.data, &fx.wt).unwrap(), None);
+    }
+
+    #[test]
+    fn abort_goes_through_the_gate_as_a_discard() {
+        let fx = fixture();
+        let ask = Audited::new(
+            FixedGate(Verdict::Ask {
+                reason: "discard asks".into(),
+            }),
+            &fx.data,
+        );
+        // Nothing in progress: no_conflict, and the gate is not asked.
+        assert_eq!(
+            code(conflict_abort(&ask, &fx.data, &fx.wt, false)),
+            "no_conflict"
+        );
+        assert!(xdev_policy::read_audit(&fx.data).is_err());
+
+        merge_conflict(&fx);
+        let asked = conflict_abort(&ask, &fx.data, &fx.wt, false).unwrap_err();
+        assert_eq!(asked.code, "needs_approval");
+        assert_eq!(asked.detail.as_deref(), Some("discard asks"));
+        assert!(conflicts(&fx.data, &fx.wt).unwrap().is_some());
+
+        let deny = Audited::new(
+            FixedGate(Verdict::Deny {
+                reason: "no".into(),
+            }),
+            &fx.data,
+        );
+        assert_eq!(
+            code(conflict_abort(&deny, &fx.data, &fx.wt, true)),
+            "denied"
+        );
+        assert!(conflicts(&fx.data, &fx.wt).unwrap().is_some());
+
+        conflict_abort(&ask, &fx.data, &fx.wt, true).unwrap();
+        assert_eq!(conflicts(&fx.data, &fx.wt).unwrap(), None);
+        assert_eq!(fs::read_to_string(fx.wt.join("a.txt")).unwrap(), "mine\n");
+        let log = xdev_policy::read_audit(&fx.data).unwrap();
+        assert!(log.iter().any(|e| matches!(
+            &e.action,
+            Action::Discard { paths, .. } if paths == &["a.txt".to_owned()]
+        )));
     }
 
     #[test]
