@@ -21,33 +21,17 @@ const CLOSE = /^>{7}(?: .*)?$/;
 const linesOf = (text: string): string[] => text.split(/(?<=\n)/);
 const bare = (line: string): string => line.replace(/\r?\n$/, "");
 
-const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
-const isMarkdown = (path: string | undefined): boolean => /\.mdx?$/i.test(path ?? "");
-
 /**
  * The complete conflict blocks of a text. A marker has exactly seven characters at the start of the line.
  * A block that never closes, and a divider outside a block, give nothing; an opening marker inside an
- * open block starts it over. In a markdown file (by `path`) markers inside a fenced code block are text.
+ * open block starts it over. Markers inside a markdown code fence count too: git writes real markers there
+ * when two branches edit the same code sample, and a missed block could be saved with its markers.
  */
-export function parseConflicts(text: string, path?: string): ConflictBlock[] {
+export function parseConflicts(text: string): ConflictBlock[] {
   const blocks: ConflictBlock[] = [];
   let open: { start: number; base?: number; mid?: number } | null = null;
-  const markdown = isMarkdown(path);
-  let fence: string | null = null;
   linesOf(text).forEach((raw, i) => {
     const line = bare(raw);
-    if (markdown) {
-      const f = FENCE.exec(line);
-      if (fence !== null) {
-        // A fence closes on the same character, at least as long, with nothing after it.
-        if (f && f[1][0] === fence[0] && f[1].length >= fence.length && f[2].trim() === "") fence = null;
-        return;
-      }
-      if (f && !(f[1][0] === "`" && f[2].includes("`"))) {
-        fence = f[1];
-        return;
-      }
-    }
     if (OPEN.test(line)) open = { start: i };
     else if (!open) return;
     else if (BASE.test(line) && open.mid === undefined && open.base === undefined) open.base = i;
