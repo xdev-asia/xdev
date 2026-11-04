@@ -1,7 +1,8 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { pastePrompt } from "@/workspace/agentPrompt";
 import { CONTEXT_LINES } from "@/terminal/terminalActions";
-import { handoffPrompt } from "./handoff";
+import type { Api, SessionRow } from "@/api";
+import { FIRST_PROMPT_MAX, handoffPrompt, sourceFirstPrompt } from "./handoff";
 
 const base = { fromProfile: "Codex", worktree: "/w/oak", branch: "feat/oak", firstPrompt: "Fix the parser", lines: ["one", "two"] };
 
@@ -29,4 +30,29 @@ it("has no control characters between the paste markers once pasted", () => {
   const inner = pasted.slice("\u001b[200~".length, pasted.lastIndexOf("\u001b[201~"));
   // eslint-disable-next-line no-control-regex
   expect(/[\u0000-\u0008\u000b-\u001f\u007f]/.test(inner)).toBe(false);
+});
+
+function apiWith(rows: unknown[] | Error) {
+  const agentSessions = vi.fn(async () => {
+    if (rows instanceof Error) throw rows;
+    return rows as SessionRow[];
+  });
+  return { api: { agentSessions } as unknown as Pick<Api, "agentSessions">, agentSessions };
+}
+
+it("sourceFirstPrompt reads the session index for the source session and caps it", async () => {
+  const long = "x".repeat(FIRST_PROMPT_MAX + 50);
+  const { api, agentSessions } = apiWith([{ session: { id: "s1", title: long } }]);
+  const got = await sourceFirstPrompt(api, "/w/oak", "s1");
+  expect(Array.from(got!).length).toBe(FIRST_PROMPT_MAX);
+  expect(agentSessions).toHaveBeenCalledWith(expect.objectContaining({ text: "s1", scope: { kind: "worktree", path: "/w/oak" }, limit: 1 }), true);
+});
+
+it("sourceFirstPrompt falls back to null: no session, no row, a failure", async () => {
+  const none = apiWith([]);
+  expect(await sourceFirstPrompt(none.api, "/w", null)).toBeNull();
+  expect(none.agentSessions).not.toHaveBeenCalled();
+  expect(await sourceFirstPrompt(none.api, "/w", "s1")).toBeNull();
+  expect(await sourceFirstPrompt(apiWith([{ session: { id: "other", title: "t" } }]).api, "/w", "s1")).toBeNull();
+  expect(await sourceFirstPrompt(apiWith(new Error("io")).api, "/w", "s1")).toBeNull();
 });
