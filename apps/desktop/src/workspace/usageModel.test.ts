@@ -9,6 +9,7 @@ const quota = (name: string, over: Partial<Quota> = {}): Quota => ({ name, state
 const accounts = (names: [string, "claude" | "codex"][]): Accounts => ({
   reservePercent: 30,
   accounts: names.map(([name, provider]) => ({ name, provider, dir: `/a/${name}`, status: { state: "logged_in", email: null, plan: null, org: null } })),
+  active: [],
 });
 
 it("keeps the account order and joins the provider", () => {

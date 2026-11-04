@@ -20,6 +20,7 @@ const info = (id: string, hooks: boolean | HookEvent[]): PtyInfo => ({
   profile: "claude",
   permissions: "ask",
   account: null,
+  accountSource: null,
   hooks: hooks !== false,
   hookEvents: hooks === true ? CLAUDE : hooks === false ? [] : hooks,
   cli: "claude",

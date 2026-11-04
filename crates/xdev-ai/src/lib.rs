@@ -10,7 +10,8 @@ pub mod secrets;
 pub mod shim;
 
 pub use accounts::{
-    AccountEntry, Provider, Registry, account_dir, login_command, status, valid_name,
+    AccountEntry, ActiveAccount, Provider, Registry, account_dir, carry_session, default_home,
+    login_command, status, valid_name,
 };
 pub use claude::{AccountStatus, StatusState, claude_command, claude_models};
 pub use codex::{codex_command, codex_context, codex_home, codex_models};
@@ -44,6 +45,8 @@ pub enum AiError {
     BadRegistry,
     #[error("reserve must be 0 to 90")]
     BadReserve,
+    #[error("no log of this session in the account's home")]
+    SessionMissing,
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -63,6 +66,7 @@ impl AiError {
             AiError::NoCodex => "no_codex",
             AiError::BadRegistry => "bad_registry",
             AiError::BadReserve => "bad_reserve",
+            AiError::SessionMissing => "session_missing",
             AiError::Io(_) => "io",
         }
     }

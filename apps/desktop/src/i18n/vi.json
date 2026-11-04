@@ -469,6 +469,7 @@
   "error.stopped": "Lượt chạy đã dừng. Bạn có thể chạy tiếp.",
   "error.seat_vacant": "Hãy gán một tài khoản cho vị trí đó trước.",
   "error.unknown_account": "Tài khoản đó chưa được đăng ký.",
+  "error.session_missing": "Tài khoản đó không có log của phiên này để chuyển.",
   "error.busy": "Đội đang chạy. Hãy chờ hoặc dừng đội trước.",
   "error.bad_role": "Vị trí đó không tồn tại.",
   "error.empty_name": "Hãy nhập tên trước.",

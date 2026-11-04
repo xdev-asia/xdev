@@ -1,4 +1,4 @@
-import type { Api, DiffSettings, EditorSettings, KeySettings, NavigationSettings, SettingsChanged, SettingsSection, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
+import type { AgentsSettings, Api, DiffSettings, EditorSettings, KeySettings, NavigationSettings, SettingsChanged, SettingsSection, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
 import { clampEditorSettings, EDITOR_DEFAULTS } from "./files/editorDefaults";
 import { KEY_SETTINGS_DEFAULTS } from "./keys/bindingsStore";
 import { DIFF_DEFAULTS, NAVIGATION_DEFAULTS } from "./settings/generalDefaults";
@@ -24,6 +24,8 @@ type SettingsApi = Pick<
   | "navigationSettingsPut"
   | "diffSettings"
   | "diffSettingsPut"
+  | "agentsSettings"
+  | "agentsSettingsPut"
 >;
 
 /** `SidebarPrefs::default()` in Rust: every row shows. */
@@ -35,6 +37,8 @@ export const UI_SETTINGS_DEFAULTS: UiSettings = { zoom: 1, restore: "all" };
 export const ZOOM_LIMITS = { min: 0.5, max: 2 } as const;
 
 export { DIFF_DEFAULTS, NAVIGATION_DEFAULTS };
+/** `AgentsSettings::default()` in Rust: a switch asks about running tabs. */
+export const AGENTS_SETTINGS_DEFAULTS: AgentsSettings = { accountSwitch: "ask" };
 
 export type SettingsHub = { emit: SettingsEmit; onSettingsChanged: Api["onSettingsChanged"] };
 
@@ -61,6 +65,7 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
   let sidebar: SidebarPrefs = { ...SIDEBAR_PREFS_DEFAULTS };
   let navigation: NavigationSettings = { ...NAVIGATION_DEFAULTS };
   let diff: DiffSettings = { ...DIFF_DEFAULTS };
+  let agents: AgentsSettings = { ...AGENTS_SETTINGS_DEFAULTS };
   return {
     onSettingsChanged: hub.onSettingsChanged,
     async terminalSettings() {
@@ -119,6 +124,14 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
       diff = { ...next };
       hub.emit(["diff"]);
       return { ...diff };
+    },
+    async agentsSettings() {
+      return { ...agents };
+    },
+    async agentsSettingsPut(next) {
+      agents = { ...AGENTS_SETTINGS_DEFAULTS, ...next };
+      hub.emit(["agents"]);
+      return { ...agents };
     },
   };
 }

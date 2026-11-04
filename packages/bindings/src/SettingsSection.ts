@@ -3,4 +3,4 @@
 /**
  * One part of the settings file, as a `settings://changed` event names it.
  */
-export type SettingsSection = "vault" | "git" | "status" | "terminal" | "keys" | "ui" | "quickCommands" | "openIn" | "editor" | "sidebar" | "navigation" | "diff";
+export type SettingsSection = "vault" | "git" | "status" | "terminal" | "keys" | "ui" | "quickCommands" | "openIn" | "editor" | "sidebar" | "navigation" | "diff" | "agents";
