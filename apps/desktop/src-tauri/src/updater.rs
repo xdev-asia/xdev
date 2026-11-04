@@ -13,9 +13,91 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 use crate::commands::CmdError;
+use crate::settings::{SettingsSection, UpdateChannel};
+use crate::settings_store;
 
 const RECHECK: Duration = Duration::from_secs(6 * 3600);
 const READY_EVENT: &str = "update-ready";
+const PHASE_EVENT: &str = "update-phase";
+
+const STABLE_ENDPOINT: &str =
+    "https://github.com/xdev-asia/xdev/releases/latest/download/latest.json";
+const RC_ENDPOINT: &str =
+    "https://github.com/xdev-asia/xdev/releases/download/rc-latest/latest.json";
+
+/// The manifest a channel follows. The stable one is also in `tauri.conf.json`.
+pub fn endpoint(channel: UpdateChannel) -> &'static str {
+    match channel {
+        UpdateChannel::Stable => STABLE_ENDPOINT,
+        UpdateChannel::Rc => RC_ENDPOINT,
+    }
+}
+
+/// The download progress in whole percent; `None` while the size is unknown.
+fn percent(downloaded: u64, total: Option<u64>) -> Option<u8> {
+    let total = total.filter(|t| *t > 0)?;
+    Some((downloaded.saturating_mul(100) / total).min(100) as u8)
+}
+
+/// What a failed check reads as. No release on the release candidate feed is
+/// normal until one is published, so it is "up to date", not an error.
+fn error_phase(channel: UpdateChannel, e: &tauri_plugin_updater::Error) -> UpdatePhase {
+    match (channel, e) {
+        (UpdateChannel::Rc, tauri_plugin_updater::Error::ReleaseNotFound) => UpdatePhase::UpToDate,
+        _ => UpdatePhase::Error {
+            detail: e.to_string(),
+        },
+    }
+}
+
+/// The phase a check that found `found` (if anything) ends in.
+fn found_phase(found: Option<UpdateInfo>) -> UpdatePhase {
+    match found {
+        None => UpdatePhase::UpToDate,
+        Some(i) => UpdatePhase::Ready {
+            version: i.version,
+            notes: i.notes,
+        },
+    }
+}
+
+/// The phase now, shared by the 6 hour loop and the commands. A check or a
+/// download in flight is the single flight: a second one gets the phase back.
+pub struct Phase(Mutex<UpdatePhase>);
+
+impl Default for Phase {
+    fn default() -> Self {
+        Self(Mutex::new(UpdatePhase::Idle))
+    }
+}
+
+impl Phase {
+    fn get(&self) -> UpdatePhase {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    fn set(&self, next: UpdatePhase) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = next;
+    }
+
+    /// Moves to `Checking` unless a check or download is already running; then
+    /// the running one's phase is the error.
+    fn begin(&self) -> Result<(), UpdatePhase> {
+        let mut now = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        match &*now {
+            UpdatePhase::Checking | UpdatePhase::Downloading { .. } => Err(now.clone()),
+            _ => {
+                *now = UpdatePhase::Checking;
+                Ok(())
+            }
+        }
+    }
+}
+
+fn publish(app: &AppHandle, next: UpdatePhase) {
+    app.state::<Phase>().set(next.clone());
+    let _ = app.emit(PHASE_EVENT, next);
+}
 
 #[derive(Clone, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -95,28 +177,84 @@ fn update_error(e: tauri_plugin_updater::Error) -> CmdError {
 pub fn start(app: AppHandle) {
     thread::spawn(move || {
         loop {
-            if let Err(e) = tauri::async_runtime::block_on(check_once(&app)) {
-                // Offline or no release yet: try again next round.
-                eprintln!("update check failed: {e}");
+            let phase = tauri::async_runtime::block_on(run_check(&app));
+            // Offline or no release yet: try again next round, quietly.
+            if let Some(UpdatePhase::Error { detail }) = &phase {
+                eprintln!("update check failed: {detail}");
             }
             thread::sleep(RECHECK);
         }
     });
 }
 
-async fn check_once(app: &AppHandle) -> tauri_plugin_updater::Result<()> {
-    let Some(update) = app.updater()?.check().await? else {
-        return Ok(());
+/// One check, and the download of what it finds, publishing every phase.
+/// `None` when another check is already running.
+async fn run_check(app: &AppHandle) -> Option<UpdatePhase> {
+    let phases = app.state::<Phase>();
+    if phases.begin().is_err() {
+        return None;
+    }
+    publish(app, UpdatePhase::Checking);
+    let channel = settings_store::read(app).shell.update_channel;
+    let end = match check_once(app, channel).await {
+        Ok(phase) => phase,
+        Err(e) => error_phase(channel, &e),
+    };
+    publish(app, end.clone());
+    Some(end)
+}
+
+async fn check_once(
+    app: &AppHandle,
+    channel: UpdateChannel,
+) -> tauri_plugin_updater::Result<UpdatePhase> {
+    let updater = match channel {
+        UpdateChannel::Stable => app.updater()?,
+        UpdateChannel::Rc => {
+            let url = tauri::Url::parse(endpoint(channel)).expect("a fixed, valid url");
+            app.updater_builder().endpoints(vec![url])?.build()?
+        }
+    };
+    let Some(update) = updater.check().await? else {
+        return Ok(UpdatePhase::UpToDate);
     };
     let pending = app.state::<Pending>();
     if !needs_download(pending.version().as_deref(), &update.version) {
-        return Ok(());
+        return Ok(found_phase(pending.info()));
     }
-    let bytes = update.download(|_, _| {}, || {}).await?;
+    let version = update.version.clone();
+    publish(
+        app,
+        UpdatePhase::Downloading {
+            version: version.clone(),
+            percent: None,
+        },
+    );
+    let mut downloaded = 0u64;
+    let mut shown = None;
+    let bytes = update
+        .download(
+            |chunk, total| {
+                downloaded += chunk as u64;
+                let now = percent(downloaded, total);
+                if now != shown {
+                    shown = now;
+                    publish(
+                        app,
+                        UpdatePhase::Downloading {
+                            version: version.clone(),
+                            percent: now,
+                        },
+                    );
+                }
+            },
+            || {},
+        )
+        .await?;
     let ready = info(&update);
     pending.put(update, bytes);
-    let _ = app.emit(READY_EVENT, ready);
-    Ok(())
+    let _ = app.emit(READY_EVENT, ready.clone());
+    Ok(found_phase(Some(ready)))
 }
 
 /// Installs whatever is pending; called as the app exits.
@@ -149,6 +287,28 @@ pub fn update_restart(app: AppHandle, pending: State<'_, Pending>) -> Result<(),
     app.restart()
 }
 
+/// A check the person asked for. `rc` also stores the release candidate
+/// channel, which the later checks keep following. Resolves with where the
+/// check ended, or the phase of the check that was already running.
+#[tauri::command(async)]
+pub async fn update_check(app: AppHandle, rc: bool) -> Result<UpdatePhase, CmdError> {
+    if rc && settings_store::read(&app).shell.update_channel != UpdateChannel::Rc {
+        settings_store::write(&app, &[SettingsSection::Shell], |s| {
+            s.shell.update_channel = UpdateChannel::Rc;
+        })?;
+    }
+    Ok(match run_check(&app).await {
+        Some(phase) => phase,
+        None => app.state::<Phase>().get(),
+    })
+}
+
+/// Where the update check stands now.
+#[tauri::command]
+pub fn update_phase(phase: State<'_, Phase>) -> UpdatePhase {
+    phase.get()
+}
+
 /// An OS notification; the UI passes the text so it is in the user's language.
 #[tauri::command]
 pub fn update_notify(app: AppHandle, title: String, body: String) {
@@ -159,12 +319,106 @@ pub fn update_notify(app: AppHandle, title: String, body: String) {
 
 #[cfg(test)]
 mod tests {
-    use super::needs_download;
+    use super::*;
 
     #[test]
     fn downloads_only_a_version_not_already_pending() {
         assert!(needs_download(None, "0.3.0"));
         assert!(!needs_download(Some("0.3.0"), "0.3.0"));
         assert!(needs_download(Some("0.3.0"), "0.3.1"));
+    }
+
+    #[test]
+    fn each_channel_has_its_own_manifest() {
+        assert_eq!(
+            endpoint(UpdateChannel::Stable),
+            "https://github.com/xdev-asia/xdev/releases/latest/download/latest.json"
+        );
+        assert_eq!(
+            endpoint(UpdateChannel::Rc),
+            "https://github.com/xdev-asia/xdev/releases/download/rc-latest/latest.json"
+        );
+    }
+
+    #[test]
+    fn the_stable_endpoint_is_the_one_in_the_config() {
+        let conf = include_str!("../tauri.conf.json");
+        assert!(conf.contains(endpoint(UpdateChannel::Stable)));
+    }
+
+    #[test]
+    fn percent_comes_from_the_chunks_and_the_total() {
+        assert_eq!(percent(0, Some(200)), Some(0));
+        assert_eq!(percent(50, Some(200)), Some(25));
+        assert_eq!(percent(200, Some(200)), Some(100));
+        assert_eq!(percent(500, Some(200)), Some(100));
+        assert_eq!(percent(10, None), None);
+        assert_eq!(percent(10, Some(0)), None);
+    }
+
+    #[test]
+    fn no_release_on_the_rc_feed_reads_as_up_to_date() {
+        let missing = tauri_plugin_updater::Error::ReleaseNotFound;
+        assert_eq!(
+            error_phase(UpdateChannel::Rc, &missing),
+            UpdatePhase::UpToDate
+        );
+        assert!(matches!(
+            error_phase(UpdateChannel::Stable, &missing),
+            UpdatePhase::Error { .. }
+        ));
+    }
+
+    #[test]
+    fn a_check_that_finds_nothing_ends_up_to_date() {
+        assert_eq!(found_phase(None), UpdatePhase::UpToDate);
+        let ready = found_phase(Some(UpdateInfo {
+            version: "0.4.0".into(),
+            notes: Some("fixes".into()),
+        }));
+        assert_eq!(
+            ready,
+            UpdatePhase::Ready {
+                version: "0.4.0".into(),
+                notes: Some("fixes".into())
+            }
+        );
+    }
+
+    #[test]
+    fn a_second_check_gets_the_running_phase_back() {
+        let phase = Phase::default();
+        assert_eq!(phase.get(), UpdatePhase::Idle);
+        assert_eq!(phase.begin(), Ok(()));
+        assert_eq!(phase.begin(), Err(UpdatePhase::Checking));
+        let downloading = UpdatePhase::Downloading {
+            version: "0.4.0".into(),
+            percent: Some(40),
+        };
+        phase.set(downloading.clone());
+        assert_eq!(phase.begin(), Err(downloading));
+        // Once it ended, a new check may start.
+        phase.set(UpdatePhase::UpToDate);
+        assert_eq!(phase.begin(), Ok(()));
+        phase.set(UpdatePhase::Ready {
+            version: "0.4.0".into(),
+            notes: None,
+        });
+        assert_eq!(phase.begin(), Ok(()));
+    }
+
+    #[test]
+    fn phases_serialise_with_a_kind_tag() {
+        let json = serde_json::to_value(UpdatePhase::Downloading {
+            version: "0.4.0".into(),
+            percent: None,
+        })
+        .unwrap();
+        assert_eq!(json["kind"], "downloading");
+        assert_eq!(json["percent"], serde_json::Value::Null);
+        assert_eq!(
+            serde_json::to_value(UpdatePhase::UpToDate).unwrap()["kind"],
+            "up-to-date"
+        );
     }
 }
