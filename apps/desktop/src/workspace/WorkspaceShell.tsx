@@ -39,7 +39,7 @@ import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { removeRepo } from "./removeRepo";
 import { VaultNav } from "./VaultNav";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
-import { sendToAgentTab } from "./agentPrompt";
+import { sendFix } from "./fixAgent";
 import { sendTarget } from "./sendTarget";
 import { SetupCard, type SetupCardState } from "./SetupCard";
 import { decideSetup } from "./setupFlow";
@@ -844,12 +844,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     return true;
   }
 
-  // Gives a failed commit hook's output to an agent of the worktree and brings its tab to the front.
+  // Gives a failed commit hook's output to an agent of the worktree, as its recipe says, and brings its tab to the front.
   async function fixWithAgent(output: string): Promise<void> {
     if (!sessions || !current) return;
     const path = current.path;
-    const prompt = `The git commit hook failed. Fix the problem it reports, then stop; do not commit.\n\n${output}`;
-    const tab = await sendToAgentTab(sessions, path, shownTab[path] ?? null, prompt);
+    const tab = await sendFix(api, sessions, path, shownTab[path] ?? null, "fixCommitFailure", { branch: current.branch ?? "", output });
     setFixNote(!tab);
     if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
   }
