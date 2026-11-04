@@ -418,6 +418,12 @@ impl Ctx<'_> {
 /// `text` as a worktree: its path or id, a name (or title) unique in the
 /// caller's repo or else everywhere, or a unique prefix of an id.
 fn resolve<'a>(all: &'a [Listed], text: &str, repo: Option<&str>) -> Result<&'a Listed, AppError> {
+    // Nothing but separators would prefix-match every worktree.
+    if text.trim().trim_matches(['/', '\\']).is_empty() {
+        return Err(bad_request(
+            "name a worktree: an empty name or path matches none",
+        ));
+    }
     let key_of = |l: &Listed| path_key(Path::new(&l.view.path));
     let wanted = path_key(Path::new(text));
     if let Some(l) = all.iter().find(|l| key_of(l) == wanted) {
@@ -1466,6 +1472,36 @@ pub(crate) mod tests {
         f.call(Some("p-lead"), "worktree.create", json!({ "name": "down" }))
             .unwrap();
         assert_eq!(asks(&f).len(), 1);
+    }
+
+    #[test]
+    fn an_empty_or_root_worktree_is_refused_not_matched() {
+        let f = fixture();
+        for text in ["", " ", "/", "\\", "//"] {
+            let code = |method: &str, params: Value| {
+                f.call(Some("p-lead"), method, params).unwrap_err().code
+            };
+            assert_eq!(
+                code("terminal.list", json!({ "worktree": text })),
+                "bad_request",
+                "{text:?}"
+            );
+            assert_eq!(
+                code(
+                    "worktree.set",
+                    json!({ "worktree": text, "status": "todo" })
+                ),
+                "bad_request",
+                "{text:?}"
+            );
+            assert_eq!(
+                code("worktree.create", json!({ "parent": text })),
+                "bad_request",
+                "{text:?}"
+            );
+        }
+        assert!(asks(&f).is_empty());
+        assert!(xdev_policy::read_audit(&f.data).is_err());
     }
 
     #[test]
