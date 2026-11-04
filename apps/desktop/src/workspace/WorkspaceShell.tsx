@@ -24,6 +24,7 @@ import { currentCloseWindow, openRestoredFile, restoreLayout, startLayoutSave, u
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
+import { useNavigationSettings } from "@/settings/navigationSettings";
 import { SettingsView } from "@/settings/SettingsView";
 import { playStatusSound } from "@/status/sound";
 import { usePresence } from "@/status/presence";
@@ -84,12 +85,16 @@ type PanelTab = "files" | "search" | "changes" | "checks";
 type Creating = { repoId: string; busy: boolean; error?: ApiError["code"]; name?: string };
 type SetupCardAt = { kind: "detected"; command: string; repoId: string } | { kind: "ask"; repoId: string };
 type TrustAsk = { path: string; repoId: string; kind: HookKind; text: string; hash: string; changed: boolean; busy: boolean; error?: ApiError["code"] };
-type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"]; archiving?: boolean; failed?: { code: number | null; output: string } };
+type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"]; archiving?: boolean; failed?: { code: number | null; output: string };
+  /** Removed without asking (Settings → General): the dialog stays hidden until something needs an answer. */
+  quiet?: boolean;
+};
 
 /** The app frame: repos and worktrees on the left, the selected worktree in the middle. */
 export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
+  const { askBeforeDeleteWorktree } = useNavigationSettings();
   const [repos, setRepos] = useState<RepoView[] | null>(null);
   const [selected, setSelected] = useState<string | null>(() => readSelected());
   const [view, setView] = useState<View>("workspace");
@@ -787,18 +792,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // second, forced confirm.
   // The archive script runs first (up to 120 s, Cancel stays usable); a failure asks, an untrusted
   // shared script opens the trust prompt, and no script goes straight on.
-  async function remove(skipArchive = false): Promise<void> {
-    if (!removing || removing.busy) return;
-    const { worktree, dirty } = removing;
+  async function remove(skipArchive = false, target: Removing | null = removing): Promise<void> {
+    if (!target || target.busy) return;
+    const { worktree, dirty, quiet } = target;
     const run = ++removeRun.current;
     try {
       if (!skipArchive) {
-        setRemoving({ worktree, dirty, busy: true, archiving: true });
+        setRemoving({ worktree, dirty, busy: true, archiving: true, quiet });
         const ran = await api.worktreeArchiveRun(worktree.path);
         if (run !== removeRun.current) return;
         if (ran.ran && ran.code !== 0) return setRemoving({ worktree, dirty, busy: false, failed: { code: ran.code, output: ran.output } });
       }
-      setRemoving({ worktree, dirty, busy: true });
+      setRemoving({ worktree, dirty, busy: true, quiet });
       await sessions?.closeWorktree(worktree.path);
       sessions?.dropCarried(worktree.path);
       await api.worktreeRemove(worktree.path, dirty, true);
@@ -1028,7 +1033,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             }}
             onCreate={startCreate}
             onPin={(wt) => void pin(wt)}
-            onRemove={(wt) => setRemoving({ worktree: wt, dirty: false, busy: false })}
+            onRemove={(wt) => {
+              const next: Removing = { worktree: wt, dirty: false, busy: false };
+              if (askBeforeDeleteWorktree) return setRemoving(next);
+              // The dialog's own defaults (keep the branch, no force); it shows up if something needs an answer.
+              const quiet = { ...next, quiet: true };
+              setRemoving(quiet);
+              void remove(false, quiet);
+            }}
             onAddRepo={addRepo}
             onAdopt={(wt) => void adopt(wt)}
             unread={unreadMap}
@@ -1366,7 +1378,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           onCancel={() => setForgetting(null)}
         />
       )}
-      {removing && (
+      {removing && !removing.quiet && (
         <RemoveWorktreeDialog
           worktree={removing.worktree}
           base={removingRepo?.baseRef ?? ""}

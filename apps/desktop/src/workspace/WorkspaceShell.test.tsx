@@ -9,6 +9,8 @@ import { translate } from "@/i18n";
 import { ChecksPanel } from "./ChecksPanel";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
+import { resetNavigationSettingsForTests, setNavigationSettings } from "@/settings/navigationSettings";
+import { NAVIGATION_DEFAULTS } from "@/settings/generalDefaults";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { SetupCard } from "./SetupCard";
 import { TrustDialog } from "./TrustDialog";
@@ -102,7 +104,7 @@ function storage(seed: Record<string, string> = {}) {
   return { map, getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => void map.set(k, v), removeItem: (k: string) => void map.delete(k) };
 }
 
-beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; sound.play.mockClear(); resetStatusSettings(); });
+beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; sound.play.mockClear(); resetStatusSettings(); resetNavigationSettingsForTests(); });
 afterEach(() => { cleanups.splice(0).forEach((c) => c()); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 it("shell_renders_without_vault", async () => {
@@ -875,6 +877,31 @@ it("setup after create: with wait, the default agent starts after setup exits", 
   expect(v.card().props.state).toEqual({ kind: "waiting" });
   v.card().props.onStartNow();
   expect(v.open.mock.calls.filter((c) => c[1] !== SETUP_PROFILE).length).toBeGreaterThan(0);
+});
+
+it("askBeforeDeleteWorktree off removes at once with the dialog's defaults; a dirty worktree still asks", async () => {
+  setNavigationSettings({ ...NAVIGATION_DEFAULTS, askBeforeDeleteWorktree: false });
+  const close = vi.spyOn(Sessions.prototype, "closeWorktree");
+  const api = createMockApi({});
+  const remove = vi.spyOn(api, "worktreeRemove");
+  const view = await harness(api);
+  const dialog = () => view.of(RemoveWorktreeDialog)[0];
+
+  // A clean worktree goes without a dialog at any point.
+  view.list().props.onRemove(view.worktree("elm"));
+  expect(view.of(RemoveWorktreeDialog)).toHaveLength(0);
+  await tick();
+  expect(close).toHaveBeenCalledWith("/demo/wt/xdev-elm");
+  expect(remove).toHaveBeenCalledWith("/demo/wt/xdev-elm", false, true);
+  expect(view.of(RemoveWorktreeDialog)).toHaveLength(0);
+  expect(view.worktree("elm")).toBeUndefined();
+
+  // Uncommitted work: the removal is refused, and the forced delete needs its own yes.
+  view.list().props.onRemove(view.worktree("oak"));
+  await tick();
+  expect(remove).toHaveBeenLastCalledWith("/demo/wt/xdev-oak", false, true);
+  expect(dialog().props.dirty).toBe(true);
+  expect(view.worktree("oak")).toBeDefined();
 });
 
 // ---- Archive before delete ---------------------------------------------------------------------
