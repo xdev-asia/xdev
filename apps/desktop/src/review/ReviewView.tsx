@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { TreeView, pathRows } from "@xdev-asia/ui";
+import { TreeView } from "@xdev-asia/ui";
+import { reviewRows } from "./reviewRows";
 import type { JSX } from "react";
 import { toApiError, type Api, type ReviewData, type ReviewFile, type ReviewNote } from "@/api";
 import type { Problem } from "@/changes/useChanges";
@@ -297,7 +298,7 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
           <nav className="rv-list" style={{ width }} aria-label={t("review.list")}>
             {opts.tree ? (
               <TreeView
-                rows={pathRows(files.map((f) => ({ path: f.path, mark: f.kind })), new Set(closed))}
+                rows={reviewRows(files, new Set(closed))}
                 labels={{ tree: t("review.tree"), changed: t("review.tree.changed"), marks: { added: t("review.kind.added"), modified: t("review.kind.modified"), deleted: t("review.kind.deleted") } }}
                 onToggle={(id) => setClosed(closed.includes(id) ? closed.filter((c) => c !== id) : [...closed, id])}
                 onOpen={show}
