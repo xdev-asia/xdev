@@ -29,6 +29,7 @@ mod ship;
 mod squads;
 mod status;
 mod tasks;
+mod terminal_themes;
 mod updater;
 mod workspace;
 
