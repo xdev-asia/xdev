@@ -219,3 +219,5 @@ export type { WorktreeSkip } from "./WorktreeSkip";
 export type { WorktreeStat } from "./WorktreeStat";
 export type { WorktreeView } from "./WorktreeView";
 export type { WriteOutcome } from "./WriteOutcome";
+export type { XdevIdState } from "./XdevIdState";
+export type { XdevIdUser } from "./XdevIdUser";

@@ -48,7 +48,7 @@ pub use http::{
     fetch_avatar, me, sign_out,
 };
 pub use link::{authorize_url, base_url, clean_device, device_name};
-pub use pkce::{PkcePair, Secret, b64url, random_43, s256};
+pub use pkce::{PkcePair, Secret, b64url, random_43, random_pair, s256};
 pub use session::{Begin, Redeem, Session, XdevIdState, XdevIdUser};
 pub use store::{
     Keychain, MemoryStore, StoreError, Stored, StoredUser, TokenStore, decode_stored, encode_stored,
