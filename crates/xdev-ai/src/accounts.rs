@@ -70,11 +70,22 @@ pub struct AccountEntry {
     pub dir: PathBuf,
 }
 
+/// The account a provider's new agent tabs run as when neither the tab nor
+/// the profile names one. At most one per provider.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ActiveAccount {
+    pub provider: Provider,
+    pub name: String,
+}
+
 /// The accounts registered on this machine, kept in `<data dir>/accounts.json`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Registry {
     pub reserve_percent: u8,
     pub accounts: Vec<AccountEntry>,
+    /// The active account per provider; none means the CLI's own home.
+    pub active: Vec<ActiveAccount>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -82,6 +93,9 @@ struct OnDisk {
     version: u32,
     reserve_percent: u8,
     accounts: Vec<AccountEntry>,
+    // A file from before active accounts has none.
+    #[serde(default)]
+    active: Vec<ActiveAccount>,
 }
 
 impl Default for Registry {
@@ -89,6 +103,7 @@ impl Default for Registry {
         Registry {
             reserve_percent: DEFAULT_RESERVE,
             accounts: Vec::new(),
+            active: Vec::new(),
         }
     }
 }
@@ -110,10 +125,19 @@ impl Registry {
         let mut reg = Registry {
             reserve_percent: disk.reserve_percent,
             accounts: Vec::with_capacity(disk.accounts.len()),
+            active: Vec::new(),
         };
         for entry in disk.accounts {
             reg.add(&entry.name, entry.provider, entry.dir)
                 .map_err(|_| AiError::BadRegistry)?;
+        }
+        // A hand edit that names no such account, or a second one for a
+        // provider, is left out: the effect is the CLI's own home, which is
+        // safer than refusing the whole file.
+        for entry in disk.active {
+            if reg.active(entry.provider).is_none() {
+                let _ = reg.activate(entry.provider, Some(&entry.name));
+            }
         }
         Ok(reg)
     }
@@ -123,6 +147,7 @@ impl Registry {
             version: VERSION,
             reserve_percent: self.reserve_percent,
             accounts: self.accounts.clone(),
+            active: self.active.clone(),
         };
         let mut text = serde_json::to_string_pretty(&disk).map_err(io::Error::other)?;
         text.push('\n');
@@ -158,6 +183,7 @@ impl Registry {
             .iter()
             .position(|a| a.name == name)
             .ok_or(AiError::NotFound)?;
+        self.active.retain(|a| a.name != name);
         Ok(self.accounts.remove(index))
     }
 
@@ -171,6 +197,152 @@ impl Registry {
 
     pub fn get(&self, name: &str) -> Option<&AccountEntry> {
         self.accounts.iter().find(|a| a.name == name)
+    }
+
+    /// Makes `name` the active account of `provider`; `None` clears it, so
+    /// the provider's tabs run on the CLI's own home. An unknown name or
+    /// another provider's account is `NotFound`.
+    pub fn activate(&mut self, provider: Provider, name: Option<&str>) -> Result<(), AiError> {
+        if let Some(name) = name
+            && !self
+                .get(name)
+                .is_some_and(|entry| entry.provider == provider)
+        {
+            return Err(AiError::NotFound);
+        }
+        self.active.retain(|a| a.provider != provider);
+        if let Some(name) = name {
+            self.active.push(ActiveAccount {
+                provider,
+                name: name.to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    /// The active account of `provider`, when it names a registered one.
+    pub fn active(&self, provider: Provider) -> Option<&AccountEntry> {
+        let active = self.active.iter().find(|a| a.provider == provider)?;
+        self.get(&active.name)
+            .filter(|entry| entry.provider == provider)
+    }
+}
+
+/// Copies the session log `session` (the CLI's session id) from `from`'s
+/// home into `to`'s, at the same path under the home, when `to` does not
+/// have it yet; returns whether it copied. `cwd` is the folder the session
+/// ran in. A log that is not in `from` is `SessionMissing`. Never moves nor
+/// overwrites a log.
+pub fn carry_session(
+    from: &AccountEntry,
+    to: &AccountEntry,
+    session: &str,
+    cwd: &Path,
+) -> Result<bool, AiError> {
+    // A plain token, like the resume id: nothing in it can climb out of
+    // the home.
+    let plain = !session.is_empty()
+        && session.len() <= 128
+        && session
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    if !plain {
+        return Err(AiError::SessionMissing);
+    }
+    let src = find_session(from, session, cwd).ok_or(AiError::SessionMissing)?;
+    if find_session(to, session, cwd).is_some() {
+        return Ok(false);
+    }
+    let rel = src
+        .strip_prefix(&from.dir)
+        .map_err(|_| AiError::SessionMissing)?;
+    let dest = to.dir.join(rel);
+    let parent = dest.parent().ok_or(AiError::SessionMissing)?;
+    fs::create_dir_all(parent)?;
+    // Copy beside the target, then link it in: a link never replaces a file
+    // that appeared meanwhile, and a reader never sees half a log.
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let tmp = parent.join(format!(
+        ".carry-{}-{}.tmp",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    let linked = fs::copy(&src, &tmp).and_then(|_| fs::hard_link(&tmp, &dest));
+    let _ = fs::remove_file(&tmp);
+    match linked {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(false),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// The log of `session` under the account's home. Claude keeps it at
+/// `projects/<cwd key>/<id>.jsonl` (any project folder will do), Codex at
+/// `sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl`.
+fn find_session(account: &AccountEntry, session: &str, cwd: &Path) -> Option<PathBuf> {
+    match account.provider {
+        Provider::Claude => {
+            let projects = account.dir.join("projects");
+            let file = format!("{session}.jsonl");
+            let own = projects.join(claude_project_key(cwd)).join(&file);
+            if own.is_file() {
+                return Some(own);
+            }
+            fs::read_dir(&projects)
+                .ok()?
+                .flatten()
+                .map(|e| e.path().join(&file))
+                .find(|p| p.is_file())
+        }
+        Provider::Codex => {
+            let suffix = format!("-{session}.jsonl");
+            find_file(&account.dir.join("sessions"), &|name| {
+                name.starts_with("rollout-") && name.ends_with(&suffix)
+            })
+        }
+    }
+}
+
+/// The folder Claude keeps a project's sessions under: every char that is
+/// not ASCII alphanumeric becomes `-`.
+fn claude_project_key(cwd: &Path) -> String {
+    cwd.to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
+}
+
+/// The first file under `dir` whose name matches, depth first.
+fn find_file(dir: &Path, matches: &dyn Fn(&str) -> bool) -> Option<PathBuf> {
+    for entry in fs::read_dir(dir).ok()?.flatten() {
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        let path = entry.path();
+        if kind.is_dir() {
+            if let Some(found) = find_file(&path, matches) {
+                return Some(found);
+            }
+        } else if kind.is_file() && entry.file_name().to_str().is_some_and(matches) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// The home a provider's CLI uses with no account: its home variable from
+/// the environment, else `~/.claude` or `~/.codex`.
+pub fn default_home(provider: Provider) -> Option<PathBuf> {
+    match provider {
+        Provider::Claude => {
+            if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|d| !d.is_empty()) {
+                return Some(PathBuf::from(dir));
+            }
+            let user = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+                .filter(|h| !h.is_empty())?;
+            Some(PathBuf::from(user).join(".claude"))
+        }
+        Provider::Codex => crate::codex::codex_home(None),
     }
 }
 

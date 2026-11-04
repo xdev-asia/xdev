@@ -4,6 +4,7 @@ use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
 use xdev_ai::{AiError, Provider, Registry, codex_home};
 
 use crate::codex_home::{codex_hook_events, prepare_codex_home};
@@ -12,6 +13,17 @@ use crate::hooks::{HookEvent, hook_args, hook_events};
 use crate::profiles::{Cli, Permissions, Profile, ProfileError, Profiles};
 use crate::shells::{ShellEntry, default_shell_id};
 use crate::version::{CliVersion, cli_version};
+
+/// Where a launch's account came from: the tab's own pick, the profile's
+/// account or the provider's active account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum AccountSource {
+    Tab,
+    Profile,
+    Active,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Launch {
@@ -26,6 +38,8 @@ pub struct Launch {
     pub permissions: Permissions,
     /// The account the CLI runs as, when it has one.
     pub account: Option<String>,
+    /// Where `account` came from; `None` when there is no account.
+    pub account_source: Option<AccountSource>,
     /// Shell lines to run before the CLI; see `command`.
     pub startup: Vec<String>,
     /// The built-in CLI the profile runs; `None` for shells and custom
@@ -210,13 +224,31 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         .iter()
         .map(|e| (e.name.clone(), OsString::from(&e.value)))
         .collect();
-    let account = ctx.account.or(profile.account.as_deref());
+    let provider = match profile.cli {
+        Some(Cli::Claude) => Some(Provider::Claude),
+        Some(Cli::Codex) => Some(Provider::Codex),
+        _ => None,
+    };
+    // The tab's account, else the profile's own, else the provider's active
+    // one. A profile with no provider has no home to switch, so it ignores
+    // the active account (R1: a profile's own account never follows it).
+    let picked = ctx
+        .account
+        .map(|name| (name, AccountSource::Tab))
+        .or_else(|| {
+            profile
+                .account
+                .as_deref()
+                .map(|name| (name, AccountSource::Profile))
+        })
+        .or_else(|| {
+            let active = ctx.accounts.active(provider?)?;
+            Some((active.name.as_str(), AccountSource::Active))
+        });
+    let account = picked.map(|(name, _)| name);
+    let account_source = picked.map(|(_, source)| source);
     if let Some(name) = account {
-        let provider = match profile.cli {
-            Some(Cli::Claude) => Provider::Claude,
-            Some(Cli::Codex) => Provider::Codex,
-            _ => return Err(LaunchError::UnknownAccount),
-        };
+        let provider = provider.ok_or(LaunchError::UnknownAccount)?;
         let entry = ctx
             .accounts
             .get(name)
@@ -243,6 +275,7 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         agent: true,
         permissions,
         account: account.map(str::to_owned),
+        account_source,
         startup: profile
             .startup
             .iter()
@@ -274,6 +307,7 @@ fn resolve_shell(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         agent: false,
         permissions: Permissions::Ask,
         account: None,
+        account_source: None,
         startup: Vec::new(),
         cli: None,
         hooks: false,
@@ -673,6 +707,91 @@ mod tests {
         assert_eq!(err.code(), "unknown_account");
     }
 
+    /// `accounts()` with `work` (Claude) and `gpt` (Codex) active, plus a
+    /// second Claude account `home`.
+    fn run_active(
+        profiles: &Profiles,
+        id: &str,
+        account: Option<&str>,
+    ) -> Result<Launch, LaunchError> {
+        let mut accounts = accounts();
+        accounts
+            .add("home", Provider::Claude, PathBuf::from("H"))
+            .unwrap();
+        accounts.activate(Provider::Claude, Some("work")).unwrap();
+        accounts.activate(Provider::Codex, Some("gpt")).unwrap();
+        resolve(
+            id,
+            &Context {
+                profiles,
+                accounts: &accounts,
+                shells: &[],
+                find: &found,
+                account,
+            },
+        )
+    }
+
+    #[test]
+    fn builtin_without_account_runs_as_the_active_one() {
+        let p = Profiles::default();
+        let l = run_active(&p, "claude", None).unwrap();
+        assert_eq!(l.account.as_deref(), Some("work"));
+        assert_eq!(l.account_source, Some(AccountSource::Active));
+        assert_eq!(l.env, [("CLAUDE_CONFIG_DIR".to_owned(), "D".into())]);
+        let l = run_active(&p, "codex", None).unwrap();
+        assert_eq!(l.account.as_deref(), Some("gpt"));
+        assert_eq!(l.account_source, Some(AccountSource::Active));
+        assert_eq!(l.env, [("CODEX_HOME".to_owned(), "E".into())]);
+    }
+
+    #[test]
+    fn tab_account_wins_over_profile_and_active() {
+        let mut c = builtin(Cli::Claude);
+        c.account = Some("work".into());
+        let l = run_active(&with(c), "claude", Some("home")).unwrap();
+        assert_eq!(l.account.as_deref(), Some("home"));
+        assert_eq!(l.account_source, Some(AccountSource::Tab));
+        assert_eq!(l.env, [("CLAUDE_CONFIG_DIR".to_owned(), "H".into())]);
+    }
+
+    #[test]
+    fn profile_account_wins_over_active() {
+        let mut c = builtin(Cli::Claude);
+        c.account = Some("home".into());
+        let l = run_active(&with(c), "claude", None).unwrap();
+        assert_eq!(l.account.as_deref(), Some("home"));
+        assert_eq!(l.account_source, Some(AccountSource::Profile));
+        // Without an active account the source is the same.
+        let mut c = builtin(Cli::Claude);
+        c.account = Some("work".into());
+        let l = run(&with(c), "claude", None, &found).unwrap();
+        assert_eq!(l.account_source, Some(AccountSource::Profile));
+        let l = run(&Profiles::default(), "claude", Some("work"), &found).unwrap();
+        assert_eq!(l.account_source, Some(AccountSource::Tab));
+    }
+
+    #[test]
+    fn no_provider_ignores_the_active_account() {
+        // A custom program and Gemini have no account home; they start as
+        // before rather than failing on an account they cannot take.
+        for (profiles, id) in [
+            (with(custom("aider")), "aider"),
+            (Profiles::default(), "gemini"),
+        ] {
+            let l = run_active(&profiles, id, None).unwrap();
+            assert_eq!((l.account, l.account_source), (None, None), "{id}");
+            assert!(l.env.is_empty(), "{id}");
+        }
+    }
+
+    #[test]
+    fn no_active_account_is_the_cli_home() {
+        let l = run(&Profiles::default(), "claude", None, &found).unwrap();
+        assert_eq!((l.account, l.account_source), (None, None));
+        assert!(l.env.is_empty());
+    }
+
     #[test]
     fn account_home_wins_over_profile_env() {
         let mut c = builtin(Cli::Claude);
@@ -749,6 +868,7 @@ mod tests {
             agent: true,
             permissions: Permissions::Ask,
             account: None,
+            account_source: None,
             startup: startup.iter().map(|a| (*a).to_owned()).collect(),
             cli: None,
             hooks: false,

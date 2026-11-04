@@ -260,6 +260,22 @@ pub fn diff_settings_put(
     settings_store::write(&app, &[SettingsSection::Diff], |s| s.diff = settings).map(|s| s.diff)
 }
 
+/// Settings → Agents as stored; the defaults when nothing is.
+#[tauri::command(async)]
+pub fn agents_settings_get(app: AppHandle) -> settings::AgentsSettings {
+    settings_store::read(&app).agents
+}
+
+/// Stores Settings → Agents and returns what was stored.
+#[tauri::command(async)]
+pub fn agents_settings_put(
+    app: AppHandle,
+    settings: settings::AgentsSettings,
+) -> Result<settings::AgentsSettings, CmdError> {
+    settings_store::write(&app, &[SettingsSection::Agents], |s| s.agents = settings)
+        .map(|s| s.agents)
+}
+
 /// The global git `user.name` that the git-username prefix shows; a repo's
 /// own `user.name` wins when a worktree is created.
 #[tauri::command(async)]

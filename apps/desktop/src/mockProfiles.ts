@@ -39,6 +39,8 @@ export interface MockProfiles extends ProfilesApi {
   __permissions(id: string): string | null;
   /** The code `ptySpawn` fails with for `id`, or `null` when it may start. */
   __launchError(id: string): ApiError["code"] | null;
+  /** The profile's own account; `null` when it has none or is not listed. */
+  __account(id: string): string | null;
 }
 
 /**
@@ -133,6 +135,9 @@ export function createMockProfiles(): MockProfiles {
     __permissions(id) {
       const found = profiles.find((p) => p.id === id);
       return found ? effective(found) : null;
+    },
+    __account(id) {
+      return profiles.find((p) => p.id === id)?.account ?? null;
     },
     __launchError(id) {
       if (id === "shell") return null;
