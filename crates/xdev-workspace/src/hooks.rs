@@ -354,6 +354,15 @@ pub(crate) fn hash_of(text: &str) -> String {
     blake3::hash(text.as_bytes()).to_hex().to_string()
 }
 
+/// Blake3 hex of a list, `None` when it is empty, in its normalized JSON spelling, so comments and
+/// spacing in the file do not change it.
+fn list_hash<T: Serialize>(list: &[T]) -> Option<String> {
+    if list.is_empty() {
+        return None;
+    }
+    serde_json::to_string(list).ok().map(|json| hash_of(&json))
+}
+
 fn blank(text: &str) -> bool {
     text.trim().is_empty()
 }
@@ -416,6 +425,12 @@ pub fn hooks_for(
     } else {
         None
     };
+    let shared_hash = list_hash(&file.shared);
+    let tabs_hash = list_hash(&file.tabs);
+    let trusted = |kind: TrustKind, hash: &Option<String>| {
+        hash.as_deref()
+            .is_some_and(|h| store.has(&repo.id, kind, h))
+    };
     Ok(RepoHooks {
         setup,
         archive,
@@ -423,12 +438,12 @@ pub fn hooks_for(
         policy: repo.setup_policy,
         parse_error,
         detected,
+        shared_trusted: trusted(TrustKind::Shared, &shared_hash),
+        tabs_trusted: trusted(TrustKind::Tabs, &tabs_hash),
         shared: file.shared,
-        shared_trusted: false,
         tabs: file.tabs,
-        tabs_trusted: false,
-        shared_hash: None,
-        tabs_hash: None,
+        shared_hash,
+        tabs_hash,
         unknown: file.unknown,
         problems: file.problems,
     })
@@ -542,14 +557,16 @@ pub fn trust_hook(
     let script = match kind {
         HookKind::Setup => &hooks.setup,
         HookKind::Archive => &hooks.archive,
-        HookKind::Shared | HookKind::Tabs => {
-            return Err(WorkspaceError::HookUntrusted(kind_name(kind).to_owned()));
-        }
+        HookKind::Shared | HookKind::Tabs => &None,
     };
-    let current = script
-        .as_ref()
-        .filter(|s| s.shared)
-        .map(|s| s.hash.as_str());
+    let current = match kind {
+        HookKind::Shared => hooks.shared_hash.as_deref(),
+        HookKind::Tabs => hooks.tabs_hash.as_deref(),
+        HookKind::Setup | HookKind::Archive => script
+            .as_ref()
+            .filter(|s| s.shared)
+            .map(|s| s.hash.as_str()),
+    };
     if current != Some(hash) {
         return Err(WorkspaceError::HookUntrusted(kind_name(kind).to_owned()));
     }
@@ -1030,6 +1047,50 @@ run = \"make test\"
             "[scripts]\nsetup = \"pnpm install && curl x | sh\"\n",
         );
         assert!(!f.hooks().setup.unwrap().trusted);
+    }
+
+    #[test]
+    fn shared_paths_and_tabs_are_trusted_by_hash() {
+        let f = fixture();
+        let file = |shared: &str, tab: &str| {
+            format!("[worktree]\nshared = [{shared}]\n[[tabs]]\ncommand = \"{tab}\"\n")
+        };
+        f.write(&f.worktree, &file("\"node_modules\"", "pnpm dev"));
+        let hooks = f.hooks();
+        assert!(!hooks.shared_trusted && !hooks.tabs_trusted);
+        let (sh, tb) = (hooks.shared_hash.unwrap(), hooks.tabs_hash.unwrap());
+        assert_eq!(sh.len(), 64);
+        let after = f.trust(HookKind::Shared, &sh).unwrap();
+        // Trust is per kind.
+        assert!(after.shared_trusted && !after.tabs_trusted);
+        let after = f.trust(HookKind::Tabs, &tb).unwrap();
+        assert!(after.shared_trusted && after.tabs_trusted);
+        assert_eq!(f.store().entries.len(), 2);
+
+        // Spacing does not matter; one changed entry does.
+        f.write(&f.worktree, &file("  \"node_modules\"  ", "pnpm dev"));
+        assert!(f.hooks().shared_trusted);
+        f.write(
+            &f.worktree,
+            &file("\"node_modules\", \"target\"", "pnpm dev"),
+        );
+        let hooks = f.hooks();
+        assert!(!hooks.shared_trusted && hooks.tabs_trusted);
+        f.write(&f.worktree, &file("\"node_modules\"", "pnpm dev --host"));
+        assert!(!f.hooks().tabs_trusted);
+    }
+
+    #[test]
+    fn no_lists_means_no_hash_and_nothing_to_trust() {
+        let f = fixture();
+        f.write(&f.worktree, FILE);
+        let hooks = f.hooks();
+        assert_eq!((hooks.shared_hash, hooks.tabs_hash), (None, None));
+        assert!(!hooks.shared_trusted && !hooks.tabs_trusted);
+        let err = f.trust(HookKind::Shared, "").unwrap_err();
+        assert_eq!(err.code(), "hook_untrusted");
+        let err = f.trust(HookKind::Tabs, &hex("x")).unwrap_err();
+        assert_eq!(err.code(), "hook_untrusted");
     }
 
     #[test]
