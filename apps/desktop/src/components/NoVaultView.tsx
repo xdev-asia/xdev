@@ -1,4 +1,4 @@
-import { Button } from "@xdev/ui";
+import { Button, Icon } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import { BrandMark } from "./BrandMark";
 import type { JSX } from "react";
@@ -16,33 +16,6 @@ import { TasksView } from "./TasksView";
 
 export type VaultFailure = { path: string; code: ApiError["code"] };
 
-const ICON = {
-  className: "vault-empty-icon",
-  "aria-hidden": true,
-  viewBox: "0 0 24 24",
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 1.75,
-  strokeLinecap: "round",
-  strokeLinejoin: "round",
-} as const;
-
-function FolderIcon(): JSX.Element {
-  return (
-    <svg {...ICON}>
-      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-    </svg>
-  );
-}
-
-function PlusIcon(): JSX.Element {
-  return (
-    <svg {...ICON}>
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
-
 export function VaultEmpty(props: { failure?: VaultFailure; busy: boolean; onCreate(): void; onOpen(): void }): JSX.Element {
   const { t } = useI18n();
   return (
@@ -58,14 +31,14 @@ export function VaultEmpty(props: { failure?: VaultFailure; busy: boolean; onCre
       )}
       <div className="vault-empty-actions">
         <div className="vault-empty-card">
-          <FolderIcon />
+          <Icon name="folder" className="vault-empty-icon" />
           <p className="vault-empty-card-body">{t("vault.empty.openBody")}</p>
           <button type="button" className="btn-secondary" disabled={props.busy} onClick={props.onOpen}>
             {props.busy ? t("vault.opening") : t("vault.open")}
           </button>
         </div>
         <div className="vault-empty-card">
-          <PlusIcon />
+          <Icon name="plus" className="vault-empty-icon" />
           <p className="vault-empty-card-body">{t("vault.empty.createBody")}</p>
           <Button type="button" disabled={props.busy} onClick={props.onCreate}>
             {t("vault.create")}

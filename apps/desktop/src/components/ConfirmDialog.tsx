@@ -1,4 +1,4 @@
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import { useEffect, useRef } from "react";
 import type { JSX, ReactNode } from "react";
 import { useI18n } from "@/i18n";

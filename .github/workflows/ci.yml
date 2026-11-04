@@ -21,6 +21,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
 
       - name: Install Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
@@ -39,6 +41,10 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+
+      - name: Check submodule
+        shell: bash
+        run: test -f packages/xdev-ui/package.json || { echo "run: git submodule update --init --recursive"; exit 1; }
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck

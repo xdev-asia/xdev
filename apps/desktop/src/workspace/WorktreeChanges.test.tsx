@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import { ProblemNote } from "@/components/ChangesPanel";
 import { createMockApi, type Api, type WorktreeChange, type WorktreeView } from "@/api";
 import { DiffView } from "@/components/DiffView";

@@ -89,6 +89,8 @@ jobs:
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
 
       # The ARM images do not all ship rustup.
       - name: Install rustup if missing
@@ -126,6 +128,10 @@ jobs:
       # Tauri's beforeBuildCommand calls bare `pnpm`; the corepack shim makes
       # it resolve to the version pinned in package.json#packageManager.
       - run: corepack enable
+
+      - name: Check submodule
+        shell: bash
+        run: test -f packages/xdev-ui/package.json || { echo "run: git submodule update --init --recursive"; exit 1; }
 
       - run: corepack pnpm install --frozen-lockfile
 

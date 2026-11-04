@@ -1,4 +1,4 @@
-import { Button } from "@xdev/ui";
+import { Button, Icon as UiIcon, type IconName } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type Change } from "@/api";
@@ -11,39 +11,24 @@ const IDENTITY_COMMANDS = 'git config --global user.name "Your Name"\ngit config
 
 export const COMPACT = { padding: "var(--x-space-1) var(--x-space-3)" };
 
-// Stroke paths (24x24) shared by the Changes, History and Agents views.
+// Icon names (xdev-ui) shared by the Changes, History and Agents views.
 export const ICON = {
-  check: "m5 12 5 5L20 7",
-  close: "M18 6 6 18M6 6l12 12",
-  doc: "M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5",
-  restore: "M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5",
-  history: "M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2",
-  bot: "M5 10a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2zM12 8V4M10 4h4M9.5 13h.01M14.5 13h.01",
-  download: "M12 4v11M7 10l5 5 5-5M5 20h14",
-  copy: "M11 9h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM5 15V6a2 2 0 0 1 2-2h9",
-  plug: "M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
-  warn: "M12 3 2 20h20zM12 10v4M12 17v.5",
-  lock: "M7 11h10a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2zM8 11V8a4 4 0 0 1 8 0v3",
-} as const;
+  check: "check",
+  close: "close",
+  doc: "file",
+  restore: "restore",
+  history: "history",
+  bot: "bot",
+  download: "download",
+  copy: "copy",
+  plug: "plug",
+  warn: "warn-dash",
+  lock: "lock",
+} as const satisfies Record<string, IconName>;
 
-export function Icon(props: { d: string; size?: number }): JSX.Element {
-  const size = props.size ?? 16;
-  return (
-    <svg
-      className="x-icon"
-      aria-hidden="true"
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.75}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d={props.d} />
-    </svg>
-  );
+/** An xdev-ui icon; `d` takes a value of `ICON`. */
+export function Icon(props: { d: IconName; size?: number }): JSX.Element {
+  return <UiIcon name={props.d} size={props.size} />;
 }
 
 // What a draft says when the recipe's agent is the problem: a profile with no runner or gone, or
