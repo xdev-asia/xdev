@@ -1515,6 +1515,26 @@ pub(crate) mod tests {
         board.wait(tab, want, timeout, &|| false)
     }
 
+    /// Runs a wait on its own thread; returns once it is waiting. `gone` is
+    /// asked under the board lock just before the condvar wait, so a
+    /// `replace` after the signal cannot slip in before the waiter sleeps.
+    fn waiting(
+        board: &Arc<TabBoard>,
+        tab: &'static str,
+        want: WaitFor,
+    ) -> thread::JoinHandle<Result<(String, i64), AppError>> {
+        let (started, rx) = std::sync::mpsc::channel::<()>();
+        let board = board.clone();
+        let waiter = thread::spawn(move || {
+            board.wait(tab, want, LONG, &|| {
+                let _ = started.send(());
+                false
+            })
+        });
+        rx.recv().unwrap();
+        waiter
+    }
+
     #[test]
     fn a_state_already_reached_answers_at_once() {
         let (board, _) = fake_board();
@@ -1538,11 +1558,7 @@ pub(crate) mod tests {
     fn a_report_wakes_the_waiter() {
         let (board, _) = fake_board();
         board.replace(vec![tab("t1", Path::new("/w"), true, "working")], None);
-        let waiter = {
-            let board = board.clone();
-            thread::spawn(move || wait(&board, "t1", WaitFor::NeedsYou, LONG))
-        };
-        thread::sleep(Duration::from_millis(100));
+        let waiter = waiting(&board, "t1", WaitFor::NeedsYou);
         board.replace(vec![tab("t1", Path::new("/w"), true, "needs-you")], None);
         assert_eq!(waiter.join().unwrap().unwrap().0, "needs-you");
     }
@@ -1553,11 +1569,7 @@ pub(crate) mod tests {
         let mut shell = tab("s1", Path::new("/w"), false, "idle");
         shell.last_output_ms = 99_000;
         board.replace(vec![shell], None);
-        let waiter = {
-            let board = board.clone();
-            thread::spawn(move || wait(&board, "s1", WaitFor::Idle, LONG))
-        };
-        thread::sleep(Duration::from_millis(100));
+        let waiter = waiting(&board, "s1", WaitFor::Idle);
         assert!(!waiter.is_finished());
         now.store(102_000, Ordering::SeqCst);
         assert_eq!(
@@ -1577,19 +1589,11 @@ pub(crate) mod tests {
         );
         assert_eq!(wait(&board, "t1", WaitFor::Exit, LONG).unwrap().0, "exited");
         // An exited agent is not done.
-        let waiter = {
-            let board = board.clone();
-            thread::spawn(move || wait(&board, "t2", WaitFor::Done, LONG))
-        };
-        thread::sleep(Duration::from_millis(50));
+        let waiter = waiting(&board, "t2", WaitFor::Done);
         board.replace(vec![], None);
         assert_eq!(waiter.join().unwrap().unwrap_err().code, "closed");
         board.replace(vec![tab("t3", Path::new("/w"), true, "working")], None);
-        let waiter = {
-            let board = board.clone();
-            thread::spawn(move || wait(&board, "t3", WaitFor::Done, LONG))
-        };
-        thread::sleep(Duration::from_millis(50));
+        let waiter = waiting(&board, "t3", WaitFor::Done);
         board.stop();
         assert_eq!(waiter.join().unwrap().unwrap_err().code, "app_stopped");
     }
