@@ -308,6 +308,7 @@ pub fn run() {
             kit::kit_skill_remove,
             kit::kit_skill_restore,
             kit::kit_usage,
+            kit::kit_usage_report,
             kit::kit_paths_exist,
             kit::kit_prompt_history,
             agent_sessions::agent_sessions,

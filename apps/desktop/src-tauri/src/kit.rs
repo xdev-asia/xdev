@@ -9,14 +9,17 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, State};
 use xdev_kit::{
-    Agent, Home, KitError, MemorySet, Roots, Skill, UsageIndex, UsageQuery, UsageSummary,
+    Agent, Home, KitError, MemorySet, RefreshStats, ReportQuery, Roots, Skill, UsageIndex,
+    UsageQuery, UsageReport, UsageSummary,
 };
 use xdev_workspace::{Registry, path_key};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError};
+use crate::settings::ProviderSwitches;
+use crate::settings_store;
 
 /// The newest part of a history file that is read. The UI shows a short list,
 /// so older lines of a huge file are never opened.
@@ -54,8 +57,6 @@ impl From<KitError> for CmdError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
-// Used by `kit_usage_report` (Lane B, task B3).
-#[allow(dead_code)]
 pub enum UsageScope {
     Xdev,
     All,
@@ -65,7 +66,6 @@ pub enum UsageScope {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub struct UsageReportArgs {
     /// `None` is All time.
     pub since_day: Option<String>,
@@ -304,6 +304,57 @@ impl Ctx {
         ))
     }
 
+    /// The Stats page: the report of the agents whose scan switch is on. A
+    /// refresh reads only their homes; with both off no log is opened.
+    fn usage_report(
+        &self,
+        args: &UsageReportArgs,
+        scan: ProviderSwitches,
+    ) -> Result<(UsageReport, RefreshStats), CmdError> {
+        let wanted = match args.agent {
+            Some(agent) => vec![agent],
+            None => vec![Agent::Claude, Agent::Codex],
+        };
+        let agents: Vec<Agent> = wanted
+            .into_iter()
+            .filter(|a| match a {
+                Agent::Claude => scan.claude,
+                Agent::Codex => scan.codex,
+            })
+            .collect();
+        let folders = match args.scope {
+            UsageScope::All => None,
+            UsageScope::Xdev => Some(
+                self.known_folders()?
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect(),
+            ),
+        };
+        let _guard = USAGE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut index = UsageIndex::load(&self.data);
+        let mut stats = RefreshStats::default();
+        if args.refresh {
+            let homes: Vec<Home> = self
+                .homes()
+                .into_iter()
+                .filter(|h| agents.contains(&h.agent))
+                .collect();
+            stats = index.refresh(&homes, args.utc_offset_minutes);
+            index.save(&self.data)?;
+        }
+        let report = xdev_kit::report(
+            &index,
+            &ReportQuery {
+                since_day: args.since_day.clone(),
+                until_day: args.until_day.clone(),
+                agents,
+                folders,
+            },
+        );
+        Ok((report, stats))
+    }
+
     /// The newest prompts of the own Claude home and of every Codex home,
     /// newest first. Read on every call and never kept: prompts can hold
     /// secrets.
@@ -486,6 +537,24 @@ pub async fn kit_usage(
         code: "io",
         detail: Some(e.to_string()),
     })?
+}
+
+/// The Stats page's report. Which agents are read follows `usage.scan`; the
+/// refresh runs on a blocking thread like `kit_usage`.
+#[tauri::command(async)]
+pub async fn kit_usage_report(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    args: UsageReportArgs,
+) -> Result<UsageReport, CmdError> {
+    let ctx = Ctx::of(&state)?;
+    let scan = settings_store::read(&app).usage.scan;
+    tauri::async_runtime::spawn_blocking(move || ctx.usage_report(&args, scan).map(|(r, _)| r))
+        .await
+        .map_err(|e| CmdError {
+            code: "io",
+            detail: Some(e.to_string()),
+        })?
 }
 
 #[tauri::command(async)]
@@ -935,6 +1004,127 @@ mod tests {
         let summary = f.ctx.usage("2026-11-03", "2026-11-03", true, 0).unwrap();
         let total: u64 = summary.days.iter().map(|(_, t)| t.sum()).sum();
         assert_eq!(total, 15);
+    }
+
+    fn write_claude_log(f: &Fixture, name: &str, cwd: &Path) {
+        let logs = f.user_home.join(".claude").join("projects").join("-p");
+        fs::create_dir_all(&logs).unwrap();
+        let cwd = cwd.to_string_lossy().replace('\\', "\\\\");
+        fs::write(
+            logs.join(format!("{name}.jsonl")),
+            format!(
+                r#"{{"type":"assistant","cwd":"{cwd}","timestamp":"2026-11-03T05:00:00.000Z","message":{{"id":"{name}","model":"model-a","usage":{{"input_tokens":10,"output_tokens":5}}}}}}"#
+            ) + "\n",
+        )
+        .unwrap();
+    }
+
+    fn write_codex_log(f: &Fixture, name: &str, cwd: &Path) {
+        let dir = f
+            .user_home
+            .join(".codex")
+            .join("sessions")
+            .join("2026")
+            .join("11")
+            .join("03");
+        fs::create_dir_all(&dir).unwrap();
+        let cwd = cwd.to_string_lossy().replace('\\', "\\\\");
+        fs::write(
+            dir.join(format!("rollout-2026-11-03T05-00-00-{name}.jsonl")),
+            format!(
+                r#"{{"timestamp":"2026-11-03T05:00:00.000Z","type":"session_meta","payload":{{"id":"{name}","cwd":"{cwd}"}}}}"#
+            ) + "\n"
+                + r#"{"timestamp":"2026-11-03T05:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":20,"output_tokens":4},"last_token_usage":{"input_tokens":20,"output_tokens":4}}}}"#
+                + "\n",
+        )
+        .unwrap();
+    }
+
+    fn report_args(agent: Option<Agent>, scope: UsageScope, refresh: bool) -> UsageReportArgs {
+        UsageReportArgs {
+            since_day: None,
+            until_day: "2026-11-30".into(),
+            agent,
+            scope,
+            refresh,
+            utc_offset_minutes: 0,
+        }
+    }
+
+    const BOTH_ON: ProviderSwitches = ProviderSwitches {
+        claude: true,
+        codex: true,
+    };
+
+    #[test]
+    fn a_report_with_both_scans_off_opens_no_log() {
+        let f = fixture();
+        write_claude_log(&f, "s1", &f.repo);
+        let off = ProviderSwitches {
+            claude: false,
+            codex: false,
+        };
+        let (report, stats) = f
+            .ctx
+            .usage_report(&report_args(None, UsageScope::All, true), off)
+            .unwrap();
+        assert_eq!(stats.files_read, 0);
+        assert_eq!(report.sessions, 0);
+        assert!(report.by_agent.is_empty());
+    }
+
+    #[test]
+    fn a_report_counts_only_the_agents_whose_scan_is_on() {
+        let f = fixture();
+        write_claude_log(&f, "s1", &f.repo);
+        write_codex_log(&f, "c1", &f.repo);
+        let all = report_args(None, UsageScope::All, true);
+        let (both, _) = f.ctx.usage_report(&all, BOTH_ON).unwrap();
+        assert_eq!(both.sessions, 2);
+        // The Codex session is in the index now; with Codex off it is not
+        // counted, and the refresh does not read its logs.
+        let claude_only = ProviderSwitches {
+            claude: true,
+            codex: false,
+        };
+        let (report, stats) = f.ctx.usage_report(&all, claude_only).unwrap();
+        assert_eq!(report.sessions, 1);
+        assert_eq!(report.by_agent.len(), 1);
+        assert_eq!(report.by_agent[0].0, Agent::Claude);
+        assert_eq!(stats.files_read, 0, "nothing changed since the last read");
+    }
+
+    #[test]
+    fn the_xdev_scope_keeps_only_registry_folders() {
+        let f = fixture();
+        write_claude_log(&f, "mine", &f.linked);
+        write_claude_log(&f, "elsewhere", Path::new("/not/in/the/registry"));
+        let (all, _) = f
+            .ctx
+            .usage_report(&report_args(None, UsageScope::All, true), BOTH_ON)
+            .unwrap();
+        assert_eq!(all.sessions, 2);
+        let (xdev, _) = f
+            .ctx
+            .usage_report(&report_args(None, UsageScope::Xdev, false), BOTH_ON)
+            .unwrap();
+        assert_eq!(xdev.sessions, 1);
+        assert_eq!(xdev.summary.by_folder[0].0, f.linked.to_string_lossy());
+    }
+
+    #[test]
+    fn a_report_without_refresh_does_not_save_the_index() {
+        let f = fixture();
+        write_claude_log(&f, "s1", &f.repo);
+        let index = f.ctx.data.join("kit").join("usage.json");
+        f.ctx
+            .usage_report(&report_args(None, UsageScope::All, false), BOTH_ON)
+            .unwrap();
+        assert!(!index.exists());
+        f.ctx
+            .usage_report(&report_args(None, UsageScope::All, true), BOTH_ON)
+            .unwrap();
+        assert!(index.exists());
     }
 
     #[test]
