@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OpenFlags, params};
 
 use crate::StoreError;
 use crate::query::{
@@ -98,6 +98,22 @@ impl SessionTextIndex {
         Ok(Self { conn })
     }
 
+    /// Opens an index that is already there for reading only: it never
+    /// creates the file or its folder, never migrates, and `None` means there
+    /// is no file. For a status read, which must not bring back what a clear
+    /// deleted nor hold the file open against its removal.
+    pub fn open_read_only(path: &Path) -> Result<Option<Self>, StoreError> {
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let conn = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.busy_timeout(Duration::from_secs(5))?;
+        Ok(Some(Self { conn }))
+    }
+
     /// `(file, mark json)` of every log read so far.
     pub fn marks(&self) -> Result<Vec<(String, String)>, StoreError> {
         let mut stmt = self.conn.prepare("SELECT file, mark FROM files")?;
@@ -171,50 +187,78 @@ impl SessionTextIndex {
         Ok(())
     }
 
-    /// The best hit of each session, best first.
-    pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SessionTextHit>, StoreError> {
+    /// `(rowid, session key)` of the best message of each session, best first.
+    /// Ranks without computing any snippet, so a common word costs one pass
+    /// over the matches and no text work.
+    fn best_rows(&self, query: &str, limit: usize) -> Result<Vec<(i64, String)>, StoreError> {
         let Some(fts) = fts_query(query) else {
             return Ok(Vec::new());
         };
         let mut stmt = self.conn.prepare(
-            "SELECT m.session_key,
-                    snippet(msgs_fts, 0, ?2, ?3, '', ?4),
-                    msgs_fts.body_raw
+            "SELECT msgs_fts.rowid, m.session_key
              FROM msgs_fts JOIN msgs m ON m.id = msgs_fts.rowid
              WHERE msgs_fts MATCH ?1
              ORDER BY bm25(msgs_fts)
-             LIMIT ?5",
+             LIMIT ?2",
         )?;
         let reads =
             i64::try_from(limit.saturating_mul(HITS_PER_SESSION).min(HITS_MAX)).unwrap_or(i64::MAX);
-        let rows = stmt.query_map(
-            params![
-                fts,
-                MARK_OPEN.to_string(),
-                MARK_CLOSE.to_string(),
-                SNIPPET_TOKENS,
-                reads
-            ],
-            |r| {
-                let key: String = r.get(0)?;
-                let snippet: String = r.get(1)?;
-                let original: String = r.get(2)?;
-                let raw = restore_snippet(&snippet, &fold(&original), &original);
-                Ok(SessionTextHit {
-                    session_key: key,
-                    snippet: render_snippet(&raw),
-                })
-            },
-        )?;
+        let rows = stmt.query_map(params![fts, reads], |r| Ok((r.get(0)?, r.get(1)?)))?;
         let mut seen = HashSet::new();
         let mut out = Vec::new();
-        for hit in rows {
-            let hit = hit?;
-            if out.len() < limit && seen.insert(hit.session_key.clone()) {
-                out.push(hit);
+        for row in rows {
+            let (id, key): (i64, String) = row?;
+            if out.len() < limit && seen.insert(key.clone()) {
+                out.push((id, key));
             }
         }
         Ok(out)
+    }
+
+    /// The best hit of each session, best first. The snippet is computed only
+    /// for the one message kept per session.
+    pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SessionTextHit>, StoreError> {
+        let best = self.best_rows(query, limit)?;
+        let Some(fts) = fts_query(query).filter(|_| !best.is_empty()) else {
+            return Ok(Vec::new());
+        };
+        let ids = best
+            .iter()
+            .map(|(id, _)| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        // The ids are numbers from the query above, never text from outside.
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT rowid, snippet(msgs_fts, 0, ?2, ?3, '', ?4), body_raw
+             FROM msgs_fts
+             WHERE msgs_fts MATCH ?1 AND rowid IN ({ids})"
+        ))?;
+        let mut snippets: std::collections::HashMap<i64, String> = stmt
+            .query_map(
+                params![
+                    fts,
+                    MARK_OPEN.to_string(),
+                    MARK_CLOSE.to_string(),
+                    SNIPPET_TOKENS
+                ],
+                |r| {
+                    let id: i64 = r.get(0)?;
+                    let snippet: String = r.get(1)?;
+                    let original: String = r.get(2)?;
+                    let raw = restore_snippet(&snippet, &fold(&original), &original);
+                    Ok((id, render_snippet(&raw)))
+                },
+            )?
+            .collect::<Result<_, _>>()?;
+        Ok(best
+            .into_iter()
+            .filter_map(|(id, session_key)| {
+                Some(SessionTextHit {
+                    session_key,
+                    snippet: snippets.remove(&id)?,
+                })
+            })
+            .collect())
     }
 
     /// `(sessions, messages)` held.
@@ -427,5 +471,46 @@ mod tests {
         assert!(!path.exists());
         assert!(!path.with_extension("sqlite-wal").exists());
         remove_session_index(&path).unwrap();
+    }
+
+    #[test]
+    fn a_read_only_open_never_creates_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("kit").join("s.sqlite");
+        assert!(SessionTextIndex::open_read_only(&path).unwrap().is_none());
+        assert!(!path.exists());
+        assert!(!dir.path().join("kit").exists());
+        let mut index = SessionTextIndex::open(&path).unwrap();
+        index
+            .apply(vec![text("a", "h:1", "words")], &[], &[], &[])
+            .unwrap();
+        let read = SessionTextIndex::open_read_only(&path).unwrap().unwrap();
+        assert_eq!(read.counts().unwrap(), (1, 1));
+        assert!(read.updated_at().unwrap().is_some());
+    }
+
+    #[test]
+    fn the_ranking_pass_keeps_the_best_message_of_each_session_without_snippets() {
+        let (_dir, mut index) = open();
+        index
+            .apply(
+                vec![
+                    text("a", "h:1", "parser and a long tail of other words here"),
+                    text("a", "h:1", "parser parser parser"),
+                    text("b", "h:2", "the parser"),
+                ],
+                &[],
+                &[],
+                &[],
+            )
+            .unwrap();
+        let rows = index.best_rows("parser", 10).unwrap();
+        let keys: Vec<_> = rows.iter().map(|(_, k)| k.as_str()).collect();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(keys.iter().collect::<HashSet<_>>().len(), 2);
+        assert_eq!(index.best_rows("parser", 1).unwrap().len(), 1);
+        assert!(index.best_rows("zzz", 5).unwrap().is_empty());
+        // The best message of h:1 is the repeated one (rowid 2).
+        assert!(rows.iter().any(|(id, k)| k == "h:1" && *id == 2));
     }
 }
