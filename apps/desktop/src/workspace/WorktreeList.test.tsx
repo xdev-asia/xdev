@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { RepoView, WorktreeView } from "@/api";
+import type { RepoView, SidebarItem, WorktreeView } from "@/api";
 import { translate } from "@/i18n";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
@@ -53,7 +53,7 @@ function harness(dots: Record<string, "working" | "failed" | "idle" | "done"> = 
   const draw = () => {
     hooks.cursor = 0;
     return WorktreeList({
-      repos: list(),
+      items: list().map((repo): SidebarItem => ({ kind: "repo", repo, kept: [] })),
       selected: "/demo/wt/xdev-oak",
       dots,
       ...extra,
@@ -324,7 +324,7 @@ it("a repo whose folder is gone stays listed with its name, a missing tag and it
 
 it("a long name and branch are cut by the row and keep their full text in a title", () => {
   const long = "feature/a-very-long-branch-name-that-does-not-fit-in-the-sidebar-at-all";
-  const view = withData({ repos: structuredClone(repos()).map(r => ({ ...r, worktrees: r.worktrees.map(w => w.name === "oak" ? { ...w, name: long, branch: long } : w) })) });
+  const view = withData({ items: structuredClone(repos()).map(r => ({ ...r, worktrees: r.worktrees.map(w => w.name === "oak" ? { ...w, name: long, branch: long } : w) })).map((repo): SidebarItem => ({ kind: "repo", repo, kept: [] })) });
   const oak = "/demo/wt/xdev-oak";
   expect(nodes(view.row(oak).props.children).find(n => n.props.className === "ws-wt-name")!.props.title).toBe(long);
   expect(part(view, oak, "ws-wt-branch")[0].props.title).toBe(long);
@@ -417,4 +417,48 @@ it("progress row renders with cancel, and a failed create offers Retry and Dismi
   button(failed, en("workspace.pending.retry")).props.onClick();
   button(failed, en("workspace.pending.dismiss")).props.onClick();
   expect(asked).toEqual({ cancel: ["create-1"], retry: ["create-2"], dismiss: ["create-2"] });
+});
+
+// Sidebar lifecycle: nesting, archived branches, folders and keyboard order.
+const asItem = (repo: RepoView, kept: Extract<SidebarItem, { kind: "repo" }>["kept"] = []): SidebarItem => ({ kind: "repo", repo, kept });
+
+it("a child worktree sits under its parent and folds away", () => {
+  const [xdev] = repos();
+  const [a, b] = xdev.worktrees.filter(w => !w.primary);
+  const nested = { ...xdev, worktrees: xdev.worktrees.map(w => (w.path === b.path ? { ...w, parent: a.path } : w)) };
+  // Same status for both, so they share a section and the child nests.
+  const dots = { [a.path]: "idle", [b.path]: "idle" } as typeof DOTS;
+  const view = harness(dots, repos, { items: [asItem(nested)] });
+  expect(view.html()).toContain("ws-wt-child");
+  expect(view.html()).toContain("ws-wt-kids");
+});
+
+it("archived branches list under their repo with a restore button", () => {
+  const [xdev] = repos();
+  const entry = { branch: "old", path: "/x/old", title: "Old work", keptMs: 1 } as never;
+  const view = harness(DOTS, repos, { items: [asItem(xdev, [{ entry, ahead: 0, archivedShown: true }] as never)], onRestore: () => {} });
+  expect(view.html()).toContain("ws-archived");
+  expect(view.html()).toContain(en("archived.title", { count: 1 }));
+});
+
+it("a plain folder shows as a row and a group lists its members", () => {
+  const [xdev] = repos();
+  const folder = { id: "f1", path: "/code/plain", name: "plain" } as never;
+  const items: SidebarItem[] = [
+    { kind: "folder", folder },
+    { kind: "group", group: { id: "g1", name: "Team", members: [xdev.id] }, items: [asItem(xdev)] },
+  ];
+  const html = harness(DOTS, repos, { items }).html();
+  expect(html).toContain("ws-folder");
+  expect(html).toContain("Team");
+});
+
+it("alt+arrow on a repo row asks for a new order", () => {
+  const [xdev, notes2] = repos();
+  const seen: string[][] = [];
+  const view = harness(DOTS, repos, { items: [asItem(xdev), asItem(notes2)], onReorder: (ids: string[]) => void seen.push(ids) });
+  const row = view.all().find(n => n.props["data-repo"] === notes2.id && /ws-repo/.test(n.props.className ?? ""))!;
+  const target = {};
+  row.props.onKeyDown({ key: "ArrowUp", altKey: true, target, currentTarget: target, preventDefault() {} });
+  expect(seen).toEqual([[notes2.id, xdev.id]]);
 });
