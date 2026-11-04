@@ -42,6 +42,7 @@ xdev-ai = { workspace = true, features = ["ts"] }
 xdev-core = { workspace = true, features = ["ts"] }
 xdev-git = { workspace = true, features = ["ts"] }
 xdev-kit = { workspace = true, features = ["ts"] }
+xdev-pty = { workspace = true, features = ["ts"] }
 xdev-workspace = { workspace = true, features = ["ts"] }
 
 [lints]

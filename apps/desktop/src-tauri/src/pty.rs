@@ -7,9 +7,10 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
+use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, State};
 use xdev_agent::{
@@ -19,6 +20,8 @@ use xdev_agent::{
 };
 use xdev_ai::Registry;
 use xdev_policy::{Action, Audited, Policy, Verdict, agent_fingerprint};
+use xdev_pty::client::Sink;
+use xdev_pty::proto::SessionInfo;
 use xdev_pty::{PtyError, Session, SpawnSpec};
 use xdev_workspace::{
     HookKind, Registry as Workspace, SetupPolicy, WorkspaceError, hook_env, hooks_for,
@@ -26,7 +29,8 @@ use xdev_workspace::{
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError, cli_beside};
-use crate::settings::StatusSettings;
+use crate::ptyd::{self, LocalHost, PtyHost};
+use crate::settings::{OnQuit, StatusSettings};
 use crate::settings_store;
 
 impl From<LaunchError> for CmdError {
@@ -51,7 +55,7 @@ impl From<PtyError> for CmdError {
 /// `repo_hooks`, in the default shell.
 pub const SETUP_PROFILE: &str = "xdev:setup";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct PtyInfo {
@@ -88,24 +92,195 @@ pub struct PtyExit {
     code: Option<i32>,
 }
 
-#[derive(Default)]
+/// What `pty_attach` returns: the tab's launch as it was spawned, and the
+/// byte offset the output channel starts at; the client counts from there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct PtyAttached {
+    pub info: PtyInfo,
+    pub seq: u64,
+    /// The ring had dropped output before `from_seq`; the replay starts later.
+    pub truncated: bool,
+}
+
+/// Where terminals run this app run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum PtydState {
+    /// Settings → Terminal → "Terminal service" is off: in the app, as before.
+    Off,
+    Running,
+    /// The service could not start or answer: in the app, and they end with it.
+    Fallback,
+    /// A service of an older build answers; it runs until restarted.
+    OldVersion,
+}
+
+/// Payload of `ptyd_status` and the `ptyd://status` event.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct PtydStatus {
+    pub state: PtydState,
+    pub service_version: Option<String>,
+    /// The error code of a fallback.
+    pub reason: Option<String>,
+}
+
+/// One live PTY, in the app (`Session`) or in the service.
+pub trait PtyHandle: Send + Sync {
+    fn write(&self, d: Vec<u8>);
+    fn resize(&self, c: u16, r: u16) -> Result<(), PtyError>;
+    fn ack(&self, n: usize);
+    fn kill(&self);
+    fn pid(&self) -> Option<u32>;
+    /// A service PTY runs on when the app ends; one in the app does not.
+    fn outlives_app(&self) -> bool {
+        false
+    }
+}
+
+impl PtyHandle for Session {
+    fn write(&self, d: Vec<u8>) {
+        Session::write(self, d)
+    }
+    fn resize(&self, c: u16, r: u16) -> Result<(), PtyError> {
+        Session::resize(self, c, r)
+    }
+    fn ack(&self, n: usize) {
+        Session::ack(self, n)
+    }
+    fn kill(&self) {
+        Session::kill(self)
+    }
+    fn pid(&self) -> Option<u32> {
+        Session::pid(self)
+    }
+}
+
 pub struct Ptys {
-    sessions: Mutex<HashMap<String, Session>>,
+    sessions: Mutex<HashMap<String, Box<dyn PtyHandle>>>,
     /// Fingerprints of skip-mode launches a person has just approved. A start
     /// takes its fingerprint out, so each approval covers one start.
     passes: Mutex<HashSet<String>>,
+    /// None until the start has picked one from the setting and the service.
+    host: Mutex<Option<(Arc<dyn PtyHost>, PtydStatus)>>,
+    host_set: Condvar,
+    /// The UI's answer to "On quit: Ask"; none until it answers.
+    quit_choice: Mutex<Option<bool>>,
 }
 
+impl Default for Ptys {
+    /// In the app, as with the service off; tests start from here.
+    fn default() -> Ptys {
+        let ptys = Ptys::pending();
+        ptys.set_host(
+            Arc::new(LocalHost),
+            ptyd::status(PtydState::Off, None, None),
+        );
+        ptys
+    }
+}
+
+/// How long a spawn waits for the start to pick a host: the service's own
+/// start wait, and a little more.
+const HOST_WAIT: Duration = Duration::from_secs(8);
+
 impl Ptys {
-    fn map(&self) -> MutexGuard<'_, HashMap<String, Session>> {
+    fn map(&self) -> MutexGuard<'_, HashMap<String, Box<dyn PtyHandle>>> {
         self.sessions.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// No host yet: terminals wait for `set_host`.
+    pub(crate) fn pending() -> Ptys {
+        Ptys {
+            sessions: Mutex::default(),
+            passes: Mutex::default(),
+            host: Mutex::new(None),
+            host_set: Condvar::new(),
+            quit_choice: Mutex::new(None),
+        }
+    }
+
+    /// The host if one is set, without waiting.
+    pub(crate) fn peek_host(&self) -> Option<Arc<dyn PtyHost>> {
+        let host = self.host.lock().unwrap_or_else(PoisonError::into_inner);
+        host.as_ref().map(|(h, _)| h.clone())
+    }
+
+    /// Back to no host: terminals wait for the next `set_host`.
+    pub(crate) fn clear_host(&self) {
+        *self.host.lock().unwrap_or_else(PoisonError::into_inner) = None;
+    }
+
+    pub(crate) fn set_quit_choice(&self, end: bool) {
+        *self
+            .quit_choice
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(end);
+    }
+
+    /// On app exit. PTYs in the app always end with it; the service's end
+    /// only for "End all", or "Ask" answered with End. Unanswered, Ask keeps
+    /// them, as Keep running does.
+    pub fn quit(&self, on_quit: OnQuit) {
+        let end = match on_quit {
+            OnQuit::Keep => false,
+            OnQuit::End => true,
+            OnQuit::Ask => {
+                *self
+                    .quit_choice
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    == Some(true)
+            }
+        };
+        // Taken out first, so killing never runs under the lock.
+        let handles = std::mem::take(&mut *self.map());
+        for handle in handles.values() {
+            if end || !handle.outlives_app() {
+                handle.kill();
+            }
+        }
+        // Also the ones no tab of this run holds, from earlier runs.
+        if end && let Some(client) = self.peek_host().and_then(|h| h.service()) {
+            let _ = client.quit_all();
+        }
+    }
+
+    /// The host and its status; the app's own when none was set in time.
+    pub(crate) fn host_status(&self) -> (Arc<dyn PtyHost>, PtydStatus) {
+        let guard = self.host.lock().unwrap_or_else(PoisonError::into_inner);
+        let (guard, _) = self
+            .host_set
+            .wait_timeout_while(guard, HOST_WAIT, |h| h.is_none())
+            .unwrap_or_else(PoisonError::into_inner);
+        guard.clone().unwrap_or_else(|| {
+            let reason = Some("ptyd_unreachable".to_owned());
+            (
+                Arc::new(LocalHost) as Arc<dyn PtyHost>,
+                ptyd::status(PtydState::Fallback, None, reason),
+            )
+        })
+    }
+
+    pub(crate) fn host(&self) -> Arc<dyn PtyHost> {
+        self.host_status().0
+    }
+
+    pub(crate) fn set_host(&self, host: Arc<dyn PtyHost>, status: PtydStatus) {
+        *self.host.lock().unwrap_or_else(PoisonError::into_inner) = Some((host, status));
+        self.host_set.notify_all();
     }
 
     fn passes(&self) -> MutexGuard<'_, HashSet<String>> {
         self.passes.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// On app exit, so no agent outlives the window.
+    /// Ends every PTY this app run holds.
+    #[cfg(test)]
     pub fn kill_all(&self) {
         // Taken out first, so killing never runs under the lock.
         let sessions = std::mem::take(&mut *self.map());
@@ -114,8 +289,8 @@ impl Ptys {
         }
     }
 
-    fn with<T>(&self, id: &str, f: impl FnOnce(&Session) -> T) -> Result<T, CmdError> {
-        self.map().get(id).map(f).ok_or(CmdError {
+    fn with<T>(&self, id: &str, f: impl FnOnce(&dyn PtyHandle) -> T) -> Result<T, CmdError> {
+        self.map().get(id).map(|h| f(h.as_ref())).ok_or(CmdError {
             code: "pty_unknown",
             detail: None,
         })
@@ -258,18 +433,9 @@ pub(crate) fn spawn_launch(
     let (program, args) = launch.command();
     let mut env = launch.env;
     env.push(("XDEV_PTY_ID".to_owned(), OsString::from(&id)));
-    let spec = SpawnSpec {
-        program: program.clone(),
-        args,
-        env,
-        cwd,
-        cols,
-        rows,
-    };
-    let session = Session::spawn(spec, on_output, on_exit)?;
-    let info = PtyInfo {
+    let mut info = PtyInfo {
         id: id.clone(),
-        pid: session.pid(),
+        pid: None,
         program: program.display().to_string(),
         agent: launch.agent,
         profile: launch.profile,
@@ -280,7 +446,28 @@ pub(crate) fn spawn_launch(
         hook_events: launch.hook_events,
         cli: launch.cli,
     };
-    map.insert(id, session);
+    // What the service lists the PTY with; `info` comes back on attach.
+    let meta = serde_json::json!({
+        "worktree": cwd.display().to_string(),
+        "tabId": id,
+        "profile": info.profile,
+        "info": info,
+    });
+    let spec = SpawnSpec {
+        program,
+        args,
+        env,
+        cwd,
+        cols,
+        rows,
+    };
+    let sink = Sink {
+        on_output: Box::new(on_output),
+        on_exit: Box::new(on_exit),
+    };
+    let handle = ptys.host().spawn(&id, spec, meta, sink)?;
+    info.pid = handle.pid();
+    map.insert(id, handle);
     Ok(info)
 }
 
@@ -579,15 +766,133 @@ pub fn pty_ack(ptys: State<'_, Ptys>, id: String, n: usize) -> Result<(), CmdErr
 // Off the main thread: ending a process tree waits on taskkill and the console.
 #[tauri::command(async)]
 pub fn pty_kill(ptys: State<'_, Ptys>, id: String) {
-    // Dropping the session kills it; an unknown id has already ended.
-    let session = ptys.map().remove(&id);
-    drop(session);
+    // An unknown id has already ended. A service PTY ends only on `kill`.
+    let handle = ptys.map().remove(&id);
+    if let Some(handle) = handle {
+        handle.kill();
+    }
+}
+
+/// Reattaches a tab to the service's PTY `id`; the channel replays its ring
+/// from `from_seq`. `pty_gone` when the service does not hold it.
+#[tauri::command(async)]
+pub fn pty_attach(
+    app: AppHandle,
+    ptys: State<'_, Ptys>,
+    id: String,
+    from_seq: u64,
+    out: Channel<InvokeResponseBody>,
+) -> Result<PtyAttached, CmdError> {
+    let host = ptys.host();
+    let gone = || CmdError {
+        code: "pty_gone",
+        detail: None,
+    };
+    let client = host.service().ok_or_else(gone)?;
+    let listed = client.list()?.into_iter().find(|s| s.id == id);
+    let session = listed.ok_or_else(gone)?;
+    let exit_id = id.clone();
+    let sink = Sink {
+        on_output: Box::new(move |bytes| {
+            let _ = out.send(InvokeResponseBody::Raw(bytes));
+        }),
+        on_exit: Box::new(move |code| {
+            let _ = app.emit("pty://exit", PtyExit { id: exit_id, code });
+        }),
+    };
+    let mut map = ptys.map();
+    if map.contains_key(&id) {
+        return Err(CmdError {
+            code: "pty_exists",
+            detail: None,
+        });
+    }
+    let (handle, attached) = host.attach(&id, from_seq, sink)?;
+    map.insert(id.clone(), handle);
+    Ok(PtyAttached {
+        info: info_of(&id, &session),
+        seq: attached.seq,
+        truncated: attached.truncated,
+    })
+}
+
+/// The launch the service listed `session` with; a plain shell when the
+/// meta is not one this build wrote.
+fn info_of(id: &str, session: &SessionInfo) -> PtyInfo {
+    let mut info =
+        serde_json::from_value::<PtyInfo>(session.meta["info"].clone()).unwrap_or(PtyInfo {
+            id: id.to_owned(),
+            pid: None,
+            program: session.program.clone(),
+            agent: false,
+            profile: "shell".to_owned(),
+            permissions: Permissions::Ask.as_str().to_owned(),
+            account: None,
+            hooks: false,
+            hook_events: Vec::new(),
+            cli: None,
+        });
+    info.id = id.to_owned();
+    info.pid = session.pid;
+    info
+}
+
+#[tauri::command(async)]
+pub fn ptyd_status(ptys: State<'_, Ptys>) -> PtydStatus {
+    ptys.host_status().1
+}
+
+#[tauri::command(async)]
+pub fn ptyd_sessions(ptys: State<'_, Ptys>) -> Result<Vec<SessionInfo>, CmdError> {
+    match ptys.host().service() {
+        Some(client) => Ok(client.list()?),
+        None => Ok(Vec::new()),
+    }
+}
+
+#[tauri::command(async)]
+pub fn ptyd_end(ptys: State<'_, Ptys>, id: String) -> Result<(), CmdError> {
+    let client = ptys.host().service().ok_or_else(unreachable_service)?;
+    // A tab of this run lets go of it; its exit event follows.
+    let handle = ptys.map().remove(&id);
+    drop(handle);
+    client.kill(&id);
+    Ok(())
+}
+
+/// Every PTY in the service; the service itself ends on its own once idle.
+#[tauri::command(async)]
+pub fn ptyd_end_all(ptys: State<'_, Ptys>) -> Result<(), CmdError> {
+    let client = ptys.host().service().ok_or_else(unreachable_service)?;
+    let mut map = ptys.map();
+    for session in client.list()? {
+        map.remove(&session.id);
+        client.kill(&session.id);
+    }
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn ptyd_restart(app: AppHandle, state: State<'_, AppState>) -> Result<(), CmdError> {
+    ptyd::restart(&app, state.local_dir.as_deref())
+}
+
+/// The UI's answer to "On quit: Ask", given before it closes the window.
+#[tauri::command]
+pub fn ptyd_quit_choice(ptys: State<'_, Ptys>, end: bool) {
+    ptys.set_quit_choice(end);
+}
+
+fn unreachable_service() -> CmdError {
+    CmdError {
+        code: "ptyd_unreachable",
+        detail: None,
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, mpsc};
-    use std::time::Duration;
+    use std::sync::mpsc;
 
     use super::*;
     use xdev_agent::{Cli, hook_args};
@@ -625,6 +930,176 @@ mod tests {
         let mut l = agent();
         l.add_hooks_with(Path::new("/opt/xdev"), None, None);
         l
+    }
+
+    /// Records each spawn it is asked for; nothing runs.
+    #[derive(Default)]
+    struct FakeHost {
+        spawns: Mutex<Vec<(String, serde_json::Value)>>,
+    }
+
+    struct FakePty;
+
+    impl PtyHandle for FakePty {
+        fn write(&self, _: Vec<u8>) {}
+        fn resize(&self, _: u16, _: u16) -> Result<(), PtyError> {
+            Ok(())
+        }
+        fn ack(&self, _: usize) {}
+        fn kill(&self) {}
+        fn pid(&self) -> Option<u32> {
+            Some(4242)
+        }
+    }
+
+    impl PtyHost for FakeHost {
+        fn spawn(
+            &self,
+            id: &str,
+            _spec: SpawnSpec,
+            meta: serde_json::Value,
+            _sink: Sink,
+        ) -> Result<Box<dyn PtyHandle>, CmdError> {
+            self.spawns.lock().unwrap().push((id.to_owned(), meta));
+            Ok(Box::new(FakePty))
+        }
+    }
+
+    #[test]
+    fn the_gate_runs_before_the_host_hears_of_a_spawn() {
+        let data = tempfile::tempdir().unwrap();
+        let ptys = Ptys::default();
+        let host = Arc::new(FakeHost::default());
+        ptys.set_host(host.clone(), ptyd::status(PtydState::Running, None, None));
+        let (first, _) = start(&ptys, data.path(), "a", agent());
+        assert_eq!(first.unwrap_err().code, "needs_approval");
+        assert!(host.spawns.lock().unwrap().is_empty());
+
+        approve_launch(&ptys, data.path(), &agent()).unwrap();
+        let info = start(&ptys, data.path(), "a", agent()).0.unwrap();
+        assert_eq!(info.pid, Some(4242));
+        let spawns = host.spawns.lock().unwrap();
+        assert_eq!(spawns.len(), 1);
+        let (id, meta) = &spawns[0];
+        assert_eq!(id, "a");
+        assert_eq!(meta["tabId"], "a");
+        assert_eq!(meta["profile"], "claude");
+        assert_eq!(meta["worktree"], std::env::temp_dir().display().to_string());
+        assert_eq!(meta["info"]["agent"], true);
+    }
+
+    /// Records whether it was killed; `outlives` stands for a service PTY.
+    struct Held {
+        killed: Arc<std::sync::atomic::AtomicBool>,
+        outlives: bool,
+    }
+
+    impl PtyHandle for Held {
+        fn write(&self, _: Vec<u8>) {}
+        fn resize(&self, _: u16, _: u16) -> Result<(), PtyError> {
+            Ok(())
+        }
+        fn ack(&self, _: usize) {}
+        fn kill(&self) {
+            self.killed.store(true, Ordering::SeqCst);
+        }
+        fn pid(&self) -> Option<u32> {
+            None
+        }
+        fn outlives_app(&self) -> bool {
+            self.outlives
+        }
+    }
+
+    /// Quits with one service PTY and one in the app; which were killed.
+    fn quit_with(on_quit: OnQuit, choice: Option<bool>) -> (bool, bool) {
+        let ptys = Ptys::default();
+        let flags = [false, true].map(|outlives| {
+            let killed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let id = if outlives { "service" } else { "local" };
+            ptys.map().insert(
+                id.into(),
+                Box::new(Held {
+                    killed: killed.clone(),
+                    outlives,
+                }),
+            );
+            killed
+        });
+        if let Some(end) = choice {
+            ptys.set_quit_choice(end);
+        }
+        ptys.quit(on_quit);
+        assert!(ptys.map().is_empty());
+        let [local, service] = flags.map(|f| f.load(Ordering::SeqCst));
+        (local, service)
+    }
+
+    #[test]
+    fn quit_keeps_service_ptys_for_keep_and_ends_them_for_end() {
+        // (local killed, service killed)
+        assert_eq!(quit_with(OnQuit::Keep, None), (true, false));
+        assert_eq!(quit_with(OnQuit::End, None), (true, true));
+        // A Keep answer to a stale Ask changes nothing for Keep or End.
+        assert_eq!(quit_with(OnQuit::Keep, Some(true)), (true, false));
+    }
+
+    #[test]
+    fn quit_with_ask_follows_the_ui_answer_and_keeps_when_unanswered() {
+        assert_eq!(quit_with(OnQuit::Ask, None), (true, false));
+        assert_eq!(quit_with(OnQuit::Ask, Some(false)), (true, false));
+        assert_eq!(quit_with(OnQuit::Ask, Some(true)), (true, true));
+    }
+
+    #[test]
+    fn attach_reads_the_launch_back_from_the_meta() {
+        let data = tempfile::tempdir().unwrap();
+        let ptys = Ptys::default();
+        let host = Arc::new(FakeHost::default());
+        ptys.set_host(host.clone(), ptyd::status(PtydState::Running, None, None));
+        approve_launch(&ptys, data.path(), &agent()).unwrap();
+        let spawned = start(&ptys, data.path(), "a", agent()).0.unwrap();
+        let meta = host.spawns.lock().unwrap()[0].1.clone();
+        let session = SessionInfo {
+            id: "a".into(),
+            pid: Some(77),
+            program: "sh".into(),
+            cwd: "/".into(),
+            started_ms: 0,
+            last_output_ms: 0,
+            last_input_ms: 0,
+            meta,
+            attached: false,
+            exited: None,
+        };
+        let info = info_of("a", &session);
+        assert_eq!(info.pid, Some(77));
+        assert_eq!(
+            PtyInfo {
+                pid: Some(4242),
+                ..info
+            },
+            spawned
+        );
+        // Meta from another build: a plain shell, never an agent.
+        let other = SessionInfo {
+            meta: serde_json::json!({ "x": 1 }),
+            ..session
+        };
+        let info = info_of("a", &other);
+        assert!(!info.agent);
+        assert_eq!(info.program, "sh");
+    }
+
+    #[test]
+    fn an_app_host_has_nothing_to_attach() {
+        let (s, _) = std::sync::mpsc::channel::<()>();
+        let sink = Sink {
+            on_output: Box::new(|_| {}),
+            on_exit: Box::new(move |_| drop(s)),
+        };
+        let err = LocalHost.attach("a", 0, sink).err().unwrap();
+        assert_eq!(err.code, "pty_gone");
     }
 
     #[test]

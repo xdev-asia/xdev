@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type ApiError, type CursorStyle, type FontWeight, type TerminalSettings } from "@/api";
+import { toApiError, type ApiError, type CursorStyle, type FontWeight, type OnQuit, type TerminalSettings } from "@/api";
 import { useI18n } from "@/i18n";
 import { setTerminalSettings, TERMINAL_DEFAULTS, TERMINAL_LIMITS } from "@/terminal/terminalSettings";
+import { RunningTerminals } from "./RunningTerminals";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
@@ -12,7 +13,9 @@ export const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
 export const CLIPBOARD_SWITCHES = ["copyOnSelect", "rightClickPaste", "osc52Clipboard"] as const;
 const FONT_IDS = ["terminal.fontFamily", "terminal.fontSize", "terminal.fontWeight", "terminal.lineHeight"];
 const CURSOR_IDS = ["terminal.cursorStyle", "terminal.cursorBlink"];
-type NumberField = "fontSize" | "lineHeight" | "scrollback";
+export const ON_QUIT: OnQuit[] = ["keep", "end", "ask"];
+const SERVICE_IDS = ["terminal.service", "terminal.onQuit", "terminal.ringMb"];
+type NumberField = "fontSize" | "lineHeight" | "scrollback" | "ringMb";
 type Draft = Partial<Record<NumberField | "fontFamily", string>>;
 
 function without(draft: Draft, field: keyof Draft): Draft {
@@ -258,6 +261,59 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
         ))}
       </ul>
       </SettingGroup>
+
+      <SettingGroup ids={SERVICE_IDS} filter={filter}>
+      <h4 className="settings-group">{t("settings.terminal.service.group")}</h4>
+      <ul className="settings-list">
+        {settingShown(filter, "terminal.service") && (
+        <li className="settings-item" data-switch="service" data-setting-id="terminal.service">
+          <div className="settings-item-text">
+            <strong>{t("settings.terminal.service.label")}</strong>
+            <span className="settings-path">{t("settings.terminal.service.hint")}</span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            className="agent-switch"
+            aria-checked={current.service}
+            aria-label={t("settings.terminal.service.label")}
+            disabled={busy}
+            onClick={() => void patch({ service: !current.service })}
+          />
+        </li>
+        )}
+      </ul>
+      <div className="ws-fields">
+        <SettingRow id="terminal.onQuit" filter={filter}>
+        <label className="ws-field">
+          <span>{t("settings.terminal.service.onQuit")}</span>
+          <select
+            value={current.onQuit}
+            disabled={busy}
+            data-field="onQuit"
+            onChange={(e) => void patch({ onQuit: e.target.value as OnQuit })}
+          >
+            {ON_QUIT.map((q) => (
+              <option key={q} value={q}>
+                {t(`settings.terminal.service.onQuit.${q}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+        </SettingRow>
+        <SettingRow id="terminal.ringMb" filter={filter}>
+        <label className="ws-field">
+          <span>{t("settings.terminal.service.ringMb")}</span>
+          {numberInput("ringMb", 1)}
+          <small className="settings-hint">{t("settings.terminal.service.ringMbHint")}</small>
+        </label>
+        </SettingRow>
+      </div>
+      </SettingGroup>
+
+      <SettingRow id="terminal.running" filter={filter}>
+        <RunningTerminals api={api} />
+      </SettingRow>
 
       <SettingRow id="terminal.reset" filter={filter}>
       <div className="settings-actions settings-actions-start">

@@ -18,13 +18,29 @@ const MAX_BATCH: usize = READ_CHUNK * 8;
 const POLL: Duration = Duration::from_millis(50);
 
 /// Bytes sent to the UI that it has not yet acked.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Flow {
     unacked: Mutex<usize>,
     below: Condvar,
+    window: usize,
+}
+
+impl Default for Flow {
+    fn default() -> Flow {
+        Flow::with_window(WINDOW)
+    }
 }
 
 impl Flow {
+    /// Reading pauses once `window` bytes wait for an ack.
+    pub(crate) fn with_window(window: usize) -> Flow {
+        Flow {
+            unacked: Mutex::new(0),
+            below: Condvar::new(),
+            window,
+        }
+    }
+
     pub(crate) fn sent(&self, n: usize) {
         *self.lock() += n;
     }
@@ -38,7 +54,7 @@ impl Flow {
     /// Blocks while the UI is a full window behind, or until `stop` is set.
     pub(crate) fn wait_below_window(&self, stop: &AtomicBool) {
         let mut unacked = self.lock();
-        while *unacked >= WINDOW && !stop.load(Ordering::SeqCst) {
+        while *unacked >= self.window && !stop.load(Ordering::SeqCst) {
             unacked = self
                 .below
                 .wait_timeout(unacked, POLL)
@@ -218,6 +234,21 @@ mod tests {
         assert!((WINDOW..=WINDOW + 64 * 1024).contains(&paused), "{paused}");
         flow.ack(paused);
         handle.join().unwrap();
+        assert_eq!(total.load(Ordering::SeqCst), 5 * 1024 * 1024);
+    }
+
+    #[test]
+    fn an_unbounded_window_never_pauses() {
+        let total = Arc::new(AtomicUsize::new(0));
+        let t = total.clone();
+        pump(
+            five_mb(),
+            Arc::new(Flow::with_window(usize::MAX)),
+            Arc::new(AtomicBool::new(false)),
+            move |c| {
+                t.fetch_add(c.len(), Ordering::SeqCst);
+            },
+        );
         assert_eq!(total.load(Ordering::SeqCst), 5 * 1024 * 1024);
     }
 

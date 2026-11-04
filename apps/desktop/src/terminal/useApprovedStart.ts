@@ -90,7 +90,7 @@ export function useApprovedStart(api: Api): {
     setError(null);
     const attempt = async (approved: boolean): Promise<PtyInfo | null> => {
       try {
-        return await client.start(cwd, profileId, cols, rows, write, account);
+        return await client.start(cwd, profileId, cols, rows, write, account, { truncated: t("ptyd.truncated") });
       } catch (e) {
         return new Promise<PtyInfo | null>((resolve) =>
           ask(

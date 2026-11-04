@@ -11,7 +11,7 @@ use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_s
 use xdev_ai::process::kill_tree;
 use xdev_ai::shim;
 
-use crate::pump::{Flow, pump};
+use crate::pump::{Flow, WINDOW, pump};
 
 /// Batch shims get their command line through this variable; see `command`.
 const SHIM_LINE: &str = "XDEV_SHIM_LINE";
@@ -63,6 +63,18 @@ impl Session {
         on_output: impl FnMut(Vec<u8>) + Send + 'static,
         on_exit: impl FnOnce(Option<i32>) + Send + 'static,
     ) -> Result<Session, PtyError> {
+        Session::spawn_with_window(spec, WINDOW, on_output, on_exit)
+    }
+
+    /// Like `spawn`, reading paused once `window` bytes wait for an ack. The
+    /// service passes `usize::MAX`: its ring takes every byte, so a child
+    /// whose client is away never blocks on a full console.
+    pub fn spawn_with_window(
+        spec: SpawnSpec,
+        window: usize,
+        on_output: impl FnMut(Vec<u8>) + Send + 'static,
+        on_exit: impl FnOnce(Option<i32>) + Send + 'static,
+    ) -> Result<Session, PtyError> {
         let cmd = command(&spec)?;
         let pair = native_pty_system()
             .openpty(size(spec.cols, spec.rows))
@@ -73,7 +85,7 @@ impl Session {
         let reader = pair.master.try_clone_reader().map_err(spawn_error)?;
         let mut writer = pair.master.take_writer().map_err(spawn_error)?;
 
-        let flow = Arc::new(Flow::default());
+        let flow = Arc::new(Flow::with_window(window));
         let stop = Arc::new(AtomicBool::new(false));
         {
             let (flow, stop) = (flow.clone(), stop.clone());

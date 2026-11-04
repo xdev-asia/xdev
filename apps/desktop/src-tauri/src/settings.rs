@@ -479,6 +479,15 @@ pub struct TerminalSettings {
     pub right_click_paste: bool,
     /// Programs may write the clipboard with OSC 52; they can never read it.
     pub osc52_clipboard: bool,
+    /// PTYs run in the `xdev-ptyd` service and outlive the app; read at start.
+    #[serde(deserialize_with = "lenient_service")]
+    pub service: bool,
+    /// What quitting the app does to the service's PTYs.
+    #[serde(deserialize_with = "lenient")]
+    pub on_quit: OnQuit,
+    /// The service's output ring per PTY, in MB, 1..=16.
+    #[serde(deserialize_with = "lenient_ring_mb")]
+    pub ring_mb: u8,
 }
 
 impl Default for TerminalSettings {
@@ -494,6 +503,9 @@ impl Default for TerminalSettings {
             copy_on_select: true,
             right_click_paste: !cfg!(target_os = "macos"),
             osc52_clipboard: true,
+            service: true,
+            on_quit: OnQuit::Keep,
+            ring_mb: 2,
         }
     }
 }
@@ -502,6 +514,7 @@ impl TerminalSettings {
     pub const FONT_SIZE: RangeInclusive<u8> = 8..=32;
     pub const LINE_HEIGHT: RangeInclusive<f32> = 1.0..=2.0;
     pub const MAX_SCROLLBACK: u32 = 100_000;
+    pub const RING_MB: RangeInclusive<u8> = 1..=16;
 
     /// As stored: every number inside its range.
     pub fn clamped(mut self) -> Self {
@@ -515,8 +528,23 @@ impl TerminalSettings {
             *Self::LINE_HEIGHT.start()
         };
         self.scrollback = self.scrollback.min(Self::MAX_SCROLLBACK);
+        self.ring_mb = self
+            .ring_mb
+            .clamp(*Self::RING_MB.start(), *Self::RING_MB.end());
         self
     }
+}
+
+/// Settings → Terminal → "On quit". Ask is answered by the UI before the
+/// window closes (`ptyd_quit_choice`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum OnQuit {
+    #[default]
+    Keep,
+    End,
+    Ask,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -794,6 +822,18 @@ where
 {
     let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
     Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+/// A service field that does not parse reads as its default, not the type's,
+/// and leaves the rest of the terminal section alone.
+fn lenient_service<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bool, D::Error> {
+    let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+    Ok(serde_json::from_value(value).unwrap_or(TerminalSettings::default().service))
+}
+
+fn lenient_ring_mb<'de, D: serde::Deserializer<'de>>(de: D) -> Result<u8, D::Error> {
+    let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+    Ok(serde_json::from_value(value).unwrap_or(TerminalSettings::default().ring_mb))
 }
 
 /// A list section: an entry that does not parse is left out, the rest kept;
@@ -1216,6 +1256,23 @@ mod tests {
     }
 
     #[test]
+    fn a_bad_service_field_costs_only_itself() {
+        let t: TerminalSettings =
+            serde_json::from_str(r#"{ "fontSize": 15, "onQuit": "later", "ringMb": "big" }"#)
+                .unwrap();
+        assert_eq!(t.font_size, 15);
+        assert_eq!(t.on_quit, OnQuit::Keep);
+        assert_eq!(t.ring_mb, 2);
+        assert!(t.service);
+        let ring = |ring_mb| TerminalSettings {
+            ring_mb,
+            ..TerminalSettings::default()
+        };
+        assert_eq!(ring(0).clamped().ring_mb, 1);
+        assert_eq!(ring(200).clamped().ring_mb, 16);
+    }
+
+    #[test]
     fn terminal_round_trips_camel_case() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(FILE_NAME);
@@ -1230,6 +1287,9 @@ mod tests {
             copy_on_select: false,
             right_click_paste: false,
             osc52_clipboard: false,
+            service: false,
+            on_quit: OnQuit::Ask,
+            ring_mb: 8,
         };
         let settings = Settings {
             terminal: terminal.clone(),
@@ -1241,6 +1301,8 @@ mod tests {
         assert!(raw.contains("\"lineHeight\": 1.2,"), "{raw}");
         assert!(raw.contains("\"cursorStyle\": \"underline\""), "{raw}");
         assert!(raw.contains("\"fontWeight\": \"medium\""), "{raw}");
+        assert!(raw.contains("\"onQuit\": \"ask\""), "{raw}");
+        assert!(raw.contains("\"ringMb\": 8"), "{raw}");
 
         // A bad terminal section costs only itself.
         fs::write(
