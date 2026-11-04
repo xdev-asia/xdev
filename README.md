@@ -36,16 +36,20 @@ Download from [Releases](https://github.com/xdev-asia/xdev/releases) or [xdev.as
 
 The `xdev` CLI ships as a separate archive per target on the same page. Installers are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper will warn. Updates are signed: the app downloads them in the background and installs on the next start.
 
+## Architecture
+
+The desktop app (Tauri host plus React UI) talks to a separate per-user terminal service, `xdev-ptyd`, over a local socket or named pipe (`xdev-ipc`, token auth). Terminals and agents run inside the service, so sessions survive an app restart or reload and the UI re-attaches. Each agent provider has one active account; new agent tabs launch with its config dir. Details: [docs/architecture.md](docs/architecture.md).
+
 ## Layout
 
 | Path | What |
 |---|---|
-| `crates/` | Rust core: `xdev-core`, `xdev-workspace`, `xdev-pty`, `xdev-agent`, `xdev-kit`, `xdev-git`, `xdev-vault`, `xdev-store`, `xdev-export`, `xdev-mcp`, `xdev-ai`, `xdev-policy`, `xdev-api`, `xdev-cli`. Map: [docs/architecture.md](docs/architecture.md) |
+| `crates/` | Rust core: `xdev-core`, `xdev-workspace`, `xdev-pty`, `xdev-ipc`, `xdev-agent`, `xdev-kit`, `xdev-git`, `xdev-vault`, `xdev-store`, `xdev-export`, `xdev-mcp`, `xdev-ai`, `xdev-policy`, `xdev-api`, `xdev-cli`. Map: [docs/architecture.md](docs/architecture.md) |
 | `apps/desktop` | Tauri 2 + React desktop app |
 | `app-packs/` | Apps that install into the shell (`docs`, `adr`). Deferred: placeholder manifests, no plugin host (ADR 0001) |
 | `packages/ui` | Design tokens and shared components |
 | `packages/bindings` | TypeScript types generated from Rust (`cargo test -p xdev-desktop export_bindings`) |
-| `docs/architecture.md` | How the pieces fit: crates, agent tabs, where data lives |
+| `docs/architecture.md` | How the pieces fit: crates, terminal service, accounts, where data lives |
 | `docs/adr/` | Architecture decisions |
 | `docs/guide/` | User guides |
 
