@@ -1,0 +1,66 @@
+/* Settings → Stats & Usage */
+
+.usage-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--x-space-3);
+  margin-bottom: var(--x-space-4);
+}
+
+.usage-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-1);
+  padding: var(--x-space-3);
+  border: 1px solid var(--x-color-line);
+  background: var(--x-color-surface);
+  color: var(--x-color-ink);
+}
+
+.usage-tile-label {
+  color: var(--x-color-muted);
+}
+
+.usage-tile-value {
+  font-family: var(--x-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.usage-controls {
+  align-items: flex-end;
+}
+
+.usage-off {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-3);
+  padding: var(--x-space-3);
+  border: 1px solid var(--x-color-line);
+  background: var(--x-color-surface-2);
+  color: var(--x-color-muted);
+  margin-bottom: var(--x-space-3);
+}
+
+.usage-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-inline-end: var(--x-space-2);
+  border: 2px solid var(--x-color-line);
+  border-top-color: var(--x-color-signal);
+  border-radius: 50%;
+  animation: usage-spin 0.8s linear infinite;
+}
+
+@keyframes usage-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .usage-spinner {
+    animation: none;
+  }
+}

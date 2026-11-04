@@ -22,9 +22,11 @@ import "./styles/terminal.css";
 import "./styles/workspace.css";
 import "./styles/review.css";
 import "./styles/settings.css";
+import "./styles/usageStats.css";
 import "./styles/quickCommands.css";
 import { startEditorSettingsSync } from "./files/editorSettings";
 import { startNavigationSettingsSync } from "./settings/navigationSettings";
+import { startUsageSync } from "./settings/usageSettings";
 import "./styles/agentSessions.css";
 
 const style = document.createElement("style");
@@ -37,6 +39,7 @@ void loadTerminalSettings(api);
 startSettingsSync(api);
 startEditorSettingsSync(api);
 startNavigationSettingsSync(api);
+startUsageSync(api);
 // The shortcuts: keybindings.json over the defaults, and the terminal key policy.
 startBindingsSync(api);
 

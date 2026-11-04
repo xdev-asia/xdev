@@ -1015,6 +1015,19 @@
   line-height: 16px;
 }
 
+.ws-tab-cache {
+  flex: none;
+  font-family: var(--x-font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--x-color-muted);
+}
+
+.ws-tab-cache-cold {
+  font-family: inherit;
+  text-transform: uppercase;
+}
+
 .ws-tab-skip-dot {
   width: 6px;
   height: 6px;
