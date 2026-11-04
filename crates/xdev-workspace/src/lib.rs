@@ -23,13 +23,14 @@ pub use hooks::{
 };
 pub use names::{PrefixIssue, normalize_prefix, prefix_issue};
 pub use ops::{
-    BranchPrefix, CreateOptions, DirEntry, DirListing, RepoPatch, RepoView, WorktreeStat,
-    WorktreeView, add_repo, adopt_worktree, create_worktree, create_worktree_with, forget_repo,
-    list, list_dir, path_key, refresh_base, remove_worktree, set_pinned, stat, update_repo,
-    valid_short_name,
+    BranchPrefix, COMMENT_MAX, CreateOptions, DetailsPatch, DirEntry, DirListing, ITEM_URL_MAX,
+    RepoPatch, RepoView, TITLE_MAX, WorktreeStat, WorktreeView, add_repo, adopt_worktree,
+    create_worktree, create_worktree_with, forget_repo, list, list_dir, path_key, refresh_base,
+    remove_worktree, set_details, set_pinned, stat, update_repo, valid_short_name,
 };
 pub use registry::{
-    Registry, RepoEntry, ScriptSource, SetupPolicy, VaultEntry, WorktreeMeta, repo_id,
+    MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, VaultEntry, WorkItem, WorkItemKind,
+    WorkStatus, WorktreeMeta, repo_id,
 };
 pub use repo_commands::{
     COMMAND_LABEL_MAX, COMMAND_PROMPT_MAX, COMMAND_TEXT_MAX, RepoAction, RepoCommand, RepoCommands,
@@ -90,6 +91,15 @@ pub enum WorkspaceError {
     SetupSkipped,
     #[error("the script failed with code {code:?}")]
     HookFailed { code: Option<i32>, output: String },
+    /// A title or comment past its length limit.
+    #[error("details too long: {0}")]
+    BadDetails(String),
+    /// Not a worktree that can hold this one: another repo, itself, the
+    /// primary checkout, or one that is a child or has children.
+    #[error("not a usable parent: {0}")]
+    BadParent(String),
+    #[error("not a usable work item link: {0}")]
+    BadItem(String),
 }
 
 impl WorkspaceError {
@@ -118,6 +128,9 @@ impl WorkspaceError {
             WorkspaceError::NoHook(_) => "hook_none",
             WorkspaceError::SetupSkipped => "setup_skipped",
             WorkspaceError::HookFailed { .. } => "hook_failed",
+            WorkspaceError::BadDetails(_) => "bad_details",
+            WorkspaceError::BadParent(_) => "bad_parent",
+            WorkspaceError::BadItem(_) => "bad_item",
         }
     }
 }

@@ -476,6 +476,7 @@ mod tests {
                 pinned: false,
                 created_ms: 0,
                 made_here: true,
+                ..WorktreeMeta::default()
             }],
             vaults: Vec::new(),
         };

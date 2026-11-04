@@ -512,7 +512,10 @@ impl GitSettings {
             BranchPrefixMode::Custom => BranchPrefix::Custom(self.branch_prefix_custom.clone()),
             BranchPrefixMode::None => BranchPrefix::None,
         };
-        xdev_workspace::CreateOptions { prefix }
+        xdev_workspace::CreateOptions {
+            prefix,
+            made_by: xdev_workspace::MadeBy::App,
+        }
     }
 }
 

@@ -860,7 +860,10 @@ fn update_root_applies_to_the_next_worktree_only() {
 }
 
 fn with_prefix(prefix: BranchPrefix) -> CreateOptions {
-    CreateOptions { prefix }
+    CreateOptions {
+        prefix,
+        ..CreateOptions::default()
+    }
 }
 
 #[test]

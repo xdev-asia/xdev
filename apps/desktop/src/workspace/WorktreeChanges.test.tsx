@@ -17,6 +17,7 @@ import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeTabs } from "./WorktreeTabs";
 import { PaneView } from "./PaneView";
 import { TabStrip } from "./TabStrip";
+import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 // Hooks are stubbed only while a component under test is called; each harness keeps its own.
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -92,7 +93,7 @@ const section = (api: Api, path: string) =>
     handlers: { add() {}, edit() {}, remove() {} },
     onRead() {},
   });
-const oak: WorktreeView = { path: OAK, name: "oak", branch: "oak", head: START, start: START, primary: false, pinned: false, detached: false };
+const oak: WorktreeView = { path: OAK, name: "oak", branch: "oak", head: START, start: START, primary: false, pinned: false, detached: false, ...NO_DETAILS };
 
 // Calls `render` with its own hook values; the first draw's effects run once, as on mount.
 function mount(render: () => unknown) {
