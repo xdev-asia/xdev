@@ -1,3 +1,6 @@
 packages:
   - apps/*
   - packages/*
+# esbuild (vite, storybook via xdev-ui) runs its install script to fetch the platform binary.
+allowBuilds:
+  esbuild: true
