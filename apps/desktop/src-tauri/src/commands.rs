@@ -68,10 +68,16 @@ pub fn open_vault(
 ) -> Result<Vec<DocEntry>, CmdError> {
     let local_dir = crate::accounts::local_dir(&state)?;
     let emitter = app.clone();
-    open_vault_in(&state.session, local_dir, &path, move |paths| {
+    let entries = open_vault_in(&state.session, local_dir, &path, move |paths| {
         // Fails only once the app is shutting down; nobody is listening.
         let _ = emitter.emit(CHANGED_EVENT, Changed { paths });
-    })
+    })?;
+    // DocsApp still boots from last_vault until U9; B4 removes this write.
+    let _ = settings_store::write(&app, &[SettingsSection::Vault], |s| {
+        s.last_vault = Some(path);
+        s.vault_prompted = true;
+    });
+    Ok(entries)
 }
 
 /// Opens `path` as the one vault of the session. It writes no setting: the
