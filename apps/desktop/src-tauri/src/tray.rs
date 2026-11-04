@@ -82,6 +82,24 @@ pub fn attention_dot(rgba: &mut [u8], width: u32, height: u32) {
     }
 }
 
+/// The attention dot for a template image (macOS): a template is drawn with
+/// its alpha only, in the colour of the menu bar, so the dot is solid black
+/// (the colour is ignored) with the same transparent ring. It reads by shape.
+pub fn attention_dot_mono(rgba: &mut [u8], width: u32, height: u32) {
+    let mut coloured = rgba.to_vec();
+    attention_dot(&mut coloured, width, height);
+    if coloured.len() != rgba.len() {
+        return;
+    }
+    for (out, with_dot) in rgba.chunks_exact_mut(4).zip(coloured.chunks_exact(4)) {
+        if with_dot[..3] == ATTENTION_RGB && with_dot[3] == 255 {
+            out.copy_from_slice(&[0, 0, 0, 255]);
+        } else {
+            out.copy_from_slice(with_dot);
+        }
+    }
+}
+
 #[cfg(any(windows, target_os = "macos"))]
 pub use native::{remove, set_attention, sync};
 
@@ -106,7 +124,7 @@ mod native {
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
     use tauri::{AppHandle, Emitter, Manager};
 
-    use super::{TRAY_ID, TrayItem, attention_dot, tray_items, wanted};
+    use super::{TRAY_ID, TrayItem, attention_dot, attention_dot_mono, tray_items, wanted};
     use crate::settings_store;
     use crate::shell::{self, MenuAction, MenuEvent, Os, QuitMode, ShellLabels, ShellState};
 
@@ -160,13 +178,23 @@ mod native {
         Ok(menu)
     }
 
+    /// macOS draws the tray image as a template (the menu bar colours it), also while the dot is lit.
+    fn template() -> bool {
+        Os::current() == Os::Macos
+    }
+
     /// The tray image, with the dot when `attention` is on.
     fn image(attention: bool) -> Option<Image<'static>> {
         let base = Image::from_bytes(ICON).ok()?;
         let (w, h) = (base.width(), base.height());
         let mut rgba = base.rgba().to_vec();
         if attention {
-            attention_dot(&mut rgba, w, h);
+            // A template icon takes no colour: the dot there is a solid shape.
+            if template() {
+                attention_dot_mono(&mut rgba, w, h);
+            } else {
+                attention_dot(&mut rgba, w, h);
+            }
         }
         Some(Image::new_owned(rgba, w, h))
     }
@@ -223,14 +251,14 @@ mod native {
         if let Some(tray) = app.tray_by_id(TRAY_ID) {
             let _ = tray.set_menu(Some(menu));
             let _ = tray.set_tooltip(Some(tooltip));
-            let _ = tray.set_icon_with_as_template(image(attention), !attention);
+            let _ = tray.set_icon_with_as_template(image(attention), template());
             return;
         }
         let mut builder = TrayIconBuilder::with_id(TRAY_ID)
             .tooltip(tooltip)
             .menu(&menu)
             .show_menu_on_left_click(Os::current() == Os::Macos)
-            .icon_as_template(!attention)
+            .icon_as_template(template())
             .on_menu_event(|app, event| on_menu(app, event.id().as_ref()))
             .on_tray_icon_event(|tray, event| {
                 // A left click opens the window; the right click is the menu.
@@ -343,6 +371,26 @@ mod tests {
             (0..w).any(|x| pixel(&rgba, w, x, 5)[3] == 0),
             "a ring exists"
         );
+    }
+
+    #[test]
+    fn the_template_dot_is_solid_black_with_no_colour() {
+        let (w, h) = (32u32, 32u32);
+        let mut rgba = vec![10u8; (w * h * 4) as usize];
+        attention_dot_mono(&mut rgba, w, h);
+        // The dot: black, opaque, in the same corner as the coloured one.
+        assert_eq!(pixel(&rgba, w, w - 5, 5), [0, 0, 0, 255]);
+        // No pixel holds the warn colour: a template carries no colour.
+        assert!(rgba.chunks_exact(4).all(|p| p[..3] != ATTENTION_RGB));
+        // The ring is cleared and the centre is untouched, as in the coloured dot.
+        assert!((0..w).any(|x| pixel(&rgba, w, x, 5)[3] == 0));
+        assert_eq!(pixel(&rgba, w, 12, 20), [10, 10, 10, 10]);
+        // Same shape as the coloured dot.
+        let mut coloured = vec![10u8; (w * h * 4) as usize];
+        attention_dot(&mut coloured, w, h);
+        for (m, c) in rgba.chunks_exact(4).zip(coloured.chunks_exact(4)) {
+            assert_eq!(m[3], c[3]);
+        }
     }
 
     #[test]
