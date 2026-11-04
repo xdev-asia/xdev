@@ -2148,5 +2148,9 @@
   "sidebar.options.props.agents": "Agents",
   "sidebar.options.props.diffStat": "Line counts",
   "sidebar.options.props.pr": "Pull request",
-  "sidebar.options.props.projectChip": "Project"
+  "sidebar.options.props.projectChip": "Project",
+  "settings.git.groupOrder": "Source control group order",
+  "settings.git.groupOrder.changes-first": "Changes first",
+  "settings.git.groupOrder.staged-first": "Staged first",
+  "settings.git.groupOrderHint": "Conflicts always stay on top."
 }

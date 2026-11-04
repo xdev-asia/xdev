@@ -109,6 +109,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   // Git
   e("git.prefix", "settings.git.prefix", ["branch", "name", "username", "nhánh", "nhanh", "tiền tố", "tien to"]),
   e("git.compare", "settings.git.compare", ["diff", "upstream", "base", "so sánh", "so sanh"], "settings.git.compareHint"),
+  e("git.groupOrder", "settings.git.groupOrder", ["staged", "changes", "order", "thứ tự", "thu tu"], "settings.git.groupOrderHint"),
   e("git.refresh", "settings.git.refresh", ["fetch", "pull", "base", "create", "làm mới", "lam moi"], "settings.git.refreshHint"),
   e("git.autoRename", "settings.git.autoRename.title", ["rename", "branch", "name", "prompt", "đổi tên", "doi ten", "nhánh", "nhanh"], "settings.git.autoRename.hint"),
   e("git.ai", "settings.git.ai.show", ["ai", "commit", "message", "source control"], "settings.git.ai.showHint"),

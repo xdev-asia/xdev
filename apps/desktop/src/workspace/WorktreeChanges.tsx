@@ -427,6 +427,37 @@ export function WorktreeChanges(props: {
     );
   }
 
+  const stagedSection = stagedList.length > 0 && (
+    <section className="ws-change-group" data-group="staged" aria-label={t("changes.group.staged")}>
+      <header className="ws-change-head">
+        <span className="ws-change-group-name">{t("changes.group.staged")}</span>
+        <span className="ws-change-group-count ws-mono">{stagedList.length}</span>
+        <span className="ws-change-group-actions">
+          <button type="button" className="btn-secondary" aria-label={t("changes.unstageAll")} disabled={acting} onClick={() => void restage(stagedList.map((c) => c.path), false)}>
+            {t("changes.unstageAll")}
+          </button>
+        </span>
+      </header>
+      {list(stagedList, "staged")}
+    </section>
+  );
+  const changesSection = changedList.length > 0 && (
+    <section className="ws-change-group" data-group="changes" aria-label={t("changes.group.changes")}>
+      <header className="ws-change-head">
+        <span className="ws-change-group-name">{t("changes.group.changes")}</span>
+        <span className="ws-change-group-count ws-mono">{changedList.length}</span>
+        <span className="ws-change-group-actions">
+          <button type="button" className="btn-secondary" aria-label={t("changes.stageAll")} disabled={acting} onClick={() => void restage(changedList.map((c) => c.path), true)}>
+            {t("changes.stageAll")}
+          </button>
+          <button type="button" className="btn-secondary" aria-label={t("changes.discardAll")} disabled={acting} onClick={() => askDiscard(changedList.map((c) => c.path))}>
+            {t("changes.discardAll")}
+          </button>
+        </span>
+      </header>
+      {list(changedList, "changes")}
+    </section>
+  );
   return (
     <div className="ws-changes" ref={root}>
       <strong className="ws-changes-title">
@@ -501,37 +532,7 @@ export function WorktreeChanges(props: {
           {list(conflictList, "conflicts")}
         </section>
       )}
-      {stagedList.length > 0 && (
-        <section className="ws-change-group" data-group="staged" aria-label={t("changes.group.staged")}>
-          <header className="ws-change-head">
-            <span className="ws-change-group-name">{t("changes.group.staged")}</span>
-            <span className="ws-change-group-count ws-mono">{stagedList.length}</span>
-            <span className="ws-change-group-actions">
-              <button type="button" className="btn-secondary" aria-label={t("changes.unstageAll")} disabled={acting} onClick={() => void restage(stagedList.map((c) => c.path), false)}>
-                {t("changes.unstageAll")}
-              </button>
-            </span>
-          </header>
-          {list(stagedList, "staged")}
-        </section>
-      )}
-      {changedList.length > 0 && (
-        <section className="ws-change-group" data-group="changes" aria-label={t("changes.group.changes")}>
-          <header className="ws-change-head">
-            <span className="ws-change-group-name">{t("changes.group.changes")}</span>
-            <span className="ws-change-group-count ws-mono">{changedList.length}</span>
-            <span className="ws-change-group-actions">
-              <button type="button" className="btn-secondary" aria-label={t("changes.stageAll")} disabled={acting} onClick={() => void restage(changedList.map((c) => c.path), true)}>
-                {t("changes.stageAll")}
-              </button>
-              <button type="button" className="btn-secondary" aria-label={t("changes.discardAll")} disabled={acting} onClick={() => askDiscard(changedList.map((c) => c.path))}>
-                {t("changes.discardAll")}
-              </button>
-            </span>
-          </header>
-          {list(changedList, "changes")}
-        </section>
-      )}
+      {git.sourceControlGroupOrder === "staged-first" ? <>{stagedSection}{changesSection}</> : <>{changesSection}{stagedSection}</>}
       <label className="ws-commit-field">
         {t("workspace.changes.message")}
         <textarea

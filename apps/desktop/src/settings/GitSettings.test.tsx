@@ -183,3 +183,13 @@ it("keeps the auto rename switch while the agent actions are off", async () => {
   await tick();
   expect(v.rename()).toBeDefined();
 });
+
+it("stores the source control group order", async () => {
+  const v = await view({});
+  const order = (o: string) => v.all().find((n) => n.type === "button" && n.props["data-group-order"] === o)!;
+  expect(order("changes-first").props["aria-pressed"]).toBe(true);
+  order("staged-first").props.onClick();
+  await tick();
+  expect(order("staged-first").props["aria-pressed"]).toBe(true);
+  expect(await v.api.gitSettings()).toEqual({ ...DEFAULT_GIT_SETTINGS, sourceControlGroupOrder: "staged-first" });
+});
