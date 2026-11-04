@@ -19,6 +19,8 @@ const LOCAL = new Set([
   "--tree-pad", // the file tree: left padding of a row
   "--ws-strip-h", // workspace.css: height of the tab strip
   "--ws-tab-color", // workspace/TabStrip.tsx sets it inline to a `--x-tab-color-*` token
+  // workspace.css `.ws-shell`: project colours (RepoBadge), each an alias over palette tokens, so both themes follow.
+  ...["slate", "red", "orange", "yellow", "green", "teal", "violet", "pink"].map((c) => `--x-color-tag-${c}`),
 ]);
 
 function sources(): string[] {
