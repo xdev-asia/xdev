@@ -5,6 +5,7 @@ import { useI18n } from "@/i18n";
 import { useUsageSettings } from "@/settings/usageSettings";
 import { useQuota } from "@/shell/useQuota";
 import { useUpdate, type Update } from "@/shell/useUpdate";
+import { KeepAwakeItem } from "./KeepAwakeItem";
 import { UsagePopover } from "./UsagePopover";
 import { footerQuota, shownPercent } from "./usageModel";
 
@@ -95,6 +96,8 @@ export function WorkspaceFooter(props: {
   usageOpen?: boolean;
   usagePopover?: ReactNode;
   usageButtonRef?: Ref<HTMLButtonElement>;
+  /** The keep-awake item, shown before the version. */
+  keepAwake?: ReactNode;
   hidden?: boolean;
 }): JSX.Element {
   const { t } = useI18n();
@@ -142,6 +145,7 @@ export function WorkspaceFooter(props: {
         {props.waiting > 0 && <span className="ws-dot" data-dot="needs-you" aria-hidden="true" />}
         {t("workspace.footer.waiting", { count: props.waiting })}
       </span>
+      {props.keepAwake}
       <span className="ws-mono">{`v${props.version}`}</span>
       {props.update && <UpdateItem update={props.update} onRestart={props.onRestartUpdate} />}
     </footer>
@@ -230,6 +234,7 @@ export function LiveWorkspaceFooter(props: {
       usageOpen={open}
       usagePopover={popover}
       usageButtonRef={button}
+      keepAwake={<KeepAwakeItem api={api} />}
     />
   );
 }

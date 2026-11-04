@@ -163,3 +163,10 @@ it("the live footer shows remaining instead of used when the display setting say
   const html = renderLive();
   expect(html).toMatch(/role="meter"[^>]*aria-valuenow="67"/);
 });
+
+it("shows the keep-awake item before the version", () => {
+  const html = render(null, { keepAwake: createElement("span", { id: "awake" }) });
+  expect(html.indexOf('id="awake"')).toBeGreaterThan(-1);
+  expect(html.indexOf('id="awake"')).toBeLessThan(html.indexOf("v0.3.0"));
+  expect(render(null)).not.toContain('id="awake"');
+});

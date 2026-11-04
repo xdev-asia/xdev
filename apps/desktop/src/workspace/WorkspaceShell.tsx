@@ -23,6 +23,7 @@ import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
 import { startAutoRename } from "./autoRename";
+import { startKeepAwakeReport } from "@/status/keepAwake";
 import { currentCloseWindow, openRestoredFile, restoreLayout, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
@@ -487,6 +488,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => {
     sessions?.setHooks(statusSettings.hooks);
   }, [sessions, statusSettings.hooks]);
+
+  // Whether an agent works, for the keep-awake mode "while agents work".
+  useEffect(() => {
+    if (!sessions) return;
+    return startKeepAwakeReport(api, sessions);
+  }, [api, sessions]);
 
   // A pane nobody looks at that wants the person: OS notification, sound, and the jump back on a click.
   useEffect(() => {
