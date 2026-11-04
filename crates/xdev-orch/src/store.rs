@@ -178,10 +178,8 @@ pub(crate) fn task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     })
 }
 
-#[allow(dead_code)] // used from the task that reads them
 pub(crate) const DISPATCH_COLS: &str =
     "id, run_id, task_id, status, depth, retry_of, failure_count, parent_dispatch";
-#[allow(dead_code)] // used from the task that reads them
 pub(crate) fn dispatch_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Dispatch> {
     Ok(Dispatch {
         id: r.get(0)?,

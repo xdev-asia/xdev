@@ -13,13 +13,15 @@ pub mod runs;
 pub mod skills;
 pub mod store;
 pub mod tasks;
+pub mod workers;
 
 pub use error::OrchError;
 pub use gates::AskAnswer;
 pub use mail::{CheckOpts, Identity, InboxRow, NewMessage, SendReceipt};
 pub use model::*;
-pub use preamble::{PreambleInput, SPEC_BUDGET};
+pub use preamble::{PreambleInput, SPEC_BUDGET, build as build_preamble};
 pub use runs::RunDetail;
 pub use skills::{SKILL_NAME, SkillAgent, SkillStatus, SkillTarget};
 pub use store::Store;
 pub use tasks::{BRIEF_CHARS, NewTask, TaskFilter, brief};
+pub use workers::{BREAKER_LIMIT, StartPlan, StartResult};

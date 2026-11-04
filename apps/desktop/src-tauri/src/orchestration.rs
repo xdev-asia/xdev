@@ -645,11 +645,245 @@ pub fn handle(
                 })?;
             to_value(&ctx.orch.with_store(ctx.data, |s| s.ask_resume(&gate))?)
         }
+        "worker-start" => worker_start(ctx, req, caller, &acting),
         other => Err(AppError::new(
             "unsupported",
             format!("orchestration {other} is not built yet"),
         )),
     }
+}
+
+/// How long the UI gets, on top of the readiness wait, to answer `open-worker`.
+const OPEN_SLACK_MS: u64 = if cfg!(test) { 50 } else { 10_000 };
+/// How long a worker's tab gets to show its agent when the CLI sends no timeout.
+const READY_DEFAULT_MS: u64 = 120_000;
+
+/// `worker-start`: records a dispatch, opens (or reuses) a tab, hands it the
+/// preamble and answers with a receipt. The store is never held while the UI
+/// is asked.
+fn worker_start(
+    ctx: &Ctx<'_>,
+    req: &Request,
+    caller: &Caller,
+    acting: &Acting,
+) -> Result<Value, AppError> {
+    for key in ["model", "effort"] {
+        if req.params.get(key).is_some_and(|v| !v.is_null()) {
+            return Err(AppError::new(
+                "unsupported",
+                format!("--{key} is not supported yet; the agent profile decides it"),
+            ));
+        }
+    }
+    let task_param = text_param(req, "task");
+    let spec_param = text_param(req, "spec");
+    let retry_param = text_param(req, "retryOf");
+    if task_param.is_none() && spec_param.is_none() {
+        return Err(AppError::new(
+            "bad_request",
+            "worker-start needs --task <id> or --spec <text>",
+        ));
+    }
+    let pick: xdev_orch::WorktreePick = match req.params.get("worktree").filter(|v| !v.is_null()) {
+        Some(v) => serde_json::from_value(v.clone())
+            .map_err(|e| AppError::new("bad_request", format!("bad --worktree: {e}")))?,
+        None => xdev_orch::WorktreePick::Current,
+    };
+    let setup = text_param(req, "setup").unwrap_or_else(|| "inherit".to_owned());
+    if !["inherit", "skip", "run"].contains(&setup.as_str()) {
+        return Err(AppError::new(
+            "bad_request",
+            format!("--setup is inherit, skip or run, not {setup}"),
+        ));
+    }
+    let ready_ms = req
+        .params
+        .get("timeoutMs")
+        .and_then(Value::as_u64)
+        .unwrap_or(READY_DEFAULT_MS);
+    let max_depth = ctx.orch_settings.nested_worker_max_depth;
+
+    // 1. Who starts what: the run, the depth, the task.
+    let (me, depth, task) = ctx.orch.with_store(ctx.data, |s| {
+        let me = match s.identity(acting.tab.as_deref(), acting.run.as_deref()) {
+            Ok(me) => me,
+            Err(e) if e.code == "no_run" && spec_param.is_some() => {
+                let run = s.run_create("", acting.tab.as_deref(), ctx.now_ms)?;
+                xdev_orch::Identity {
+                    address: format!("run:{}", run.id),
+                    run_id: run.id,
+                    dispatch: None,
+                }
+            }
+            Err(e) => return Err(e),
+        };
+        let depth = s.depth_for_child(me.dispatch.as_deref())?;
+        if depth > max_depth {
+            return Err(OrchError::new(
+                "nested_worker_depth_exceeded",
+                format!("workers may nest {max_depth} deep; this one would be at {depth}"),
+            ));
+        }
+        let task = match (&task_param, &spec_param) {
+            (Some(id), _) => s.task_get(id)?,
+            (None, Some(spec)) => {
+                let parent = match &me.dispatch {
+                    Some(d) => Some(s.dispatch_get(d)?.task_id),
+                    None => None,
+                };
+                s.task_create(
+                    &me.run_id,
+                    xdev_orch::NewTask {
+                        title: None,
+                        spec: spec.clone(),
+                        deps: Vec::new(),
+                        parent,
+                    },
+                    ctx.now_ms,
+                )?
+            }
+            (None, None) => unreachable!("checked above"),
+        };
+        if task.run_id != me.run_id {
+            return Err(OrchError::bad_request(format!(
+                "task {} is not in run {}",
+                task.id, me.run_id
+            )));
+        }
+        // A broken chain says so before the task's own state does.
+        if let Some(prev) = &retry_param {
+            s.retry_failures(prev, &me.run_id)?;
+        }
+        if task.status != xdev_orch::TaskStatus::Ready {
+            return Err(OrchError::new(
+                "invalid_transition",
+                format!(
+                    "task {} is not ready, so no worker can start on it",
+                    task.id
+                ),
+            ));
+        }
+        // Too big a spec fails here, before a tab or worktree is made.
+        xdev_orch::build_preamble(&xdev_orch::PreambleInput {
+            run: &me.run_id,
+            task: &task.id,
+            dispatch: "disp_check",
+            spec: &task.spec,
+            depth,
+            max_depth,
+            cli: "xdev",
+        })?;
+        Ok((me, depth, task))
+    })?;
+
+    // 2. Where: an existing tab, or a worktree and a new tab.
+    let (tabs, _) = ctx.board.tabs();
+    let default_agent = acting
+        .tab
+        .as_deref()
+        .and_then(|t| tabs.iter().find(|x| x.id == t))
+        .map(|t| t.profile.clone())
+        .unwrap_or_default();
+    let agent = text_param(req, "agent").unwrap_or(default_agent);
+    let terminal = text_param(req, "terminal");
+    let (tab, worktree, mut kept) = match &terminal {
+        Some(t) => {
+            let found = tabs
+                .iter()
+                .find(|x| &x.id == t && !x.exited)
+                .ok_or_else(|| AppError::new("not_found", format!("no open terminal {t}")))?;
+            // The person's tab: never closed behind them.
+            (t.clone(), found.worktree.clone(), true)
+        }
+        None => {
+            let (path, made) = crate::cli_verbs::pick_worktree(
+                ctx,
+                caller,
+                &pick,
+                text_param(req, "name").as_deref(),
+            )?;
+            (
+                ctx.orch.with_store(ctx.data, |s| Ok(s.next_id("tab")))?,
+                path,
+                made,
+            )
+        }
+    };
+    kept |= flag(req, "keepOpen");
+
+    // 3. Record it, then build what the worker starts with.
+    let plan = xdev_orch::StartPlan {
+        run_id: me.run_id.clone(),
+        task_id: task.id.clone(),
+        parent_dispatch: me.dispatch.clone(),
+        depth,
+        retry_of: retry_param,
+        tab: tab.clone(),
+        worktree: worktree.clone(),
+        agent: agent.clone(),
+        kept,
+    };
+    let dispatch = ctx
+        .orch
+        .with_store(ctx.data, |s| s.worker_begin(&plan, ctx.now_ms))?;
+    let prompt = xdev_orch::build_preamble(&xdev_orch::PreambleInput {
+        run: &me.run_id,
+        task: &task.id,
+        dispatch: &dispatch.id,
+        spec: &task.spec,
+        depth,
+        max_depth,
+        cli: "xdev",
+    })?;
+
+    // 4. Open the tab (or type into the given one) and wait for the UI.
+    let result = match terminal {
+        Some(_) => {
+            let paste = format!("\x1b[200~{prompt}\x1b[201~\r");
+            if (ctx.write_pty)(&tab, paste.as_bytes()) {
+                xdev_orch::StartResult::Ready
+            } else {
+                xdev_orch::StartResult::Failed {
+                    stage: FailedStage::DispatchInput,
+                    error: format!("terminal {tab} did not take the text"),
+                }
+            }
+        }
+        None => {
+            let open = WorkerOpen {
+                dispatch: dispatch.id.clone(),
+                tab: tab.clone(),
+                title: format!("worker-{}", task.id),
+                worktree: worktree.clone(),
+                profile: agent,
+                prompt,
+                setup,
+                ready_timeout_ms: ready_ms,
+            };
+            let payload = to_value(&open)?;
+            let wait = Duration::from_millis(ready_ms + OPEN_SLACK_MS);
+            let answer = ctx.orch.opens.ask(
+                dispatch.id.clone(),
+                || (ctx.emit)("orchestration://open-worker", payload),
+                wait,
+            );
+            match answer {
+                Some(WorkerOpenOutcome::Ok) => xdev_orch::StartResult::Ready,
+                Some(WorkerOpenOutcome::Failed { stage, error }) => {
+                    xdev_orch::StartResult::Failed { stage, error }
+                }
+                None => xdev_orch::StartResult::Unknown,
+            }
+        }
+    };
+    let receipt = ctx.orch.with_store(ctx.data, |s| {
+        s.worker_started(&dispatch.id, result, ctx.now_ms)
+    })?;
+    (ctx.emit)(
+        "orchestration://worker-changed",
+        to_value(&WorkerChanged { tab })?,
+    );
+    to_value(&receipt)
 }
 
 #[cfg(test)]
@@ -962,5 +1196,162 @@ line", "title": "A"}),
         assert_eq!(pending[0]["id"], b["id"]);
         let again = t("task-update", json!({"id": a["id"], "status": "failed"}));
         assert_eq!(again.unwrap_err().code, "invalid_transition");
+    }
+
+    fn opened(f: &crate::cli_verbs::tests::Fixture) -> Vec<Value> {
+        f.events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(e, _)| e == "orchestration://open-worker")
+            .map(|(_, p)| p.clone())
+            .collect()
+    }
+
+    #[test]
+    fn worker_start_opens_a_tab_with_the_preamble_and_answers_with_a_receipt() {
+        let mut f = crate::cli_verbs::tests::fixture();
+        f.open_answer = Some(WorkerOpenOutcome::Ok);
+        let call = |m: &str, p: Value| f.call(Some("p-lead"), &format!("orchestration.{m}"), p);
+        // With no run yet, a spec makes one.
+        let r = call("worker-start", json!({"spec": "do x"})).unwrap();
+        assert_eq!(r["state"], "ready");
+        assert_eq!(r["next"], xdev_orch::render::NEXT_STARTED);
+        let open = &opened(&f)[0];
+        assert_eq!(open["dispatch"], r["dispatchId"]);
+        assert_eq!(
+            open["title"],
+            format!("worker-{}", r["taskId"].as_str().unwrap())
+        );
+        assert_eq!(open["setup"], "inherit");
+        assert!(open["worktree"].as_str().unwrap().ends_with("lead"));
+        assert!(
+            open["prompt"]
+                .as_str()
+                .unwrap()
+                .ends_with("=== TASK ===\ndo x\n")
+        );
+        // The task is taken, so it cannot be started again.
+        let again = call("worker-start", json!({"task": r["taskId"]}));
+        assert_eq!(again.unwrap_err().code, "invalid_transition");
+        // Neither a task nor a spec, nor a flag that is not built.
+        assert_eq!(
+            call("worker-start", json!({})).unwrap_err().code,
+            "bad_request"
+        );
+        let model = call("worker-start", json!({"spec": "y", "model": "m"}));
+        assert_eq!(model.unwrap_err().code, "unsupported");
+    }
+
+    #[test]
+    fn a_failed_open_names_the_stage_and_an_unanswered_one_is_unknown() {
+        let mut f = crate::cli_verbs::tests::fixture();
+        f.open_answer = Some(WorkerOpenOutcome::Failed {
+            stage: FailedStage::AgentReadiness,
+            error: "no prompt".to_owned(),
+        });
+        let call = |f: &crate::cli_verbs::tests::Fixture, m: &str, p: Value| {
+            f.call(Some("p-lead"), &format!("orchestration.{m}"), p)
+        };
+        call(&f, "run-create", json!({})).unwrap();
+        let r = call(&f, "worker-start", json!({"spec": "a"})).unwrap();
+        assert_eq!(r["state"], "failed");
+        assert_eq!(r["failedStage"], "agent_readiness");
+        assert_eq!(r["lastError"], "no prompt");
+        // The task went back to ready.
+        let ready = call(&f, "task-list", json!({"ready": true})).unwrap();
+        assert_eq!(ready[0]["id"], r["taskId"]);
+
+        f.open_answer = None;
+        let u = call(
+            &f,
+            "worker-start",
+            json!({"task": r["taskId"], "timeoutMs": 0}),
+        )
+        .unwrap();
+        assert_eq!(u["state"], "start_unknown");
+        assert!(u["recovery"].is_string());
+    }
+
+    #[test]
+    fn the_third_failed_start_of_a_chain_opens_the_breaker() {
+        let mut f = crate::cli_verbs::tests::fixture();
+        f.open_answer = Some(WorkerOpenOutcome::Failed {
+            stage: FailedStage::TerminalCreate,
+            error: "x".to_owned(),
+        });
+        let call = |m: &str, p: Value| f.call(Some("p-lead"), &format!("orchestration.{m}"), p);
+        let mut r = call("worker-start", json!({"spec": "a"})).unwrap();
+        let task = r["taskId"].clone();
+        for _ in 0..2 {
+            r = call(
+                "worker-start",
+                json!({"task": task, "retryOf": r["dispatchId"]}),
+            )
+            .unwrap();
+        }
+        assert_eq!(r["next"], xdev_orch::render::NEXT_BREAKER);
+        let more = call(
+            "worker-start",
+            json!({"task": task, "retryOf": r["dispatchId"]}),
+        );
+        assert_eq!(more.unwrap_err().code, "circuit_broken");
+    }
+
+    #[test]
+    fn a_worker_may_start_workers_only_within_the_depth_limit() {
+        let mut f = crate::cli_verbs::tests::fixture();
+        f.open_answer = Some(WorkerOpenOutcome::Ok);
+        let lead = |f: &crate::cli_verbs::tests::Fixture, p: Value| {
+            f.call(Some("p-lead"), "orchestration.worker-start", p)
+        };
+        lead(&f, json!({"spec": "top"})).unwrap();
+        let worker_tab = opened(&f)[0]["tab"].as_str().unwrap().to_owned();
+        let sub = json!({"spec": "sub", "worktree": {"selector": "other"}});
+        // The default allows one level: the worker may not start another.
+        let e = f.call(Some(&worker_tab), "orchestration.worker-start", sub.clone());
+        assert_eq!(e.unwrap_err().code, "nested_worker_depth_exceeded");
+        // Raised to 2 it may, at depth 2, and its task hangs under its own.
+        f.max_depth = 2;
+        let ok = f
+            .call(Some(&worker_tab), "orchestration.worker-start", sub)
+            .unwrap();
+        assert_eq!(ok["state"], "ready");
+        let prompt = opened(&f)[1]["prompt"].as_str().unwrap().to_owned();
+        assert!(prompt.contains("Depth: 2 of 2"));
+        assert!(!prompt.contains("SUB-DISPATCH"));
+        assert!(
+            opened(&f)[1]["worktree"]
+                .as_str()
+                .unwrap()
+                .ends_with("other")
+        );
+    }
+
+    #[test]
+    fn terminal_mode_types_into_the_given_tab_and_fails_when_it_cannot() {
+        let mut f = crate::cli_verbs::tests::fixture();
+        f.board.replace(
+            vec![crate::cli_verbs::tests::tab("t9", &f.other, true, "idle")],
+            None,
+        );
+        let call = |f: &crate::cli_verbs::tests::Fixture, p: Value| {
+            f.call(Some("p-lead"), "orchestration.worker-start", p)
+        };
+        let r = call(&f, json!({"spec": "go", "terminal": "t9"})).unwrap();
+        assert_eq!(r["state"], "ready");
+        assert!(opened(&f).is_empty());
+        let writes = f.pty_writes.lock().unwrap().clone();
+        assert_eq!(writes[0].0, "t9");
+        let text = String::from_utf8(writes[0].1.clone()).unwrap();
+        assert!(text.starts_with("\u{1b}[200~") && text.ends_with("\u{1b}[201~\r"));
+        assert!(text.contains("=== TASK ===\ngo"));
+
+        let none = call(&f, json!({"spec": "go", "terminal": "nope"}));
+        assert_eq!(none.unwrap_err().code, "not_found");
+        f.pty_alive = false;
+        let dead = call(&f, json!({"spec": "go", "terminal": "t9"})).unwrap();
+        assert_eq!(dead["state"], "failed");
+        assert_eq!(dead["failedStage"], "dispatch_input");
     }
 }
