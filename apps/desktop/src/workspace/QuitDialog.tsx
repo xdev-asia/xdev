@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { JSX } from "react";
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
 import type { QuitAsk, QuitChoice } from "./quitGuard";
 

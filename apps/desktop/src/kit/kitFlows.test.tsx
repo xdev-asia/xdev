@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import { expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, type Api, type MemorySet, type Skill } from "@/api";

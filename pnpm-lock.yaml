@@ -219,9 +219,6 @@ importers:
       '@xdev/bindings':
         specifier: workspace:*
         version: link:../../packages/bindings
-      '@xdev/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
       '@xterm/addon-fit':
         specifier: 0.11.0
         version: 0.11.0

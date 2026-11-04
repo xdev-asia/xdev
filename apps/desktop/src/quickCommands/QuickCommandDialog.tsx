@@ -1,4 +1,4 @@
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, JSX } from "react";
 import type { Api, QuickCommand } from "@/api";
