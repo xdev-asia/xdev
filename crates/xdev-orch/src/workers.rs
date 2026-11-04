@@ -460,6 +460,10 @@ impl Store {
             now_ms,
         )?;
         self.promote_dependants(&d.run_id, now_ms)?;
+        self.conn.execute(
+            "UPDATE workers SET finished_ms = ?2 WHERE dispatch_id = ?1",
+            params![dispatch_id, now_ms],
+        )?;
         let closes = (auto_close && !w.kept).then_some(now_ms + CLOSE_AFTER_MS);
         self.worker_set_closes_at(dispatch_id, closes, now_ms)?;
         self.worker_get(dispatch_id)
@@ -564,12 +568,12 @@ impl Store {
         since_ms: i64,
         now_ms: i64,
     ) -> Result<Vec<Swept>, OrchError> {
-        // A worker with no countdown that last changed before auto-close was
+        // A worker with no countdown that finished before auto-close was
         // turned on (`since_ms`) finished while it was off: it stays open.
         let mut st = self.conn.prepare(&format!(
             "SELECT {WORKER_COLS}, close_asked_ms FROM workers
              WHERE state IN ('succeeded', 'failed') AND kept = 0 AND released = 0
-               AND tab IS NOT NULL AND (closes_at_ms IS NOT NULL OR updated_ms >= ?1)
+               AND tab IS NOT NULL AND (closes_at_ms IS NOT NULL OR finished_ms >= ?1)
              ORDER BY created_ms, rowid"
         ))?;
         let workers = st
@@ -1190,6 +1194,20 @@ mod tests {
         assert_eq!(s.worker_get(&id).unwrap().closes_at_ms, None);
         // On since before it finished: it gets its countdown.
         assert_eq!(s.worker_sweep(&idle, 500, 9_000).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_unrelated_write_does_not_make_an_old_finish_count_as_new() {
+        let (s, run, task) = world();
+        let id = ready_worker(&s, &run, &task);
+        s.worker_settle(&id, WorkerState::Succeeded, None, false, 1_000)
+            .unwrap();
+        // Keeping and un-keeping later touches the row, not the finish.
+        s.worker_set_kept(&id, true, 5_000).unwrap();
+        s.worker_set_kept(&id, false, 6_000).unwrap();
+        let idle = |_: &str| Some("idle".to_owned());
+        assert!(s.worker_sweep(&idle, 2_000, 9_000).unwrap().is_empty());
+        assert_eq!(s.worker_get(&id).unwrap().closes_at_ms, None);
     }
 
     #[test]
