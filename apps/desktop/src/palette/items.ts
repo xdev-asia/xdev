@@ -56,6 +56,7 @@ export function worktreeItems(
         status: ctx.dot(wt.path),
         activity: ctx.activity(wt.path),
         worktree: wt.path,
+        repo: repo.path,
         run: () => ctx.onPick(wt),
       });
     }
@@ -81,6 +82,7 @@ export function tabItems(
           keywords: [tab.agent ? "agent" : "terminal"],
           status: ctx.attention?.(tab.id) ?? tab.status,
           worktree: wt.path,
+          repo: repo.path,
           order: out.length,
           run: () => ctx.onPick(tab),
         });

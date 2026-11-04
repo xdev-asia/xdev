@@ -55,7 +55,7 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
     setExtra({});
   }, [open]);
 
-  const rows = rank({ items, query, filter, current, recent: (id) => recent.at(id), extra, canCreate, now: props.now ?? Date.now() });
+  const rows = rank({ items, query, filter, current, recent: (id) => recent.at(id), extra, canCreate, now: props.now ?? Date.now(), scope: null });
   const picks = rows.filter(selectable);
   const at = Math.min(selected, Math.max(0, picks.length - 1));
 
