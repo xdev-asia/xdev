@@ -1639,6 +1639,7 @@ button.ws-tree-row:focus-visible {
 /* Footer */
 
 .ws-footer {
+  position: relative;
   display: flex;
   flex-shrink: 0;
   align-items: center;
@@ -2609,7 +2610,7 @@ button.ws-tree-row:focus-visible {
 
 .ws-usage-pop {
   position: absolute;
-  bottom: calc(var(--h-footer) + 4px);
+  bottom: calc(100% + 4px);
   left: 12px;
   z-index: 21;
   display: flex;
