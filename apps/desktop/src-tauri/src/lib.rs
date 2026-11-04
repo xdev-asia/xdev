@@ -73,10 +73,7 @@ pub fn run() {
             {
                 let app = app.handle().clone();
                 let local = ptyd_local.clone();
-                std::thread::spawn(move || {
-                    let terminal = settings_store::read(&app).terminal;
-                    ptyd::start_host(&app.state::<pty::Ptys>(), &terminal, local.as_deref());
-                });
+                std::thread::spawn(move || ptyd::start_host(&app, local.as_deref()));
             }
             // The `.off` marker follows the stored setting from the start,
             // not only once the setting is saved. Best effort.
@@ -201,6 +198,7 @@ pub fn run() {
             pty::ptyd_end,
             pty::ptyd_end_all,
             pty::ptyd_restart,
+            pty::ptyd_quit_choice,
             status::status_settings_get,
             status::status_settings_put,
             status::status_notify,
@@ -306,7 +304,8 @@ pub fn run() {
         .expect("failed to start xDev")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
-                app.state::<pty::Ptys>().kill_all();
+                let on_quit = settings_store::read(app).terminal.on_quit;
+                app.state::<pty::Ptys>().quit(on_quit);
                 updater::install_pending(app);
             }
         });
