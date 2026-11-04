@@ -91,6 +91,13 @@ describe("mock workspace", () => {
     await expect(api.worktreeRemove(repo.path, true, true)).rejects.toMatchObject({ code: "primary_worktree" });
   });
 
+  it("keeps a branch not made here even when force and deleteUnmerged are set", async () => {
+    const api = createMockWorkspace();
+    const [repo] = await api.workspaceList();
+    const { worktree: wt } = await api.worktreeCreate(repo.id, "", null, { existing: "develop", sparse: [] });
+    expect(await api.worktreeRemove(wt.path, true, true, true)).toMatchObject({ deletedBranch: null, kept: { branch: "develop" } });
+  });
+
   it("removes a clean worktree without force", async () => {
     const api = createMockWorkspace();
     await api.worktreeRemove("/demo/wt/xdev-elm", false, true);
