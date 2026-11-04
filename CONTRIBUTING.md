@@ -15,7 +15,7 @@ git commit -s -m "fix: describe the change"
 - Keep commits small. Write messages in English.
 - When you add a third-party library, say why in the commit message.
 - Code comments explain why, not what.
-- UI colors, spacing and radii come from `packages/ui/tokens.json`. Do not hardcode them.
+- UI colors, spacing and radii come from `packages/xdev-ui/tokens/tokens.json`. Do not hardcode them.
 - Do not copy code from projects under AGPL or other incompatible licenses.
 - Never commit secrets.
 - Do not name other products in code, UI strings or docs.
