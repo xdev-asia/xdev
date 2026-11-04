@@ -44,3 +44,10 @@ open on GitHub; merging that PR publishes the next version (ADR 0005).
 cd apps/desktop
 corepack pnpm tauri build --no-bundle
 ```
+
+The terminal service `xdev-ptyd` is built by the before-build command and
+lands next to the app. Installers ship it as a sidecar only with its config:
+
+```sh
+corepack pnpm tauri build --config src-tauri/tauri.ptyd.conf.json
+```

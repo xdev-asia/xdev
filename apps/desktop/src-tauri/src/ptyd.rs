@@ -210,9 +210,13 @@ pub(crate) fn start_host(app: &AppHandle, local_dir: Option<&Path>) {
             code: "ptyd_start_failed".into(),
             detail: Some(e.to_string()),
         })?;
+        let binary = find_binary(&exe).ok_or_else(|| ClientError {
+            code: "ptyd_start_failed".into(),
+            detail: Some(format!("no {BINARY} next to the app")),
+        })?;
         ensure(&StartOptions {
             dir: local.join(PTYD_DIR),
-            binary: binary_beside(&exe),
+            binary,
             app_version: version.clone(),
             ring_mb: terminal.ring_mb,
             ..StartOptions::default()
@@ -279,9 +283,16 @@ const RESTART_WAIT: Duration = Duration::from_secs(5);
 /// The folder under the local dir the service keeps its files in.
 pub(crate) const PTYD_DIR: &str = "ptyd";
 
-/// The service binary the app ships next to its own exe.
-pub(crate) fn binary_beside(exe: &Path) -> PathBuf {
-    exe.with_file_name(format!("xdev-ptyd{}", std::env::consts::EXE_SUFFIX))
+/// The service's name: the `[[bin]]` of `xdev-pty` and the `externalBin` of
+/// `tauri.ptyd.conf.json`, which installs it next to the app.
+pub(crate) const BINARY: &str = "xdev-ptyd";
+
+/// The service binary next to the app's exe: where an installer puts the
+/// sidecar, and where cargo and `scripts/ptyd-sidecar.mjs` put it in a dev
+/// build.
+pub(crate) fn find_binary(exe: &Path) -> Option<PathBuf> {
+    let path = exe.with_file_name(format!("{BINARY}{}", std::env::consts::EXE_SUFFIX));
+    path.is_file().then_some(path)
 }
 
 pub(crate) fn status(
@@ -299,6 +310,54 @@ pub(crate) fn status(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_resolver_finds_the_binary_next_to_the_app() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir
+            .path()
+            .join(format!("xdev-desktop{}", std::env::consts::EXE_SUFFIX));
+        assert_eq!(find_binary(&exe), None);
+        let bin = dir
+            .path()
+            .join(format!("xdev-ptyd{}", std::env::consts::EXE_SUFFIX));
+        std::fs::write(&bin, "").unwrap();
+        assert_eq!(find_binary(&exe), Some(bin));
+    }
+
+    #[test]
+    fn a_dev_build_has_the_binary_next_to_the_app() {
+        // Test binaries live in `deps`; the app and the service one up.
+        let exe = std::env::current_exe().unwrap();
+        let app = exe.parent().unwrap().parent().unwrap().join("xdev-desktop");
+        // `cargo test --workspace` builds every bin before a test runs.
+        assert!(
+            find_binary(&app).is_some(),
+            "no {BINARY} next to {}; build the workspace or run scripts/ptyd-sidecar.mjs",
+            app.display()
+        );
+    }
+
+    #[test]
+    fn the_bundle_ships_the_binary_the_resolver_looks_for() {
+        let here = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.ptyd.conf.json")).unwrap();
+        assert_eq!(
+            conf["bundle"]["externalBin"],
+            serde_json::json!([format!("binaries/{BINARY}")])
+        );
+        let bin = here.join(format!("../../../crates/xdev-pty/src/bin/{BINARY}.rs"));
+        assert!(bin.is_file(), "{}", bin.display());
+        // The before commands build it, or a dev run and a bundle miss it.
+        let main: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        for cmd in ["beforeDevCommand", "beforeBuildCommand"] {
+            let line = main["build"][cmd].as_str().unwrap();
+            assert!(line.contains("scripts/ptyd-sidecar.mjs"), "{cmd}: {line}");
+        }
+        assert!(here.join("../scripts/ptyd-sidecar.mjs").is_file());
+    }
 
     #[test]
     fn the_service_is_not_started_when_the_setting_is_off() {
