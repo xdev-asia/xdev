@@ -665,6 +665,7 @@ pub fn repo_update(
     script_source: Option<ScriptSource>,
     local_setup: Option<String>,
     local_archive: Option<String>,
+    docs_dir: Option<String>,
 ) -> Result<RepoView, CmdError> {
     let patch = RepoPatch {
         short_name,
@@ -674,6 +675,7 @@ pub fn repo_update(
         script_source,
         local_setup,
         local_archive,
+        docs_dir,
     };
     update(data_dir(&state)?, &lock, |reg| update_repo(reg, &id, patch))
 }
@@ -1759,6 +1761,25 @@ mod tests {
         assert_eq!(code(unknown), "repo_unknown");
         let bad = vault_create_docs_in(&fx.data, &id, "../x.md", "x");
         assert_eq!(code(bad), "bad_path");
+    }
+
+    #[test]
+    fn vault_create_docs_uses_the_repo_docs_dir() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let id = Registry::load(&fx.data).unwrap().repos[0].id.clone();
+        let patch = RepoPatch {
+            docs_dir: Some("handbook/en".to_owned()),
+            ..RepoPatch::default()
+        };
+        update(&fx.data, &lock, |reg| update_repo(reg, &id, patch)).unwrap();
+        let view = vault_create_docs_in(&fx.data, &id, "Start.md", "# Hi").unwrap();
+        assert!(view.exists);
+        assert_eq!(
+            fs::read_to_string(fx.main.join("handbook/en/Start.md")).unwrap(),
+            "# Hi"
+        );
+        assert!(!fx.main.join("docs").exists());
     }
 
     #[test]

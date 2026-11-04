@@ -1316,3 +1316,57 @@ fn sweep_takes_stale_staging_worktrees_and_keeps_fresh_ones() {
             .is_empty()
     );
 }
+
+#[test]
+fn update_sets_and_resets_the_docs_dir() {
+    let (mut reg, id, _main) = registered();
+    assert_eq!(
+        update_repo(&mut reg, &id, RepoPatch::default())
+            .unwrap()
+            .docs_dir,
+        "docs"
+    );
+    let view = update_repo(
+        &mut reg,
+        &id,
+        RepoPatch {
+            docs_dir: Some(r"handbook\en".into()),
+            ..RepoPatch::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(view.docs_dir, "handbook/en");
+    assert_eq!(reg.repos[0].docs_dir.as_deref(), Some("handbook/en"));
+
+    let view = update_repo(
+        &mut reg,
+        &id,
+        RepoPatch {
+            docs_dir: Some(String::new()),
+            ..RepoPatch::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(view.docs_dir, "docs");
+    assert_eq!(reg.repos[0].docs_dir, None);
+}
+
+#[test]
+fn update_refuses_a_bad_docs_dir_and_writes_nothing() {
+    let (mut reg, id, _main) = registered();
+    let before = reg.clone();
+    for bad in ["../x", "/x", r"C:\x"] {
+        let err = update_repo(
+            &mut reg,
+            &id,
+            RepoPatch {
+                short_name: Some("other".into()),
+                docs_dir: Some(bad.into()),
+                ..RepoPatch::default()
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err.code(), "bad_path", "{bad:?}");
+        assert_eq!(reg, before);
+    }
+}
