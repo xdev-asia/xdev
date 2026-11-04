@@ -6297,6 +6297,7 @@ version = "0.4.0"
 dependencies = [
  "blake3",
  "dunce",
+ "ignore",
  "serde",
  "serde_json",
  "tempfile",
