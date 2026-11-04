@@ -6682,7 +6682,6 @@ version = "0.5.0"
 dependencies = [
  "arboard",
  "blake3",
- "core-foundation 0.10.1",
  "dunce",
  "notify-debouncer-full",
  "png",
@@ -6707,6 +6706,7 @@ dependencies = [
  "xdev-core",
  "xdev-git",
  "xdev-id",
+ "xdev-input-source",
  "xdev-ipc",
  "xdev-kit",
  "xdev-orch",
@@ -6753,6 +6753,13 @@ dependencies = [
  "ts-rs",
  "ureq",
  "url",
+]
+
+[[package]]
+name = "xdev-input-source"
+version = "0.5.0"
+dependencies = [
+ "core-foundation 0.10.1",
 ]
 
 [[package]]
