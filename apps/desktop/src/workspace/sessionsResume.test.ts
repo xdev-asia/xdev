@@ -104,4 +104,17 @@ describe("Sessions agent session id", () => {
     expect(live.resume(A, "claude", null, "xyz").agentSession).toBe("xyz");
     expect(live.open(A, "shell")).toMatchObject({ agentSession: null, openedAt: 4242 });
   });
+
+  it("restart keeps the agentSession a hook set, and the snapshot still has it", async () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    const tab = live.open(A, "claude");
+    await Promise.resolve();
+    api.__hook(tab.id, "prompt", undefined, "abc");
+    const next = live.restart(tab.id)!;
+    expect(next.id).not.toBe(tab.id);
+    expect(live.tabs(A)[0].agentSession).toBe("abc");
+    const snap = live.snapshot().worktrees[A].tabs.t1;
+    expect(snap).toMatchObject({ kind: "terminal", agentSession: "abc" });
+  });
 });

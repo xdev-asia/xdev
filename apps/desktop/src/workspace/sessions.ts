@@ -118,6 +118,8 @@ export class Sessions {
   private hooksOn = true;
   // A restore runs once per app run.
   private restored = false;
+  /** Saved worktrees this run could not load (a missing repo): kept in every snapshot until `dropCarried`. */
+  private carried = new Map<string, WorktreeSnapshot>();
   // Restored tabs whose terminal starts when they are first shown.
   private readonly lazy = new Set<string>();
   // Tabs the person closed, newest last.
@@ -171,6 +173,8 @@ export class Sessions {
       const one = toSnapshot(layout, (id) => this.entries.get(id)?.tab ?? null);
       if (one) worktrees[path] = one;
     }
+    // Worktrees that were not loaded keep their saved entry, unless they have tabs now.
+    for (const [path, one] of this.carried) if (!this.layouts.has(path)) worktrees[path] ??= one;
     return { version: LAYOUT_VERSION, savedAt: this.now(), worktrees };
   }
 
@@ -187,6 +191,7 @@ export class Sessions {
     for (const [worktree, one] of Object.entries(s.worktrees)) {
       if (options.known && !options.known(worktree)) {
         report.skipped.push({ worktree, reason: "unknownWorktree" });
+        if (one && options.carry?.(worktree)) this.carried.set(worktree, one);
         continue;
       }
       if (this.layouts.has(worktree) || !one || typeof one.tabs !== "object" || !one.layout) continue;
@@ -223,6 +228,16 @@ export class Sessions {
     const layout = fromSnapshot(one.layout, ids, (id) => files.has(id));
     report.opened.push(...opened);
     if (layout) this.setLayout(worktree, layout);
+  }
+
+  /** Forgets the saved entry of a worktree that is gone for good (removed through the app). */
+  dropCarried(worktree: string): void {
+    this.carried.delete(worktree);
+  }
+
+  /** Paths of the worktrees whose saved entry is carried. */
+  carriedWorktrees(): string[] {
+    return [...this.carried.keys()];
   }
 
   /** One terminal tab of a snapshot, or null when `mode` or a missing session leaves it out. */
@@ -279,8 +294,8 @@ export class Sessions {
     this.clear(this.announce, id);
     this.clear(this.stale, id);
     const next = this.entry(old.tab.worktree, old.tab.profileId, old.tab.account, old.tab.cli, old.tab.resumeOf, old.tab.title);
-    // The pin and colour belong to the slot, not to the pty.
-    next.tab = { ...next.tab, pinned: old.tab.pinned, color: old.tab.color };
+    // The pin and colour belong to the slot, not to the pty; so does the agent's session id, which a restart must not lose.
+    next.tab = { ...next.tab, pinned: old.tab.pinned, color: old.tab.color, agentSession: old.tab.agentSession };
     const kept = [...this.entries].map(([key, e]): [string, Entry] => (key === id ? [next.tab.id, next] : [key, e]));
     this.entries.clear();
     for (const [key, e] of kept) this.entries.set(key, e);
