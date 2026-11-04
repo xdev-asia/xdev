@@ -162,6 +162,7 @@ export class Sessions {
    * adds the tab behind the pane's active one. The selected worktree is the caller's to keep.
    */
   open(worktree: string, profileId: PtyProfile, account: string | null = null, cli?: TabCli, opts: { id?: string; title?: string; background?: boolean } = {}): Tab {
+    if (opts.id && this.entries.has(opts.id)) throw new Error("tab id in use");
     const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, null, opts.title ?? null, opts.id);
     if (opts.title !== undefined) entry.tab = { ...entry.tab, renamed: true };
     this.entries.set(entry.tab.id, entry);
