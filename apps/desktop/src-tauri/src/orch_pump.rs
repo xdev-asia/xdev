@@ -166,9 +166,9 @@ impl Pump {
     }
 
     /// On a timer thread, pastes each pointer (bracketed) into its tab if
-    /// `idle` still finds it idle, then types Enter `delay` later. A skipped
-    /// or failed write keeps the mail and forgets the pointer, so a later
-    /// pass points again.
+    /// `idle` still finds it idle, then types Enter `delay` later if it still
+    /// is. A skipped or failed paste keeps the mail and forgets the pointer,
+    /// so a later pass points again; a pasted pointer is never forgotten.
     pub fn deliver(
         self: &Arc<Self>,
         plans: Vec<Pointer>,
@@ -194,9 +194,11 @@ impl Pump {
                 return;
             }
             std::thread::sleep(delay);
+            // The paste is in the input: never point again (it would paste
+            // twice). A tab that is no longer idle gets no Enter.
             for p in pasted {
-                if !write(&p.tab, b"\r") {
-                    pump.forget(&p);
+                if idle(&p.tab) {
+                    write(&p.tab, b"\r");
                 }
             }
         }))
@@ -563,6 +565,49 @@ mod tests {
             .unwrap();
         assert_eq!(*writes.lock().unwrap(), 0);
         assert_eq!(pump.plan(&wakes, &idle, &nobody, 1_001).len(), 1);
+    }
+
+    #[test]
+    fn a_tab_that_got_busy_after_the_paste_gets_no_enter_and_no_second_paste() {
+        let pump = Arc::new(Pump::default());
+        let wakes = [wake("dispatch:d1", "t1", 1, 3)];
+        let idle = [tab("t1", "idle", false)];
+        let plans = pump.plan(&wakes, &idle, &nobody, 1_000);
+        let writes = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let log = Arc::clone(&writes);
+        let write: Writer = Arc::new(move |_, bytes| {
+            log.lock().unwrap().push(bytes.to_vec());
+            true
+        });
+        // Idle for the paste, busy by the time Enter is due.
+        let probes = Arc::new(Mutex::new(0));
+        let n = Arc::clone(&probes);
+        let probe: Probe = Arc::new(move |_| {
+            let mut n = n.lock().unwrap();
+            *n += 1;
+            *n == 1
+        });
+        pump.deliver(plans, Duration::ZERO, probe, write)
+            .unwrap()
+            .join()
+            .unwrap();
+        assert_eq!(writes.lock().unwrap().len(), 1, "the paste only");
+        // Pasted, so not pointed at again.
+        assert!(pump.plan(&wakes, &idle, &nobody, 1_001).is_empty());
+    }
+
+    #[test]
+    fn a_failed_enter_after_a_good_paste_does_not_paste_twice() {
+        let pump = Arc::new(Pump::default());
+        let wakes = [wake("dispatch:d1", "t1", 1, 3)];
+        let idle = [tab("t1", "idle", false)];
+        let plans = pump.plan(&wakes, &idle, &nobody, 1_000);
+        let write: Writer = Arc::new(|_, bytes| bytes != b"\r");
+        pump.deliver(plans, Duration::ZERO, still_idle(), write)
+            .unwrap()
+            .join()
+            .unwrap();
+        assert!(pump.plan(&wakes, &idle, &nobody, 1_001).is_empty());
     }
 
     #[test]
