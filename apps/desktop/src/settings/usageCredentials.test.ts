@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
 import type { Account, Quota } from "@/api";
+import { credentialRows } from "./usageCredentials";
 
 type Reason = NonNullable<Quota["reason"]>;
-import { credentialRows } from "./usageCredentials";
 
 const account = (name: string, provider: Account["provider"] = "claude"): Account => ({
   name,
