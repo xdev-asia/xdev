@@ -852,6 +852,7 @@
   "workspace.pinned": "Pinned",
   "workspace.pin": "Pin",
   "workspace.unpin": "Unpin",
+  "sidebar.pinned.title": "Pinned",
   "workspace.markUnread": "Mark unread",
   "workspace.markRead": "Mark read",
   "workspace.unread": "Unread",

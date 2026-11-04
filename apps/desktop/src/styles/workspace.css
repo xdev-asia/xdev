@@ -3158,3 +3158,19 @@ button.ws-tree-row:focus-visible {
 .ws-badge-tag-pink {
   background: var(--x-color-tag-pink);
 }
+
+/* The project chip: badge and short name on a row, and the Pinned group's heading mark. */
+.ws-tag-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ws-group-pinned .ws-group-head .ws-pin {
+  flex-shrink: 0;
+  color: var(--text-2);
+}
+
+.ws-repo .ws-badge {
+  margin-right: 6px;
+}

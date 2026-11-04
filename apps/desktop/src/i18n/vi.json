@@ -852,6 +852,7 @@
   "workspace.pinned": "Đã ghim",
   "workspace.pin": "Ghim",
   "workspace.unpin": "Bỏ ghim",
+  "sidebar.pinned.title": "Đã ghim",
   "workspace.markUnread": "Đánh dấu chưa xem",
   "workspace.markRead": "Đánh dấu đã xem",
   "workspace.unread": "Chưa xem",
