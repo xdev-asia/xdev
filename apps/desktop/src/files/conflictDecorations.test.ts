@@ -13,8 +13,8 @@ vi.mock("./conflictMarkers", async (original) => {
 const labels = { bar: (n: number, total: number) => `Conflict ${n} of ${total}`, current: "Accept current", incoming: "Accept incoming", both: "Accept both" };
 const doc = ["a", "<<<<<<< HEAD", "ours", "=======", "theirs", ">>>>>>> feature", "z"].join("\n");
 
-function decorations(text: string, path?: string): { line: number; class: string | null; widget: boolean; label?: string }[] {
-  const state = EditorState.create({ doc: text, extensions: [conflictDecorations(() => labels, path)] });
+function decorations(text: string): { line: number; class: string | null; widget: boolean; label?: string }[] {
+  const state = EditorState.create({ doc: text, extensions: [conflictDecorations(() => labels)] });
   const out: { line: number; class: string | null; widget: boolean; label?: string }[] = [];
   for (const source of state.facet(EditorView.decorations)) {
     const set = typeof source === "function" ? source(null as unknown as EditorView) : source;
@@ -64,12 +64,6 @@ it("the bar names its block and the count", () => {
   expect(decorations(two).filter((d) => d.widget).map((d) => d.label)).toEqual(["Conflict 1 of 2", "Conflict 2 of 2"]);
   expect(translate("en", "editor.conflict.bar", { n: 2, total: 5 })).toBe("Conflict 2 of 5");
   expect(translate("vi", "editor.conflict.bar", { n: 2, total: 5 })).toContain("2");
-});
-
-it("the markers of a fenced block in a markdown file draw nothing", () => {
-  const md = ["```", "<<<<<<< a", "x", "=======", "y", ">>>>>>> b", "```"].join("\n");
-  expect(decorations(md, "a.md")).toEqual([]);
-  expect(decorations(md, "a.ts").length).toBeGreaterThan(0);
 });
 
 it("resolving the last block to an empty side leaves no blank last line", () => {

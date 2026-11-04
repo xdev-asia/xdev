@@ -103,8 +103,8 @@ export function CodeEditor(props: {
   // Conflict blocks of the text, with accept actions that edit the buffer; the labels follow the language.
   useEffect(() => {
     const labels = { bar: (n: number, total: number) => t("editor.conflict.bar", { n, total }), current: t("editor.conflict.current"), incoming: t("editor.conflict.incoming"), both: t("editor.conflict.both") };
-    view.current?.dispatch({ effects: conflicts.current.reconfigure(conflictDecorations(() => labels, props.rel)) });
-  }, [t, props.rel]);
+    view.current?.dispatch({ effects: conflicts.current.reconfigure(conflictDecorations(() => labels)) });
+  }, [t]);
 
   // A new `seq` moves the caret to the line, once the text is in.
   const seq = props.goto?.seq;

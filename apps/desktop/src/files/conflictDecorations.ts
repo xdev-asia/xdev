@@ -75,14 +75,14 @@ const ours = Decoration.line({ class: "cm-conflict-ours" });
 const theirs = Decoration.line({ class: "cm-conflict-theirs" });
 const marker = Decoration.line({ class: "cm-conflict-marker" });
 
-function build(state: EditorState, labels: () => ConflictLabels, path: string | undefined): DecorationSet {
+function build(state: EditorState, labels: () => ConflictLabels): DecorationSet {
   const text = state.doc.toString();
   // Most files have no conflict: the common case costs one scan.
   if (!text.includes("<<<<<<<")) return Decoration.none;
   const ranges: Range<Decoration>[] = [];
   const lineFrom = (n: number): number => state.doc.line(n + 1).from;
   const mark = (n: number, deco: Decoration): void => void ranges.push(deco.range(lineFrom(n)));
-  const blocks = parseConflicts(text, path);
+  const blocks = parseConflicts(text);
   blocks.forEach((b, i) => {
     ranges.push(Decoration.widget({ widget: new ConflictBar(b, labels(), i + 1, blocks.length), block: true, side: -1 }).range(lineFrom(b.start)));
     mark(b.start, marker);
@@ -99,10 +99,10 @@ function build(state: EditorState, labels: () => ConflictLabels, path: string | 
  * Tints the sides of every conflict block of the text and puts the accept actions above it. The accept
  * actions edit the buffer; nothing is written until the file is saved. Parsed when the text changes only.
  */
-export function conflictDecorations(labels: () => ConflictLabels, path?: string): Extension {
+export function conflictDecorations(labels: () => ConflictLabels): Extension {
   const field = StateField.define<DecorationSet>({
-    create: (state) => build(state, labels, path),
-    update: (deco, tr) => (tr.docChanged ? build(tr.state, labels, path) : deco),
+    create: (state) => build(state, labels),
+    update: (deco, tr) => (tr.docChanged ? build(tr.state, labels) : deco),
     provide: (f) => EditorView.decorations.from(f),
   });
   return field;

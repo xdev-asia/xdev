@@ -112,7 +112,7 @@ const CONFLICTED = ["a", "<<<<<<< HEAD", "ours", "=======", "theirs", ">>>>>>> f
 
 // The bar is a widget of the editor's state; without a DOM it is read from the decorations the editor would draw.
 const bars = (editor: Node): number => {
-  const state = EditorState.create({ doc: editor.props.value, extensions: [conflictDecorations(() => ({ bar: () => "bar", current: "c", incoming: "i", both: "b" }), editor.props.rel)] });
+  const state = EditorState.create({ doc: editor.props.value, extensions: [conflictDecorations(() => ({ bar: () => "bar", current: "c", incoming: "i", both: "b" }))] });
   let count = 0;
   for (const source of state.facet(EditorView.decorations)) {
     const set = typeof source === "function" ? source(null as unknown as EditorView) : source;
