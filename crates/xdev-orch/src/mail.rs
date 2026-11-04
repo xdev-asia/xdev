@@ -113,11 +113,28 @@ impl Store {
             .optional()?)
     }
 
-    /// Who a call from `tab` (or `--run`) acts as. A worker's tab acts as its
-    /// dispatch; any other tab acts as the coordinator of its current run.
+    /// The worker in `tab` that has not finished yet, newest first.
+    pub fn live_worker_of_tab(&self, tab: &str) -> Result<Option<Worker>, OrchError> {
+        Ok(self
+            .conn
+            .query_row(
+                &format!(
+                    "SELECT {WORKER_COLS} FROM workers WHERE tab = ?1
+                     AND state NOT IN ('succeeded', 'failed', 'stopped', 'abandoned')
+                     ORDER BY created_ms DESC, rowid DESC LIMIT 1"
+                ),
+                [tab],
+                worker_row,
+            )
+            .optional()?)
+    }
+
+    /// Who a call from `tab` (or `--run`) acts as. The tab of a worker that
+    /// has not finished acts as its dispatch; any other tab (one whose worker
+    /// finished too) acts as the coordinator of its current run.
     pub fn identity(&self, tab: Option<&str>, run: Option<&str>) -> Result<Identity, OrchError> {
         if let Some(tab) = tab
-            && let Some(w) = self.worker_of_tab(tab)?
+            && let Some(w) = self.live_worker_of_tab(tab)?
         {
             let run_id: String = self.conn.query_row(
                 "SELECT run_id FROM dispatches WHERE id = ?1",
@@ -629,6 +646,40 @@ mod tests {
         assert_eq!(w.run_id, lead.run_id);
         assert_eq!(w.dispatch.as_deref(), Some("disp_a"));
         assert_eq!(s.identity(None, None).unwrap(), lead);
+    }
+
+    #[test]
+    fn a_tab_whose_worker_finished_acts_as_the_coordinator_again() {
+        let (s, lead) = world();
+        // The person's own tab once hosted a `--terminal` worker.
+        for (d, state) in [("disp_t", "ready"), ("disp_u", "succeeded")] {
+            s.conn
+                .execute_batch(&format!(
+                    "INSERT INTO dispatches (id, run_id, task_id, status) VALUES ('{d}', '{r}', 't_disp_a', 'dispatched');
+                     INSERT INTO workers (dispatch_id, tab, worktree, agent, state, created_ms, updated_ms)
+                       VALUES ('{d}', 'lead', '/wt/l', 'claude', '{state}', 1, 1);",
+                    r = lead.run_id
+                ))
+                .unwrap();
+        }
+        // The newest is finished, an older one is still live: it wins.
+        assert_eq!(
+            s.identity(Some("lead"), None).unwrap().address,
+            "dispatch:disp_t"
+        );
+        for state in ["succeeded", "failed", "stopped", "abandoned"] {
+            s.conn
+                .execute(
+                    "UPDATE workers SET state = ?1 WHERE dispatch_id = 'disp_t'",
+                    [state],
+                )
+                .unwrap();
+            assert_eq!(s.identity(Some("lead"), None).unwrap(), lead, "{state}");
+        }
+        assert_eq!(
+            s.identity(Some("tab_c"), None).unwrap().address,
+            lead.address
+        );
     }
 
     #[test]
