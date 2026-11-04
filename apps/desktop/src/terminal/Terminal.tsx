@@ -8,6 +8,7 @@ import type { JSX, Ref } from "react";
 import { toApiError, type Api, type ApiError, type PtyInfo, type PtyProfile } from "@/api";
 import { useI18n } from "@/i18n";
 import { appOwnsKey } from "@/keys/keymap";
+import { PLATFORM } from "@/platform";
 import { PtyClient } from "./ptyClient";
 import { createTerminalHandle } from "./terminalActions";
 import { getTerminalSettings, subscribeTerminalSettings } from "./terminalSettings";
@@ -16,6 +17,9 @@ import { TerminalFind } from "./TerminalFind";
 import { createBell } from "./terminalBell";
 import { attachRenderer } from "./terminalRenderer";
 import { followAppTheme } from "./terminalColors";
+import { trackInputModes } from "./inputModes";
+import { effectiveOptionAsAlt, getDetectedLayout, subscribeDetectedLayout } from "./optionAsAlt";
+import { createOptionSideTracker, resolveTerminalKey } from "./terminalKeys";
 
 /** What a menu, the palette or a shortcut can do to one terminal. Acts on the xterm; nothing goes to the pty unless said. */
 export interface TerminalHandle {
@@ -128,12 +132,47 @@ export function Terminal(props: {
     term.open(el);
     // WebGL or DOM, as Settings says; after `open`, which the addon needs.
     const renderer = attachRenderer(term, getTerminalSettings().gpu);
+    // What the program asked for (kitty flags, modifyOtherKeys) and which Option keys are held.
+    const modes = trackInputModes(term);
+    const optionSides = createOptionSideTracker();
+    const effectiveOption = () => effectiveOptionAsAlt(getTerminalSettings().macOptionAsAlt, getDetectedLayout());
+    // With both Option keys as Alt, xterm itself encodes Option+key as ESC + key.
+    const applyOptionMeta = () => {
+      term.options.macOptionIsMeta = PLATFORM === "mac" && effectiveOption() === "both";
+    };
+    applyOptionMeta();
+    const offLayout = subscribeDetectedLayout(applyOptionMeta);
+    const clearOptionSides = () => optionSides.clear();
+    el.addEventListener("focusout", clearOptionSides);
     // A chord the app owns (per the key policy) never reaches the program: a terminal action runs
     // here, any other one has run in the window handler before xterm saw it.
     term.attachCustomKeyEventHandler((e) => {
+      if (e.key === "Alt") {
+        if (e.type === "keydown") optionSides.down(e);
+        else if (e.type === "keyup") optionSides.up(e);
+      }
       if (e.type !== "keydown") return true;
       const action = appOwnsKey(e);
-      if (action === null) return true;
+      if (action === null) {
+        const resolved = resolveTerminalKey(e, {
+          platform: PLATFORM,
+          optionAsAlt: effectiveOption(),
+          optionSide: optionSides.get(),
+          kittyFlags: modes.kittyFlags(),
+          modifyOtherKeys: modes.modifyOtherKeys(),
+          fullScreenNonAgent: term.buffer.active.type === "alternate" && handlers.current.profile === "shell",
+        });
+        if (resolved === null) return true;
+        if (resolved.type === "scroll") {
+          if (resolved.to === "top") term.scrollToTop();
+          else term.scrollToBottom();
+        } else {
+          handlers.current.onInput?.(resolved.data);
+          void client.input(resolved.data).catch(() => {});
+        }
+        e.preventDefault();
+        return false;
+      }
       switch (action) {
         case "terminal.find":
           openFindRef.current();
@@ -225,6 +264,7 @@ export function Terminal(props: {
       term.options.scrollSensitivity = next.scrollSensitivity;
       term.options.fastScrollSensitivity = next.fastScrollSensitivity;
       term.options.minimumContrastRatio = next.minimumContrastRatio;
+      applyOptionMeta();
       renderer.set(getTerminalSettings().gpu);
       fitVisible();
       // A font that has not loaded yet measures wrong; measure again when it has.
@@ -275,6 +315,9 @@ export function Terminal(props: {
       alive = false;
       offSettings();
       offTheme();
+      offLayout();
+      modes.dispose();
+      el.removeEventListener("focusout", clearOptionSides);
       renderer.dispose();
       bell.dispose();
       el.removeEventListener("contextmenu", onContextMenu, true);
