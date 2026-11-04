@@ -1157,6 +1157,7 @@
   "ship.more.sync": "Đồng bộ",
   "ship.more.fetch": "Fetch",
   "ship.more.force": "Force push (có lease)…",
+  "ship.more.commitPush": "Commit và đẩy",
   "ship.force.title": "Force push?",
   "ship.force.body": "Thay {remote}/{branch} ({id}) bằng nhánh của bạn? Các commit chỉ có trên remote sẽ mất.",
   "ship.force.confirm": "Force push",

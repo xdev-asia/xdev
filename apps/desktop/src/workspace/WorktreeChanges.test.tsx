@@ -1041,3 +1041,43 @@ it("draws Changes before Staged by default and Staged first when the setting say
   await tick();
   expect(groupNames(b)).toEqual(["staged", "changes"]);
 });
+
+const pushOf = (view: ReturnType<typeof changes>) => view.find((n) => n.type === ShipBar)!.props;
+
+it("Commit and push commits the checked files and then pushes", async () => {
+  const api = createMockApi({});
+  const commit = vi.spyOn(api, "worktreeCommit");
+  const push = vi.spyOn(api, "worktreePush");
+  const view = changes(api, undefined, { prs: new PrStore(api) });
+  await tick();
+  expect(pushOf(view).commitBlocked).toBe(true);
+  view.message().props.onChange({ target: { value: "feat: ship it" } });
+  expect(pushOf(view).commitBlocked).toBe(false);
+  pushOf(view).onCommitPush();
+  await tick();
+  expect(commit).toHaveBeenCalledWith(OAK, ["docs/old-notes.md", "src/session.ts", "src/status.ts"], "feat: ship it");
+  expect(push).toHaveBeenCalledWith(OAK);
+  expect(commit.mock.invocationCallOrder[0]).toBeLessThan(push.mock.invocationCallOrder[0]);
+});
+
+it("Commit and push does not push when the commit returns nothing", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeCommit").mockResolvedValue(null);
+  const push = vi.spyOn(api, "worktreePush");
+  const view = changes(api, undefined, { prs: new PrStore(api) });
+  await tick();
+  view.message().props.onChange({ target: { value: "feat: nothing" } });
+  pushOf(view).onCommitPush();
+  await tick();
+  expect(push).not.toHaveBeenCalled();
+});
+
+it("Commit and push does nothing while blocked", async () => {
+  const api = createMockApi({});
+  const commit = vi.spyOn(api, "worktreeCommit");
+  const view = changes(api, undefined, { prs: new PrStore(api) });
+  await tick();
+  pushOf(view).onCommitPush();
+  await tick();
+  expect(commit).not.toHaveBeenCalled();
+});
