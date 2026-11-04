@@ -2778,3 +2778,13 @@ button.ws-tree-row:focus-visible {
 .ws-tick input {
   accent-color: var(--accent);
 }
+
+.ws-item-row {
+  display: flex;
+  gap: 6px;
+}
+
+.ws-item-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}

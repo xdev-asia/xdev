@@ -1,7 +1,8 @@
 import { toApiError, type ApiError, type WorktreeView } from "@/api";
+import type { CreateExtra } from "./CreateWorktreeDialog";
 
 /** What a create was asked with; Retry asks again with the same. */
-export type CreateArgs = { repoId: string; name: string; from: string | null };
+export type CreateArgs = { repoId: string; name: string; from: string | null; extra?: CreateExtra };
 
 /** A create still running, or one that failed and waits for Retry or Dismiss. */
 export type PendingCreate = {
@@ -9,6 +10,7 @@ export type PendingCreate = {
   repoId: string;
   name: string;
   from: string | null;
+  extra?: CreateExtra;
   state: "running" | "failed";
   error?: ApiError;
 };
