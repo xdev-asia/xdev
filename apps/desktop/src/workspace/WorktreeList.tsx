@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@xdev-asia/ui";
 import type { JSX } from "react";
-import type { ApiError, Check, FolderEntry, KeptView, OpenInApp, OpenTarget, PrView, PtyProfile, RepoGroup, RepoView, SidebarItem, SidebarPrefs, WorkStatus, WorktreeStat, WorktreeView } from "@/api";
+import type { ApiError, Check, FolderEntry, KeptView, LivePort, OpenInApp, OpenTarget, PrView, PtyProfile, RepoGroup, RepoView, SidebarItem, SidebarPrefs, WorkStatus, WorktreeStat, WorktreeView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { useI18n } from "@/i18n";
 import { profileLetter, profileName, useProfiles } from "@/agents/profileStore";
@@ -21,6 +21,7 @@ import { RepoBadge } from "./RepoBadge";
 import { SidebarFilters } from "./SidebarFilters";
 import { SidebarOptions } from "./SidebarOptions";
 import { WorkItemChip } from "./WorkItemChip";
+import { PortsChip, PortsPopover } from "./PortsChip";
 import { ContextMenu } from "@/ui/ContextMenu";
 
 type T = ReturnType<typeof useI18n>["t"];
@@ -66,6 +67,12 @@ export interface WorktreeListProps {
   onArchive?(worktree: WorktreeView): void;
   /** A click on a work item chip: the shell copies the URL. */
   onCopyLink?(url: string): void;
+  /** The live ports of each worktree path; a path with none shows no chip. */
+  ports?: Record<string, LivePort[] | undefined>;
+  /** Browser, copy and stop for a port; the stop resolves once the process is gone. */
+  onOpenPort?(port: LivePort): void;
+  onCopyPort?(port: LivePort): void;
+  onStopPort?(worktree: WorktreeView, port: LivePort): Promise<void>;
   selected: string | null;
   /** The status dot of each worktree path; null shows none. */
   dots: Record<string, TabStatus | null>;
@@ -152,6 +159,9 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const [pinnedShut, setPinnedShut] = useState(false);
   // The id being dragged in the project list.
   const [dragging, setDragging] = useState<string | null>(null);
+  // The worktree whose live ports popover is open, where it opens, and the pid whose Stop asks again.
+  const [portsOpen, setPortsOpen] = useState<{ worktree: WorktreeView; at: { x: number; y: number } } | null>(null);
+  const [stopAsk, setStopAsk] = useState<number | null>(null);
   const prefs = props.prefs ?? SIDEBAR_PREFS_DEFAULTS;
   const tree = props.items;
   // The repos whose "Found outside xDev" group is open; all start closed.
@@ -208,6 +218,8 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         {summary && <span className="ws-dot" data-check={summary} aria-hidden="true" />}
       </span>
     );
+    const livePorts = parts.has("ports") ? (props.ports?.[wt.path] ?? []) : [];
+    const portsNode = livePorts.length > 0 && props.onStopPort && <PortsChip count={livePorts.length} onOpen={(at) => setPortsOpen({ worktree: wt, at })} />;
     const showAgents = parts.has("agents") ? agents : [];
     const showStatus = parts.has("workStatus") ? wt.status : null;
     const showItem = parts.has("workItem") ? wt.item : null;
@@ -245,6 +257,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
             {seen !== null && parts.has("time") && <span className="ws-wt-time">{ago(seen, props.now ?? Date.now(), t)}</span>}
             {compact && statNode}
             {compact && prNode}
+            {compact && portsNode}
           </span>
           {!compact && (parts.has("branch") || parts.has("projectChip") || wt.primary) && (
           <span className="ws-wt-sub">
@@ -274,7 +287,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
               {wt.comment.split("\n")[0]}
             </span>
           )}
-          {!compact && (showAgents.length > 0 || statNode || prNode || showStatus || showItem || showCli != null) && (
+          {!compact && (showAgents.length > 0 || statNode || prNode || portsNode || showStatus || showItem || showCli != null) && (
             <span className="ws-wt-meta">
               {showStatus && (
                 <span className="ws-chip ws-wt-status" data-work={showStatus}>
@@ -293,6 +306,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
                 </span>
               ))}
               <span className="ws-wt-spacer" />
+              {portsNode}
               {statNode}
               {prNode}
             </span>
@@ -799,6 +813,10 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         </p>
       )}
       {openMenuNode()}
+      {portsOpen && <PortsPopover ports={props.ports?.[portsOpen.worktree.path] ?? []} at={portsOpen.at} confirming={stopAsk} onOpenBrowser={(p) => props.onOpenPort?.(p)} onCopy={(p) => props.onCopyPort?.(p)} onAskStop={(p) => setStopAsk(p.pid)} onStop={(p) => {
+        setStopAsk(null);
+        void props.onStopPort?.(portsOpen.worktree, p);
+      }} onClose={() => { setPortsOpen(null); setStopAsk(null); }} />}
       <div className="ws-sidebar-foot">
         <button type="button" className="ws-add-repo" onClick={() => props.onAddRepo()}>
           <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

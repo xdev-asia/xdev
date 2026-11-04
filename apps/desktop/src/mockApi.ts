@@ -32,6 +32,7 @@ import { createMockPower } from "./mockPower";
 import { createMockPty, type MockPtyd } from "./mockPty";
 import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
 import { createMockXdevId, type MockXdevId } from "./mockXdevId";
+import { createMockPorts } from "./mockPorts";
 import { createMockSettings, createSettingsHub } from "./mockSettings";
 import { createMockShell, type MockShell } from "./mockShell";
 import { createMockStatus, type MockStatus } from "./mockStatus";
@@ -579,6 +580,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...workspace,
     ...createMockIssues(),
     ...settingsApi,
+    ...createMockPorts(),
     ...themes,
     agentsSettingsPut: power.agentsSettingsPut,
     ...createMockKeybindings(options.keybindings ?? null),

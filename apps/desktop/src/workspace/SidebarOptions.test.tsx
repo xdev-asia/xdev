@@ -66,7 +66,7 @@ it("lists the five groupings", () => {
 it("toggles one card property and keeps the rest", () => {
   const { onPrefs, tree } = panel();
   const boxes = nodes(tree.find((n) => n.props.role === "group")!.props.children).filter((n) => n.type === Checkbox);
-  expect(boxes).toHaveLength(9);
+  expect(boxes).toHaveLength(10);
   boxes[0].props.onChange({ target: { checked: false } });
   const [next] = onPrefs.mock.calls[0];
   expect(Object.values(next.card).filter((v) => v === false)).toHaveLength(1);
