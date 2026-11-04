@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Condvar, Mutex, MutexGuard, PoisonError, mpsc};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, mpsc};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -135,6 +135,11 @@ pub struct OrchHub {
     pub mail_gen: Mutex<u64>,
     /// Mailboxes a `check --wait` is sleeping on, with how many.
     waiters: Mutex<HashMap<String, u32>>,
+    /// What the wake pump remembers.
+    pub pump: Arc<crate::orch_pump::Pump>,
+    /// Set when the pump should look again; see [`OrchHub::kick_pump`].
+    kick: Mutex<bool>,
+    kicked: Condvar,
 }
 
 /// How long `check --wait` sleeps when the CLI sends no timeout.
@@ -228,11 +233,71 @@ impl OrchHub {
     pub fn notify_mail(&self) {
         *self.mail_gen.lock().unwrap_or_else(PoisonError::into_inner) += 1;
         self.mail.notify_all();
+        self.kick_pump();
+    }
+
+    /// Asks the pump to look again now: the tabs changed or mail came in.
+    pub fn kick_pump(&self) {
+        *self.kick.lock().unwrap_or_else(PoisonError::into_inner) = true;
+        self.kicked.notify_all();
+    }
+
+    /// Sleeps until [`OrchHub::kick_pump`] or `limit`; true when kicked.
+    pub fn wait_kick(&self, limit: Duration) -> bool {
+        let guard = self.kick.lock().unwrap_or_else(PoisonError::into_inner);
+        let (mut guard, _) = self
+            .kicked
+            .wait_timeout_while(guard, limit, |k| !*k)
+            .unwrap_or_else(PoisonError::into_inner);
+        std::mem::take(&mut *guard)
     }
 
     pub fn next_read(&self) -> u64 {
         self.next_read.fetch_add(1, Ordering::Relaxed) + 1
     }
+}
+
+/// Starts the pump thread: after every tab report and every new message, and
+/// at least every two seconds, it points idle tabs at their mail.
+pub fn start_pump(app: AppHandle) {
+    use tauri::Manager;
+    std::thread::spawn(move || {
+        let hub = app.state::<OrchHub>();
+        loop {
+            hub.wait_kick(Duration::from_millis(
+                crate::orch_pump::POINTER_GAP_MS as u64,
+            ));
+            pump_once(&app);
+        }
+    });
+}
+
+fn pump_once(app: &AppHandle) {
+    use tauri::Manager;
+    let state = app.state::<AppState>();
+    let Ok(data) = data_dir(&state) else { return };
+    // Nothing to do before the first orchestration call made a store.
+    if !data.join("orchestration.db").is_file() {
+        return;
+    }
+    let hub = app.state::<OrchHub>();
+    let board = app.state::<crate::cli_verbs::CliHub>();
+    let Ok(wakes) = hub.with_store(data, |s| s.wake_targets()) else {
+        return;
+    };
+    let (tabs, _) = board.board.tabs();
+    let now = crate::workspace::clock().0;
+    let plans = hub.pump.plan(&wakes, &tabs, &|a| hub.has_waiter(a), now);
+    let handle = app.clone();
+    let write: crate::orch_pump::Writer = Arc::new(move |tab, bytes| {
+        let ptys = handle.state::<crate::pty::Ptys>();
+        ptys.with(tab, |s| s.write(bytes.to_vec())).is_ok()
+    });
+    hub.pump.deliver(
+        plans,
+        Duration::from_millis(crate::orch_pump::WRITE_DELAY_MS),
+        write,
+    );
 }
 
 impl From<OrchError> for AppError {

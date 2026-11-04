@@ -79,6 +79,16 @@ pub struct InboxRow {
     pub created_ms: i64,
 }
 
+/// A mailbox with unread mail and the tab its owner sits in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Wake {
+    pub address: String,
+    pub tab: String,
+    pub unread: u32,
+    /// The newest unread message (its `seq`).
+    pub latest_seq: i64,
+}
+
 fn preview(body: &str, full: bool) -> String {
     if full || body.chars().count() <= PREVIEW_CHARS {
         return body.to_owned();
@@ -318,6 +328,56 @@ impl Store {
         )?)
     }
 
+    /// Mailboxes with unread mail whose owner has a tab: a live worker's, or
+    /// a run's coordinator's. What the wake pump points at.
+    pub fn wake_targets(&self) -> Result<Vec<Wake>, OrchError> {
+        let mut st = self.conn.prepare(
+            "SELECT to_addr, COUNT(*), MAX(seq) FROM messages WHERE read = 0
+             GROUP BY to_addr ORDER BY MIN(seq)",
+        )?;
+        let boxes = st
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, u32>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut out = Vec::new();
+        for (address, unread, latest_seq) in boxes {
+            let tab: Option<String> = if let Some(d) = address.strip_prefix("dispatch:") {
+                self.conn
+                    .query_row(
+                        "SELECT tab FROM workers WHERE dispatch_id = ?1
+                         AND state IN ('starting', 'start_unknown', 'ready')",
+                        [d],
+                        |r| r.get(0),
+                    )
+                    .optional()?
+                    .flatten()
+            } else if let Some(r) = address.strip_prefix("run:") {
+                self.conn
+                    .query_row("SELECT coordinator_tab FROM runs WHERE id = ?1", [r], |r| {
+                        r.get(0)
+                    })
+                    .optional()?
+                    .flatten()
+            } else {
+                None
+            };
+            if let Some(tab) = tab {
+                out.push(Wake {
+                    address,
+                    tab,
+                    unread,
+                    latest_seq,
+                });
+            }
+        }
+        Ok(out)
+    }
+
     /// Hands over the oldest messages of `address` (at most [`CHECK_MAX`]) and
     /// marks them handled, unless `peek`.
     pub fn check(
@@ -481,6 +541,29 @@ mod tests {
 
     fn nobody(_: &str) -> bool {
         false
+    }
+
+    #[test]
+    fn wake_targets_list_unread_mailboxes_of_live_tabs_only() {
+        let (s, lead) = world();
+        let w = |to: &str| note(to, MessageType::Status, "x");
+        s.send(&lead, &w("dispatch:disp_a"), 1, &nobody).unwrap();
+        s.send(&lead, &w("dispatch:disp_a"), 2, &nobody).unwrap();
+        // A finished worker has no live tab to wake.
+        s.send(&lead, &w("dispatch:disp_c"), 3, &nobody).unwrap();
+        let a = s.identity(Some("tab_a"), None).unwrap();
+        s.send(&a, &w(&lead.address), 4, &nobody).unwrap();
+        let got = s.wake_targets().unwrap();
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].address, "dispatch:disp_a");
+        assert_eq!(got[0].tab, "tab_a");
+        assert_eq!(got[0].unread, 2);
+        assert_eq!(got[1].address, lead.address);
+        assert_eq!(got[1].tab, "lead");
+        assert!(got[1].latest_seq > got[0].latest_seq);
+        s.check("dispatch:disp_a", &CheckOpts::default(), 5)
+            .unwrap();
+        assert_eq!(s.wake_targets().unwrap().len(), 1);
     }
 
     #[test]

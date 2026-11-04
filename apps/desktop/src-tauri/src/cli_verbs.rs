@@ -280,8 +280,14 @@ pub struct CliHub {
 
 /// The UI's tabs, replacing the last report; `selected` is the worktree in front.
 #[tauri::command]
-pub fn cli_tabs_report(hub: State<'_, CliHub>, tabs: Vec<TabReport>, selected: Option<String>) {
+pub fn cli_tabs_report(
+    hub: State<'_, CliHub>,
+    orch: State<'_, OrchHub>,
+    tabs: Vec<TabReport>,
+    selected: Option<String>,
+) {
     hub.board.replace(tabs, selected);
+    orch.kick_pump();
 }
 
 /// The person's answer to a `cli://ask`.
