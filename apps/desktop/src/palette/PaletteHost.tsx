@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { useProfiles, profileName } from "@/agents/profileStore";
 import type { QuickCommand, RepoView, SessionRow, Task, WorktreeView } from "@/api";
@@ -84,18 +84,24 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
 
   // The task list is read as the palette opens; a failure (no Docs vault, say) leaves it empty.
   const [taskRows, setTaskRows] = useState<Task[]>(NO_TASKS);
+  // The reader is kept in a ref: the shell passes a new arrow each render, and the list is read
+  // once per opening, not once per render.
   const readTasks = props.tasks;
+  const readRef = useRef(readTasks);
+  readRef.current = readTasks;
+  const canReadTasks = !!readTasks;
   useEffect(() => {
-    if (!open || !readTasks) return;
+    const read = readRef.current;
+    if (!open || !read) return;
     let live = true;
-    readTasks().then(
+    read().then(
       (found) => live && setTaskRows(found),
       () => live && setTaskRows(NO_TASKS),
     );
     return () => {
       live = false;
     };
-  }, [open, readTasks]);
+  }, [open, canReadTasks]);
 
   const currentPath = current?.path ?? null;
   const quick = useSyncExternalStore(subscribeQuickCommands, getQuickCommands, getQuickCommands);

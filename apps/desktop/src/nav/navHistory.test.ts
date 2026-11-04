@@ -70,6 +70,34 @@ describe("NavHistory", () => {
     expect(h.back(all)).toBeNull();
   });
 
+  it("merges the runs of one worktree that dropping a dead entry leaves side by side", () => {
+    const h = new NavHistory();
+    h.visit("X", null);
+    h.visit("A", "t1");
+    h.visit("B", null);
+    h.visit("A", "t2");
+    const alive = (w: string) => w !== "B";
+    // A, dead B, A: back skips both and lands on X, not on the same worktree.
+    expect(h.back(alive)?.worktree).toBe("X");
+    const seen: (string | null)[] = [];
+    let e;
+    while ((e = h.forward(all))) seen.push(`${e.worktree}:${e.tab}`);
+    // One A is left, the newest, with its tab.
+    expect(seen).toEqual(["A:t2"]);
+  });
+
+  it("drops a dead run behind without leaving the current worktree twice", () => {
+    const h = new NavHistory();
+    h.visit("A", null);
+    h.visit("B", null);
+    h.visit("A", "t");
+    const alive = (w: string) => w !== "B";
+    expect(h.canBack(alive)).toBe(false);
+    expect(h.back(alive)).toBeNull();
+    expect(h.back(all)).toBeNull();
+    expect(h.forward(all)).toBeNull();
+  });
+
   it("returns null and stays put when everything behind is dead", () => {
     const h = new NavHistory();
     h.visit("A", null);
@@ -86,6 +114,17 @@ describe("NavHistory", () => {
     while (h.back(all)) n++;
     expect(n).toBe(NAV_CAP - 1);
     expect(h.forward(all)?.worktree).toBe("w2");
+  });
+
+  it("hands out the same bound subscribe and version each time", () => {
+    const h = new NavHistory();
+    const { subscribe, version } = h;
+    expect(h.subscribe).toBe(subscribe);
+    const fn = vi.fn();
+    subscribe(fn);
+    h.visit("A", null);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(version()).toBe(h.version());
   });
 
   it("notifies subscribers and bumps the version on each change", () => {

@@ -1449,7 +1449,6 @@
   "agentSessions.messages": "{count} tin nhắn",
   "agentSessions.messages.one": "{count} tin nhắn",
   "agentSessions.showInHistory": "Xem trong lịch sử phiên",
-  "agentSessions.palette.resume": "Tiếp tục: {title}",
   "palette.action.resumeSession": "Tiếp tục phiên agent…",
   "palette.action.resumeSession.keywords": "agent phiên lịch sử tiếp tục",
   "agentSessions.resume": "Tiếp tục",

@@ -16,7 +16,8 @@ export function useNavHistory(args: {
   const ref = useRef<NavHistory | null>(null);
   if (ref.current === null) ref.current = new NavHistory();
   const history = ref.current;
-  useSyncExternalStore(history.subscribe.bind(history), history.version.bind(history));
+  // `subscribe` and `version` are bound fields, so React sees the same callbacks on each render.
+  useSyncExternalStore(history.subscribe, history.version);
   useEffect(() => {
     if (current !== null) history.visit(current, tab);
   }, [history, current, tab]);

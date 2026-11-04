@@ -1449,7 +1449,6 @@
   "agentSessions.messages": "{count} messages",
   "agentSessions.messages.one": "{count} message",
   "agentSessions.showInHistory": "Show in session history",
-  "agentSessions.palette.resume": "Resume: {title}",
   "palette.action.resumeSession": "Resume agent session…",
   "palette.action.resumeSession.keywords": "agent session history continue",
   "agentSessions.resume": "Resume",
