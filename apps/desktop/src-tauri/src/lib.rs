@@ -263,6 +263,7 @@ pub fn run() {
             issues::issues_list,
             issues::issue_view,
             issues::issue_resolve,
+            issues::issue_open,
             ship::worktree_draft_commit,
             ship::worktree_draft_pr,
             kit::kit_homes,

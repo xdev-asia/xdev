@@ -640,6 +640,8 @@ export interface Api {
   issueView(repoId: string, number: number): Promise<IssueDetail>;
   // `#12`, `12` or an issue URL of this repo; null when the text names no issue.
   issueResolve(repoId: string, text: string): Promise<Issue | null>;
+  // Opens the issue in the browser through `gh`.
+  issueOpen(repoId: string, number: number): Promise<void>;
   // Drafted texts; reject with `draft_failed`.
   worktreeDraftCommit(path: string, files: string[]): Promise<string>;
   worktreeDraftPr(path: string): Promise<PrDraft>;
@@ -1043,6 +1045,7 @@ const tauriApi: Api = {
   issuesList: (repoId, query) => call("issues_list", { repoId, query }),
   issueView: (repoId, number) => call("issue_view", { repoId, number }),
   issueResolve: (repoId, text) => call("issue_resolve", { repoId, text }),
+  issueOpen: (repoId, number) => call("issue_open", { repoId, number }),
   worktreeDraftCommit: (path, files) => call("worktree_draft_commit", { path, files }),
   worktreeDraftPr: (path) => call("worktree_draft_pr", { path }),
   worktreeListDir: (path, dir) => call("worktree_list_dir", { path, dir }),

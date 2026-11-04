@@ -465,6 +465,13 @@ pub fn parse_issue_ref(text: &str) -> Option<(Option<String>, u64)> {
     number(text.strip_prefix('#').unwrap_or(text)).map(|n| (None, n))
 }
 
+/// Opens the issue in the browser through `gh`.
+pub fn issue_open_web(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<(), GitError> {
+    let number = number.to_string();
+    ok(gh.run(cwd, &["issue", "view", &number, "--web"], None)?)?;
+    Ok(())
+}
+
 fn spawn_error(e: io::Error) -> GitError {
     match e.kind() {
         io::ErrorKind::NotFound => GitError::GhMissing,
@@ -901,5 +908,17 @@ mod tests {
         let fake = Fake::new(vec![out(0, r#"{"nameWithOwner":"acme/app"}"#, "")]);
         assert_eq!(repo_name(&fake, cwd()).unwrap(), "acme/app");
         assert_eq!(args_of(&fake), ["repo", "view", "--json", "nameWithOwner"]);
+    }
+
+    #[test]
+    fn issue_open_web_runs_view_web() {
+        let fake = Fake::new(vec![out(0, "", "")]);
+        issue_open_web(&fake, cwd(), 12).unwrap();
+        assert_eq!(args_of(&fake), ["issue", "view", "12", "--web"]);
+        let fake = Fake::new(vec![out(1, "", "boom")]);
+        assert_eq!(
+            issue_open_web(&fake, cwd(), 12).unwrap_err().code(),
+            "gh_failed"
+        );
     }
 }

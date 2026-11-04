@@ -1,6 +1,6 @@
 import type { Api, ApiError, Issue, IssueDetail } from "./api";
 
-type IssuesApi = Pick<Api, "issuesList" | "issueView" | "issueResolve">;
+type IssuesApi = Pick<Api, "issuesList" | "issueView" | "issueResolve" | "issueOpen">;
 
 /** The repo the mock's issue URLs belong to. */
 export const MOCK_ISSUE_REPO = "example/demo";
@@ -53,6 +53,9 @@ export function createMockIssues(): IssuesApi {
       const found = ISSUES.find((i) => i.number === number);
       if (!found) return reject("issue_not_found");
       return structuredClone({ issue: found, ...DETAILS[number] });
+    },
+    async issueOpen(_repoId, number) {
+      if (!ISSUES.some((i) => i.number === number)) return reject("issue_not_found");
     },
     async issueResolve(_repoId, text) {
       const t = text.trim();
