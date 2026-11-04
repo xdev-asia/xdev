@@ -75,3 +75,14 @@ it("carries the sidebar layout through a prefs put", async () => {
   expect(await api.sidebarPrefsPut(next)).toEqual(next);
   expect(await api.sidebarPrefsGet()).toEqual(next);
 });
+
+it("stores the orchestration settings with the depth clamped to one through nine", async () => {
+  const api = createMockApi({});
+  expect(await api.orchestrationSettings()).toEqual({ nestedWorkerMaxDepth: 1, workerAutoClose: true });
+  const seen = vi.fn();
+  api.onSettingsChanged((e) => seen(e.sections));
+  expect((await api.orchestrationSettingsPut({ nestedWorkerMaxDepth: 40, workerAutoClose: false })).nestedWorkerMaxDepth).toBe(9);
+  expect((await api.orchestrationSettingsPut({ nestedWorkerMaxDepth: 0, workerAutoClose: false })).nestedWorkerMaxDepth).toBe(1);
+  expect(await api.orchestrationSettings()).toEqual({ nestedWorkerMaxDepth: 1, workerAutoClose: false });
+  expect(seen).toHaveBeenCalledWith(["orchestration"]);
+});

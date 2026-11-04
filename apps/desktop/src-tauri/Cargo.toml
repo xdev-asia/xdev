@@ -29,6 +29,7 @@ xdev-core.workspace = true
 xdev-git.workspace = true
 xdev-ipc.workspace = true
 xdev-kit.workspace = true
+xdev-orch.workspace = true
 xdev-policy.workspace = true
 xdev-pty.workspace = true
 xdev-workspace.workspace = true
@@ -43,6 +44,7 @@ xdev-ai = { workspace = true, features = ["ts"] }
 xdev-core = { workspace = true, features = ["ts"] }
 xdev-git = { workspace = true, features = ["ts"] }
 xdev-kit = { workspace = true, features = ["ts"] }
+xdev-orch = { workspace = true, features = ["ts"] }
 xdev-pty = { workspace = true, features = ["ts"] }
 xdev-workspace = { workspace = true, features = ["ts"] }
 

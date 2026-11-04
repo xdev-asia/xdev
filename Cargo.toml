@@ -12,6 +12,7 @@ default-members = [
     "crates/xdev-mcp",
     "crates/xdev-ai",
     "crates/xdev-kit",
+    "crates/xdev-orch",
     "crates/xdev-api",
     "crates/xdev-policy",
     "crates/xdev-agent",
@@ -37,6 +38,7 @@ xdev-git = { path = "crates/xdev-git" }
 xdev-ipc = { path = "crates/xdev-ipc" }
 xdev-kit = { path = "crates/xdev-kit" }
 xdev-mcp = { path = "crates/xdev-mcp" }
+xdev-orch = { path = "crates/xdev-orch" }
 xdev-policy = { path = "crates/xdev-policy" }
 xdev-pty = { path = "crates/xdev-pty" }
 xdev-store = { path = "crates/xdev-store" }

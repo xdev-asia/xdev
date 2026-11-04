@@ -31,3 +31,21 @@ describe("mock app CLI", () => {
     expect(changed).toHaveBeenCalledTimes(1);
   });
 });
+
+it("plays the orchestration events and records what the UI answers", async () => {
+  const api = createMockApi({});
+  const opens: string[] = [];
+  const stop = await api.onOrchestrationOpenWorker((e) => opens.push(e.tab));
+  api.__orchOpenWorker({ dispatch: "d1", tab: "t1", title: "worker", worktree: "w", profile: "claude", prompt: "p", setup: "skip", readyTimeoutMs: 1000 });
+  stop();
+  api.__orchOpenWorker({ dispatch: "d2", tab: "t2", title: "worker", worktree: "w", profile: "claude", prompt: "p", setup: "skip", readyTimeoutMs: 1000 });
+  expect(opens).toEqual(["t1"]);
+  await api.orchestrationWorkerOpened("d1", { kind: "ok" });
+  await api.orchestrationReadAnswer(3, "text");
+  expect(api.__orchOpened()).toEqual([{ dispatch: "d1", outcome: { kind: "ok" } }]);
+  expect(api.__orchReads()).toEqual([{ request: 3, text: "text" }]);
+  expect(await api.orchestrationWorkerLifetime("t1")).toBeNull();
+  expect(await api.orchestrationWorkerKeepOpen("t1", true)).toMatchObject({ kept: true });
+  expect((await api.orchestrationSkillInstall(true)).installed).toBe(true);
+  expect(api.__orchInstalls()).toEqual([true]);
+});

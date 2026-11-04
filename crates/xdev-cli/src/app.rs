@@ -70,13 +70,18 @@ fn app_stopped() -> AppError {
 /// How long a verb's answer may take: a wait its own timeout plus a margin,
 /// anything else `ANSWER_WAIT`.
 pub fn answer_limit(method: &str, params: &Value) -> Duration {
-    match (method, params["timeoutS"].as_u64()) {
-        ("terminal.wait", Some(s)) => Duration::from_secs(s).saturating_add(WAIT_MARGIN),
+    if let ("terminal.wait", Some(s)) = (method, params["timeoutS"].as_u64()) {
+        return Duration::from_secs(s).saturating_add(WAIT_MARGIN);
+    }
+    match (method, params["timeoutMs"].as_u64()) {
+        ("orchestration.check" | "orchestration.ask" | "orchestration.worker-start", Some(ms)) => {
+            Duration::from_millis(ms).saturating_add(WAIT_MARGIN)
+        }
         _ => ANSWER_WAIT,
     }
 }
 
-fn io_error(e: impl std::fmt::Display) -> AppError {
+pub(crate) fn io_error(e: impl std::fmt::Display) -> AppError {
     AppError::new("io", e.to_string())
 }
 
@@ -279,6 +284,7 @@ pub fn request(
     stdin: &mut dyn Read,
 ) -> Result<(&'static str, Value, bool), AppError> {
     Ok(match cmd {
+        AppCommand::Orchestration(o) => return crate::orch::request(o, stdin),
         AppCommand::Status(a) => ("status", json!({}), a.json),
         AppCommand::Worktree(WorktreeCommand::Ps { all, json }) => {
             ("worktree.ps", json!({ "all": all }), *json)
@@ -336,6 +342,7 @@ pub enum AppCommand {
     Status(StatusArgs),
     Worktree(WorktreeCommand),
     Terminal(TerminalCommand),
+    Orchestration(Box<crate::orch::OrchArgs>),
 }
 
 fn text(v: &Value) -> String {

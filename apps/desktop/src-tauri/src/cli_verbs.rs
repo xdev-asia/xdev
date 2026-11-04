@@ -21,7 +21,10 @@ use crate::commands::{AppState, CmdError, load_git_settings};
 use crate::endpoint::{
     APP_PROTOCOL, AppError, Caller, Handler, Request, Scope, WAIT_MAX_S, caller_worktree, scope_of,
 };
+use crate::orchestration::{self, OrchHub};
 use crate::pty::Ptys;
+use crate::settings::OrchestrationSettings;
+use crate::settings_store;
 use crate::workspace::{WorkspaceLock, clock, update};
 
 /// One terminal tab as the UI sees it; the UI owns the state machine.
@@ -320,6 +323,14 @@ pub struct Ctx<'a> {
     pub now_ms: i64,
     pub seed: u64,
     pub ask_wait: Duration,
+    /// Orchestration: the store, the pending UI answers and the mail waiters.
+    #[allow(dead_code)] // read by the orchestration verbs as they land
+    pub orch: &'a OrchHub,
+    #[allow(dead_code)]
+    pub orch_settings: OrchestrationSettings,
+    /// Types into a live PTY; false when there is none to write to.
+    #[allow(dead_code)]
+    pub write_pty: &'a dyn Fn(&str, &[u8]) -> bool,
 }
 
 /// One worktree as the verbs know it.
@@ -849,6 +860,7 @@ pub fn dispatch(
         "worktree.set" => worktree_set(ctx, req, caller),
         "worktree.create" => worktree_create(ctx, req, caller),
         "terminal.wait" => terminal_wait(ctx, req, gone),
+        m if m.starts_with("orchestration.") => orchestration::handle(ctx, req, caller, gone),
         other => Err(bad_request(format!("unknown method {other}"))),
     }
 }
@@ -872,6 +884,8 @@ impl Handler for AppVerbs {
         let hub = app.state::<CliHub>();
         let ptys = app.state::<Ptys>();
         let cwd_of = |id: &str| ptys.cwd_of(id);
+        let write_pty = |id: &str, bytes: &[u8]| ptys.with(id, |s| s.write(bytes.to_vec())).is_ok();
+        let orch = app.state::<OrchHub>();
         let emit = |event: &str, payload: Value| {
             let _ = app.emit(event, payload);
         };
@@ -889,6 +903,9 @@ impl Handler for AppVerbs {
             now_ms,
             seed,
             ask_wait: ASK_WAIT,
+            orch: &orch,
+            orch_settings: settings_store::read(app).orchestration,
+            write_pty: &write_pty,
         };
         dispatch(&ctx, req, caller, gone)
     }
@@ -927,6 +944,7 @@ pub(crate) mod tests {
         pub board: TabBoard,
         pub events: Mutex<Vec<(String, Value)>>,
         pub approvals: Approvals,
+        pub orch: OrchHub,
         /// The fake person: answers every ask with this, or never.
         pub answer: Option<bool>,
     }
@@ -982,6 +1000,7 @@ pub(crate) mod tests {
             board: TabBoard::default(),
             events: Mutex::default(),
             approvals: Approvals::default(),
+            orch: OrchHub::default(),
             answer: None,
         }
     }
@@ -1028,6 +1047,9 @@ pub(crate) mod tests {
                 now_ms: 777,
                 seed: 9,
                 ask_wait: Duration::from_millis(50),
+                orch: &self.orch,
+                orch_settings: OrchestrationSettings::default(),
+                write_pty: &|_: &str, _: &[u8]| false,
             };
             let req = Request {
                 id: 1,

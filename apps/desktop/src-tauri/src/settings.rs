@@ -81,6 +81,41 @@ pub struct Settings {
     /// Settings → Stats & Usage; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub usage: UsageSettings,
+    /// Settings → Orchestration; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub orchestration: OrchestrationSettings,
+}
+
+/// The deepest nesting of dispatched workers Settings allows.
+pub const NESTED_DEPTH_MAX: u32 = 9;
+
+/// Settings → Orchestration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct OrchestrationSettings {
+    /// How many generations of dispatched workers may start workers of their
+    /// own; 1 keeps the agent tree flat.
+    pub nested_worker_max_depth: u32,
+    /// Close a worker's tab 2 minutes after it finishes.
+    pub worker_auto_close: bool,
+}
+
+impl Default for OrchestrationSettings {
+    fn default() -> Self {
+        Self {
+            nested_worker_max_depth: 1,
+            worker_auto_close: true,
+        }
+    }
+}
+
+impl OrchestrationSettings {
+    /// What `orchestration_settings_put` stores: the depth clamped to 1..=9.
+    pub fn normalized(mut self) -> Self {
+        self.nested_worker_max_depth = self.nested_worker_max_depth.clamp(1, NESTED_DEPTH_MAX);
+        self
+    }
 }
 
 /// What happens to the agent tabs that run under the old active account
@@ -896,6 +931,7 @@ pub enum SettingsSection {
     Diff,
     Agents,
     Usage,
+    Orchestration,
 }
 
 /// What a `settings://changed` event carries.
@@ -2311,6 +2347,60 @@ then sum up"
             .unwrap();
             assert_eq!(load(&path).agents, agents);
         }
+    }
+
+    #[test]
+    fn orchestration_settings_default_and_stay_lenient() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let want = OrchestrationSettings::default();
+        assert_eq!(want.nested_worker_max_depth, 1);
+        assert!(want.worker_auto_close);
+        for text in [
+            "{}",
+            r#"{ "orchestration": {} }"#,
+            r#"{ "orchestration": 3 }"#,
+            r#"{ "orchestration": { "nestedWorkerMaxDepth": "deep" } }"#,
+            r#"{ "orchestration": { "workerAutoClose": 7 } }"#,
+        ] {
+            fs::write(&path, text).unwrap();
+            assert_eq!(load(&path).orchestration, want, "{text}");
+        }
+        // A broken section keeps the other sections.
+        fs::write(
+            &path,
+            r#"{ "orchestration": [1], "agents": { "accountSwitch": "keep" } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.orchestration, want);
+        assert_eq!(loaded.agents.account_switch, SwitchRunning::Keep);
+        fs::write(
+            &path,
+            r#"{ "orchestration": { "nestedWorkerMaxDepth": 3, "workerAutoClose": false } }"#,
+        )
+        .unwrap();
+        let got = load(&path).orchestration;
+        assert_eq!(got.nested_worker_max_depth, 3);
+        assert!(!got.worker_auto_close);
+    }
+
+    #[test]
+    fn orchestration_depth_is_clamped_to_one_through_nine() {
+        let depth = |n: u32| {
+            OrchestrationSettings {
+                nested_worker_max_depth: n,
+                worker_auto_close: true,
+            }
+            .normalized()
+            .nested_worker_max_depth
+        };
+        assert_eq!(depth(0), 1);
+        assert_eq!(depth(1), 1);
+        assert_eq!(depth(5), 5);
+        assert_eq!(depth(9), 9);
+        assert_eq!(depth(10), 9);
+        assert_eq!(depth(u32::MAX), 9);
     }
 
     #[test]
