@@ -68,9 +68,25 @@ jobs:
           git commit -m "chore: sync Cargo.lock" Cargo.lock
           git push
 
+  # Bad input fails here, before a reviewer is asked to approve the build.
+  # No environment and no secrets. Skipped on a push and on an unsigned run.
+  rc-check:
+    if: github.event_name == 'workflow_dispatch' && inputs.rc_version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check the release candidate version and branch
+        shell: bash
+        run: |
+          [[ "$RC_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] || { echo "::error::rc_version must look like 0.6.0-rc.1"; exit 1; }
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::a release candidate is signed only from main, not $GITHUB_REF"; exit 1; }
+        env:
+          RC_VERSION: ${{ inputs.rc_version }}
+
   build:
-    needs: release-please
-    if: ${{ !cancelled() && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
+    needs: [release-please, rc-check]
+    if: ${{ !cancelled() && (needs.rc-check.result == 'success' || needs.rc-check.result == 'skipped') && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
     strategy:
       fail-fast: false
       matrix:
@@ -150,13 +166,6 @@ jobs:
       - run: corepack pnpm install --frozen-lockfile
 
       - run: cargo build --release -p xdev-cli --locked --target ${{ matrix.target }}
-
-      - name: Check the release candidate version
-        if: github.event_name == 'workflow_dispatch' && inputs.rc_version != ''
-        run: |
-          [[ "$RC_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] || { echo "::error::rc_version must look like 0.6.0-rc.1"; exit 1; }
-        env:
-          RC_VERSION: ${{ inputs.rc_version }}
 
       # Updates are signed with the updater key; the installers themselves are
       # not OS code-signed yet (Windows unsigned, macOS ad-hoc "-"), so
