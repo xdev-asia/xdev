@@ -57,6 +57,7 @@ pub fn run() {
         .manage(workspace::Clones::default())
         .manage(review_notes::ReviewNotesLock::default())
         .manage(profiles::ProfilesLock::default())
+        .manage(files::Searches::default())
         .manage(status::Shown::default())
         .manage(keybindings::LastSent::default())
         .setup(move |app| {
@@ -228,6 +229,9 @@ pub fn run() {
             files::file_rename,
             files::file_trash,
             files::file_reveal,
+            files::files_list,
+            files::files_search,
+            files::files_search_cancel,
             ship::worktree_ship,
             ship::worktree_push,
             ship::worktree_pull,

@@ -1,6 +1,9 @@
-import type { Api, ApiError, Eol, FileText } from "./api";
+import type { Api, ApiError, Eol, FileHits, FileText, SearchQuery } from "./api";
 
-type FilesApi = Pick<Api, "fileRead" | "fileWrite" | "fileCreate" | "fileRename" | "fileTrash" | "fileReveal">;
+type FilesApi = Pick<
+  Api,
+  "fileRead" | "fileWrite" | "fileCreate" | "fileRename" | "fileTrash" | "fileReveal" | "filesList" | "filesSearch" | "filesSearchCancel"
+>;
 
 export type MockFiles = FilesApi & {
   // Changes a file the way another program would (`null` deletes it); for conflict demos and tests.
@@ -62,6 +65,8 @@ type Overlay = { written: Map<string, string>; dirs: Set<string>; removed: Set<s
 export function createMockFiles(base: (worktree: string) => string[] | null): MockFiles {
   const overlays = new Map<string, Overlay>();
   const reveals: { worktree: string; rel: string }[] = [];
+  // Search id → its current run; a cancel or a newer run makes an older one stop.
+  const runs = new Map<string, number>();
 
   function overlay(worktree: string): Overlay {
     let o = overlays.get(worktree);
@@ -181,6 +186,54 @@ export function createMockFiles(base: (worktree: string) => string[] | null): Mo
       if (at instanceof Promise) return at;
       reveals.push({ worktree, rel: at.p });
     },
+    async filesList(worktree) {
+      const t = tree(worktree);
+      if (!t) return reject("worktree_unknown", worktree);
+      return { files: [...t.files].sort(), truncated: false };
+    },
+    async filesSearch(worktree, query, id, onEvent) {
+      const t = tree(worktree);
+      if (!t) return reject("worktree_unknown", worktree);
+      // A new search with this id cancels the old one, which then sends nothing more.
+      const run = (runs.get(id) ?? 0) + 1;
+      runs.set(id, run);
+      const started = Date.now();
+      let compiled: { re: RegExp; keep: (rel: string) => boolean };
+      try {
+        compiled = compileQuery(query);
+      } catch (e) {
+        onEvent({ type: "error", message: e instanceof Error ? e.message : String(e) });
+        return;
+      }
+      // Lets a cancel or a newer search with this id land first, as on a real walk.
+      await Promise.resolve();
+      if (runs.get(id) !== run) return;
+      const found: FileHits[] = [];
+      let hits = 0;
+      for (const rel of [...t.files].sort()) {
+        if (BINARY.test(rel) || !compiled.keep(rel)) continue;
+        const lines = textOf(worktree, rel).split("\n");
+        const fileHits: FileHits = { rel, hits: [], more: false };
+        lines.forEach((raw, i) => {
+          const text = raw.replace(/\r$/, "");
+          const ranges: [number, number][] = [];
+          for (const m of text.matchAll(compiled.re)) {
+            if (m[0].length > 0) ranges.push([m.index, m.index + m[0].length]);
+          }
+          if (ranges.length > 0) fileHits.hits.push({ line: i + 1, text, ranges });
+        });
+        if (fileHits.hits.length > 0) {
+          found.push(fileHits);
+          hits += fileHits.hits.length;
+        }
+      }
+      if (found.length > 0) onEvent({ type: "batch", files: found });
+      onEvent({ type: "done", files: found.length, hits, truncated: false, ms: Date.now() - started });
+      runs.delete(id);
+    },
+    async filesSearchCancel(id) {
+      if (runs.has(id)) runs.set(id, (runs.get(id) ?? 0) + 1);
+    },
     __editFile(worktree, rel, text) {
       const o = overlay(worktree);
       if (text === null) {
@@ -195,4 +248,33 @@ export function createMockFiles(base: (worktree: string) => string[] | null): Mo
 // Whether `path` is `base` or lies under it.
 function within(path: string, base: string): boolean {
   return path === base || path.startsWith(`${base}/`);
+}
+
+/** The regex and the include / exclude filter of `q`, as Rust builds them; throws on a bad regex. */
+function compileQuery(q: SearchQuery): { re: RegExp; keep: (rel: string) => boolean } {
+  if (q.text.length === 0 || q.text.length > 1000) throw new Error("the search text must be 1 to 1000 chars");
+  let source = q.regex ? q.text : q.text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (q.wholeWord) source = `\\b(?:${source})\\b`;
+  const re = new RegExp(source, q.caseSensitive ? "gu" : "giu");
+  const include = q.include.map(globToRegExp);
+  const exclude = q.exclude.map(globToRegExp);
+  const keep = (rel: string) =>
+    (include.length === 0 || include.some((g) => g.test(rel))) && !exclude.some((g) => g.test(rel));
+  return { re, keep };
+}
+
+/** A gitignore-style glob: `*` within a name, `**` across folders; no `/` matches at any depth. */
+function globToRegExp(glob: string): RegExp {
+  let body = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*" && glob[i + 1] === "*") {
+      body += ".*";
+      i++;
+      if (glob[i + 1] === "/") i++;
+    } else if (c === "*") body += "[^/]*";
+    else if (c === "?") body += "[^/]";
+    else body += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return glob.includes("/") ? new RegExp(`^${body.replace(/^\//, "")}$`) : new RegExp(`(^|/)${body}$`);
 }

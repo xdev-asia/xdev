@@ -115,7 +115,7 @@ pub fn read_file(worktree: &str, rel: &str) -> Result<FileText, WorkspaceError> 
 }
 
 /// How much of a file is searched for a NUL byte.
-const BINARY_SNIFF: usize = 8 * 1024;
+pub(crate) const BINARY_SNIFF: usize = 8 * 1024;
 
 fn hash_of(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
