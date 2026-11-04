@@ -38,8 +38,8 @@ const other: RepoView = { ...structuredClone(DEMO_WORKSPACE.repos[0]), id: "demo
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; });
 
-async function view(repoFiles?: Record<string, MockRepoFile>) {
-  const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), repos: [structuredClone(DEMO_WORKSPACE.repos[0]), other], repoFiles } });
+async function view(repoFiles?: Record<string, MockRepoFile>, first: Partial<RepoView> = {}) {
+  const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), repos: [{ ...structuredClone(DEMO_WORKSPACE.repos[0]), ...first }, other], repoFiles } });
   const onChanged = vi.fn();
   const draw = () => {
     hooks.cursor = 0;
@@ -191,4 +191,125 @@ it("Open xdev.toml opens it as a file tab of the repo's first worktree", async (
   nodes(v.form("demo-xdev")).find((n) => n.props["data-open-file"] !== undefined)!.props.onClick();
   off();
   expect(seen).toEqual([{ worktree: DEMO_WORKSPACE.repos[0].worktrees[0].path, rel: "xdev.toml" }]);
+});
+
+// Project identity and GitHub account
+const tab = (v: Awaited<ReturnType<typeof view>>, id: string, kind: string) => nodes(v.form(id)).find((n) => n.props["data-icon-tab"] === kind)!;
+const button = (v: Awaited<ReturnType<typeof view>>, id: string, attr: string, value?: string) =>
+  nodes(v.form(id)).find((n) => n.props[attr] !== undefined && (value === undefined || n.props[attr] === value))!;
+
+it("the Identity group comes first, with colour, icon and GitHub account rows", async () => {
+  const v = await view();
+  const form = v.form("demo-xdev");
+  const rows = nodes(form).filter((n) => typeof n.props.id === "string" && n.props.children !== undefined && n.type !== "form" && String(n.props.id).startsWith("repos."));
+  expect(rows.map((n) => n.props.id).slice(0, 4)).toEqual(["repos.color", "repos.icon", "repos.ghAccount", "repos.shortName"]);
+  const heads = nodes(form).filter((n) => n.type === "h4").map((n) => n.props.children);
+  expect(heads[0]).toBe(en("settings.repos.identity"));
+});
+
+it("the colour is a radio group of the presets; a pick sends only the colour", async () => {
+  const v = await view();
+  const update = vi.spyOn(v.api, "repoUpdate");
+  const group = nodes(v.form("demo-xdev")).find((n) => n.props.role === "radiogroup" && n.props["aria-label"] === en("settings.repos.identity.color"))!;
+  const radios = nodes(group).filter((n) => n.type === "input" && n.props.type === "radio");
+  expect(radios.map((n) => n.props.value)).toEqual(["none", "slate", "red", "orange", "yellow", "green", "teal", "violet", "pink"]);
+  // The stored colour is the checked one.
+  expect(radios.find((n) => n.props.checked)!.props.value).toBe("teal");
+  v.pick("demo-xdev", "color", "violet");
+  await v.submit("demo-xdev");
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { color: "violet" });
+  v.pick("demo-xdev", "color", "none");
+  await v.submit("demo-xdev");
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { color: null });
+  expect((await v.api.workspaceList())[0].color).toBeNull();
+});
+
+it("a custom hex is typed into its own field; a bad one is refused under the colour", async () => {
+  const v = await view();
+  const update = vi.spyOn(v.api, "repoUpdate");
+  v.type("demo-xdev", "colorHex", "#3a7");
+  await v.submit("demo-xdev");
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { color: "#3a7" });
+  expect(v.field("demo-xdev", "colorHex").props.value).toBe("#3a7");
+  v.type("demo-xdev", "colorHex", "#3a7f");
+  await v.submit("demo-xdev");
+  expect(v.error("demo-xdev", "color")?.props.children).toBe(en("settings.repos.identity.badColor"));
+  expect(v.field("demo-xdev", "colorHex").props.value).toBe("#3a7f");
+  expect((await v.api.workspaceList())[0].color).toBe("#3a7");
+});
+
+it("icon tabs: Emoji shows the grid and a free field; Letter clears the icon", async () => {
+  const v = await view();
+  const update = vi.spyOn(v.api, "repoUpdate");
+  expect(tab(v, "demo-xdev", "emoji").props["aria-selected"]).toBe(true);
+  expect(tab(v, "demo-xdev", "letter").props["aria-selected"]).toBe(false);
+  // A grid cell sends that emoji.
+  button(v, "demo-xdev", "data-emoji", "🐛").props.onClick();
+  await v.submit("demo-xdev");
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { icon: { kind: "emoji", value: "🐛" } });
+  // The free field takes any one emoji.
+  v.type("demo-xdev", "iconEmoji", "🇻🇳");
+  await v.submit("demo-xdev");
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { icon: { kind: "emoji", value: "🇻🇳" } });
+  // Two emoji are refused by the backend and shown under the icon.
+  v.type("demo-xdev", "iconEmoji", "🚀🚀");
+  await v.submit("demo-xdev");
+  expect(v.error("demo-xdev", "icon")?.props.children).toBe(en("settings.repos.identity.badIcon"));
+  // Letter: the icon goes back to the first letter.
+  tab(v, "demo-xdev", "letter").props.onClick();
+  expect(tab(v, "demo-xdev", "letter").props["aria-selected"]).toBe(true);
+  expect(nodes(v.form("demo-xdev")).some((n) => n.props["data-emoji"] !== undefined)).toBe(false);
+  await v.submit("demo-xdev");
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { icon: null });
+});
+
+it("Reset clears the colour and the icon in one save", async () => {
+  const v = await view();
+  const update = vi.spyOn(v.api, "repoUpdate");
+  button(v, "demo-xdev", "data-identity-reset").props.onClick();
+  expect(v.save("demo-xdev").props.disabled).toBe(false);
+  await v.submit("demo-xdev");
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { color: null, icon: null });
+  // Nothing to reset on a repo with no identity.
+  expect(button(v, "demo-xdev", "data-identity-reset").props.disabled).toBe(true);
+});
+
+it("the GitHub account select lists the gh logins and the default, and sends the pick", async () => {
+  const v = await view();
+  const update = vi.spyOn(v.api, "repoUpdate");
+  const select = v.field("demo-xdev", "ghAccount");
+  const options = nodes(select).filter((n) => n.type === "option");
+  expect(options.map((n) => n.props.children)).toEqual([en("settings.repos.gh.default"), "work-me · github.com", "me · github.com"]);
+  expect(select.props.value).toBe("");
+  v.type("demo-xdev", "ghAccount", options[2].props.value);
+  await v.submit("demo-xdev");
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { ghAccount: { host: "github.com", user: "me" } });
+  v.type("demo-xdev", "ghAccount", "");
+  await v.submit("demo-xdev");
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { ghAccount: null });
+});
+
+it("a bound login that gh no longer holds stays selected and is marked", async () => {
+  const v = await view(undefined, { ghAccount: { host: "github.com", user: "gone" } });
+  const select = v.field("demo-xdev", "ghAccount");
+  const options = nodes(select).filter((n) => n.type === "option");
+  expect(options.map((n) => n.props.children)).toContain(en("settings.repos.gh.gone", { user: "gone", host: "github.com" }));
+  expect(select.props.value).toBe(options.find((n) => String(n.props.children).startsWith("gone"))!.props.value);
+  expect(v.html()).toContain(en("settings.repos.gh.goneNote"));
+  // Untouched, nothing is saved for it.
+  expect(v.save("demo-xdev").props.disabled).toBe(true);
+});
+
+it("Refresh asks gh for the logins again; a failure is a note, not a blocker", async () => {
+  const v = await view();
+  const logins = vi.spyOn(v.api, "ghLogins");
+  button(v, "demo-xdev", "data-gh-refresh").props.onClick();
+  await tick();
+  expect(logins).toHaveBeenCalledTimes(1);
+  logins.mockRejectedValueOnce({ code: "gh_missing" });
+  button(v, "demo-xdev", "data-gh-refresh").props.onClick();
+  await tick();
+  expect(v.html()).toContain(en("settings.repos.gh.unavailable", { error: en("error.gh_missing") }));
+  // The select still offers the default.
+  expect(nodes(v.field("demo-xdev", "ghAccount")).filter((n) => n.type === "option")).toHaveLength(1);
 });

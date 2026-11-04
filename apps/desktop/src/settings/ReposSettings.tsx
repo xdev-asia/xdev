@@ -14,8 +14,10 @@ import {
 } from "@/api";
 import { openFile } from "@/files/openFile";
 import { useI18n } from "@/i18n";
+import { RepoBadge } from "@/workspace/RepoBadge";
 import { RemoveRepoDialog } from "@/workspace/RemoveRepoDialog";
 import { removeRepo } from "@/workspace/removeRepo";
+import { colorField, ghField, iconField, identityPatch, shown, type GhState, type IdentityDraft } from "./repoIdentityForm";
 import { SettingGroup, SettingRow } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
@@ -23,7 +25,7 @@ type Field = "shortName" | "baseRef" | "worktreeRoot" | "setupPolicy" | "scriptS
 type TextField = "shortName" | "baseRef" | "worktreeRoot";
 type ScriptField = "localSetup" | "localArchive";
 type Draft = Partial<Record<Field, string>>;
-type Failure = { field: Field | "form"; code: ApiError["code"] };
+type Failure = { field: Field | "color" | "icon" | "form"; code: ApiError["code"] };
 
 const FIELDS: Field[] = ["shortName", "baseRef", "worktreeRoot", "setupPolicy", "scriptSource", "localSetup", "localArchive"];
 // Scripts keep their own whitespace; the other fields are trimmed.
@@ -38,13 +40,16 @@ function hooksPath(repo: RepoView): string | null {
 }
 
 // Which field a refusal belongs under; anything else shows under the whole form.
-function fieldOf(code: ApiError["code"]): Field | "form" {
+function fieldOf(code: ApiError["code"]): Failure["field"] {
+  if (code === "bad_color") return "color";
+  if (code === "bad_icon") return "icon";
   if (code === "bad_name" || code === "short_name_taken") return "shortName";
   if (code === "bad_ref") return "baseRef";
   if (code === "bad_path") return "worktreeRoot";
   return "form";
 }
 
+const IDENTITY_IDS = ["repos.color", "repos.icon", "repos.ghAccount"];
 const SCRIPT_IDS = ["repos.scriptPolicy", "repos.scriptSource", "repos.localScripts", "repos.sharedScripts", "repos.repoFile"];
 
 /** One form per repo: short name, base ref, worktree folder and setup scripts. Save sends only what changed. */
@@ -59,6 +64,8 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
   // The repo Remove from xDev asks about.
   const [forgetting, setForgetting] = useState<{ repo: RepoView; error?: ApiError["code"] } | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [identity, setIdentity] = useState<Record<string, IdentityDraft>>({});
+  const [gh, setGh] = useState<GhState>({ logins: null, error: null, loading: false });
   const [loadError, setLoadError] = useState<ApiError["code"]>();
 
   function loadHooks(repo: RepoView): void {
@@ -82,6 +89,17 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
     document.getElementById(`settings-repo-${props.arg}`)?.scrollIntoView?.({ block: "start" });
   }, [repos === null, props.arg]);
 
+  // The logins gh holds; a failure leaves the list empty with a note, and the default still works.
+  function loadLogins(): void {
+    setGh((g) => ({ ...g, loading: true }));
+    api.ghLogins().then(
+      (logins) => setGh({ logins, error: null, loading: false }),
+      (e: unknown) => setGh({ logins: [], error: t(`error.${toApiError(e).code}`), loading: false }),
+    );
+  }
+
+  useEffect(loadLogins, [api]);
+
   useEffect(() => {
     api.workspaceList().then(
       (list) => {
@@ -104,7 +122,12 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
       const typed = VERBATIM.includes(field) ? value(repo, field) : value(repo, field).trim();
       if (typed !== repo[field]) patch[field] = typed;
     }
-    return patch as RepoPatch;
+    return { ...patch, ...identityPatch(repo, identity[repo.id]) } as RepoPatch;
+  }
+
+  function editIdentity(repo: RepoView, next: Partial<IdentityDraft>): void {
+    setIdentity((d) => ({ ...d, [repo.id]: { ...d[repo.id], ...next } }));
+    setSaved((s) => (s === repo.id ? null : s));
   }
 
   function edit(repo: RepoView, field: Field, next: string): void {
@@ -126,6 +149,7 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
       const next = await api.repoUpdate(repo.id, patch);
       setRepos((list) => list?.map((r) => (r.id === repo.id ? next : r)) ?? null);
       setDrafts(({ [repo.id]: _, ...rest }) => rest);
+      setIdentity(({ [repo.id]: _, ...rest }) => rest);
       setFailures(({ [repo.id]: _, ...rest }) => rest);
       setSaved(repo.id);
       loadHooks(next);
@@ -153,11 +177,13 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
 
   function message(failure: Failure): string {
     if (failure.code === "bad_name") return t("settings.repos.badName");
+    if (failure.code === "bad_color") return t("settings.repos.identity.badColor");
+    if (failure.code === "bad_icon") return t("settings.repos.identity.badIcon");
     if (failure.code === "bad_path" && failure.field === "worktreeRoot") return t("settings.repos.badRoot");
     return t(`error.${failure.code}`);
   }
 
-  function errorFor(repo: RepoView, field: Field | "form"): JSX.Element | null {
+  function errorFor(repo: RepoView, field: Failure["field"]): JSX.Element | null {
     const failure = failures[repo.id];
     if (!failure || failure.field !== field) return null;
     return (
@@ -200,6 +226,42 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
           onChange={(e) => edit(repo, field, e.target.value)}
         />
       </label>
+    );
+  }
+
+  // The Identity group: colour, icon and GitHub account, drawn by plain functions so the page owns the state.
+  function identityRows(repo: RepoView): JSX.Element {
+    const draft = identity[repo.id];
+    const disabled = busy === repo.id;
+    const now = shown(repo, draft);
+    const ctx = { t, repo, draft, disabled, edit: (next: Partial<IdentityDraft>) => editIdentity(repo, next) };
+    return (
+      <>
+        <div className="settings-row settings-identity-head">
+          <h4 className="settings-group">{t("settings.repos.identity")}</h4>
+          <RepoBadge repo={{ shortName: repo.shortName, color: now.color, icon: now.icon }} size="md" />
+          <button
+            type="button"
+            className="btn-secondary"
+            data-identity-reset
+            disabled={disabled || (now.color === null && now.icon === null)}
+            onClick={() => editIdentity(repo, { color: null, icon: null, iconTab: "letter" })}
+          >
+            {t("settings.repos.identity.reset")}
+          </button>
+        </div>
+        <div className="ws-fields">
+          <SettingRow id="repos.color" filter={filter}>
+            {colorField({ ...ctx, error: errorFor(repo, "color") })}
+          </SettingRow>
+          <SettingRow id="repos.icon" filter={filter}>
+            {iconField({ ...ctx, error: errorFor(repo, "icon") })}
+          </SettingRow>
+          <SettingRow id="repos.ghAccount" filter={filter}>
+            {ghField({ ...ctx, error: null, gh, refresh: loadLogins })}
+          </SettingRow>
+        </div>
+      </>
     );
   }
 
@@ -316,6 +378,9 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
               <span className="ws-mono settings-path">{repo.path}</span>
               {repo.missing && <span className="settings-tag">{t("settings.repos.missing")}</span>}
             </div>
+            <SettingGroup ids={IDENTITY_IDS} filter={filter}>
+              {identityRows(repo)}
+            </SettingGroup>
             <div className="ws-fields">
               <SettingRow id="repos.shortName" filter={filter}>
               <label className="ws-field">
