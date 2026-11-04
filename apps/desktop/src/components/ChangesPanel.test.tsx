@@ -4,7 +4,7 @@ import { createMockApi, type Change } from "@/api";
 import type { Changes } from "@/changes/useChanges";
 import { I18nProvider } from "@/i18n";
 import { DEMO_AI_EDIT, DEMO_COMMITS, DEMO_SEED } from "@/mockApi";
-import { ChangesPanel, ChangeView } from "./ChangesPanel";
+import { ChangesPanel, ChangeView, ProblemNote, isRecipeProblem } from "./ChangesPanel";
 
 function review(changes: Change[]): Changes {
   const done = async () => true;
@@ -87,5 +87,26 @@ describe("ChangesPanel", () => {
     );
     expect(html).toContain('data-origin="ai"');
     expect(html).toContain('<span class="change-note diff-note">');
+  });
+});
+
+describe("ProblemNote", () => {
+  const note = (code: string, onOpenSettings?: () => void) =>
+    renderToStaticMarkup(
+      <I18nProvider>
+        <ProblemNote problem={{ code: code as never }} onOpenSettings={onOpenSettings} />
+      </I18nProvider>,
+    );
+
+  it("links to Settings → Git for an agent problem, when it can", () => {
+    for (const code of ["unsupported_agent", "unknown_profile", "needs_approval", "denied"]) {
+      expect(isRecipeProblem(code)).toBe(true);
+      expect(note(code, () => {})).toContain('data-open-settings="git"');
+      expect(note(code)).not.toContain("data-open-settings");
+    }
+    for (const code of ["draft_failed", "git", "hook_failed"]) {
+      expect(isRecipeProblem(code)).toBe(false);
+      expect(note(code, () => {})).not.toContain("data-open-settings");
+    }
   });
 });

@@ -43,6 +43,8 @@ export function ShipBar(props: {
   // Gives a failed push's output to an agent, as the Fix push failure recipe says; without it the
   // button is not offered.
   onFixPush?(output: string, branch: string): void;
+  // Where a draft's agent problem links to: Settings → Git.
+  onOpenGitSettings?(): void;
 }): JSX.Element {
   const { api, worktree, prs } = props;
   const git = props.git ?? DEFAULT_GIT_SETTINGS;
@@ -269,6 +271,7 @@ export function ShipBar(props: {
           ai={git.sourceControlAi}
           generateOnOpen={git.sourceControlAi && git.prGenerateOnOpen}
           openAfterCreate={git.prOpenAfterCreate}
+          onOpenGitSettings={props.onOpenGitSettings}
           onCreated={(created) => {
             setCreating(false);
             prs.set(worktree, created);

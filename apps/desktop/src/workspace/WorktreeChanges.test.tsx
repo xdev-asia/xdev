@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Button } from "@xdev/ui";
+import { ProblemNote } from "@/components/ChangesPanel";
 import { createMockApi, type Api, type WorktreeChange, type WorktreeView } from "@/api";
 import { DiffView } from "@/components/DiffView";
 import { FileDiff } from "@/review/FileDiff";
@@ -418,6 +419,20 @@ it("draft fills the message", async () => {
   button().props.onClick();
   await tick();
   expect(view.html()).toContain(en("error.draft_failed"));
+});
+
+it("passes the Settings → Git link to the problem note of a failed draft", async () => {
+  const api = createMockApi({});
+  const onOpenGitSettings = vi.fn();
+  const view = changes(api, undefined, { onOpenGitSettings });
+  await tick();
+  vi.spyOn(api, "worktreeDraftCommit").mockRejectedValueOnce({ code: "unsupported_agent" });
+  view.find((n) => n.type === "button" && n.props.children === en("ship.draft"))!.props.onClick();
+  await tick();
+  const note = view.find((n) => n.type === ProblemNote)!;
+  expect(note.props.problem.code).toBe("unsupported_agent");
+  note.props.onOpenSettings();
+  expect(onOpenGitSettings).toHaveBeenCalledOnce();
 });
 
 it("amend pushed asks then confirms", async () => {

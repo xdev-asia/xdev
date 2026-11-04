@@ -315,6 +315,7 @@ export type ErrorCode =
   | "not_github"
   | "gh_failed"
   | "draft_failed"
+  | "unsupported_agent"
   | "bad_sound"
   | "hook_untrusted"
   | "hook_none"
@@ -777,6 +778,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "not_github",
   "gh_failed",
   "draft_failed",
+  "unsupported_agent",
   "bad_sound",
   "hook_untrusted",
   "hook_none",
