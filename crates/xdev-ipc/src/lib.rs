@@ -250,7 +250,7 @@ impl Stream {
         {
             self.until = until;
             if until.is_none() {
-                self.inner.set_recv_timeout(None)?;
+                recv_timeout(&self.inner, None)?;
             }
         }
         Ok(())
@@ -275,11 +275,22 @@ impl Read for Stream {
         if left.is_zero() {
             return Err(timed_out());
         }
-        self.inner.set_recv_timeout(Some(left))?;
+        recv_timeout(&self.inner, Some(left))?;
         match self.inner.read(buf) {
             Err(e) if e.kind() == ErrorKind::WouldBlock => Err(timed_out()),
             other => other,
         }
+    }
+}
+
+/// macOS refuses the option with `EINVAL` once the peer has hung up; the
+/// read that follows then sees the end of the stream at once, so that error
+/// is not the caller's.
+#[cfg(not(windows))]
+fn recv_timeout(inner: &ls::Stream, limit: Option<Duration>) -> io::Result<()> {
+    match inner.set_recv_timeout(limit) {
+        Err(e) if e.kind() == ErrorKind::InvalidInput => Ok(()),
+        other => other,
     }
 }
 
