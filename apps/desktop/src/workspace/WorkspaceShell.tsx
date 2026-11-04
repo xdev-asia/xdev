@@ -66,7 +66,7 @@ import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
 import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
 import { QuitDialog } from "./QuitDialog";
 import { AboutDialog } from "./AboutDialog";
-import { HelpButton, type HelpPick } from "./HelpMenu";
+import { HelpButton, type HelpPick, runHelpPick } from "./HelpMenu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { runMenuAction } from "@/shell/menuActions";
 import { useShellLabels } from "@/shell/shellLabels";
@@ -1323,10 +1323,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
 
   function pickHelp(pick: HelpPick): void {
-    if (pick === "shortcuts") openSettings("keys");
-    else if (pick === "about") openAbout();
-    else if (pick === "restart") void api.shellQuit("restart");
-    else void api.helpOpen(pick);
+    runHelpPick(pick, { openSettings: (page) => openSettings(page), openAbout, api });
   }
 
   function openSettings(section?: string, arg?: string, target?: string): void {
