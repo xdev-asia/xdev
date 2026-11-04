@@ -25,6 +25,7 @@ uuid = { version = "1.29", features = ["v4"] }
 trash.workspace = true
 xdev-agent.workspace = true
 xdev-ai.workspace = true
+xdev-awake.workspace = true
 xdev-core.workspace = true
 xdev-git.workspace = true
 xdev-ipc.workspace = true

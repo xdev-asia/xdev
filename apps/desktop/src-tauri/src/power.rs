@@ -3,10 +3,11 @@
 
 use std::sync::Mutex;
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::commands::CmdError;
-use crate::settings::KeepAwake;
+use crate::settings::{KeepAwake, SettingsSection};
+use crate::settings_store::{self, SettingsStore};
 
 /// What the footer item shows.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -131,7 +132,7 @@ impl Awake {
 
 impl Default for Awake {
     fn default() -> Self {
-        Self::new(Box::new(Unavailable))
+        Self::new(Box::new(OsBlocker(xdev_awake::SleepBlock::new())))
     }
 }
 
@@ -141,9 +142,26 @@ impl Drop for Awake {
     }
 }
 
+/// The request of this OS (`xdev-awake`).
+struct OsBlocker(xdev_awake::SleepBlock);
+
+impl Blocker for OsBlocker {
+    fn hold(&mut self) -> Result<(), String> {
+        self.0.hold()
+    }
+    fn release(&mut self) {
+        self.0.release();
+    }
+    fn available(&self) -> bool {
+        self.0.available()
+    }
+}
+
 /// The blocker of a machine that has no way to hold a request.
+#[cfg(test)]
 struct Unavailable;
 
+#[cfg(test)]
 impl Blocker for Unavailable {
     fn hold(&mut self) -> Result<(), String> {
         Err("not available".to_owned())
@@ -154,23 +172,65 @@ impl Blocker for Unavailable {
     }
 }
 
+/// Tells every window when the view changed.
+fn publish(app: &AppHandle, before: &AwakeView, now: &AwakeView) {
+    if before != now {
+        let _ = app.emit(CHANGED_EVENT, now.clone());
+    }
+}
+
+/// Follows a stored mode: at start and after Settings → Agents is saved.
+pub fn apply_mode(app: &AppHandle, mode: KeepAwake) -> AwakeView {
+    let awake = app.state::<Awake>();
+    let before = awake.view();
+    let now = awake.set_mode(mode);
+    publish(app, &before, &now);
+    now
+}
+
+/// Stores `mode` in the agents settings, then follows it.
+fn set_stored(
+    store: &SettingsStore,
+    awake: &Awake,
+    mode: KeepAwake,
+) -> Result<AwakeView, CmdError> {
+    store
+        .update(|s| s.agents.keep_awake = mode)
+        .map_err(|e| CmdError {
+            code: "io",
+            detail: Some(e.to_string()),
+        })?;
+    Ok(awake.set_mode(mode))
+}
+
 #[tauri::command]
-pub fn keep_awake_get(_app: AppHandle, awake: State<'_, Awake>) -> AwakeView {
+pub fn keep_awake_get(awake: State<'_, Awake>) -> AwakeView {
     awake.view()
 }
 
 #[tauri::command(async)]
 pub fn keep_awake_set(
-    _app: AppHandle,
+    app: AppHandle,
     awake: State<'_, Awake>,
     mode: KeepAwake,
 ) -> Result<AwakeView, CmdError> {
-    Ok(awake.set_mode(mode))
+    let store = settings_store::store(&app).ok_or(CmdError {
+        code: "io",
+        detail: Some("no app config folder".into()),
+    })?;
+    let before = awake.view();
+    let now = set_stored(&store, &awake, mode)?;
+    settings_store::emit_changed(&app, &[SettingsSection::Agents]);
+    publish(&app, &before, &now);
+    Ok(now)
 }
 
 #[tauri::command]
-pub fn keep_awake_agents(_app: AppHandle, awake: State<'_, Awake>, working: bool) -> AwakeView {
-    awake.set_working(working)
+pub fn keep_awake_agents(app: AppHandle, awake: State<'_, Awake>, working: bool) -> AwakeView {
+    let before = awake.view();
+    let now = awake.set_working(working);
+    publish(&app, &before, &now);
+    now
 }
 
 #[cfg(test)]
@@ -313,9 +373,35 @@ mod tests {
     }
 
     #[test]
-    fn the_default_has_no_blocker_and_says_so() {
-        let a = Awake::default();
+    fn a_machine_without_a_mechanism_says_so() {
+        let a = Awake::new(Box::new(Unavailable));
         let v = a.set_mode(KeepAwake::On);
         assert!(!v.held && !v.supported);
+    }
+
+    #[test]
+    fn a_set_mode_is_stored_and_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SettingsStore::new(dir.path().join(crate::settings::FILE_NAME));
+        let (a, c) = awake(false);
+        let v = set_stored(&store, &a, KeepAwake::Agent).unwrap();
+        assert_eq!(v.mode, KeepAwake::Agent);
+        assert_eq!(store.read().agents.keep_awake, KeepAwake::Agent);
+        let v = set_stored(&store, &a, KeepAwake::On).unwrap();
+        assert!(v.held);
+        assert_eq!(n(&c.holds), 1);
+        assert_eq!(store.read().agents.keep_awake, KeepAwake::On);
+    }
+
+    #[test]
+    fn a_saved_agents_section_changes_the_mode_the_same_way() {
+        // `agents_settings_put` hands the saved mode to `apply_mode`, which is
+        // `Awake::set_mode`: the view follows the stored value.
+        let (a, _) = awake(false);
+        let saved = crate::settings::AgentsSettings {
+            keep_awake: KeepAwake::On,
+            ..Default::default()
+        };
+        assert_eq!(a.set_mode(saved.keep_awake).mode, KeepAwake::On);
     }
 }

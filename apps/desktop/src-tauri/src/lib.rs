@@ -78,6 +78,11 @@ pub fn run() {
             if let Some(file) = commands::settings_path(app.handle()) {
                 app.manage(settings_store::SettingsStore::new(file));
             }
+            // The OS request follows the stored mode from the start.
+            power::apply_mode(
+                app.handle(),
+                settings_store::read(app.handle()).agents.keep_awake,
+            );
             workspace::start_migrations(app.handle());
             // Off the main thread: starting the service may take a moment.
             {
@@ -364,6 +369,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 let on_quit = settings_store::read(app).terminal.on_quit;
                 app.state::<pty::Ptys>().quit(on_quit);
+                app.state::<power::Awake>().release();
                 if let Some(running) = app.try_state::<endpoint::Running>() {
                     running.stop();
                 }

@@ -6173,6 +6173,13 @@ name = "xdev-api"
 version = "0.5.0"
 
 [[package]]
+name = "xdev-awake"
+version = "0.5.0"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "xdev-cli"
 version = "0.5.0"
 dependencies = [
@@ -6224,6 +6231,7 @@ dependencies = [
  "uuid",
  "xdev-agent",
  "xdev-ai",
+ "xdev-awake",
  "xdev-core",
  "xdev-git",
  "xdev-ipc",
