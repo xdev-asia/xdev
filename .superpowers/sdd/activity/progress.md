@@ -46,3 +46,8 @@ Tasks B3+B4: complete, one commit. Deviation: the OS blockers live in a new crat
 - `terminalMenu`: `forkSession` item between Quick Commands and Copy Context; hidden (context has no `forkSession`) for shells and CLIs other than claude/codex; disabled while `agentSession` is null. i18n `termMenu.forkSession` en + vi.
 - Deviation: no `jumpTo` prop into `WorktreeTabs`; `sessions.fork` adds the tab to the focused pane like `open`, so the new tab is in front without a jump. Seven test fixtures got `forkOf: null`.
 - Tests: full vitest 239 files / 2187 tests pass; tsc clean.
+
+## Task U9: complete
+- `agentSessions/handoff.ts` (`handoffPrompt`, last `CONTEXT_LINES` lines), `agentSessions/HandOffDialog.tsx` (agent + worktree pickers), menu item `handOff` after `forkSession`, flow in `WorktreeTabs` (open agent, `sendToOpenedTab`, toast).
+- Deviation: WorktreeTabs gets optional `worktrees` and `onJump` props from the shell; the item is hidden without `worktrees`. The first prompt is the tab title only when it was auto titled.
+- Tests: handoff.test.ts, HandOffDialog.test.tsx, terminalMenu.test.ts. vitest 241 files / 2195 tests pass; tsc clean.

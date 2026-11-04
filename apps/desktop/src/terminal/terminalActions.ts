@@ -92,7 +92,7 @@ export function copyContext(handle: TerminalHandle, info: ContextInfo): Promise<
 }
 
 /** The last `max` lines once blank lines at the end are dropped. */
-function lastLines(lines: string[], max: number): string[] {
+export function lastLines(lines: string[], max: number): string[] {
   let end = lines.length;
   while (end > 0 && !lines[end - 1].trim()) end--;
   return lines.slice(Math.max(0, end - max), end);
