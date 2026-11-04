@@ -6,7 +6,7 @@ import type { TabStatus } from "./status";
 afterEach(() => vi.useRealTimers());
 
 function tab(id: string, over: Partial<Tab> = {}): Tab {
-  return { id, worktree: "/w", profileId: "claude", account: null, accountSource: null, permissions: "ask", agent: true, status: "idle", cli: "claude", unread: false, unreadAt: null, unreadReason: null, title: null, renamed: false, autoTitled: false, resumeOf: null, agentSession: null, openedAt: 0, pinned: false, color: "none", client: { input: vi.fn(async () => {}) } as never, ...over };
+  return { id, worktree: "/w", profileId: "claude", account: null, accountSource: null, permissions: "ask", agent: true, status: "idle", cli: "claude", unread: false, unreadAt: null, unreadReason: null, title: null, renamed: false, autoTitled: false, resumeOf: null, forkOf: null, agentSession: null, openedAt: 0, pinned: false, color: "none", client: { input: vi.fn(async () => {}) } as never, ...over };
 }
 
 // Just what sendToAgentTab reads: a tab list that can change and tell its listeners.

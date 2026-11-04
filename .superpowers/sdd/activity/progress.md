@@ -39,3 +39,10 @@ Tasks B3+B4: complete, one commit. Deviation: the OS blockers live in a new crat
 - i18n `activity.*`, `status.bell.viewActivity`, `agentSessions.tab.activity` in en and vi. CSS tokens only.
 - Deviation: the plan's "no match" and "no threads" states are told apart by `anyThreads` (agent threads that are not idle, before search).
 - Tests: full vitest 238 files / 2180 tests pass; tsc clean.
+
+## Task U8: complete
+- `Sessions.fork(worktree, profileId, account, sourceId, title, cli)`: `Tab.forkOf = sourceId`, `resumeOf = null`, `agentSession = null` until a hook reports the new id. `PtyClient(api, id, resume?, fork?)` passes `fork` to `ptySpawn`. `restart` of a forked tab resumes `agentSession` (no second fork) or starts fresh when it is still unknown.
+- `useApprovedStart.start/ask` carry `fork`; approval repeats `ptyApprove(profile, account, resume, true)`. `WorktreeTabs.failed` passes `forkOf` and the flag.
+- `terminalMenu`: `forkSession` item between Quick Commands and Copy Context; hidden (context has no `forkSession`) for shells and CLIs other than claude/codex; disabled while `agentSession` is null. i18n `termMenu.forkSession` en + vi.
+- Deviation: no `jumpTo` prop into `WorktreeTabs`; `sessions.fork` adds the tab to the focused pane like `open`, so the new tab is in front without a jump. Seven test fixtures got `forkOf: null`.
+- Tests: full vitest 239 files / 2187 tests pass; tsc clean.

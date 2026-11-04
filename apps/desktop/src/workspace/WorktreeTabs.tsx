@@ -412,8 +412,18 @@ export function WorktreeTabs(props: {
       // A tab whose pty never started has nothing to show; the reason stays in the banner.
       () => void sessions.close(tab.id),
       ownAccount(tab),
-      tab.resumeOf ?? undefined,
+      tab.forkOf ?? tab.resumeOf ?? undefined,
+      tab.forkOf !== null,
     );
+  }
+
+  // A claude or codex tab can fork once its session id is known.
+  const forkable = (tab: Tab): boolean => tab.agent && (tab.cli === "claude" || tab.cli === "codex");
+  function forkSession(tab: Tab): void {
+    if (!tab.agentSession) return;
+    setMenuPane(null);
+    setError(null);
+    sessions.fork(worktree, tab.profileId, ownAccount(tab), tab.agentSession, tab.title, tab.cli);
   }
 
   function again(tab: Tab): void {
@@ -444,6 +454,7 @@ export function WorktreeTabs(props: {
           branch: props.branch ?? null,
           exitCode: tab.exitCode,
         }),
+      forkSession: forkable(tab) ? () => forkSession(tab) : undefined,
       copyTerminalId: () => void copyText(tab.id),
       copyPaneId: () => pane && void copyText(pane),
       quickCommands: quickCommandsSubmenu(

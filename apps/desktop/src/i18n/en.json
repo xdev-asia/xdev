@@ -1743,6 +1743,7 @@
   "termMenu.quickCommands": "Quick Commands",
   "termMenu.paste": "Paste",
   "termMenu.selectAll": "Select All",
+  "termMenu.forkSession": "Fork session",
   "termMenu.copyContext": "Copy Context",
   "termMenu.splitRight": "Split Right",
   "termMenu.splitDown": "Split Down",

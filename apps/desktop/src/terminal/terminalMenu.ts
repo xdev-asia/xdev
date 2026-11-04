@@ -18,6 +18,11 @@ export interface TerminalMenuContext {
   copyPaneId(): void;
   /** The Quick Commands submenu (`quickCommandsSubmenu`), shown before Copy Context; absent hides it. */
   quickCommands?: MenuItem;
+  /**
+   * Opens a copy of this agent session in a new tab. Absent for a shell and for CLIs without a fork
+   * (the item is hidden); the item is disabled while the tab has no session id yet.
+   */
+  forkSession?(): void;
 }
 
 const SEP = (id: string): MenuItem => ({ id, labelKey: "", kind: "separator" });
@@ -28,7 +33,7 @@ const chord = (action: ActionId): string | undefined => chordLabel(action) ?? un
 /**
  * The terminal's right-click items, in the reference order (plan U2): the items that have an action
  * show its chord, and the Quick Commands submenu sits before Copy Context.
- * Fork Agent Session is P2 (A9) and is not built here.
+ * Fork session sits between Quick Commands and Copy Context.
  */
 export function terminalMenuItems(ctx: TerminalMenuContext): MenuItem[] {
   const { handle } = ctx;
@@ -38,6 +43,7 @@ export function terminalMenuItems(ctx: TerminalMenuContext): MenuItem[] {
     { id: "selectAll", labelKey: "termMenu.selectAll", chord: chord("terminal.selectAll"), run: () => handle.selectAll() },
     SEP("sep1"),
     ...(ctx.quickCommands ? [ctx.quickCommands] : []),
+    ...(ctx.forkSession ? [{ id: "forkSession", labelKey: "termMenu.forkSession", disabled: !ctx.tab.agentSession, run: ctx.forkSession }] : []),
     { id: "copyContext", labelKey: "termMenu.copyContext", run: ctx.copyContext },
     SEP("sep2"),
     { id: "splitRight", labelKey: "termMenu.splitRight", chord: chord("pane.splitRight"), run: () => ctx.split("right") },
