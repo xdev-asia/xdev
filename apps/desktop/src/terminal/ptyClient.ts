@@ -37,6 +37,8 @@ export class PtyClient {
   private pending: Uint8Array[] = [];
   // While an attach waits for its reply: output can come first, and the truncated line goes before it.
   private holding = false;
+  // Set by `attachOnStart`: the seq a later `start` attaches from instead of spawning.
+  private attachFrom: number | null = null;
 
   constructor(
     private readonly api: Api,
@@ -58,6 +60,11 @@ export class PtyClient {
     account: string | null = null,
     notes: PtyNotes = {},
   ): Promise<PtyInfo> {
+    if (!this.attached && this.attachFrom !== null) {
+      // A failed attach is the start's failure; a later start tries again, it never spawns.
+      await this.attach(this.attachFrom);
+      this.attachFrom = null;
+    }
     if (this.attached) return this.bind(cols, rows, write, notes);
     const run = this.spawn(cwd, profileId, cols, rows, write, account);
     this.started = run.catch(() => {});
@@ -90,6 +97,15 @@ export class PtyClient {
     this.note(notes);
     this.flush();
     return got;
+  }
+
+  /**
+   * For an attach that failed for a reason other than `pty_gone` (the service busy, restarting):
+   * `start` attaches from `fromSeq` instead of spawning, so the tab never starts a second pty.
+   */
+  attachOnStart(fromSeq: number): void {
+    this.attachFrom = fromSeq;
+    this.drawn = fromSeq;
   }
 
   /** Output bytes drawn so far, counted from the pty's first byte: where a later attach replays from. */

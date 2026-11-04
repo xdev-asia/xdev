@@ -239,6 +239,42 @@ describe("Sessions.restore: the terminal service", () => {
     expect(s.tabs(A)[0]).toMatchObject({ id: "done-1", exitCode: 3 });
   });
 
+  it("keeps the tab and attaches again on start when the attach fails for another reason", async () => {
+    const api = running();
+    api.__ptydHold({ id: "busy-1", output: "abcdef", info: { agent: true, profile: "claude", cli: "claude" } });
+    const attach = api.ptyAttach.bind(api);
+    const spy = vi.spyOn(api, "ptyAttach").mockRejectedValueOnce({ code: "ptyd_unreachable" });
+    const spawn = vi.spyOn(api, "ptySpawn");
+    const s = (sessions = new Sessions(api));
+    const resume = vi.spyOn(s, "resume");
+    const report = await s.restore(snap({ [A]: one({ t1: claude({ agentSession: "abc", ptyId: "busy-1", seq: 2 }) }) }), "all", never);
+    expect(resume).not.toHaveBeenCalled();
+    expect(report).toMatchObject({ attached: 1, resumed: 0, fresh: 0 });
+    const [tab] = s.tabs(A);
+    expect(tab.id).toBe("busy-1");
+    // A snapshot taken meanwhile keeps the seq the tab had drawn.
+    expect(tab.client.seq).toBe(2);
+    // The view's start attaches again, from the same seq, and never spawns a second pty.
+    spy.mockImplementation(attach);
+    const got: Uint8Array[] = [];
+    await tab.client.start(A, "claude", 80, 24, (b) => got.push(b));
+    expect(spy).toHaveBeenLastCalledWith("busy-1", 2, expect.any(Function));
+    expect(spawn).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(got.map((g) => new TextDecoder().decode(g)).join("")).toBe("cdef"));
+  });
+
+  it("surfaces a second failed attach as the start's error, without spawning", async () => {
+    const api = running();
+    api.__ptydHold({ id: "busy-2" });
+    vi.spyOn(api, "ptyAttach").mockRejectedValue({ code: "ptyd_unreachable" });
+    const spawn = vi.spyOn(api, "ptySpawn");
+    const s = (sessions = new Sessions(api));
+    await s.restore(snap({ [A]: one({ t1: shell({ ptyId: "busy-2" }) }) }), "all", never);
+    const [tab] = s.tabs(A);
+    await expect(tab.client.start(A, "shell", 80, 24, () => {})).rejects.toMatchObject({ code: "ptyd_unreachable" });
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
   it("attaches a live shell in agentsOnly too, which would otherwise skip it", async () => {
     const api = running();
     api.__ptydHold({ id: "sh-1" });
