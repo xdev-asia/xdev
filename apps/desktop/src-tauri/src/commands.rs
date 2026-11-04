@@ -276,6 +276,23 @@ pub fn agents_settings_put(
         .map(|s| s.agents)
 }
 
+/// Settings → Stats & Usage as stored; the defaults when nothing is.
+#[tauri::command(async)]
+pub fn usage_settings_get(app: AppHandle) -> settings::UsageSettings {
+    settings_store::read(&app).usage
+}
+
+/// Stores Settings → Stats & Usage and returns what was stored. A cache
+/// lifetime that is not one of the two known ones is stored as the short one.
+#[tauri::command(async)]
+pub fn usage_settings_put(
+    app: AppHandle,
+    settings: settings::UsageSettings,
+) -> Result<settings::UsageSettings, CmdError> {
+    let settings = settings.normalized();
+    settings_store::write(&app, &[SettingsSection::Usage], |s| s.usage = settings).map(|s| s.usage)
+}
+
 /// The global git `user.name` that the git-username prefix shows; a repo's
 /// own `user.name` wins when a worktree is created.
 #[tauri::command(async)]

@@ -172,6 +172,17 @@ impl Default for UsageSettings {
     }
 }
 
+impl UsageSettings {
+    /// What `usage_settings_put` stores: a cache lifetime other than the two
+    /// known ones is the short one.
+    pub fn normalized(mut self) -> Self {
+        if self.cache_ttl_ms != CACHE_TTL_LONG_MS {
+            self.cache_ttl_ms = CACHE_TTL_SHORT_MS;
+        }
+        self
+    }
+}
+
 /// Which worktree rows the sidebar hides. All off: every row shows.
 #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -1739,6 +1750,67 @@ then sum up"
             .unwrap();
             assert_eq!(load(&path).agents, agents);
         }
+    }
+
+    #[test]
+    fn usage_settings_default_and_stay_lenient() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let want = UsageSettings::default();
+        assert_eq!(want.display, UsageDisplay::Used);
+        assert!(want.footer.claude && want.footer.codex);
+        assert!(!want.scan.claude && !want.scan.codex);
+        assert!(!want.cache_timer);
+        assert_eq!(want.cache_ttl_ms, CACHE_TTL_SHORT_MS);
+        for text in [
+            "{}",
+            r#"{ "usage": {} }"#,
+            r#"{ "usage": 3 }"#,
+            r#"{ "usage": { "display": "bogus" } }"#,
+        ] {
+            fs::write(&path, text).unwrap();
+            assert_eq!(load(&path).usage, want, "{text}");
+        }
+        // A broken usage section keeps the other sections.
+        fs::write(
+            &path,
+            r#"{ "usage": [1], "agents": { "accountSwitch": "keep" } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.usage, want);
+        assert_eq!(loaded.agents.account_switch, SwitchRunning::Keep);
+    }
+
+    #[test]
+    fn usage_settings_round_trip_and_normalise_the_cache_ttl() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let usage = UsageSettings {
+            display: UsageDisplay::Remaining,
+            footer: ProviderSwitches {
+                claude: true,
+                codex: false,
+            },
+            scan: ProviderSwitches {
+                claude: true,
+                codex: false,
+            },
+            cache_timer: true,
+            cache_ttl_ms: CACHE_TTL_LONG_MS,
+        };
+        let json = serde_json::to_value(&usage).unwrap();
+        assert_eq!(json["display"], "remaining");
+        assert_eq!(json["cacheTtlMs"], 3_600_000);
+        fs::write(&path, format!(r#"{{ "usage": {json} }}"#)).unwrap();
+        assert_eq!(load(&path).usage, usage);
+
+        let odd = UsageSettings {
+            cache_ttl_ms: 12345,
+            ..UsageSettings::default()
+        };
+        assert_eq!(odd.normalized().cache_ttl_ms, CACHE_TTL_SHORT_MS);
+        assert_eq!(usage.clone().normalized(), usage);
     }
 
     #[test]
