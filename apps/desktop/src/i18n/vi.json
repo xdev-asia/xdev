@@ -1914,5 +1914,16 @@
   "usage.stats.enable": "Bật {provider}",
   "usage.stats.empty": "Không có mức dùng trong khoảng này.",
   "usage.stats.byProvider": "Theo nhà cung cấp",
-  "usage.stats.noDate": "–"
+  "usage.stats.noDate": "–",
+  "settings.usage.footerGroup": "Thanh mức dùng ở chân trang",
+  "settings.usage.display": "Phần trăm mức dùng",
+  "settings.usage.displayHint": "Con số trên thanh chân trang và trong cửa sổ mức dùng: đã dùng bao nhiêu, hoặc còn lại bao nhiêu.",
+  "settings.usage.display.used": "Đã dùng",
+  "settings.usage.display.remaining": "Còn lại",
+  "settings.usage.footer.claude": "Thanh của Claude",
+  "settings.usage.footer.codex": "Thanh của Codex",
+  "settings.usage.logsGroup": "Log cục bộ",
+  "settings.usage.scan.claude": "Đọc log Claude",
+  "settings.usage.scan.codex": "Đọc log Codex",
+  "settings.usage.scanHint": "Thống kê đọc log phiên trên máy này. Tắt cho đến khi bạn bật."
 }

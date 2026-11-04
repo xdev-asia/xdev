@@ -41,6 +41,12 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("agents.profiles", "settings.agents.profiles", ["claude", "codex", "gemini", "profile", "enable", "hồ sơ", "ho so"]),
   e("agents.shells", "settings.agents.shells", ["shell", "bash", "powershell", "zsh", "program", "args"]),
   e("agents.statusHooks", "settings.agents.statusHooks.label", ["hooks", "status", "trạng thái", "trang thai"], "settings.agents.statusHooks.what"),
+  // Stats & Usage
+  e("usage.display", "settings.usage.display", ["usage", "percent", "percentage", "used", "remaining", "left", "meter", "footer", "đã dùng", "da dung", "còn lại", "con lai", "phần trăm", "phan tram"], "settings.usage.displayHint"),
+  e("usage.footer.claude", "settings.usage.footer.claude", ["footer", "meter", "claude", "usage", "quota", "thanh", "mức dùng", "muc dung", "chân trang", "chan trang"]),
+  e("usage.footer.codex", "settings.usage.footer.codex", ["footer", "meter", "codex", "usage", "quota", "thanh", "mức dùng", "muc dung", "chân trang", "chan trang"]),
+  e("usage.scan.claude", "settings.usage.scan.claude", ["stats", "logs", "scan", "read", "claude", "session", "thống kê", "thong ke", "đọc log", "doc log", "nhật ký", "nhat ky"], "settings.usage.scanHint"),
+  e("usage.scan.codex", "settings.usage.scan.codex", ["stats", "logs", "scan", "read", "codex", "session", "thống kê", "thong ke", "đọc log", "doc log", "nhật ký", "nhat ky"], "settings.usage.scanHint"),
   // Notifications
   e("notifications.enabled", "settings.notifications.enabled", ["notify", "alert", "master", "thông báo", "thong bao"], "settings.notifications.enabledHint"),
   e("notifications.onNeedsInput", "settings.notifications.onNeedsInput", ["input", "waiting", "cần nhập", "can nhap"], "settings.notifications.onNeedsInputHint"),

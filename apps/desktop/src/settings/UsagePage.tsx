@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Agent, type ApiError, type UsageReport, type UsageScope, type UsageSettings } from "@/api";
+import { toApiError, type Agent, type ApiError, type UsageDisplay, type UsageReport, type UsageScope, type UsageSettings } from "@/api";
 import { useI18n } from "@/i18n";
 import { displayPath, totalOf, type Tokens } from "@/kit/kitUi";
 import { TokenTable } from "@/kit/UsageTab";
 import { UsageChart } from "@/kit/UsageChart";
 import { rangeDays, type UsageRange } from "@/kit/usageRange";
+import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 import { setUsageSettings } from "./usageSettings";
 
@@ -14,10 +15,14 @@ export const PROVIDERS: Provider[] = ["overview", "claude", "codex"];
 export const SCOPES: UsageScope[] = ["xdev", "all"];
 export const RANGES: UsageRange[] = ["7", "30", "90", "all"];
 const AGENTS: Agent[] = ["claude", "codex"];
+export const DISPLAYS: UsageDisplay[] = ["used", "remaining"];
+// Catalog ids of the page's settings, per group; a switch adds its provider (`usage.footer.claude`).
+const FOOTER_IDS = ["usage.display", ...AGENTS.map((a) => `usage.footer.${a}`)];
+const SCAN_IDS = AGENTS.map((a) => `usage.scan.${a}`);
 
 /** Settings → Stats & Usage: what the agents on this machine spent, from their local logs. */
 export function UsagePage(props: SettingsSectionProps): JSX.Element {
-  const { api } = props;
+  const { api, filter } = props;
   const { t } = useI18n();
   const [settings, setSettings] = useState<UsageSettings | null>(null);
   // Session state only: none of these three is saved.
@@ -30,6 +35,7 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
   const [reads, setReads] = useState(0);
   // The first read of the page reads the new log bytes; Refresh and Enable ask for it again.
   const refresh = useRef(true);
+  const saving = useRef(false);
 
   useEffect(() => {
     api.usageSettings().then(setSettings, (e) => setError(toApiError(e).code));
@@ -39,6 +45,8 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
   const covered: Agent[] = provider === "overview" ? AGENTS : [provider];
   const off = settings === null ? [] : covered.filter((a) => !settings.scan[a]);
   const anyOn = settings !== null && off.length < covered.length;
+  // A read follows the scan switches, not the other settings.
+  const scanKey = settings === null ? "" : AGENTS.map((a) => String(settings.scan[a])).join();
 
   useEffect(() => {
     if (settings === null || !anyOn) {
@@ -67,20 +75,36 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
     return () => {
       stale = true;
     };
-    // `reads` asks for another read of the same query; `settings` changes when a scan switch does.
-  }, [api, settings, anyOn, provider, scope, range, reads]);
+    // `reads` asks for another read of the same query; `scanKey` changes when a scan switch does.
+  }, [api, scanKey, anyOn, provider, scope, range, reads]);
 
-  async function enable(agent: Agent): Promise<void> {
-    if (settings === null || busy) return;
+  // Each write returns what was stored; the page and the shared copy show that.
+  async function patch(change: Partial<UsageSettings>): Promise<void> {
+    if (settings === null || saving.current) return;
+    saving.current = true;
     try {
-      const stored = await api.usageSettingsPut({ ...settings, scan: { ...settings.scan, [agent]: true } });
+      const stored = await api.usageSettingsPut({ ...settings, ...change });
       setUsageSettings(stored);
-      refresh.current = true;
+      // Turning a scan on reads the logs of that agent from the start.
+      if (change.scan) refresh.current = true;
       setSettings(stored);
     } catch (e) {
       setError(toApiError(e).code);
+    } finally {
+      saving.current = false;
     }
   }
+  const enable = (agent: Agent) => patch({ scan: { ...settings!.scan, [agent]: true } });
+  const flip = (group: "footer" | "scan", agent: Agent) => patch({ [group]: { ...settings![group], [agent]: !settings![group][agent] } });
+  const sw = (id: string, label: string, on: boolean, flipIt: () => void, hint?: string) => (
+    <li className="settings-item" data-switch={id} data-setting-id={id} key={id}>
+      <div className="settings-item-text">
+        <strong>{label}</strong>
+        {hint && <span className="settings-path">{hint}</span>}
+      </div>
+      <button type="button" role="switch" className="agent-switch" aria-checked={on} aria-label={label} onClick={flipIt} />
+    </li>
+  );
 
   const label = (a: Agent) => t(`usage.stats.provider.${a}`);
   const tokens = report === undefined ? 0 : report.by_agent.reduce((n, [, tk]) => n + totalOf(tk), 0);
@@ -100,6 +124,8 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
         </p>
       )}
 
+      {!filter && (
+      <>
       <div className="usage-tiles">
         {(
           [
@@ -221,6 +247,40 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
             </table>
           </section>
         </div>
+      )}
+      </>
+      )}
+
+      {settings && (
+        <>
+          <SettingGroup ids={FOOTER_IDS} filter={filter}>
+            <h4 className="settings-group">{t("settings.usage.footerGroup")}</h4>
+            <SettingRow id="usage.display" filter={filter}>
+              <div className="ws-fields">
+                <div className="ws-field" role="radiogroup" aria-label={t("settings.usage.display")}>
+                  <span>{t("settings.usage.display")}</span>
+                  <div className="segmented">
+                    {DISPLAYS.map((d) => (
+                      <button key={d} type="button" role="radio" data-display={d} aria-checked={settings.display === d} onClick={() => void patch({ display: d })}>
+                        {t(`settings.usage.display.${d}`)}
+                      </button>
+                    ))}
+                  </div>
+                  <small className="settings-hint">{t("settings.usage.displayHint")}</small>
+                </div>
+              </div>
+            </SettingRow>
+            <ul className="settings-list">
+              {AGENTS.map((a) => settingShown(filter, `usage.footer.${a}`) && sw(`usage.footer.${a}`, t(`settings.usage.footer.${a}`), settings.footer[a], () => void flip("footer", a)))}
+            </ul>
+          </SettingGroup>
+          <SettingGroup ids={SCAN_IDS} filter={filter}>
+            <h4 className="settings-group">{t("settings.usage.logsGroup")}</h4>
+            <ul className="settings-list">
+              {AGENTS.map((a) => settingShown(filter, `usage.scan.${a}`) && sw(`usage.scan.${a}`, t(`settings.usage.scan.${a}`), settings.scan[a], () => void flip("scan", a), t("settings.usage.scanHint")))}
+            </ul>
+          </SettingGroup>
+        </>
       )}
     </div>
   );

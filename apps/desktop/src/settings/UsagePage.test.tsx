@@ -2,9 +2,10 @@ import { expect, it, vi } from "vitest";
 import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
 import { UsageChart } from "@/kit/UsageChart";
-import { mount, textOf, tick, type Node } from "@/kit/testHooks";
+import { mount, nodes, textOf, tick, type Node } from "@/kit/testHooks";
 import { USAGE_DEFAULTS } from "./usageDefaults";
 import { getUsageSettings, resetUsageSettingsForTests } from "./usageSettings";
+import { runSearch } from "./searchModel";
 import { UsagePage } from "./UsagePage";
 
 vi.mock("react", async (original) => (await import("@/kit/testHooks")).patchReact(await original<typeof import("react")>()));
@@ -100,4 +101,60 @@ it("a failed read shows the error code", async () => {
   await m.settle();
   await m.settle();
   expect(m.all().some((n) => n.props.role === "alert" && textOf(n) === en("error.io"))).toBe(true);
+});
+
+// --- the usage settings rows ---
+
+const sw = (all: Node[], id: string) => all.find((n) => n.props["data-switch"] === id)!;
+const toggle = (all: Node[], id: string) => nodes(sw(all, id).props.children).find((n) => n.props.role === "switch")!;
+
+it("Used / Remaining writes the display and updates the shared copy", async () => {
+  const { api, m } = await open();
+  const put = vi.spyOn(api, "usageSettingsPut");
+  m.all().find((n) => n.props["data-display"] === "remaining")!.props.onClick();
+  await tick();
+  expect(put).toHaveBeenCalledWith({ ...USAGE_DEFAULTS, scan: { claude: true, codex: false }, display: "remaining" });
+  expect(getUsageSettings().display).toBe("remaining");
+  expect((await api.usageSettings()).display).toBe("remaining");
+  const checked = (d: string) => m.all().find((n) => n.props["data-display"] === d)!.props["aria-checked"];
+  await m.settle();
+  expect([checked("used"), checked("remaining")]).toEqual([false, true]);
+});
+
+it("each footer and scan switch stores its own flag", async () => {
+  const { api, m } = await open();
+  for (const [id, group, agent] of [
+    ["usage.footer.claude", "footer", "claude"],
+    ["usage.footer.codex", "footer", "codex"],
+    ["usage.scan.claude", "scan", "claude"],
+    ["usage.scan.codex", "scan", "codex"],
+  ] as const) {
+    const before = (await api.usageSettings())[group][agent];
+    toggle(m.all(), id).props.onClick();
+    await tick();
+    await m.settle();
+    expect((await api.usageSettings())[group][agent], id).toBe(!before);
+    expect(getUsageSettings()[group][agent], id).toBe(!before);
+  }
+});
+
+it("a scan switch turned on reads again with a refresh; the display does not", async () => {
+  const { m, report } = await open();
+  m.all().find((n) => n.props["data-display"] === "remaining")!.props.onClick();
+  await tick();
+  await m.settle();
+  expect(report).toHaveBeenCalledTimes(1);
+  toggle(m.all(), "usage.scan.codex").props.onClick();
+  await tick();
+  await m.settle();
+  await m.settle();
+  expect(report).toHaveBeenCalledTimes(2);
+  expect(report.mock.calls[1]![0]).toMatchObject({ refresh: true });
+});
+
+it("a search for remaining or con lai finds the display row", () => {
+  const t = (key: string) => translate("en", key);
+  for (const q of ["remaining", "con lai", "còn lại"]) {
+    expect(runSearch(q, t, (s) => s).ids.has("usage.display"), q).toBe(true);
+  }
 });
