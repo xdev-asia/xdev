@@ -137,6 +137,9 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
       pushToast({ id: "session-search-clear", text: t("sessionSearch.cleared") });
     } catch (e) {
       pushToast({ id: "session-search-clear", text: t(`error.${toApiError(e).code}`) });
+      // A failed clear may have left the index half removed; show what is stored now.
+      api.agentsSettings().then(setSwitchPolicy, () => {});
+      api.sessionSearchStatus().then(setSearchStatus, () => {});
     }
   }
 
