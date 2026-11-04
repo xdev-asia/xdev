@@ -50,6 +50,7 @@ pub fn run() {
     }
     let sync_local = local_dir.clone();
     let ptyd_local = local_dir.clone();
+    let endpoint_local = local_dir.clone();
     let hooks_dir = local_dir
         .as_ref()
         .map(|local| local.join(xdev_agent::HOOKS_DIR));
@@ -89,6 +90,25 @@ pub fn run() {
                 eprintln!("hooks marker: {e}");
             }
             status::listen_clicks(app.handle());
+            // The `xdev` CLI's way in; without it the app runs as before.
+            if let Some(local) = &endpoint_local {
+                let handler = std::sync::Arc::new(cli_verbs::AppVerbs {
+                    app: app.handle().clone(),
+                });
+                let now = workspace::clock().0;
+                match endpoint::start(
+                    &endpoint::app_dir(local),
+                    endpoint::PREFIX,
+                    xdev_core::version(),
+                    now,
+                    handler,
+                ) {
+                    Ok(running) => {
+                        app.manage(running);
+                    }
+                    Err(e) => eprintln!("app endpoint: {e}"),
+                }
+            }
             // Without it an edit on disk shows only after a restart.
             let last = app.state::<keybindings::LastSent>().inner().clone();
             match keybindings::watch(app.handle().clone(), last) {
@@ -329,6 +349,9 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 let on_quit = settings_store::read(app).terminal.on_quit;
                 app.state::<pty::Ptys>().quit(on_quit);
+                if let Some(running) = app.try_state::<endpoint::Running>() {
+                    running.stop();
+                }
                 updater::install_pending(app);
             }
         });
