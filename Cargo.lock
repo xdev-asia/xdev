@@ -6257,6 +6257,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "xdev-id"
+version = "0.5.0"
+dependencies = [
+ "base64 0.23.1",
+ "getrandom 0.4.3",
+ "keyring",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.21",
+ "ts-rs",
+ "ureq",
+ "url",
+]
+
+[[package]]
 name = "xdev-ipc"
 version = "0.5.0"
 dependencies = [
