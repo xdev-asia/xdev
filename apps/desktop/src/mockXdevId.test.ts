@@ -19,6 +19,8 @@ describe("mock xDev ID", () => {
 
   it("mock_xdev_id_rejects_a_bad_link_a_wrong_state_and_no_attempt", async () => {
     const api = createMockApi({});
+    // Rust checks the link shape before the attempt: junk is a link error even with no attempt.
+    await expect(api.xdevIdPaste("https://example.com")).rejects.toMatchObject({ code: "account_link" });
     await expect(api.xdevIdPaste(LINK("demo"))).rejects.toMatchObject({ code: "account_state" });
     await api.xdevIdSignIn();
     await expect(api.xdevIdPaste("https://example.com")).rejects.toMatchObject({ code: "account_link" });
@@ -26,6 +28,16 @@ describe("mock xDev ID", () => {
     await expect(api.xdevIdPaste(LINK("other"))).rejects.toMatchObject({ code: "account_state" });
     // A rejected paste keeps the attempt.
     expect(await api.xdevIdState()).toMatchObject({ state: "signingIn" });
+  });
+
+  it("mock_xdev_id_reopen_needs_a_running_attempt_and_starts_no_new_one", async () => {
+    const api = createMockApi({});
+    await expect(api.xdevIdReopen()).rejects.toMatchObject({ code: "account_state" });
+    const waiting = await api.xdevIdSignIn();
+    await api.xdevIdReopen();
+    await api.xdevIdReopen();
+    expect(api.__xdevIdReopens()).toBe(2);
+    expect(await api.xdevIdState()).toEqual(waiting);
   });
 
   it("mock_xdev_id_cancel_returns_to_signed_out", async () => {
