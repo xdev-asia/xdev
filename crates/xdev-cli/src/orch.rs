@@ -114,8 +114,12 @@ pub enum OrchVerb {
     WorkerStop { handle: String },
     /// Give a worker up without closing its tab.
     WorkerAbandon { handle: String },
-    /// Let a finished worker's tab go.
-    WorkerRelease { handle: String },
+    /// Settle a ready worker by hand: `--outcome succeeded` or `failed`.
+    WorkerRelease {
+        handle: String,
+        #[arg(long, value_parser = ["succeeded", "failed"])]
+        outcome: String,
+    },
     /// Keep a worker's tab open past the auto-close (`--off` undoes it).
     WorkerKeepOpen {
         handle: String,
@@ -426,9 +430,10 @@ pub fn request(
         OrchVerb::WorkerAbandon { handle } => {
             ("orchestration.worker-abandon", json!({ "handle": handle }))
         }
-        OrchVerb::WorkerRelease { handle } => {
-            ("orchestration.worker-release", json!({ "handle": handle }))
-        }
+        OrchVerb::WorkerRelease { handle, outcome } => (
+            "orchestration.worker-release",
+            json!({ "handle": handle, "outcome": outcome }),
+        ),
         OrchVerb::WorkerKeepOpen { handle, off } => (
             "orchestration.worker-keep-open",
             json!({ "handle": handle, "keep": !off }),
@@ -531,9 +536,253 @@ fn put(map: &mut Map<String, Value>, key: &str, value: &Option<String>) {
     }
 }
 
+fn cell(v: &Value) -> String {
+    match v {
+        Value::Null => "-".to_owned(),
+        Value::String(s) if s.is_empty() => "-".to_owned(),
+        Value::String(s) => s.replace(['\t', '\r', '\n'], " "),
+        other => other.to_string(),
+    }
+}
+
+fn row(r: &Value, keys: &[&str]) -> String {
+    keys.iter()
+        .map(|k| cell(&r[*k]))
+        .collect::<Vec<_>>()
+        .join("\t")
+}
+
+fn rows(result: &Value, keys: &[&str]) -> String {
+    result
+        .as_array()
+        .map(|a| a.iter().map(|r| row(r, keys) + "\n").collect())
+        .unwrap_or_default()
+}
+
+/// The `next` line and the follow-up commands of a receipt.
+fn next_lines(result: &Value) -> String {
+    let mut out = String::new();
+    if let Some(n) = result["next"].as_str().filter(|n| !n.is_empty()) {
+        out.push_str(&format!("next\t{n}\n"));
+    }
+    for c in result["nextCommands"].as_array().into_iter().flatten() {
+        out.push_str(&format!("run\t{}\n", cell(c)));
+    }
+    out
+}
+
+/// Plain text of an orchestration answer, `None` for a method that is not one.
+pub fn plain(method: &str, result: &Value) -> Option<String> {
+    let verb = method.strip_prefix("orchestration.")?;
+    Some(match verb {
+        "check" => {
+            let mut out = String::new();
+            for r in result["rendered"].as_array().into_iter().flatten() {
+                out.push_str(r.as_str().unwrap_or_default());
+                out.push('\n');
+            }
+            if result["messages"].as_array().is_none_or(Vec::is_empty) {
+                out.push_str("no new messages\n");
+            }
+            out + &next_lines(result)
+        }
+        "send" | "reply" => {
+            let ids: Vec<String> = result["ids"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(cell)
+                .collect();
+            format!(
+                "sent\t{}\t{}\t{}\n{}",
+                ids.join(","),
+                cell(&result["to"]),
+                cell(&result["count"]),
+                next_lines(result)
+            )
+        }
+        "inbox" => rows(
+            result,
+            &[
+                "id", "from", "priority", "type", "read", "subject", "preview",
+            ],
+        ),
+        "run-create" | "run-use" | "run-current" => {
+            row(result, &["id", "objective", "coordinatorTab"]) + "\n"
+        }
+        "run-list" => rows(result, &["id", "objective", "coordinatorTab"]),
+        "run-show" => {
+            let mut out = row(&result["run"], &["id", "objective", "coordinatorTab"]) + "\n";
+            out.push_str(&format!("open gates\t{}\n", cell(&result["openGates"])));
+            for t in result["tasks"].as_array().into_iter().flatten() {
+                out.push_str(&format!("task\t{}\n", row(t, &["id", "status", "title"])));
+            }
+            for w in result["workers"].as_array().into_iter().flatten() {
+                out.push_str(&format!(
+                    "worker\t{}\n",
+                    row(w, &["dispatchId", "state", "tab", "agent"])
+                ));
+            }
+            out
+        }
+        "task-create" | "task-update" => row(result, &["id", "status", "title"]) + "\n",
+        "task-list" => rows(result, &["id", "status", "title", "spec"]),
+        "gate-create" | "gate-resolve" => {
+            row(result, &["id", "status", "question", "resolution"]) + "\n"
+        }
+        "gate-list" => rows(result, &["id", "status", "question", "resolution"]),
+        "ask" => {
+            let state = if result["pending"].as_bool().unwrap_or(false) {
+                "pending"
+            } else {
+                "answered"
+            };
+            format!(
+                "{state}\t{}\t{}\n{}",
+                cell(&result["gateId"]),
+                cell(&result["resolution"]),
+                next_lines(result)
+            )
+        }
+        "worker-start" => {
+            let mut out = row(result, &["dispatchId", "state", "taskId", "runId"]) + "\n";
+            for k in ["failedStage", "lastError", "recovery"] {
+                if let Some(v) = result[k].as_str().filter(|v| !v.is_empty()) {
+                    out.push_str(&format!("{k}\t{v}\n"));
+                }
+            }
+            out + &next_lines(result)
+        }
+        "worker-show" => {
+            let d = &result["dispatch"];
+            let w = &result["worker"];
+            format!(
+                "{}\t{}\t{}\t{}\t{}\t{}\n",
+                cell(&d["id"]),
+                cell(&w["state"]),
+                cell(&w["tab"]),
+                cell(&w["agent"]),
+                cell(&d["taskId"]),
+                cell(&result["taskTitle"])
+            )
+        }
+        "worker-list" => result
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|v| {
+                format!(
+                    "{}\t{}\t{}\t{}\t{}\n",
+                    cell(&v["dispatch"]["id"]),
+                    cell(&v["worker"]["state"]),
+                    cell(&v["worker"]["tab"]),
+                    cell(&v["worker"]["agent"]),
+                    cell(&v["dispatch"]["taskId"])
+                )
+            })
+            .collect(),
+        "worker-read" => {
+            let t = result["text"].as_str().unwrap_or_default();
+            if t.ends_with('\n') || t.is_empty() {
+                t.to_owned()
+            } else {
+                format!("{t}\n")
+            }
+        }
+        "worker-keep-open" => {
+            row(result, &["kept", "closesAtMs", "finished"])
+                + "
+"
+        }
+        "worker-stop" | "worker-abandon" | "worker-release" => {
+            row(result, &["dispatchId", "state", "tab", "kept"]) + "\n"
+        }
+        "reset" => format!(
+            "reset\truns={} tasks={} messages={}\n",
+            cell(&result["runs"]),
+            cell(&result["tasks"]),
+            cell(&result["messages"])
+        ),
+        "request-show" => format!(
+            "{}\t{}\n{}\n",
+            cell(&result["id"]),
+            cell(&result["method"]),
+            result["answer"]
+        ),
+        _ => format!("{result}\n"),
+    })
+}
+
+/// 1 when the answer says the worker did not come up, else 0.
+pub fn exit_for(method: &str, result: &Value) -> u8 {
+    match method {
+        "orchestration.worker-start" if result["state"].as_str().is_some_and(|s| s != "ready") => 1,
+        _ => 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_prints_the_blocks_then_next() {
+        let r = json!({ "messages": [{}], "rendered": ["──── From: w (dispatch:d1) ────
+Subject: s
+b"], "remaining": 0, "next": "End your turn." });
+        let t = plain("orchestration.check", &r).unwrap();
+        assert!(t.starts_with("──── From: w"));
+        assert!(t.ends_with(
+            "next	End your turn.
+"
+        ));
+        let none = json!({ "messages": [], "rendered": [], "remaining": 0, "next": "x" });
+        assert!(plain("orchestration.check", &none).unwrap().starts_with(
+            "no new messages
+"
+        ));
+    }
+
+    #[test]
+    fn receipts_and_tables_are_tab_separated() {
+        let send = json!({ "ids": ["m1", "m2"], "to": "run:r", "count": 2, "next": "Recorded." });
+        assert_eq!(
+            plain("orchestration.send", &send).unwrap(),
+            "sent	m1,m2	run:r	2
+next	Recorded.
+"
+        );
+        let start = json!({ "runId": "r", "taskId": "t", "dispatchId": "d1", "state": "failed", "failedStage": "setup", "lastError": "boom", "recovery": "retry", "nextCommands": ["xdev orchestration worker-show d1"], "next": null });
+        let t = plain("orchestration.worker-start", &start).unwrap();
+        assert!(t.starts_with(
+            "d1	failed	t	r
+"
+        ));
+        assert!(t.contains(
+            "lastError	boom
+"
+        ));
+        assert!(t.ends_with(
+            "run	xdev orchestration worker-show d1
+"
+        ));
+        let list = json!([{ "dispatch": { "id": "d1", "taskId": "t" }, "worker": { "state": "ready", "tab": null, "agent": "claude" }, "taskTitle": "x", "taskStatus": "running" }]);
+        assert_eq!(
+            plain("orchestration.worker-list", &list).unwrap(),
+            "d1	ready	-	claude	t
+"
+        );
+        assert_eq!(plain("status", &json!({})), None);
+    }
+
+    #[test]
+    fn only_a_worker_that_is_not_ready_exits_non_zero() {
+        let m = "orchestration.worker-start";
+        assert_eq!(exit_for(m, &json!({ "state": "ready" })), 0);
+        assert_eq!(exit_for(m, &json!({ "state": "failed" })), 1);
+        assert_eq!(exit_for(m, &json!({ "state": "start_unknown" })), 1);
+        assert_eq!(exit_for("orchestration.send", &json!({})), 0);
+    }
     use clap::Parser;
 
     #[derive(Parser)]
@@ -612,9 +861,9 @@ mod tests {
                 json!({"handle": "d1"}),
             ),
             (
-                "worker-release d1",
+                "worker-release d1 --outcome failed",
                 "orchestration.worker-release",
-                json!({"handle": "d1"}),
+                json!({"handle": "d1", "outcome": "failed"}),
             ),
             (
                 "worker-keep-open d1 --off",
