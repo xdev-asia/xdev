@@ -21,6 +21,7 @@ export const RECIPE_IDS: readonly RecipeId[] = [
   "fixCommitFailure",
   "fixPushFailure",
   "fixChecks",
+  "resolveConflicts",
 ];
 export type FixRecipeId = "fixCommitFailure" | "fixPushFailure" | "fixChecks" | "resolveConflicts";
 

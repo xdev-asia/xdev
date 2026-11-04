@@ -7,8 +7,9 @@ import { joinArgs, splitArgs } from "./args";
 import { RECIPE_IDS, RECIPE_TEMPLATE_MAX, RECIPE_VARS, render, type RecipeId } from ".";
 import { RECIPE_SAMPLES } from "./samples";
 
-// Only these two have a runner, so only they can draft (a fix action runs in a terminal tab).
-const DRAFTS: readonly RecipeId[] = ["commitMessage", "pullRequest"];
+// Only these have a runner, so only they can draft (a fix action runs in a terminal tab). The branch
+// name is asked of an agent without tools, like a draft.
+const DRAFTS: readonly RecipeId[] = ["commitMessage", "pullRequest", "branchName"];
 type Caret = { start: number; end: number };
 
 function sameRecipe(a: Recipe, b: Recipe): boolean {
@@ -28,8 +29,16 @@ export function insertAt(text: string, caret: Caret, insert: string): { text: st
  * Settings → Git → Recipes: one row per agent action with its agent, extra arguments (drafts only),
  * template, variable chips and a preview with sample values.
  */
-export function RecipesEditor(props: { api: Api; recipes: GitRecipes; onChange(next: GitRecipes): void }): JSX.Element {
-  const { api, recipes, onChange } = props;
+export function RecipesEditor(props: {
+  api: Api;
+  recipes: GitRecipes;
+  onChange(next: GitRecipes): void;
+  /** The recipes to list, in order; all of the Source Control ones by default. */
+  ids?: readonly RecipeId[];
+  /** The title and the intro above the rows; on by default. */
+  heading?: boolean;
+}): JSX.Element {
+  const { api, recipes, onChange, ids = RECIPE_IDS, heading = true } = props;
   const { t } = useI18n();
   const [profiles, setProfiles] = useState<ProfileView[]>([]);
   // What is typed in an args box, so a trailing space or quote survives until it is a real arg.
@@ -66,12 +75,16 @@ export function RecipesEditor(props: { api: Api; recipes: GitRecipes; onChange(n
   }
 
   return (
-    <div className="recipes" role="group" aria-labelledby="settings-git-recipes-title">
-      <h4 className="settings-group" id="settings-git-recipes-title">
-        {t("settings.git.recipes.title")}
-      </h4>
-      <p className="settings-hint">{t("settings.git.recipes.intro")}</p>
-      {RECIPE_IDS.map((id) => {
+    <div className="recipes" role="group" aria-labelledby={heading ? "settings-git-recipes-title" : undefined}>
+      {heading && (
+        <>
+          <h4 className="settings-group" id="settings-git-recipes-title">
+            {t("settings.git.recipes.title")}
+          </h4>
+          <p className="settings-hint">{t("settings.git.recipes.intro")}</p>
+        </>
+      )}
+      {ids.map((id) => {
         const recipe = recipes[id];
         const draft = DRAFTS.includes(id);
         const options = draft ? profiles.filter((p) => p.profile.cli === "claude" || p.profile.cli === "codex") : profiles;
