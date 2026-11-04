@@ -7,8 +7,10 @@ use rusqlite::{OptionalExtension, params};
 use serde::Serialize;
 
 use crate::error::OrchError;
+use crate::mail::NewMessage;
 use crate::model::{
-    Dispatch, DispatchStatus, FailedStage, TaskStatus, Worker, WorkerReceipt, WorkerState,
+    Dispatch, DispatchStatus, FailedStage, MessageType, Priority, StopReason, TaskStatus, Worker,
+    WorkerReceipt, WorkerState,
 };
 use crate::render::{NEXT_BREAKER, NEXT_STARTED};
 use crate::store::{DISPATCH_COLS, Store, WORKER_COLS, dispatch_row, enum_text, worker_row};
@@ -470,6 +472,71 @@ impl Store {
         Ok(w)
     }
 
+    /// Workers that are ready and have a tab: the ones whose tab the pump
+    /// watches for a stop.
+    pub fn ready_workers(&self) -> Result<Vec<Worker>, OrchError> {
+        let mut st = self.conn.prepare(&format!(
+            "SELECT {WORKER_COLS} FROM workers WHERE state = 'ready' AND tab IS NOT NULL
+             ORDER BY created_ms, rowid"
+        ))?;
+        Ok(st
+            .query_map([], worker_row)?
+            .collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Tells the coordinator that a ready worker stopped without a
+    /// `worker_done` (an `escalation`). Nothing is written when the worker is
+    /// no longer ready, when it has a question open (a pending gate, or an
+    /// unread question), or when this stop was reported already: the id is
+    /// built from the worker, the reason and `edge_ms`. The new message id.
+    pub fn worker_stop_notice(
+        &self,
+        dispatch_id: &str,
+        reason: StopReason,
+        last_output: &str,
+        edge_ms: i64,
+        now_ms: i64,
+    ) -> Result<Option<String>, OrchError> {
+        let w = self.worker_get(dispatch_id)?;
+        if w.state != WorkerState::Ready {
+            return Ok(None);
+        }
+        let d = self.dispatch_get(dispatch_id)?;
+        let address = format!("dispatch:{dispatch_id}");
+        let open: i64 = self.conn.query_row(
+            "SELECT (SELECT COUNT(*) FROM gates WHERE asker = ?1 AND status = 'pending')
+                  + (SELECT COUNT(*) FROM messages
+                       WHERE from_addr = ?1 AND kind = 'question' AND read = 0)",
+            [&address],
+            |r| r.get(0),
+        )?;
+        if open > 0 {
+            return Ok(None);
+        }
+        let why = enum_text(&reason);
+        let id = crate::ids::stop_message_id(dispatch_id, &format!("{why}@{edge_ms}"));
+        let m = NewMessage {
+            to: format!("run:{}", d.run_id),
+            kind: MessageType::Escalation,
+            subject: format!("worker-{} stopped: {why}", d.task_id),
+            body: format!(
+                "The worker of task {} stopped ({why}) without sending worker_done.",
+                d.task_id
+            ),
+            priority: Priority::High,
+            payload: Some(serde_json::json!({
+                "taskId": d.task_id,
+                "dispatchId": dispatch_id,
+                "handle": dispatch_id,
+                "stopReason": why,
+                "lastOutput": last_output.chars().take(2000).collect::<String>(),
+            })),
+            thread: None,
+        };
+        let fresh = self.insert_message_with_id(&id, &d.run_id, &address, &m.to, &m, now_ms)?;
+        Ok(fresh.then_some(id))
+    }
+
     /// The dispatch failed without a verdict on the task: it is ready again.
     fn give_task_back(&self, dispatch_id: &str, now_ms: i64) -> Result<(), OrchError> {
         let d = self.dispatch_get(dispatch_id)?;
@@ -822,5 +889,60 @@ mod tests {
         let v = s.worker_view(&id).unwrap();
         assert_eq!(v.worker.state, WorkerState::Ready);
         assert_eq!(s.worker_view("nope").unwrap_err().code, "not_found");
+    }
+
+    #[test]
+    fn a_stop_notice_goes_to_the_coordinator_once_and_carries_the_context() {
+        let (s, run, task) = world();
+        let id = ready_worker(&s, &run, &task);
+        assert_eq!(s.ready_workers().unwrap().len(), 1);
+        let first = s
+            .worker_stop_notice(&id, StopReason::Finished, &"x".repeat(3000), 50, 60)
+            .unwrap()
+            .unwrap();
+        assert!(first.starts_with("msg_stop_"));
+        let again = s
+            .worker_stop_notice(&id, StopReason::Finished, "x", 50, 61)
+            .unwrap();
+        assert_eq!(again, None, "the same stop is reported once");
+        let got = s
+            .check(&format!("run:{run}"), &crate::CheckOpts::default(), 70)
+            .unwrap();
+        let m = &got.messages[0];
+        assert_eq!(m.kind, MessageType::Escalation);
+        assert_eq!(m.from, format!("dispatch:{id}"));
+        let p = m.payload.as_ref().unwrap();
+        assert_eq!(p["taskId"], json!(task));
+        assert_eq!(p["dispatchId"], json!(id));
+        assert_eq!(p["handle"], json!(id));
+        assert_eq!(p["stopReason"], "finished");
+        assert_eq!(p["lastOutput"].as_str().unwrap().chars().count(), 2000);
+        // A later stop of another kind is a new report.
+        assert!(
+            s.worker_stop_notice(&id, StopReason::Exited, "", 90, 91)
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn a_stop_with_a_question_open_or_after_settling_says_nothing() {
+        let (s, run, task) = world();
+        let id = ready_worker(&s, &run, &task);
+        let me = s.identity(Some("tab_x"), None).unwrap();
+        s.ask(&me, "which one?", &[], 5).unwrap();
+        let none = s
+            .worker_stop_notice(&id, StopReason::NeedsInput, "", 10, 11)
+            .unwrap();
+        assert_eq!(none, None, "the question already says why it stopped");
+        let (s2, run2, task2) = world();
+        let id2 = ready_worker(&s2, &run2, &task2);
+        s2.worker_settle(&id2, WorkerState::Succeeded, None, false, 20)
+            .unwrap();
+        let after = s2
+            .worker_stop_notice(&id2, StopReason::Finished, "", 30, 31)
+            .unwrap();
+        assert_eq!(after, None);
+        assert!(s2.ready_workers().unwrap().is_empty());
     }
 }

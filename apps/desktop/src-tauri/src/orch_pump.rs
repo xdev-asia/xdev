@@ -7,9 +7,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use xdev_orch::Wake;
+use xdev_orch::{StopReason, Wake, Worker};
 
 use crate::cli_verbs::TabReport;
+use crate::orchestration::OrchHub;
 
 /// The least time between two pointers at the same mailbox.
 pub const POINTER_GAP_MS: i64 = 2_000;
@@ -31,10 +32,29 @@ pub struct Pointer {
 pub type Writer = Arc<dyn Fn(&str, &[u8]) -> bool + Send + Sync>;
 
 /// What the pump remembers: per mailbox, the newest message it pointed at and
-/// when.
+/// when; per watched tab, how it looked last.
 #[derive(Default)]
 pub struct Pump {
     pointed: Mutex<HashMap<String, (i64, i64)>>,
+    seen: Mutex<HashMap<String, Seen>>,
+}
+
+/// How a watched tab looked at the last pass.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Seen {
+    /// `working`, `needs-you`, `done`, `idle`, `exited` or `gone`.
+    state: String,
+    last_output_ms: i64,
+}
+
+/// A ready worker whose tab stopped, without a `worker_done`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StopEdge {
+    pub dispatch: String,
+    pub reason: StopReason,
+    /// The tab's last output time: with the reason, what names this stop.
+    pub edge_ms: i64,
+    pub tab: String,
 }
 
 fn pointer_text(unread: u32) -> String {
@@ -89,6 +109,53 @@ impl Pump {
         out
     }
 
+    /// The stops since the last pass among `ready` workers (those with a tab):
+    /// working to done or idle is `finished`, any change to needs-you is
+    /// `needs_input`, and the tab exiting or leaving the board is `exited`.
+    /// A tab seen for the first time only records how it looks.
+    pub fn stops(&self, ready: &[Worker], tabs: &[TabReport]) -> Vec<StopEdge> {
+        let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
+        seen.retain(|t, _| ready.iter().any(|w| w.tab.as_deref() == Some(t)));
+        let mut out = Vec::new();
+        for w in ready {
+            let Some(tab) = w.tab.as_deref() else {
+                continue;
+            };
+            let now = match tabs.iter().find(|t| t.id == tab) {
+                Some(t) => Seen {
+                    state: if t.exited { "exited" } else { &t.status }.to_owned(),
+                    last_output_ms: t.last_output_ms,
+                },
+                None => Seen {
+                    state: "gone".to_owned(),
+                    last_output_ms: seen.get(tab).map_or(0, |s| s.last_output_ms),
+                },
+            };
+            let prev = seen.insert(tab.to_owned(), now.clone());
+            let Some(prev) = prev else { continue };
+            if prev.state == now.state {
+                continue;
+            }
+            let reason = match now.state.as_str() {
+                "exited" | "gone" if prev.state != "exited" && prev.state != "gone" => {
+                    Some(StopReason::Exited)
+                }
+                "needs-you" => Some(StopReason::NeedsInput),
+                "idle" | "done" if prev.state == "working" => Some(StopReason::Finished),
+                _ => None,
+            };
+            if let Some(reason) = reason {
+                out.push(StopEdge {
+                    dispatch: w.dispatch_id.clone(),
+                    reason,
+                    edge_ms: now.last_output_ms,
+                    tab: tab.to_owned(),
+                });
+            }
+        }
+        out
+    }
+
     /// A write failed: the mail stays unread, and the next pass may point again.
     pub fn forget(&self, p: &Pointer) {
         let mut pointed = self.pointed.lock().unwrap_or_else(PoisonError::into_inner);
@@ -123,6 +190,29 @@ impl Pump {
             }
         }))
     }
+}
+
+/// Mails the coordinator one escalation per stop. `read` gives the tab's
+/// recent output (empty when it cannot be read). True when mail was written.
+pub fn escalate(
+    hub: &OrchHub,
+    data: &std::path::Path,
+    edges: &[StopEdge],
+    read: &dyn Fn(&str) -> String,
+    now_ms: i64,
+) -> bool {
+    let mut wrote = false;
+    for e in edges {
+        let text = read(&e.tab);
+        let made = hub.with_store(data, |s| {
+            s.worker_stop_notice(&e.dispatch, e.reason, &text, e.edge_ms, now_ms)
+        });
+        wrote |= matches!(made, Ok(Some(_)));
+    }
+    if wrote {
+        hub.notify_mail();
+    }
+    wrote
 }
 
 #[cfg(test)]
@@ -230,6 +320,157 @@ mod tests {
         assert_eq!(seen[0].1.last(), Some(&b'\r'));
         // Forgotten, so the next pass (the gap does not apply) points again.
         assert_eq!(pump.plan(&wakes, &idle, &nobody, 1_001).len(), 1);
+    }
+
+    fn worker(dispatch: &str, tab: &str) -> Worker {
+        Worker {
+            dispatch_id: dispatch.to_owned(),
+            tab: Some(tab.to_owned()),
+            worktree: "/wt".to_owned(),
+            agent: "claude".to_owned(),
+            state: xdev_orch::WorkerState::Ready,
+            failed_stage: None,
+            last_error: None,
+            kept: false,
+            closes_at_ms: None,
+            released: false,
+            created_ms: 1,
+            updated_ms: 1,
+        }
+    }
+
+    fn at(id: &str, status: &str, exited: bool, out: i64) -> TabReport {
+        TabReport {
+            last_output_ms: out,
+            ..tab(id, status, exited)
+        }
+    }
+
+    #[test]
+    fn each_stop_reason_is_an_edge_and_a_steady_tab_is_not() {
+        let pump = Pump::default();
+        let ws = [worker("d1", "t1")];
+        // First sight only records.
+        assert!(pump.stops(&ws, &[at("t1", "working", false, 5)]).is_empty());
+        assert!(pump.stops(&ws, &[at("t1", "working", false, 6)]).is_empty());
+        let fin = pump.stops(&ws, &[at("t1", "idle", false, 7)]);
+        assert_eq!(fin.len(), 1);
+        assert_eq!(fin[0].reason, StopReason::Finished);
+        assert_eq!((fin[0].edge_ms, fin[0].dispatch.as_str()), (7, "d1"));
+        assert!(pump.stops(&ws, &[at("t1", "idle", false, 7)]).is_empty());
+        // Idle to done is no stop; working to done is.
+        assert!(pump.stops(&ws, &[at("t1", "done", false, 7)]).is_empty());
+        pump.stops(&ws, &[at("t1", "working", false, 8)]);
+        let done = pump.stops(&ws, &[at("t1", "done", false, 9)]);
+        assert_eq!(done[0].reason, StopReason::Finished);
+        // Needs you, from anywhere.
+        let needs = pump.stops(&ws, &[at("t1", "needs-you", false, 10)]);
+        assert_eq!(needs[0].reason, StopReason::NeedsInput);
+        // Exited, once.
+        let out = pump.stops(&ws, &[at("t1", "needs-you", true, 10)]);
+        assert_eq!(out[0].reason, StopReason::Exited);
+        assert!(
+            pump.stops(&ws, &[]).is_empty(),
+            "gone after exited is no new stop"
+        );
+    }
+
+    #[test]
+    fn a_tab_that_leaves_the_board_counts_as_exited() {
+        let pump = Pump::default();
+        let ws = [worker("d1", "t1")];
+        pump.stops(&ws, &[at("t1", "working", false, 5)]);
+        let gone = pump.stops(&ws, &[]);
+        assert_eq!(gone[0].reason, StopReason::Exited);
+        assert_eq!(gone[0].edge_ms, 5);
+    }
+
+    fn hub_with_ready_worker(dir: &std::path::Path) -> (OrchHub, String, String) {
+        let hub = OrchHub::default();
+        let (run, d) = hub
+            .with_store(dir, |s| {
+                let run = s.run_create("o", Some("lead"), 1)?;
+                let t = s.task_create(
+                    &run.id,
+                    xdev_orch::NewTask {
+                        title: None,
+                        spec: "x".into(),
+                        deps: vec![],
+                        parent: None,
+                    },
+                    1,
+                )?;
+                let d = s.worker_begin(
+                    &xdev_orch::StartPlan {
+                        run_id: run.id.clone(),
+                        task_id: t.id,
+                        parent_dispatch: None,
+                        depth: 1,
+                        retry_of: None,
+                        tab: "t1".into(),
+                        worktree: "/wt".into(),
+                        agent: "claude".into(),
+                        kept: false,
+                    },
+                    1,
+                )?;
+                s.worker_started(&d.id, xdev_orch::StartResult::Ready, 2)?;
+                Ok((run.id, d.id))
+            })
+            .unwrap();
+        (hub, run, d)
+    }
+
+    #[test]
+    fn a_stop_is_mailed_once_with_the_last_output_and_skipped_when_a_question_is_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let (hub, run, d) = hub_with_ready_worker(dir.path());
+        let edge = StopEdge {
+            dispatch: d.clone(),
+            reason: StopReason::Finished,
+            edge_ms: 7,
+            tab: "t1".to_owned(),
+        };
+        let read = |_: &str| "last words".to_owned();
+        assert!(escalate(
+            &hub,
+            dir.path(),
+            std::slice::from_ref(&edge),
+            &read,
+            10
+        ));
+        assert!(
+            !escalate(&hub, dir.path(), std::slice::from_ref(&edge), &read, 11),
+            "deduped"
+        );
+        let got = hub
+            .with_store(dir.path(), |s| {
+                s.check(&format!("run:{run}"), &xdev_orch::CheckOpts::default(), 12)
+            })
+            .unwrap();
+        assert_eq!(got.messages.len(), 1);
+        let p = got.messages[0].payload.as_ref().unwrap();
+        assert_eq!(p["lastOutput"], "last words");
+        assert_eq!(p["stopReason"], "finished");
+
+        // With a pending question, a different stop is not reported.
+        hub.with_store(dir.path(), |s| {
+            let me = s.identity(Some("t1"), None)?;
+            s.ask(&me, "which?", &[], 20).map(|_| ())
+        })
+        .unwrap();
+        let other = StopEdge {
+            reason: StopReason::NeedsInput,
+            edge_ms: 30,
+            ..edge
+        };
+        assert!(!escalate(
+            &hub,
+            dir.path(),
+            &[other],
+            &|_: &str| String::new(),
+            31
+        ));
     }
 
     #[test]
