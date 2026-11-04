@@ -447,7 +447,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const running = sessions ? paths.reduce((n, p) => n + working(sessions, p), 0) : 0;
   const waiting = sessions ? paths.reduce((n, p) => n + waitingIn(sessions, p), 0) : 0;
   const unreadMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.unread(p) ?? false]));
-  const sleepableMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.tabs(p).some((t) => !t.asleep) ?? false]));
+  const sleepableMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.sleepable(p) ?? false]));
   const asleepMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.asleep(p) ?? false]));
 
   const all = repos?.flatMap((r) => r.worktrees) ?? [];

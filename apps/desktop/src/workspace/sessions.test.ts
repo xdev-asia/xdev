@@ -162,6 +162,24 @@ describe("Sessions", () => {
     expect(live.restart("gone")).toBeNull();
   });
 
+  it("sleepable_ignores_agents_that_work_or_wait_for_the_person", () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    const agent = live.open(A, "claude");
+    live.noteStarted(agent.id, info(agent.id, true));
+    expect(live.sleepable(A)).toBe(true);
+    api.__hook(agent.id, "prompt");
+    expect(live.tabs(A)[0].status).toBe("working");
+    expect(live.sleepable(A)).toBe(false);
+    api.__hook(agent.id, "needs-input");
+    expect(live.tabs(A)[0].status).toBe("needs-you");
+    expect(live.sleepable(A)).toBe(false);
+    // A shell beside the busy agent can sleep, so the worktree still offers it.
+    live.open(A, "shell");
+    expect(live.sleepable(A)).toBe(true);
+    expect(live.sleepable(B)).toBe(false);
+  });
+
   it("shell tabs do not count for the dot", () => {
     const live = (sessions = new Sessions(createMockApi({}), () => 1_000));
     const shell = live.open(A, "shell");
