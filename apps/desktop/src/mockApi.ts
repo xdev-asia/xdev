@@ -27,6 +27,7 @@ import { createMockLayout } from "./mockLayout";
 import { createMockCli, type MockCli } from "./mockCli";
 import { createMockOpenIn, type MockOpenIn } from "./mockOpenIn";
 import { createMockProfiles } from "./mockProfiles";
+import { createMockPower } from "./mockPower";
 import { createMockPty, type MockPtyd } from "./mockPty";
 import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
 import { createMockSettings, createSettingsHub } from "./mockSettings";
@@ -564,6 +565,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       (provider) => active.find((a) => a.provider === provider)?.name ?? null,
     ),
     ...createMockStatus(settingsHub.emit),
+    ...createMockPower(settingsApi),
     ...workspace,
     ...createMockIssues(),
     ...settingsApi,

@@ -14,6 +14,7 @@ mod kit;
 mod layout;
 mod links;
 mod open_in;
+mod power;
 mod profiles;
 mod pty;
 mod ptyd;
@@ -67,6 +68,7 @@ pub fn run() {
         .manage(profiles::ProfilesLock::default())
         .manage(files::Searches::default())
         .manage(status::Shown::default())
+        .manage(power::Awake::default())
         .manage(cli_verbs::CliHub::default())
         .manage(keybindings::LastSent::default())
         .setup(move |app| {
@@ -223,6 +225,9 @@ pub fn run() {
             squads::squad_resume,
             squads::squad_stop,
             squads::squad_events,
+            power::keep_awake_get,
+            power::keep_awake_set,
+            power::keep_awake_agents,
             pty::pty_spawn,
             pty::pty_approve,
             pty::pty_write,
