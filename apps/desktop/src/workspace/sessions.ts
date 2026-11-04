@@ -294,8 +294,8 @@ export class Sessions {
     this.clear(this.announce, id);
     this.clear(this.stale, id);
     const next = this.entry(old.tab.worktree, old.tab.profileId, old.tab.account, old.tab.cli, old.tab.resumeOf, old.tab.title);
-    // The pin and colour belong to the slot, not to the pty.
-    next.tab = { ...next.tab, pinned: old.tab.pinned, color: old.tab.color };
+    // The pin and colour belong to the slot, not to the pty; so does the agent's session id, which a restart must not lose.
+    next.tab = { ...next.tab, pinned: old.tab.pinned, color: old.tab.color, agentSession: old.tab.agentSession };
     const kept = [...this.entries].map(([key, e]): [string, Entry] => (key === id ? [next.tab.id, next] : [key, e]));
     this.entries.clear();
     for (const [key, e] of kept) this.entries.set(key, e);
