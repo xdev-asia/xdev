@@ -66,13 +66,13 @@ it("opens General first and switches to Vaults", () => {
     en("keys.title"),
     en("qcmd.title"),
   ]);
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", ...Array(12).fill(undefined)]);
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", ...Array(13).fill(undefined)]);
   expect(v.shown().type).toBe(GeneralPage);
   expect(v.shown().props.api).toBe(v.api);
   expect(v.shown().props.onChanged).toBe(v.onChanged);
 
-  v.items()[10].props.onClick();
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual([...Array(10).fill(undefined), "page", undefined, undefined]);
+  v.items()[11].props.onClick();
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual([...Array(11).fill(undefined), "page", undefined, undefined]);
   expect(v.shown().type).toBe(VaultsSettings);
   expect(v.body().props["aria-label"]).toBe(en("settings.vaults.title"));
 });
@@ -89,8 +89,8 @@ it("an unknown initial section falls back to the first", () => {
 
 it("lists notifications after usage and opens its page", () => {
   const v = view();
-  v.items()[4].props.onClick();
-  expect(v.items()[4].props["aria-current"]).toBe("page");
+  v.items()[5].props.onClick();
+  expect(v.items()[5].props["aria-current"]).toBe("page");
   expect(v.shown().type).toBe(NotificationsPage);
   expect(v.body().props["aria-label"]).toBe(en("settings.notifications.title"));
   hooks.values = [];
@@ -99,8 +99,8 @@ it("lists notifications after usage and opens its page", () => {
 
 it("lists terminal after notifications and opens its page", () => {
   const v = view();
-  v.items()[5].props.onClick();
-  expect(v.items()[5].props["aria-current"]).toBe("page");
+  v.items()[6].props.onClick();
+  expect(v.items()[6].props["aria-current"]).toBe("page");
   expect(v.shown().type).toBe(TerminalPage);
   expect(v.body().props["aria-label"]).toBe(en("settings.terminal.title"));
   hooks.values = [];
@@ -185,7 +185,7 @@ it("a palette target opens its section with the filter holding every id and the 
 it("hands a section the way to open another one", () => {
   const v = view();
   v.shown().props.openSection("openIn");
-  expect(v.items()[8].props["aria-current"]).toBe("page");
+  expect(v.items()[9].props["aria-current"]).toBe("page");
   expect(v.body().props["aria-label"]).toBe(en("openIn.title"));
   hooks.values = [];
   const w = view();
