@@ -21,6 +21,7 @@ pub enum TrayItem {
     Settings,
     CheckUpdates,
     Separator,
+    QuitEndAll,
     Quit,
 }
 
@@ -33,9 +34,15 @@ pub fn tray_items(os: Os) -> Vec<TrayItem> {
             TrayItem::Settings,
             TrayItem::CheckUpdates,
             TrayItem::Separator,
+            TrayItem::QuitEndAll,
             TrayItem::Quit,
         ],
-        Os::Windows => vec![TrayItem::Open, TrayItem::Separator, TrayItem::Quit],
+        Os::Windows => vec![
+            TrayItem::Open,
+            TrayItem::Separator,
+            TrayItem::QuitEndAll,
+            TrayItem::Quit,
+        ],
         Os::Linux => Vec::new(),
     }
 }
@@ -111,6 +118,7 @@ mod native {
     const ID_OPEN: &str = "tray-open";
     const ID_SETTINGS: &str = "tray-settings";
     const ID_UPDATES: &str = "tray-updates";
+    const ID_QUIT_END_ALL: &str = "quit-end-all";
     const ID_QUIT: &str = "tray-quit";
 
     fn label(item: TrayItem, l: &ShellLabels) -> &str {
@@ -118,6 +126,7 @@ mod native {
             TrayItem::Open => &l.tray_open,
             TrayItem::Settings => &l.settings,
             TrayItem::CheckUpdates => &l.check_updates,
+            TrayItem::QuitEndAll => &l.quit_end_all,
             TrayItem::Quit => &l.quit,
             TrayItem::Separator => "",
         }
@@ -128,6 +137,7 @@ mod native {
             TrayItem::Open => ID_OPEN,
             TrayItem::Settings => ID_SETTINGS,
             TrayItem::CheckUpdates => ID_UPDATES,
+            TrayItem::QuitEndAll => ID_QUIT_END_ALL,
             TrayItem::Quit => ID_QUIT,
             TrayItem::Separator => "",
         }
@@ -179,6 +189,8 @@ mod native {
             ID_OPEN => show_window(app),
             ID_SETTINGS => emit(app, MenuAction::OpenSettings),
             ID_UPDATES => emit(app, MenuAction::CheckUpdates),
+            // The webview confirms first: ending every terminal is not undone.
+            ID_QUIT_END_ALL => emit(app, MenuAction::QuitEndAll),
             ID_QUIT => shell::quit(app, QuitMode::Quit),
             _ => {}
         }
@@ -272,7 +284,12 @@ mod tests {
     fn the_menu_per_os() {
         assert_eq!(
             tray_items(Os::Windows),
-            [TrayItem::Open, TrayItem::Separator, TrayItem::Quit]
+            [
+                TrayItem::Open,
+                TrayItem::Separator,
+                TrayItem::QuitEndAll,
+                TrayItem::Quit
+            ]
         );
         assert_eq!(
             tray_items(Os::Macos),
@@ -281,6 +298,7 @@ mod tests {
                 TrayItem::Settings,
                 TrayItem::CheckUpdates,
                 TrayItem::Separator,
+                TrayItem::QuitEndAll,
                 TrayItem::Quit
             ]
         );

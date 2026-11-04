@@ -2,10 +2,10 @@ import { useState } from "react";
 import type { JSX } from "react";
 import { Icon, Menu, Popover } from "@xdev-asia/ui";
 import type { MenuEntry } from "@xdev-asia/ui";
-import type { HelpLink } from "@/api";
+import type { Api, HelpLink } from "@/api";
 import { useI18n } from "@/i18n";
 
-export type HelpPick = "shortcuts" | HelpLink | "about" | "restart";
+export type HelpPick = "shortcuts" | HelpLink | "check-updates" | "reload" | "devtools" | "about" | "restart";
 
 type HelpItem = { id: HelpPick; key: string } | { id: "separator" };
 
@@ -19,9 +19,36 @@ export const HELP_ITEMS: HelpItem[] = [
   { id: "report-issue", key: "reportIssue" },
   { id: "source", key: "source" },
   { id: "separator" },
+  { id: "check-updates", key: "checkUpdates" },
+  { id: "reload", key: "reload" },
+  { id: "devtools", key: "devtools" },
+  { id: "separator" },
   { id: "about", key: "about" },
   { id: "restart", key: "restart" },
 ];
+
+/** What a Help menu pick does: the pages of the app it opens, and the shell calls it makes. */
+export function runHelpPick(
+  pick: HelpPick,
+  h: { openSettings(page: "keys" | "general"): void; openAbout(): void; api: Pick<Api, "shellQuit" | "helpOpen" | "windowReload" | "windowDevtoolsToggle"> },
+): void {
+  switch (pick) {
+    case "shortcuts":
+      return h.openSettings("keys");
+    case "check-updates":
+      return h.openSettings("general");
+    case "about":
+      return h.openAbout();
+    case "restart":
+      return void h.api.shellQuit("restart").catch(() => {});
+    case "reload":
+      return void h.api.windowReload().catch(() => {});
+    case "devtools":
+      return void h.api.windowDevtoolsToggle().catch(() => {});
+    default:
+      return void h.api.helpOpen(pick).catch(() => {});
+  }
+}
 
 export function HelpMenu(props: { onPick(pick: HelpPick): void }): JSX.Element {
   const { t } = useI18n();
