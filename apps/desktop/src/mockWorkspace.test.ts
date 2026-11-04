@@ -452,6 +452,26 @@ describe("mock repo hooks", () => {
     expect((await api.worktreeCreate(repo.id, "🚀 launch", null)).worktree).toMatchObject({ branch: "launch", title: "🚀 launch" });
   });
 
+  it("puts a worktree on an existing local branch and refuses a taken or unknown one", async () => {
+    const api = createMockWorkspace();
+    const [repo] = await api.workspaceList();
+    const { worktree: wt } = await api.worktreeCreate(repo.id, "", null, { existing: "develop", sparse: [] });
+    expect(wt).toMatchObject({ branch: "develop", name: "develop", autoName: false });
+    expect(await api.worktreeRemove(wt.path, false, true)).toMatchObject({ deletedBranch: null });
+    await expect(api.worktreeCreate(repo.id, "", null, { existing: "main", sparse: [] })).rejects.toMatchObject({ code: "branch_in_use" });
+    await expect(api.worktreeCreate(repo.id, "", null, { existing: "nope", sparse: [] })).rejects.toMatchObject({ code: "bad_ref" });
+  });
+
+  it("checks the sparse folders", async () => {
+    const api = createMockWorkspace();
+    const [repo] = await api.workspaceList();
+    for (const bad of ["../out", "/abs", "-x", "a\\..\\b", " "]) {
+      await expect(api.worktreeCreate(repo.id, "s", null, { existing: null, sparse: [bad] })).rejects.toMatchObject({ code: "bad_sparse" });
+    }
+    await expect(api.worktreeCreate(repo.id, "s", null, { existing: null, sparse: Array.from({ length: 51 }, (_, i) => `d${i}`) })).rejects.toMatchObject({ code: "bad_sparse" });
+    expect((await api.worktreeCreate(repo.id, "s", null, { existing: null, sparse: ["src", "docs/api"] })).worktree.branch).toBe("s");
+  });
+
   it("previews the name a create would get, without making anything", async () => {
     const api = createMockWorkspace();
     const [repo] = await api.workspaceList();
