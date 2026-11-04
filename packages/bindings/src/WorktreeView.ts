@@ -24,4 +24,13 @@ parent: string | null, item: WorkItem | null, madeBy: MadeBy,
 /**
  * On the repo's base branch (by its short name).
  */
-defaultBranch: boolean, };
+defaultBranch: boolean, 
+/**
+ * The branch name was picked by the app and may still be renamed from
+ * the first prompt.
+ */
+autoName: boolean, 
+/**
+ * When the app CLI last created or changed it; absent when it never did.
+ */
+setByCliMs?: number, };

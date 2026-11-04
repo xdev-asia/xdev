@@ -68,20 +68,28 @@ pub fn open_vault(
 ) -> Result<Vec<DocEntry>, CmdError> {
     let local_dir = crate::accounts::local_dir(&state)?;
     let emitter = app.clone();
-    let entries = state
-        .session
-        .open(local_dir, Path::new(&path), move |paths| {
-            // Fails only once the app is shutting down; nobody is listening.
-            let _ = emitter.emit(CHANGED_EVENT, Changed { paths });
-        })?;
-
-    // Losing this only costs the user one folder pick on the next launch,
-    // so it must not fail an open that worked.
+    let entries = open_vault_in(&state.session, local_dir, &path, move |paths| {
+        // Fails only once the app is shutting down; nobody is listening.
+        let _ = emitter.emit(CHANGED_EVENT, Changed { paths });
+    })?;
+    // DocsApp still boots from last_vault until U9; B4 removes this write.
     let _ = settings_store::write(&app, &[SettingsSection::Vault], |s| {
         s.last_vault = Some(path);
         s.vault_prompted = true;
     });
     Ok(entries)
+}
+
+/// Opens `path` as the one vault of the session. It writes no setting: the
+/// vault list in the registry says which vaults exist, and the UI keeps the
+/// source it showed last.
+fn open_vault_in(
+    session: &Shared,
+    local_dir: &Path,
+    path: &str,
+    on_changed: impl Fn(Vec<String>) + Send + 'static,
+) -> Result<Vec<DocEntry>, CmdError> {
+    Ok(session.open(local_dir, Path::new(path), on_changed)?)
 }
 
 #[tauri::command(async)]
@@ -141,10 +149,11 @@ pub fn set_git_settings(
         .map(|s| s.git)
 }
 
-/// Settings → Terminal as stored; the defaults when nothing is.
+/// Settings → Terminal as stored, clamped so a hand-edited file never reaches xterm out of
+/// range; the defaults when nothing is stored.
 #[tauri::command(async)]
 pub fn terminal_settings_get(app: AppHandle) -> settings::TerminalSettings {
-    settings_store::read(&app).terminal
+    settings_store::read(&app).terminal.clamped()
 }
 
 /// Stores Settings → Terminal with every number clamped to its range, and
@@ -274,6 +283,23 @@ pub fn agents_settings_put(
 ) -> Result<settings::AgentsSettings, CmdError> {
     settings_store::write(&app, &[SettingsSection::Agents], |s| s.agents = settings)
         .map(|s| s.agents)
+}
+
+/// Settings → Stats & Usage as stored; the defaults when nothing is.
+#[tauri::command(async)]
+pub fn usage_settings_get(app: AppHandle) -> settings::UsageSettings {
+    settings_store::read(&app).usage
+}
+
+/// Stores Settings → Stats & Usage and returns what was stored. A cache
+/// lifetime that is not one of the two known ones is stored as the short one.
+#[tauri::command(async)]
+pub fn usage_settings_put(
+    app: AppHandle,
+    settings: settings::UsageSettings,
+) -> Result<settings::UsageSettings, CmdError> {
+    let settings = settings.normalized();
+    settings_store::write(&app, &[SettingsSection::Usage], |s| s.usage = settings).map(|s| s.usage)
 }
 
 /// The global git `user.name` that the git-username prefix shows; a repo's
@@ -535,6 +561,25 @@ mod tests {
 
     fn code_of(e: impl Into<CoreError>) -> &'static str {
         CmdError::from(e.into()).code
+    }
+
+    #[test]
+    fn open_vault_leaves_the_last_vault_setting_alone() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("a.md"), "# A").unwrap();
+        let store = settings_store::SettingsStore::new(data.path().join("settings.json"));
+        store
+            .update(|s| s.last_vault = Some("D:/elsewhere".into()))
+            .unwrap();
+        let before = store.read();
+
+        let session = Shared::default();
+        let path = root.path().to_string_lossy().into_owned();
+        let entries = open_vault_in(&session, data.path(), &path, |_| {}).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(store.read(), before);
+        assert_eq!(store.read().last_vault.as_deref(), Some("D:/elsewhere"));
     }
 
     #[test]

@@ -5,11 +5,6 @@ on:
     branches: [main]
   pull_request:
 
-# packages: read lets GITHUB_TOKEN install @xdev-asia/ui from GitHub Packages.
-permissions:
-  contents: read
-  packages: read
-
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -26,6 +21,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
 
       - name: Install Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
@@ -45,14 +42,11 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      # pnpm reads registry credentials only from user-level config.
-      - name: Install dependencies
-        run: |
-          echo '//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}' > "$NPM_CONFIG_USERCONFIG"
-          pnpm install --frozen-lockfile
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/.npmrc
+      - name: Check submodule
+        shell: bash
+        run: test -f packages/xdev-ui/package.json || { echo "run: git submodule update --init --recursive"; exit 1; }
+
+      - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
       - run: pnpm -r test
 

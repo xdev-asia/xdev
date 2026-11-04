@@ -21,12 +21,12 @@ use xdev_git::{ChangeKind, GitError, Repo};
 use xdev_policy::{Action, Verdict};
 use xdev_workspace::{
     CreateOptions, CreateProject, Created, DetailsPatch, FolderEntry, HookKind, HookRun, Linked,
-    NamePreview, Registry, Removed, RepoHooks, RepoPatch, RepoView, ScriptSource, SetupPolicy,
-    SidebarItem, VaultView, WorkspaceError, WorktreeStat, WorktreeView, add_repo, add_vault,
-    adopt_worktree, archive_worktree, create_project, create_worktree_linked, forget_repo,
-    forget_vault, hooks_for, kept_delete, list, list_vaults, name_preview, path_key, refresh_base,
-    remove_worktree, repo_docs_dir, restore_worktree, set_details, set_order, set_pinned,
-    shared_to_link, sidebar, stat, trust_hook, update_repo,
+    NamePreview, Registry, Removed, RepoHooks, RepoPatch, RepoView, SidebarItem, VaultView,
+    WorkspaceError, WorktreeStat, WorktreeView, add_repo, add_vault, adopt_worktree,
+    archive_worktree, create_project, create_worktree_linked, forget_repo, forget_vault, hooks_for,
+    kept_delete, list, list_vaults, name_preview, path_key, refresh_base, remove_worktree,
+    repo_docs_dir, restore_worktree, set_details, set_order, set_pinned, shared_to_link, sidebar,
+    stat, trust_hook, update_repo,
 };
 
 use crate::accounts::data_dir;
@@ -148,7 +148,7 @@ pub(crate) fn lock_guard(lock: &WorkspaceLock) -> std::sync::MutexGuard<'_, ()> 
 
 /// Loads the registry, runs `f`, and saves when `f` changed it. A failing
 /// `f` saves nothing.
-fn update<T>(
+pub(crate) fn update<T>(
     data: &Path,
     lock: &WorkspaceLock,
     f: impl FnOnce(&mut Registry) -> Result<T, WorkspaceError>,
@@ -161,6 +161,40 @@ fn update<T>(
         reg.save(data)?;
     }
     Ok(out)
+}
+
+/// Adopts the old single `last_vault` setting as a shared vault. Runs once at
+/// start; a second run finds the vault already listed and does nothing.
+/// `last_vault` is cleared in U9, once DocsView no longer boots from it.
+pub fn migrate_last_vault(
+    data: &Path,
+    lock: &WorkspaceLock,
+    settings: &crate::settings_store::SettingsStore,
+) -> Result<bool, CmdError> {
+    let Some(last) = settings.read().last_vault else {
+        return Ok(false);
+    };
+    let adopted = update(data, lock, |reg| {
+        Ok(xdev_workspace::adopt_last_vault(
+            reg,
+            Some(Path::new(&last)),
+        ))
+    })?;
+    Ok(adopted)
+}
+
+/// `migrate_last_vault` at start. Best effort: a failure leaves the setting
+/// in place for the next launch.
+pub fn start_migrations(app: &AppHandle) {
+    let (Some(data), Some(store)) = (
+        app.state::<AppState>().data_dir.clone(),
+        crate::settings_store::store(app),
+    ) else {
+        return;
+    };
+    if let Err(e) = migrate_last_vault(&data, &app.state::<WorkspaceLock>(), &store) {
+        eprintln!("last vault migration: {}", e.code);
+    }
 }
 
 /// Clears the staging folders a crash left behind, under the workspace lock
@@ -424,6 +458,8 @@ pub fn repo_forget(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "type", rename_all = "camelCase")]
+// One event per progress line, a few per clone: the size gap costs nothing.
+#[allow(clippy::large_enum_variant)]
 pub enum CloneProgress {
     /// A git progress phase such as `Receiving objects`.
     Phase {
@@ -432,7 +468,7 @@ pub enum CloneProgress {
     },
     /// Cloned and added to the workspace.
     Done {
-        repo: RepoView,
+        repo: Box<RepoView>,
     },
     Error {
         message: String,
@@ -595,7 +631,9 @@ fn clone_with(
     });
     match added {
         Ok(repo) => {
-            send(CloneProgress::Done { repo: repo.clone() });
+            send(CloneProgress::Done {
+                repo: Box::new(repo.clone()),
+            });
             Ok(repo)
         }
         Err(mut e) => {
@@ -653,28 +691,12 @@ fn trash_folder(path: &Path) -> io::Result<()> {
 }
 
 #[tauri::command(async)]
-#[allow(clippy::too_many_arguments)]
 pub fn repo_update(
     state: State<'_, AppState>,
     lock: State<'_, WorkspaceLock>,
     id: String,
-    short_name: Option<String>,
-    base_ref: Option<String>,
-    worktree_root: Option<PathBuf>,
-    setup_policy: Option<SetupPolicy>,
-    script_source: Option<ScriptSource>,
-    local_setup: Option<String>,
-    local_archive: Option<String>,
+    patch: RepoPatch,
 ) -> Result<RepoView, CmdError> {
-    let patch = RepoPatch {
-        short_name,
-        base_ref,
-        worktree_root,
-        setup_policy,
-        script_source,
-        local_setup,
-        local_archive,
-    };
     update(data_dir(&state)?, &lock, |reg| update_repo(reg, &id, patch))
 }
 
@@ -959,6 +981,22 @@ pub fn worktree_name_preview(
         Registry::load(data_dir(&state)?)?
     };
     Ok(name_preview(&reg, &repo_id, &name, &git.create_options())?)
+}
+
+/// Renames the branch of a worktree, keeping its prefix; see
+/// `xdev_workspace::rename_branch`.
+#[tauri::command(async)]
+pub fn worktree_rename_branch(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    path: PathBuf,
+    name: String,
+) -> Result<WorktreeView, CmdError> {
+    let opts = load_git_settings(&app).create_options();
+    update(data_dir(&state)?, &lock, |reg| {
+        xdev_workspace::rename_branch(reg, &path, &name, &opts)
+    })
 }
 
 #[tauri::command(async)]
@@ -1762,6 +1800,60 @@ mod tests {
     }
 
     #[test]
+    fn migrate_last_vault_adopts_once_and_keeps_the_setting() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let shared = fx.main.parent().unwrap().join("old notes");
+        fs::create_dir(&shared).unwrap();
+        let file = fx.main.parent().unwrap().join("settings.json");
+        let store = crate::settings_store::SettingsStore::new(file);
+        store
+            .update(|s| s.last_vault = Some(shared.to_string_lossy().into_owned()))
+            .unwrap();
+
+        assert!(migrate_last_vault(&fx.data, &lock, &store).unwrap());
+        assert_eq!(
+            store.read().last_vault.as_deref(),
+            Some(shared.to_string_lossy().as_ref())
+        );
+        let reg = Registry::load(&fx.data).unwrap();
+        assert_eq!(reg.vaults.len(), 1);
+        assert_eq!(reg.vaults[0].path, shared);
+
+        // Nothing is left to do the second time.
+        assert!(!migrate_last_vault(&fx.data, &lock, &store).unwrap());
+        assert_eq!(Registry::load(&fx.data).unwrap(), reg);
+
+        // A path that is a repo's docs folder is not adopted.
+        let docs = fx.main.join("docs");
+        store
+            .update(|s| s.last_vault = Some(docs.to_string_lossy().into_owned()))
+            .unwrap();
+        assert!(!migrate_last_vault(&fx.data, &lock, &store).unwrap());
+        assert!(store.read().last_vault.is_some());
+        assert_eq!(Registry::load(&fx.data).unwrap(), reg);
+    }
+
+    #[test]
+    fn vault_create_docs_uses_the_repo_docs_dir() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let id = Registry::load(&fx.data).unwrap().repos[0].id.clone();
+        let patch = RepoPatch {
+            docs_dir: Some("handbook/en".to_owned()),
+            ..RepoPatch::default()
+        };
+        update(&fx.data, &lock, |reg| update_repo(reg, &id, patch)).unwrap();
+        let view = vault_create_docs_in(&fx.data, &id, "Start.md", "# Hi").unwrap();
+        assert!(view.exists);
+        assert_eq!(
+            fs::read_to_string(fx.main.join("handbook/en/Start.md")).unwrap(),
+            "# Hi"
+        );
+        assert!(!fx.main.join("docs").exists());
+    }
+
+    #[test]
     fn adopt_through_lock_records_the_worktree_once() {
         let fx = fixture();
         let lock = WorkspaceLock::default();
@@ -2084,7 +2176,12 @@ mod tests {
         assert_eq!(repo.short_name, "origin");
         let reg = Registry::load(&fx.data).unwrap();
         assert!(reg.repos.iter().any(|r| r.id == repo.id));
-        assert_eq!(events.last(), Some(&CloneProgress::Done { repo }));
+        assert_eq!(
+            events.last(),
+            Some(&CloneProgress::Done {
+                repo: Box::new(repo)
+            })
+        );
         assert!(trashed.0.borrow().is_empty());
     }
 

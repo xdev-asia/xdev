@@ -1,3 +1,4 @@
+import { Icon } from "@xdev-asia/ui";
 import { useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { useI18n } from "@/i18n";
@@ -27,9 +28,7 @@ export function Toasts(): JSX.Element | null {
             </button>
           ))}
           <button type="button" className="ws-icon-btn" aria-label={t("toast.close")} title={t("toast.close")} onClick={() => dismissToast(toast.id)}>
-            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M6 6l12 12M18 6 6 18" />
-            </svg>
+            <Icon name="close" size={12} style={{ strokeWidth: 2 }} />
           </button>
         </div>
       ))}

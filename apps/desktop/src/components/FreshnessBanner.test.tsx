@@ -23,7 +23,7 @@ function render(freshness: Freshness, draft = "", disabled = false): string {
 }
 
 function verifyButton(html: string): string {
-  return /<button[^>]*class="freshness-verify"[^>]*>/.exec(html)?.[0] ?? "";
+  return /<button[^>]*class="(?:[^"]* )?freshness-verify(?: [^"]*)?"[^>]*>/.exec(html)?.[0] ?? "";
 }
 
 const stale: Freshness = {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
-import { LAYOUT_VERSION, type LayoutSnapshot, type TabSnapshot } from "./layoutSnapshot";
+import { LAYOUT_VERSION, restoredAccount, type LayoutSnapshot, type TabSnapshot } from "./layoutSnapshot";
 import { leaves } from "./paneTree";
 import { Sessions } from "./sessions";
 
@@ -282,5 +282,43 @@ describe("Sessions.restore: the terminal service", () => {
     const report = await s.restore(snap({ [A]: one({ t1: shell({ ptyId: "sh-1" }), t2: shell() }) }), "agentsOnly", never);
     expect(report.attached).toBe(1);
     expect(s.tabs(A).map((t) => t.id)).toEqual(["sh-1"]);
+  });
+});
+
+describe("restored accounts", () => {
+  // The mock's active Claude account is claude-2.
+  let sessions: Sessions | null = null;
+  afterEach(() => {
+    sessions?.dispose();
+    sessions = null;
+  });
+  const restored = async (over: Partial<Extract<TabSnapshot, { kind: "terminal" }>>) => {
+    const s = (sessions = new Sessions(createMockApi({})));
+    await s.restore(snap({ [A]: one({ t1: claude({ agentSession: "abc", ...over }) }) }), "all", never);
+    return s.tabs(A)[0];
+  };
+
+  it("a tab that followed the active account follows it again while it is still the active one", async () => {
+    const tab = await restored({ account: "claude-2", accountSource: "active" });
+    expect(tab.account).toBeNull();
+  });
+
+  it("a tab that followed the active account but would now get another is pinned to the saved one", async () => {
+    const tab = await restored({ account: "claude-3", accountSource: "active" });
+    expect(tab.account).toBe("claude-3");
+  });
+
+  it("a tab's own pick stays pinned, and an older snapshot's account is read as one", async () => {
+    expect((await restored({ account: "claude-3", accountSource: "tab" })).account).toBe("claude-3");
+    sessions?.dispose();
+    expect((await restored({ account: "claude-3" })).account).toBe("claude-3");
+  });
+
+  it("restoredAccount: a profile's account is looked up again, and an unreadable active account does not pin", () => {
+    const active = new Map<string, string | null>([["claude", "claude-2"]]);
+    expect(restoredAccount({ account: "x", accountSource: "profile" }, "claude", active)).toBeNull();
+    expect(restoredAccount({ account: "x", accountSource: "active" }, "claude", null)).toBeNull();
+    expect(restoredAccount({ account: null, accountSource: "active" }, "claude", active)).toBe(null);
+    expect(restoredAccount({ account: "claude-2", accountSource: "active" }, null, active)).toBeNull();
   });
 });

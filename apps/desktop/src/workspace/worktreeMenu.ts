@@ -17,6 +17,8 @@ export interface WorktreeMenuContext {
   onRemove(): void;
   /** Opens the details dialog; without it the item is left out. */
   onEditDetails?(): void;
+  /** Opens the rename branch dialog; without it the item is left out. */
+  onRenameBranch?(): void;
   /** Archives the worktree (folder goes, branch stays); without it the item is left out. */
   onArchive?(): void;
 }
@@ -85,6 +87,7 @@ export function worktreeMenuItems(ctx: WorktreeMenuContext): MenuItem[] {
     { id: "copyBranch", labelKey: "worktreeMenu.copyBranch", disabled: !wt.branch, run: () => wt.branch && ctx.copy(wt.branch) },
     SEP("sep1"),
     { id: "pin", labelKey: wt.pinned ? "workspace.unpin" : "workspace.pin", run: ctx.onPin },
+    ...(ctx.onRenameBranch && !wt.primary ? [{ id: "renameBranch", labelKey: "branchRename.menu", disabled: wt.branch === null, run: ctx.onRenameBranch }] : []),
     ...(ctx.onEditDetails && !wt.primary ? [{ id: "details", labelKey: "workspace.details.menu", run: ctx.onEditDetails }] : []),
     ...read,
     // The primary checkout is the repo itself: it can be pinned but never removed.

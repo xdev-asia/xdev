@@ -3,6 +3,7 @@
 
 mod clone;
 mod commit;
+mod conflict;
 mod diff;
 mod gh;
 mod history;
@@ -17,11 +18,12 @@ mod worktree;
 use std::path::{Path, PathBuf};
 
 pub use clone::{CloneEvent, check_clone_url, clone_name, clone_repo, parse_progress};
+pub use conflict::{ConflictOp, ConflictState};
 pub use gh::{
-    Check, CheckBucket, GhExec, GhOutput, ISSUE_BODY_MAX, ISSUE_LIMIT_MAX, Issue, IssueComment,
-    IssueDetail, IssueQuery, IssueState, PrDraft, PrState, PrView, SystemGh, issue_list,
-    issue_open_web, issue_view, parse_issue_ref, pr_checks, pr_create, pr_open_web, pr_view,
-    repo_name, run_failed_log,
+    Check, CheckBucket, GhAccount, GhEnv, GhExec, GhLogin, GhOutput, ISSUE_BODY_MAX,
+    ISSUE_LIMIT_MAX, Issue, IssueComment, IssueDetail, IssueQuery, IssueState, PrDraft, PrState,
+    PrView, SystemGh, TokenGh, gh_logins, issue_list, issue_open_web, issue_view, parse_issue_ref,
+    pr_checks, pr_create, pr_open_web, pr_view, repo_name, run_failed_log,
 };
 pub use history::Commit;
 pub use remote::{BaseRange, BaseRefresh, Upstream};
@@ -51,6 +53,9 @@ pub enum GitError {
     Diverged,
     #[error("gh not found")]
     GhMissing,
+    /// The login a repo is bound to is no longer in `gh`.
+    #[error("the bound gh login is gone")]
+    GhAccountMissing,
     #[error("gh is not logged in")]
     GhAuth,
     #[error("the repo has no GitHub remote")]
@@ -63,6 +68,10 @@ pub enum GitError {
     IssueOtherRepo(String),
     #[error("a commit hook failed: {output}")]
     Hook { output: String },
+    #[error("a file is still unmerged")]
+    StillConflicted,
+    #[error("no merge, rebase, cherry-pick or revert in progress")]
+    NoConflict,
     #[error("timeout")]
     Timeout,
     #[error("not a clone URL xDev accepts: {0}")]
@@ -92,6 +101,7 @@ impl GitError {
             GitError::Diverged => "pull_diverged",
             GitError::GhMissing => "gh_missing",
             GitError::GhAuth => "gh_auth",
+            GitError::GhAccountMissing => "gh_account_missing",
             GitError::NotGithub => "not_github",
             GitError::Gh(_) => "gh_failed",
             GitError::IssueNotFound => "issue_not_found",
@@ -99,6 +109,8 @@ impl GitError {
             GitError::Hook { .. } => "hook_failed",
             GitError::BadUrl(_) => "bad_arg",
             GitError::Cancelled => "cancelled",
+            GitError::StillConflicted => "still_conflicted",
+            GitError::NoConflict => "no_conflict",
             GitError::BadId(_) | GitError::Timeout | GitError::Failed { .. } => "git",
             GitError::Io(_) => "io",
         }

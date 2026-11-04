@@ -9,10 +9,11 @@ describe("BrandMark", () => {
     expect(markup).toMatch(/^<svg /);
     expect(markup).toContain('width="18"');
     expect(markup).toContain('height="18"');
-    expect(markup).toContain('class="ws-logo"');
+    expect(markup).toContain('class="x-mark ws-logo"');
     expect(markup).toContain('fill="currentColor"');
     expect(markup).toContain('aria-hidden="true"');
     expect(markup).not.toContain("<img");
+    expect(markup).not.toContain('role="img"');
   });
 
   it("matches the geometry of the brand asset", () => {

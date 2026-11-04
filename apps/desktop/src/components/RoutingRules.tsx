@@ -1,4 +1,4 @@
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import { PROVIDERS, toApiError, type Api, type ApiError, type Models, type RouteRule } from "@/api";
 import { useI18n } from "@/i18n";

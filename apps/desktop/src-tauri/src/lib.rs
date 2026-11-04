@@ -3,7 +3,9 @@ mod agent_sessions;
 mod atomic;
 #[cfg(test)]
 mod bindings;
+mod cli_verbs;
 mod commands;
+mod endpoint;
 mod files;
 mod hooks;
 mod issues;
@@ -48,6 +50,7 @@ pub fn run() {
     }
     let sync_local = local_dir.clone();
     let ptyd_local = local_dir.clone();
+    let endpoint_local = local_dir.clone();
     let hooks_dir = local_dir
         .as_ref()
         .map(|local| local.join(xdev_agent::HOOKS_DIR));
@@ -64,6 +67,7 @@ pub fn run() {
         .manage(profiles::ProfilesLock::default())
         .manage(files::Searches::default())
         .manage(status::Shown::default())
+        .manage(cli_verbs::CliHub::default())
         .manage(keybindings::LastSent::default())
         .setup(move |app| {
             updater::start(app.handle().clone());
@@ -72,6 +76,7 @@ pub fn run() {
             if let Some(file) = commands::settings_path(app.handle()) {
                 app.manage(settings_store::SettingsStore::new(file));
             }
+            workspace::start_migrations(app.handle());
             // Off the main thread: starting the service may take a moment.
             {
                 let app = app.handle().clone();
@@ -86,6 +91,25 @@ pub fn run() {
                 eprintln!("hooks marker: {e}");
             }
             status::listen_clicks(app.handle());
+            // The `xdev` CLI's way in; without it the app runs as before.
+            if let Some(local) = &endpoint_local {
+                let handler = std::sync::Arc::new(cli_verbs::AppVerbs {
+                    app: app.handle().clone(),
+                });
+                let now = workspace::clock().0;
+                match endpoint::start(
+                    &xdev_ipc::app_dir(local),
+                    endpoint::PREFIX,
+                    xdev_core::version(),
+                    now,
+                    handler,
+                ) {
+                    Ok(running) => {
+                        app.manage(running);
+                    }
+                    Err(e) => eprintln!("app endpoint: {e}"),
+                }
+            }
             // Without it an edit on disk shows only after a restart.
             let last = app.state::<keybindings::LastSent>().inner().clone();
             match keybindings::watch(app.handle().clone(), last) {
@@ -140,6 +164,8 @@ pub fn run() {
             commands::diff_settings_put,
             commands::agents_settings_get,
             commands::agents_settings_put,
+            commands::usage_settings_get,
+            commands::usage_settings_put,
             keybindings::keybindings_read,
             keybindings::keybindings_write,
             keybindings::keybindings_reveal,
@@ -232,6 +258,7 @@ pub fn run() {
             workspace::repo_create,
             workspace::worktree_name_preview,
             workspace::repo_update,
+            ship::gh_logins,
             workspace::repo_hooks,
             workspace::repo_hook_trust,
             workspace::worktree_archive_run,
@@ -283,6 +310,11 @@ pub fn run() {
             ship::worktree_force_push,
             review::worktree_discard,
             review::worktree_stage_state,
+            review::worktree_conflicts,
+            review::worktree_conflict_continue,
+            review::worktree_conflict_abort,
+            ship::worktree_suggest_branch,
+            workspace::worktree_rename_branch,
             ship::worktree_amend,
             ship::worktree_pr,
             ship::worktree_pr_create,
@@ -306,6 +338,7 @@ pub fn run() {
             kit::kit_skill_remove,
             kit::kit_skill_restore,
             kit::kit_usage,
+            kit::kit_usage_report,
             kit::kit_paths_exist,
             kit::kit_prompt_history,
             agent_sessions::agent_sessions,
@@ -317,6 +350,8 @@ pub fn run() {
             quick_commands::quick_commands_recent,
             quick_commands::repo_file_commands,
             quick_commands::repo_file_commands_trust,
+            cli_verbs::cli_tabs_report,
+            cli_verbs::cli_approve,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
@@ -324,6 +359,11 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 let on_quit = settings_store::read(app).terminal.on_quit;
                 app.state::<pty::Ptys>().quit(on_quit);
+                if let Some(running) = app.try_state::<endpoint::Running>() {
+                    running.stop();
+                }
+                // Every `terminal wait` ends with `app_stopped`.
+                app.state::<cli_verbs::CliHub>().board.stop();
                 updater::install_pending(app);
             }
         });

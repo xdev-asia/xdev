@@ -55,15 +55,39 @@ async function mount(recipes: GitRecipes = DEFAULT_GIT_SETTINGS.recipes) {
   return { onChange, all, row, within, field, chip, reset, preview };
 }
 
-it("lists the five recipes with their variables, and args only for the drafts", async () => {
+it("lists the six recipes with their variables, and args only for the drafts", async () => {
   const v = await mount();
   const ids = v.all().filter((n) => n.type === "details").map((n) => n.props["data-recipe"]);
-  expect(ids).toEqual(["commitMessage", "pullRequest", "fixCommitFailure", "fixPushFailure", "fixChecks"]);
+  expect(ids).toEqual(["commitMessage", "pullRequest", "fixCommitFailure", "fixPushFailure", "fixChecks", "resolveConflicts"]);
+  expect(v.field("resolveConflicts", "input", "args")).toBeUndefined();
+  const conflict = v.within("resolveConflicts").filter((n) => n.props["data-var"]).map((n) => n.props["data-var"]);
+  expect(conflict).toEqual(["basePrompt", "branch", "operation", "files", "onto"]);
   expect(v.field("commitMessage", "input", "args")).toBeDefined();
   expect(v.field("pullRequest", "input", "args")).toBeDefined();
   for (const id of ["fixCommitFailure", "fixPushFailure", "fixChecks"]) expect(v.field(id, "input", "args")).toBeUndefined();
   const names = v.within("fixChecks").filter((n) => n.props["data-var"]).map((n) => n.props["data-var"]);
   expect(names).toEqual(["basePrompt", "branch", "checkName", "workflow", "link", "log"]);
+});
+
+it("lists only the asked recipes without the heading, and the branch name one drafts", async () => {
+  const api = createMockApi({});
+  const draw = () => {
+    hooks.cursor = 0;
+    hooks.active = true;
+    try { return RecipesEditor({ api, recipes: DEFAULT_GIT_SETTINGS.recipes, onChange: vi.fn(), ids: ["branchName"], heading: false }); } finally { hooks.active = false; }
+  };
+  draw();
+  hooks.effects.forEach((e) => e());
+  await tick();
+  const all = nodes(draw());
+  expect(all.filter((n) => n.type === "details").map((n) => n.props["data-recipe"])).toEqual(["branchName"]);
+  expect(all.find((n) => n.type === "h4")).toBeUndefined();
+  // It runs through a runner like the drafts: args, and Claude or Codex only.
+  expect(all.find((n) => n.type === "input" && n.props.name === "recipe-branchName-args")).toBeDefined();
+  const names = all.filter((n) => n.props["data-var"]).map((n) => n.props["data-var"]);
+  expect(names).toEqual(["basePrompt", "firstPrompt", "assistantMessage"]);
+  const select = all.find((n) => n.type === "select")!;
+  expect(nodes(select).filter((n) => n.type === "option").map((n) => n.props.value)).toEqual(["", "claude", "codex"]);
 });
 
 it("offers the default agent first, and only Claude and Codex for a draft", async () => {

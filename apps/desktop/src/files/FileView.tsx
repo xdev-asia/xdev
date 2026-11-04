@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import type { JSX } from "react";
 import type { Api } from "@/api";
 import { useI18n } from "@/i18n";
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import { CodeEditor } from "./CodeEditor";
 import { useEditorSettings } from "./editorSettings";
 import { loadFile, saveFile } from "./fileIO";

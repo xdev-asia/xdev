@@ -7,6 +7,7 @@ mod memory;
 mod sessions;
 mod skills;
 mod usage;
+mod usage_report;
 mod write;
 
 pub use homes::{Agent, Home, HomeSource, KitError, approx_tokens, homes};
@@ -19,6 +20,7 @@ pub use skills::{Skill, SkillScope, scan_skills};
 pub use usage::{
     RefreshStats, SessionUsage, Tokens, UsageIndex, UsageQuery, UsageSummary, summarize,
 };
+pub use usage_report::{ReportQuery, UsageReport, report, under_any};
 pub use write::{
     Roots, copy_file, copy_skill_dir, new_skill, read_for_edit, remove_skill, restore_skill,
     write_checked,

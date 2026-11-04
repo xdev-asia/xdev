@@ -6183,6 +6183,7 @@ dependencies = [
  "xdev-agent",
  "xdev-ai",
  "xdev-core",
+ "xdev-ipc",
  "xdev-mcp",
  "xdev-policy",
 ]
@@ -6225,6 +6226,7 @@ dependencies = [
  "xdev-ai",
  "xdev-core",
  "xdev-git",
+ "xdev-ipc",
  "xdev-kit",
  "xdev-policy",
  "xdev-pty",
@@ -6354,6 +6356,7 @@ dependencies = [
  "toml 1.1.8+spec-1.1.0",
  "trash",
  "ts-rs",
+ "unicode-segmentation",
  "winapi-util",
  "xdev-git",
 ]

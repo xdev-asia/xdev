@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use xdev_git::GhAccount;
+
 use crate::WorkspaceError;
 use crate::groups::{FolderEntry, RepoGroup};
 use crate::kept::KeptBranch;
@@ -32,6 +34,41 @@ pub struct RepoEntry {
     /// This machine's archive script, run before a worktree is removed.
     #[serde(default)]
     pub local_archive: String,
+    /// The folder of this repo's docs, relative to the primary checkout.
+    /// `None` means `docs`. Absent in older files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docs_dir: Option<String>,
+    /// A `REPO_COLORS` name or `#rgb` / `#rrggbb`; `None` is the neutral badge.
+    #[serde(default)]
+    pub color: Option<String>,
+    /// `None` shows the first letter of the short name.
+    #[serde(default)]
+    pub icon: Option<RepoIcon>,
+    /// The `gh` login this repo's `gh` calls run as; `None` is `gh`'s own default.
+    #[serde(default)]
+    pub gh_account: Option<GhAccount>,
+    /// This machine's issue prompt template.
+    #[serde(default)]
+    pub local_issue_command: String,
+}
+
+/// The colour names a repo badge has a design token for.
+pub const REPO_COLORS: [&str; 8] = [
+    "slate", "red", "orange", "yellow", "green", "teal", "violet", "pink",
+];
+
+/// Longest issue command, in bytes.
+pub const ISSUE_COMMAND_MAX: usize = 64 * 1024;
+
+/// What a repo badge shows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum RepoIcon {
+    /// The first letter of the short name.
+    Letter,
+    /// One grapheme, at most 16 bytes.
+    Emoji { value: String },
 }
 
 /// Whether setup runs after a worktree is created.
@@ -87,6 +124,15 @@ pub struct WorktreeMeta {
     pub item: Option<WorkItem>,
     #[serde(default)]
     pub made_by: MadeBy,
+    /// The branch name was picked by the app (a blank name at creation) and
+    /// no rename has happened since; older files read `false`, so those
+    /// worktrees are never renamed on their own.
+    #[serde(default)]
+    pub auto_name: bool,
+    /// When the app CLI last created or changed this worktree; the sidebar
+    /// marks it "by CLI".
+    #[serde(default)]
+    pub set_by_cli_ms: Option<i64>,
 }
 
 /// Where the work in a worktree stands, as the person sets it.
@@ -294,6 +340,24 @@ mod tests {
         assert_eq!(repo.script_source, ScriptSource::Auto);
         assert_eq!(repo.local_setup, "");
         assert_eq!(repo.local_archive, "");
+    }
+
+    #[test]
+    fn docs_dir_is_absent_in_old_files_and_survives_a_save() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("workspace.json"),
+            r#"{"version":1,"repos":[{"id":"abc","short_name":"xdev","path":"/r","base_ref":"main","worktree_root":"/wt"}],"worktrees":[]}"#,
+        )
+        .unwrap();
+        let mut r = Registry::load(dir.path()).unwrap();
+        assert_eq!(r.repos[0].docs_dir, None);
+        r.save(dir.path()).unwrap();
+        let text = std::fs::read_to_string(dir.path().join("workspace.json")).unwrap();
+        assert!(!text.contains("docs_dir"));
+        r.repos[0].docs_dir = Some("handbook".into());
+        r.save(dir.path()).unwrap();
+        assert_eq!(Registry::load(dir.path()).unwrap(), r);
     }
 
     #[test]

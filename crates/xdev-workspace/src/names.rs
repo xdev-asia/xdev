@@ -71,6 +71,32 @@ pub fn slug(name: &str) -> String {
     }
 }
 
+/// The branch leaf for work that starts with `prompt`: its first 4 words
+/// through the rules of `slug`. Words with no ASCII letter or digit are
+/// dropped; `""` when no word is usable.
+pub fn from_work(prompt: &str) -> String {
+    let words: Vec<String> = prompt
+        .split_whitespace()
+        // A word with a letter or digit outside ASCII names nothing once that
+        // letter is cut out of it.
+        .filter(|w| !w.chars().any(|c| !c.is_ascii() && c.is_alphanumeric()))
+        .map(|w| {
+            let kept: String = w
+                .chars()
+                .flat_map(char::to_lowercase)
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+                .collect();
+            kept.trim_matches('-').to_owned()
+        })
+        .filter(|w| !w.is_empty())
+        .take(FROM_WORK_WORDS)
+        .collect();
+    slug(&words.join("-"))
+}
+
+/// The most words of a prompt that `from_work` keeps.
+const FROM_WORK_WORDS: usize = 4;
+
 /// A branch prefix as stored or typed: trimmed, without a leading or
 /// trailing `/`, and with each `//` run cut to one `/`.
 pub fn normalize_prefix(prefix: &str) -> String {
@@ -216,6 +242,42 @@ mod tests {
                 .iter()
                 .all(|w| w.chars().all(|c| c.is_ascii_lowercase()))
         );
+    }
+
+    #[test]
+    fn from_work_takes_the_first_four_words() {
+        assert_eq!(
+            from_work("fix the footer usage meter rounding"),
+            "fix-the-footer-usage"
+        );
+        assert_eq!(from_work("  Add   Login\n page  "), "add-login-page");
+        assert_eq!(from_work("one"), "one");
+    }
+
+    #[test]
+    fn from_work_follows_the_slug_rules() {
+        // Punctuation goes, an inner dash stays, case folds.
+        assert_eq!(
+            from_work("Fix: the footer's (usage)!"),
+            "fix-the-footers-usage"
+        );
+        assert_eq!(from_work("add re-try to API"), "add-re-try-to-api");
+        // The result is a slug of itself and fits the cap.
+        let long = from_work(&"abcdefghijkl ".repeat(6));
+        assert!(long.len() <= 48);
+        assert_eq!(slug(&long), long);
+    }
+
+    #[test]
+    fn from_work_drops_non_ascii_and_empty_words() {
+        // A word with a letter outside ASCII is dropped whole: cutting the letter
+        // out would leave a fragment (`sửa` -> `sa`) that names nothing.
+        assert_eq!(from_work("sửa lỗi footer rounding"), "footer-rounding");
+        assert_eq!(from_work("a café b"), "a-b");
+        assert_eq!(from_work("日本語 だけ"), "");
+        assert_eq!(from_work("日本語 fix 😀 the bug now"), "fix-the-bug-now");
+        assert_eq!(from_work(""), "");
+        assert_eq!(from_work("  ... --- "), "");
     }
 
     #[test]

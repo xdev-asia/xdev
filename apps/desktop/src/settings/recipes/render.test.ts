@@ -60,3 +60,16 @@ describe("fixPrompt", () => {
     expect(text.endsWith("see {branch}|main")).toBe(true);
   });
 });
+
+describe("resolveConflicts", () => {
+  const vars = { branch: "feat", operation: "merge", files: "a.ts", onto: "topic" };
+  it("lists what a conflict template can name, as the Rust constant does", () => {
+    expect(RECIPE_VARS.resolveConflicts).toEqual(["basePrompt", "branch", "operation", "files", "onto"]);
+    expect(RECIPE_VARS.branchName).toEqual(["basePrompt", "firstPrompt", "assistantMessage"]);
+  });
+  it("keeps the built-in prompt with what the operation found", () => {
+    expect(fixPrompt("resolveConflicts", DEFAULT_RECIPE, vars)).toBe(`${FIX_BASE_PROMPTS.resolveConflicts}\n\nOperation: merge\nOnto: topic\nFiles:\na.ts`);
+    // No target known: the line is left out.
+    expect(fixPrompt("resolveConflicts", DEFAULT_RECIPE, { ...vars, onto: "" })).toBe(`${FIX_BASE_PROMPTS.resolveConflicts}\n\nOperation: merge\nFiles:\na.ts`);
+  });
+});

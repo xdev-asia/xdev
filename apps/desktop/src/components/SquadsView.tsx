@@ -1,4 +1,4 @@
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import {
@@ -88,7 +88,16 @@ export function Ring(props: { percent: number | null; monogram: string }): JSX.E
   );
 }
 
-export function SquadsView({ api, onOpenTask }: { api: Api; onOpenTask?(task: string): void }): JSX.Element {
+export function SquadsView({
+  api,
+  onOpenTask,
+  defaultRepo,
+}: {
+  api: Api;
+  onOpenTask?(task: string): void;
+  /** The repo a new squad goes to when none is picked; it beats the app's own default. */
+  defaultRepo?: string | null;
+}): JSX.Element {
   const { t } = useI18n();
   const [items, setItems] = useState<SquadItem[]>();
   const [view, setView] = useState<View>();
@@ -223,7 +232,7 @@ export function SquadsView({ api, onOpenTask }: { api: Api; onOpenTask?(task: st
     try {
       const made = await api.newSquad(
         name,
-        repo ?? context?.defaultRepo ?? "",
+        repo ?? defaultRepo ?? context?.defaultRepo ?? "",
         ROLES.map((role) => ({ role, account: seats[role] === "" ? null : seats[role] })),
         test.trim() === "" ? null : test,
       );
@@ -277,7 +286,7 @@ export function SquadsView({ api, onOpenTask }: { api: Api; onOpenTask?(task: st
   }
 
   function form() {
-    const repoValue = repo ?? context?.defaultRepo ?? "";
+    const repoValue = repo ?? defaultRepo ?? context?.defaultRepo ?? "";
     return (
       <form
         className="task-form"

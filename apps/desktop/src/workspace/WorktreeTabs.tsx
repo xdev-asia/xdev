@@ -9,6 +9,8 @@ import { UnsavedDialog } from "@/files/UnsavedDialog";
 import { useI18n } from "@/i18n";
 import { useKeymap } from "@/keys/keymap";
 import { useNavigationSettings } from "@/settings/navigationSettings";
+import { useUsageSettings } from "@/settings/usageSettings";
+import { useCacheTimers } from "./cacheTimer";
 import { buildSections } from "@/quickCommands/model";
 import { QuickCommandsControl } from "@/quickCommands/QuickCommandsControl";
 import { runWithToast } from "@/quickCommands/runUi";
@@ -40,7 +42,7 @@ import {
 } from "./paneTree";
 import { CloseTabsDialog } from "./CloseTabsDialog";
 import { bodyStyle, PaneView, paneRects } from "./PaneView";
-import { cliOf, type Sessions, type Tab, type TabCli } from "./sessions";
+import { cliOf, ownAccount, type Sessions, type Tab, type TabCli } from "./sessions";
 import type { SetupGate } from "./setupGate";
 import { TabStrip, type MenuGroup, type StripItem } from "./TabStrip";
 import { cycleTab, mruOrder, nthTab } from "./tabNav";
@@ -129,6 +131,9 @@ export function WorktreeTabs(props: {
   const subscribe = useCallback((listener: () => void) => sessions.subscribe(listener), [sessions]);
   const snapshot = () => sessions.tabs(worktree);
   const tabs = useSyncExternalStore(subscribe, snapshot, snapshot);
+  const usage = useUsageSettings();
+  // Seen from the outside: the transitions of the tabs' status, not a time read from the agent.
+  const cacheTimers = useCacheTimers(tabs, usage.cacheTimer);
   const layoutSnapshot = () => sessions.layout(worktree);
   const stored = useSyncExternalStore(subscribe, layoutSnapshot, layoutSnapshot);
 
@@ -406,7 +411,7 @@ export function WorktreeTabs(props: {
       () => setAttempts((a) => ({ ...a, [tab.id]: (a[tab.id] ?? 0) + 1 })),
       // A tab whose pty never started has nothing to show; the reason stays in the banner.
       () => void sessions.close(tab.id),
-      tab.account,
+      ownAccount(tab),
       tab.resumeOf ?? undefined,
     );
   }
@@ -469,6 +474,7 @@ export function WorktreeTabs(props: {
       <TabStrip
         pane={leaf.id}
         items={items}
+        cache={usage.cacheTimer ? { timers: cacheTimers, ttlMs: usage.cacheTtlMs } : undefined}
         active={leaf.active}
         groups={groups}
         menuOpen={menuPane === leaf.id}
@@ -572,7 +578,7 @@ export function WorktreeTabs(props: {
                 id={tab.id}
                 cwd={worktree}
                 profile={tab.profileId}
-                account={tab.account}
+                account={ownAccount(tab)}
                 onStarted={(info) => sessions.noteStarted(tab.id, info)}
                 onError={(e) => failed(tab, e)}
                 onOutput={(bytes) => sessions.noteOutput(tab.id, bytes)}

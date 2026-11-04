@@ -9,6 +9,7 @@ use ts_rs::{Config, TS};
 
 use crate::accounts::{Account, Accounts, LoginStart, Models};
 use crate::agent_sessions::{SessionQuery, SessionRow};
+use crate::cli_verbs::{CliAsk, CliOpenTab, TabReport};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
 use crate::hooks::PtyHook;
 use crate::keybindings::{KeybindingsChanged, KeybindingsText};
@@ -22,7 +23,7 @@ use crate::review_notes::ReviewNote;
 use crate::settings::{
     AgentsSettings, DiffSettings, EditorSettings, GitSettings, KeySettings, NavigationSettings,
     OpenInSettings, RestoreMode, SettingsChanged, SidebarPrefs, StatusSettings, TerminalSettings,
-    UiSettings,
+    UiSettings, UsageSettings,
 };
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
@@ -81,6 +82,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     NavigationSettings::export_all(cfg)?;
     DiffSettings::export_all(cfg)?;
     AgentsSettings::export_all(cfg)?;
+    UsageSettings::export_all(cfg)?;
     KeybindingsText::export_all(cfg)?;
     KeybindingsChanged::export_all(cfg)?;
     PtyHook::export_all(cfg)?;
@@ -104,6 +106,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     ReviewData::export_all(cfg)?;
     ReviewBranch::export_all(cfg)?;
     StageState::export_all(cfg)?;
+    xdev_git::ConflictState::export_all(cfg)?;
+    xdev_git::ConflictOp::export_all(cfg)?;
     ReviewNote::export_all(cfg)?;
     xdev_workspace::DirListing::export_all(cfg)?;
     xdev_workspace::FileText::export_all(cfg)?;
@@ -124,18 +128,26 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_git::IssueComment::export_all(cfg)?;
     xdev_git::IssueDetail::export_all(cfg)?;
     xdev_git::IssueQuery::export_all(cfg)?;
+    xdev_git::GhAccount::export_all(cfg)?;
+    xdev_git::GhLogin::export_all(cfg)?;
+    xdev_workspace::RepoIcon::export_all(cfg)?;
     KitText::export_all(cfg)?;
     PromptEntry::export_all(cfg)?;
     xdev_kit::Home::export_all(cfg)?;
     xdev_kit::Skill::export_all(cfg)?;
     xdev_kit::MemorySet::export_all(cfg)?;
     xdev_kit::UsageSummary::export_all(cfg)?;
+    xdev_kit::UsageReport::export_all(cfg)?;
+    crate::kit::UsageReportArgs::export_all(cfg)?;
     SessionQuery::export_all(cfg)?;
     SessionRow::export_all(cfg)?;
     xdev_workspace::VaultView::export_all(cfg)?;
     xdev_workspace::VaultKind::export_all(cfg)?;
     QuickCommand::export_all(cfg)?;
     FileCommands::export_all(cfg)?;
+    TabReport::export_all(cfg)?;
+    CliOpenTab::export_all(cfg)?;
+    CliAsk::export_all(cfg)?;
     Ok(())
 }
 

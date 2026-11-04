@@ -149,7 +149,8 @@ impl Gate for StubGate {
             Action::Delete { .. }
             | Action::LaunchAgent { .. }
             | Action::ForcePush { .. }
-            | Action::Discard { .. } => Verdict::Deny {
+            | Action::Discard { .. }
+            | Action::CliWorktree { .. } => Verdict::Deny {
                 reason: "not used".into(),
             },
         }

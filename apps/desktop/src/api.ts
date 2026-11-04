@@ -68,6 +68,8 @@ import type {
   ReviewData,
   ReviewNote,
   StageState,
+  ConflictOp,
+  ConflictState,
   WorktreeStat,
   WorktreeView,
   WorktreeCreated,
@@ -79,6 +81,9 @@ import type {
   SidebarItem,
   SidebarPrefs,
   Check,
+  GhAccount,
+  GhLogin,
+  RepoIcon,
   PrDraft,
   PrView,
   Issue,
@@ -94,6 +99,9 @@ import type {
   ScriptSource,
   QuickCommand,
   FileCommands,
+  CliAsk,
+  CliOpenTab,
+  TabReport,
 } from "@xdev/bindings";
 import type {
   AgentSession,
@@ -120,6 +128,12 @@ import type {
   SessionRow,
   Agent,
   Skill,
+  UsageDisplay,
+  UsageReport,
+  UsageReportArgs,
+  UsageScope,
+  UsageSettings,
+  ProviderSwitches,
   UsageSummary,
   WriteOutcome,
 } from "@xdev/bindings";
@@ -136,8 +150,10 @@ export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill
 export type { Agent, AgentSession, SessionQuery, SessionRow };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, SwitchRunning };
+export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
-export type { FileKind } from "@xdev/bindings";
+export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
+export type { CliAsk, CliOpenTab, TabReport };
 export type { RestoreMode } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
 
@@ -211,6 +227,8 @@ export type {
   ReviewFile,
   ReviewNote,
   StageState,
+  ConflictOp,
+  ConflictState,
   WorktreeSkip,
   WorktreeStat,
   WorktreeView,
@@ -243,6 +261,8 @@ export type {
   TerminalSettings,
   FontWeight,
   CursorStyle,
+  TerminalGpu,
+  TerminalBell,
   SettingsSection,
   SettingsChanged,
   SetupPolicy,
@@ -393,7 +413,13 @@ export type ErrorCode =
   | "kept_unknown"
   | "group_unknown"
   | "folder_unknown"
-  | "folder_exists";
+  | "folder_exists"
+  | "branch_pushed"
+  | "no_conflict"
+  | "still_conflicted"
+  | "bad_color"
+  | "bad_icon"
+  | "gh_account_missing";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -404,6 +430,15 @@ export type RepoPatch = {
   scriptSource?: ScriptSource;
   localSetup?: string;
   localArchive?: string;
+  // A folder relative to the primary checkout; "" goes back to the default "docs".
+  docsDir?: string;
+  // `null` clears; an absent key leaves it. `color` is a preset name or "#rgb" / "#rrggbb"
+  // (`bad_color`), an emoji icon is one grapheme (`bad_icon`), the issue command is capped at
+  // 64 KiB (`too_large`).
+  color?: string | null;
+  icon?: RepoIcon | null;
+  ghAccount?: GhAccount | null;
+  localIssueCommand?: string;
 };
 
 // The `ptySpawn` profile id that runs the worktree's setup script in the default shell. Rejects
@@ -709,6 +744,9 @@ export interface Api {
   worktreePrCreate(path: string, draft: PrDraft): Promise<PrView>;
   worktreePrChecks(path: string, number: number): Promise<Check[]>;
   worktreePrOpen(path: string, checks: boolean): Promise<void>;
+  // The logins `gh` holds, active one flagged; [] when none or `gh` is not signed in. Rejects with
+  // `gh_missing`. A repo bound to a login that is gone rejects its `gh` calls with `gh_account_missing`.
+  ghLogins(): Promise<GhLogin[]>;
   // GitHub issues of a repo through `gh`, read in its main checkout. Reject with the `gh_*` codes,
   // `not_github`, `issue_not_found`, or `issue_other_repo` (resolve only).
   issuesList(repoId: string, query: IssueQuery): Promise<Issue[]>;
@@ -737,6 +775,20 @@ export interface Api {
   worktreeBranches(path: string): Promise<ReviewBranch[]>;
   worktreeStageState(path: string): Promise<StageState[]>;
   worktreeDiscard(path: string, files: string[], stagedToo: boolean, confirmed: boolean): Promise<void>;
+  // Renames the worktree's branch to `<prefix>/<name>` (`-2`, `-3`, … when taken); the folder stays.
+  // Rejects with `branch_pushed` (it has an upstream), `detached`, `bad_name` or `branch_exists`.
+  worktreeRenameBranch(path: string, name: string): Promise<WorktreeView>;
+  // A name for the work of an agent session (the worktree's latest when null), from the Branch name
+  // recipe, or the first words of the prompt when the recipe's agent cannot answer; changes nothing.
+  // Rejects with `bad_name` when the session has no usable prompt.
+  worktreeSuggestBranch(path: string, session: string | null): Promise<string>;
+  // The merge, rebase, cherry-pick or revert in progress; null when there is none.
+  worktreeConflicts(path: string): Promise<ConflictState | null>;
+  // Finishes it; rejects with `still_conflicted` while a file is unmerged, `no_conflict` with nothing
+  // in progress.
+  worktreeConflictContinue(path: string): Promise<void>;
+  // Gives it up and drops the resolution work; gated like a discard (`confirmed`).
+  worktreeConflictAbort(path: string, confirmed: boolean): Promise<void>;
   // Review notes of one worktree. A put replaces them all and rejects with `bad_note` when any is invalid.
   reviewNotes(path: string): Promise<ReviewNote[]>;
   reviewNotesPut(path: string, notes: ReviewNote[]): Promise<ReviewNote[]>;
@@ -759,6 +811,8 @@ export interface Api {
   kitSkillRestore(removed: string, to: string, worktree: string | null): Promise<void>;
   // Days are local `YYYY-MM-DD`; `refresh` reads the new session log bytes first.
   kitUsage(sinceDay: string, untilDay: string, refresh: boolean): Promise<UsageSummary>;
+  // The Stats page: filtered by agent and scope, and by `usage.scan` (an agent whose scan is off is not read).
+  kitUsageReport(args: Omit<UsageReportArgs, "utcOffsetMinutes">): Promise<UsageReport>;
   // Whether each relative path exists under `root` (an agent home, repo or worktree).
   kitPathsExist(root: string, paths: string[]): Promise<boolean[]>;
   // Newest first, at most `limit` (and 1000).
@@ -831,6 +885,8 @@ export interface Api {
   // Settings → Agents; the put returns what was stored.
   agentsSettings(): Promise<AgentsSettings>;
   agentsSettingsPut(v: AgentsSettings): Promise<AgentsSettings>;
+  usageSettings(): Promise<UsageSettings>;
+  usageSettingsPut(v: UsageSettings): Promise<UsageSettings>;
 
   // Layout
   // The tabs and splits saved for the next start (`<data_dir>/layout.json`); null when none is saved
@@ -839,6 +895,18 @@ export interface Api {
   // Replaces the saved layout. Rejects with `bad_arg` when `version` is not `LAYOUT_VERSION` and
   // `too_large` past 1 MiB.
   layoutSave(snapshot: LayoutSnapshot): Promise<void>;
+  // The app CLI (`xdev status | worktree | terminal`). The UI owns the tab states: it reports every
+  // tab (and the worktree in front) when they change, and `xdev terminal wait` reads them.
+  cliTabsReport(tabs: TabReport[], selected: string | null): Promise<void>;
+  // The person's answer to a `cli://ask`; an unknown or late request is ignored.
+  cliApprove(request: number, allow: boolean): Promise<void>;
+  // The CLI changed the registry (`workspace://changed`): the sidebar loads again.
+  onWorkspaceChanged(cb: () => void): Promise<() => void>;
+  // `xdev worktree create --agent/--prompt` (`cli://open-tab`): open `profile` (empty: the default
+  // agent) in `worktree` without focusing it, and type `prompt` once it is ready.
+  onCliOpenTab(cb: (e: CliOpenTab) => void): Promise<() => void>;
+  // A CLI write that needs the person (`cli://ask`); answer with `cliApprove`.
+  onCliAsk(cb: (e: CliAsk) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -955,6 +1023,12 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "group_unknown",
   "folder_unknown",
   "folder_exists",
+  "branch_pushed",
+  "no_conflict",
+  "still_conflicted",
+  "bad_color",
+  "bad_icon",
+  "gh_account_missing",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -1110,7 +1184,7 @@ const tauriApi: Api = {
   repoCloneCancel: (id) => call("repo_clone_cancel", { id }),
   repoCloneName: (url) => call("repo_clone_name", { url }),
   repoCreate: (req) => call("repo_create", { req }),
-  repoUpdate: (id, patch) => call("repo_update", { id, ...patch }),
+  repoUpdate: (id, patch) => call("repo_update", { id, patch }),
   repoHooks: (path) => call("repo_hooks", { path }),
   repoHookTrust: (path, kind, hash) => call("repo_hook_trust", { path, kind, hash }),
   worktreeArchiveRun: (path) => call("worktree_archive_run", { path }),
@@ -1150,6 +1224,7 @@ const tauriApi: Api = {
   worktreeAmend: (path, files, message, confirmed) => call("worktree_amend", { path, files, message, confirmed }),
   worktreePr: (path) => call("worktree_pr", { path }),
   worktreePrCreate: (path, draft) => call("worktree_pr_create", { path, draft }),
+  ghLogins: () => call("gh_logins"),
   worktreePrChecks: (path, number) => call("worktree_pr_checks", { path, number }),
   worktreePrOpen: (path, checks) => call("worktree_pr_open", { path, checks }),
   issuesList: (repoId, query) => call("issues_list", { repoId, query }),
@@ -1166,6 +1241,11 @@ const tauriApi: Api = {
   worktreeBranches: (path) => call("worktree_branches", { path }),
   worktreeStageState: (path) => call("worktree_stage_state", { path }),
   worktreeDiscard: (path, files, stagedToo, confirmed) => call("worktree_discard", { path, files, stagedToo, confirmed }),
+  worktreeRenameBranch: (path, name) => call("worktree_rename_branch", { path, name }),
+  worktreeSuggestBranch: (path, session) => call("worktree_suggest_branch", { path, session }),
+  worktreeConflicts: (path) => call("worktree_conflicts", { path }),
+  worktreeConflictContinue: (path) => call("worktree_conflict_continue", { path }),
+  worktreeConflictAbort: (path, confirmed) => call("worktree_conflict_abort", { path, confirmed }),
   reviewNotes: (path) => call("review_notes_get", { path }),
   reviewNotesPut: (path, notes) => call("review_notes_put", { path, notes }),
   kitHomes: () => call("kit_homes"),
@@ -1181,6 +1261,7 @@ const tauriApi: Api = {
   // The local offset (UTC+7 is 420) decides which day a log line belongs to.
   kitUsage: (sinceDay, untilDay, refresh) =>
     call("kit_usage", { sinceDay, untilDay, refresh, utcOffsetMinutes: -new Date().getTimezoneOffset() }),
+  kitUsageReport: (args) => call("kit_usage_report", { args: { ...args, utcOffsetMinutes: -new Date().getTimezoneOffset() } }),
   kitPathsExist: (root, paths) => call("kit_paths_exist", { root, paths }),
   kitPromptHistory: (limit) => call("kit_prompt_history", { limit }),
   agentSessions: (query, refresh) => call("agent_sessions", { query, refresh }),
@@ -1213,8 +1294,15 @@ const tauriApi: Api = {
   diffSettingsPut: (settings) => call("diff_settings_put", { settings }),
   agentsSettings: () => call("agents_settings_get"),
   agentsSettingsPut: (settings) => call("agents_settings_put", { settings }),
+  usageSettings: () => call("usage_settings_get"),
+  usageSettingsPut: (settings) => call("usage_settings_put", { settings }),
   layoutLoad: () => call("layout_load"),
   layoutSave: (snapshot) => call("layout_save", { snapshot }),
+  cliTabsReport: (tabs, selected) => call("cli_tabs_report", { tabs, selected }),
+  cliApprove: (request, allow) => call("cli_approve", { request, allow }),
+  onWorkspaceChanged: (cb) => listen("workspace://changed", () => cb()),
+  onCliOpenTab: (cb) => listen<CliOpenTab>("cli://open-tab", (e) => cb(e.payload)),
+  onCliAsk: (cb) => listen<CliAsk>("cli://ask", (e) => cb(e.payload)),
 };
 
 function browserApi(): Api {

@@ -2,7 +2,7 @@
   "mcpServers": {
     "xdev-ui": {
       "command": "node",
-      "args": ["apps/desktop/node_modules/@xdev-asia/ui/dist/mcp.js"]
+      "args": ["packages/xdev-ui/dist/mcp.js"]
     }
   }
 }

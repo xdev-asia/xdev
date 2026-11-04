@@ -1,4 +1,4 @@
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type ApiError, type FileDiff, type Task, type TaskState, type TasksContext } from "@/api";
@@ -35,7 +35,8 @@ function firstLine(goal: string): string {
 }
 
 // `initial` picks a task to show first, e.g. one a squad worked on.
-export function TasksView({ api, initial }: { api: Api; initial?: string }): JSX.Element {
+// `defaultRepo` is the repo a new task goes to when none is picked; it beats the app's own default.
+export function TasksView({ api, initial, defaultRepo }: { api: Api; initial?: string; defaultRepo?: string | null }): JSX.Element {
   const { t } = useI18n();
   const [tasks, setTasks] = useState<Task[]>();
   const [context, setContext] = useState<TasksContext>();
@@ -126,7 +127,7 @@ export function TasksView({ api, initial }: { api: Api; initial?: string }): JSX
   async function create() {
     setProblem(undefined);
     try {
-      const made = await api.newTask(repo ?? context?.defaultRepo ?? "", goal);
+      const made = await api.newTask(repo ?? defaultRepo ?? context?.defaultRepo ?? "", goal);
       setCreating(false);
       setGoal("");
       select(made.id);
@@ -173,7 +174,7 @@ export function TasksView({ api, initial }: { api: Api; initial?: string }): JSX
   }
 
   function form() {
-    const repoValue = repo ?? context?.defaultRepo ?? "";
+    const repoValue = repo ?? defaultRepo ?? context?.defaultRepo ?? "";
     return (
       <form
         className="task-form"

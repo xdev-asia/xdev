@@ -30,8 +30,8 @@ function nodes(value: unknown): Node[] {
 const tick = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 
-async function harness(api = createMockApi({})) {
-  const draw = () => { hooks.cursor = 0; return TasksView({ api }); };
+async function harness(api = createMockApi({}), defaultRepo?: string | null) {
+  const draw = () => { hooks.cursor = 0; return TasksView({ api, defaultRepo }); };
   const html = () => renderToStaticMarkup(draw());
   const all = () => nodes(draw());
   const button = (text: string) => all().find(n => n.props.children === text && n.props.onClick)!;
@@ -146,4 +146,22 @@ it("creates a task in the default repo", async () => {
   expect(create).toHaveBeenCalledWith((await view.api.tasksContext()).defaultRepo, "Write a changelog");
   await view.reload();
   expect(view.html()).toContain("Write a changelog");
+});
+
+it("creates a task in the repo the host passes, ahead of the app default", async () => {
+  const view = await harness(createMockApi({}), "/p/shared");
+  const create = vi.spyOn(view.api, "newTask");
+  view.button(en("tasks.new")).props.onClick();
+  view.all().find(n => n.type === "textarea")!.props.onChange({ target: { value: "Fix it" } });
+  await view.all().find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} }); await tick();
+  expect(create).toHaveBeenCalledWith("/p/shared", "Fix it");
+});
+
+it("a null host repo falls back to the app default", async () => {
+  const view = await harness(createMockApi({}), null);
+  const create = vi.spyOn(view.api, "newTask");
+  view.button(en("tasks.new")).props.onClick();
+  view.all().find(n => n.type === "textarea")!.props.onChange({ target: { value: "Fix it" } });
+  await view.all().find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} }); await tick();
+  expect(create).toHaveBeenCalledWith((await view.api.tasksContext()).defaultRepo, "Fix it");
 });
