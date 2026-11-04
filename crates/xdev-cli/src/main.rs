@@ -163,7 +163,7 @@ fn main() -> ExitCode {
         eprintln!("error: io");
         return ExitCode::from(1);
     };
-    ExitCode::from(app::run(&app_cmd, &local.join("app"), app::PREFIX))
+    ExitCode::from(app::run(&app_cmd, &xdev_ipc::app_dir(&local), app::PREFIX))
 }
 
 fn finish(outcome: Result<Outcome, &'static str>) -> ExitCode {

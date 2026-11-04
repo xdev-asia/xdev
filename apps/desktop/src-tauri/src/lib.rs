@@ -98,7 +98,7 @@ pub fn run() {
                 });
                 let now = workspace::clock().0;
                 match endpoint::start(
-                    &endpoint::app_dir(local),
+                    &xdev_ipc::app_dir(local),
                     endpoint::PREFIX,
                     xdev_core::version(),
                     now,
