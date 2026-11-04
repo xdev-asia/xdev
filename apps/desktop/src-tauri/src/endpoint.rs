@@ -451,7 +451,8 @@ mod tests {
             .connect()
             .unwrap();
         let mut read = s.try_clone().unwrap();
-        read.set_read_deadline(Some(Duration::from_secs(10))).unwrap();
+        read.set_read_deadline(Some(Duration::from_secs(10)))
+            .unwrap();
         (s, BufReader::new(read))
     }
 
