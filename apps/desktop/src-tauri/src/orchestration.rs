@@ -1044,6 +1044,30 @@ fn wait_tab_gone(ctx: &Ctx<'_>, tab: &str, limit: Duration, gone: &dyn Fn() -> b
     }
 }
 
+/// The tab `--terminal` names, when it may become a worker: an open agent
+/// tab that sits idle, so the preamble is typed into an agent's prompt and
+/// never into a shell or over a turn in progress.
+fn terminal_target(ctx: &Ctx<'_>, t: &str) -> Result<crate::cli_verbs::TabReport, AppError> {
+    let (tabs, _) = ctx.board.tabs();
+    let found = tabs
+        .into_iter()
+        .find(|x| x.id == t && !x.exited)
+        .ok_or_else(|| AppError::new("not_found", format!("no open terminal {t}")))?;
+    if !found.agent {
+        return Err(AppError::new(
+            "terminal_not_agent",
+            format!("terminal {t} runs no agent; start one in it first"),
+        ));
+    }
+    if found.status != "idle" && found.status != "done" {
+        return Err(AppError::new(
+            "terminal_busy",
+            format!("terminal {t} is {}; wait until it is idle", found.status),
+        ));
+    }
+    Ok(found)
+}
+
 /// How long the UI gets, on top of the readiness wait, to answer `open-worker`.
 const OPEN_SLACK_MS: u64 = if cfg!(test) { 50 } else { 10_000 };
 /// How long a worker's tab gets to show its agent when the CLI sends no timeout.
@@ -1093,6 +1117,10 @@ fn worker_start(
         .and_then(Value::as_u64)
         .unwrap_or(READY_DEFAULT_MS);
     let max_depth = ctx.orch_settings.nested_worker_max_depth;
+    let terminal = text_param(req, "terminal");
+    if let Some(t) = &terminal {
+        terminal_target(ctx, t)?;
+    }
 
     // 1. Who starts what: the run, the depth, the task.
     let (me, depth, task) = ctx.orch.with_store(ctx.data, |s| {
@@ -1176,15 +1204,11 @@ fn worker_start(
         .map(|t| t.profile.clone())
         .unwrap_or_default();
     let agent = text_param(req, "agent").unwrap_or(default_agent);
-    let terminal = text_param(req, "terminal");
     let (tab, worktree, mut kept) = match &terminal {
         Some(t) => {
-            let found = tabs
-                .iter()
-                .find(|x| &x.id == t && !x.exited)
-                .ok_or_else(|| AppError::new("not_found", format!("no open terminal {t}")))?;
+            let found = terminal_target(ctx, t)?;
             // The person's tab: never closed behind them.
-            (t.clone(), found.worktree.clone(), true)
+            (t.clone(), found.worktree, true)
         }
         None => {
             let (path, made) = crate::cli_verbs::pick_worktree(
@@ -1743,6 +1767,65 @@ line", "title": "A"}),
         let dead = call(&f, json!({"spec": "go", "terminal": "t9"})).unwrap();
         assert_eq!(dead["state"], "failed");
         assert_eq!(dead["failedStage"], "dispatch_input");
+    }
+
+    #[test]
+    fn terminal_mode_refuses_a_shell_or_a_busy_agent_and_writes_nothing() {
+        let f = crate::cli_verbs::tests::fixture();
+        f.board.replace(
+            vec![
+                crate::cli_verbs::tests::tab("sh", &f.other, false, "idle"),
+                crate::cli_verbs::tests::tab("busy", &f.other, true, "working"),
+                crate::cli_verbs::tests::tab("asks", &f.other, true, "needs-you"),
+            ],
+            None,
+        );
+        for (t, code) in [
+            ("sh", "terminal_not_agent"),
+            ("busy", "terminal_busy"),
+            ("asks", "terminal_busy"),
+        ] {
+            let e = f
+                .call(
+                    Some("p-lead"),
+                    "orchestration.worker-start",
+                    json!({"spec": "go", "terminal": t}),
+                )
+                .unwrap_err();
+            assert_eq!(e.code, code, "{t}");
+        }
+        assert!(f.pty_writes.lock().unwrap().is_empty());
+        // Refused before anything was recorded: no run, task or worker.
+        let runs = f
+            .call(Some("p-lead"), "orchestration.run-list", json!({}))
+            .unwrap();
+        assert_eq!(runs.as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn terminal_mode_pastes_a_spec_without_its_control_characters() {
+        let f = crate::cli_verbs::tests::fixture();
+        f.board.replace(
+            vec![crate::cli_verbs::tests::tab("t9", &f.other, true, "idle")],
+            None,
+        );
+        f.call(
+            Some("p-lead"),
+            "orchestration.worker-start",
+            json!({"spec": "go\u{1b}[201~whoami\r", "terminal": "t9"}),
+        )
+        .unwrap();
+        let writes = f.pty_writes.lock().unwrap().clone();
+        let text = String::from_utf8(writes[0].1.clone()).unwrap();
+        let inner = text
+            .strip_prefix("\u{1b}[200~")
+            .and_then(|t| t.strip_suffix("\u{1b}[201~\r"))
+            .unwrap();
+        assert!(
+            !inner.contains('\u{1b}') && !inner.contains('\r'),
+            "{inner:?}"
+        );
+        assert!(inner.ends_with("go[201~whoami\n"), "{inner:?}");
     }
 
     fn events_named(f: &crate::cli_verbs::tests::Fixture, name: &str) -> Vec<Value> {
