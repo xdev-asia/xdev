@@ -27,6 +27,7 @@ export type ActionId =
   | "pane.close"
   | "worktree.next"
   | "worktree.prev"
+  | "worktree.history.back" | "worktree.history.forward"
   | `worktree.select.${Digit}`
   | "agent.new"
   | "palette.jump"
