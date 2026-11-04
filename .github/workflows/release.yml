@@ -166,7 +166,14 @@ jobs:
         run: |
           # The terminal service ships next to the app (tauri.ptyd.conf.json);
           # beforeBuildCommand builds it.
-          args=(--target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}" --config src-tauri/tauri.ptyd.conf.json)
+          bundles="$BUNDLES"
+          # MSI accepts only a numeric pre-release, so a candidate ships no MSI;
+          # the updater uses the NSIS installer.
+          if [ -n "$RC_VERSION" ]; then
+            bundles="${bundles//,msi/}"
+            bundles="${bundles//msi,/}"
+          fi
+          args=(--target "$TARGET" --bundles "$bundles" --config src-tauri/tauri.ptyd.conf.json)
           if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
             args+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
           fi
@@ -176,6 +183,8 @@ jobs:
           fi
           corepack pnpm tauri build "${args[@]}"
         env:
+          BUNDLES: ${{ matrix.bundles }}
+          TARGET: ${{ matrix.target }}
           RC_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.rc_version || '' }}
           APPLE_SIGNING_IDENTITY: "-"
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
