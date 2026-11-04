@@ -1480,3 +1480,21 @@ it("a worker tab asked for in a worktree not shown yet gets that worktree mounte
   ask!({ dispatch: "d1", tab: "tab-w1", title: "worker-task_1", worktree: "/demo/wt/xdev-elm", profile: "claude", prompt: "go", setup: "skip", readyTimeoutMs: 2_000 });
   expect(mounted()).toContain("/demo/wt/xdev-elm");
 });
+
+it("a worker in a worktree the backend made runs the repo's setup once, before the agent", async () => {
+  const api = createMockApi({});
+  let ask: ((e: WorkerOpen) => void) | undefined;
+  vi.spyOn(api, "onOrchestrationOpenWorker").mockImplementation(async (cb) => ((ask = cb), () => {}));
+  const hooks = vi.spyOn(api, "repoHooks");
+  const view = await harness(api);
+  attend(view);
+  const open = (dispatch: string) => ask!({ dispatch, tab: `tab-${dispatch}`, title: "worker-task_1", worktree: "/demo/wt/xdev-elm", profile: "claude", prompt: "go", setup: "inherit", readyTimeoutMs: 2_000 });
+  open("d1");
+  await settle();
+  const reads = () => hooks.mock.calls.filter(c => c[0] === "/demo/wt/xdev-elm").length;
+  const once = reads();
+  expect(once).toBeGreaterThan(0);
+  open("d2");
+  await settle();
+  expect(reads()).toBe(once);
+});
