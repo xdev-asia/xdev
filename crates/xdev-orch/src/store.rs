@@ -259,7 +259,9 @@ impl Store {
         let base = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(1, |d| d.as_nanos() as u64);
-        Store::init(conn, base)
+        let store = Store::init(conn, base)?;
+        store.receipts_clear_reserved()?;
+        Ok(store)
     }
 
     /// A database that lives and dies with the value; ids start from a fixed seed.
