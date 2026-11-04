@@ -9,7 +9,7 @@ import { actionItems, sessionItems, settingItems, tabItems, validWorktreeName, w
 const t = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 
 function wt(path: string, name: string, branch: string | null): WorktreeView {
-  return { path, name, branch, head: null, start: null, primary: false, pinned: false, detached: branch === null };
+  return { path, name, branch, head: null, start: null, primary: false, pinned: false, detached: branch === null, ...NO_DETAILS };
 }
 
 function repo(id: string, shortName: string, worktrees: WorktreeView[], missing = false): RepoView {
@@ -156,6 +156,7 @@ it("the Resume agent session action is listed only when the shell supplies it", 
 import type { QuickCommand } from "@/api";
 import { quickCommandItems } from "./items";
 import { selectCommands } from "@/quickCommands/store";
+import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 const qcs: QuickCommand[] = [
   { id: "g", label: "Git status", scope: { type: "global" }, action: { type: "terminal", command: "git status", appendEnter: true } },

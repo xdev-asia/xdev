@@ -1,7 +1,9 @@
 //! The desktop app's list of repos and the worktrees made from them.
 
 mod files;
+mod groups;
 mod hooks;
+mod kept;
 mod names;
 mod ops;
 mod registry;
@@ -18,19 +20,28 @@ pub use files::{
     Eol, FileKind, FileText, OsTrash, READ_MAX, Trash, WriteOutcome, create_entry, entry_path,
     read_file, rename_entry, trash_entry, trash_entry_with, write_file,
 };
+pub use groups::{
+    FolderEntry, RepoGroup, SidebarItem, folder_add, folder_forget, group_move, group_put,
+    group_remove, set_order, sidebar,
+};
 pub use hooks::{
     FILE_NAME, HookKind, HookRun, HookScript, RepoHooks, TRUST_FILE, detect_setup, hook_env,
     hooks_for, trust, trust_hook,
 };
+pub use kept::{
+    ARCHIVE_DAYS, KeptBranch, KeptReason, KeptView, archive_worktree, kept_delete, kept_keep,
+    kept_list, restore_worktree,
+};
 pub use names::{PrefixIssue, normalize_prefix, prefix_issue};
 pub use ops::{
-    BranchPrefix, CreateOptions, DirEntry, DirListing, RepoPatch, RepoView, WorktreeStat,
-    WorktreeView, add_repo, adopt_worktree, create_worktree, create_worktree_with, forget_repo,
-    list, list_dir, path_key, refresh_base, remove_worktree, set_pinned, stat, update_repo,
-    valid_short_name,
+    BranchPrefix, COMMENT_MAX, CreateOptions, DetailsPatch, DirEntry, DirListing, ITEM_URL_MAX,
+    Removed, RepoPatch, RepoView, TITLE_MAX, WorktreeStat, WorktreeView, add_repo, adopt_worktree,
+    create_worktree, create_worktree_with, forget_repo, list, list_dir, path_key, refresh_base,
+    remove_worktree, set_details, set_pinned, stat, update_repo, valid_short_name,
 };
 pub use registry::{
-    Registry, RepoEntry, ScriptSource, SetupPolicy, VaultEntry, WorktreeMeta, repo_id,
+    MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, VaultEntry, WorkItem, WorkItemKind,
+    WorkStatus, WorktreeMeta, repo_id,
 };
 pub use repo_commands::{
     COMMAND_LABEL_MAX, COMMAND_PROMPT_MAX, COMMAND_TEXT_MAX, RepoAction, RepoCommand, RepoCommands,
@@ -95,6 +106,27 @@ pub enum WorkspaceError {
     SetupSkipped,
     #[error("the script failed with code {code:?}")]
     HookFailed { code: Option<i32>, output: String },
+    /// A title or comment past its length limit.
+    #[error("details too long: {0}")]
+    BadDetails(String),
+    /// Not a worktree that can hold this one: another repo, itself, the
+    /// primary checkout, or one that is a child or has children.
+    #[error("not a usable parent: {0}")]
+    BadParent(String),
+    #[error("not a usable work item link: {0}")]
+    BadItem(String),
+    /// A detached worktree has no branch to keep when archived.
+    #[error("detached HEAD, no branch to keep: {0}")]
+    Detached(PathBuf),
+    #[error("no kept branch {branch} in repo {repo_id}")]
+    KeptUnknown { repo_id: String, branch: String },
+    #[error("unknown group: {0}")]
+    GroupUnknown(String),
+    #[error("unknown folder: {0}")]
+    FolderUnknown(String),
+    /// Already listed as a folder, a repo or a worktree.
+    #[error("folder already listed: {0}")]
+    FolderExists(String),
 }
 
 impl WorkspaceError {
@@ -123,6 +155,14 @@ impl WorkspaceError {
             WorkspaceError::NoHook(_) => "hook_none",
             WorkspaceError::SetupSkipped => "setup_skipped",
             WorkspaceError::HookFailed { .. } => "hook_failed",
+            WorkspaceError::BadDetails(_) => "bad_details",
+            WorkspaceError::BadParent(_) => "bad_parent",
+            WorkspaceError::BadItem(_) => "bad_item",
+            WorkspaceError::Detached(_) => "detached",
+            WorkspaceError::KeptUnknown { .. } => "kept_unknown",
+            WorkspaceError::GroupUnknown(_) => "group_unknown",
+            WorkspaceError::FolderUnknown(_) => "folder_unknown",
+            WorkspaceError::FolderExists(_) => "folder_exists",
         }
     }
 }

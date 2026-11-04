@@ -27,6 +27,7 @@ import { WorktreeList } from "./WorktreeList";
 import { WorktreeTabs } from "./WorktreeTabs";
 import { Toasts } from "./Toasts";
 import { SessionsSidebar } from "@/agentSessions/SessionsSidebar";
+import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 // Hooks are stubbed only while the shell itself is called; children rendered to markup use React's own.
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -179,7 +180,7 @@ it("header settings button opens settings", async () => {
 });
 
 it("adopting refreshes the list", async () => {
-  const spike: WorktreeView = { path: "/demo/elsewhere/spike", name: "spike", branch: "spike", head: "6666666666666666666666666666666666666666", start: null, primary: false, pinned: false, detached: false };
+  const spike: WorktreeView = { path: "/demo/elsewhere/spike", name: "spike", branch: "spike", head: "6666666666666666666666666666666666666666", start: null, primary: false, pinned: false, detached: false, ...NO_DETAILS };
   const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), found: { "demo-xdev": [spike] } } });
   const view = await harness(api);
   expect(view.list().props.repos[0].found).toHaveLength(1);
@@ -298,7 +299,7 @@ it("a finished clone closes the dialog and selects the new repo", async () => {
   expect(view.list().props.selected).toBe("/code/cloned");
 });
 
-it("create shows branch_exists inline", async () => {
+it("create closes the dialog at once; a failure stays as a row with Retry and Dismiss", async () => {
   const api = createMockApi({});
   const create = vi.spyOn(api, "worktreeCreate");
   const view = await harness(api);
@@ -311,16 +312,41 @@ it("create shows branch_exists inline", async () => {
   expect(markup).toContain('placeholder="main"');
 
   dialog().props.onCreate("demo-xdev", "oak", null);
+  expect(view.of(CreateWorktreeDialog)).toHaveLength(0);
+  expect(view.list().props.pending).toMatchObject([{ name: "oak", state: "running" }]);
   await tick();
   expect(create).toHaveBeenCalledWith("demo-xdev", "oak", null);
-  expect(dialog().props.error).toBe("branch_exists");
-  expect(renderToStaticMarkup(dialog())).toContain(en("error.branch_exists"));
+  const [failed] = view.list().props.pending;
+  expect(failed).toMatchObject({ name: "oak", state: "failed", error: { code: "branch_exists" } });
+  view.list().props.onRetryCreate(failed.id);
+  await tick();
+  expect(create).toHaveBeenCalledTimes(2);
+  expect(view.list().props.pending[0].state).toBe("failed");
+  view.list().props.onDismissCreate(failed.id);
+  expect(view.list().props.pending).toEqual([]);
 
+  view.list().props.onCreate();
   dialog().props.onCreate("demo-xdev", "birch", null);
   await tick();
-  expect(view.of(CreateWorktreeDialog)).toHaveLength(0);
+  await tick();
+  expect(view.list().props.pending).toEqual([]);
   expect(view.list().props.selected).toBe("/demo/wt/xdev-birch");
   expect(view.html()).toContain("⎇ birch");
+});
+
+it("a create cancelled while running is removed once it lands, and nothing is selected", async () => {
+  const api = createMockApi({});
+  const remove = vi.spyOn(api, "worktreeRemove");
+  const view = await harness(api);
+  view.list().props.onCreate();
+  view.of(CreateWorktreeDialog)[0].props.onCreate("demo-xdev", "birch", null);
+  view.list().props.onCancelCreate(view.list().props.pending[0].id);
+  expect(view.list().props.pending).toEqual([]);
+  await tick();
+  await tick();
+  expect(remove).toHaveBeenCalledWith("/demo/wt/xdev-birch", false, true);
+  expect(view.list().props.selected).not.toBe("/demo/wt/xdev-birch");
+  expect((await api.workspaceList())[0].worktrees.map((w) => w.name)).not.toContain("birch");
 });
 
 it("delete asks, closes sessions, then removes; dirty needs the second step", async () => {

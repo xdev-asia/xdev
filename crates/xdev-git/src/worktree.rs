@@ -132,6 +132,41 @@ impl Repo {
         .map(drop)
     }
 
+    /// `git worktree add <path> <branch>`: a worktree on a local branch
+    /// that already exists.
+    pub fn add_worktree_on(&self, path: &Path, branch: &str) -> Result<(), GitError> {
+        if !self.branch_exists(branch)? || branch.starts_with('-') {
+            return Err(GitError::BadId(branch.to_owned()));
+        }
+        let path = utf8(path)?;
+        run::run(
+            &self.workdir,
+            &["worktree", "add", "-q", path, branch],
+            None,
+        )
+        .map(drop)
+    }
+
+    /// Commits on local branch `branch` that `base` does not have; every
+    /// commit on the branch when `base` names no commit.
+    pub fn count_ahead(&self, branch: &str, base: &str) -> Result<u32, GitError> {
+        let Some(tip) = self.resolve_ref(&format!("refs/heads/{branch}"))? else {
+            return Err(GitError::BadId(branch.to_owned()));
+        };
+        let range = match self.resolve_ref(base) {
+            Ok(Some(base)) => format!("{base}..{tip}"),
+            Ok(None) | Err(GitError::BadId(_)) => tip,
+            Err(e) => return Err(e),
+        };
+        let out = run::run(&self.workdir, &["rev-list", "--count", &range], None)?;
+        let out = String::from_utf8_lossy(&out);
+        out.trim().parse().map_err(|_| GitError::Failed {
+            args: "rev-list --count".to_owned(),
+            status: Some(0),
+            stderr: out.trim().to_owned(),
+        })
+    }
+
     /// Removes a worktree even with changes in it. A folder already gone is
     /// only pruned from git's list.
     pub fn remove_worktree(&self, path: &Path) -> Result<(), GitError> {

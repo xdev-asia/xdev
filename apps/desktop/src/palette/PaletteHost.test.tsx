@@ -7,6 +7,7 @@ import { JumpPalette } from "./JumpPalette";
 import { registerTerminal } from "@/terminal/terminalRegistry";
 import type { TerminalHandle } from "@/terminal/Terminal";
 import { PaletteHost, type PaletteActions, type PaletteHostProps } from "./PaletteHost";
+import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
 const store = vi.hoisted(() => ({ view: null as unknown }));
@@ -29,7 +30,7 @@ vi.mock("@/agents/profileStore", async (original) => ({ ...await original<typeof
 
 type Node = ReactElement<Record<string, any>>;
 
-const oak: WorktreeView = { path: "/wt/oak", name: "oak", branch: "feat/oak", head: null, start: null, primary: false, pinned: false, detached: false };
+const oak: WorktreeView = { path: "/wt/oak", name: "oak", branch: "feat/oak", head: null, start: null, primary: false, pinned: false, detached: false, ...NO_DETAILS };
 const elm: WorktreeView = { ...oak, path: "/wt/elm", name: "elm", branch: "feat/elm" };
 const repos: RepoView[] = [{ id: "x", shortName: "xdev", path: "/r/x", baseRef: "origin/main", worktreeRoot: "/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", missing: false, worktrees: [oak, elm], found: [] }];
 const tabOf = (id: string, worktree: string, profileId: string, agent: boolean): Tab => ({ id, worktree, profileId, account: null, permissions: "ask", agent, status: "idle" } as Tab);

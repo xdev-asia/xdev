@@ -20,10 +20,12 @@ use xdev_ai::process::{kill_tree, own_group};
 use xdev_git::{ChangeKind, GitError, Repo};
 use xdev_policy::{Action, Verdict};
 use xdev_workspace::{
-    HookKind, HookRun, Registry, RepoHooks, RepoPatch, RepoView, ScriptSource, SetupPolicy,
-    VaultView, WorkspaceError, WorktreeStat, WorktreeView, add_repo, add_vault, adopt_worktree,
-    create_worktree_with, forget_repo, forget_vault, hooks_for, list, list_vaults, path_key,
-    refresh_base, remove_worktree, repo_docs_dir, set_pinned, stat, trust_hook, update_repo,
+    DetailsPatch, FolderEntry, HookKind, HookRun, Registry, Removed, RepoHooks, RepoPatch,
+    RepoView, ScriptSource, SetupPolicy, SidebarItem, VaultView, WorkspaceError, WorktreeStat,
+    WorktreeView, add_repo, add_vault, adopt_worktree, archive_worktree, create_worktree_with,
+    forget_repo, forget_vault, hooks_for, kept_delete, list, list_vaults, path_key, refresh_base,
+    remove_worktree, repo_docs_dir, restore_worktree, set_details, set_order, set_pinned, sidebar,
+    stat, trust_hook, update_repo,
 };
 
 use crate::accounts::data_dir;
@@ -171,12 +173,69 @@ fn remove_with(
     path: &Path,
     force: bool,
     confirmed: bool,
-) -> Result<(), CmdError> {
+) -> Result<Removed, CmdError> {
     let action = Action::Delete {
         path: path.to_owned(),
     };
     allowed(data, &action, confirmed)?;
-    update(data, lock, |reg| remove_worktree(reg, path, force))
+    let now = clock().0;
+    update(data, lock, |reg| remove_worktree(reg, path, force, now))
+}
+
+/// Removes the folder and keeps the branch; the same delete gate as
+/// `remove_with`, since the folder goes either way.
+fn archive_with(
+    data: &Path,
+    lock: &WorkspaceLock,
+    path: &Path,
+    force: bool,
+    confirmed: bool,
+) -> Result<Removed, CmdError> {
+    let action = Action::Delete {
+        path: path.to_owned(),
+    };
+    allowed(data, &action, confirmed)?;
+    let now = clock().0;
+    update(data, lock, |reg| archive_worktree(reg, path, force, now))
+}
+
+/// Deletes a kept branch from git. The gate sees the branch as the ref file
+/// it lives in, `<repo>/.git/refs/heads/<branch>`, since `Action` has no
+/// branch kind. An unknown repo or branch fails before the gate asks.
+fn branch_delete_with(
+    data: &Path,
+    lock: &WorkspaceLock,
+    repo_id: &str,
+    branch: &str,
+    confirmed: bool,
+) -> Result<(), CmdError> {
+    let reg = Registry::load(data)?;
+    let repo = reg
+        .repos
+        .iter()
+        .find(|r| r.id == repo_id)
+        .ok_or_else(|| WorkspaceError::RepoUnknown(repo_id.to_owned()))?;
+    if !reg
+        .kept
+        .iter()
+        .any(|k| k.repo_id == repo_id && k.branch == branch)
+    {
+        return Err(WorkspaceError::KeptUnknown {
+            repo_id: repo_id.to_owned(),
+            branch: branch.to_owned(),
+        }
+        .into());
+    }
+    let action = Action::Delete {
+        path: repo
+            .path
+            .join(".git")
+            .join("refs")
+            .join("heads")
+            .join(branch),
+    };
+    allowed(data, &action, confirmed)?;
+    update(data, lock, |reg| kept_delete(reg, repo_id, branch))
 }
 
 /// `Ok` when the policy gate lets `action` run; `confirmed` says the user
@@ -847,8 +906,147 @@ pub fn worktree_remove(
     path: PathBuf,
     force: bool,
     confirmed: bool,
-) -> Result<(), CmdError> {
+) -> Result<Removed, CmdError> {
     remove_with(data_dir(&state)?, &lock, &path, force, confirmed)
+}
+
+#[tauri::command(async)]
+pub fn worktree_archive(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    path: PathBuf,
+    force: bool,
+    confirmed: bool,
+) -> Result<Removed, CmdError> {
+    archive_with(data_dir(&state)?, &lock, &path, force, confirmed)
+}
+
+#[tauri::command(async)]
+pub fn worktree_details(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    path: PathBuf,
+    patch: DetailsPatch,
+) -> Result<(), CmdError> {
+    update(data_dir(&state)?, &lock, |reg| {
+        set_details(reg, &path, patch)
+    })
+}
+
+#[tauri::command(async)]
+pub fn worktree_restore(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    repo_id: String,
+    branch: String,
+) -> Result<WorktreeView, CmdError> {
+    let now = clock().0;
+    update(data_dir(&state)?, &lock, |reg| {
+        restore_worktree(reg, &repo_id, &branch, now)
+    })
+}
+
+/// Stops listing a kept branch; the branch stays in git.
+#[tauri::command(async)]
+pub fn kept_keep(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    repo_id: String,
+    branch: String,
+) -> Result<(), CmdError> {
+    update(data_dir(&state)?, &lock, |reg| {
+        xdev_workspace::kept_keep(reg, &repo_id, &branch)
+    })
+}
+
+#[tauri::command(async)]
+pub fn branch_delete(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    repo_id: String,
+    branch: String,
+    confirmed: bool,
+) -> Result<(), CmdError> {
+    branch_delete_with(data_dir(&state)?, &lock, &repo_id, &branch, confirmed)
+}
+
+/// Repos with their kept branches, folders and groups in shown order.
+#[tauri::command(async)]
+pub fn workspace_sidebar(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+) -> Result<Vec<SidebarItem>, CmdError> {
+    let now = clock().0;
+    update(data_dir(&state)?, &lock, |reg| sidebar(reg, now))
+}
+
+#[tauri::command(async)]
+pub fn sidebar_order(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    ids: Vec<String>,
+) -> Result<(), CmdError> {
+    update(data_dir(&state)?, &lock, |reg| set_order(reg, &ids))
+}
+
+/// Creates a group (no `id`) or renames one; returns its id.
+#[tauri::command(async)]
+pub fn group_put(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    id: Option<String>,
+    name: String,
+) -> Result<String, CmdError> {
+    update(data_dir(&state)?, &lock, |reg| {
+        xdev_workspace::group_put(reg, id.as_deref(), &name)
+    })
+}
+
+#[tauri::command(async)]
+pub fn group_remove(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    id: String,
+) -> Result<(), CmdError> {
+    update(data_dir(&state)?, &lock, |reg| {
+        xdev_workspace::group_remove(reg, &id)
+    })
+}
+
+#[tauri::command(async)]
+pub fn group_move(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    member: String,
+    group: Option<String>,
+    index: usize,
+) -> Result<(), CmdError> {
+    update(data_dir(&state)?, &lock, |reg| {
+        xdev_workspace::group_move(reg, &member, group.as_deref(), index)
+    })
+}
+
+#[tauri::command(async)]
+pub fn folder_add(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    path: PathBuf,
+) -> Result<FolderEntry, CmdError> {
+    update(data_dir(&state)?, &lock, |reg| {
+        xdev_workspace::folder_add(reg, &path)
+    })
+}
+
+/// Drops the folder from the sidebar; nothing on disk is touched.
+#[tauri::command(async)]
+pub fn folder_forget(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    id: String,
+) -> Result<(), CmdError> {
+    update(data_dir(&state)?, &lock, |reg| {
+        xdev_workspace::folder_forget(reg, &id)
+    })
 }
 
 #[tauri::command(async)]
@@ -1032,6 +1230,68 @@ mod tests {
             verdicts[..],
             [Verdict::Ask { .. }, Verdict::Allow]
         ));
+    }
+
+    fn verdicts(data: &Path) -> Vec<Verdict> {
+        xdev_policy::read_audit(data)
+            .unwrap()
+            .into_iter()
+            .map(|entry| entry.verdict)
+            .collect()
+    }
+
+    #[test]
+    fn archive_goes_through_the_delete_gate() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let asked = archive_with(&fx.data, &lock, &fx.first, false, false);
+        assert_eq!(code(asked), "needs_approval");
+        assert!(fx.first.exists());
+
+        let removed = archive_with(&fx.data, &lock, &fx.first, false, true).unwrap();
+        assert!(!fx.first.exists());
+        assert!(removed.kept.is_some());
+        assert!(matches!(
+            verdicts(&fx.data)[..],
+            [Verdict::Ask { .. }, Verdict::Allow]
+        ));
+
+        fs::write(fx.data.join("policy.json"), r#"{"delete":"deny"}"#).unwrap();
+        let err = archive_with(&fx.data, &lock, &fx.second, false, true).unwrap_err();
+        assert_eq!(err.code, "denied");
+        assert!(fx.second.exists());
+    }
+
+    #[test]
+    fn branch_delete_goes_through_the_delete_gate() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let removed = archive_with(&fx.data, &lock, &fx.first, false, true).unwrap();
+        let kept = removed.kept.unwrap();
+        let has_branch = || {
+            !git(&fx.main, &["branch", "--list", &kept.branch])
+                .trim()
+                .is_empty()
+        };
+
+        let asked = branch_delete_with(&fx.data, &lock, &kept.repo_id, &kept.branch, false);
+        assert_eq!(code(asked), "needs_approval");
+        assert!(has_branch());
+
+        branch_delete_with(&fx.data, &lock, &kept.repo_id, &kept.branch, true).unwrap();
+        assert!(!has_branch());
+        assert!(Registry::load(&fx.data).unwrap().kept.is_empty());
+        let audit = verdicts(&fx.data);
+        assert!(matches!(
+            audit[audit.len() - 2..],
+            [Verdict::Ask { .. }, Verdict::Allow]
+        ));
+
+        // Gone from the list: refused before the gate is asked.
+        let before = verdicts(&fx.data).len();
+        let gone = branch_delete_with(&fx.data, &lock, &kept.repo_id, &kept.branch, true);
+        assert_eq!(code(gone), "kept_unknown");
+        assert_eq!(verdicts(&fx.data).len(), before);
     }
 
     #[test]

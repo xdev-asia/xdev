@@ -6,6 +6,7 @@ import { translate } from "@/i18n";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import { WorktreeList, type WorktreeListProps } from "./WorktreeList";
+import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
 vi.mock("react", async (original) => ({
@@ -34,7 +35,7 @@ const event = { preventDefault() {} };
 
 const notes: RepoView = {
   id: "repo-2-notes", shortName: "notes", path: "/code/notes", baseRef: "main", worktreeRoot: "/code/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", missing: false,
-  worktrees: [{ path: "/code/notes", name: "notes", branch: null, head: null, start: null, primary: true, pinned: false, detached: true }],
+  worktrees: [{ path: "/code/notes", name: "notes", branch: null, head: null, start: null, primary: true, pinned: false, detached: true, ...NO_DETAILS }],
   found: [],
 };
 // A repo whose folder is gone comes back with no worktrees.
@@ -331,7 +332,7 @@ it("a long name and branch are cut by the row and keep their full text in a titl
   expect(part(view, oak, "ws-stat")).toHaveLength(1);
 });
 
-const FOUND: WorktreeView = { path: "/demo/elsewhere/spike", name: "spike", branch: "spike", head: "6666666666666666666666666666666666666666", start: null, primary: false, pinned: false, detached: false };
+const FOUND: WorktreeView = { path: "/demo/elsewhere/spike", name: "spike", branch: "spike", head: "6666666666666666666666666666666666666666", start: null, primary: false, pinned: false, detached: false, ...NO_DETAILS };
 
 it("found worktrees show under their repo and Adopt calls onAdopt", () => {
   const adopted: WorktreeView[] = [];
@@ -386,4 +387,34 @@ it("shows the PR chip with state and checks", () => {
 it("no chip without a PR", () => {
   expect(harness().html()).not.toContain("ws-pr");
   expect(harness(DOTS, repos, { prs: { [OAK_PATH]: { pr: null, checks: null } } }).html()).not.toContain("ws-pr");
+});
+
+it("progress row renders with cancel, and a failed create offers Retry and Dismiss", () => {
+  const asked = { cancel: [] as string[], retry: [] as string[], dismiss: [] as string[] };
+  const view = harness(DOTS, repos, {
+    pending: [
+      { id: "create-1", repoId: "demo-xdev", name: "birch", from: null, state: "running" },
+      { id: "create-2", repoId: "demo-xdev", name: "pine", from: null, state: "failed", error: { code: "worktree_exists", detail: "x" } },
+    ],
+    onCancelCreate: (id) => asked.cancel.push(id),
+    onRetryCreate: (id) => asked.retry.push(id),
+    onDismissCreate: (id) => asked.dismiss.push(id),
+  });
+  const rows = view.all().filter((n) => n.props["data-pending"] !== undefined);
+  expect(rows.map((n) => n.props["data-pending"])).toEqual(["create-1", "create-2"]);
+  const running = nodes(rows[0].props.children);
+  expect(running.some((n) => n.props.children === "birch")).toBe(true);
+  const spinner = running.find((n) => n.props.role === "progressbar")!;
+  expect(spinner.props["aria-label"]).toBe(en("workspace.pending.creating", { name: "birch" }));
+  const button = (list: Node[], text: string) => list.find((n) => n.type === "button" && n.props.children === text)!;
+  button(running, en("workspace.pending.cancel")).props.onClick();
+  expect(asked.cancel).toEqual(["create-1"]);
+
+  const failed = nodes(rows[1].props.children);
+  expect(failed.some((n) => n.props.role === "progressbar")).toBe(false);
+  const why = failed.find((n) => n.props.role === "alert")!;
+  expect(why.props.children).toEqual([en("workspace.pending.failed"), ` · ${en("error.worktree_exists")}`]);
+  button(failed, en("workspace.pending.retry")).props.onClick();
+  button(failed, en("workspace.pending.dismiss")).props.onClick();
+  expect(asked).toEqual({ cancel: ["create-1"], retry: ["create-2"], dismiss: ["create-2"] });
 });

@@ -202,7 +202,7 @@ fn create_from_another_branch_starts_at_that_commit() {
 fn remove_refuses_primary() {
     let (mut reg, _id, main) = registered();
     assert_eq!(
-        remove_worktree(&mut reg, main.path(), true)
+        remove_worktree(&mut reg, main.path(), true, 0)
             .unwrap_err()
             .code(),
         "primary_worktree"
@@ -214,7 +214,7 @@ fn unknown_paths_are_refused() {
     let (mut reg, _id, main) = registered();
     let nowhere = main.path().join("nowhere");
     assert_eq!(
-        remove_worktree(&mut reg, &nowhere, true)
+        remove_worktree(&mut reg, &nowhere, true, 0)
             .unwrap_err()
             .code(),
         "worktree_unknown"
@@ -231,12 +231,12 @@ fn remove_dirty_needs_force_and_deletes_branch() {
     let wt = create_worktree(&mut reg, &id, "dirty", None, 1, 0).unwrap();
     fs::write(Path::new(&wt.path).join("new.txt"), "x").unwrap();
     assert_eq!(
-        remove_worktree(&mut reg, Path::new(&wt.path), false)
+        remove_worktree(&mut reg, Path::new(&wt.path), false, 0)
             .unwrap_err()
             .code(),
         "worktree_dirty"
     );
-    remove_worktree(&mut reg, Path::new(&wt.path), true).unwrap();
+    remove_worktree(&mut reg, Path::new(&wt.path), true, 0).unwrap();
     assert!(!Path::new(&wt.path).exists());
     assert!(reg.worktrees.is_empty());
     assert!(
@@ -251,7 +251,7 @@ fn remove_dirty_needs_force_and_deletes_branch() {
 fn remove_clean_worktree_without_force() {
     let (mut reg, id, _main) = registered();
     let wt = create_worktree(&mut reg, &id, "clean", None, 1, 0).unwrap();
-    remove_worktree(&mut reg, Path::new(&wt.path), false).unwrap();
+    remove_worktree(&mut reg, Path::new(&wt.path), false, 0).unwrap();
     assert!(!Path::new(&wt.path).exists());
 }
 
@@ -266,7 +266,7 @@ fn remove_keeps_the_branch_of_an_imported_worktree() {
     let mut reg = Registry::default();
     let view = add_repo(&mut reg, main.path(), 0).unwrap();
     let path = view.worktrees[1].path.clone();
-    remove_worktree(&mut reg, Path::new(&path), false).unwrap();
+    remove_worktree(&mut reg, Path::new(&path), false, 0).unwrap();
     assert!(!Path::new(&path).exists());
     assert!(
         Repo::discover(main.path())
@@ -397,7 +397,7 @@ fn adopted_worktree_keeps_its_branch_on_remove() {
     let (mut reg, _id, main) = registered();
     let outside = outside_worktree(main.path(), "late");
     adopt_worktree(&mut reg, &outside, 1).unwrap();
-    remove_worktree(&mut reg, &outside, false).unwrap();
+    remove_worktree(&mut reg, &outside, false, 0).unwrap();
     assert!(
         Repo::discover(main.path())
             .unwrap()
@@ -469,7 +469,7 @@ fn worktree_with_commit() -> (Registry, TestRepo, String, Repo) {
 #[test]
 fn remove_without_force_keeps_a_branch_with_unmerged_commits() {
     let (mut reg, _main, path, repo) = worktree_with_commit();
-    remove_worktree(&mut reg, Path::new(&path), false).unwrap();
+    remove_worktree(&mut reg, Path::new(&path), false, 0).unwrap();
     assert!(!Path::new(&path).exists());
     assert!(reg.worktrees.is_empty());
     assert!(repo.branch_exists("work").unwrap());
@@ -478,7 +478,7 @@ fn remove_without_force_keeps_a_branch_with_unmerged_commits() {
 #[test]
 fn remove_with_force_deletes_a_branch_with_unmerged_commits() {
     let (mut reg, _main, path, repo) = worktree_with_commit();
-    remove_worktree(&mut reg, Path::new(&path), true).unwrap();
+    remove_worktree(&mut reg, Path::new(&path), true, 0).unwrap();
     assert!(!repo.branch_exists("work").unwrap());
 }
 
@@ -486,7 +486,7 @@ fn remove_with_force_deletes_a_branch_with_unmerged_commits() {
 fn remove_without_force_deletes_a_merged_branch() {
     let (mut reg, main, path, repo) = worktree_with_commit();
     git(main.path(), &["merge", "-q", "--ff-only", "work"]);
-    remove_worktree(&mut reg, Path::new(&path), false).unwrap();
+    remove_worktree(&mut reg, Path::new(&path), false, 0).unwrap();
     assert!(!repo.branch_exists("work").unwrap());
 }
 
@@ -532,7 +532,7 @@ fn records_survive_a_repo_added_through_a_link() {
     assert_eq!(repos[0].worktrees[1].name, "kept");
     assert!(repos[0].worktrees[1].pinned);
     // Removing it still deletes the branch the app made.
-    remove_worktree(&mut reg, Path::new(&wt.path), false).unwrap();
+    remove_worktree(&mut reg, Path::new(&wt.path), false, 0).unwrap();
     assert!(
         !Repo::discover(&repo_path)
             .unwrap()
@@ -860,7 +860,10 @@ fn update_root_applies_to_the_next_worktree_only() {
 }
 
 fn with_prefix(prefix: BranchPrefix) -> CreateOptions {
-    CreateOptions { prefix }
+    CreateOptions {
+        prefix,
+        ..CreateOptions::default()
+    }
 }
 
 #[test]
