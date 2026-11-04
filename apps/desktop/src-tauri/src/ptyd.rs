@@ -342,7 +342,7 @@ mod tests {
             serde_json::from_str(include_str!("../tauri.ptyd.conf.json")).unwrap();
         assert_eq!(
             conf["bundle"]["externalBin"],
-            serde_json::json!([format!("binaries/{BINARY}")])
+            serde_json::json!([format!("binaries/{BINARY}"), "binaries/xdev"])
         );
         let bin = here.join(format!("../../../crates/xdev-pty/src/bin/{BINARY}.rs"));
         assert!(bin.is_file(), "{}", bin.display());
