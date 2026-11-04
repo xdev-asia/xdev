@@ -1006,3 +1006,24 @@ it("settings and search keys open their views", async () => {
   view.draw();
   expect(view.of(DocsApp)).toHaveLength(1);
 });
+
+it("Manage accounts in the usage popover shows the docs view on the Accounts app", async () => {
+  const view = await harness();
+  expect(view.of(LiveWorkspaceFooter)[0].props.onManageAccounts).toBeTypeOf("function");
+  expect(view.of(DocsApp)).toHaveLength(0);
+  view.of(LiveWorkspaceFooter)[0].props.onManageAccounts();
+  view.draw();
+  expect(view.of(DocsApp)[0].props.appRequest).toEqual({ app: "accounts", seq: 1 });
+  expect(view.all().find(n => n.props.className === "ws-docs")!.props.hidden).toBe(false);
+  // Asking again is a new request, so Accounts shows again after the person moved elsewhere.
+  view.of(LiveWorkspaceFooter)[0].props.onManageAccounts();
+  view.draw();
+  expect(view.of(DocsApp)[0].props.appRequest).toEqual({ app: "accounts", seq: 2 });
+});
+
+it("Usage details in the usage popover asks the Kit for the usage tab", async () => {
+  const view = await harness();
+  view.of(LiveWorkspaceFooter)[0].props.onOpenUsage();
+  view.draw();
+  expect(view.of(DocsApp)[0].props.kit.open).toMatchObject({ tab: "usage" });
+});

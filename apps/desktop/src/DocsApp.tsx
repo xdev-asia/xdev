@@ -58,7 +58,9 @@ function folderName(path: string): string {
 }
 
 /** Docs & SDLC: the vault, its docs and the agents that work on them. */
-export function DocsApp(props: { kit?: KitHost }) {
+export type AppRequest = { app: AppId; seq: number };
+
+export function DocsApp(props: { kit?: KitHost; appRequest?: AppRequest | null }) {
   const { t } = useI18n();
   const [booting, setBooting] = useState(true);
   const [vault, setVault] = useState<Vault | null>(null);
@@ -141,10 +143,11 @@ export function DocsApp(props: { kit?: KitHost }) {
     <>
       {vault ? (
         // Keyed by path so switching folders starts with a clean editor and search state.
-        <VaultView key={vault.path} vault={vault} kit={props.kit} onChangeFolder={pickAndOpen} />
+        <VaultView key={vault.path} vault={vault} kit={props.kit} appRequest={props.appRequest} onChangeFolder={pickAndOpen} />
       ) : (
         <NoVaultView
           kit={props.kit}
+          appRequest={props.appRequest}
           failure={failure}
           busy={opening}
           onCreate={() => setCreating({ path: defaultPath })}
@@ -165,7 +168,7 @@ export function DocsApp(props: { kit?: KitHost }) {
   );
 }
 
-function VaultView(props: { vault: Vault; kit?: KitHost; onChangeFolder(): Promise<void> }) {
+function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: AppRequest | null; onChangeFolder(): Promise<void> }) {
   const { t } = useI18n();
   const doc = useDoc(api);
   const review = useChanges(api, doc.flush);
@@ -364,6 +367,14 @@ function VaultView(props: { vault: Vault; kit?: KitHost; onChangeFolder(): Promi
     // `openApp` only sets state, so the request alone decides when this runs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kitRequest]);
+
+  // A request from the shell (the usage popover) shows the app it names.
+  const appSeq = props.appRequest?.seq;
+  useEffect(() => {
+    if (props.appRequest) openApp(props.appRequest.app);
+    // Only a new request runs this; `openApp` just sets state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appSeq]);
 
   function openApp(next: AppId) {
     // A diff belongs to Changes; elsewhere the main area goes back to the open doc.
