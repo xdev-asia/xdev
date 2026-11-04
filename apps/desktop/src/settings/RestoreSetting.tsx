@@ -5,7 +5,7 @@ import { useI18n } from "@/i18n";
 
 export const RESTORE_MODES: RestoreMode[] = ["all", "agentsOnly", "none"];
 
-/** Settings → Terminal → On start, reopen tabs: what a restart brings back (`UiSettings.restore`). */
+/** Settings → General → On start, reopen tabs: what a restart brings back (`UiSettings.restore`). */
 export function RestoreSetting(props: { api: Pick<Api, "uiSettingsGet" | "uiSettingsPut"> }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
