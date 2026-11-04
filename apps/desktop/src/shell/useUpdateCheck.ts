@@ -3,7 +3,7 @@ import type { Api, UpdatePhase } from "@/api";
 
 export type CheckState = { phase: UpdatePhase; restart: "idle" | "restarting" | "failed" };
 
-export type CheckAction = { kind: "phase"; phase: UpdatePhase } | { kind: "restarting" } | { kind: "restartFailed" } | { kind: "restartDone" };
+export type CheckAction = { kind: "phase"; phase: UpdatePhase } | { kind: "restarting" } | { kind: "restartFailed" } | { kind: "restartDone" } | { kind: "restartHanded" };
 
 export const INITIAL_CHECK: CheckState = { phase: { kind: "idle" }, restart: "idle" };
 
@@ -16,6 +16,9 @@ export function nextCheck(current: CheckState, action: CheckAction): CheckState 
       return { ...current, restart: "restarting" };
     case "restartFailed":
       return { ...current, restart: "failed" };
+    case "restartHanded":
+      // The quit guard has the restart now; if the person cancels there, the button is back.
+      return { ...current, restart: "idle" };
     case "restartDone":
       return { phase: { kind: "up-to-date" }, restart: "idle" };
   }
@@ -44,7 +47,7 @@ export function phaseLine(state: CheckState): { key: string; vars?: Record<strin
 }
 
 /** The update check as the Updates setting shows it: the phase Rust is in, a manual check and the restart. */
-export function useUpdateCheck(api: Pick<Api, "updateCheck" | "updatePhase" | "onUpdatePhase" | "restartToUpdate">): {
+export function useUpdateCheck(api: Pick<Api, "updateCheck" | "updatePhase" | "onUpdatePhase" | "shellQuit">): {
   state: CheckState;
   check(rc: boolean): Promise<void>;
   restart(): void;
@@ -79,9 +82,10 @@ export function useUpdateCheck(api: Pick<Api, "updateCheck" | "updatePhase" | "o
   );
   const restart = useCallback(() => {
     dispatch({ kind: "restarting" });
-    // Success restarts the app; resolving means nothing was pending any more.
-    api.restartToUpdate().then(
-      () => dispatch({ kind: "restartDone" }),
+    // The restart goes through the same quit guard as a click on the close button; the quit installs
+    // the pending update and starts the app again.
+    api.shellQuit("restart").then(
+      () => dispatch({ kind: "restartHanded" }),
       () => dispatch({ kind: "restartFailed" }),
     );
   }, [api]);

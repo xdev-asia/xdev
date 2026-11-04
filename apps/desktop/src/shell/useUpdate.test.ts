@@ -20,6 +20,11 @@ describe("nextUpdate", () => {
     expect(firstSeen(seen, "0.3.1")).toBe(true);
   });
 
+  it("a restart handed to the quit guard frees the button again", () => {
+    const restarting = nextUpdate(ready, { kind: "restarting" });
+    expect(nextUpdate(restarting, { kind: "handed" })).toEqual(ready);
+  });
+
   it("a newer download does not interrupt a restart", () => {
     const restarting = nextUpdate(ready, { kind: "restarting" });
     expect(nextUpdate(restarting, { kind: "ready", version: "0.3.1", notes: null })).toBe(restarting);

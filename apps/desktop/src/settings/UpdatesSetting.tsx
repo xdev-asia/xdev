@@ -88,7 +88,7 @@ export function UpdatesView(props: UpdatesViewProps): JSX.Element {
   );
 }
 
-type UpdatesApi = Pick<Api, "appVersion" | "shellSettings" | "shellSettingsPut" | "updateCheck" | "updatePhase" | "onUpdatePhase" | "restartToUpdate">;
+type UpdatesApi = Pick<Api, "appVersion" | "shellSettings" | "shellSettingsPut" | "updateCheck" | "updatePhase" | "onUpdatePhase" | "shellQuit">;
 
 /** Settings → General → Updates: the version, a manual check, the restart and the release channel. */
 export function UpdatesSetting(props: { api: UpdatesApi; filter?: SettingsFilter; onError(code: ApiError["code"]): void }): JSX.Element {

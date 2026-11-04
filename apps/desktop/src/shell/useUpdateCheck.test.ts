@@ -22,6 +22,11 @@ it("a phase that arrives while the install restarts does not hide it", () => {
   expect(nextCheck(s, { kind: "restartDone" })).toEqual({ phase: { kind: "up-to-date" }, restart: "idle" });
 });
 
+it("a restart handed to the quit guard frees the button again", () => {
+  const s = nextCheck({ phase: ready, restart: "restarting" }, { kind: "restartHanded" });
+  expect(s).toEqual({ phase: ready, restart: "idle" });
+});
+
 it("a new phase clears an earlier failed restart", () => {
   const failed: CheckState = { phase: ready, restart: "failed" };
   expect(nextCheck(failed, { kind: "phase", phase: { kind: "checking" } }).restart).toBe("idle");
