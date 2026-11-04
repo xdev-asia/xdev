@@ -64,6 +64,7 @@ pub fn run() {
         .manage(keybindings::LastSent::default())
         .setup(move |app| {
             updater::start(app.handle().clone());
+            workspace::start_sweep(app.handle());
             // Every settings read and write goes through this store.
             if let Some(file) = commands::settings_path(app.handle()) {
                 app.manage(settings_store::SettingsStore::new(file));
