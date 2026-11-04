@@ -1914,5 +1914,16 @@
   "usage.stats.enable": "Enable {provider}",
   "usage.stats.empty": "No usage in this range.",
   "usage.stats.byProvider": "By provider",
-  "usage.stats.noDate": "–"
+  "usage.stats.noDate": "–",
+  "settings.usage.footerGroup": "Footer meters",
+  "settings.usage.display": "Usage percentages",
+  "settings.usage.displayHint": "The number on the footer meters and in the usage popover: how much is used, or how much is left.",
+  "settings.usage.display.used": "Used",
+  "settings.usage.display.remaining": "Remaining",
+  "settings.usage.footer.claude": "Claude meters",
+  "settings.usage.footer.codex": "Codex meters",
+  "settings.usage.logsGroup": "Local logs",
+  "settings.usage.scan.claude": "Read Claude logs",
+  "settings.usage.scan.codex": "Read Codex logs",
+  "settings.usage.scanHint": "Stats read the session logs on this machine. Off until you turn it on."
 }
