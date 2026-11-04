@@ -12,6 +12,7 @@ import { PtyClient } from "./ptyClient";
 import { createTerminalHandle } from "./terminalActions";
 import { getTerminalSettings, subscribeTerminalSettings } from "./terminalSettings";
 import { decodeOsc52Write, xtermOptions } from "./terminalOptions";
+import { createBell } from "./terminalBell";
 import { attachRenderer } from "./terminalRenderer";
 
 /** What a menu, the palette or a shortcut can do to one terminal. Acts on the xterm; nothing goes to the pty unless said. */
@@ -103,6 +104,7 @@ export function Terminal(props: {
       if (pane) pane.style.background = background && getTerminalSettings().theme !== "app" ? background : "";
     };
     paint(initial.theme.background);
+    const bell = createBell(pane ?? el);
     const fit = new FitAddon();
     const finder = new SearchAddon();
     search.current = finder;
@@ -188,6 +190,13 @@ export function Terminal(props: {
       menu({ x: e.clientX, y: e.clientY }, handle.current);
     };
     el.addEventListener("contextmenu", onContextMenu, true);
+    // Focus follows the mouse when set, unless the find bar's input has the focus.
+    const onMouseEnter = () => {
+      if (!getTerminalSettings().focusFollowsMouse) return;
+      if (typeof document !== "undefined" && document.activeElement?.closest?.(".terminal-find")) return;
+      term.focus();
+    };
+    el.addEventListener("mouseenter", onMouseEnter);
     // A change in Settings applies to this pane at once, with no restart.
     const offSettings = subscribeTerminalSettings(() => {
       const next = xtermOptions(getTerminalSettings(), mono, color);
@@ -219,7 +228,10 @@ export function Terminal(props: {
       void client.input(text).catch(() => {});
     });
     term.onTitleChange((title) => handlers.current.onTitle?.(title));
-    term.onBell(() => handlers.current.onBell?.());
+    term.onBell(() => {
+      bell.ring(getTerminalSettings().bell);
+      handlers.current.onBell?.();
+    });
     term.onResize(({ cols, rows }) => void client.resize(cols, rows).catch(() => {}));
     // A mount undone in the same tick (StrictMode in dev) starts nothing, so a shared client
     // is started once, by the mount that stays.
@@ -244,7 +256,9 @@ export function Terminal(props: {
       alive = false;
       offSettings();
       renderer.dispose();
+      bell.dispose();
       el.removeEventListener("contextmenu", onContextMenu, true);
+      el.removeEventListener("mouseenter", onMouseEnter);
       observer.disconnect();
       if (owned) void client.dispose();
       search.current = null;

@@ -21,6 +21,7 @@ vi.mock("react", async (original) => ({
           ? {
               clientWidth: 0,
               clientHeight: 0,
+              classList: { add() {}, remove() {} },
               addEventListener: (name: string, cb: (e: unknown) => void) => void (hooks.listeners[name] = cb),
               removeEventListener: (name: string) => void delete hooks.listeners[name],
             }
@@ -248,7 +249,7 @@ it("builds the xterm options from the stored settings", () => {
 });
 
 it("the stored theme builds the xterm and the pane takes its background", () => {
-  const pane = { style: { background: "" } };
+  const pane = { style: { background: "" }, classList: { add() {}, remove() {} }, addEventListener() {}, removeEventListener() {} };
   setTerminalSettings({ ...TERMINAL_DEFAULTS, theme: "dracula", wordSeparators: " /" });
   const { effect } = mount({ api: createMockApi({}), id: "th-1" });
   (hooks.store[0].current as { parentElement?: unknown }).parentElement = pane;
@@ -450,4 +451,38 @@ it("under terminal first the keys a TUI uses reach the program", () => {
   // Ctrl+K no longer clears (it yields); the global search is what is left on that chord.
   expect(handler(key({ ctrlKey: true, code: "KeyK" }))).toBe(false);
   expect(hooks.calls).toEqual([]);
+});
+
+it("the bell cue follows the setting and onBell still fires", () => {
+  const classes = new Set<string>();
+  const pane = {
+    style: { background: "" },
+    classList: { add: (c: string) => void classes.add(c), remove: (c: string) => void classes.delete(c) },
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  const onBell = vi.fn();
+  const { effect } = mount({ api: createMockApi({}), id: "b-1", onBell });
+  (hooks.store[0].current as { parentElement?: unknown }).parentElement = pane;
+  effect();
+  hooks.bell?.();
+  expect(onBell).toHaveBeenCalledTimes(1);
+  expect(classes.has("terminal-bell")).toBe(false);
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, bell: "visual" });
+  hooks.bell?.();
+  expect(onBell).toHaveBeenCalledTimes(2);
+  expect(classes.has("terminal-bell")).toBe(true);
+});
+
+it("mouseenter focuses the xterm only when focus follows mouse is on", () => {
+  const { effect } = mount({ api: createMockApi({}), id: "f-1" });
+  const cleanup = effect() as () => void;
+  const before = hooks.focused;
+  hooks.listeners.mouseenter?.({});
+  expect(hooks.focused).toBe(before);
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, focusFollowsMouse: true });
+  hooks.listeners.mouseenter?.({});
+  expect(hooks.focused).toBe(before + 1);
+  cleanup();
+  expect(hooks.listeners.mouseenter).toBeUndefined();
 });
