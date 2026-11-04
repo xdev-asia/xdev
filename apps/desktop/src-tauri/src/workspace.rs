@@ -653,28 +653,12 @@ fn trash_folder(path: &Path) -> io::Result<()> {
 }
 
 #[tauri::command(async)]
-#[allow(clippy::too_many_arguments)]
 pub fn repo_update(
     state: State<'_, AppState>,
     lock: State<'_, WorkspaceLock>,
     id: String,
-    short_name: Option<String>,
-    base_ref: Option<String>,
-    worktree_root: Option<PathBuf>,
-    setup_policy: Option<SetupPolicy>,
-    script_source: Option<ScriptSource>,
-    local_setup: Option<String>,
-    local_archive: Option<String>,
+    patch: RepoPatch,
 ) -> Result<RepoView, CmdError> {
-    let patch = RepoPatch {
-        short_name,
-        base_ref,
-        worktree_root,
-        setup_policy,
-        script_source,
-        local_setup,
-        local_archive,
-    };
     update(data_dir(&state)?, &lock, |reg| update_repo(reg, &id, patch))
 }
 

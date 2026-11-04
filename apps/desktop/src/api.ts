@@ -79,6 +79,9 @@ import type {
   SidebarItem,
   SidebarPrefs,
   Check,
+  GhAccount,
+  GhLogin,
+  RepoIcon,
   PrDraft,
   PrView,
   Issue,
@@ -137,7 +140,7 @@ export type { Agent, AgentSession, SessionQuery, SessionRow };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, SwitchRunning };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
-export type { FileKind } from "@xdev/bindings";
+export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { RestoreMode } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
 
@@ -393,7 +396,10 @@ export type ErrorCode =
   | "kept_unknown"
   | "group_unknown"
   | "folder_unknown"
-  | "folder_exists";
+  | "folder_exists"
+  | "bad_color"
+  | "bad_icon"
+  | "gh_account_missing";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -404,6 +410,13 @@ export type RepoPatch = {
   scriptSource?: ScriptSource;
   localSetup?: string;
   localArchive?: string;
+  // `null` clears; an absent key leaves it. `color` is a preset name or "#rgb" / "#rrggbb"
+  // (`bad_color`), an emoji icon is one grapheme (`bad_icon`), the issue command is capped at
+  // 64 KiB (`too_large`).
+  color?: string | null;
+  icon?: RepoIcon | null;
+  ghAccount?: GhAccount | null;
+  localIssueCommand?: string;
 };
 
 // The `ptySpawn` profile id that runs the worktree's setup script in the default shell. Rejects
@@ -709,6 +722,9 @@ export interface Api {
   worktreePrCreate(path: string, draft: PrDraft): Promise<PrView>;
   worktreePrChecks(path: string, number: number): Promise<Check[]>;
   worktreePrOpen(path: string, checks: boolean): Promise<void>;
+  // The logins `gh` holds, active one flagged; [] when none or `gh` is not signed in. Rejects with
+  // `gh_missing`. A repo bound to a login that is gone rejects its `gh` calls with `gh_account_missing`.
+  ghLogins(): Promise<GhLogin[]>;
   // GitHub issues of a repo through `gh`, read in its main checkout. Reject with the `gh_*` codes,
   // `not_github`, `issue_not_found`, or `issue_other_repo` (resolve only).
   issuesList(repoId: string, query: IssueQuery): Promise<Issue[]>;
@@ -955,6 +971,9 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "group_unknown",
   "folder_unknown",
   "folder_exists",
+  "bad_color",
+  "bad_icon",
+  "gh_account_missing",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -1110,7 +1129,7 @@ const tauriApi: Api = {
   repoCloneCancel: (id) => call("repo_clone_cancel", { id }),
   repoCloneName: (url) => call("repo_clone_name", { url }),
   repoCreate: (req) => call("repo_create", { req }),
-  repoUpdate: (id, patch) => call("repo_update", { id, ...patch }),
+  repoUpdate: (id, patch) => call("repo_update", { id, patch }),
   repoHooks: (path) => call("repo_hooks", { path }),
   repoHookTrust: (path, kind, hash) => call("repo_hook_trust", { path, kind, hash }),
   worktreeArchiveRun: (path) => call("worktree_archive_run", { path }),
@@ -1150,6 +1169,7 @@ const tauriApi: Api = {
   worktreeAmend: (path, files, message, confirmed) => call("worktree_amend", { path, files, message, confirmed }),
   worktreePr: (path) => call("worktree_pr", { path }),
   worktreePrCreate: (path, draft) => call("worktree_pr_create", { path, draft }),
+  ghLogins: () => call("gh_logins"),
   worktreePrChecks: (path, number) => call("worktree_pr_checks", { path, number }),
   worktreePrOpen: (path, checks) => call("worktree_pr_open", { path, checks }),
   issuesList: (repoId, query) => call("issues_list", { repoId, query }),

@@ -30,6 +30,24 @@ pub struct GhOutput {
     pub stderr: String,
 }
 
+/// A login `gh` holds, as one repo is bound to it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct GhAccount {
+    pub host: String,
+    pub user: String,
+}
+
+/// One login `gh auth status` lists.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct GhLogin {
+    pub host: String,
+    pub user: String,
+    /// The login `gh` uses when none is asked for.
+    pub active: bool,
+}
+
 pub trait GhExec {
     fn run(&self, cwd: &Path, args: &[&str], stdin: Option<&str>) -> Result<GhOutput, GitError>;
 }

@@ -17,6 +17,7 @@ mod vaults;
 use std::io;
 use std::path::PathBuf;
 
+pub use xdev_git::GhAccount;
 use xdev_git::GitError;
 
 pub use create::{CreateProject, Created, PROJECT_NAME_MAX, ProjectKind, create_project};
@@ -45,8 +46,8 @@ pub use ops::{
     stat, update_repo, valid_short_name,
 };
 pub use registry::{
-    MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, VaultEntry, WorkItem, WorkItemKind,
-    WorkStatus, WorktreeMeta, repo_id,
+    ISSUE_COMMAND_MAX, MadeBy, REPO_COLORS, Registry, RepoEntry, RepoIcon, ScriptSource,
+    SetupPolicy, VaultEntry, WorkItem, WorkItemKind, WorkStatus, WorktreeMeta, repo_id,
 };
 pub use repo_commands::{
     COMMAND_LABEL_MAX, COMMAND_PROMPT_MAX, COMMAND_TEXT_MAX, RepoAction, RepoCommand, RepoCommands,
@@ -134,6 +135,15 @@ pub enum WorkspaceError {
     /// Already listed as a folder, a repo or a worktree.
     #[error("folder already listed: {0}")]
     FolderExists(String),
+    /// Not a colour name and not `#rgb` / `#rrggbb`.
+    #[error("not a usable colour: {0}")]
+    BadColor(String),
+    /// Not one emoji.
+    #[error("not a usable icon: {0}")]
+    BadIcon(String),
+    /// A text over its size cap.
+    #[error("too large: {0}")]
+    TooLarge(String),
 }
 
 impl WorkspaceError {
@@ -170,6 +180,9 @@ impl WorkspaceError {
             WorkspaceError::GroupUnknown(_) => "group_unknown",
             WorkspaceError::FolderUnknown(_) => "folder_unknown",
             WorkspaceError::FolderExists(_) => "folder_exists",
+            WorkspaceError::BadColor(_) => "bad_color",
+            WorkspaceError::BadIcon(_) => "bad_icon",
+            WorkspaceError::TooLarge(_) => "too_large",
         }
     }
 }
