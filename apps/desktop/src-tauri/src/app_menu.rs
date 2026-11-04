@@ -271,7 +271,7 @@ mod native {
             Some(Route::Quit) => shell::quit(app, QuitMode::Quit),
             Some(Route::Help(link)) => {
                 if let Err(e) = shell::open_help(app, link) {
-                    eprintln!("help link failed: {e:?}");
+                    crate::applog::warn("help link failed", &format!("{e:?}"));
                 }
             }
             None => {}
@@ -284,7 +284,7 @@ mod native {
             Ok(menu) => {
                 let _ = app.set_menu(menu);
             }
-            Err(e) => eprintln!("menu failed: {e}"),
+            Err(e) => crate::applog::error("menu failed", &e.to_string()),
         }
     }
 

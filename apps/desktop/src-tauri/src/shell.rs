@@ -319,7 +319,7 @@ pub fn shell_close_requested(
                     .body(notice_body)
                     .show()
             {
-                eprintln!("tray notice failed: {e}");
+                crate::applog::warn("tray notice failed", &e.to_string());
             }
         }
     }

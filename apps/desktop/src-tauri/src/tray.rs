@@ -281,7 +281,7 @@ mod native {
             builder = builder.icon(icon);
         }
         if let Err(e) = builder.build(app) {
-            eprintln!("tray failed: {e}");
+            crate::applog::error("tray failed", &e.to_string());
         }
     }
 
