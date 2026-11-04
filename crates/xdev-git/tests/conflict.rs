@@ -225,6 +225,23 @@ fn abort_puts_each_operation_back() {
 }
 
 #[test]
+fn an_abort_git_refuses_is_an_error_and_the_operation_stays() {
+    let (dir, repo) = fixture();
+    let root = dir.path();
+    // A rebase whose state git cannot read back: `rebase --abort` fails.
+    let state_dir = root.join(".git").join("rebase-merge");
+    fs::create_dir(&state_dir).unwrap();
+    fs::write(state_dir.join("onto"), git(root, &["rev-parse", "HEAD"])).unwrap();
+    assert_eq!(
+        repo.conflict_state().unwrap().map(|s| s.op),
+        Some(ConflictOp::Rebase)
+    );
+    let err = repo.conflict_abort(ConflictOp::Rebase).unwrap_err();
+    assert_eq!(err.code(), "git");
+    assert!(repo.conflict_state().unwrap().is_some());
+}
+
+#[test]
 fn stage_state_marks_the_unmerged_files() {
     let (dir, repo) = fixture();
     let root = dir.path();

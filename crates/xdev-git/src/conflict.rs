@@ -176,10 +176,20 @@ impl Repo {
     }
 
     /// Gives the operation up and puts the work tree back as it was before.
+    /// A refused abort is an error, so the operation is never shown as gone
+    /// while it is still in progress.
     pub fn conflict_abort(&self, op: ConflictOp) -> Result<(), GitError> {
         self.conflict_state()?.ok_or(GitError::NoConflict)?;
-        run::run_env(&self.workdir, &[op.command(), "--abort"], &NO_EDITOR)?;
-        Ok(())
+        let args = [op.command(), "--abort"];
+        let out = run::run_env(&self.workdir, &args, &NO_EDITOR)?;
+        if out.status == Some(0) {
+            return Ok(());
+        }
+        Err(GitError::Failed {
+            args: args.join(" "),
+            status: out.status,
+            stderr: String::from_utf8_lossy(&out.stderr).trim().to_owned(),
+        })
     }
 }
 
