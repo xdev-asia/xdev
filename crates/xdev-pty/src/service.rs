@@ -520,12 +520,11 @@ fn spawn(
         last_input_ms: AtomicI64::new(now),
     });
     let window = shared.cfg.window;
+    // Strong refs: the callbacks live on the session's threads, which end
+    // with the child, so a killed PTY still reports its exit.
     let on_output = {
-        let pty = Arc::downgrade(&pty);
+        let pty = pty.clone();
         move |bytes: Vec<u8>| {
-            let Some(pty) = pty.upgrade() else {
-                return;
-            };
             let mut out = lock(&pty.out);
             out.ring.push(&bytes);
             out.last_output_ms = now_ms();
@@ -533,11 +532,8 @@ fn spawn(
         }
     };
     let on_exit = {
-        let (pty, shared) = (Arc::downgrade(&pty), Arc::downgrade(shared));
+        let (pty, shared) = (pty.clone(), Arc::downgrade(shared));
         move |code: Option<i32>| {
-            let Some(pty) = pty.upgrade() else {
-                return;
-            };
             {
                 let mut out = lock(&pty.out);
                 out.exited = Some(code);

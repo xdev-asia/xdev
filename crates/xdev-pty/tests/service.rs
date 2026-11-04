@@ -136,7 +136,8 @@ impl Client {
         }
     }
 
-    fn spawn(&mut self, id: &str, script: &str) {
+    /// The frames up to the Spawned reply; a quick child's exit can come first.
+    fn spawn(&mut self, id: &str, script: &str) -> Vec<Frame> {
         let (program, args) = shell(script);
         self.send(Frame::Spawn {
             id: id.into(),
@@ -154,6 +155,7 @@ impl Client {
             matches!(frames.last(), Some(Frame::Spawned { pid: Some(_), .. })),
             "{frames:?}"
         );
+        frames
     }
 }
 
@@ -313,16 +315,22 @@ fn the_list_and_sessions_json_show_meta_and_attachment() {
 fn a_child_that_ended_is_reported_on_attach() {
     let svc = service("exited", |_| {});
     let mut c = svc.client();
-    c.spawn("p1", "echo bye");
-    c.until(|f, _| matches!(f, Frame::Exited { .. }));
+    let early = c.spawn("p1", "echo bye");
+    if !early.iter().any(|f| matches!(f, Frame::Exited { .. })) {
+        c.until(|f, _| matches!(f, Frame::Exited { .. }));
+    }
     drop(c);
     let mut again = svc.client();
     again.send(Frame::Attach {
         id: "p1".into(),
         from_seq: 0,
     });
-    let (_, out) = again.until(|f, _| matches!(f, Frame::Exited { .. }));
-    assert!(contains(&out, b"bye"));
+    // Exit is reported on its own thread, so the last output may trail it.
+    let mut exited = false;
+    again.until(|f, out| {
+        exited |= matches!(f, Frame::Exited { .. });
+        exited && contains(out, b"bye")
+    });
 }
 
 #[test]

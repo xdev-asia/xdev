@@ -3,6 +3,7 @@
 //! behind. `proto` is what the app and the `xdev-ptyd` service say to each
 //! other.
 
+pub mod client;
 pub mod proto;
 mod pump;
 pub mod ring;
