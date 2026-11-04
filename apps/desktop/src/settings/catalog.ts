@@ -77,6 +77,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("terminal.cursorStyle", "settings.terminal.cursorStyle", ["cursor", "block", "bar", "underline", "con trỏ", "con tro"]),
   e("terminal.cursorBlink", "settings.terminal.cursorBlink", ["cursor", "blink", "nhấp nháy", "nhap nhay"]),
   e("terminal.theme", "settings.terminal.theme.label", ["theme", "colour", "color", "scheme", "dark", "light", "màu", "mau", "giao diện", "giao dien", "bảng màu", "bang mau"], "settings.terminal.theme.hint"),
+  e("terminal.themeImport", "settings.terminal.import.button", ["theme", "import", "scheme", "colour", "color", "file", "json", "nhập", "nhap", "giao diện", "giao dien", "bảng màu", "bang mau"], "settings.terminal.import.hint"),
   e("terminal.gpu", "settings.terminal.render.gpu", ["gpu", "webgl", "renderer", "acceleration", "dom", "tăng tốc", "tang toc", "hiển thị", "hien thi"], "settings.terminal.render.gpuHint"),
   e("terminal.minimumContrast", "settings.terminal.render.contrast", ["contrast", "readable", "accessibility", "tương phản", "tuong phan", "màu", "mau"], "settings.terminal.render.contrastHint"),
   e("terminal.scrollSensitivity", "settings.terminal.interaction.scroll", ["scroll", "speed", "wheel", "cuộn", "cuon", "tốc độ", "toc do"]),
