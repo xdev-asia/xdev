@@ -200,11 +200,16 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
               {wt.comment.split("\n")[0]}
             </span>
           )}
-          {(agents.length > 0 || counts || pr || wt.status || wt.item) && (
+          {(agents.length > 0 || counts || pr || wt.status || wt.item || wt.setByCliMs != null) && (
             <span className="ws-wt-meta">
               {wt.status && (
                 <span className="ws-chip ws-wt-status" data-work={wt.status}>
                   {t(`workspace.work.${wt.status}`)}
+                </span>
+              )}
+              {wt.setByCliMs != null && (
+                <span className="ws-wt-cli" title={t("cli.mark.title", { ago: ago(wt.setByCliMs, props.now ?? Date.now(), t) })}>
+                  {t("cli.mark")}
                 </span>
               )}
               {wt.item && props.onCopyLink && <WorkItemChip item={wt.item} onCopy={props.onCopyLink} />}

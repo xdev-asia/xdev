@@ -91,6 +91,10 @@ pub struct WorktreeMeta {
     pub item: Option<WorkItem>,
     #[serde(default)]
     pub made_by: MadeBy,
+    /// When the app CLI last created or changed this worktree; the sidebar
+    /// marks it "by CLI".
+    #[serde(default)]
+    pub set_by_cli_ms: Option<i64>,
 }
 
 /// Where the work in a worktree stands, as the person sets it.
