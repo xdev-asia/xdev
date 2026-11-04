@@ -417,6 +417,15 @@ export type ErrorCode =
   | "no_upstream"
   | "push_rejected"
   | "pull_diverged"
+  | "update_dirty"
+  | "update_untracked"
+  | "update_conflicted"
+  | "update_conflicts"
+  | "base_not_remote"
+  | "pull_policy"
+  | "no_web_remote"
+  | "needs_force"
+  | "open_failed"
   | "force_base"
   | "nothing_to_amend"
   | "amend_pushed"
@@ -1042,6 +1051,15 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "no_upstream",
   "push_rejected",
   "pull_diverged",
+  "update_dirty",
+  "update_untracked",
+  "update_conflicted",
+  "update_conflicts",
+  "base_not_remote",
+  "pull_policy",
+  "no_web_remote",
+  "needs_force",
+  "open_failed",
   "force_base",
   "nothing_to_amend",
   "amend_pushed",
