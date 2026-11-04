@@ -25,6 +25,7 @@ import { NavButtons } from "@/nav/NavButtons";
 import { SettingsView } from "@/settings/SettingsView";
 import { resetStatusSettings } from "@/status/statusSettings";
 import { BellMenu } from "./BellMenu";
+import { ActivityPanel } from "@/activity/ActivityPanel";
 import { Sessions } from "./sessions";
 import * as agentPrompt from "./agentPrompt";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
@@ -696,6 +697,19 @@ it("hidden worktree asking a question raises everything", async () => {
   expect(view.list().props.selected).toBe(OAK);
   expect(view.of(WorktreeTabs).find(n => n.props.worktree === OAK)!.props.front).toMatchObject({ id: tab.id });
   expect(view.of(BellMenu)).toHaveLength(0);
+});
+
+it("the bell's View activity opens the Activity side tab on the feed", async () => {
+  const view = await harness(createMockApi({}));
+  attend(view);
+  const side = () => view.all().filter(n => n.props.className === "ws-side-tab");
+  expect(side().map(n => n.props.children)).toEqual([en("agentSessions.tab.worktrees"), en("agentSessions.tab.sessions"), en("agentSessions.tab.activity")]);
+  expect(view.of(ActivityPanel)[0].props.ask.tab).toBe("threads");
+  bell(view).props.onClick();
+  view.of(BellMenu)[0].props.onViewActivity();
+  expect(view.of(BellMenu)).toHaveLength(0);
+  expect(side()[2].props["aria-pressed"]).toBe(true);
+  expect(view.of(ActivityPanel)[0].props.ask.tab).toBe("feed");
 });
 
 it("a click on the notification, or a focus soon after it, goes to its pane", async () => {

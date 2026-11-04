@@ -230,6 +230,23 @@
   color: var(--text-3);
 }
 
+.ws-bell-activity {
+  width: 100%;
+  min-height: 32px;
+  margin-top: 4px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ws-bell-activity:hover {
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
 .ws-bell-list {
   display: flex;
   flex-direction: column;
