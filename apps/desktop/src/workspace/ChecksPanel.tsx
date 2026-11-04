@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError } from "@/api";
+import { toApiError, type Api, type ApiError, type Check } from "@/api";
 import { useI18n } from "@/i18n";
 import type { PrStore } from "./prs";
 
@@ -8,10 +8,21 @@ const REFRESH_MS = 30_000;
 const REASONS: readonly string[] = ["gh_missing", "gh_auth", "not_github"];
 
 /** The pull request of a worktree and its checks. */
-export function ChecksPanel(props: { api: Api; worktree: string; prs: PrStore; visible: boolean }): JSX.Element {
+export function ChecksPanel(props: {
+  api: Api;
+  worktree: string;
+  prs: PrStore;
+  visible: boolean;
+  // Hands a failed check to an agent (Fix checks recipe). The action shows on failed rows while
+  // Settings → Git shows the agent actions; it waits for the returned promise.
+  onFix?(check: Check): void | Promise<void>;
+}): JSX.Element {
   const { api, worktree, prs, visible } = props;
   const { t } = useI18n();
   const [openError, setOpenError] = useState<ApiError | null>(null);
+  const [ai, setAi] = useState(false);
+  // The row whose fix is being prepared.
+  const [fixing, setFixing] = useState<string | null>(null);
 
   useSyncExternalStore(useCallback((fn: () => void) => prs.subscribe(fn), [prs]), () => prs.snapshot(), () => prs.snapshot());
   const entry = prs.get(worktree);
@@ -27,6 +38,15 @@ export function ChecksPanel(props: { api: Api; worktree: string; prs: PrStore; v
     window.addEventListener("focus", again);
     return () => window.removeEventListener("focus", again);
   }, [prs, worktree]);
+
+  // Read when the tab comes to the front, so a change in Settings shows without a restart.
+  useEffect(() => {
+    if (!visible) return;
+    api.gitSettings().then(
+      (git) => setAi(git.sourceControlAi),
+      () => setAi(false),
+    );
+  }, [api, visible]);
 
   // Only an unfinished run, and only while the tab is in front, is worth asking about again.
   useEffect(() => {
@@ -81,6 +101,20 @@ export function ChecksPanel(props: { api: Api; worktree: string; prs: PrStore; v
                     {c.name}
                   </span>
                   {c.workflow && <span className="ws-check-workflow">{c.workflow}</span>}
+                  {c.bucket === "fail" && ai && props.onFix && (
+                    <button
+                      type="button"
+                      className="ws-checks-btn ws-check-fix"
+                      data-fix={c.name}
+                      disabled={fixing !== null}
+                      onClick={() => {
+                        setFixing(c.name);
+                        void Promise.resolve(props.onFix?.(c)).finally(() => setFixing(null));
+                      }}
+                    >
+                      {t("checks.fix")}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>

@@ -868,6 +868,7 @@
   "ship.amend.pushed.confirm": "Vẫn sửa",
   "ship.hook.fix": "Nhờ agent sửa",
   "ship.push.fix": "Nhờ agent sửa",
+  "checks.fix": "Nhờ agent sửa",
   "ship.hook.copy": "Sao chép output",
   "ship.hook.output": "Output của hook",
   "ship.fix.noTab": "Chưa có tab agent nào sẵn sàng kịp lúc. Hãy mở một tab rồi thử lại.",
