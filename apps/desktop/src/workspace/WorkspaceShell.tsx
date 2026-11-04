@@ -219,7 +219,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [bellOpen, setBellOpen] = useState(false);
   const statusSettings = useStatusSettings();
   // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
-  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {} }));
+  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, ensureMounted: (_w: string) => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {} }));
 
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
@@ -604,6 +604,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => onOpenFile((req) => live.openFileTab(req)), [live]);
   live.selected = current?.path ?? null;
   live.reload = () => void load();
+  // A worktree a worker opens in must be listed and shown (hidden) so its tabs mount and start a pty.
+  live.ensureMounted = (w) => {
+    setVisited((v) => (v.includes(w) ? v : [...v, w]));
+    if (!live.repos?.some((r) => r.worktrees.some((x) => x.path === w))) live.reload();
+  };
   // `xdev worktree create --agent/--prompt`: the profile opens unfocused and gets the prompt once setup lets agents start.
   live.cliOpen = (worktree, profile, prompt) => void openDefaultAgent(worktree, profile || undefined, prompt ?? undefined);
   // The app CLI: the tabs as `xdev terminal` sees them, and what its endpoint asks of the window.
@@ -618,6 +623,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       gate,
       send: (worktree, id, text, timeoutMs) => sendToOpenedTab(sessions, worktree, id, text, { timeoutMs }),
       terminal: terminalOf,
+      ensureMounted: (w) => live.ensureMounted(w),
       failed: (open, stage) => void openFailedToast(open, stage, (key, vars) => live.t(key, vars)),
     });
     return () => {

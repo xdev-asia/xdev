@@ -15,6 +15,8 @@ export interface OrchestrationHost {
   gate: Pick<SetupGate, "defer" | "state">;
   /** Types `text` into tab `id` once its agent has started; null at the timeout or when the tab ends. */
   send(worktree: string, id: string, text: string, timeoutMs: number): Promise<Tab | null>;
+  /** Makes sure the worktree's tabs are mounted (and listed), so a tab opened there gets its pty. */
+  ensureMounted?(worktree: string): void;
   /** The xterm of a tab, when it is mounted. */
   terminal(id: string): Pick<TerminalHandle, "lines"> | null;
   /** An open failed; the shell shows a toast. */
@@ -32,6 +34,7 @@ export async function openWorker(api: Api, host: OrchestrationHost, open: Worker
     host.failed?.(open, stage, error);
     return { kind: "failed", stage, error };
   };
+  host.ensureMounted?.(open.worktree);
   const make = (): Tab => host.sessions.open(open.worktree, open.profile, null, undefined, { id: open.tab, title: open.title, background: true });
   let tab: Tab;
   try {

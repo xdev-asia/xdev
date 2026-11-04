@@ -37,6 +37,14 @@ describe("openWorker", () => {
     expect(send).toHaveBeenCalledWith("/w/a", "tab-1", "do it", 60_000);
   });
 
+  it("mounts the worktree before the tab is made", async () => {
+    const order: string[] = [];
+    const { h, open } = host({ ensureMounted: (w) => void order.push(`mount ${w}`) });
+    open.mockImplementation((w: string, _p: string, _a: unknown, _c: unknown, o: { id?: string }) => (order.push("open"), { id: o.id!, worktree: w } as Tab));
+    await openWorker(createMockApi({}), h, OPEN);
+    expect(order).toEqual(["mount /w/a", "open"]);
+  });
+
   it("terminal_create when the tab cannot be made", async () => {
     const failed = vi.fn();
     const { h, send } = host({ failed });
