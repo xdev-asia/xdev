@@ -13,6 +13,8 @@ export type UsageRow = {
   state: Quota["state"];
   /** The login expired, was signed out, or never existed: the person has to sign in again. */
   signIn: boolean;
+  /** It is the active account of its provider. */
+  active: boolean;
   /** `percent` is whole percent used (may pass 100), `resetsAt` is epoch milliseconds. */
   windows: { key: string; label: string; percent: number | null; resetsAt: number | null }[];
 };
@@ -40,6 +42,7 @@ export function usageRows(quota: readonly Quota[], accounts: Accounts | null, t:
       provider: providers.get(name) ?? null,
       state: q.state,
       signIn: q.reason !== null && SIGN_IN.has(q.reason),
+      active: (accounts?.active ?? []).some((a) => a.name === name && a.provider === providers.get(name)),
       windows: q.windows.map((w) => {
         const at = w.resetsAt === null ? NaN : Date.parse(w.resetsAt);
         return {

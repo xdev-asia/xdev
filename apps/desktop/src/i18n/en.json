@@ -1785,6 +1785,7 @@
   "usage.popover.state.unknown": "Unknown",
   "usage.popover.signIn": "Sign in again to {name}",
   "usage.popover.details": "Usage details & history",
+  "usage.popover.use": "Use",
   "usage.popover.manage": "Manage accounts…",
   "usage.popover.open": "Show usage per account",
   "workspace.children": "{count}",

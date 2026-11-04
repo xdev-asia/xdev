@@ -12,7 +12,7 @@ vi.mock("react", async (original) => ({ ...await original<typeof import("react")
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 const now = Date.parse("2026-11-04T10:00:00Z");
 const row = (account: string, over: Partial<UsageRow> = {}): UsageRow => ({
-  account, provider: "claude", state: "ok", signIn: false,
+  account, provider: "claude", state: "ok", signIn: false, active: false,
   windows: [
     { key: "five_hour", label: "5-hour", percent: 12, resetsAt: now + 130 * 60_000 },
     { key: "seven_day", label: "Weekly", percent: 40, resetsAt: now + 3 * 86_400_000 },
@@ -106,4 +106,34 @@ it("the saved mode defaults to detailed", () => {
   expect(loadUsageMode()).toBe("compact");
   vi.stubGlobal("localStorage", { getItem: () => { throw new Error("blocked"); } });
   expect(loadUsageMode()).toBe("detailed");
+});
+
+it("marks the active account and offers Use on the other accounts of a provider", () => {
+  const props = base({
+    rows: [
+      row("claude-2", { active: true }),
+      row("claude-3"),
+      row("old", { state: "unknown", signIn: true, windows: [] }),
+      row("codex-1", { provider: "codex" }),
+    ],
+    onUse: vi.fn(),
+  });
+  const tree = UsagePopoverView(props);
+  const out = renderToStaticMarkup(tree);
+  expect(out.match(/data-action="usage-active"/g)).toHaveLength(1);
+  expect(out).toContain(en("accounts.switch.active"));
+  // Not on the active row, not on a signed-out one.
+  const uses = find(tree, "usage-use");
+  expect(uses).toHaveLength(2);
+  expect(uses.map((u) => u.props["aria-label"])).toEqual([en("accounts.switch.useAria", { name: "claude-3" }), en("accounts.switch.useAria", { name: "codex-1" })]);
+  // A plain <button>: keyboard reachable (Tab, Enter, Space) with no tabIndex games.
+  expect(uses.every((u) => u.type === "button" && u.props.tabIndex === undefined)).toBe(true);
+  (uses[0].props.onClick as () => void)();
+  expect(props.onUse).toHaveBeenCalledWith("claude", "claude-3");
+  (uses[1].props.onClick as () => void)();
+  expect(props.onUse).toHaveBeenLastCalledWith("codex", "codex-1");
+});
+it("shows no Use action without a handler or for a row with no provider", () => {
+  expect(html({ rows: [row("claude-3")] })).not.toContain('data-action="usage-use"');
+  expect(html({ rows: [row("x", { provider: null })], onUse: vi.fn() })).not.toContain('data-action="usage-use"');
 });

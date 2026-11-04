@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX, ReactNode, Ref } from "react";
-import type { Accounts, Api, Quota } from "@/api";
+import type { Accounts, Api, Provider, Quota } from "@/api";
 import { useI18n } from "@/i18n";
 import { useQuota } from "@/shell/useQuota";
 import { useUpdate, type Update } from "@/shell/useUpdate";
@@ -151,9 +151,11 @@ export function LiveWorkspaceFooter(props: {
   onOpenUsage?: () => void;
   /** Opens the Accounts app. */
   onManageAccounts?: () => void;
+  /** Makes an account the active one of its provider; the "Use" action shows only when this is given. */
+  onUseAccount?: (provider: Provider, name: string) => void;
   hidden?: boolean;
 }): JSX.Element {
-  const { api, hidden, onManageAccounts, ...rest } = props;
+  const { api, hidden, onManageAccounts, onUseAccount, ...rest } = props;
   const { quota, loading, refresh } = useQuota(api, hidden === true);
   const update = useUpdate(api);
   const [open, setOpen] = useState(false);
@@ -165,12 +167,17 @@ export function LiveWorkspaceFooter(props: {
   useEffect(() => {
     if (!open) return;
     let stale = false;
-    api.accounts().then(
-      (found) => !stale && setAccounts(found),
-      () => !stale && setAccounts(null),
-    );
+    const read = () =>
+      api.accounts().then(
+        (found) => !stale && setAccounts(found),
+        () => !stale && setAccounts(null),
+      );
+    void read();
+    // A switch (here or in Accounts) moves the active mark while the popover stays open.
+    const unlisten = api.onAccountsChanged(() => void read());
     return () => {
       stale = true;
+      void unlisten.then((off) => off(), () => {});
     };
   }, [api, open]);
   // Closing hands the focus back to the meters button.
@@ -198,6 +205,7 @@ export function LiveWorkspaceFooter(props: {
         close();
         onManageAccounts?.();
       }}
+      onUse={onUseAccount}
       onClose={close}
     />
   );

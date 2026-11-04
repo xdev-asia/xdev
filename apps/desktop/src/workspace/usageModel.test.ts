@@ -49,3 +49,10 @@ it("resetLabel: relative under a day, date and time beyond", () => {
   expect(resetLabel(now + 25 * 3_600_000, now, t)).toMatch(/^Resets .*\d/);
   expect(resetLabel(now + 25 * 3_600_000, now, t)).not.toContain(" in ");
 });
+
+it("marks the active account of each provider", () => {
+  const found = { ...accounts([["a", "claude"], ["b", "claude"], ["c", "codex"]]), active: [{ provider: "claude" as const, name: "b" }] };
+  const rows = usageRows([quota("a"), quota("b"), quota("c")], found, t);
+  expect(rows.map((r) => r.active)).toEqual([false, true, false]);
+  expect(usageRows([quota("a")], null, t)[0].active).toBe(false);
+});
