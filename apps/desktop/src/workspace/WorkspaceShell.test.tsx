@@ -944,6 +944,46 @@ it("repo file lists: Cancel leaves them untrusted and the setup card still shows
   expect((await v.api.repoHooks("/demo/wt/xdev-birch")).sharedTrusted).toBe(false);
 });
 
+const TABS = { tabs: [{ title: "dev", color: "#4a9", command: "pnpm dev" }, { title: "tests", color: null, command: "cargo watch" }] };
+
+it("default tabs: with no setup, trusting the list opens one shell tab per entry", async () => {
+  const rename = vi.spyOn(Sessions.prototype, "rename");
+  const v = await created(TABS, { setupPolicy: "skip" });
+  expect(v.trust().props.kind).toBe("lists");
+  v.trust().props.onTrust();
+  await tick();
+  await tick();
+  const shells = v.open.mock.calls.filter((c) => String(c[1]).startsWith("shell"));
+  expect(shells).toHaveLength(2);
+  expect(rename.mock.calls.map((c) => c[1])).toEqual(["dev", "tests"]);
+});
+
+it("default tabs: untrusted tabs open nothing", async () => {
+  const v = await created(TABS, { setupPolicy: "skip" });
+  v.trust().props.onCancel();
+  await tick();
+  expect(v.open.mock.calls.filter((c) => String(c[1]).startsWith("shell"))).toHaveLength(0);
+});
+
+it("default tabs: they wait for the setup tab; a failed setup opens none and the card offers them", async () => {
+  const v = await created({ ...TABS, setup: "pnpm i", setupCode: 1 }, { setupPolicy: "run" });
+  v.trust().props.onTrust();
+  await tick();
+  await tick();
+  expect(v.setupOpens()).toHaveLength(1);
+  const shells = () => v.open.mock.calls.filter((c) => String(c[1]).startsWith("shell"));
+  expect(shells()).toHaveLength(0);
+  // The setup tab exits with code 1, as the pty event would say it.
+  const at = v.open.mock.calls.findIndex((c) => c[1] === SETUP_PROFILE);
+  const tab = v.open.mock.results[at].value as { id: string };
+  (v.open.mock.instances[at] as unknown as { apply(id: string, e: { kind: "exit"; code: number }): void }).apply(tab.id, { kind: "exit", code: 1 });
+  expect(v.card()?.props.state).toMatchObject({ kind: "failed", tabs: true });
+  v.card().props.onOpenTabs();
+  await tick();
+  await tick();
+  expect(shells()).toHaveLength(2);
+});
+
 it("setup after create: a stale hash reopens the prompt with the new text", async () => {
   const v = await created({ setup: "old" }, { setupPolicy: "run" });
   vi.spyOn(v.api, "repoHookTrust").mockRejectedValueOnce({ code: "hook_untrusted" });

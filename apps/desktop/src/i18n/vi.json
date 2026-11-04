@@ -1003,6 +1003,7 @@
   "setup.card.failedNoCode": "Thiết lập thất bại",
   "setup.card.startAnyway": "Vẫn bắt đầu",
   "setup.card.openSetup": "Mở tab thiết lập",
+  "setup.card.openTabs": "Mở tab mặc định",
   "setup.tab": "Thiết lập",
   "error.bad_profiles": "Không đọc được tệp hồ sơ đã lưu, nên đã giữ nguyên.",
   "error.invalid_profile": "Hồ sơ hoặc shell này không hợp lệ.",
