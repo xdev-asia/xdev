@@ -81,8 +81,10 @@ pub fn link_shared(main: &Path, worktree: &Path, shared: &[String]) -> Vec<Linke
 }
 
 fn link_one(main: &Path, worktree: &Path, path: &str) -> Result<(), String> {
-    let from = main.join(path);
-    let to = worktree.join(path);
+    // Join segment by segment: `mklink /J` rejects a path with `/` in it.
+    let rel: std::path::PathBuf = path.split('/').collect();
+    let from = main.join(&rel);
+    let to = worktree.join(&rel);
     let meta = match fs::symlink_metadata(&from) {
         Ok(meta) => meta,
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
