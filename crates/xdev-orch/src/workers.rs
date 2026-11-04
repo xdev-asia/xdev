@@ -105,8 +105,9 @@ impl Store {
         }
     }
 
-    /// Refuses a retry of a chain whose breaker is open or of a dispatch that
-    /// is not a failure; otherwise how many starts in the chain failed.
+    /// Refuses a retry of a chain whose breaker is open, of a dispatch that
+    /// is not a failure, or of one that was already retried; otherwise how
+    /// many starts of its task failed.
     pub fn retry_failures(&self, retry_of: &str, run_id: &str) -> Result<u32, OrchError> {
         let prev = self.dispatch_get(retry_of)?;
         if prev.run_id != run_id {
@@ -115,18 +116,40 @@ impl Store {
             )));
         }
         match prev.status {
-            DispatchStatus::CircuitBroken => Err(OrchError::new(
-                "circuit_broken",
-                format!(
-                    "{retry_of} failed to start {BREAKER_LIMIT} times; report it to the user instead of retrying"
-                ),
-            )),
-            DispatchStatus::Failed => Ok(prev.failure_count),
-            _ => Err(OrchError::new(
-                "invalid_transition",
-                format!("{retry_of} did not fail, so it cannot be retried"),
-            )),
+            DispatchStatus::CircuitBroken => return Err(broken(retry_of)),
+            DispatchStatus::Failed => {}
+            _ => {
+                return Err(OrchError::new(
+                    "invalid_transition",
+                    format!("{retry_of} did not fail, so it cannot be retried"),
+                ));
+            }
         }
+        let next: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT id FROM dispatches WHERE retry_of = ?1 ORDER BY rowid LIMIT 1",
+                [retry_of],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(next) = next {
+            return Err(OrchError::new(
+                "invalid_transition",
+                format!("{retry_of} was already retried as {next}; retry the newest attempt"),
+            ));
+        }
+        self.start_failures(&prev.task_id)
+    }
+
+    /// How many starts of `task_id` failed, however they were started.
+    fn start_failures(&self, task_id: &str) -> Result<u32, OrchError> {
+        Ok(self.conn.query_row(
+            "SELECT COUNT(*) FROM dispatches d JOIN workers w ON w.dispatch_id = d.id
+             WHERE d.task_id = ?1 AND w.failed_stage IS NOT NULL",
+            [task_id],
+            |r| r.get(0),
+        )?)
     }
 
     /// Records a start: the dispatch, the worker in `starting` and the task
@@ -145,10 +168,15 @@ impl Store {
                 plan.task_id, plan.run_id
             )));
         }
-        let inherited = match &plan.retry_of {
-            Some(prev) => self.retry_failures(prev, &plan.run_id)?,
-            None => 0,
-        };
+        if let Some(prev) = &plan.retry_of {
+            self.retry_failures(prev, &plan.run_id)?;
+        }
+        // Failures count per task, so a start without --retry-of, or of an
+        // older attempt, does not reset the breaker.
+        let inherited = self.start_failures(&plan.task_id)?;
+        if inherited >= BREAKER_LIMIT {
+            return Err(broken(&plan.task_id));
+        }
         match task.status {
             TaskStatus::Ready => {}
             other => {
@@ -312,6 +340,15 @@ impl Store {
         }
         Ok(receipt)
     }
+}
+
+fn broken(what: &str) -> OrchError {
+    OrchError::new(
+        "circuit_broken",
+        format!(
+            "{what} failed to start {BREAKER_LIMIT} times; report it to the user instead of retrying"
+        ),
+    )
 }
 
 /// How long a finished worker's tab stays before it closes.
@@ -772,6 +809,39 @@ mod tests {
         // The chain is closed: no retry of the broken one.
         let e = s.worker_begin(&plan(&run, &task, prev.as_deref()), 9);
         assert_eq!(e.unwrap_err().code, "circuit_broken");
+    }
+
+    #[test]
+    fn failed_starts_count_per_task_with_or_without_retry_of() {
+        let (s, run, task) = world();
+        let mut first = None;
+        for n in 1..=3 {
+            // No --retry-of: the task is simply started again.
+            let d = s.worker_begin(&plan(&run, &task, None), n).unwrap();
+            let r = s
+                .worker_started(&d.id, fail(FailedStage::TerminalCreate), n)
+                .unwrap();
+            first.get_or_insert(d.id);
+            assert_eq!(r.next == NEXT_BREAKER, n == 3, "start {n}");
+        }
+        assert_eq!(s.task_get(&task).unwrap().status, TaskStatus::Failed);
+        let e = s.worker_begin(&plan(&run, &task, first.as_deref()), 9);
+        assert_eq!(e.unwrap_err().code, "circuit_broken");
+    }
+
+    #[test]
+    fn an_attempt_that_was_retried_cannot_be_retried_again() {
+        let (s, run, task) = world();
+        let a = s.worker_begin(&plan(&run, &task, None), 1).unwrap();
+        s.worker_started(&a.id, fail(FailedStage::TerminalCreate), 1)
+            .unwrap();
+        let b = s.worker_begin(&plan(&run, &task, Some(&a.id)), 2).unwrap();
+        s.worker_started(&b.id, fail(FailedStage::TerminalCreate), 2)
+            .unwrap();
+        let old = s.worker_begin(&plan(&run, &task, Some(&a.id)), 3);
+        let e = old.unwrap_err();
+        assert_eq!(e.code, "invalid_transition");
+        assert!(e.message.contains(&b.id), "{}", e.message);
     }
 
     #[test]
