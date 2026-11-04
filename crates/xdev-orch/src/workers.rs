@@ -4,6 +4,7 @@
 //! records how the start went.
 
 use rusqlite::{OptionalExtension, params};
+use serde::Serialize;
 
 use crate::error::OrchError;
 use crate::model::{
@@ -287,6 +288,202 @@ impl Store {
     }
 }
 
+/// How long a finished worker's tab stays before it closes.
+pub const CLOSE_AFTER_MS: i64 = 120_000;
+
+/// A worker with its dispatch and the state of its task.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerView {
+    pub dispatch: Dispatch,
+    pub worker: Worker,
+    pub task_title: Option<String>,
+    pub task_status: TaskStatus,
+}
+
+impl Store {
+    /// One worker with its dispatch and task.
+    pub fn worker_view(&self, dispatch_id: &str) -> Result<WorkerView, OrchError> {
+        let dispatch = self.dispatch_get(dispatch_id)?;
+        let worker = self.worker_get(dispatch_id)?;
+        let task = self.task_get(&dispatch.task_id)?;
+        Ok(WorkerView {
+            dispatch,
+            worker,
+            task_title: task.title,
+            task_status: task.status,
+        })
+    }
+
+    /// The workers of a run, oldest first.
+    pub fn worker_list(
+        &self,
+        run_id: &str,
+        state: Option<WorkerState>,
+    ) -> Result<Vec<WorkerView>, OrchError> {
+        let ids: Vec<String> = {
+            let mut st = self.conn.prepare(
+                "SELECT d.id FROM dispatches d JOIN workers w ON w.dispatch_id = d.id
+                 WHERE d.run_id = ?1 ORDER BY w.created_ms, w.rowid",
+            )?;
+            st.query_map([run_id], |r| r.get(0))?
+                .collect::<Result<_, _>>()?
+        };
+        let mut out = Vec::new();
+        for id in ids {
+            let v = self.worker_view(&id)?;
+            if state.is_none_or(|s| v.worker.state == s) {
+                out.push(v);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Settles a worker that reported `worker_done` (or was released): its
+    /// state, dispatch and task follow `outcome` (`Succeeded` or `Failed`),
+    /// the tasks that waited on it are promoted and the tab gets its closing
+    /// time. A worker already settled is left as it is.
+    pub fn worker_settle(
+        &self,
+        dispatch_id: &str,
+        outcome: WorkerState,
+        result: Option<&str>,
+        auto_close: bool,
+        now_ms: i64,
+    ) -> Result<Worker, OrchError> {
+        if !matches!(outcome, WorkerState::Succeeded | WorkerState::Failed) {
+            return Err(OrchError::bad_request("an outcome is succeeded or failed"));
+        }
+        let w = self.worker_get(dispatch_id)?;
+        if w.state.is_terminal() {
+            return Ok(w);
+        }
+        // A worker may report before the app has recorded its start.
+        if matches!(w.state, WorkerState::Starting | WorkerState::StartUnknown) {
+            self.worker_set_state(dispatch_id, WorkerState::Ready, None, None, now_ms)?;
+        }
+        self.worker_set_state(dispatch_id, outcome, None, None, now_ms)?;
+        let ok = outcome == WorkerState::Succeeded;
+        let d = self.dispatch_get(dispatch_id)?;
+        self.conn.execute(
+            "UPDATE dispatches SET status = ?2 WHERE id = ?1",
+            params![dispatch_id, if ok { "completed" } else { "failed" }],
+        )?;
+        self.set_task_status(
+            &d.task_id,
+            if ok {
+                TaskStatus::Completed
+            } else {
+                TaskStatus::Failed
+            },
+            result,
+            now_ms,
+        )?;
+        self.promote_dependants(&d.run_id, now_ms)?;
+        let closes = (auto_close && !w.kept).then_some(now_ms + CLOSE_AFTER_MS);
+        self.worker_set_closes_at(dispatch_id, closes, now_ms)?;
+        self.worker_get(dispatch_id)
+    }
+
+    /// When a finished worker's tab closes; none: not scheduled.
+    pub fn worker_set_closes_at(
+        &self,
+        dispatch_id: &str,
+        at: Option<i64>,
+        now_ms: i64,
+    ) -> Result<(), OrchError> {
+        self.conn.execute(
+            "UPDATE workers SET closes_at_ms = ?2, updated_ms = ?3 WHERE dispatch_id = ?1",
+            params![dispatch_id, at, now_ms],
+        )?;
+        Ok(())
+    }
+
+    /// Marks a worker's tab as closed by xDev.
+    pub fn worker_mark_released(&self, dispatch_id: &str, now_ms: i64) -> Result<(), OrchError> {
+        self.conn.execute(
+            "UPDATE workers SET released = 1, updated_ms = ?2 WHERE dispatch_id = ?1",
+            params![dispatch_id, now_ms],
+        )?;
+        Ok(())
+    }
+
+    /// Keeps a worker's tab open, or lets it close again. Keeping cancels a
+    /// closing time that was set.
+    pub fn worker_set_kept(
+        &self,
+        dispatch_id: &str,
+        kept: bool,
+        now_ms: i64,
+    ) -> Result<Worker, OrchError> {
+        self.worker_get(dispatch_id)?;
+        self.conn.execute(
+            "UPDATE workers SET kept = ?2,
+                 closes_at_ms = CASE WHEN ?2 THEN NULL ELSE closes_at_ms END,
+                 updated_ms = ?3 WHERE dispatch_id = ?1",
+            params![dispatch_id, kept, now_ms],
+        )?;
+        self.worker_get(dispatch_id)
+    }
+
+    /// Starts stopping a worker: refused while its tab is kept. A worker
+    /// already stopping (or whose stop was unknown) is returned as it is, so
+    /// a second `stop` asks the tab to close again.
+    pub fn worker_stop_begin(&self, dispatch_id: &str, now_ms: i64) -> Result<Worker, OrchError> {
+        let w = self.worker_get(dispatch_id)?;
+        if w.kept {
+            return Err(OrchError::new(
+                "worker_kept",
+                format!("the tab of {dispatch_id} is kept open; undo that with keep-open --off"),
+            ));
+        }
+        if matches!(w.state, WorkerState::Stopping | WorkerState::StopUnknown) {
+            return Ok(w);
+        }
+        self.worker_set_state(dispatch_id, WorkerState::Stopping, None, None, now_ms)
+    }
+
+    /// Records whether the tab went away: `stopped` hands the task back, not
+    /// stopped leaves the stop unknown.
+    pub fn worker_stop_end(
+        &self,
+        dispatch_id: &str,
+        stopped: bool,
+        now_ms: i64,
+    ) -> Result<Worker, OrchError> {
+        let w = self.worker_get(dispatch_id)?;
+        if stopped {
+            let w = self.worker_set_state(dispatch_id, WorkerState::Stopped, None, None, now_ms)?;
+            self.give_task_back(dispatch_id, now_ms)?;
+            Ok(w)
+        } else if w.state == WorkerState::StopUnknown {
+            Ok(w)
+        } else {
+            self.worker_set_state(dispatch_id, WorkerState::StopUnknown, None, None, now_ms)
+        }
+    }
+
+    /// Forgets a worker without touching its tab; the task is open again.
+    pub fn worker_abandon(&self, dispatch_id: &str, now_ms: i64) -> Result<Worker, OrchError> {
+        let w = self.worker_set_state(dispatch_id, WorkerState::Abandoned, None, None, now_ms)?;
+        self.give_task_back(dispatch_id, now_ms)?;
+        Ok(w)
+    }
+
+    /// The dispatch failed without a verdict on the task: it is ready again.
+    fn give_task_back(&self, dispatch_id: &str, now_ms: i64) -> Result<(), OrchError> {
+        let d = self.dispatch_get(dispatch_id)?;
+        self.conn.execute(
+            "UPDATE dispatches SET status = 'failed' WHERE id = ?1",
+            [dispatch_id],
+        )?;
+        if self.task_get(&d.task_id)?.status == TaskStatus::Dispatched {
+            self.set_task_status(&d.task_id, TaskStatus::Ready, None, now_ms)?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -461,5 +658,169 @@ mod tests {
             .unwrap();
         let out = s.worker_set_state(&d.id, WorkerState::Ready, None, None, 5);
         assert_eq!(out.unwrap_err().code, "invalid_transition");
+    }
+
+    fn ready_worker(s: &Store, run: &str, task: &str) -> String {
+        let d = s.worker_begin(&plan(run, task, None), 1).unwrap();
+        s.worker_started(&d.id, StartResult::Ready, 2).unwrap();
+        d.id
+    }
+
+    #[test]
+    fn settling_finishes_the_task_promotes_dependants_and_schedules_the_close() {
+        let (s, run, task) = world();
+        let next = s
+            .task_create(
+                &run,
+                NewTask {
+                    title: None,
+                    spec: "then".into(),
+                    deps: vec![task.clone()],
+                    parent: None,
+                },
+                1,
+            )
+            .unwrap();
+        assert_eq!(next.status, TaskStatus::Pending);
+        let id = ready_worker(&s, &run, &task);
+        let w = s
+            .worker_settle(&id, WorkerState::Succeeded, Some("did it"), true, 1000)
+            .unwrap();
+        assert_eq!(w.state, WorkerState::Succeeded);
+        assert_eq!(w.closes_at_ms, Some(1000 + CLOSE_AFTER_MS));
+        assert_eq!(
+            s.dispatch_get(&id).unwrap().status,
+            DispatchStatus::Completed
+        );
+        let t = s.task_get(&task).unwrap();
+        assert_eq!(t.status, TaskStatus::Completed);
+        assert_eq!(t.result.as_deref(), Some("did it"));
+        assert_eq!(s.task_get(&next.id).unwrap().status, TaskStatus::Ready);
+        // A second report changes nothing.
+        let again = s
+            .worker_settle(&id, WorkerState::Failed, None, true, 5000)
+            .unwrap();
+        assert_eq!(again, w);
+        let bad = s.worker_settle(&id, WorkerState::Ready, None, true, 5);
+        assert_eq!(bad.unwrap_err().code, "bad_request");
+    }
+
+    #[test]
+    fn a_failed_report_fails_the_task_and_a_kept_or_manual_tab_gets_no_close_time() {
+        let (s, run, task) = world();
+        let id = ready_worker(&s, &run, &task);
+        s.worker_set_kept(&id, true, 3).unwrap();
+        let w = s
+            .worker_settle(&id, WorkerState::Failed, None, true, 10)
+            .unwrap();
+        assert_eq!(w.closes_at_ms, None);
+        assert_eq!(s.task_get(&task).unwrap().status, TaskStatus::Failed);
+        assert_eq!(s.dispatch_get(&id).unwrap().status, DispatchStatus::Failed);
+
+        let t2 = s
+            .task_create(
+                &run,
+                NewTask {
+                    title: None,
+                    spec: "b".into(),
+                    deps: vec![],
+                    parent: None,
+                },
+                1,
+            )
+            .unwrap();
+        let id2 = ready_worker(&s, &run, &t2.id);
+        let w2 = s
+            .worker_settle(&id2, WorkerState::Succeeded, None, false, 10)
+            .unwrap();
+        assert_eq!(w2.closes_at_ms, None);
+    }
+
+    #[test]
+    fn a_report_before_the_start_was_recorded_still_settles() {
+        let (s, run, task) = world();
+        let d = s.worker_begin(&plan(&run, &task, None), 1).unwrap();
+        let w = s
+            .worker_settle(&d.id, WorkerState::Succeeded, None, true, 2)
+            .unwrap();
+        assert_eq!(w.state, WorkerState::Succeeded);
+    }
+
+    #[test]
+    fn keeping_cancels_the_close_and_blocks_stop() {
+        let (s, run, task) = world();
+        let id = ready_worker(&s, &run, &task);
+        s.worker_settle(&id, WorkerState::Succeeded, None, true, 10)
+            .unwrap();
+        let w = s.worker_set_kept(&id, true, 11).unwrap();
+        assert!(w.kept);
+        assert_eq!(w.closes_at_ms, None);
+        assert_eq!(
+            s.worker_stop_begin(&id, 12).unwrap_err().code,
+            "worker_kept"
+        );
+        assert!(!s.worker_set_kept(&id, false, 13).unwrap().kept);
+        assert_eq!(
+            s.worker_set_kept("nope", true, 1).unwrap_err().code,
+            "not_found"
+        );
+    }
+
+    #[test]
+    fn stop_hands_the_task_back_when_the_tab_goes_and_stays_unknown_when_it_does_not() {
+        let (s, run, task) = world();
+        let id = ready_worker(&s, &run, &task);
+        let w = s.worker_stop_begin(&id, 3).unwrap();
+        assert_eq!(w.state, WorkerState::Stopping);
+        let w = s.worker_stop_end(&id, false, 4).unwrap();
+        assert_eq!(w.state, WorkerState::StopUnknown);
+        // Asking again retries the close.
+        assert_eq!(
+            s.worker_stop_begin(&id, 5).unwrap().state,
+            WorkerState::StopUnknown
+        );
+        assert_eq!(
+            s.worker_stop_end(&id, false, 6).unwrap().state,
+            WorkerState::StopUnknown
+        );
+        let w = s.worker_stop_end(&id, true, 7).unwrap();
+        assert_eq!(w.state, WorkerState::Stopped);
+        assert_eq!(s.task_get(&task).unwrap().status, TaskStatus::Ready);
+        assert_eq!(s.dispatch_get(&id).unwrap().status, DispatchStatus::Failed);
+    }
+
+    #[test]
+    fn abandon_forgets_the_worker_and_reopens_the_task() {
+        let (s, run, task) = world();
+        let id = ready_worker(&s, &run, &task);
+        let w = s.worker_abandon(&id, 5).unwrap();
+        assert_eq!(w.state, WorkerState::Abandoned);
+        assert_eq!(s.task_get(&task).unwrap().status, TaskStatus::Ready);
+        assert_eq!(
+            s.worker_abandon(&id, 6).unwrap_err().code,
+            "invalid_transition"
+        );
+    }
+
+    #[test]
+    fn workers_list_by_run_and_state_with_their_task() {
+        let (s, run, task) = world();
+        let id = ready_worker(&s, &run, &task);
+        let all = s.worker_list(&run, None).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].dispatch.id, id);
+        assert_eq!(all[0].task_status, TaskStatus::Dispatched);
+        assert_eq!(
+            s.worker_list(&run, Some(WorkerState::Ready)).unwrap().len(),
+            1
+        );
+        assert!(
+            s.worker_list(&run, Some(WorkerState::Failed))
+                .unwrap()
+                .is_empty()
+        );
+        let v = s.worker_view(&id).unwrap();
+        assert_eq!(v.worker.state, WorkerState::Ready);
+        assert_eq!(s.worker_view("nope").unwrap_err().code, "not_found");
     }
 }
