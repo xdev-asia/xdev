@@ -1930,6 +1930,51 @@ button.ws-tree-row:focus-visible {
   font-size: 12px;
 }
 
+/* Creates running in the background: a spinner and Cancel, or why it failed with Retry and Dismiss. */
+.ws-wt-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.ws-pending-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ws-pending-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ws-pending-line .ws-wt-name,
+.ws-pending-error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-wt-pending[data-state="running"] .ws-wt-name {
+  color: var(--text-2);
+}
+
+.ws-pending-error {
+  color: var(--danger);
+}
+
+.ws-pending-btn {
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
 /* The vaults under Docs & SDLC. */
 
 .ws-vault-list {
