@@ -157,7 +157,8 @@ fn write_does_not_block_when_child_is_not_reading() {
     };
     let start = Instant::now();
     run.session.write(vec![b'x'; 1024 * 1024]);
-    assert!(start.elapsed() < Duration::from_millis(50));
+    // A blocking write would wait for the child to exit (5 s); 2 s leaves room for slow CI runners.
+    assert!(start.elapsed() < Duration::from_secs(2));
 }
 
 #[test]

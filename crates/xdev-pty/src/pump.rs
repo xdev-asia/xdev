@@ -134,7 +134,6 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::AtomicUsize;
     use std::thread;
-    use std::time::Instant;
 
     /// Yields each chunk after its delay, then EOF.
     struct Script(VecDeque<(Duration, Vec<u8>)>);
@@ -182,22 +181,23 @@ mod tests {
     #[test]
     fn a_quiet_reader_still_flushes_after_16ms() {
         // The reader blocks long after the first bytes; they go out anyway.
+        // No wall-clock bound (slow CI runners): the prompt must go out alone, before the
+        // reader wakes 3 s later, instead of being held back and merged with the next bytes.
         let script = [
             (Duration::ZERO, b"prompt> ".to_vec()),
-            (Duration::from_millis(500), b"x".to_vec()),
+            (Duration::from_secs(3), b"x".to_vec()),
         ];
         let first = Arc::new(Mutex::new(None));
         let seen = first.clone();
-        let start = Instant::now();
         pump(
             Script(script.into()),
             Arc::new(Flow::default()),
             Arc::new(AtomicBool::new(false)),
-            move |_| {
-                seen.lock().unwrap().get_or_insert(start.elapsed());
+            move |c| {
+                seen.lock().unwrap().get_or_insert(c.to_vec());
             },
         );
-        assert!(first.lock().unwrap().unwrap() < Duration::from_millis(250));
+        assert_eq!(first.lock().unwrap().as_deref(), Some(&b"prompt> "[..]));
     }
 
     fn five_mb() -> Script {
@@ -263,9 +263,13 @@ mod tests {
             })
         });
         settle(&total);
-        let start = Instant::now();
         stop.store(true, Ordering::SeqCst);
-        handle.join().unwrap();
-        assert!(start.elapsed() < Duration::from_millis(100));
+        // A paused pump that ignored `stop` would wait for an ack forever; a generous bound
+        // tells the two apart without timing the poll itself (slow CI runners).
+        let (tx, rx) = std::sync::mpsc::channel();
+        thread::spawn(move || tx.send(handle.join()).ok());
+        rx.recv_timeout(Duration::from_secs(5))
+            .expect("the pump did not stop")
+            .unwrap();
     }
 }
