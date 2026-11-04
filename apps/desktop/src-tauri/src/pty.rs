@@ -18,6 +18,7 @@ use xdev_agent::{
 };
 use xdev_ai::Registry;
 use xdev_policy::{Action, Audited, Policy, Verdict, agent_fingerprint};
+use xdev_pty::proto::SessionInfo;
 use xdev_pty::{PtyError, Session, SpawnSpec};
 use xdev_workspace::{
     HookKind, Registry as Workspace, SetupPolicy, WorkspaceError, hook_env, hooks_for,
@@ -82,6 +83,72 @@ pub struct PtyInfo {
 pub struct PtyExit {
     id: String,
     code: Option<i32>,
+}
+
+/// What `pty_attach` returns: the tab's launch as it was spawned, and the
+/// byte offset the output channel starts at; the client counts from there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct PtyAttached {
+    pub info: PtyInfo,
+    pub seq: u64,
+    /// The ring had dropped output before `from_seq`; the replay starts later.
+    pub truncated: bool,
+}
+
+/// Where terminals run this app run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+#[allow(dead_code)] // The service host reports the other states.
+pub enum PtydState {
+    /// Settings → Terminal → "Terminal service" is off: in the app, as before.
+    Off,
+    Running,
+    /// The service could not start or answer: in the app, and they end with it.
+    Fallback,
+    /// A service of an older build answers; it runs until restarted.
+    OldVersion,
+}
+
+/// Payload of `ptyd_status` and the `ptyd://status` event.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct PtydStatus {
+    pub state: PtydState,
+    pub service_version: Option<String>,
+    /// The error code of a fallback.
+    pub reason: Option<String>,
+}
+
+/// One live PTY, in the app (`Session`) or in the service.
+#[allow(dead_code)] // `Ptys` holds these once the service host lands.
+pub trait PtyHandle: Send + Sync {
+    fn write(&self, d: Vec<u8>);
+    fn resize(&self, c: u16, r: u16) -> Result<(), PtyError>;
+    fn ack(&self, n: usize);
+    fn kill(&self);
+    fn pid(&self) -> Option<u32>;
+}
+
+impl PtyHandle for Session {
+    fn write(&self, d: Vec<u8>) {
+        Session::write(self, d)
+    }
+    fn resize(&self, c: u16, r: u16) -> Result<(), PtyError> {
+        Session::resize(self, c, r)
+    }
+    fn ack(&self, n: usize) {
+        Session::ack(self, n)
+    }
+    fn kill(&self) {
+        Session::kill(self)
+    }
+    fn pid(&self) -> Option<u32> {
+        Session::pid(self)
+    }
 }
 
 #[derive(Default)]
@@ -574,6 +641,58 @@ pub fn pty_kill(ptys: State<'_, Ptys>, id: String) {
     // Dropping the session kills it; an unknown id has already ended.
     let session = ptys.map().remove(&id);
     drop(session);
+}
+
+/// Reattaches a tab to the service's PTY `id`; the channel replays its ring
+/// from `from_seq`. `pty_gone` when the service does not hold it.
+#[tauri::command(async)]
+pub fn pty_attach(
+    id: String,
+    from_seq: u64,
+    out: Channel<InvokeResponseBody>,
+) -> Result<PtyAttached, CmdError> {
+    let _ = (id, from_seq, out);
+    Err(CmdError {
+        code: "pty_gone",
+        detail: None,
+    })
+}
+
+#[tauri::command]
+pub fn ptyd_status() -> PtydStatus {
+    PtydStatus {
+        state: PtydState::Off,
+        service_version: None,
+        reason: None,
+    }
+}
+
+#[tauri::command(async)]
+pub fn ptyd_sessions() -> Result<Vec<SessionInfo>, CmdError> {
+    Ok(Vec::new())
+}
+
+#[tauri::command(async)]
+pub fn ptyd_end(id: String) -> Result<(), CmdError> {
+    let _ = id;
+    Err(unreachable_service())
+}
+
+#[tauri::command(async)]
+pub fn ptyd_end_all() -> Result<(), CmdError> {
+    Err(unreachable_service())
+}
+
+#[tauri::command(async)]
+pub fn ptyd_restart() -> Result<(), CmdError> {
+    Err(unreachable_service())
+}
+
+fn unreachable_service() -> CmdError {
+    CmdError {
+        code: "ptyd_unreachable",
+        detail: None,
+    }
 }
 
 #[cfg(test)]

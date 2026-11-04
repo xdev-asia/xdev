@@ -6224,6 +6224,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "xdev-ipc"
+version = "0.4.0"
+dependencies = [
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "xdev-kit"
 version = "0.4.0"
 dependencies = [
@@ -6261,8 +6269,11 @@ name = "xdev-pty"
 version = "0.4.0"
 dependencies = [
  "portable-pty",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
+ "ts-rs",
  "xdev-ai",
 ]
 

@@ -42,6 +42,10 @@ export type TabSnapshot =
       agentSession: string | null;
       /** When the tab was opened, in ms; the fallback looks for sessions that started after it. */
       openedAt: number;
+      /** The pty id in the terminal service, which a restore attaches to first. */
+      ptyId?: string;
+      /** How many output bytes the tab had drawn; the attach replays from there. */
+      seq?: number;
     }
   | { kind: "review" }
   | { kind: "file"; rel: string };
