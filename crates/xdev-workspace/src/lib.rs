@@ -52,7 +52,7 @@ pub use search::{
     FileHits, FileList, HIT_MAX, LINE_CLIP, LIST_MAX, LineHit, PER_FILE_MAX, SearchEvent,
     SearchQuery, list_files, search_text,
 };
-pub use shared::Linked;
+pub use shared::{Linked, SharedError, link_shared, validate as validate_shared};
 pub use vaults::{VaultKind, VaultView, add_vault, forget_vault, list_vaults, repo_docs_dir};
 
 /// The UI translates `code()`, never the message.
