@@ -13,7 +13,7 @@ export const BADGE_DEBOUNCE_MS = 200;
 export const FOCUS_JUMP_MS = 15000;
 
 export interface NotifierDeps {
-  api: Pick<Api, "statusNotify" | "statusBadge">;
+  api: Pick<Api, "statusNotify" | "statusBadge" | "trayAttention">;
   /** The settings as stored now, read before each channel fires so a change in Settings applies at once. */
   settings(): Promise<StatusSettings>;
   /** Plays the status sound; true when it played (the player keeps its own 2 s floor). */
@@ -87,6 +87,9 @@ export function createNotifier(deps: NotifierDeps): Notifier {
       recent.delete(key);
       return;
     }
+    // The tray dot, once per burst: it is for a window the person cannot see (Rust decides that).
+    // Not awaited: a slow tray call must not hold the OS notification back.
+    void deps.api.trayAttention().catch(() => {});
     let sent = false;
     if (settings.os) {
       try {

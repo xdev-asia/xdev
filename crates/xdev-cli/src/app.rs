@@ -18,6 +18,9 @@ pub const PREFIX: &str = "xdev-app";
 pub const ANSWER_WAIT: Duration = Duration::from_secs(30);
 /// Past a `terminal.wait`'s own timeout, how long the app has to answer it.
 pub const WAIT_MARGIN: Duration = Duration::from_secs(10);
+/// Past a `worker-start`'s readiness timeout, how long the app has to answer:
+/// more than its own slack for the UI plus the time a new worktree takes.
+pub const START_MARGIN: Duration = Duration::from_secs(30);
 
 /// An error the app answered with, or one met on the way there.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,13 +73,21 @@ fn app_stopped() -> AppError {
 /// How long a verb's answer may take: a wait its own timeout plus a margin,
 /// anything else `ANSWER_WAIT`.
 pub fn answer_limit(method: &str, params: &Value) -> Duration {
-    match (method, params["timeoutS"].as_u64()) {
-        ("terminal.wait", Some(s)) => Duration::from_secs(s).saturating_add(WAIT_MARGIN),
+    if let ("terminal.wait", Some(s)) = (method, params["timeoutS"].as_u64()) {
+        return Duration::from_secs(s).saturating_add(WAIT_MARGIN);
+    }
+    match (method, params["timeoutMs"].as_u64()) {
+        ("orchestration.check" | "orchestration.ask", Some(ms)) => {
+            Duration::from_millis(ms).saturating_add(WAIT_MARGIN)
+        }
+        ("orchestration.worker-start", Some(ms)) => {
+            Duration::from_millis(ms).saturating_add(START_MARGIN)
+        }
         _ => ANSWER_WAIT,
     }
 }
 
-fn io_error(e: impl std::fmt::Display) -> AppError {
+pub(crate) fn io_error(e: impl std::fmt::Display) -> AppError {
     AppError::new("io", e.to_string())
 }
 
@@ -279,6 +290,7 @@ pub fn request(
     stdin: &mut dyn Read,
 ) -> Result<(&'static str, Value, bool), AppError> {
     Ok(match cmd {
+        AppCommand::Orchestration(o) => return crate::orch::request(o, stdin),
         AppCommand::Status(a) => ("status", json!({}), a.json),
         AppCommand::Worktree(WorktreeCommand::Ps { all, json }) => {
             ("worktree.ps", json!({ "all": all }), *json)
@@ -336,6 +348,7 @@ pub enum AppCommand {
     Status(StatusArgs),
     Worktree(WorktreeCommand),
     Terminal(TerminalCommand),
+    Orchestration(Box<crate::orch::OrchArgs>),
 }
 
 fn text(v: &Value) -> String {
@@ -374,6 +387,9 @@ fn row_line(r: &Value) -> String {
 
 /// The plain text of a verb's result, one line per row.
 pub fn plain(method: &str, result: &Value) -> String {
+    if let Some(text) = crate::orch::plain(method, result) {
+        return text;
+    }
     let rows = |f: fn(&Value) -> String| -> String {
         result
             .as_array()
@@ -434,7 +450,7 @@ pub fn run(cmd: &AppCommand, dir: &Path, prefix: &str) -> u8 {
             } else {
                 print!("{}", plain(method, &result));
             }
-            0
+            crate::orch::exit_for(method, &result)
         }
         Err(e) => {
             if e.message.is_empty() {
@@ -617,6 +633,16 @@ mod endpoint_tests {
         assert_eq!(wait, Duration::from_secs(60) + WAIT_MARGIN);
         assert_eq!(answer_limit("status", &json!({})), ANSWER_WAIT);
         assert_eq!(answer_limit("terminal.wait", &json!({})), ANSWER_WAIT);
+        for (verb, margin) in [
+            ("check", WAIT_MARGIN),
+            ("ask", WAIT_MARGIN),
+            ("worker-start", START_MARGIN),
+        ] {
+            let m = format!("orchestration.{verb}");
+            let limit = answer_limit(&m, &json!({ "timeoutMs": 90_000 }));
+            assert_eq!(limit, Duration::from_secs(90) + margin, "{verb}");
+            assert_eq!(answer_limit(&m, &json!({})), ANSWER_WAIT, "{verb}");
+        }
     }
 
     #[test]

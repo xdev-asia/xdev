@@ -112,6 +112,22 @@ impl Repo {
         Ok(BaseRefresh::Updated)
     }
 
+    /// Fetches pull request `number`'s head into local branch `branch`
+    /// (`fetch <remote> pull/<n>/head:refs/heads/<branch>`). No `+`: a branch
+    /// that exists and is not an ancestor is refused, never overwritten.
+    pub fn fetch_pull(&self, number: u64, branch: &str) -> Result<(), GitError> {
+        if !self.valid_branch_name(branch)? {
+            return Err(GitError::BadId(branch.to_owned()));
+        }
+        let remote = self.default_remote()?;
+        let spec = format!("pull/{number}/head:refs/heads/{branch}");
+        let out = run::run_long(&self.workdir, &["fetch", "-q", &remote, &spec])?;
+        if out.status != Some(0) {
+            return Err(failed("fetch", &out));
+        }
+        Ok(())
+    }
+
     /// `(remote, branch on the remote, local branch)` behind a base, or
     /// `None` when it names no remote branch.
     fn base_source(&self, base: &str) -> Result<Option<(String, String, String)>, GitError> {

@@ -1,25 +1,25 @@
 import { expect, it } from "vitest";
 import { translate } from "@/i18n";
-import { settingEntriesFor } from "./catalog";
+import { entriesFor } from "./catalog";
 import { runSearch } from "./searchModel";
 
 const t = (k: string) => translate("en", k);
 const title = (s: string) => t(`${s === "editor" ? "files.settings" : s === "openIn" ? "openIn" : s === "keys" ? "keys" : s === "qcmd" ? "qcmd" : `settings.${s}`}.title`);
 
 it("an empty query keeps every entry and every section", () => {
-  const r = runSearch("", t, title, "mac");
+  const r = runSearch("", t, title);
   expect(r.active).toBe(false);
-  expect(r.ids.size).toBe(settingEntriesFor("mac").length);
+  expect(r.ids.size).toBe(entriesFor().length);
   expect(r.best).toBeNull();
 });
 
-it("font finds the terminal and editor rows only", () => {
+it("font finds the appearance, terminal and editor rows only", () => {
   const r = runSearch("font", t, title);
   expect(r.active).toBe(true);
   expect(r.ids.has("terminal.fontSize")).toBe(true);
   expect(r.ids.has("editor.fontSize")).toBe(true);
   expect(r.ids.has("git.prefix")).toBe(false);
-  expect([...r.counts.keys()].sort()).toEqual(["editor", "terminal"]);
+  expect([...r.counts.keys()].sort()).toEqual(["appearance", "editor", "terminal"]);
   expect(r.counts.get("terminal")).toBeGreaterThan(1);
 });
 
@@ -37,10 +37,4 @@ it("a query with no hit is active with nothing found", () => {
 it("a section title matches all of its entries", () => {
   const r = runSearch("Vaults", t, title);
   expect([...r.counts.keys()]).toEqual(["vaults"]);
-});
-
-it("Option as Alt is found on mac and not elsewhere", () => {
-  expect(runSearch("option", t, title, "mac").ids.has("terminal.optionAsAlt")).toBe(true);
-  expect(runSearch("option", t, title, "win").ids.has("terminal.optionAsAlt")).toBe(false);
-  expect(runSearch("", t, title, "linux").ids.has("terminal.optionAsAlt")).toBe(false);
 });

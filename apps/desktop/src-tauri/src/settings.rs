@@ -81,6 +81,103 @@ pub struct Settings {
     /// Settings → Stats & Usage; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub usage: UsageSettings,
+    /// Settings → Orchestration; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub orchestration: OrchestrationSettings,
+    /// Settings → General, Window and Updates groups; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub shell: ShellSettings,
+}
+
+/// The deepest nesting of dispatched workers Settings allows.
+pub const NESTED_DEPTH_MAX: u32 = 9;
+
+/// Settings → Orchestration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct OrchestrationSettings {
+    /// How many generations of dispatched workers may start workers of their
+    /// own; 1 keeps the agent tree flat.
+    pub nested_worker_max_depth: u32,
+    /// Close a worker's tab 2 minutes after it finishes.
+    pub worker_auto_close: bool,
+}
+
+impl Default for OrchestrationSettings {
+    fn default() -> Self {
+        Self {
+            nested_worker_max_depth: 1,
+            worker_auto_close: true,
+        }
+    }
+}
+
+/// Which update feed the app follows.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum UpdateChannel {
+    #[default]
+    Stable,
+    /// Release candidates, ahead of the stable release.
+    Rc,
+}
+
+/// An unknown value is the default, as for `TabOrder`.
+impl<'de> serde::Deserialize<'de> for UpdateChannel {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = String::deserialize(d)?;
+        Ok(match v.as_str() {
+            "rc" => Self::Rc,
+            _ => Self::Stable,
+        })
+    }
+}
+
+/// Settings → General: Window and Updates groups.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct ShellSettings {
+    /// Windows only: closing the window hides it to the tray.
+    pub minimize_to_tray: bool,
+    /// macOS only: the menu bar icon; on unless the person turned it off.
+    pub menu_bar_icon: bool,
+    /// Set once the "still running in the tray" notice was shown. Only the
+    /// shell sets it; a `put` keeps the stored value.
+    pub tray_notice_shown: bool,
+    pub update_channel: UpdateChannel,
+}
+
+impl Default for ShellSettings {
+    fn default() -> Self {
+        Self {
+            minimize_to_tray: false,
+            menu_bar_icon: true,
+            tray_notice_shown: false,
+            update_channel: UpdateChannel::Stable,
+        }
+    }
+}
+
+impl OrchestrationSettings {
+    /// What `orchestration_settings_put` stores: the depth clamped to 1..=9.
+    pub fn normalized(mut self) -> Self {
+        self.nested_worker_max_depth = self.nested_worker_max_depth.clamp(1, NESTED_DEPTH_MAX);
+        self
+    }
+}
+
+impl ShellSettings {
+    /// What `shell_settings_put` stores: the person's switches, with the
+    /// notice flag kept from `stored`.
+    pub fn for_put(self, stored: &ShellSettings) -> Self {
+        Self {
+            tray_notice_shown: stored.tray_notice_shown,
+            ..self
+        }
+    }
 }
 
 /// What happens to the agent tabs that run under the old active account
@@ -99,11 +196,65 @@ pub enum SwitchRunning {
 }
 
 /// Settings → Agents.
-#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(default, rename_all = "camelCase")]
 pub struct AgentsSettings {
     pub account_switch: SwitchRunning,
+    /// Whether the OS may sleep; an unknown stored value reads as `Off`.
+    #[serde(deserialize_with = "lenient")]
+    pub keep_awake: KeepAwake,
+    /// Whether an agent tab is titled from its session's first prompt.
+    #[serde(deserialize_with = "lenient")]
+    pub auto_tab_title: bool,
+    /// Experimental: finished agent tabs sleep after `sleep_after_min` idle minutes.
+    pub auto_sleep: bool,
+    /// Idle minutes before an agent tab sleeps, held to `SLEEP_AFTER_MIN_RANGE`.
+    pub sleep_after_min: u32,
+    /// Consent to index agent conversations on this computer.
+    pub session_search: bool,
+}
+
+/// Settings → Agents → Keep computer awake.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum KeepAwake {
+    /// Always asks the OS not to sleep.
+    On,
+    /// Asks only while an agent tab works.
+    Agent,
+    /// Never asks.
+    #[default]
+    Off,
+}
+
+/// Minutes an agent tab may idle before it sleeps: 1 minute to 24 hours.
+pub const SLEEP_AFTER_MIN_RANGE: std::ops::RangeInclusive<u32> = 1..=1440;
+/// Default idle minutes before an agent tab sleeps.
+pub const SLEEP_AFTER_MIN_DEFAULT: u32 = 30;
+
+impl Default for AgentsSettings {
+    fn default() -> Self {
+        Self {
+            account_switch: SwitchRunning::default(),
+            keep_awake: KeepAwake::default(),
+            auto_tab_title: false,
+            auto_sleep: false,
+            sleep_after_min: SLEEP_AFTER_MIN_DEFAULT,
+            session_search: false,
+        }
+    }
+}
+
+impl AgentsSettings {
+    /// Holds `sleep_after_min` inside `SLEEP_AFTER_MIN_RANGE`.
+    pub fn clamped(mut self) -> Self {
+        self.sleep_after_min = self
+            .sleep_after_min
+            .clamp(*SLEEP_AFTER_MIN_RANGE.start(), *SLEEP_AFTER_MIN_RANGE.end());
+        self
+    }
 }
 
 /// Prompt cache lifetime, 5 minutes.
@@ -577,7 +728,23 @@ pub struct UiSettings {
     pub restore: RestoreMode,
     /// Light, dark, or follow the system. A file from before it loads `System`.
     pub theme: Theme,
+    /// Settings → Appearance → UI font. Empty is the `--font-body` token.
+    /// Trimmed, control characters dropped, at most `UI_FONT_MAX` chars.
+    #[serde(deserialize_with = "lenient")]
+    pub ui_font: String,
+    /// Token set the editor and diff view use while the app paints light.
+    pub editor_theme_light: EditorTheme,
+    /// Token set the editor and diff view use while the app paints dark.
+    pub editor_theme_dark: EditorTheme,
+    /// Left sidebar background.
+    pub sidebar: SidebarLook,
+    /// Which of xDev's own footer items show.
+    #[serde(deserialize_with = "lenient")]
+    pub status_bar: StatusBarItems,
 }
+
+/// The longest `UiSettings::ui_font`, in characters.
+pub const UI_FONT_MAX: usize = 120;
 
 impl Default for UiSettings {
     fn default() -> Self {
@@ -585,6 +752,78 @@ impl Default for UiSettings {
             zoom: 1.0,
             restore: RestoreMode::All,
             theme: Theme::System,
+            ui_font: String::new(),
+            editor_theme_light: EditorTheme::App,
+            editor_theme_dark: EditorTheme::App,
+            sidebar: SidebarLook::Default,
+            status_bar: StatusBarItems::default(),
+        }
+    }
+}
+
+/// Settings → Appearance → Editor theme. A value this build does not know
+/// reads as `App`, so it does not reset the zoom beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum EditorTheme {
+    /// Follow the app theme.
+    #[default]
+    App,
+    Light,
+    Dark,
+}
+
+impl<'de> serde::Deserialize<'de> for EditorTheme {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("light") => EditorTheme::Light,
+            Some("dark") => EditorTheme::Dark,
+            _ => EditorTheme::App,
+        })
+    }
+}
+
+/// Settings → Appearance → Left sidebar. A value this build does not know
+/// reads as `Default`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum SidebarLook {
+    #[default]
+    Default,
+    Tinted,
+}
+
+impl<'de> serde::Deserialize<'de> for SidebarLook {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("tinted") => SidebarLook::Tinted,
+            _ => SidebarLook::Default,
+        })
+    }
+}
+
+/// Settings → Appearance → Status bar: one switch per footer item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct StatusBarItems {
+    pub branch: bool,
+    pub token_usage: bool,
+    pub agents: bool,
+    pub version: bool,
+}
+
+impl Default for StatusBarItems {
+    fn default() -> Self {
+        StatusBarItems {
+            branch: true,
+            token_usage: true,
+            agents: true,
+            version: true,
         }
     }
 }
@@ -649,8 +888,16 @@ impl UiSettings {
         } else {
             1.0
         };
+        self.ui_font = clean_ui_font(&self.ui_font);
         self
     }
+}
+
+/// Control characters dropped, trimmed, cut to `UI_FONT_MAX` characters.
+fn clean_ui_font(raw: &str) -> String {
+    let kept: String = raw.chars().filter(|c| !c.is_control()).collect();
+    let cut: String = kept.trim().chars().take(UI_FONT_MAX).collect();
+    cut.trim().to_string()
 }
 
 /// How every terminal pane looks and behaves. Values outside the ranges
@@ -913,6 +1160,8 @@ pub enum SettingsSection {
     Diff,
     Agents,
     Usage,
+    Orchestration,
+    Shell,
 }
 
 /// What a `settings://changed` event carries.
@@ -1950,6 +2199,84 @@ then sum up"
     }
 
     #[test]
+    fn appearance_defaults_and_an_old_file() {
+        let ui = UiSettings::default();
+        assert_eq!(ui.ui_font, "");
+        assert_eq!(ui.editor_theme_light, EditorTheme::App);
+        assert_eq!(ui.editor_theme_dark, EditorTheme::App);
+        assert_eq!(ui.sidebar, SidebarLook::Default);
+        assert_eq!(ui.status_bar, StatusBarItems::default());
+        assert!(ui.status_bar.branch && ui.status_bar.token_usage);
+        assert!(ui.status_bar.agents && ui.status_bar.version);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(&path, r#"{"ui":{"zoom":1.5,"theme":"dark"}}"#).unwrap();
+        let ui = load(&path).ui;
+        assert_eq!(ui.zoom, 1.5);
+        assert_eq!(ui.theme, Theme::Dark);
+        assert_eq!(ui.sidebar, SidebarLook::Default);
+        assert_eq!(ui.status_bar, StatusBarItems::default());
+    }
+
+    #[test]
+    fn unknown_appearance_values_fall_back_without_resetting_zoom() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(
+            &path,
+            r#"{"ui":{"zoom":1.5,"uiFont":7,"editorThemeLight":"sepia","editorThemeDark":"dark","sidebar":"glass","statusBar":{"branch":"no"}}}"#,
+        )
+        .unwrap();
+        let ui = load(&path).ui;
+        assert_eq!(ui.zoom, 1.5);
+        assert_eq!(ui.ui_font, "");
+        assert_eq!(ui.editor_theme_light, EditorTheme::App);
+        assert_eq!(ui.editor_theme_dark, EditorTheme::Dark);
+        assert_eq!(ui.sidebar, SidebarLook::Default);
+        assert_eq!(ui.status_bar, StatusBarItems::default());
+
+        fs::write(&path, r#"{"ui":{"statusBar":{"agents":false}}}"#).unwrap();
+        let bar = load(&path).ui.status_bar;
+        assert!(!bar.agents && bar.branch && bar.token_usage && bar.version);
+    }
+
+    #[test]
+    fn ui_font_is_trimmed_capped_and_free_of_control_characters() {
+        let font = |raw: &str| {
+            UiSettings {
+                ui_font: raw.to_string(),
+                ..UiSettings::default()
+            }
+            .clamped()
+            .ui_font
+        };
+        assert_eq!(font("  Inter  "), "Inter");
+        assert_eq!(font("In\u{0}ter\n"), "Inter");
+        assert_eq!(font(&"a".repeat(300)).chars().count(), UI_FONT_MAX);
+        assert_eq!(font("   "), "");
+    }
+
+    #[test]
+    fn appearance_round_trips() {
+        let ui = UiSettings {
+            ui_font: "Inter".into(),
+            editor_theme_light: EditorTheme::Dark,
+            editor_theme_dark: EditorTheme::Light,
+            sidebar: SidebarLook::Tinted,
+            status_bar: StatusBarItems {
+                version: false,
+                ..StatusBarItems::default()
+            },
+            ..UiSettings::default()
+        };
+        let json = serde_json::to_string(&ui).unwrap();
+        assert!(json.contains("\"editorThemeLight\":\"dark\""));
+        assert!(json.contains("\"tokenUsage\":true"));
+        assert_eq!(serde_json::from_str::<UiSettings>(&json).unwrap(), ui);
+    }
+
+    #[test]
     fn zoom_clamps_to_its_range() {
         let at = |zoom: f32| {
             UiSettings {
@@ -2351,10 +2678,18 @@ then sum up"
         ] {
             let agents = AgentsSettings {
                 account_switch: value,
+                ..AgentsSettings::default()
             };
             assert_eq!(
                 serde_json::to_value(&agents).unwrap(),
-                serde_json::json!({ "accountSwitch": json })
+                serde_json::json!({
+                    "accountSwitch": json,
+                    "keepAwake": "off",
+                    "autoTabTitle": false,
+                    "autoSleep": false,
+                    "sleepAfterMin": 30,
+                    "sessionSearch": false
+                })
             );
             fs::write(
                 &path,
@@ -2363,6 +2698,107 @@ then sum up"
             .unwrap();
             assert_eq!(load(&path).agents, agents);
         }
+        // The two newer fields default, round trip and stay lenient.
+        let defaults = AgentsSettings::default();
+        assert_eq!(defaults.keep_awake, KeepAwake::Off);
+        assert!(!defaults.auto_tab_title);
+        for (value, json) in [
+            (KeepAwake::On, "on"),
+            (KeepAwake::Agent, "agent"),
+            (KeepAwake::Off, "off"),
+        ] {
+            let agents = AgentsSettings {
+                keep_awake: value,
+                auto_tab_title: true,
+                ..AgentsSettings::default()
+            };
+            let text = serde_json::to_string(&serde_json::json!({ "agents": agents })).unwrap();
+            assert!(text.contains(&format!(r#""keepAwake":"{json}""#)));
+            fs::write(&path, text).unwrap();
+            assert_eq!(load(&path).agents, agents);
+        }
+        fs::write(
+            &path,
+            r#"{ "agents": { "accountSwitch": "keep", "keepAwake": "bogus", "autoTabTitle": 3 } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path).agents;
+        assert_eq!(loaded.keep_awake, KeepAwake::Off);
+        assert!(!loaded.auto_tab_title);
+        assert_eq!(loaded.account_switch, SwitchRunning::Keep);
+        let on = AgentsSettings {
+            auto_sleep: true,
+            sleep_after_min: 5,
+            session_search: true,
+            ..AgentsSettings::default()
+        };
+        fs::write(&path, serde_json::json!({ "agents": on }).to_string()).unwrap();
+        assert_eq!(load(&path).agents, on);
+    }
+
+    #[test]
+    fn sleep_after_min_is_clamped() {
+        for (given, want) in [(0, 1), (1, 1), (45, 45), (1440, 1440), (99_999, 1440)] {
+            let s = AgentsSettings {
+                sleep_after_min: given,
+                ..AgentsSettings::default()
+            };
+            assert_eq!(s.clamped().sleep_after_min, want);
+        }
+    }
+
+    #[test]
+    fn orchestration_settings_default_and_stay_lenient() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let want = OrchestrationSettings::default();
+        assert_eq!(want.nested_worker_max_depth, 1);
+        assert!(want.worker_auto_close);
+        for text in [
+            "{}",
+            r#"{ "orchestration": {} }"#,
+            r#"{ "orchestration": 3 }"#,
+            r#"{ "orchestration": { "nestedWorkerMaxDepth": "deep" } }"#,
+            r#"{ "orchestration": { "workerAutoClose": 7 } }"#,
+        ] {
+            fs::write(&path, text).unwrap();
+            assert_eq!(load(&path).orchestration, want, "{text}");
+        }
+        // A broken section keeps the other sections.
+        fs::write(
+            &path,
+            r#"{ "orchestration": [1], "agents": { "accountSwitch": "keep" } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.orchestration, want);
+        assert_eq!(loaded.agents.account_switch, SwitchRunning::Keep);
+        fs::write(
+            &path,
+            r#"{ "orchestration": { "nestedWorkerMaxDepth": 3, "workerAutoClose": false } }"#,
+        )
+        .unwrap();
+        let got = load(&path).orchestration;
+        assert_eq!(got.nested_worker_max_depth, 3);
+        assert!(!got.worker_auto_close);
+    }
+
+    #[test]
+    fn orchestration_depth_is_clamped_to_one_through_nine() {
+        let depth = |n: u32| {
+            OrchestrationSettings {
+                nested_worker_max_depth: n,
+                worker_auto_close: true,
+            }
+            .normalized()
+            .nested_worker_max_depth
+        };
+        assert_eq!(depth(0), 1);
+        assert_eq!(depth(1), 1);
+        assert_eq!(depth(5), 5);
+        assert_eq!(depth(9), 9);
+        assert_eq!(depth(10), 9);
+        assert_eq!(depth(u32::MAX), 9);
     }
 
     #[test]
@@ -2424,6 +2860,76 @@ then sum up"
         };
         assert_eq!(odd.normalized().cache_ttl_ms, CACHE_TTL_SHORT_MS);
         assert_eq!(usage.clone().normalized(), usage);
+    }
+
+    #[test]
+    fn shell_settings_default_and_stay_lenient() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let want = ShellSettings::default();
+        assert!(!want.minimize_to_tray);
+        assert!(want.menu_bar_icon);
+        assert!(!want.tray_notice_shown);
+        assert_eq!(want.update_channel, UpdateChannel::Stable);
+        for text in [
+            "{}",
+            r#"{ "shell": {} }"#,
+            r#"{ "shell": 3 }"#,
+            r#"{ "shell": { "updateChannel": "nightly" } }"#,
+            r#"{ "shell": { "updateChannel": 7 } }"#,
+        ] {
+            fs::write(&path, text).unwrap();
+            assert_eq!(load(&path).shell, want, "{text}");
+        }
+        // A broken shell section keeps the other sections.
+        fs::write(
+            &path,
+            r#"{ "shell": [1], "agents": { "accountSwitch": "keep" } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.shell, want);
+        assert_eq!(loaded.agents.account_switch, SwitchRunning::Keep);
+    }
+
+    #[test]
+    fn shell_settings_round_trip_with_camel_case_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let shell = ShellSettings {
+            minimize_to_tray: true,
+            menu_bar_icon: false,
+            tray_notice_shown: true,
+            update_channel: UpdateChannel::Rc,
+        };
+        let json = serde_json::to_value(&shell).unwrap();
+        assert_eq!(json["minimizeToTray"], true);
+        assert_eq!(json["menuBarIcon"], false);
+        assert_eq!(json["trayNoticeShown"], true);
+        assert_eq!(json["updateChannel"], "rc");
+        fs::write(&path, format!(r#"{{ "shell": {json} }}"#)).unwrap();
+        assert_eq!(load(&path).shell, shell);
+    }
+
+    #[test]
+    fn a_shell_put_keeps_the_stored_notice_flag() {
+        let stored = ShellSettings {
+            tray_notice_shown: true,
+            ..ShellSettings::default()
+        };
+        let incoming = ShellSettings {
+            minimize_to_tray: true,
+            tray_notice_shown: false,
+            ..ShellSettings::default()
+        };
+        let put = incoming.for_put(&stored);
+        assert!(put.tray_notice_shown);
+        assert!(put.minimize_to_tray);
+        assert!(
+            !ShellSettings::default()
+                .for_put(&ShellSettings::default())
+                .tray_notice_shown
+        );
     }
 
     #[test]

@@ -218,7 +218,9 @@ impl From<RawCheck> for Check {
 
 /// The one reading of a failed `gh` run.
 fn classify(out: &GhOutput) -> GitError {
-    if out.stderr.contains("gh auth login") {
+    if out.stderr.contains("missing required scopes") {
+        GitError::GhScope(out.stderr.trim().to_owned())
+    } else if out.stderr.contains("gh auth login") {
         GitError::GhAuth
     } else if out.stderr.contains("none of the git remotes") {
         GitError::NotGithub
@@ -623,6 +625,289 @@ pub fn issue_open_web(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<(), Gi
     Ok(())
 }
 
+const PR_LIST_FIELDS: &str =
+    "number,url,state,isDraft,title,baseRefName,headRefName,author,updatedAt,isCrossRepository";
+
+/// A row of `gh pr list` or `gh pr view <n>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct PrSummary {
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
+    pub number: u64,
+    pub url: String,
+    pub state: PrState,
+    pub title: String,
+    pub base: String,
+    pub head: String,
+    pub author: Option<String>,
+    /// RFC 3339 as `gh` prints it.
+    pub updated_at: String,
+    /// The head lives in another repo (`isCrossRepository`).
+    pub fork: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum PrFilter {
+    Open,
+    Closed,
+    Merged,
+    All,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct PrQuery {
+    /// `None` reads as open.
+    pub state: Option<PrFilter>,
+    /// `--author @me`.
+    pub mine: bool,
+    /// `review-requested:@me`, joined with `search`.
+    pub needs_review: bool,
+    /// At most 256 chars.
+    pub search: Option<String>,
+    /// Default 100, capped at `ISSUE_LIMIT_MAX`.
+    pub limit: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawPrSummary {
+    number: u64,
+    url: String,
+    state: String,
+    #[serde(default)]
+    is_draft: bool,
+    title: String,
+    base_ref_name: String,
+    head_ref_name: String,
+    author: Option<RawLogin>,
+    #[serde(default)]
+    updated_at: String,
+    #[serde(default)]
+    is_cross_repository: bool,
+}
+
+impl From<RawPrSummary> for PrSummary {
+    fn from(raw: RawPrSummary) -> PrSummary {
+        let state = match raw.state.as_str() {
+            "MERGED" => PrState::Merged,
+            "CLOSED" => PrState::Closed,
+            _ if raw.is_draft => PrState::Draft,
+            _ => PrState::Open,
+        };
+        PrSummary {
+            number: raw.number,
+            url: raw.url,
+            state,
+            title: raw.title,
+            base: raw.base_ref_name,
+            head: raw.head_ref_name,
+            author: login(raw.author),
+            updated_at: raw.updated_at,
+            fork: raw.is_cross_repository,
+        }
+    }
+}
+
+pub fn pr_list(gh: &dyn GhExec, cwd: &Path, q: &PrQuery) -> Result<Vec<PrSummary>, GitError> {
+    let limit = q
+        .limit
+        .unwrap_or(DEFAULT_ISSUE_LIMIT)
+        .clamp(1, ISSUE_LIMIT_MAX)
+        .to_string();
+    let mut search: String = q
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.chars().take(SEARCH_MAX).collect())
+        .unwrap_or_default();
+    if q.needs_review {
+        search = format!("review-requested:@me {search}").trim().to_owned();
+    }
+    let mut args = vec!["pr", "list", "--json", PR_LIST_FIELDS, "--limit", &limit];
+    match q.state {
+        Some(PrFilter::Closed) => args.extend(["--state", "closed"]),
+        Some(PrFilter::Merged) => args.extend(["--state", "merged"]),
+        Some(PrFilter::All) => args.extend(["--state", "all"]),
+        Some(PrFilter::Open) | None => {}
+    }
+    if q.mine {
+        args.extend(["--author", "@me"]);
+    }
+    if !search.is_empty() {
+        args.extend(["--search", &search]);
+    }
+    let out = ok(gh.run(cwd, &args, None)?)?;
+    let raw: Vec<RawPrSummary> = serde_json::from_str(&out.stdout).map_err(parse_error)?;
+    Ok(raw.into_iter().map(PrSummary::from).collect())
+}
+
+pub fn pr_get(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<PrSummary, GitError> {
+    let number = number.to_string();
+    let out = gh.run(
+        cwd,
+        &["pr", "view", &number, "--json", PR_LIST_FIELDS],
+        None,
+    )?;
+    if out.status != Some(0) {
+        if out.stderr.contains("Could not resolve to a PullRequest") {
+            return Err(GitError::PrNotFound);
+        }
+        return Err(classify(&out));
+    }
+    let raw: RawPrSummary = serde_json::from_str(&out.stdout).map_err(parse_error)?;
+    Ok(raw.into())
+}
+
+/// Opens pull request `number` in the browser through `gh`.
+pub fn pr_open_number(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<(), GitError> {
+    let number = number.to_string();
+    ok(gh.run(cwd, &["pr", "view", &number, "--web"], None)?)?;
+    Ok(())
+}
+
+/// What `issue_create` sends.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct IssueDraft {
+    pub title: String,
+    pub body: String,
+}
+
+/// A GitHub Project of an owner.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSummary {
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
+    pub number: u64,
+    pub title: String,
+    pub url: String,
+    pub closed: bool,
+    /// `items.totalCount`.
+    pub items: u32,
+}
+
+const TITLE_MAX: usize = 256;
+
+/// Creates the issue (body on stdin) and reads it back from the URL `gh` prints.
+pub fn issue_create(gh: &dyn GhExec, cwd: &Path, draft: &IssueDraft) -> Result<Issue, GitError> {
+    let title = draft.title.trim();
+    if title.is_empty()
+        || title.chars().count() > TITLE_MAX
+        || draft.body.chars().count() > ISSUE_BODY_MAX
+    {
+        return Err(GitError::BadDraft);
+    }
+    let out = ok(gh.run(
+        cwd,
+        &["issue", "create", "--title", title, "--body-file", "-"],
+        Some(&draft.body),
+    )?)?;
+    let number = out
+        .stdout
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find_map(|l| parse_issue_ref(l).map(|(_, n)| n))
+        .ok_or_else(|| GitError::Gh("gh printed no issue URL".into()))?;
+    let n = number.to_string();
+    let out = ok(gh.run(cwd, &["issue", "view", &n, "--json", ISSUE_FIELDS], None)?)?;
+    let raw: RawIssue = serde_json::from_str(&out.stdout).map_err(parse_error)?;
+    Ok(raw.into())
+}
+
+fn owner_ok(owner: &str) -> Result<(), GitError> {
+    if owner.is_empty() || owner.starts_with('-') || owner.contains('/') {
+        return Err(GitError::Gh(format!("bad owner: {owner}")));
+    }
+    Ok(())
+}
+
+/// The GitHub Projects of `owner`, open and closed.
+pub fn project_list(
+    gh: &dyn GhExec,
+    cwd: &Path,
+    owner: &str,
+) -> Result<Vec<ProjectSummary>, GitError> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Items {
+        #[serde(default)]
+        total_count: u32,
+    }
+    #[derive(Deserialize)]
+    struct Raw {
+        number: u64,
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        url: String,
+        #[serde(default)]
+        closed: bool,
+        items: Option<Items>,
+    }
+    #[derive(Deserialize)]
+    struct Wrap {
+        #[serde(default)]
+        projects: Vec<Raw>,
+    }
+    owner_ok(owner)?;
+    let out = ok(gh.run(
+        cwd,
+        &[
+            "project", "list", "--owner", owner, "--closed", "--format", "json", "--limit", "100",
+        ],
+        None,
+    )?)?;
+    let wrap: Wrap = serde_json::from_str(&out.stdout).map_err(parse_error)?;
+    Ok(wrap
+        .projects
+        .into_iter()
+        .map(|p| ProjectSummary {
+            number: p.number,
+            title: p.title,
+            url: p.url,
+            closed: p.closed,
+            items: p.items.map_or(0, |i| i.total_count),
+        })
+        .collect())
+}
+
+/// Opens a project of `owner` in the browser through `gh`.
+pub fn project_open(gh: &dyn GhExec, cwd: &Path, owner: &str, number: u64) -> Result<(), GitError> {
+    owner_ok(owner)?;
+    let n = number.to_string();
+    ok(gh.run(
+        cwd,
+        &["project", "view", &n, "--owner", owner, "--web"],
+        None,
+    )?)?;
+    Ok(())
+}
+
+/// "https://github.com/<owner>/<repo>/pull/12" gives (`owner/repo`, 12).
+pub fn parse_pr_ref(text: &str) -> Option<(Option<String>, u64)> {
+    let rest = text.trim().strip_prefix("https://github.com/")?;
+    let parts: Vec<&str> = rest.trim_end_matches('/').split('/').collect();
+    match parts.as_slice() {
+        [owner, repo, "pull", n] if !owner.is_empty() && !repo.is_empty() => {
+            let digits = !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit());
+            n.parse::<u64>()
+                .ok()
+                .filter(|n| digits && *n > 0)
+                .map(|n| (Some(format!("{owner}/{repo}")), n))
+        }
+        _ => None,
+    }
+}
+
 fn spawn_error(e: io::Error) -> GitError {
     match e.kind() {
         io::ErrorKind::NotFound => GitError::GhMissing,
@@ -939,6 +1224,209 @@ mod tests {
 
     fn args_of(fake: &Fake) -> Vec<String> {
         fake.calls.borrow()[0].0.clone()
+    }
+
+    fn raw_pr(n: u64, state: &str, draft: bool, fork: bool) -> String {
+        format!(
+            r#"{{"number":{n},"url":"https://github.com/o/r/pull/{n}","state":"{state}","isDraft":{draft},"title":"T{n}","baseRefName":"main","headRefName":"feat/{n}","author":{{"login":"hubot"}},"updatedAt":"2026-11-03T09:15:00Z","isCrossRepository":{fork}}}"#
+        )
+    }
+
+    #[test]
+    fn pr_list_default_args_and_mapping() {
+        let body = format!(
+            "[{},{},{}]",
+            raw_pr(1, "OPEN", false, false),
+            raw_pr(2, "OPEN", true, true),
+            raw_pr(3, "MERGED", false, false)
+        );
+        let fake = Fake::new(vec![out(0, &body, "")]);
+        let prs = pr_list(&fake, cwd(), &PrQuery::default()).unwrap();
+        assert_eq!(
+            args_of(&fake),
+            ["pr", "list", "--json", PR_LIST_FIELDS, "--limit", "100"]
+        );
+        assert_eq!(prs[0].state, PrState::Open);
+        assert_eq!(prs[0].author.as_deref(), Some("hubot"));
+        assert!(!prs[0].fork);
+        assert_eq!(prs[1].state, PrState::Draft);
+        assert!(prs[1].fork);
+        assert_eq!(prs[2].state, PrState::Merged);
+        assert_eq!(prs[2].head, "feat/3");
+    }
+
+    #[test]
+    fn pr_list_args_follow_the_query() {
+        let fake = Fake::new(vec![out(0, "[]", ""), out(0, "[]", ""), out(0, "[]", "")]);
+        let q = PrQuery {
+            state: Some(PrFilter::Merged),
+            mine: true,
+            needs_review: true,
+            search: Some("  footer ".into()),
+            limit: Some(9999),
+        };
+        pr_list(&fake, cwd(), &q).unwrap();
+        assert_eq!(
+            args_of(&fake)[4..],
+            [
+                "--limit",
+                "200",
+                "--state",
+                "merged",
+                "--author",
+                "@me",
+                "--search",
+                "review-requested:@me footer"
+            ]
+        );
+        let q = PrQuery {
+            needs_review: true,
+            ..PrQuery::default()
+        };
+        pr_list(&fake, cwd(), &q).unwrap();
+        assert_eq!(
+            fake.calls.borrow()[1].0.last().unwrap(),
+            "review-requested:@me"
+        );
+        let q = PrQuery {
+            state: Some(PrFilter::All),
+            ..PrQuery::default()
+        };
+        pr_list(&fake, cwd(), &q).unwrap();
+        assert!(fake.calls.borrow()[2].0.contains(&"all".to_owned()));
+    }
+
+    #[test]
+    fn pr_get_maps_fork_and_not_found() {
+        let fake = Fake::new(vec![
+            out(0, &raw_pr(13, "OPEN", false, true), ""),
+            out(
+                1,
+                "",
+                "GraphQL: Could not resolve to a PullRequest with the number of 99.",
+            ),
+        ]);
+        let pr = pr_get(&fake, cwd(), 13).unwrap();
+        assert!(pr.fork);
+        assert_eq!(
+            fake.calls.borrow()[0].0,
+            ["pr", "view", "13", "--json", PR_LIST_FIELDS]
+        );
+        let err = pr_get(&fake, cwd(), 99).unwrap_err();
+        assert_eq!(err.code(), "pr_not_found");
+    }
+
+    #[test]
+    fn pr_get_keeps_a_network_failure_as_gh_error() {
+        let fake = Fake::new(vec![out(
+            1,
+            "",
+            "error connecting: Could not resolve host: api.github.com",
+        )]);
+        let err = pr_get(&fake, cwd(), 5).unwrap_err();
+        assert!(matches!(err, GitError::Gh(_)), "{err:?}");
+    }
+
+    #[test]
+    fn pr_open_number_runs_view_web() {
+        let fake = Fake::new(vec![out(0, "", "")]);
+        pr_open_number(&fake, cwd(), 7).unwrap();
+        assert_eq!(args_of(&fake), ["pr", "view", "7", "--web"]);
+    }
+
+    #[test]
+    fn issue_create_sends_body_on_stdin_and_reads_back() {
+        let view = r#"{"number":42,"url":"https://github.com/o/r/issues/42","state":"OPEN","title":"New","labels":[],"assignees":[],"author":{"login":"me"},"updatedAt":"2026-11-04T00:00:00Z"}"#;
+        let fake = Fake::new(vec![
+            out(0, "https://github.com/o/r/issues/42\n", ""),
+            out(0, view, ""),
+        ]);
+        let draft = IssueDraft {
+            title: "  New ".into(),
+            body: "line\nTwo".into(),
+        };
+        let issue = issue_create(&fake, cwd(), &draft).unwrap();
+        assert_eq!(issue.number, 42);
+        let calls = fake.calls.borrow();
+        assert_eq!(
+            calls[0].0,
+            ["issue", "create", "--title", "New", "--body-file", "-"]
+        );
+        assert_eq!(calls[0].1.as_deref(), Some("line\nTwo"));
+        assert_eq!(calls[1].0, ["issue", "view", "42", "--json", ISSUE_FIELDS]);
+    }
+
+    #[test]
+    fn issue_create_refuses_bad_drafts() {
+        let fake = Fake::new(vec![]);
+        for title in ["", "   ", &"x".repeat(257)] {
+            let d = IssueDraft {
+                title: title.to_owned(),
+                body: String::new(),
+            };
+            let err = issue_create(&fake, cwd(), &d).unwrap_err();
+            assert_eq!(err.code(), "bad_draft");
+        }
+        assert!(fake.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn project_list_parses_items_and_passes_owner() {
+        let json = r#"{"projects":[{"number":1,"title":"Roadmap","url":"https://github.com/orgs/acme/projects/1","closed":false,"items":{"totalCount":12}},{"number":2,"title":"Old","url":"https://github.com/orgs/acme/projects/2","closed":true,"items":{"totalCount":0}}],"totalCount":2}"#;
+        let fake = Fake::new(vec![out(0, json, "")]);
+        let list = project_list(&fake, cwd(), "acme").unwrap();
+        assert_eq!(
+            args_of(&fake),
+            [
+                "project", "list", "--owner", "acme", "--closed", "--format", "json", "--limit",
+                "100"
+            ]
+        );
+        assert_eq!(list.len(), 2);
+        assert_eq!(
+            (list[0].number, list[0].items, list[0].closed),
+            (1, 12, false)
+        );
+        assert!(list[1].closed);
+    }
+
+    #[test]
+    fn project_list_maps_a_missing_scope() {
+        let fake = Fake::new(vec![out(
+            1,
+            "",
+            "error: your authentication token is missing required scopes [read:project]",
+        )]);
+        let err = project_list(&fake, cwd(), "acme").unwrap_err();
+        assert_eq!(err.code(), "gh_scope");
+    }
+
+    #[test]
+    fn project_open_runs_view_web_and_refuses_odd_owners() {
+        let fake = Fake::new(vec![out(0, "", "")]);
+        project_open(&fake, cwd(), "acme", 3).unwrap();
+        assert_eq!(
+            args_of(&fake),
+            ["project", "view", "3", "--owner", "acme", "--web"]
+        );
+        assert!(project_open(&fake, cwd(), "--x", 3).is_err());
+    }
+
+    #[test]
+    fn parse_pr_ref_reads_pull_urls_only() {
+        let url = Some((Some("o/r".to_owned()), 12));
+        assert_eq!(parse_pr_ref("https://github.com/o/r/pull/12"), url);
+        assert_eq!(parse_pr_ref(" https://github.com/o/r/pull/12/ "), url);
+        for text in [
+            "#12",
+            "12",
+            "https://github.com/o/r/issues/12",
+            "https://github.com/o/r/pull/0",
+            "https://github.com/o/r/pull/12/files",
+            "https://example.com/o/r/pull/12",
+        ] {
+            assert_eq!(parse_pr_ref(text), None, "{text}");
+        }
     }
 
     #[test]

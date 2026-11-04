@@ -1235,6 +1235,7 @@ mod tests {
             worktree: None,
             repo: None,
             resumable: true,
+            hit: None,
         }
     }
 

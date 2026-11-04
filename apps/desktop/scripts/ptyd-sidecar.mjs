@@ -1,5 +1,5 @@
-// Builds `xdev-ptyd` and puts it where Tauri's `externalBin` looks for it
-// (`src-tauri/binaries/xdev-ptyd-<target triple>`). Runs as the before-dev and
+// Builds `xdev-ptyd` and `xdev` and puts them where Tauri's `externalBin` looks for it
+// (`src-tauri/binaries/<name>-<target triple>`). Runs as the before-dev and
 // before-build command, which get the target from Tauri's environment.
 //
 // Only `tauri build --config src-tauri/tauri.ptyd.conf.json` bundles it: the
@@ -20,20 +20,33 @@ const triple = process.env.TAURI_ENV_TARGET_TRIPLE || host;
 if (!triple) throw new Error("no target triple");
 const exe = triple.includes("windows") ? ".exe" : "";
 
-const args = ["build", "-p", "xdev-pty", "--bin", "xdev-ptyd", "--locked"];
-if (!debug) args.push("--release");
-if (triple !== host) args.push("--target", triple);
-execFileSync("cargo", args, { cwd: root, stdio: "inherit" });
+// Two sidecars, both kept out of tauri.conf.json for the same reason:
+// `xdev-ptyd` (the terminal service) and `xdev` (the CLI, so the app's
+// terminals can run `xdev orchestration …` from `XDEV_CLI` or PATH).
+const sidecars = [
+  { pkg: "xdev-pty", bin: "xdev-ptyd" },
+  { pkg: "xdev-cli", bin: "xdev" },
+];
 
 // Cargo's own answer, so CARGO_TARGET_DIR and `build.target-dir` count.
-const meta = execFileSync("cargo", ["metadata", "--format-version", "1", "--no-deps"], {
-  cwd: root,
-  encoding: "utf8",
-  maxBuffer: 64 * 1024 * 1024,
-});
-const target = JSON.parse(meta).target_directory;
-const profile = debug ? "debug" : "release";
-const built = join(target, ...(triple !== host ? [triple] : []), profile, `xdev-ptyd${exe}`);
+let target;
 const out = join(here, "../src-tauri/binaries");
 mkdirSync(out, { recursive: true });
-copyFileSync(built, join(out, `xdev-ptyd-${triple}${exe}`));
+
+for (const { pkg, bin } of sidecars) {
+  const args = ["build", "-p", pkg, "--bin", bin, "--locked"];
+  if (!debug) args.push("--release");
+  if (triple !== host) args.push("--target", triple);
+  execFileSync("cargo", args, { cwd: root, stdio: "inherit" });
+
+  target ??= JSON.parse(
+    execFileSync("cargo", ["metadata", "--format-version", "1", "--no-deps"], {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    }),
+  ).target_directory;
+  const profile = debug ? "debug" : "release";
+  const built = join(target, ...(triple !== host ? [triple] : []), profile, `${bin}${exe}`);
+  copyFileSync(built, join(out, `${bin}-${triple}${exe}`));
+}

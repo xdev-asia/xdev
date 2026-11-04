@@ -7,6 +7,7 @@ import { resetBindingsForTests, setKeySettings } from "@/keys/bindingsStore";
 import { PtyClient } from "./ptyClient";
 import { Terminal } from "./Terminal";
 import { TERMINAL_SCHEMES } from "./terminalThemes";
+import { resetCustomSchemesForTests, setCustomSchemes } from "./customSchemes";
 import { resetTerminalSettingsForTests, setTerminalSettings, TERMINAL_DEFAULTS } from "./terminalSettings";
 
 // The first ref is the xterm host; the rest keep their initial value.
@@ -679,4 +680,17 @@ it("macOptionIsMeta follows the setting and the detected layout", async () => {
   expect(hooks.options.macOptionIsMeta).toBe(false);
   setTerminalSettings({ ...TERMINAL_DEFAULTS, macOptionAsAlt: "auto" });
   expect(hooks.options.macOptionIsMeta).toBe(false);
+});
+
+it("a custom scheme picks its colours, and one added later re-themes the pane", () => {
+  const colors = { ...TERMINAL_SCHEMES[0]!.colors, background: "#123456" };
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, theme: "custom-mine" });
+  const { effect } = mount({ api: createMockApi({}), id: "cs-1" });
+  const cleanup = effect() as () => void;
+  // Not imported yet: the app look.
+  expect((hooks.options.theme as { background?: string }).background).not.toBe("#123456");
+  setCustomSchemes([{ id: "custom-mine", name: "Mine", mode: "dark", colors }]);
+  expect(hooks.options.theme).toEqual(colors);
+  cleanup();
+  resetCustomSchemesForTests();
 });

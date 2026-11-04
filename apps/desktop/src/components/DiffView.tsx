@@ -6,6 +6,7 @@ import { EditorView, lineNumbers } from "@codemirror/view";
 import { useEffect, useMemo, useRef } from "react";
 import type { JSX } from "react";
 import { useI18n } from "@/i18n";
+import { useEditorTheme } from "@/ui/editorTheme";
 import { highlight, theme } from "./Editor";
 
 const added = "color-mix(in srgb, var(--x-color-ok) 30%, transparent)";
@@ -96,5 +97,5 @@ export function DiffView(props: { base: string; current: string }): JSX.Element 
     return () => view.destroy();
   }, [props.base, props.current, t]);
 
-  return <div className="editor diff" ref={host} />;
+  return <div className="editor diff" ref={host} data-theme={useEditorTheme()} />;
 }

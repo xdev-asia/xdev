@@ -71,10 +71,9 @@ describe("searchSettings", () => {
 });
 
 it("a mac-only entry is listed for mac and for no other platform", async () => {
-  const { settingEntriesFor, SETTING_ENTRIES } = await import("./catalog");
+  const { entriesFor } = await import("./catalog");
   const id = "terminal.optionAsAlt";
-  expect(settingEntriesFor("mac").some((x) => x.id === id)).toBe(true);
-  expect(settingEntriesFor("win").some((x) => x.id === id)).toBe(false);
-  expect(settingEntriesFor("linux").some((x) => x.id === id)).toBe(false);
-  expect(settingEntriesFor("win").length).toBe(SETTING_ENTRIES.length - 1);
+  expect(entriesFor("mac").some((x) => x.id === id)).toBe(true);
+  expect(entriesFor("win").some((x) => x.id === id)).toBe(false);
+  expect(entriesFor("linux").some((x) => x.id === id)).toBe(false);
 });

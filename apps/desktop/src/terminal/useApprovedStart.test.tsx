@@ -79,6 +79,17 @@ it("shows any other failure as the error and resolves null", async () => {
   expect(s.draw().error).toEqual({ code: "pty_spawn", detail: "boom" });
 });
 
+it("approves a fork launch with the same resume id and fork", async () => {
+  const s = setup();
+  const approve = vi.spyOn(s.api, "ptyApprove");
+  const client = new PtyClient(s.api, "t-3", "abc-1", true);
+  const started = s.draw().start(client, "/demo", "claude", 80, 24, () => {}, null, "abc-1", true);
+  await tick();
+  s.dialog().onConfirm();
+  expect(await started).toMatchObject({ id: "t-3" });
+  expect(approve).toHaveBeenCalledWith("claude", null, "abc-1", true);
+});
+
 it("approves a resume launch with the same resume id", async () => {
   const s = setup();
   const approve = vi.spyOn(s.api, "ptyApprove");

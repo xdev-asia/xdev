@@ -11,6 +11,7 @@ import { appOwnsKey } from "@/keys/keymap";
 import { PLATFORM } from "@/platform";
 import { PtyClient } from "./ptyClient";
 import { createTerminalHandle } from "./terminalActions";
+import { getCustomSchemes, subscribeCustomSchemes } from "./customSchemes";
 import { getTerminalSettings, subscribeTerminalSettings } from "./terminalSettings";
 import { decodeOsc52Write, xtermOptions } from "./terminalOptions";
 import { TerminalFind } from "./TerminalFind";
@@ -135,7 +136,7 @@ export function Terminal(props: {
     const css = getComputedStyle(el);
     const color = (name: string) => css.getPropertyValue(name).trim() || undefined;
     const mono = color("--x-font-mono");
-    const initial = xtermOptions(getTerminalSettings(), mono, color);
+    const initial = xtermOptions(getTerminalSettings(), mono, color, getCustomSchemes());
     // Proposed API: search decorations (and with them the match count) need it.
     const term = new XTerm({ ...initial, allowProposedApi: true });
     // The pane and the padding around the host take the theme's background (the app theme: the CSS one).
@@ -284,8 +285,8 @@ export function Terminal(props: {
     };
     el.addEventListener("mouseenter", onMouseEnter);
     // A change in Settings applies to this pane at once, with no restart.
-    const offSettings = subscribeTerminalSettings(() => {
-      const next = xtermOptions(getTerminalSettings(), mono, color);
+    const applySettings = () => {
+      const next = xtermOptions(getTerminalSettings(), mono, color, getCustomSchemes());
       term.options.fontFamily = next.fontFamily;
       term.options.fontSize = next.fontSize;
       term.options.fontWeight = next.fontWeight;
@@ -304,11 +305,18 @@ export function Terminal(props: {
       fitVisible();
       // A font that has not loaded yet measures wrong; measure again when it has.
       if (typeof document !== "undefined") void document.fonts?.ready.then(() => alive && fitVisible());
-    });
+    };
+    const offSettingsStore = subscribeTerminalSettings(applySettings);
+    // An import or a removal changes which scheme an id means.
+    const offSchemes = subscribeCustomSchemes(applySettings);
+    const offSettings = () => {
+      offSettingsStore();
+      offSchemes();
+    };
 
     // The app theme switching between light and dark: read the variables again for this pane.
     const offTheme = followAppTheme(el, (token) => {
-      const next = xtermOptions(getTerminalSettings(), mono, token);
+      const next = xtermOptions(getTerminalSettings(), mono, token, getCustomSchemes());
       term.options.theme = next.theme;
       paint(next.theme.background);
     });

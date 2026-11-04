@@ -1,19 +1,21 @@
 import { Button } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import type { ApiError, DetailsPatch, WorkItemKind, WorkStatus, WorktreeView } from "@/api";
+import type { Api, ApiError, DetailsPatch, WorkItemKind, WorkStatus, WorktreeView } from "@/api";
 import { useI18n } from "@/i18n";
 import { expandShortcodes } from "./emoji";
+import { LinkedWorkSearch } from "./LinkedWorkSearch";
 import { parseItem } from "./workItemInput";
 
 const STATUSES: WorkStatus[] = ["todo", "in-progress", "in-review", "completed"];
 
-type Form = { title: string; comment: string; status: string; parent: string; itemUrl: string; itemKind: WorkItemKind };
+type Form = { title: string; comment: string; status: string; parent: string; itemUrl: string; itemKind: WorkItemKind; itemTitle?: string | null };
 
 /** Only the fields that differ from the worktree; null while the work item link is unusable. */
 export function detailsPatch(wt: WorktreeView, form: Form): DetailsPatch | null {
-  const item = parseItem(form.itemUrl, form.itemKind);
-  if (item === "bad") return null;
+  const parsed = parseItem(form.itemUrl, form.itemKind);
+  if (parsed === "bad") return null;
+  const item = parsed === null || parsed.title !== null || !form.itemTitle ? parsed : { ...parsed, title: form.itemTitle };
   const patch: DetailsPatch = {};
   const title = form.title.trim() === "" ? null : form.title.trim();
   if (title !== (wt.title ?? null)) patch.title = title;
@@ -29,6 +31,9 @@ export function detailsPatch(wt: WorktreeView, form: Form): DetailsPatch | null 
 
 /** Title, comment, status, work item and parent of one worktree. Mounted only while open. */
 export function DetailsDialog(props: {
+  api: Api;
+  /** The repo the worktree belongs to, where linked work is searched. */
+  repoId: string;
   worktree: WorktreeView;
   /** The other worktrees of the repo, for the parent choice. */
   siblings: WorktreeView[];
@@ -46,6 +51,7 @@ export function DetailsDialog(props: {
   const [parent, setParent] = useState(wt.parent ?? "");
   const [itemUrl, setItemUrl] = useState(wt.item?.url ?? "");
   const [itemKind, setItemKind] = useState<WorkItemKind>(wt.item?.kind ?? "pr");
+  const [itemTitle, setItemTitle] = useState<string | null>(wt.item?.title ?? null);
 
   useEffect(() => {
     const d = dialog.current;
@@ -71,7 +77,7 @@ export function DetailsDialog(props: {
         onSubmit={(e) => {
           e.preventDefault();
           if (props.busy) return;
-          const patch = detailsPatch(wt, { title, comment, status, parent, itemUrl, itemKind });
+          const patch = detailsPatch(wt, { title, comment, status, parent, itemUrl, itemKind, itemTitle });
           if (patch) props.onSave(patch);
         }}
       >
@@ -110,23 +116,35 @@ export function DetailsDialog(props: {
             </select>
           </label>
           <div className="ws-field">
-            <span>{t("workspace.create.item")}</span>
-            <div className="ws-item-row">
-              <select aria-label={t("workspace.create.itemKind")} value={itemKind} disabled={props.busy} onChange={(e) => setItemKind(e.target.value as WorkItemKind)}>
-                <option value="pr">{t("workItem.kind.pr")}</option>
-                <option value="issue">{t("workItem.kind.issue")}</option>
-              </select>
-              <input
-                type="text"
-                className="ws-mono"
-                value={itemUrl}
-                placeholder={t("workspace.create.itemPlaceholder")}
-                spellCheck={false}
-                disabled={props.busy}
-                aria-invalid={badItem}
-                onChange={(e) => setItemUrl(e.target.value)}
+            <span>{t("workspace.details.linked")}</span>
+            {itemUrl !== "" ? (
+              <div className="ws-item-row">
+                <span className="ws-mono ws-item-linked" title={itemUrl}>
+                  {t(`workItem.kind.${itemKind}`)}: {itemTitle ?? itemUrl}
+                </span>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={props.busy}
+                  onClick={() => {
+                    setItemUrl("");
+                    setItemTitle(null);
+                  }}
+                >
+                  {t("workspace.details.linkedRemove")}
+                </button>
+              </div>
+            ) : (
+              <LinkedWorkSearch
+                api={props.api}
+                repoId={props.repoId}
+                onPick={(item) => {
+                  setItemUrl(item.url);
+                  setItemKind(item.kind);
+                  setItemTitle(item.title);
+                }}
               />
-            </div>
+            )}
           </div>
         </div>
         {(badItem || error) && (
