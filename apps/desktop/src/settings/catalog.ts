@@ -58,6 +58,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("usage.footer.codex", "settings.usage.footer.codex", ["footer", "meter", "codex", "usage", "quota", "thanh", "mức dùng", "muc dung", "chân trang", "chan trang"]),
   e("usage.scan.claude", "settings.usage.scan.claude", ["stats", "logs", "scan", "read", "claude", "session", "thống kê", "thong ke", "đọc log", "doc log", "nhật ký", "nhat ky"], "settings.usage.scanHint"),
   e("usage.scan.codex", "settings.usage.scan.codex", ["stats", "logs", "scan", "read", "codex", "session", "thống kê", "thong ke", "đọc log", "doc log", "nhật ký", "nhat ky"], "settings.usage.scanHint"),
+  e("usage.credentials", "settings.usage.credentials.group", ["credentials", "sign in", "login", "account", "token", "expired", "claude", "codex", "đăng nhập", "dang nhap", "tài khoản", "tai khoan", "hết hạn", "het han"]),
   e("usage.cacheTimer", "settings.usage.cacheTimer", ["cache", "timer", "countdown", "prompt cache", "claude", "tab", "đồng hồ", "dong ho", "đếm ngược", "dem nguoc", "bộ nhớ đệm", "bo nho dem"], "settings.usage.cacheTimerHint"),
   e("usage.cacheTtl", "settings.usage.cacheTtl", ["cache", "lifetime", "ttl", "5 minutes", "1 hour", "thời hạn", "thoi han", "5 phút", "5 phut", "1 giờ", "1 gio"]),
   // Notifications
