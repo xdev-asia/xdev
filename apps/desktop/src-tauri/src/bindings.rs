@@ -20,8 +20,8 @@ use crate::quick_commands::{FileCommands, QuickCommand};
 use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
-    EditorSettings, GitSettings, KeySettings, OpenInSettings, RestoreMode, SettingsChanged,
-    StatusSettings, TerminalSettings, UiSettings,
+    DiffSettings, EditorSettings, GitSettings, KeySettings, NavigationSettings, OpenInSettings,
+    RestoreMode, SettingsChanged, StatusSettings, TerminalSettings, UiSettings,
 };
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
@@ -73,6 +73,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     OpenTarget::export_all(cfg)?;
     CloneProgress::export_all(cfg)?;
     EditorSettings::export_all(cfg)?;
+    NavigationSettings::export_all(cfg)?;
+    DiffSettings::export_all(cfg)?;
     KeybindingsText::export_all(cfg)?;
     KeybindingsChanged::export_all(cfg)?;
     PtyHook::export_all(cfg)?;
