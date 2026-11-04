@@ -15,6 +15,7 @@ mod layout;
 mod links;
 mod open_in;
 mod profiles;
+mod prs;
 mod pty;
 mod ptyd;
 mod quick_commands;
@@ -324,6 +325,13 @@ pub fn run() {
             issues::issue_view,
             issues::issue_resolve,
             issues::issue_open,
+            issues::issue_create,
+            prs::prs_list,
+            prs::pr_get,
+            prs::pr_open,
+            prs::pr_branch,
+            prs::projects_list,
+            prs::project_open,
             ship::worktree_draft_commit,
             ship::worktree_draft_pr,
             ship::worktree_check_log,
