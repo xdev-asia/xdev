@@ -246,3 +246,15 @@ it.each([["shared source", shared, "/notes"], ["no source", null, "/p/main"]] as
   const none = await view({ section: "tasks", source, defaultRepo: null });
   expect(none.of(TasksView)[0].props.defaultRepo).toBeNull();
 });
+
+it("opens the folder once even when every effect runs twice, as in StrictMode", async () => {
+  const api = createMockApi({ "a.md": "# A" });
+  const open = vi.spyOn(api, "openVault");
+  const v = await view({ api });
+  expect(open).toHaveBeenCalledTimes(1);
+  // A StrictMode remount: every effect's deps are forgotten, so each one runs again.
+  for (const slot of hooks.slots as { deps?: unknown[] }[]) if (slot) slot.deps = undefined;
+  await v.settle();
+  expect(open).toHaveBeenCalledTimes(1);
+  expect(v.of(Sidebar)).toHaveLength(1);
+});

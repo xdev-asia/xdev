@@ -208,19 +208,21 @@ const Folder = forwardRef<DocsHandle, DocsViewProps & { source: VaultView }>(fun
 
   useImperativeHandle(ref, () => ({ flush: doc.flush }), [doc.flush]);
 
+  // The vault is the session's one open folder, so opening it twice (React's StrictMode
+  // runs every effect twice in development) would restart its watcher for nothing.
+  const openedFor = useRef<{ api: Api; path: string } | null>(null);
   useEffect(() => {
-    let stale = false;
+    const last = openedFor.current;
+    if (last && last.api === api && last.path === source.path) return;
+    openedFor.current = { api, path: source.path };
+    // No stale guard: this folder is keyed by its path, and a late answer after unmount sets nothing visible.
     api.openVault(source.path).then(
       (found) => {
-        if (stale) return;
         setDocs(found);
         setOpened({ status: "ready" });
       },
-      (e: unknown) => !stale && setOpened({ status: "failed", code: toApiError(e).code }),
+      (e: unknown) => setOpened({ status: "failed", code: toApiError(e).code }),
     );
-    return () => {
-      stale = true;
-    };
   }, [api, source.path]);
 
   useEffect(() => {
