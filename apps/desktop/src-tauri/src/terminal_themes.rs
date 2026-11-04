@@ -2,8 +2,20 @@
 //!
 //! `parse` is pure. The store under `<data_dir>/themes/` is below it.
 
+use std::fs;
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use crate::atomic::write_atomic;
+use tauri::{AppHandle, State};
+
+use crate::accounts::data_dir;
+use crate::commands::{AppState, CmdError};
+use crate::settings::SettingsSection;
+use crate::settings_store;
 
 /// The largest theme file read, in bytes.
 pub const THEME_FILE_MAX: u64 = 64 * 1024;
@@ -320,6 +332,231 @@ pub fn parse(bytes: &[u8]) -> Result<(CustomScheme, Vec<String>), ThemeError> {
     ))
 }
 
+// ---- Store: `<data_dir>/themes/<slug>.json` ----
+
+/// The folder the imported schemes live in.
+pub fn themes_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("themes")
+}
+
+/// Moves a file to the OS trash. A parameter of `import` and `remove`, so a
+/// test passes its own.
+pub type Trash<'a> = &'a dyn Fn(&Path) -> io::Result<()>;
+
+fn io_error(e: io::Error) -> CmdError {
+    CmdError {
+        code: "io",
+        detail: Some(e.kind().to_string()),
+    }
+}
+
+impl From<ThemeError> for CmdError {
+    fn from(e: ThemeError) -> CmdError {
+        CmdError {
+            code: e.code,
+            detail: e.field,
+        }
+    }
+}
+
+fn not_found() -> CmdError {
+    CmdError {
+        code: "not_found",
+        detail: None,
+    }
+}
+
+/// A file stem this module wrote: lower-case letters, digits and `-`.
+fn valid_stem(stem: &str) -> bool {
+    !stem.is_empty()
+        && stem.chars().count() <= SLUG_MAX
+        && stem
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+fn file_of(dir: &Path, stem: &str) -> PathBuf {
+    dir.join(format!("{stem}.json"))
+}
+
+/// The file's bytes, refusing one over `THEME_FILE_MAX` before reading it.
+fn read_capped(path: &Path) -> Result<Vec<u8>, CmdError> {
+    let file = fs::File::open(path).map_err(io_error)?;
+    if file.metadata().map_err(io_error)?.len() > THEME_FILE_MAX {
+        return Err(ThemeError::too_large().into());
+    }
+    let mut bytes = Vec::new();
+    file.take(THEME_FILE_MAX + 1)
+        .read_to_end(&mut bytes)
+        .map_err(io_error)?;
+    Ok(bytes)
+}
+
+/// Every stored scheme, by name. A file that does not parse is skipped.
+pub fn list(dir: &Path) -> Vec<CustomScheme> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut out: Vec<CustomScheme> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                return None;
+            }
+            let stem = path.file_stem()?.to_str()?;
+            if !valid_stem(stem) {
+                return None;
+            }
+            let (mut scheme, _) = parse(&read_capped(&path).ok()?).ok()?;
+            scheme.id = format!("custom-{stem}");
+            Some(scheme)
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        a.name
+            .to_lowercase()
+            .cmp(&b.name.to_lowercase())
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    out
+}
+
+/// Reads and checks the file at `source` and says what saving it would meet.
+pub fn preview(dir: &Path, source: &Path) -> Result<SchemePreview, CmdError> {
+    let (scheme, ignored_keys) = parse(&read_capped(source)?)?;
+    let stem = scheme.id.trim_start_matches("custom-").to_string();
+    Ok(SchemePreview {
+        low_contrast: contrast_ratio(&scheme.colors.foreground, &scheme.colors.background)
+            < MIN_CONTRAST,
+        name_taken: file_of(dir, &stem).exists(),
+        ignored_keys,
+        scheme,
+    })
+}
+
+/// `base` with `-n`, cut so the stem stays within `SLUG_MAX`.
+fn numbered(base: &str, n: u32) -> String {
+    let suffix = format!("-{n}");
+    let head: String = base.chars().take(SLUG_MAX - suffix.len()).collect();
+    format!("{}{suffix}", head.trim_end_matches('-'))
+}
+
+/// The file as stored: the import format, every colour spelled out.
+fn stored_bytes(scheme: &CustomScheme) -> Vec<u8> {
+    let mut doc = serde_json::Map::new();
+    doc.insert("format".into(), FORMAT.into());
+    doc.insert("version".into(), 1.into());
+    doc.insert("name".into(), scheme.name.clone().into());
+    let kind = match scheme.mode {
+        SchemeMode::Dark => "dark",
+        SchemeMode::Light => "light",
+    };
+    doc.insert("kind".into(), kind.into());
+    if let Ok(Value::Object(colors)) = serde_json::to_value(&scheme.colors) {
+        doc.extend(colors);
+    }
+    serde_json::to_vec_pretty(&Value::Object(doc)).unwrap_or_default()
+}
+
+/// Saves the scheme in the file at `source`. A name already stored is
+/// refused, replaces the old file (which goes to `trash`), or gets a numbered
+/// stem, as `on_taken` says.
+pub fn import(
+    dir: &Path,
+    source: &Path,
+    on_taken: OnNameTaken,
+    trash: Trash,
+) -> Result<CustomScheme, CmdError> {
+    let (mut scheme, _) = parse(&read_capped(source)?)?;
+    let base = scheme.id.trim_start_matches("custom-").to_string();
+    let mut stem = base.clone();
+    if file_of(dir, &stem).exists() {
+        match on_taken {
+            OnNameTaken::Fail => {
+                return Err(CmdError {
+                    code: "theme_name_taken",
+                    detail: None,
+                });
+            }
+            OnNameTaken::Replace => trash(&file_of(dir, &stem)).map_err(io_error)?,
+            OnNameTaken::KeepBoth => {
+                stem = (2u32..)
+                    .map(|n| numbered(&base, n))
+                    .find(|s| !file_of(dir, s).exists())
+                    .unwrap_or(base);
+            }
+        }
+    }
+    scheme.id = format!("custom-{stem}");
+    write_atomic(&file_of(dir, &stem), &stored_bytes(&scheme)).map_err(io_error)?;
+    Ok(scheme)
+}
+
+/// Moves the stored scheme `id` to the trash.
+pub fn remove(dir: &Path, id: &str, trash: Trash) -> Result<(), CmdError> {
+    let stem = id
+        .strip_prefix("custom-")
+        .filter(|s| valid_stem(s))
+        .ok_or_else(not_found)?;
+    let path = file_of(dir, stem);
+    if !path.is_file() {
+        return Err(not_found());
+    }
+    trash(&path).map_err(io_error)
+}
+
+// ---- Commands ----
+
+fn dir_of(state: &AppState) -> Result<PathBuf, CmdError> {
+    data_dir(state).map(themes_dir)
+}
+
+fn trash_file(path: &Path) -> io::Result<()> {
+    trash::delete(path).map_err(|e| io::Error::other(e.to_string()))
+}
+
+/// Tells open terminals to re-read the list of imported schemes.
+fn changed(app: &AppHandle) {
+    settings_store::emit_changed(app, &[SettingsSection::Terminal]);
+}
+
+#[tauri::command(async)]
+pub fn terminal_themes_list(state: State<'_, AppState>) -> Result<Vec<CustomScheme>, CmdError> {
+    Ok(list(&dir_of(&state)?))
+}
+
+#[tauri::command(async)]
+pub fn terminal_theme_preview(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<SchemePreview, CmdError> {
+    preview(&dir_of(&state)?, Path::new(&path))
+}
+
+#[tauri::command(async)]
+pub fn terminal_theme_import(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    on_taken: OnNameTaken,
+) -> Result<CustomScheme, CmdError> {
+    let scheme = import(&dir_of(&state)?, Path::new(&path), on_taken, &trash_file)?;
+    changed(&app);
+    Ok(scheme)
+}
+
+#[tauri::command(async)]
+pub fn terminal_theme_remove(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), CmdError> {
+    remove(&dir_of(&state)?, &id, &trash_file)?;
+    changed(&app);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -470,6 +707,149 @@ mod tests {
         assert!((contrast_ratio("#777777", "#ffffff") - 4.48).abs() < 0.01);
         assert_eq!(contrast_ratio("nope", "#ffffff"), 1.0);
         assert!(contrast_ratio("#d7dae0", "#14161a") > MIN_CONTRAST);
+    }
+
+    // ---- store ----
+
+    fn put(dir: &Path, name: &str, theme: &Value) -> PathBuf {
+        let path = dir.join(name);
+        fs::write(&path, theme.to_string()).unwrap();
+        path
+    }
+
+    fn fake_trash(path: &Path) -> io::Result<()> {
+        fs::remove_file(path)
+    }
+
+    fn named(name: &str) -> Value {
+        let mut v = file();
+        v["name"] = json!(name);
+        v
+    }
+
+    #[test]
+    fn an_empty_or_missing_folder_lists_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(list(&themes_dir(tmp.path())).is_empty());
+        fs::create_dir_all(themes_dir(tmp.path())).unwrap();
+        assert!(list(&themes_dir(tmp.path())).is_empty());
+    }
+
+    #[test]
+    fn import_writes_the_slug_file_and_lists_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = themes_dir(tmp.path());
+        let src = put(tmp.path(), "in.json", &file());
+        let scheme = import(&dir, &src, OnNameTaken::Fail, &fake_trash).unwrap();
+        assert_eq!(scheme.id, "custom-graphite-dark");
+        assert!(dir.join("graphite-dark.json").is_file());
+        assert_eq!(list(&dir), vec![scheme]);
+    }
+
+    #[test]
+    fn a_name_clash_fails_unless_told_otherwise() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = themes_dir(tmp.path());
+        let src = put(tmp.path(), "in.json", &file());
+        import(&dir, &src, OnNameTaken::Fail, &fake_trash).unwrap();
+        let err = import(&dir, &src, OnNameTaken::Fail, &fake_trash).unwrap_err();
+        assert_eq!(err.code, "theme_name_taken");
+        assert_eq!(list(&dir).len(), 1);
+        assert!(preview(&dir, &src).unwrap().name_taken);
+    }
+
+    #[test]
+    fn keep_both_numbers_the_new_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = themes_dir(tmp.path());
+        let src = put(tmp.path(), "in.json", &file());
+        import(&dir, &src, OnNameTaken::Fail, &fake_trash).unwrap();
+        let second = import(&dir, &src, OnNameTaken::KeepBoth, &fake_trash).unwrap();
+        let third = import(&dir, &src, OnNameTaken::KeepBoth, &fake_trash).unwrap();
+        assert_eq!(second.id, "custom-graphite-dark-2");
+        assert_eq!(third.id, "custom-graphite-dark-3");
+        assert_eq!(list(&dir).len(), 3);
+        // A long name still gives an id the terminal setting accepts.
+        let long = put(tmp.path(), "long.json", &named(&"a".repeat(60)));
+        import(&dir, &long, OnNameTaken::Fail, &fake_trash).unwrap();
+        let again = import(&dir, &long, OnNameTaken::KeepBoth, &fake_trash).unwrap();
+        assert!(again.id.len() <= 40 && again.id.ends_with("-2"));
+    }
+
+    #[test]
+    fn replace_sends_the_old_file_to_the_trash_and_writes_the_new() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = themes_dir(tmp.path());
+        let src = put(tmp.path(), "in.json", &file());
+        import(&dir, &src, OnNameTaken::Fail, &fake_trash).unwrap();
+        let mut changed = file();
+        changed["red"] = json!("#010203");
+        let src2 = put(tmp.path(), "in2.json", &changed);
+        let trashed = std::cell::RefCell::new(Vec::new());
+        let trash = |p: &Path| {
+            trashed.borrow_mut().push(p.to_path_buf());
+            fs::remove_file(p)
+        };
+        let scheme = import(&dir, &src2, OnNameTaken::Replace, &trash).unwrap();
+        assert_eq!(trashed.borrow().len(), 1);
+        assert_eq!(scheme.colors.red, "#010203");
+        assert_eq!(list(&dir)[0].colors.red, "#010203");
+        assert_eq!(list(&dir).len(), 1);
+    }
+
+    #[test]
+    fn remove_trashes_only_a_stored_scheme() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = themes_dir(tmp.path());
+        let src = put(tmp.path(), "in.json", &file());
+        let scheme = import(&dir, &src, OnNameTaken::Fail, &fake_trash).unwrap();
+        for bad in ["custom-nope", "graphite-dark", "custom-../x", "custom-"] {
+            assert_eq!(
+                remove(&dir, bad, &fake_trash).unwrap_err().code,
+                "not_found"
+            );
+        }
+        remove(&dir, &scheme.id, &fake_trash).unwrap();
+        assert!(list(&dir).is_empty());
+    }
+
+    #[test]
+    fn a_file_over_the_limit_is_refused_before_it_is_parsed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let big = tmp.path().join("big.json");
+        fs::write(&big, vec![b' '; THEME_FILE_MAX as usize + 1]).unwrap();
+        let err = preview(&themes_dir(tmp.path()), &big).unwrap_err();
+        assert_eq!(err.code, "theme_too_large");
+        assert_eq!(err.detail, None);
+    }
+
+    #[test]
+    fn preview_flags_low_contrast_and_ignored_keys_and_hides_the_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut v = file();
+        v["foreground"] = json!("#15171b");
+        v["extra"] = json!(true);
+        let src = put(tmp.path(), "in.json", &v);
+        let p = preview(&themes_dir(tmp.path()), &src).unwrap();
+        assert!(p.low_contrast && !p.name_taken);
+        assert_eq!(p.ignored_keys, vec!["extra".to_string()]);
+        let bad = put(tmp.path(), "bad.json", &json!({"format": "x"}));
+        let err = preview(&themes_dir(tmp.path()), &bad).unwrap_err();
+        assert_eq!(err.code, "theme_invalid");
+        assert_eq!(err.detail.as_deref(), Some("format"));
+        let missing = preview(&themes_dir(tmp.path()), &tmp.path().join("gone.json")).unwrap_err();
+        assert!(!format!("{missing:?}").contains("gone"));
+    }
+
+    #[test]
+    fn a_broken_file_in_the_folder_is_skipped() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = themes_dir(tmp.path());
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("junk.json"), "{").unwrap();
+        fs::write(dir.join("Bad Name.json"), file().to_string()).unwrap();
+        fs::write(dir.join("note.txt"), "x").unwrap();
+        assert!(list(&dir).is_empty());
     }
 
     #[test]
