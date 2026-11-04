@@ -81,6 +81,19 @@ pub struct Settings {
     /// Settings → Stats & Usage; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub usage: UsageSettings,
+    /// Settings → xDev ID; lenient the same way.
+    #[serde(default, rename = "xdevId", deserialize_with = "lenient")]
+    pub xdev_id: XdevIdSettings,
+}
+
+/// Settings → xDev ID.
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct XdevIdSettings {
+    /// The origin of an on-prem xDev ID server. Empty: the default service. Read at
+    /// startup and on save; `XDEV_ID_URL` wins over it.
+    pub server: String,
 }
 
 /// What happens to the agent tabs that run under the old active account
@@ -896,6 +909,7 @@ pub enum SettingsSection {
     Diff,
     Agents,
     Usage,
+    XdevId,
 }
 
 /// What a `settings://changed` event carries.
@@ -2311,6 +2325,27 @@ then sum up"
             .unwrap();
             assert_eq!(load(&path).agents, agents);
         }
+    }
+
+    #[test]
+    fn the_xdev_id_server_setting_defaults_to_empty_and_stays_lenient() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        for text in [
+            "{}",
+            r#"{ "xdevId": {} }"#,
+            r#"{ "xdevId": 3 }"#,
+            r#"{ "xdevId": { "server": 4 } }"#,
+        ] {
+            fs::write(&path, text).unwrap();
+            assert_eq!(load(&path).xdev_id.server, "", "{text}");
+        }
+        fs::write(
+            &path,
+            r#"{ "xdevId": { "server": "https://id.corp.test" }, "usage": 1 }"#,
+        )
+        .unwrap();
+        assert_eq!(load(&path).xdev_id.server, "https://id.corp.test");
     }
 
     #[test]
