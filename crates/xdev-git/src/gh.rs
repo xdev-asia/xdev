@@ -755,7 +755,7 @@ pub fn pr_get(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<PrSummary, Git
         None,
     )?;
     if out.status != Some(0) {
-        if out.stderr.contains("Could not resolve") {
+        if out.stderr.contains("Could not resolve to a PullRequest") {
             return Err(GitError::PrNotFound);
         }
         return Err(classify(&out));
@@ -1314,6 +1314,17 @@ mod tests {
         );
         let err = pr_get(&fake, cwd(), 99).unwrap_err();
         assert_eq!(err.code(), "pr_not_found");
+    }
+
+    #[test]
+    fn pr_get_keeps_a_network_failure_as_gh_error() {
+        let fake = Fake::new(vec![out(
+            1,
+            "",
+            "error connecting: Could not resolve host: api.github.com",
+        )]);
+        let err = pr_get(&fake, cwd(), 5).unwrap_err();
+        assert!(matches!(err, GitError::Gh(_)), "{err:?}");
     }
 
     #[test]
