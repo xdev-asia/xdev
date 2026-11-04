@@ -65,6 +65,23 @@ pub struct Settings {
     /// Settings → Editor, for file tabs; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub editor: EditorSettings,
+    /// The sidebar's filters; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub sidebar: SidebarPrefs,
+}
+
+/// Which worktree rows the sidebar hides. All off: every row shows.
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct SidebarPrefs {
+    /// Rows on the repo's default branch, the primary checkout included.
+    pub hide_default: bool,
+    pub hide_detached: bool,
+    /// Worktrees made by an automation.
+    pub hide_automation: bool,
+    /// Worktrees made from the CLI.
+    pub hide_cli: bool,
 }
 
 /// How file tabs edit. Values outside the ranges below are clamped when
@@ -378,6 +395,7 @@ pub enum SettingsSection {
     QuickCommands,
     OpenIn,
     Editor,
+    Sidebar,
 }
 
 /// What a `settings://changed` event carries.

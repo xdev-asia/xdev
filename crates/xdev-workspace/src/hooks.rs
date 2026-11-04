@@ -479,7 +479,7 @@ mod tests {
                 ..WorktreeMeta::default()
             }],
             vaults: Vec::new(),
-            kept: Vec::new(),
+            ..Registry::default()
         };
         Fixture {
             _tmp: tmp,

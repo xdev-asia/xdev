@@ -60,6 +60,11 @@ import type {
   StageState,
   WorktreeStat,
   WorktreeView,
+  DetailsPatch,
+  FolderEntry,
+  Removed,
+  SidebarItem,
+  SidebarPrefs,
   Check,
   PrDraft,
   PrView,
@@ -171,6 +176,19 @@ export type {
   WorktreeSkip,
   WorktreeStat,
   WorktreeView,
+  DetailsPatch,
+  FolderEntry,
+  KeptBranch,
+  KeptReason,
+  KeptView,
+  MadeBy,
+  RepoGroup,
+  Removed,
+  SidebarItem,
+  SidebarPrefs,
+  WorkItem,
+  WorkItemKind,
+  WorkStatus,
   Check,
   PrDraft,
   PrView,
@@ -307,7 +325,14 @@ export type ErrorCode =
   | "hook_untrusted"
   | "hook_none"
   | "setup_skipped"
-  | "cancelled";
+  | "cancelled"
+  | "bad_details"
+  | "bad_parent"
+  | "bad_item"
+  | "kept_unknown"
+  | "group_unknown"
+  | "folder_unknown"
+  | "folder_exists";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -530,8 +555,41 @@ export interface Api {
   worktreeCreate(repoId: string, name: string, from: string | null): Promise<WorktreeView>;
   worktreePin(path: string, pinned: boolean): Promise<void>;
   // Rejects with `needs_approval` until `confirmed`, then with `worktree_dirty` for uncommitted
-  // work until `force`, and with `primary_worktree` for the main checkout.
-  worktreeRemove(path: string, force: boolean, confirmed: boolean): Promise<void>;
+  // work until `force`, and with `primary_worktree` for the main checkout. A branch made here and
+  // merged (or any with `force`) is deleted; otherwise it is kept and listed for review.
+  worktreeRemove(path: string, force: boolean, confirmed: boolean): Promise<Removed>;
+  // Removes the folder and keeps the branch, listed under Archived. The same gate and dirty check as
+  // `worktreeRemove`; a detached worktree rejects with `detached` until `force`.
+  worktreeArchive(path: string, force: boolean, confirmed: boolean): Promise<Removed>;
+  // Only the keys given change; `null` clears. Rejects with `bad_details` (title over 120 or comment
+  // over 2000 chars), `bad_parent`, `bad_item`, `primary_worktree`, `worktree_unknown`.
+  worktreeDetails(path: string, patch: DetailsPatch): Promise<void>;
+  // Brings a kept branch back as a worktree at its old path, or a free one beside it, with its
+  // details. Rejects with `kept_unknown` when the entry or the branch is gone.
+  worktreeRestore(repoId: string, branch: string): Promise<WorktreeView>;
+  // Stops listing a kept branch; the branch stays in git. Rejects with `kept_unknown`.
+  keptKeep(repoId: string, branch: string): Promise<void>;
+  // Deletes a kept branch from git. Rejects with `needs_approval` until `confirmed`, `kept_unknown`.
+  branchDelete(repoId: string, branch: string, confirmed: boolean): Promise<void>;
+  // Repos (with their kept branches), plain folders and groups in shown order.
+  workspaceSidebar(): Promise<SidebarItem[]>;
+  // The top-level order; unknown ids are skipped and items left out follow in the order added.
+  sidebarOrder(ids: string[]): Promise<void>;
+  // Creates a group (`id` null) or renames one; returns its id. Rejects with `bad_name`, `group_unknown`.
+  groupPut(id: string | null, name: string): Promise<string>;
+  // Its members take its place at the top level. Rejects with `group_unknown`.
+  groupRemove(id: string): Promise<void>;
+  // Moves a repo or folder into `group` (top level when null) at `index`. Rejects with
+  // `repo_unknown` for an unknown member, `group_unknown`.
+  groupMove(member: string, group: string | null, index: number): Promise<void>;
+  // Lists a plain folder. Rejects with `not_found`, and `folder_exists` for a repo, a worktree or a
+  // folder already listed.
+  folderAdd(path: string): Promise<FolderEntry>;
+  // Only the entry goes; nothing on disk is touched. Rejects with `folder_unknown`.
+  folderForget(id: string): Promise<void>;
+  // The sidebar's filters (Settings `sidebar`); the put returns what was stored.
+  sidebarPrefsGet(): Promise<SidebarPrefs>;
+  sidebarPrefsPut(prefs: SidebarPrefs): Promise<SidebarPrefs>;
   // Against the commit the worktree started from.
   worktreeChanges(path: string): Promise<WorktreeChange[]>;
   worktreeFileDiff(path: string, file: string): Promise<WorktreeFileDiff>;
@@ -748,6 +806,13 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "hook_none",
   "setup_skipped",
   "cancelled",
+  "bad_details",
+  "bad_parent",
+  "bad_item",
+  "kept_unknown",
+  "group_unknown",
+  "folder_unknown",
+  "folder_exists",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -899,6 +964,20 @@ const tauriApi: Api = {
   worktreeCreate: (repoId, name, from) => call("worktree_create", { repoId, name, from }),
   worktreePin: (path, pinned) => call("worktree_pin", { path, pinned }),
   worktreeRemove: (path, force, confirmed) => call("worktree_remove", { path, force, confirmed }),
+  worktreeArchive: (path, force, confirmed) => call("worktree_archive", { path, force, confirmed }),
+  worktreeDetails: (path, patch) => call("worktree_details", { path, patch }),
+  worktreeRestore: (repoId, branch) => call("worktree_restore", { repoId, branch }),
+  keptKeep: (repoId, branch) => call("kept_keep", { repoId, branch }),
+  branchDelete: (repoId, branch, confirmed) => call("branch_delete", { repoId, branch, confirmed }),
+  workspaceSidebar: () => call("workspace_sidebar"),
+  sidebarOrder: (ids) => call("sidebar_order", { ids }),
+  groupPut: (id, name) => call("group_put", { id, name }),
+  groupRemove: (id) => call("group_remove", { id }),
+  groupMove: (member, group, index) => call("group_move", { member, group, index }),
+  folderAdd: (path) => call("folder_add", { path }),
+  folderForget: (id) => call("folder_forget", { id }),
+  sidebarPrefsGet: () => call("sidebar_prefs_get"),
+  sidebarPrefsPut: (prefs) => call("sidebar_prefs_put", { prefs }),
   worktreeChanges: (path) => call("worktree_changes", { path }),
   worktreeFileDiff: (path, file) => call("worktree_file_diff", { path, file }),
   worktreeCommit: (path, files, message) => call("worktree_commit", { path, files, message }),

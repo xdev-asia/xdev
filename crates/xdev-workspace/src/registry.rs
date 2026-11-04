@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::WorkspaceError;
+use crate::groups::{FolderEntry, RepoGroup};
 use crate::kept::KeptBranch;
 
 const FILE: &str = "workspace.json";
@@ -147,6 +148,14 @@ pub struct Registry {
     /// Branches left in git when their worktree was archived or deleted.
     #[serde(default)]
     pub kept: Vec<KeptBranch>,
+    /// Top-level sidebar ids (repos, folders, groups) in shown order.
+    #[serde(default)]
+    pub order: Vec<String>,
+    #[serde(default)]
+    pub groups: Vec<RepoGroup>,
+    /// Plain folders listed in the sidebar.
+    #[serde(default)]
+    pub folders: Vec<FolderEntry>,
 }
 
 impl Registry {
