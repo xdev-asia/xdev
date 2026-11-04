@@ -12,6 +12,7 @@ pub mod callback;
 pub mod http;
 pub mod link;
 pub mod pkce;
+pub mod server;
 pub mod session;
 pub mod store;
 pub mod ureq_transport;
@@ -38,6 +39,8 @@ pub const E_CODE: &str = "account_code";
 pub const E_EXPIRED: &str = "account_expired";
 /// The attempt is older than `ATTEMPT_TTL`.
 pub const E_TIMEOUT: &str = "account_timeout";
+/// The server setting is not an https (or loopback http) origin.
+pub const E_SERVER: &str = "account_server";
 
 pub use avatar::{AVATAR_MAX, avatar_allowed, data_url};
 pub use callback::{Callback, parse_callback, same_state};
@@ -47,8 +50,9 @@ pub use http::{
     CallError, Me, Method, Offline, Request, Response, TokenReply, Transport, exchange,
     fetch_avatar, me, sign_out,
 };
-pub use link::{authorize_url, base_url, clean_device, device_name};
+pub use link::{authorize_url, base_url, check_origin, clean_device, device_name};
 pub use pkce::{PkcePair, Secret, b64url, random_43, random_pair, s256};
+pub use server::{ServerSource, XdevIdServer, resolve_server};
 pub use session::{Begin, Redeem, Session, XdevIdState, XdevIdUser};
 pub use store::{
     Keychain, MemoryStore, StoreError, Stored, StoredUser, TokenStore, decode_stored, encode_stored,
