@@ -6,11 +6,12 @@ use std::path::{Component, Path, PathBuf};
 use serde::{Deserialize, Deserializer, Serialize};
 use xdev_git::{BaseRefresh, GitError, Repo, WorktreeEntry};
 
+use crate::hooks;
 use crate::kept::{KeptBranch, KeptReason, keep};
 use crate::registry::normalize;
 use crate::{
-    MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, WorkItem, WorkStatus, WorkspaceError,
-    WorktreeMeta, names, repo_id,
+    Linked, MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, WorkItem, WorkStatus,
+    WorkspaceError, WorktreeMeta, link_shared, names, repo_id, unlink_shared,
 };
 
 /// A repo as the sidebar shows it.
@@ -603,6 +604,9 @@ pub struct CreateOptions {
     pub prefix: BranchPrefix,
     /// Recorded on the new worktree; the desktop app passes `App`.
     pub made_by: MadeBy,
+    /// Paths of the main checkout to link into the new worktree; the caller
+    /// passes the list only when the person trusted it.
+    pub shared: Vec<String>,
 }
 
 /// Fetches the base a new worktree of `repo_id` would start from (`from`,
@@ -681,6 +685,20 @@ pub fn create_worktree_with(
     seed: u64,
     opts: &CreateOptions,
 ) -> Result<WorktreeView, WorkspaceError> {
+    create_worktree_linked(reg, repo_id, name, from, now_ms, seed, opts).map(|(view, _)| view)
+}
+
+/// `create_worktree_with`, and what linking `opts.shared` did. A link that
+/// fails is reported, not fatal: the worktree is still made.
+pub fn create_worktree_linked(
+    reg: &mut Registry,
+    repo_id: &str,
+    name: &str,
+    from: Option<&str>,
+    now_ms: i64,
+    seed: u64,
+    opts: &CreateOptions,
+) -> Result<(WorktreeView, Vec<Linked>), WorkspaceError> {
     let entry = find_repo(reg, repo_id)?;
     let repo = Repo::discover(&entry.path)?;
     let prefix = branch_prefix(&repo, &opts.prefix)?;
@@ -745,6 +763,7 @@ pub fn create_worktree_with(
         made_by: opts.made_by,
         ..WorktreeMeta::default()
     };
+    let linked = link_shared(&entry.path, &git_entry.path, &opts.shared);
     let default = default_short(&repo, &entry.base_ref)?;
     let view = view_of(
         &git_entry,
@@ -753,7 +772,7 @@ pub fn create_worktree_with(
         default.as_deref(),
     );
     reg.worktrees.push(meta);
-    Ok(view)
+    Ok((view, linked))
 }
 
 /// The branch tip is in the history of `base_ref`, so deleting the branch
@@ -946,6 +965,8 @@ pub(crate) struct Leaving {
     pub entry: RepoEntry,
     pub repo: Repo,
     pub key: String,
+    /// Shared paths of its `xdev.toml`; links to take out before it goes.
+    pub shared: Vec<String>,
     /// Its branch, unless git lists it detached or another worktree has
     /// the same branch checked out.
     pub branch: Option<String>,
@@ -967,9 +988,14 @@ pub(crate) fn leaving(reg: &Registry, path: &Path, force: bool) -> Result<Leavin
     let entry = find_repo(reg, &meta.repo_id)?;
     let repo = Repo::discover(&entry.path)?;
 
-    // Plain `status` lists untracked files; `is_clean` does not.
-    if !force && meta.path.exists() && !Repo::discover(&meta.path)?.status()?.is_empty() {
-        return Err(WorkspaceError::Dirty(path.to_owned()));
+    let shared = hooks::shared_list(&entry, &meta.path);
+    // Plain `status` lists untracked files; `is_clean` does not. A shared
+    // link shows as untracked unless the repo ignores it, so it does not count.
+    if !force && meta.path.exists() {
+        let status = Repo::discover(&meta.path)?.status()?;
+        if status.iter().any(|f| !under_shared(&shared, &f.path)) {
+            return Err(WorkspaceError::Dirty(path.to_owned()));
+        }
     }
     let listed = repo.list_worktrees()?;
     let branch = listed
@@ -988,13 +1014,27 @@ pub(crate) fn leaving(reg: &Registry, path: &Path, force: bool) -> Result<Leavin
         entry,
         repo,
         key,
+        shared,
         branch,
+    })
+}
+
+/// `file` is a shared path or lies below one.
+fn under_shared(shared: &[String], file: &str) -> bool {
+    let file = file.trim_end_matches('/');
+    shared.iter().any(|s| {
+        file == s
+            || file
+                .strip_prefix(s.as_str())
+                .is_some_and(|rest| rest.starts_with('/'))
     })
 }
 
 /// Removes the folder through git and the record; children become
 /// top-level. Never touches the branch.
 pub(crate) fn drop_folder(reg: &mut Registry, l: &Leaving) -> Result<(), WorkspaceError> {
+    // Before git removes the folder, so nothing can follow a link out of it.
+    unlink_shared(&l.meta.path, &l.shared)?;
     l.repo.remove_worktree(&l.meta.path)?;
     reg.worktrees.remove(l.idx);
     orphan_children(reg, &l.key);

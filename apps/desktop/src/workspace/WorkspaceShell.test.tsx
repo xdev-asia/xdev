@@ -14,7 +14,7 @@ import { resetNavigationSettingsForTests, setNavigationSettings } from "@/settin
 import { NAVIGATION_DEFAULTS } from "@/settings/generalDefaults";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { BulkRemoveDialog } from "./BulkRemoveDialog";
-import { getToasts } from "./toastStore";
+import { dismissToast, getToasts } from "./toastStore";
 import { SetupCard } from "./SetupCard";
 import { TrustDialog } from "./TrustDialog";
 import { FileTree } from "./FileTree";
@@ -915,10 +915,111 @@ it("setup after create: an untrusted shared script shows its text; Trust runs it
   expect(v.trust()).toBeUndefined();
 });
 
+it("link report: a toast lists shared paths that did not link, with the error; all linked says nothing", async () => {
+  const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), repoFiles: { "/demo/xdev": { shared: ["node_modules", ".env.local"], linkErrors: { ".env.local": "missing in the main checkout" } } } } as never });
+  const view = await harness(api);
+  // Trust the list first so the next create links it.
+  const primary = DEMO_WORKSPACE.repos[0].worktrees[0].path;
+  await api.repoHookTrust(primary, "shared", (await api.repoHooks(primary)).sharedHash!);
+  view.list().props.onCreate();
+  view.of(CreateWorktreeDialog)[0].props.onCreate("demo-xdev", "birch", null);
+  await tick();
+  await tick();
+  const texts = getToasts().map((x) => x.text);
+  expect(texts).toHaveLength(1);
+  expect(texts[0]).toContain(".env.local: missing in the main checkout");
+  expect(texts[0]).not.toContain("node_modules");
+  for (const x of getToasts()) dismissToast(x.id);
+});
+
+it("link report: nothing to say when the list is not trusted", async () => {
+  const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), repoFiles: { "/demo/xdev": { shared: ["node_modules"] } } } as never });
+  const before = getToasts().length;
+  const view = await harness(api);
+  view.list().props.onCreate();
+  view.of(CreateWorktreeDialog)[0].props.onCreate("demo-xdev", "birch", null);
+  await tick();
+  await tick();
+  expect(getToasts().filter((x) => x.text.includes("node_modules"))).toHaveLength(0);
+  expect(getToasts().length).toBe(before);
+});
+
+const LISTS = { shared: ["node_modules", ".env.local"], tabs: [{ title: "dev", color: "#4a9", command: "pnpm dev" }] };
+
+it("repo file lists: untrusted shared paths and tabs are asked about, and Trust writes each hash", async () => {
+  const v = await created(LISTS, { setupPolicy: "skip" });
+  expect(v.trust().props).toMatchObject({ kind: "lists", text: "", shared: LISTS.shared, tabs: LISTS.tabs });
+  const trust = vi.spyOn(v.api, "repoHookTrust");
+  v.trust().props.onTrust();
+  await tick();
+  expect(trust.mock.calls.map((c) => c[1])).toEqual(["shared", "tabs"]);
+  expect(v.trust()).toBeUndefined();
+});
+
+it("repo file lists: with an untrusted setup script one prompt covers the script and the lists", async () => {
+  const v = await created({ ...LISTS, setup: "pnpm i" }, { setupPolicy: "run" });
+  expect(v.trust().props).toMatchObject({ kind: "setup", text: "pnpm i", shared: LISTS.shared, tabs: LISTS.tabs });
+  const trust = vi.spyOn(v.api, "repoHookTrust");
+  v.trust().props.onTrust();
+  await tick();
+  expect(trust.mock.calls.map((c) => c[1])).toEqual(["shared", "tabs", "setup"]);
+  expect(v.setupOpens()).toHaveLength(1);
+});
+
+it("repo file lists: Cancel leaves them untrusted and the setup card still shows", async () => {
+  const v = await created(LISTS, { localSetup: "pnpm i" });
+  expect(v.trust().props.kind).toBe("lists");
+  v.trust().props.onCancel();
+  await tick();
+  expect(v.trust()).toBeUndefined();
+  expect(v.card().props.state).toEqual({ kind: "ask" });
+  expect((await v.api.repoHooks("/demo/wt/xdev-birch")).sharedTrusted).toBe(false);
+});
+
+const TABS = { tabs: [{ title: "dev", color: "#4a9", command: "pnpm dev" }, { title: "tests", color: null, command: "cargo watch" }] };
+
+it("default tabs: with no setup, trusting the list opens one shell tab per entry", async () => {
+  const rename = vi.spyOn(Sessions.prototype, "rename");
+  const v = await created(TABS, { setupPolicy: "skip" });
+  expect(v.trust().props.kind).toBe("lists");
+  v.trust().props.onTrust();
+  await tick();
+  await tick();
+  const shells = v.open.mock.calls.filter((c) => String(c[1]).startsWith("shell"));
+  expect(shells).toHaveLength(2);
+  expect(rename.mock.calls.map((c) => c[1])).toEqual(["dev", "tests"]);
+});
+
+it("default tabs: untrusted tabs open nothing", async () => {
+  const v = await created(TABS, { setupPolicy: "skip" });
+  v.trust().props.onCancel();
+  await tick();
+  expect(v.open.mock.calls.filter((c) => String(c[1]).startsWith("shell"))).toHaveLength(0);
+});
+
+it("default tabs: they wait for the setup tab; a failed setup opens none and the card offers them", async () => {
+  const v = await created({ ...TABS, setup: "pnpm i", setupCode: 1 }, { setupPolicy: "run" });
+  v.trust().props.onTrust();
+  await tick();
+  await tick();
+  expect(v.setupOpens()).toHaveLength(1);
+  const shells = () => v.open.mock.calls.filter((c) => String(c[1]).startsWith("shell"));
+  expect(shells()).toHaveLength(0);
+  // The setup tab exits with code 1, as the pty event would say it.
+  const at = v.open.mock.calls.findIndex((c) => c[1] === SETUP_PROFILE);
+  const tab = v.open.mock.results[at].value as { id: string };
+  (v.open.mock.instances[at] as unknown as { apply(id: string, e: { kind: "exit"; code: number }): void }).apply(tab.id, { kind: "exit", code: 1 });
+  expect(v.card()?.props.state).toMatchObject({ kind: "failed", tabs: true });
+  v.card().props.onOpenTabs();
+  await tick();
+  await tick();
+  expect(shells()).toHaveLength(2);
+});
+
 it("setup after create: a stale hash reopens the prompt with the new text", async () => {
   const v = await created({ setup: "old" }, { setupPolicy: "run" });
   vi.spyOn(v.api, "repoHookTrust").mockRejectedValueOnce({ code: "hook_untrusted" });
-  vi.spyOn(v.api, "repoHooks").mockResolvedValueOnce({ setup: { text: "new", shared: true, hash: "n", trusted: false }, archive: null, waitForSetup: false, policy: "run", parseError: null, detected: null });
+  vi.spyOn(v.api, "repoHooks").mockResolvedValueOnce({ setup: { text: "new", shared: true, hash: "n", trusted: false }, archive: null, waitForSetup: false, policy: "run", parseError: null, detected: null, shared: [], sharedTrusted: false, tabs: [], tabsTrusted: false, sharedHash: null, tabsHash: null, unknown: [], problems: [] });
   v.trust().props.onTrust();
   await tick();
   expect(v.setupOpens()).toHaveLength(0);

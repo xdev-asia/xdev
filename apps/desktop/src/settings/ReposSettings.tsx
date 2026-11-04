@@ -4,7 +4,7 @@ import type { JSX } from "react";
 import {
   toApiError,
   type ApiError,
-  type HookKind,
+  type ScriptKind,
   type HookScript,
   type RepoHooks,
   type RepoPatch,
@@ -12,6 +12,7 @@ import {
   type ScriptSource,
   type SetupPolicy,
 } from "@/api";
+import { openFile } from "@/files/openFile";
 import { useI18n } from "@/i18n";
 import { RemoveRepoDialog } from "@/workspace/RemoveRepoDialog";
 import { removeRepo } from "@/workspace/removeRepo";
@@ -29,7 +30,7 @@ const FIELDS: Field[] = ["shortName", "baseRef", "worktreeRoot", "setupPolicy", 
 const VERBATIM: Field[] = ["localSetup", "localArchive"];
 const POLICIES: SetupPolicy[] = ["ask", "run", "skip"];
 const SOURCES: ScriptSource[] = ["auto", "shared", "local", "both"];
-const KINDS: HookKind[] = ["setup", "archive"];
+const KINDS: ScriptKind[] = ["setup", "archive"];
 
 // The worktree whose `xdev.toml` is shown: the first one the repo has.
 function hooksPath(repo: RepoView): string | null {
@@ -44,7 +45,7 @@ function fieldOf(code: ApiError["code"]): Field | "form" {
   return "form";
 }
 
-const SCRIPT_IDS = ["repos.scriptPolicy", "repos.scriptSource", "repos.localScripts", "repos.sharedScripts"];
+const SCRIPT_IDS = ["repos.scriptPolicy", "repos.scriptSource", "repos.localScripts", "repos.sharedScripts", "repos.repoFile"];
 
 /** One form per repo: short name, base ref, worktree folder and setup scripts. Save sends only what changed. */
 export function ReposSettings(props: SettingsSectionProps): JSX.Element {
@@ -139,7 +140,7 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
   }
 
   // Trusts the hash that is shown. When the file changed since (the call is refused), the new text is shown instead.
-  async function trust(repo: RepoView, kind: HookKind, script: HookScript): Promise<void> {
+  async function trust(repo: RepoView, kind: ScriptKind, script: HookScript): Promise<void> {
     const path = hooksPath(repo);
     if (!path) return;
     try {
@@ -232,6 +233,55 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
           </div>
         ))}
         {shown.some((x) => !x.script.trusted) && <small className="settings-hint">{t("settings.repos.scripts.trustNote")}</small>}
+      </div>
+    );
+  }
+
+  // What the file says besides scripts: the lists, what was left out, and keys this version does not read.
+  function repoFile(repo: RepoView): JSX.Element {
+    const found = hooks[repo.id];
+    const path = hooksPath(repo);
+    const tag = (trusted: boolean): JSX.Element => <span className="settings-tag">{trusted ? t("settings.repos.file.trusted") : t("settings.repos.file.untrusted")}</span>;
+    return (
+      <div className="ws-field" role="group" aria-label={t("settings.repos.file")}>
+        <span>{t("settings.repos.file")}</span>
+        <div className="settings-row">
+          <strong>{t("settings.repos.file.shared")}</strong>
+          {found && found.shared.length > 0 && tag(found.sharedTrusted)}
+        </div>
+        {found && found.shared.length > 0 ? <pre className="ws-mono settings-script-text">{found.shared.join("\n")}</pre> : <small className="settings-hint">{t("settings.repos.file.none")}</small>}
+        <div className="settings-row">
+          <strong>{t("settings.repos.file.tabs")}</strong>
+          {found && found.tabs.length > 0 && tag(found.tabsTrusted)}
+        </div>
+        {found && found.tabs.length > 0 ? (
+          <pre className="ws-mono settings-script-text">{found.tabs.map((x) => t("repoFile.tab.item", { title: x.title, command: x.command })).join("\n")}</pre>
+        ) : (
+          <small className="settings-hint">{t("settings.repos.file.none")}</small>
+        )}
+        {found && found.problems.length > 0 && (
+          <div role="group" aria-label={t("settings.repos.file.problems")}>
+            <strong>{t("settings.repos.file.problems")}</strong>
+            <ul className="settings-list">
+              {found.problems.map((p) => (
+                <li key={p} className="error-text">{p}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {found && found.unknown.length > 0 && (
+          <small className="settings-hint" role="status">
+            {t("settings.repos.file.unknown", { keys: found.unknown.join(", ") })}
+          </small>
+        )}
+        <small className="settings-hint">{t("settings.repos.file.hint")}</small>
+        {path && (
+          <div className="settings-actions">
+            <button type="button" className="btn-secondary" data-open-file onClick={() => openFile({ worktree: path, rel: "xdev.toml" })}>
+              {t("settings.repos.file.open")}
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -350,6 +400,9 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
               </SettingRow>
               <SettingRow id="repos.sharedScripts" filter={filter}>
                 {sharedScripts(repo)}
+              </SettingRow>
+              <SettingRow id="repos.repoFile" filter={filter}>
+                {repoFile(repo)}
               </SettingRow>
             </div>
             </SettingGroup>

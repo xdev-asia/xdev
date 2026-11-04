@@ -6,8 +6,9 @@ use tempfile::TempDir;
 use xdev_git::{BaseRefresh, Repo};
 use xdev_workspace::{
     BranchPrefix, CreateOptions, Registry, RepoPatch, ScriptSource, SetupPolicy, WorkspaceError,
-    WorktreeStat, add_repo, adopt_worktree, create_worktree, create_worktree_with, forget_repo,
-    list, path_key, refresh_base, remove_worktree, set_pinned, stat, update_repo, valid_short_name,
+    WorktreeStat, add_repo, adopt_worktree, archive_worktree, create_worktree,
+    create_worktree_linked, create_worktree_with, forget_repo, list, path_key, refresh_base,
+    remove_worktree, set_pinned, stat, update_repo, valid_short_name,
 };
 
 /// Runs setup commands; never used for the code under test.
@@ -1023,4 +1024,85 @@ fn refresh_base_that_cannot_fetch_leaves_the_base_alone() {
         refresh_base(&reg, "nope", None),
         Err(WorkspaceError::RepoUnknown(_))
     ));
+}
+
+/// A repo whose main checkout has `node_modules/x` and a `.env.local`, listed
+/// as shared in its `xdev.toml`, and a worktree made with those linked.
+#[cfg(unix)]
+fn with_shared() -> (Registry, TestRepo, PathBuf) {
+    let (mut reg, id, main) = registered();
+    fs::create_dir_all(main.path().join("node_modules")).unwrap();
+    fs::write(main.path().join("node_modules/x"), "dep").unwrap();
+    fs::write(main.path().join(".env.local"), "KEY=1").unwrap();
+    fs::write(
+        main.path().join("xdev.toml"),
+        "[worktree]\nshared = [\"node_modules\", \".env.local\"]\n",
+    )
+    .unwrap();
+    let opts = CreateOptions {
+        shared: vec!["node_modules".into(), ".env.local".into(), "gone".into()],
+        ..CreateOptions::default()
+    };
+    let (wt, linked) = create_worktree_linked(&mut reg, &id, "work", None, 1, 0, &opts).unwrap();
+    assert_eq!(
+        linked.iter().map(|l| l.ok).collect::<Vec<_>>(),
+        [true, true, false]
+    );
+    let path = PathBuf::from(wt.path);
+    assert_eq!(
+        fs::read_to_string(path.join("node_modules/x")).unwrap(),
+        "dep"
+    );
+    (reg, main, path)
+}
+
+#[cfg(unix)]
+fn main_is_intact(main: &TestRepo) {
+    assert_eq!(
+        fs::read_to_string(main.path().join("node_modules/x")).unwrap(),
+        "dep"
+    );
+    assert_eq!(
+        fs::read_to_string(main.path().join(".env.local")).unwrap(),
+        "KEY=1"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn remove_keeps_the_shared_folder_of_the_main_checkout() {
+    let (mut reg, main, path) = with_shared();
+    // The links are untracked in the worktree, yet they are not changes.
+    remove_worktree(&mut reg, &path, false, 0).unwrap();
+    assert!(!path.exists());
+    main_is_intact(&main);
+}
+
+#[cfg(unix)]
+#[test]
+fn forced_remove_keeps_the_shared_folder_too() {
+    let (mut reg, main, path) = with_shared();
+    remove_worktree(&mut reg, &path, true, 0).unwrap();
+    assert!(!path.exists());
+    main_is_intact(&main);
+}
+
+#[cfg(unix)]
+#[test]
+fn archive_keeps_the_shared_folder_too() {
+    let (mut reg, main, path) = with_shared();
+    archive_worktree(&mut reg, &path, false, 0).unwrap();
+    assert!(!path.exists());
+    main_is_intact(&main);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_real_change_still_blocks_remove_and_keeps_the_links() {
+    let (mut reg, main, path) = with_shared();
+    fs::write(path.join("mine.txt"), "x").unwrap();
+    let err = remove_worktree(&mut reg, &path, false, 0).unwrap_err();
+    assert!(matches!(err, WorkspaceError::Dirty(_)));
+    assert!(path.join("node_modules/x").is_file());
+    main_is_intact(&main);
 }

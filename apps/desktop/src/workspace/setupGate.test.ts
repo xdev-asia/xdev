@@ -48,7 +48,7 @@ it("a failure keeps the agent waiting and shows the code; Start anyway starts it
   gate.defer(WT, start);
   finish(3);
   expect(start).not.toHaveBeenCalled();
-  expect(gate.state(WT)).toEqual({ phase: "failed", code: 3 });
+  expect(gate.state(WT)).toEqual({ phase: "failed", code: 3, agent: true, tabs: false });
   gate.startNow(WT);
   expect(start).toHaveBeenCalledOnce();
   expect(gate.state(WT)).toBeNull();
@@ -95,4 +95,29 @@ it("tells listeners when the state changes", () => {
   const before = seen.mock.calls.length;
   finish(1);
   expect(seen.mock.calls.length).toBeGreaterThan(before);
+});
+
+it("opens the default tabs once setup exits 0, not before", () => {
+  const { tab, gate, finish } = setup();
+  const open = vi.fn();
+  gate.track(WT, tab.id, false, open);
+  expect(open).not.toHaveBeenCalled();
+  finish(0);
+  expect(open).toHaveBeenCalledOnce();
+});
+
+it("a failed setup keeps the default tabs closed and offers them; the offer opens them once", () => {
+  const { tab, gate, finish } = setup();
+  const open = vi.fn();
+  gate.track(WT, tab.id, false, open);
+  finish(2);
+  expect(open).not.toHaveBeenCalled();
+  expect(gate.tabsOffered(WT)).toBe(true);
+  // No agent waits, yet the card shows, for the offer.
+  expect(gate.state(WT)).toEqual({ phase: "failed", code: 2, agent: false, tabs: true });
+  gate.openTabs(WT);
+  expect(open).toHaveBeenCalledOnce();
+  expect(gate.state(WT)).toBeNull();
+  gate.openTabs(WT);
+  expect(open).toHaveBeenCalledOnce();
 });

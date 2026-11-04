@@ -65,3 +65,21 @@ it("uses the commands wording for xdev.toml quick commands", () => {
   expect(shown).toContain(en("qcmd.trust.title", { repo: "xdev" }));
   expect(button(all, en("qcmd.trust.confirm"))).toBeDefined();
 });
+
+it("lists the shared paths and the default tabs next to the script", () => {
+  const { all } = draw({ shared: ["node_modules", ".env.local"], tabs: [{ title: "dev", color: null, command: "pnpm dev" }] });
+  const pres = all.filter((n) => n.type === "pre").map((n) => n.props.children);
+  expect(pres).toEqual(["pnpm i\nmake", "node_modules\n.env.local", "dev: pnpm dev"]);
+  const shown = text(all);
+  expect(shown).toContain(en("repoFile.shared"));
+  expect(shown).toContain(en("repoFile.tabs"));
+});
+
+it("the lists-only kind has its own wording and no script block", () => {
+  const { all } = draw({ kind: "lists", text: "", shared: ["target"] });
+  expect(all.filter((n) => n.type === "pre")).toHaveLength(1);
+  const shown = text(all);
+  expect(shown).toContain(en("repoFile.trust.title"));
+  expect(shown).toContain(en("repoFile.trust.note"));
+  expect(button(all, en("repoFile.trust.confirm"))).toBeDefined();
+});

@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Button } from "@xdev/ui";
 import { createMockApi, type RepoView } from "@/api";
+import { onOpenFile } from "@/files/openFile";
 import { translate } from "@/i18n";
 import { DEMO_WORKSPACE, type MockRepoFile } from "@/mockWorkspace";
 import { ReposSettings } from "./ReposSettings";
@@ -160,4 +161,34 @@ it("Remove from xDev opens the dialog; confirm forgets the repo and tells the wi
   expect(forget).toHaveBeenCalledWith("demo-xdev");
   expect(v.onChanged).toHaveBeenCalledTimes(1);
   expect(v.all().some((n) => n.type === "form" && n.key === "demo-xdev")).toBe(false);
+});
+
+it("the Repo file block lists shared paths, tabs, what was left out and unknown keys", async () => {
+  const v = await view({
+    "/demo/xdev": { shared: ["node_modules", "target"], tabs: [{ title: "dev", color: null, command: "pnpm dev" }], problems: ["worktree.shared[2] \"../x\": `.` and `..` are not allowed"], unknown: ["worktree.foo", "tabs[1].bar"] },
+  });
+  const html = v.html();
+  expect(html).toContain(en("settings.repos.file"));
+  expect(html).toContain("node_modules\ntarget");
+  expect(html).toContain("dev: pnpm dev");
+  expect(html).toContain(en("settings.repos.file.untrusted"));
+  expect(html).toContain("not allowed");
+  expect(html).toContain("Unknown keys in xdev.toml: worktree.foo, tabs[1].bar");
+});
+
+it("the Repo file block says None when the file sets nothing, and is read only", async () => {
+  const v = await view();
+  const html = v.html();
+  expect(html).toContain(en("settings.repos.file.none"));
+  expect(html).not.toContain("Unknown keys");
+  expect(nodes(v.form("demo-xdev")).some((n) => n.props["data-trust"] === "shared")).toBe(false);
+});
+
+it("Open xdev.toml opens it as a file tab of the repo's first worktree", async () => {
+  const seen: unknown[] = [];
+  const off = onOpenFile((req) => seen.push(req));
+  const v = await view();
+  nodes(v.form("demo-xdev")).find((n) => n.props["data-open-file"] !== undefined)!.props.onClick();
+  off();
+  expect(seen).toEqual([{ worktree: DEMO_WORKSPACE.repos[0].worktrees[0].path, rel: "xdev.toml" }]);
 });
