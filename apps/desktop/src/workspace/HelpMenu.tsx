@@ -27,16 +27,22 @@ export const HELP_ITEMS: HelpItem[] = [
   { id: "restart", key: "restart" },
 ];
 
+/** "Check for updates" from Help, the tray and the native menu: shows the page, and starts the check (one already running is joined). */
+export function checkForUpdates(h: { openSettings(page: "general"): void; api: Pick<Api, "updateCheck"> }): void {
+  h.openSettings("general");
+  void h.api.updateCheck(false).catch(() => {});
+}
+
 /** What a Help menu pick does: the pages of the app it opens, and the shell calls it makes. */
 export function runHelpPick(
   pick: HelpPick,
-  h: { openSettings(page: "keys" | "general"): void; openAbout(): void; api: Pick<Api, "shellQuit" | "helpOpen" | "windowReload" | "windowDevtoolsToggle"> },
+  h: { openSettings(page: "keys" | "general"): void; openUpdates(): void; openAbout(): void; api: Pick<Api, "shellQuit" | "helpOpen" | "windowReload" | "windowDevtoolsToggle"> },
 ): void {
   switch (pick) {
     case "shortcuts":
       return h.openSettings("keys");
     case "check-updates":
-      return h.openSettings("general");
+      return h.openUpdates();
     case "about":
       return h.openAbout();
     case "restart":

@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { translate } from "@/i18n";
 import { createMockApi } from "@/mockApi";
-import { HELP_ITEMS, HelpMenu, runHelpPick } from "./HelpMenu";
+import { checkForUpdates, HELP_ITEMS, HelpMenu, runHelpPick } from "./HelpMenu";
 
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
@@ -24,11 +24,11 @@ it("renders every item as a menu item with its label", () => {
 it("routes each pick to the page or shell call it names", async () => {
   const api = createMockApi({});
   const pages: string[] = [];
-  const h = { openSettings: (p: string) => void pages.push(p), openAbout: () => void pages.push("about"), api };
+  const h = { openSettings: (p: string) => void pages.push(p), openUpdates: () => void pages.push("updates"), openAbout: () => void pages.push("about"), api };
   runHelpPick("shortcuts", h);
   runHelpPick("check-updates", h);
   runHelpPick("about", h);
-  expect(pages).toEqual(["keys", "general", "about"]);
+  expect(pages).toEqual(["keys", "updates", "about"]);
   runHelpPick("reload", h);
   runHelpPick("devtools", h);
   runHelpPick("docs", h);
@@ -37,4 +37,14 @@ it("routes each pick to the page or shell call it names", async () => {
   expect(api.__windowCalls()).toEqual({ reloads: 1, devtools: 1 });
   expect(api.__opened()).toEqual(["docs"]);
   expect(api.__quitMode()).toBe("restart");
+});
+
+it("Check for updates opens the page and starts a check, even when the check fails", async () => {
+  const api = createMockApi({});
+  const check = vi.spyOn(api, "updateCheck").mockRejectedValue(new Error("offline"));
+  const pages: string[] = [];
+  checkForUpdates({ openSettings: (p) => void pages.push(p), api });
+  await Promise.resolve();
+  expect(pages).toEqual(["general"]);
+  expect(check).toHaveBeenCalledWith(false);
 });
