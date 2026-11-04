@@ -411,7 +411,7 @@ export class Sessions {
     this.clear(this.stale, id);
     const next = this.entry(old.tab.worktree, old.tab.profileId, account, old.tab.cli, resumeOf, old.tab.title);
     // The pin and colour belong to the slot, not to the pty; so does the agent's session id, which a restart must not lose.
-    next.tab = { ...next.tab, accountSource: old.tab.accountSource, pinned: old.tab.pinned, color: old.tab.color, agentSession, autoTitled: old.tab.autoTitled };
+    next.tab = { ...next.tab, accountSource: old.tab.accountSource, pinned: old.tab.pinned, color: old.tab.color, agentSession, renamed: old.tab.renamed, autoTitled: old.tab.autoTitled && !old.tab.renamed };
     // The auto title is the slot's too: the new pty keeps it, and the title the user clears to returns to it.
     next.autoTitle = old.autoTitle;
     const kept = [...this.entries].map(([key, e]): [string, Entry] => (key === id ? [next.tab.id, next] : [key, e]));

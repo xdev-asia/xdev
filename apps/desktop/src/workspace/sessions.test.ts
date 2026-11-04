@@ -541,6 +541,19 @@ describe("Sessions", () => {
     expect(live.tabs(A)[0]).toMatchObject({ title: "Fix the parser", autoTitled: true });
   });
 
+  it("a hand name survives a restart", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "claude");
+    live.setAutoTitle(tab.id, "Fix the parser");
+    live.rename(tab.id, "Mine");
+    const again = live.restart(tab.id)!;
+    expect(live.tabs(A)[0]).toMatchObject({ id: again.id, title: "Mine", renamed: true, autoTitled: false });
+    live.noteTitle(again.id, "program says");
+    live.setAutoTitle(again.id, "Something else");
+    expect(live.tabs(A)[0]).toMatchObject({ title: "Mine", renamed: true });
+    expect(Object.values(live.snapshot().worktrees[A].tabs)[0]).toMatchObject({ title: "Mine", renamed: true });
+  });
+
   it("an auto title beats the program title and loses to a name by hand", () => {
     const live = (sessions = new Sessions(createMockApi({})));
     const tab = live.open(A, "claude");
