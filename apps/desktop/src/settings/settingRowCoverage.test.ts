@@ -11,6 +11,7 @@ const PAGES: Record<string, string[]> = {
   appearance: ["AppearancePage.tsx"],
   account: ["account/AccountPage.tsx", "account/ServerRow.tsx"],
   agents: ["agents/AgentsPage.tsx"],
+  orchestration: ["orchestration/OrchestrationPage.tsx"],
   usage: ["UsagePage.tsx"],
   notifications: ["notifications/NotificationsPage.tsx"],
   terminal: ["TerminalPage.tsx", "terminal/TerminalLookSection.tsx", "terminal/TerminalBehaviourSection.tsx"],

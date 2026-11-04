@@ -355,7 +355,11 @@ impl Ptys {
         handle
     }
 
-    fn with<T>(&self, id: &str, f: impl FnOnce(&dyn PtyHandle) -> T) -> Result<T, CmdError> {
+    pub(crate) fn with<T>(
+        &self,
+        id: &str,
+        f: impl FnOnce(&dyn PtyHandle) -> T,
+    ) -> Result<T, CmdError> {
         // Output, and so acks, can come before the spawn returns; a call for
         // an id still being spawned or attached waits for it to land.
         let claims = self.claims();
@@ -572,6 +576,10 @@ pub(crate) fn spawn_launch(
     let (program, args) = launch.command();
     let mut env = launch.env;
     env.push(("XDEV_PTY_ID".to_owned(), OsString::from(&id)));
+    // Agents run `xdev orchestration ...` from here.
+    if let Ok(exe) = std::env::current_exe() {
+        crate::cli_path::cli_env(&exe, &mut env);
+    }
     let mut info = PtyInfo {
         id: id.clone(),
         pid: None,

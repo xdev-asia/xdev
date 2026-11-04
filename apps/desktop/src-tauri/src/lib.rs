@@ -4,6 +4,7 @@ mod app_menu;
 mod atomic;
 #[cfg(test)]
 mod bindings;
+mod cli_path;
 mod cli_verbs;
 mod commands;
 mod endpoint;
@@ -15,6 +16,10 @@ mod kit;
 mod layout;
 mod links;
 mod open_in;
+mod orch_pump;
+mod orch_skill;
+mod orch_sweep;
+mod orchestration;
 mod power;
 mod profiles;
 mod prs;
@@ -89,6 +94,7 @@ pub fn run() {
         .manage(status::Shown::default())
         .manage(power::Awake::default())
         .manage(cli_verbs::CliHub::default())
+        .manage(orchestration::OrchHub::default())
         .manage(keybindings::LastSent::default())
         .on_window_event(|window, event| {
             if window.label() == "main"
@@ -136,6 +142,9 @@ pub fn run() {
                 eprintln!("hooks marker: {e}");
             }
             status::listen_clicks(app.handle());
+            orchestration::start_pump(app.handle().clone());
+            orch_sweep::start(app.handle().clone());
+            orch_skill::auto_update(app.handle().clone());
             // The `xdev` CLI's way in; without it the app runs as before.
             if let Some(local) = &endpoint_local {
                 let handler = std::sync::Arc::new(cli_verbs::AppVerbs {
@@ -220,6 +229,14 @@ pub fn run() {
             commands::agents_settings_put,
             commands::usage_settings_get,
             commands::usage_settings_put,
+            orchestration::orchestration_settings_get,
+            orchestration::orchestration_settings_put,
+            orchestration::orchestration_skill_status,
+            orchestration::orchestration_skill_install,
+            orchestration::orchestration_worker_lifetime,
+            orchestration::orchestration_worker_keep_open,
+            orchestration::orchestration_worker_opened,
+            orchestration::orchestration_read_answer,
             commands::shell_settings_get,
             commands::shell_settings_put,
             keybindings::keybindings_read,

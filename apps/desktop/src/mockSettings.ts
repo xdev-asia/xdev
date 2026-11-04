@@ -1,4 +1,4 @@
-import type { AgentsSettings, Api, UsageSettings, DiffSettings, EditorSettings, KeySettings, NavigationSettings, SettingsChanged, SettingsSection, CardProps, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
+import type { AgentsSettings, OrchestrationSettings, Api, UsageSettings, DiffSettings, EditorSettings, KeySettings, NavigationSettings, SettingsChanged, SettingsSection, CardProps, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
 import { clampEditorSettings, EDITOR_DEFAULTS } from "./files/editorDefaults";
 import { KEY_SETTINGS_DEFAULTS } from "./keys/bindingsStore";
 import { DIFF_DEFAULTS, NAVIGATION_DEFAULTS } from "./settings/generalDefaults";
@@ -27,6 +27,8 @@ type SettingsApi = Pick<
   | "diffSettingsPut"
   | "agentsSettings"
   | "agentsSettingsPut"
+  | "orchestrationSettings"
+  | "orchestrationSettingsPut"
   | "usageSettings"
   | "usageSettingsPut"
 >;
@@ -90,6 +92,10 @@ export const AGENTS_SETTINGS_DEFAULTS: AgentsSettings = {
   sessionSearch: false,
 };
 
+/** `OrchestrationSettings::default()` in Rust, and the range the depth is clamped to. */
+export const ORCHESTRATION_DEFAULTS: OrchestrationSettings = { nestedWorkerMaxDepth: 1, workerAutoClose: true };
+export const NESTED_DEPTH_LIMITS = { min: 1, max: 9 } as const;
+
 export type SettingsHub = { emit: SettingsEmit; onSettingsChanged: Api["onSettingsChanged"] };
 
 /** The `settings://changed` listeners of one mock api; `emit` calls them synchronously. */
@@ -116,6 +122,7 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
   let navigation: NavigationSettings = { ...NAVIGATION_DEFAULTS };
   let diff: DiffSettings = { ...DIFF_DEFAULTS };
   let agents: AgentsSettings = { ...AGENTS_SETTINGS_DEFAULTS };
+  let orchestration: OrchestrationSettings = { ...ORCHESTRATION_DEFAULTS };
   let usage: UsageSettings = structuredClone(USAGE_DEFAULTS);
   return {
     onSettingsChanged: hub.onSettingsChanged,
@@ -189,6 +196,18 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
       agents = { ...AGENTS_SETTINGS_DEFAULTS, ...next };
       hub.emit(["agents"]);
       return { ...agents };
+    },
+    async orchestrationSettings() {
+      return { ...orchestration };
+    },
+    async orchestrationSettingsPut(next) {
+      const depth = Number.isFinite(next.nestedWorkerMaxDepth) ? Math.trunc(next.nestedWorkerMaxDepth) : ORCHESTRATION_DEFAULTS.nestedWorkerMaxDepth;
+      orchestration = {
+        nestedWorkerMaxDepth: Math.max(NESTED_DEPTH_LIMITS.min, Math.min(NESTED_DEPTH_LIMITS.max, depth)),
+        workerAutoClose: next.workerAutoClose,
+      };
+      hub.emit(["orchestration"]);
+      return { ...orchestration };
     },
     async usageSettings() {
       return structuredClone(usage);

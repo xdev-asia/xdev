@@ -7,6 +7,14 @@ import type {
   AccountSource,
   ActiveAccount,
   AgentsSettings,
+  OrchestrationSettings,
+  SkillStatus,
+  WorkerLifetime,
+  WorkerOpen,
+  WorkerOpenOutcome,
+  WorkerClose,
+  ReadTab,
+  WorkerChanged,
   AwakeView,
   KeepAwake,
   SwitchRunning,
@@ -185,6 +193,7 @@ export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase };
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { CliAsk, CliOpenTab, TabReport };
+export type { OrchestrationSettings, SkillStatus, WorkerLifetime, WorkerOpen, WorkerOpenOutcome, WorkerClose, ReadTab, WorkerChanged };
 export type { RestoreMode } from "@xdev/bindings";
 export type { Theme, EditorTheme, SidebarLook, StatusBarItems } from "@xdev/bindings";
 export type { CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview } from "@xdev/bindings";
@@ -1017,6 +1026,9 @@ export interface Api {
   // Settings → Agents; the put returns what was stored.
   agentsSettings(): Promise<AgentsSettings>;
   agentsSettingsPut(v: AgentsSettings): Promise<AgentsSettings>;
+  // Settings → Orchestration; the put returns what was stored, with the depth clamped to 1..9.
+  orchestrationSettings(): Promise<OrchestrationSettings>;
+  orchestrationSettingsPut(v: OrchestrationSettings): Promise<OrchestrationSettings>;
   // Keep computer awake: the stored mode, whether an OS request is held, whether this machine can hold one.
   keepAwake(): Promise<AwakeView>;
   keepAwakeSet(mode: KeepAwake): Promise<AwakeView>;
@@ -1045,6 +1057,17 @@ export interface Api {
   onCliOpenTab(cb: (e: CliOpenTab) => void): Promise<() => void>;
   // A CLI write that needs the person (`cli://ask`); answer with `cliApprove`.
   onCliAsk(cb: (e: CliAsk) => void): Promise<() => void>;
+  // Orchestration. The skill card, the strip over a worker's terminal, and the answers the UI owes the backend.
+  orchestrationSkillStatus(): Promise<SkillStatus>;
+  orchestrationSkillInstall(force?: boolean): Promise<SkillStatus>;
+  orchestrationWorkerLifetime(tab: string): Promise<WorkerLifetime | null>;
+  orchestrationWorkerKeepOpen(tab: string, keep: boolean): Promise<WorkerLifetime>;
+  orchestrationWorkerOpened(dispatch: string, outcome: WorkerOpenOutcome): Promise<void>;
+  orchestrationReadAnswer(request: number, text: string): Promise<void>;
+  onOrchestrationOpenWorker(cb: (e: WorkerOpen) => void): Promise<() => void>;
+  onOrchestrationCloseWorker(cb: (e: WorkerClose) => void): Promise<() => void>;
+  onOrchestrationReadTab(cb: (e: ReadTab) => void): Promise<() => void>;
+  onOrchestrationWorkerChanged(cb: (e: WorkerChanged) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -1491,6 +1514,8 @@ const tauriApi: Api = {
   diffSettingsPut: (settings) => call("diff_settings_put", { settings }),
   agentsSettings: () => call("agents_settings_get"),
   agentsSettingsPut: (settings) => call("agents_settings_put", { settings }),
+  orchestrationSettings: () => call("orchestration_settings_get"),
+  orchestrationSettingsPut: (settings) => call("orchestration_settings_put", { settings }),
   keepAwake: () => call("keep_awake_get"),
   keepAwakeSet: (mode) => call("keep_awake_set", { mode }),
   keepAwakeAgents: (working) => call("keep_awake_agents", { working }),
@@ -1504,6 +1529,16 @@ const tauriApi: Api = {
   onWorkspaceChanged: (cb) => listen("workspace://changed", () => cb()),
   onCliOpenTab: (cb) => listen<CliOpenTab>("cli://open-tab", (e) => cb(e.payload)),
   onCliAsk: (cb) => listen<CliAsk>("cli://ask", (e) => cb(e.payload)),
+  orchestrationSkillStatus: () => call("orchestration_skill_status"),
+  orchestrationSkillInstall: (force = false) => call("orchestration_skill_install", { force }),
+  orchestrationWorkerLifetime: (tab) => call("orchestration_worker_lifetime", { tab }),
+  orchestrationWorkerKeepOpen: (tab, keep) => call("orchestration_worker_keep_open", { tab, keep }),
+  orchestrationWorkerOpened: (dispatch, outcome) => call("orchestration_worker_opened", { dispatch, outcome }),
+  orchestrationReadAnswer: (request, text) => call("orchestration_read_answer", { request, text }),
+  onOrchestrationOpenWorker: (cb) => listen<WorkerOpen>("orchestration://open-worker", (e) => cb(e.payload)),
+  onOrchestrationCloseWorker: (cb) => listen<WorkerClose>("orchestration://close-worker", (e) => cb(e.payload)),
+  onOrchestrationReadTab: (cb) => listen<ReadTab>("orchestration://read-tab", (e) => cb(e.payload)),
+  onOrchestrationWorkerChanged: (cb) => listen<WorkerChanged>("orchestration://worker-changed", (e) => cb(e.payload)),
 };
 
 function browserApi(): Api {

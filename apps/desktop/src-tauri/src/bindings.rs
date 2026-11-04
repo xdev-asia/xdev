@@ -15,6 +15,9 @@ use crate::hooks::PtyHook;
 use crate::keybindings::{KeybindingsChanged, KeybindingsText};
 use crate::kit::{KitText, PromptEntry};
 use crate::open_in::OpenTarget;
+use crate::orchestration::{
+    ReadTab, WorkerChanged, WorkerClose, WorkerLifetime, WorkerOpen, WorkerOpenOutcome,
+};
 use crate::power::AwakeView;
 use crate::profiles::ProfilesView;
 use crate::pty::{PtyAttached, PtyExit, PtyInfo, PtydStatus};
@@ -23,9 +26,9 @@ use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
     AgentsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings, KeySettings,
-    NavigationSettings, OpenInSettings, RestoreMode, SettingsChanged, ShellSettings, SidebarLook,
-    SidebarPrefs, StatusBarItems, StatusSettings, TerminalSettings, Theme, UiSettings,
-    UpdateChannel, UsageSettings, XdevIdSettings,
+    NavigationSettings, OpenInSettings, OrchestrationSettings, RestoreMode, SettingsChanged,
+    ShellSettings, SidebarLook, SidebarPrefs, StatusBarItems, StatusSettings, TerminalSettings,
+    Theme, UiSettings, UpdateChannel, UsageSettings, XdevIdSettings,
 };
 use crate::shell::{CloseIntent, CloseRequest, HelpLink, MenuEvent, QuitMode, ShellLabels};
 use crate::ship::ShipView;
@@ -113,6 +116,21 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     AwakeView::export_all(cfg)?;
     UsageSettings::export_all(cfg)?;
     XdevIdSettings::export_all(cfg)?;
+    OrchestrationSettings::export_all(cfg)?;
+    WorkerOpen::export_all(cfg)?;
+    WorkerOpenOutcome::export_all(cfg)?;
+    WorkerClose::export_all(cfg)?;
+    ReadTab::export_all(cfg)?;
+    WorkerChanged::export_all(cfg)?;
+    WorkerLifetime::export_all(cfg)?;
+    xdev_orch::SkillStatus::export_all(cfg)?;
+    xdev_orch::SkillAgent::export_all(cfg)?;
+    xdev_orch::FailedStage::export_all(cfg)?;
+    xdev_orch::WorkerState::export_all(cfg)?;
+    xdev_orch::WorkerReceipt::export_all(cfg)?;
+    xdev_orch::Message::export_all(cfg)?;
+    xdev_orch::MessageType::export_all(cfg)?;
+    xdev_orch::Priority::export_all(cfg)?;
     KeybindingsText::export_all(cfg)?;
     KeybindingsChanged::export_all(cfg)?;
     PtyHook::export_all(cfg)?;
