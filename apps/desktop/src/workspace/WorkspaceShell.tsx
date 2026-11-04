@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type CreateRequest } from "@/api";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
@@ -172,7 +172,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [pending] = useState(
     () =>
       new PendingCreates({
-        create: (repoId, name, from) => afterCreate.current.api.worktreeCreate(repoId, name, from).then((made) => {
+        create: (repoId, name, from, request) => afterCreate.current.api.worktreeCreate(repoId, name, from, request).then((made) => {
           afterCreate.current.linked(made.shared);
           return made.worktree;
         }),
@@ -1011,9 +1011,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
 
   // The dialog closes at once; the create runs as a row in the list until it finishes or fails.
-  function create(repoId: string, name: string, from: string | null, extra?: CreateExtra): void {
-    setCreating(null);
-    pending.start({ repoId, name, from, ...(extra ? { extra } : {}) });
+  function create(repoId: string, name: string, from: string | null, extra?: CreateExtra, request?: CreateRequest, keepOpen = false): void {
+    if (!keepOpen) setCreating(null);
+    pending.start({ repoId, name, from, ...(extra ? { extra } : {}), ...(request ? { request } : {}) });
   }
 
   // The issue becomes the worktree: named from it, linked as its work item, sent to the default agent.
@@ -1063,6 +1063,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (extra.title !== null) patch.title = extra.title;
     if (extra.parent !== null) patch.parent = extra.parent;
     if (extra.item !== null) patch.item = extra.item;
+    if (extra.note) patch.comment = extra.note;
     try {
       if (Object.keys(patch).length > 0) await api.worktreeDetails(path, patch);
       if (extra.setDefault && extra.agent !== null) {
@@ -1826,7 +1827,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           agents={creating.agents}
           defaultAgent={creating.defaultAgent}
           namePreview={api.worktreeNamePreview}
-          onCreate={(repoId, name, from, extra) => create(repoId, name, from, extra)}
+          onCreate={(repoId, name, from, extra, request, more) => create(repoId, name, from, extra, request, more)}
           resolveIssue={(repoId, text) => api.issueResolve(repoId, text)}
           onStartIssue={(repoId, issue) => {
             setCreating(null);

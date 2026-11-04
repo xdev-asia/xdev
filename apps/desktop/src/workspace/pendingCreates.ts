@@ -1,8 +1,8 @@
-import { toApiError, type ApiError, type WorktreeView } from "@/api";
+import { toApiError, type ApiError, type CreateRequest, type WorktreeView } from "@/api";
 import type { CreateExtra } from "./CreateWorktreeDialog";
 
 /** What a create was asked with; Retry asks again with the same. */
-export type CreateArgs = { repoId: string; name: string; from: string | null; extra?: CreateExtra };
+export type CreateArgs = { repoId: string; name: string; from: string | null; extra?: CreateExtra; request?: CreateRequest };
 
 /** A create still running, or one that failed and waits for Retry or Dismiss. */
 export type PendingCreate = {
@@ -11,12 +11,13 @@ export type PendingCreate = {
   name: string;
   from: string | null;
   extra?: CreateExtra;
+  request?: CreateRequest;
   state: "running" | "failed";
   error?: ApiError;
 };
 
 export interface PendingCreatesDeps {
-  create(repoId: string, name: string, from: string | null): Promise<WorktreeView>;
+  create(repoId: string, name: string, from: string | null, request?: CreateRequest): Promise<WorktreeView>;
   /** Takes back a worktree whose create was cancelled; a fresh one is clean, so no force. */
   remove(path: string, force: boolean): Promise<unknown>;
   /** A create that was not cancelled finished. */
@@ -88,8 +89,8 @@ export class PendingCreates {
     job.state = "running";
     job.error = undefined;
     this.emit();
-    const { repoId, name, from } = job.args;
-    this.deps.create(repoId, name, from).then(
+    const { repoId, name, from, request } = job.args;
+    this.deps.create(repoId, name, from, request).then(
       (view) => {
         if (job.cancelled) {
           // Made after all: take it back. A remove that fails leaves an ordinary worktree.

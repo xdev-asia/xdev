@@ -1,15 +1,16 @@
-import { Button } from "@xdev-asia/ui";
+import { Button, Disclosure, Switch } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type ApiError, type Issue, type NamePreview, type RepoView, type WorkItem, type WorkItemKind } from "@/api";
+import { toApiError, type ApiError, type CreateRequest, type Issue, type NamePreview, type RepoView, type WorkItem, type WorkItemKind } from "@/api";
 import { isIssueRef } from "@/issues/issueStart";
 import { useI18n } from "@/i18n";
 import { expandShortcodes, hasEmoji, slugFromTitle } from "./emoji";
+import { sparseDirs } from "./createSource";
 import { schedulePreview } from "./namePreview";
 import { parseItem } from "./workItemInput";
 
 /** What the dialog adds to the name and base: the title, the agent, the parent and the work item. */
-export type CreateExtra = { title: string | null; agent: string | null; setDefault: boolean; parent: string | null; item: WorkItem | null; /** Typed into the agent that opens, once it has started. */ prompt?: string };
+export type CreateExtra = { title: string | null; agent: string | null; setDefault: boolean; parent: string | null; item: WorkItem | null; /** Becomes the comment of the worktree. */ note?: string | null; /** Typed into the agent that opens, once it has started. */ prompt?: string };
 
 /** How long the name field rests before an issue number with a hash, or an issue URL, is looked up. */
 export const ISSUE_RESOLVE_DEBOUNCE_MS = 300;
@@ -26,6 +27,7 @@ type Form = {
   parent: string;
   itemUrl: string;
   itemKind: WorkItemKind;
+  note?: string;
 };
 
 /** The name for `worktree_create` and the extras; null while the work item link is unusable. */
@@ -44,6 +46,7 @@ export function buildCreate(form: Form): { name: string; extra: CreateExtra } | 
       setDefault: form.setDefault && agent !== null && agent !== form.defaultAgent,
       parent: form.parent === "" ? null : form.parent,
       item,
+      ...(form.note && form.note.trim() !== "" ? { note: form.note.trim() } : {}),
     },
   };
 }
@@ -72,7 +75,8 @@ export function CreateWorktreeDialog(props: {
   name?: string;
   /** The name a create would get; without it no preview shows. */
   namePreview?(repoId: string, name: string): Promise<NamePreview>;
-  onCreate(repoId: string, name: string, from: string | null, extra: CreateExtra): void;
+  /** `more` is true when Create more is on: the shell leaves the dialog open and the dialog blanks its name. */
+  onCreate(repoId: string, name: string, from: string | null, extra: CreateExtra, request?: CreateRequest, more?: boolean): void;
   /** Reads the issue a an issue number with a hash, or an issue URL, in the name field points to. */
   resolveIssue?(repoId: string, text: string): Promise<Issue | null>;
   /** Create with an issue in the name field: the shell starts the worktree from it instead of `onCreate`. */
@@ -93,6 +97,9 @@ export function CreateWorktreeDialog(props: {
   const [parent, setParent] = useState("");
   const [itemUrl, setItemUrl] = useState("");
   const [itemKind, setItemKind] = useState<WorkItemKind>("pr");
+  const [note, setNote] = useState("");
+  const [sparseText, setSparseText] = useState("");
+  const [more, setMore] = useState(false);
   const [found, setFound] = useState<Found | null>(null);
   const [preview, setPreview] = useState<NamePreview | null>(null);
 
@@ -115,6 +122,8 @@ export function CreateWorktreeDialog(props: {
   const parents = (repo?.worktrees ?? []).filter((w) => !w.primary && w.parent === null);
   const parentPath = parents.some((w) => w.path === parent) ? parent : "";
   const badItem = parseItem(itemUrl, itemKind) === "bad";
+  const sparse = sparseDirs(sparseText);
+  const badSparse = sparse === "bad";
   const ref = props.resolveIssue !== undefined && props.onStartIssue !== undefined && isIssueRef(name);
   const refText = name.trim();
   const refRepo = repo?.id ?? "";
@@ -139,6 +148,22 @@ export function CreateWorktreeDialog(props: {
     };
   }, [ref, refRepo, refText]);
 
+  function submit(): void {
+    if (ref) {
+      if (repo && issue) props.onStartIssue?.(repo.id, issue);
+      return;
+    }
+    if (badItem || badSparse) return;
+    const built = repo && buildCreate({ text: name, agent, defaultAgent, setDefault, parent: parentPath, itemUrl, itemKind, note });
+    if (!repo || !built) return;
+    const request: CreateRequest | undefined = Array.isArray(sparse) && sparse.length > 0 ? { existing: null, sparse } : undefined;
+    props.onCreate(repo.id, built.name, from.trim() || null, built.extra, request, more);
+    if (more) {
+      setName("");
+      setNote("");
+    }
+  }
+
   return (
     <dialog
       ref={dialog}
@@ -152,12 +177,13 @@ export function CreateWorktreeDialog(props: {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (ref) {
-            if (repo && issue) props.onStartIssue?.(repo.id, issue);
-            return;
+          submit();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            submit();
           }
-          const built = repo && buildCreate({ text: name, agent, defaultAgent, setDefault, parent: parentPath, itemUrl, itemKind });
-          if (repo && built) props.onCreate(repo.id, built.name, from.trim() || null, built.extra);
         }}
       >
         <h2 id="ws-create-title" className="dialog-title">
@@ -215,19 +241,6 @@ export function CreateWorktreeDialog(props: {
               <span>{t("workspace.create.setDefault")}</span>
             </label>
           )}
-          {parents.length > 0 && (
-            <label className="ws-field">
-              <span>{t("workspace.create.parent")}</span>
-              <select value={parentPath} onChange={(e) => setParent(e.target.value)}>
-                <option value="">{t("workspace.create.noParent")}</option>
-                {parents.map((w) => (
-                  <option key={w.path} value={w.path}>
-                    {w.title ?? w.branch ?? w.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
           <div className="ws-field">
             <span>{t("workspace.create.item")}</span>
             <div className="ws-item-row">
@@ -246,17 +259,52 @@ export function CreateWorktreeDialog(props: {
               />
             </div>
           </div>
+          <Disclosure title={t("workspace.create.advanced")} defaultExpanded={false}>
+            <div className="ws-fields">
+            {parents.length > 0 && (
+              <label className="ws-field">
+                <span>{t("workspace.create.parent")}</span>
+                <select value={parentPath} onChange={(e) => setParent(e.target.value)}>
+                  <option value="">{t("workspace.create.noParent")}</option>
+                  {parents.map((w) => (
+                    <option key={w.path} value={w.path}>
+                      {w.title ?? w.branch ?? w.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+              <label className="ws-field">
+                <span>{t("workspace.create.note")}</span>
+                <textarea value={note} rows={2} placeholder={t("workspace.create.notePlaceholder")} onChange={(e) => setNote(e.target.value)} />
+              </label>
+              <label className="ws-field">
+                <span>{t("workspace.create.sparse")}</span>
+                <textarea
+                  className="ws-mono"
+                  value={sparseText}
+                  rows={3}
+                  spellCheck={false}
+                  aria-invalid={badSparse}
+                  aria-describedby="ws-create-sparse-hint"
+                  onChange={(e) => setSparseText(e.target.value)}
+                />
+                <small id="ws-create-sparse-hint">{Array.isArray(sparse) && sparse.length > 0 ? t("workspace.create.sparseHint") : t("workspace.create.sparseFull")}</small>
+              </label>
+            </div>
+          </Disclosure>
         </div>
-        {badItem && (
+        {(badItem || badSparse) && (
           <p className="error-text" role="alert">
-            {t("error.bad_item")}
+            {badItem ? t("error.bad_item") : t("error.bad_sparse")}
           </p>
         )}
         <div className="dialog-actions">
+          <Switch label={t("workspace.create.createMore")} checked={more} onChange={(e) => setMore(e.target.checked)} />
           <button type="button" className="btn-secondary" onClick={props.onCancel}>
             {t("dialog.cancel")}
           </button>
-          <Button type="submit" disabled={!repo || badItem || (ref && !issue)}>
+          <Button type="submit" disabled={!repo || badItem || badSparse || (ref && !issue)}>
             {t("workspace.create.confirm")}
           </Button>
         </div>

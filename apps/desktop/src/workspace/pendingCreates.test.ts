@@ -96,3 +96,15 @@ describe("PendingCreates", () => {
     expect(t.remove).toHaveBeenCalledTimes(1);
   });
 });
+
+it("hands the request to create, again on retry", async () => {
+  const request = { existing: "develop", sparse: ["src"] };
+  const create = vi.fn().mockRejectedValueOnce({ code: "branch_in_use" }).mockResolvedValue({ path: "/w/a" });
+  const jobs = new PendingCreates({ create, remove: vi.fn(), onCreated: vi.fn() });
+  const id = jobs.start({ repoId: "r", name: "a", from: null, request });
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(create).toHaveBeenCalledWith("r", "a", null, request);
+  jobs.retry(id);
+  expect(create).toHaveBeenLastCalledWith("r", "a", null, request);
+});

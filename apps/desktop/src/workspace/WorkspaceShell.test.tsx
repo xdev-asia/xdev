@@ -354,7 +354,7 @@ it("create closes the dialog at once; a failure stays as a row with Retry and Di
   expect(view.of(CreateWorktreeDialog)).toHaveLength(0);
   expect(view.list().props.pending).toMatchObject([{ name: "...", state: "running" }]);
   await tick();
-  expect(create).toHaveBeenCalledWith("demo-xdev", "...", null);
+  expect(create).toHaveBeenCalledWith("demo-xdev", "...", null, undefined);
   const [failed] = view.list().props.pending;
   expect(failed).toMatchObject({ name: "...", state: "failed", error: { code: "bad_name" } });
   view.list().props.onRetryCreate(failed.id);
