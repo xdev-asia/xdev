@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
-import { askQuit, guardClose, quitAsk } from "./quitGuard";
+import { askQuit, guardClose, installCloseGuard, quitAsk } from "./quitGuard";
 import { Sessions } from "./sessions";
 
 const A = "/demo/wt/xdev-oak";
@@ -88,5 +88,56 @@ describe("guardClose", () => {
       throw new Error("no shell");
     };
     expect(await guardClose(api, notice, async () => true)).toBe(true);
+  });
+});
+
+describe("installCloseGuard", () => {
+  type Handler = (e: { preventDefault(): void }) => void | Promise<void>;
+  const fakeWindow = () => {
+    const box: { handler: Handler | null } = { handler: null };
+    return {
+      box,
+      win: {
+        onCloseRequested: async (h: Handler) => {
+          box.handler = h;
+          return () => {};
+        },
+      },
+    };
+  };
+  const settle = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+
+  it("guards a close before any saver exists (welcome screen, restore still running)", async () => {
+    const { box, win } = fakeWindow();
+    const guard = vi.fn(async () => false);
+    installCloseGuard(win, () => null, guard);
+    await settle();
+    const event = { preventDefault: vi.fn() };
+    await box.handler!(event);
+    expect(guard).toHaveBeenCalledOnce();
+    expect(event.preventDefault).toHaveBeenCalled();
+  });
+
+  it("closes without a saver when the guard agrees", async () => {
+    const { box, win } = fakeWindow();
+    installCloseGuard(win, () => null, async () => true);
+    await settle();
+    const event = { preventDefault: vi.fn() };
+    await box.handler!(event);
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("flushes the saver that exists when the close fires", async () => {
+    const { box, win } = fakeWindow();
+    let saver: { flush: () => Promise<void> } | null = null;
+    installCloseGuard(win, () => saver, async () => true);
+    await settle();
+    const flush = vi.fn(async () => {});
+    saver = { flush };
+    await box.handler!({ preventDefault: () => {} });
+    expect(flush).toHaveBeenCalledOnce();
   });
 });

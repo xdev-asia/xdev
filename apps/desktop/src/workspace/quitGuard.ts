@@ -1,5 +1,6 @@
 import type { Api, OnQuit, PtydState } from "@/api";
 import type { Tab } from "./sessions";
+import { type CloseWindow, type LayoutSaver, watchWindowClose } from "./layoutPersist";
 
 /** What the quit question names: the live tabs, and the ones working right now. */
 export interface QuitAsk {
@@ -57,4 +58,16 @@ export async function guardClose(
   const go = await ask();
   if (!go) await api.shellQuitCancelled().catch(() => {});
   return go;
+}
+
+/**
+ * The one close listener, set up once at mount: the saver is looked up when the close fires, so a
+ * close before the layout restore finished (welcome screen, no repos) is still guarded.
+ */
+export function installCloseGuard(
+  win: CloseWindow | null,
+  saver: () => Pick<LayoutSaver, "flush"> | null,
+  guard: () => Promise<boolean>,
+): () => void {
+  return watchWindowClose({ flush: async () => void (await saver()?.flush()) }, win, guard);
 }
