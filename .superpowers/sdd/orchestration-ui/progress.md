@@ -39,3 +39,12 @@ Base 0755c35 (B0). Backend tasks (B1-B15) live on feat/orchestration; this lane 
 
 ## Task 7: skipped (optional)
 - No cheap path: the B0 contract has `orchestrationWorkerLifetime(tab)` only (no worker-list / task-to-tab lookup). A `task_<id>` link provider needs a backend lookup such as `orchestration.worker-list`; add after B8 if wanted.
+
+## Review fixes round 1
+- Item 1 (0b0afae): `OrchestrationHost.ensureMounted`; the shell marks the worktree visited and reloads when it is not listed. Shell test: a worker in an unvisited worktree is in the mounted tabs.
+- Items 2, 3, 8 (3f70efe): `prepareSetup` host hook runs `setupAfterCreate` once per worktree (not for one set up by the UI create flow or with a setup watch), then the gate defers; the agent must be enabled and installed else `terminal_create`; `readTab` drops a lone low surrogate. Limit: if setup asks the person (trust or card), no watch exists yet, so the agent starts without waiting, as in the UI create flow.
+- Item 7 (e868c4e): `setup_wait` wording is neutral in en and vi.
+- Item 6 (14e126f): `Sessions.open` throws "tab id in use" for a live id.
+- Items 4, 11 (4e6e734): `stripState(lifetime, now, { autoClose, running })`; hidden when auto-close is off (the strip reads `orchestrationSettings` at mount and on worker-changed), and when there is no close time and no running agent (`running(tab)` from WorktreeTabs). No backend change needed. Limit: a worker whose agent is idle before its first turn shows no strip until it works.
+- Items 9, 10 (5e947b2): secondary "Replace edited copy" (`orchestrationSkillInstall(true)`) in the Edited state; Install stays the one primary button. `patch` queues changes made during a save and applies them on top of the stored value.
+- Item 5: skipped (controller).
