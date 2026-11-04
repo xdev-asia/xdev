@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { UiSettings } from "@/api";
 import { UI_SETTINGS_DEFAULTS } from "@/mockSettings";
 import { currentEditorTheme } from "./editorTheme";
+import { getStatusBarItems } from "./statusBarItems";
 import { applyAppearance, applyCachedTheme, FONT_CACHE_KEY, getThemePreference, loadTheme, readCachedTheme, resetThemeForTests, setThemePreference, startThemeSync, THEME_CACHE_KEY } from "./theme";
 
 function setup(opts: { dark?: boolean; store?: Record<string, string>; storageThrows?: boolean } = {}) {
@@ -147,4 +148,10 @@ it("applyAppearance feeds the editor theme with the painted theme and the pick",
   expect(currentEditorTheme()).toBe("light");
   applyAppearance({ ...UI_SETTINGS_DEFAULTS, theme: "light", editorThemeDark: "light" });
   expect(currentEditorTheme()).toBeUndefined();
+});
+
+it("applyAppearance hands the status bar items to the footer", () => {
+  setup();
+  applyAppearance({ ...UI_SETTINGS_DEFAULTS, statusBar: { branch: false, tokenUsage: true, agents: true, version: false } });
+  expect(getStatusBarItems()).toEqual({ branch: false, tokenUsage: true, agents: true, version: false });
 });
