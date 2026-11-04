@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager};
 
-use xdev_pty::client::{Attached, Client, ClientError, Sink, StartOptions, ensure};
+use xdev_pty::client::{Attached, Client, ClientError, Sink, StartOptions, ensure, service_dir};
 use xdev_pty::{Session, SpawnSpec};
 
 use crate::commands::CmdError;
@@ -215,7 +215,7 @@ pub(crate) fn start_host(app: &AppHandle, local_dir: Option<&Path>) {
             detail: Some(format!("no {BINARY} next to the app")),
         })?;
         ensure(&StartOptions {
-            dir: local.join(PTYD_DIR),
+            dir: service_dir(local),
             binary,
             app_version: version.clone(),
             ring_mb: terminal.ring_mb,
@@ -279,9 +279,6 @@ pub(crate) fn restart(app: &AppHandle, local_dir: Option<&Path>) -> Result<(), C
 /// The `ptyd://status` event: where terminals run changed.
 pub(crate) const STATUS_EVENT: &str = "ptyd://status";
 const RESTART_WAIT: Duration = Duration::from_secs(5);
-
-/// The folder under the local dir the service keeps its files in.
-pub(crate) const PTYD_DIR: &str = "ptyd";
 
 /// The service's name: the `[[bin]]` of `xdev-pty` and the `externalBin` of
 /// `tauri.ptyd.conf.json`, which installs it next to the app.
@@ -357,6 +354,9 @@ mod tests {
             assert!(line.contains("scripts/ptyd-sidecar.mjs"), "{cmd}: {line}");
         }
         assert!(here.join("../scripts/ptyd-sidecar.mjs").is_file());
+        // A bundle has it only with this config.
+        let release = include_str!("../../../../.github/workflows/release.yml");
+        assert!(release.contains("--config src-tauri/tauri.ptyd.conf.json"));
     }
 
     #[test]
