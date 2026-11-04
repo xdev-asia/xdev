@@ -115,3 +115,28 @@ it("offers Rename branch… after Details, for a worktree on a branch only", () 
   expect(ids(ctx({ onRenameBranch: rename, worktree: wt({ primary: true }) }).items)).not.toContain("renameBranch");
   expect(ids(ctx().items)).not.toContain("renameBranch");
 });
+
+it("offers Sleep on an awake worktree and Wake on a sleeping one, also on the primary checkout", () => {
+  const sleep = vi.fn();
+  const wake = vi.fn();
+  const awake = ctx({ onSleep: sleep, onWake: wake });
+  expect(ids(awake.items)).toContain("sleep");
+  expect(ids(awake.items)).not.toContain("wake");
+  find(awake.items, "sleep").run?.();
+  expect(sleep).toHaveBeenCalledTimes(1);
+
+  const asleep = ctx({ asleep: true, onSleep: sleep, onWake: wake });
+  expect(ids(asleep.items)).toContain("wake");
+  expect(ids(asleep.items)).not.toContain("sleep");
+  find(asleep.items, "wake").run?.();
+  expect(wake).toHaveBeenCalledTimes(1);
+
+  const primary = ctx({ worktree: wt({ primary: true }), onSleep: sleep });
+  expect(ids(primary.items)).toContain("sleep");
+});
+
+it("leaves the sleep items out without handlers", () => {
+  const { items } = ctx();
+  expect(ids(items)).not.toContain("sleep");
+  expect(ids(items)).not.toContain("wake");
+});

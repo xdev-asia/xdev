@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Badge } from "@xdev-asia/ui";
 import type { JSX } from "react";
 import type { ApiError, Check, FolderEntry, KeptView, OpenInApp, OpenTarget, PrView, PtyProfile, RepoGroup, RepoView, SidebarItem, SidebarPrefs, WorktreeStat, WorktreeView } from "@/api";
 import { useI18n } from "@/i18n";
@@ -87,6 +88,12 @@ export interface WorktreeListProps {
   onMarkUnread?(worktree: WorktreeView): void;
   /** Marks an unread worktree read; the menu offers it in place of "Mark unread" while the row is unread. */
   onMarkRead?(worktree: WorktreeView): void;
+  /** Worktree paths whose tabs are all asleep; the row says so and its menu offers Wake. */
+  asleep?: Record<string, boolean>;
+  /** Puts a worktree's tabs to sleep; without it the menu has no such item. */
+  onSleep?(worktree: WorktreeView): void;
+  /** Wakes a sleeping worktree's tabs. */
+  onWake?(worktree: WorktreeView): void;
   /** The Open In apps, in order; the Open in menu lists them above File Manager. */
   openInApps?: OpenInApp[];
   /** Opens a worktree or repo folder in an app or the file manager. */
@@ -184,6 +191,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
               {wt.title ?? wt.name}
             </span>
             {wt.pinned && <PinMark t={t} />}
+            {props.asleep?.[wt.path] === true && <Badge>{t("sleep.badge")}</Badge>}
             {seen !== null && <span className="ws-wt-time">{ago(seen, props.now ?? Date.now(), t)}</span>}
           </span>
           <span className="ws-wt-sub">
@@ -597,6 +605,9 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         onEditDetails: props.onEditDetails && (() => props.onEditDetails?.(wt)),
         onRenameBranch: props.onRenameBranch && (() => props.onRenameBranch?.(wt)),
         onArchive: props.onArchive && (() => props.onArchive?.(wt)),
+        asleep: props.asleep?.[wt.path] === true,
+        onSleep: props.onSleep && (() => props.onSleep?.(wt)),
+        onWake: props.onWake && (() => props.onWake?.(wt)),
       });
     } else if (menu.kind === "folder") {
       const folder = folderOf(menu.key);

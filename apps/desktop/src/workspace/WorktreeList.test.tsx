@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { RepoView, SidebarItem, WorktreeView } from "@/api";
+import { Badge } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { ago } from "./ago";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
@@ -584,4 +585,25 @@ it("a worktree the CLI changed shows a by CLI chip beside its status", () => {
   expect(kids.indexOf("ws-wt-cli")).toBe(kids.indexOf("ws-chip ws-wt-status") + 1);
   // Others have none.
   expect(view.all().filter((n) => n.props.className === "ws-wt-cli")).toHaveLength(1);
+});
+
+it("a sleeping worktree shows a badge and its menu offers Wake; an awake one offers Sleep", () => {
+  const slept: string[] = [];
+  const woke: string[] = [];
+  const view = harness(DOTS, repos, {
+    asleep: { "/demo/wt/xdev-oak": true },
+    onSleep: (w) => void slept.push(w.path),
+    onWake: (w) => void woke.push(w.path),
+  });
+  const badge = view.inRow("/demo/wt/xdev-oak").find((n) => n.type === Badge);
+  expect(badge).toBeDefined();
+  expect(view.inRow("/demo/wt/xdev-elm").find((n) => n.type === Badge)).toBeUndefined();
+
+  view.main("/demo/wt/xdev-oak").props.onContextMenu(event);
+  expect(view.item("sleep")).toBeUndefined();
+  view.item("wake")!.run!();
+  view.main("/demo/xdev").props.onContextMenu(event);
+  view.item("sleep")!.run!();
+  expect(woke).toEqual(["/demo/wt/xdev-oak"]);
+  expect(slept).toEqual(["/demo/xdev"]);
 });

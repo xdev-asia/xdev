@@ -2131,5 +2131,10 @@
   "settings.usage.cacheTimerHint": "Đếm ngược từ lúc tab Claude chuyển sang xong hoặc rảnh. Chỉ là gợi ý, không phải trạng thái cache thật của agent.",
   "settings.usage.cacheTtl": "Thời hạn cache",
   "settings.usage.cacheTtl.short": "5 phút",
-  "settings.usage.cacheTtl.long": "1 giờ"
+  "settings.usage.cacheTtl.long": "1 giờ",
+  "sleep.menu": "Cho ngủ",
+  "sleep.wake": "Đánh thức",
+  "sleep.badge": "Đang ngủ",
+  "sleep.tab.title": "Terminal này đang ngủ",
+  "sleep.tab.hint": "Đánh thức sẽ chạy lại phiên agent từ chỗ đã dừng."
 }

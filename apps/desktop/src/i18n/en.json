@@ -2131,5 +2131,10 @@
   "settings.usage.cacheTimerHint": "Counts down from the moment a Claude tab went done or idle. A hint, not the agent's real cache state.",
   "settings.usage.cacheTtl": "Cache lifetime",
   "settings.usage.cacheTtl.short": "5 minutes",
-  "settings.usage.cacheTtl.long": "1 hour"
+  "settings.usage.cacheTtl.long": "1 hour",
+  "sleep.menu": "Sleep",
+  "sleep.wake": "Wake",
+  "sleep.badge": "Asleep",
+  "sleep.tab.title": "This terminal is asleep",
+  "sleep.tab.hint": "Waking it starts the agent session again where it stopped."
 }
