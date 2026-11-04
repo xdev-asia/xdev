@@ -21,6 +21,12 @@ export interface WorktreeMenuContext {
   onRenameBranch?(): void;
   /** Archives the worktree (folder goes, branch stays); without it the item is left out. */
   onArchive?(): void;
+  /** The worktree's tabs are all asleep: the menu offers Wake in place of Sleep. */
+  asleep?: boolean;
+  /** Puts every tab of the worktree to sleep; without it the item is left out. */
+  onSleep?(): void;
+  /** Wakes the worktree's tabs; without it the item is left out. */
+  onWake?(): void;
 }
 
 /** What the project (repo heading) menu acts on. */
@@ -80,6 +86,12 @@ export function worktreeMenuItems(ctx: WorktreeMenuContext): MenuItem[] {
       : ctx.onMarkUnread
         ? [{ id: "markUnread", labelKey: "workspace.markUnread", run: ctx.onMarkUnread }]
         : [];
+  const sleep: MenuItem[] =
+    ctx.asleep && ctx.onWake
+      ? [{ id: "wake", labelKey: "sleep.wake", run: ctx.onWake }]
+      : !ctx.asleep && ctx.onSleep
+        ? [{ id: "sleep", labelKey: "sleep.menu", run: ctx.onSleep }]
+        : [];
   return [
     openInItem(ctx.apps, ctx.openIn, ctx.newTerminal),
     { id: "copyPath", labelKey: "worktreeMenu.copyPath", run: () => ctx.copy(wt.path) },
@@ -90,6 +102,7 @@ export function worktreeMenuItems(ctx: WorktreeMenuContext): MenuItem[] {
     ...(ctx.onRenameBranch && !wt.primary ? [{ id: "renameBranch", labelKey: "branchRename.menu", disabled: wt.branch === null, run: ctx.onRenameBranch }] : []),
     ...(ctx.onEditDetails && !wt.primary ? [{ id: "details", labelKey: "workspace.details.menu", run: ctx.onEditDetails }] : []),
     ...read,
+    ...sleep,
     // The primary checkout is the repo itself: it can be pinned but never removed.
     ...(wt.primary
       ? []

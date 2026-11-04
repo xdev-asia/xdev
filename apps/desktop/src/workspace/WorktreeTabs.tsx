@@ -1,3 +1,4 @@
+import { Button, EmptyState } from "@xdev-asia/ui";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
@@ -571,7 +572,18 @@ export function WorktreeTabs(props: {
                   </button>
                 </div>
               )}
-              {(everFront.has(tab.id) || !sessions.deferred(tab.id)) && <Terminal
+              {tab.asleep && (
+                <EmptyState
+                  title={t("sleep.tab.title")}
+                  hint={t("sleep.tab.hint")}
+                  actions={
+                    <Button type="button" variant="primary" data-field="wake" onClick={() => sessions.wake(tab.id)}>
+                      {t("sleep.wake")}
+                    </Button>
+                  }
+                />
+              )}
+              {!tab.asleep && (everFront.has(tab.id) || !sessions.deferred(tab.id)) && <Terminal
                 key={`${tab.id}:${attempts[tab.id] ?? 0}`}
                 api={api}
                 client={tab.client}

@@ -23,7 +23,7 @@ import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
 import { startAutoRename } from "./autoRename";
-import { currentCloseWindow, openRestoredFile, restoreLayout, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
+import { currentCloseWindow, openRestoredFile, restoreLayout, sessionFallback, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
@@ -426,6 +426,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const running = sessions ? paths.reduce((n, p) => n + working(sessions, p), 0) : 0;
   const waiting = sessions ? paths.reduce((n, p) => n + waitingIn(sessions, p), 0) : 0;
   const unreadMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.unread(p) ?? false]));
+  const asleepMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.asleep(p) ?? false]));
 
   const all = repos?.flatMap((r) => r.worktrees) ?? [];
   // A stored path that no longer exists falls back to the first worktree.
@@ -1556,6 +1557,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onAddRepo={addRepo}
             onAdopt={(wt) => void adopt(wt)}
             unread={unreadMap}
+            asleep={asleepMap}
+            onSleep={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api), all.filter((c) => c.parent === wt.path).map((c) => c.path))}
+            onWake={(wt) => [wt.path, ...all.filter((c) => c.parent === wt.path).map((c) => c.path)].forEach((p) => sessions?.wakeWorktree(p))}
             onMarkUnread={(wt) => sessions?.markUnread(wt.path)}
             onMarkRead={(wt) => sessions?.markRead(wt.path)}
             openInApps={openInApps}
