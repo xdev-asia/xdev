@@ -1803,6 +1803,41 @@ line", "title": "A"}),
     }
 
     #[test]
+    fn a_tab_whose_terminal_worker_finished_can_start_workers_again() {
+        let mut f = crate::cli_verbs::tests::fixture();
+        f.open_answer = Some(WorkerOpenOutcome::Ok);
+        f.board.replace(
+            vec![crate::cli_verbs::tests::tab(
+                "p-lead", &f.lead, true, "idle",
+            )],
+            None,
+        );
+        let r = f
+            .call(
+                Some("p-lead"),
+                "orchestration.worker-start",
+                json!({"spec": "mine", "terminal": "p-lead"}),
+            )
+            .unwrap();
+        let run = r["runId"].as_str().unwrap();
+        f.call(
+            Some("p-lead"),
+            "orchestration.send",
+            json!({"to": format!("run:{run}"), "type": "worker_done", "outcome": "succeeded"}),
+        )
+        .unwrap();
+        let next = f
+            .call(
+                Some("p-lead"),
+                "orchestration.worker-start",
+                json!({"spec": "theirs"}),
+            )
+            .unwrap();
+        assert_eq!(next["state"], "ready");
+        assert_eq!(next["runId"], run);
+    }
+
+    #[test]
     fn terminal_mode_pastes_a_spec_without_its_control_characters() {
         let f = crate::cli_verbs::tests::fixture();
         f.board.replace(
