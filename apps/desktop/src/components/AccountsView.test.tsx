@@ -212,3 +212,58 @@ it("asks for a folder before importing", async () => {
   expect(view.html()).toContain(translate("en", "error.not_found"));
   expect(add).not.toHaveBeenCalled();
 });
+
+describe("active account", () => {
+  const withActive = async (api = createMockApi({})) => {
+    const view = harness(api); view.draw(); const cleanup = hooks.effects[0](); await tick();
+    return { view, cleanup };
+  };
+  const byText = (view: ReturnType<typeof harness>, text: string) => nodes(view.draw()).filter(n => n.props.children === text && n.props.onClick);
+  it("marks the active account and offers Use this account on the others of the same list", async () => {
+    const { view, cleanup } = await withActive();
+    const html = view.html();
+    expect(html.match(/>Active</g)).toHaveLength(1);
+    expect(html).toMatch(/data-active="true"[^>]*>Active</);
+    // claude-2 is active for Claude; every other account (Codex has none active) gets the action, the active one the way back.
+    expect(byText(view, "Use this account")).toHaveLength(3);
+    expect(byText(view, "Use CLI default")).toHaveLength(1);
+    if (typeof cleanup === "function") cleanup();
+  });
+  it("Use this account activates it and reloads", async () => {
+    const api = createMockApi({});
+    const activate = vi.spyOn(api, "accountActivate");
+    const { view, cleanup } = await withActive(api);
+    await byText(view, "Use this account").find(n => n.props["aria-label"] === "Use claude-3 as the active account")!.props.onClick(); await tick();
+    expect(activate).toHaveBeenCalledWith("claude", "claude-3");
+    if (typeof cleanup === "function") cleanup();
+  });
+  it("Use CLI default clears the active account of that provider", async () => {
+    const api = createMockApi({});
+    const activate = vi.spyOn(api, "accountActivate");
+    const { view, cleanup } = await withActive(api);
+    await byText(view, "Use CLI default")[0].props.onClick(); await tick();
+    expect(activate).toHaveBeenCalledWith("claude", null);
+    expect((await api.accounts()).active).toEqual([]);
+    if (typeof cleanup === "function") cleanup();
+  });
+  it("shows an error from the switch", async () => {
+    const api = createMockApi({});
+    vi.spyOn(api, "accountActivate").mockRejectedValue({ code: "not_found" });
+    const { view, cleanup } = await withActive(api);
+    await byText(view, "Use this account")[0].props.onClick(); await tick();
+    expect(view.html()).toContain(translate("en", "error.not_found"));
+    if (typeof cleanup === "function") cleanup();
+  });
+  it("reloads when the accounts change elsewhere", async () => {
+    const api = createMockApi({});
+    const { view, cleanup } = await withActive(api);
+    const accounts = vi.spyOn(api, "accounts");
+    await api.accountActivate("claude", "claude-3"); await tick();
+    expect(accounts).toHaveBeenCalled();
+    if (typeof cleanup === "function") cleanup();
+  });
+  it("has the switch strings in both languages", () => {
+    for (const key of Object.keys(en).filter(k => k.startsWith("accounts.switch."))) expect(viDict).toHaveProperty(key);
+    expect(Object.keys(en).filter(k => k.startsWith("accounts.switch.")).length).toBeGreaterThan(3);
+  });
+});

@@ -123,6 +123,12 @@ import type {
   SessionRow,
   Agent,
   Skill,
+  UsageDisplay,
+  UsageReport,
+  UsageReportArgs,
+  UsageScope,
+  UsageSettings,
+  ProviderSwitches,
   UsageSummary,
   WriteOutcome,
 } from "@xdev/bindings";
@@ -139,6 +145,7 @@ export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill
 export type { Agent, AgentSession, SessionQuery, SessionRow };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, SwitchRunning };
+export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { CliAsk, CliOpenTab, TabReport };
 export type { FileKind } from "@xdev/bindings";
@@ -767,6 +774,8 @@ export interface Api {
   kitSkillRestore(removed: string, to: string, worktree: string | null): Promise<void>;
   // Days are local `YYYY-MM-DD`; `refresh` reads the new session log bytes first.
   kitUsage(sinceDay: string, untilDay: string, refresh: boolean): Promise<UsageSummary>;
+  // The Stats page: filtered by agent and scope, and by `usage.scan` (an agent whose scan is off is not read).
+  kitUsageReport(args: Omit<UsageReportArgs, "utcOffsetMinutes">): Promise<UsageReport>;
   // Whether each relative path exists under `root` (an agent home, repo or worktree).
   kitPathsExist(root: string, paths: string[]): Promise<boolean[]>;
   // Newest first, at most `limit` (and 1000).
@@ -839,6 +848,8 @@ export interface Api {
   // Settings → Agents; the put returns what was stored.
   agentsSettings(): Promise<AgentsSettings>;
   agentsSettingsPut(v: AgentsSettings): Promise<AgentsSettings>;
+  usageSettings(): Promise<UsageSettings>;
+  usageSettingsPut(v: UsageSettings): Promise<UsageSettings>;
 
   // Layout
   // The tabs and splits saved for the next start (`<data_dir>/layout.json`); null when none is saved
@@ -1201,6 +1212,7 @@ const tauriApi: Api = {
   // The local offset (UTC+7 is 420) decides which day a log line belongs to.
   kitUsage: (sinceDay, untilDay, refresh) =>
     call("kit_usage", { sinceDay, untilDay, refresh, utcOffsetMinutes: -new Date().getTimezoneOffset() }),
+  kitUsageReport: (args) => call("kit_usage_report", { args: { ...args, utcOffsetMinutes: -new Date().getTimezoneOffset() } }),
   kitPathsExist: (root, paths) => call("kit_paths_exist", { root, paths }),
   kitPromptHistory: (limit) => call("kit_prompt_history", { limit }),
   agentSessions: (query, refresh) => call("agent_sessions", { query, refresh }),
@@ -1233,6 +1245,8 @@ const tauriApi: Api = {
   diffSettingsPut: (settings) => call("diff_settings_put", { settings }),
   agentsSettings: () => call("agents_settings_get"),
   agentsSettingsPut: (settings) => call("agents_settings_put", { settings }),
+  usageSettings: () => call("usage_settings_get"),
+  usageSettingsPut: (settings) => call("usage_settings_put", { settings }),
   layoutLoad: () => call("layout_load"),
   layoutSave: (snapshot) => call("layout_save", { snapshot }),
   cliTabsReport: (tabs, selected) => call("cli_tabs_report", { tabs, selected }),

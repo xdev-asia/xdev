@@ -113,3 +113,4 @@
 .routing-index { align-self: center; min-width: 2ch; font-family: var(--x-font-mono); color: var(--x-color-muted); }
 .routing-actions, .routing-footer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-space-2); }
 .routing-saved { color: var(--x-color-muted); }
+.account-active { color: var(--x-color-ok); background: color-mix(in srgb, var(--x-color-ok) 14%, transparent); border: 1px solid transparent; }

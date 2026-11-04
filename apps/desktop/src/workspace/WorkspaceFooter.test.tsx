@@ -1,8 +1,17 @@
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Quota } from "@/api";
 import { translate } from "@/i18n";
-import { meterOf, WorkspaceFooter } from "./WorkspaceFooter";
+import { createMockApi } from "@/mockApi";
+import { resetUsageSettingsForTests, setUsageSettings } from "@/settings/usageSettings";
+import { USAGE_DEFAULTS } from "@/settings/usageDefaults";
+import { LiveWorkspaceFooter, meterOf, WorkspaceFooter } from "./WorkspaceFooter";
+
+// The live footer reads the quota and the update state through hooks; fixed values stand in for them.
+const live = vi.hoisted(() => ({ quota: null as unknown }));
+vi.mock("@/shell/useQuota", () => ({ useQuota: () => ({ quota: live.quota, loading: false, refresh() {} }) }));
+vi.mock("@/shell/useUpdate", () => ({ useUpdate: () => ({ state: null, restart() {} }) }));
 
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
@@ -107,4 +116,50 @@ it("the old token usage link stays next to the meter button", () => {
 
 it("no meters, no usage button", () => {
   expect(render(null, { onToggleUsage: () => {} })).not.toContain('data-action="usage"');
+});
+
+it("Remaining shows what is left: 30 % for 70 % used, in the number, the bar and the title", () => {
+  const html = render([account("claude-2", [["five_hour", 70]])], { display: "remaining" });
+  expect(html).toContain("30%");
+  expect(html).not.toContain("70%");
+  expect(html).toMatch(/role="meter"[^>]*aria-valuenow="30"/);
+  expect(html).toMatch(/class="ws-meter-fill" style="width:30%"/);
+  expect(html).toContain(en("workspace.footer.meterTitle", { name: "claude-2", window: en("workspace.footer.window.five_hour"), percent: 30, state: en("usage.stats.left") }));
+  const used = render([account("claude-2", [["five_hour", 70]])]);
+  expect(used).toContain("70%");
+  expect(used).toContain(en("usage.stats.used"));
+});
+
+it("the warning stays on 80 % used in both modes: 85 % used warns in Remaining, 79 % does not", () => {
+  const hot = render([account("hot", [["five_hour", 85]])], { display: "remaining" });
+  expect(hot).toContain("ws-meter-warn");
+  expect(hot).toContain("15%");
+  expect(render([account("calm", [["five_hour", 79]])], { display: "remaining" })).not.toContain("ws-meter-warn");
+});
+
+it("a meter past 100 % used shows 0 % left", () => {
+  const html = render([account("over", [["five_hour", 130]])], { display: "remaining" });
+  expect(html).toMatch(/role="meter"[^>]*aria-valuenow="0"/);
+  expect(html).toContain("0%");
+});
+
+const renderLive = (hidden = false) =>
+  renderToStaticMarkup(createElement(LiveWorkspaceFooter, { api: createMockApi({}), branch: "main", running: 0, waiting: 0, version: "0.3.0", hidden }));
+
+beforeEach(() => {
+  resetUsageSettingsForTests();
+  live.quota = [account("claude-1", [["five_hour", 33]]), account("codex-1", [["five_hour", 7]])];
+});
+
+it("the live footer shows a meter for each account from the live quota", () => {
+  const html = renderLive();
+  expect(html.match(/role="meter"/g)).toHaveLength(2);
+  expect(html).toMatch(/role="meter"[^>]*aria-valuenow="33"/);
+  expect(html).toContain("v0.3.0");
+});
+
+it("the live footer shows remaining instead of used when the display setting says so", () => {
+  setUsageSettings({ ...USAGE_DEFAULTS, display: "remaining" });
+  const html = renderLive();
+  expect(html).toMatch(/role="meter"[^>]*aria-valuenow="67"/);
 });
