@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { RepoView, SidebarItem, WorktreeView } from "@/api";
 import { translate } from "@/i18n";
+import { ago } from "./ago";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import { WorktreeList, type WorktreeListProps } from "./WorktreeList";
@@ -461,4 +462,23 @@ it("alt+arrow on a repo row asks for a new order", () => {
   const target = {};
   row.props.onKeyDown({ key: "ArrowUp", altKey: true, target, currentTarget: target, preventDefault() {} });
   expect(seen).toEqual([[notes2.id, xdev.id]]);
+});
+
+it("a worktree the CLI changed shows a by CLI chip beside its status", () => {
+  const marked = (): RepoView[] => {
+    const list = repos();
+    Object.assign(list[0].worktrees[1], { status: "in-review", setByCliMs: 1_000 });
+    return list;
+  };
+  const view = harness(DOTS, marked, { now: 61_000 });
+  const path = marked()[0].worktrees[1].path;
+  const chip = view.inRow(path).find((n) => n.props.className === "ws-wt-cli")!;
+  expect(chip.props.children).toBe(translate("en", "cli.mark"));
+  const t = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
+  expect(chip.props.title).toBe(t("cli.mark.title", { ago: ago(1_000, 61_000, t) }));
+  const meta = view.inRow(path).find((n) => n.props.className === "ws-wt-meta")!;
+  const kids = nodes(meta.props.children).map((n) => n.props.className);
+  expect(kids.indexOf("ws-wt-cli")).toBe(kids.indexOf("ws-chip ws-wt-status") + 1);
+  // Others have none.
+  expect(view.all().filter((n) => n.props.className === "ws-wt-cli")).toHaveLength(1);
 });
