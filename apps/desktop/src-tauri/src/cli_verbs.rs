@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError, mpsc};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -19,7 +19,7 @@ use xdev_workspace::{
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError, load_git_settings};
 use crate::endpoint::{
-    APP_PROTOCOL, AppError, Caller, Handler, Request, Scope, caller_worktree, scope_of,
+    APP_PROTOCOL, AppError, Caller, Handler, Request, Scope, WAIT_MAX_S, caller_worktree, scope_of,
 };
 use crate::pty::Ptys;
 use crate::workspace::{WorkspaceLock, clock, update};
@@ -75,6 +75,37 @@ pub struct CliAsk {
 
 /// The most tabs a report may carry; the rest are dropped.
 pub const TABS_MAX: usize = 500;
+/// A shell with no output for this long is idle.
+pub const SHELL_IDLE_MS: i64 = 3000;
+/// How often a waiter looks again without a new report: a shell goes idle
+/// by the clock alone, and a client may have left.
+const WAIT_SLICE: Duration = Duration::from_millis(250);
+
+/// What `terminal wait --for` waits for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WaitFor {
+    /// An agent at `done` or `idle`; a shell with no output for 3 s.
+    Idle,
+    Done,
+    NeedsYou,
+    Exit,
+}
+
+/// The state `tab` stands in when it is what `want` waits for.
+fn reached(tab: &TabReport, want: WaitFor, now_ms: i64) -> Option<String> {
+    let hit = match want {
+        WaitFor::Exit => return tab.exited.then(|| "exited".to_owned()),
+        _ if tab.exited => false,
+        WaitFor::Idle if !tab.agent => {
+            return (now_ms - tab.last_output_ms >= SHELL_IDLE_MS).then(|| "idle".to_owned());
+        }
+        WaitFor::Idle => tab.status == "done" || tab.status == "idle",
+        WaitFor::Done => tab.status == "done",
+        WaitFor::NeedsYou => tab.status == "needs-you",
+    };
+    hit.then(|| tab.status.clone())
+}
 
 #[derive(Default)]
 struct Board {
@@ -124,6 +155,67 @@ impl TabBoard {
     pub fn stop(&self) {
         self.lock().stopped = true;
         self.changed.notify_all();
+    }
+
+    /// Blocks until the tab `tab` (an id or a unique prefix) reaches `want`:
+    /// the state and when. `not_found` / `ambiguous` at once, `closed` when
+    /// the tab goes or the client leaves, `app_stopped`, `timeout`.
+    pub fn wait(
+        &self,
+        tab: &str,
+        want: WaitFor,
+        timeout: Duration,
+        gone: &dyn Fn() -> bool,
+    ) -> Result<(String, i64), AppError> {
+        let deadline = Instant::now() + timeout;
+        let mut board = self.lock();
+        let id = {
+            let ids: Vec<&str> = board.tabs.iter().map(|t| t.id.as_str()).collect();
+            match ids.iter().find(|i| **i == tab) {
+                Some(id) => (*id).to_owned(),
+                None => match ids
+                    .iter()
+                    .filter(|i| i.starts_with(tab))
+                    .collect::<Vec<_>>()[..]
+                {
+                    [id] => (*id).to_owned(),
+                    [] => return Err(AppError::new("not_found", format!("no tab {tab}"))),
+                    _ => {
+                        return Err(AppError::new(
+                            "ambiguous",
+                            format!("more than one tab starts with {tab}"),
+                        ));
+                    }
+                },
+            }
+        };
+        loop {
+            if board.stopped {
+                return Err(AppError::new("app_stopped", "xDev is quitting"));
+            }
+            let Some(t) = board.tabs.iter().find(|t| t.id == id) else {
+                return Err(AppError::new("closed", format!("tab {id} was closed")));
+            };
+            let now = (self.clock)();
+            if let Some(state) = reached(t, want, now) {
+                return Ok((state, now));
+            }
+            if gone() {
+                return Err(AppError::new("closed", "the caller left"));
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Err(AppError::new(
+                    "timeout",
+                    format!("tab {id} did not get there in time"),
+                ));
+            }
+            board = self
+                .changed
+                .wait_timeout(board, left.min(WAIT_SLICE))
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
     }
 
     fn tabs(&self) -> (Vec<TabReport>, Option<String>) {
@@ -687,6 +779,36 @@ pub fn worktree_create(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<
     }))
 }
 
+fn default_timeout() -> u64 {
+    600
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WaitParams {
+    tab: String,
+    #[serde(rename = "for")]
+    want: WaitFor,
+    #[serde(default = "default_timeout")]
+    timeout_s: u64,
+}
+
+/// `terminal.wait`: blocks until the tab reaches the state (see `TabBoard::wait`).
+pub fn terminal_wait(
+    ctx: &Ctx<'_>,
+    req: &Request,
+    gone: &dyn Fn() -> bool,
+) -> Result<Value, AppError> {
+    let p: WaitParams = params(req)?;
+    if p.timeout_s > WAIT_MAX_S {
+        return Err(bad_request(format!("--timeout is at most {WAIT_MAX_S} s")));
+    }
+    let (state, at) = ctx
+        .board
+        .wait(&p.tab, p.want, Duration::from_secs(p.timeout_s), gone)?;
+    Ok(json!({ "state": state, "atMs": at }))
+}
+
 /// Runs one request.
 pub fn dispatch(
     ctx: &Ctx<'_>,
@@ -694,7 +816,6 @@ pub fn dispatch(
     caller: &Caller,
     gone: &dyn Fn() -> bool,
 ) -> Result<Value, AppError> {
-    let _ = gone;
     match req.method.as_str() {
         "status" => Ok(status(ctx)),
         "worktree.ps" => worktree_ps(ctx, req, caller),
@@ -702,6 +823,7 @@ pub fn dispatch(
         "terminal.list" => terminal_list(ctx, req, caller),
         "worktree.set" => worktree_set(ctx, req, caller),
         "worktree.create" => worktree_create(ctx, req, caller),
+        "terminal.wait" => terminal_wait(ctx, req, gone),
         other => Err(bad_request(format!("unknown method {other}"))),
     }
 }
@@ -1319,6 +1441,148 @@ pub(crate) mod tests {
             Duration::from_secs(5),
         );
         assert_eq!(got, Some(true));
+    }
+
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicI64;
+    use std::thread;
+
+    /// A board on a clock the test moves.
+    fn fake_board() -> (Arc<TabBoard>, Arc<AtomicI64>) {
+        let now = Arc::new(AtomicI64::new(100_000));
+        let clock = now.clone();
+        (
+            Arc::new(TabBoard::with_clock(move || clock.load(Ordering::SeqCst))),
+            now,
+        )
+    }
+
+    const LONG: Duration = Duration::from_secs(30);
+
+    fn wait(
+        board: &TabBoard,
+        tab: &str,
+        want: WaitFor,
+        timeout: Duration,
+    ) -> Result<(String, i64), AppError> {
+        board.wait(tab, want, timeout, &|| false)
+    }
+
+    #[test]
+    fn a_state_already_reached_answers_at_once() {
+        let (board, _) = fake_board();
+        board.replace(vec![tab("agent-1", Path::new("/w"), true, "done")], None);
+        assert_eq!(
+            wait(&board, "agent-1", WaitFor::Done, LONG).unwrap(),
+            ("done".to_owned(), 100_000)
+        );
+        // A unique prefix will do; an agent at done is idle too.
+        assert_eq!(
+            wait(&board, "agent", WaitFor::Idle, LONG).unwrap().0,
+            "done"
+        );
+        assert_eq!(
+            wait(&board, "nope", WaitFor::Done, LONG).unwrap_err().code,
+            "not_found"
+        );
+    }
+
+    #[test]
+    fn a_report_wakes_the_waiter() {
+        let (board, _) = fake_board();
+        board.replace(vec![tab("t1", Path::new("/w"), true, "working")], None);
+        let waiter = {
+            let board = board.clone();
+            thread::spawn(move || wait(&board, "t1", WaitFor::NeedsYou, LONG))
+        };
+        thread::sleep(Duration::from_millis(100));
+        board.replace(vec![tab("t1", Path::new("/w"), true, "needs-you")], None);
+        assert_eq!(waiter.join().unwrap().unwrap().0, "needs-you");
+    }
+
+    #[test]
+    fn a_shell_is_idle_after_three_quiet_seconds_on_the_clock() {
+        let (board, now) = fake_board();
+        let mut shell = tab("s1", Path::new("/w"), false, "idle");
+        shell.last_output_ms = 99_000;
+        board.replace(vec![shell], None);
+        let waiter = {
+            let board = board.clone();
+            thread::spawn(move || wait(&board, "s1", WaitFor::Idle, LONG))
+        };
+        thread::sleep(Duration::from_millis(100));
+        assert!(!waiter.is_finished());
+        now.store(102_000, Ordering::SeqCst);
+        assert_eq!(
+            waiter.join().unwrap().unwrap(),
+            ("idle".to_owned(), 102_000)
+        );
+    }
+
+    #[test]
+    fn exit_closed_and_app_stopped_end_a_wait() {
+        let (board, _) = fake_board();
+        let mut gone = tab("t1", Path::new("/w"), true, "working");
+        gone.exited = true;
+        board.replace(
+            vec![gone, tab("t2", Path::new("/w"), true, "working")],
+            None,
+        );
+        assert_eq!(wait(&board, "t1", WaitFor::Exit, LONG).unwrap().0, "exited");
+        // An exited agent is not done.
+        let waiter = {
+            let board = board.clone();
+            thread::spawn(move || wait(&board, "t2", WaitFor::Done, LONG))
+        };
+        thread::sleep(Duration::from_millis(50));
+        board.replace(vec![], None);
+        assert_eq!(waiter.join().unwrap().unwrap_err().code, "closed");
+        board.replace(vec![tab("t3", Path::new("/w"), true, "working")], None);
+        let waiter = {
+            let board = board.clone();
+            thread::spawn(move || wait(&board, "t3", WaitFor::Done, LONG))
+        };
+        thread::sleep(Duration::from_millis(50));
+        board.stop();
+        assert_eq!(waiter.join().unwrap().unwrap_err().code, "app_stopped");
+    }
+
+    #[test]
+    fn a_wait_times_out_and_ends_when_the_caller_leaves() {
+        let (board, _) = fake_board();
+        board.replace(vec![tab("t1", Path::new("/w"), true, "working")], None);
+        let started = Instant::now();
+        assert_eq!(
+            wait(&board, "t1", WaitFor::Done, Duration::from_millis(100))
+                .unwrap_err()
+                .code,
+            "timeout"
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
+        let e = board.wait("t1", WaitFor::Done, LONG, &|| true).unwrap_err();
+        assert_eq!(e.code, "closed");
+    }
+
+    #[test]
+    fn the_wait_verb_checks_its_params() {
+        let f = fixture();
+        f.board
+            .replace(vec![tab("t1", &f.lead, true, "done")], None);
+        let back = f
+            .call(
+                None,
+                "terminal.wait",
+                json!({ "tab": "t1", "for": "done", "timeoutS": 5 }),
+            )
+            .unwrap();
+        assert_eq!(back["state"], "done");
+        assert!(back["atMs"].as_i64().unwrap() > 0);
+        let code = |p: Value| f.call(None, "terminal.wait", p).unwrap_err().code;
+        assert_eq!(code(json!({ "tab": "t1", "for": "soon" })), "bad_request");
+        assert_eq!(
+            code(json!({ "tab": "t1", "for": "done", "timeoutS": WAIT_MAX_S + 1 })),
+            "bad_request"
+        );
     }
 
     #[test]
