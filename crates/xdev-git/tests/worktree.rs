@@ -390,12 +390,50 @@ fn commit_empty_makes_one_commit() {
     );
 }
 
+/// Runs `commit_empty_without_identity_child` with a global config that has
+/// no identity and forbids guessing one (macOS git guesses from the host
+/// name), so a developer's own identity cannot make it pass.
 #[test]
 fn commit_empty_without_identity_is_identity() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("gitconfig");
+    fs::write(
+        &file,
+        "[user]
+	useConfigOnly = true
+",
+    )
+    .unwrap();
+    let out = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--ignored",
+            "--exact",
+            "commit_empty_without_identity_child",
+        ])
+        .env("GIT_CONFIG_GLOBAL", &file)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("HOME", dir.path())
+        .env("XDG_CONFIG_HOME", dir.path())
+        .env_remove("GIT_AUTHOR_NAME")
+        .env_remove("GIT_AUTHOR_EMAIL")
+        .env_remove("GIT_COMMITTER_NAME")
+        .env_remove("GIT_COMMITTER_EMAIL")
+        .env_remove("EMAIL")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success() && stdout.contains("1 passed"),
+        "{stdout}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+#[ignore]
+fn commit_empty_without_identity_child() {
     let dir = bare_dir();
     let repo = Repo::init_on(dir.path(), "main").unwrap();
-    // Local config wins over the developer's global identity.
-    git(dir.path(), &["config", "user.useConfigOnly", "true"]);
     assert!(matches!(
         repo.commit_empty("x").unwrap_err(),
         GitError::Identity
