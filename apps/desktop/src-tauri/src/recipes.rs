@@ -27,7 +27,7 @@ pub const PR_VARS: [&str; 9] = [
 pub const BRANCH_VARS: [&str; 3] = ["basePrompt", "firstPrompt", "assistantMessage"];
 
 /// What a conflict resolution template can name.
-// Used by the conflict commands' prompt vars in the UI mirror; the Rust side checks the list in a test (B5).
+// The prompt is built in the UI (`RECIPE_VARS.resolveConflicts`); this is the shared list.
 #[allow(dead_code)]
 pub const CONFLICT_VARS: [&str; 5] = ["basePrompt", "branch", "operation", "files", "onto"];
 
