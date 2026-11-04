@@ -27,3 +27,8 @@ Tasks B3+B4: complete, one commit. Deviation: the OS blockers live in a new crat
 ## Task U5: complete
 - `Sessions.onStatus(listener(tab, from, to, at))`: every status change of an agent tab (exit included), with unsubscribe.
 - `activity/feed.ts`: `ActivityFeed` (newest first, cap 200, `done` back to `idle` dropped, stable snapshot, `subscribe`, `follow(sessions)`, `clear`). The shell creates and follows it in U7.
+
+## Task U6: complete
+- `activity/options.ts`: `ActivityOptions` (showIdle, groupByWorktree), saved under `xdev.activity.options`; bad JSON, wrong shape or throwing storage give the defaults, each field checked on its own.
+- `activity/threads.ts`: `activityThreads(tabs, names, query, options)`; agent tabs only, idle and exited only with showIdle, every query word matched against title, worktree name, branch and profile, newest output first (stable), optional grouping by worktree.
+- Tests: 15 in `src/activity` (feed, options, threads) pass; tsc clean.
