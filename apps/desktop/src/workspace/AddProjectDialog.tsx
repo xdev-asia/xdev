@@ -206,20 +206,20 @@ export function AddProjectDialog(props: {
             <div className="ws-field" role="radiogroup" aria-labelledby="ws-create-kind-label">
               <span id="ws-create-kind-label">{t("addProject.create.kind")}</span>
               {(["git", "folder"] as const).map((k) => (
-                <label key={k} className="ws-radio">
+                <label key={k} className="ws-tick">
                   <input type="radio" name="kind" value={k} disabled={busy} checked={kind === k} onChange={() => setKind(k)} />
                   <span>{t(`addProject.create.kind.${k}`)}</span>
                 </label>
               ))}
             </div>
             {kind === "git" && (
-              <details className="ws-advanced">
+              <details>
                 <summary>{t("addProject.create.advanced")}</summary>
                 <label className="ws-field">
                   <span>{t("addProject.create.branch")}</span>
                   <input name="branch" className="ws-mono" placeholder="main" spellCheck={false} disabled={busy} value={branch} onChange={(e) => setBranch(e.target.value)} />
                 </label>
-                <label className="ws-radio">
+                <label className="ws-tick">
                   <input type="checkbox" name="firstCommit" disabled={busy} checked={firstCommit} onChange={(e) => setFirstCommit(e.target.checked)} />
                   <span>{t("addProject.create.firstCommit")}</span>
                 </label>

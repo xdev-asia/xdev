@@ -972,6 +972,7 @@
   "workspace.create.repo": "Repository",
   "workspace.create.name": "Name",
   "workspace.create.namePlaceholder": "auto",
+  "createWorktree.preview.willBe": "Will be created as {folder} on branch {branch}",
   "workspace.create.nameHint": "Also the branch name. Leave it empty and xDev picks one.",
   "workspace.create.from": "From",
   "workspace.create.confirm": "Create",

@@ -2,14 +2,14 @@ import { expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { translate } from "@/i18n";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
-import { buildCreate, CreateWorktreeDialog } from "./CreateWorktreeDialog";
+import { buildCreate, CreateWorktreeDialog, PreviewHint } from "./CreateWorktreeDialog";
 import { parseItem } from "./workItemInput";
 
 vi.mock("react", async (original) => {
   const react = await original<typeof import("react")>();
   return { ...react, useState: (initial: unknown) => [initial, () => {}], useRef: () => ({ current: null }), useEffect: () => {} };
 });
-vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string) => translate("en", key) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {
@@ -60,4 +60,18 @@ it("keeps the emoji in the title and uses the code word in the name", () => {
   const plain = buildCreate({ ...BLANK, text: "feat/login" });
   expect(plain?.name).toBe("feat/login");
   expect(plain?.extra.title).toBeNull();
+});
+
+it("shows what a taken name will be created as, and nothing otherwise", () => {
+  const taken = { branch: "feat-one-2", folder: "xdev-feat-one-2", suffixed: true };
+  const hint = PreviewHint({ preview: taken }) as Node;
+  expect(hint.props.children).toBe("Will be created as xdev-feat-one-2 on branch feat-one-2");
+  expect(PreviewHint({ preview: { ...taken, suffixed: false } })).toBeNull();
+  expect(PreviewHint({ preview: null })).toBeNull();
+});
+
+it("the name field is followed by the preview slot", () => {
+  const repos = DEMO_WORKSPACE.repos;
+  const all = nodes(CreateWorktreeDialog({ repos, repoId: repos[0].id, onCreate: vi.fn(), onCancel: vi.fn() }));
+  expect(all.some((n) => n.type === PreviewHint)).toBe(true);
 });
