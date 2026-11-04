@@ -3367,6 +3367,7 @@ button.ws-tree-row:focus-visible {
 .ws-options-row { display: grid; gap: var(--x-space-1); }
 .ws-options-props { display: grid; gap: var(--x-space-1); }
 .ws-options-label { color: var(--text-3); font-size: 11px; }
+.ws-options-hint { color: var(--text-3); font-size: 11px; }
 
 /* Conflict blocks in the file editor: a tint per side, a quiet marker line, and the accept actions above. */
 .file-editor .cm-conflict-ours { background: var(--x-color-ok-soft); }

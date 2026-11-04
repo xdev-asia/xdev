@@ -44,6 +44,17 @@ it("changes only the group, the sort or the layout it was asked for", () => {
   ]);
 });
 
+it("lists the five sorts and explains Smart and Manual", () => {
+  const { tree } = panel();
+  const sort = tree.filter((n) => n.type === Segmented)[1];
+  expect(sort.props.options.map((o: { value: string }) => o.value)).toEqual(["manual", "recent", "name", "smart", "project"]);
+  expect(sort.props.options.map((o: { label: string }) => o.label)).toEqual(["Manual", "Recent", "Name", "Smart", "Project"]);
+  const hint = (sortValue: "manual" | "smart" | "name") => nodes(SidebarOptionsPanel({ prefs: { ...SIDEBAR_PREFS_DEFAULTS, sort: sortValue }, onPrefs: () => {} })).filter((n) => n.type === "small").map((n) => n.props.children);
+  expect(hint("smart")).toEqual(["Agents that need attention, then most recent activity."]);
+  expect(hint("manual")).toEqual(["Drag worktrees to arrange them within each group."]);
+  expect(hint("name")).toEqual([]);
+});
+
 it("lists the five groupings", () => {
   const { tree } = panel();
   const group = tree.find((n) => n.type === Segmented)!;
