@@ -360,19 +360,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   // The active account changed (Accounts, the usage popover, a removal): the running agent tabs that
   // follow it are restarted, kept or asked about by the `agents.accountSwitch` setting.
-  const [switching, setSwitching] = useState<PendingSwitch | null>(null);
+  // Switches queue: a second one while the dialog is open waits its turn instead of replacing the first.
+  const [switches, setSwitching] = useState<PendingSwitch[]>([]);
+  const switching = switches[0] ?? null;
   useEffect(() => {
     if (!sessions) return;
     const watcher = watchAccountSwitch({
       api,
       sessions,
       notify: (key, vars) => pushToast({ text: live.t(key, vars) }),
-      ask: setSwitching,
+      ask: (p) => setSwitching((q) => [...q, p]),
     });
     return () => watcher.stop();
   }, [api, sessions]);
   async function answerSwitch(pending: PendingSwitch, restart: string[] | null, remember: boolean): Promise<void> {
-    setSwitching(null);
+    setSwitching((q) => q.filter((p) => p !== pending));
     if (remember) {
       // "Don't ask again" stores what was chosen; a failed write only means it asks again.
       const current = await api.agentsSettings().catch(() => null);
