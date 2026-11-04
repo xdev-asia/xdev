@@ -5,9 +5,9 @@
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use xdev_agent::Routing;
-use xdev_ai::{AccountEntry, AccountStatus, AiError, Provider, Quota, Registry};
+use xdev_ai::{AccountEntry, AccountStatus, ActiveAccount, AiError, Provider, Quota, Registry};
 
 use crate::commands::{AppState, CmdError};
 
@@ -36,7 +36,13 @@ pub struct Account {
 pub struct Accounts {
     reserve_percent: u8,
     accounts: Vec<Account>,
+    /// The active account per provider, at most one each.
+    active: Vec<ActiveAccount>,
 }
+
+/// Emitted, without a payload, after an account is added, removed or made
+/// active.
+pub const CHANGED_EVENT: &str = "accounts://changed";
 
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -87,6 +93,7 @@ pub fn accounts_list(state: State<'_, AppState>) -> Result<Accounts, CmdError> {
     Ok(Accounts {
         reserve_percent: registry.reserve_percent,
         accounts: each(&registry.accounts, account),
+        active: registry.active.clone(),
     })
 }
 
@@ -148,6 +155,40 @@ pub fn account_remove(state: State<'_, AppState>, name: String) -> Result<(), Cm
     registry.remove(&name)?;
     registry.save(data)?;
     Ok(())
+}
+
+/// Makes `name` the active account of `provider`; `None` goes back to the
+/// CLI's own home. Running tabs are left alone: the UI restarts the ones
+/// the person picks.
+#[tauri::command(async)]
+pub fn account_activate(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    provider: Provider,
+    name: Option<String>,
+) -> Result<(), CmdError> {
+    let data = data_dir(&state)?;
+    let mut registry = Registry::load(data)?;
+    registry.activate(provider, name.as_deref())?;
+    registry.save(data)?;
+    let _ = app.emit(CHANGED_EVENT, ());
+    Ok(())
+}
+
+/// Copies the log of agent session `session` from account `from`'s home to
+/// `to`'s, so a tab restarted under `to` can resume it; `None` is the CLI's
+/// own home. Returns whether it copied (false: `to` already has it).
+#[tauri::command(async)]
+pub fn account_carry_session(
+    state: State<'_, AppState>,
+    provider: Provider,
+    from: Option<String>,
+    to: Option<String>,
+    session: String,
+    cwd: PathBuf,
+) -> Result<bool, CmdError> {
+    let _ = (state, provider, from, to, session, cwd);
+    Err(AiError::SessionMissing.into())
 }
 
 /// The person's rules for which model a turn runs on.
@@ -228,6 +269,10 @@ mod tests {
     fn accounts_serialize_like_the_ui_expects() {
         let accounts = Accounts {
             reserve_percent: 30,
+            active: vec![ActiveAccount {
+                provider: Provider::Claude,
+                name: "a".into(),
+            }],
             accounts: vec![
                 Account {
                     name: "a".into(),
@@ -261,7 +306,7 @@ mod tests {
             }, {
                 "name": "c", "provider": "codex", "dir": "e",
                 "status": { "state": "no_codex", "email": null, "plan": null, "org": null }
-            }] })
+            }], "active": [{ "provider": "claude", "name": "a" }] })
         );
         let login = LoginStart {
             opened: false,

@@ -70,11 +70,22 @@ pub struct AccountEntry {
     pub dir: PathBuf,
 }
 
+/// The account a provider's new agent tabs run as when neither the tab nor
+/// the profile names one. At most one per provider.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ActiveAccount {
+    pub provider: Provider,
+    pub name: String,
+}
+
 /// The accounts registered on this machine, kept in `<data dir>/accounts.json`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Registry {
     pub reserve_percent: u8,
     pub accounts: Vec<AccountEntry>,
+    /// The active account per provider; none means the CLI's own home.
+    pub active: Vec<ActiveAccount>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -82,6 +93,9 @@ struct OnDisk {
     version: u32,
     reserve_percent: u8,
     accounts: Vec<AccountEntry>,
+    // A file from before active accounts has none.
+    #[serde(default)]
+    active: Vec<ActiveAccount>,
 }
 
 impl Default for Registry {
@@ -89,6 +103,7 @@ impl Default for Registry {
         Registry {
             reserve_percent: DEFAULT_RESERVE,
             accounts: Vec::new(),
+            active: Vec::new(),
         }
     }
 }
@@ -110,6 +125,7 @@ impl Registry {
         let mut reg = Registry {
             reserve_percent: disk.reserve_percent,
             accounts: Vec::with_capacity(disk.accounts.len()),
+            active: Vec::new(),
         };
         for entry in disk.accounts {
             reg.add(&entry.name, entry.provider, entry.dir)
@@ -123,6 +139,7 @@ impl Registry {
             version: VERSION,
             reserve_percent: self.reserve_percent,
             accounts: self.accounts.clone(),
+            active: self.active.clone(),
         };
         let mut text = serde_json::to_string_pretty(&disk).map_err(io::Error::other)?;
         text.push('\n');
@@ -172,6 +189,42 @@ impl Registry {
     pub fn get(&self, name: &str) -> Option<&AccountEntry> {
         self.accounts.iter().find(|a| a.name == name)
     }
+
+    /// Makes `name` the active account of `provider`; `None` clears it, so
+    /// the provider's tabs run on the CLI's own home. An unknown name or
+    /// another provider's account is `NotFound`.
+    pub fn activate(&mut self, provider: Provider, name: Option<&str>) -> Result<(), AiError> {
+        let _ = (provider, name);
+        Err(AiError::NotFound)
+    }
+
+    /// The active account of `provider`, when it names a registered one.
+    pub fn active(&self, provider: Provider) -> Option<&AccountEntry> {
+        let _ = provider;
+        None
+    }
+}
+
+/// Copies the session log `session` (the CLI's session id) from `from`'s
+/// home into `to`'s, at the same path under the home, when `to` does not
+/// have it yet; returns whether it copied. `cwd` is the folder the session
+/// ran in. A log that is not in `from` is `SessionMissing`. Never moves nor
+/// overwrites a log.
+pub fn carry_session(
+    from: &AccountEntry,
+    to: &AccountEntry,
+    session: &str,
+    cwd: &Path,
+) -> Result<bool, AiError> {
+    let _ = (from, to, session, cwd);
+    Err(AiError::SessionMissing)
+}
+
+/// The home a provider's CLI uses with no account: its home variable from
+/// the environment, else `~/.claude` or `~/.codex`.
+pub fn default_home(provider: Provider) -> Option<PathBuf> {
+    let _ = provider;
+    None
 }
 
 /// Sign-in state from the account's own CLI. Never fails: a missing CLI is

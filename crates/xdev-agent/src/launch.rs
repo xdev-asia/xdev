@@ -4,6 +4,7 @@ use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
 use xdev_ai::{AiError, Provider, Registry, codex_home};
 
 use crate::codex_home::{codex_hook_events, prepare_codex_home};
@@ -12,6 +13,17 @@ use crate::hooks::{HookEvent, hook_args, hook_events};
 use crate::profiles::{Cli, Permissions, Profile, ProfileError, Profiles};
 use crate::shells::{ShellEntry, default_shell_id};
 use crate::version::{CliVersion, cli_version};
+
+/// Where a launch's account came from: the tab's own pick, the profile's
+/// account or the provider's active account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum AccountSource {
+    Tab,
+    Profile,
+    Active,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Launch {
@@ -26,6 +38,8 @@ pub struct Launch {
     pub permissions: Permissions,
     /// The account the CLI runs as, when it has one.
     pub account: Option<String>,
+    /// Where `account` came from; `None` when there is no account.
+    pub account_source: Option<AccountSource>,
     /// Shell lines to run before the CLI; see `command`.
     pub startup: Vec<String>,
     /// The built-in CLI the profile runs; `None` for shells and custom
@@ -243,6 +257,7 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         agent: true,
         permissions,
         account: account.map(str::to_owned),
+        account_source: None,
         startup: profile
             .startup
             .iter()
@@ -274,6 +289,7 @@ fn resolve_shell(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         agent: false,
         permissions: Permissions::Ask,
         account: None,
+        account_source: None,
         startup: Vec::new(),
         cli: None,
         hooks: false,
@@ -749,6 +765,7 @@ mod tests {
             agent: true,
             permissions: Permissions::Ask,
             account: None,
+            account_source: None,
             startup: startup.iter().map(|a| (*a).to_owned()).collect(),
             cli: None,
             hooks: false,
