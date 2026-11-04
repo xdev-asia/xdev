@@ -98,15 +98,14 @@ describe("guardClose", () => {
     expect(ask).toHaveBeenCalledOnce();
   });
 
-  it("tells the shell when the question throws, so the quit does not stay in flight", async () => {
+  it("closes and keeps the quit mode when the question throws", async () => {
     const api = createMockApi({});
-    await api.shellQuit("quit");
-    await expect(
-      guardClose(api, notice, async () => {
-        throw new Error("boom");
-      }),
-    ).rejects.toThrow("boom");
-    expect(api.__quitMode()).toBeNull();
+    await api.shellQuit("restart");
+    const go = await guardClose(api, notice, async () => {
+      throw new Error("boom");
+    });
+    expect(go).toBe(true);
+    expect(api.__quitMode()).toBe("restart");
   });
 
   it("closes when the shell does not answer", async () => {

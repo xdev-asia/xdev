@@ -57,12 +57,14 @@ export async function guardClose(
   if (request.intent === "hide") return false;
   // "Quit and end terminals" was confirmed before the close began: asking again would ignore its answer.
   if (request.mode === "end-all") return true;
-  let go = false;
+  let go: boolean;
   try {
     go = await ask();
-  } finally {
-    if (!go) await api.shellQuitCancelled().catch(() => {});
+  } catch {
+    // The question broke: close and keep the quit mode (end-all must still end, restart still restart).
+    return true;
   }
+  if (!go) await api.shellQuitCancelled().catch(() => {});
   return go;
 }
 
