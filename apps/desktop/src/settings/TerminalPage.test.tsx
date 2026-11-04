@@ -140,3 +140,28 @@ it("a failed write shows an error and keeps the shown values", async () => {
   expect(p.field("save-failed")).toBeDefined();
   expect(p.sw("cursorBlink").props["aria-checked"]).toBe(true);
 });
+
+it("the service rows: a switch, the On quit choice and the ring size, each one put", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  expect(p.sw("service").props["aria-checked"]).toBe(true);
+  expect(p.field("onQuit").props.value).toBe("keep");
+  expect(p.field("ringMb").props.value).toBe("2");
+  p.sw("service").props.onClick();
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, service: false });
+  p.field("onQuit").props.onChange({ target: { value: "ask" } });
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, service: false, onQuit: "ask" });
+  p.field("ringMb").props.onChange({ target: { value: "99" } });
+  p.field("ringMb").props.onBlur();
+  await tick();
+  expect(p.field("ringMb").props.value).toBe("16");
+  expect(put).toHaveBeenCalledTimes(3);
+});
+
+it("the service switch says it takes effect at the next start", async () => {
+  const p = await page();
+  const text = JSON.stringify(nodes(p.all().find((n) => n.props["data-switch"] === "service")).map((n) => n.props.children));
+  expect(text).toContain(en("settings.terminal.service.hint"));
+});

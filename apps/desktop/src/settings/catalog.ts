@@ -48,6 +48,10 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("terminal.copyOnSelect", "settings.terminal.copyOnSelect", ["clipboard", "copy", "select", "sao chép", "sao chep"]),
   e("terminal.rightClickPaste", "settings.terminal.rightClickPaste", ["clipboard", "paste", "mouse", "dán", "dan"]),
   e("terminal.osc52Clipboard", "settings.terminal.osc52Clipboard", ["clipboard", "osc52", "osc 52"], "settings.terminal.osc52ClipboardHint"),
+  e("terminal.service", "settings.terminal.service.label", ["service", "daemon", "background", "keep running", "quit", "dịch vụ", "dich vu", "chạy nền", "chay nen"], "settings.terminal.service.hint"),
+  e("terminal.onQuit", "settings.terminal.service.onQuit", ["quit", "close", "exit", "end", "ask", "thoát", "thoat", "đóng", "dong"]),
+  e("terminal.ringMb", "settings.terminal.service.ringMb", ["ring", "buffer", "output", "memory", "bộ nhớ", "bo nho"], "settings.terminal.service.ringMbHint"),
+  e("terminal.running", "settings.terminal.service.running", ["running", "service", "end", "restart", "đang chạy", "dang chay", "khởi động lại", "khoi dong lai"]),
   e("terminal.restore", "layout.setting", ["restore", "layout", "session", "khôi phục", "khoi phuc", "bố cục", "bo cuc"], "layout.setting.hint"),
   e("terminal.reset", "settings.terminal.reset", ["defaults", "reset", "đặt lại", "dat lai"]),
   // Editor
