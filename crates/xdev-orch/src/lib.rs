@@ -22,7 +22,7 @@ pub use gates::AskAnswer;
 pub use mail::{CheckOpts, Identity, InboxRow, NewMessage, SendReceipt, Wake};
 pub use model::*;
 pub use preamble::{PreambleInput, SPEC_BUDGET, build as build_preamble};
-pub use receipts::{RECEIPT_ROWS, RECEIPT_TTL_MS, Receipt, ResetCounts, ResetScope};
+pub use receipts::{RECEIPT_ROWS, RECEIPT_TTL_MS, Receipt, Reserve, ResetCounts, ResetScope};
 pub use runs::RunDetail;
 pub use skills::{
     Action, How, INSTALL_COMMAND, InstallOpts, InstallReport, SKILL_NAME, SkillAgent, SkillEnv,

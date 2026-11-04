@@ -22,6 +22,20 @@ pub struct Receipt {
     pub created_ms: i64,
 }
 
+/// What [`Store::receipt_reserve`] found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reserve {
+    /// The id is this caller's: run the request, then put or release it.
+    Mine,
+    /// Another call with this id is still running.
+    Running,
+    /// The id was answered before.
+    Answered(Receipt),
+}
+
+/// The answer of a reserved id that is not answered yet.
+const RESERVED: &str = "";
+
 /// What `reset` forgets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResetScope {
@@ -47,7 +61,8 @@ impl Store {
         Ok(self
             .conn
             .query_row(
-                "SELECT request_id, method, answer, created_ms FROM receipts WHERE request_id = ?1",
+                "SELECT request_id, method, answer, created_ms FROM receipts
+                 WHERE request_id = ?1 AND answer <> ''",
                 [request_id],
                 |r| {
                     Ok(Receipt {
@@ -61,6 +76,44 @@ impl Store {
             .optional()?)
     }
 
+    /// Claims a request id before the request runs, so two calls with one id
+    /// never both run: the first gets [`Reserve::Mine`], the rest see it
+    /// running or, once it is put, its answer.
+    pub fn receipt_reserve(
+        &self,
+        request_id: &str,
+        method: &str,
+        now_ms: i64,
+    ) -> Result<Reserve, OrchError> {
+        let n = self.conn.execute(
+            "INSERT OR IGNORE INTO receipts (request_id, method, answer, created_ms) VALUES (?1, ?2, ?3, ?4)",
+            params![request_id, method, RESERVED, now_ms],
+        )?;
+        if n > 0 {
+            return Ok(Reserve::Mine);
+        }
+        Ok(match self.receipt_get(request_id)? {
+            Some(r) => Reserve::Answered(r),
+            None => Reserve::Running,
+        })
+    }
+
+    /// Gives back a reserved id whose request failed, so a retry runs it.
+    pub fn receipt_release(&self, request_id: &str) -> Result<(), OrchError> {
+        self.conn.execute(
+            "DELETE FROM receipts WHERE request_id = ?1 AND answer = ''",
+            [request_id],
+        )?;
+        Ok(())
+    }
+
+    /// Drops every reservation: no request outlives the app that ran it.
+    pub fn receipts_clear_reserved(&self) -> Result<(), OrchError> {
+        self.conn
+            .execute("DELETE FROM receipts WHERE answer = ''", [])?;
+        Ok(())
+    }
+
     /// Keeps an answer (the first one for an id wins), then prunes receipts
     /// older than 30 days and all but the newest 10 000.
     pub fn receipt_put(
@@ -71,7 +124,10 @@ impl Store {
         now_ms: i64,
     ) -> Result<(), OrchError> {
         self.conn.execute(
-            "INSERT OR IGNORE INTO receipts (request_id, method, answer, created_ms) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO receipts (request_id, method, answer, created_ms) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (request_id) DO UPDATE
+             SET method = excluded.method, answer = excluded.answer, created_ms = excluded.created_ms
+             WHERE receipts.answer = ''",
             params![request_id, method, answer, now_ms],
         )?;
         self.conn.execute(
@@ -185,6 +241,30 @@ mod tests {
         assert_eq!(n, RECEIPT_ROWS);
         assert_eq!(s.receipt_get("r0").unwrap(), None);
         assert!(s.receipt_get("extra").unwrap().is_some());
+    }
+
+    #[test]
+    fn a_request_id_is_reserved_once_until_it_is_answered_or_released() {
+        let s = Store::open_in_memory().unwrap();
+        assert_eq!(s.receipt_reserve("r1", "m", 1).unwrap(), Reserve::Mine);
+        assert_eq!(s.receipt_reserve("r1", "m", 2).unwrap(), Reserve::Running);
+        assert_eq!(
+            s.receipt_get("r1").unwrap(),
+            None,
+            "a reservation is no answer"
+        );
+        s.receipt_put("r1", "m", "{\"a\":1}", 3).unwrap();
+        match s.receipt_reserve("r1", "m", 4).unwrap() {
+            Reserve::Answered(r) => assert_eq!(r.answer, "{\"a\":1}"),
+            other => panic!("{other:?}"),
+        }
+        // A request that failed gives its id back.
+        assert_eq!(s.receipt_reserve("r2", "m", 5).unwrap(), Reserve::Mine);
+        s.receipt_release("r2").unwrap();
+        assert_eq!(s.receipt_reserve("r2", "m", 6).unwrap(), Reserve::Mine);
+        // Reservations do not outlive the app.
+        s.receipts_clear_reserved().unwrap();
+        assert_eq!(s.receipt_reserve("r2", "m", 7).unwrap(), Reserve::Mine);
     }
 
     #[test]

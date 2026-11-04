@@ -521,10 +521,29 @@ pub fn handle(
     let Some(id) = text_param(req, "retryRequest").filter(|_| !READ_ONLY.contains(&verb)) else {
         return handle_verb(ctx, req, caller, gone);
     };
-    if let Some(r) = ctx.orch.with_store(ctx.data, |s| s.receipt_get(&id))? {
-        return serde_json::from_str(&r.answer).map_err(|e| AppError::new("store", e.to_string()));
+    let reserved = ctx.orch.with_store(ctx.data, |s| {
+        s.receipt_reserve(&id, &req.method, ctx.now_ms)
+    })?;
+    match reserved {
+        xdev_orch::Reserve::Mine => {}
+        xdev_orch::Reserve::Answered(r) => {
+            return serde_json::from_str(&r.answer)
+                .map_err(|e| AppError::new("store", e.to_string()));
+        }
+        xdev_orch::Reserve::Running => {
+            return Err(AppError::new(
+                "request_running",
+                format!("request {id} is still running; retry it once it has answered"),
+            ));
+        }
     }
-    let answer = handle_verb(ctx, req, caller, gone)?;
+    let answer = match handle_verb(ctx, req, caller, gone) {
+        Ok(a) => a,
+        Err(e) => {
+            let _ = ctx.orch.with_store(ctx.data, |s| s.receipt_release(&id));
+            return Err(e);
+        }
+    };
     let text = answer.to_string();
     ctx.orch.with_store(ctx.data, |s| {
         s.receipt_put(&id, &req.method, &text, ctx.now_ms)
@@ -2087,6 +2106,38 @@ line", "title": "A"}),
                 .code,
             "not_found"
         );
+    }
+
+    #[test]
+    fn a_request_still_running_is_not_run_a_second_time() {
+        let f = crate::cli_verbs::tests::fixture();
+        // Another call with this id is in flight.
+        f.orch
+            .with_store(&f.data, |s| s.receipt_reserve("req-2", "m", 1))
+            .unwrap();
+        let again = f.call(
+            Some("p-lead"),
+            "orchestration.run-create",
+            json!({"objective": "o", "retryRequest": "req-2"}),
+        );
+        assert_eq!(again.unwrap_err().code, "request_running");
+        let runs = f
+            .call(Some("p-lead"), "orchestration.run-list", json!({}))
+            .unwrap();
+        assert_eq!(runs, json!([]));
+        // A request that fails gives its id back for the retry.
+        let bad = f.call(
+            Some("p-lead"),
+            "orchestration.run-use",
+            json!({"id": "nope", "retryRequest": "req-3"}),
+        );
+        assert!(bad.is_err());
+        let r = f.call(
+            Some("p-lead"),
+            "orchestration.run-use",
+            json!({"id": "nope", "retryRequest": "req-3"}),
+        );
+        assert_ne!(r.unwrap_err().code, "request_running");
     }
 
     #[test]
