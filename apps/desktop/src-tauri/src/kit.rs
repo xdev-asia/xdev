@@ -8,7 +8,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 use xdev_kit::{
     Agent, Home, KitError, MemorySet, Roots, Skill, UsageIndex, UsageQuery, UsageSummary,
@@ -47,6 +47,34 @@ impl From<KitError> for CmdError {
             detail: Some(e.to_string()),
         }
     }
+}
+
+/// Whose usage the Stats page counts: the sessions under the registry's repos
+/// and worktrees, or everything the logs hold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+// Used by `kit_usage_report` (Lane B, task B3).
+#[allow(dead_code)]
+pub enum UsageScope {
+    Xdev,
+    All,
+}
+
+/// The arguments of `kit_usage_report`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub struct UsageReportArgs {
+    /// `None` is All time.
+    pub since_day: Option<String>,
+    pub until_day: String,
+    /// `None` is the overview of both agents.
+    pub agent: Option<Agent>,
+    pub scope: UsageScope,
+    pub refresh: bool,
+    pub utc_offset_minutes: i32,
 }
 
 /// What a file holds and the stamp to give back when saving it.
