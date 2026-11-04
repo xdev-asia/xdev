@@ -133,6 +133,7 @@
   "error.not_found": "Không tìm thấy tệp hoặc thư mục.",
   "error.outside_vault": "Đường dẫn này nằm ngoài thư mục đang mở.",
   "error.no_vault": "Chưa mở thư mục nào.",
+  "error.port_unknown": "Tiến trình đó không còn chạy trong worktree này.",
   "error.io": "Không đọc hoặc ghi được tệp.",
   "error.not_utf8": "Tệp này không phải văn bản UTF-8.",
   "error.too_large": "Tệp này lớn hơn 5 MB.",

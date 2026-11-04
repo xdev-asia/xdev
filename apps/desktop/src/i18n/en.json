@@ -133,6 +133,7 @@
   "error.not_found": "The file or folder was not found.",
   "error.outside_vault": "That path is outside the open folder.",
   "error.no_vault": "No folder is open.",
+  "error.port_unknown": "That process is no longer running in this worktree.",
   "error.io": "The file could not be read or written.",
   "error.not_utf8": "This file is not UTF-8 text.",
   "error.too_large": "This file is larger than 5 MB.",

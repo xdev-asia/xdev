@@ -372,6 +372,7 @@ export type ErrorCode =
   | "not_found"
   | "outside_vault"
   | "no_vault"
+  | "port_unknown"
   | "io"
   | "not_utf8"
   | "too_large"
@@ -1089,6 +1090,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "not_found",
   "outside_vault",
   "no_vault",
+  "port_unknown",
   "io",
   "not_utf8",
   "too_large",
