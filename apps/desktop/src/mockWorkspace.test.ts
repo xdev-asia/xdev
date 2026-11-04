@@ -378,6 +378,23 @@ describe("mock repo hooks", () => {
     expect(await api.worktreeArchiveRun(FIRST)).toEqual({ ran: false, code: null, output: "" });
   });
 
+  it("round-trips docsDir and lists the repo vault at that folder", async () => {
+    const api = createMockWorkspace();
+    expect((await api.workspaceList())[0].docsDir).toBe("docs");
+    const view = await api.repoUpdate("demo-xdev", { docsDir: "handbook\\en" });
+    expect(view.docsDir).toBe("handbook/en");
+    expect((await api.workspaceList())[0].docsDir).toBe("handbook/en");
+    const vault = (await api.vaultList()).find((v) => v.repoId === "demo-xdev")!;
+    expect(vault.path).toBe("/demo/xdev/handbook/en");
+    // An empty value goes back to the default.
+    expect((await api.repoUpdate("demo-xdev", { docsDir: "" })).docsDir).toBe("docs");
+    // Absolute paths, drives and `..` are refused and change nothing.
+    for (const bad of ["../x", "a/../b", "/x", "C:\\x", "C:/x"]) {
+      await expect(api.repoUpdate("demo-xdev", { docsDir: bad })).rejects.toMatchObject({ code: "bad_path" });
+    }
+    expect((await api.workspaceList())[0].docsDir).toBe("docs");
+  });
+
   it("runs setup in the mock terminal and reports its exit", async () => {
     const api = createMockApi({}, { workspace: seed });
     await expect(api.ptySpawn("s", FIRST, SETUP_PROFILE, null, 80, 24, () => {})).rejects.toMatchObject({ code: "hook_untrusted" });
