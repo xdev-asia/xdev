@@ -423,9 +423,7 @@ mod tests {
     #[test]
     fn discard_deletes_only_a_branch_the_flow_made() {
         let (_tmp, data, main) = fixture("r-d1");
-        let exists = |b: &str| {
-            !git(&main, &["branch", "--list", b]).trim().is_empty()
-        };
+        let exists = |b: &str| !git(&main, &["branch", "--list", b]).trim().is_empty();
         // Fetched by the flow: discarded.
         let fake = Fake::new(vec![(0, &pr(7, "feat/x", false), "")]);
         assert_eq!(branch_with(&fake, &data, "r-d1", 7).unwrap(), "feat/x");
