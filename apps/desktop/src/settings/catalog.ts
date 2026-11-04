@@ -40,6 +40,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("agents.defaultShell", "settings.agents.defaultShell", ["default", "shell", "mặc định", "mac dinh"]),
   e("agents.profiles", "settings.agents.profiles", ["claude", "codex", "gemini", "profile", "enable", "hồ sơ", "ho so"]),
   e("agents.shells", "settings.agents.shells", ["shell", "bash", "powershell", "zsh", "program", "args"]),
+  e("agents.accountSwitch", "settings.agents.accountSwitch.label", ["account", "switch", "restart", "keep", "ask", "running", "agent", "tài khoản", "tai khoan", "chuyển", "chuyen", "khởi động lại", "khoi dong lai", "giữ", "giu"], "settings.agents.accountSwitch.hint"),
   e("agents.statusHooks", "settings.agents.statusHooks.label", ["hooks", "status", "trạng thái", "trang thai"], "settings.agents.statusHooks.what"),
   // Notifications
   e("notifications.enabled", "settings.notifications.enabled", ["notify", "alert", "master", "thông báo", "thong bao"], "settings.notifications.enabledHint"),
