@@ -1,6 +1,6 @@
 import type { ITerminalOptions } from "@xterm/xterm";
 import type { TerminalSettings } from "@/api";
-import { terminalTheme } from "./terminalThemes";
+import { terminalTheme, type TerminalScheme } from "./terminalThemes";
 
 type LiveOptions = Required<
   Pick<
@@ -22,12 +22,13 @@ type LiveOptions = Required<
 
 /**
  * The xterm options a `TerminalSettings` sets. An empty family falls back to the `--x-font-mono`
- * token; `token` reads a CSS custom property for the `app` theme.
+ * token; `token` reads a CSS custom property for the `app` theme; `custom` is the imported schemes.
  */
 export function xtermOptions(
   s: TerminalSettings,
   mono: string | undefined,
   token: (name: string) => string | undefined,
+  custom: readonly TerminalScheme[] = [],
 ): LiveOptions {
   return {
     fontFamily: s.fontFamily.trim() || mono || "monospace",
@@ -37,7 +38,7 @@ export function xtermOptions(
     cursorStyle: s.cursorStyle,
     cursorBlink: s.cursorBlink,
     scrollback: s.scrollback,
-    theme: terminalTheme(s.theme, token),
+    theme: terminalTheme(s.theme, token, custom),
     wordSeparator: s.wordSeparators,
     scrollSensitivity: s.scrollSensitivity,
     fastScrollSensitivity: s.fastScrollSensitivity,

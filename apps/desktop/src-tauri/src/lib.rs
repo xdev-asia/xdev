@@ -29,6 +29,7 @@ mod ship;
 mod squads;
 mod status;
 mod tasks;
+mod terminal_themes;
 mod updater;
 mod workspace;
 
@@ -194,6 +195,10 @@ pub fn run() {
             commands::export_plan,
             commands::export_write,
             accounts::accounts_list,
+            terminal_themes::terminal_themes_list,
+            terminal_themes::terminal_theme_preview,
+            terminal_themes::terminal_theme_import,
+            terminal_themes::terminal_theme_remove,
             accounts::accounts_quota,
             accounts::account_add,
             accounts::account_login,
