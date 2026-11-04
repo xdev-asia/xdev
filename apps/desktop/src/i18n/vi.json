@@ -1005,7 +1005,7 @@
   "workspace.footer.waiting": "{count} đang chờ bạn",
   "workspace.footer.waiting.one": "{count} đang chờ bạn",
   "workspace.footer.usage": "Mức dùng tài khoản",
-  "workspace.footer.meterTitle": "{name}: đã dùng {percent}% của khung {window}",
+  "workspace.footer.meterTitle": "{name}: {state} {percent}% của khung {window}",
   "workspace.footer.meterUnknown": "{name}: chưa rõ mức dùng",
   "workspace.footer.window.five_hour": "5 giờ",
   "workspace.footer.window.seven_day": "7 ngày",
@@ -1925,5 +1925,7 @@
   "settings.usage.logsGroup": "Log cục bộ",
   "settings.usage.scan.claude": "Đọc log Claude",
   "settings.usage.scan.codex": "Đọc log Codex",
-  "settings.usage.scanHint": "Thống kê đọc log phiên trên máy này. Tắt cho đến khi bạn bật."
+  "settings.usage.scanHint": "Thống kê đọc log phiên trên máy này. Tắt cho đến khi bạn bật.",
+  "usage.stats.used": "đã dùng",
+  "usage.stats.left": "còn lại"
 }

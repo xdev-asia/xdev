@@ -1188,9 +1188,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (next === "docs") setDocsMounted(true);
   }
 
+  // Usage details & history live on the Stats & Usage settings page; the Kit app keeps its own tab.
   function openUsage(): void {
-    setKitOpen((k) => ({ tab: "usage", seq: (k?.seq ?? 0) + 1 }));
-    show("docs");
+    openSettings("usage");
   }
 
   function openAccounts(): void {
