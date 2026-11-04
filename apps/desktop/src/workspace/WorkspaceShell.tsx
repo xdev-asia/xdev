@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type OpenInApp, type OpenTarget, type HookDetail, type HookKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
 import { DocsApp } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
@@ -47,7 +47,9 @@ import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { sendCheckFix, sendFix } from "./fixAgent";
 import { sendTarget } from "./sendTarget";
 import { SetupCard, type SetupCardState } from "./SetupCard";
-import { decideSetup } from "./setupFlow";
+import { openDefaultTabs } from "./defaultTabs";
+import { failedLinks } from "./linkReport";
+import { decideSetup, hasPending, pendingLists, type PendingLists } from "./setupFlow";
 import { SetupGate } from "./setupGate";
 import { TrustDialog } from "./TrustDialog";
 import { createNotifier, type Notifier } from "./notifier";
@@ -96,7 +98,7 @@ type PanelTab = "files" | "search" | "changes" | "checks" | "issues";
 type Creating = { repoId: string; name?: string; agents: AgentChoice[]; defaultAgent: string | null };
 type Editing = { worktree: WorktreeView; busy: boolean; error?: ApiError["code"] };
 type SetupCardAt = { kind: "detected"; command: string; repoId: string } | { kind: "ask"; repoId: string };
-type TrustAsk = { path: string; repoId: string; kind: HookKind; text: string; hash: string; changed: boolean; busy: boolean; error?: ApiError["code"] };
+type TrustAsk = { path: string; repoId: string; kind: ScriptKind | "lists"; text: string; hash: string; lists: PendingLists; changed: boolean; busy: boolean; error?: ApiError["code"] };
 type BulkState = { mode: "delete" | "archive"; worktrees: WorktreeView[]; dirty: Record<string, boolean>; busy: boolean; result?: BulkResult };
 type Review = { repoId: string | null; busy: boolean; error?: ApiError["code"] };
 type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"]; archiving?: boolean; failed?: { code: number | null; output: string };
@@ -151,11 +153,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [sessionsAsk, setSessionsAsk] = useState<{ seq: number; focus: boolean; reveal: { key: string; seq: number } | null }>({ seq: 0, focus: false, reveal: null });
   const [creating, setCreating] = useState<Creating | null>(null);
   // Creates run after the dialog has closed; what a finished one does is read from this render.
-  const afterCreate = useRef<{ api: Api; created(wt: WorktreeView, args: CreateArgs): void; reload(): void }>({ api, created() {}, reload() {} });
+  const afterCreate = useRef<{ api: Api; created(wt: WorktreeView, args: CreateArgs): void; reload(): void; linked(shared: Linked[]): void }>({ api, created() {}, reload() {}, linked() {} });
   const [pending] = useState(
     () =>
       new PendingCreates({
-        create: (repoId, name, from) => afterCreate.current.api.worktreeCreate(repoId, name, from),
+        create: (repoId, name, from) => afterCreate.current.api.worktreeCreate(repoId, name, from).then((made) => {
+          afterCreate.current.linked(made.shared);
+          return made.worktree;
+        }),
         // Cancel was the go-ahead; a fresh worktree is clean, so its branch goes too.
         remove: (path, force) => afterCreate.current.api.worktreeRemove(path, force, true).finally(() => afterCreate.current.reload()),
         onCreated: (wt, args) => afterCreate.current.created(wt, args),
@@ -900,7 +905,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     await openDefaultAgent(wt.path, extra ? extra.agent : undefined);
     select(wt);
   }
-  afterCreate.current = { api, created: (wt, args) => void created(wt, args), reload: () => void load() };
+  afterCreate.current = { api, created: (wt, args) => void created(wt, args), reload: () => void load(), linked: reportLinks };
+
+  // Shared paths that did not link are said once, with the reason; the worktree is made all the same.
+  function reportLinks(shared: Linked[]): void {
+    const failed = failedLinks(shared);
+    if (failed.length > 0) pushToast({ text: t("repoFile.linkFailed", { paths: failed.join("\n") }), ttlMs: 0 });
+  }
 
   // The worktree is made; what the dialog added goes in one details call, and a new default agent is kept.
   async function applyCreateExtra(path: string, extra: CreateExtra): Promise<void> {
@@ -951,7 +962,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   // What a new worktree does about setup. Skip never opens the setup tab; the card choices and a
   // trusted Run policy do.
-  async function setupAfterCreate(path: string, repoId: string): Promise<void> {
+  async function setupAfterCreate(path: string, repoId: string, listsAsked = false): Promise<void> {
     let hooks: RepoHooks;
     try {
       hooks = await api.repoHooks(path);
@@ -959,24 +970,50 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       return;
     }
     const todo = decideSetup(hooks);
+    // The setup prompt carries the lists; alone, they are asked first and the flow goes on after.
+    if (todo.step !== "trust" && !listsAsked && hasPending(pendingLists(hooks))) return askTrust(path, repoId, hooks, false, "lists");
     if (todo.step === "detected") setCards((c) => ({ ...c, [path]: { kind: "detected", command: todo.command, repoId } }));
     else if (todo.step === "ask") setCards((c) => ({ ...c, [path]: { kind: "ask", repoId } }));
     else if (todo.step === "run") startSetup(path, hooks);
     else if (todo.step === "trust") askTrust(path, repoId, hooks, false);
+    // No setup will run now: the default tabs open at once.
+    else void openTabsFor(path);
+  }
+
+  // The default tabs of the repo file, when the person trusted that list; a shell tab each. The hooks are read
+  // again so the trust check sees the file as it is now.
+  async function openTabsFor(path: string): Promise<void> {
+    try {
+      const hooks = await api.repoHooks(path);
+      if (hooks.tabsTrusted) await openTabsOf(path, hooks);
+    } catch {
+      // The worktree is made; it just opens without them.
+    }
+  }
+
+  async function openTabsOf(path: string, hooks: RepoHooks): Promise<void> {
+    if (!sessions || hooks.tabs.length === 0) return;
+    const pv = await api.profiles();
+    const shell = pv.shells.some((s) => s.id === pv.defaultShell) ? pv.defaultShell : pv.shells[0]?.id;
+    if (shell) openDefaultTabs(sessions, path, hooks.tabs, shell);
   }
 
   function startSetup(path: string, hooks: RepoHooks): void {
     if (!sessions) return;
     const tab = sessions.open(path, SETUP_PROFILE);
     sessions.rename(tab.id, t("setup.tab"));
-    gate.track(path, tab.id, hooks.waitForSetup);
+    // The default tabs wait for setup to exit 0; after a failure the card offers them.
+    const tabs = hooks.tabsTrusted && hooks.tabs.length > 0 ? () => void openTabsOf(path, hooks).catch(() => {}) : null;
+    gate.track(path, tab.id, hooks.waitForSetup, tabs);
     dropCard(path);
   }
 
-  function askTrust(path: string, repoId: string, hooks: RepoHooks, changed: boolean, kind: HookKind = "setup"): void {
-    const script = hooks[kind];
-    if (!script) return;
-    setTrusting({ path, repoId, kind, text: script.text, hash: script.hash, changed, busy: false });
+  function askTrust(path: string, repoId: string, hooks: RepoHooks, changed: boolean, kind: ScriptKind | "lists" = "setup"): void {
+    const script = kind === "lists" ? null : hooks[kind];
+    if (kind !== "lists" && !script) return;
+    // The archive prompt is about the script alone.
+    const lists = kind === "archive" ? pendingLists({ ...hooks, sharedHash: null, tabsHash: null }) : pendingLists(hooks);
+    setTrusting({ path, repoId, kind, text: script?.text ?? "", hash: script?.hash ?? "", lists, changed, busy: false });
   }
 
   // The archive script is not trusted: show its current text, then run the removal again on Trust.
@@ -1008,18 +1045,24 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     const ask = trusting;
     setTrusting({ ...ask, busy: true });
     try {
-      const hooks = await api.repoHookTrust(ask.path, ask.kind, ask.hash);
+      // The lists first, the script last, so the hooks that come back are the newest.
+      let hooks: RepoHooks | null = null;
+      if (ask.lists.sharedHash !== null) hooks = await api.repoHookTrust(ask.path, "shared", ask.lists.sharedHash);
+      if (ask.lists.tabsHash !== null) hooks = await api.repoHookTrust(ask.path, "tabs", ask.lists.tabsHash);
+      if (ask.kind !== "lists") hooks = await api.repoHookTrust(ask.path, ask.kind, ask.hash);
       setTrusting(null);
-      if (ask.kind === "setup") startSetup(ask.path, hooks);
-      else void remove();
+      if (ask.kind === "setup" && hooks) startSetup(ask.path, hooks);
+      else if (ask.kind === "archive") void remove();
+      else void setupAfterCreate(ask.path, ask.repoId, true);
     } catch (e) {
       const code = toApiError(e).code;
       if (code !== "hook_untrusted") return setTrusting({ ...ask, busy: false, error: code });
       try {
         const fresh = await api.repoHooks(ask.path);
-        const script = fresh[ask.kind];
-        if (!script) return setTrusting(null);
-        setTrusting({ ...ask, text: script.text, hash: script.hash, changed: true, busy: false, error: undefined });
+        const script = ask.kind === "lists" ? null : fresh[ask.kind];
+        const lists = ask.kind === "archive" ? ask.lists : pendingLists(fresh);
+        if (!script && !hasPending(lists)) return setTrusting(null);
+        setTrusting({ ...ask, text: script?.text ?? "", hash: script?.hash ?? "", lists, changed: true, busy: false, error: undefined });
       } catch (again) {
         setTrusting({ ...ask, busy: false, error: toApiError(again).code });
       }
@@ -1033,7 +1076,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The card of the worktree in front: a held agent beats the offers.
   function cardFor(path: string): SetupCardState | null {
     const held = gate.state(path);
-    if (held) return held.phase === "running" ? { kind: "waiting" } : { kind: "failed", code: held.code };
+    if (held) return held.phase === "running" ? { kind: "waiting" } : { kind: "failed", code: held.code, agent: held.agent, tabs: held.tabs };
     const card = cards[path];
     return card ? (card.kind === "ask" ? { kind: "ask" } : { kind: "detected", command: card.command }) : null;
   }
@@ -1397,15 +1440,22 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   dropCard(current.path);
                   openSettings("repos");
                 }}
-                onDismiss={() => dropCard(current.path)}
+                onDismiss={() => {
+                  dropCard(current.path);
+                  void openTabsFor(current.path);
+                }}
                 onRun={() => void runSetup(current.path, cards[current.path]?.repoId ?? "")}
-                onSkip={() => dropCard(current.path)}
+                onSkip={() => {
+                  dropCard(current.path);
+                  void openTabsFor(current.path);
+                }}
                 onAlways={() => {
                   const repoId = cards[current.path]?.repoId;
                   if (!repoId) return;
                   void api.repoUpdate(repoId, { setupPolicy: "run" }).then(() => runSetup(current.path, repoId), () => {});
                 }}
                 onStartNow={() => gate.startNow(current.path)}
+                onOpenTabs={() => gate.openTabs(current.path)}
                 onOpenSetup={() => {
                   const id = gate.setupTab(current.path);
                   if (id) setFront((f) => ({ worktree: current.path, id, seq: (f?.seq ?? 0) + 1 }));
@@ -1677,11 +1727,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           file="xdev.toml"
           kind={trusting.kind}
           text={trusting.text}
+          shared={trusting.lists.shared}
+          tabs={trusting.lists.tabs}
           changed={trusting.changed}
           busy={trusting.busy}
           error={trusting.error}
           onTrust={() => void confirmTrust()}
-          onCancel={() => setTrusting(null)}
+          onCancel={() => {
+            const ask = trusting;
+            setTrusting(null);
+            // Without the lists the flow goes on: setup cards, setup itself.
+            if (ask.kind === "lists") void setupAfterCreate(ask.path, ask.repoId, true);
+          }}
         />
       )}
       <Toasts />

@@ -9,6 +9,7 @@ mod ops;
 mod registry;
 mod repo_commands;
 mod search;
+mod shared;
 mod vaults;
 
 use std::io;
@@ -25,8 +26,8 @@ pub use groups::{
     group_remove, set_order, sidebar,
 };
 pub use hooks::{
-    FILE_NAME, HookKind, HookRun, HookScript, RepoHooks, TRUST_FILE, detect_setup, hook_env,
-    hooks_for, trust, trust_hook,
+    DefaultTab, FILE_NAME, HookKind, HookRun, HookScript, RepoHooks, SHARED_MAX, TABS_MAX,
+    TRUST_FILE, detect_setup, hook_env, hooks_for, shared_to_link, trust, trust_hook,
 };
 pub use kept::{
     ARCHIVE_DAYS, KeptBranch, KeptReason, KeptView, archive_worktree, kept_delete, kept_keep,
@@ -36,8 +37,9 @@ pub use names::{PrefixIssue, normalize_prefix, prefix_issue};
 pub use ops::{
     BranchPrefix, COMMENT_MAX, CreateOptions, DetailsPatch, DirEntry, DirListing, ITEM_URL_MAX,
     Removed, RepoPatch, RepoView, TITLE_MAX, WorktreeStat, WorktreeView, add_repo, adopt_worktree,
-    create_worktree, create_worktree_with, forget_repo, list, list_dir, path_key, refresh_base,
-    remove_worktree, set_details, set_pinned, stat, update_repo, valid_short_name,
+    create_worktree, create_worktree_linked, create_worktree_with, forget_repo, list, list_dir,
+    path_key, refresh_base, remove_worktree, set_details, set_pinned, stat, update_repo,
+    valid_short_name,
 };
 pub use registry::{
     MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, VaultEntry, WorkItem, WorkItemKind,
@@ -51,6 +53,7 @@ pub use search::{
     FileHits, FileList, HIT_MAX, LINE_CLIP, LIST_MAX, LineHit, PER_FILE_MAX, SearchEvent,
     SearchQuery, list_files, search_text,
 };
+pub use shared::{Linked, SharedError, link_shared, unlink_shared, validate as validate_shared};
 pub use vaults::{VaultKind, VaultView, add_vault, forget_vault, list_vaults, repo_docs_dir};
 
 /// The UI translates `code()`, never the message.

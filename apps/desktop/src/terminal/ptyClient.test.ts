@@ -21,6 +21,28 @@ describe("PtyClient", () => {
     client.dispose();
   });
 
+  it("typeWhenReady waits for the pty to start, then types; after the start it types at once", async () => {
+    const api = createMockApi({});
+    const write = vi.spyOn(api, "ptyWrite");
+    const client = new PtyClient(api, "t0");
+    client.typeWhenReady("first\r");
+    expect(write).not.toHaveBeenCalled();
+    await client.start("/demo", "shell", 80, 24, () => {});
+    expect(write).toHaveBeenCalledTimes(1);
+    client.typeWhenReady("second\r");
+    expect(write).toHaveBeenCalledTimes(2);
+    client.dispose();
+  });
+
+  it("typeWhenReady on a disposed client never types", async () => {
+    const api = createMockApi({});
+    const write = vi.spyOn(api, "ptyWrite");
+    const client = new PtyClient(api, "t0b");
+    client.typeWhenReady("x");
+    await client.dispose();
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it("acks once per 256 KB handed to the terminal", async () => {
     const api = createMockApi({});
     const ack = vi.spyOn(api, "ptyAck");

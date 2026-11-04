@@ -2,7 +2,7 @@ import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
 import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
-import type { Api, ApiError, Check, Commit, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, Check, Commit, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 type WorkspaceApi = Pick<
@@ -120,6 +120,13 @@ export type MockRepoFile = {
   // The valid `[[commands]]` entries, and one line per entry left out.
   commands?: FileCommand[];
   commandErrors?: string[];
+  // `[worktree] shared` and `[[tabs]]`, as the reader returns them, with the keys and entries it left out.
+  shared?: string[];
+  tabs?: DefaultTab[];
+  unknown?: string[];
+  problems?: string[];
+  // Shared paths that fail to link on create, with the error.
+  linkErrors?: Record<string, string>;
 };
 
 // What the mock terminal of `SETUP_PROFILE` prints and exits with.
@@ -432,6 +439,24 @@ export function createMockWorkspace(
     return { text, shared: sharedPart !== "", hash, trusted: hash === "" || trusted.has(`${repo.id}:${kind}:${hash}`) };
   }
 
+  // The shared paths and tabs; trusted by the hash of the list, like the scripts.
+  function listsOf(repo: RepoView, file: MockRepoFile | undefined) {
+    const shared = structuredClone(file?.shared ?? []);
+    const tabs = structuredClone(file?.tabs ?? []);
+    const sharedHash = shared.length > 0 ? mockHash(JSON.stringify(shared)) : null;
+    const tabsHash = tabs.length > 0 ? mockHash(JSON.stringify(tabs)) : null;
+    return {
+      shared,
+      sharedTrusted: sharedHash !== null && trusted.has(`${repo.id}:shared:${sharedHash}`),
+      tabs,
+      tabsTrusted: tabsHash !== null && trusted.has(`${repo.id}:tabs:${tabsHash}`),
+      sharedHash,
+      tabsHash,
+      unknown: [...(file?.unknown ?? [])],
+      problems: [...(file?.problems ?? [])],
+    };
+  }
+
   function hooksOf(path: string): { repo: RepoView; file: MockRepoFile | undefined; hooks: RepoHooks } | null {
     const found = findWorktree(path);
     if (!found) return null;
@@ -450,6 +475,7 @@ export function createMockWorkspace(
         policy: repo.setupPolicy,
         parseError: file?.parseError ?? null,
         detected: setup === null ? (file?.detected ?? null) : null,
+        ...listsOf(repo, parsed),
       },
     };
   }
@@ -539,6 +565,12 @@ export function createMockWorkspace(
     async repoHookTrust(path, kind, hash) {
       const found = hooksOf(path);
       if (!found) return reject("worktree_unknown", path);
+      if (kind === "shared" || kind === "tabs") {
+        const current = kind === "shared" ? found.hooks.sharedHash : found.hooks.tabsHash;
+        if (current === null || current !== hash) return reject("hook_untrusted", kind);
+        trusted.add(`${found.repo.id}:${kind}:${hash}`);
+        return hooksOf(path)!.hooks;
+      }
       const script = kind === "setup" ? found.hooks.setup : found.hooks.archive;
       if (!script || !script.shared || script.hash !== hash) return reject("hook_untrusted", kind);
       trusted.add(`${found.repo.id}:${kind}:${hash}`);
@@ -641,7 +673,15 @@ export function createMockWorkspace(
       const parent = repo.path.replace(/[\/][^\/]*$/, "");
       const wt = worktree(`${parent}/wt/${repo.shortName}-${folder}`, folder, branch, false);
       repo.worktrees.push(wt);
-      return structuredClone(wt);
+      // As `shared_to_link`: the primary checkout's list, and only when it is trusted.
+      const lists = listsOf(repo, repoFiles.get(repo.path));
+      const shared: Linked[] = lists.sharedTrusted
+        ? lists.shared.map((p) => {
+            const error = repoFiles.get(repo.path)?.linkErrors?.[p] ?? null;
+            return { path: p, ok: error === null, error };
+          })
+        : [];
+      return { worktree: structuredClone(wt), shared };
     },
     async worktreePin(path, pinned) {
       const found = findWorktree(path);

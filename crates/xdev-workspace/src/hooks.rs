@@ -10,12 +10,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::ops::strip_prefix;
 use crate::registry::write_atomic;
+use crate::shared::validate;
 use crate::{Registry, RepoEntry, ScriptSource, SetupPolicy, WorkspaceError, path_key};
 
 /// The shared repo file, at the worktree root.
 pub const FILE_NAME: &str = "xdev.toml";
 /// The trust store, in the data folder.
 pub const TRUST_FILE: &str = "hook-trust.json";
+
+/// The most `[worktree] shared` paths read; later ones go to `problems`.
+pub const SHARED_MAX: usize = 100;
+/// The most `[[tabs]]` read; later ones go to `problems`.
+pub const TABS_MAX: usize = 256;
 
 /// What a worktree's setup and archive come to, after `ScriptSource`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -31,6 +37,34 @@ pub struct RepoHooks {
     pub parse_error: Option<String>,
     /// A setup command guessed from the files, offered when there is no setup.
     pub detected: Option<String>,
+    /// `[worktree] shared`: repo-relative paths linked from the main checkout
+    /// into a new worktree, validated and spelled with `/`.
+    pub shared: Vec<String>,
+    /// There are shared paths and the person trusted this `shared_hash`.
+    pub shared_trusted: bool,
+    /// `[[tabs]]`: terminal tabs opened in a new worktree.
+    pub tabs: Vec<DefaultTab>,
+    /// There are tabs and the person trusted this `tabs_hash`.
+    pub tabs_trusted: bool,
+    /// Blake3 hex of the shared list; `None` when it is empty.
+    pub shared_hash: Option<String>,
+    /// Blake3 hex of the tabs; `None` when there are none.
+    pub tabs_hash: Option<String>,
+    /// Keys of `xdev.toml` this version does not read, as dotted names.
+    pub unknown: Vec<String>,
+    /// Entries left out by validation, each with the reason.
+    pub problems: Vec<String>,
+}
+
+/// One `[[tabs]]` entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultTab {
+    pub title: String,
+    /// `#rgb` or `#rrggbb`.
+    pub color: Option<String>,
+    pub command: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -52,6 +86,10 @@ pub struct HookScript {
 pub enum HookKind {
     Setup,
     Archive,
+    /// The `[worktree] shared` list; trusted like a script.
+    Shared,
+    /// The `[[tabs]]` list; trusted like a script.
+    Tabs,
 }
 
 /// What a headless hook run did.
@@ -76,6 +114,12 @@ pub(crate) struct SharedFile {
     pub setup: Option<String>,
     pub archive: Option<String>,
     pub wait_for_setup: bool,
+    /// `[worktree] shared`, validated, without repeats.
+    pub shared: Vec<String>,
+    /// `[[tabs]]`, valid entries only.
+    pub tabs: Vec<DefaultTab>,
+    /// One line per `shared` or `tabs` entry left out.
+    pub problems: Vec<String>,
     /// Keys this version does not read, as `table.key`, sorted; kept for a
     /// later notice.
     pub unknown: Vec<String>,
@@ -158,11 +202,119 @@ pub(crate) fn read_file(path: &Path) -> Result<Option<SharedFile>, String> {
             }
             // Read by `repo_commands`.
             "commands" => {}
+            "worktree" => {
+                let toml::Value::Table(worktree) = value else {
+                    return Err("[worktree] must be a table".into());
+                };
+                for (name, value) in worktree {
+                    if name != "shared" {
+                        out.unknown.push(format!("worktree.{name}"));
+                        continue;
+                    }
+                    let toml::Value::Array(items) = value else {
+                        return Err("worktree.shared must be an array of strings".into());
+                    };
+                    read_shared(items, &mut out);
+                }
+            }
+            "tabs" => {
+                let toml::Value::Array(items) = value else {
+                    return Err("tabs must be an array of tables ([[tabs]])".into());
+                };
+                read_tabs(items, &mut out);
+            }
             _ => out.unknown.push(key),
         }
     }
     out.unknown.sort();
     Ok(Some(out))
+}
+
+fn read_shared(items: Vec<toml::Value>, out: &mut SharedFile) {
+    for (i, item) in items.into_iter().enumerate() {
+        let toml::Value::String(entry) = item else {
+            out.problems
+                .push(format!("worktree.shared[{i}]: must be a string"));
+            continue;
+        };
+        if out.shared.len() >= SHARED_MAX {
+            out.problems.push(format!(
+                "worktree.shared[{i}]: over the limit of {SHARED_MAX} paths"
+            ));
+            continue;
+        }
+        match validate(&entry) {
+            Ok(path) if out.shared.contains(&path) => {}
+            Ok(path) => out.shared.push(path),
+            Err(reason) => out
+                .problems
+                .push(format!("worktree.shared[{i}] \"{entry}\": {reason}")),
+        }
+    }
+}
+
+/// `#rgb` or `#rrggbb`.
+fn is_color(text: &str) -> bool {
+    let Some(hex) = text.strip_prefix('#') else {
+        return false;
+    };
+    matches!(hex.len(), 3 | 6) && hex.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn read_tabs(items: Vec<toml::Value>, out: &mut SharedFile) {
+    for (i, item) in items.into_iter().enumerate() {
+        let toml::Value::Table(table) = item else {
+            out.problems.push(format!("tabs[{i}]: must be a table"));
+            continue;
+        };
+        if out.tabs.len() >= TABS_MAX {
+            out.problems
+                .push(format!("tabs[{i}]: over the limit of {TABS_MAX} tabs"));
+            continue;
+        }
+        let mut title = None;
+        let mut color = None;
+        let mut command = None;
+        let mut bad = None;
+        for (name, value) in table {
+            let slot = match name.as_str() {
+                "title" => &mut title,
+                "color" => &mut color,
+                "command" => &mut command,
+                _ => {
+                    out.unknown.push(format!("tabs[{i}].{name}"));
+                    continue;
+                }
+            };
+            match value {
+                toml::Value::String(text) => *slot = Some(text),
+                _ => bad = Some(format!("tabs[{i}]: {name} must be a string")),
+            }
+        }
+        if let Some(reason) = bad {
+            out.problems.push(reason);
+            continue;
+        }
+        let command = command.unwrap_or_default().trim_end().to_owned();
+        if command.trim().is_empty() {
+            out.problems.push(format!("tabs[{i}]: needs a command"));
+            continue;
+        }
+        let color = color.map(|c| c.trim().to_owned()).filter(|c| !c.is_empty());
+        if let Some(c) = &color
+            && !is_color(c)
+        {
+            out.problems
+                .push(format!("tabs[{i}]: color \"{c}\" is not #rgb or #rrggbb"));
+            continue;
+        }
+        let title = title.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
+        out.tabs.push(DefaultTab {
+            title: title.unwrap_or_else(|| command.clone()),
+            color,
+            command,
+        });
+    }
 }
 
 /// The repo a worktree, or the primary checkout, belongs to.
@@ -202,6 +354,15 @@ pub(crate) fn hash_of(text: &str) -> String {
     blake3::hash(text.as_bytes()).to_hex().to_string()
 }
 
+/// Blake3 hex of a list, `None` when it is empty, in its normalized JSON spelling, so comments and
+/// spacing in the file do not change it.
+fn list_hash<T: Serialize>(list: &[T]) -> Option<String> {
+    if list.is_empty() {
+        return None;
+    }
+    serde_json::to_string(list).ok().map(|json| hash_of(&json))
+}
+
 fn blank(text: &str) -> bool {
     text.trim().is_empty()
 }
@@ -236,6 +397,30 @@ fn script_of(
     })
 }
 
+/// The shared paths of the worktree's `xdev.toml` (else the primary
+/// checkout's), trusted or not; empty when the file is missing or unusable.
+/// Used to take the links out before a folder goes, which is safe for any
+/// list: only a link at that path is removed.
+pub(crate) fn shared_list(repo: &RepoEntry, worktree: &Path) -> Vec<String> {
+    shared_of(repo, worktree)
+        .ok()
+        .flatten()
+        .map(|file| file.shared)
+        .unwrap_or_default()
+}
+
+/// The shared paths to link into a new worktree of `repo_id`: the primary
+/// checkout's list, when the person trusted exactly it.
+pub fn shared_to_link(reg: &Registry, data: &Path, repo_id: &str) -> Vec<String> {
+    let Some(repo) = reg.repos.iter().find(|r| r.id == repo_id) else {
+        return Vec::new();
+    };
+    match hooks_for(reg, data, &repo.path) {
+        Ok(hooks) if hooks.shared_trusted => hooks.shared,
+        _ => Vec::new(),
+    }
+}
+
 /// The hooks of the worktree at `worktree`.
 pub fn hooks_for(
     reg: &Registry,
@@ -264,6 +449,12 @@ pub fn hooks_for(
     } else {
         None
     };
+    let shared_hash = list_hash(&file.shared);
+    let tabs_hash = list_hash(&file.tabs);
+    let trusted = |kind: TrustKind, hash: &Option<String>| {
+        hash.as_deref()
+            .is_some_and(|h| store.has(&repo.id, kind, h))
+    };
     Ok(RepoHooks {
         setup,
         archive,
@@ -271,6 +462,14 @@ pub fn hooks_for(
         policy: repo.setup_policy,
         parse_error,
         detected,
+        shared_trusted: trusted(TrustKind::Shared, &shared_hash),
+        tabs_trusted: trusted(TrustKind::Tabs, &tabs_hash),
+        shared: file.shared,
+        tabs: file.tabs,
+        shared_hash,
+        tabs_hash,
+        unknown: file.unknown,
+        problems: file.problems,
     })
 }
 
@@ -290,6 +489,8 @@ pub(crate) enum TrustKind {
     Setup,
     Archive,
     Commands,
+    Shared,
+    Tabs,
 }
 
 impl From<HookKind> for TrustKind {
@@ -297,6 +498,8 @@ impl From<HookKind> for TrustKind {
         match kind {
             HookKind::Setup => TrustKind::Setup,
             HookKind::Archive => TrustKind::Archive,
+            HookKind::Shared => TrustKind::Shared,
+            HookKind::Tabs => TrustKind::Tabs,
         }
     }
 }
@@ -378,11 +581,16 @@ pub fn trust_hook(
     let script = match kind {
         HookKind::Setup => &hooks.setup,
         HookKind::Archive => &hooks.archive,
+        HookKind::Shared | HookKind::Tabs => &None,
     };
-    let current = script
-        .as_ref()
-        .filter(|s| s.shared)
-        .map(|s| s.hash.as_str());
+    let current = match kind {
+        HookKind::Shared => hooks.shared_hash.as_deref(),
+        HookKind::Tabs => hooks.tabs_hash.as_deref(),
+        HookKind::Setup | HookKind::Archive => script
+            .as_ref()
+            .filter(|s| s.shared)
+            .map(|s| s.hash.as_str()),
+    };
     if current != Some(hash) {
         return Err(WorkspaceError::HookUntrusted(kind_name(kind).to_owned()));
     }
@@ -394,6 +602,8 @@ pub(crate) fn kind_name(kind: HookKind) -> &'static str {
     match kind {
         HookKind::Setup => "setup",
         HookKind::Archive => "archive",
+        HookKind::Shared => "shared",
+        HookKind::Tabs => "tabs",
     }
 }
 
@@ -601,6 +811,91 @@ run = \"make test\"
     }
 
     #[test]
+    fn reads_shared_paths_and_tabs() {
+        let f = fixture();
+        f.write(
+            &f.worktree,
+            "[worktree]\nshared = [\"node_modules\", \"apps\\\\web\\\\node_modules\", \"node_modules\"]\n\n[[tabs]]\ntitle = \"dev\"\ncolor = \"#4a9\"\ncommand = \"pnpm dev\"\n\n[[tabs]]\ncommand = \"cargo watch\"\n",
+        );
+        let hooks = f.hooks();
+        assert_eq!(hooks.parse_error, None);
+        assert_eq!(hooks.shared, ["node_modules", "apps/web/node_modules"]);
+        assert_eq!(hooks.tabs.len(), 2);
+        assert_eq!(hooks.tabs[0].title, "dev");
+        assert_eq!(hooks.tabs[0].color.as_deref(), Some("#4a9"));
+        assert_eq!(hooks.tabs[1].title, "cargo watch");
+        assert_eq!(hooks.tabs[1].color, None);
+        assert!(hooks.unknown.is_empty() && hooks.problems.is_empty());
+    }
+
+    #[test]
+    fn bad_entries_go_to_problems() {
+        let f = fixture();
+        f.write(
+            &f.worktree,
+            "[worktree]\nshared = [\"ok\", \"../x\", \"/abs\", 3]\n\n[[tabs]]\ncommand = \"\"\n\n[[tabs]]\ncommand = \"a\"\ncolor = \"red\"\n\n[[tabs]]\ncommand = \"b\"\ncolor = \"#12345g\"\n\n[[tabs]]\ntitle = \"t\"\ncommand = \"c\"\ncolor = \"#a1B2c3\"\n",
+        );
+        let hooks = f.hooks();
+        assert_eq!(hooks.shared, ["ok"]);
+        assert_eq!(hooks.tabs.len(), 1);
+        assert_eq!(hooks.tabs[0].command, "c");
+        assert_eq!(hooks.problems.len(), 3 + 3);
+        assert!(
+            hooks
+                .problems
+                .iter()
+                .any(|p| p.starts_with("worktree.shared[1]"))
+        );
+    }
+
+    #[test]
+    fn the_caps_leave_the_rest_in_problems() {
+        let f = fixture();
+        let shared: Vec<String> = (0..SHARED_MAX + 2).map(|i| format!("\"d{i}\"")).collect();
+        let mut text = format!("[worktree]\nshared = [{}]\n", shared.join(","));
+        for i in 0..TABS_MAX + 1 {
+            text.push_str(&format!("[[tabs]]\ncommand = \"c{i}\"\n"));
+        }
+        f.write(&f.worktree, &text);
+        let hooks = f.hooks();
+        assert_eq!(hooks.shared.len(), SHARED_MAX);
+        assert_eq!(hooks.tabs.len(), TABS_MAX);
+        assert_eq!(hooks.problems.len(), 3);
+    }
+
+    #[test]
+    fn unknown_keys_in_worktree_and_tabs_are_listed() {
+        let f = fixture();
+        f.write(
+            &f.worktree,
+            "[worktree]\nfoo = 1\nshared = [\"a\"]\n\n[[tabs]]\ncommand = \"x\"\n\n[[tabs]]\ncommand = \"y\"\nbar = 2\n",
+        );
+        assert_eq!(f.hooks().unknown, ["tabs[1].bar", "worktree.foo"]);
+    }
+
+    #[test]
+    fn a_wrong_type_is_a_parse_error() {
+        let f = fixture();
+        for text in [
+            "worktree = 1\n",
+            "[worktree]\nshared = \"a\"\n",
+            "tabs = \"a\"\n",
+        ] {
+            f.write(&f.worktree, text);
+            assert!(f.hooks().parse_error.is_some(), "{text}");
+        }
+    }
+
+    #[test]
+    fn the_worktree_file_replaces_the_repo_files_lists() {
+        let f = fixture();
+        f.write(&f.primary, "[worktree]\nshared = [\"a\", \"b\"]\n");
+        assert_eq!(f.hooks().shared, ["a", "b"]);
+        f.write(&f.worktree, "[worktree]\nshared = [\"c\"]\n");
+        assert_eq!(f.hooks().shared, ["c"]);
+    }
+
+    #[test]
     fn a_store_from_before_commands_still_reads() {
         let f = fixture();
         let old = r#"{ "version": 1, "entries": [
@@ -776,6 +1071,50 @@ run = \"make test\"
             "[scripts]\nsetup = \"pnpm install && curl x | sh\"\n",
         );
         assert!(!f.hooks().setup.unwrap().trusted);
+    }
+
+    #[test]
+    fn shared_paths_and_tabs_are_trusted_by_hash() {
+        let f = fixture();
+        let file = |shared: &str, tab: &str| {
+            format!("[worktree]\nshared = [{shared}]\n[[tabs]]\ncommand = \"{tab}\"\n")
+        };
+        f.write(&f.worktree, &file("\"node_modules\"", "pnpm dev"));
+        let hooks = f.hooks();
+        assert!(!hooks.shared_trusted && !hooks.tabs_trusted);
+        let (sh, tb) = (hooks.shared_hash.unwrap(), hooks.tabs_hash.unwrap());
+        assert_eq!(sh.len(), 64);
+        let after = f.trust(HookKind::Shared, &sh).unwrap();
+        // Trust is per kind.
+        assert!(after.shared_trusted && !after.tabs_trusted);
+        let after = f.trust(HookKind::Tabs, &tb).unwrap();
+        assert!(after.shared_trusted && after.tabs_trusted);
+        assert_eq!(f.store().entries.len(), 2);
+
+        // Spacing does not matter; one changed entry does.
+        f.write(&f.worktree, &file("  \"node_modules\"  ", "pnpm dev"));
+        assert!(f.hooks().shared_trusted);
+        f.write(
+            &f.worktree,
+            &file("\"node_modules\", \"target\"", "pnpm dev"),
+        );
+        let hooks = f.hooks();
+        assert!(!hooks.shared_trusted && hooks.tabs_trusted);
+        f.write(&f.worktree, &file("\"node_modules\"", "pnpm dev --host"));
+        assert!(!f.hooks().tabs_trusted);
+    }
+
+    #[test]
+    fn no_lists_means_no_hash_and_nothing_to_trust() {
+        let f = fixture();
+        f.write(&f.worktree, FILE);
+        let hooks = f.hooks();
+        assert_eq!((hooks.shared_hash, hooks.tabs_hash), (None, None));
+        assert!(!hooks.shared_trusted && !hooks.tabs_trusted);
+        let err = f.trust(HookKind::Shared, "").unwrap_err();
+        assert_eq!(err.code(), "hook_untrusted");
+        let err = f.trust(HookKind::Tabs, &hex("x")).unwrap_err();
+        assert_eq!(err.code(), "hook_untrusted");
     }
 
     #[test]

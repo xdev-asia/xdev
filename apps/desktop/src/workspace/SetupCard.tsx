@@ -10,7 +10,7 @@ export type SetupCardState =
   /** An agent launch waits for the setup tab to exit. */
   | { kind: "waiting" }
   /** The setup tab exited with a failure. */
-  | { kind: "failed"; code: number | null };
+  | { kind: "failed"; code: number | null; /** A waiting agent can start anyway. */ agent?: boolean; /** The default tabs wait for a go-ahead. */ tabs?: boolean };
 
 // A non-modal panel at the top of the worktree's terminal area. Bordered, with no coloured stripe.
 export function SetupCard(props: {
@@ -24,6 +24,8 @@ export function SetupCard(props: {
   /** Starts the waiting agent now; also "Start anyway" after a failure. */
   onStartNow(): void;
   onOpenSetup(): void;
+  /** Opens the default tabs that did not open because setup failed. */
+  onOpenTabs?(): void;
 }): JSX.Element {
   const { t } = useI18n();
   const { state } = props;
@@ -65,8 +67,9 @@ export function SetupCard(props: {
         <>
           <p role="alert">{state.code === null ? t("setup.card.failedNoCode") : t("setup.card.failed", { code: state.code })}</p>
           <div className="ws-setup-actions">
-            {button(t("setup.card.startAnyway"), props.onStartNow)}
+            {state.agent !== false && button(t("setup.card.startAnyway"), props.onStartNow)}
             {button(t("setup.card.openSetup"), props.onOpenSetup)}
+            {state.tabs === true && props.onOpenTabs && button(t("setup.card.openTabs"), props.onOpenTabs)}
           </div>
         </>
       )}
