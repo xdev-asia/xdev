@@ -29,3 +29,8 @@ Task 6: complete (cardModel, WorktreeList draws from prefs; compact CSS). i18n k
 ## Task 11: complete
 - files/conflictDecorations.ts (StateField, parsed on docChanged, accept bar via DOM widget, conflictChange edits the buffer only); added to CodeEditor through a Compartment so labels follow the language.
 - Deviation: no FileView test; CodeEditor props are unchanged. Decorations and accept edits are tested on EditorState (no jsdom).
+
+## Task 12: complete
+- Gap matrix: none in this worktree (only the generated CHANGELOG mentions the row ids), so nothing to update. [Unverified] it may live outside the repo.
+- Gate: pnpm -r typecheck ok; pnpm -r test: xdev-ui 154, desktop 2167 (235 files); desktop build ok; cargo fmt ok; clippy -D warnings ok; cargo test --workspace --no-fail-fast exit 0, no FAILED; export_bindings + packages/bindings diff clean; git status clean, submodule clean at cbb5774.
+- PR text must flag: R5 behaviour change. Staged was drawn before Changes; the default is now changes-first (Settings > Git can restore staged-first).
