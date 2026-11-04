@@ -46,7 +46,16 @@ export function Icon(props: { d: string; size?: number }): JSX.Element {
   );
 }
 
-export function ProblemNote(props: { problem: Problem }): JSX.Element {
+// What a draft says when the recipe's agent is the problem: a profile with no runner or gone, or
+// the policy stopping its run. The recipe is in Settings → Git.
+const RECIPE_CODES: ReadonlySet<string> = new Set(["unsupported_agent", "unknown_profile", "needs_approval", "denied"]);
+
+/** Whether the error comes from the agent a recipe names, so Settings → Git is where to look. */
+export function isRecipeProblem(code: string): boolean {
+  return RECIPE_CODES.has(code);
+}
+
+export function ProblemNote(props: { problem: Problem; onOpenSettings?(): void }): JSX.Element {
   const { t } = useI18n();
   const { code, detail } = props.problem;
   return (
@@ -58,6 +67,11 @@ export function ProblemNote(props: { problem: Problem }): JSX.Element {
         {code === "git" && detail && <pre className="commands">{detail}</pre>}
         {/* A denial carries the policy's own reason. */}
         {code === "denied" && detail && <span>{detail}</span>}
+        {props.onOpenSettings && isRecipeProblem(code) && (
+          <button type="button" className="ws-ship-link" data-open-settings="git" onClick={props.onOpenSettings}>
+            {t("recipes.openSettings")}
+          </button>
+        )}
       </div>
     </div>
   );

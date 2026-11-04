@@ -607,6 +607,83 @@ pub enum BranchPrefixMode {
     None,
 }
 
+/// Longest recipe template kept, in characters; a longer one is cut on save.
+pub const RECIPE_TEMPLATE_MAX: usize = 16 * 1024;
+/// Most extra CLI args a recipe keeps.
+pub const RECIPE_ARGS_MAX: usize = 32;
+/// The template that keeps the built-in prompt as it is.
+pub const RECIPE_DEFAULT_TEMPLATE: &str = "{basePrompt}";
+
+/// One agent action's prompt: who runs it and the text it is given.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct Recipe {
+    /// A profile id from profiles.json; `None` is the default agent.
+    pub agent: Option<String>,
+    /// Extra CLI args for drafts; the fix actions run in a terminal tab and
+    /// do not use them.
+    pub args: Vec<String>,
+    /// Text with `{variables}`; `{basePrompt}` is xDev's built-in prompt.
+    pub template: String,
+}
+
+impl Default for Recipe {
+    fn default() -> Recipe {
+        Recipe {
+            agent: None,
+            args: Vec::new(),
+            template: RECIPE_DEFAULT_TEMPLATE.to_owned(),
+        }
+    }
+}
+
+/// The agent actions of Source Control, each with its own recipe.
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct GitRecipes {
+    // Each recipe is lenient on its own: one with a wrong type costs only itself.
+    #[serde(deserialize_with = "lenient")]
+    pub commit_message: Recipe,
+    #[serde(deserialize_with = "lenient")]
+    pub pull_request: Recipe,
+    #[serde(deserialize_with = "lenient")]
+    pub fix_commit_failure: Recipe,
+    #[serde(deserialize_with = "lenient")]
+    pub fix_push_failure: Recipe,
+    #[serde(deserialize_with = "lenient")]
+    pub fix_checks: Recipe,
+}
+
+impl Recipe {
+    /// As stored: a template cut to `RECIPE_TEMPLATE_MAX` characters (a blank
+    /// one is the default), at most `RECIPE_ARGS_MAX` args, a blank agent
+    /// as none.
+    fn normalized(mut self) -> Recipe {
+        if self.template.trim().is_empty() {
+            self.template = RECIPE_DEFAULT_TEMPLATE.to_owned();
+        } else if let Some((end, _)) = self.template.char_indices().nth(RECIPE_TEMPLATE_MAX) {
+            self.template.truncate(end);
+        }
+        self.args.truncate(RECIPE_ARGS_MAX);
+        self.agent = self.agent.filter(|a| !a.trim().is_empty());
+        self
+    }
+}
+
+impl GitRecipes {
+    fn normalized(self) -> GitRecipes {
+        GitRecipes {
+            commit_message: self.commit_message.normalized(),
+            pull_request: self.pull_request.normalized(),
+            fix_commit_failure: self.fix_commit_failure.normalized(),
+            fix_push_failure: self.fix_push_failure.normalized(),
+            fix_checks: self.fix_checks.normalized(),
+        }
+    }
+}
+
 /// Settings → Git. Every field has a default, so a file from an older
 /// version, or one missing a field, still loads.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -632,6 +709,10 @@ pub struct GitSettings {
     pub pr_generate_on_open: bool,
     /// Open the pull request in the browser once it is created.
     pub pr_open_after_create: bool,
+    /// The prompts behind the agent actions. A part that does not parse
+    /// falls back to the defaults on its own.
+    #[serde(deserialize_with = "lenient")]
+    pub recipes: GitRecipes,
 }
 
 impl Default for GitSettings {
@@ -647,6 +728,7 @@ impl Default for GitSettings {
             pr_draft: false,
             pr_generate_on_open: false,
             pr_open_after_create: false,
+            recipes: GitRecipes::default(),
         }
     }
 }
@@ -655,6 +737,7 @@ impl GitSettings {
     /// As stored: the custom prefix normalized the way names use it.
     pub fn normalized(mut self) -> GitSettings {
         self.branch_prefix_custom = xdev_workspace::normalize_prefix(&self.branch_prefix_custom);
+        self.recipes = self.recipes.normalized();
         self
     }
 
@@ -788,6 +871,7 @@ mod tests {
                 pr_draft: true,
                 pr_generate_on_open: true,
                 pr_open_after_create: true,
+                recipes: GitRecipes::default(),
             },
             status: StatusSettings {
                 hooks: false,
@@ -825,6 +909,60 @@ mod tests {
         let old: GitSettings = serde_json::from_str(r#"{"branchPrefix":"none"}"#).unwrap();
         assert!(old.source_control_ai);
         assert_eq!(old.branch_prefix, BranchPrefixMode::None);
+    }
+
+    #[test]
+    fn a_file_without_recipes_gets_the_default_ones() {
+        let old: GitSettings = serde_json::from_str(r#"{"prDraft":true}"#).unwrap();
+        assert_eq!(old.recipes, GitRecipes::default());
+        assert_eq!(old.recipes.commit_message.template, "{basePrompt}");
+        assert_eq!(old.recipes.commit_message.agent, None);
+        // One recipe given, the others default.
+        let some: GitSettings =
+            serde_json::from_str(r#"{"recipes":{"fixChecks":{"agent":"codex"}}}"#).unwrap();
+        assert_eq!(some.recipes.fix_checks.agent.as_deref(), Some("codex"));
+        assert_eq!(some.recipes.fix_checks.template, "{basePrompt}");
+        assert_eq!(some.recipes.pull_request, Recipe::default());
+    }
+
+    #[test]
+    fn a_bad_recipe_falls_back_on_its_own() {
+        let raw = r#"{"recipes":{
+            "commitMessage":{"agent":7,"template":"mine"},
+            "pullRequest":{"template":"pr {branch}"},
+            "fixPushFailure":"nope"}}"#;
+        let git: GitSettings = serde_json::from_str(raw).unwrap();
+        assert_eq!(git.recipes.commit_message, Recipe::default());
+        assert_eq!(git.recipes.pull_request.template, "pr {branch}");
+        assert_eq!(git.recipes.fix_push_failure, Recipe::default());
+        // A wrong `recipes` value costs only the recipes.
+        let git: GitSettings = serde_json::from_str(r#"{"prDraft":true,"recipes":[1]}"#).unwrap();
+        assert!(git.pr_draft);
+        assert_eq!(git.recipes, GitRecipes::default());
+    }
+
+    #[test]
+    fn saving_cuts_a_long_template_and_many_args() {
+        let mut git = GitSettings::default();
+        git.recipes.commit_message.template = "é".repeat(RECIPE_TEMPLATE_MAX + 5);
+        git.recipes.pull_request.args = (0..RECIPE_ARGS_MAX + 3).map(|i| i.to_string()).collect();
+        git.recipes.fix_checks.template = "  \n".into();
+        git.recipes.fix_push_failure.agent = Some(" ".into());
+        let git = git.normalized();
+        assert_eq!(
+            git.recipes.commit_message.template.chars().count(),
+            RECIPE_TEMPLATE_MAX
+        );
+        assert_eq!(git.recipes.pull_request.args.len(), RECIPE_ARGS_MAX);
+        assert_eq!(git.recipes.fix_checks.template, "{basePrompt}");
+        assert_eq!(git.recipes.fix_push_failure.agent, None);
+        // A template within the cap is kept as typed.
+        let mut ok = GitSettings::default();
+        ok.recipes.commit_message.template = "Use conventional commits.\n{basePrompt}".into();
+        assert_eq!(
+            ok.clone().normalized().recipes.commit_message,
+            ok.recipes.commit_message
+        );
     }
 
     #[test]

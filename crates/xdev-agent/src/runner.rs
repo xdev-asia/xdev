@@ -28,6 +28,8 @@ pub struct RunRequest {
     pub tools: Vec<String>,
     /// The CLI's default when `None`.
     pub model: Option<String>,
+    /// Extra CLI args, put before the prompt; none for a task's runs.
+    pub args: Vec<String>,
     /// Set to kill the agent; the runner then returns `Stopped`.
     pub cancel: Cancel,
 }
@@ -149,6 +151,7 @@ impl Runner for ClaudeRunner {
         if let Some(model) = &req.model {
             cmd.args(["--model", model]);
         }
+        cmd.args(&req.args);
         // Last, because the option takes every value up to the next flag.
         if !req.tools.is_empty() {
             cmd.arg("--allowedTools").args(&req.tools);
@@ -216,12 +219,14 @@ impl Runner for CodexRunner {
                 cmd.args(["resume", "--json", "--skip-git-repo-check", "-c"])
                     .arg(format!("sandbox_mode={sandbox}"))
                     .args(model_args(req))
+                    .args(&req.args)
                     .arg("--")
                     .arg(id);
             }
             None => {
                 cmd.args(["--json", "--skip-git-repo-check", "-s", sandbox])
                     .args(model_args(req))
+                    .args(&req.args)
                     .arg("-C")
                     .arg(&req.worktree)
                     .arg("--");

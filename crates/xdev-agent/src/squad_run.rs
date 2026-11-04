@@ -384,6 +384,7 @@ impl<'a> Driver<'a> {
             resume,
             tools,
             model,
+            args: Vec::new(),
             cancel: self.cancel.clone(),
         });
         let record = self.task.runs.last_mut().expect("a run was pushed");

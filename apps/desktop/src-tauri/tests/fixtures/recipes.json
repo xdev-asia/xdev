@@ -1,0 +1,74 @@
+[
+  {
+    "name": "a known variable is replaced",
+    "template": "On {branch} now",
+    "vars": { "branch": "feat/x" },
+    "expected": "On feat/x now"
+  },
+  {
+    "name": "every occurrence is replaced",
+    "template": "{branch} and {branch}",
+    "vars": { "branch": "a" },
+    "expected": "a and a"
+  },
+  {
+    "name": "an unknown variable stays as written",
+    "template": "{branch} {nope}",
+    "vars": { "branch": "a" },
+    "expected": "a {nope}"
+  },
+  {
+    "name": "doubled braces are the braces themselves",
+    "template": "{{branch}} is {branch}",
+    "vars": { "branch": "a" },
+    "expected": "{branch} is a"
+  },
+  {
+    "name": "an escaped brace next to a variable",
+    "template": "{{{branch}}}",
+    "vars": { "branch": "a" },
+    "expected": "{a}"
+  },
+  {
+    "name": "no variables leaves the text alone, escapes aside",
+    "template": "plain {branch} {{x}}",
+    "vars": {},
+    "expected": "plain {branch} {x}"
+  },
+  {
+    "name": "a value that names a variable is not expanded again",
+    "template": "{basePrompt} / {branch}",
+    "vars": { "basePrompt": "work on {branch}", "branch": "main" },
+    "expected": "work on {branch} / main"
+  },
+  {
+    "name": "a value with doubled braces is kept as it is",
+    "template": "{patch}",
+    "vars": { "patch": "fn a() {{ }}" },
+    "expected": "fn a() {{ }}"
+  },
+  {
+    "name": "a lone brace stays",
+    "template": "a { b } c { d",
+    "vars": { "b": "x" },
+    "expected": "a { b } c { d"
+  },
+  {
+    "name": "a name with spaces or an empty name is not a variable",
+    "template": "{ branch } {} {branch }",
+    "vars": { "branch": "a" },
+    "expected": "{ branch } {} {branch }"
+  },
+  {
+    "name": "an empty value empties the variable",
+    "template": "issue: [{linkedIssue}]",
+    "vars": { "linkedIssue": "" },
+    "expected": "issue: []"
+  },
+  {
+    "name": "multi-line text and non-ASCII are kept",
+    "template": "Tóm tắt:\n{branch}\n\n{{done}}",
+    "vars": { "branch": "tính-năng" },
+    "expected": "Tóm tắt:\ntính-năng\n\n{done}"
+  }
+]

@@ -1,4 +1,7 @@
-import type { GitSettings } from "@/api";
+import type { GitSettings, Recipe } from "@/api";
+
+// `Recipe::default()`: the built-in prompt, the default agent.
+export const DEFAULT_RECIPE: Recipe = { agent: null, args: [], template: "{basePrompt}" };
 
 // `GitSettings::default()` in Rust; used until the stored settings load, or when they cannot.
 export const DEFAULT_GIT_SETTINGS: GitSettings = {
@@ -10,4 +13,11 @@ export const DEFAULT_GIT_SETTINGS: GitSettings = {
   prDraft: false,
   prGenerateOnOpen: false,
   prOpenAfterCreate: false,
+  recipes: {
+    commitMessage: { ...DEFAULT_RECIPE, args: [] },
+    pullRequest: { ...DEFAULT_RECIPE, args: [] },
+    fixCommitFailure: { ...DEFAULT_RECIPE, args: [] },
+    fixPushFailure: { ...DEFAULT_RECIPE, args: [] },
+    fixChecks: { ...DEFAULT_RECIPE, args: [] },
+  },
 };

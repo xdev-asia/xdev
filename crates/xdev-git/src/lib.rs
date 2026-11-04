@@ -21,7 +21,7 @@ pub use gh::{
     Check, CheckBucket, GhExec, GhOutput, ISSUE_BODY_MAX, ISSUE_LIMIT_MAX, Issue, IssueComment,
     IssueDetail, IssueQuery, IssueState, PrDraft, PrState, PrView, SystemGh, issue_list,
     issue_open_web, issue_view, parse_issue_ref, pr_checks, pr_create, pr_open_web, pr_view,
-    repo_name,
+    repo_name, run_failed_log,
 };
 pub use history::Commit;
 pub use remote::{BaseRange, BaseRefresh, Upstream};
