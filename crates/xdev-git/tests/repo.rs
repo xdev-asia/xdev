@@ -175,6 +175,7 @@ fn codes_are_stable() {
         (GitError::Identity, "git_identity"),
         (GitError::GhMissing, "gh_missing"),
         (GitError::GhAuth, "gh_auth"),
+        (GitError::GhAccountMissing, "gh_account_missing"),
         (GitError::NotGithub, "not_github"),
         (GitError::Gh(String::new()), "gh_failed"),
         (GitError::IssueNotFound, "issue_not_found"),
