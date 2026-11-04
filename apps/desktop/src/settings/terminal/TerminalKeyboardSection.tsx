@@ -34,7 +34,7 @@ export function TerminalKeyboardSection(props: TerminalSectionProps): JSX.Elemen
       <h4 className="settings-group">{t("settings.terminal.keyboard.group")}</h4>
       <SettingRow id="terminal.optionAsAlt" filter={filter}>
         <div className="ws-fields">
-          <div className="ws-field">
+          <div className="ws-field settings-option-modes">
             <span>{t("settings.terminal.keyboard.optionAsAlt")}</span>
             <Segmented
               label={t("settings.terminal.keyboard.optionAsAlt")}
