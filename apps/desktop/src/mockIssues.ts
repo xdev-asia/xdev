@@ -2,7 +2,7 @@ import type { Api, ApiError, Issue, IssueDetail, PrSummary, ProjectSummary } fro
 
 type IssuesApi = Pick<
   Api,
-  "issuesList" | "issueView" | "issueResolve" | "issueOpen" | "issueCreate" | "prsList" | "prGet" | "prOpen" | "prBranch" | "projectsList" | "projectOpen"
+  "issuesList" | "issueView" | "issueResolve" | "issueOpen" | "issueCreate" | "prsList" | "prGet" | "prOpen" | "prBranch" | "prBranchDiscard" | "projectsList" | "projectOpen"
 >;
 
 /** The repo the mock's issue URLs belong to. */
@@ -118,6 +118,7 @@ export function createMockIssues(): IssuesApi {
       if (!found) return reject("pr_not_found");
       return found.fork ? `pr-${number}` : found.head;
     },
+    async prBranchDiscard() {},
     async projectsList() {
       return structuredClone(PROJECTS);
     },

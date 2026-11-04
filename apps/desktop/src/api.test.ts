@@ -589,12 +589,12 @@ it("routes pull request, project, issue create and create request calls with the
     const { invoke } = await import("@tauri-apps/api/core");
     const query = { state: "merged" as const, mine: true, needsReview: false, search: null, limit: 20 };
     const draft = { title: "T", body: "B" };
-    await api.prsList("r", query); await api.prGet("r", 7); await api.prOpen("r", 7); await api.prBranch("r", 7);
+    await api.prsList("r", query); await api.prGet("r", 7); await api.prOpen("r", 7); await api.prBranch("r", 7); await api.prBranchDiscard("r", "pr-7");
     await api.projectsList("r"); await api.projectOpen("r", 2); await api.issueCreate("r", draft);
     await api.worktreeCreate("r", "n", null); await api.worktreeCreate("r", "n", "main", { existing: "b", sparse: ["src"] });
     expect(vi.mocked(invoke).mock.calls).toEqual([
       ["prs_list", { repoId: "r", query }], ["pr_get", { repoId: "r", number: 7 }], ["pr_open", { repoId: "r", number: 7 }],
-      ["pr_branch", { repoId: "r", number: 7 }], ["projects_list", { repoId: "r" }], ["project_open", { repoId: "r", number: 2 }],
+      ["pr_branch", { repoId: "r", number: 7 }], ["pr_branch_discard", { repoId: "r", branch: "pr-7" }], ["projects_list", { repoId: "r" }], ["project_open", { repoId: "r", number: 2 }],
       ["issue_create", { repoId: "r", draft }],
       ["worktree_create", { repoId: "r", name: "n", from: null, request: null }],
       ["worktree_create", { repoId: "r", name: "n", from: "main", request: { existing: "b", sparse: ["src"] } }],

@@ -1,7 +1,9 @@
 //! Pull requests and Projects of a registered repo, read through `gh` in its
 //! main checkout, and the local branch a pull request is started on.
 
+use std::collections::HashSet;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
 use tauri::State;
 use xdev_git::{
@@ -74,6 +76,39 @@ fn project_open_with(
     Ok(gh_project_open(gh, &cwd, &owner, number)?)
 }
 
+/// `(repo id, branch)` of the branches `branch_with` made by fetching; only these may be
+/// discarded again, so a branch the user already had is never deleted.
+fn made() -> &'static Mutex<HashSet<(String, String)>> {
+    static MADE: OnceLock<Mutex<HashSet<(String, String)>>> = OnceLock::new();
+    MADE.get_or_init(Mutex::default)
+}
+
+fn made_insert(repo_id: &str, branch: &str) {
+    made()
+        .lock()
+        .unwrap()
+        .insert((repo_id.to_owned(), branch.to_owned()));
+}
+
+/// Deletes `branch` when `branch_with` made it and no worktree has it; says whether it did.
+/// A branch this flow did not make, or one a worktree now uses, is left alone.
+fn discard_with(data: &Path, repo_id: &str, branch: &str) -> Result<bool, CmdError> {
+    let key = (repo_id.to_owned(), branch.to_owned());
+    if !made().lock().unwrap().remove(&key) {
+        return Ok(false);
+    }
+    let repo = Repo::discover(&main_path(data, repo_id)?)?;
+    if repo
+        .list_worktrees()?
+        .iter()
+        .any(|w| w.branch.as_deref() == Some(branch))
+    {
+        return Ok(false);
+    }
+    repo.delete_branch(branch)?;
+    Ok(true)
+}
+
 /// The local branch to start pull request `number` on, fetched when needed:
 /// - not a fork, `head` exists locally: `head`, nothing fetched;
 /// - not a fork, `head` free: fetched into `head`;
@@ -102,6 +137,7 @@ fn branch_with(
         }
         if !repo.branch_exists(&pr.head)? {
             repo.fetch_pull(number, &pr.head)?;
+            made_insert(repo_id, &pr.head);
         }
         return Ok(pr.head);
     }
@@ -113,6 +149,7 @@ fn branch_with(
         };
         if !repo.branch_exists(&branch)? {
             repo.fetch_pull(number, &branch)?;
+            made_insert(repo_id, &branch);
             return Ok(branch);
         }
     }
@@ -168,6 +205,18 @@ pub fn pr_branch(
     run_gh(&SystemGh, account, |gh| {
         branch_with(gh, data, &repo_id, number)
     })
+}
+
+/// Takes back the branch `pr_branch` fetched when the worktree on it was never made. Only a
+/// branch `pr_branch` made is deleted, and never one a worktree has.
+#[tauri::command(async)]
+pub fn pr_branch_discard(
+    state: State<'_, AppState>,
+    repo_id: String,
+    branch: String,
+) -> Result<(), CmdError> {
+    let data = data_dir(&state)?;
+    discard_with(data, &repo_id, &branch).map(drop)
 }
 
 #[tauri::command(async)]
@@ -369,6 +418,47 @@ mod tests {
             git(&main, &["log", "-1", "--format=%s", "pr-7-2"]).trim(),
             "pr work"
         );
+    }
+
+    #[test]
+    fn discard_deletes_only_a_branch_the_flow_made() {
+        let (_tmp, data, main) = fixture("r-d1");
+        let exists = |b: &str| {
+            !git(&main, &["branch", "--list", b]).trim().is_empty()
+        };
+        // Fetched by the flow: discarded.
+        let fake = Fake::new(vec![(0, &pr(7, "feat/x", false), "")]);
+        assert_eq!(branch_with(&fake, &data, "r-d1", 7).unwrap(), "feat/x");
+        assert!(exists("feat/x"));
+        assert!(discard_with(&data, "r-d1", "feat/x").unwrap());
+        assert!(!exists("feat/x"));
+        // Asked twice: nothing more to do.
+        assert!(!discard_with(&data, "r-d1", "feat/x").unwrap());
+        // A branch the user had before is reused, not made, so it stays.
+        git(&main, &["branch", "mine"]);
+        let fake = Fake::new(vec![(0, &pr(7, "mine", false), "")]);
+        assert_eq!(branch_with(&fake, &data, "r-d1", 7).unwrap(), "mine");
+        assert!(!discard_with(&data, "r-d1", "mine").unwrap());
+        assert!(exists("mine"));
+        // A branch the flow never saw stays too.
+        git(&main, &["branch", "other"]);
+        assert!(!discard_with(&data, "r-d1", "other").unwrap());
+        assert!(exists("other"));
+    }
+
+    #[test]
+    fn discard_keeps_a_branch_a_worktree_took() {
+        let (tmp, data, main) = fixture("r-d2");
+        let fake = Fake::new(vec![(0, &pr(7, "main", true), "")]);
+        let branch = branch_with(&fake, &data, "r-d2", 7).unwrap();
+        assert_eq!(branch, "pr-7");
+        let wt = tmp.path().join("wt-pr7");
+        git(
+            &main,
+            &["worktree", "add", "-q", wt.to_str().unwrap(), "pr-7"],
+        );
+        assert!(!discard_with(&data, "r-d2", "pr-7").unwrap());
+        assert!(!git(&main, &["branch", "--list", "pr-7"]).trim().is_empty());
     }
 
     #[test]

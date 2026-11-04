@@ -182,6 +182,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         // Cancel was the go-ahead; a fresh worktree is clean, so its branch goes too.
         remove: (path, force) => afterCreate.current.api.worktreeRemove(path, force, true).finally(() => afterCreate.current.reload()),
         onCreated: (wt, args) => afterCreate.current.created(wt, args),
+        discard: (repoId, branch) => afterCreate.current.api.prBranchDiscard(repoId, branch),
       }),
   );
   useSyncExternalStore(
@@ -1014,9 +1015,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
 
   // The dialog closes at once; the create runs as a row in the list until it finishes or fails.
-  function create(repoId: string, name: string, from: string | null, extra?: CreateExtra, request?: CreateRequest, keepOpen = false): void {
+  function create(repoId: string, name: string, from: string | null, extra?: CreateExtra, request?: CreateRequest, keepOpen = false, discardBranch?: string): void {
     if (!keepOpen) setCreating(null);
-    pending.start({ repoId, name, from, ...(extra ? { extra } : {}), ...(request ? { request } : {}) });
+    pending.start({ repoId, name, from, ...(extra ? { extra } : {}), ...(request ? { request } : {}), ...(discardBranch ? { discardBranch } : {}) });
   }
 
   // The issue becomes the worktree: named from it, linked as its work item, sent to the default agent.
@@ -1051,7 +1052,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       const taken = new Set((repo?.worktrees ?? []).flatMap((w) => [w.name, w.branch ?? ""]));
       const name = uniqueWorktreeName(prWorktreeName(pr), taken);
       const view = await api.profiles().catch(() => null);
-      create(repoId, name, null, { title: pr.title, agent: view?.defaultAgent ?? null, setDefault: false, parent: null, item: prWorkItem(pr) }, { existing: branch, sparse: [] });
+      create(repoId, name, null, { title: pr.title, agent: view?.defaultAgent ?? null, setDefault: false, parent: null, item: prWorkItem(pr) }, { existing: branch, sparse: [] }, false, branch);
     } catch (e) {
       setNotice(toApiError(e).code);
     }
