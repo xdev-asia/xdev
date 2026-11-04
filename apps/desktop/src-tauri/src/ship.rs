@@ -229,11 +229,25 @@ fn sync_with(
     let repo = Repo::discover(path)?;
     repo.fetch()?;
     let up = repo.upstream()?.ok_or_else(|| err("no_upstream", None))?;
+    // The remote holds only old copies of our commits: a pull would replay
+    // them, so the way on is a force push, which the user confirms.
+    if up.rewritten {
+        return Err(err("needs_force", None));
+    }
     match (up.ahead, up.behind) {
         (0, 0) => {}
         (_, 0) => repo.push()?,
-        // Behind, or both: `pull` refuses a split history itself.
-        _ => repo.pull_with(policy)?,
+        // Behind, or both: `pull` refuses a split history itself. A policy
+        // that merges or rebases leaves commits to publish afterwards.
+        _ => {
+            repo.pull_with(policy)?;
+            if repo
+                .upstream()?
+                .is_some_and(|u| u.ahead > 0 && u.behind == 0)
+            {
+                repo.push()?;
+            }
+        }
     }
     view(data, path, against_upstream)
 }
@@ -1042,6 +1056,56 @@ mod tests {
         assert_eq!(
             code(sync_with(&fx.data, &fx.wt, PullPolicy::FfOnly, false)),
             "pull_diverged"
+        );
+        assert_eq!(git(&fx.origin, &["rev-parse", &name]), remote_before);
+
+        // With a merge policy the same split history is joined and pushed.
+        let v = sync_with(&fx.data, &fx.wt, PullPolicy::Merge, false).unwrap();
+        let up = v.upstream.unwrap();
+        assert_eq!((up.ahead, up.behind), (0, 0));
+        assert_eq!(
+            git(&fx.origin, &["rev-parse", &name]),
+            git(&fx.wt, &["rev-parse", "HEAD"])
+        );
+    }
+
+    #[test]
+    fn rebase_from_base_follows_the_registered_base() {
+        let fx = fixture();
+        commit_file(&fx.wt, "f.txt", "f");
+        // The base has no remote counterpart yet.
+        assert_eq!(
+            code(rebase_from_base_with(&fx.data, &fx.wt, false)),
+            "base_not_remote"
+        );
+        let base = Registry::load(&fx.data).unwrap().repos[0].base_ref.clone();
+        git(&fx.main, &["push", "-q", "-u", "origin", &base]);
+        commit_file(&fx.main, "m.txt", "m");
+        git(&fx.main, &["push", "-q", "origin", &base]);
+        rebase_from_base_with(&fx.data, &fx.wt, false).unwrap();
+        assert!(fx.wt.join("m.txt").exists() && fx.wt.join("f.txt").exists());
+    }
+
+    #[test]
+    fn fast_forward_refuses_a_branch_without_upstream() {
+        let fx = fixture();
+        assert_eq!(
+            code(fast_forward_with(&fx.data, &fx.wt, false)),
+            "no_upstream"
+        );
+    }
+
+    #[test]
+    fn sync_with_a_rewritten_branch_asks_for_a_force_push() {
+        let fx = fixture();
+        commit_file(&fx.wt, "b.txt", "two");
+        push_with(&fx.data, &fx.wt, false).unwrap();
+        let name = branch(&fx);
+        git(&fx.wt, &["commit", "-q", "--amend", "-m", "reworded"]);
+        let remote_before = git(&fx.origin, &["rev-parse", &name]);
+        assert_eq!(
+            code(sync_with(&fx.data, &fx.wt, PullPolicy::Merge, false)),
+            "needs_force"
         );
         assert_eq!(git(&fx.origin, &["rev-parse", &name]), remote_before);
     }
