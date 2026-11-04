@@ -5,6 +5,8 @@ import { useI18n } from "@/i18n";
 import { setTerminalSettings, TERMINAL_DEFAULTS, TERMINAL_LIMITS } from "@/terminal/terminalSettings";
 import { RunningTerminals } from "./RunningTerminals";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
+import { TerminalBehaviourSection } from "./terminal/TerminalBehaviourSection";
+import { TerminalLookSection } from "./terminal/TerminalLookSection";
 import type { SettingsSectionProps } from "./sections";
 
 export const FONT_WEIGHTS: FontWeight[] = ["normal", "medium", "bold"];
@@ -227,6 +229,9 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
         )}
       </ul>
       </SettingGroup>
+
+      <TerminalLookSection current={current} busy={busy} patch={patch} filter={filter} />
+      <TerminalBehaviourSection current={current} busy={busy} patch={patch} filter={filter} />
 
       <SettingRow id="terminal.scrollback" filter={filter}>
       <h4 className="settings-group">{t("settings.terminal.buffer")}</h4>
