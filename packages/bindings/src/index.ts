@@ -153,6 +153,7 @@ export type { SessionInfo } from "./SessionInfo";
 export type { SessionQuery } from "./SessionQuery";
 export type { SessionRow } from "./SessionRow";
 export type { SessionScope } from "./SessionScope";
+export type { SessionSearchStatus } from "./SessionSearchStatus";
 export type { SessionSort } from "./SessionSort";
 export type { SessionUsage } from "./SessionUsage";
 export type { SettingsChanged } from "./SettingsChanged";

@@ -99,11 +99,43 @@ pub enum SwitchRunning {
 }
 
 /// Settings → Agents.
-#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(default, rename_all = "camelCase")]
 pub struct AgentsSettings {
     pub account_switch: SwitchRunning,
+    /// Experimental: finished agent tabs sleep after `sleep_after_min` idle minutes.
+    pub auto_sleep: bool,
+    /// Idle minutes before an agent tab sleeps, held to `SLEEP_AFTER_MIN_RANGE`.
+    pub sleep_after_min: u32,
+    /// Consent to index agent conversations on this computer.
+    pub session_search: bool,
+}
+
+/// Minutes an agent tab may idle before it sleeps: 1 minute to 24 hours.
+pub const SLEEP_AFTER_MIN_RANGE: std::ops::RangeInclusive<u32> = 1..=1440;
+/// Default idle minutes before an agent tab sleeps.
+pub const SLEEP_AFTER_MIN_DEFAULT: u32 = 30;
+
+impl Default for AgentsSettings {
+    fn default() -> Self {
+        Self {
+            account_switch: SwitchRunning::default(),
+            auto_sleep: false,
+            sleep_after_min: SLEEP_AFTER_MIN_DEFAULT,
+            session_search: false,
+        }
+    }
+}
+
+impl AgentsSettings {
+    /// Holds `sleep_after_min` inside `SLEEP_AFTER_MIN_RANGE`.
+    pub fn clamped(mut self) -> Self {
+        self.sleep_after_min = self
+            .sleep_after_min
+            .clamp(*SLEEP_AFTER_MIN_RANGE.start(), *SLEEP_AFTER_MIN_RANGE.end());
+        self
+    }
 }
 
 /// Prompt cache lifetime, 5 minutes.
@@ -2122,10 +2154,16 @@ then sum up"
         ] {
             let agents = AgentsSettings {
                 account_switch: value,
+                ..AgentsSettings::default()
             };
             assert_eq!(
                 serde_json::to_value(&agents).unwrap(),
-                serde_json::json!({ "accountSwitch": json })
+                serde_json::json!({
+                    "accountSwitch": json,
+                    "autoSleep": false,
+                    "sleepAfterMin": 30,
+                    "sessionSearch": false
+                })
             );
             fs::write(
                 &path,
@@ -2133,6 +2171,25 @@ then sum up"
             )
             .unwrap();
             assert_eq!(load(&path).agents, agents);
+        }
+        let on = AgentsSettings {
+            auto_sleep: true,
+            sleep_after_min: 5,
+            session_search: true,
+            ..AgentsSettings::default()
+        };
+        fs::write(&path, serde_json::json!({ "agents": on }).to_string()).unwrap();
+        assert_eq!(load(&path).agents, on);
+    }
+
+    #[test]
+    fn sleep_after_min_is_clamped() {
+        for (given, want) in [(0, 1), (1, 1), (45, 45), (1440, 1440), (99_999, 1440)] {
+            let s = AgentsSettings {
+                sleep_after_min: given,
+                ..AgentsSettings::default()
+            };
+            assert_eq!(s.clamped().sleep_after_min, want);
         }
     }
 
