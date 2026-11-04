@@ -15,6 +15,7 @@ import {
 import { useI18n } from "@/i18n";
 import { RemoveRepoDialog } from "@/workspace/RemoveRepoDialog";
 import { removeRepo } from "@/workspace/removeRepo";
+import { SettingGroup, SettingRow } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
 type Field = "shortName" | "baseRef" | "worktreeRoot" | "setupPolicy" | "scriptSource" | "localSetup" | "localArchive";
@@ -43,9 +44,11 @@ function fieldOf(code: ApiError["code"]): Field | "form" {
   return "form";
 }
 
+const SCRIPT_IDS = ["repos.scriptPolicy", "repos.scriptSource", "repos.localScripts", "repos.sharedScripts"];
+
 /** One form per repo: short name, base ref, worktree folder and setup scripts. Save sends only what changed. */
 export function ReposSettings(props: SettingsSectionProps): JSX.Element {
-  const { api } = props;
+  const { api, filter } = props;
   const { t } = useI18n();
   const [repos, setRepos] = useState<RepoView[] | null>(null);
   const [hooks, setHooks] = useState<Record<string, RepoHooks>>({});
@@ -264,6 +267,7 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
               {repo.missing && <span className="settings-tag">{t("settings.repos.missing")}</span>}
             </div>
             <div className="ws-fields">
+              <SettingRow id="repos.shortName" filter={filter}>
               <label className="ws-field">
                 <span>{t("settings.repos.shortName")}</span>
                 {input(repo, "shortName", false)}
@@ -272,6 +276,8 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
                   {t("settings.repos.shortNameNote")}
                 </small>
               </label>
+              </SettingRow>
+              <SettingRow id="repos.baseRef" filter={filter}>
               <label className="ws-field">
                 <span>{t("settings.repos.baseRef")}</span>
                 {input(repo, "baseRef", true)}
@@ -280,6 +286,8 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
                   {t("settings.repos.baseRefHint")}
                 </small>
               </label>
+              </SettingRow>
+              <SettingRow id="repos.worktreeRoot" filter={filter}>
               <div className="ws-field" role="group" aria-labelledby={`settings-${repo.id}-worktreeRoot-label`}>
                 <span id={`settings-${repo.id}-worktreeRoot-label`}>{t("settings.repos.worktreeRoot")}</span>
                 <div className="settings-row">
@@ -293,9 +301,12 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
                   {t("settings.repos.worktreeRootHint")}
                 </small>
               </div>
+              </SettingRow>
             </div>
+            <SettingGroup ids={SCRIPT_IDS} filter={filter}>
             <h4 className="settings-group">{t("settings.repos.scripts")}</h4>
             <div className="ws-fields">
+              <SettingRow id="repos.scriptPolicy" filter={filter}>
               <div className="ws-field" role="radiogroup" aria-label={t("settings.repos.scripts.policy")}>
                 <span>{t("settings.repos.scripts.policy")}</span>
                 <div className="term-radios">
@@ -314,6 +325,8 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
                   ))}
                 </div>
               </div>
+              </SettingRow>
+              <SettingRow id="repos.scriptSource" filter={filter}>
               <label className="ws-field">
                 <span>{t("settings.repos.scripts.source")}</span>
                 <select
@@ -329,11 +342,17 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
                   ))}
                 </select>
               </label>
-              {scriptField(repo, "localSetup")}
-              {scriptField(repo, "localArchive")}
-              <small className="settings-hint">{t("settings.repos.scripts.localHint")}</small>
-              {sharedScripts(repo)}
+              </SettingRow>
+              <SettingRow id="repos.localScripts" filter={filter}>
+                {scriptField(repo, "localSetup")}
+                {scriptField(repo, "localArchive")}
+                <small className="settings-hint">{t("settings.repos.scripts.localHint")}</small>
+              </SettingRow>
+              <SettingRow id="repos.sharedScripts" filter={filter}>
+                {sharedScripts(repo)}
+              </SettingRow>
             </div>
+            </SettingGroup>
             {errorFor(repo, "form")}
             <div className="settings-actions">
               {saved === repo.id && (

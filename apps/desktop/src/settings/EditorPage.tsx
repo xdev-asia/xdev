@@ -4,6 +4,7 @@ import { toApiError, type ApiError, type EditorSettings } from "@/api";
 import { clampEditorSettings, EDITOR_LIMITS } from "@/files/editorDefaults";
 import { getEditorSettings, setEditorSettings } from "@/files/editorSettings";
 import { useI18n } from "@/i18n";
+import { SettingRow, settingShown } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
 type NumberField = "autosaveMs" | "fontSize" | "tabSize";
@@ -11,7 +12,7 @@ const NUMBER_STEP: Record<NumberField, number> = { autosaveMs: 250, fontSize: 1,
 
 /** Settings → Editor: autosave, font size, word wrap and tab size of the file editor. */
 export function EditorPage(props: SettingsSectionProps): JSX.Element {
-  const { api } = props;
+  const { api, filter } = props;
   const { t } = useI18n();
   const [settings, setSettings] = useState<EditorSettings>(getEditorSettings);
   // A number while it is being typed in; written when it loses focus or on Enter.
@@ -65,8 +66,8 @@ export function EditorPage(props: SettingsSectionProps): JSX.Element {
       onKeyDown={(e) => e.key === "Enter" && commit(field)}
     />
   );
-  const toggle = (key: "autosave" | "wordWrap", label: string, hint?: string) => (
-    <li className="settings-item" data-switch={key}>
+  const toggle = (key: "autosave" | "wordWrap", label: string, hint?: string) => settingShown(filter, `editor.${key}`) && (
+    <li className="settings-item" data-switch={key} data-setting-id={`editor.${key}`}>
       <div className="settings-item-text">
         <strong>{label}</strong>
         {hint && <span className="settings-path">{hint}</span>}
@@ -98,19 +99,25 @@ export function EditorPage(props: SettingsSectionProps): JSX.Element {
         {toggle("wordWrap", t("files.settings.wordWrap"))}
       </ul>
       <div className="ws-fields">
-        <label className="ws-field">
-          <span>{t("files.settings.autosaveMs")}</span>
-          {numberInput("autosaveMs")}
-        </label>
-        <label className="ws-field">
-          <span>{t("files.settings.fontSize")}</span>
-          {numberInput("fontSize")}
-        </label>
-        <label className="ws-field">
-          <span>{t("files.settings.tabSize")}</span>
-          {numberInput("tabSize")}
-          <small className="settings-hint">{t("files.settings.tabSizeHint")}</small>
-        </label>
+        <SettingRow id="editor.autosaveMs" filter={filter}>
+          <label className="ws-field">
+            <span>{t("files.settings.autosaveMs")}</span>
+            {numberInput("autosaveMs")}
+          </label>
+        </SettingRow>
+        <SettingRow id="editor.fontSize" filter={filter}>
+          <label className="ws-field">
+            <span>{t("files.settings.fontSize")}</span>
+            {numberInput("fontSize")}
+          </label>
+        </SettingRow>
+        <SettingRow id="editor.tabSize" filter={filter}>
+          <label className="ws-field">
+            <span>{t("files.settings.tabSize")}</span>
+            {numberInput("tabSize")}
+            <small className="settings-hint">{t("files.settings.tabSizeHint")}</small>
+          </label>
+        </SettingRow>
       </div>
     </div>
   );

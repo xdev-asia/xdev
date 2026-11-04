@@ -4,6 +4,7 @@ import type { JSX } from "react";
 import { toApiError, type ApiError, type VaultView } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
+import { SettingRow } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
 /** Repo vaults (each repo's `docs/`) and shared vaults; forgetting one keeps its folder. */
@@ -76,6 +77,7 @@ export function VaultsSettings(props: SettingsSectionProps): JSX.Element {
         </p>
       )}
 
+      <SettingRow id="vaults.repo" filter={props.filter}>
       <h4 className="settings-group">{t("settings.vaults.repo")}</h4>
       {vaults && repoVaults.length === 0 && <p className="settings-empty">{t("settings.vaults.noRepos")}</p>}
       <ul className="settings-list">
@@ -93,7 +95,9 @@ export function VaultsSettings(props: SettingsSectionProps): JSX.Element {
           </li>
         ))}
       </ul>
+      </SettingRow>
 
+      <SettingRow id="vaults.shared" filter={props.filter}>
       <h4 className="settings-group">{t("settings.vaults.shared")}</h4>
       {vaults && shared.length === 0 && <p className="settings-empty">{t("settings.vaults.noShared")}</p>}
       <ul className="settings-list">
@@ -115,6 +119,7 @@ export function VaultsSettings(props: SettingsSectionProps): JSX.Element {
           {t("settings.vaults.add")}
         </Button>
       </div>
+      </SettingRow>
 
       <ConfirmDialog
         open={forgetting !== null}
