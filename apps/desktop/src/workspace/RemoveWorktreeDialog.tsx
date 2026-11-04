@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import type { ApiError, WorktreeView } from "@/api";
 import { useI18n } from "@/i18n";
@@ -15,11 +15,17 @@ export function RemoveWorktreeDialog(props: {
   /** The archive script ended with a failure; the person may remove anyway. */
   failed?: { code: number | null; output: string };
   error?: ApiError["code"];
-  onConfirm(): void;
+  /** How many worktrees name this one as their parent. */
+  children?: number;
+  /** `nested`: the children go too. */
+  onConfirm(nested: boolean): void;
+  /** Archive instead of delete: the folder goes, the branch stays. */
+  onArchive?(): void;
   onCancel(): void;
 }): JSX.Element {
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
+  const [nested, setNested] = useState(false);
 
   useEffect(() => {
     const d = dialog.current;
@@ -56,6 +62,12 @@ export function RemoveWorktreeDialog(props: {
           <p className="dialog-body">{t("workspace.remove.forceNote")}</p>
         </>
       )}
+      {(props.children ?? 0) > 0 && (
+        <label className="ws-tick">
+          <input type="checkbox" checked={nested} disabled={props.busy} onChange={(e) => setNested(e.target.checked)} />
+          <span>{t("workspace.remove.nested")}</span>
+        </label>
+      )}
       {props.archiving && (
         <p className="dialog-body" role="status">
           {t("workspace.remove.archiving")}
@@ -79,7 +91,12 @@ export function RemoveWorktreeDialog(props: {
         <button type="button" className="btn-secondary" autoFocus disabled={props.busy && !props.archiving} onClick={props.onCancel}>
           {t("dialog.cancel")}
         </button>
-        <button type="button" className="ws-danger" disabled={props.busy} onClick={props.onConfirm}>
+        {props.onArchive && !props.failed && (
+          <button type="button" className="btn-secondary" disabled={props.busy} onClick={props.onArchive}>
+            {t("workspace.remove.archiveInstead")}
+          </button>
+        )}
+        <button type="button" className="ws-danger" disabled={props.busy} onClick={() => props.onConfirm(nested)}>
           {props.busy ? t("workspace.remove.busy") : props.failed ? t("workspace.remove.anyway") : props.dirty ? t("workspace.remove.force") : t("workspace.remove.confirm")}
         </button>
       </div>

@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type OpenInApp, type OpenTarget, type HookDetail, type HookKind, type RepoHooks, type PrView, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type OpenInApp, type OpenTarget, type HookDetail, type HookKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
 import { DocsApp } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
@@ -30,8 +30,9 @@ import { usePresence } from "@/status/presence";
 import { eventOn, getStatusSettings, loadStatusSettings, useStatusSettings } from "@/status/statusSettings";
 import { BellMenu, bellCount, type BellRow } from "./BellMenu";
 import { ChecksPanel } from "./ChecksPanel";
-import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
-import { PendingCreates } from "./pendingCreates";
+import { CreateWorktreeDialog, type AgentChoice, type CreateExtra } from "./CreateWorktreeDialog";
+import { DetailsDialog } from "./DetailsDialog";
+import { PendingCreates, type CreateArgs } from "./pendingCreates";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { AddProjectDialog, parentOf } from "./AddProjectDialog";
@@ -58,6 +59,13 @@ import type { TabStatus } from "./status";
 import { WorktreeChanges, type ChangesHandlers } from "./WorktreeChanges";
 import { worktreeTarget } from "./groups";
 import { WorktreeList } from "./WorktreeList";
+import { NameDialog } from "./NameDialog";
+import { flattenRepos, keptByRepo } from "./sidebarModel";
+import { clear as clearPicked, click as pickClick, runBulk, selectAll, type BulkResult, type Selection } from "./selection";
+import { BulkBar } from "./BulkBar";
+import { BulkRemoveDialog } from "./BulkRemoveDialog";
+import { ReviewBranchesDialog } from "./ReviewBranchesDialog";
+import { isDeleteKey, typingIn } from "./deleteKey";
 import { WorktreeTabs, type Reveal } from "./WorktreeTabs";
 import { runWithToast } from "@/quickCommands/runUi";
 import { startQuickCommands } from "@/quickCommands/store";
@@ -83,9 +91,12 @@ function storeSelected(path: string): void {
 
 type View = "workspace" | "docs" | "settings";
 type PanelTab = "files" | "search" | "changes" | "checks";
-type Creating = { repoId: string; busy: boolean; error?: ApiError["code"]; name?: string };
+type Creating = { repoId: string; name?: string; agents: AgentChoice[]; defaultAgent: string | null };
+type Editing = { worktree: WorktreeView; busy: boolean; error?: ApiError["code"] };
 type SetupCardAt = { kind: "detected"; command: string; repoId: string } | { kind: "ask"; repoId: string };
 type TrustAsk = { path: string; repoId: string; kind: HookKind; text: string; hash: string; changed: boolean; busy: boolean; error?: ApiError["code"] };
+type BulkState = { mode: "delete" | "archive"; worktrees: WorktreeView[]; dirty: Record<string, boolean>; busy: boolean; result?: BulkResult };
+type Review = { repoId: string | null; busy: boolean; error?: ApiError["code"] };
 type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"]; archiving?: boolean; failed?: { code: number | null; output: string } };
 
 /** The app frame: repos and worktrees on the left, the selected worktree in the middle. */
@@ -93,6 +104,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
   const [repos, setRepos] = useState<RepoView[] | null>(null);
+  const [items, setItems] = useState<SidebarItem[] | null>(null);
+  const [prefs, setPrefs] = useState<SidebarPrefs>({ hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false });
+  // The group name dialog: `id` null makes a new group.
+  // The multi-selection, the bulk delete or archive dialog, and the branch review.
+  const [picked, setPicked] = useState<Selection>(clearPicked);
+  const [bulk, setBulk] = useState<BulkState | null>(null);
+  const [review, setReview] = useState<Review | null>(null);
+  const [groupName, setGroupName] = useState<{ id: string | null; name: string; error?: ApiError["code"] } | null>(null);
   const [selected, setSelected] = useState<string | null>(() => readSelected());
   const [view, setView] = useState<View>("workspace");
   // The docs app mounts on first visit and then stays, so its editor state survives a switch.
@@ -126,14 +145,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [sessionsAsk, setSessionsAsk] = useState<{ seq: number; focus: boolean; reveal: { key: string; seq: number } | null }>({ seq: 0, focus: false, reveal: null });
   const [creating, setCreating] = useState<Creating | null>(null);
   // Creates run after the dialog has closed; what a finished one does is read from this render.
-  const afterCreate = useRef<{ api: Api; created(wt: WorktreeView, repoId: string): void; reload(): void }>({ api, created() {}, reload() {} });
+  const afterCreate = useRef<{ api: Api; created(wt: WorktreeView, args: CreateArgs): void; reload(): void }>({ api, created() {}, reload() {} });
   const [pending] = useState(
     () =>
       new PendingCreates({
         create: (repoId, name, from) => afterCreate.current.api.worktreeCreate(repoId, name, from),
         // Cancel was the go-ahead; a fresh worktree is clean, so its branch goes too.
         remove: (path, force) => afterCreate.current.api.worktreeRemove(path, force, true).finally(() => afterCreate.current.reload()),
-        onCreated: (wt, args) => afterCreate.current.created(wt, args.repoId),
+        onCreated: (wt, args) => afterCreate.current.created(wt, args),
       }),
   );
   useSyncExternalStore(
@@ -147,6 +166,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // Which remove is current; a Cancel during the archive run bumps it so the late result is dropped.
   const removeRun = useRef(0);
   const [removing, setRemoving] = useState<Removing | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
   const [notice, setNotice] = useState<ApiError["code"]>();
   const [fixNote, setFixNote] = useState(false);
   // A request to bring a tab to the front of its worktree; a new `seq` is a new request.
@@ -167,7 +187,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [bellOpen, setBellOpen] = useState(false);
   const statusSettings = useStatusSettings();
   // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
-  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, notifier: null as Notifier | null }));
+  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null }));
 
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
@@ -193,7 +213,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [quickSeq, setQuickSeq] = useState(0);
   const [settingsAt, setSettingsAt] = useState<{ section?: string; arg?: string; target?: string; seq: number }>({ seq: 0 });
   // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
-  const dialogOpen = creating !== null || removing !== null || adding;
+  const dialogOpen = creating !== null || removing !== null || adding || groupName !== null || editing !== null || bulk !== null || review !== null;
   useJumpKey(useCallback(() => setJumpOpen((o) => (dialogOpen ? false : !o)), [dialogOpen]));
   // The worktrees in the order the sidebar draws them, which the worktree keys walk.
   const [order, setOrder] = useState<string[]>([]);
@@ -218,7 +238,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   async function load(): Promise<void> {
     try {
-      const list = await api.workspaceList();
+      const tree = await api.workspaceSidebar();
+      const list = flattenRepos(tree);
+      setItems(tree);
       setRepos(list);
       stats.track(list.flatMap((r) => r.worktrees.map((w) => w.path)));
       // A worktree gone from the list (removed outside the app, say) must not keep its ptys. A
@@ -238,6 +260,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => {
     void load();
     // Loaded once; every action below reloads after it changes the list.
+  }, [api]);
+
+  useEffect(() => {
+    const mac = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
+    const onKey = (e: KeyboardEvent) => {
+      if (!isDeleteKey(e, mac) || typingIn(e.target)) return;
+      e.preventDefault();
+      live.deleteKey();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    api.sidebarPrefsGet().then(setPrefs, () => {});
   }, [api]);
 
   // Layout restore: once per run, after the registry is known and before the saver starts (a saver that
@@ -465,6 +502,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   live.t = t;
   live.jump = jumpTo;
   live.openShortcuts = (action) => openSettings("keys", action);
+  live.deleteKey = deleteKey;
   // `openFile()` from anywhere: the file joins its worktree's tabs and comes to the front there.
   live.openFileTab = (req) => {
     const wt = all.find((w) => w.path === req.worktree);
@@ -646,6 +684,141 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     }
   }
 
+  async function sidebarCall(run: () => Promise<unknown>): Promise<boolean> {
+    setNotice(undefined);
+    try {
+      await run();
+      await load();
+      return true;
+    } catch (e) {
+      setNotice(toApiError(e).code);
+      return false;
+    }
+  }
+
+  function changePrefs(next: SidebarPrefs): void {
+    setPrefs(next);
+    api.sidebarPrefsPut(next).catch((e) => setNotice(toApiError(e).code));
+  }
+
+  async function saveGroup(name: string): Promise<void> {
+    if (!groupName) return;
+    try {
+      await api.groupPut(groupName.id, name);
+      setGroupName(null);
+      await load();
+    } catch (e) {
+      setGroupName({ ...groupName, name, error: toApiError(e).code });
+    }
+  }
+
+  async function addFolder(): Promise<void> {
+    const path = await api.pickFolder().catch(() => null);
+    if (path) await sidebarCall(() => api.folderAdd(path));
+  }
+
+  async function openFolder(folder: FolderEntry): Promise<void> {
+    if (!sessions) return;
+    try {
+      const pv = await api.profiles();
+      const shell = pv.shells.some((s) => s.id === pv.defaultShell) ? pv.defaultShell : pv.shells[0]?.id;
+      if (shell) {
+        sessions.open(folder.path, shell);
+        show("workspace");
+      }
+    } catch {
+      // The profile list did not load; nothing opens.
+    }
+  }
+
+  const selectable = order.filter((p) => !(repos ?? []).some((r) => r.worktrees.some((w) => w.path === p && w.primary)));
+
+  function keptNotice(kept: KeptBranch[]): void {
+    if (kept.length === 0) return;
+    pushToast({ text: t("review.notice", { count: kept.length }), actions: [{ label: t("review.notice.button"), run: () => setReview({ repoId: null, busy: false }) }] });
+  }
+
+  async function openBulk(mode: "delete" | "archive"): Promise<void> {
+    const wts = all.filter((w) => picked.paths.has(w.path) && !w.primary);
+    if (wts.length === 0) return;
+    const dirty: Record<string, boolean> = {};
+    await Promise.all(wts.map(async (w) => void (dirty[w.path] = ((await api.worktreeChanges(w.path).catch(() => [])) as unknown[]).length > 0)));
+    setBulk({ mode, worktrees: wts, dirty, busy: false });
+  }
+
+  async function confirmBulk(opts: { anyway: boolean; nested: boolean }): Promise<void> {
+    if (!bulk || bulk.busy) return;
+    const b = bulk;
+    setBulk({ ...b, busy: true });
+    const chosen = b.worktrees.map((w) => w.path);
+    // Nested children go first, so a parent never leaves them half-linked.
+    const kids = opts.nested ? all.filter((c) => c.parent && chosen.includes(c.parent) && !chosen.includes(c.path)).map((c) => c.path) : [];
+    const list = [...kids, ...chosen];
+    const targets = opts.anyway ? list : list.filter((p) => b.dirty[p] !== true);
+    const skipped = list.filter((p) => !targets.includes(p));
+    const op = (p: string) => (b.mode === "archive" ? api.worktreeArchive(p, opts.anyway, true) : api.worktreeRemove(p, opts.anyway, true));
+    const result = await runBulk(targets, op, async (p) => void (await sessions?.closeWorktree(p)));
+    for (const path of skipped) result.failed.push({ path, error: { code: "worktree_dirty" } });
+    for (const path of result.ok) sessions?.dropCarried(path);
+    setBulk({ ...b, busy: false, result });
+    setPicked(clearPicked());
+    keptNotice(result.kept);
+    await load();
+  }
+
+  async function bulkEach(run: (path: string) => Promise<unknown>): Promise<void> {
+    setNotice(undefined);
+    try {
+      for (const path of picked.paths) await run(path);
+    } catch (e) {
+      setNotice(toApiError(e).code);
+    }
+    await load();
+  }
+
+  function deleteKey(): void {
+    if (dialogOpen || view !== "workspace") return;
+    const chosen = [...picked.paths];
+    if (chosen.length >= 2) return void openBulk("delete");
+    const wt = chosen.length === 1 ? all.find((w) => w.path === chosen[0]) : current;
+    if (wt && !wt.primary) setRemoving({ worktree: wt, dirty: false, busy: false });
+  }
+
+  const reviewKept = review ? Object.entries(keptByRepo(items ?? [])).flatMap(([id, list]) => (review.repoId === null || review.repoId === id ? list : [])) : [];
+
+  async function reviewDo(run: () => Promise<unknown>): Promise<void> {
+    setReview((r) => (r ? { ...r, busy: true, error: undefined } : r));
+    try {
+      await run();
+      await load();
+      setReview((r) => (r ? { ...r, busy: false } : r));
+    } catch (e) {
+      setReview((r) => (r ? { ...r, busy: false, error: toApiError(e).code } : r));
+    }
+  }
+
+  async function archiveRemoving(): Promise<void> {
+    if (!removing || removing.busy) return;
+    const { worktree, dirty } = removing;
+    setRemoving({ worktree, dirty, busy: true });
+    try {
+      await sessions?.closeWorktree(worktree.path);
+      sessions?.dropCarried(worktree.path);
+      await api.worktreeArchive(worktree.path, dirty, true);
+      setRemoving(null);
+      await load();
+    } catch (e) {
+      const code = toApiError(e).code;
+      setRemoving({ worktree, dirty: dirty || code === "worktree_dirty", busy: false, error: code === "worktree_dirty" ? undefined : code });
+    }
+  }
+
+  async function archive(wt: WorktreeView): Promise<void> {
+    await sessions?.closeWorktree(wt.path);
+    const ok = await sidebarCall(() => api.worktreeArchive(wt.path, false, true));
+    if (ok) sessions?.dropCarried(wt.path);
+  }
+
   async function repoCloned(repo: RepoView): Promise<void> {
     setAdding(false);
     await load();
@@ -680,29 +853,73 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   function startCreate(repoId?: string, name?: string): void {
     const usable = repos?.filter((r) => !r.missing) ?? [];
     const id = repoId ?? (currentRepo && !currentRepo.missing ? currentRepo.id : usable[0]?.id);
-    if (id) setCreating({ repoId: id, busy: false, name });
+    if (!id) return;
+    setCreating({ repoId: id, name, agents: [], defaultAgent: null });
+    // The agent choice arrives a moment later; the dialog is already open.
+    void api
+      .profiles()
+      .then((v) => ({
+        agents: v.profiles.filter((p) => p.profile.enabled && p.installed).map((p) => ({ id: p.profile.id, name: p.profile.name })),
+        defaultAgent: v.defaultAgent as string | null,
+      }))
+      .then((choice) => setCreating((c) => (c ? { ...c, ...choice } : c)))
+      .catch(() => {});
   }
 
   // The dialog closes at once; the create runs as a row in the list until it finishes or fails.
-  function create(repoId: string, name: string, from: string | null): void {
+  function create(repoId: string, name: string, from: string | null, extra?: CreateExtra): void {
     setCreating(null);
-    pending.start({ repoId, name, from });
+    pending.start({ repoId, name, from, ...(extra ? { extra } : {}) });
   }
 
-  async function created(wt: WorktreeView, repoId: string): Promise<void> {
+  async function created(wt: WorktreeView, args: CreateArgs): Promise<void> {
+    const extra = args.extra;
+    if (extra) await applyCreateExtra(wt.path, extra);
     await load();
-    await setupAfterCreate(wt.path, repoId);
-    await openDefaultAgent(wt.path);
+    await setupAfterCreate(wt.path, args.repoId);
+    // Dialog: the agent it picked, or none. No dialog: the default agent.
+    await openDefaultAgent(wt.path, extra ? extra.agent : undefined);
     select(wt);
   }
-  afterCreate.current = { api, created: (wt, repoId) => void created(wt, repoId), reload: () => void load() };
+  afterCreate.current = { api, created: (wt, args) => void created(wt, args), reload: () => void load() };
 
-  // A new worktree starts with the default agent when it is on and installed; else nothing opens.
-  async function openDefaultAgent(path: string): Promise<void> {
-    if (!sessions) return;
+  // The worktree is made; what the dialog added goes in one details call, and a new default agent is kept.
+  async function applyCreateExtra(path: string, extra: CreateExtra): Promise<void> {
+    const patch: DetailsPatch = {};
+    if (extra.title !== null) patch.title = extra.title;
+    if (extra.parent !== null) patch.parent = extra.parent;
+    if (extra.item !== null) patch.item = extra.item;
+    try {
+      if (Object.keys(patch).length > 0) await api.worktreeDetails(path, patch);
+      if (extra.setDefault && extra.agent !== null) {
+        const view = await api.profiles();
+        if (view.defaultAgent !== extra.agent) await api.profilesDefaults(view.approvals, extra.agent, view.defaultShell);
+      }
+    } catch (e) {
+      setNotice(toApiError(e).code);
+    }
+  }
+
+  async function saveDetails(patch: DetailsPatch): Promise<void> {
+    if (!editing || editing.busy) return;
+    const { worktree } = editing;
+    if (Object.keys(patch).length === 0) return setEditing(null);
+    setEditing({ worktree, busy: true });
+    try {
+      await api.worktreeDetails(worktree.path, patch);
+      setEditing(null);
+      await load();
+    } catch (e) {
+      setEditing({ worktree, busy: false, error: toApiError(e).code });
+    }
+  }
+
+  // A new worktree starts with the agent picked for it, or the default one when none was asked for; it must be on and installed.
+  async function openDefaultAgent(path: string, pick?: string | null): Promise<void> {
+    if (!sessions || pick === null) return;
     try {
       const view = await api.profiles();
-      const found = view.profiles.find((p) => p.profile.id === view.defaultAgent);
+      const found = view.profiles.find((p) => p.profile.id === (pick ?? view.defaultAgent));
       if (found?.profile.enabled && found.installed) {
         const id = found.profile.id;
         // With the repo set to wait, the agent starts when the setup tab has exited.
@@ -806,7 +1023,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // second, forced confirm.
   // The archive script runs first (up to 120 s, Cancel stays usable); a failure asks, an untrusted
   // shared script opens the trust prompt, and no script goes straight on.
-  async function remove(skipArchive = false): Promise<void> {
+  async function remove(skipArchive = false, nested = false): Promise<void> {
     if (!removing || removing.busy) return;
     const { worktree, dirty } = removing;
     const run = ++removeRun.current;
@@ -820,7 +1037,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       setRemoving({ worktree, dirty, busy: true });
       await sessions?.closeWorktree(worktree.path);
       sessions?.dropCarried(worktree.path);
-      await api.worktreeRemove(worktree.path, dirty, true);
+      if (nested) {
+        for (const child of all.filter((c) => c.parent === worktree.path)) {
+          await sessions?.closeWorktree(child.path);
+          sessions?.dropCarried(child.path);
+          await api.worktreeRemove(child.path, false, true);
+        }
+      }
+      const done = await api.worktreeRemove(worktree.path, dirty, true);
+      keptNotice(done.kept ? [done.kept] : []);
       setRemoving(null);
       await load();
     } catch (e) {
@@ -1035,9 +1260,45 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             </div>
           )}
           <div className="ws-side-view" hidden={sideView !== "worktrees"}>
+          {picked.paths.size >= 2 && (
+            <BulkBar
+              count={picked.paths.size}
+              allPinned={all.filter((w) => picked.paths.has(w.path)).every((w) => w.pinned)}
+              onArchive={() => void openBulk("archive")}
+              onDelete={() => void openBulk("delete")}
+              onPin={() => {
+                const pin = !all.filter((w) => picked.paths.has(w.path)).every((w) => w.pinned);
+                void bulkEach((path) => api.worktreePin(path, pin));
+              }}
+              onStatus={(status: WorkStatus) => void bulkEach((path) => api.worktreeDetails(path, { status }))}
+              onClear={() => setPicked(clearPicked())}
+            />
+          )}
           <WorktreeList
             onOrder={(paths) => setOrder((o) => (o.join(",") === paths.join(",") ? o : paths))}
-            repos={repos}
+            picked={picked.paths}
+            onPick={(wt, mods) => setPicked((sel) => pickClick(sel, wt.path, selectable, mods))}
+            onSelectAll={() => setPicked(selectAll(selectable))}
+            onClearPicked={() => setPicked(clearPicked())}
+            onReviewBranches={(repoId) => setReview({ repoId, busy: false })}
+            items={items}
+            prefs={prefs}
+            onPrefs={changePrefs}
+            onReorder={(ids) => void sidebarCall(() => api.sidebarOrder(ids))}
+            onGroupMove={(member, group, index) => void sidebarCall(() => api.groupMove(member, group, index))}
+            onNewGroup={() => setGroupName({ id: null, name: "" })}
+            onRenameGroup={(g: RepoGroup) => setGroupName({ id: g.id, name: g.name })}
+            onRemoveGroup={(g: RepoGroup) => void sidebarCall(() => api.groupRemove(g.id))}
+            onAddFolder={() => void addFolder()}
+            onOpenFolder={(f) => void openFolder(f)}
+            onForgetFolder={(f) => void sidebarCall(() => api.folderForget(f.id))}
+            onRestore={(repoId, branch) => void sidebarCall(() => api.worktreeRestore(repoId, branch))}
+            onArchive={(wt) => void archive(wt)}
+            onEditDetails={(wt) => setEditing({ worktree: wt, busy: false })}
+            onCopyLink={(url) => {
+              void copy(url);
+              pushToast({ text: t("workItem.copied") });
+            }}
             selected={current?.path ?? null}
             dots={dots}
             stats={stats.all()}
@@ -1047,6 +1308,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             now={Date.now()}
             notice={notice}
             onSelect={(wt) => {
+              setPicked(clearPicked());
               select(wt);
               show("workspace");
             }}
@@ -1292,15 +1554,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         <CreateWorktreeDialog
           repos={repos}
           repoId={creating.repoId}
-          busy={creating.busy}
-          error={creating.error}
           name={creating.name}
-          onCreate={(repoId, name, from) => create(repoId, name, from)}
+          agents={creating.agents}
+          defaultAgent={creating.defaultAgent}
+          onCreate={(repoId, name, from, extra) => create(repoId, name, from, extra)}
           onCancel={() => setCreating(null)}
-          onOpenGitSettings={() => {
-            setCreating(null);
-            openSettings("git");
-          }}
         />
       )}
       <QuickOpenDialog
@@ -1396,6 +1654,48 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           onCancel={() => setForgetting(null)}
         />
       )}
+      {groupName && (
+        <NameDialog
+          heading={t(groupName.id ? "group.rename" : "group.new")}
+          label={t("group.name")}
+          initial={groupName.name}
+          error={groupName.error}
+          onSave={(name) => void saveGroup(name)}
+          onCancel={() => setGroupName(null)}
+        />
+      )}
+      {editing && (
+        <DetailsDialog
+          worktree={editing.worktree}
+          siblings={repos?.find((r) => r.worktrees.some((w) => w.path === editing.worktree.path))?.worktrees ?? []}
+          busy={editing.busy}
+          error={editing.error}
+          onSave={(patch) => void saveDetails(patch)}
+          onCancel={() => setEditing(null)}
+        />
+      )}
+      {bulk && (
+        <BulkRemoveDialog
+          mode={bulk.mode}
+          worktrees={bulk.worktrees}
+          dirty={bulk.dirty}
+          children={Object.fromEntries(bulk.worktrees.map((w) => [w.path, all.filter((c) => c.parent === w.path && !bulk.worktrees.some((b) => b.path === c.path)).map((c) => c.path)]))}
+          busy={bulk.busy}
+          result={bulk.result}
+          onConfirm={(opts) => void confirmBulk(opts)}
+          onCancel={() => setBulk(null)}
+        />
+      )}
+      {review && (
+        <ReviewBranchesDialog
+          kept={reviewKept}
+          busy={review.busy}
+          error={review.error}
+          onDelete={(entry) => void reviewDo(() => api.branchDelete(entry.repoId, entry.branch, true))}
+          onKeep={(entry) => void reviewDo(() => api.keptKeep(entry.repoId, entry.branch))}
+          onClose={() => setReview(null)}
+        />
+      )}
       {removing && (
         <RemoveWorktreeDialog
           worktree={removing.worktree}
@@ -1405,7 +1705,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           archiving={removing.archiving}
           failed={removing.failed}
           error={removing.error}
-          onConfirm={() => void remove(removing.failed !== undefined)}
+          onConfirm={(nested) => void remove(removing.failed !== undefined, nested)}
+          onArchive={() => void archiveRemoving()}
+          children={all.filter((c) => c.parent === removing.worktree.path).length}
           onCancel={() => {
             removeRun.current++;
             setRemoving(null);

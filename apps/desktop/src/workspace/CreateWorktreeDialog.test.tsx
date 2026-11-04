@@ -2,7 +2,8 @@ import { expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { translate } from "@/i18n";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
-import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
+import { buildCreate, CreateWorktreeDialog } from "./CreateWorktreeDialog";
+import { parseItem } from "./workItemInput";
 
 vi.mock("react", async (original) => {
   const react = await original<typeof import("react")>();
@@ -18,24 +19,45 @@ function nodes(value: unknown): Node[] {
   return [node, ...nodes(node.props.children)];
 }
 
-function draw(error: string | undefined, onOpenGitSettings?: () => void) {
-  const repos = DEMO_WORKSPACE.repos;
-  return nodes(
-    CreateWorktreeDialog({ repos, repoId: repos[0].id, busy: false, error: error as never, onCreate: vi.fn(), onCancel: vi.fn(), onOpenGitSettings }),
-  );
-}
-const action = (all: Node[]) => all.find((n) => n.type === "button" && n.props.children === translate("en", "workspace.create.openGitSettings"));
+const AGENTS = [
+  { id: "claude", name: "Claude" },
+  { id: "codex", name: "Codex" },
+];
+const BLANK = { text: "", agent: "claude", defaultAgent: "claude", setDefault: false, parent: "", itemUrl: "", itemKind: "pr" as const };
 
-it("points a refused branch prefix at Settings → Git", () => {
-  const open = vi.fn();
-  const all = draw("bad_branch_prefix", open);
-  expect(all.find((n) => n.props.role === "alert")?.props.children).toBe(translate("en", "error.bad_branch_prefix"));
-  action(all)!.props.onClick();
-  expect(open).toHaveBeenCalledOnce();
+it("preselects the default agent and lists No agent first", () => {
+  const repos = DEMO_WORKSPACE.repos;
+  const all = nodes(CreateWorktreeDialog({ repos, repoId: repos[0].id, agents: AGENTS, defaultAgent: "claude", onCreate: vi.fn(), onCancel: vi.fn() }));
+  const select = all.find((n) => n.type === "select" && n.props.value === "claude")!;
+  expect(select).toBeDefined();
+  const options = nodes(select.props.children).filter((n) => n.type === "option");
+  expect(options.map((o) => o.props.value)).toEqual(["", "claude", "codex"]);
 });
 
-it("offers Settings → Git only for a refused prefix", () => {
-  expect(action(draw("branch_exists", vi.fn()))).toBeUndefined();
-  expect(action(draw(undefined, vi.fn()))).toBeUndefined();
-  expect(action(draw("bad_branch_prefix"))).toBeUndefined();
+it("sends the picked agent and Set as default only when it differs from the default", () => {
+  expect(buildCreate({ ...BLANK, agent: "codex", setDefault: true })?.extra).toMatchObject({ agent: "codex", setDefault: true });
+  expect(buildCreate({ ...BLANK, agent: "claude", setDefault: true })?.extra).toMatchObject({ agent: "claude", setDefault: false });
+  expect(buildCreate({ ...BLANK, agent: "", setDefault: true })?.extra).toMatchObject({ agent: null, setDefault: false });
+});
+
+it("sends the parent and the work item", () => {
+  const built = buildCreate({ ...BLANK, parent: "/w/oak", itemUrl: "https://x.test/i/7", itemKind: "issue" });
+  expect(built?.extra.parent).toBe("/w/oak");
+  expect(built?.extra.item).toEqual({ kind: "issue", url: "https://x.test/i/7", title: null });
+});
+
+it("refuses a link that is not a URL", () => {
+  expect(parseItem("not a link", "pr")).toBe("bad");
+  expect(parseItem("ftp://x.test/1", "pr")).toBe("bad");
+  expect(buildCreate({ ...BLANK, itemUrl: "nope" })).toBeNull();
+  expect(parseItem("  ", "pr")).toBeNull();
+});
+
+it("keeps the emoji in the title and uses the code word in the name", () => {
+  const built = buildCreate({ ...BLANK, text: "🚀 login" });
+  expect(built?.name).toBe("rocket-login");
+  expect(built?.extra.title).toBe("🚀 login");
+  const plain = buildCreate({ ...BLANK, text: "feat/login" });
+  expect(plain?.name).toBe("feat/login");
+  expect(plain?.extra.title).toBeNull();
 });
