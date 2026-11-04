@@ -17,6 +17,8 @@ export function RemoveWorktreeDialog(props: {
   error?: ApiError["code"];
   /** How many worktrees name this one as their parent. */
   children?: number;
+  /** The nested tick starts on (the row menu's "Delete with nested worktrees"). */
+  nestedDefault?: boolean;
   /** `nested`: the children go too. */
   onConfirm(nested: boolean): void;
   /** Archive instead of delete: the folder goes, the branch stays. */
@@ -25,7 +27,7 @@ export function RemoveWorktreeDialog(props: {
 }): JSX.Element {
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
-  const [nested, setNested] = useState(false);
+  const [nested, setNested] = useState(props.nestedDefault === true);
 
   useEffect(() => {
     const d = dialog.current;
