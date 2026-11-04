@@ -341,7 +341,8 @@ fn a_client_that_does_not_ack_is_detached_and_the_child_runs_on() {
     });
     let mut c = svc.client();
     let flood = if cfg!(windows) {
-        "for /l %i in (1,1,2000) do @echo line-%i".to_owned() + "& ping -n 30 127.0.0.1 >nul"
+        // The loop in brackets: unbracketed, the ping would run after every line.
+        "(for /l %i in (1,1,2000) do @echo line-%i)".to_owned() + "& ping -n 30 127.0.0.1 >nul"
     } else {
         "i=0; while [ $i -lt 2000 ]; do echo line-$i; i=$((i+1)); done; sleep 30".to_owned()
     };
