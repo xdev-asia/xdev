@@ -1,28 +1,31 @@
-// Rasterises the flat xDev tile into pixel-aligned PNGs and packs icon.ico.
+// Rasterises the xDev v9 tile into PNGs, packs icon.ico and writes the mobile icon set.
 // Usage: node gen-icons.mjs <out-dir>   (needs @resvg/resvg-js resolvable, e.g. installed in a scratch folder)
-// The mark's coordinates are all multiples of 3, so a scale of k/3 keeps every edge on a whole pixel.
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+// Sizes up to 32 px use the hand-drawn 16-grid tile (docs/brand/xdev-mark-tile.svg) so the × stays crisp;
+// larger sizes use the gradient tile with the 1024-unit mark (docs/brand/xdev-mark.svg).
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Resvg } from "@resvg/resvg-js";
 
-const BLUE = "#2f62e6";
-const MARK = '<path d="M0 3H6L15 12L6 21H0L9 12Z"/><path d="M12 18H21V21H12Z"/>';
-// size -> mark scale (in thirds). The mark spans 21x18 units; 2/3 -> 14x12 etc.
-const THIRDS = { 16: 2, 24: 2, 32: 3, 48: 4, 64: 6, 128: 9, 256: 18 };
+const brand = join(dirname(fileURLToPath(import.meta.url)), "..");
+const ORANGE = "#ff7a3d";
+const mark = (stroke) =>
+  `<path d="M316 368L580 632M580 368L316 632" stroke="${stroke}" stroke-width="112" stroke-linecap="round" fill="none"/>` +
+  `<rect x="640" y="580" width="150" height="64" rx="18" fill="${ORANGE}"/>`;
+const centred = (scale, body) => `<g transform="translate(512 512) scale(${scale}) translate(-525 -500)">${body}</g>`;
+const BLUE = '<linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f84ff"/><stop offset="1" stop-color="#1f45c7"/></linearGradient>';
 
+// The desktop tile: rounded gradient square, mark at 0.9.
 export function tileSvg(size) {
-  const t = THIRDS[size] ?? Math.round((size * 0.66) / 21) * 3; // large sizes: ~66% mark, whole-pixel scale
-  const s = t / 3;
-  const w = 21 * s, h = 18 * s;
-  // The mark's vertical extent is y 3..21 -> centre 12; horizontal 0..21 -> centre 10.5.
-  const x = Math.round((size - w) / 2);
-  const y = Math.round(size / 2 - 12 * s);
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">` +
-    `<rect width="${size}" height="${size}" rx="${size / 4}" fill="${BLUE}"/>` +
-    `<g transform="translate(${x} ${y}) scale(${s})" fill="#fff">${MARK}</g></svg>`;
+  if (size <= 32) {
+    return readFileSync(join(brand, "xdev-mark-tile.svg"), "utf8").replace('width="32" height="32"', `width="${size}" height="${size}"`);
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 1024 1024"><defs>${BLUE}</defs>` +
+    `<rect width="1024" height="1024" rx="230" fill="url(#g)"/>${centred(0.9, mark("#fff"))}</svg>`;
 }
 
-export const png = (size) => new Resvg(tileSvg(size), { fitTo: { mode: "width", value: size } }).render().asPng();
+const render = (svg, size) => new Resvg(svg, { fitTo: { mode: "width", value: size } }).render().asPng();
+export const png = (size) => render(tileSvg(size), size);
 
 function ico(sizes) {
   const images = sizes.map((s) => png(s));
@@ -45,9 +48,13 @@ function ico(sizes) {
 
 const out = process.argv[2];
 if (out) {
-  mkdirSync(out, { recursive: true });
+  mkdirSync(join(out, "mobile"), { recursive: true });
   writeFileSync(join(out, "source-1024.svg"), tileSvg(1024));
   writeFileSync(join(out, "source-1024.png"), png(1024));
   for (const s of [16, 24, 32, 48, 64, 128, 256, 512]) writeFileSync(join(out, `tile-${s}.png`), png(s));
   writeFileSync(join(out, "icon.ico"), ico([16, 24, 32, 48, 64, 256]));
+  for (const name of ["ios-icon", "ios-icon-dark", "android-foreground", "android-background", "android-monochrome"]) {
+    const svg = readFileSync(join(brand, "mobile", `${name}.svg`), "utf8");
+    writeFileSync(join(out, "mobile", `${name}-1024.png`), render(svg, 1024));
+  }
 }
