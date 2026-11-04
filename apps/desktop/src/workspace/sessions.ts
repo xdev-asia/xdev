@@ -118,6 +118,8 @@ export class Sessions {
   private hooksOn = true;
   // A restore runs once per app run.
   private restored = false;
+  // Restored tabs whose terminal starts when they are first shown.
+  private readonly lazy = new Set<string>();
   // Tabs the person closed, newest last.
   private readonly closed: ClosedTab[] = [];
 
@@ -246,6 +248,7 @@ export class Sessions {
     } else return null;
     const entry = this.entries.get(tab.id)!;
     const color = TAB_COLORS.includes(snap.color) ? snap.color : "none";
+    this.lazy.add(tab.id);
     this.update(entry, { title: snap.title, renamed: snap.renamed === true, pinned: snap.pinned === true, color });
     return entry.tab;
   }
@@ -253,6 +256,11 @@ export class Sessions {
   /** Every tab that resumed an agent session, in the order they opened. */
   resumed(): Tab[] {
     return [...this.entries.values()].filter((e) => e.tab.resumeOf !== null).map((e) => e.tab);
+  }
+
+  /** A restored tab that has not been shown yet: its view leaves the terminal unstarted until it is. */
+  deferred(id: string): boolean {
+    return this.lazy.has(id);
   }
 
   /** A tab by its pty id; `null` when it is gone. */
@@ -767,6 +775,7 @@ export class Sessions {
       this.clear(this.announce, e.tab.id);
       this.clear(this.stale, e.tab.id);
       this.entries.delete(e.tab.id);
+      this.lazy.delete(e.tab.id);
       this.cache.delete(e.tab.worktree);
       const layout = this.layouts.get(e.tab.worktree);
       if (layout) {

@@ -118,3 +118,17 @@ describe("Sessions.restore", () => {
     expect(report.fresh).toBe(1);
   });
 });
+
+describe("Sessions.restore lazy start", () => {
+  it("marks restored tabs as deferred until they are removed; tabs opened by hand never are", async () => {
+    const s = new Sessions(createMockApi({}));
+    const mine = s.open(B, "shell");
+    await s.restore(snap({ [A]: one({ t1: shell() }) }), "all", never);
+    const restored = s.tabs(A)[0];
+    expect(s.deferred(restored.id)).toBe(true);
+    expect(s.deferred(mine.id)).toBe(false);
+    await s.close(restored.id);
+    expect(s.deferred(restored.id)).toBe(false);
+    s.dispose();
+  });
+});
