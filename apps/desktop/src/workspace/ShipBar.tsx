@@ -20,6 +20,12 @@ type Force = { remote: string; branch: string; id: string };
  * mount, on window focus, after each action and whenever `refreshKey` changes.
  */
 const DETAIL_CODES = new Set(["git", "push_rejected", "gh_failed", "draft_failed"]);
+const POLICY_CODES = new Set(["needs_approval", "denied"]);
+
+// What the agent is given of a failed push: git's own words when there are any.
+function pushOutput(error: ApiError, message: string): string {
+  return error.detail ? `${message}\n${error.detail}` : message;
+}
 
 export function ShipBar(props: {
   api: Api;
@@ -34,6 +40,9 @@ export function ShipBar(props: {
   refreshKey?: number;
   // Settings → Git: the agent actions and the pull request defaults.
   git?: GitSettings;
+  // Gives a failed push's output to an agent, as the Fix push failure recipe says; without it the
+  // button is not offered.
+  onFixPush?(output: string, branch: string): void;
 }): JSX.Element {
   const { api, worktree, prs } = props;
   const git = props.git ?? DEFAULT_GIT_SETTINGS;
@@ -45,6 +54,8 @@ export function ShipBar(props: {
   const [listed, setListed] = useState(false);
   const [force, setForce] = useState<Force | null>(null);
   const [creating, setCreating] = useState(false);
+  // The error on show came from a push, the one action a recipe can fix.
+  const [pushFailed, setPushFailed] = useState(false);
   // Only the newest read may write.
   const reads = useRef(0);
   const onChanged = useRef(props.onChanged);
@@ -85,10 +96,11 @@ export function ShipBar(props: {
   }, [prs, worktree]);
 
   // Runs one action; its answer is the new state of the branch.
-  async function run(act: () => Promise<ShipView | void>): Promise<void> {
+  async function run(act: () => Promise<ShipView | void>, push = false): Promise<void> {
     setBusy(true);
     setMenu(false);
     setError(null);
+    setPushFailed(false);
     try {
       const view = await act();
       if (view) {
@@ -100,6 +112,7 @@ export function ShipBar(props: {
       onChanged.current();
     } catch (e) {
       setError(toApiError(e));
+      setPushFailed(push);
     } finally {
       setBusy(false);
     }
@@ -119,11 +132,14 @@ export function ShipBar(props: {
 
   function main(): void {
     if (action === "commit") props.onCommit();
-    else if (action === "publish" || action === "push") void run(() => api.worktreePush(worktree));
+    else if (action === "publish" || action === "push") void run(() => api.worktreePush(worktree), true);
     else if (action === "pull") void run(() => api.worktreePull(worktree));
     else if (action === "create_pr") setCreating(true);
     else if (action === "open_pr") void run(() => api.worktreePrOpen(worktree, false));
   }
+
+  // A policy stop is not something an agent can fix.
+  const fixable = error !== null && pushFailed && git.sourceControlAi && props.onFixPush !== undefined && !POLICY_CODES.has(error.code);
 
   return (
     <section className="ws-ship" aria-label={t("ship.region")}>
@@ -219,6 +235,14 @@ export function ShipBar(props: {
         <p className="error-text" role="alert">
           {t(`error.${error.code}`)}
           {DETAIL_CODES.has(error.code) && error.detail ? ` ${error.detail}` : ""}
+          {fixable && (
+            <>
+              {" "}
+              <button type="button" className="ws-ship-link" data-fix="push" onClick={() => props.onFixPush?.(pushOutput(error, t(`error.${error.code}`)), ship?.branch ?? "")}>
+                {t("ship.push.fix")}
+              </button>
+            </>
+          )}
         </p>
       )}
       <ConfirmDialog

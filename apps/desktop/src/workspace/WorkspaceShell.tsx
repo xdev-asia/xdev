@@ -845,10 +845,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
 
   // Gives a failed commit hook's output to an agent of the worktree, as its recipe says, and brings its tab to the front.
-  async function fixWithAgent(output: string): Promise<void> {
+  async function fixWithAgent(id: "fixCommitFailure" | "fixPushFailure", output: string, branch = current?.branch ?? ""): Promise<void> {
     if (!sessions || !current) return;
     const path = current.path;
-    const tab = await sendFix(api, sessions, path, shownTab[path] ?? null, "fixCommitFailure", { branch: current.branch ?? "", output });
+    const tab = await sendFix(api, sessions, path, shownTab[path] ?? null, id, { branch, output });
     setFixNote(!tab);
     if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
   }
@@ -1209,7 +1209,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   onOpenFile={(file) => openFile(current.path, file)}
                   onCount={(n) => setChangeCount({ worktree: current.path, count: n })}
                   onChanges={(list) => setChangeList({ worktree: current.path, list })}
-                  onFixWithAgent={(output) => void fixWithAgent(output)}
+                  onFixWithAgent={(output) => void fixWithAgent("fixCommitFailure", output)}
+                  onFixPush={(output, branch) => void fixWithAgent("fixPushFailure", output, branch)}
                   register={registerChanges}
                 />
               ) : (

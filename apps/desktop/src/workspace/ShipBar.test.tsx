@@ -69,11 +69,11 @@ function mount(render: () => unknown) {
 }
 
 
-function bar(api: Api, extra: { checked?: number; git?: GitSettings } = {}) {
+function bar(api: Api, extra: { checked?: number; git?: GitSettings; onFixPush?: (output: string, branch: string) => void } = {}) {
   const prs = new PrStore(api);
   const onCommit = vi.fn();
   const onChanged = vi.fn();
-  const view = mount(() => ShipBar({ api, worktree: OAK, checked: extra.checked ?? 0, prs, onCommit, onChanged, git: extra.git }));
+  const view = mount(() => ShipBar({ api, worktree: OAK, checked: extra.checked ?? 0, prs, onCommit, onChanged, git: extra.git, onFixPush: extra.onFixPush }));
   const main = () => view.find((n) => n.type === Button)!;
   const more = () => view.find((n) => n.props["aria-haspopup"] === "menu")!;
   const item = (label: string) => view.find((n) => n.props.role === "menuitem" && n.props.children === label)!;
@@ -255,6 +255,61 @@ it("push_rejected shows inline", async () => {
   view.main().props.onClick();
   await tick();
   expect(view.html()).toContain(en("error.push_rejected"));
+});
+
+it("offers a fix for a failed push, with git's output and the branch", async () => {
+  const api = seeded();
+  await api.worktreeCommit(OAK, ["src/session.ts"], "feat: one");
+  vi.spyOn(api, "worktreePush").mockRejectedValue({ code: "push_rejected", detail: "! [rejected] oak -> oak (fetch first)" });
+  const onFixPush = vi.fn();
+  const view = bar(api, { onFixPush });
+  await tick();
+  const fix = () => view.find((n) => n.props["data-fix"] === "push");
+  expect(fix()).toBeUndefined();
+  view.main().props.onClick();
+  await tick();
+  expect(fix()!.props.children).toBe(en("ship.push.fix"));
+  fix()!.props.onClick();
+  expect(onFixPush).toHaveBeenCalledWith(`${en("error.push_rejected")}\n! [rejected] oak -> oak (fetch first)`, "oak");
+});
+
+it("offers no fix when the agent actions are off, there is no handler, or the error is not a push's", async () => {
+  const failing = async () => {
+    const api = seeded();
+    await api.worktreeCommit(OAK, ["src/session.ts"], "feat: one");
+    vi.spyOn(api, "worktreePush").mockRejectedValue({ code: "push_rejected" });
+    return api;
+  };
+  const fixOf = (view: ReturnType<typeof bar>) => view.find((n) => n.props["data-fix"] === "push");
+  const attempt = async (extra: Parameters<typeof bar>[1]) => {
+    hooks.values = []; hooks.effects = [];
+    const view = bar(await failing(), extra);
+    await tick();
+    view.main().props.onClick();
+    await tick();
+    return view;
+  };
+  expect(fixOf(await attempt({ onFixPush: vi.fn(), git: { ...DEFAULT_GIT_SETTINGS, sourceControlAi: false } }))).toBeUndefined();
+  expect(fixOf(await attempt({}))).toBeUndefined();
+  // A pull that fails is not a push.
+  hooks.values = []; hooks.effects = [];
+  const api = await failing();
+  vi.spyOn(api, "worktreePull").mockRejectedValue({ code: "git", detail: "x" });
+  const view = bar(api, { onFixPush: vi.fn() });
+  await tick();
+  view.openMenu();
+  view.item(en("ship.more.pull")).props.onClick();
+  await tick();
+  expect(view.html()).toContain(en("error.git"));
+  expect(fixOf(view)).toBeUndefined();
+  // A policy stop is not for an agent.
+  vi.spyOn(api, "worktreePush").mockRejectedValue({ code: "denied", detail: "no" });
+  hooks.values = []; hooks.effects = [];
+  const denied = bar(api, { onFixPush: vi.fn() });
+  await tick();
+  denied.main().props.onClick();
+  await tick();
+  expect(fixOf(denied)).toBeUndefined();
 });
 
 it("shows the pull request number from the store", async () => {
