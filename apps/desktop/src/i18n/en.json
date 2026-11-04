@@ -469,6 +469,7 @@
   "error.stopped": "The run was stopped. You can resume it.",
   "error.seat_vacant": "Put an account in that seat first.",
   "error.unknown_account": "That account is not registered.",
+  "error.session_missing": "That account has no log of this session to carry.",
   "error.busy": "The squad is running. Wait for it, or deactivate it first.",
   "error.bad_role": "That seat does not exist.",
   "error.empty_name": "Write a name first.",
