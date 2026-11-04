@@ -663,6 +663,47 @@ fn update_changes_short_name_base_ref_and_root() {
 }
 
 #[test]
+fn update_refuses_a_docs_dir_that_is_a_shared_vault() {
+    let (mut reg, id, main) = registered();
+    let shared = main.path().join("handbook");
+    fs::create_dir(&shared).unwrap();
+    xdev_workspace::add_vault(&mut reg, &shared).unwrap();
+    let before = reg.clone();
+    let err = update_repo(
+        &mut reg,
+        &id,
+        RepoPatch {
+            docs_dir: Some("handbook".into()),
+            ..RepoPatch::default()
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err.code(), "vault_exists");
+    assert_eq!(reg, before);
+    // A reset to the default folder is checked the same way.
+    let default = main.path().join("docs");
+    fs::create_dir(&default).unwrap();
+    reg.repos[0].docs_dir = Some("other".into());
+    reg.vaults.clear();
+    reg.vaults.push(xdev_workspace::VaultEntry {
+        id: "x".into(),
+        path: default,
+    });
+    let before = reg.clone();
+    let err = update_repo(
+        &mut reg,
+        &id,
+        RepoPatch {
+            docs_dir: Some(String::new()),
+            ..RepoPatch::default()
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err.code(), "vault_exists");
+    assert_eq!(reg, before);
+}
+
+#[test]
 fn update_with_an_empty_patch_changes_nothing() {
     let (mut reg, id, _main) = registered();
     let before = reg.clone();

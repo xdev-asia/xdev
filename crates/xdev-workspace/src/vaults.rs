@@ -33,7 +33,7 @@ pub struct VaultView {
     pub exists: bool,
 }
 
-const DEFAULT_DOCS_DIR: &str = "docs";
+pub(crate) const DEFAULT_DOCS_DIR: &str = "docs";
 
 /// The repo's docs folder as a relative path, `docs` when none is set.
 pub(crate) fn docs_dir_text(entry: &RepoEntry) -> String {
@@ -50,14 +50,18 @@ pub fn repo_docs_dir(entry: &RepoEntry) -> PathBuf {
 
 /// Checks a docs folder typed by the person. Returns `None` for an empty
 /// string (back to the default), else the folder with `/` separators and no
-/// `.` parts. A `..` part, a root, a drive or a UNC prefix is refused, in
-/// either separator, whatever the host OS.
+/// `.` parts. A `..` part, a root, a drive or a UNC prefix, a `:` anywhere
+/// (a drive, or a Windows stream name) and a first part named `.git` (any
+/// case) are refused, in either separator, whatever the host OS.
 pub fn validate_docs_dir(s: &str) -> Result<Option<String>, WorkspaceError> {
     let text = s.trim();
     if text.is_empty() {
         return Ok(None);
     }
     let bad = || WorkspaceError::BadPath(text.to_owned());
+    if text.contains(':') {
+        return Err(bad());
+    }
     let unified = text.replace('\\', "/");
     let drive = unified.as_bytes();
     if unified.starts_with('/')
@@ -73,7 +77,7 @@ pub fn validate_docs_dir(s: &str) -> Result<Option<String>, WorkspaceError> {
             p => parts.push(p),
         }
     }
-    if parts.is_empty() {
+    if parts.is_empty() || parts[0].eq_ignore_ascii_case(".git") {
         return Err(bad());
     }
     Ok(Some(parts.join("/")))
@@ -158,12 +162,12 @@ pub fn forget_vault(reg: &mut Registry, id: &str) -> Result<(), WorkspaceError> 
 }
 
 /// Adopts the folder the old single `last_vault` setting held as a shared
-/// vault. Nothing happens for `None`, an empty path, a path already
+/// vault. Nothing happens for `None`, an empty or relative path, a path already
 /// registered or a repo's docs folder. The folder need not exist: a vault on
 /// a drive that is away lists as not existing. Returns whether the registry
 /// changed, so running it again returns `false`.
 pub fn adopt_last_vault(reg: &mut Registry, last: Option<&Path>) -> bool {
-    let Some(path) = last.filter(|p| !p.as_os_str().is_empty()) else {
+    let Some(path) = last.filter(|p| p.is_absolute()) else {
         return false;
     };
     let key = path_key(path);

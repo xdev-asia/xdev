@@ -178,6 +178,11 @@ fn validate_docs_dir_refuses_escapes_and_absolute_paths() {
         r"\\host\share",
         ".",
         "a/./..",
+        ".git",
+        ".GIT/hooks",
+        r".Git\x",
+        "a:b",
+        "docs:stream",
     ] {
         let err = validate_docs_dir(bad).unwrap_err();
         assert_eq!(err.code(), "bad_path", "{bad:?}");
@@ -219,6 +224,28 @@ fn adopt_last_vault_adds_a_missing_path_as_shared() {
     // A second run changes nothing.
     assert!(!adopt_last_vault(&mut reg, Some(&notes)));
     assert_eq!(reg.vaults.len(), 1);
+}
+
+#[test]
+fn validate_docs_dir_allows_a_git_name_below_the_first_part() {
+    assert_eq!(
+        validate_docs_dir("docs/.git-notes").unwrap(),
+        Some("docs/.git-notes".into())
+    );
+    assert_eq!(
+        validate_docs_dir(".github").unwrap(),
+        Some(".github".into())
+    );
+}
+
+#[test]
+fn adopt_last_vault_skips_a_relative_path() {
+    use xdev_workspace::adopt_last_vault;
+    let (_tmp, mut reg, _) = with_repo();
+    let before = reg.clone();
+    assert!(!adopt_last_vault(&mut reg, Some(Path::new("notes"))));
+    assert!(!adopt_last_vault(&mut reg, Some(Path::new("../notes"))));
+    assert_eq!(reg, before);
 }
 
 #[test]
