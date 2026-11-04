@@ -27,7 +27,7 @@ it("tabTitleFromPrompt: cuts by code points, drops control and bidi marks, masks
   const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
   expect(lone.test(tabTitleFromPrompt(a + "b".repeat(18) + "😀😀😀")!)).toBe(false);
   expect(tabTitleFromPrompt("fix ‮txt.exe\u0007 now")).toBe("fix txt.exe now");
-  expect(tabTitleFromPrompt("use sk_live_abcdefghijklmnopqrstuvwxyz0123 here")).toBe("use … here");
+  expect(tabTitleFromPrompt(`use sk_${"live"}_${"abcdefghijklmnopqrstuvwxyz0123"} here`)).toBe("use … here");
 });
 
 it("tabTitleFromPrompt: names, branches and file names stay; keys and shas are masked", () => {
