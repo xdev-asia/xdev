@@ -159,6 +159,18 @@ export function Terminal(props: {
     // What the program asked for (kitty flags, modifyOtherKeys) and which Option keys are held.
     const modes = trackInputModes(term);
     const optionSides = createOptionSideTracker();
+    // The program is gone: its keyboard modes go with it.
+    let offExit: (() => void) | null = null;
+    let exitGone = false;
+    void props.api
+      .onPtyExit((exit) => {
+        if (exit.id === props.id) modes.reset();
+      })
+      .then((off) => {
+        if (exitGone) off();
+        else offExit = off;
+      })
+      .catch(() => {});
     const effectiveOption = () => effectiveOptionAsAlt(getTerminalSettings().macOptionAsAlt, getDetectedLayout());
     // With both Option keys as Alt, xterm itself encodes Option+key as ESC + key.
     const applyOptionMeta = () => {
@@ -350,6 +362,8 @@ export function Terminal(props: {
       offSettings();
       offTheme();
       offLayout();
+      exitGone = true;
+      offExit?.();
       modes.dispose();
       el.removeEventListener("focusout", clearOptionSides);
       renderer.dispose();

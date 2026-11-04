@@ -6,6 +6,8 @@ export interface InputModes {
   kittyFlags(): number;
   /** The modifyOtherKeys level the program set. */
   modifyOtherKeys(): number;
+  /** Forget everything: the program that set it is gone. */
+  reset(): void;
   dispose(): void;
 }
 
@@ -25,15 +27,22 @@ const num = (p: Params, i: number, fallback: number): number => {
  * program sets. Every handler returns false so xterm still runs its own; the `CSI ? u` query is
  * not answered, because xterm cannot produce the full kitty encoding a program would then expect.
  */
-export function trackInputModes(term: Pick<XTerm, "parser" | "buffer">): InputModes {
+export function trackInputModes(term: Pick<XTerm, "parser"> & { buffer: Pick<XTerm["buffer"], "active"> & Partial<Pick<XTerm["buffer"], "onBufferChange">> }): InputModes {
   const screens: Record<string, Screen> = {};
   let mok = 0;
   const screen = (): Screen => (screens[term.buffer.active.type] ??= { flags: 0, stack: [] });
-  const reset = () => {
+  const clear = () => {
     for (const k of Object.keys(screens)) delete screens[k];
     mok = 0;
+  };
+  const reset = () => {
+    clear();
     return false;
   };
+  // A program that enters the alternate screen starts from nothing; one that died there left its flags behind.
+  const bufferChange = term.buffer.onBufferChange?.((b) => {
+    if (b.type === "alternate") delete screens.alternate;
+  });
 
   const handlers = [
     term.parser.registerCsiHandler({ prefix: ">", final: "u" }, (p) => {
@@ -71,6 +80,10 @@ export function trackInputModes(term: Pick<XTerm, "parser" | "buffer">): InputMo
   return {
     kittyFlags: () => screen().flags,
     modifyOtherKeys: () => mok,
-    dispose: () => handlers.forEach((h) => h.dispose()),
+    reset: clear,
+    dispose: () => {
+      handlers.forEach((h) => h.dispose());
+      bufferChange?.dispose();
+    },
   };
 }

@@ -9,7 +9,18 @@ function fake() {
   const csi = new Map<string, (p: Params) => boolean>();
   const esc = new Map<string, () => boolean>();
   const key = (id: Id) => `${id.prefix ?? ""}${id.intermediates ?? ""}${id.final}`;
-  const buffer = { active: { type: "normal" } };
+  const buffer = {
+    active: { type: "normal" },
+    listeners: [] as ((b: { type: string }) => void)[],
+    onBufferChange(cb: (b: { type: string }) => void) {
+      buffer.listeners.push(cb);
+      return { dispose: () => void buffer.listeners.splice(buffer.listeners.indexOf(cb), 1) };
+    },
+    switchTo(type: string) {
+      buffer.active = { type };
+      buffer.listeners.forEach((cb) => cb(buffer.active));
+    },
+  };
   const term = {
     buffer,
     parser: {
@@ -144,5 +155,41 @@ describe("trackInputModes", () => {
     modes.dispose();
     expect(csi.size).toBe(0);
     expect(esc.size).toBe(0);
+  });
+});
+
+describe("stale modes", () => {
+  it("entering the alternate screen again starts from zero flags", () => {
+    const { buffer, run, modes } = start();
+    buffer.switchTo("alternate");
+    run(">u", 5);
+    expect(modes.kittyFlags()).toBe(5);
+    // The program was killed without popping its flags; the next full-screen program must not inherit them.
+    buffer.switchTo("normal");
+    buffer.switchTo("alternate");
+    expect(modes.kittyFlags()).toBe(0);
+  });
+
+  it("the normal screen keeps its flags across an alternate screen visit", () => {
+    const { buffer, run, modes } = start();
+    run(">u", 3);
+    buffer.switchTo("alternate");
+    buffer.switchTo("normal");
+    expect(modes.kittyFlags()).toBe(3);
+  });
+
+  it("reset() forgets kitty flags and modifyOtherKeys", () => {
+    const { run, modes } = start();
+    run(">u", 3);
+    run(">m", 4, 2);
+    modes.reset();
+    expect(modes.kittyFlags()).toBe(0);
+    expect(modes.modifyOtherKeys()).toBe(0);
+  });
+
+  it("dispose releases the buffer listener", () => {
+    const { buffer, modes } = start();
+    modes.dispose();
+    expect(buffer.listeners).toHaveLength(0);
   });
 });
