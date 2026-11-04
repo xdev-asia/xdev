@@ -55,3 +55,5 @@ That key is separate from Apple and Microsoft code-signing certificates.
 - [Inference] On macOS, ad-hoc signed builds change identity on each update,
   so Keychain may ask again for access to stored API keys until the app is
   signed with a Developer ID.
+
+- A manual "Check for updates" (Settings, General, and the tray and macOS menu) runs the same signed check as the background one; it adds no new trust path and no new key.
