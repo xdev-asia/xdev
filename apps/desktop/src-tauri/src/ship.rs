@@ -19,6 +19,7 @@ use xdev_workspace::{Registry, WorkspaceError, path_key};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError, load_git_settings};
+use crate::recipes::render;
 use crate::settings::Recipe;
 use crate::tasks::{gate, provider_runner};
 use crate::workspace::{bad_arg, inside, parent_within, start_of};
@@ -27,6 +28,14 @@ use crate::workspace::{bad_arg, inside, parent_within, start_of};
 const RANGE_LIMIT: usize = 50;
 /// What a draft prompt carries of the changes; the rest is cut.
 const DRAFT_CAP: usize = 60_000;
+/// The built-in commit message prompt; `{basePrompt}` is this and the changes.
+const COMMIT_BASE: &str = "Write a concise conventional commit message for the changes below. \
+     The subject line is at most 72 characters; add a short body only if it helps. \
+     Answer with the message only, no quotes and no commentary.";
+/// The built-in pull request prompt; `{baseBranch}` is filled when it is built.
+const PR_BASE: &str = "Write a pull request title and description for merging the current branch into {baseBranch}. \
+     Put the title on the first line, then a blank line, then the description in Markdown. \
+     Answer with that only, no commentary.";
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -362,7 +371,7 @@ fn draft_commit_with(
     runner: &dyn Runner,
     repo: &Repo,
     files: &[String],
-    args: &[String],
+    recipe: &Recipe,
 ) -> Result<String, CmdError> {
     let mut changes = repo.diff_text(files)?;
     // Untracked files are not in `git diff`; show them whole.
@@ -379,25 +388,30 @@ fn draft_commit_with(
             String::from_utf8_lossy(&bytes)
         ));
     }
-    let prompt = format!(
-        "Write a concise conventional commit message for the changes below. \
-         The subject line is at most 72 characters; add a short body only if it helps. \
-         Answer with the message only, no quotes and no commentary.\n\n{}",
-        cap(&changes, DRAFT_CAP)
-    );
-    ask(runner, repo, prompt, args)
+    let changes = cap(&changes, DRAFT_CAP);
+    let base = format!("{COMMIT_BASE}\n\n{changes}");
+    let branch = repo.current_branch()?.unwrap_or_default();
+    let staged = files.join("\n");
+    // Work items arrive with worktree lifecycle (R4).
+    let vars = [
+        ("basePrompt", base.as_str()),
+        ("branch", branch.as_str()),
+        ("stagedFiles", staged.as_str()),
+        ("stagedPatch", changes.as_str()),
+        ("linkedIssue", ""),
+    ];
+    ask(runner, repo, render(&recipe.template, &vars), &recipe.args)
 }
 
 fn draft_pr_with(
     runner: &dyn Runner,
     repo: &Repo,
     base: &str,
-    args: &[String],
+    recipe: &Recipe,
 ) -> Result<PrDraft, CmdError> {
     // The plain name may exist only as a remote branch.
-    let remote = repo
-        .current_branch()?
-        .and_then(|b| repo.remote_for(&b).ok());
+    let branch = repo.current_branch()?;
+    let remote = branch.as_ref().and_then(|b| repo.remote_for(b).ok());
     let mut candidates = vec![base.to_owned()];
     candidates.extend(remote.map(|r| format!("{r}/{base}")));
     let mut rev = None;
@@ -408,19 +422,32 @@ fn draft_pr_with(
         }
     }
     let rev = rev.ok_or_else(|| err("bad_ref", Some(base.to_owned())))?;
-    let data = format!(
-        "Commits:\n{}\nFiles:\n{}\nDiff:\n{}",
-        repo.range_subjects(&rev)?,
-        repo.range_stat(&rev)?,
-        repo.range_diff(&rev)?
-    );
-    let prompt = format!(
-        "Write a pull request title and description for merging the current branch into {base}. \
-         Put the title on the first line, then a blank line, then the description in Markdown. \
-         Answer with that only, no commentary.\n\n{}",
+    let commits = repo.range_subjects(&rev)?;
+    let files = repo.range_stat(&rev)?;
+    let patch = repo.range_diff(&rev)?;
+    let data = format!("Commits:\n{commits}\nFiles:\n{files}\nDiff:\n{patch}");
+    let base_prompt = format!(
+        "{}\n\n{}",
+        render(PR_BASE, &[("baseBranch", base)]),
         cap(&data, DRAFT_CAP)
     );
-    let answer = ask(runner, repo, prompt, args)?;
+    let patch = cap(&patch, DRAFT_CAP);
+    let branch = branch.unwrap_or_default();
+    // The dialog's own title and body are not passed in, so they are empty;
+    // work items arrive with worktree lifecycle (R4).
+    let vars = [
+        ("basePrompt", base_prompt.as_str()),
+        ("branch", branch.as_str()),
+        ("baseBranch", base),
+        ("currentTitle", ""),
+        ("currentBody", ""),
+        ("commitSummary", commits.as_str()),
+        ("changedFiles", files.as_str()),
+        ("patch", patch.as_str()),
+        ("linkedIssue", ""),
+    ];
+    let prompt = render(&recipe.template, &vars);
+    let answer = ask(runner, repo, prompt, &recipe.args)?;
     let mut lines = answer.lines().skip_while(|l| l.trim().is_empty());
     let first = lines.next().unwrap_or_default();
     let title = first.trim_start_matches('#').trim();
@@ -545,12 +572,7 @@ pub fn worktree_draft_commit(
     checked_files(&path, &files)?;
     let recipe = load_git_settings(&app).recipes.commit_message;
     let runner = draft_runner(data, &path, &recipe)?;
-    draft_commit_with(
-        runner.as_ref(),
-        &Repo::discover(&path)?,
-        &files,
-        &recipe.args,
-    )
+    draft_commit_with(runner.as_ref(), &Repo::discover(&path)?, &files, &recipe)
 }
 
 #[tauri::command(async)]
@@ -568,7 +590,7 @@ pub fn worktree_draft_pr(
         runner.as_ref(),
         &repo,
         &plain_base(&repo, &known.base_ref),
-        &recipe.args,
+        &recipe,
     )
 }
 
@@ -1155,7 +1177,7 @@ mod tests {
         fs::write(fx.wt.join("new.txt"), "brand new text").unwrap();
         let runner = FakeRunner::new(Ok("```\nfix: x\n```"));
         let files = vec!["a.txt".to_owned(), "new.txt".to_owned()];
-        let msg = draft_commit_with(&runner, &repo_of(&fx), &files, &[]).unwrap();
+        let msg = draft_commit_with(&runner, &repo_of(&fx), &files, &Recipe::default()).unwrap();
         assert_eq!(msg, "fix: x");
         let prompt = runner.reqs.borrow()[0].prompt.clone();
         assert!(prompt.contains("+changed line"), "{prompt}");
@@ -1167,7 +1189,13 @@ mod tests {
         let fx = fixture();
         fs::write(fx.wt.join("big.txt"), "é".repeat(100_000)).unwrap();
         let runner = FakeRunner::new(Ok("feat: big"));
-        draft_commit_with(&runner, &repo_of(&fx), &["big.txt".to_owned()], &[]).unwrap();
+        draft_commit_with(
+            &runner,
+            &repo_of(&fx),
+            &["big.txt".to_owned()],
+            &Recipe::default(),
+        )
+        .unwrap();
         let prompt = runner.reqs.borrow()[0].prompt.clone();
         assert!(prompt.len() <= 61_000, "{}", prompt.len());
         assert!(prompt.contains("[cut]"));
@@ -1187,7 +1215,7 @@ mod tests {
         commit_file(&fx.wt, "b.txt", "two lines");
         let runner = FakeRunner::new(Ok("```markdown\n# Title: Add b\n\nAdds b.\n\n- one\n```"));
         let base = locate(&fx.data, &fx.wt).unwrap().base_ref;
-        let d = draft_pr_with(&runner, &repo_of(&fx), &base, &[]).unwrap();
+        let d = draft_pr_with(&runner, &repo_of(&fx), &base, &Recipe::default()).unwrap();
         assert_eq!(d.title, "Add b");
         assert_eq!(d.body, "Adds b.\n\n- one");
         assert_eq!((d.base, d.draft), (base, false));
@@ -1203,7 +1231,13 @@ mod tests {
         let fx = fixture();
         fs::write(fx.wt.join("a.txt"), "x").unwrap();
         let runner = FakeRunner::new(Ok("fix: y"));
-        draft_commit_with(&runner, &repo_of(&fx), &["a.txt".to_owned()], &[]).unwrap();
+        draft_commit_with(
+            &runner,
+            &repo_of(&fx),
+            &["a.txt".to_owned()],
+            &Recipe::default(),
+        )
+        .unwrap();
         let req = runner.reqs.borrow()[0].clone();
         assert!(req.tools.is_empty());
         assert_eq!(req.model, None);
@@ -1213,13 +1247,24 @@ mod tests {
     fn draft_failure_is_draft_failed() {
         let fx = fixture();
         let runner = FakeRunner::new(Err("claude_missing"));
-        let e = draft_commit_with(&runner, &repo_of(&fx), &["a.txt".to_owned()], &[]).unwrap_err();
+        let e = draft_commit_with(
+            &runner,
+            &repo_of(&fx),
+            &["a.txt".to_owned()],
+            &Recipe::default(),
+        )
+        .unwrap_err();
         assert_eq!(e.code, "draft_failed");
         assert_eq!(e.detail.as_deref(), Some("claude_missing"));
 
         let empty = FakeRunner::new(Ok("  "));
         assert_eq!(
-            code(draft_commit_with(&empty, &repo_of(&fx), &[], &[])),
+            code(draft_commit_with(
+                &empty,
+                &repo_of(&fx),
+                &[],
+                &Recipe::default()
+            )),
             "draft_failed"
         );
     }
@@ -1360,7 +1405,102 @@ mod tests {
         let fx = fixture();
         let runner = FakeRunner::new(Ok("fix: a"));
         let args = vec!["--model".to_owned(), "x".to_owned()];
-        draft_commit_with(&runner, &repo_of(&fx), &["a.txt".to_owned()], &args).unwrap();
+        let recipe = Recipe {
+            args: args.clone(),
+            ..Recipe::default()
+        };
+        draft_commit_with(&runner, &repo_of(&fx), &["a.txt".to_owned()], &recipe).unwrap();
         assert_eq!(runner.reqs.borrow()[0].args, args);
+    }
+
+    #[test]
+    fn the_default_template_gives_the_built_in_commit_prompt() {
+        let fx = fixture();
+        fs::write(fx.wt.join("a.txt"), "changed line").unwrap();
+        let repo = repo_of(&fx);
+        let files = vec!["a.txt".to_owned()];
+        let runner = FakeRunner::new(Ok("fix: x"));
+        draft_commit_with(&runner, &repo, &files, &Recipe::default()).unwrap();
+        // Golden: the prompt as it was before recipes, word for word.
+        let expected = format!(
+            "Write a concise conventional commit message for the changes below. \
+             The subject line is at most 72 characters; add a short body only if it helps. \
+             Answer with the message only, no quotes and no commentary.\n\n{}",
+            repo.diff_text(&files).unwrap()
+        );
+        assert_eq!(runner.reqs.borrow()[0].prompt, expected);
+    }
+
+    #[test]
+    fn a_commit_template_gets_its_variables() {
+        let fx = fixture();
+        fs::write(fx.wt.join("a.txt"), "changed line").unwrap();
+        let recipe = Recipe {
+            template: "House style.\n{basePrompt}\n--\nOn {branch}: {stagedFiles} [{linkedIssue}] {{x}}\n{stagedPatch}"
+                .to_owned(),
+            ..Recipe::default()
+        };
+        let runner = FakeRunner::new(Ok("fix: x"));
+        let repo = repo_of(&fx);
+        draft_commit_with(&runner, &repo, &["a.txt".to_owned()], &recipe).unwrap();
+        let prompt = runner.reqs.borrow()[0].prompt.clone();
+        let branch = repo.current_branch().unwrap().unwrap();
+        assert!(
+            prompt.starts_with("House style.\nWrite a concise conventional"),
+            "{prompt}"
+        );
+        assert!(
+            prompt.contains(&format!("--\nOn {branch}: a.txt [] {{x}}\n")),
+            "{prompt}"
+        );
+        assert!(
+            prompt
+                .trim_end()
+                .ends_with("+changed line\n\\ No newline at end of file"),
+            "{prompt}"
+        );
+    }
+
+    #[test]
+    fn the_default_template_gives_the_built_in_pr_prompt() {
+        let fx = fixture();
+        commit_file(&fx.wt, "b.txt", "two lines");
+        let repo = repo_of(&fx);
+        let base = locate(&fx.data, &fx.wt).unwrap().base_ref;
+        let runner = FakeRunner::new(Ok("Title\n\nBody"));
+        draft_pr_with(&runner, &repo, &base, &Recipe::default()).unwrap();
+        let expected = format!(
+            "Write a pull request title and description for merging the current branch into {base}. \
+             Put the title on the first line, then a blank line, then the description in Markdown. \
+             Answer with that only, no commentary.\n\nCommits:\n{}\nFiles:\n{}\nDiff:\n{}",
+            repo.range_subjects(&base).unwrap(),
+            repo.range_stat(&base).unwrap(),
+            repo.range_diff(&base).unwrap()
+        );
+        assert_eq!(runner.reqs.borrow()[0].prompt, expected);
+    }
+
+    #[test]
+    fn a_pr_template_gets_its_variables() {
+        let fx = fixture();
+        commit_file(&fx.wt, "b.txt", "two lines");
+        let repo = repo_of(&fx);
+        let base = locate(&fx.data, &fx.wt).unwrap().base_ref;
+        let recipe = Recipe {
+            template: "{branch}->{baseBranch}|{commitSummary}|{changedFiles}|{patch}|{currentTitle}|{linkedIssue}"
+                .to_owned(),
+            ..Recipe::default()
+        };
+        let runner = FakeRunner::new(Ok("T"));
+        draft_pr_with(&runner, &repo, &base, &recipe).unwrap();
+        let prompt = runner.reqs.borrow()[0].prompt.clone();
+        let branch = repo.current_branch().unwrap().unwrap();
+        assert!(
+            prompt.starts_with(&format!("{branch}->{base}|")),
+            "{prompt}"
+        );
+        assert!(prompt.contains("b.txt"), "{prompt}");
+        assert!(prompt.contains("+two lines"), "{prompt}");
+        assert!(prompt.ends_with("||"), "{prompt}");
     }
 }
