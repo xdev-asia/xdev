@@ -132,7 +132,7 @@ pub fn scope_of(caller_worktree: Option<&Path>, target: &Path, reg: &Registry) -
 pub const RATE_PER_S: f64 = 50.0;
 pub const RATE_BURST: f64 = 100.0;
 /// How long a new connection has to send its hello.
-const HELLO_WAIT: Duration = Duration::from_secs(5);
+const HELLO_WAIT: Duration = Duration::from_secs(if cfg!(test) { 2 } else { 5 });
 const ENDPOINT_FILE: &str = "endpoint.json";
 
 /// An error a verb answers with; `code` is one of the spec's error codes.
@@ -318,11 +318,15 @@ impl Bucket {
 
 /// One connection: the hello, then requests answered in order. A reader
 /// thread notices a disconnect while a long call runs.
-fn serve(stream: Stream, token: &str, version: &str, handler: &dyn Handler) {
+fn serve(mut stream: Stream, token: &str, version: &str, handler: &dyn Handler) {
     let Ok(mut writer) = stream.try_clone() else {
         return;
     };
-    let _ = stream.set_read_timeout(Some(HELLO_WAIT));
+    // On the stream the reader reads: a clone has no deadline of its own. A
+    // peer that says nothing is dropped, on every OS.
+    if stream.set_read_deadline(Some(HELLO_WAIT)).is_err() {
+        return;
+    }
     let mut reader = BufReader::new(stream);
     let hello = match read_line(&mut reader, LINE_MAX) {
         Ok(Some(Line::Text(line))) => serde_json::from_slice::<Hello>(&line).ok(),
@@ -344,7 +348,9 @@ fn serve(stream: Stream, token: &str, version: &str, handler: &dyn Handler) {
     if write_frame(&mut writer, &ok).is_err() {
         return;
     }
-    let _ = reader.get_ref().set_read_timeout(None);
+    if reader.get_mut().set_read_deadline(None).is_err() {
+        return;
+    }
     let base = hello.caller.unwrap_or_default();
     let gone = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel::<Line>();
@@ -449,9 +455,9 @@ mod tests {
         let s = xdev_ipc::endpoint(f.dir.path(), &f.prefix, APP_PROTOCOL)
             .connect()
             .unwrap();
-        s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-        let r = BufReader::new(s.try_clone().unwrap());
-        (s, r)
+        let mut read = s.try_clone().unwrap();
+        read.set_read_deadline(Some(Duration::from_secs(10))).unwrap();
+        (s, BufReader::new(read))
     }
 
     fn send(w: &mut Stream, v: &Value) {
@@ -499,6 +505,26 @@ mod tests {
         let mut rest = Vec::new();
         // Closed without a word: the read ends at once with nothing.
         assert_eq!(r.read_to_end(&mut rest).unwrap_or(0), 0);
+    }
+
+    #[test]
+    fn a_silent_peer_is_dropped_after_the_hello_wait() {
+        let f = fixture();
+        let (_w, mut r) = connect(&f);
+        let t = Instant::now();
+        let mut rest = Vec::new();
+        // The server's deadline, not this read's 10 s one, ends it.
+        assert_eq!(r.read_to_end(&mut rest).unwrap_or(0), 0);
+        assert!(t.elapsed() < Duration::from_secs(9), "{:?}", t.elapsed());
+    }
+
+    #[test]
+    fn the_hello_deadline_is_cleared_once_the_hello_is_in() {
+        let f = fixture();
+        let (mut w, mut r) = hello(&f);
+        thread::sleep(HELLO_WAIT + Duration::from_millis(500));
+        send(&mut w, &json!({ "id": 3, "method": "status" }));
+        assert_eq!(recv(&mut r)["id"], 3);
     }
 
     #[test]
