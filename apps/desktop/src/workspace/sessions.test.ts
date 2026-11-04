@@ -370,6 +370,45 @@ describe("Sessions", () => {
     expect(live.unread(A)).toBe(false);
   });
 
+  it("onStatus hears each status change of an agent tab, with the old and the new status", () => {
+    let t = 100;
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api, () => t));
+    const tab = live.open(A, "claude");
+    const shell = live.open(A, "shell");
+    live.noteStarted(tab.id, info(tab.id, true));
+    const heard = vi.fn();
+    const off = live.onStatus(heard);
+    api.__hook(tab.id, "prompt");
+    expect(heard).toHaveBeenLastCalledWith(expect.objectContaining({ id: tab.id, status: "working" }), "idle", "working", 100);
+    t = 200;
+    api.__hook(tab.id, "needs-input");
+    expect(heard).toHaveBeenLastCalledWith(expect.objectContaining({ id: tab.id }), "working", "needs-you", 200);
+    // The same status again is not a change.
+    const calls = heard.mock.calls.length;
+    api.__hook(tab.id, "needs-input");
+    expect(heard).toHaveBeenCalledTimes(calls);
+    // A plain shell is not an agent: nothing is heard for it.
+    live.noteOutput(shell.id, 10);
+    expect(heard.mock.calls.every(([x]) => x.id === tab.id)).toBe(true);
+    off();
+    api.__hook(tab.id, "resume");
+    expect(heard).toHaveBeenCalledTimes(calls);
+  });
+
+  it("onStatus hears the exit of an agent tab", async () => {
+    const api = createMockApi({});
+    let fire: (e: { id: string; code: number | null }) => void = () => {};
+    vi.spyOn(api, "onPtyExit").mockImplementation(async (cb) => ((fire = cb), () => {}));
+    const live = (sessions = new Sessions(api));
+    const tab = live.open(A, "claude");
+    await Promise.resolve();
+    const heard = vi.fn();
+    live.onStatus(heard);
+    fire({ id: tab.id, code: 0 });
+    expect(heard).toHaveBeenCalledWith(expect.objectContaining({ id: tab.id }), "idle", expect.stringMatching(/^(exited|failed)$/), expect.any(Number));
+  });
+
   it("turn_done_on_hidden_pane_is_unread", () => {
     vi.useFakeTimers();
     let t = 42;
