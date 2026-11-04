@@ -1,19 +1,25 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import { translate } from "@/i18n";
 import { conflictChange, conflictDecorations } from "./conflictDecorations";
 import { parseConflicts } from "./conflictMarkers";
 
-const labels = { bar: "Conflict", current: "Accept current", incoming: "Accept incoming", both: "Accept both" };
+vi.mock("./conflictMarkers", async (original) => {
+  const real = await original<typeof import("./conflictMarkers")>();
+  return { ...real, parseConflicts: vi.fn(real.parseConflicts) };
+});
+
+const labels = { bar: (n: number, total: number) => `Conflict ${n} of ${total}`, current: "Accept current", incoming: "Accept incoming", both: "Accept both" };
 const doc = ["a", "<<<<<<< HEAD", "ours", "=======", "theirs", ">>>>>>> feature", "z"].join("\n");
 
-function decorations(text: string): { line: number; class: string | null; widget: boolean }[] {
-  const state = EditorState.create({ doc: text, extensions: [conflictDecorations(() => labels)] });
-  const out: { line: number; class: string | null; widget: boolean }[] = [];
+function decorations(text: string, path?: string): { line: number; class: string | null; widget: boolean; label?: string }[] {
+  const state = EditorState.create({ doc: text, extensions: [conflictDecorations(() => labels, path)] });
+  const out: { line: number; class: string | null; widget: boolean; label?: string }[] = [];
   for (const source of state.facet(EditorView.decorations)) {
     const set = typeof source === "function" ? source(null as unknown as EditorView) : source;
     for (const it = set.iter(); it.value; it.next()) {
-      out.push({ line: state.doc.lineAt(it.from).number, class: (it.value.spec.class as string | undefined) ?? null, widget: Boolean(it.value.spec.widget) });
+      out.push({ line: state.doc.lineAt(it.from).number, class: (it.value.spec.class as string | undefined) ?? null, widget: Boolean(it.value.spec.widget), label: it.value.spec.widget?.label });
     }
   }
   return out;
@@ -51,4 +57,33 @@ it("an empty side leaves no empty line behind", () => {
 it("resolving the last block of the file works without a trailing line break", () => {
   const tail = ["<<<<<<< a", "x", "=======", "y", ">>>>>>> b"].join("\n");
   expect(accept("incoming", tail)).toBe("y");
+});
+
+it("the bar names its block and the count", () => {
+  const two = doc + "\n" + doc;
+  expect(decorations(two).filter((d) => d.widget).map((d) => d.label)).toEqual(["Conflict 1 of 2", "Conflict 2 of 2"]);
+  expect(translate("en", "editor.conflict.bar", { n: 2, total: 5 })).toBe("Conflict 2 of 5");
+  expect(translate("vi", "editor.conflict.bar", { n: 2, total: 5 })).toContain("2");
+});
+
+it("the markers of a fenced block in a markdown file draw nothing", () => {
+  const md = ["```", "<<<<<<< a", "x", "=======", "y", ">>>>>>> b", "```"].join("\n");
+  expect(decorations(md, "a.md")).toEqual([]);
+  expect(decorations(md, "a.ts").length).toBeGreaterThan(0);
+});
+
+it("resolving the last block to an empty side leaves no blank last line", () => {
+  const tail = ["a", "<<<<<<< HEAD", "=======", "theirs", ">>>>>>> f"].join("\n");
+  expect(accept("current", tail)).toBe("a");
+  const only = ["<<<<<<< HEAD", "=======", "theirs", ">>>>>>> f"].join("\n");
+  expect(accept("current", only)).toBe("");
+});
+
+it("parses only a text that has an opening marker", () => {
+  const parse = vi.mocked(parseConflicts);
+  parse.mockClear();
+  expect(decorations("a\nb\n")).toEqual([]);
+  expect(parse).not.toHaveBeenCalled();
+  decorations(doc);
+  expect(parse).toHaveBeenCalledTimes(1);
 });

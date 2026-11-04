@@ -60,3 +60,26 @@ it("resolves an empty side", () => {
   expect(resolveBlock(text, parseConflicts(text)[0], "current")).toBe("");
   expect(resolveBlock(text, parseConflicts(text)[0], "both")).toBe("y\n");
 });
+
+const fenced = (fence: string) => ["# Doc", fence, "<<<<<<< a", "x", "=======", "y", ">>>>>>> b", fence, ""].join("\n");
+
+it("ignores markers inside a fenced code block of a markdown file", () => {
+  expect(parseConflicts(fenced("```"), "docs/merge.md")).toEqual([]);
+  expect(parseConflicts(fenced("~~~"), "docs/merge.mdx")).toEqual([]);
+  expect(parseConflicts(fenced("````"), "README.MD")).toEqual([]);
+});
+
+it("finds a block after a fence has closed in a markdown file", () => {
+  const text = [fenced("```"), "<<<<<<< a", "x", "=======", "y", ">>>>>>> b", ""].join("\n");
+  expect(parseConflicts(text, "a.md").map((b) => b.start)).toEqual([9]);
+});
+
+it("a shorter or different fence does not close a fence", () => {
+  const text = ["````", "```", "<<<<<<< a", "=======", ">>>>>>> b", "~~~", "````", ""].join("\n");
+  expect(parseConflicts(text, "a.md")).toEqual([]);
+});
+
+it("treats fences as plain lines in other files and without a path", () => {
+  expect(parseConflicts(fenced("```"), "a.ts")).toHaveLength(1);
+  expect(parseConflicts(fenced("```"))).toHaveLength(1);
+});
