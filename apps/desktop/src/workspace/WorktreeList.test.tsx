@@ -735,3 +735,35 @@ it("the menu of a child row has the lineage items; the parent's has Delete with 
   view.item("deleteNested")!.run!();
   expect(done.nested).toEqual([a.path]);
 });
+
+it("project order recent puts the repo with the newest output first, in headings and project sections, and turns dragging off", () => {
+  const activity = { "/code/notes": NOW - 100, "/demo/wt/xdev-elm": NOW - 1000 };
+  const view = harness(DOTS, repos, { prefs: prefsWith({ groupBy: "project", projectOrder: "recent" }), activity, onReorder: () => {} });
+  expect(view.all().filter(n => n.props.className === "ws-group").map(n => n.props["data-group"])).toEqual(["project:repo-2-notes", "project:demo-xdev"]);
+  const heads = view.all().filter(n => n.props.className === "ws-repo").map(n => n.props["data-repo"]);
+  expect(heads).toEqual(["repo-2-notes", "demo-xdev"]);
+  expect(view.all().filter(n => n.props.className === "ws-repo").every(n => n.props.draggable === false)).toBe(true);
+  // Manual keeps the repo order and dragging.
+  const manual = harness(DOTS, repos, { prefs: prefsWith({ groupBy: "project" }), activity, onReorder: () => {} });
+  expect(manual.all().filter(n => n.props.className === "ws-repo").map(n => n.props["data-repo"])).toEqual(["demo-xdev", "repo-2-notes"]);
+  expect(manual.all().filter(n => n.props.className === "ws-repo").every(n => n.props.draggable === true)).toBe(true);
+});
+
+it("pinned in groups draws a pinned row in both places, and onOrder lists it once", () => {
+  const seen: string[][] = [];
+  const draw = (pinnedInGroups: boolean) => {
+    const view = harness(DOTS, repos, { prefs: prefsWith({ pinnedInGroups }), onOrder: (p) => seen.push(p) });
+    const rows = view.all().filter(n => /^ws-wt( |$)/.test(n.props.className ?? "") && n.props["data-path"] !== undefined).map(n => n.props["data-path"] as string);
+    hooks.effects = [];
+    view.html();
+    hooks.effects.at(-1)!();
+    return { rows, order: seen.at(-1)! };
+  };
+  const pinPath = repos()[0].worktrees[2].path;
+  const off = draw(false);
+  expect(off.rows.filter(p => p === pinPath)).toHaveLength(1);
+  const on = draw(true);
+  expect(on.rows.filter(p => p === pinPath)).toHaveLength(2);
+  expect(on.order.filter(p => p === pinPath)).toHaveLength(1);
+  expect(new Set(on.order).size).toBe(on.order.length);
+});

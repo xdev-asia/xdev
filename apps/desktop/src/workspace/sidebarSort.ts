@@ -77,9 +77,9 @@ export interface RecentSnapshot {
  */
 export function recentSnapshot(
   prev: RecentSnapshot | null,
-  input: { sort: SidebarSort; paths: readonly string[]; activity: Activity | undefined; focus: number },
+  input: { sort: SidebarSort; projectOrder?: string; paths: readonly string[]; activity: Activity | undefined; focus: number },
 ): RecentSnapshot {
-  const key = `${input.sort}|${input.focus}|${[...input.paths].sort().join("\n")}`;
+  const key = `${input.sort}|${input.projectOrder ?? ""}|${input.focus}|${[...input.paths].sort().join("\n")}`;
   if (prev && prev.key === key) return prev;
-  return { key, activity: input.sort === "recent" || input.sort === "smart" ? { ...input.activity } : {} };
+  return { key, activity: input.sort === "recent" || input.sort === "smart" || input.projectOrder === "recent" ? { ...input.activity } : {} };
 }
