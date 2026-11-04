@@ -12,6 +12,7 @@ import { DEFAULT_GIT_SETTINGS } from "@/settings/gitDefaults";
 import { conflictVars, operationText } from "./conflictModel";
 import type { PrStore } from "./prs";
 import type { Sessions } from "./sessions";
+import { HistoryPanel } from "./HistoryPanel";
 import { ShipBar } from "./ShipBar";
 import type { TabStatus } from "./status";
 
@@ -46,6 +47,8 @@ export function WorktreeChanges(props: {
   onResolveConflicts?(vars: Record<string, string>): void;
   // Opens Settings → Git; offered with a draft's agent problem.
   onOpenGitSettings?(): void;
+  // Opens a commit's changes in a tab: one file, or all of them when `file` is null.
+  onOpenCommit?(id: string, file: string | null): void;
   // The shared store of pull requests; the ship bar shows only when it is given.
   prs?: PrStore;
   // Gives the palette handlers for the list's bulk actions, and takes them back on unmount.
@@ -606,6 +609,7 @@ export function WorktreeChanges(props: {
           </label>
         )}
       </ConfirmDialog>
+      <HistoryPanel api={api} worktree={path} reloadKey={shipKey} onOpenCommit={(id, file) => props.onOpenCommit?.(id, file)} />
     </div>
   );
 }
