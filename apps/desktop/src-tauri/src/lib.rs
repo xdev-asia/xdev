@@ -37,6 +37,8 @@ mod pty;
 mod ptyd;
 mod quick_commands;
 mod recipes;
+#[allow(dead_code)]
+mod redact;
 mod reveal;
 mod review;
 mod review_notes;

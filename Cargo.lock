@@ -6750,6 +6750,7 @@ dependencies = [
  "dunce",
  "notify-debouncer-full",
  "png",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",
