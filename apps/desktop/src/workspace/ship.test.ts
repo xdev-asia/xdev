@@ -10,7 +10,7 @@ function ship(over: { ahead?: number; behind?: number; upstream?: boolean; commi
     branch: "oak",
     base: "main",
     remote: "origin",
-    upstream: upstream ? { remote: "origin", branch: "oak", id: "b", ahead, behind } : null,
+    upstream: upstream ? { remote: "origin", branch: "oak", id: "b", ahead, behind, rewritten: false } : null,
     headPushed: ahead === 0,
     atStart: false,
     range: { mergeBase: "m", added: 1, removed: 0, commits: Array(commits).fill(commit), truncated: false },

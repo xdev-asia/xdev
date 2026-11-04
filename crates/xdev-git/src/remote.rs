@@ -15,6 +15,10 @@ pub struct Upstream {
     pub id: Option<String>,
     pub ahead: u32,
     pub behind: u32,
+    /// Ahead and behind, and every commit only on the remote has a patch-equal copy in `HEAD`
+    /// (`git rev-list --cherry-pick --right-only --no-merges HEAD...@{u}` is empty): the
+    /// remote holds older copies of local commits, as after an amend.
+    pub rewritten: bool,
 }
 
 /// What a branch adds to its base.
@@ -248,6 +252,7 @@ impl Repo {
             id,
             ahead,
             behind,
+            rewritten: false,
         }))
     }
 
