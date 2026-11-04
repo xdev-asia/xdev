@@ -1,80 +1,6 @@
-/* Workspace design tokens: the one place raw colors live. Dark is the default; an explicit
-   data-theme="light" on the root switches the whole set. Stylesheets use the names only. */
-:root {
-  --bg-0: #0b0b0d;
-  --bg-1: #101013;
-  --bg-2: #16161a;
-  --bg-3: #1e1e23;
-  --line: #232329;
-  --text-1: #e8e8ec;
-  --text-2: #8e8e98;
-  --text-3: #62626c;
-  --term: #09090b;
-  --accent: #2f62e6;
-  --brand-agent: #ff7a3d;
-  --signal: #5bd8ff;
-  --signal-bg: rgba(91, 216, 255, 0.12);
-  --warn: #f2b544;
-  --warn-bg: rgba(242, 181, 68, 0.12);
-  --violet: #b69cff;
-  --violet-bg: rgba(182, 156, 255, 0.12);
-  --ok: #4ade9b;
-  --ok-bg: rgba(74, 222, 155, 0.12);
-  --danger: #ff7a7a;
-  --danger-bg: rgba(255, 122, 122, 0.12);
-  --orange: #f0a070;
-  --orange-bg: rgba(240, 160, 112, 0.12);
-
-  --radius-s: 4px;
-  --radius-m: 6px;
-  --radius-l: 8px;
-
-  --h-header: 38px;
-  --w-side: 296px;
-  --w-panel: 300px;
-  --h-footer: 26px;
-}
-
-:root[data-theme="light"] {
-  --bg-0: #f4f4f6;
-  --bg-1: #ffffff;
-  --bg-2: #ffffff;
-  --bg-3: #ededf0;
-  --line: #dedee3;
-  --text-1: #111114;
-  --text-2: #5c5c66;
-  --text-3: #8a8a94;
-  --term: #fafafb;
-  --accent: #2453d6;
-  --brand-agent: #ff7a3d;
-  --signal: #0670a0;
-  --signal-bg: rgba(6, 112, 160, 0.1);
-  --warn: #8a5200;
-  --warn-bg: rgba(138, 82, 0, 0.1);
-  --violet: #5b3cc4;
-  --violet-bg: rgba(91, 60, 196, 0.1);
-  --ok: #0f7a4a;
-  --ok-bg: rgba(15, 122, 74, 0.1);
-  --danger: #b42318;
-  --danger-bg: rgba(180, 35, 24, 0.1);
-  --orange: #a04a14;
-  --orange-bg: rgba(160, 74, 20, 0.1);
-}
-
-/* Tab colours (R5): ten names over the palette above, no new hues, so light and dark follow it. */
-:root {
-  --x-tab-color-1: var(--danger);
-  --x-tab-color-2: var(--orange);
-  --x-tab-color-3: var(--warn);
-  --x-tab-color-4: var(--ok);
-  --x-tab-color-5: color-mix(in srgb, var(--ok) 50%, var(--signal));
-  --x-tab-color-6: var(--accent);
-  --x-tab-color-7: color-mix(in srgb, var(--accent) 50%, var(--violet));
-  --x-tab-color-8: var(--violet);
-  --x-tab-color-9: color-mix(in srgb, var(--danger) 50%, var(--violet));
-  --x-tab-color-10: var(--text-2);
-}
-
+/* Tokens, body, .btn*, .segmented and .lang-select come from @xdev-asia/ui/styles.css (imported first in main.tsx).
+   What stays: app layout roots and the element rules xdev-ui does not ship, plus the dialog and crash
+   styles until they move (plan lane 4). */
 html,
 body,
 #root {
@@ -83,10 +9,6 @@ body,
 }
 
 body {
-  background: var(--x-color-bg);
-  color: var(--x-color-ink);
-  font-family: var(--x-font-body);
-  font-size: 14px;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -158,77 +80,6 @@ kbd {
 .error-text {
   margin: 0;
   color: var(--x-color-danger);
-}
-
-.btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--x-space-2);
-  min-height: 32px;
-  box-sizing: border-box;
-  padding: 0 var(--x-space-3);
-  border: 1px solid var(--x-color-line);
-  border-radius: var(--x-radius-md);
-  background: transparent;
-  font-weight: 600;
-  font-size: 13px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: var(--x-color-surface-2);
-}
-
-.segmented {
-  display: inline-flex;
-  flex: none;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--x-color-line);
-  border-radius: 10px;
-  background: var(--x-color-surface);
-}
-
-.segmented button {
-  min-height: 26px;
-  padding: 0 var(--x-space-3);
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--x-color-muted);
-  cursor: pointer;
-}
-
-.segmented button:hover:not([aria-pressed="true"]) {
-  color: var(--x-color-ink);
-  background: var(--x-color-surface-2);
-}
-
-.segmented button[aria-pressed="true"] {
-  background: var(--x-color-accent);
-  color: var(--x-color-on-accent);
-}
-
-.lang-select {
-  flex: none;
-  min-height: 32px;
-  padding: 0 var(--x-space-3);
-  border: 1px solid var(--x-color-line);
-  border-radius: 10px;
-  background: var(--x-color-surface);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--x-color-ink);
-  cursor: pointer;
-}
-
-.lang-select:hover {
-  background: var(--x-color-surface-2);
 }
 
 .dialog {
