@@ -40,18 +40,15 @@ export function KeepAwakeView(props: KeepAwakeViewProps): JSX.Element {
         </button>
       )}
     >
-      {view.supported ? (
-        <RadioGroup
-          name="keep-awake"
-          label={t("keepAwake.title")}
-          orientation="vertical"
-          value={view.mode}
-          onChange={(value) => props.onPick(value as KeepAwake)}
-          options={MODES.map((mode) => ({ value: mode, label: t(`keepAwake.mode.${mode}`), hint: t(`keepAwake.hint.${mode}`) }))}
-        />
-      ) : (
-        <p className="ws-awake-unsupported">{t("keepAwake.unsupported")}</p>
-      )}
+      {!view.supported && <p className="ws-awake-unsupported">{t("keepAwake.unsupported")}</p>}
+      <RadioGroup
+        name="keep-awake"
+        label={t("keepAwake.title")}
+        orientation="vertical"
+        value={view.mode}
+        onChange={(value) => props.onPick(value as KeepAwake)}
+        options={MODES.map((mode) => ({ value: mode, label: t(`keepAwake.mode.${mode}`), hint: t(`keepAwake.hint.${mode}`) }))}
+      />
     </Popover>
   );
 }

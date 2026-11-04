@@ -30,8 +30,8 @@ it("open: one radio per mode with the current one checked", () => {
   for (const mode of ["off", "agent", "on"]) expect(html).toContain(en(`keepAwake.hint.${mode}`));
 });
 
-it("open on a machine without a way to stay awake: says so and offers no choice", () => {
+it("open on a machine without a way to stay awake: says so and keeps the choices, so Off stays reachable", () => {
   const html = render({ mode: "off", held: false, supported: false }, true);
   expect(html).toContain(en("keepAwake.unsupported"));
-  expect(html).not.toContain('type="radio"');
+  expect(html.match(/type="radio"/g)).toHaveLength(3);
 });
