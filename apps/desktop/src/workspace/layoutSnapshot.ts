@@ -39,6 +39,8 @@ export type TabSnapshot =
       cli?: TabCli;
       title: string | null;
       renamed: boolean;
+      /** `title` was made from the first prompt; absent in older snapshots. */
+      autoTitled?: boolean;
       pinned: boolean;
       color: TabColor;
       agent: boolean;
@@ -140,6 +142,7 @@ export function toSnapshot(layout: PaneLayout, tabOf: (id: string) => Tab | null
       cli: tab.cli,
       title: tab.title,
       renamed: tab.renamed,
+      ...(tab.autoTitled ? { autoTitled: true } : {}),
       pinned: tab.pinned,
       color: tab.color,
       agent: tab.agent,

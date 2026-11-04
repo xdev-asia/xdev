@@ -488,6 +488,52 @@ describe("Sessions", () => {
     expect(live.tabs(A)[1].title).toBeNull();
   });
 
+  it("an auto title beats the program title and loses to a name by hand", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "claude");
+    live.noteTitle(tab.id, "program says");
+    live.setAutoTitle(tab.id, "  Fix the parser  ");
+    expect(live.tabs(A)[0]).toMatchObject({ title: "Fix the parser", autoTitled: true, renamed: false });
+    // The program's later titles are kept but do not show.
+    live.noteTitle(tab.id, "program again");
+    expect(live.tabs(A)[0].title).toBe("Fix the parser");
+    // Same title again: same array.
+    const before = live.tabs(A);
+    live.setAutoTitle(tab.id, "Fix the parser");
+    expect(live.tabs(A)).toBe(before);
+    // A name by hand wins; the auto title can no longer replace it.
+    live.rename(tab.id, "Mine");
+    live.setAutoTitle(tab.id, "Other");
+    expect(live.tabs(A)[0]).toMatchObject({ title: "Mine", renamed: true, autoTitled: false });
+    // Giving the name back returns the auto title, then a blank auto title is ignored.
+    live.setTitle(tab.id, null);
+    expect(live.tabs(A)[0]).toMatchObject({ title: "Fix the parser", autoTitled: true, renamed: false });
+    live.setAutoTitle(tab.id, "   ");
+    expect(live.tabs(A)[0].title).toBe("Fix the parser");
+  });
+
+  it("without an auto title, giving a name back returns the program title", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "claude");
+    live.noteTitle(tab.id, "program says");
+    live.rename(tab.id, "Mine");
+    live.setTitle(tab.id, null);
+    expect(live.tabs(A)[0]).toMatchObject({ title: "program says", autoTitled: false });
+    live.setAutoTitle("no-such-tab", "x");
+  });
+
+  it("an auto title is saved in the layout and comes back on restore", async () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "claude");
+    live.setAutoTitle(tab.id, "Fix the parser");
+    const snap = live.snapshot().worktrees[A]!;
+    const saved = Object.values(snap.tabs)[0]!;
+    expect(saved).toMatchObject({ title: "Fix the parser", autoTitled: true });
+    live.rename(tab.id, "Mine");
+    expect(Object.values(live.snapshot().worktrees[A]!.tabs)[0]).toMatchObject({ title: "Mine", renamed: true });
+    expect(Object.values(live.snapshot().worktrees[A]!.tabs)[0]).not.toHaveProperty("autoTitled");
+  });
+
   it("hook caps come from the pty, and a turn-done tab needs no tick", () => {
     vi.useFakeTimers();
     let t = 10_000;
