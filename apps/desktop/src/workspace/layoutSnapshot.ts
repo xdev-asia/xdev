@@ -58,6 +58,16 @@ export interface RestoreReport {
   /** Tabs that came back as a new process: shells, and agents with no session to resume. */
   fresh: number;
   skipped: { worktree: string; reason: "unknownWorktree" | "noSession" }[];
+  /** The pty ids of the terminal tabs that were opened, for "Undo". */
+  opened: string[];
+}
+
+/** What `restore` cannot know by itself. */
+export interface RestoreOptions {
+  /** Whether a worktree is still in the registry; left out, every worktree is. */
+  known?: (worktree: string) => boolean;
+  /** Opens a file tab again; true when the file is there, false (or a throw) when it is gone. Left out, file tabs are dropped. */
+  openFile?: (worktree: string, rel: string) => Promise<boolean>;
 }
 
 export type { RestoreMode };
