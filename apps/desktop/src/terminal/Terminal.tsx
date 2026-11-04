@@ -17,6 +17,7 @@ import { TerminalFind } from "./TerminalFind";
 import { createBell } from "./terminalBell";
 import { attachRenderer } from "./terminalRenderer";
 import { followAppTheme } from "./terminalColors";
+import { registerDropTarget } from "./fileDrop";
 import { trackInputModes } from "./inputModes";
 import { effectiveOptionAsAlt, getDetectedLayout, subscribeDetectedLayout } from "./optionAsAlt";
 import { createOptionSideTracker, resolveTerminalKey } from "./terminalKeys";
@@ -310,9 +311,16 @@ export function Terminal(props: {
     });
     const observer = new ResizeObserver(fitVisible);
     observer.observe(el);
+    // Files dropped from the OS land here as paths; the shell's drop listener finds this pane by its host.
+    const offDrop = registerDropTarget(el, {
+      write: (data) => client.input(data),
+      ready: () => client.spawned,
+      focus: () => term.focus(),
+    });
 
     return () => {
       alive = false;
+      offDrop();
       offSettings();
       offTheme();
       offLayout();
