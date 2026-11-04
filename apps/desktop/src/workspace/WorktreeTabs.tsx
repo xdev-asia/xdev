@@ -153,6 +153,10 @@ export function WorktreeTabs(props: {
   const focusedLeaf = panes.find((n) => n.id === layout?.focused);
   const shown = focusedLeaf?.active ?? null;
   const frontIds = new Set(panes.filter((n) => n.id in rects).map((n) => n.active));
+  // A restored tab that sits behind another starts its terminal only when it is first at the front of
+  // a pane (Q2); every other tab starts at once.
+  const [everFront] = useState(() => new Set<string>());
+  for (const id of frontIds) everFront.add(id);
   // A string, so the shell hears only when the set on screen changes.
   const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB && !isFileTab(id)).join(" ");
   const { onShown, onPanes, front } = props;
@@ -505,7 +509,7 @@ export function WorktreeTabs(props: {
                   </button>
                 </div>
               )}
-              <Terminal
+              {(everFront.has(tab.id) || !sessions.deferred(tab.id)) && <Terminal
                 key={`${tab.id}:${attempts[tab.id] ?? 0}`}
                 api={api}
                 client={tab.client}
@@ -529,7 +533,7 @@ export function WorktreeTabs(props: {
                   registerTerminal(tab.id, handle);
                   return () => registerTerminal(tab.id, null);
                 }}
-              />
+              />}
             </div>
           );
         })}
