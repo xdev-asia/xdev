@@ -31,7 +31,7 @@ Download from [Releases](https://github.com/xdev-asia/xdev/releases) or [xdev.as
 | OS | Builds |
 |---|---|
 | Windows | x64 (`.exe`, `.msi`), ARM64 (`.exe`) |
-| macOS | Apple silicon, Intel (`.dmg`) |
+| macOS | Apple silicon (`.dmg`); Intel Macs are not built |
 | Linux | x64, ARM64 (`.AppImage`, `.deb`) |
 
 The `xdev` CLI ships as a separate archive per target on the same page. Installers are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper will warn. Updates are signed: the app downloads them in the background and installs on the next start.

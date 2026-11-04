@@ -72,9 +72,6 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             bundles: app,dmg
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            bundles: app,dmg
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             bundles: appimage,deb
@@ -167,8 +164,8 @@ jobs:
             macOS)
               # tar keeps the executable bit that zip-based artifacts drop.
               tar -czf "out/xdev-${{ matrix.target }}.tar.gz" -C "$rel" xdev
-              # Both macOS targets name the updater tarball xDev.app.tar.gz;
-              # renaming keeps the bytes the .sig covers.
+              # The updater tarball is named xDev.app.tar.gz; adding the target
+              # keeps the bytes the .sig covers.
               for f in "$bundle"/macos/xDev.app.tar.gz*; do
                 name=$(basename "$f")
                 cp "$f" "out/${name/xDev/xDev-${{ matrix.target }}}"
@@ -223,7 +220,6 @@ jobs:
           add windows-x86_64 '*_x64-setup.exe'
           add windows-aarch64 '*_arm64-setup.exe'
           add darwin-aarch64 'xDev-aarch64-apple-darwin.app.tar.gz'
-          add darwin-x86_64 'xDev-x86_64-apple-darwin.app.tar.gz'
           add linux-x86_64 '*_amd64.AppImage'
           add linux-aarch64 '*_aarch64.AppImage'
           jq -n \

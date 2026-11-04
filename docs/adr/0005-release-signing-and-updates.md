@@ -36,7 +36,7 @@ That key is separate from Apple and Microsoft code-signing certificates.
 - Releases are cut by release-please from Conventional Commits on main. It
   keeps a release PR open; merging it bumps the version, tags it and opens a
   draft release. The build then signs installers for Windows (x64, ARM64),
-  macOS (Apple silicon, Intel) and Linux (x64, ARM64), uploads them with a
+  macOS (Apple silicon only; Intel dropped 2026-11-04) and Linux (x64, ARM64), uploads them with a
   `latest.json` that lists all six, and publishes the release. Merging the PR
   and approving the `release` environment are the two human steps; an
   install sees an update only after the release is published.
