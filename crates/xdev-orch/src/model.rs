@@ -47,11 +47,11 @@ string_enum!(Priority {
     High,
     Urgent
 });
-string_enum!(GateStatus {
-    Pending,
-    Resolved,
-    Timeout
-});
+string_enum!(
+    /// A gate stays pending until it is answered: an `ask --wait` that runs
+    /// out leaves it pending, so `ask --resume` still finds the answer.
+    GateStatus { Pending, Resolved }
+);
 string_enum!(
     /// The step a failed worker start stopped at.
     FailedStage { TerminalCreate, SetupStart, AgentReadiness, SetupWait, DispatchInput }
@@ -247,6 +247,13 @@ mod tests {
         Stopped,
         Abandoned,
     ];
+
+    #[test]
+    fn a_gate_is_pending_or_resolved_and_a_wait_that_ends_does_not_end_it() {
+        let ok: GateStatus = serde_json::from_str("\"resolved\"").unwrap();
+        assert_eq!(ok, GateStatus::Resolved);
+        assert!(serde_json::from_str::<GateStatus>("\"timeout\"").is_err());
+    }
 
     fn allowed(from: WorkerState) -> Vec<WorkerState> {
         match from {
