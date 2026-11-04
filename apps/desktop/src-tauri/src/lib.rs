@@ -1,5 +1,6 @@
 mod accounts;
 mod agent_sessions;
+mod app_menu;
 mod atomic;
 #[cfg(test)]
 mod bindings;
@@ -60,6 +61,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(updater::Pending::default())
         .manage(updater::Phase::default())
         .manage(shell::ShellState::default())
@@ -89,6 +91,8 @@ pub fn run() {
             }
             workspace::start_migrations(app.handle());
             tray::sync(app.handle());
+            app_menu::listen(app.handle());
+            app_menu::install(app.handle());
             // Off the main thread: starting the service may take a moment.
             {
                 let app = app.handle().clone();
@@ -156,6 +160,9 @@ pub fn run() {
             shell::shell_quit_cancelled,
             shell::shell_labels_set,
             shell::tray_attention,
+            shell::help_open,
+            shell::window_reload,
+            shell::window_devtools_toggle,
             updater::update_check,
             updater::update_phase,
             commands::open_vault,

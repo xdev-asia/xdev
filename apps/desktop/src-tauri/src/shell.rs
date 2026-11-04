@@ -8,6 +8,9 @@ use std::sync::atomic::AtomicBool;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_opener::OpenerExt;
+
+use crate::commands::CmdError;
 
 use crate::settings::{OnQuit, SettingsSection, ShellSettings};
 use crate::settings_store;
@@ -75,6 +78,7 @@ pub enum HelpLink {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "kebab-case")]
+#[allow(dead_code)] // `Shortcuts` and `About` are only ever named by the webview's side of the type.
 pub enum MenuAction {
     OpenSettings,
     Shortcuts,
@@ -281,6 +285,58 @@ pub fn quit(app: &AppHandle, mode: QuitMode) {
     }
 }
 
+/// The page a help link opens. Fixed: the webview never passes a URL.
+pub fn help_url(link: HelpLink) -> &'static str {
+    match link {
+        HelpLink::Docs => "https://github.com/xdev-asia/xdev/tree/main/docs/guide",
+        HelpLink::GettingStarted => "https://github.com/xdev-asia/xdev#install",
+        HelpLink::Changelog => "https://github.com/xdev-asia/xdev/releases",
+        HelpLink::ReportIssue => "https://github.com/xdev-asia/xdev/issues/new",
+        HelpLink::Source => "https://github.com/xdev-asia/xdev",
+    }
+}
+
+/// Opens a help link in the OS browser.
+pub fn open_help(app: &AppHandle, link: HelpLink) -> Result<(), CmdError> {
+    app.opener()
+        .open_url(help_url(link), None::<&str>)
+        .map_err(|e| CmdError {
+            code: "open_failed",
+            detail: Some(e.to_string()),
+        })
+}
+
+#[tauri::command]
+pub fn help_open(app: AppHandle, link: HelpLink) -> Result<(), CmdError> {
+    open_help(&app, link)
+}
+
+pub fn window_reload_now(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(MAIN) {
+        let _ = window.reload();
+    }
+}
+
+pub fn window_devtools_toggle_now(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(MAIN) {
+        if window.is_devtools_open() {
+            window.close_devtools();
+        } else {
+            window.open_devtools();
+        }
+    }
+}
+
+#[tauri::command]
+pub fn window_reload(app: AppHandle) {
+    window_reload_now(&app);
+}
+
+#[tauri::command]
+pub fn window_devtools_toggle(app: AppHandle) {
+    window_devtools_toggle_now(&app);
+}
+
 /// Whether the attention dot is wanted: only while the window cannot be seen.
 fn attention_wanted(visible: bool, minimized: bool) -> bool {
     !visible || minimized
@@ -292,6 +348,7 @@ fn attention_wanted(visible: bool, minimized: bool) -> bool {
 pub fn shell_labels_set(app: AppHandle, state: State<'_, ShellState>, labels: ShellLabels) {
     *state.labels.lock().unwrap_or_else(|e| e.into_inner()) = labels;
     crate::tray::sync(&app);
+    crate::app_menu::install(&app);
 }
 
 /// An agent needs the person: light the tray dot if they cannot see the window.
@@ -371,6 +428,25 @@ mod tests {
             assert_eq!(on_quit_for(Some(QuitMode::Quit), setting), setting);
             assert_eq!(on_quit_for(Some(QuitMode::Restart), setting), setting);
             assert_eq!(on_quit_for(None, setting), setting);
+        }
+    }
+
+    #[test]
+    fn help_links_are_https_pages_of_the_project() {
+        for link in [
+            HelpLink::Docs,
+            HelpLink::GettingStarted,
+            HelpLink::Changelog,
+            HelpLink::ReportIssue,
+            HelpLink::Source,
+        ] {
+            let url = help_url(link);
+            assert!(
+                url == "https://github.com/xdev-asia/xdev"
+                    || url.starts_with("https://github.com/xdev-asia/xdev/")
+                    || url.starts_with("https://github.com/xdev-asia/xdev#"),
+                "{link:?} {url}"
+            );
         }
     }
 
