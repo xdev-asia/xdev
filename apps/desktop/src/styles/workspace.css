@@ -3012,6 +3012,14 @@ button.ws-tree-row:focus-visible {
   min-width: 0;
 }
 
+.ws-item-linked {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ws-issues {
   display: flex;
   flex-direction: column;

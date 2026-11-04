@@ -139,8 +139,11 @@ export function CreateWorktreeDialog(props: {
   const parentPath = parents.some((w) => w.path === parent) ? parent : "";
   const badItem = parseItem(itemUrl, itemKind) === "bad";
   const { branches } = props;
+  // The Branch tab always picks an existing branch; on the Name tab the choice is the radio.
+  const mode = tab === "branch" ? "existing" : branchMode;
+  const listing = tab !== "github" && mode === "existing";
   useEffect(() => {
-    if (tab !== "branch" || !branches || !repo) return;
+    if (!listing || !branches || !repo) return;
     let stale = false;
     branches(repo.path).then(
       (list) => !stale && setBranchList({ repoId: repo.id, list }),
@@ -149,11 +152,11 @@ export function CreateWorktreeDialog(props: {
     return () => {
       stale = true;
     };
-  }, [tab, branches, repo?.id]);
+  }, [listing, branches, repo?.id]);
   const loaded = branchList && branchList.repoId === repo?.id ? branchList.list : null;
   const free = loaded && repo ? localBranches(loaded, repo.worktrees) : [];
-  const pickedBranch = tab === "branch" && branchMode === "existing" && free.includes(existing) ? existing : "";
-  const needsBranch = tab === "branch" && branchMode === "existing" && pickedBranch === "";
+  const pickedBranch = listing && free.includes(existing) ? existing : "";
+  const needsBranch = listing && pickedBranch === "";
   const sparse = sparseDirs(sparseText);
   const badSparse = sparse === "bad";
   const ref = props.resolveIssue !== undefined && props.onStartIssue !== undefined && isIssueRef(name);
@@ -260,19 +263,21 @@ export function CreateWorktreeDialog(props: {
               <small>{t("workspace.create.searchHint")}</small>
             </div>
           )}
-          {tab === "branch" && (
+          {tab !== "github" && branches && (
             <div className="ws-field">
-              <RadioGroup
-                name="ws-create-branch-mode"
-                label={t("workspace.create.branchMode.label")}
-                value={branchMode}
-                onChange={(v) => setBranchMode(v as "new" | "existing")}
-                options={[
-                  { value: "new", label: t("workspace.create.branchMode.new") },
-                  { value: "existing", label: t("workspace.create.branchMode.existing") },
-                ]}
-              />
-              {branchMode === "existing" &&
+              {tab === "name" && (
+                <RadioGroup
+                  name="ws-create-branch-mode"
+                  label={t("workspace.create.branchMode.label")}
+                  value={branchMode}
+                  onChange={(v) => setBranchMode(v as "new" | "existing")}
+                  options={[
+                    { value: "new", label: t("workspace.create.branchMode.new") },
+                    { value: "existing", label: t("workspace.create.branchMode.existing") },
+                  ]}
+                />
+              )}
+              {mode === "existing" &&
                 (loaded !== null && free.length === 0 ? (
                   <small role="status">{t("workspace.create.noBranches")}</small>
                 ) : (
@@ -306,7 +311,7 @@ export function CreateWorktreeDialog(props: {
             )}
             <PreviewHint preview={preview} />
           </label>
-          {pickedBranch === "" && !(tab === "branch" && branchMode === "existing") && (
+          {pickedBranch === "" && mode !== "existing" && (
             <label className="ws-field">
               <span>{t("workspace.create.from")}</span>
               <input type="text" className="ws-mono" value={from} placeholder={repo?.baseRef ?? ""} spellCheck={false} onChange={(e) => setFrom(e.target.value)} />
