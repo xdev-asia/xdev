@@ -55,6 +55,8 @@ export interface Tab {
   /** Pinned tabs sort first and are skipped by Close Others and Close to the Right. */
   pinned: boolean;
   color: TabColor;
+  /** Put to sleep: no pty runs, the slot stays, and waking resumes `agentSession`. */
+  asleep?: true;
   /** Set once the pty exited; `null` when it was killed or its code is unknown. */
   exitCode?: number | null;
   client: PtyClient;
@@ -376,11 +378,60 @@ export class Sessions {
     return this.replace(old, own, session, session);
   }
 
+  /**
+   * Puts a tab to sleep: its pty is killed, the slot and its pin, colour and title stay, and an agent
+   * keeps the session id it wakes with (the fallback looks one up when the hooks never sent it). The
+   * tab gets a new id and no terminal starts for it until `wake`. `null` for an unknown id.
+   */
+  async hibernate(id: string, fallback: SessionFallback = async () => null): Promise<Tab | null> {
+    const old = this.entries.get(id);
+    if (!old) return null;
+    if (old.tab.asleep) return old.tab;
+    let session = old.tab.agentSession ?? old.tab.resumeOf;
+    if (!session && old.tab.agent && old.tab.cli) session = await fallback(old.tab.worktree, old.tab.cli, old.tab.openedAt).catch(() => null);
+    // The tab may have closed or been replaced while the fallback ran.
+    const live = this.entries.get(id);
+    if (!live) return null;
+    const next = this.replace(live, ownAccount(live.tab), session, session);
+    this.update(this.entries.get(next.id)!, { asleep: true });
+    return this.entries.get(next.id)!.tab;
+  }
+
+  /** `hibernate` for every tab of `worktree` and of each of `children`; resolves with the tabs now asleep. */
+  async sleepWorktree(worktree: string, fallback: SessionFallback, children: readonly string[] = []): Promise<Tab[]> {
+    const ids = [worktree, ...children].flatMap((w) => this.tabs(w).map((t) => t.id));
+    const slept = await Promise.all(ids.map((id) => this.hibernate(id, fallback)));
+    return slept.filter((t): t is Tab => t !== null);
+  }
+
+  /** Starts a sleeping tab again in its place: it resumes its agent session, or is a new shell. `null` for an unknown id. */
+  wake(id: string): Tab | null {
+    const old = this.entries.get(id);
+    if (!old) return null;
+    if (!old.tab.asleep) return old.tab;
+    const session = old.tab.agentSession ?? old.tab.resumeOf;
+    const next = this.replace(old, ownAccount(old.tab), session, session);
+    this.lazy.add(next.id);
+    return next;
+  }
+
+  /** Wakes every sleeping tab of `worktree`. */
+  wakeWorktree(worktree: string): Tab[] {
+    return this.tabs(worktree).flatMap((t) => (t.asleep ? [this.wake(t.id)!] : []));
+  }
+
+  /** The worktree has tabs and every one sleeps. */
+  asleep(worktree: string): boolean {
+    const tabs = this.tabs(worktree);
+    return tabs.length > 0 && tabs.every((t) => t.asleep);
+  }
+
   private replace(old: Entry, account: string | null, resumeOf: string | null, agentSession: string | null): Tab {
     const id = old.tab.id;
     this.clear(this.settle, id);
     this.clear(this.announce, id);
     this.clear(this.stale, id);
+    this.lazy.delete(id);
     const next = this.entry(old.tab.worktree, old.tab.profileId, account, old.tab.cli, resumeOf, old.tab.title);
     // The pin and colour belong to the slot, not to the pty; so does the agent's session id, which a restart must not lose.
     next.tab = { ...next.tab, accountSource: old.tab.accountSource, pinned: old.tab.pinned, color: old.tab.color, agentSession };
