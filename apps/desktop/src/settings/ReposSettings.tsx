@@ -13,6 +13,7 @@ import {
   type SetupPolicy,
 } from "@/api";
 import { openFile } from "@/files/openFile";
+import { ISSUE_VARS, effectiveIssueCommand, renderIssueCommand } from "@/issues/issueTemplate";
 import { useI18n } from "@/i18n";
 import { RepoBadge } from "@/workspace/RepoBadge";
 import { RemoveRepoDialog } from "@/workspace/RemoveRepoDialog";
@@ -21,15 +22,15 @@ import { colorField, ghField, iconField, identityPatch, shown, type GhState, typ
 import { SettingGroup, SettingRow } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
-type Field = "shortName" | "baseRef" | "worktreeRoot" | "setupPolicy" | "scriptSource" | "localSetup" | "localArchive";
+type Field = "shortName" | "baseRef" | "worktreeRoot" | "setupPolicy" | "scriptSource" | "localSetup" | "localArchive" | "localIssueCommand";
 type TextField = "shortName" | "baseRef" | "worktreeRoot";
 type ScriptField = "localSetup" | "localArchive";
 type Draft = Partial<Record<Field, string>>;
 type Failure = { field: Field | "color" | "icon" | "form"; code: ApiError["code"] };
 
-const FIELDS: Field[] = ["shortName", "baseRef", "worktreeRoot", "setupPolicy", "scriptSource", "localSetup", "localArchive"];
+const FIELDS: Field[] = ["shortName", "baseRef", "worktreeRoot", "setupPolicy", "scriptSource", "localSetup", "localArchive", "localIssueCommand"];
 // Scripts keep their own whitespace; the other fields are trimmed.
-const VERBATIM: Field[] = ["localSetup", "localArchive"];
+const VERBATIM: Field[] = ["localSetup", "localArchive", "localIssueCommand"];
 const POLICIES: SetupPolicy[] = ["ask", "run", "skip"];
 const SOURCES: ScriptSource[] = ["auto", "shared", "local", "both"];
 const KINDS: ScriptKind[] = ["setup", "archive"];
@@ -41,6 +42,7 @@ function hooksPath(repo: RepoView): string | null {
 
 // Which field a refusal belongs under; anything else shows under the whole form.
 function fieldOf(code: ApiError["code"]): Failure["field"] {
+  if (code === "too_large") return "localIssueCommand";
   if (code === "bad_color") return "color";
   if (code === "bad_icon") return "icon";
   if (code === "bad_name" || code === "short_name_taken") return "shortName";
@@ -49,6 +51,7 @@ function fieldOf(code: ApiError["code"]): Failure["field"] {
   return "form";
 }
 
+const ISSUE_IDS = ["repos.issueCommand"];
 const IDENTITY_IDS = ["repos.color", "repos.icon", "repos.ghAccount"];
 const SCRIPT_IDS = ["repos.scriptPolicy", "repos.scriptSource", "repos.localScripts", "repos.sharedScripts", "repos.repoFile"];
 
@@ -175,8 +178,22 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
     }
   }
 
+  // Trusts the shared issue command whose hash is shown; a changed file reloads and shows the new text.
+  async function trustIssue(repo: RepoView): Promise<void> {
+    const path = hooksPath(repo);
+    const hash = hooks[repo.id]?.issueCommandHash;
+    if (!path || !hash) return;
+    try {
+      const next = await api.repoHookTrust(path, "issueCommand", hash);
+      setHooks((all) => ({ ...all, [repo.id]: next }));
+    } catch {
+      loadHooks(repo);
+    }
+  }
+
   function message(failure: Failure): string {
     if (failure.code === "bad_name") return t("settings.repos.badName");
+    if (failure.code === "too_large") return t("settings.repos.issue.tooLarge");
     if (failure.code === "bad_color") return t("settings.repos.identity.badColor");
     if (failure.code === "bad_icon") return t("settings.repos.identity.badIcon");
     if (failure.code === "bad_path" && failure.field === "worktreeRoot") return t("settings.repos.badRoot");
@@ -262,6 +279,67 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
           </SettingRow>
         </div>
       </>
+    );
+  }
+
+  // The prompt template for a worktree started from an issue: the shared text (read only, trusted by hash),
+  // this machine's own text, the variables it can use, and a preview with a sample issue.
+  function issueRow(repo: RepoView): JSX.Element {
+    const found = hooks[repo.id] ?? null;
+    const local = value(repo, "localIssueCommand");
+    const effective = effectiveIssueCommand(local, found);
+    const sample: Record<string, string> = {
+      number: "123",
+      title: t("settings.repos.issue.sample.title"),
+      url: "https://github.com/owner/repo/issues/123",
+      body: t("settings.repos.issue.sample.body"),
+      labels: "bug, ui",
+      repo: repo.shortName,
+    };
+    return (
+      <div className="ws-field" role="group" aria-label={t("settings.repos.issue")}>
+        <span>{t("settings.repos.issue")}</span>
+        <div className="settings-row">
+          <strong>{t("settings.repos.issue.shared")}</strong>
+          {found?.issueCommand && <span className="settings-tag">{found.issueCommandTrusted ? t("settings.repos.issue.trusted") : t("settings.repos.issue.untrusted")}</span>}
+          {found?.issueCommand && !found.issueCommandTrusted && (
+            <button type="button" className="btn-secondary" data-trust="issueCommand" onClick={() => void trustIssue(repo)}>
+              {t("settings.repos.issue.trust")}
+            </button>
+          )}
+        </div>
+        {found?.issueCommand ? <pre className="ws-mono settings-script-text">{found.issueCommand}</pre> : <small className="settings-hint">{t("settings.repos.issue.sharedNone")}</small>}
+        <label className="ws-field">
+          <span>{t("settings.repos.issue.local")}</span>
+          <textarea
+            name="localIssueCommand"
+            className="ws-mono"
+            rows={4}
+            value={local}
+            spellCheck={false}
+            disabled={busy === repo.id}
+            aria-invalid={failures[repo.id]?.field === "localIssueCommand" || undefined}
+            onChange={(e) => edit(repo, "localIssueCommand", e.target.value)}
+          />
+        </label>
+        {errorFor(repo, "localIssueCommand")}
+        <div className="ws-issue-vars" role="group" aria-label={t("settings.repos.issue.vars")}>
+          {ISSUE_VARS.map((name) => (
+            <button key={name} type="button" className="btn-secondary ws-issue-var" data-issue-var={name} disabled={busy === repo.id} onClick={() => edit(repo, "localIssueCommand", `${local}{${name}}`)}>
+              {`{${name}}`}
+            </button>
+          ))}
+        </div>
+        <strong>{t("settings.repos.issue.preview")}</strong>
+        {effective === null ? (
+          <small className="settings-hint">{t("settings.repos.issue.previewBuiltIn")}</small>
+        ) : (
+          <pre className="ws-mono settings-script-text" data-issue-preview>
+            {renderIssueCommand(effective, sample)}
+          </pre>
+        )}
+        <small className="settings-hint">{t("settings.repos.issue.hint")}</small>
+      </div>
     );
   }
 
@@ -470,6 +548,14 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
                 {repoFile(repo)}
               </SettingRow>
             </div>
+            </SettingGroup>
+            <SettingGroup ids={ISSUE_IDS} filter={filter}>
+              <h4 className="settings-group">{t("settings.repos.issue")}</h4>
+              <div className="ws-fields">
+                <SettingRow id="repos.issueCommand" filter={filter}>
+                  {issueRow(repo)}
+                </SettingRow>
+              </div>
             </SettingGroup>
             {errorFor(repo, "form")}
             <div className="settings-actions">
