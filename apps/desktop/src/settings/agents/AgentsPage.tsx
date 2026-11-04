@@ -3,8 +3,10 @@ import type { JSX } from "react";
 import {
   toApiError,
   type Account,
+  type AgentsSettings,
   type ApiError,
   type Approvals,
+  type SwitchRunning,
   type ProfilesView,
   type ProfileView,
   type StatusSettings,
@@ -18,6 +20,8 @@ import type { SettingsSectionProps } from "@/settings/sections";
 import { freeId } from "./agentForm";
 import { ProfileEditor } from "./ProfileEditor";
 import { ShellsSection } from "./ShellsSection";
+
+const SWITCH_CHOICES: readonly SwitchRunning[] = ["ask", "restart", "keep"];
 
 /** Settings → Agents: the Approvals switch, defaults, agent profiles, shells and Status hooks. */
 export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settings: StatusSettings): void }): JSX.Element {
@@ -34,12 +38,25 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
   // The status channel settings; this page owns only `hooks`.
   const [status, setStatus] = useState<StatusSettings | null>(null);
   const [statusBusy, setStatusBusy] = useState(false);
+  // What a switch of the active account does to agent tabs that are running.
+  const [switchPolicy, setSwitchPolicy] = useState<AgentsSettings | null>(null);
 
   useEffect(() => {
     api.profiles().then(setView, (e) => setError(toApiError(e).code));
     api.accounts().then((a) => setAccounts(a.accounts), () => setAccounts([]));
     api.statusSettings().then(setStatus, (e) => setError(toApiError(e).code));
+    api.agentsSettings().then(setSwitchPolicy, (e) => setError(toApiError(e).code));
   }, [api]);
+
+  async function pickSwitch(next: SwitchRunning): Promise<void> {
+    if (!switchPolicy || next === switchPolicy.accountSwitch) return;
+    setError(undefined);
+    try {
+      setSwitchPolicy(await api.agentsSettingsPut({ ...switchPolicy, accountSwitch: next }));
+    } catch (e) {
+      setError(toApiError(e).code);
+    }
+  }
 
   // Off, the `.off` marker drops hook events at once and open tabs go back to timing. On, tabs started
   // with hook flags use them again; a tab started while off has none until it restarts.
@@ -242,6 +259,28 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
           onAdd={(s) => void act(() => api.shellPut(s))}
           onRemove={(id) => void act(() => api.shellRemove(id))}
         />
+      </SettingRow>
+
+      <SettingRow id="agents.accountSwitch" filter={filter}>
+      <h4 className="settings-group">{t("settings.agents.accountSwitch")}</h4>
+      <div className="ws-fields">
+        <label className="ws-field">
+          <span>{t("settings.agents.accountSwitch.label")}</span>
+          <select
+            value={switchPolicy?.accountSwitch ?? "ask"}
+            disabled={!switchPolicy}
+            data-field="accountSwitch"
+            onChange={(e) => void pickSwitch(e.target.value as SwitchRunning)}
+          >
+            {SWITCH_CHOICES.map((c) => (
+              <option key={c} value={c}>
+                {t(`settings.agents.accountSwitch.${c}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <p className="settings-empty">{t(`settings.agents.accountSwitch.${switchPolicy?.accountSwitch ?? "ask"}Hint`)}</p>
       </SettingRow>
 
       <SettingRow id="agents.statusHooks" filter={filter}>

@@ -3099,3 +3099,30 @@ button.ws-tree-row:focus-visible {
 .ws-issue[data-state="closed"] .ws-checks-title {
   color: var(--text-2);
 }
+
+.ws-usage-active {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.ws-usage-use {
+  margin-left: auto;
+}
+
+.ws-switch-list {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.ws-switch-working {
+  color: var(--warn);
+  font-size: 0.9em;
+}

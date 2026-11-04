@@ -56,6 +56,8 @@ import { failedLinks } from "./linkReport";
 import { decideSetup, hasPending, pendingLists, type PendingLists } from "./setupFlow";
 import { SetupGate } from "./setupGate";
 import { TrustDialog } from "./TrustDialog";
+import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
+import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
 import { QuitDialog } from "./QuitDialog";
 import { askQuit, type QuitAsk, type QuitChoice } from "./quitGuard";
 import { getTerminalSettings } from "@/terminal/terminalSettings";
@@ -355,6 +357,29 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       if (typeof window !== "undefined") window.removeEventListener("beforeunload", close);
     };
   }, [sessions]);
+
+  // The active account changed (Accounts, the usage popover, a removal): the running agent tabs that
+  // follow it are restarted, kept or asked about by the `agents.accountSwitch` setting.
+  const [switching, setSwitching] = useState<PendingSwitch | null>(null);
+  useEffect(() => {
+    if (!sessions) return;
+    const watcher = watchAccountSwitch({
+      api,
+      sessions,
+      notify: (key, vars) => pushToast({ text: live.t(key, vars) }),
+      ask: setSwitching,
+    });
+    return () => watcher.stop();
+  }, [api, sessions]);
+  async function answerSwitch(pending: PendingSwitch, restart: string[] | null, remember: boolean): Promise<void> {
+    setSwitching(null);
+    if (remember) {
+      // "Don't ask again" stores what was chosen; a failed write only means it asks again.
+      const current = await api.agentsSettings().catch(() => null);
+      if (current) await api.agentsSettingsPut({ ...current, accountSwitch: restart ? "restart" : "keep" }).catch(() => {});
+    }
+    if (restart && sessions) await restartTabs({ api, sessions, notify: (key, vars) => pushToast({ text: live.t(key, vars) }) }, pending, restart);
+  }
 
   const paths = repos?.flatMap((r) => r.worktrees.map((w) => w.path)) ?? [];
   const subscribe = useCallback((listener: () => void) => sessions?.subscribe(listener) ?? (() => {}), [sessions]);
@@ -1731,6 +1756,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         version={pkg.version}
         onOpenUsage={openUsage}
         onManageAccounts={openAccounts}
+        onUseAccount={(provider, name) => void api.accountActivate(provider, name).catch(() => {})}
         hidden={view === "docs"}
       />
 
@@ -1831,6 +1857,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             // Without the lists the flow goes on: setup cards, setup itself.
             if (ask.kind === "lists") void setupAfterCreate(ask.path, ask.repoId, true);
           }}
+        />
+      )}
+      {switching && sessions && (
+        <AccountSwitchDialog
+          provider={switching.provider}
+          from={switching.from}
+          to={switching.to}
+          rows={switching.tabIds.flatMap((id): SwitchRow[] => {
+            const tab = sessions.tab(id);
+            if (!tab) return [];
+            const name = tab.title ?? profileName(null, tab.profileId, t);
+            return [{ id, label: `${name} · ${tab.worktree.split(/[\\/]/).filter(Boolean).pop() ?? tab.worktree}`, working: tab.status === "working" }];
+          })}
+          onRestart={(ids, remember) => void answerSwitch(switching, ids, remember)}
+          onKeep={(remember) => void answerSwitch(switching, null, remember)}
         />
       )}
       {quitting && <QuitDialog ask={quitting.ask} onChoose={quitting.answer} />}
