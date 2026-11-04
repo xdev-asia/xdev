@@ -133,3 +133,48 @@ it("a custom Fix checks template gets the check's variables", async () => {
   await sendCheckFix(api, fake([a]).sessions, "/w", "a", "feat/x", FAILED);
   expect(a.client.input).toHaveBeenCalledWith(pastePrompt(`lint on feat/x (CI): ${FAILED.link}\nLOG`));
 });
+
+const CONFLICT = { branch: "me/oak", operation: "rebase (step 3 of 7)", files: "src/a.ts\nsrc/b.ts", onto: "main" };
+
+it("Resolve conflicts sends the operation, target and files with the default recipe, to the agent tab in front", async () => {
+  const a = tab("a");
+  const { sessions, open } = fake([a]);
+  await sendFix(apiWith(() => {}), sessions, "/w", "a", "resolveConflicts", CONFLICT);
+  expect(a.client.input).toHaveBeenCalledWith(
+    pastePrompt(`${FIX_BASE_PROMPTS.resolveConflicts}\n\nOperation: rebase (step 3 of 7)\nOnto: main\nFiles:\nsrc/a.ts\nsrc/b.ts`),
+  );
+  expect(open).not.toHaveBeenCalled();
+});
+
+it("a custom Resolve conflicts template reaches the tab with every variable", async () => {
+  const a = tab("a");
+  const api = apiWith((g) => {
+    g.recipes.resolveConflicts.template = "{operation} of {branch} onto {onto}. Prefer ours.\n{files}\n---\n{basePrompt}";
+  });
+  await sendFix(api, fake([a]).sessions, "/w", null, "resolveConflicts", CONFLICT);
+  const sent = (a.client.input as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+  expect(sent).toContain("rebase (step 3 of 7) of me/oak onto main. Prefer ours.\nsrc/a.ts\nsrc/b.ts\n---\n");
+  expect(sent).toContain(FIX_BASE_PROMPTS.resolveConflicts);
+});
+
+it("Resolve conflicts opens a tab of the recipe's profile when it names one, else uses the agent tab", async () => {
+  vi.useFakeTimers();
+  const api = apiWith((g) => {
+    g.recipes.resolveConflicts.agent = "codex";
+  });
+  const f = fake([tab("a")]);
+  const sent = sendFix(api, f.sessions, "/w", "a", "resolveConflicts", CONFLICT);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(f.open).toHaveBeenCalledWith("/w", "codex");
+  f.set("working");
+  f.set("idle");
+  expect((await sent)?.id).toBe("new");
+  expect(f.opened.client.input).toHaveBeenCalledWith(expect.stringContaining("Operation: rebase (step 3 of 7)"));
+
+  vi.useRealTimers();
+  const gone = apiWith((g) => {
+    g.recipes.resolveConflicts.agent = "removed-profile";
+  });
+  const a = tab("b");
+  expect(await sendFix(gone, fake([a]).sessions, "/w", "b", "resolveConflicts", CONFLICT)).toBe(a);
+});
