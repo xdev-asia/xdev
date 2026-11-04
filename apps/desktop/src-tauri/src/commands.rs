@@ -281,10 +281,7 @@ pub fn agents_settings_put(
     app: AppHandle,
     settings: settings::AgentsSettings,
 ) -> Result<settings::AgentsSettings, CmdError> {
-    let saved = settings_store::write(&app, &[SettingsSection::Agents], |s| s.agents = settings)
-        .map(|s| s.agents)?;
-    crate::power::apply_mode(&app, saved.keep_awake);
-    Ok(saved)
+    crate::power::put_agents(&app, settings)
 }
 
 /// Settings → Stats & Usage as stored; the defaults when nothing is.

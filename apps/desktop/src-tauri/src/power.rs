@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::commands::CmdError;
-use crate::settings::{KeepAwake, SettingsSection};
+use crate::settings::{AgentsSettings, KeepAwake, SettingsSection};
 use crate::settings_store::{self, SettingsStore};
 
 /// What the footer item shows.
@@ -203,6 +203,37 @@ fn set_stored(
     Ok(awake.set_mode(mode))
 }
 
+/// Stores Settings → Agents, then follows its keep-awake mode: the one step `agents_settings_put` takes.
+fn save_agents(
+    store: &SettingsStore,
+    awake: &Awake,
+    agents: AgentsSettings,
+) -> Result<(AgentsSettings, AwakeView), CmdError> {
+    let saved = store
+        .update(|s| s.agents = agents)
+        .map_err(|e| CmdError {
+            code: "io",
+            detail: Some(e.to_string()),
+        })?
+        .agents;
+    let now = awake.set_mode(saved.keep_awake);
+    Ok((saved, now))
+}
+
+/// `save_agents` on the app's store; every window hears the save and the view when it changed.
+pub fn put_agents(app: &AppHandle, agents: AgentsSettings) -> Result<AgentsSettings, CmdError> {
+    let store = settings_store::store(app).ok_or(CmdError {
+        code: "io",
+        detail: Some("no app config folder".into()),
+    })?;
+    let awake = app.state::<Awake>();
+    let before = awake.view();
+    let (saved, now) = save_agents(&store, &awake, agents)?;
+    settings_store::emit_changed(app, &[SettingsSection::Agents]);
+    publish(app, &before, &now);
+    Ok(saved)
+}
+
 #[tauri::command]
 pub fn keep_awake_get(awake: State<'_, Awake>) -> AwakeView {
     awake.view()
@@ -395,13 +426,22 @@ mod tests {
 
     #[test]
     fn a_saved_agents_section_changes_the_mode_the_same_way() {
-        // `agents_settings_put` hands the saved mode to `apply_mode`, which is
-        // `Awake::set_mode`: the view follows the stored value.
-        let (a, _) = awake(false);
-        let saved = crate::settings::AgentsSettings {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SettingsStore::new(dir.path().join(crate::settings::FILE_NAME));
+        let (a, c) = awake(false);
+        let agents = AgentsSettings {
             keep_awake: KeepAwake::On,
             ..Default::default()
         };
-        assert_eq!(a.set_mode(saved.keep_awake).mode, KeepAwake::On);
+        let (saved, view) = save_agents(&store, &a, agents).unwrap();
+        assert_eq!(saved.keep_awake, KeepAwake::On);
+        assert_eq!(store.read().agents.keep_awake, KeepAwake::On);
+        assert!(view.held);
+        assert_eq!(a.view().mode, KeepAwake::On);
+        assert_eq!(n(&c.holds), 1);
+        // Another mode in the same section releases it.
+        let (_, view) = save_agents(&store, &a, AgentsSettings::default()).unwrap();
+        assert_eq!(view.mode, KeepAwake::Off);
+        assert!(!view.held);
     }
 }
