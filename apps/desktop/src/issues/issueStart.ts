@@ -40,3 +40,9 @@ export function issueWorkItem(issue: Issue): WorkItem {
 export function issueQuery(patch: Partial<IssueQuery> = {}): IssueQuery {
   return { state: null, assigneeMe: false, search: null, limit: null, ...patch };
 }
+
+/** `name`, or `name-2`, `name-3` ... the first one not in `taken`. */
+export function uniqueWorktreeName(name: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(name)) return name;
+  for (let n = 2; ; n++) if (!taken.has(`${name}-${n}`)) return `${name}-${n}`;
+}
