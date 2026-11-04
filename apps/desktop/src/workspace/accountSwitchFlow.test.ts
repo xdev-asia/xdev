@@ -153,6 +153,16 @@ describe("account switch flow", () => {
     expect([a.id, b.id]).not.toContain(first.id);
   });
 
+  it("a tab that only has the session it resumed still carries that session", async () => {
+    const carry = vi.fn(async () => {});
+    const restartAs = vi.fn();
+    const tab = { id: "t", worktree: WT, title: null, profileId: "claude", agentSession: null, resumeOf: "resumed-1" };
+    const deps = { api: { accountCarrySession: carry } as never, sessions: { tab: () => tab, restartAs } as never, notify: vi.fn() };
+    await restartTabs(deps, { provider: "claude", from: "claude-2", to: "claude-3", tabIds: ["t"] }, ["t"]);
+    expect(carry).toHaveBeenCalledWith("claude", "claude-2", "claude-3", "resumed-1", WT);
+    expect(restartAs).toHaveBeenCalledWith("t", "claude-3", false);
+  });
+
   it("a tab without a session id restarts without a carry", async () => {
     const { api, live, agent } = await setup("restart");
     const carry = vi.spyOn(api, "accountCarrySession");
