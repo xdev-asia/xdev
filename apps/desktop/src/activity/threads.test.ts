@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { Tab } from "@/workspace/sessions";
-import { activityThreads, type ThreadSource } from "./threads";
+import { activityThreads, hasAgentThreads, type ThreadSource } from "./threads";
 
 const names = { "/a": { name: "oak", branch: "feat/oak" }, "/b": { name: "elm", branch: null } };
 const src = (id: string, over: Partial<Tab>, lastOutput: number | null): ThreadSource => ({
@@ -47,4 +47,11 @@ it("no match is an empty list; an unknown worktree shows its path", () => {
   expect(activityThreads([], names, "", off)).toEqual([]);
   const out = activityThreads([src("x", { worktree: "/zzz" }, 1)], names, "", off);
   expect(out[0]!.threads[0]).toMatchObject({ worktreeName: "/zzz", branch: null });
+});
+
+it("hasAgentThreads counts idle and ended agent tabs, not shells", () => {
+  expect(hasAgentThreads([])).toBe(false);
+  expect(hasAgentThreads([src("s", { agent: false }, 1)])).toBe(false);
+  expect(hasAgentThreads([src("i", { status: "idle" }, null)])).toBe(true);
+  expect(hasAgentThreads([src("e", { status: "exited" }, null)])).toBe(true);
 });

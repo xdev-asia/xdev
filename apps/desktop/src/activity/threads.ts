@@ -28,6 +28,11 @@ export interface ThreadGroup {
   threads: Thread[];
 }
 
+/** Whether any agent thread exists, idle and ended ones included: it tells "no threads" from "no match". */
+export function hasAgentThreads(tabs: readonly ThreadSource[]): boolean {
+  return tabs.some(({ tab }) => tab.agent);
+}
+
 const resting = (tab: Tab): boolean => tab.status === "idle" || tab.status === "exited";
 
 /**
