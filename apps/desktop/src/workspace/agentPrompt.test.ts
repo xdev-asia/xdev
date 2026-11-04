@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { pastePrompt, sendToAgentTab, sendToChosenTab } from "./agentPrompt";
+import { pastePrompt, sendToAgentTab, sendToChosenTab, sendToOpenedTab } from "./agentPrompt";
 import type { Sessions, Tab } from "./sessions";
 import type { TabStatus } from "./status";
 
@@ -110,4 +110,24 @@ it("sendToChosenTab gives up on a tab that ended, and waits for a new one", asyn
   f.set("working");
   f.set("idle");
   expect((await result)?.id).toBe("new");
+});
+
+it("sendToOpenedTab types into a tab that is already open once it has started", async () => {
+  vi.useFakeTimers();
+  const f = fake([tab("new", { status: "idle" })]);
+  const result = sendToOpenedTab(f.sessions, "/w", "new", "hi");
+  f.set("working");
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(f.opened.client.input).not.toHaveBeenCalled();
+  f.set("idle");
+  expect((await result)?.id).toBe("new");
+  expect(f.open).not.toHaveBeenCalled();
+});
+
+it("sendToOpenedTab gives up at the timeout", async () => {
+  vi.useFakeTimers();
+  const f = fake([tab("new")]);
+  const result = sendToOpenedTab(f.sessions, "/w", "new", "hi", { timeoutMs: 5_000 });
+  await vi.advanceTimersByTimeAsync(5_000);
+  expect(await result).toBeNull();
 });

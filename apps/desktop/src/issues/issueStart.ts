@@ -40,3 +40,15 @@ export function issueWorkItem(issue: Issue): WorkItem {
 export function issueQuery(patch: Partial<IssueQuery> = {}): IssueQuery {
   return { state: null, assigneeMe: false, search: null, limit: null, ...patch };
 }
+
+/** `name`, or `name-2`, `name-3` ... the first one not in `taken`. */
+export function uniqueWorktreeName(name: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(name)) return name;
+  for (let n = 2; ; n++) if (!taken.has(`${name}-${n}`)) return `${name}-${n}`;
+}
+
+/** True for a hash and an issue number, or a GitHub issue URL: what the create dialog treats as an issue, not a name. */
+export function isIssueRef(text: string): boolean {
+  const t = text.trim();
+  return /^#\d+$/.test(t) || /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/issues\/\d+\/?$/.test(t);
+}

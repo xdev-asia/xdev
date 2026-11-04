@@ -1738,6 +1738,8 @@
   "workspace.create.setDefault": "Đặt làm mặc định",
   "workspace.create.parent": "Worktree cha",
   "workspace.create.noParent": "Không có",
+  "workspace.create.issueFound": "Tạo worktree từ issue #{number}: {title}",
+  "workspace.create.issueLooking": "Đang tìm issue…",
   "workspace.create.item": "Mục công việc",
   "workspace.create.itemKind": "Loại mục công việc",
   "workspace.create.itemPlaceholder": "Liên kết https://… của pull request hoặc issue",
