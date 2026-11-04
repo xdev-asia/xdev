@@ -62,7 +62,12 @@ impl Startup {
     }
 
     /// Records a step; a second mark for the same id replaces the first.
-    pub fn mark(&self, step: StartupStep) {
+    pub fn mark(&self, mut step: StartupStep) {
+        // Details can carry a path or a token; hide them before the report
+        // is copied or exported.
+        step.detail = step
+            .detail
+            .map(|d| crate::redact::redact_text(&d, applog::home_dir().as_deref()));
         let text = line(&step);
         if self.print {
             eprintln!("{text}");
@@ -170,6 +175,20 @@ mod tests {
             ms,
             detail: None,
         }
+    }
+
+    #[test]
+    fn step_details_are_redacted_when_marked() {
+        let s = Startup::new(false);
+        s.mark(StartupStep {
+            id: "x".into(),
+            ok: false,
+            ms: 1,
+            detail: Some("failed with access_token=abc123 here".into()),
+        });
+        let detail = s.report().steps[0].detail.clone().unwrap();
+        assert!(!detail.contains("abc123"), "{detail}");
+        assert!(detail.contains("access_token=[redacted]"));
     }
 
     #[test]
