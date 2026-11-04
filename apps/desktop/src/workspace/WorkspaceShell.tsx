@@ -61,7 +61,7 @@ import { decideSetup, hasPending, pendingLists, type PendingLists } from "./setu
 import { SetupGate } from "./setupGate";
 import { startCliReport } from "./cliReport";
 import { startCliEvents } from "./cliEvents";
-import { startOrchestrationEvents } from "./orchestrationEvents";
+import { openFailedToast, startOrchestrationEvents } from "./orchestrationEvents";
 import { terminalOf } from "@/terminal/terminalRegistry";
 import { TrustDialog } from "./TrustDialog";
 import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
@@ -618,6 +618,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       gate,
       send: (worktree, id, text, timeoutMs) => sendToOpenedTab(sessions, worktree, id, text, { timeoutMs }),
       terminal: terminalOf,
+      failed: (open, stage) => void openFailedToast(open, stage, (key, vars) => live.t(key, vars)),
     });
     return () => {
       reporter.stop();

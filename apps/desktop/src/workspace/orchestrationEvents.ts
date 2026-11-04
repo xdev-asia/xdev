@@ -1,6 +1,7 @@
 import type { Api, ReadTab, WorkerClose, WorkerOpen, WorkerOpenOutcome } from "@/api";
 import type { TerminalHandle } from "@/terminal/Terminal";
 import type { SetupGate } from "./setupGate";
+import { pushToast } from "./toastStore";
 import type { Sessions, Tab } from "./sessions";
 
 /** Where an open went wrong; the backend puts it in the receipt (`failedStage`). */
@@ -106,4 +107,9 @@ export function startOrchestrationEvents(api: Api, host: OrchestrationHost): () 
   return () => {
     for (const off of offs) void off.then((stop) => stop()).catch(() => {});
   };
+}
+
+/** The toast for a worker that did not open: its title and the stage that failed. */
+export function openFailedToast(open: WorkerOpen, stage: OpenStage, t: (key: string, vars?: Record<string, string | number>) => string): string {
+  return pushToast({ id: `orchestration-open-${open.dispatch}`, text: t("orchestration.worker.openFailed", { title: open.title, stage: t(`orchestration.worker.stage.${stage}`) }) });
 }
