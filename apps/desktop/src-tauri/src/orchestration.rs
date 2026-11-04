@@ -15,8 +15,9 @@ use serde_json::Value;
 use tauri::{AppHandle, State};
 use xdev_orch::{FailedStage, OrchError, SkillStatus, Store};
 
+use crate::accounts::data_dir;
 use crate::cli_verbs::Ctx;
-use crate::commands::CmdError;
+use crate::commands::{AppState, CmdError};
 use crate::endpoint::{AppError, Caller, Request};
 use crate::settings::{OrchestrationSettings, SettingsSection};
 use crate::settings_store;
@@ -280,24 +281,45 @@ pub fn orchestration_skill_install(_app: AppHandle, _force: bool) -> Result<Skil
 /// The strip's data for the worker in `tab`; none when the tab is no worker's.
 #[tauri::command(async)]
 pub fn orchestration_worker_lifetime(
-    _hub: State<'_, OrchHub>,
-    _tab: String,
+    state: State<'_, AppState>,
+    hub: State<'_, OrchHub>,
+    tab: String,
 ) -> Option<WorkerLifetime> {
-    None
+    let data = data_dir(&state).ok()?;
+    hub.with_store(data, |s| {
+        Ok(s.worker_of_tab(&tab)?.map(|w| lifetime_of(&w)))
+    })
+    .ok()
+    .flatten()
 }
 
 /// Keeps a worker's tab open (`keep`) or lets it close again.
 #[tauri::command(async)]
 pub fn orchestration_worker_keep_open(
-    _app: AppHandle,
-    _hub: State<'_, OrchHub>,
-    _tab: String,
-    _keep: bool,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    hub: State<'_, OrchHub>,
+    tab: String,
+    keep: bool,
 ) -> Result<WorkerLifetime, CmdError> {
-    Err(CmdError {
-        code: "unsupported",
-        detail: Some("keep open is not built yet".to_owned()),
-    })
+    use tauri::Emitter;
+    let data = data_dir(&state)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
+    let w = hub
+        .with_store(data, |s| {
+            let w = s
+                .worker_of_tab(&tab)?
+                .ok_or_else(|| OrchError::new("not_found", format!("{tab} is no worker's tab")))?;
+            s.worker_set_kept(&w.dispatch_id, keep, now)
+        })
+        .map_err(|e| CmdError {
+            code: "orchestration",
+            detail: Some(format!("{}: {}", e.code, e.message)),
+        })?;
+    let _ = app.emit("orchestration://worker-changed", WorkerChanged { tab });
+    Ok(lifetime_of(&w))
 }
 
 /// The UI's answer to `orchestration://open-worker`.
@@ -508,10 +530,45 @@ pub fn handle(
                 tabs.iter()
                     .any(|t| t.id == tab && !t.exited && (t.status == "idle" || t.status == "done"))
             };
-            let receipt = ctx.orch.with_store(ctx.data, |s| {
+            let auto_close = ctx.orch_settings.worker_auto_close;
+            let (receipt, settled) = ctx.orch.with_store(ctx.data, |s| {
                 let me = s.identity(acting.tab.as_deref(), acting.run.as_deref())?;
-                s.send(&me, &msg, ctx.now_ms, &idle)
+                // A worker's `worker_done` also settles it: say how first.
+                let done = match (&me.dispatch, msg.kind) {
+                    (Some(d), xdev_orch::MessageType::WorkerDone) => {
+                        let outcome = msg
+                            .payload
+                            .as_ref()
+                            .and_then(|p| p["outcome"].as_str())
+                            .and_then(|o| match o {
+                                "succeeded" => Some(xdev_orch::WorkerState::Succeeded),
+                                "failed" => Some(xdev_orch::WorkerState::Failed),
+                                _ => None,
+                            })
+                            .ok_or_else(|| {
+                                OrchError::bad_request(
+                                    "worker_done needs --outcome succeeded or failed",
+                                )
+                            })?;
+                        Some((d.clone(), outcome))
+                    }
+                    _ => None,
+                };
+                let receipt = s.send(&me, &msg, ctx.now_ms, &idle)?;
+                let mut tab = None;
+                if let Some((d, outcome)) = done
+                    && receipt.count > 0
+                {
+                    let body = (!msg.body.is_empty()).then_some(msg.body.as_str());
+                    tab = s
+                        .worker_settle(&d, outcome, body, auto_close, ctx.now_ms)?
+                        .tab;
+                }
+                Ok((receipt, tab))
             })?;
+            if let Some(tab) = settled {
+                changed(ctx, tab)?;
+            }
             if receipt.count > 0 {
                 ctx.orch.notify_mail();
             }
@@ -646,10 +703,187 @@ pub fn handle(
             to_value(&ctx.orch.with_store(ctx.data, |s| s.ask_resume(&gate))?)
         }
         "worker-start" => worker_start(ctx, req, caller, &acting),
+        "worker-show" => {
+            let id = handle_param(req)?;
+            to_value(&ctx.orch.with_store(ctx.data, |s| s.worker_view(&id))?)
+        }
+        "worker-list" => {
+            let state = enum_param(req, "state")?;
+            let list = ctx.orch.with_store(ctx.data, |s| {
+                let me = s.identity(acting.tab.as_deref(), acting.run.as_deref())?;
+                s.worker_list(&me.run_id, state)
+            })?;
+            to_value(&list)
+        }
+        "worker-stop" => {
+            let id = handle_param(req)?;
+            let w = ctx
+                .orch
+                .with_store(ctx.data, |s| s.worker_stop_begin(&id, ctx.now_ms))?;
+            let Some(tab) = w.tab.clone() else {
+                let w = ctx
+                    .orch
+                    .with_store(ctx.data, |s| s.worker_stop_end(&id, true, ctx.now_ms))?;
+                return to_value(&w);
+            };
+            changed(ctx, tab.clone())?;
+            (ctx.emit)(
+                "orchestration://close-worker",
+                to_value(&WorkerClose {
+                    dispatch: id.clone(),
+                    tab: tab.clone(),
+                })?,
+            );
+            let went = wait_tab_gone(ctx, &tab, Duration::from_millis(STOP_WAIT_MS), gone);
+            let w = ctx
+                .orch
+                .with_store(ctx.data, |s| s.worker_stop_end(&id, went, ctx.now_ms))?;
+            changed(ctx, tab)?;
+            if !went {
+                return Err(AppError::new(
+                    "stop_unknown",
+                    format!(
+                        "the tab of {id} did not close in time; run worker-stop again or look at it"
+                    ),
+                ));
+            }
+            to_value(&w)
+        }
+        "worker-abandon" => {
+            let id = handle_param(req)?;
+            let w = ctx
+                .orch
+                .with_store(ctx.data, |s| s.worker_abandon(&id, ctx.now_ms))?;
+            if let Some(tab) = w.tab.clone() {
+                changed(ctx, tab)?;
+            }
+            to_value(&w)
+        }
+        "worker-release" => {
+            let id = handle_param(req)?;
+            let outcome = match text_param(req, "outcome").as_deref() {
+                Some("succeeded") => xdev_orch::WorkerState::Succeeded,
+                Some("failed") => xdev_orch::WorkerState::Failed,
+                _ => {
+                    return Err(AppError::new(
+                        "bad_request",
+                        "worker-release needs --outcome succeeded or failed",
+                    ));
+                }
+            };
+            let result = text_param(req, "result");
+            let auto_close = ctx.orch_settings.worker_auto_close;
+            let w = ctx.orch.with_store(ctx.data, |s| {
+                let now = s.worker_get(&id)?;
+                if matches!(
+                    now.state,
+                    xdev_orch::WorkerState::Succeeded | xdev_orch::WorkerState::Failed
+                ) {
+                    return Err(OrchError::new(
+                        "already_released",
+                        format!("{id} is already {:?}", now.state),
+                    ));
+                }
+                s.worker_settle(&id, outcome, result.as_deref(), auto_close, ctx.now_ms)
+            })?;
+            if let Some(tab) = w.tab.clone() {
+                changed(ctx, tab)?;
+            }
+            to_value(&w)
+        }
+        "worker-keep-open" => {
+            let id = handle_param(req)?;
+            let keep = !flag(req, "off");
+            let w = ctx
+                .orch
+                .with_store(ctx.data, |s| s.worker_set_kept(&id, keep, ctx.now_ms))?;
+            if let Some(tab) = w.tab.clone() {
+                changed(ctx, tab)?;
+            }
+            to_value(&lifetime_of(&w))
+        }
+        "worker-read" => {
+            let id = handle_param(req)?;
+            let max_chars = req
+                .params
+                .get("maxChars")
+                .and_then(Value::as_u64)
+                .map_or(8000, |n| n.clamp(1, 200_000) as u32);
+            let w = ctx.orch.with_store(ctx.data, |s| s.worker_get(&id))?;
+            let tab = w
+                .tab
+                .ok_or_else(|| AppError::new("not_found", format!("{id} has no tab")))?;
+            let request = ctx.orch.next_read();
+            let text = ctx
+                .orch
+                .reads
+                .ask(
+                    request,
+                    || {
+                        let payload = to_value(&ReadTab {
+                            request,
+                            tab,
+                            max_chars,
+                        });
+                        if let Ok(p) = payload {
+                            (ctx.emit)("orchestration://read-tab", p);
+                        }
+                    },
+                    Duration::from_millis(READ_WAIT_MS),
+                )
+                .ok_or_else(|| {
+                    AppError::new("read_unavailable", "the terminal did not answer in time")
+                })?;
+            Ok(serde_json::json!({ "text": text }))
+        }
         other => Err(AppError::new(
             "unsupported",
             format!("orchestration {other} is not built yet"),
         )),
+    }
+}
+
+/// How long `worker-stop` waits for the tab to leave the board.
+const STOP_WAIT_MS: u64 = if cfg!(test) { 150 } else { 10_000 };
+/// How long `worker-read` waits for the terminal's text.
+const READ_WAIT_MS: u64 = if cfg!(test) { 100 } else { 5_000 };
+
+fn handle_param(req: &Request) -> Result<String, AppError> {
+    text_param(req, "handle")
+        .ok_or_else(|| AppError::new("bad_request", "this verb needs --handle <dispatch id>"))
+}
+
+/// Tells the UI the strip over `tab` changed.
+fn changed(ctx: &Ctx<'_>, tab: String) -> Result<(), AppError> {
+    (ctx.emit)(
+        "orchestration://worker-changed",
+        to_value(&WorkerChanged { tab })?,
+    );
+    Ok(())
+}
+
+fn lifetime_of(w: &xdev_orch::Worker) -> WorkerLifetime {
+    WorkerLifetime {
+        kept: w.kept,
+        closes_at_ms: w.closes_at_ms,
+        finished: matches!(
+            w.state,
+            xdev_orch::WorkerState::Succeeded | xdev_orch::WorkerState::Failed
+        ),
+    }
+}
+
+/// Whether `tab` is off the board before `limit` ends (or the caller leaves).
+fn wait_tab_gone(ctx: &Ctx<'_>, tab: &str, limit: Duration, gone: &dyn Fn() -> bool) -> bool {
+    let deadline = std::time::Instant::now() + limit;
+    loop {
+        if !ctx.board.tabs().0.iter().any(|t| t.id == tab) {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline || gone() {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(25));
     }
 }
 
@@ -1353,5 +1587,160 @@ line", "title": "A"}),
         let dead = call(&f, json!({"spec": "go", "terminal": "t9"})).unwrap();
         assert_eq!(dead["state"], "failed");
         assert_eq!(dead["failedStage"], "dispatch_input");
+    }
+
+    fn events_named(f: &crate::cli_verbs::tests::Fixture, name: &str) -> Vec<Value> {
+        f.events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(e, _)| e == name)
+            .map(|(_, p)| p.clone())
+            .collect()
+    }
+
+    /// A fixture with one ready worker; returns it, the receipt and its tab.
+    fn with_worker() -> (crate::cli_verbs::tests::Fixture, Value, String) {
+        let mut f = crate::cli_verbs::tests::fixture();
+        f.open_answer = Some(WorkerOpenOutcome::Ok);
+        let r = f
+            .call(
+                Some("p-lead"),
+                "orchestration.worker-start",
+                json!({"spec": "do x"}),
+            )
+            .unwrap();
+        let tab = opened(&f)[0]["tab"].as_str().unwrap().to_owned();
+        (f, r, tab)
+    }
+
+    #[test]
+    fn worker_done_from_the_worker_settles_it_and_the_task() {
+        let (f, r, tab) = with_worker();
+        let run = r["runId"].as_str().unwrap();
+        let handle = r["dispatchId"].clone();
+        // A done without a valid outcome is refused and changes nothing.
+        let bad = f.call(
+            Some(&tab),
+            "orchestration.send",
+            json!({"to": format!("run:{run}"), "type": "worker_done", "outcome": "maybe"}),
+        );
+        assert_eq!(bad.unwrap_err().code, "bad_request");
+        let show = |f: &crate::cli_verbs::tests::Fixture| {
+            f.call(
+                Some("p-lead"),
+                "orchestration.worker-show",
+                json!({"handle": handle}),
+            )
+            .unwrap()
+        };
+        assert_eq!(show(&f)["worker"]["state"], "ready");
+
+        f.call(
+            Some(&tab),
+            "orchestration.send",
+            json!({"to": format!("run:{run}"), "type": "worker_done", "outcome": "succeeded", "body": "all good"}),
+        )
+        .unwrap();
+        let v = show(&f);
+        assert_eq!(v["worker"]["state"], "succeeded");
+        assert_eq!(v["taskStatus"], "completed");
+        assert!(v["worker"]["closesAtMs"].is_i64());
+        assert!(
+            !events_named(&f, "orchestration://worker-changed").is_empty(),
+            "the strip is told"
+        );
+        let list = f
+            .call(
+                Some("p-lead"),
+                "orchestration.worker-list",
+                json!({"state": "succeeded"}),
+            )
+            .unwrap();
+        assert_eq!(list.as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn keep_open_stops_the_countdown_and_stop_refuses_a_kept_worker() {
+        let (f, r, tab) = with_worker();
+        let handle = r["dispatchId"].clone();
+        let call = |m: &str, p: Value| f.call(Some("p-lead"), &format!("orchestration.{m}"), p);
+        let k = call("worker-keep-open", json!({"handle": handle})).unwrap();
+        assert_eq!(k["kept"], true);
+        let e = call("worker-stop", json!({"handle": handle}));
+        assert_eq!(e.unwrap_err().code, "worker_kept");
+        let off = call("worker-keep-open", json!({"handle": handle, "off": true})).unwrap();
+        assert_eq!(off["kept"], false);
+        assert!(
+            events_named(&f, "orchestration://worker-changed")
+                .iter()
+                .any(|e| e["tab"] == tab)
+        );
+    }
+
+    #[test]
+    fn stop_closes_the_tab_when_it_leaves_the_board_and_says_unknown_when_it_does_not() {
+        let (f, r, tab) = with_worker();
+        let handle = r["dispatchId"].clone();
+        // The tab stays on the board: the stop cannot be confirmed.
+        f.board.replace(
+            vec![crate::cli_verbs::tests::tab(&tab, &f.other, true, "idle")],
+            None,
+        );
+        let e = f.call(
+            Some("p-lead"),
+            "orchestration.worker-stop",
+            json!({"handle": handle}),
+        );
+        assert_eq!(e.unwrap_err().code, "stop_unknown");
+        assert_eq!(events_named(&f, "orchestration://close-worker").len(), 1);
+        // Once it has gone, asking again ends in stopped.
+        f.board.replace(vec![], None);
+        let w = f
+            .call(
+                Some("p-lead"),
+                "orchestration.worker-stop",
+                json!({"handle": handle}),
+            )
+            .unwrap();
+        assert_eq!(w["state"], "stopped");
+    }
+
+    #[test]
+    fn abandon_and_release_move_a_worker_out_of_ready() {
+        let (f, r, _tab) = with_worker();
+        let handle = r["dispatchId"].clone();
+        let call = |m: &str, p: Value| f.call(Some("p-lead"), &format!("orchestration.{m}"), p);
+        let none = call("worker-release", json!({"handle": handle}));
+        assert_eq!(none.unwrap_err().code, "bad_request");
+        let rel = call(
+            "worker-release",
+            json!({"handle": handle, "outcome": "failed", "result": "gave up"}),
+        )
+        .unwrap();
+        assert_eq!(rel["state"], "failed");
+        let again = call(
+            "worker-release",
+            json!({"handle": handle, "outcome": "succeeded"}),
+        );
+        assert_eq!(again.unwrap_err().code, "already_released");
+
+        let r2 = call("worker-start", json!({"spec": "two"})).unwrap();
+        let ab = call("worker-abandon", json!({"handle": r2["dispatchId"]})).unwrap();
+        assert_eq!(ab["state"], "abandoned");
+    }
+
+    #[test]
+    fn worker_read_asks_the_terminal_and_times_out_when_nobody_answers() {
+        let (f, r, tab) = with_worker();
+        let e = f.call(
+            Some("p-lead"),
+            "orchestration.worker-read",
+            json!({"handle": r["dispatchId"], "maxChars": 50}),
+        );
+        assert_eq!(e.unwrap_err().code, "read_unavailable");
+        let asked = events_named(&f, "orchestration://read-tab");
+        assert_eq!(asked[0]["tab"], tab);
+        assert_eq!(asked[0]["maxChars"], 50);
     }
 }
