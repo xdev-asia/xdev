@@ -67,9 +67,12 @@ export function AccountsView({ api }: { api: Api }) {
     }
     void load();
     const timer = setInterval(() => void load(), 300_000);
+    // An account made active, added or removed elsewhere (the usage popover) shows here at once.
+    const unlisten = api.onAccountsChanged(() => void load());
     return () => {
       disposed = true;
       clearInterval(timer);
+      void unlisten.then(off => off(), () => {});
     };
   }, [api, revision]);
 
@@ -202,6 +205,20 @@ export function AccountsView({ api }: { api: Api }) {
     const quota = quotaOf(account);
     return (account.status.state !== "logged_in" || quota?.reason === "expired") && <Button type="button" style={COMPACT} disabled={busy} onClick={() => run(() => login(account.name))}>{t("accounts.login")}</Button>;
   }
+  const isActive = (account: Account) => accounts?.active.some(a => a.provider === account.provider && a.name === account.name) ?? false;
+  // "Use this account" on the others, "Use CLI default" on the active one (it clears the choice for its provider).
+  function switchButton(account: Account, compact: boolean) {
+    const active = isActive(account);
+    const text = t(active ? "accounts.switch.cliDefault" : "accounts.switch.use");
+    const label = t(active ? "accounts.switch.cliDefaultAria" : "accounts.switch.useAria", { name: account.name });
+    const onClick = () => run(async () => { await api.accountActivate(account.provider, active ? null : account.name); setRevision(n => n + 1); });
+    return compact
+      ? <Button type="button" style={COMPACT} disabled={busy} aria-label={label} data-switch={active ? "clear" : "use"} onClick={onClick}>{text}</Button>
+      : <button type="button" className="btn-secondary" disabled={busy} aria-label={label} data-switch={active ? "clear" : "use"} onClick={onClick}>{text}</button>;
+  }
+  function activeChip(account: Account) {
+    return isActive(account) && <span className="badge account-active" data-active="true">{t("accounts.switch.active")}</span>;
+  }
   function confirmRemove(account: Account) {
     return <div className="account-confirm">
       <p>{t("accounts.keepFolder", { dir: account.dir })}</p>
@@ -220,6 +237,7 @@ export function AccountsView({ api }: { api: Api }) {
         <span className="account-dot" data-state={state} aria-hidden="true" />
         <h2>{account.name}</h2>
         <span className="badge account-provider" data-provider={account.provider}>{t(`accounts.provider.${account.provider}`)}</span>
+        {activeChip(account)}
         <span className="badge" data-state={account.status.state}>{t(`accounts.status.${account.status.state}`)}</span>
         <span className="badge account-state" data-state={state}>{t(`accounts.state.${state}`)}</span>
       </div>
@@ -234,6 +252,7 @@ export function AccountsView({ api }: { api: Api }) {
         </div>;
       })}
       <div className="account-row account-actions">
+        {switchButton(account, true)}
         {loginButton(account)}
         <Button type="button" style={COMPACT} disabled={busy} onClick={() => setRemoving(account.name)}>{t("accounts.remove")}</Button>
       </div>
@@ -255,13 +274,14 @@ export function AccountsView({ api }: { api: Api }) {
       <div role="row" className="account-tr" key={account.name} data-state={state}>
         <div role="cell" className="account-cell-name">
           <span className="account-dot" data-state={state} aria-hidden="true" />
-          <span className="account-name-text"><strong>{account.name}</strong><span className="doc-path">{who(account) || t(`accounts.status.${account.status.state}`)}</span></span>
+          <span className="account-name-text"><strong>{account.name}</strong>{activeChip(account)}<span className="doc-path">{who(account) || t(`accounts.status.${account.status.state}`)}</span></span>
         </div>
         <div role="cell"><span className="badge account-provider" data-provider={account.provider}>{t(`accounts.provider.${account.provider}`)}</span></div>
         {cell(account, "five_hour")}
         {cell(account, "seven_day")}
         <div role="cell"><span className="badge account-state" data-state={state}>{t(`accounts.state.${state}`)}</span></div>
         <div role="cell" className="account-cell-actions">
+          {switchButton(account, false)}
           {loginButton(account)}
           <button type="button" className="btn-secondary account-remove" disabled={busy} onClick={() => setRemoving(account.name)}>{t("accounts.remove")}</button>
         </div>
