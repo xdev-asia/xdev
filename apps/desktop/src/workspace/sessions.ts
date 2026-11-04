@@ -1,5 +1,9 @@
-import { toApiError, type Api, type HookDetail, type PtyInfo, type PtyProfile, type RestoreMode } from "@/api";
+import { toApiError, type AccountSource, type Api, type HookDetail, type PtyInfo, type PtyProfile, type RestoreMode } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
+import { ownAccount } from "./ownAccount";
+
+// Where `ownAccount` lives to keep it free of the api import; callers may still take it from here.
+export { ownAccount };
 import { addTab, leaves, paneOf, pinFirst, removeTab, replaceTab, single, splitPane, type PaneDir, type PaneLayout } from "./paneTree";
 import { LAYOUT_VERSION, fromSnapshot, toSnapshot, type LayoutSnapshot, type RestoreOptions, type RestoreReport, type SessionFallback, type TabSnapshot, type WorktreeSnapshot } from "./layoutSnapshot";
 import { DONE_QUIET_MS, INTERRUPT_MS, NO_CAPS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type Caps, type StatusEvent, type StatusState, type TabStatus } from "./status";
@@ -23,6 +27,8 @@ export interface Tab {
   profileId: PtyProfile;
   /** The account the profile runs under, if one was picked. */
   account: string | null;
+  /** Where the account the pty runs under came from (`tab`, `profile`, `active`); null until it started or without one. */
+  accountSource: AccountSource | null;
   /** What the tab was started as (`ask`, `accept-edits`, `skip`); filled in once known. */
   permissions: string;
   /** Agent tabs count for the worktree's status dot; plain shells do not. */
@@ -345,12 +351,29 @@ export class Sessions {
   restart(id: string): Tab | null {
     const old = this.entries.get(id);
     if (!old) return null;
+    return this.replace(old, old.tab.account, old.tab.resumeOf, old.tab.agentSession);
+  }
+
+  /**
+   * `restart` under `account`: for a tab that follows the active account, the one it follows now. The
+   * tab keeps its account source and resumes its agent session (the latest one its hooks reported);
+   * `fresh` starts a new conversation instead. `null` for an unknown id.
+   */
+  restartAs(id: string, account: string | null, fresh = false): Tab | null {
+    const old = this.entries.get(id);
+    if (!old) return null;
+    const session = fresh ? null : (old.tab.agentSession ?? old.tab.resumeOf);
+    return this.replace(old, account, session, session);
+  }
+
+  private replace(old: Entry, account: string | null, resumeOf: string | null, agentSession: string | null): Tab {
+    const id = old.tab.id;
     this.clear(this.settle, id);
     this.clear(this.announce, id);
     this.clear(this.stale, id);
-    const next = this.entry(old.tab.worktree, old.tab.profileId, old.tab.account, old.tab.cli, old.tab.resumeOf, old.tab.title);
+    const next = this.entry(old.tab.worktree, old.tab.profileId, account, old.tab.cli, resumeOf, old.tab.title);
     // The pin and colour belong to the slot, not to the pty; so does the agent's session id, which a restart must not lose.
-    next.tab = { ...next.tab, pinned: old.tab.pinned, color: old.tab.color, agentSession: old.tab.agentSession };
+    next.tab = { ...next.tab, accountSource: old.tab.accountSource, pinned: old.tab.pinned, color: old.tab.color, agentSession };
     const kept = [...this.entries].map(([key, e]): [string, Entry] => (key === id ? [next.tab.id, next] : [key, e]));
     this.entries.clear();
     for (const [key, e] of kept) this.entries.set(key, e);
@@ -368,8 +391,8 @@ export class Sessions {
   async close(id: string): Promise<void> {
     const entry = this.entries.get(id);
     if (!entry) return;
-    const { worktree, profileId, account, cli } = entry.tab;
-    this.closed.push({ worktree, profileId, account, cli });
+    const { worktree, profileId, cli } = entry.tab;
+    this.closed.push({ worktree, profileId, account: ownAccount(entry.tab), cli });
     if (this.closed.length > CLOSED_KEPT) this.closed.shift();
     this.remove([entry]);
     await entry.tab.client.dispose();
@@ -492,8 +515,8 @@ export class Sessions {
     // A tab opened without a profile view (the palette, a prompt) learns its CLI here, for title rules.
     const reported: TabCli = info.cli === "claude" || info.cli === "codex" ? info.cli : null;
     const cli = entry.tab.cli ?? reported;
-    if (entry.tab.permissions === info.permissions && entry.tab.account === info.account && entry.tab.cli === cli) return;
-    this.update(entry, { permissions: info.permissions, account: info.account, cli });
+    if (entry.tab.permissions === info.permissions && entry.tab.account === info.account && entry.tab.accountSource === info.accountSource && entry.tab.cli === cli) return;
+    this.update(entry, { permissions: info.permissions, account: info.account, accountSource: info.accountSource, cli });
   }
 
   /**
@@ -832,6 +855,7 @@ export class Sessions {
       worktree,
       profileId,
       account,
+      accountSource: null,
       permissions: "ask",
       // The setup script's tab (`xdev:` ids) is a terminal, not an agent: it must not drive the status dot.
       agent: !profileId.startsWith("shell") && !profileId.startsWith("xdev:"),
