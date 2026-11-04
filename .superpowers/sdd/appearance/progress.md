@@ -26,3 +26,12 @@ Deviations:
 - Replace no longer sends the old file to the OS trash: the brief says to trash the old one only if the paths differ, and a replaced scheme has the same path, so the previous content is overwritten, not recoverable from the trash.
 - xdev-ui also gained a `disabled` prop on Segmented and ThemeSwitch (neither had one), and FontField's reset button follows `disabled` (not separately tested).
 - Appearance link rows only render when the host passes `openSection`.
+
+Gate (2026-11-04, worktree head before this note 942b8ad):
+- `corepack pnpm -r typecheck`: pass (desktop and xdev-ui).
+- `corepack pnpm -r test`: desktop 239 files / 2181 tests pass; xdev-ui 52 files / 164 tests pass.
+- `corepack pnpm --filter desktop build`: built.
+- `cargo fmt --all --check`: pass. `cargo clippy --workspace --all-targets -- -D warnings`: pass.
+- `cargo test -p xdev-desktop`: 446 passed, 1 failed (`ptyd::tests::a_dev_build_has_the_binary_next_to_the_app`, needs the built sidecar); after `cargo build --workspace --bins` that test passes. Other crates were not run (`cargo test --workspace` was too slow); no other crate was touched.
+- `cargo test -p xdev-desktop export_bindings` + `git diff --exit-code packages/bindings`: no diff.
+- `git status` clean in the worktree and in `packages/xdev-ui`.
