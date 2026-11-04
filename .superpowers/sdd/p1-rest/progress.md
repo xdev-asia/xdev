@@ -34,3 +34,4 @@ Gate: -r typecheck ok; -r test ui 155 + desktop 2156 ok; desktop build ok; cargo
 
 ## Last fix (lane p1-rest, Sonnet)
 - Item 1: `pr_branch` returns `{ branch, fetched }`. The fetch records the branch tip; `pr_branch_discard` deletes only while `refs/heads/<b>` still has that tip and no worktree holds it. `branch_with` reusing an existing branch drops its record. WorkspaceShell sets `discardBranch` only when `fetched`. Tests: commit-then-reuse, fetch-then-discard, moved tip, delete-and-recreate.
+- Item 2: mock `sparseOk` mirrors `names::sparse_dirs` (blank skipped, `a//b`, `a/./b`, `C:x`, control chars refused, 50 counted after dedupe).
