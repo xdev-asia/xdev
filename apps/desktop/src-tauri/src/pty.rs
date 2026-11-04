@@ -162,6 +162,13 @@ impl PtyHandle for Session {
 
 pub struct Ptys {
     sessions: Mutex<HashMap<String, Box<dyn PtyHandle>>>,
+    /// Ids a spawn or attach has taken and not filled yet, each with the
+    /// ticket of the call that holds it. Locked after `sessions`, never
+    /// before.
+    claims: Mutex<HashMap<String, u64>>,
+    /// Signalled when a claim ends, filled or not.
+    claim_ended: Condvar,
+    next_claim: AtomicU64,
     /// Fingerprints of skip-mode launches a person has just approved. A start
     /// takes its fingerprint out, so each approval covers one start.
     passes: Mutex<HashSet<String>>,
@@ -188,6 +195,10 @@ impl Default for Ptys {
 /// start wait, and a little more.
 const HOST_WAIT: Duration = Duration::from_secs(8);
 
+/// How long a write, resize or ack waits for a spawn or attach of its id to
+/// land: the host wait, and the spawn after it.
+const CLAIM_WAIT: Duration = Duration::from_secs(16);
+
 impl Ptys {
     fn map(&self) -> MutexGuard<'_, HashMap<String, Box<dyn PtyHandle>>> {
         self.sessions.lock().unwrap_or_else(PoisonError::into_inner)
@@ -197,6 +208,9 @@ impl Ptys {
     pub(crate) fn pending() -> Ptys {
         Ptys {
             sessions: Mutex::default(),
+            claims: Mutex::default(),
+            claim_ended: Condvar::new(),
+            next_claim: AtomicU64::new(0),
             passes: Mutex::default(),
             host: Mutex::new(None),
             host_set: Condvar::new(),
@@ -289,11 +303,94 @@ impl Ptys {
         }
     }
 
+    fn claims(&self) -> MutexGuard<'_, HashMap<String, u64>> {
+        self.claims.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Takes `id` for a spawn or attach, which then runs without the lock:
+    /// `pty_exists` while a PTY or another claim has it.
+    fn claim(&self, id: &str) -> Result<Claim<'_>, CmdError> {
+        let map = self.map();
+        let mut claims = self.claims();
+        if map.contains_key(id) || claims.contains_key(id) {
+            return Err(CmdError {
+                code: "pty_exists",
+                detail: None,
+            });
+        }
+        let ticket = self.next_claim.fetch_add(1, Ordering::Relaxed);
+        claims.insert(id.to_owned(), ticket);
+        Ok(Claim {
+            ptys: self,
+            id: id.to_owned(),
+            ticket,
+        })
+    }
+
+    /// Lets go of `id`: its PTY, for the caller to end, or else the claim of
+    /// a spawn or attach still under way, which then ends what it gets.
+    fn take(&self, id: &str) -> Option<Box<dyn PtyHandle>> {
+        let mut map = self.map();
+        let handle = map.remove(id);
+        if handle.is_none() && self.claims().remove(id).is_some() {
+            self.claim_ended.notify_all();
+        }
+        handle
+    }
+
     fn with<T>(&self, id: &str, f: impl FnOnce(&dyn PtyHandle) -> T) -> Result<T, CmdError> {
+        // Output, and so acks, can come before the spawn returns; a call for
+        // an id still being spawned or attached waits for it to land.
+        let claims = self.claims();
+        let (claims, _) = self
+            .claim_ended
+            .wait_timeout_while(claims, CLAIM_WAIT, |c| c.contains_key(id))
+            .unwrap_or_else(PoisonError::into_inner);
+        drop(claims);
         self.map().get(id).map(|h| f(h.as_ref())).ok_or(CmdError {
             code: "pty_unknown",
             detail: None,
         })
+    }
+}
+
+/// An id taken for a PTY that is not there yet. Dropped unfilled, it lets
+/// the id go.
+struct Claim<'a> {
+    ptys: &'a Ptys,
+    id: String,
+    ticket: u64,
+}
+
+impl Claim<'_> {
+    /// Puts `handle` in the id's place. When the id was let go meanwhile (its
+    /// tab closed), the PTY is ended instead and the call fails `pty_gone`.
+    fn fill(self, handle: Box<dyn PtyHandle>) -> Result<(), CmdError> {
+        {
+            let mut map = self.ptys.map();
+            let mut claims = self.ptys.claims();
+            if claims.get(&self.id) == Some(&self.ticket) {
+                claims.remove(&self.id);
+                map.insert(self.id.clone(), handle);
+                return Ok(());
+            }
+        }
+        handle.kill();
+        Err(CmdError {
+            code: "pty_gone",
+            detail: None,
+        })
+    }
+}
+
+impl Drop for Claim<'_> {
+    fn drop(&mut self) {
+        let mut claims = self.ptys.claims();
+        if claims.get(&self.id) == Some(&self.ticket) {
+            claims.remove(&self.id);
+        }
+        // Filled or not, the claim is over.
+        self.ptys.claim_ended.notify_all();
     }
 }
 
@@ -405,13 +502,9 @@ pub(crate) fn spawn_launch(
             detail: Some(cwd.display().to_string()),
         });
     }
-    let mut map = ptys.map();
-    if map.contains_key(&id) {
-        return Err(CmdError {
-            code: "pty_exists",
-            detail: None,
-        });
-    }
+    // Not under the lock: the host may wait for the service to start, and a
+    // spawn there is a round trip.
+    let claim = ptys.claim(&id)?;
     if launch.agent {
         let gate = Audited::new(Policy::load(data_dir)?, data_dir);
         match gate.check_confirmed(&launch_action(&launch), approved_now) {
@@ -467,7 +560,7 @@ pub(crate) fn spawn_launch(
     };
     let handle = ptys.host().spawn(&id, spec, meta, sink)?;
     info.pid = handle.pid();
-    map.insert(id, handle);
+    claim.fill(handle)?;
     Ok(info)
 }
 
@@ -767,7 +860,7 @@ pub fn pty_ack(ptys: State<'_, Ptys>, id: String, n: usize) -> Result<(), CmdErr
 #[tauri::command(async)]
 pub fn pty_kill(ptys: State<'_, Ptys>, id: String) {
     // An unknown id has already ended. A service PTY ends only on `kill`.
-    let handle = ptys.map().remove(&id);
+    let handle = ptys.take(&id);
     if let Some(handle) = handle {
         handle.kill();
     }
@@ -800,15 +893,9 @@ pub fn pty_attach(
             let _ = app.emit("pty://exit", PtyExit { id: exit_id, code });
         }),
     };
-    let mut map = ptys.map();
-    if map.contains_key(&id) {
-        return Err(CmdError {
-            code: "pty_exists",
-            detail: None,
-        });
-    }
+    let claim = ptys.claim(&id)?;
     let (handle, attached) = host.attach(&id, from_seq, sink)?;
-    map.insert(id.clone(), handle);
+    claim.fill(handle)?;
     Ok(PtyAttached {
         info: info_of(&id, &session),
         seq: attached.seq,
@@ -855,7 +942,7 @@ pub fn ptyd_sessions(ptys: State<'_, Ptys>) -> Result<Vec<SessionInfo>, CmdError
 pub fn ptyd_end(ptys: State<'_, Ptys>, id: String) -> Result<(), CmdError> {
     let client = ptys.host().service().ok_or_else(unreachable_service)?;
     // A tab of this run lets go of it; its exit event follows.
-    let handle = ptys.map().remove(&id);
+    let handle = ptys.take(&id);
     drop(handle);
     client.kill(&id);
     Ok(())
@@ -865,9 +952,9 @@ pub fn ptyd_end(ptys: State<'_, Ptys>, id: String) -> Result<(), CmdError> {
 #[tauri::command(async)]
 pub fn ptyd_end_all(ptys: State<'_, Ptys>) -> Result<(), CmdError> {
     let client = ptys.host().service().ok_or_else(unreachable_service)?;
-    let mut map = ptys.map();
     for session in client.list()? {
-        map.remove(&session.id);
+        let handle = ptys.take(&session.id);
+        drop(handle);
         client.kill(&session.id);
     }
     Ok(())
@@ -1344,6 +1431,82 @@ mod tests {
         ptys.kill_all();
         let (changed, _) = start(&ptys, data.path(), "b", with_extra_args(["--model", "b"]));
         assert_eq!(changed.unwrap_err().code, "needs_approval");
+    }
+
+    #[test]
+    fn a_claimed_id_is_taken_until_filled_or_let_go() {
+        let ptys = Ptys::default();
+        let claim = ptys.claim("a").unwrap();
+        assert_eq!(ptys.claim("a").err().unwrap().code, "pty_exists");
+        drop(claim);
+        let claim = ptys.claim("a").unwrap();
+        claim.fill(Box::new(FakePty)).unwrap();
+        assert_eq!(ptys.claim("a").err().unwrap().code, "pty_exists");
+        assert_eq!(ptys.with("a", |h| h.pid()).unwrap(), Some(4242));
+    }
+
+    #[test]
+    fn a_call_for_a_claimed_id_waits_for_it_to_land() {
+        let ptys = Ptys::default();
+        let claim = ptys.claim("a").unwrap();
+        std::thread::scope(|s| {
+            let ack = s.spawn(|| ptys.with("a", |h| h.pid()));
+            std::thread::sleep(Duration::from_millis(50));
+            claim.fill(Box::new(FakePty)).unwrap();
+            assert_eq!(ack.join().unwrap().unwrap(), Some(4242));
+        });
+    }
+
+    /// Lets go of the id while its spawn is under way, as a tab closed then
+    /// would, and notes whether the PTY map was free meanwhile.
+    struct ClosingHost {
+        ptys: OnceLock<std::sync::Weak<Ptys>>,
+        killed: Arc<std::sync::atomic::AtomicBool>,
+        map_free: std::sync::atomic::AtomicBool,
+    }
+
+    impl PtyHost for ClosingHost {
+        fn spawn(
+            &self,
+            id: &str,
+            _spec: SpawnSpec,
+            _meta: serde_json::Value,
+            _sink: Sink,
+        ) -> Result<Box<dyn PtyHandle>, CmdError> {
+            let ptys = self.ptys.get().unwrap().upgrade().unwrap();
+            let free = ptys.sessions.try_lock().is_ok();
+            self.map_free.store(free, Ordering::SeqCst);
+            assert!(ptys.take(id).is_none());
+            Ok(Box::new(Held {
+                killed: self.killed.clone(),
+                outlives: true,
+            }))
+        }
+    }
+
+    #[test]
+    fn a_tab_closed_during_its_spawn_ends_the_pty() {
+        let data = tempfile::tempdir().unwrap();
+        let ptys = Arc::new(Ptys::default());
+        let host = Arc::new(ClosingHost {
+            ptys: OnceLock::new(),
+            killed: Arc::default(),
+            map_free: Default::default(),
+        });
+        let _ = host.ptys.set(Arc::downgrade(&ptys));
+        ptys.set_host(host.clone(), ptyd::status(PtydState::Running, None, None));
+        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
+        let (result, _) = start(&ptys, data.path(), "c", launch.clone());
+        assert_eq!(result.unwrap_err().code, "pty_gone");
+        assert!(host.map_free.load(Ordering::SeqCst));
+        assert!(host.killed.load(Ordering::SeqCst));
+        assert!(ptys.map().is_empty());
+        // The id is free again.
+        ptys.set_host(
+            Arc::new(FakeHost::default()),
+            ptyd::status(PtydState::Running, None, None),
+        );
+        start(&ptys, data.path(), "c", launch).0.unwrap();
     }
 
     #[test]
