@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ShellKind } from "./pathPaste";
 import { registerDropTarget, startFileDrop, type DropEvent } from "./fileDrop";
 
 // A host element stand-in: a class list and `contains`.
@@ -12,11 +13,12 @@ function host(children: object[] = []) {
   return self;
 }
 
-function setup(over: { scale?: number; shell?: "posix" | "windows" } = {}) {
+function setup(over: { scale?: number } = {}) {
   let emit: (e: DropEvent) => void = () => {};
   const unlisten = vi.fn();
   const hit = vi.fn<(x: number, y: number) => Element | null>();
   const onError = vi.fn();
+  const onRejected = vi.fn();
   const stop = startFileDrop({
     listen: async (cb) => {
       emit = cb;
@@ -24,20 +26,21 @@ function setup(over: { scale?: number; shell?: "posix" | "windows" } = {}) {
     },
     scale: () => over.scale ?? 2,
     hit,
-    shell: over.shell ?? "posix",
     onError,
+    onRejected,
   });
-  return { send: (e: DropEvent) => emit(e), unlisten, hit, onError, stop };
+  return { send: (e: DropEvent) => emit(e), unlisten, hit, onError, onRejected, stop };
 }
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
-function pane(over: { ready?: boolean; write?: (d: string) => Promise<void> } = {}) {
+function pane(over: { ready?: boolean; shell?: ShellKind; write?: (d: string) => Promise<void> } = {}) {
   const el = {};
   const h = host([el]);
   const calls: string[] = [];
   const target = {
     write: vi.fn(over.write ?? (async (d: string) => void calls.push(`write:${d}`))),
     ready: () => over.ready ?? true,
+    shell: () => over.shell ?? "posix",
     focus: vi.fn(() => void calls.push("focus")),
   };
   const off = registerDropTarget(h as never, target);
@@ -52,18 +55,31 @@ describe("startFileDrop", () => {
     s.send({ type: "drop", paths: ["/a/b.txt", "/my dir/c.txt"], position: { x: 200, y: 100 } });
     await flush();
     expect(s.hit).toHaveBeenCalledWith(100, 50);
-    expect(p.calls).toEqual(["write:/a/b.txt ", "write:'/my dir/c.txt' ", "focus"]);
+    expect(p.calls).toEqual(["write:/a/b.txt ", "write:/my\\ dir/c.txt ", "focus"]);
     p.off();
     s.stop();
   });
 
-  it("uses the target shell's quoting", async () => {
-    const s = setup({ shell: "windows" });
-    const p = pane();
+  it("uses the pane's own shell quoting", async () => {
+    const s = setup();
+    const p = pane({ shell: "cmd" });
     s.hit.mockReturnValue(p.el as never);
     s.send({ type: "drop", paths: ["C:\\My Files\\a.txt"], position: { x: 2, y: 2 } });
     await flush();
     expect(p.calls[0]).toBe('write:"C:\\My Files\\a.txt" ');
+    p.off();
+    s.stop();
+  });
+
+  it("leaves out a path that cannot be written safely and reports the count once", async () => {
+    const s = setup();
+    const p = pane({ shell: "powershell" });
+    s.hit.mockReturnValue(p.el as never);
+    s.send({ type: "drop", paths: ["C:\\dl\\$(calc).txt", "C:\\a\nb", "C:\\ok.txt"], position: { x: 2, y: 2 } });
+    await flush();
+    expect(p.calls).toEqual(["write:'C:\\dl\\$(calc).txt' ", "write:C:\\ok.txt ", "focus"]);
+    expect(s.onRejected).toHaveBeenCalledTimes(1);
+    expect(s.onRejected).toHaveBeenCalledWith(1);
     p.off();
     s.stop();
   });
@@ -143,8 +159,8 @@ describe("startFileDrop", () => {
       listen: async () => unlisten,
       scale: () => 1,
       hit: () => null,
-      shell: "posix",
       onError: () => {},
+      onRejected: () => {},
     });
     early();
     await flush();

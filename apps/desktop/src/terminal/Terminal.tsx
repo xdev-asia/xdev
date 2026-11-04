@@ -21,6 +21,7 @@ import { pushToast } from "@/workspace/toastStore";
 import { pasteClipboard, type PasteResult } from "./clipboardPaste";
 import { registerDropTarget } from "./fileDrop";
 import { trackInputModes } from "./inputModes";
+import { shellKindFor, type ShellKind } from "./pathPaste";
 import { effectiveOptionAsAlt, getDetectedLayout, subscribeDetectedLayout } from "./optionAsAlt";
 import { createOptionSideTracker, resolveTerminalKey } from "./terminalKeys";
 
@@ -87,6 +88,8 @@ export function Terminal(props: {
   const handlers = useRef(props);
   handlers.current = props;
   const clientRef = useRef<PtyClient | null>(null);
+  // The quoting kind of the running program, known once the pty has started.
+  const shellKind = useRef<ShellKind>("unknown");
   const tRef = useRef(t);
   tRef.current = t;
   // A paste that saved nothing says why; the others are silent.
@@ -316,6 +319,7 @@ export function Terminal(props: {
       }, props.account ?? null, { truncated: t("ptyd.truncated") }).then(
         (info) => {
           if (!alive) return;
+          shellKind.current = shellKindFor(info.program, info.agent, PLATFORM === "win");
           handlers.current.onStarted(info);
           term.focus();
         },
@@ -329,6 +333,7 @@ export function Terminal(props: {
       write: (data) => client.input(data),
       ready: () => client.spawned,
       focus: () => term.focus(),
+      shell: () => shellKind.current,
     });
 
     return () => {

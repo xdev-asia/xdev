@@ -688,15 +688,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }, [live]);
   // macOS: which keyboard layout is active decides what "Option as Alt: auto" does.
   useEffect(() => (IS_MAC ? startOptionAsAltProbe(() => api.keyboardInputSource()) : undefined), []);
-  // Files dropped from the OS go to the terminal pane under the pointer, as shell-quoted paths.
+  // Files dropped from the OS go to the terminal pane under the pointer, as paths quoted for the pane's shell.
   useEffect(
     () =>
       startFileDrop({
         listen: async (cb) => getCurrentWebview().onDragDropEvent((e) => cb(e.payload as DropEvent)),
         scale: () => window.devicePixelRatio || 1,
         hit: (x, y) => document.elementFromPoint(x, y),
-        shell: PLATFORM === "win" ? "windows" : "posix",
         onError: () => pushToast({ text: live.t("terminal.input.dropFailed") }),
+        onRejected: () => pushToast({ text: live.t("terminal.input.dropRejected") }),
       }),
     [live],
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bracketed, dropPayloads, isImagePath, shellQuotePath } from "./pathPaste";
+import { bracketed, dropPayloads, isImagePath, quotePath, shellKindFor, type ShellKind } from "./pathPaste";
 
 const OPEN = "\x1b[200~";
 const CLOSE = "\x1b[201~";
@@ -19,19 +19,88 @@ describe("isImagePath", () => {
   });
 });
 
-describe("shellQuotePath", () => {
-  it("leaves a plain path bare", () => {
-    expect(shellQuotePath("/home/me/a_b-c.txt", "posix")).toBe("/home/me/a_b-c.txt");
-    expect(shellQuotePath("C:\\Users\\me\\a.txt", "windows")).toBe("C:\\Users\\me\\a.txt");
+describe("shellKindFor", () => {
+  const cases: [string, boolean, boolean, ShellKind][] = [
+    ["C:\\Program Files\\PowerShell\\7\\pwsh.exe", false, true, "powershell"],
+    ["C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", false, true, "powershell"],
+    ["C:\\Windows\\System32\\cmd.exe", false, true, "cmd"],
+    ["C:\\Program Files\\Git\\bin\\bash.exe", false, true, "posix"],
+    ["C:\\Windows\\System32\\wsl.exe", false, true, "posix"],
+    ["/bin/zsh", false, false, "posix"],
+    ["/usr/bin/fish", false, false, "fish"],
+    ["/usr/local/bin/nu", false, false, "unknown"],
+    ["", false, false, "unknown"],
+    ["/usr/bin/claude", true, false, "posix"],
+    ["C:\\tools\\claude.exe", true, true, "cmd"],
+  ];
+  it.each(cases)("%s (agent %s, windows %s) is %s", (program, agent, win, kind) => {
+    expect(shellKindFor(program, agent, win)).toBe(kind);
   });
-  it("single-quotes on posix and escapes an embedded quote", () => {
-    expect(shellQuotePath("/my dir/a.txt", "posix")).toBe("'/my dir/a.txt'");
-    expect(shellQuotePath("/it's/a.txt", "posix")).toBe("'/it'\\''s/a.txt'");
-    expect(shellQuotePath("/a/$HOME", "posix")).toBe("'/a/$HOME'");
-  });
-  it("double-quotes on windows", () => {
-    expect(shellQuotePath("C:\\My Files\\a.txt", "windows")).toBe('"C:\\My Files\\a.txt"');
-    expect(shellQuotePath("C:\\a\\$x", "windows")).toBe('"C:\\a\\$x"');
+});
+
+// [path, expected] per kind; null means the drop is refused.
+const TABLE: Record<ShellKind, [string, string | null][]> = {
+  posix: [
+    ["/home/me/a_b-c.txt", "/home/me/a_b-c.txt"],
+    ["/my dir/a.txt", "/my\\ dir/a.txt"],
+    ["/it's/a.txt", "/it\\'s/a.txt"],
+    ["/a/$HOME", "/a/\\$HOME"],
+    ["/a/`id`", "/a/\\`id\\`"],
+    ["/a/x;y&z|w", "/a/x\\;y\\&z\\|w"],
+    ["/a/é ü", "/a/é\\ ü"],
+    ["a\\b", "a\\\\b"],
+    ["/a/b\nid", null],
+    ["/a/b\rid", null],
+  ],
+  fish: [
+    ["/my dir/a.txt", "/my\\ dir/a.txt"],
+    ["a\\'\nid\n", null],
+    ["a\\'", "a\\\\\\'"],
+    ["/a/$x", "/a/\\$x"],
+    ["/a/(id)", "/a/\\(id\\)"],
+  ],
+  powershell: [
+    ["C:\\Users\\me\\a.txt", "C:\\Users\\me\\a.txt"],
+    ["C:\\dl\\$(calc).txt", "'C:\\dl\\$(calc).txt'"],
+    ["C:\\dl\\`x`.txt", "'C:\\dl\\`x`.txt'"],
+    ["C:\\it's\\a.txt", "'C:\\it''s\\a.txt'"],
+    ["C:\\it\u2019s\\a.txt", "'C:\\it\u2019\u2019s\\a.txt'"],
+    ["C:\\a\u2018b\u201a\u201b", "'C:\\a\u2018\u2018b\u201a\u201a\u201b\u201b'"],
+    ["C:\\My Files\\a;b&c|d.txt", "'C:\\My Files\\a;b&c|d.txt'"],
+    ["@x", "'@x'"],
+    ["C:\\é ü", "'C:\\é ü'"],
+    ["C:\\a\nb", null],
+  ],
+  cmd: [
+    ["C:\\Users\\me\\a.txt", "C:\\Users\\me\\a.txt"],
+    ["C:\\My Files\\a.txt", '"C:\\My Files\\a.txt"'],
+    ["C:\\a&b|c;d.txt", '"C:\\a&b|c;d.txt"'],
+    ["C:\\100%\\a.txt", null],
+    ["C:\\a!b", null],
+    ["C:\\My Dir\\", '"C:\\My Dir\\\\"'],
+    ["C:\\a\u00e9 b", '"C:\\a\u00e9 b"'],
+    ["C:\\a\nb", null],
+  ],
+  unknown: [
+    ["/home/me/a_b-c.txt", "/home/me/a_b-c.txt"],
+    ["C:\\Users\\me\\a.txt", "C:\\Users\\me\\a.txt"],
+    ["/my dir/a.txt", null],
+    ["/a/$HOME", null],
+    ["/a/b\nc", null],
+  ],
+};
+
+describe("quotePath", () => {
+  for (const [kind, rows] of Object.entries(TABLE) as [ShellKind, [string, string | null][]][]) {
+    it.each(rows)(`${kind}: %j`, (path, expected) => {
+      expect(quotePath(path, kind)).toBe(expected);
+    });
+  }
+
+  it("refuses every control byte in every kind", () => {
+    for (const kind of Object.keys(TABLE) as ShellKind[]) {
+      for (const c of ["\x00", "\x07", "\x1b", "\x7f", "\x85", "\u2028"]) expect(quotePath(`/a${c}b`, kind)).toBeNull();
+    }
   });
 });
 
@@ -44,46 +113,38 @@ describe("bracketed", () => {
 
 describe("dropPayloads", () => {
   it("quotes a non-image path and adds a space", () => {
-    expect(dropPayloads(["/a/b.txt", "/my dir/c.txt"], "posix")).toEqual(["/a/b.txt ", "'/my dir/c.txt' "]);
-    expect(dropPayloads(["C:\\My Files\\c.txt"], "windows")).toEqual(['"C:\\My Files\\c.txt" ']);
+    expect(dropPayloads(["/a/b.txt", "/my dir/c.txt"], "posix")).toEqual({ payloads: ["/a/b.txt ", "/my\\ dir/c.txt "], rejected: 0 });
+    expect(dropPayloads(["C:\\My Files\\c.txt"], "cmd").payloads).toEqual(['"C:\\My Files\\c.txt" ']);
+    expect(dropPayloads(["C:\\a\\$(calc).txt"], "powershell").payloads).toEqual(["'C:\\a\\$(calc).txt' "]);
   });
 
-  it("pastes a plain image path as a bracketed paste", () => {
-    expect(dropPayloads(["/a/shot.png"], "posix")).toEqual([`${OPEN}/a/shot.png${CLOSE} `]);
-    expect(dropPayloads(["C:\\a\\shot.PNG"], "windows")).toEqual([`${OPEN}C:\\a\\shot.PNG${CLOSE} `]);
+  it("pastes an image path as a bracketed paste of the quoted word", () => {
+    expect(dropPayloads(["/a/shot.png"], "posix").payloads).toEqual([`${OPEN}/a/shot.png${CLOSE} `]);
+    expect(dropPayloads(["C:\\a\\shot.PNG"], "cmd").payloads).toEqual([`${OPEN}C:\\a\\shot.PNG${CLOSE} `]);
+    expect(dropPayloads(["/my dir/it's $x.png"], "posix").payloads).toEqual([`${OPEN}/my\\ dir/it\\'s\\ \\$x.png${CLOSE} `]);
+    expect(dropPayloads(["C:\\My Files\\a.png"], "powershell").payloads).toEqual([`${OPEN}'C:\\My Files\\a.png'${CLOSE} `]);
   });
 
-  it("escapes a posix image path and quotes a windows one", () => {
-    expect(dropPayloads(["/my dir/it's $x.png"], "posix")).toEqual([`${OPEN}/my\\ dir/it\\'s\\ \\$x.png${CLOSE} `]);
-    expect(dropPayloads(["/a/é ü.png"], "posix")).toEqual([`${OPEN}/a/é\\ ü.png${CLOSE} `]);
-    expect(dropPayloads(["C:\\My Files\\a.png"], "windows")).toEqual([`${OPEN}"C:\\My Files\\a.png"${CLOSE} `]);
-    expect(dropPayloads(["C:\\a\\100%.png"], "windows")).toEqual([`${OPEN}"C:\\a\\100%.png"${CLOSE} `]);
-  });
-
-  it("a backslash is plain on windows but special on posix", () => {
-    expect(dropPayloads(["C:\\a\\b.png"], "windows")).toEqual([`${OPEN}C:\\a\\b.png${CLOSE} `]);
-    expect(dropPayloads(["a\\b.png"], "posix")).toEqual([`${OPEN}a\\\\b.png${CLOSE} `]);
-  });
-
-  it("a control byte makes an image a quoted path, not a bracketed paste", () => {
-    expect(dropPayloads(["/a/b\x07.png"], "posix")).toEqual(["'/a/b\x07.png' "]);
+  it("refuses a path with a control byte, image or not, and counts it", () => {
+    expect(dropPayloads(["/a/b\x07.png", "/a/c\nid", "/ok"], "posix")).toEqual({ payloads: ["/ok "], rejected: 2 });
+    expect(dropPayloads(["/a b"], "unknown")).toEqual({ payloads: [], rejected: 1 });
   });
 
   it("an image dir name does not make a file an image", () => {
-    expect(dropPayloads(["/a/dir.png/file"], "posix")).toEqual(["/a/dir.png/file "]);
+    expect(dropPayloads(["/a/dir.png/file"], "posix").payloads).toEqual(["/a/dir.png/file "]);
   });
 
   it("no space between two plain images, one after every other path", () => {
-    expect(dropPayloads(["/a.png", "/b.jpg", "/c.png"], "posix")).toEqual([
+    expect(dropPayloads(["/a.png", "/b.jpg", "/c.png"], "posix").payloads).toEqual([
       `${OPEN}/a.png${CLOSE}`,
       `${OPEN}/b.jpg${CLOSE}`,
       `${OPEN}/c.png${CLOSE} `,
     ]);
-    expect(dropPayloads(["/a.png", "/b.txt"], "posix")).toEqual([`${OPEN}/a.png${CLOSE} `, "/b.txt "]);
-    expect(dropPayloads(["/a b.png", "/c.png"], "posix")[0].endsWith(`${CLOSE} `)).toBe(true);
+    expect(dropPayloads(["/a.png", "/b.txt"], "posix").payloads).toEqual([`${OPEN}/a.png${CLOSE} `, "/b.txt "]);
+    expect(dropPayloads(["/a b.png", "/c.png"], "posix").payloads[0].endsWith(`${CLOSE} `)).toBe(true);
   });
 
   it("an empty drop writes nothing", () => {
-    expect(dropPayloads([], "posix")).toEqual([]);
+    expect(dropPayloads([], "posix")).toEqual({ payloads: [], rejected: 0 });
   });
 });

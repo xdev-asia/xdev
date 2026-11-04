@@ -2183,6 +2183,7 @@
   "settings.terminal.keyboard.state.right": "Phím Option phải gửi Alt/Esc; phím trái gõ ký tự đặc biệt.",
   "settings.terminal.keyboard.choose": "Chọn Cả hai cho phím tắt Option, Tắt để gõ dấu và ký hiệu, hoặc Trái/Phải để mỗi phím Option làm một việc.",
   "terminal.input.dropFailed": "Không chèn được đường dẫn vừa thả.",
+  "terminal.input.dropRejected": "Một số đường dẫn vừa thả đã bị bỏ qua: tên có ký tự điều khiển hoặc ký tự mà shell này không nhận an toàn.",
   "terminal.input.imageSaveFailed": "Không lưu được ảnh trong clipboard.",
   "terminal.input.imageTooLarge": "Ảnh trong clipboard quá lớn."
 }
