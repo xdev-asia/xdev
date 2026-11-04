@@ -305,14 +305,18 @@ impl Store {
             )));
         }
         let targets = self.recipients(from, &m.to, idle)?;
-        let mut ids = Vec::new();
-        let mut to = Vec::new();
-        for (address, run) in targets {
-            let id = self.next_id("msg");
-            self.insert_message_with_id(&id, &run, &from.address, &address, m, now_ms)?;
-            ids.push(id);
-            to.push(address);
-        }
+        // A group gets every copy or none.
+        let (ids, to) = self.atomic(|s| {
+            let mut ids = Vec::new();
+            let mut to = Vec::new();
+            for (address, run) in targets {
+                let id = s.next_id("msg");
+                s.insert_message_with_id(&id, &run, &from.address, &address, m, now_ms)?;
+                ids.push(id);
+                to.push(address);
+            }
+            Ok((ids, to))
+        })?;
         let next = if from.dispatch.is_some()
             && matches!(m.kind, MessageType::WorkerDone | MessageType::Question)
         {
@@ -433,12 +437,15 @@ impl Store {
             |r| r.get(0),
         )?;
         if !opts.peek {
-            for m in &messages {
-                self.conn.execute(
-                    "UPDATE messages SET read = 1, delivered_ms = COALESCE(delivered_ms, ?2) WHERE id = ?1",
-                    params![m.id, now_ms],
-                )?;
-            }
+            self.atomic(|s| {
+                for m in &messages {
+                    s.conn.execute(
+                        "UPDATE messages SET read = 1, delivered_ms = COALESCE(delivered_ms, ?2) WHERE id = ?1",
+                        params![m.id, now_ms],
+                    )?;
+                }
+                Ok(())
+            })?;
         }
         let remaining = total.saturating_sub(messages.len() as u32);
         let rendered = messages

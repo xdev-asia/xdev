@@ -88,8 +88,9 @@ impl Store {
     /// Forgets work. `run` is the run for `Tasks` and `Messages`; `All`
     /// ignores it. Receipts are kept.
     pub fn reset(&self, scope: ResetScope, run: Option<&str>) -> Result<ResetCounts, OrchError> {
+        self.atomic(|st| {
+        let tx = &st.conn;
         let mut out = ResetCounts::default();
-        let tx = self.conn.unchecked_transaction()?;
         match scope {
             ResetScope::All => {
                 out.messages = tx.execute("DELETE FROM messages", [])?;
@@ -115,8 +116,8 @@ impl Store {
                 out.messages = tx.execute("DELETE FROM messages WHERE run_id = ?1", [run])?;
             }
         }
-        tx.commit()?;
         Ok(out)
+        })
     }
 }
 

@@ -718,17 +718,19 @@ fn handle_verb(
                     }
                     _ => None,
                 };
-                let receipt = s.send(&me, &msg, ctx.now_ms, &idle)?;
-                let mut tab = None;
-                if let Some((d, outcome)) = done
-                    && receipt.count > 0
-                {
-                    let body = (!msg.body.is_empty()).then_some(msg.body.as_str());
-                    tab = s
-                        .worker_settle(&d, outcome, body, auto_close, ctx.now_ms)?
-                        .tab;
-                }
-                Ok((receipt, tab))
+                // Settled first, so a worker that cannot settle (it is being
+                // stopped) leaves no message; one unit, so neither is half done.
+                s.atomic(|s| {
+                    let mut tab = None;
+                    if let Some((d, outcome)) = done {
+                        let body = (!msg.body.is_empty()).then_some(msg.body.as_str());
+                        tab = s
+                            .worker_settle(&d, outcome, body, auto_close, ctx.now_ms)?
+                            .tab;
+                    }
+                    let receipt = s.send(&me, &msg, ctx.now_ms, &idle)?;
+                    Ok((receipt, tab))
+                })
             })?;
             if let Some(tab) = settled {
                 changed(ctx, tab)?;
@@ -1987,6 +1989,32 @@ line", "title": "A"}),
             )
             .unwrap();
         assert_eq!(w["state"], "stopped");
+    }
+
+    #[test]
+    fn a_done_while_stopping_is_refused_and_leaves_no_message() {
+        let (f, r, tab) = with_worker();
+        let run = r["runId"].as_str().unwrap();
+        f.board.replace(
+            vec![crate::cli_verbs::tests::tab(&tab, &f.other, true, "idle")],
+            None,
+        );
+        let stop = f.call(
+            Some("p-lead"),
+            "orchestration.worker-stop",
+            json!({"handle": r["dispatchId"]}),
+        );
+        assert_eq!(stop.unwrap_err().code, "stop_unknown");
+        let done = f.call(
+            Some(&tab),
+            "orchestration.send",
+            json!({"to": format!("run:{run}"), "type": "worker_done", "outcome": "succeeded"}),
+        );
+        assert_eq!(done.unwrap_err().code, "invalid_transition");
+        let mail = f
+            .call(Some("p-lead"), "orchestration.check", json!({"peek": true}))
+            .unwrap();
+        assert_eq!(mail["messages"], json!([]), "{mail}");
     }
 
     #[test]
