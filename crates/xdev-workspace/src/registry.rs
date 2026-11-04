@@ -58,8 +58,9 @@ pub enum ScriptSource {
     Both,
 }
 
-/// What the app knows about a linked worktree that git does not.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// What the app knows about a linked worktree that git does not. Every
+/// field after `made_here` is absent in older files.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorktreeMeta {
     pub repo_id: String,
     pub path: PathBuf,
@@ -69,6 +70,60 @@ pub struct WorktreeMeta {
     pub created_ms: i64,
     /// Created by the app, not found already in git's list.
     pub made_here: bool,
+    /// The name shown instead of the folder name; may hold emoji.
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub comment: String,
+    #[serde(default)]
+    pub status: Option<WorkStatus>,
+    /// Another worktree of the same repo this one is shown under.
+    #[serde(default)]
+    pub parent: Option<PathBuf>,
+    /// The pull request or issue the work is for; a link, never fetched.
+    #[serde(default)]
+    pub item: Option<WorkItem>,
+    #[serde(default)]
+    pub made_by: MadeBy,
+}
+
+/// Where the work in a worktree stands, as the person sets it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum WorkStatus {
+    Todo,
+    InProgress,
+    InReview,
+    Completed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum WorkItemKind {
+    Pr,
+    Issue,
+}
+
+/// A link to a pull request or issue, typed by the person.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct WorkItem {
+    pub kind: WorkItemKind,
+    pub url: String,
+    pub title: Option<String>,
+}
+
+/// Who asked for a worktree: the desktop app, the CLI or an automation.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum MadeBy {
+    #[default]
+    App,
+    Cli,
+    Automation,
 }
 
 /// A docs folder shared across repos. Only these are stored; a repo's own

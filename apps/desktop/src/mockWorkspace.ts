@@ -3,6 +3,7 @@ import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
 import type { Api, ApiError, Check, Commit, DirEntry, DirListing, FileCommand, FileCommands, GitSettings, HookKind, HookScript, RepoHooks, RepoView, ReviewNote, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 type WorkspaceApi = Pick<
   Api,
@@ -106,7 +107,7 @@ type Remote = { tracked: boolean; ahead: number; behind: number; commits: Commit
 const DEMO_START = "5555555555555555555555555555555555555555";
 
 function worktree(path: string, name: string, branch: string, primary: boolean): WorktreeView {
-  return { path, name, branch, head: DEMO_START, start: primary ? null : DEMO_START, primary, pinned: false, detached: false };
+  return { path, name, branch, head: DEMO_START, start: primary ? null : DEMO_START, primary, pinned: false, detached: false, ...NO_DETAILS, defaultBranch: primary };
 }
 
 export const DEMO_WORKSPACE: MockWorkspaceSeed = {

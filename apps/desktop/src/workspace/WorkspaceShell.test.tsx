@@ -27,6 +27,7 @@ import { WorktreeList } from "./WorktreeList";
 import { WorktreeTabs } from "./WorktreeTabs";
 import { Toasts } from "./Toasts";
 import { SessionsSidebar } from "@/agentSessions/SessionsSidebar";
+import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 // Hooks are stubbed only while the shell itself is called; children rendered to markup use React's own.
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -179,7 +180,7 @@ it("header settings button opens settings", async () => {
 });
 
 it("adopting refreshes the list", async () => {
-  const spike: WorktreeView = { path: "/demo/elsewhere/spike", name: "spike", branch: "spike", head: "6666666666666666666666666666666666666666", start: null, primary: false, pinned: false, detached: false };
+  const spike: WorktreeView = { path: "/demo/elsewhere/spike", name: "spike", branch: "spike", head: "6666666666666666666666666666666666666666", start: null, primary: false, pinned: false, detached: false, ...NO_DETAILS };
   const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), found: { "demo-xdev": [spike] } } });
   const view = await harness(api);
   expect(view.list().props.repos[0].found).toHaveLength(1);

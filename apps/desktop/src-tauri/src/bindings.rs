@@ -81,6 +81,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_workspace::HookRun::export_all(cfg)?;
     xdev_workspace::WorktreeView::export_all(cfg)?;
     xdev_workspace::WorktreeStat::export_all(cfg)?;
+    xdev_workspace::DetailsPatch::export_all(cfg)?;
     WorktreeChange::export_all(cfg)?;
     WorktreeFileDiff::export_all(cfg)?;
     ReviewData::export_all(cfg)?;
