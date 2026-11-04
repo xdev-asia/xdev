@@ -243,6 +243,8 @@ export type {
   TerminalSettings,
   FontWeight,
   CursorStyle,
+  TerminalGpu,
+  TerminalBell,
   SettingsSection,
   SettingsChanged,
   SetupPolicy,

@@ -174,6 +174,8 @@ export type { Target } from "./Target";
 export type { Task } from "./Task";
 export type { TaskState } from "./TaskState";
 export type { TasksContext } from "./TasksContext";
+export type { TerminalBell } from "./TerminalBell";
+export type { TerminalGpu } from "./TerminalGpu";
 export type { TerminalKeyPolicy } from "./TerminalKeyPolicy";
 export type { TerminalSettings } from "./TerminalSettings";
 export type { TestResult } from "./TestResult";
