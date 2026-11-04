@@ -132,6 +132,7 @@ import type {
   SessionQuery,
   SessionRow,
   Agent,
+  Cost,
   Skill,
   UsageDisplay,
   UsageReport,
@@ -152,7 +153,7 @@ export { createMockApi };
 export type ScriptKind = Extract<HookKind, "setup" | "archive">;
 export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
-export type { Agent, AgentSession, SessionQuery, SessionRow };
+export type { Agent, AgentSession, Cost, SessionQuery, SessionRow };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, SwitchRunning };
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
@@ -824,6 +825,9 @@ export interface Api {
   kitUsage(sinceDay: string, untilDay: string, refresh: boolean): Promise<UsageSummary>;
   // The Stats page: filtered by agent and scope, and by `usage.scan` (an agent whose scan is off is not read).
   kitUsageReport(args: Omit<UsageReportArgs, "utcOffsetMinutes">): Promise<UsageReport>;
+  // The share dialog: a PNG to the clipboard, and a post opened in the browser.
+  usageShareCopyImage(png: Uint8Array): Promise<void>;
+  usageSharePost(text: string): Promise<void>;
   // Whether each relative path exists under `root` (an agent home, repo or worktree).
   kitPathsExist(root: string, paths: string[]): Promise<boolean[]>;
   // Newest first, at most `limit` (and 1000).
@@ -1273,6 +1277,9 @@ const tauriApi: Api = {
   kitUsage: (sinceDay, untilDay, refresh) =>
     call("kit_usage", { sinceDay, untilDay, refresh, utcOffsetMinutes: -new Date().getTimezoneOffset() }),
   kitUsageReport: (args) => call("kit_usage_report", { args: { ...args, utcOffsetMinutes: -new Date().getTimezoneOffset() } }),
+  // A raw body, not `call`'s record: the PNG never travels as a JSON number array.
+  usageShareCopyImage: (png) => invoke<void>("usage_share_copy_image", png).catch((e: unknown) => Promise.reject(toApiError(e))),
+  usageSharePost: (text) => call("usage_share_post", { text }),
   kitPathsExist: (root, paths) => call("kit_paths_exist", { root, paths }),
   kitPromptHistory: (limit) => call("kit_prompt_history", { limit }),
   agentSessions: (query, refresh) => call("agent_sessions", { query, refresh }),

@@ -32,6 +32,23 @@ pub struct UsageReport {
     /// Unix ms of the earliest session start (> 0) among the counted agents,
     /// whatever the range.
     pub tracking_since: Option<i64>,
+    /// Est. API-equivalent cost of the counted tokens.
+    pub cost: Cost,
+    /// Same order as `by_agent`.
+    pub cost_by_agent: Vec<(Agent, Cost)>,
+    /// At most 10, newest `last` first; `total` and `days` cover the range only.
+    pub recent_sessions: Vec<SessionUsage>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct Cost {
+    /// Sum over priced session-days, nano-USD.
+    pub nanos: u64,
+    /// Some tokens in range belong to a model with no rate.
+    pub unpriced: bool,
+    /// At least one priced token; false means the UI shows "n/a".
+    pub priced: bool,
 }
 
 /// Totals for the days `since_day..=until_day` (every day when `since_day` is
@@ -95,6 +112,9 @@ pub fn report(index: &UsageIndex, q: &ReportQuery) -> UsageReport {
         by_agent: per_agent,
         sessions,
         tracking_since,
+        cost: Cost::default(),
+        cost_by_agent: Vec::new(),
+        recent_sessions: Vec::new(),
     }
 }
 

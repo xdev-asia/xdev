@@ -11,6 +11,7 @@ use serde_json::Value;
 
 use crate::AiError;
 use crate::claude::{AccountStatus, StatusState, find_cli, stdout_within};
+use crate::codex_rpc::ProbeError;
 use crate::process::{kill_tree, own_group};
 use crate::quota::QuotaWindow;
 
@@ -20,6 +21,10 @@ const MODELS_MAX: u64 = 16 << 20;
 /// Sessions with no rate-limit line (an API-key run, a crash before the
 /// first turn) are skipped, but only this many: an old file says little.
 const MAX_FILES: usize = 10;
+/// A live result younger than this is reused, so the Accounts view and the
+/// footer do not spawn twice.
+#[allow(dead_code)]
+pub(crate) const LIVE_REUSE: Duration = Duration::from_secs(60);
 const FIVE_HOURS: u64 = 300;
 const SEVEN_DAYS: u64 = 10_080;
 
@@ -88,6 +93,13 @@ pub(crate) fn status(dir: &Path) -> AccountStatus {
         Err(e) if e.kind() == io::ErrorKind::NotFound => AccountStatus::bare(StatusState::NoCodex),
         Err(_) => AccountStatus::bare(StatusState::Error),
     }
+}
+
+/// Live read for one Codex home: one probe at a time per home, a result
+/// reused for `LIVE_REUSE`.
+#[allow(dead_code)]
+pub(crate) fn live_usage(_dir: &Path) -> Result<Vec<QuotaWindow>, ProbeError> {
+    Err(ProbeError::Timeout)
 }
 
 fn exit_within(mut cmd: Command, timeout: Duration) -> io::Result<ExitStatus> {

@@ -139,6 +139,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_kit::MemorySet::export_all(cfg)?;
     xdev_kit::UsageSummary::export_all(cfg)?;
     xdev_kit::UsageReport::export_all(cfg)?;
+    xdev_kit::Cost::export_all(cfg)?;
     crate::kit::UsageReportArgs::export_all(cfg)?;
     SessionQuery::export_all(cfg)?;
     SessionRow::export_all(cfg)?;
