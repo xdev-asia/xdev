@@ -70,6 +70,11 @@ export function RunningTerminals(props: { api: Api }): JSX.Element {
         </p>
       )}
       {status && !up && <p className="settings-empty">{t("settings.terminal.service.off")}</p>}
+      {status?.state === "old-version" && (
+        <p className="settings-hint" data-ptyd="old-version">
+          {t("ptyd.oldVersion", { version: status.serviceVersion ?? "?" })}
+        </p>
+      )}
       {up && (
         <>
           {count === 0 && <p className="settings-empty">{t("settings.terminal.service.none")}</p>}

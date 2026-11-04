@@ -104,3 +104,11 @@ it("says so when the service is not running, with no actions", async () => {
   expect(JSON.stringify(v.all().map((n) => n.props.children))).toContain(en("settings.terminal.service.off"));
   expect(v.button(en("settings.terminal.service.endAll"))).toBeUndefined();
 });
+
+it("an older service says which version it is from and to restart it", async () => {
+  const v = await view((api) => {
+    api.__ptydSet({ state: "old-version", serviceVersion: "0.3.9" });
+  });
+  expect(JSON.stringify(v.all().map((n) => n.props.children))).toContain(en("ptyd.oldVersion", { version: "0.3.9" }));
+  expect(v.button(en("settings.terminal.service.restart"))).toBeDefined();
+});
