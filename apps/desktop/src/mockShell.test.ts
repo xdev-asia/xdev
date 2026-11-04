@@ -52,7 +52,7 @@ it("records quits, cancels, attention, links and menu actions for the tests", as
   off();
   shell.__menu("about");
   expect(got.mock.calls).toEqual([["open-settings"]]);
-  expect(await shell.shellCloseRequested("t", "b")).toBe("close");
+  expect(await shell.shellCloseRequested("t", "b")).toEqual({ intent: "close", mode: null });
   shell.__closeIntent("hide");
-  expect(await shell.shellCloseRequested("t", "b")).toBe("hide");
+  expect(await shell.shellCloseRequested("t", "b")).toEqual({ intent: "hide", mode: null });
 });

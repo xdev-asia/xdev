@@ -76,9 +76,36 @@ describe("guardClose", () => {
 
   it("tells the shell when the person cancels, so it stops treating the close as a quit", async () => {
     const api = createMockApi({});
-    await api.shellQuit("end-all");
-    expect(api.__quitMode()).toBe("end-all");
+    await api.shellQuit("quit");
+    expect(api.__quitMode()).toBe("quit");
     expect(await guardClose(api, notice, async () => false)).toBe(false);
+    expect(api.__quitMode()).toBeNull();
+  });
+
+  it("does not ask again when the person already chose Quit and end terminals", async () => {
+    const api = createMockApi({});
+    await api.shellQuit("end-all");
+    const ask = vi.fn(async () => false);
+    expect(await guardClose(api, notice, ask)).toBe(true);
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it("still asks for a plain quit or restart", async () => {
+    const api = createMockApi({});
+    await api.shellQuit("restart");
+    const ask = vi.fn(async () => true);
+    expect(await guardClose(api, notice, ask)).toBe(true);
+    expect(ask).toHaveBeenCalledOnce();
+  });
+
+  it("tells the shell when the question throws, so the quit does not stay in flight", async () => {
+    const api = createMockApi({});
+    await api.shellQuit("quit");
+    await expect(
+      guardClose(api, notice, async () => {
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
     expect(api.__quitMode()).toBeNull();
   });
 

@@ -21,6 +21,7 @@ export type { CliAsk } from "./CliAsk";
 export type { CliOpenTab } from "./CliOpenTab";
 export type { CloneProgress } from "./CloneProgress";
 export type { CloseIntent } from "./CloseIntent";
+export type { CloseRequest } from "./CloseRequest";
 export type { CmdError } from "./CmdError";
 export type { Commit } from "./Commit";
 export type { ConflictOp } from "./ConflictOp";

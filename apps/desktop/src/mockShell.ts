@@ -1,4 +1,4 @@
-import type { Api, CloseIntent, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdatePhase } from "./api";
+import type { Api, CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdatePhase } from "./api";
 import type { SettingsEmit } from "./mockSettings";
 
 type ShellApi = Pick<
@@ -74,8 +74,8 @@ export function createMockShell(emit: SettingsEmit = () => {}, update: string | 
       emit(["shell"]);
       return { ...settings };
     },
-    async shellCloseRequested() {
-      return intent;
+    async shellCloseRequested(): Promise<CloseRequest> {
+      return { intent, mode: quit };
     },
     async shellQuit(mode) {
       quit = mode;

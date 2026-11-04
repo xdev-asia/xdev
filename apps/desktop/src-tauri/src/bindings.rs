@@ -25,7 +25,7 @@ use crate::settings::{
     OpenInSettings, RestoreMode, SettingsChanged, ShellSettings, SidebarPrefs, StatusSettings,
     TerminalSettings, Theme, UiSettings, UpdateChannel, UsageSettings,
 };
-use crate::shell::{CloseIntent, HelpLink, MenuEvent, QuitMode, ShellLabels};
+use crate::shell::{CloseIntent, CloseRequest, HelpLink, MenuEvent, QuitMode, ShellLabels};
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
@@ -75,6 +75,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     ShellSettings::export_all(cfg)?;
     UpdateChannel::export_all(cfg)?;
     CloseIntent::export_all(cfg)?;
+    CloseRequest::export_all(cfg)?;
     QuitMode::export_all(cfg)?;
     HelpLink::export_all(cfg)?;
     MenuEvent::export_all(cfg)?;

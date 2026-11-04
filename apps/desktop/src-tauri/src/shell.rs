@@ -48,6 +48,15 @@ pub enum CloseIntent {
     Close,
 }
 
+/// The answer to a close request: what the webview does, and the quit in
+/// flight (if any), so it need not ask what the person already answered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct CloseRequest {
+    pub intent: CloseIntent,
+    pub mode: Option<QuitMode>,
+}
+
 /// How the app ends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -206,6 +215,14 @@ pub fn close_intent(os: Os, shell: &ShellSettings, quitting: bool) -> CloseInten
     }
 }
 
+/// The answer for a close request given the setting and the quit in flight.
+pub fn close_request(os: Os, shell: &ShellSettings, quitting: Option<QuitMode>) -> CloseRequest {
+    CloseRequest {
+        intent: close_intent(os, shell, quitting.is_some()),
+        mode: quitting,
+    }
+}
+
 /// Whether the "still running in the tray" notice is due: on the first hide.
 fn notice_due(intent: CloseIntent, shell: &ShellSettings) -> bool {
     intent == CloseIntent::Hide && !shell.tray_notice_shown
@@ -234,9 +251,10 @@ pub fn shell_close_requested(
     state: State<'_, ShellState>,
     notice_title: String,
     notice_body: String,
-) -> CloseIntent {
+) -> CloseRequest {
     let shell = settings_store::read(&app).shell;
-    let intent = close_intent(Os::current(), &shell, state.quitting().is_some());
+    let request = close_request(Os::current(), &shell, state.quitting());
+    let intent = request.intent;
     if intent == CloseIntent::Hide {
         if let Some(window) = app.get_webview_window(MAIN) {
             let _ = window.hide();
@@ -258,7 +276,7 @@ pub fn shell_close_requested(
             }
         }
     }
-    intent
+    request
 }
 
 /// Every quit goes through here: the window is shown (a hidden one cannot ask
@@ -406,6 +424,16 @@ mod tests {
                 "{os:?} minimize={minimize} quitting={quitting}"
             );
         }
+    }
+
+    #[test]
+    fn a_close_request_carries_the_quit_in_flight() {
+        let s = shell(true);
+        let r = close_request(Os::Windows, &s, Some(QuitMode::EndAll));
+        assert_eq!(r.intent, CloseIntent::Close);
+        assert_eq!(r.mode, Some(QuitMode::EndAll));
+        let r = close_request(Os::Windows, &s, None);
+        assert_eq!((r.intent, r.mode), (CloseIntent::Hide, None));
     }
 
     #[test]

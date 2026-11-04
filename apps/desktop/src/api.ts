@@ -63,6 +63,7 @@ import type {
   ShellSettings,
   ShellLabels,
   CloseIntent,
+  CloseRequest,
   QuitMode,
   HelpLink,
   MenuAction,
@@ -166,7 +167,7 @@ export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, W
 export type { AccountSource, ActiveAccount, AgentsSettings, SwitchRunning };
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
-export type { CloseIntent, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase };
+export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase };
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { CliAsk, CliOpenTab, TabReport };
 export type { RestoreMode } from "@xdev/bindings";
@@ -489,7 +490,7 @@ export interface Api {
   shellSettingsPut(settings: ShellSettings): Promise<ShellSettings>;
   // Asked from the window close handler: `hide` means Rust hid the window to the tray, `close` means
   // go on to the quit guard. The notice text is what Rust shows the first time it hides.
-  shellCloseRequested(noticeTitle: string, noticeBody: string): Promise<CloseIntent>;
+  shellCloseRequested(noticeTitle: string, noticeBody: string): Promise<CloseRequest>;
   // Every quit goes through here; the window closes and the quit guard asks as for the close button.
   shellQuit(mode: QuitMode): Promise<void>;
   // The person said no in the quit guard.
