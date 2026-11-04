@@ -68,9 +68,25 @@ jobs:
           git commit -m "chore: sync Cargo.lock" Cargo.lock
           git push
 
+  # Bad input fails here, before a reviewer is asked to approve the build.
+  # No environment and no secrets. Skipped on a push and on an unsigned run.
+  rc-check:
+    if: github.event_name == 'workflow_dispatch' && inputs.rc_version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check the release candidate version and branch
+        shell: bash
+        run: |
+          [[ "$RC_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] || { echo "::error::rc_version must look like 0.6.0-rc.1"; exit 1; }
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::a release candidate is signed only from main, not $GITHUB_REF"; exit 1; }
+        env:
+          RC_VERSION: ${{ inputs.rc_version }}
+
   build:
-    needs: release-please
-    if: ${{ !cancelled() && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
+    needs: [release-please, rc-check]
+    if: ${{ !cancelled() && (needs.rc-check.result == 'success' || needs.rc-check.result == 'skipped') && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
     strategy:
       fail-fast: false
       matrix:
@@ -151,13 +167,6 @@ jobs:
 
       - run: cargo build --release -p xdev-cli --locked --target ${{ matrix.target }}
 
-      - name: Check the release candidate version
-        if: github.event_name == 'workflow_dispatch' && inputs.rc_version != ''
-        run: |
-          [[ "$RC_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] || { echo "::error::rc_version must look like 0.6.0-rc.1"; exit 1; }
-        env:
-          RC_VERSION: ${{ inputs.rc_version }}
-
       # Updates are signed with the updater key; the installers themselves are
       # not OS code-signed yet (Windows unsigned, macOS ad-hoc "-"), so
       # SmartScreen and Gatekeeper still warn on first install.
@@ -166,7 +175,14 @@ jobs:
         run: |
           # The terminal service ships next to the app (tauri.ptyd.conf.json);
           # beforeBuildCommand builds it.
-          args=(--target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}" --config src-tauri/tauri.ptyd.conf.json)
+          bundles="$BUNDLES"
+          # MSI accepts only a numeric pre-release, so a candidate ships no MSI;
+          # the updater uses the NSIS installer.
+          if [ -n "$RC_VERSION" ]; then
+            bundles="${bundles//,msi/}"
+            bundles="${bundles//msi,/}"
+          fi
+          args=(--target "$TARGET" --bundles "$bundles" --config src-tauri/tauri.ptyd.conf.json)
           if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
             args+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
           fi
@@ -176,6 +192,8 @@ jobs:
           fi
           corepack pnpm tauri build "${args[@]}"
         env:
+          BUNDLES: ${{ matrix.bundles }}
+          TARGET: ${{ matrix.target }}
           RC_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.rc_version || '' }}
           APPLE_SIGNING_IDENTITY: "-"
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -330,11 +348,23 @@ jobs:
         if: inputs.rc_publish
         run: |
           if gh release view "$RC_TAG" >/dev/null 2>&1; then
+            # latest.json goes first, so it never lists files that are gone.
+            gh release delete-asset "$RC_TAG" latest.json --yes || true
             # Old candidates carry other file names; the release holds only this one.
             gh release view "$RC_TAG" --json assets --jq '.assets[].name' | while read -r name; do
               gh release delete-asset "$RC_TAG" "$name" --yes
             done
+            # --target only applies on create, so move the tag to this commit.
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$RC_TAG" \
+              -f sha="$GITHUB_SHA" -F force=true
           else
-            gh release create "$RC_TAG" --target "$GITHUB_SHA" --prerelease --latest=false               --title "Release candidate" --notes "The newest release candidate. Read by installs on the release candidate channel only."
+            gh release create "$RC_TAG" --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "Release candidate" \
+              --notes "The newest release candidate. Read by installs on the release candidate channel only."
           fi
-          gh release upload "$RC_TAG" dist/* --clobber
+          # latest.json goes last, in its own command: it points at files that exist.
+          for f in dist/*; do
+            [ "$(basename "$f")" = latest.json ] && continue
+            gh release upload "$RC_TAG" "$f" --clobber
+          done
+          gh release upload "$RC_TAG" dist/latest.json --clobber
