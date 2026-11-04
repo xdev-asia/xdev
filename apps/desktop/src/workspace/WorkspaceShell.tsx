@@ -48,6 +48,9 @@ import { SetupCard, type SetupCardState } from "./SetupCard";
 import { decideSetup } from "./setupFlow";
 import { SetupGate } from "./setupGate";
 import { TrustDialog } from "./TrustDialog";
+import { QuitDialog } from "./QuitDialog";
+import { askQuit, type QuitAsk, type QuitChoice } from "./quitGuard";
+import { getTerminalSettings } from "@/terminal/terminalSettings";
 import { createNotifier, type Notifier } from "./notifier";
 import { AgentSessionsStore } from "@/agentSessions/store";
 import { confirmResume } from "@/agentSessions/resumeFlow";
@@ -162,6 +165,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // Setup: the card a worktree shows, the trust prompt, and the gate that holds agents while setup runs.
   const [cards, setCards] = useState<Record<string, SetupCardAt>>({});
   const [trusting, setTrusting] = useState<TrustAsk | null>(null);
+  // "On quit: Ask": the question shown while the window waits to close.
+  const [quitting, setQuitting] = useState<{ ask: QuitAsk; answer(choice: QuitChoice): void } | null>(null);
   const [gate] = useState(() => new SetupGate());
   // Which remove is current; a Cancel during the archive run bumps it so the late result is dropped.
   const removeRun = useRef(0);
@@ -297,7 +302,23 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       void currentCloseWindow().then((win) => {
         if (!saver.current) return;
         stopCloseWatch.current();
-        stopCloseWatch.current = watchWindowClose(saver.current, win);
+        stopCloseWatch.current = watchWindowClose(saver.current, win, () =>
+          askQuit(
+            api,
+            () => getTerminalSettings().onQuit,
+            () => sessions.worktrees().flatMap((w) => sessions.tabs(w)),
+            (ask) =>
+              new Promise<QuitChoice>((resolve) =>
+                setQuitting({
+                  ask,
+                  answer: (choice) => {
+                    setQuitting(null);
+                    resolve(choice);
+                  },
+                }),
+              ),
+          ),
+        );
       });
       if (!got || got.report.opened.length === 0) return;
       const { resumed, fresh, opened } = got.report;
@@ -1634,6 +1655,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           onCancel={() => setTrusting(null)}
         />
       )}
+      {quitting && <QuitDialog ask={quitting.ask} onChoose={quitting.answer} />}
       <Toasts />
       {adding && (
         <AddProjectDialog
