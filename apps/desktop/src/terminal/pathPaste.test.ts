@@ -58,6 +58,8 @@ const TABLE: Record<ShellKind, [string, string | null][]> = {
     ["a\\'", "a\\\\\\'"],
     ["/a/$x", "/a/\\$x"],
     ["/a/(id)", "/a/\\(id\\)"],
+    ["/a/b c", "/a/b\\ c"],
+    ["/a/b　c", "/a/b\\　c"],
   ],
   powershell: [
     ["C:\\Users\\me\\a.txt", "C:\\Users\\me\\a.txt"],
@@ -70,6 +72,9 @@ const TABLE: Record<ShellKind, [string, string | null][]> = {
     ["@x", "'@x'"],
     ["C:\\é ü", "'C:\\é ü'"],
     ["C:\\a\nb", null],
+    ["C:\\a\u00a0b", "'C:\\a\u00a0b'"],
+    ["C:\\a\u2013b", "'C:\\a\u2013b'"],
+    ["C:\\a\u3000b", "'C:\\a\u3000b'"],
   ],
   cmd: [
     ["C:\\Users\\me\\a.txt", "C:\\Users\\me\\a.txt"],
@@ -80,6 +85,9 @@ const TABLE: Record<ShellKind, [string, string | null][]> = {
     ["C:\\My Dir\\", '"C:\\My Dir\\\\"'],
     ["C:\\a\u00e9 b", '"C:\\a\u00e9 b"'],
     ["C:\\a\nb", null],
+    ["C:\\a\u00a0b", '"C:\\a\u00a0b"'],
+    ["C:\\a\u2013b", '"C:\\a\u2013b"'],
+    ["C:\\a\u3000b", '"C:\\a\u3000b"'],
   ],
   unknown: [
     ["/home/me/a_b-c.txt", "/home/me/a_b-c.txt"],

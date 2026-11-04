@@ -6,10 +6,12 @@ export const IMAGE_EXTENSIONS: readonly string[] = [".png", ".jpg", ".jpeg", ".g
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\x00-\x1f\x7f-\x9f\u2028\u2029]/;
 // Characters every supported shell reads as plain text.
-const BARE_POSIX = /^[a-zA-Z0-9_./@:\-\u00a0-\uffff]+$/;
-// `@` opens a splat in PowerShell, and the typographic quotes U+2018 to U+201E are quotes there.
-const BARE_WINDOWS = /^[a-zA-Z0-9_./:\\\-\u00a0-\u2017\u201f-\uffff]+$/;
-const POSIX_ESCAPE = /[^a-zA-Z0-9_./@:\-\u00a0-\uffff]/g;
+// Non-ASCII letters stay bare; Unicode spaces (NBSP, U+2000 range, U+3000) are escaped like a space.
+const BARE_POSIX = /^(?:[a-zA-Z0-9_./@:\-]|[^\x00-\x7f\s])+$/;
+// ASCII only: PowerShell reads NBSP and other Unicode spaces as whitespace, an en dash as a parameter
+// marker, and U+2018 to U+201E as quotes. `@` opens a splat there. Everything else is quoted.
+const BARE_WINDOWS = /^[a-zA-Z0-9_./:\\-]+$/;
+const POSIX_ESCAPE = /(?![a-zA-Z0-9_./@:\-])(?:[\x00-\x7f]|\s)/g;
 
 const SHELL_PROGRAMS: Record<string, ShellKind> = {
   pwsh: "powershell",
