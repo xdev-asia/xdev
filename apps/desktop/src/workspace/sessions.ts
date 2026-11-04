@@ -128,7 +128,10 @@ export class Sessions {
     this.unlisten = [
       api.onPtyExit((e) => this.apply(e.id, { kind: "exit", code: e.code })),
       // Windows compare against this clock, so a hook is timed when it arrives.
-      api.onPtyHook((h) => this.apply(h.id, { kind: "hook", event: h.event, at: this.now(), detail: h.detail })),
+      api.onPtyHook((h) => {
+        this.apply(h.id, { kind: "hook", event: h.event, at: this.now(), detail: h.detail });
+        this.noteSession(h.id, h.session ?? null);
+      }),
     ];
   }
 
@@ -341,6 +344,13 @@ export class Sessions {
       this.watchStale(e, before);
     }
     this.sync();
+  }
+
+  /** The agent's own session id from a hook; the latest one wins, a hook without one changes nothing. */
+  private noteSession(id: string, session: string | null): void {
+    const entry = this.entries.get(id);
+    if (!entry || !session || entry.tab.agentSession === session) return;
+    this.update(entry, { agentSession: session });
   }
 
   /** A keystroke batch from the person. Escape or Ctrl-C on a hooked working pane may stop its turn. */

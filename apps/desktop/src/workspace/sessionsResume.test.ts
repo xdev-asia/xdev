@@ -77,3 +77,31 @@ describe("Sessions.resumed", () => {
     live.dispose();
   });
 });
+
+describe("Sessions agent session id", () => {
+  let sessions: Sessions | null = null;
+  afterEach(() => {
+    sessions?.dispose();
+    sessions = null;
+  });
+
+  it("a hook with a session id sets agentSession, and a later different id replaces it", async () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    const tab = live.open(A, "claude");
+    await Promise.resolve();
+    expect(live.tabs(A)[0].agentSession).toBeNull();
+    api.__hook(tab.id, "prompt", undefined, "abc");
+    expect(live.tabs(A)[0].agentSession).toBe("abc");
+    api.__hook(tab.id, "turn-done");
+    expect(live.tabs(A)[0].agentSession).toBe("abc");
+    api.__hook(tab.id, "prompt", undefined, "def");
+    expect(live.tabs(A)[0].agentSession).toBe("def");
+  });
+
+  it("a resumed tab starts with the id and an open stamps openedAt", () => {
+    const live = (sessions = new Sessions(createMockApi({}), () => 4242));
+    expect(live.resume(A, "claude", null, "xyz").agentSession).toBe("xyz");
+    expect(live.open(A, "shell")).toMatchObject({ agentSession: null, openedAt: 4242 });
+  });
+});
