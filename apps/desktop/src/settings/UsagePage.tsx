@@ -77,6 +77,8 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
   async function signIn(name: string): Promise<void> {
     try {
       await api.loginAccount(name);
+      // The sign-in is done; look once more, so the row does not stay on its old state.
+      await checkCredentials();
     } catch (e) {
       setError(toApiError(e).code);
     }
