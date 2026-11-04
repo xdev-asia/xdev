@@ -6,10 +6,11 @@ use tempfile::TempDir;
 use xdev_git::{BaseRefresh, Repo};
 use xdev_workspace::{
     BranchPrefix, CreateOptions, Registry, RepoPatch, ScriptSource, SetupPolicy, WorkspaceError,
-    WorktreeStat, add_repo, adopt_worktree, archive_worktree, create_worktree,
-    create_worktree_linked, create_worktree_with, forget_repo, list, path_key, refresh_base,
-    remove_worktree, set_pinned, stat, update_repo, valid_short_name,
+    WorktreeStat, add_repo, adopt_worktree, create_worktree, create_worktree_with, forget_repo,
+    list, path_key, refresh_base, remove_worktree, set_pinned, stat, update_repo, valid_short_name,
 };
+#[cfg(unix)]
+use xdev_workspace::{archive_worktree, create_worktree_linked};
 
 /// Runs setup commands; never used for the code under test.
 fn git(dir: &Path, args: &[&str]) -> String {
