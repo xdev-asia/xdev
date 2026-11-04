@@ -10,7 +10,7 @@ import { parseItem } from "./workItemInput";
 /** What the dialog adds to the name and base: the title, the agent, the parent and the work item. */
 export type CreateExtra = { title: string | null; agent: string | null; setDefault: boolean; parent: string | null; item: WorkItem | null; /** Typed into the agent that opens, once it has started. */ prompt?: string };
 
-/** How long the name field rests before `#123` or an issue URL is looked up. */
+/** How long the name field rests before an issue number with a hash, or an issue URL, is looked up. */
 export const ISSUE_RESOLVE_DEBOUNCE_MS = 300;
 
 type Found = { repoId: string; text: string; issue: Issue | null; error?: ApiError["code"] };
@@ -58,7 +58,7 @@ export function CreateWorktreeDialog(props: {
   /** A name to start with, such as one typed into the jump palette. */
   name?: string;
   onCreate(repoId: string, name: string, from: string | null, extra: CreateExtra): void;
-  /** Reads the issue a `#123` or issue URL in the name field points to. */
+  /** Reads the issue a an issue number with a hash, or an issue URL, in the name field points to. */
   resolveIssue?(repoId: string, text: string): Promise<Issue | null>;
   /** Create with an issue in the name field: the shell starts the worktree from it instead of `onCreate`. */
   onStartIssue?(repoId: string, issue: Issue): void;
@@ -99,7 +99,7 @@ export function CreateWorktreeDialog(props: {
   const issue = ref ? (resolved?.issue ?? null) : null;
   const offerDefault = agent !== "" && agent !== defaultAgent;
 
-  // `#123` or an issue URL is looked up once typing rests; a result for older text is ignored.
+  // an issue number with a hash, or an issue URL, is looked up once typing rests; a result for older text is ignored.
   useEffect(() => {
     if (!ref || !props.resolveIssue || refRepo === "") return;
     let stale = false;
