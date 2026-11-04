@@ -516,6 +516,8 @@ export interface Api {
   ptydEndAll(): Promise<void>;
   // Ends the service and every pty in it, then starts it again (Retry after a fallback).
   ptydRestart(): Promise<void>;
+  // The answer to "On quit: Ask", given before the window closes: true ends every pty.
+  ptydQuitChoice(end: boolean): Promise<void>;
   onPtydStatus(cb: (s: PtydStatus) => void): Promise<() => void>;
   // A status line an agent's hook wrote for one terminal (`pty://hook`).
   onPtyHook(cb: (hook: PtyHook) => void): Promise<() => void>;
@@ -991,6 +993,7 @@ const tauriApi: Api = {
   ptydEnd: (id) => call("ptyd_end", { id }),
   ptydEndAll: () => call("ptyd_end_all"),
   ptydRestart: () => call("ptyd_restart"),
+  ptydQuitChoice: (end) => call("ptyd_quit_choice", { end }),
   onPtydStatus: (cb) => listen<PtydStatus>("ptyd://status", (e) => cb(e.payload)),
   onPtyHook: (cb) => listen<PtyHook>("pty://hook", (e) => cb(e.payload)),
   statusSettings: () => call("status_settings_get"),
