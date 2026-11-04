@@ -19,3 +19,7 @@ Tasks B3+B4: complete, one commit. Deviation: the OS blockers live in a new crat
 ## Task U3: complete
 - `Sessions.setAutoTitle`, `Entry.autoTitle`, `Tab.autoTitled`, snapshot `autoTitled?` (written only when true; restored for attached and resumed tabs). Precedence: hand name > auto title > program title > resume title; `setTitle(null)` returns the auto title. An auto title for a tab named by hand is dropped, not kept behind the name.
 - Five test fixtures that build a `Tab` literal got `autoTitled: false`.
+
+## Task U4: complete
+- `workspace/autoTabTitle.ts`: `tabTitleFromPrompt` and `startAutoTabTitle` (modelled on `autoRename.ts`); started in `WorkspaceShell`.
+- Decision: the setting is read fresh when a tab's lookup starts; a tab found with the setting off counts as tried for this run (same as the branch rename), so turning it on affects tabs that start working afterwards.
