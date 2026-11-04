@@ -22,3 +22,25 @@ export function sortEntries<T extends { path: string }>(
     })
     .map((x) => x.entry);
 }
+
+type Activity = Readonly<Record<string, number | null | undefined>>;
+
+/** The activity times a `recent` order was taken from, and what they were taken for. */
+export interface RecentSnapshot {
+  key: string;
+  activity: Activity;
+}
+
+/**
+ * The recent order is a snapshot: rows do not move under the cursor as output arrives. A new snapshot
+ * is taken only when the sort changes, a worktree is added or removed, or `focus` (the count of window
+ * focus events) moves. Otherwise `prev` comes back unchanged.
+ */
+export function recentSnapshot(
+  prev: RecentSnapshot | null,
+  input: { sort: SidebarSort; paths: readonly string[]; activity: Activity | undefined; focus: number },
+): RecentSnapshot {
+  const key = `${input.sort}|${input.focus}|${[...input.paths].sort().join("\n")}`;
+  if (prev && prev.key === key) return prev;
+  return { key, activity: input.sort === "recent" ? { ...input.activity } : {} };
+}

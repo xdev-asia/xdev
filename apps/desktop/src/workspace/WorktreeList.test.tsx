@@ -648,3 +648,34 @@ it("sort recent changes the order passed to onOrder", () => {
   expect(recent.slice(0, 2)).toEqual(["/demo/wt/xdev-elm", "/demo/wt/xdev-oak"]);
   expect([...recent].sort()).toEqual([...manual].sort());
 });
+
+it("group by project with sort recent keeps the repo order and sorts the rows inside a section", () => {
+  const seen: string[][] = [];
+  // The notes repo has the newest output, but its section stays second.
+  const activity = { "/code/notes": NOW - 100, "/demo/wt/xdev-elm": NOW - 1000, "/demo/wt/xdev-oak": NOW - 9000 };
+  const view = harness(DOTS, repos, { prefs: prefsWith({ groupBy: "project", sort: "recent" }), activity, onOrder: (p) => seen.push(p) });
+  const keys = view.all().filter(n => n.props.className === "ws-group").map(n => n.props["data-group"]);
+  expect(keys).toEqual(["project:demo-xdev", "project:repo-2-notes"]);
+  hooks.effects = [];
+  view.html();
+  hooks.effects.at(-1)!();
+  const order = seen.at(-1)!;
+  expect(order.indexOf("/demo/wt/xdev-elm")).toBeLessThan(order.indexOf("/demo/wt/xdev-oak"));
+  expect(order.indexOf("/demo/wt/xdev-oak")).toBeLessThan(order.indexOf("/code/notes"));
+});
+
+it("sort recent does not move rows when new output arrives", () => {
+  const seen: string[][] = [];
+  const activity: Record<string, number> = { "/demo/wt/xdev-elm": NOW - 1000, "/demo/wt/xdev-oak": NOW - 9000 };
+  const view = harness(DOTS, repos, { prefs: prefsWith({ groupBy: "none", sort: "recent" }), activity, onOrder: (p) => seen.push(p) });
+  const order = () => {
+    hooks.effects = [];
+    view.html();
+    hooks.effects.at(-1)!();
+    return seen.at(-1)!;
+  };
+  const before = order();
+  activity["/code/notes"] = NOW + 1;
+  expect(order()).toEqual(before);
+  expect(before.at(-1)).toBe("/code/notes");
+});

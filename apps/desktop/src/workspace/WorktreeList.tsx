@@ -7,7 +7,7 @@ import { profileLetter, profileName, useProfiles } from "@/agents/profileStore";
 import { ago } from "./ago";
 import { cardParts } from "./cardModel";
 import { groupBy, orderedWorktrees, type Section } from "./groups";
-import { sortEntries } from "./sidebarSort";
+import { recentSnapshot, sortEntries, type RecentSnapshot } from "./sidebarSort";
 import type { PendingCreate } from "./pendingCreates";
 import { checksSummary } from "./ship";
 import type { TabStatus } from "./status";
@@ -137,6 +137,14 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const tree = props.items;
   // The repos whose "Found outside xDev" group is open; all start closed.
   const [foundOpen, setFoundOpen] = useState<string[]>([]);
+  // The activity times the recent order was taken from, and how often the window has regained focus.
+  const [recent, setRecent] = useState<RecentSnapshot | null>(null);
+  const [focus, setFocus] = useState(0);
+  useEffect(() => {
+    const onFocus = () => setFocus((n) => n + 1);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   const toggle = (key: string) =>
     setCollapsed(collapsed.includes(key) ? collapsed.filter((c) => c !== key) : [...collapsed, key]);
@@ -298,18 +306,23 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
 
   const repoList = flattenRepos(tree ?? []);
   const entries: Entry[] = repoList.flatMap((repo) => repo.worktrees.map((wt) => ({ path: wt.path, wt, repo })));
+  // The recent order is a snapshot: retaken when the sort, the set of worktrees or the window focus changes.
+  const snapshot = recentSnapshot(recent, { sort: prefs.sort, paths: entries.map((e) => e.path), activity: props.activity, focus });
+  if (snapshot !== recent) setRecent(snapshot);
+  const sortRows = <T extends { path: string }>(list: readonly T[]): T[] => sortEntries(list, prefs.sort, snapshot.activity);
   // The repo is named on a row only when more than one repo is listed.
   const many = repoList.length > 1;
   const shown = visibleEntries(entries, prefs, props.selected);
   // Pinned worktrees get their own group first and are left out of the status sections.
   const shownPaths = new Set(shown.entries.map((e) => e.path));
-  const pinnedRows = nestRows(sortEntries(pinnedEntries(tree ?? []).filter((e) => shownPaths.has(e.path)), prefs.sort, props.activity), new Set(folded));
+  const pinnedRows = nestRows(sortRows(pinnedEntries(tree ?? []).filter((e) => shownPaths.has(e.path))), new Set(folded));
   const pinnedPaths = new Set(pinnedRows.map((r) => r.entry.path));
+  // Sections come from the rows in sidebar order, so a sort never reorders the sections; it sorts inside each.
   const sections = groupBy(
-    sortEntries(shown.entries.filter((e) => !pinnedPaths.has(e.path)), prefs.sort, props.activity),
+    shown.entries.filter((e) => !pinnedPaths.has(e.path)),
     prefs.groupBy,
     { dotOf: (path) => props.dots[path] ?? null, prOf: (path) => props.prs?.[path]?.pr?.state ?? null },
-  ).map((s): Section<NestRow> => ({ ...s, items: nestRows(s.items, new Set(folded)) }));
+  ).map((s): Section<NestRow> => ({ ...s, items: nestRows(sortRows(s.items), new Set(folded)) }));
   const gone = repoList.filter((repo) => repo.missing);
   const order = [
     ...(pinnedShut ? [] : pinnedRows.map((r) => r.entry.path)),
