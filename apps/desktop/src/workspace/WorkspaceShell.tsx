@@ -1220,6 +1220,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   onChanges={(list) => setChangeList({ worktree: current.path, list })}
                   onFixWithAgent={(output) => void fixWithAgent("fixCommitFailure", output)}
                   onFixPush={(output, branch) => void fixWithAgent("fixPushFailure", output, branch)}
+                  onOpenGitSettings={() => openSettings("git")}
                   register={registerChanges}
                 />
               ) : (

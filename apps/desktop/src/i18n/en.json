@@ -513,6 +513,8 @@
   "error.not_github": "This remote is not on GitHub.",
   "error.gh_failed": "gh failed. The details are shown with the error.",
   "error.draft_failed": "The agent could not draft this text. Write it yourself.",
+  "error.unsupported_agent": "The agent of this recipe cannot draft text. Pick Claude Code or Codex in Settings → Git.",
+  "recipes.openSettings": "Open Settings → Git",
   "error.bad_sound": "Use a wav, mp3 or ogg file of at most 1 MB.",
   "error.hook_untrusted": "The script from xdev.toml is not trusted yet, or it changed since you trusted it.",
   "error.hook_none": "This repo has no script for that.",

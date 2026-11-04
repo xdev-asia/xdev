@@ -513,6 +513,8 @@
   "error.not_github": "Remote này không nằm trên GitHub.",
   "error.gh_failed": "gh bị lỗi. Chi tiết hiện cùng thông báo lỗi.",
   "error.draft_failed": "Agent không soạn được nội dung này. Hãy tự viết.",
+  "error.unsupported_agent": "Agent của công thức này không soạn được văn bản. Chọn Claude Code hoặc Codex trong Cài đặt → Git.",
+  "recipes.openSettings": "Mở Cài đặt → Git",
   "error.bad_sound": "Hãy chọn tệp wav, mp3 hoặc ogg, tối đa 1 MB.",
   "error.hook_untrusted": "Script trong xdev.toml chưa được tin cậy, hoặc đã đổi từ lúc bạn tin cậy.",
   "error.hook_none": "Repo này không có script cho việc đó.",
