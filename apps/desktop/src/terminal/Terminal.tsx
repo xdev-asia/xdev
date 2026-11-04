@@ -346,6 +346,8 @@ export function Terminal(props: {
         (info) => {
           if (!alive) return;
           isAgent.current = info.agent;
+          // Limit: quoting follows the program the pane started, not a shell run inside it (pwsh in a
+          // bash pane is quoted as bash). A WSL pane is quoted as posix; a Windows path is quoted but not converted to /mnt/c.
           shellKind.current = shellKindFor(info.program, info.agent, PLATFORM === "win");
           handlers.current.onStarted(info);
           term.focus();
