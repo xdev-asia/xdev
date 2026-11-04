@@ -161,6 +161,22 @@
   font-size: 12px;
 }
 
+.as-snippet {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 12px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.as-snippet mark {
+  padding: 0 2px;
+  border-radius: var(--x-radius-sm);
+  background: var(--x-color-warn-soft);
+  color: var(--x-color-ink);
+}
+
 .as-actions {
   display: none;
   gap: 4px;
@@ -206,4 +222,36 @@
 
 .as-error {
   margin: 6px 12px;
+}
+
+/* Activity view: the agent threads and the feed. Tokens only. */
+.act-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.act-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.act-list {
+  flex: 1;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.act-group {
+  padding: 8px 8px 2px;
+  color: var(--text-3);
+  font-size: 11px;
+  text-transform: none;
 }

@@ -183,3 +183,62 @@ it("the cache timer switch stores its flag, and the lifetime row shows only whil
   expect((await api.usageSettings()).cacheTtlMs).toBe(3_600_000);
   expect(getUsageSettings().cacheTtlMs).toBe(3_600_000);
 });
+
+it("lists the accounts with their status, reads once on open and once per Check again, and signs in", async () => {
+  const { api, m } = await open();
+  const quota = vi.spyOn(api, "quota");
+  const accounts = vi.spyOn(api, "accounts");
+  const login = vi.spyOn(api, "loginAccount").mockResolvedValue({ opened: true, command: "x" });
+  const fresh = mount(UsagePage, () => ({ api, onChanged: vi.fn() }));
+  await fresh.settle();
+  await fresh.settle();
+  expect(quota).toHaveBeenCalledTimes(1);
+  const rows = fresh.all().filter((n) => n.props["data-credential"]);
+  expect(rows.length).toBeGreaterThan(0);
+  let reads = 1;
+  const signIn = fresh.all().find((n) => String(n.props["data-act"] ?? "").startsWith("signin-"));
+  if (signIn) {
+    signIn.props.onClick();
+    await fresh.settle();
+    expect(login).toHaveBeenCalledWith(String(signIn.props["data-act"]).slice("signin-".length));
+    reads += 1; // Sign in looks once more when it finishes.
+  }
+  act(fresh.all(), "check-credentials")!.props.onClick();
+  await fresh.settle();
+  expect(quota).toHaveBeenCalledTimes(reads + 1);
+  expect(accounts).toHaveBeenCalledTimes(reads + 1);
+  expect(m.all().length).toBeGreaterThan(0);
+});
+
+it("checks the credentials once more after Sign in finishes", async () => {
+  resetUsageSettingsForTests();
+  const api = createMockApi({});
+  const acct = { name: "a1", provider: "claude" as const, dir: "/x", status: { state: "logged_out" as const, email: null, plan: null, org: null } };
+  vi.spyOn(api, "accounts").mockResolvedValue({ reservePercent: 30, accounts: [acct], active: [] });
+  const quota = vi.spyOn(api, "quota").mockResolvedValue([{ name: "a1", state: "unknown", reason: "no_credentials", windows: [], asOf: null }]);
+  const login = vi.spyOn(api, "loginAccount").mockResolvedValue({ opened: true, command: "x" });
+  const m = mount(UsagePage, () => ({ api, onChanged: vi.fn() }));
+  await m.settle();
+  await m.settle();
+  expect(quota).toHaveBeenCalledTimes(1);
+  m.all().find((n) => n.props["data-act"] === "signin-a1")!.props.onClick();
+  await m.settle();
+  await m.settle();
+  expect(login).toHaveBeenCalledWith("a1");
+  expect(quota).toHaveBeenCalledTimes(2);
+  login.mockRejectedValueOnce(new Error("x"));
+  m.all().find((n) => n.props["data-act"] === "signin-a1")!.props.onClick();
+  await m.settle();
+  await m.settle();
+  expect(quota).toHaveBeenCalledTimes(2);
+});
+
+it("shows an empty state when there are no accounts", async () => {
+  resetUsageSettingsForTests();
+  const api = createMockApi({});
+  vi.spyOn(api, "accounts").mockResolvedValue({ reservePercent: 30, accounts: [], active: [] });
+  const m = mount(UsagePage, () => ({ api, onChanged: vi.fn() }));
+  await m.settle();
+  await m.settle();
+  expect(m.all().some((n) => n.props["data-field"] === "credentials-empty")).toBe(true);
+});

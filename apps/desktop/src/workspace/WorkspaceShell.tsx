@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type CreateRequest, type PrSummary, type MenuAction } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
@@ -24,7 +24,10 @@ import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
 import { startAutoRename } from "./autoRename";
-import { currentCloseWindow, openRestoredFile, restoreLayout, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
+import { startAutoTabTitle } from "./autoTabTitle";
+import { startAutoSleep } from "./autoSleep";
+import { startKeepAwakeReport } from "@/status/keepAwake";
+import { currentCloseWindow, openRestoredFile, restoreLayout, sessionFallback, startLayoutSave, undoRestore } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
@@ -34,9 +37,11 @@ import { playStatusSound } from "@/status/sound";
 import { usePresence } from "@/status/presence";
 import { eventOn, getStatusSettings, loadStatusSettings, useStatusSettings } from "@/status/statusSettings";
 import { BellMenu, bellCount, type BellRow } from "./BellMenu";
+import { ActivityPanel, type ActivityTab } from "@/activity/ActivityPanel";
+import { ActivityFeed } from "@/activity/feed";
 import { ChecksPanel } from "./ChecksPanel";
 import { IssuesPanel } from "@/issues/IssuesPanel";
-import { CreateWorktreeDialog, type AgentChoice, type CreateExtra } from "./CreateWorktreeDialog";
+import { CreateWorktreeDialog, type AgentChoice, type CreateExtra, type CreateTab } from "./CreateWorktreeDialog";
 import { DetailsDialog } from "./DetailsDialog";
 import { RenameBranchDialog } from "./RenameBranchDialog";
 import { PendingCreates, type CreateArgs } from "./pendingCreates";
@@ -52,6 +57,7 @@ import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { sendCheckFix, sendFix } from "./fixAgent";
 import { sendToAgentTab, sendToOpenedTab } from "./agentPrompt";
 import { issuePrompt, issueWorkItem, issueWorktreeName, uniqueWorktreeName } from "@/issues/issueStart";
+import { prWorkItem, prWorktreeName } from "./createSource";
 import { effectiveIssueCommand, issueTemplateVars, renderIssueCommand } from "@/issues/issueTemplate";
 import { sendTarget } from "./sendTarget";
 import { SetupCard, type SetupCardState } from "./SetupCard";
@@ -67,7 +73,12 @@ import { TrustDialog } from "./TrustDialog";
 import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
 import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
 import { QuitDialog } from "./QuitDialog";
-import { askQuit, type QuitAsk, type QuitChoice } from "./quitGuard";
+import { AboutDialog } from "./AboutDialog";
+import { checkForUpdates, HelpButton, type HelpPick, runHelpPick } from "./HelpMenu";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { runMenuAction } from "@/shell/menuActions";
+import { useShellLabels } from "@/shell/shellLabels";
+import { askQuit, guardClose, installCloseGuard, type QuitAsk, type QuitChoice } from "./quitGuard";
 import { getTerminalSettings } from "@/terminal/terminalSettings";
 import { createNotifier, type Notifier } from "./notifier";
 import { AgentSessionsStore } from "@/agentSessions/store";
@@ -125,6 +136,9 @@ type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?:
 };
 
 /** The app frame: repos and worktrees on the left, the selected worktree in the middle. */
+/** How often the auto sleep check runs. */
+const AUTO_SLEEP_TICK_MS = 60_000;
+
 export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
@@ -166,22 +180,27 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [sessions, setSessions] = useState<Sessions | null>(null);
   // The agent session history, and which of the two sidebar views shows.
   const [history, setHistory] = useState<AgentSessionsStore | null>(null);
-  const [sideView, setSideView] = useState<"worktrees" | "sessions">("worktrees");
+  const [sideView, setSideView] = useState<"worktrees" | "sessions" | "activity">("worktrees");
+  const [feed] = useState(() => new ActivityFeed());
+  const [activityAsk, setActivityAsk] = useState<{ tab: ActivityTab; seq: number }>({ tab: "threads", seq: 0 });
   // A new `seq` asks the sessions panel for the search box, or to mark one session.
   const [sessionsAsk, setSessionsAsk] = useState<{ seq: number; focus: boolean; reveal: { key: string; seq: number } | null }>({ seq: 0, focus: false, reveal: null });
   const [creating, setCreating] = useState<Creating | null>(null);
+  // The tab the create dialog was last on, for the next opening of this shell.
+  const createTab = useRef<CreateTab>("name");
   // Creates run after the dialog has closed; what a finished one does is read from this render.
   const afterCreate = useRef<{ api: Api; created(wt: WorktreeView, args: CreateArgs): void; reload(): void; linked(shared: Linked[]): void }>({ api, created() {}, reload() {}, linked() {} });
   const [pending] = useState(
     () =>
       new PendingCreates({
-        create: (repoId, name, from) => afterCreate.current.api.worktreeCreate(repoId, name, from).then((made) => {
+        create: (repoId, name, from, request) => afterCreate.current.api.worktreeCreate(repoId, name, from, request).then((made) => {
           afterCreate.current.linked(made.shared);
           return made.worktree;
         }),
         // Cancel was the go-ahead; a fresh worktree is clean, so its branch goes too.
         remove: (path, force) => afterCreate.current.api.worktreeRemove(path, force, true).finally(() => afterCreate.current.reload()),
         onCreated: (wt, args) => afterCreate.current.created(wt, args),
+        discard: (repoId, branch) => afterCreate.current.api.prBranchDiscard(repoId, branch),
       }),
   );
   useSyncExternalStore(
@@ -193,6 +212,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [trusting, setTrusting] = useState<TrustAsk | null>(null);
   // "On quit: Ask": the question shown while the window waits to close.
   const [quitting, setQuitting] = useState<{ ask: QuitAsk; answer(choice: QuitChoice): void } | null>(null);
+  // The About dialog (its version, once known) and the "quit and end terminals" confirmation.
+  const [about, setAbout] = useState<string | null>(null);
+  const [confirmEndAll, setConfirmEndAll] = useState(false);
   const [gate] = useState(() => new SetupGate());
   // Worktrees whose setup flow already ran (made here, or run for a worker); it runs once each.
   const setupRan = useRef(new Set<string>());
@@ -329,12 +351,17 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     });
   }, [api, sessions]);
 
+  // Agent tabs take a short title from their first prompt when Settings → Agents asks for it.
+  useEffect(() => {
+    if (!sessions) return;
+    return startAutoTabTitle({ api, sessions });
+  }, [api, sessions]);
+
   // Layout restore: once per run, after the registry is known and before the saver starts (a saver that
   // ran first would replace the stored layout with an empty one). Nothing runs without a worktree.
   const restoreStarted = useRef(false);
   const saver = useRef<ReturnType<typeof startLayoutSave> | null>(null);
   const flushOnClose = useRef(() => saver.current?.flush());
-  const stopCloseWatch = useRef<() => void>(() => {});
   useEffect(() => {
     if (!sessions || !repos || repos.length === 0 || restoreStarted.current) return;
     restoreStarted.current = true;
@@ -346,27 +373,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       if (!restoreStarted.current) return;
       saver.current = startLayoutSave(api, sessions);
       if (typeof window !== "undefined") window.addEventListener("beforeunload", flushOnClose.current);
-      void currentCloseWindow().then((win) => {
-        if (!saver.current) return;
-        stopCloseWatch.current();
-        stopCloseWatch.current = watchWindowClose(saver.current, win, () =>
-          askQuit(
-            api,
-            () => getTerminalSettings().onQuit,
-            () => sessions.worktrees().flatMap((w) => sessions.tabs(w)),
-            (ask) =>
-              new Promise<QuitChoice>((resolve) =>
-                setQuitting({
-                  ask,
-                  answer: (choice) => {
-                    setQuitting(null);
-                    resolve(choice);
-                  },
-                }),
-              ),
-          ),
-        );
-      });
       if (!got || got.report.opened.length === 0) return;
       const { resumed, fresh, opened } = got.report;
       pushToast({
@@ -375,14 +381,49 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       });
     });
   }, [sessions, repos]);
+  // The close guard, set up once at mount: it looks the saver and the tabs up when a close fires, so it
+  // also works on the welcome screen, with no repos, and while the layout restore still runs.
+  const sessionsNow = useRef<Sessions | null>(null);
+  sessionsNow.current = sessions;
+  useEffect(() => {
+    let stopped = false;
+    let stop = () => {};
+    void currentCloseWindow().then((win) => {
+      if (stopped) return;
+      stop = installCloseGuard(
+        win,
+        () => saver.current,
+        () =>
+          guardClose(api, { title: live.t("shell.tray.tooltip"), body: live.t("shell.tray.notice") }, () =>
+            askQuit(
+              api,
+              () => getTerminalSettings().onQuit,
+              () => sessionsNow.current?.worktrees().flatMap((w) => sessionsNow.current?.tabs(w) ?? []) ?? [],
+              (ask) =>
+                new Promise<QuitChoice>((resolve) =>
+                  setQuitting({
+                    ask,
+                    answer: (choice) => {
+                      setQuitting(null);
+                      resolve(choice);
+                    },
+                  }),
+                ),
+            ),
+          ),
+      );
+    });
+    return () => {
+      stopped = true;
+      stop();
+    };
+  }, [api]);
   useEffect(() => {
     const close = flushOnClose.current;
     return () => {
       restoreStarted.current = false;
       saver.current?.stop();
       saver.current = null;
-      stopCloseWatch.current();
-      stopCloseWatch.current = () => {};
       if (typeof window !== "undefined") window.removeEventListener("beforeunload", close);
     };
   }, [sessions]);
@@ -433,10 +474,30 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const running = sessions ? paths.reduce((n, p) => n + working(sessions, p), 0) : 0;
   const waiting = sessions ? paths.reduce((n, p) => n + waitingIn(sessions, p), 0) : 0;
   const unreadMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.unread(p) ?? false]));
+  const sleepableMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.sleepable(p) ?? false]));
+  const asleepMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.asleep(p) ?? false]));
 
   const all = repos?.flatMap((r) => r.worktrees) ?? [];
   // A stored path that no longer exists falls back to the first worktree.
   const current = all.find((w) => w.path === selected) ?? all[0] ?? null;
+
+  // Auto sleep: once a minute, tabs of finished agents that nobody looks at and that went quiet sleep.
+  // The inputs sit in a ref, so a worktree switch does not restart the timer; the settings are read on each tick.
+  const sleepLive = useRef({ paths, current: current?.path ?? null });
+  sleepLive.current = { paths, current: current?.path ?? null };
+  useEffect(() => {
+    if (!sessions) return;
+    return startAutoSleep({
+      tickMs: AUTO_SLEEP_TICK_MS,
+      settings: () => api.agentsSettings(),
+      tabs: () => sleepLive.current.paths.flatMap((p) => sessions.tabs(p)),
+      // The worktree on screen is never touched.
+      onScreen: () => new Set(sleepLive.current.current ? sessions.tabs(sleepLive.current.current).map((t) => t.id) : []),
+      lastOutput: (id) => sessions.lastOutput(id),
+      now: () => Date.now(),
+      sleep: (id) => sessions.hibernate(id, sessionFallback(api)),
+    });
+  }, [api, sessions]);
   const currentRepo = repos?.find((r) => r.worktrees.some((w) => w.path === current?.path)) ?? null;
   const branch = current ? (current.branch ?? t("workspace.detached")) : null;
   // Noted during render, so the first frame of a worktree already has its tabs.
@@ -494,6 +555,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => {
     sessions?.setHooks(statusSettings.hooks);
   }, [sessions, statusSettings.hooks]);
+
+  // The Activity feed records every status change of the agent tabs.
+  useEffect(() => {
+    if (!sessions) return;
+    return feed.follow(sessions);
+  }, [feed, sessions]);
+
+  // Whether an agent works, for the keep-awake mode "while agents work".
+  useEffect(() => {
+    if (!sessions) return;
+    return startKeepAwakeReport(api, sessions);
+  }, [api, sessions]);
 
   // A pane nobody looks at that wants the person: OS notification, sound, and the jump back on a click.
   useEffect(() => {
@@ -730,6 +803,32 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setPanelTab(tab);
   }
   useEffect(() => startQuickCommands(api), [api]);
+  useShellLabels(api);
+  // Native menu and tray items; the latest handlers run through a ref so the listener binds once.
+  const menuRun = useRef<(action: MenuAction) => void>(() => {});
+  menuRun.current = (action) =>
+    runMenuAction(action, {
+      openSettings: () => openSettings(),
+      openShortcuts: () => openSettings("keys"),
+      openUpdates,
+      confirmQuitEndAll: () => setConfirmEndAll(true),
+      zoom: (delta) => void stepZoom(api, delta),
+      toggleLeftSidebar: () => setSidebarOpen((o) => !o),
+      toggleRightSidebar: () => setRightOpen((o) => !o),
+      openAbout: () => openAbout(),
+    });
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let gone = false;
+    void api.onMenuAction((action) => menuRun.current(action)).then((un) => {
+      if (gone) un();
+      else off = un;
+    });
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, [api]);
   useKeymap({
     "sessions.open": () => {
       show("workspace");
@@ -1043,9 +1142,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
 
   // The dialog closes at once; the create runs as a row in the list until it finishes or fails.
-  function create(repoId: string, name: string, from: string | null, extra?: CreateExtra): void {
-    setCreating(null);
-    pending.start({ repoId, name, from, ...(extra ? { extra } : {}) });
+  function create(repoId: string, name: string, from: string | null, extra?: CreateExtra, request?: CreateRequest, keepOpen = false, discardBranch?: string): void {
+    if (!keepOpen) setCreating(null);
+    pending.start({ repoId, name, from, ...(extra ? { extra } : {}), ...(request ? { request } : {}), ...(discardBranch ? { discardBranch } : {}) });
   }
 
   // The issue becomes the worktree: named from it, linked as its work item, sent to the default agent.
@@ -1067,6 +1166,20 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         item: issueWorkItem(issue),
         prompt: template === null ? issuePrompt(full, t) : renderIssueCommand(template, issueTemplateVars(full, repo?.shortName ?? "", t)),
       });
+    } catch (e) {
+      setNotice(toApiError(e).code);
+    }
+  }
+
+  // The pull request becomes the worktree: its branch is put on a new worktree, linked as its work item, sent to the default agent.
+  async function startFromPr(repoId: string, pr: PrSummary): Promise<void> {
+    try {
+      const { branch, fetched } = await api.prBranch(repoId, pr.number);
+      const repo = repos?.find((r) => r.id === repoId);
+      const taken = new Set((repo?.worktrees ?? []).flatMap((w) => [w.name, w.branch ?? ""]));
+      const name = uniqueWorktreeName(prWorktreeName(pr), taken);
+      const view = await api.profiles().catch(() => null);
+      create(repoId, name, null, { title: pr.title, agent: view?.defaultAgent ?? null, setDefault: false, parent: null, item: prWorkItem(pr) }, { existing: branch, sparse: [] }, false, fetched ? branch : undefined);
     } catch (e) {
       setNotice(toApiError(e).code);
     }
@@ -1096,6 +1209,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (extra.title !== null) patch.title = extra.title;
     if (extra.parent !== null) patch.parent = extra.parent;
     if (extra.item !== null) patch.item = extra.item;
+    if (extra.note) patch.comment = extra.note;
     try {
       if (Object.keys(patch).length > 0) await api.worktreeDetails(path, patch);
       if (extra.setDefault && extra.agent !== null) {
@@ -1303,6 +1417,19 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     }
   }
 
+  function openAbout(): void {
+    void api.appVersion().then(setAbout, () => setAbout(""));
+  }
+
+  /** Help, tray and native menu "Check for updates": shows the page, and starts the check (a check already running is joined). */
+  function openUpdates(): void {
+    checkForUpdates({ openSettings, api });
+  }
+
+  function pickHelp(pick: HelpPick): void {
+    runHelpPick(pick, { openSettings: (page) => openSettings(page), openUpdates, openAbout, api });
+  }
+
   function openSettings(section?: string, arg?: string, target?: string): void {
     setSettingsAt((s) => ({ section, arg, target, seq: s.seq + 1 }));
     show("settings");
@@ -1440,8 +1567,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               </span>
             )}
           </button>
-          {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onClose={() => setBellOpen(false)} />}
+          {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onViewActivity={() => { setBellOpen(false); setSidebarOpen(true); setSideView("activity"); setActivityAsk((a) => ({ tab: "feed", seq: a.seq + 1 })); }} onClose={() => setBellOpen(false)} />}
         </div>
+        <HelpButton onPick={pickHelp} />
         <button
           type="button"
           className="ws-icon-btn ws-header-btn"
@@ -1499,7 +1627,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             )}
           </nav>
           <div className="ws-side-tabs" role="group" aria-label={t("agentSessions.tabs.label")}>
-            {(["worktrees", "sessions"] as const).map((v) => (
+            {(["worktrees", "sessions", "activity"] as const).map((v) => (
               <button key={v} type="button" className="ws-side-tab" aria-pressed={sideView === v} onClick={() => setSideView(v)}>
                 {t(`agentSessions.tab.${v}`)}
               </button>
@@ -1522,6 +1650,17 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   select(wt);
                   show("workspace");
                 }}
+              />
+            </div>
+          )}
+          {sessions && (
+            <div className="ws-side-view" hidden={sideView !== "activity"}>
+              <ActivityPanel
+                sessions={sessions}
+                feed={feed}
+                names={Object.fromEntries(all.map((w) => [w.path, { name: worktreeName(all, w.path), branch: w.branch ?? null }]))}
+                ask={activityAsk}
+                onJump={jumpTo}
               />
             </div>
           )}
@@ -1589,6 +1728,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onAddRepo={addRepo}
             onAdopt={(wt) => void adopt(wt)}
             unread={unreadMap}
+            asleep={asleepMap}
+            sleepable={sleepableMap}
+            onSleep={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api), all.filter((c) => c.parent === wt.path).map((c) => c.path))}
+            onWake={(wt) => [wt.path, ...all.filter((c) => c.parent === wt.path).map((c) => c.path)].forEach((p) => sessions?.wakeWorktree(p))}
             onMarkUnread={(wt) => sessions?.markUnread(wt.path)}
             onMarkRead={(wt) => sessions?.markRead(wt.path)}
             openInApps={openInApps}
@@ -1623,6 +1766,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   repoName={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.shortName ?? ""}
                   quickSeq={path === current?.path ? quickSeq : undefined}
                   onManageQuickCommands={() => openSettings("qcmd")}
+                  worktrees={all.map((w) => ({ path: w.path, label: worktreeName(all, w.path) }))}
+                  onJump={jumpTo}
                 />
               ))}
             {current && cardFor(current.path) && (
@@ -1859,7 +2004,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           agents={creating.agents}
           defaultAgent={creating.defaultAgent}
           namePreview={api.worktreeNamePreview}
-          onCreate={(repoId, name, from, extra) => create(repoId, name, from, extra)}
+          branches={api.worktreeBranches}
+          api={api}
+          initialTab={createTab.current}
+          onTabChange={(tab) => (createTab.current = tab)}
+          onStartPr={(repoId, pr) => {
+            setCreating(null);
+            void startFromPr(repoId, pr);
+          }}
+          onCreate={(repoId, name, from, extra, request, more) => create(repoId, name, from, extra, request, more)}
           resolveIssue={(repoId, text) => api.issueResolve(repoId, text)}
           onStartIssue={(repoId, issue) => {
             setCreating(null);
@@ -1966,6 +2119,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         />
       )}
       {quitting && <QuitDialog ask={quitting.ask} onChoose={quitting.answer} />}
+      {about !== null && <AboutDialog version={about} onLink={(link) => void api.helpOpen(link)} onClose={() => setAbout(null)} />}
+      <ConfirmDialog
+        open={confirmEndAll}
+        title={t("shell.quitEndAll.title")}
+        body={t("shell.quitEndAll.body")}
+        confirmLabel={t("shell.quitEndAll.confirm")}
+        onConfirm={() => {
+          setConfirmEndAll(false);
+          void api.shellQuit("end-all");
+        }}
+        onCancel={() => setConfirmEndAll(false)}
+      />
       <Toasts />
       {adding && (
         <AddProjectDialog
@@ -1999,6 +2164,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       )}
       {editing && (
         <DetailsDialog
+          api={api}
+          repoId={repos?.find((r) => r.worktrees.some((w) => w.path === editing.worktree.path))?.id ?? ""}
           worktree={editing.worktree}
           siblings={repos?.find((r) => r.worktrees.some((w) => w.path === editing.worktree.path))?.worktrees ?? []}
           busy={editing.busy}
