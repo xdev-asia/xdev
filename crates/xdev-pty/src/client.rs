@@ -339,6 +339,11 @@ impl Inner {
                 }
             }
             Frame::Gap { id, .. } => {
+                // TODO: a Gap on a live tab is dropped here; the next Output's
+                // seq keeps `seen` right, but the view never hears that bytes
+                // were lost, and its own byte count (the next attach's
+                // `from_seq`) falls behind. Telling it needs a Sink callback
+                // and a Channel message the terminal client knows.
                 if let Some(p) = lock(&self.attaches).get_mut(&id) {
                     p.truncated = true;
                 }
