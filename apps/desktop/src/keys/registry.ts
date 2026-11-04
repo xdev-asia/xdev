@@ -99,6 +99,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("file.save", "editor", ["Mod+S"]),
   // App.
   def("palette.jump", "app", ["Mod+J"]),
+  def("quickOpen.open", "app", ["Mod+P"]),
   def("search.open", "app", ["Mod+K"]),
   def("settings.open", "app", ["Mod+,"]),
   def("settings.shortcuts", "app", []),

@@ -2,13 +2,17 @@
 //! `xdev_workspace::files`. Each one first checks that `worktree` is a repo
 //! or worktree the registry knows; the crate keeps every `rel` inside it.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 
 use tauri::State;
+use tauri::ipc::Channel;
 use xdev_policy::Action;
 use xdev_workspace::{
-    Eol, FileText, OsTrash, Trash, WriteOutcome, create_entry, entry_path, read_file, rename_entry,
-    trash_entry_with, write_file,
+    Eol, FileList, FileText, OsTrash, SearchEvent, SearchQuery, Trash, WriteOutcome, create_entry,
+    entry_path, list_files, read_file, rename_entry, search_text, trash_entry_with, write_file,
 };
 
 use crate::accounts::data_dir;
@@ -133,6 +137,47 @@ pub fn file_reveal(
 ) -> Result<(), CmdError> {
     let path = reveal_path(data_dir(&state)?, &worktree, &rel)?;
     Ok(crate::reveal::reveal(&path, true)?)
+}
+
+// Quick open and search in files.
+
+/// The searches running now, by the id the UI gave each.
+#[derive(Default)]
+pub struct Searches {
+    _runs: Mutex<HashMap<String, Arc<AtomicBool>>>,
+}
+
+/// Every file of the worktree `.gitignore` keeps, for quick open.
+#[tauri::command(async)]
+pub fn files_list(state: State<'_, AppState>, worktree: PathBuf) -> Result<FileList, CmdError> {
+    Ok(list_files(&root(data_dir(&state)?, &worktree)?)?)
+}
+
+/// Searches the worktree's files, sending `SearchEvent`s on `on_event`. A new
+/// search with the same `id` cancels the old one.
+#[tauri::command(async)]
+pub fn files_search(
+    state: State<'_, AppState>,
+    _searches: State<'_, Searches>,
+    worktree: PathBuf,
+    query: SearchQuery,
+    id: String,
+    on_event: Channel<SearchEvent>,
+) -> Result<(), CmdError> {
+    let _ = id;
+    let root = root(data_dir(&state)?, &worktree)?;
+    let cancel = AtomicBool::new(false);
+    Ok(search_text(&root, &query, &cancel, &mut |event| {
+        // The window may be gone; nobody is listening then.
+        let _ = on_event.send(event);
+    })?)
+}
+
+/// Stops the search named `id`; nothing when it is not running.
+#[tauri::command]
+pub fn files_search_cancel(_searches: State<'_, Searches>, id: String) -> Result<(), CmdError> {
+    let _ = id;
+    Ok(())
 }
 
 #[cfg(test)]

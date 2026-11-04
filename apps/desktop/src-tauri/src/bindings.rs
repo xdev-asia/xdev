@@ -90,6 +90,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_workspace::DirListing::export_all(cfg)?;
     xdev_workspace::FileText::export_all(cfg)?;
     xdev_workspace::WriteOutcome::export_all(cfg)?;
+    xdev_workspace::FileList::export_all(cfg)?;
+    xdev_workspace::SearchQuery::export_all(cfg)?;
+    xdev_workspace::SearchEvent::export_all(cfg)?;
     ShipView::export_all(cfg)?;
     xdev_git::Upstream::export_all(cfg)?;
     xdev_git::BaseRange::export_all(cfg)?;
