@@ -1,0 +1,26 @@
+{
+  "assignees": [{"id": "MDQ6VXNlcjE=", "login": "octocat", "name": "The Octocat", "isBot": false}],
+  "author": {"id": "MDQ6VXNlcjI=", "is_bot": false, "login": "hubot", "name": "Hubot"},
+  "body": "The meter wraps\n\n- step 1\n- step 2",
+  "comments": [
+    {
+      "id": "IC_1",
+      "author": {"login": "octocat"},
+      "authorAssociation": "MEMBER",
+      "body": "Looking at it.",
+      "createdAt": "2026-11-03T10:00:00Z",
+      "includesCreatedEdit": false,
+      "isMinimized": false,
+      "minimizedReason": "",
+      "reactionGroups": [],
+      "url": "https://github.com/acme/app/issues/123#issuecomment-1",
+      "viewerDidAuthor": false
+    }
+  ],
+  "labels": [{"id": "LA_1", "name": "bug", "description": "", "color": "d73a4a"}],
+  "number": 123,
+  "state": "OPEN",
+  "title": "Footer meter overflows",
+  "updatedAt": "2026-11-03T10:00:00Z",
+  "url": "https://github.com/acme/app/issues/123"
+}
