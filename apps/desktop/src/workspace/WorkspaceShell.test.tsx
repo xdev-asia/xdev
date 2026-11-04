@@ -912,6 +912,38 @@ it("setup after create: an untrusted shared script shows its text; Trust runs it
   expect(v.trust()).toBeUndefined();
 });
 
+const LISTS = { shared: ["node_modules", ".env.local"], tabs: [{ title: "dev", color: "#4a9", command: "pnpm dev" }] };
+
+it("repo file lists: untrusted shared paths and tabs are asked about, and Trust writes each hash", async () => {
+  const v = await created(LISTS, { setupPolicy: "skip" });
+  expect(v.trust().props).toMatchObject({ kind: "lists", text: "", shared: LISTS.shared, tabs: LISTS.tabs });
+  const trust = vi.spyOn(v.api, "repoHookTrust");
+  v.trust().props.onTrust();
+  await tick();
+  expect(trust.mock.calls.map((c) => c[1])).toEqual(["shared", "tabs"]);
+  expect(v.trust()).toBeUndefined();
+});
+
+it("repo file lists: with an untrusted setup script one prompt covers the script and the lists", async () => {
+  const v = await created({ ...LISTS, setup: "pnpm i" }, { setupPolicy: "run" });
+  expect(v.trust().props).toMatchObject({ kind: "setup", text: "pnpm i", shared: LISTS.shared, tabs: LISTS.tabs });
+  const trust = vi.spyOn(v.api, "repoHookTrust");
+  v.trust().props.onTrust();
+  await tick();
+  expect(trust.mock.calls.map((c) => c[1])).toEqual(["shared", "tabs", "setup"]);
+  expect(v.setupOpens()).toHaveLength(1);
+});
+
+it("repo file lists: Cancel leaves them untrusted and the setup card still shows", async () => {
+  const v = await created(LISTS, { localSetup: "pnpm i" });
+  expect(v.trust().props.kind).toBe("lists");
+  v.trust().props.onCancel();
+  await tick();
+  expect(v.trust()).toBeUndefined();
+  expect(v.card().props.state).toEqual({ kind: "ask" });
+  expect((await v.api.repoHooks("/demo/wt/xdev-birch")).sharedTrusted).toBe(false);
+});
+
 it("setup after create: a stale hash reopens the prompt with the new text", async () => {
   const v = await created({ setup: "old" }, { setupPolicy: "run" });
   vi.spyOn(v.api, "repoHookTrust").mockRejectedValueOnce({ code: "hook_untrusted" });
