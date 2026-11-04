@@ -78,11 +78,15 @@ pub fn run() {
             if let Some(file) = commands::settings_path(app.handle()) {
                 app.manage(settings_store::SettingsStore::new(file));
             }
-            // The OS request follows the stored mode from the start.
-            power::apply_mode(
-                app.handle(),
-                settings_store::read(app.handle()).agents.keep_awake,
-            );
+            // The OS request follows the stored mode from the start. Off the main thread: a
+            // helper is watched for an early exit, which takes a moment.
+            {
+                let app = app.handle().clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let mode = settings_store::read(&app).agents.keep_awake;
+                    power::apply_mode(&app, mode);
+                });
+            }
             workspace::start_migrations(app.handle());
             // Off the main thread: starting the service may take a moment.
             {
