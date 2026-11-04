@@ -310,6 +310,27 @@ impl Store {
             .pragma_query_value(None, "journal_mode", |r| r.get(0))?)
     }
 
+    /// Runs `f` as one unit: every write it makes lands, or none does. Built
+    /// on a savepoint, so units nest.
+    pub fn atomic<T>(
+        &self,
+        f: impl FnOnce(&Store) -> Result<T, OrchError>,
+    ) -> Result<T, OrchError> {
+        self.conn.execute_batch("SAVEPOINT orch_unit")?;
+        match f(self) {
+            Ok(v) => {
+                self.conn.execute_batch("RELEASE orch_unit")?;
+                Ok(v)
+            }
+            Err(e) => {
+                let _ = self
+                    .conn
+                    .execute_batch("ROLLBACK TO orch_unit; RELEASE orch_unit");
+                Err(e)
+            }
+        }
+    }
+
     /// A fresh id: `<prefix>_<12 hex>`; never the same twice from one store.
     pub fn next_id(&self, prefix: &str) -> String {
         let n = self.counter.get() + 1;
