@@ -5,6 +5,7 @@
 pub mod attribute;
 pub mod parse;
 mod probe;
+pub mod urls;
 
 pub use probe::{Listener, OsProbe, Probe, Proc, PtyRoot, ScanError};
 
