@@ -124,6 +124,7 @@ export class Sessions {
   private seen = new Set<string>();
   private readonly marked = new Set<string>();
   private readonly attention = new Set<(tab: Tab, status: Attention, detail: HookDetail | null) => void>();
+  private readonly statusListeners = new Set<(tab: Tab, from: TabStatus, to: TabStatus, at: number) => void>();
   private interval: ReturnType<typeof setInterval> | null = null;
   // One-shot timers per tab: an interrupt settling, a done waiting to be announced.
   private readonly settle = new Map<string, ReturnType<typeof setTimeout>>();
@@ -747,6 +748,12 @@ export class Sessions {
     return () => this.attention.delete(listener);
   }
 
+  /** Called for every status change of an agent tab, its exit included: the tab, the old and new status, and when. */
+  onStatus(listener: (tab: Tab, from: TabStatus, to: TabStatus, at: number) => void): () => void {
+    this.statusListeners.add(listener);
+    return () => this.statusListeners.delete(listener);
+  }
+
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -804,6 +811,7 @@ export class Sessions {
       // Any change ends a done that was still settling.
       this.clear(this.announce, id);
       this.update(entry, { status: next.status, ...exit });
+      if (entry.tab.agent) for (const l of [...this.statusListeners]) l(entry.tab, before.status, next.status, this.now());
     }
     // Only agents ask for the person; a closing tab's exit is expected.
     const quiet = seen && this.suppressWhenFocused();

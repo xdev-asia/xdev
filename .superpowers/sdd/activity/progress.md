@@ -23,3 +23,7 @@ Tasks B3+B4: complete, one commit. Deviation: the OS blockers live in a new crat
 ## Task U4: complete
 - `workspace/autoTabTitle.ts`: `tabTitleFromPrompt` and `startAutoTabTitle` (modelled on `autoRename.ts`); started in `WorkspaceShell`.
 - Decision: the setting is read fresh when a tab's lookup starts; a tab found with the setting off counts as tried for this run (same as the branch rename), so turning it on affects tabs that start working afterwards.
+
+## Task U5: complete
+- `Sessions.onStatus(listener(tab, from, to, at))`: every status change of an agent tab (exit included), with unsubscribe.
+- `activity/feed.ts`: `ActivityFeed` (newest first, cap 200, `done` back to `idle` dropped, stable snapshot, `subscribe`, `follow(sessions)`, `clear`). The shell creates and follows it in U7.
