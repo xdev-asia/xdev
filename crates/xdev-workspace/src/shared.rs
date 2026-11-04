@@ -156,13 +156,14 @@ fn is_link(meta: &fs::Metadata) -> bool {
         return true;
     }
     #[cfg(windows)]
-    {
+    let reparse = {
         use std::os::windows::fs::MetadataExt;
         const REPARSE_POINT: u32 = 0x400;
-        return meta.file_attributes() & REPARSE_POINT != 0;
-    }
+        meta.file_attributes() & REPARSE_POINT != 0
+    };
     #[cfg(not(windows))]
-    false
+    let reparse = false;
+    reparse
 }
 
 #[cfg(unix)]
