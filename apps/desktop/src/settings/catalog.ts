@@ -27,7 +27,6 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("general.nav.confirmCloseRunning", "settings.general.confirmCloseRunning", ["close", "running", "agent", "process", "confirm", "đóng", "dong", "đang chạy", "dang chay", "xác nhận", "xac nhan"], "settings.general.confirmCloseRunningHint"),
   e("general.nav.askBeforeDeleteWorktree", "settings.general.askBeforeDeleteWorktree", ["delete", "remove", "worktree", "ask", "confirm", "xoá", "xoa", "xóa", "hỏi", "hoi"]),
   e("general.language", "language.label", ["language", "locale", "english", "vietnamese", "ngôn ngữ", "ngon ngu", "tiếng việt", "tieng viet"]),
-  e("general.theme", "settings.general.theme", ["theme", "appearance", "dark", "light", "system", "mode", "giao diện", "giao dien", "tối", "toi", "sáng", "sang", "chế độ", "che do"], "settings.general.themeHint"),
   e("general.zoom", "settings.general.zoom", ["zoom", "scale", "size", "thu phóng", "thu phong", "phóng to", "phong to"]),
   e("general.restore", "layout.setting", ["restore", "layout", "session", "reopen", "khôi phục", "khoi phuc", "bố cục", "bo cuc"], "layout.setting.hint"),
   e("general.openIn", "settings.general.openIn", ["open in", "apps", "ide", "mở bằng", "mo bang", "ứng dụng", "ung dung"]),
@@ -36,6 +35,15 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("general.diff.collapseUnchanged", "settings.general.collapseUnchanged", ["diff", "collapse", "unchanged", "thu gọn", "thu gon"]),
   e("general.diff.wordWrap", "settings.general.wordWrap", ["diff", "wrap", "long lines", "xuống dòng", "xuong dong"]),
   e("general.diff.fileTree", "settings.general.fileTree", ["diff", "file tree", "tree", "cây", "cay", "tệp", "tep"], "settings.general.fileTreeHint"),
+  // Appearance
+  e("appearance.theme", "settings.appearance.theme", ["theme", "appearance", "dark", "light", "system", "mode", "giao diện", "giao dien", "chủ đề", "chu de", "tối", "toi", "sáng", "sang", "chế độ", "che do"], "settings.appearance.themeHint"),
+  e("appearance.font", "settings.appearance.font", ["font", "typeface", "text", "family", "phông", "phong", "chữ", "chu", "kiểu chữ", "kieu chu"], "settings.appearance.fontHint"),
+  e("appearance.sidebar", "settings.appearance.sidebar", ["sidebar", "tint", "tinted", "colour", "color", "thanh bên", "thanh ben", "ánh màu", "anh mau"], "settings.appearance.sidebarHint"),
+  e("appearance.editorTheme", "settings.appearance.editor", ["editor", "diff", "theme", "light", "dark", "colours", "colors", "trình soạn thảo", "trinh soan thao", "màu", "mau"], "settings.appearance.editorHint"),
+  e("appearance.statusBar.branch", "settings.appearance.statusBar.branch", ["status bar", "footer", "branch", "thanh trạng thái", "thanh trang thai", "nhánh", "nhanh"]),
+  e("appearance.statusBar.tokenUsage", "settings.appearance.statusBar.tokenUsage", ["status bar", "footer", "token", "usage", "quota", "thanh trạng thái", "thanh trang thai", "mức dùng", "muc dung"]),
+  e("appearance.statusBar.agents", "settings.appearance.statusBar.agents", ["status bar", "footer", "agent", "agents", "thanh trạng thái", "thanh trang thai"]),
+  e("appearance.statusBar.version", "settings.appearance.statusBar.version", ["status bar", "footer", "version", "thanh trạng thái", "thanh trang thai", "phiên bản", "phien ban"]),
   // Agents
   e("agents.approvals", "settings.agents.approvals", ["permission", "ask", "skip", "yolo", "phê duyệt", "phe duyet", "quyền", "quyen"]),
   e("agents.defaultAgent", "settings.agents.defaultAgent", ["default", "agent", "mặc định", "mac dinh"]),
