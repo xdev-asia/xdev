@@ -61,6 +61,8 @@ import { decideSetup, hasPending, pendingLists, type PendingLists } from "./setu
 import { SetupGate } from "./setupGate";
 import { startCliReport } from "./cliReport";
 import { startCliEvents } from "./cliEvents";
+import { openFailedToast, startOrchestrationEvents } from "./orchestrationEvents";
+import { terminalOf } from "@/terminal/terminalRegistry";
 import { TrustDialog } from "./TrustDialog";
 import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
 import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
@@ -192,6 +194,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // "On quit: Ask": the question shown while the window waits to close.
   const [quitting, setQuitting] = useState<{ ask: QuitAsk; answer(choice: QuitChoice): void } | null>(null);
   const [gate] = useState(() => new SetupGate());
+  // Worktrees whose setup flow already ran (made here, or run for a worker); it runs once each.
+  const setupRan = useRef(new Set<string>());
   // Which remove is current; a Cancel during the archive run bumps it so the late result is dropped.
   const removeRun = useRef(0);
   const [removing, setRemoving] = useState<Removing | null>(null);
@@ -217,7 +221,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [bellOpen, setBellOpen] = useState(false);
   const statusSettings = useStatusSettings();
   // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
-  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {} }));
+  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, ensureMounted: (_w: string) => {}, prepareSetup: async (_w: string) => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {} }));
 
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
@@ -266,7 +270,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     };
   }, [api]);
 
-  async function load(): Promise<void> {
+  async function load(): Promise<RepoView[] | null> {
     try {
       const tree = await api.workspaceSidebar();
       const list = flattenRepos(tree);
@@ -281,9 +285,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         // The registry is complete here, so a saved layout of a worktree it does not list is gone for good.
         for (const path of sessions?.carriedWorktrees() ?? []) if (!kept.has(path)) sessions?.dropCarried(path);
       }
+      return list;
     } catch (e) {
       setNotice(toApiError(e).code);
       setRepos((r) => r ?? []);
+      return null;
     }
   }
 
@@ -602,6 +608,20 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => onOpenFile((req) => live.openFileTab(req)), [live]);
   live.selected = current?.path ?? null;
   live.reload = () => void load();
+  // A worktree the backend made (a worker's `--worktree new-*`) has had no setup: run the same flow the UI runs
+  // after a create, so `inherit` holds the agent until it ends. Not for one set up already or with setup under way.
+  live.prepareSetup = async (path) => {
+    if (setupRan.current.has(path) || gate.setupTab(path) !== null) return;
+    setupRan.current.add(path);
+    const find = (list: RepoView[] | null) => list?.find((r) => r.worktrees.some((w) => w.path === path));
+    const repo = find(live.repos) ?? find(await load());
+    if (repo) await setupAfterCreate(path, repo.id);
+  };
+  // A worktree a worker opens in must be listed and shown (hidden) so its tabs mount and start a pty.
+  live.ensureMounted = (w) => {
+    setVisited((v) => (v.includes(w) ? v : [...v, w]));
+    if (!live.repos?.some((r) => r.worktrees.some((x) => x.path === w))) live.reload();
+  };
   // `xdev worktree create --agent/--prompt`: the profile opens unfocused and gets the prompt once setup lets agents start.
   live.cliOpen = (worktree, profile, prompt) => void openDefaultAgent(worktree, profile || undefined, prompt ?? undefined);
   // The app CLI: the tabs as `xdev terminal` sees them, and what its endpoint asks of the window.
@@ -610,12 +630,23 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     const reporter = startCliReport(api, sessions, () => live.selected);
     live.cliPoke = reporter.poke;
     const stopEvents = startCliEvents(api, { reload: () => live.reload(), openTab: (w, p, prompt) => live.cliOpen(w, p, prompt), t: (key, vars) => live.t(key, vars) });
+    // Worker tabs the backend asks for, closes and reads (orchestration).
+    const stopOrchestration = startOrchestrationEvents(api, {
+      sessions,
+      gate,
+      send: (worktree, id, text, timeoutMs) => sendToOpenedTab(sessions, worktree, id, text, { timeoutMs }),
+      terminal: terminalOf,
+      ensureMounted: (w) => live.ensureMounted(w),
+      prepareSetup: (w) => live.prepareSetup(w),
+      failed: (open, stage) => void openFailedToast(open, stage, (key, vars) => live.t(key, vars)),
+    });
     return () => {
       reporter.stop();
       stopEvents();
+      stopOrchestration();
       live.cliPoke = () => {};
     };
-  }, [api, sessions]);
+  }, [api, sessions, gate]);
   const selectedPath = current?.path ?? null;
   useEffect(() => live.cliPoke(), [selectedPath]);
   useEffect(() => onOpenFile((req) => recentFiles.touch(req.worktree, req.rel)), []);
@@ -1045,6 +1076,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     const extra = args.extra;
     if (extra) await applyCreateExtra(wt.path, extra);
     await load();
+    setupRan.current.add(wt.path);
     await setupAfterCreate(wt.path, args.repoId);
     // Dialog: the agent it picked, or none. No dialog: the default agent.
     await openDefaultAgent(wt.path, extra ? extra.agent : undefined, extra?.prompt);
