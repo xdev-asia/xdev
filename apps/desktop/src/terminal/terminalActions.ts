@@ -1,4 +1,5 @@
 import { copyText } from "@/ui/clipboard";
+import { pasteClipboard, type PasteResult } from "./clipboardPaste";
 import type { PtyClient } from "./ptyClient";
 import type { TerminalHandle } from "./Terminal";
 
@@ -24,6 +25,10 @@ export interface HandleDeps {
   term(): XTermLike | null;
   client(): PtyClient | null;
   find(): void;
+  /** The clipboard image as a saved PNG path; absent: images are not pasted. */
+  saveImage?(): Promise<string | null>;
+  /** How a paste ended, for the toast. */
+  pasted?(result: PasteResult): void;
 }
 
 /** A handle that reads its xterm on every call, so it stays valid across remounts. */
@@ -37,9 +42,18 @@ export function createTerminalHandle(deps: HandleDeps): TerminalHandle {
     },
     async paste() {
       if (!deps.term()) return;
-      const text = await navigator.clipboard?.readText().catch(() => "");
-      // Read again: the view may have gone while the clipboard answered.
-      if (text) deps.term()?.paste(text);
+      const result = await pasteClipboard({
+        readText: async () => (await navigator.clipboard?.readText()) ?? "",
+        saveImage: async () => (await deps.saveImage?.()) ?? null,
+        // Read again: the view may have gone while the clipboard answered.
+        pasteText: (text) => deps.term()?.paste(text),
+        writeRaw: async (data) => {
+          const client = deps.client();
+          if (!client) throw new Error("no pty");
+          await client.input(data);
+        },
+      });
+      deps.pasted?.(result);
     },
     selectAll: () => deps.term()?.selectAll(),
     clear: () => deps.term()?.clear(),

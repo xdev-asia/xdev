@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createMockApi } from "@/api";
+import { setMockClipboardImage } from "@/mockApi";
+import { getToasts, resetToastsForTests } from "@/workspace/toastStore";
 import { translate } from "@/i18n";
 import { resetBindingsForTests, setKeySettings } from "@/keys/bindingsStore";
 import { PtyClient } from "./ptyClient";
@@ -372,6 +374,42 @@ it("a right click pastes when on and does nothing when off", async () => {
   await tick();
   expect(event.preventDefault).toHaveBeenCalledTimes(1);
   expect(readText).toHaveBeenCalledTimes(1);
+});
+
+it("a right click with an image on the clipboard writes its saved path as a bracketed paste", async () => {
+  const readText = vi.fn(async () => "");
+  vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn(), readText } });
+  setMockClipboardImage("/tmp/xdev-paste.png");
+  const api = createMockApi({});
+  const input = vi.spyOn(api, "ptyWrite");
+  const { effect } = mount({ api, id: "img-1" });
+  effect();
+  await tick();
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, rightClickPaste: true });
+  hooks.listeners.contextmenu({ preventDefault: vi.fn() });
+  await tick();
+  expect(input).toHaveBeenCalledWith("img-1", new TextEncoder().encode("[200~/tmp/xdev-paste.png[201~"));
+  setMockClipboardImage(null);
+});
+
+it("an image too large, or one that cannot be saved, says so in a toast", async () => {
+  resetToastsForTests();
+  const readText = vi.fn(async () => "");
+  vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn(), readText } });
+  const { effect } = mount({ api: createMockApi({}), id: "img-2" });
+  effect();
+  await tick();
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, rightClickPaste: true });
+  setMockClipboardImage({ code: "too_large" });
+  hooks.listeners.contextmenu({ preventDefault: vi.fn() });
+  await tick();
+  expect(getToasts().map((x) => x.text)).toEqual([translate("en", "terminal.input.imageTooLarge")]);
+  setMockClipboardImage(new Error("io"));
+  hooks.listeners.contextmenu({ preventDefault: vi.fn() });
+  await tick();
+  expect(getToasts().map((x) => x.text)).toContain(translate("en", "terminal.input.imageSaveFailed"));
+  setMockClipboardImage(null);
+  resetToastsForTests();
 });
 
 it("R1: Shift+right-click opens the menu when paste is on; a right click opens it when paste is off", async () => {
