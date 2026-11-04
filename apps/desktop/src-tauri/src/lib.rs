@@ -85,13 +85,14 @@ pub fn run() {
             if let Some((data, local)) = &index_dirs {
                 xdev_core::move_indexes(data, local);
             }
-            xdev_id::start(app.handle());
             updater::start(app.handle().clone());
             workspace::start_sweep(app.handle());
             // Every settings read and write goes through this store.
             if let Some(file) = commands::settings_path(app.handle()) {
                 app.manage(settings_store::SettingsStore::new(file));
             }
+            // After the settings store: the server setting is read first.
+            xdev_id::start(app.handle());
             workspace::start_migrations(app.handle());
             // Off the main thread: starting the service may take a moment.
             {
@@ -376,6 +377,8 @@ pub fn run() {
             xdev_id::xdev_id_refresh,
             xdev_id::xdev_id_reopen,
             xdev_id::xdev_id_manage,
+            xdev_id::xdev_id_server,
+            xdev_id::xdev_id_server_set,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")

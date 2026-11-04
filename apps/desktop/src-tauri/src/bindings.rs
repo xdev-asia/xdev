@@ -23,7 +23,7 @@ use crate::review_notes::ReviewNote;
 use crate::settings::{
     AgentsSettings, DiffSettings, EditorSettings, GitSettings, KeySettings, NavigationSettings,
     OpenInSettings, RestoreMode, SettingsChanged, SidebarPrefs, StatusSettings, TerminalSettings,
-    Theme, UiSettings, UsageSettings,
+    Theme, UiSettings, UsageSettings, XdevIdSettings,
 };
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
@@ -36,6 +36,8 @@ use ::xdev_id::XdevIdState;
 fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     CmdError::export_all(cfg)?;
     XdevIdState::export_all(cfg)?;
+    ::xdev_id::XdevIdServer::export_all(cfg)?;
+    ::xdev_id::ServerSource::export_all(cfg)?;
     Changed::export_all(cfg)?;
     VaultSetup::export_all(cfg)?;
     VcsState::export_all(cfg)?;
@@ -86,6 +88,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     DiffSettings::export_all(cfg)?;
     AgentsSettings::export_all(cfg)?;
     UsageSettings::export_all(cfg)?;
+    XdevIdSettings::export_all(cfg)?;
     KeybindingsText::export_all(cfg)?;
     KeybindingsChanged::export_all(cfg)?;
     PtyHook::export_all(cfg)?;

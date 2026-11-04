@@ -17,6 +17,7 @@ use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::commands::CmdError;
+use crate::settings::SettingsSection;
 
 pub const CHANGED_EVENT: &str = "xdev-id://changed";
 
@@ -321,6 +322,28 @@ fn random_bytes() -> Result<([u8; 32], [u8; 32]), CmdError> {
     ::xdev_id::random_pair().map_err(|_| fail(E_UNAVAILABLE))
 }
 
+/// Which server the account uses and where that came from.
+#[tauri::command(async)]
+pub fn xdev_id_server(hub: State<'_, XdevIdHub>) -> XdevIdServer {
+    hub.server()
+}
+
+/// Saves `xdevId.server` (empty: the default) and switches to it. A different server
+/// signs the person out at the old one first.
+#[tauri::command(async)]
+pub fn xdev_id_server_set(
+    app: AppHandle,
+    hub: State<'_, XdevIdHub>,
+    value: String,
+) -> Result<XdevIdServer, CmdError> {
+    let value = XdevIdHub::checked_setting(&value)?;
+    let saved = value.clone();
+    crate::settings_store::write(&app, &[SettingsSection::XdevId], move |s| {
+        s.xdev_id.server = saved;
+    })?;
+    hub.configure_server(Some(&value), &emitter(&app))
+}
+
 #[tauri::command(async)]
 pub fn xdev_id_state(hub: State<'_, XdevIdHub>) -> XdevIdState {
     hub.state()
@@ -445,6 +468,9 @@ pub fn start(app: &AppHandle) {
     std::thread::spawn(move || {
         let hub = app.state::<XdevIdHub>();
         let notify = emitter(&app);
+        // The server first, so a token saved for another origin is never sent anywhere.
+        let setting = crate::settings_store::read(&app).xdev_id.server;
+        let _ = hub.configure_server(Some(&setting), &notify);
         if hub.load(&notify).is_err() {
             eprintln!("xdev id: the system keychain is not available");
         }
