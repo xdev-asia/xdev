@@ -1288,6 +1288,15 @@ it("a second account switch while the dialog is open waits its turn", async () =
   expect(view.of(AccountSwitchDialog)).toHaveLength(0);
 });
 
+it("a failed Use in the usage popover says so in a toast", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "accountActivate").mockRejectedValueOnce({ code: "not_found" });
+  const view = await harness(api);
+  view.of(LiveWorkspaceFooter)[0].props.onUseAccount("claude", "claude-3");
+  await tick();
+  expect(getToasts().some((x) => x.text === en("accounts.switch.failed", { code: "not_found" }))).toBe(true);
+});
+
 // Ctrl+Shift+Backspace, selection and branch review.
 const DEL_KEY = { key: "Backspace", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, target: null, preventDefault() {} };
 

@@ -226,6 +226,7 @@
   "accounts.switch.cliDefault": "Use CLI default",
   "accounts.switch.cliDefaultAria": "Stop using {name} as the active account; use the CLI default",
   "accounts.switch.cliDefaultName": "the CLI default",
+  "accounts.switch.failed": "Could not switch the account ({code}).",
   "accounts.switch.carryFailed": "Could not carry the conversation of {tab} to the new account. It restarted with a new conversation.",
   "accounts.switch.dialog.title": "Restart agents under the new account?",
   "accounts.switch.dialog.body": "The active {provider} account changed from {from} to {to}. These tabs still run under the old one.",
