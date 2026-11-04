@@ -194,22 +194,62 @@ it("reads again when the changes panel stages or discards, and stops once it unm
   expect(read).toHaveBeenCalledTimes(2);
 });
 
-it("saves the view options and restores them", async () => {
-  const saved = new Map<string, string>();
-  vi.stubGlobal("localStorage", { getItem: (k: string) => saved.get(k) ?? null, setItem: (k: string, x: string) => void saved.set(k, x) });
+function memoryStorage(initial: Record<string, string> = {}) {
+  const saved = new Map(Object.entries(initial));
+  vi.stubGlobal("localStorage", {
+    getItem: (k: string) => saved.get(k) ?? null,
+    setItem: (k: string, x: string) => void saved.set(k, x),
+    removeItem: (k: string) => void saved.delete(k),
+  });
+  return saved;
+}
+const saveButton = (v: ReturnType<typeof review>) => v.all().find((n) => n.props["data-act"] === "save-default")!;
+
+it("starts from the diff settings; a change stays in this view until Save as default", async () => {
+  const saved = memoryStorage();
   const api = createMockApi({});
+  await api.diffSettingsPut({ defaultView: "split", ignoreWhitespace: true, collapseUnchanged: false, wordWrap: true, fileTree: true });
   const v = review(api);
   await tick();
-  expect(v.diff("src/session.ts").props.opts).toMatchObject({ layout: "inline", ignoreWhitespace: false });
-  const whitespace = v.all().find((n) => n.type === "input" && n.props.type === "checkbox" && !n.props.checked)!;
-  whitespace.props.onChange();
-  v.all().find((n) => n.type === "button" && n.props["aria-pressed"] === false)!.props.onClick();
-  expect(JSON.parse(saved.get(VIEW_KEY)!)).toMatchObject({ layout: "split", ignoreWhitespace: true });
-  expect(v.diff("src/session.ts").props.opts).toMatchObject({ layout: "split", ignoreWhitespace: true });
+  expect(v.diff("src/session.ts").props.opts).toMatchObject({ layout: "split", ignoreWhitespace: true, collapse: false, wrap: true });
+  expect(saveButton(v).props.disabled).toBe(true);
 
+  // A toggle changes this view only: no settings write, nothing in localStorage.
+  const put = vi.spyOn(api, "diffSettingsPut");
+  v.all().find((n) => n.type === "button" && n.props["aria-pressed"] === false)!.props.onClick();
+  expect(v.diff("src/session.ts").props.opts).toMatchObject({ layout: "inline" });
+  expect(put).not.toHaveBeenCalled();
+  expect([...saved.keys()]).toEqual([]);
+  // A view opened now still starts from the settings.
+  const other = review(api);
+  await tick();
+  expect(other.diff("src/session.ts").props.opts).toMatchObject({ layout: "split" });
+
+  expect(saveButton(v).props.disabled).toBe(false);
+  saveButton(v).props.onClick();
+  await tick();
+  expect(put).toHaveBeenCalledWith({ defaultView: "inline", ignoreWhitespace: true, collapseUnchanged: false, wordWrap: true, fileTree: true });
+  expect(await api.diffSettings()).toMatchObject({ defaultView: "inline" });
+  expect(saveButton(v).props.disabled).toBe(true);
   const again = review(api);
   await tick();
-  expect(again.diff("src/session.ts").props.opts).toMatchObject({ layout: "split", ignoreWhitespace: true });
+  expect(again.diff("src/session.ts").props.opts).toMatchObject({ layout: "inline", ignoreWhitespace: true });
+});
+
+it("moves the options an older version kept in localStorage into the settings, once", async () => {
+  const saved = memoryStorage({ [VIEW_KEY]: JSON.stringify({ layout: "split", ignoreWhitespace: true, collapse: true, lineNumbers: false, wrap: true, listWidth: 300 }) });
+  const api = createMockApi({});
+  const put = vi.spyOn(api, "diffSettingsPut");
+  const v = review(api);
+  await tick();
+  expect(put).toHaveBeenCalledOnce();
+  expect(await api.diffSettings()).toEqual({ defaultView: "split", ignoreWhitespace: true, collapseUnchanged: true, wordWrap: true, fileTree: false });
+  expect(saved.has(VIEW_KEY)).toBe(false);
+  expect(v.diff("src/session.ts").props.opts).toMatchObject({ layout: "split", lineNumbers: false, listWidth: 300 });
+  const next = review(api);
+  await tick();
+  expect(put).toHaveBeenCalledOnce();
+  expect(next.diff("src/session.ts").props.opts).toMatchObject({ layout: "split", wrap: true });
 });
 
 it("the file list resizes by keyboard within its limits", async () => {

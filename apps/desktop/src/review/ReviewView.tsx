@@ -14,7 +14,9 @@ import { sortNotes } from "./notes";
 import { noteLabel } from "./NoteCard";
 import { SendNotesMenu } from "./SendNotesMenu";
 import { useReviewNotes } from "./useReviewNotes";
-import { clampListWidth, readViewOptions, writeViewOptions, type ViewOptions } from "./viewOptions";
+import type { DiffSettings } from "@/api";
+import { DIFF_DEFAULTS } from "@/settings/generalDefaults";
+import { clampListWidth, fromDiffSettings, migrateViewOptions, readLocalView, toDiffSettings, writeLocalView, type ViewOptions } from "./viewOptions";
 
 // Past this many files the sections start closed, so opening the tab does not read them all.
 export const OPEN_LIMIT = 30;
@@ -32,7 +34,9 @@ const LETTER: Record<ReviewFile["kind"], string> = { added: "A", modified: "M", 
 export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessions | null; reveal?: { file: string; seq: number } }): JSX.Element {
   const { api, worktree, sessions, reveal } = props;
   const { t } = useI18n();
-  const [opts, setOpts] = useState<ViewOptions>(() => readViewOptions(storage()));
+  // Starts from the diff settings; what is changed here stays in this view until "Save as default".
+  const [opts, setOpts] = useState<ViewOptions>(() => fromDiffSettings(DIFF_DEFAULTS, readLocalView(storage())));
+  const [saved, setSaved] = useState<DiffSettings>(DIFF_DEFAULTS);
   const [data, setData] = useState<ReviewData | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -103,6 +107,25 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
     }
   }
 
+  // The diff settings are where a view starts; a copy an older version kept in localStorage moves over once.
+  useEffect(() => {
+    let live = true;
+    api
+      .diffSettings()
+      .then((stored) => migrateViewOptions(storage(), stored, (next) => api.diffSettingsPut(next)))
+      .then((now) => {
+        if (!live) return;
+        setSaved(now);
+        setOpts(fromDiffSettings(now, readLocalView(storage())));
+      })
+      .catch(() => {
+        // The built-in defaults stay.
+      });
+    return () => {
+      live = false;
+    };
+  }, [api]);
+
   useEffect(() => {
     void load();
     const again = () => {
@@ -138,7 +161,16 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
   function setOption(patch: Partial<ViewOptions>): void {
     const next = { ...opts, ...patch };
     setOpts(next);
-    writeViewOptions(storage(), next);
+    if ("lineNumbers" in patch || "listWidth" in patch) writeLocalView(storage(), next);
+  }
+
+  const unsaved = JSON.stringify(toDiffSettings(opts, saved)) !== JSON.stringify(saved);
+  async function saveDefault(): Promise<void> {
+    try {
+      setSaved(await api.diffSettingsPut(toDiffSettings(opts, saved)));
+    } catch (e) {
+      setProblem(toApiError(e));
+    }
   }
 
   function toggle(path: string): void {
@@ -215,6 +247,9 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
         {flag("collapse", "review.opt.collapse")}
         {flag("lineNumbers", "review.opt.lineNumbers")}
         {flag("wrap", "review.opt.wrap")}
+        <button type="button" className="rv-base-button" data-act="save-default" disabled={!unsaved} onClick={() => void saveDefault()}>
+          {t("review.opt.saveDefault")}
+        </button>
         <div className="rv-notes">
           <button type="button" className="rv-base-button" aria-haspopup="dialog" aria-expanded={listing} onClick={() => setListing(!listing)}>
             {t("review.notes", { count: store.notes.length })}

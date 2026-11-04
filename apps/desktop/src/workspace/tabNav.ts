@@ -12,3 +12,14 @@ export function nthTab(ids: readonly string[], n: number): string | null {
   if (n === 9) return ids[ids.length - 1];
   return ids[n - 1] ?? null;
 }
+
+/**
+ * `ids` in the order Ctrl+Tab walks them most recent first: the ones in `recent` (newest first), then the rest
+ * in strip order. A tab in `recent` that is no longer in `ids` is dropped.
+ */
+export function mruOrder(ids: readonly string[], recent: readonly string[]): string[] {
+  const here = new Set(ids);
+  const seen = new Set<string>();
+  const first = recent.filter((id) => here.has(id) && !seen.has(id) && !!seen.add(id));
+  return [...first, ...ids.filter((id) => !seen.has(id))];
+}

@@ -1,6 +1,7 @@
-import type { Api, EditorSettings, KeySettings, SettingsChanged, SettingsSection, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
+import type { Api, DiffSettings, EditorSettings, KeySettings, NavigationSettings, SettingsChanged, SettingsSection, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
 import { clampEditorSettings, EDITOR_DEFAULTS } from "./files/editorDefaults";
 import { KEY_SETTINGS_DEFAULTS } from "./keys/bindingsStore";
+import { DIFF_DEFAULTS, NAVIGATION_DEFAULTS } from "./settings/generalDefaults";
 import { clampTerminalSettings, TERMINAL_DEFAULTS } from "./settings/terminalDefaults";
 
 /** Called by a mock's settings write, the way Rust emits `settings://changed`. */
@@ -19,6 +20,10 @@ type SettingsApi = Pick<
   | "editorSettingsPut"
   | "sidebarPrefsGet"
   | "sidebarPrefsPut"
+  | "navigationSettings"
+  | "navigationSettingsPut"
+  | "diffSettings"
+  | "diffSettingsPut"
 >;
 
 /** `SidebarPrefs::default()` in Rust: every row shows. */
@@ -28,6 +33,8 @@ export { KEY_SETTINGS_DEFAULTS };
 /** `UiSettings::default()` in Rust, and the range `ui_settings_put` clamps the zoom to. */
 export const UI_SETTINGS_DEFAULTS: UiSettings = { zoom: 1, restore: "all" };
 export const ZOOM_LIMITS = { min: 0.5, max: 2 } as const;
+
+export { DIFF_DEFAULTS, NAVIGATION_DEFAULTS };
 
 export type SettingsHub = { emit: SettingsEmit; onSettingsChanged: Api["onSettingsChanged"] };
 
@@ -52,6 +59,8 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
   let ui: UiSettings = { ...UI_SETTINGS_DEFAULTS };
   let editor: EditorSettings = { ...EDITOR_DEFAULTS };
   let sidebar: SidebarPrefs = { ...SIDEBAR_PREFS_DEFAULTS };
+  let navigation: NavigationSettings = { ...NAVIGATION_DEFAULTS };
+  let diff: DiffSettings = { ...DIFF_DEFAULTS };
   return {
     onSettingsChanged: hub.onSettingsChanged,
     async terminalSettings() {
@@ -94,6 +103,22 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
       sidebar = { ...SIDEBAR_PREFS_DEFAULTS, ...next };
       hub.emit(["sidebar"]);
       return { ...sidebar };
+    },
+    async navigationSettings() {
+      return { ...navigation };
+    },
+    async navigationSettingsPut(next) {
+      navigation = { ...next };
+      hub.emit(["navigation"]);
+      return { ...navigation };
+    },
+    async diffSettings() {
+      return { ...diff };
+    },
+    async diffSettingsPut(next) {
+      diff = { ...next };
+      hub.emit(["diff"]);
+      return { ...diff };
     },
   };
 }

@@ -5,6 +5,8 @@ import { createMockApi, toApiError, type Api, type Profile, type ProfilesView, t
 import { fileTabs } from "@/files/fileTabs";
 import { UnsavedDialog } from "@/files/UnsavedDialog";
 import { translate } from "@/i18n";
+import { resetNavigationSettingsForTests, setNavigationSettings } from "@/settings/navigationSettings";
+import { NAVIGATION_DEFAULTS } from "@/settings/generalDefaults";
 import { useKeymap } from "@/keys/keymap";
 import { Terminal, type TerminalHandle } from "@/terminal/Terminal";
 import { ContextMenu } from "@/ui/ContextMenu";
@@ -105,8 +107,8 @@ async function run(term: Node) {
 }
 
 let sessions: Sessions | null = null;
-beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; store.view = null; });
-afterEach(() => { sessions?.dispose(); sessions = null; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; store.view = null; resetNavigationSettingsForTests(); });
+afterEach(() => { sessions?.dispose(); sessions = null; vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 it("plus menu starts claude in the worktree after approval", async () => {
   const api = createMockApi({});
@@ -1001,6 +1003,7 @@ it("ctrl_w_on_an_agent_asks_first", () => {
   const api = createMockApi({});
   const live = (sessions = new Sessions(api));
   const agent = live.open(A, "claude");
+  live.noteTitleStatus(agent.id, "working");
   const view = harness(api, live);
   const ask = () => view.find((n) => n.type === CloseTabsDialog);
   expect(ask()).toBeUndefined();
@@ -1042,6 +1045,145 @@ it("ctrl_tab_cycles_and_alt_n_picks_a_tab", () => {
   const e = press(view, { key: "4", code: "Digit4", altKey: true });
   expect(e.preventDefault).not.toHaveBeenCalled();
   expect(selected(view)).toEqual([c]);
+});
+
+it("ctrl_tab_in_mru_mode_goes_to_the_tab_used_before_and_keeps_walking_one_list", () => {
+  vi.useFakeTimers();
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const [a, b, c] = ["shell", "shell", "shell"].map((p) => live.open(A, p as "shell").id);
+  // Focus order: c now, b before it, a before that.
+  for (const id of [a, b, c]) live.noteFocused(A, id);
+  const view = harness(api, live);
+  expect(selected(view)).toEqual([c]);
+  press(view, CTRL_TAB);
+  expect(selected(view)).toEqual([b]);
+  // Held: the list is the one the walk started with, although the focus moved.
+  press(view, CTRL_TAB);
+  expect(selected(view)).toEqual([a]);
+  press(view, { ...CTRL_TAB, shiftKey: true });
+  expect(selected(view)).toEqual([b]);
+  // The walk passed through a without recording it; once the focus settles only b is the newest.
+  expect(live.recentTabs(A)).toEqual([c, b, a]);
+  view.draw();
+  vi.advanceTimersByTime(600);
+  expect(live.recentTabs(A)[0]).toBe(b);
+  // A new walk starts from the new order: b, c, a.
+  press(view, CTRL_TAB);
+  expect(selected(view)).toEqual([c]);
+});
+
+it("ctrl_tab_in_strip_mode_follows_the_strip_order", () => {
+  vi.useFakeTimers();
+  setNavigationSettings({ ...NAVIGATION_DEFAULTS, tabOrder: "sequential" });
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const [a, b, c] = ["shell", "shell", "shell"].map((p) => live.open(A, p as "shell").id);
+  for (const id of [a, b, c]) live.noteFocused(A, id);
+  const view = harness(api, live);
+  expect(selected(view)).toEqual([c]);
+  // MRU would go to b; the strip wraps to a.
+  press(view, CTRL_TAB);
+  expect(selected(view)).toEqual([a]);
+  press(view, CTRL_TAB);
+  expect(selected(view)).toEqual([b]);
+});
+
+// ---- Close confirmations (Settings → General → Navigation) ----
+
+const strip = (view: ReturnType<typeof harness>) => view.find((n) => n.type === TabStrip)!.props;
+const asking = (view: ReturnType<typeof harness>) => view.find((n) => n.type === CloseTabsDialog);
+const working = (live: Sessions, profile: "claude" | "shell" = "claude") => {
+  const tab = live.open(A, profile);
+  live.noteTitleStatus(tab.id, "working");
+  return tab;
+};
+
+it("the close button of an agent at work asks first; Cancel keeps it, confirm closes it", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const agent = working(live);
+  const view = harness(api, live);
+  strip(view).onClose(agent.id);
+  expect(asking(view)!.props.reason).toBe("running");
+  expect(live.tabs(A)).toHaveLength(1);
+  asking(view)!.props.onCancel();
+  expect(asking(view)).toBeUndefined();
+  expect(live.tabs(A)).toHaveLength(1);
+  strip(view).onClose(agent.id);
+  asking(view)!.props.onConfirm();
+  expect(live.tabs(A)).toEqual([]);
+});
+
+it("an idle agent and a shell close at once", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const agent = live.open(A, "claude");
+  const shell = live.open(A, "shell");
+  const view = harness(api, live);
+  strip(view).onClose(agent.id);
+  strip(view).onClose(shell.id);
+  expect(asking(view)).toBeUndefined();
+  expect(live.tabs(A)).toEqual([]);
+});
+
+it("confirmCloseRunning off closes an agent at work at once", () => {
+  setNavigationSettings({ ...NAVIGATION_DEFAULTS, confirmCloseRunning: false });
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const agent = working(live);
+  const view = harness(api, live);
+  strip(view).onClose(agent.id);
+  expect(asking(view)).toBeUndefined();
+  expect(live.tabs(A)).toEqual([]);
+});
+
+it("a pinned tab asks before it closes, from the key and from the menu, unless the setting is off", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const shell = live.open(A, "shell");
+  live.setPinned(shell.id, true);
+  const view = harness(api, live);
+  press(view, CTRL_W);
+  expect(asking(view)!.props.reason).toBe("pinned");
+  asking(view)!.props.onCancel();
+  expect(live.tabs(A)).toHaveLength(1);
+  strip(view).onClose(shell.id);
+  expect(asking(view)!.props.reason).toBe("pinned");
+  asking(view)!.props.onConfirm();
+  expect(live.tabs(A)).toEqual([]);
+
+  setNavigationSettings({ ...NAVIGATION_DEFAULTS, confirmClosePinned: false });
+  const again = live.open(A, "shell");
+  live.setPinned(again.id, true);
+  strip(view).onClose(again.id);
+  expect(asking(view)).toBeUndefined();
+  expect(live.tabs(A)).toEqual([]);
+});
+
+it("Close Others and Close to the Right ask once when a running tab is in the set, and skip pinned tabs", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const pinned = live.open(A, "shell");
+  live.setPinned(pinned.id, true);
+  const keep = live.open(A, "shell");
+  const busy = working(live);
+  const busy2 = working(live);
+  const view = harness(api, live);
+  strip(view).onCloseOthers(keep.id);
+  expect(asking(view)!.props.reason).toBe("running");
+  expect(live.tabs(A)).toHaveLength(4);
+  asking(view)!.props.onCancel();
+  expect(live.tabs(A)).toHaveLength(4);
+  strip(view).onCloseOthers(keep.id);
+  asking(view)!.props.onConfirm();
+  // One question for both agents; the pinned tab stays.
+  expect(live.tabs(A).map((t) => t.id)).toEqual([pinned.id, keep.id]);
+  expect([busy.id, busy2.id]).not.toContain(live.tabs(A)[0].id);
+  // Nothing but a pinned tab to the right: nothing to ask, nothing to close.
+  strip(view).onCloseToRight(keep.id);
+  expect(asking(view)).toBeUndefined();
+  expect(live.tabs(A)).toHaveLength(2);
 });
 
 const CTRL_SHIFT_D = { key: "D", code: "KeyD", ctrlKey: true, shiftKey: true };
@@ -1192,8 +1334,9 @@ it("pane_close_closes_every_tab_of_the_focused_pane_after_asking_for_an_agent", 
   const live = (sessions = new Sessions(api));
   const { one, two, three } = threePanes(live);
   const four = live.open(A, "shell");
+  live.noteTitleStatus(three.id, "working");
   const view = harness(api, live);
-  // The focused pane holds codex (an agent) and a shell: ask first.
+  // The focused pane holds codex (an agent at work) and a shell: ask first.
   expect(focusedLeaf(live).tabs).toEqual([three.id, four.id]);
   const ask = () => view.find((n) => n.type === CloseTabsDialog);
   expect(handlers(view)["pane.close"]!()).not.toBe(false);

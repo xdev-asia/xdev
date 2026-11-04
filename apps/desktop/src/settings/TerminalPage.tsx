@@ -3,7 +3,6 @@ import type { JSX } from "react";
 import { toApiError, type ApiError, type CursorStyle, type FontWeight, type TerminalSettings } from "@/api";
 import { useI18n } from "@/i18n";
 import { setTerminalSettings, TERMINAL_DEFAULTS, TERMINAL_LIMITS } from "@/terminal/terminalSettings";
-import { RestoreSetting } from "./RestoreSetting";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
@@ -259,10 +258,6 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
         ))}
       </ul>
       </SettingGroup>
-
-      <SettingRow id="terminal.restore" filter={filter}>
-        <RestoreSetting api={api} />
-      </SettingRow>
 
       <SettingRow id="terminal.reset" filter={filter}>
       <div className="settings-actions settings-actions-start">

@@ -24,6 +24,7 @@ import { currentCloseWindow, openRestoredFile, restoreLayout, startLayoutSave, u
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
+import { useNavigationSettings } from "@/settings/navigationSettings";
 import { SettingsView } from "@/settings/SettingsView";
 import { playStatusSound } from "@/status/sound";
 import { usePresence } from "@/status/presence";
@@ -97,12 +98,16 @@ type SetupCardAt = { kind: "detected"; command: string; repoId: string } | { kin
 type TrustAsk = { path: string; repoId: string; kind: HookKind; text: string; hash: string; changed: boolean; busy: boolean; error?: ApiError["code"] };
 type BulkState = { mode: "delete" | "archive"; worktrees: WorktreeView[]; dirty: Record<string, boolean>; busy: boolean; result?: BulkResult };
 type Review = { repoId: string | null; busy: boolean; error?: ApiError["code"] };
-type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"]; archiving?: boolean; failed?: { code: number | null; output: string } };
+type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"]; archiving?: boolean; failed?: { code: number | null; output: string };
+  /** Removed without asking (Settings → General): the dialog stays hidden until something needs an answer. */
+  quiet?: boolean;
+};
 
 /** The app frame: repos and worktrees on the left, the selected worktree in the middle. */
 export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
+  const { askBeforeDeleteWorktree } = useNavigationSettings();
   const [repos, setRepos] = useState<RepoView[] | null>(null);
   const [items, setItems] = useState<SidebarItem[] | null>(null);
   const [prefs, setPrefs] = useState<SidebarPrefs>({ hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false });
@@ -781,7 +786,19 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     const chosen = [...picked.paths];
     if (chosen.length >= 2) return void openBulk("delete");
     const wt = chosen.length === 1 ? all.find((w) => w.path === chosen[0]) : current;
-    if (wt && !wt.primary) setRemoving({ worktree: wt, dirty: false, busy: false });
+    if (wt && !wt.primary) startRemove(wt);
+  }
+
+  // Delete of one worktree (row menu or the delete shortcut). With Settings → General → "Ask before
+  // deleting a worktree" off it runs at once with the dialog's defaults (keep the branch, no force,
+  // nested worktrees kept); the dialog still shows when the worktree is dirty, the archive script
+  // fails or needs trust, or the removal errors. Bulk delete keeps its own dialog.
+  function startRemove(wt: WorktreeView): void {
+    const next: Removing = { worktree: wt, dirty: false, busy: false };
+    if (askBeforeDeleteWorktree) return setRemoving(next);
+    const quiet: Removing = { ...next, quiet: true };
+    setRemoving(quiet);
+    void remove(false, false, quiet);
   }
 
   const reviewKept = review ? Object.entries(keptByRepo(items ?? [])).flatMap(([id, list]) => (review.repoId === null || review.repoId === id ? list : [])) : [];
@@ -1023,18 +1040,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // second, forced confirm.
   // The archive script runs first (up to 120 s, Cancel stays usable); a failure asks, an untrusted
   // shared script opens the trust prompt, and no script goes straight on.
-  async function remove(skipArchive = false, nested = false): Promise<void> {
-    if (!removing || removing.busy) return;
-    const { worktree, dirty } = removing;
+  async function remove(skipArchive = false, nested = false, target: Removing | null = removing): Promise<void> {
+    if (!target || target.busy) return;
+    const { worktree, dirty, quiet } = target;
     const run = ++removeRun.current;
     try {
       if (!skipArchive) {
-        setRemoving({ worktree, dirty, busy: true, archiving: true });
+        setRemoving({ worktree, dirty, busy: true, archiving: true, quiet });
         const ran = await api.worktreeArchiveRun(worktree.path);
         if (run !== removeRun.current) return;
         if (ran.ran && ran.code !== 0) return setRemoving({ worktree, dirty, busy: false, failed: { code: ran.code, output: ran.output } });
       }
-      setRemoving({ worktree, dirty, busy: true });
+      setRemoving({ worktree, dirty, busy: true, quiet });
       await sessions?.closeWorktree(worktree.path);
       sessions?.dropCarried(worktree.path);
       if (nested) {
@@ -1318,7 +1335,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onRetryCreate={(id) => pending.retry(id)}
             onDismissCreate={(id) => pending.dismiss(id)}
             onPin={(wt) => void pin(wt)}
-            onRemove={(wt) => setRemoving({ worktree: wt, dirty: false, busy: false })}
+            onRemove={startRemove}
             onAddRepo={addRepo}
             onAdopt={(wt) => void adopt(wt)}
             unread={unreadMap}
@@ -1696,7 +1713,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           onClose={() => setReview(null)}
         />
       )}
-      {removing && (
+      {removing && !removing.quiet && (
         <RemoveWorktreeDialog
           worktree={removing.worktree}
           base={removingRepo?.baseRef ?? ""}

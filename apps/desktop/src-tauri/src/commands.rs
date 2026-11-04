@@ -227,6 +227,39 @@ pub fn sidebar_prefs_put(
         .map(|s| s.sidebar)
 }
 
+/// Settings → General → Navigation as stored; the defaults when nothing is.
+#[tauri::command(async)]
+pub fn navigation_settings_get(app: AppHandle) -> settings::NavigationSettings {
+    settings_store::read(&app).navigation
+}
+
+/// Stores Settings → General → Navigation and returns what was stored.
+#[tauri::command(async)]
+pub fn navigation_settings_put(
+    app: AppHandle,
+    settings: settings::NavigationSettings,
+) -> Result<settings::NavigationSettings, CmdError> {
+    settings_store::write(&app, &[SettingsSection::Navigation], |s| {
+        s.navigation = settings
+    })
+    .map(|s| s.navigation)
+}
+
+/// Settings → General → Diff as stored; the defaults when nothing is.
+#[tauri::command(async)]
+pub fn diff_settings_get(app: AppHandle) -> settings::DiffSettings {
+    settings_store::read(&app).diff
+}
+
+/// Stores Settings → General → Diff and returns what was stored.
+#[tauri::command(async)]
+pub fn diff_settings_put(
+    app: AppHandle,
+    settings: settings::DiffSettings,
+) -> Result<settings::DiffSettings, CmdError> {
+    settings_store::write(&app, &[SettingsSection::Diff], |s| s.diff = settings).map(|s| s.diff)
+}
+
 /// The global git `user.name` that the git-username prefix shows; a repo's
 /// own `user.name` wins when a worktree is created.
 #[tauri::command(async)]
