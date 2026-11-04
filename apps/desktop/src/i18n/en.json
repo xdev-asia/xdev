@@ -1587,6 +1587,7 @@
   "agentSessions.tab.sessions": "Sessions",
   "agentSessions.tabs.label": "Sidebar view",
   "agentSessions.search.placeholder": "Search sessions by title, folder, branch…",
+  "sessionSearch.placeholder": "Search sessions by title, folder, branch and conversation text…",
   "agentSessions.search.label": "Search sessions",
   "agentSessions.scope.label": "Show sessions from",
   "agentSessions.scope.worktree": "This worktree",
