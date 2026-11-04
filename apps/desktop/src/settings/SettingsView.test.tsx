@@ -212,6 +212,6 @@ it("contains a page that throws in a boundary reset by the section, so the nav s
   expect(v.boundary().props).toMatchObject({ id: "page.settings", resetKey: "general", titleKey: "boundary.page.title" });
   // The nav is a sibling of the body, outside the boundary.
   expect(v.items()).toHaveLength(SECTIONS.length);
-  v.items()[9].props.onClick();
+  v.items()[13].props.onClick();
   expect(v.boundary().props.resetKey).toBe("vaults");
 });
