@@ -1614,5 +1614,12 @@
   "search.files.more": "Còn kết quả khác trong tệp này chưa hiện",
   "search.files.collapseAll": "Thu gọn tất cả",
   "search.files.clear": "Xoá kết quả tìm",
-  "search.files.noWorktree": "Mở một worktree để tìm trong tệp của nó."
+  "search.files.noWorktree": "Mở một worktree để tìm trong tệp của nó.",
+  "usage.popover.window.five_hour": "5 giờ",
+  "usage.popover.window.seven_day": "Hằng tuần",
+  "usage.popover.reset.none": "Chưa rõ giờ đặt lại",
+  "usage.popover.reset.now": "Đang đặt lại",
+  "usage.popover.reset.minutes": "Đặt lại sau {minutes} phút",
+  "usage.popover.reset.hours": "Đặt lại sau {hours} giờ {minutes} phút",
+  "usage.popover.reset.at": "Đặt lại lúc {when}"
 }
