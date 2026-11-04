@@ -13,6 +13,7 @@ use serde::de::DeserializeOwned;
 
 use crate::error::OrchError;
 use crate::ids::new_id;
+use crate::model::{Dispatch, Gate, Message, Run, Task, Worker};
 
 /// The schema version this build writes.
 pub const SCHEMA_VERSION: i32 = 1;
@@ -109,7 +110,6 @@ pub struct Store {
 }
 
 /// The text a unit enum is stored as: its serde name.
-#[allow(dead_code)] // used from the next task on
 pub(crate) fn enum_text<T: Serialize>(v: &T) -> String {
     match serde_json::to_value(v) {
         Ok(serde_json::Value::String(s)) => s,
@@ -118,10 +118,138 @@ pub(crate) fn enum_text<T: Serialize>(v: &T) -> String {
 }
 
 /// The enum a stored name stands for.
-#[allow(dead_code)] // used from the next task on
 pub(crate) fn enum_from<T: DeserializeOwned>(s: &str) -> Result<T, OrchError> {
     serde_json::from_value(serde_json::Value::String(s.to_owned()))
         .map_err(|e| OrchError::new("store", format!("bad stored value {s}: {e}")))
+}
+
+/// A stored enum name read back as the enum.
+fn parse<T: DeserializeOwned>(row: &rusqlite::Row<'_>, idx: usize) -> rusqlite::Result<T> {
+    let text: String = row.get(idx)?;
+    enum_from(&text).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(idx, rusqlite::types::Type::Text, Box::new(e))
+    })
+}
+
+fn parse_opt<T: DeserializeOwned>(
+    row: &rusqlite::Row<'_>,
+    idx: usize,
+) -> rusqlite::Result<Option<T>> {
+    match row.get::<_, Option<String>>(idx)? {
+        None => Ok(None),
+        Some(text) => enum_from(&text).map(Some).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(idx, rusqlite::types::Type::Text, Box::new(e))
+        }),
+    }
+}
+
+fn json_col<T: DeserializeOwned>(row: &rusqlite::Row<'_>, idx: usize) -> rusqlite::Result<T> {
+    let text: String = row.get(idx)?;
+    serde_json::from_str(&text).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(idx, rusqlite::types::Type::Text, Box::new(e))
+    })
+}
+
+pub(crate) const RUN_COLS: &str = "id, objective, coordinator_tab, created_ms";
+pub(crate) fn run_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Run> {
+    Ok(Run {
+        id: r.get(0)?,
+        objective: r.get(1)?,
+        coordinator_tab: r.get(2)?,
+        created_ms: r.get(3)?,
+    })
+}
+
+pub(crate) const TASK_COLS: &str =
+    "id, run_id, title, spec, deps, parent, status, result, created_ms, updated_ms";
+pub(crate) fn task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
+    Ok(Task {
+        id: r.get(0)?,
+        run_id: r.get(1)?,
+        title: r.get(2)?,
+        spec: r.get(3)?,
+        deps: json_col(r, 4)?,
+        parent: r.get(5)?,
+        status: parse(r, 6)?,
+        result: r.get(7)?,
+        created_ms: r.get(8)?,
+        updated_ms: r.get(9)?,
+    })
+}
+
+#[allow(dead_code)] // used from the task that reads them
+pub(crate) const DISPATCH_COLS: &str =
+    "id, run_id, task_id, status, depth, retry_of, failure_count, parent_dispatch";
+#[allow(dead_code)] // used from the task that reads them
+pub(crate) fn dispatch_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Dispatch> {
+    Ok(Dispatch {
+        id: r.get(0)?,
+        run_id: r.get(1)?,
+        task_id: r.get(2)?,
+        status: parse(r, 3)?,
+        depth: r.get(4)?,
+        retry_of: r.get(5)?,
+        failure_count: r.get(6)?,
+        parent_dispatch: r.get(7)?,
+    })
+}
+
+pub(crate) const WORKER_COLS: &str = "dispatch_id, tab, worktree, agent, state, failed_stage, last_error, kept, closes_at_ms, released, created_ms, updated_ms";
+pub(crate) fn worker_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Worker> {
+    Ok(Worker {
+        dispatch_id: r.get(0)?,
+        tab: r.get(1)?,
+        worktree: r.get(2)?,
+        agent: r.get(3)?,
+        state: parse(r, 4)?,
+        failed_stage: parse_opt(r, 5)?,
+        last_error: r.get(6)?,
+        kept: r.get::<_, i64>(7)? != 0,
+        closes_at_ms: r.get(8)?,
+        released: r.get::<_, i64>(9)? != 0,
+        created_ms: r.get(10)?,
+        updated_ms: r.get(11)?,
+    })
+}
+
+#[allow(dead_code)] // used from the task that reads them
+pub(crate) const MESSAGE_COLS: &str = "id, run_id, from_addr, to_addr, subject, body, kind, priority, thread_id, payload, read, seq, created_ms, delivered_ms";
+#[allow(dead_code)] // used from the task that reads them
+pub(crate) fn message_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
+    let payload: Option<String> = r.get(9)?;
+    Ok(Message {
+        id: r.get(0)?,
+        run_id: r.get(1)?,
+        from: r.get(2)?,
+        to: r.get(3)?,
+        subject: r.get(4)?,
+        body: r.get(5)?,
+        kind: parse(r, 6)?,
+        priority: parse(r, 7)?,
+        thread_id: r.get(8)?,
+        payload: payload.and_then(|p| serde_json::from_str(&p).ok()),
+        read: r.get::<_, i64>(10)? != 0,
+        seq: r.get(11)?,
+        created_ms: r.get(12)?,
+        delivered_ms: r.get(13)?,
+    })
+}
+
+#[allow(dead_code)] // used from the task that reads them
+pub(crate) const GATE_COLS: &str =
+    "id, run_id, task_id, question, options, status, resolution, created_ms";
+#[allow(dead_code)] // used from the task that reads them
+pub(crate) fn gate_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Gate> {
+    Ok(Gate {
+        id: r.get(0)?,
+        run_id: r.get(1)?,
+        task_id: r.get(2)?,
+        question: r.get(3)?,
+        options: json_col(r, 4)?,
+        status: parse(r, 5)?,
+        resolution: r.get(6)?,
+        created_ms: r.get(7)?,
+    })
 }
 
 impl Store {

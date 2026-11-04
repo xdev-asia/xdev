@@ -240,26 +240,99 @@ pub fn orchestration_read_answer(hub: State<'_, OrchHub>, request: u64, text: St
     hub.reads.answer(&request, text);
 }
 
-/// `orchestration.<verb>`: every verb answers `unsupported` until it is built.
+/// The tab and run a verb acts for, from its params and the caller.
+struct Acting {
+    /// `--as <tab>`, else the terminal the CLI runs in.
+    tab: Option<String>,
+    run: Option<String>,
+}
+
+impl Acting {
+    fn of(req: &Request, caller: &Caller) -> Acting {
+        let text = |key: &str| {
+            req.params
+                .get(key)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        };
+        Acting {
+            tab: text("as").or_else(|| caller.pty.clone()),
+            run: text("run"),
+        }
+    }
+}
+
+fn text_param(req: &Request, key: &str) -> Option<String> {
+    req.params
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
+fn to_value<T: Serialize>(v: &T) -> Result<Value, AppError> {
+    serde_json::to_value(v).map_err(|e| AppError::new("store", e.to_string()))
+}
+
+/// `orchestration.<verb>`; a verb that is not built answers `unsupported`.
 pub fn handle(
-    _ctx: &Ctx<'_>,
+    ctx: &Ctx<'_>,
     req: &Request,
-    _caller: &Caller,
+    caller: &Caller,
     _gone: &dyn Fn() -> bool,
 ) -> Result<Value, AppError> {
     let verb = req
         .method
         .strip_prefix("orchestration.")
         .unwrap_or_default();
-    Err(AppError::new(
-        "unsupported",
-        format!("orchestration {verb} is not built yet"),
-    ))
+    let acting = Acting::of(req, caller);
+    match verb {
+        "run-create" => {
+            let objective = text_param(req, "objective").unwrap_or_default();
+            let run = ctx.orch.with_store(ctx.data, |s| {
+                s.run_create(&objective, acting.tab.as_deref(), ctx.now_ms)
+            })?;
+            to_value(&run)
+        }
+        "run-use" => {
+            let id = text_param(req, "id")
+                .ok_or_else(|| AppError::new("bad_request", "run-use needs a run id"))?;
+            let tab = acting.tab.as_deref().ok_or_else(|| {
+                AppError::new(
+                    "no_run",
+                    "not called from an xDev terminal; pass --as <tab>",
+                )
+            })?;
+            let run = ctx.orch.with_store(ctx.data, |s| s.run_use(tab, &id))?;
+            to_value(&run)
+        }
+        "run-current" => {
+            let run = ctx.orch.with_store(ctx.data, |s| {
+                s.run_resolve(acting.run.as_deref(), acting.tab.as_deref())
+            })?;
+            to_value(&run)
+        }
+        "run-list" => to_value(&ctx.orch.with_store(ctx.data, |s| s.run_list())?),
+        "run-show" => {
+            let detail = ctx.orch.with_store(ctx.data, |s| {
+                let id = match text_param(req, "id").or_else(|| acting.run.clone()) {
+                    Some(id) => id,
+                    None => s.run_current(acting.tab.as_deref())?.id,
+                };
+                s.run_show(&id)
+            })?;
+            to_value(&detail)
+        }
+        other => Err(AppError::new(
+            "unsupported",
+            format!("orchestration {other} is not built yet"),
+        )),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn an_answer_reaches_a_waiting_ask_and_a_late_one_is_ignored() {
@@ -291,6 +364,54 @@ mod tests {
                 error: "no prompt".to_owned()
             }
         );
+    }
+
+    #[test]
+    fn run_verbs_create_use_list_and_show_for_the_calling_tab() {
+        let f = crate::cli_verbs::tests::fixture();
+        let none = f.call(Some("p-lead"), "orchestration.run-current", json!({}));
+        assert_eq!(none.unwrap_err().code, "no_run");
+
+        let a = f
+            .call(
+                Some("p-lead"),
+                "orchestration.run-create",
+                json!({"objective": "ship"}),
+            )
+            .unwrap();
+        assert_eq!(a["objective"], "ship");
+        assert_eq!(a["coordinatorTab"], "p-lead");
+        let cur = f.call(Some("p-lead"), "orchestration.run-current", json!({}));
+        assert_eq!(cur.unwrap()["id"], a["id"]);
+
+        let b = f
+            .call(Some("p-other"), "orchestration.run-create", json!({}))
+            .unwrap();
+        // p-child has no run of its own and there are two: it must choose.
+        let err = f.call(Some("p-child"), "orchestration.run-current", json!({}));
+        assert_eq!(err.unwrap_err().code, "no_run");
+        let used = f
+            .call(
+                Some("p-child"),
+                "orchestration.run-use",
+                json!({"id": b["id"]}),
+            )
+            .unwrap();
+        assert_eq!(used["id"], b["id"]);
+        // `as` acts for another tab, `run` overrides the current run.
+        let cur = f.call(None, "orchestration.run-current", json!({"as": "p-lead"}));
+        assert_eq!(cur.unwrap()["id"], a["id"]);
+        let list = f.call(None, "orchestration.run-list", json!({})).unwrap();
+        assert_eq!(list.as_array().unwrap().len(), 2);
+        let show = f
+            .call(Some("p-lead"), "orchestration.run-show", json!({}))
+            .unwrap();
+        assert_eq!(show["run"]["id"], a["id"]);
+        assert_eq!(show["openGates"], 0);
+        let missing = f.call(None, "orchestration.run-show", json!({"id": "run_x"}));
+        assert_eq!(missing.unwrap_err().code, "not_found");
+        let outside = f.call(None, "orchestration.run-use", json!({"id": a["id"]}));
+        assert_eq!(outside.unwrap_err().code, "no_run");
     }
 
     #[test]
