@@ -5,6 +5,7 @@ import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { I18nProvider } from "./i18n";
 import { startCrashBreadcrumbs } from "./crash/crashEvents";
+import { markStartup } from "./startup/startupSteps";
 import { startBindingsSync } from "./keys/bindingsStore";
 import { loadStatusSettings } from "./status/statusSettings";
 import { startCustomSchemesSync } from "./terminal/customSchemes";
@@ -30,6 +31,7 @@ import "./styles/quickCommands.css";
 import "katex/dist/katex.min.css";
 import "./styles/preview-files.css";
 import "./styles/diagnostics.css";
+import "./styles/startup.css";
 import { startEditorSettingsSync } from "./files/editorSettings";
 import { startNavigationSettingsSync } from "./settings/navigationSettings";
 import { startAutomationsSettingsSync } from "./settings/automationsSettings";
@@ -55,6 +57,7 @@ startBindingsSync(api);
 // Window errors and rejected promises are kept as breadcrumbs for the next crash report.
 startCrashBreadcrumbs(api);
 
+const renderStart = performance.now();
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <I18nProvider>
@@ -64,3 +67,8 @@ createRoot(document.getElementById("root")!).render(
     </I18nProvider>
   </StrictMode>,
 );
+
+// The first frame after the render call: a step the startup report shows next to the Rust ones.
+requestAnimationFrame(() => {
+  void markStartup(api, { id: "ui.first_render", ok: true, ms: Math.round(performance.now() - renderStart) });
+});

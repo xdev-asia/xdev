@@ -2,6 +2,7 @@ import type { Api, RestoreMode } from "@/api";
 import type { FileTabs } from "@/files/fileTabs";
 import { LAYOUT_VERSION, type RestoreReport, type SessionFallback } from "./layoutSnapshot";
 import type { Sessions } from "./sessions";
+import { markStartup } from "@/startup/startupSteps";
 
 /** How long after the last change the layout is written. */
 export const SAVE_DEBOUNCE_MS = 1000;
@@ -112,18 +113,25 @@ export interface LayoutRestore {
  * the mode is `none`; never rejects (a broken store starts the app with no tabs).
  */
 export async function restoreLayout(
-  api: Pick<Api, "layoutLoad" | "uiSettingsGet" | "agentSessions">,
+  api: Pick<Api, "layoutLoad" | "uiSettingsGet" | "agentSessions"> & Partial<Pick<Api, "startupMark">>,
   sessions: Sessions,
   known: (worktree: string) => boolean,
   openFile: (worktree: string, rel: string) => Promise<boolean>,
   carry?: (worktree: string) => boolean,
 ): Promise<LayoutRestore | null> {
   try {
+    const began = Date.now();
     const [snapshot, ui] = await Promise.all([api.layoutLoad(), api.uiSettingsGet()]);
-    if (!snapshot || snapshot.version !== LAYOUT_VERSION || ui.restore === "none") return null;
+    if (!snapshot || snapshot.version !== LAYOUT_VERSION || ui.restore === "none") {
+      void markStartup(api, { id: "layout.restore", ok: true, ms: Date.now() - began });
+      return null;
+    }
     const report = await sessions.restore(snapshot, ui.restore, sessionFallback(api), { known, openFile, carry });
+    void markStartup(api, { id: "layout.restore", ok: true, ms: Date.now() - began });
     return { mode: ui.restore, report };
-  } catch {
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : typeof e === "object" && e && "code" in e ? String((e as { code: unknown }).code) : String(e);
+    void markStartup(api, { id: "layout.restore", ok: false, ms: 0, detail: detail.slice(0, 240) });
     return null;
   }
 }

@@ -11,6 +11,7 @@ import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useI18n } from "@/i18n";
 import { SurfaceBoundary } from "@/components/SurfaceBoundary";
 import { CrashHost } from "@/crash/CrashHost";
+import { StartupBanner } from "@/startup/StartupBanner";
 import { PaletteHost } from "@/palette/PaletteHost";
 import { NavButtons } from "@/nav/NavButtons";
 import { useNavHistory } from "@/nav/useNavHistory";
@@ -2380,6 +2381,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         onCancel={() => setConfirmEndAll(false)}
       />
       <CrashHost api={api} />
+      <div className="startup-banner-host">
+        <StartupBanner api={api} />
+      </div>
       <Toasts />
       {adding && (
         <AddProjectDialog

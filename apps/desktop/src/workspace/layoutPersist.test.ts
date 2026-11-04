@@ -164,6 +164,22 @@ describe("restore at start", () => {
     expect(restore).not.toHaveBeenCalled();
   });
 
+  it("a rejecting layoutLoad still returns null and marks layout.restore not ok", async () => {
+    const api = createMockApi({});
+    const s = (sessions = new Sessions(api));
+    api.layoutLoad = () => Promise.reject(new Error("layout.json did not parse"));
+    expect(await restoreLayout(api, s, () => true, async () => false)).toBeNull();
+    const step = (await api.startupReport()).steps.find((x) => x.id === "layout.restore");
+    expect(step).toMatchObject({ ok: false, detail: "layout.json did not parse" });
+  });
+
+  it("a clean restore marks layout.restore ok", async () => {
+    const api = createMockApi({});
+    const s = (sessions = new Sessions(api));
+    await restoreLayout(api, s, () => true, async () => false);
+    expect((await api.startupReport()).steps.find((x) => x.id === "layout.restore")?.ok).toBe(true);
+  });
+
   it("the fallback asks the worktree's agent sessions and takes the newest resumable one since the tab opened", async () => {
     const api = createMockApi({});
     const rows = (...r: [string, number, boolean][]) =>

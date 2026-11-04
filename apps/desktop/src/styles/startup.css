@@ -1,0 +1,13 @@
+.startup-banner-host {
+  position: fixed;
+  left: 12px;
+  bottom: calc(var(--h-footer) + 8px);
+  z-index: 30;
+  width: 420px;
+  max-width: calc(100vw - 24px);
+}
+
+.startup-steps {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
