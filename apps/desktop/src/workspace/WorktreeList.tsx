@@ -5,6 +5,7 @@ import { useI18n } from "@/i18n";
 import { profileLetter, profileName, useProfiles } from "@/agents/profileStore";
 import { ago } from "./ago";
 import { groupWorktrees, orderedWorktrees, type Group } from "./groups";
+import type { PendingCreate } from "./pendingCreates";
 import { checksSummary } from "./ship";
 import type { TabStatus } from "./status";
 import { StatusGlyph } from "./StatusGlyph";
@@ -65,6 +66,11 @@ export interface WorktreeListProps {
   onRepoSettings?(repo: RepoView): void;
   /** Asks to forget the repo in xDev; without it the project menu has no Remove item. */
   onRemoveRepo?(repo: RepoView): void;
+  /** Creates running in the background, or failed; each shows a row above the list. */
+  pending?: PendingCreate[];
+  onCancelCreate?(id: string): void;
+  onRetryCreate?(id: string): void;
+  onDismissCreate?(id: string): void;
 }
 
 /** The open menu: a worktree row or a repo, and where it opened. */
@@ -212,6 +218,45 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     );
   };
 
+  // A create still running: name, spinner, Cancel. One that failed: why, Retry and Dismiss.
+  const pendingRow = (job: PendingCreate) => (
+    <li key={job.id} className="ws-wt ws-wt-pending" data-pending={job.id} data-state={job.state}>
+      <span className="ws-pending-text">
+        <span className="ws-pending-line">
+          {job.state === "running" ? (
+            <span className="ws-glyph" data-status="working" role="progressbar" aria-label={t("workspace.pending.creating", { name: job.name })} title={t("workspace.pending.creating", { name: job.name })} />
+          ) : (
+            <span className="ws-glyph" data-status="failed" aria-hidden="true" />
+          )}
+          <span className="ws-wt-name" title={job.name}>
+            {job.name}
+          </span>
+        </span>
+        {job.state === "failed" && (
+          <span className="ws-pending-error" role="alert" title={job.error ? t(`error.${job.error.code}`) : undefined}>
+            {t("workspace.pending.failed")}
+            {job.error && ` · ${t(`error.${job.error.code}`)}`}
+          </span>
+        )}
+      </span>
+      {job.state === "running" ? (
+        <button type="button" className="btn-secondary ws-pending-btn" aria-label={t("workspace.pending.cancelLabel", { name: job.name })} onClick={() => props.onCancelCreate?.(job.id)}>
+          {t("workspace.pending.cancel")}
+        </button>
+      ) : (
+        <>
+          <button type="button" className="btn-secondary ws-pending-btn" aria-label={t("workspace.pending.retryLabel", { name: job.name })} onClick={() => props.onRetryCreate?.(job.id)}>
+            {t("workspace.pending.retry")}
+          </button>
+          <button type="button" className="btn-secondary ws-pending-btn" aria-label={t("workspace.pending.dismissLabel", { name: job.name })} onClick={() => props.onDismissCreate?.(job.id)}>
+            {t("workspace.pending.dismiss")}
+          </button>
+        </>
+      )}
+    </li>
+  );
+  const pending = props.pending ?? [];
+
   const withFound = (props.repos ?? []).filter((repo) => !repo.missing && repo.found.length > 0);
   const foundGroup = (repo: RepoView) => {
     const open = foundOpen.includes(repo.id);
@@ -328,6 +373,11 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       </div>
       <div className="ws-list">
         {props.repos?.length === 0 && <p className="ws-empty">{t("workspace.noRepos")}</p>}
+        {pending.length > 0 && (
+          <ul className="ws-wts ws-pending" aria-label={t("workspace.pending.heading")}>
+            {pending.map(pendingRow)}
+          </ul>
+        )}
         {sections.length > 0 && <ul className="ws-groups">{sections.map(section)}</ul>}
         {present.length > 0 && (
           <ul className="ws-repos" aria-label={t("project.heading")}>

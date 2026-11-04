@@ -26,6 +26,7 @@ import { eventOn, getStatusSettings, loadStatusSettings, useStatusSettings } fro
 import { BellMenu, bellCount, type BellRow } from "./BellMenu";
 import { ChecksPanel } from "./ChecksPanel";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
+import { PendingCreates } from "./pendingCreates";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { AddProjectDialog, parentOf } from "./AddProjectDialog";
@@ -116,6 +117,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // A new `seq` asks the sessions panel for the search box, or to mark one session.
   const [sessionsAsk, setSessionsAsk] = useState<{ seq: number; focus: boolean; reveal: { key: string; seq: number } | null }>({ seq: 0, focus: false, reveal: null });
   const [creating, setCreating] = useState<Creating | null>(null);
+  // Creates run after the dialog has closed; what a finished one does is read from this render.
+  const afterCreate = useRef<{ api: Api; created(wt: WorktreeView, repoId: string): void; reload(): void }>({ api, created() {}, reload() {} });
+  const [pending] = useState(
+    () =>
+      new PendingCreates({
+        create: (repoId, name, from) => afterCreate.current.api.worktreeCreate(repoId, name, from),
+        // Cancel was the go-ahead; a fresh worktree is clean, so its branch goes too.
+        remove: (path, force) => afterCreate.current.api.worktreeRemove(path, force, true).finally(() => afterCreate.current.reload()),
+        onCreated: (wt, args) => afterCreate.current.created(wt, args.repoId),
+      }),
+  );
+  useSyncExternalStore(
+    (fn) => pending.subscribe(fn),
+    () => pending.version,
+  );
   // Setup: the card a worktree shows, the trust prompt, and the gate that holds agents while setup runs.
   const [cards, setCards] = useState<Record<string, SetupCardAt>>({});
   const [trusting, setTrusting] = useState<TrustAsk | null>(null);
@@ -593,19 +609,19 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (id) setCreating({ repoId: id, busy: false, name });
   }
 
-  async function create(repoId: string, name: string, from: string | null): Promise<void> {
-    setCreating({ repoId, busy: true });
-    try {
-      const wt = await api.worktreeCreate(repoId, name, from);
-      setCreating(null);
-      await load();
-      await setupAfterCreate(wt.path, repoId);
-      await openDefaultAgent(wt.path);
-      select(wt);
-    } catch (e) {
-      setCreating({ repoId, busy: false, error: toApiError(e).code });
-    }
+  // The dialog closes at once; the create runs as a row in the list until it finishes or fails.
+  function create(repoId: string, name: string, from: string | null): void {
+    setCreating(null);
+    pending.start({ repoId, name, from });
   }
+
+  async function created(wt: WorktreeView, repoId: string): Promise<void> {
+    await load();
+    await setupAfterCreate(wt.path, repoId);
+    await openDefaultAgent(wt.path);
+    select(wt);
+  }
+  afterCreate.current = { api, created: (wt, repoId) => void created(wt, repoId), reload: () => void load() };
 
   // A new worktree starts with the default agent when it is on and installed; else nothing opens.
   async function openDefaultAgent(path: string): Promise<void> {
@@ -955,6 +971,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               show("workspace");
             }}
             onCreate={startCreate}
+            pending={pending.list()}
+            onCancelCreate={(id) => pending.cancel(id)}
+            onRetryCreate={(id) => pending.retry(id)}
+            onDismissCreate={(id) => pending.dismiss(id)}
             onPin={(wt) => void pin(wt)}
             onRemove={(wt) => setRemoving({ worktree: wt, dirty: false, busy: false })}
             onAddRepo={addRepo}
@@ -1167,7 +1187,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           busy={creating.busy}
           error={creating.error}
           name={creating.name}
-          onCreate={(repoId, name, from) => void create(repoId, name, from)}
+          onCreate={(repoId, name, from) => create(repoId, name, from)}
           onCancel={() => setCreating(null)}
           onOpenGitSettings={() => {
             setCreating(null);
