@@ -85,3 +85,11 @@ it("digits go to the first nine item rows", () => {
   const digits = rank({ ...base, items }).flatMap((r) => (r.type === "item" ? [r.digit] : []));
   expect(digits).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, null]);
 });
+
+it("an item with minQuery stays out until the query is long enough", () => {
+  const gated = { ...set("git.prefix", "Branch prefix"), minQuery: 2 };
+  const items = [gated, set("git", "Git")];
+  expect(ids(rank({ ...base, items, query: "b", filter: "other" }))).toEqual([]);
+  expect(ids(rank({ ...base, items, query: "br" }))).toEqual(["set:git.prefix"]);
+  expect(ids(rank({ ...base, items, query: "", filter: "other" }))).toEqual(["set:git"]);
+});

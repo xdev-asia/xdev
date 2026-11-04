@@ -9,6 +9,7 @@ import { duplicateOf } from "@/quickCommands/form";
 import { badgeOf, oneLine, textOf } from "@/quickCommands/model";
 import { QuickCommandDialog } from "@/quickCommands/QuickCommandDialog";
 import { getQuickCommands, loadFileCommands, startQuickCommands, subscribeQuickCommands } from "@/quickCommands/store";
+import { SettingRow } from "../SettingRow";
 import type { SettingsSectionProps } from "../sections";
 import { buildGroups, moveTarget, type Group, type RepoOption } from "./pageModel";
 
@@ -24,7 +25,7 @@ export function QuickCommandsPage(props: SettingsSectionProps): JSX.Element {
   const [repoViews, setRepoViews] = useState<RepoView[]>([]);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
-  const [editing, setEditing] = useState<{ item: QuickCommand | null } | null>(props.filter === "new" ? { item: null } : null);
+  const [editing, setEditing] = useState<{ item: QuickCommand | null } | null>(props.arg === "new" ? { item: null } : null);
   const [deleting, setDeleting] = useState<QuickCommand | null>(null);
   const [error, setError] = useState<ApiError["code"]>();
 
@@ -121,6 +122,7 @@ export function QuickCommandsPage(props: SettingsSectionProps): JSX.Element {
           {t(`error.${error}`)}
         </p>
       )}
+      <SettingRow id="qcmd.page" filter={props.filter}>
       <div className="qc-page-tools">
         <input type="search" className="qc-search" aria-label={t("qcmd.search")} placeholder={t("qcmd.search")} value={query} onChange={(e) => setQuery(e.target.value)} />
         <select aria-label={t("qcmd.page.filter")} value={filter} onChange={(e) => setFilter(e.target.value)}>
@@ -172,6 +174,7 @@ export function QuickCommandsPage(props: SettingsSectionProps): JSX.Element {
           )}
         </section>
       ))}
+      </SettingRow>
 
       {editing && (
         <QuickCommandDialog

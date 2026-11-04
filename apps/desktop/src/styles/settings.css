@@ -544,3 +544,85 @@
   justify-content: space-between;
   gap: 12px;
 }
+
+/* Settings search */
+.settings-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0 0 8px;
+}
+
+.settings-search-input {
+  width: 100%;
+  height: 30px;
+  padding: 0 28px 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-0);
+  color: var(--text-1);
+  font: inherit;
+}
+
+.settings-search-input:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 0;
+}
+
+.settings-search-clear {
+  position: absolute;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-search-clear:hover {
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-nav-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-s);
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* The control a palette item opened: lit once, then settles. */
+.setting-flash {
+  animation: setting-flash 1.6s ease-out 1;
+}
+
+@keyframes setting-flash {
+  0%,
+  40% {
+    background: var(--signal-bg);
+    outline: 1px solid var(--signal);
+  }
+  100% {
+    background: transparent;
+    outline: 1px solid transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .setting-flash {
+    animation: none;
+    outline: 1px solid var(--signal);
+  }
+}

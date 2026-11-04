@@ -191,7 +191,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [openInApps, setOpenInApps] = useState<OpenInApp[]>([]);
   // A new value asks the front pane to open its quick commands popover.
   const [quickSeq, setQuickSeq] = useState(0);
-  const [settingsAt, setSettingsAt] = useState<{ section?: string; filter?: string; seq: number }>({ seq: 0 });
+  const [settingsAt, setSettingsAt] = useState<{ section?: string; arg?: string; target?: string; seq: number }>({ seq: 0 });
   // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
   const dialogOpen = creating !== null || removing !== null || adding;
   useJumpKey(useCallback(() => setJumpOpen((o) => (dialogOpen ? false : !o)), [dialogOpen]));
@@ -835,8 +835,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     }
   }
 
-  function openSettings(section?: string, filter?: string): void {
-    setSettingsAt((s) => ({ section, filter, seq: s.seq + 1 }));
+  function openSettings(section?: string, arg?: string, target?: string): void {
+    setSettingsAt((s) => ({ section, arg, target, seq: s.seq + 1 }));
     show("settings");
   }
 
@@ -1265,7 +1265,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               key={settingsAt.seq}
               api={api}
               initial={settingsAt.section}
-              filter={settingsAt.filter}
+              arg={settingsAt.arg}
+              target={settingsAt.target}
               onChanged={() => {
                 void load();
                 void loadStatusSettings(api);
@@ -1333,7 +1334,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             setFront((f) => ({ worktree, id, seq: (f?.seq ?? 0) + 1 }));
             focusTerminal(worktree);
           },
-          openSettings,
+          openSettings: (section, target) => openSettings(section, undefined, target),
           newWorktree: (name) => startCreate(undefined, name),
           addRepo,
           searchDocs: openSearch,

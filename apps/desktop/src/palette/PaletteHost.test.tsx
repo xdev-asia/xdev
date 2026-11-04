@@ -197,3 +197,9 @@ it("lists the focused tab's actions and runs them through Sessions and the termi
     vi.unstubAllGlobals();
   }
 });
+
+it("opens settings on the section and entry for a setting entry", () => {
+  const h = host();
+  h.item("set:git.prefix").run();
+  expect(h.actions.openSettings).toHaveBeenCalledWith("git", "git.prefix");
+});
