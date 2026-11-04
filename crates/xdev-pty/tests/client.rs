@@ -168,11 +168,14 @@ fn a_service_that_ends_ends_every_sink() {
     // Another client ends the service; this one hears its PTY end.
     ensure(&opts).unwrap().quit_all().unwrap();
     exit.recv_timeout(DEADLINE).unwrap();
-    let start = Instant::now();
-    while c.alive() {
-        assert!(start.elapsed() < DEADLINE);
-        thread::sleep(Duration::from_millis(20));
-    }
+    let (tx, rx) = mpsc::channel();
+    c.on_close(move || tx.send(()).unwrap());
+    rx.recv_timeout(DEADLINE).unwrap();
+    assert!(!c.alive() && c.closed());
+    // Asked for after the fact, it runs at once.
+    let (tx, rx) = mpsc::channel();
+    c.on_close(move || tx.send(()).unwrap());
+    rx.try_recv().unwrap();
 }
 
 fn binary_opts(local: &std::path::Path, prefix: &str) -> StartOptions {

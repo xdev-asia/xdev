@@ -3,14 +3,17 @@
 //! keeps it running when the app quits, updates or crashes.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
+use std::time::{Duration, Instant};
 
-use xdev_pty::client::{Client, ClientError, Sink, StartOptions, ensure};
+use tauri::{AppHandle, Emitter, Manager};
+
+use xdev_pty::client::{Attached, Client, ClientError, Sink, StartOptions, ensure};
 use xdev_pty::{Session, SpawnSpec};
 
 use crate::commands::CmdError;
 use crate::pty::{PtyHandle, PtydState, PtydStatus, Ptys};
-use crate::settings::TerminalSettings;
+use crate::settings_store;
 
 impl From<ClientError> for CmdError {
     fn from(e: ClientError) -> CmdError {
@@ -44,8 +47,22 @@ pub(crate) trait PtyHost: Send + Sync {
         sink: Sink,
     ) -> Result<Box<dyn PtyHandle>, CmdError>;
 
+    /// Takes over the service's PTY `id`, replaying from `from_seq`;
+    /// `pty_gone` when there is none (always, in the app).
+    fn attach(
+        &self,
+        id: &str,
+        from_seq: u64,
+        sink: Sink,
+    ) -> Result<(Box<dyn PtyHandle>, Attached), CmdError> {
+        let _ = (id, from_seq, sink);
+        Err(CmdError {
+            code: "pty_gone",
+            detail: None,
+        })
+    }
+
     /// The service behind this host; none for `LocalHost`.
-    #[allow(dead_code)] // The ptyd_* commands ask for it.
     fn service(&self) -> Option<Arc<Client>> {
         None
     }
@@ -88,6 +105,21 @@ impl PtyHost for ServiceHost {
         }))
     }
 
+    fn attach(
+        &self,
+        id: &str,
+        from_seq: u64,
+        sink: Sink,
+    ) -> Result<(Box<dyn PtyHandle>, Attached), CmdError> {
+        let attached = self.client.attach(id, from_seq, sink)?;
+        let pty = ServicePty {
+            client: self.client.clone(),
+            id: id.to_owned(),
+            pid: None,
+        };
+        Ok((Box::new(pty), attached))
+    }
+
     fn service(&self) -> Option<Arc<Client>> {
         Some(self.client.clone())
     }
@@ -121,6 +153,10 @@ impl PtyHandle for ServicePty {
 
     fn pid(&self) -> Option<u32> {
         self.pid
+    }
+
+    fn outlives_app(&self) -> bool {
+        true
     }
 }
 
@@ -159,11 +195,13 @@ pub(crate) fn choose_host(
 }
 
 /// Picks the host from the stored setting, starting the service from the
-/// `xdev-ptyd` next to the app when it is on. Runs off the main thread at
-/// start; terminals wait for it.
-pub(crate) fn start_host(ptys: &Ptys, terminal: &TerminalSettings, local_dir: Option<&Path>) {
+/// `xdev-ptyd` next to the app when it is on, and tells the UI. Runs off the
+/// main thread; terminals wait for it. A service that drops later turns into
+/// a fallback: new terminals run in the app.
+pub(crate) fn start_host(app: &AppHandle, local_dir: Option<&Path>) {
+    let terminal = settings_store::read(app).terminal;
     let version = xdev_core::version().to_string();
-    let (host, status) = choose_host(terminal.service, &version, || {
+    let (host, picked) = choose_host(terminal.service, &version, || {
         let local = local_dir.ok_or_else(|| ClientError {
             code: "ptyd_start_failed".into(),
             detail: Some("no local dir".into()),
@@ -180,8 +218,63 @@ pub(crate) fn start_host(ptys: &Ptys, terminal: &TerminalSettings, local_dir: Op
             ..StartOptions::default()
         })
     });
-    ptys.set_host(host, status);
+    if let Some(client) = host.service() {
+        let app = app.clone();
+        let watched = Arc::downgrade(&client);
+        client.on_close(move || {
+            let ptys = app.state::<Ptys>();
+            // Only the host this hook was set for; a restart has its own.
+            let current = ptys.peek_host().and_then(|h| h.service());
+            if current.is_some_and(|c| Weak::ptr_eq(&watched, &Arc::downgrade(&c))) {
+                let fallback = status(
+                    PtydState::Fallback,
+                    None,
+                    Some("ptyd_unreachable".to_owned()),
+                );
+                ptys.set_host(Arc::new(LocalHost), fallback.clone());
+                let _ = app.emit(STATUS_EVENT, fallback);
+            }
+        });
+    }
+    ptys_set(app, host, picked);
 }
+
+fn ptys_set(app: &AppHandle, host: Arc<dyn PtyHost>, status: PtydStatus) {
+    app.state::<Ptys>().set_host(host, status.clone());
+    let _ = app.emit(STATUS_EVENT, status);
+}
+
+/// Ends the service and every PTY in it, then starts it again; from a
+/// fallback, tries to start it (Retry).
+pub(crate) fn restart(app: &AppHandle, local_dir: Option<&Path>) -> Result<(), CmdError> {
+    let ptys = app.state::<Ptys>();
+    if let Some(client) = ptys.host().service() {
+        // New terminals wait while the service is swapped.
+        ptys.clear_host();
+        if client.quit_all().is_ok() {
+            let start = Instant::now();
+            while !client.closed() && start.elapsed() < RESTART_WAIT {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+    }
+    start_host(app, local_dir);
+    match ptys.host_status().1 {
+        PtydStatus {
+            state: PtydState::Fallback,
+            reason,
+            ..
+        } => Err(CmdError {
+            code: "ptyd_start_failed",
+            detail: reason,
+        }),
+        _ => Ok(()),
+    }
+}
+
+/// The `ptyd://status` event: where terminals run changed.
+pub(crate) const STATUS_EVENT: &str = "ptyd://status";
+const RESTART_WAIT: Duration = Duration::from_secs(5);
 
 /// The folder under the local dir the service keeps its files in.
 pub(crate) const PTYD_DIR: &str = "ptyd";

@@ -111,6 +111,9 @@ struct Inner {
     attaches: Mutex<HashMap<String, Pending>>,
     lists: Mutex<VecDeque<Sender<Vec<SessionInfo>>>>,
     alive: AtomicBool,
+    /// Set once the reader has ended and every sink heard it.
+    closed: AtomicBool,
+    on_close: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 /// The pid, or the service's error code.
@@ -265,6 +268,8 @@ fn hello(endpoint: &Endpoint, dir: &Path, app_version: &str) -> Result<Client, H
         attaches: Mutex::default(),
         lists: Mutex::default(),
         alive: AtomicBool::new(true),
+        closed: AtomicBool::new(false),
+        on_close: Mutex::new(None),
     });
     {
         let inner = inner.clone();
@@ -286,6 +291,14 @@ fn read_loop(inner: Arc<Inner>, mut r: Stream) {
     lock(&inner.spawns).clear();
     lock(&inner.attaches).clear();
     lock(&inner.lists).clear();
+    let on_close = {
+        let mut slot = lock(&inner.on_close);
+        inner.closed.store(true, Ordering::SeqCst);
+        slot.take()
+    };
+    if let Some(f) = on_close {
+        f();
+    }
 }
 
 impl Inner {
@@ -371,6 +384,23 @@ impl Client {
     /// False once the connection has dropped.
     pub fn alive(&self) -> bool {
         self.inner.alive.load(Ordering::SeqCst)
+    }
+
+    /// True once the connection has dropped and every sink has heard it.
+    pub fn closed(&self) -> bool {
+        self.inner.closed.load(Ordering::SeqCst)
+    }
+
+    /// Runs `f` once the connection drops, after every sink heard it; at
+    /// once when it already has.
+    pub fn on_close(&self, f: impl FnOnce() + Send + 'static) {
+        let mut slot = lock(&self.inner.on_close);
+        if self.inner.closed.load(Ordering::SeqCst) {
+            drop(slot);
+            f();
+        } else {
+            *slot = Some(Box::new(f));
+        }
     }
 
     /// Starts `spec` in the service as `id`, its output going to `sink`.
