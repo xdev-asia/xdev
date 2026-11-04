@@ -18,6 +18,7 @@ xdev-agent.workspace = true
 xdev-ai.workspace = true
 xdev-core.workspace = true
 xdev-ipc.workspace = true
+xdev-kit.workspace = true
 xdev-mcp.workspace = true
 xdev-orch.workspace = true
 xdev-policy.workspace = true

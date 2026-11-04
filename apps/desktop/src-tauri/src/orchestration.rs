@@ -348,22 +348,16 @@ pub fn orchestration_settings_put(
     .map(|s| s.orchestration)
 }
 
-/// What the skill card shows. Filled in with the skill install.
+/// What the skill card shows.
 #[tauri::command(async)]
-pub fn orchestration_skill_status(_app: AppHandle) -> Result<SkillStatus, CmdError> {
-    Ok(SkillStatus {
-        install_command: "xdev skills install".to_owned(),
-        ..SkillStatus::default()
-    })
+pub fn orchestration_skill_status(app: AppHandle) -> Result<SkillStatus, CmdError> {
+    crate::orch_skill::status(&app)
 }
 
-/// Installs the skill. Filled in with the skill install.
+/// Installs the skill; `force` replaces edited copies after a backup.
 #[tauri::command(async)]
-pub fn orchestration_skill_install(_app: AppHandle, _force: bool) -> Result<SkillStatus, CmdError> {
-    Err(CmdError {
-        code: "unsupported",
-        detail: Some("the skill install is not built yet".to_owned()),
-    })
+pub fn orchestration_skill_install(app: AppHandle, force: bool) -> Result<SkillStatus, CmdError> {
+    crate::orch_skill::install(&app, force)
 }
 
 /// The strip's data for the worker in `tab`; none when the tab is no worker's.
