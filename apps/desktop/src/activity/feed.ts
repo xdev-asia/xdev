@@ -11,6 +11,8 @@ export interface FeedEntry {
   tabId: string;
   worktree: string;
   profileId: string;
+  /** The title of the tab when it happened (null when it has none). */
+  title: string | null;
   from: TabStatus;
   to: TabStatus;
   /** When it happened, in ms. */
@@ -36,9 +38,9 @@ export class ActivityFeed {
   }
 
   /** Adds a change; a done that goes back to idle is noise after the done and is left out. */
-  record(tab: Pick<Tab, "id" | "worktree" | "profileId">, from: TabStatus, to: TabStatus, at: number): void {
+  record(tab: Pick<Tab, "id" | "worktree" | "profileId" | "title">, from: TabStatus, to: TabStatus, at: number): void {
     if (from === "done" && to === "idle") return;
-    const entry: FeedEntry = { id: this.next++, tabId: tab.id, worktree: tab.worktree, profileId: tab.profileId, from, to, at };
+    const entry: FeedEntry = { id: this.next++, tabId: tab.id, worktree: tab.worktree, profileId: tab.profileId, title: tab.title ?? null, from, to, at };
     this.list = [entry, ...this.list].slice(0, FEED_CAP);
     this.emit();
   }
