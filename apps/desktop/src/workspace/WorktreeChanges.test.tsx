@@ -1041,3 +1041,23 @@ it("draws Changes before Staged by default and Staged first when the setting say
   await tick();
   expect(groupNames(b)).toEqual(["staged", "changes"]);
 });
+
+it("hands the ship bar the message state and a commit that reports whether it was made", async () => {
+  const api = createMockApi({});
+  const commit = vi.spyOn(api, "worktreeCommit");
+  const view = changes(api, undefined, { prs: new PrStore(api) });
+  await tick();
+  const bar = () => view.find((n) => n.type === ShipBar)!;
+  expect(bar().props.hasMessage).toBe(false);
+  // No message: nothing is committed and the bar is told so.
+  expect(await bar().props.onCommitFirst()).toBe(false);
+  expect(commit).not.toHaveBeenCalled();
+  view.message().props.onChange({ target: { value: "feat: x" } });
+  expect(bar().props.hasMessage).toBe(true);
+  expect(await bar().props.onCommitFirst()).toBe(true);
+  expect(commit).toHaveBeenCalledWith(OAK, FILES, "feat: x");
+  // A failing commit reports false.
+  view.message().props.onChange({ target: { value: "feat: y" } });
+  commit.mockRejectedValueOnce({ code: "hook_failed", detail: "boom" });
+  expect(await bar().props.onCommitFirst()).toBe(false);
+});

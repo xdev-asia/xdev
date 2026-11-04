@@ -2196,6 +2196,14 @@ button.ws-tree-row:focus-visible {
   background: var(--bg-2);
 }
 
+.ws-ship-sep {
+  width: 100%;
+  height: 0;
+  margin: 2px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
 .ws-ship-item:disabled {
   color: var(--text-2);
   cursor: default;
