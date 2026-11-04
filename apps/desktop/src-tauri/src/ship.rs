@@ -11,8 +11,9 @@ use tauri::{AppHandle, State};
 use xdev_agent::{AgentError, Cancel, Cli, Profiles, RunRequest, Runner};
 use xdev_ai::Provider;
 use xdev_git::{
-    BaseRange, Check, GhAccount, GhEnv, GhExec, GhLogin, GhOutput, GitError, PrDraft, PrView, Repo,
-    SystemGh, TokenGh, Upstream, pr_checks, pr_create, pr_open_web, pr_view, run_failed_log,
+    BaseRange, Check, GhAccount, GhEnv, GhExec, GhLogin, GhOutput, GitError, PrDraft, PrView,
+    PullPolicy, Repo, SystemGh, TokenGh, Upstream, pr_checks, pr_create, pr_open_web, pr_view,
+    run_failed_log,
 };
 use xdev_policy::{Action, Gate, Verdict};
 use xdev_workspace::{Registry, WorkspaceError, path_key};
@@ -177,9 +178,36 @@ fn push_with(data: &Path, path: &Path, against_upstream: bool) -> Result<ShipVie
     view(data, path, against_upstream)
 }
 
-fn pull_with(data: &Path, path: &Path, against_upstream: bool) -> Result<ShipView, CmdError> {
+fn pull_with(
+    data: &Path,
+    path: &Path,
+    policy: PullPolicy,
+    against_upstream: bool,
+) -> Result<ShipView, CmdError> {
     locate(data, path)?;
-    Repo::discover(path)?.pull()?;
+    Repo::discover(path)?.pull_with(policy)?;
+    view(data, path, against_upstream)
+}
+
+fn fast_forward_with(
+    data: &Path,
+    path: &Path,
+    against_upstream: bool,
+) -> Result<ShipView, CmdError> {
+    locate(data, path)?;
+    Repo::discover(path)?.fast_forward()?;
+    view(data, path, against_upstream)
+}
+
+/// Rebases onto the registered base. Local history only, so no policy gate
+/// (like `amend_with`); pushing the result later needs a force push.
+fn rebase_from_base_with(
+    data: &Path,
+    path: &Path,
+    against_upstream: bool,
+) -> Result<ShipView, CmdError> {
+    let known = locate(data, path)?;
+    Repo::discover(path)?.rebase_from_base(&known.base_ref)?;
     view(data, path, against_upstream)
 }
 
@@ -191,7 +219,12 @@ fn fetch_with(data: &Path, path: &Path, against_upstream: bool) -> Result<ShipVi
 
 /// Fetches, then fast-forwards when behind or pushes when ahead. Split
 /// histories are `pull_diverged` and nothing is pushed.
-fn sync_with(data: &Path, path: &Path, against_upstream: bool) -> Result<ShipView, CmdError> {
+fn sync_with(
+    data: &Path,
+    path: &Path,
+    policy: PullPolicy,
+    against_upstream: bool,
+) -> Result<ShipView, CmdError> {
     locate(data, path)?;
     let repo = Repo::discover(path)?;
     repo.fetch()?;
@@ -200,7 +233,7 @@ fn sync_with(data: &Path, path: &Path, against_upstream: bool) -> Result<ShipVie
         (0, 0) => {}
         (_, 0) => repo.push()?,
         // Behind, or both: `pull` refuses a split history itself.
-        _ => repo.pull()?,
+        _ => repo.pull_with(policy)?,
     }
     view(data, path, against_upstream)
 }
@@ -745,7 +778,30 @@ pub fn worktree_pull(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<ShipView, CmdError> {
-    pull_with(data_dir(&state)?, &path, against_upstream(&app))
+    pull_with(
+        data_dir(&state)?,
+        &path,
+        load_git_settings(&app).pull_policy,
+        against_upstream(&app),
+    )
+}
+
+#[tauri::command(async)]
+pub fn worktree_fast_forward(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: PathBuf,
+) -> Result<ShipView, CmdError> {
+    fast_forward_with(data_dir(&state)?, &path, against_upstream(&app))
+}
+
+#[tauri::command(async)]
+pub fn worktree_rebase_from_base(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: PathBuf,
+) -> Result<ShipView, CmdError> {
+    rebase_from_base_with(data_dir(&state)?, &path, against_upstream(&app))
 }
 
 #[tauri::command(async)]
@@ -754,7 +810,12 @@ pub fn worktree_sync(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<ShipView, CmdError> {
-    sync_with(data_dir(&state)?, &path, against_upstream(&app))
+    sync_with(
+        data_dir(&state)?,
+        &path,
+        load_git_settings(&app).pull_policy,
+        against_upstream(&app),
+    )
 }
 
 #[tauri::command(async)]
@@ -960,12 +1021,12 @@ mod tests {
         commit_file(&other, "c.txt", "three");
         git(&other, &["push", "-q", "origin", &name]);
 
-        let v = sync_with(&fx.data, &fx.wt, false).unwrap();
+        let v = sync_with(&fx.data, &fx.wt, PullPolicy::FfOnly, false).unwrap();
         assert!(fx.wt.join("c.txt").exists());
         assert_eq!(v.upstream.unwrap().behind, 0);
 
         commit_file(&fx.wt, "d.txt", "four");
-        let v = sync_with(&fx.data, &fx.wt, false).unwrap();
+        let v = sync_with(&fx.data, &fx.wt, PullPolicy::FfOnly, false).unwrap();
         assert_eq!(v.upstream.unwrap().ahead, 0);
         assert_eq!(
             git(&fx.origin, &["rev-parse", &name]),
@@ -978,7 +1039,10 @@ mod tests {
         git(&other, &["push", "-q", "origin", &name]);
         commit_file(&fx.wt, "f.txt", "six");
         let remote_before = git(&fx.origin, &["rev-parse", &name]);
-        assert_eq!(code(sync_with(&fx.data, &fx.wt, false)), "pull_diverged");
+        assert_eq!(
+            code(sync_with(&fx.data, &fx.wt, PullPolicy::FfOnly, false)),
+            "pull_diverged"
+        );
         assert_eq!(git(&fx.origin, &["rev-parse", &name]), remote_before);
     }
 

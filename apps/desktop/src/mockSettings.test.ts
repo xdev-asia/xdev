@@ -75,3 +75,11 @@ it("carries the sidebar layout through a prefs put", async () => {
   expect(await api.sidebarPrefsPut(next)).toEqual(next);
   expect(await api.sidebarPrefsGet()).toEqual(next);
 });
+
+it("starts the pull policy at fast-forward only and stores a change", async () => {
+  const api = createMockApi({});
+  expect((await api.gitSettings()).pullPolicy).toBe("ff-only");
+  const stored = await api.setGitSettings({ ...(await api.gitSettings()), pullPolicy: "rebase" });
+  expect(stored.pullPolicy).toBe("rebase");
+  expect((await api.gitSettings()).pullPolicy).toBe("rebase");
+});

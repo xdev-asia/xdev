@@ -2,7 +2,7 @@ import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
 import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
-import type { Api, ApiError, Check, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, Check, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 import { fromWork } from "@/workspace/branchName";
 import { REPO_COLORS, isHexColor } from "@/workspace/repoIdentity";
@@ -48,6 +48,13 @@ type WorkspaceApi = Pick<
   | "worktreeShip"
   | "worktreePush"
   | "worktreePull"
+  | "worktreeFastForward"
+  | "worktreeRebaseFromBase"
+  | "worktreeLog"
+  | "worktreeCommitFiles"
+  | "worktreeCommitFile"
+  | "worktreeOpenCommit"
+  | "worktreeOpenFileOnHost"
   | "worktreeSync"
   | "worktreeFetch"
   | "worktreeForcePush"
@@ -111,6 +118,13 @@ export type MockWorkspaceSeed = {
   conflicts?: Record<string, ConflictState>;
   // The first prompt of an agent session, by session id; a worktree path stands for its latest.
   prompts?: Record<string, string>;
+  // The commit graph by worktree path, and the files of a commit by `<worktree path>#<commit id>`.
+  log?: Record<string, RepoLog>;
+  commitFiles?: Record<string, CommitFiles>;
+  // Worktrees whose repo has no supported web remote: opening a commit or file rejects `no_web_remote`.
+  hostless?: string[];
+  // Worktrees whose remote holds older copies of their local commits, as after an amend.
+  rewritten?: Record<string, boolean>;
 };
 
 // `ARCHIVE_DAYS` in Rust: archived entries show under Archived this long.
@@ -438,7 +452,7 @@ export function createMockWorkspace(
     const branch = wt.detached ? null : wt.branch;
     const upstream =
       r.tracked && branch !== null
-        ? { remote: "origin", branch, id: "b".repeat(40), ahead: r.ahead, behind: r.behind }
+        ? { remote: "origin", branch, id: "b".repeat(40), ahead: r.ahead, behind: r.behind, rewritten: seed.rewritten?.[path] === true && r.ahead > 0 && r.behind > 0 }
         : null;
     // Against the upstream only the unpushed commits count; they are the newest, first in the list.
     const vsUpstream = git.compareAgainstUpstream && upstream !== null;
@@ -1119,6 +1133,27 @@ export function createMockWorkspace(
     },
     async worktreePull(path) {
       return doPull(path);
+    },
+    async worktreeFastForward() {
+      return reject("git", "not implemented");
+    },
+    async worktreeRebaseFromBase() {
+      return reject("git", "not implemented");
+    },
+    async worktreeLog() {
+      return reject("git", "not implemented");
+    },
+    async worktreeCommitFiles() {
+      return reject("git", "not implemented");
+    },
+    async worktreeCommitFile() {
+      return reject("git", "not implemented");
+    },
+    async worktreeOpenCommit() {
+      return reject("git", "not implemented");
+    },
+    async worktreeOpenFileOnHost() {
+      return reject("git", "not implemented");
     },
     async worktreeSync(path) {
       // Like Rust: pull when behind (a split history is refused), push when only ahead.

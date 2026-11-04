@@ -757,3 +757,29 @@ describe("mock agent kit", () => {
     expect(history[0].at).toBeGreaterThanOrEqual(history[1].at);
   });
 });
+
+it("routes the branch update and history calls through Tauri with the argument names Rust expects", async () => {
+  vi.resetModules();
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    await api.worktreeFastForward("/wt");
+    await api.worktreeRebaseFromBase("/wt");
+    await api.worktreeLog("/wt", 50, 0);
+    await api.worktreeCommitFiles("/wt", "abc1234");
+    await api.worktreeCommitFile("/wt", "abc1234", "src/a.ts");
+    await api.worktreeOpenCommit("/wt", "abc1234");
+    await api.worktreeOpenFileOnHost("/wt", "src/a.ts", null, null);
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["worktree_fast_forward", { path: "/wt" }],
+      ["worktree_rebase_from_base", { path: "/wt" }],
+      ["worktree_log", { path: "/wt", limit: 50, skip: 0 }],
+      ["worktree_commit_files", { path: "/wt", id: "abc1234" }],
+      ["worktree_commit_file", { path: "/wt", id: "abc1234", file: "src/a.ts" }],
+      ["worktree_open_commit", { path: "/wt", id: "abc1234" }],
+      ["worktree_open_file_on_host", { path: "/wt", file: "src/a.ts", line: null, endLine: null }],
+    ]);
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
+});

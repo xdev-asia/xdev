@@ -118,6 +118,15 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_workspace::SearchEvent::export_all(cfg)?;
     ShipView::export_all(cfg)?;
     xdev_git::Upstream::export_all(cfg)?;
+    xdev_git::RepoLog::export_all(cfg)?;
+    xdev_git::LogCommit::export_all(cfg)?;
+    xdev_git::CommitRef::export_all(cfg)?;
+    xdev_git::RefKind::export_all(cfg)?;
+    xdev_git::LogRef::export_all(cfg)?;
+    xdev_git::CommitFiles::export_all(cfg)?;
+    xdev_git::CommitFile::export_all(cfg)?;
+    xdev_git::CommitFileStatus::export_all(cfg)?;
+    xdev_git::PullPolicy::export_all(cfg)?;
     xdev_git::BaseRange::export_all(cfg)?;
     xdev_git::PrView::export_all(cfg)?;
     xdev_git::PrState::export_all(cfg)?;
