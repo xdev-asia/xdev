@@ -354,6 +354,9 @@ mod tests {
             assert!(line.contains("scripts/ptyd-sidecar.mjs"), "{cmd}: {line}");
         }
         assert!(here.join("../scripts/ptyd-sidecar.mjs").is_file());
+        // A bundle has it only with this config.
+        let release = include_str!("../../../../.github/workflows/release.yml");
+        assert!(release.contains("--config src-tauri/tauri.ptyd.conf.json"));
     }
 
     #[test]
