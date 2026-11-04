@@ -24,4 +24,4 @@ pub use runs::RunDetail;
 pub use skills::{SKILL_NAME, SkillAgent, SkillStatus, SkillTarget};
 pub use store::Store;
 pub use tasks::{BRIEF_CHARS, NewTask, TaskFilter, brief};
-pub use workers::{BREAKER_LIMIT, CLOSE_AFTER_MS, StartPlan, StartResult, WorkerView};
+pub use workers::{BREAKER_LIMIT, CLOSE_AFTER_MS, StartPlan, StartResult, Swept, WorkerView};
