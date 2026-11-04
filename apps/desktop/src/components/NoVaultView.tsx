@@ -77,7 +77,7 @@ export function VaultEmpty(props: { failure?: VaultFailure; busy: boolean; onCre
 }
 
 /** The workbench before any folder is open: Accounts, Tasks and Squads work, the folder apps explain how to get one. */
-export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; kit?: KitHost; onCreate(): void; onOpen(): void }): JSX.Element {
+export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; kit?: KitHost; appRequest?: { app: AppId; seq: number } | null; onCreate(): void; onOpen(): void }): JSX.Element {
   const { t } = useI18n();
   const [app, setApp] = useState<AppId>("docs");
   const [taskFocus, setTaskFocus] = useState<string | null>(null);
@@ -86,6 +86,12 @@ export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; kit?
   useEffect(() => {
     if (kitRequest) setApp("kit");
   }, [kitRequest]);
+  const appSeq = props.appRequest?.seq;
+  useEffect(() => {
+    if (props.appRequest) setApp(props.appRequest.app);
+    // Only a new request runs this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appSeq]);
   return (
     <div className="app" data-panel="off">
       <header className="topbar">
