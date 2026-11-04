@@ -1696,7 +1696,10 @@ mod tests {
                 ..TerminalSettings::default()
             };
             let json = serde_json::to_string(&t).unwrap();
-            assert!(json.contains(&format!(r#""macOptionAsAlt":"{text}""#)), "{json}");
+            assert!(
+                json.contains(&format!(r#""macOptionAsAlt":"{text}""#)),
+                "{json}"
+            );
             let back: TerminalSettings = serde_json::from_str(&json).unwrap();
             assert_eq!(back.mac_option_as_alt, value);
         }
