@@ -775,7 +775,14 @@ fn handle_verb(
             let me = ctx.orch.with_store(ctx.data, |s| {
                 s.identity(acting.tab.as_deref(), acting.run.as_deref())
             })?;
+            let waited = std::time::Instant::now();
             if flag(req, "wait") {
+                if opts.all {
+                    return Err(AppError::new(
+                        "bad_request",
+                        "--wait waits for new mail; --all reads old mail too, so use one",
+                    ));
+                }
                 let peek_all = xdev_orch::CheckOpts {
                     peek: true,
                     ..opts.clone()
@@ -789,9 +796,11 @@ fn handle_verb(
                     })
                 })?;
             }
+            // The clock after the wait: the mail is handed over now.
+            let now = ctx.now_ms + waited.elapsed().as_millis() as i64;
             let got = ctx
                 .orch
-                .with_store(ctx.data, |s| s.check(&me.address, &opts, ctx.now_ms))?;
+                .with_store(ctx.data, |s| s.check(&me.address, &opts, now))?;
             to_value(&got)
         }
         "inbox" => {
@@ -1493,6 +1502,13 @@ mod tests {
             assert_eq!(got["messages"][0]["body"], "late");
             assert!(t0.elapsed() < Duration::from_secs(5));
         });
+        // Handed over when the wait ended, not when it began.
+        let all = call("p-lead", "check", json!({"all": true, "peek": true})).unwrap();
+        let delivered = all["messages"][0]["deliveredMs"].as_i64().unwrap();
+        assert!(delivered >= 777 + 300, "{delivered}");
+        // --all reads old mail at once, so it cannot wait for new mail.
+        let both = call("p-lead", "check", json!({"wait": true, "all": true}));
+        assert_eq!(both.unwrap_err().code, "bad_request");
         // Mail already there: no sleep at all.
         call("p-child", "send", json!({"to": to, "body": "now"})).unwrap();
         let t0 = std::time::Instant::now();
