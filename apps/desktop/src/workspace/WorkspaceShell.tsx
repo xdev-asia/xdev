@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type OpenInApp, type OpenTarget, type HookDetail, type HookKind, type RepoHooks, type PrView, type PtyProfile, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type OpenInApp, type OpenTarget, type HookDetail, type HookKind, type RepoHooks, type PrView, type PtyProfile, type RepoGroup, type FolderEntry, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
 import { DocsApp } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
@@ -57,6 +57,8 @@ import type { TabStatus } from "./status";
 import { WorktreeChanges, type ChangesHandlers } from "./WorktreeChanges";
 import { worktreeTarget } from "./groups";
 import { WorktreeList } from "./WorktreeList";
+import { NameDialog } from "./NameDialog";
+import { flattenRepos, topIds } from "./sidebarModel";
 import { WorktreeTabs, type Reveal } from "./WorktreeTabs";
 import { runWithToast } from "@/quickCommands/runUi";
 import { startQuickCommands } from "@/quickCommands/store";
@@ -92,6 +94,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
   const [repos, setRepos] = useState<RepoView[] | null>(null);
+  const [items, setItems] = useState<SidebarItem[] | null>(null);
+  const [prefs, setPrefs] = useState<SidebarPrefs>({ hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false });
+  // The group name dialog: `id` null makes a new group.
+  const [groupName, setGroupName] = useState<{ id: string | null; name: string; error?: ApiError["code"] } | null>(null);
   const [selected, setSelected] = useState<string | null>(() => readSelected());
   const [view, setView] = useState<View>("workspace");
   // The docs app mounts on first visit and then stays, so its editor state survives a switch.
@@ -190,7 +196,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [quickSeq, setQuickSeq] = useState(0);
   const [settingsAt, setSettingsAt] = useState<{ section?: string; filter?: string; seq: number }>({ seq: 0 });
   // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
-  const dialogOpen = creating !== null || removing !== null || adding;
+  const dialogOpen = creating !== null || removing !== null || adding || groupName !== null;
   useJumpKey(useCallback(() => setJumpOpen((o) => (dialogOpen ? false : !o)), [dialogOpen]));
   // The worktrees in the order the sidebar draws them, which the worktree keys walk.
   const [order, setOrder] = useState<string[]>([]);
@@ -215,7 +221,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   async function load(): Promise<void> {
     try {
-      const list = await api.workspaceList();
+      const tree = await api.workspaceSidebar();
+      const list = flattenRepos(tree);
+      setItems(tree);
       setRepos(list);
       stats.track(list.flatMap((r) => r.worktrees.map((w) => w.path)));
       // A worktree gone from the list (removed outside the app, say) must not keep its ptys. A
@@ -235,6 +243,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => {
     void load();
     // Loaded once; every action below reloads after it changes the list.
+  }, [api]);
+
+  useEffect(() => {
+    api.sidebarPrefsGet().then(setPrefs, () => {});
   }, [api]);
 
   // Layout restore: once per run, after the registry is known and before the saver starts (a saver that
@@ -643,6 +655,59 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     }
   }
 
+  async function sidebarCall(run: () => Promise<unknown>): Promise<boolean> {
+    setNotice(undefined);
+    try {
+      await run();
+      await load();
+      return true;
+    } catch (e) {
+      setNotice(toApiError(e).code);
+      return false;
+    }
+  }
+
+  function changePrefs(next: SidebarPrefs): void {
+    setPrefs(next);
+    api.sidebarPrefsPut(next).catch((e) => setNotice(toApiError(e).code));
+  }
+
+  async function saveGroup(name: string): Promise<void> {
+    if (!groupName) return;
+    try {
+      await api.groupPut(groupName.id, name);
+      setGroupName(null);
+      await load();
+    } catch (e) {
+      setGroupName({ ...groupName, name, error: toApiError(e).code });
+    }
+  }
+
+  async function addFolder(): Promise<void> {
+    const path = await api.pickFolder().catch(() => null);
+    if (path) await sidebarCall(() => api.folderAdd(path));
+  }
+
+  async function openFolder(folder: FolderEntry): Promise<void> {
+    if (!sessions) return;
+    try {
+      const pv = await api.profiles();
+      const shell = pv.shells.some((s) => s.id === pv.defaultShell) ? pv.defaultShell : pv.shells[0]?.id;
+      if (shell) {
+        sessions.open(folder.path, shell);
+        show("workspace");
+      }
+    } catch {
+      // The profile list did not load; nothing opens.
+    }
+  }
+
+  async function archive(wt: WorktreeView): Promise<void> {
+    await sessions?.closeWorktree(wt.path);
+    const ok = await sidebarCall(() => api.worktreeArchive(wt.path, false, true));
+    if (ok) sessions?.dropCarried(wt.path);
+  }
+
   async function repoCloned(repo: RepoView): Promise<void> {
     setAdding(false);
     await load();
@@ -1029,7 +1094,23 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           <div className="ws-side-view" hidden={sideView !== "worktrees"}>
           <WorktreeList
             onOrder={(paths) => setOrder((o) => (o.join(",") === paths.join(",") ? o : paths))}
-            repos={repos}
+            items={items}
+            prefs={prefs}
+            onPrefs={changePrefs}
+            onReorder={(ids) => void sidebarCall(() => api.sidebarOrder(ids))}
+            onGroupMove={(member, group, index) => void sidebarCall(() => api.groupMove(member, group, index))}
+            onNewGroup={() => setGroupName({ id: null, name: "" })}
+            onRenameGroup={(g: RepoGroup) => setGroupName({ id: g.id, name: g.name })}
+            onRemoveGroup={(g: RepoGroup) => void sidebarCall(() => api.groupRemove(g.id))}
+            onAddFolder={() => void addFolder()}
+            onOpenFolder={(f) => void openFolder(f)}
+            onForgetFolder={(f) => void sidebarCall(() => api.folderForget(f.id))}
+            onRestore={(repoId, branch) => void sidebarCall(() => api.worktreeRestore(repoId, branch))}
+            onArchive={(wt) => void archive(wt)}
+            onCopyLink={(url) => {
+              void copy(url);
+              pushToast({ text: t("workItem.copied") });
+            }}
             selected={current?.path ?? null}
             dots={dots}
             stats={stats.all()}
@@ -1384,6 +1465,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           error={forgetting.error}
           onConfirm={() => void forgetRepo(forgetting.repo)}
           onCancel={() => setForgetting(null)}
+        />
+      )}
+      {groupName && (
+        <NameDialog
+          heading={t(groupName.id ? "group.rename" : "group.new")}
+          label={t("group.name")}
+          initial={groupName.name}
+          error={groupName.error}
+          onSave={(name) => void saveGroup(name)}
+          onCancel={() => setGroupName(null)}
         />
       )}
       {removing && (
