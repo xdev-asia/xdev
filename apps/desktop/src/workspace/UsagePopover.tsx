@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
-import type { Accounts, Quota } from "@/api";
+import type { Accounts, Provider, Quota, UsageDisplay } from "@/api";
 import { useI18n } from "@/i18n";
-import { resetLabel, USAGE_MODE_KEY, usageRows, type UsageMode, type UsageRow } from "./usageModel";
+import { resetLabel, shownPercent, USAGE_MODE_KEY, usageRows, type UsageMode, type UsageRow } from "./usageModel";
 
 /** The saved mode; Detailed when nothing is saved or storage cannot be read. */
 export function loadUsageMode(): UsageMode {
@@ -28,6 +28,7 @@ function busiest(row: UsageRow): UsageRow["windows"][number] | null {
   return best;
 }
 
+/** `percent` is the number to show (used or left); the caller has already applied the display. */
 function Bar(props: { state: UsageRow["state"]; percent: number; label: string }): JSX.Element {
   const shown = Math.min(100, Math.max(0, props.percent));
   return (
@@ -40,6 +41,8 @@ function Bar(props: { state: UsageRow["state"]; percent: number; label: string }
 export interface UsagePopoverViewProps {
   rows: UsageRow[] | null;
   mode: UsageMode;
+  /** Used (default) or Remaining. */
+  display?: UsageDisplay;
   loading: boolean;
   now: number;
   readAt: number | null;
@@ -47,6 +50,8 @@ export interface UsagePopoverViewProps {
   onRefresh(): void;
   onOpenDetails(): void;
   onManageAccounts(): void;
+  /** Makes `account` the active one of `provider`; without it the rows have no "Use" action. */
+  onUse?(provider: Provider, account: string): void;
   onClose(): void;
 }
 
@@ -54,6 +59,9 @@ export interface UsagePopoverViewProps {
 export function UsagePopoverView(props: UsagePopoverViewProps): JSX.Element {
   const { t } = useI18n();
   const { rows, mode } = props;
+  const display = props.display ?? "used";
+  const word = t(display === "remaining" ? "usage.stats.left" : "usage.stats.used");
+  const pct = (used: number) => shownPercent(used, display);
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => root.current?.focus(), []);
 
@@ -99,10 +107,16 @@ export function UsagePopoverView(props: UsagePopoverViewProps): JSX.Element {
                   <div className="ws-usage-line">
                     <span className="ws-usage-name">{row.account}</span>
                     {row.provider && <span className="ws-usage-provider">{row.provider}</span>}
+                    {row.active && <span className="ws-usage-active" data-action="usage-active">{t("accounts.switch.active")}</span>}
+                    {!row.active && !row.signIn && row.provider && props.onUse && (
+                      <button type="button" className="ws-usage-btn ws-usage-use" data-action="usage-use" aria-label={t("accounts.switch.useAria", { name: row.account })} onClick={() => props.onUse?.(row.provider as Provider, row.account)}>
+                        {t("usage.popover.use")}
+                      </button>
+                    )}
                     {mode === "compact" && top ? (
                       <>
-                        <Bar state={row.state} percent={top.percent ?? 0} label={`${row.account}: ${top.label}`} />
-                        <span className="ws-usage-pct">{`${top.percent}%`}</span>
+                        <Bar state={row.state} percent={pct(top.percent ?? 0)} label={`${row.account}: ${top.label} (${word})`} />
+                        <span className="ws-usage-pct" title={word}>{`${pct(top.percent ?? 0)}%`}</span>
                         <span className="ws-usage-window">{top.label}</span>
                       </>
                     ) : (
@@ -113,8 +127,8 @@ export function UsagePopoverView(props: UsagePopoverViewProps): JSX.Element {
                     row.windows.map((w) => (
                       <div key={w.key} className="ws-usage-window-row">
                         <span className="ws-usage-window">{w.label}</span>
-                        {w.percent !== null ? <Bar state={row.state} percent={w.percent} label={`${row.account}: ${w.label}`} /> : null}
-                        <span className="ws-usage-pct">{w.percent === null ? "–" : `${w.percent}%`}</span>
+                        {w.percent !== null ? <Bar state={row.state} percent={pct(w.percent)} label={`${row.account}: ${w.label} (${word})`} /> : null}
+                        <span className="ws-usage-pct" title={word}>{w.percent === null ? "–" : `${pct(w.percent)}%`}</span>
                         <span className="ws-usage-reset">{resetLabel(w.resetsAt, props.now, t)}</span>
                       </div>
                     ))}
@@ -145,10 +159,12 @@ export function UsagePopoverView(props: UsagePopoverViewProps): JSX.Element {
 export function UsagePopover(props: {
   quota: Quota[] | null;
   accounts: Accounts | null;
+  display?: UsageDisplay;
   loading: boolean;
   onRefresh(): void;
   onOpenDetails(): void;
   onManageAccounts(): void;
+  onUse?(provider: Provider, account: string): void;
   onClose(): void;
 }): JSX.Element {
   const { t } = useI18n();
@@ -163,6 +179,7 @@ export function UsagePopover(props: {
     <UsagePopoverView
       rows={rows}
       mode={mode}
+      display={props.display}
       loading={props.loading}
       now={Date.now()}
       readAt={readAt}
@@ -173,6 +190,7 @@ export function UsagePopover(props: {
       onRefresh={props.onRefresh}
       onOpenDetails={props.onOpenDetails}
       onManageAccounts={props.onManageAccounts}
+      onUse={props.onUse}
       onClose={props.onClose}
     />
   );

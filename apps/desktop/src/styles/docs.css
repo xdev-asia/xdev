@@ -486,3 +486,65 @@
   font-size: 11px;
   color: var(--x-color-muted);
 }
+
+/* Docs view: a list beside the doc, or the doc alone when the section has no list. */
+
+.docsview {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--x-color-bg);
+}
+
+.docsview[data-list="off"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.docsview-list {
+  min-height: 0;
+}
+
+.docsview-main {
+  min-width: 0;
+  min-height: 0;
+}
+
+.docsview-note {
+  margin: 0;
+  padding: var(--x-space-2) var(--x-space-4);
+  border-bottom: 1px solid var(--x-color-line);
+  color: var(--x-color-muted);
+  font-size: 13px;
+}
+
+.docsview-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-3);
+  align-items: center;
+  max-width: 440px;
+  margin: auto;
+  padding: var(--x-space-6);
+  text-align: center;
+}
+
+.docsview-empty-title {
+  margin: 0;
+  color: var(--x-color-ink);
+  font-size: 18px;
+}
+
+.docsview-empty-hint {
+  margin: 0;
+  color: var(--x-color-muted);
+  line-height: 1.6;
+}
+
+.docsview-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-2);
+  justify-content: center;
+}

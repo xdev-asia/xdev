@@ -21,11 +21,13 @@ import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { VaultNav } from "./VaultNav";
 import { PaletteHost } from "@/palette/PaletteHost";
+import { NavButtons } from "@/nav/NavButtons";
 import { SettingsView } from "@/settings/SettingsView";
 import { resetStatusSettings } from "@/status/statusSettings";
 import { BellMenu } from "./BellMenu";
 import { Sessions } from "./sessions";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
+import { AccountSwitchDialog } from "./AccountSwitchDialog";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeList } from "./WorktreeList";
@@ -68,6 +70,9 @@ vi.mock("@/keys/keymap", async (original) => ({
 }));
 const termKey = vi.hoisted(() => ({ host: null as null | { t: (k: string) => string; openShortcuts: (a: string) => void } }));
 vi.mock("@/keys/terminalKey", async (original) => ({ ...await original<typeof import("@/keys/terminalKey")>(), setTerminalKeyHost: (h: typeof termKey.host) => { termKey.host = h; } }));
+// The switch watcher is outside what the shell tests drive; what it asks is fed in by hand.
+const flow = vi.hoisted(() => ({ ask: null as null | ((p: unknown) => void) }));
+vi.mock("./accountSwitchFlow", async (original) => ({ ...await original<typeof import("./accountSwitchFlow")>(), watchAccountSwitch: (o: { ask(p: unknown): void }) => { flow.ask = o.ask; return { stop() {} }; } }));
 // xterm needs a real canvas; the terminals are tested on their own.
 vi.mock("@/terminal/Terminal", () => ({ Terminal: () => null }));
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
@@ -1231,11 +1236,65 @@ it("Manage accounts in the usage popover shows the docs view on the Accounts app
   expect(view.of(DocsApp)[0].props.appRequest).toEqual({ app: "accounts", seq: 2 });
 });
 
-it("Usage details in the usage popover asks the Kit for the usage tab", async () => {
+it("picking a task in the palette shows the docs view on Tasks, focused on that task", async () => {
+  const view = await harness();
+  view.of(PaletteHost)[0].props.actions.openTask("t1");
+  view.draw();
+  expect(view.of(DocsApp)[0].props.appRequest).toEqual({ app: "tasks", task: "t1", seq: 1 });
+  expect(view.all().find(n => n.props.className === "ws-docs")!.props.hidden).toBe(false);
+  expect(view.of(PaletteHost)[0].props.tasks).toBeTypeOf("function");
+});
+
+it("the header has back and forward buttons, and the history keys have handlers that pass on at the ends", async () => {
+  const view = await harness();
+  const buttons = view.of(NavButtons)[0].props;
+  expect(buttons.canBack).toBe(false);
+  expect(buttons.canForward).toBe(false);
+  expect(keymap.handlers["worktree.history.back"]()).toBe(false);
+  expect(keymap.handlers["worktree.history.forward"]()).toBe(false);
+});
+
+it("Usage details in the usage popover opens the Stats & Usage settings section", async () => {
   const view = await harness();
   view.of(LiveWorkspaceFooter)[0].props.onOpenUsage();
   view.draw();
-  expect(view.of(DocsApp)[0].props.kit.open).toMatchObject({ tab: "usage" });
+  expect(view.of(SettingsView)[0].props.initial).toBe("usage");
+});
+
+// Account switches: the dialog, its queue and a failed Use.
+const pending = (to: string) => ({ provider: "claude", from: "claude-2", to, tabIds: [] as string[] });
+it("a second account switch while the dialog is open waits its turn", async () => {
+  const view = await harness();
+  // The effects of a later draw, with the sessions store in place: run them until the watcher is started.
+  flow.ask = null;
+  hooks.effects = [];
+  view.draw();
+  for (const effect of hooks.effects) {
+    if (flow.ask) break;
+    try { effect(); } catch { /* an effect that needs a browser */ }
+  }
+  expect(flow.ask).not.toBeNull();
+  flow.ask!(pending("claude-3"));
+  flow.ask!(pending("claude-4"));
+  view.draw();
+  expect(view.of(AccountSwitchDialog)).toHaveLength(1);
+  expect(view.of(AccountSwitchDialog)[0].props.to).toBe("claude-3");
+  // Answering the first shows the second, then the dialog goes.
+  view.of(AccountSwitchDialog)[0].props.onKeep(false);
+  view.draw();
+  expect(view.of(AccountSwitchDialog)[0].props.to).toBe("claude-4");
+  view.of(AccountSwitchDialog)[0].props.onKeep(false);
+  view.draw();
+  expect(view.of(AccountSwitchDialog)).toHaveLength(0);
+});
+
+it("a failed Use in the usage popover says so in a toast", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "accountActivate").mockRejectedValueOnce({ code: "not_found" });
+  const view = await harness(api);
+  view.of(LiveWorkspaceFooter)[0].props.onUseAccount("claude", "claude-3");
+  await tick();
+  expect(getToasts().some((x) => x.text === en("accounts.switch.failed", { code: "not_found" }))).toBe(true);
 });
 
 // Ctrl+Shift+Backspace, selection and branch review.

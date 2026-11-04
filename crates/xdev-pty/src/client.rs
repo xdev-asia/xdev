@@ -68,10 +68,17 @@ pub struct Attached {
     pub truncated: bool,
 }
 
+/// The service's folder under the app's local dir. A debug build has its own
+/// (`ptyd-dev`), so it never reads a release service's token or sessions, nor
+/// runs its binary copies, and the other way round.
+pub fn service_dir(local: &Path) -> PathBuf {
+    local.join(format!("ptyd{}", xdev_ipc::CHANNEL))
+}
+
 /// What `ensure` needs to find or start the service.
 #[derive(Debug, Clone)]
 pub struct StartOptions {
-    /// `<local dir>/ptyd`: token, socket, `sessions.json`, binary copies.
+    /// `service_dir(<local dir>)`: token, socket, `sessions.json`, binary copies.
     pub dir: PathBuf,
     /// The `xdev-ptyd` next to the app.
     pub binary: PathBuf,
@@ -158,6 +165,8 @@ impl Sub {
 enum Hello {
     NotRunning,
     Auth,
+    /// Another user's process holds the endpoint; never sent the token.
+    Foreign(String),
     Version,
     Io(String),
 }
@@ -177,7 +186,7 @@ pub fn ensure(opts: &StartOptions) -> Result<Client, ClientError> {
     loop {
         match hello(&endpoint, &opts.dir, &opts.app_version) {
             Ok(client) => return Ok(client),
-            Err(Hello::Version) => return Err(hello_error(Hello::Version)),
+            Err(e @ (Hello::Version | Hello::Foreign(_))) => return Err(hello_error(e)),
             // Not bound yet, or bound with its token not written yet.
             Err(_) if start.elapsed() < START_WAIT => thread::sleep(POLL),
             Err(e) => {
@@ -209,6 +218,7 @@ fn hello_error(e: Hello) -> ClientError {
     match e {
         Hello::NotRunning => ClientError::new("ptyd_unreachable", None),
         Hello::Auth => ClientError::new("ptyd_auth", None),
+        Hello::Foreign(d) => ClientError::new("ptyd_auth", d),
         Hello::Version => ClientError::new("ptyd_version", None),
         Hello::Io(d) => ClientError::new("ptyd_unreachable", d),
     }
@@ -222,6 +232,7 @@ pub fn connect(dir: &Path, endpoint: &Endpoint, app_version: &str) -> Result<Cli
 fn hello(endpoint: &Endpoint, dir: &Path, app_version: &str) -> Result<Client, Hello> {
     let mut r = endpoint.connect().map_err(|e| match e {
         IpcError::NotRunning => Hello::NotRunning,
+        e @ IpcError::Foreign => Hello::Foreign(e.to_string()),
         e => Hello::Io(e.to_string()),
     })?;
     let token = match read_token(dir) {
@@ -231,7 +242,7 @@ fn hello(endpoint: &Endpoint, dir: &Path, app_version: &str) -> Result<Client, H
     };
     let io = |e: io::Error| Hello::Io(e.to_string());
     let mut w = r.try_clone().map_err(io)?;
-    r.set_read_timeout(Some(START_WAIT)).map_err(io)?;
+    r.set_read_deadline(Some(START_WAIT)).map_err(io)?;
     write_frame(
         &mut w,
         &Frame::Hello {
@@ -256,11 +267,15 @@ fn hello(endpoint: &Endpoint, dir: &Path, app_version: &str) -> Result<Client, H
         Ok(Some(Frame::Error { code, .. })) if code == "ptyd_version" => {
             return Err(Hello::Version);
         }
+        // A service that never answers is not one this client can use.
+        Err(ProtoError::Io(e)) if e.kind() == io::ErrorKind::TimedOut => {
+            return Err(Hello::Io(e.to_string()));
+        }
         // Closed with no answer: the token was not the service's.
         Ok(_) | Err(ProtoError::Io(_)) => return Err(Hello::Auth),
         Err(e) => return Err(Hello::Io(e.to_string())),
     };
-    r.set_read_timeout(None).map_err(io)?;
+    r.set_read_deadline(None).map_err(io)?;
     let inner = Arc::new(Inner {
         w: Mutex::new(w),
         subs: Mutex::default(),
@@ -324,6 +339,11 @@ impl Inner {
                 }
             }
             Frame::Gap { id, .. } => {
+                // TODO: a Gap on a live tab is dropped here; the next Output's
+                // seq keeps `seen` right, but the view never hears that bytes
+                // were lost, and its own byte count (the next attach's
+                // `from_seq`) falls behind. Telling it needs a Sink callback
+                // and a Channel message the terminal client knows.
                 if let Some(p) = lock(&self.attaches).get_mut(&id) {
                     p.truncated = true;
                 }
@@ -658,4 +678,20 @@ fn reap(mut child: std::process::Child) {
 
 fn lock<T: ?Sized>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_debug_build_keeps_its_own_service_dir() {
+        let local = Path::new("local");
+        let want = if cfg!(debug_assertions) {
+            "ptyd-dev"
+        } else {
+            "ptyd"
+        };
+        assert_eq!(service_dir(local), local.join(want));
+    }
 }

@@ -56,6 +56,11 @@ export function relativeFolder(folder: string, roots: string[]): string {
   return displayPath(folder);
 }
 
+/** A count in the reader's locale, with its digit grouping (`12,345`). */
+export function formatCount(n: number, locale?: string): string {
+  return new Intl.NumberFormat(locale).format(n);
+}
+
 export function totalOf(t: Tokens): number {
   return t.input + t.output + t.cache_read + t.cache_write;
 }

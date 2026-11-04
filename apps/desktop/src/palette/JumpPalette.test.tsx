@@ -210,3 +210,127 @@ it("ctrl+k inside the palette does not reach the window", () => {
   const m = p.key({ key: "K", metaKey: true });
   expect(m.stopPropagation).toHaveBeenCalled();
 });
+
+const scoped = [
+  mk("wt:/wt/oak", "worktree", "oak", { worktree: "/wt/oak", repo: "/r/x" }),
+  mk("wt:/wt/pine", "worktree", "pine", { worktree: "/wt/pine", repo: "/r/y" }),
+  mk("set:agents", "setting", "Agents"),
+];
+const scopes = [{ path: "/r/x", name: "xdev" }, { path: "/r/y", name: "other" }];
+const find = (p: ReturnType<typeof setup>, pred: (n: Node) => boolean) => nodes(p.draw()).find(pred)!;
+const filterBtn = (p: ReturnType<typeof setup>) => find(p, (n) => n.props.className === "pal-filter-btn");
+const menuItems = (p: ReturnType<typeof setup>) => nodes(p.draw()).filter((n) => n.props.role === "menuitemradio");
+
+it("the Filter button toggles the project menu", () => {
+  const p = setup({ items: scoped, scopes });
+  expect(filterBtn(p).props["aria-haspopup"]).toBe("menu");
+  expect(filterBtn(p).props["aria-expanded"]).toBe(false);
+  expect(nodes(p.draw()).some((n) => n.props.role === "menu")).toBe(false);
+  filterBtn(p).props.onClick();
+  expect(filterBtn(p).props["aria-expanded"]).toBe(true);
+  expect(menuItems(p).map((n) => n.props.children)).toEqual([en("palette.scope.all"), "xdev", "other"]);
+  filterBtn(p).props.onClick();
+  expect(nodes(p.draw()).some((n) => n.props.role === "menu")).toBe(false);
+});
+
+it("picking a project narrows the rows and shows a chip that × clears", () => {
+  const p = setup({ items: scoped, scopes });
+  expect(p.rows()).toHaveLength(2);
+  filterBtn(p).props.onClick();
+  menuItems(p)[1].props.onClick();
+  expect(p.rows()).toHaveLength(1);
+  expect(p.html()).not.toContain("pine");
+  expect(filterBtn(p).props["data-active"]).toBe(true);
+  const chip = find(p, (n) => String(n.props.className).includes("pal-scope-chip"));
+  expect(JSON.stringify(chip.props.children)).toContain("xdev");
+  find(p, (n) => n.props.className === "pal-scope-clear").props.onClick();
+  expect(p.rows()).toHaveLength(2);
+  expect(filterBtn(p).props["data-active"]).toBe(false);
+});
+
+it("the menu takes Up, Down and Enter", () => {
+  const p = setup({ items: scoped, scopes });
+  filterBtn(p).props.onClick();
+  p.key({ key: "ArrowDown" });
+  p.key({ key: "ArrowDown" });
+  p.key({ key: "Enter" });
+  expect(p.html()).toContain("other");
+  expect(find(p, (n) => String(n.props.className).includes("pal-scope-chip")).props.children[0]).toBe("other");
+  expect(p.props.onClose).not.toHaveBeenCalled();
+});
+
+it("Escape in the menu closes the menu, not the palette", () => {
+  const p = setup({ items: scoped, scopes });
+  filterBtn(p).props.onClick();
+  const e = p.key({ key: "Escape" });
+  expect(e.preventDefault).toHaveBeenCalled();
+  expect(nodes(p.draw()).some((n) => n.props.role === "menu")).toBe(false);
+  const cancel = { preventDefault: vi.fn() };
+  filterBtn(p).props.onClick();
+  p.draw().props.onCancel(cancel);
+  expect(p.props.onClose).not.toHaveBeenCalled();
+  p.draw().props.onCancel(cancel);
+  expect(p.props.onClose).toHaveBeenCalledTimes(1);
+});
+
+it("Tab still cycles five chips", () => {
+  const p = setup({ items: scoped, scopes });
+  expect(nodes(p.draw()).filter((n) => n.props.role === "tab")).toHaveLength(5);
+  for (let i = 0; i < 5; i++) p.key({ key: "Tab" });
+  const active = nodes(p.draw()).filter((n) => n.props.role === "tab" && n.props["aria-selected"]);
+  expect(active[0].props.children).toBe(en("palette.filter.all"));
+});
+
+it("the chips, the Filter button, the menu and × keep the focus in the search box", () => {
+  const p = setup({ items: scoped, scopes });
+  const press = (n: Node) => {
+    const e = { preventDefault: vi.fn() };
+    n.props.onMouseDown(e);
+    expect(e.preventDefault).toHaveBeenCalled();
+  };
+  nodes(p.draw()).filter((n) => n.props.role === "tab").forEach(press);
+  press(filterBtn(p));
+  filterBtn(p).props.onClick();
+  menuItems(p).forEach(press);
+  menuItems(p)[1].props.onClick();
+  press(find(p, (n) => n.props.className === "pal-scope-clear"));
+});
+
+it("a press outside the menu closes it; a press inside does not", () => {
+  const p = setup({ items: scoped, scopes });
+  const at = (inside: boolean) => ({ target: { closest: () => (inside ? {} : null) } });
+  filterBtn(p).props.onClick();
+  p.draw().props.onMouseDown(at(true));
+  expect(nodes(p.draw()).some((n) => n.props.role === "menu")).toBe(true);
+  p.draw().props.onMouseDown(at(false));
+  expect(nodes(p.draw()).some((n) => n.props.role === "menu")).toBe(false);
+});
+
+it("Tab and digits close the open menu without acting on the rows", () => {
+  const p = setup({ items: scoped, scopes });
+  run.mockClear();
+  filterBtn(p).props.onClick();
+  p.key({ key: "Tab" });
+  expect(nodes(p.draw()).some((n) => n.props.role === "menu")).toBe(false);
+  const active = nodes(p.draw()).filter((n) => n.props.role === "tab" && n.props["aria-selected"]);
+  expect(active[0].props.children).toBe(en("palette.filter.all"));
+  filterBtn(p).props.onClick();
+  p.key({ key: "1" });
+  expect(run).not.toHaveBeenCalled();
+  expect(nodes(p.draw()).some((n) => n.props.role === "menu")).toBe(false);
+});
+
+it("reopening resets the scope", () => {
+  const p = setup({ items: scoped, scopes });
+  filterBtn(p).props.onClick();
+  menuItems(p)[1].props.onClick();
+  expect(p.rows()).toHaveLength(1);
+  p.draw();
+  hooks.effects.splice(0).forEach((e) => e());
+  expect(p.rows()).toHaveLength(2);
+});
+
+it("no projects, no Filter button", () => {
+  const p = setup({ items: scoped });
+  expect(nodes(p.draw()).some((n) => n.props.className === "pal-filter-btn")).toBe(false);
+});

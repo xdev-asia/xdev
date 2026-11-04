@@ -1,11 +1,11 @@
 import { chordLabel } from "@/keys/keymap";
-import type { QuickCommand, RepoView, SessionRow, WorktreeView } from "@/api";
+import type { QuickCommand, RepoView, WorktreeView } from "@/api";
 import { SETTING_ENTRIES } from "@/settings/catalog";
 import { SECTIONS } from "@/settings/sections";
 import type { Tab } from "@/workspace/sessions";
 import type { TabStatus } from "@/workspace/status";
 
-export type PaletteKind = "tab" | "worktree" | "setting" | "action";
+export type PaletteKind = "tab" | "chat" | "worktree" | "task" | "setting" | "action";
 /** What an agent wants from the person; supplied by the status feature when it exists. */
 export type Attention = "needs-you" | "done";
 export type ItemStatus = TabStatus | Attention;
@@ -23,6 +23,8 @@ export interface PaletteItem {
   activity?: number | null;
   /** Tabs and worktrees: the worktree path they belong to. */
   worktree?: string;
+  /** The repo folder, for the project scope. Settings and actions have none. */
+  repo?: string;
   /** Tabs: the position in open order, for stable ordering. */
   order?: number;
   /** Left out until the trimmed query has at least this many characters. */
@@ -54,6 +56,7 @@ export function worktreeItems(
         status: ctx.dot(wt.path),
         activity: ctx.activity(wt.path),
         worktree: wt.path,
+        repo: repo.path,
         run: () => ctx.onPick(wt),
       });
     }
@@ -79,6 +82,7 @@ export function tabItems(
           keywords: [tab.agent ? "agent" : "terminal"],
           status: ctx.attention?.(tab.id) ?? tab.status,
           worktree: wt.path,
+          repo: repo.path,
           order: out.length,
           run: () => ctx.onPick(tab),
         });
@@ -157,30 +161,6 @@ export function actionItems(t: T, acts: Partial<Record<ActionName, () => void>>)
     });
   }
   return out;
-}
-
-/** How many recent sessions of the worktree the palette lists. */
-export const RECENT_SESSIONS = 5;
-
-/** The newest resumable sessions that ran in a worktree, as "Resume: {title}" items. */
-export function sessionItems(rows: SessionRow[], worktree: string | null, t: T, onResume: (row: SessionRow) => void): PaletteItem[] {
-  if (!worktree) return [];
-  return rows
-    .filter((r) => r.worktree === worktree && r.resumable)
-    .sort((a, b) => b.session.last - a.session.last)
-    .slice(0, RECENT_SESSIONS)
-    .map((row) => {
-      const title = row.session.title ?? t("agentSessions.untitled");
-      return {
-        id: `sess:${row.session.key}`,
-        kind: "action" as const,
-        title: t("agentSessions.palette.resume", { title }),
-        detail: row.session.branch ?? undefined,
-        keywords: ["resume", "session", "agent", row.session.agent],
-        worktree,
-        run: () => onResume(row),
-      };
-    });
 }
 
 /** The same check as the create-worktree dialog. */

@@ -91,8 +91,8 @@ struct Client {
 
 impl Client {
     fn connect(e: &Endpoint) -> Client {
-        let r = e.connect().unwrap();
-        r.set_read_timeout(Some(DEADLINE)).unwrap();
+        let mut r = e.connect().unwrap();
+        r.set_read_deadline(Some(DEADLINE)).unwrap();
         let w = r.try_clone().unwrap();
         Client { r, w }
     }
@@ -101,7 +101,9 @@ impl Client {
         write_frame(&mut self.w, &f).unwrap();
     }
 
+    /// None at the end of the stream, or with no frame for `DEADLINE`.
     fn next(&mut self) -> Option<Frame> {
+        self.r.set_read_deadline(Some(DEADLINE)).unwrap();
         read_frame(&mut self.r).ok().flatten()
     }
 
@@ -237,14 +239,12 @@ fn a_reattach_from_the_old_seq_gets_only_the_new_bytes() {
     c.send(Frame::Detach { id: "p1".into() });
     let mut seen = out.len() as u64;
     // Bytes that raced the detach still count as seen.
-    c.r.set_read_timeout(Some(Duration::from_millis(300)))
-        .unwrap();
-    while let Some(f) = c.next() {
+    c.r.set_read_deadline(Some(Duration::from_secs(1))).unwrap();
+    while let Ok(Some(f)) = read_frame(&mut c.r) {
         if let Frame::Output { data, .. } = f {
             seen += data.len() as u64;
         }
     }
-    c.r.set_read_timeout(Some(DEADLINE)).unwrap();
     let enter = if cfg!(windows) { "go\r\n" } else { "go\n" };
     c.send(Frame::Write {
         id: "p1".into(),
@@ -341,7 +341,8 @@ fn a_client_that_does_not_ack_is_detached_and_the_child_runs_on() {
     });
     let mut c = svc.client();
     let flood = if cfg!(windows) {
-        "for /l %i in (1,1,2000) do @echo line-%i".to_owned() + "& ping -n 30 127.0.0.1 >nul"
+        // The loop in brackets: unbracketed, the ping would run after every line.
+        "(for /l %i in (1,1,2000) do @echo line-%i)".to_owned() + "& ping -n 30 127.0.0.1 >nul"
     } else {
         "i=0; while [ $i -lt 2000 ]; do echo line-$i; i=$((i+1)); done; sleep 30".to_owned()
     };

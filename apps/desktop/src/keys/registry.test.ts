@@ -15,7 +15,7 @@ const ALL: Record<ActionId, true> = {
   "tab.select.6": true, "tab.select.7": true, "tab.select.8": true, "tab.select.9": true,
   "pane.splitRight": true, "pane.splitDown": true, "pane.next": true, "pane.prev": true,
   "pane.expand": true, "pane.equalize": true, "pane.close": true,
-  "worktree.next": true, "worktree.prev": true,
+  "worktree.next": true, "worktree.prev": true, "worktree.history.back": true, "worktree.history.forward": true,
   "worktree.select.1": true, "worktree.select.2": true, "worktree.select.3": true, "worktree.select.4": true,
   "worktree.select.5": true, "worktree.select.6": true, "worktree.select.7": true, "worktree.select.8": true,
   "worktree.select.9": true,
@@ -70,7 +70,7 @@ it("no two defaults in one scope share a chord on any platform", () => {
 
 it("the keys a TUI also uses are the ones that yield under terminal first", () => {
   expect(SHORTCUTS.filter((d) => d.yieldsToTerminal).map((d) => d.id).sort()).toEqual(
-    ["pane.close", "pane.next", "pane.prev", "pane.splitDown", "pane.splitRight", "terminal.clear", "terminal.find", "terminal.selectAll"],
+    ["pane.close", "pane.next", "pane.prev", "pane.splitDown", "pane.splitRight", "terminal.clear", "terminal.find", "terminal.selectAll", "worktree.history.back", "worktree.history.forward"],
   );
 });
 

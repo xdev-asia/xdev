@@ -72,6 +72,7 @@ pub fn run() {
             if let Some(file) = commands::settings_path(app.handle()) {
                 app.manage(settings_store::SettingsStore::new(file));
             }
+            workspace::start_migrations(app.handle());
             // Off the main thread: starting the service may take a moment.
             {
                 let app = app.handle().clone();
@@ -140,6 +141,8 @@ pub fn run() {
             commands::diff_settings_put,
             commands::agents_settings_get,
             commands::agents_settings_put,
+            commands::usage_settings_get,
+            commands::usage_settings_put,
             keybindings::keybindings_read,
             keybindings::keybindings_write,
             keybindings::keybindings_reveal,
@@ -306,6 +309,7 @@ pub fn run() {
             kit::kit_skill_remove,
             kit::kit_skill_restore,
             kit::kit_usage,
+            kit::kit_usage_report,
             kit::kit_paths_exist,
             kit::kit_prompt_history,
             agent_sessions::agent_sessions,

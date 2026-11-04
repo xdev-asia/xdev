@@ -15,11 +15,15 @@ export interface JumpPaletteProps {
   canCreate: boolean;
   onCreate(name: string): void;
   onClose(): void;
+  /** The projects the Filter button offers; none hides the button. */
+  scopes?: { path: string; name: string }[];
   now?: number;
 }
 
 const ICONS: Record<PaletteKind, string> = {
   tab: "M4 5h16v14H4zM8 10l3 2-3 2M13 14h3",
+  chat: "M4 5h16v11H9l-5 4zM8 10h8",
+  task: "M5 5h14v14H5zM9 12l2 2 4-4",
   worktree: "M6 4v10M6 14a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM6 4a2 2 0 1 0 0 .01M18 8a2 2 0 1 0 0 .01M18 10c0 4-6 3-12 4",
   setting: "M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6",
   action: "M13 3 5 13h6l-1 8 8-10h-6z",
@@ -43,6 +47,8 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
   const [filter, setFilter] = useState<Filter>("all");
   const [selected, setSelected] = useState(0);
   const [extra, setExtra] = useState<Partial<Record<Filter, number>>>({});
+  const [scope, setScope] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ at: number } | null>(null);
 
   // Every opening starts clean.
   useEffect(() => {
@@ -51,9 +57,11 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
     setFilter("all");
     setSelected(0);
     setExtra({});
+    setScope(null);
+    setMenu(null);
   }, [open]);
 
-  const rows = rank({ items, query, filter, current, recent: (id) => recent.at(id), extra, canCreate, now: props.now ?? Date.now() });
+  const rows = rank({ items, query, filter, current, recent: (id) => recent.at(id), extra, canCreate, now: props.now ?? Date.now(), scope });
   const picks = rows.filter(selectable);
   const at = Math.min(selected, Math.max(0, picks.length - 1));
 
@@ -86,9 +94,61 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
     setExtra({});
   }
 
+  const scopes = props.scopes ?? [];
+  // Menu entries: "All projects" (null) then one per project.
+  const menuEntries: (string | null)[] = [null, ...scopes.map((s) => s.path)];
+  const scopeName = scope === null ? null : (scopes.find((s) => s.path === scope)?.name ?? scope);
+
+  function pickScope(next: string | null) {
+    setScope(next);
+    setMenu(null);
+    setSelected(0);
+    setExtra({});
+  }
+
+  // The menu keeps the keys it uses: Up / Down move, Enter picks, Escape closes only the menu.
+  function onMenuKey(e: KeyboardEvent, at: number): void {
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setMenu({ at: (at + 1) % menuEntries.length });
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setMenu({ at: (at - 1 + menuEntries.length) % menuEntries.length });
+        break;
+      case "Enter":
+        e.preventDefault();
+        pickScope(menuEntries[at] ?? null);
+        break;
+      case "Escape":
+        e.preventDefault();
+        e.stopPropagation();
+        setMenu(null);
+        break;
+    }
+  }
+
+  // A press on a chip or the menu leaves the focus in the search box, so typing and keys still work.
+  const keepFocus = (e: { preventDefault(): void }) => e.preventDefault();
+
+  function toggleMenu() {
+    setMenu(menu ? null : { at: Math.max(0, menuEntries.indexOf(scope)) });
+  }
+
   function onKeyDown(e: KeyboardEvent) {
     // An Enter that confirms an IME candidate (Telex, CJK) is not a command.
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    if (menu && ["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(e.key)) {
+      onMenuKey(e, menu.at);
+      return;
+    }
+    // While the menu is open, Tab and the digit shortcuts would act on rows behind it: they close it instead.
+    if (menu && (e.key === "Tab" || /^[1-9]$/.test(e.key))) {
+      e.preventDefault();
+      setMenu(null);
+      return;
+    }
     // The search shortcut must not run behind the open palette.
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
       e.preventDefault();
@@ -145,35 +205,88 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
       className="palette"
       aria-labelledby="palette-title"
       onKeyDown={onKeyDown}
+      onMouseDown={(e) => {
+        // A press outside the menu and its button closes the menu.
+        const target = e.target as Element | null;
+        if (menu && !target?.closest?.(".pal-scope-menu, .pal-filter-btn")) setMenu(null);
+      }}
       onCancel={(e) => {
-        // Escape: close through state, so `open` stays the single source of truth.
+        // Escape: close through state, so `open` stays the single source of truth. An open menu takes it first.
         e.preventDefault();
-        onClose();
+        if (menu) setMenu(null);
+        else onClose();
       }}
     >
       <h2 id="palette-title" className="pal-title">
         {t("palette.title")}
       </h2>
-      <input
-        className="pal-input"
-        type="text"
-        autoFocus
-        spellCheck={false}
-        autoComplete="off"
-        placeholder={t("palette.placeholder")}
-        value={query}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setSelected(0);
-          setExtra({});
-        }}
-      />
-      <div className="pal-filters" role="tablist">
-        {FILTERS.map((f) => (
-          <button key={f} type="button" role="tab" aria-selected={f === filter} className="pal-chip" data-active={f === filter} tabIndex={-1} onClick={() => pickFilter(f)}>
-            {t(`palette.filter.${f}`)}
+      <div className="pal-input-row">
+        <input
+          className="pal-input"
+          type="text"
+          autoFocus
+          spellCheck={false}
+          autoComplete="off"
+          placeholder={t("palette.placeholder")}
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setSelected(0);
+            setExtra({});
+          }}
+        />
+        {scopes.length > 0 && (
+          <button
+            type="button"
+            className="pal-filter-btn"
+            aria-label={t("palette.scope.button")}
+            title={t("palette.scope.button")}
+            aria-haspopup="menu"
+            aria-expanded={menu !== null}
+            data-active={scope !== null}
+            tabIndex={-1}
+            onMouseDown={keepFocus}
+            onClick={toggleMenu}
+          >
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 5h16l-6 8v6l-4-2v-4z" />
+            </svg>
           </button>
-        ))}
+        )}
+        {menu && (
+          <div className="pal-scope-menu" role="menu" aria-label={t("palette.scope.button")}>
+            {menuEntries.map((path, i) => (
+              <div
+                key={path ?? "all"}
+                role="menuitemradio"
+                aria-checked={path === scope}
+                className="pal-scope-item"
+                data-selected={i === menu.at}
+                onMouseDown={keepFocus}
+                onClick={() => pickScope(path)}
+              >
+                {path === null ? t("palette.scope.all") : scopes[i - 1].name}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="pal-filters">
+        <div className="pal-kinds" role="tablist">
+          {FILTERS.map((f) => (
+            <button key={f} type="button" role="tab" aria-selected={f === filter} className="pal-chip" data-active={f === filter} tabIndex={-1} onMouseDown={keepFocus} onClick={() => pickFilter(f)}>
+              {t(`palette.filter.${f}`)}
+            </button>
+          ))}
+        </div>
+        {scopeName !== null && (
+          <span className="pal-chip pal-scope-chip" data-active="true">
+            {scopeName}
+            <button type="button" className="pal-scope-clear" aria-label={t("palette.scope.clear")} title={t("palette.scope.clear")} tabIndex={-1} onMouseDown={keepFocus} onClick={() => pickScope(null)}>
+              ×
+            </button>
+          </span>
+        )}
       </div>
       <div className="pal-list" role="listbox">
         {rows.length === 0 && <p className="pal-empty">{t("palette.empty")}</p>}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type ApiError, type DiffSettings, type NavigationSettings } from "@/api";
-import { useI18n } from "@/i18n";
+import { useI18n, type Locale } from "@/i18n";
 import { clampZoom, getZoom, stepZoom, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from "@/ui/zoom";
 import { setNavigationSettings } from "./navigationSettings";
 import { RestoreSetting } from "./RestoreSetting";
@@ -15,14 +15,15 @@ export const DIFF_SWITCHES = ["ignoreWhitespace", "collapseUnchanged", "wordWrap
 // 50 % … 200 % in steps of `ZOOM_STEP`.
 // Catalog ids of the page, per group; a switch adds its key (`general.nav.confirmClosePinned`).
 const NAVIGATION_IDS = ["general.tabOrder", ...NAVIGATION_SWITCHES.map((k) => `general.nav.${k}`)];
-const WORKSPACE_IDS = ["general.zoom", "general.restore", "general.openIn"];
+const LOCALES: Locale[] = ["en", "vi"];
+const WORKSPACE_IDS = ["general.language", "general.zoom", "general.restore", "general.openIn"];
 const DIFF_IDS = ["general.diffView", ...DIFF_SWITCHES.map((k) => `general.diff.${k}`)];
 export const ZOOM_LEVELS: number[] = Array.from({ length: Math.round((ZOOM_MAX - ZOOM_MIN) / ZOOM_STEP) + 1 }, (_, i) => clampZoom(ZOOM_MIN + i * ZOOM_STEP));
 
 /** Settings → General: navigation, workspace and diff preferences of the whole app. */
 export function GeneralPage(props: SettingsSectionProps): JSX.Element {
   const { api, openSection, filter } = props;
-  const { t } = useI18n();
+  const { t, locale, setLocale } = useI18n();
   const [navigation, setNavigation] = useState<NavigationSettings | null>(null);
   const [diff, setDiff] = useState<DiffSettings | null>(null);
   const [zoom, setZoom] = useState(() => getZoom());
@@ -122,6 +123,20 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
 
       <SettingGroup ids={WORKSPACE_IDS} filter={filter}>
       <h4 className="settings-group">{t("settings.general.workspace")}</h4>
+      <SettingRow id="general.language" filter={filter}>
+      <div className="ws-fields">
+        <label className="ws-field">
+          <span>{t("language.label")}</span>
+          <select value={locale} data-field="language" onChange={(e) => setLocale(e.target.value as Locale)}>
+            {LOCALES.map((l) => (
+              <option key={l} value={l} lang={l}>
+                {t(`language.${l}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      </SettingRow>
       <SettingRow id="general.zoom" filter={filter}>
       <div className="ws-fields">
         <label className="ws-field">

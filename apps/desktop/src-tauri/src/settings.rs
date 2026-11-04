@@ -78,6 +78,9 @@ pub struct Settings {
     /// Settings → Agents; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub agents: AgentsSettings,
+    /// Settings → Stats & Usage; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub usage: UsageSettings,
 }
 
 /// What happens to the agent tabs that run under the old active account
@@ -101,6 +104,83 @@ pub enum SwitchRunning {
 #[serde(default, rename_all = "camelCase")]
 pub struct AgentsSettings {
     pub account_switch: SwitchRunning,
+}
+
+/// Prompt cache lifetime, 5 minutes.
+pub const CACHE_TTL_SHORT_MS: u32 = 300_000;
+/// Prompt cache lifetime, 1 hour.
+pub const CACHE_TTL_LONG_MS: u32 = 3_600_000;
+
+/// Whether the footer meters show what is used or what is left.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum UsageDisplay {
+    #[default]
+    Used,
+    Remaining,
+}
+
+/// One switch per provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct ProviderSwitches {
+    pub claude: bool,
+    pub codex: bool,
+}
+
+impl Default for ProviderSwitches {
+    fn default() -> Self {
+        Self {
+            claude: true,
+            codex: true,
+        }
+    }
+}
+
+/// Settings → Stats & Usage.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct UsageSettings {
+    pub display: UsageDisplay,
+    /// Which providers get a footer meter.
+    pub footer: ProviderSwitches,
+    /// Which providers' local session logs the Stats page may read. Off by
+    /// default.
+    pub scan: ProviderSwitches,
+    /// A countdown on Claude tabs to the end of the prompt cache.
+    pub cache_timer: bool,
+    /// `CACHE_TTL_SHORT_MS` or `CACHE_TTL_LONG_MS`; `put` turns any other
+    /// value into the short one.
+    pub cache_ttl_ms: u32,
+}
+
+impl Default for UsageSettings {
+    fn default() -> Self {
+        Self {
+            display: UsageDisplay::Used,
+            footer: ProviderSwitches::default(),
+            scan: ProviderSwitches {
+                claude: false,
+                codex: false,
+            },
+            cache_timer: false,
+            cache_ttl_ms: CACHE_TTL_SHORT_MS,
+        }
+    }
+}
+
+impl UsageSettings {
+    /// What `usage_settings_put` stores: a cache lifetime other than the two
+    /// known ones is the short one.
+    pub fn normalized(mut self) -> Self {
+        if self.cache_ttl_ms != CACHE_TTL_LONG_MS {
+            self.cache_ttl_ms = CACHE_TTL_SHORT_MS;
+        }
+        self
+    }
 }
 
 /// Which worktree rows the sidebar hides. All off: every row shows.
@@ -587,6 +667,7 @@ pub enum SettingsSection {
     Navigation,
     Diff,
     Agents,
+    Usage,
 }
 
 /// What a `settings://changed` event carries.
@@ -1669,6 +1750,67 @@ then sum up"
             .unwrap();
             assert_eq!(load(&path).agents, agents);
         }
+    }
+
+    #[test]
+    fn usage_settings_default_and_stay_lenient() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let want = UsageSettings::default();
+        assert_eq!(want.display, UsageDisplay::Used);
+        assert!(want.footer.claude && want.footer.codex);
+        assert!(!want.scan.claude && !want.scan.codex);
+        assert!(!want.cache_timer);
+        assert_eq!(want.cache_ttl_ms, CACHE_TTL_SHORT_MS);
+        for text in [
+            "{}",
+            r#"{ "usage": {} }"#,
+            r#"{ "usage": 3 }"#,
+            r#"{ "usage": { "display": "bogus" } }"#,
+        ] {
+            fs::write(&path, text).unwrap();
+            assert_eq!(load(&path).usage, want, "{text}");
+        }
+        // A broken usage section keeps the other sections.
+        fs::write(
+            &path,
+            r#"{ "usage": [1], "agents": { "accountSwitch": "keep" } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.usage, want);
+        assert_eq!(loaded.agents.account_switch, SwitchRunning::Keep);
+    }
+
+    #[test]
+    fn usage_settings_round_trip_and_normalise_the_cache_ttl() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let usage = UsageSettings {
+            display: UsageDisplay::Remaining,
+            footer: ProviderSwitches {
+                claude: true,
+                codex: false,
+            },
+            scan: ProviderSwitches {
+                claude: true,
+                codex: false,
+            },
+            cache_timer: true,
+            cache_ttl_ms: CACHE_TTL_LONG_MS,
+        };
+        let json = serde_json::to_value(&usage).unwrap();
+        assert_eq!(json["display"], "remaining");
+        assert_eq!(json["cacheTtlMs"], 3_600_000);
+        fs::write(&path, format!(r#"{{ "usage": {json} }}"#)).unwrap();
+        assert_eq!(load(&path).usage, usage);
+
+        let odd = UsageSettings {
+            cache_ttl_ms: 12345,
+            ..UsageSettings::default()
+        };
+        assert_eq!(odd.normalized().cache_ttl_ms, CACHE_TTL_SHORT_MS);
+        assert_eq!(usage.clone().normalized(), usage);
     }
 
     #[test]
