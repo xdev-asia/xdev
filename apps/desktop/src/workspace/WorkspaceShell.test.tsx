@@ -1529,4 +1529,5 @@ it.each([[true, 1], [false, 0]])("dismissing a failed pull request create takes 
   const [failed] = view.list().props.pending;
   view.list().props.onDismissCreate(failed.id);
   expect(discard).toHaveBeenCalledTimes(discards);
+  if (fetched) expect(discard).toHaveBeenCalledWith("demo-xdev", "develop");
 });
