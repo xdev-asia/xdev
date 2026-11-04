@@ -7,6 +7,7 @@
 
 use std::time::Duration;
 
+pub mod callback;
 pub mod link;
 pub mod pkce;
 
