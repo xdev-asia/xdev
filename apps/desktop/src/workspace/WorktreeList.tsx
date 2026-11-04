@@ -90,6 +90,8 @@ export interface WorktreeListProps {
   onMarkRead?(worktree: WorktreeView): void;
   /** Worktree paths whose tabs are all asleep; the row says so and its menu offers Wake. */
   asleep?: Record<string, boolean>;
+  /** Worktree paths with no awake tab (false); the menu leaves Sleep out for them. A path not listed is sleepable. */
+  sleepable?: Record<string, boolean>;
   /** Puts a worktree's tabs to sleep; without it the menu has no such item. */
   onSleep?(worktree: WorktreeView): void;
   /** Wakes a sleeping worktree's tabs. */
@@ -606,6 +608,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         onRenameBranch: props.onRenameBranch && (() => props.onRenameBranch?.(wt)),
         onArchive: props.onArchive && (() => props.onArchive?.(wt)),
         asleep: props.asleep?.[wt.path] === true,
+        sleepable: props.sleepable?.[wt.path] !== false,
         onSleep: props.onSleep && (() => props.onSleep?.(wt)),
         onWake: props.onWake && (() => props.onWake?.(wt)),
       });

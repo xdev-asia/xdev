@@ -430,6 +430,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const running = sessions ? paths.reduce((n, p) => n + working(sessions, p), 0) : 0;
   const waiting = sessions ? paths.reduce((n, p) => n + waitingIn(sessions, p), 0) : 0;
   const unreadMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.unread(p) ?? false]));
+  const sleepableMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.tabs(p).some((t) => !t.asleep) ?? false]));
   const asleepMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.asleep(p) ?? false]));
 
   const all = repos?.flatMap((r) => r.worktrees) ?? [];
@@ -1580,6 +1581,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onAdopt={(wt) => void adopt(wt)}
             unread={unreadMap}
             asleep={asleepMap}
+            sleepable={sleepableMap}
             onSleep={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api), all.filter((c) => c.parent === wt.path).map((c) => c.path))}
             onWake={(wt) => [wt.path, ...all.filter((c) => c.parent === wt.path).map((c) => c.path)].forEach((p) => sessions?.wakeWorktree(p))}
             onMarkUnread={(wt) => sessions?.markUnread(wt.path)}

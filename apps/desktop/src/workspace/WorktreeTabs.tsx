@@ -575,7 +575,7 @@ export function WorktreeTabs(props: {
               {tab.asleep && (
                 <EmptyState
                   title={t("sleep.tab.title")}
-                  hint={t("sleep.tab.hint")}
+                  hint={t(tab.agent ? "sleep.tab.hint" : "sleep.tab.hint.shell")}
                   actions={
                     <Button type="button" variant="primary" data-field="wake" onClick={() => sessions.wake(tab.id)}>
                       {t("sleep.wake")}

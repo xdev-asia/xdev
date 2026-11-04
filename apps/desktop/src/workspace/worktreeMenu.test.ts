@@ -135,6 +135,12 @@ it("offers Sleep on an awake worktree and Wake on a sleeping one, also on the pr
   expect(ids(primary.items)).toContain("sleep");
 });
 
+it("leaves Sleep out for a worktree with no awake tab", () => {
+  const none = ctx({ onSleep: vi.fn(), sleepable: false });
+  expect(ids(none.items)).not.toContain("sleep");
+  expect(ids(ctx({ onSleep: vi.fn(), sleepable: true }).items)).toContain("sleep");
+});
+
 it("leaves the sleep items out without handlers", () => {
   const { items } = ctx();
   expect(ids(items)).not.toContain("sleep");
