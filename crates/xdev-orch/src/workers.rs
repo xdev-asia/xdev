@@ -23,7 +23,8 @@ pub const BREAKER_LIMIT: u32 = 3;
 pub struct Swept {
     pub dispatch: String,
     pub tab: String,
-    /// Close the tab now (the worker is marked released).
+    /// Close the tab now. The worker is marked released once its tab has
+    /// left the board; until then it is asked again every [`CLOSE_RETRY_MS`].
     pub close: bool,
 }
 
@@ -354,6 +355,10 @@ fn broken(what: &str) -> OrchError {
 /// How long a finished worker's tab stays before it closes.
 pub const CLOSE_AFTER_MS: i64 = 120_000;
 
+/// How long a tab asked to close may stay on the board before it is asked
+/// again.
+pub const CLOSE_RETRY_MS: i64 = 10_000;
+
 /// A worker with its dispatch and the state of its task.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -549,8 +554,10 @@ impl Store {
     /// failed) that are not kept and not released and whose tab is on the
     /// board; `status_of` gives a tab's status, none when it is off the board.
     /// A busy tab (`working`, `needs-you`) cancels its countdown; a quiet one
-    /// starts it ([`CLOSE_AFTER_MS`]); one whose time has come is marked
-    /// released and reported with `close`. Only the workers that changed.
+    /// starts it ([`CLOSE_AFTER_MS`]); one whose time has come is reported
+    /// with `close`. A tab asked to close is marked released once it has left
+    /// the board, and asked again while it stays ([`CLOSE_RETRY_MS`]). Only
+    /// the workers that changed.
     pub fn worker_sweep(
         &self,
         status_of: &dyn Fn(&str) -> Option<String>,
@@ -560,33 +567,53 @@ impl Store {
         // A worker with no countdown that last changed before auto-close was
         // turned on (`since_ms`) finished while it was off: it stays open.
         let mut st = self.conn.prepare(&format!(
-            "SELECT {WORKER_COLS} FROM workers
+            "SELECT {WORKER_COLS}, close_asked_ms FROM workers
              WHERE state IN ('succeeded', 'failed') AND kept = 0 AND released = 0
                AND tab IS NOT NULL AND (closes_at_ms IS NOT NULL OR updated_ms >= ?1)
              ORDER BY created_ms, rowid"
         ))?;
         let workers = st
-            .query_map([since_ms], worker_row)?
+            .query_map([since_ms], |r| {
+                Ok((worker_row(r)?, r.get::<_, Option<i64>>(12)?))
+            })?
             .collect::<Result<Vec<_>, _>>()?;
         let mut out = Vec::new();
-        for w in workers {
+        for (w, asked) in workers {
             let Some(tab) = w.tab.clone() else { continue };
-            let Some(status) = status_of(&tab) else {
-                continue;
+            let status = status_of(&tab);
+            let close = match (asked, status) {
+                // Asked and gone: the close went through.
+                (Some(_), None) => {
+                    self.worker_mark_released(&w.dispatch_id, now_ms)?;
+                    false
+                }
+                // Asked and still there: ask again once the gap has passed.
+                (Some(at), Some(_)) if now_ms >= at + CLOSE_RETRY_MS => {
+                    self.worker_close_asked(&w.dispatch_id, now_ms)?;
+                    true
+                }
+                (Some(_), Some(_)) | (None, None) => continue,
+                (None, Some(status)) => {
+                    let busy = status == "working" || status == "needs-you";
+                    match (busy, w.closes_at_ms) {
+                        (true, Some(_)) => {
+                            self.worker_set_closes_at(&w.dispatch_id, None, now_ms)?;
+                            false
+                        }
+                        (true, None) => continue,
+                        (false, None) => {
+                            let at = now_ms + CLOSE_AFTER_MS;
+                            self.worker_set_closes_at(&w.dispatch_id, Some(at), now_ms)?;
+                            false
+                        }
+                        (false, Some(at)) if now_ms >= at => {
+                            self.worker_close_asked(&w.dispatch_id, now_ms)?;
+                            true
+                        }
+                        (false, Some(_)) => continue,
+                    }
+                }
             };
-            let busy = status == "working" || status == "needs-you";
-            let (close, set) = match (busy, w.closes_at_ms) {
-                (true, Some(_)) => (false, Some(None)),
-                (true, None) => continue,
-                (false, None) => (false, Some(Some(now_ms + CLOSE_AFTER_MS))),
-                (false, Some(at)) if now_ms >= at => (true, None),
-                (false, Some(_)) => continue,
-            };
-            if close {
-                self.worker_mark_released(&w.dispatch_id, now_ms)?;
-            } else if let Some(at) = set {
-                self.worker_set_closes_at(&w.dispatch_id, at, now_ms)?;
-            }
             out.push(Swept {
                 dispatch: w.dispatch_id,
                 tab,
@@ -594,6 +621,15 @@ impl Store {
             });
         }
         Ok(out)
+    }
+
+    /// Records that the tab of a worker was asked to close at `now_ms`.
+    fn worker_close_asked(&self, dispatch_id: &str, now_ms: i64) -> Result<(), OrchError> {
+        self.conn.execute(
+            "UPDATE workers SET close_asked_ms = ?2, updated_ms = ?2 WHERE dispatch_id = ?1",
+            params![dispatch_id, now_ms],
+        )?;
+        Ok(())
     }
 
     /// Workers that are ready and have a tab: the ones whose tab the pump
@@ -1069,12 +1105,30 @@ mod tests {
             Some(4_000 + CLOSE_AFTER_MS)
         );
         assert!(s.worker_sweep(&on("idle"), 0, at).unwrap().is_empty());
-        // Due: close, once.
-        let due = s
-            .worker_sweep(&on("idle"), 0, 4_000 + CLOSE_AFTER_MS)
-            .unwrap();
+        // Due: asked to close, but released only once the tab has gone.
+        let due_at = 4_000 + CLOSE_AFTER_MS;
+        let due = s.worker_sweep(&on("idle"), 0, due_at).unwrap();
         assert_eq!(due.len(), 1);
         assert!(due[0].close);
+        assert!(!s.worker_get(&id).unwrap().released);
+        assert!(
+            s.worker_sweep(&on("idle"), 0, due_at + 1)
+                .unwrap()
+                .is_empty()
+        );
+        // Still on the board after the retry gap: asked again.
+        let again = s
+            .worker_sweep(&on("idle"), 0, due_at + CLOSE_RETRY_MS)
+            .unwrap();
+        assert_eq!(again.len(), 1);
+        assert!(again[0].close);
+        // Gone from the board: released, and never again.
+        let gone = |_: &str| None;
+        let done = s
+            .worker_sweep(&gone, 0, due_at + CLOSE_RETRY_MS + 1)
+            .unwrap();
+        assert_eq!(done.len(), 1);
+        assert!(!done[0].close);
         assert!(s.worker_get(&id).unwrap().released);
         assert!(s.worker_sweep(&on("idle"), 0, at * 9).unwrap().is_empty());
     }
