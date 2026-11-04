@@ -664,19 +664,12 @@ pub fn worktree_set(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<Val
         ));
     }
     let path = PathBuf::from(&t.view.path);
-    let mut scope = scope_of(me.as_deref(), &path, &ctx.registry()?);
-    // Family writes go down only: a child may not set its parent.
-    let my_parent = me.as_deref().and_then(|me| {
-        let key = path_key(me);
-        all.iter()
-            .find(|l| path_key(Path::new(&l.view.path)) == key)
-            .and_then(|l| l.view.parent.clone())
-    });
-    if scope == Scope::Family
-        && my_parent.is_some_and(|p| path_key(Path::new(&p)) == path_key(&path))
-    {
-        scope = Scope::Other;
-    }
+    let scope = downward(
+        scope_of(me.as_deref(), &path, &ctx.registry()?),
+        &all,
+        me.as_deref(),
+        &path,
+    );
     ctx.gate("worktree.set", "set", me.as_deref(), &path, scope)?;
     let patch = DetailsPatch {
         title: p.title.map(Some),
@@ -693,6 +686,25 @@ pub fn worktree_set(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<Val
     let all = ctx.listed()?;
     let l = target(&all, Some(&t.view.path), None)?;
     Ok(json!(ctx.row(l, &ctx.board.tabs().0)))
+}
+
+/// Family writes go down only: on the caller's own parent a write is
+/// `Other`, so the person is asked, as for any other worktree.
+fn downward(scope: Scope, all: &[Listed], me: Option<&Path>, target: &Path) -> Scope {
+    if scope != Scope::Family {
+        return scope;
+    }
+    let my_parent = me.and_then(|me| {
+        let key = path_key(me);
+        all.iter()
+            .find(|l| path_key(Path::new(&l.view.path)) == key)
+            .and_then(|l| l.view.parent.clone())
+    });
+    if my_parent.is_some_and(|p| path_key(Path::new(&p)) == path_key(target)) {
+        Scope::Other
+    } else {
+        scope
+    }
 }
 
 #[derive(Deserialize)]
@@ -721,7 +733,13 @@ pub fn worktree_create(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<
             .map_or_else(|| holder_path.clone(), PathBuf::from)
     });
     let reg = ctx.registry()?;
-    let scope = scope_of(me.as_deref(), &holder_path, &reg);
+    // A child names its own parent: that writes under the parent, so it asks.
+    let scope = downward(
+        scope_of(me.as_deref(), &holder_path, &reg),
+        &all,
+        me.as_deref(),
+        &holder_path,
+    );
     ctx.gate(
         "worktree.create",
         "create",
@@ -1419,6 +1437,34 @@ pub(crate) mod tests {
             .unwrap()
             .clone();
         assert_eq!(row["parent"], Value::Null);
+    }
+
+    #[test]
+    fn a_child_naming_its_own_parent_for_create_must_ask() {
+        let mut f = fixture();
+        let e = f
+            .call(
+                Some("p-child"),
+                "worktree.create",
+                json!({ "parent": "lead", "name": "up" }),
+            )
+            .unwrap_err();
+        assert_eq!(e.code, "needs_approval");
+        let ask = &asks(&f)[0];
+        assert_eq!(ask["verb"], "worktree.create");
+        assert_eq!(ask["target"], f.lead.display().to_string());
+        assert_eq!(
+            audit(&f)[..2],
+            [
+                ("other".to_owned(), "ask".to_owned()),
+                ("other".to_owned(), "deny".to_owned())
+            ]
+        );
+        // The parent itself may still create under its own worktree.
+        f.answer = None;
+        f.call(Some("p-lead"), "worktree.create", json!({ "name": "down" }))
+            .unwrap();
+        assert_eq!(asks(&f).len(), 1);
     }
 
     #[test]
