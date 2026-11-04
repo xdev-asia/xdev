@@ -153,8 +153,10 @@ mod tests {
         first: i64,
         days: &[(&str, u64)],
     ) -> SessionUsage {
-        let days: BTreeMap<String, Tokens> =
-            days.iter().map(|(d, n)| ((*d).to_owned(), tok(*n))).collect();
+        let days: BTreeMap<String, Tokens> = days
+            .iter()
+            .map(|(d, n)| ((*d).to_owned(), tok(*n)))
+            .collect();
         let mut total = Tokens::default();
         for t in days.values() {
             total.add(t);
@@ -182,8 +184,20 @@ mod tests {
                 1_000,
                 &[("2026-10-01", 5), ("2026-11-02", 10)],
             ),
-            session("b", Agent::Codex, Some("/r/xdev"), 500, &[("2026-11-02", 30)]),
-            session("c", Agent::Claude, Some("/other"), 2_000, &[("2026-11-03", 7)]),
+            session(
+                "b",
+                Agent::Codex,
+                Some("/r/xdev"),
+                500,
+                &[("2026-11-02", 30)],
+            ),
+            session(
+                "c",
+                Agent::Claude,
+                Some("/other"),
+                2_000,
+                &[("2026-11-03", 7)],
+            ),
             session("d", Agent::Codex, None, 0, &[("2026-11-03", 1)]),
         ] {
             i.sessions.insert(format!("h:{}", s.id), s);
