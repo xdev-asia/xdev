@@ -2171,5 +2171,21 @@
   "editor.conflict.bar": "Xung đột {n} trên {total}",
   "editor.conflict.current": "Giữ bản hiện tại",
   "editor.conflict.incoming": "Giữ bản đến",
-  "editor.conflict.both": "Giữ cả hai"
+  "editor.conflict.both": "Giữ cả hai",
+  "account.title": "Tài khoản",
+  "account.xdevId": "xDev ID",
+  "account.about": "Đăng nhập để liên kết ứng dụng này với xDev ID của bạn. Mọi tính năng cục bộ đều dùng được khi không có tài khoản.",
+  "account.signIn": "Đăng nhập vào xDev",
+  "account.waiting.title": "Hoàn tất đăng nhập trong trình duyệt",
+  "account.waiting.body": "Xác nhận trên id.xdev.asia. xDev sẽ tự cập nhật khi bạn xong.",
+  "account.openAgain": "Mở lại trang",
+  "account.copyLink": "Sao chép liên kết",
+  "account.copied": "Đã sao chép liên kết",
+  "account.cancel": "Hủy",
+  "account.paste.toggle": "Trình duyệt không quay lại xDev?",
+  "account.paste.label": "Liên kết đăng nhập từ trình duyệt",
+  "account.paste.hint": "Dán liên kết bắt đầu bằng xdev://auth/callback.",
+  "account.paste.submit": "Tiếp tục",
+  "account.manage": "Quản lý tài khoản",
+  "account.signOut": "Đăng xuất"
 }
