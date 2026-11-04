@@ -341,27 +341,29 @@ export class Sessions {
   restart(id: string): Tab | null {
     const old = this.entries.get(id);
     if (!old) return null;
-    return this.replace(old, old.tab.account);
+    return this.replace(old, old.tab.account, old.tab.resumeOf, old.tab.agentSession);
   }
 
   /**
    * `restart` under `account`: for a tab that follows the active account, the one it follows now. The
-   * tab keeps its account source; `null` for an unknown id.
+   * tab keeps its account source and resumes its agent session (the latest one its hooks reported);
+   * `fresh` starts a new conversation instead. `null` for an unknown id.
    */
-  restartAs(id: string, account: string | null): Tab | null {
+  restartAs(id: string, account: string | null, fresh = false): Tab | null {
     const old = this.entries.get(id);
     if (!old) return null;
-    return this.replace(old, account);
+    const session = fresh ? null : (old.tab.agentSession ?? old.tab.resumeOf);
+    return this.replace(old, account, session, session);
   }
 
-  private replace(old: Entry, account: string | null): Tab {
+  private replace(old: Entry, account: string | null, resumeOf: string | null, agentSession: string | null): Tab {
     const id = old.tab.id;
     this.clear(this.settle, id);
     this.clear(this.announce, id);
     this.clear(this.stale, id);
-    const next = this.entry(old.tab.worktree, old.tab.profileId, account, old.tab.cli, old.tab.resumeOf, old.tab.title);
+    const next = this.entry(old.tab.worktree, old.tab.profileId, account, old.tab.cli, resumeOf, old.tab.title);
     // The pin and colour belong to the slot, not to the pty; so does the agent's session id, which a restart must not lose.
-    next.tab = { ...next.tab, accountSource: old.tab.accountSource, pinned: old.tab.pinned, color: old.tab.color, agentSession: old.tab.agentSession };
+    next.tab = { ...next.tab, accountSource: old.tab.accountSource, pinned: old.tab.pinned, color: old.tab.color, agentSession };
     const kept = [...this.entries].map(([key, e]): [string, Entry] => (key === id ? [next.tab.id, next] : [key, e]));
     this.entries.clear();
     for (const [key, e] of kept) this.entries.set(key, e);
