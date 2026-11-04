@@ -355,7 +355,7 @@ it("create closes the dialog at once; a failure stays as a row with Retry and Di
   expect(view.of(CreateWorktreeDialog)).toHaveLength(0);
   expect(view.list().props.pending).toMatchObject([{ name: "...", state: "running" }]);
   await tick();
-  expect(create).toHaveBeenCalledWith("demo-xdev", "...", null);
+  expect(create).toHaveBeenCalledWith("demo-xdev", "...", null, undefined);
   const [failed] = view.list().props.pending;
   expect(failed).toMatchObject({ name: "...", state: "failed", error: { code: "bad_name" } });
   view.list().props.onRetryCreate(failed.id);
@@ -1481,4 +1481,52 @@ it("reports its tabs to the app CLI and follows the endpoint's events", async ()
   api.__cliOpenTab({ worktree: OAK, profile: "claude", prompt: null });
   await vi.waitFor(() => expect(sessions.tabs(OAK)).toHaveLength(before + 1));
   expect(sessions.tabs(OAK).at(-1)?.profileId).toBe("claude");
+});
+
+it("starting from a pull request puts its branch on a worktree, links it and opens the agent", async () => {
+  const api = createMockApi({});
+  await api.profilesDefaults("ask", "codex", null);
+  // The mock workspace does not know the branch the real prBranch fetches, so give it one it has.
+  vi.spyOn(api, "prBranch").mockResolvedValue({ branch: "develop", fetched: false });
+  const create = vi.spyOn(api, "worktreeCreate");
+  const details = vi.spyOn(api, "worktreeDetails");
+  const view = await harness(api);
+  view.list().props.onCreate();
+  const pr = (await api.prsList("demo-xdev", { state: null, mine: false, needsReview: false, search: null, limit: null })).find((p) => p.number === 13)!;
+  view.of(CreateWorktreeDialog)[0].props.onStartPr("demo-xdev", pr);
+  expect(view.of(CreateWorktreeDialog)).toHaveLength(0);
+  await settle();
+  expect(create.mock.calls[0][3]).toEqual({ existing: "develop", sparse: [] });
+  expect(create.mock.calls[0][1]).toMatch(/^pr-13/);
+  await settle();
+  expect(details.mock.calls[0][1]).toEqual({ title: pr.title, item: { kind: "pr", url: pr.url, title: pr.title } });
+  const path = view.list().props.selected as string;
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  expect(sessions.tabs(path).map((t) => t.profileId)).toEqual(["codex"]);
+});
+
+it("remembers the tab the create dialog was left on", async () => {
+  const view = await harness(createMockApi({}));
+  view.list().props.onCreate();
+  expect(view.of(CreateWorktreeDialog)[0].props.initialTab).toBe("name");
+  view.of(CreateWorktreeDialog)[0].props.onTabChange("github");
+  view.of(CreateWorktreeDialog)[0].props.onCancel();
+  view.list().props.onCreate();
+  expect(view.of(CreateWorktreeDialog)[0].props.initialTab).toBe("github");
+});
+
+it.each([[true, 1], [false, 0]])("dismissing a failed pull request create takes the branch back only when it was fetched (%s)", async (fetched, discards) => {
+  const api = createMockApi({});
+  await api.profilesDefaults("ask", "codex", null);
+  vi.spyOn(api, "prBranch").mockResolvedValue({ branch: "develop", fetched });
+  vi.spyOn(api, "worktreeCreate").mockRejectedValue({ code: "bad_ref" });
+  const discard = vi.spyOn(api, "prBranchDiscard");
+  const view = await harness(api);
+  view.list().props.onCreate();
+  const pr = (await api.prsList("demo-xdev", { state: null, mine: false, needsReview: false, search: null, limit: null })).find((p) => p.number === 13)!;
+  view.of(CreateWorktreeDialog)[0].props.onStartPr("demo-xdev", pr);
+  await settle();
+  const [failed] = view.list().props.pending;
+  view.list().props.onDismissCreate(failed.id);
+  expect(discard).toHaveBeenCalledTimes(discards);
 });

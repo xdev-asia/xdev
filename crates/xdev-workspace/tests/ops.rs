@@ -1631,3 +1631,123 @@ fn a_camel_case_repo_patch_reads_as_the_ui_sends_it() {
     let snake: RepoPatch = serde_json::from_str(r#"{"docs_dir":"notes"}"#).unwrap();
     assert!(snake.docs_dir.is_none());
 }
+
+fn opts_existing(branch: &str) -> CreateOptions {
+    CreateOptions {
+        existing: Some(branch.to_owned()),
+        suffix: true,
+        ..CreateOptions::default()
+    }
+}
+
+#[test]
+fn an_existing_branch_gets_a_worktree_that_does_not_own_it() {
+    let (mut reg, id, main) = registered();
+    git(main.path(), &["branch", "feat/old"]);
+    let view =
+        create_worktree_with(&mut reg, &id, "", None, 0, 1, &opts_existing("feat/old")).unwrap();
+    assert_eq!(view.branch.as_deref(), Some("feat/old"));
+    assert!(!reg.worktrees[0].made_here);
+    assert!(Path::new(&view.path).ends_with(format!("{}-old", reg.repos[0].short_name)));
+    remove_worktree(&mut reg, Path::new(&view.path), true, 0).unwrap();
+    assert!(
+        Repo::discover(main.path())
+            .unwrap()
+            .branch_exists("feat/old")
+            .unwrap()
+    );
+}
+
+#[test]
+fn an_existing_branch_in_use_or_missing_is_refused() {
+    let (mut reg, id, main) = registered();
+    let current = git(main.path(), &["branch", "--show-current"])
+        .trim()
+        .to_owned();
+    let err =
+        create_worktree_with(&mut reg, &id, "", None, 0, 1, &opts_existing(&current)).unwrap_err();
+    assert_eq!(err.code(), "branch_in_use");
+    git(main.path(), &["branch", "side"]);
+    create_worktree_with(&mut reg, &id, "", None, 0, 1, &opts_existing("side")).unwrap();
+    let err = create_worktree_with(&mut reg, &id, "again", None, 0, 1, &opts_existing("side"))
+        .unwrap_err();
+    assert_eq!(err.code(), "branch_in_use");
+    let err =
+        create_worktree_with(&mut reg, &id, "", None, 0, 1, &opts_existing("nope")).unwrap_err();
+    assert_eq!(err.code(), "bad_ref");
+    let err =
+        create_worktree_with(&mut reg, &id, "", None, 0, 1, &opts_existing("-x")).unwrap_err();
+    assert_eq!(err.code(), "bad_ref");
+}
+
+#[test]
+fn a_failed_add_keeps_an_existing_branch() {
+    let (mut reg, id, main) = registered();
+    git(main.path(), &["branch", "keep"]);
+    // Sparse on a branch that is fine, but the folder appears first: use a
+    // name whose folder is taken and no suffix.
+    let folder = reg.repos[0]
+        .worktree_root
+        .join(format!("{}-taken", reg.repos[0].short_name));
+    fs::create_dir_all(&folder).unwrap();
+    let opts = CreateOptions {
+        suffix: false,
+        ..opts_existing("keep")
+    };
+    let err = create_worktree_with(&mut reg, &id, "taken", None, 0, 1, &opts).unwrap_err();
+    assert_eq!(err.code(), "worktree_exists");
+    assert!(
+        Repo::discover(main.path())
+            .unwrap()
+            .branch_exists("keep")
+            .unwrap()
+    );
+}
+
+#[test]
+fn sparse_leaves_folders_out_of_the_worktree_only() {
+    let main = repo_dir();
+    fs::create_dir_all(main.path().join("src")).unwrap();
+    fs::create_dir_all(main.path().join("docs")).unwrap();
+    fs::write(main.path().join("src/a.txt"), "a").unwrap();
+    fs::write(main.path().join("docs/d.txt"), "d").unwrap();
+    commit_all(main.path(), "one");
+    let mut reg = Registry::default();
+    let id = add_repo(&mut reg, main.path(), 0).unwrap().id;
+    let opts = CreateOptions {
+        sparse: vec!["src".into()],
+        ..CreateOptions::default()
+    };
+    let view = create_worktree_with(&mut reg, &id, "slim", None, 0, 1, &opts).unwrap();
+    let wt = Path::new(&view.path);
+    assert!(wt.join("src/a.txt").exists());
+    assert!(!wt.join("docs").exists());
+    assert!(reg.worktrees[0].made_here);
+    assert!(main.path().join("docs/d.txt").exists());
+    let sparse = Command::new("git")
+        .current_dir(main.path())
+        .args(["sparse-checkout", "list"])
+        .output()
+        .unwrap();
+    assert!(!sparse.status.success(), "the main checkout must stay full");
+}
+
+#[test]
+fn a_bad_sparse_list_is_refused_before_anything_is_made() {
+    let (mut reg, id, main) = registered();
+    for bad in ["../x", "/abs", "-rf"] {
+        let opts = CreateOptions {
+            sparse: vec![bad.into()],
+            ..CreateOptions::default()
+        };
+        let err = create_worktree_with(&mut reg, &id, "n", None, 0, 1, &opts).unwrap_err();
+        assert_eq!(err.code(), "bad_sparse", "{bad}");
+    }
+    assert!(reg.worktrees.is_empty());
+    assert!(
+        !Repo::discover(main.path())
+            .unwrap()
+            .branch_exists("n")
+            .unwrap()
+    );
+}

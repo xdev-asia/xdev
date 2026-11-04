@@ -31,7 +31,9 @@ use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
 use crate::terminal_themes::{CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview};
 use crate::updater::UpdateInfo;
-use crate::workspace::{CloneProgress, WorktreeChange, WorktreeCreated, WorktreeFileDiff};
+use crate::workspace::{
+    CloneProgress, CreateRequest, WorktreeChange, WorktreeCreated, WorktreeFileDiff,
+};
 
 /// Each type's dependencies are written with it, so only the roots are here.
 fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
@@ -142,6 +144,13 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_git::IssueQuery::export_all(cfg)?;
     xdev_git::GhAccount::export_all(cfg)?;
     xdev_git::GhLogin::export_all(cfg)?;
+    xdev_git::PrSummary::export_all(cfg)?;
+    crate::prs::PrBranch::export_all(cfg)?;
+    xdev_git::PrFilter::export_all(cfg)?;
+    xdev_git::PrQuery::export_all(cfg)?;
+    xdev_git::IssueDraft::export_all(cfg)?;
+    xdev_git::ProjectSummary::export_all(cfg)?;
+    CreateRequest::export_all(cfg)?;
     xdev_workspace::RepoIcon::export_all(cfg)?;
     KitText::export_all(cfg)?;
     PromptEntry::export_all(cfg)?;
