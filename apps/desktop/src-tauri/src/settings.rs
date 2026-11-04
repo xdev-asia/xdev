@@ -568,7 +568,35 @@ pub struct TerminalSettings {
     /// The service's output ring per PTY, in MB, 1..=16.
     #[serde(deserialize_with = "lenient_ring_mb")]
     pub ring_mb: u8,
+    /// "app" or a built-in scheme id; `[a-z0-9-]{1,40}`, anything else is "app".
+    #[serde(deserialize_with = "lenient_theme")]
+    pub theme: String,
+    #[serde(deserialize_with = "lenient")]
+    pub gpu: TerminalGpu,
+    #[serde(deserialize_with = "lenient")]
+    pub bell: TerminalBell,
+    /// Control chars dropped, at most 64 chars; empty reads as `DEFAULT_WORD_SEPARATORS`.
+    #[serde(deserialize_with = "lenient_words")]
+    pub word_separators: String,
+    /// 0.5..=3.0.
+    #[serde(deserialize_with = "lenient_scroll")]
+    pub scroll_sensitivity: f32,
+    /// 1.0..=10.0; xterm applies it with Alt held.
+    #[serde(deserialize_with = "lenient_fast")]
+    pub fast_scroll_sensitivity: f32,
+    /// 1.0..=21.0; 1 is off.
+    #[serde(deserialize_with = "lenient_contrast")]
+    pub minimum_contrast: f32,
+    #[serde(deserialize_with = "lenient_bool_false")]
+    pub focus_follows_mouse: bool,
 }
+
+/// The default double-click word separators, the reference app's.
+pub const DEFAULT_WORD_SEPARATORS: &str = " ()[]{}',\"`";
+/// Most chars the word separators keep.
+pub const WORD_SEPARATORS_MAX: usize = 64;
+/// The theme id that means the xDev tokens.
+pub const THEME_APP: &str = "app";
 
 impl Default for TerminalSettings {
     fn default() -> Self {
@@ -586,6 +614,14 @@ impl Default for TerminalSettings {
             service: true,
             on_quit: OnQuit::Keep,
             ring_mb: 2,
+            theme: THEME_APP.into(),
+            gpu: TerminalGpu::Auto,
+            bell: TerminalBell::None,
+            word_separators: DEFAULT_WORD_SEPARATORS.into(),
+            scroll_sensitivity: 1.15,
+            fast_scroll_sensitivity: 5.0,
+            minimum_contrast: 1.0,
+            focus_follows_mouse: false,
         }
     }
 }
@@ -595,6 +631,9 @@ impl TerminalSettings {
     pub const LINE_HEIGHT: RangeInclusive<f32> = 1.0..=2.0;
     pub const MAX_SCROLLBACK: u32 = 100_000;
     pub const RING_MB: RangeInclusive<u8> = 1..=16;
+    pub const SCROLL: RangeInclusive<f32> = 0.5..=3.0;
+    pub const FAST_SCROLL: RangeInclusive<f32> = 1.0..=10.0;
+    pub const CONTRAST: RangeInclusive<f32> = 1.0..=21.0;
 
     /// As stored: every number inside its range.
     pub fn clamped(mut self) -> Self {
@@ -611,7 +650,58 @@ impl TerminalSettings {
         self.ring_mb = self
             .ring_mb
             .clamp(*Self::RING_MB.start(), *Self::RING_MB.end());
+        if !valid_theme_id(&self.theme) {
+            self.theme = THEME_APP.into();
+        }
+        self.word_separators = clean_word_separators(&self.word_separators);
+        let default = Self::default();
+        self.scroll_sensitivity = clamp_or(
+            self.scroll_sensitivity,
+            Self::SCROLL,
+            default.scroll_sensitivity,
+        );
+        self.fast_scroll_sensitivity = clamp_or(
+            self.fast_scroll_sensitivity,
+            Self::FAST_SCROLL,
+            default.fast_scroll_sensitivity,
+        );
+        self.minimum_contrast = clamp_or(
+            self.minimum_contrast,
+            Self::CONTRAST,
+            default.minimum_contrast,
+        );
         self
+    }
+}
+
+/// `[a-z0-9-]{1,40}`: what a scheme id may be.
+fn valid_theme_id(id: &str) -> bool {
+    (1..=40).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// Control chars dropped, at most `WORD_SEPARATORS_MAX` chars; empty reads as the default.
+fn clean_word_separators(raw: &str) -> String {
+    let kept: String = raw
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(WORD_SEPARATORS_MAX)
+        .collect();
+    if kept.is_empty() {
+        DEFAULT_WORD_SEPARATORS.into()
+    } else {
+        kept
+    }
+}
+
+/// `n` inside `range`; the default when it is not a finite number.
+fn clamp_or(n: f32, range: RangeInclusive<f32>, default: f32) -> f32 {
+    if n.is_finite() {
+        n.clamp(*range.start(), *range.end())
+    } else {
+        default
     }
 }
 
@@ -645,6 +735,28 @@ pub enum CursorStyle {
     Block,
     Bar,
     Underline,
+}
+
+/// Settings → Terminal → "GPU acceleration": the WebGL renderer or the DOM one.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum TerminalGpu {
+    #[default]
+    Auto,
+    On,
+    Off,
+}
+
+/// Settings → Terminal → "Bell": what a pane does on BEL.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum TerminalBell {
+    #[default]
+    None,
+    Visual,
+    Sound,
 }
 
 /// One part of the settings file, as a `settings://changed` event names it.
@@ -915,6 +1027,40 @@ fn lenient_service<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bool, D::E
 fn lenient_ring_mb<'de, D: serde::Deserializer<'de>>(de: D) -> Result<u8, D::Error> {
     let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
     Ok(serde_json::from_value(value).unwrap_or(TerminalSettings::default().ring_mb))
+}
+
+/// A field that does not parse reads as its own default, not the type's.
+fn lenient_or<'de, D, T>(de: D, default: T) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+    Ok(serde_json::from_value(value).unwrap_or(default))
+}
+
+fn lenient_theme<'de, D: serde::Deserializer<'de>>(de: D) -> Result<String, D::Error> {
+    lenient_or(de, THEME_APP.to_owned())
+}
+
+fn lenient_words<'de, D: serde::Deserializer<'de>>(de: D) -> Result<String, D::Error> {
+    lenient_or(de, DEFAULT_WORD_SEPARATORS.to_owned())
+}
+
+fn lenient_scroll<'de, D: serde::Deserializer<'de>>(de: D) -> Result<f32, D::Error> {
+    lenient_or(de, TerminalSettings::default().scroll_sensitivity)
+}
+
+fn lenient_fast<'de, D: serde::Deserializer<'de>>(de: D) -> Result<f32, D::Error> {
+    lenient_or(de, TerminalSettings::default().fast_scroll_sensitivity)
+}
+
+fn lenient_contrast<'de, D: serde::Deserializer<'de>>(de: D) -> Result<f32, D::Error> {
+    lenient_or(de, TerminalSettings::default().minimum_contrast)
+}
+
+fn lenient_bool_false<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bool, D::Error> {
+    lenient_or(de, false)
 }
 
 /// A list section: an entry that does not parse is left out, the rest kept;
@@ -1354,6 +1500,46 @@ mod tests {
     }
 
     #[test]
+    fn an_old_terminal_file_loads_every_new_field_at_its_default() {
+        let t: TerminalSettings = serde_json::from_str(r#"{ "fontSize": 15 }"#).unwrap();
+        let want = TerminalSettings {
+            font_size: 15,
+            ..TerminalSettings::default()
+        };
+        assert_eq!(t, want);
+        assert_eq!(t.theme, "app");
+        assert_eq!(t.word_separators, DEFAULT_WORD_SEPARATORS);
+    }
+
+    #[test]
+    fn a_bad_new_terminal_field_costs_only_itself() {
+        let t: TerminalSettings = serde_json::from_str(
+            r#"{ "gpu": "fast", "bell": 3, "scrollSensitivity": "x", "theme": 7, "fontSize": 15 }"#,
+        )
+        .unwrap();
+        let want = TerminalSettings {
+            font_size: 15,
+            ..TerminalSettings::default()
+        };
+        assert_eq!(t, want);
+        // Every other field is also its own.
+        let t: TerminalSettings = serde_json::from_str(
+            r#"{ "gpu": "on", "bell": "sound", "theme": "nord", "wordSeparators": null,
+                 "fastScrollSensitivity": [], "minimumContrast": {}, "focusFollowsMouse": "yes",
+                 "scrollSensitivity": 2.0 }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            (t.gpu, t.bell, t.theme.as_str()),
+            (TerminalGpu::On, TerminalBell::Sound, "nord")
+        );
+        assert_eq!(t.word_separators, DEFAULT_WORD_SEPARATORS);
+        assert_eq!((t.fast_scroll_sensitivity, t.minimum_contrast), (5.0, 1.0));
+        assert!(!t.focus_follows_mouse);
+        assert_eq!(t.scroll_sensitivity, 2.0);
+    }
+
+    #[test]
     fn terminal_round_trips_camel_case() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(FILE_NAME);
@@ -1371,6 +1557,14 @@ mod tests {
             service: false,
             on_quit: OnQuit::Ask,
             ring_mb: 8,
+            theme: "tokyo-night".into(),
+            gpu: TerminalGpu::Off,
+            bell: TerminalBell::Visual,
+            word_separators: " /".into(),
+            scroll_sensitivity: 2.5,
+            fast_scroll_sensitivity: 8.0,
+            minimum_contrast: 4.5,
+            focus_follows_mouse: true,
         };
         let settings = Settings {
             terminal: terminal.clone(),
@@ -1384,6 +1578,18 @@ mod tests {
         assert!(raw.contains("\"fontWeight\": \"medium\""), "{raw}");
         assert!(raw.contains("\"onQuit\": \"ask\""), "{raw}");
         assert!(raw.contains("\"ringMb\": 8"), "{raw}");
+        for want in [
+            "\"theme\": \"tokyo-night\"",
+            "\"gpu\": \"off\"",
+            "\"bell\": \"visual\"",
+            "\"wordSeparators\": \" /\"",
+            "\"scrollSensitivity\": 2.5",
+            "\"fastScrollSensitivity\": 8.0",
+            "\"minimumContrast\": 4.5",
+            "\"focusFollowsMouse\": true",
+        ] {
+            assert!(raw.contains(want), "{want} in {raw}");
+        }
 
         // A bad terminal section costs only itself.
         fs::write(
@@ -1639,6 +1845,102 @@ then sum up"
             ..TerminalSettings::default()
         };
         assert_eq!(fine.clone().clamped(), fine);
+    }
+
+    #[test]
+    fn terminal_theme_and_word_separators_are_normalised() {
+        let with = |theme: &str, words: &str| {
+            TerminalSettings {
+                theme: theme.into(),
+                word_separators: words.into(),
+                ..TerminalSettings::default()
+            }
+            .clamped()
+        };
+        for bad in ["Dracula", "../x", "", "a b", &"a".repeat(41)] {
+            assert_eq!(with(bad, " ").theme, THEME_APP, "{bad:?}");
+        }
+        for ok in ["tokyo-night", "app", "a", &"a".repeat(40)] {
+            assert_eq!(with(ok, " ").theme, ok);
+        }
+        // Control chars dropped, the rest kept in order.
+        assert_eq!(with("app", " a\u{7}/\n\t").word_separators, " a/");
+        // Cut to 64 chars (not bytes).
+        assert_eq!(
+            with("app", &"é".repeat(100))
+                .word_separators
+                .chars()
+                .count(),
+            64
+        );
+        assert_eq!(with("app", &"-".repeat(64)).word_separators, "-".repeat(64));
+        // Empty, or only control chars: the default.
+        for empty in ["", "\u{1}\n"] {
+            assert_eq!(with("app", empty).word_separators, DEFAULT_WORD_SEPARATORS);
+        }
+    }
+
+    #[test]
+    fn terminal_new_numbers_clamp_and_nan_reads_as_the_default() {
+        let with = |scroll, fast, contrast| {
+            TerminalSettings {
+                scroll_sensitivity: scroll,
+                fast_scroll_sensitivity: fast,
+                minimum_contrast: contrast,
+                ..TerminalSettings::default()
+            }
+            .clamped()
+        };
+        let hi = with(99.0, 99.0, 99.0);
+        assert_eq!(
+            (
+                hi.scroll_sensitivity,
+                hi.fast_scroll_sensitivity,
+                hi.minimum_contrast
+            ),
+            (3.0, 10.0, 21.0)
+        );
+        let lo = with(0.0, 0.0, 0.0);
+        assert_eq!(
+            (
+                lo.scroll_sensitivity,
+                lo.fast_scroll_sensitivity,
+                lo.minimum_contrast
+            ),
+            (0.5, 1.0, 1.0)
+        );
+        let nan = with(f32::NAN, f32::NAN, f32::NAN);
+        assert_eq!(
+            (
+                nan.scroll_sensitivity,
+                nan.fast_scroll_sensitivity,
+                nan.minimum_contrast
+            ),
+            (1.15, 5.0, 1.0)
+        );
+        let inf = with(f32::INFINITY, f32::NEG_INFINITY, f32::INFINITY);
+        assert_eq!(
+            (
+                inf.scroll_sensitivity,
+                inf.fast_scroll_sensitivity,
+                inf.minimum_contrast
+            ),
+            (1.15, 5.0, 1.0)
+        );
+        // In range: untouched.
+        let fine = TerminalSettings {
+            theme: "nord".into(),
+            word_separators: " /.".into(),
+            scroll_sensitivity: 2.0,
+            fast_scroll_sensitivity: 7.5,
+            minimum_contrast: 4.5,
+            ..TerminalSettings::default()
+        };
+        assert_eq!(fine.clone().clamped(), fine);
+        assert_eq!(
+            TerminalSettings::default().clamped(),
+            TerminalSettings::default()
+        );
     }
 
     #[test]
