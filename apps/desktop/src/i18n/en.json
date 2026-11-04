@@ -2161,7 +2161,7 @@
   "review.kind.added": "Added",
   "review.kind.modified": "Modified",
   "review.kind.deleted": "Deleted",
-  "editor.conflict.bar": "Merge conflict",
+  "editor.conflict.bar": "Conflict {n} of {total}",
   "editor.conflict.current": "Accept current",
   "editor.conflict.incoming": "Accept incoming",
   "editor.conflict.both": "Accept both"
