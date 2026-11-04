@@ -8,6 +8,7 @@ import type { EditorSettings } from "@/api";
 import { highlight, theme } from "@/components/Editor";
 import { useI18n } from "@/i18n";
 import type { Goto } from "./fileTabs";
+import { conflictDecorations } from "./conflictDecorations";
 import { languageOf, loadLanguage } from "./languages";
 
 const wrap = (on: boolean) => (on ? EditorView.lineWrapping : []);
@@ -31,6 +32,7 @@ export function CodeEditor(props: {
   const wrapping = useRef(new Compartment());
   const indent = useRef(new Compartment());
   const label = useRef(new Compartment());
+  const conflicts = useRef(new Compartment());
 
   useEffect(() => {
     const s = latest.current.settings;
@@ -47,6 +49,7 @@ export function CodeEditor(props: {
           wrapping.current.of(wrap(s.wordWrap)),
           indent.current.of(tabs(s.tabSize)),
           label.current.of([]),
+          conflicts.current.of([]),
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) return;
             const text = update.state.doc.toString();
@@ -95,6 +98,12 @@ export function CodeEditor(props: {
     view.current?.dispatch({
       effects: label.current.reconfigure(EditorView.contentAttributes.of({ "aria-label": t("editor.label") })),
     });
+  }, [t]);
+
+  // Conflict blocks of the text, with accept actions that edit the buffer; the labels follow the language.
+  useEffect(() => {
+    const labels = { bar: t("editor.conflict.bar"), current: t("editor.conflict.current"), incoming: t("editor.conflict.incoming"), both: t("editor.conflict.both") };
+    view.current?.dispatch({ effects: conflicts.current.reconfigure(conflictDecorations(() => labels)) });
   }, [t]);
 
   // A new `seq` moves the caret to the line, once the text is in.

@@ -25,3 +25,7 @@ Task 6: complete (cardModel, WorktreeList draws from prefs; compact CSS). i18n k
 
 ## Task 10: complete
 - files/conflictMarkers.ts: parseConflicts and resolveBlock (7-char markers, diff3 base, CRLF kept, unclosed block and stray divider ignored).
+
+## Task 11: complete
+- files/conflictDecorations.ts (StateField, parsed on docChanged, accept bar via DOM widget, conflictChange edits the buffer only); added to CodeEditor through a Compartment so labels follow the language.
+- Deviation: no FileView test; CodeEditor props are unchanged. Decorations and accept edits are tested on EditorState (no jsdom).
