@@ -4,7 +4,7 @@ import { translate } from "@/i18n";
 import { UsageChart } from "@/kit/UsageChart";
 import { mount, nodes, textOf, tick, type Node } from "@/kit/testHooks";
 import { USAGE_DEFAULTS } from "./usageDefaults";
-import { getUsageSettings, resetUsageSettingsForTests } from "./usageSettings";
+import { getUsageSettings, resetUsageSettingsForTests, setUsageSettings } from "./usageSettings";
 import { runSearch } from "./searchModel";
 import { UsagePage } from "./UsagePage";
 
@@ -119,6 +119,16 @@ it("Used / Remaining writes the display and updates the shared copy", async () =
   const checked = (d: string) => m.all().find((n) => n.props["data-display"] === d)!.props["aria-checked"];
   await m.settle();
   expect([checked("used"), checked("remaining")]).toEqual([false, true]);
+});
+
+it("a save starts from the shared copy, so a change made elsewhere is kept", async () => {
+  const { api, m } = await open();
+  // Another window part changed the cache timer after the page loaded.
+  setUsageSettings({ ...getUsageSettings(), cacheTimer: true });
+  const put = vi.spyOn(api, "usageSettingsPut");
+  m.all().find((n) => n.props["data-display"] === "remaining")!.props.onClick();
+  await tick();
+  expect(put).toHaveBeenCalledWith({ ...USAGE_DEFAULTS, scan: { claude: true, codex: false }, cacheTimer: true, display: "remaining" });
 });
 
 it("each footer and scan switch stores its own flag", async () => {
