@@ -18,7 +18,7 @@ static USERINFO: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?i)\b([a-z][a-z0-9+.-]*://)[^\s/@:]+(?::[^\s/@]*)?@"));
 static LABELLED: LazyLock<Regex> = LazyLock::new(|| {
     re(
-        r#"(?i)\b(api[ _-]?key|apikey|token|secret|password|bearer|authorization)(\s*[=:]\s*)((?:(?:bearer|basic)\s+)?(?:"[^"]*"|'[^']*'|[^\s,;"']+))"#,
+        r#"(?i)(^|[^a-z0-9])((?:[a-z0-9]+[_-])*(?:api[ _-]?key|apikey|token|secret|password|passwd|bearer|authorization))("?\s*[=:]\s*)((?:(?:bearer|basic)\s+)?(?:"[^"]*"|'[^']*'|[^\s,;"']+))"#,
     )
 });
 static ENV_LINE: LazyLock<Regex> =
@@ -27,8 +27,8 @@ static ENV_LINE: LazyLock<Regex> =
 /// matters: `sk-ant-` must run before the broader `sk-`.
 static TOKENS: LazyLock<Vec<(&'static str, Regex)>> = LazyLock::new(|| {
     vec![
-        ("anthropic-key", re(r"sk-ant-[A-Za-z0-9_-]{8,}")),
-        ("openai-key", re(r"sk-[A-Za-z0-9_-]{16,}")),
+        ("anthropic-key", re(r"\bsk-ant-[A-Za-z0-9_-]{8,}")),
+        ("openai-key", re(r"\bsk-[A-Za-z0-9_-]{16,}")),
         (
             "github-token",
             re(r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"),
@@ -98,10 +98,10 @@ pub(crate) fn redact_text(s: &str, home: Option<&Path>) -> String {
     }
     out = LABELLED
         .replace_all(&out, |c: &Captures| {
-            if c[3].starts_with("[redacted") {
+            if c[4].starts_with("[redacted") {
                 c[0].to_string()
             } else {
-                format!("{}=[redacted]", &c[1])
+                format!("{}{}=[redacted]", &c[1], &c[2])
             }
         })
         .into_owned();
@@ -200,6 +200,22 @@ mod tests {
             "Authorization=[redacted]"
         );
         assert_eq!(r("the token is fine"), "the token is fine");
+    }
+
+    #[test]
+    fn prefixed_and_json_labels_are_redacted() {
+        assert_eq!(r("x access_token=abc y"), "x access_token=[redacted] y");
+        assert_eq!(r("client_secret: yyy"), "client_secret=[redacted]");
+        assert_eq!(r("a GITHUB_TOKEN: ghx b"), "a GITHUB_TOKEN=[redacted] b");
+        let json = r(r#"{"token":"abc","password": "hunter2"}"#);
+        assert!(!json.contains("abc") && !json.contains("hunter2"), "{json}");
+        assert_eq!(redact_text(&json, None), json);
+    }
+
+    #[test]
+    fn sk_needs_a_word_boundary() {
+        assert_eq!(r("desk-abcdefghijklmnopqrst"), "desk-abcdefghijklmnopqrst");
+        assert_eq!(r("task-abcdefghijklmnopqrst"), "task-abcdefghijklmnopqrst");
     }
 
     #[test]
