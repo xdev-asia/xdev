@@ -381,6 +381,9 @@ fn row_line(r: &Value) -> String {
 
 /// The plain text of a verb's result, one line per row.
 pub fn plain(method: &str, result: &Value) -> String {
+    if let Some(text) = crate::orch::plain(method, result) {
+        return text;
+    }
     let rows = |f: fn(&Value) -> String| -> String {
         result
             .as_array()
@@ -441,7 +444,7 @@ pub fn run(cmd: &AppCommand, dir: &Path, prefix: &str) -> u8 {
             } else {
                 print!("{}", plain(method, &result));
             }
-            0
+            crate::orch::exit_for(method, &result)
         }
         Err(e) => {
             if e.message.is_empty() {

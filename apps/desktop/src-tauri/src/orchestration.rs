@@ -2,8 +2,6 @@
 //! mail waiters), the events and commands the UI uses, and the endpoint
 //! verbs `orchestration.*`. The logic itself lives in `xdev-orch`.
 
-// The verbs that use these land task by task; the allow goes once they all have.
-#![allow(dead_code)]
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::atomic::{AtomicU64, Ordering};
