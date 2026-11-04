@@ -45,6 +45,7 @@ import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { sendToAgentTab } from "./agentPrompt";
 import { sendTarget } from "./sendTarget";
 import { SetupCard, type SetupCardState } from "./SetupCard";
+import { openDefaultTabs } from "./defaultTabs";
 import { decideSetup, hasPending, pendingLists, type PendingLists } from "./setupFlow";
 import { SetupGate } from "./setupGate";
 import { TrustDialog } from "./TrustDialog";
@@ -946,13 +947,35 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     else if (todo.step === "ask") setCards((c) => ({ ...c, [path]: { kind: "ask", repoId } }));
     else if (todo.step === "run") startSetup(path, hooks);
     else if (todo.step === "trust") askTrust(path, repoId, hooks, false);
+    // No setup will run now: the default tabs open at once.
+    else void openTabsFor(path);
+  }
+
+  // The default tabs of the repo file, when the person trusted that list; a shell tab each. The hooks are read
+  // again so the trust check sees the file as it is now.
+  async function openTabsFor(path: string): Promise<void> {
+    try {
+      const hooks = await api.repoHooks(path);
+      if (hooks.tabsTrusted) await openTabsOf(path, hooks);
+    } catch {
+      // The worktree is made; it just opens without them.
+    }
+  }
+
+  async function openTabsOf(path: string, hooks: RepoHooks): Promise<void> {
+    if (!sessions || hooks.tabs.length === 0) return;
+    const pv = await api.profiles();
+    const shell = pv.shells.some((s) => s.id === pv.defaultShell) ? pv.defaultShell : pv.shells[0]?.id;
+    if (shell) openDefaultTabs(sessions, path, hooks.tabs, shell);
   }
 
   function startSetup(path: string, hooks: RepoHooks): void {
     if (!sessions) return;
     const tab = sessions.open(path, SETUP_PROFILE);
     sessions.rename(tab.id, t("setup.tab"));
-    gate.track(path, tab.id, hooks.waitForSetup);
+    // The default tabs wait for setup to exit 0; after a failure the card offers them.
+    const tabs = hooks.tabsTrusted && hooks.tabs.length > 0 ? () => void openTabsOf(path, hooks).catch(() => {}) : null;
+    gate.track(path, tab.id, hooks.waitForSetup, tabs);
     dropCard(path);
   }
 
@@ -1024,7 +1047,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The card of the worktree in front: a held agent beats the offers.
   function cardFor(path: string): SetupCardState | null {
     const held = gate.state(path);
-    if (held) return held.phase === "running" ? { kind: "waiting" } : { kind: "failed", code: held.code };
+    if (held) return held.phase === "running" ? { kind: "waiting" } : { kind: "failed", code: held.code, agent: held.agent, tabs: held.tabs };
     const card = cards[path];
     return card ? (card.kind === "ask" ? { kind: "ask" } : { kind: "detected", command: card.command }) : null;
   }
@@ -1380,15 +1403,22 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   dropCard(current.path);
                   openSettings("repos");
                 }}
-                onDismiss={() => dropCard(current.path)}
+                onDismiss={() => {
+                  dropCard(current.path);
+                  void openTabsFor(current.path);
+                }}
                 onRun={() => void runSetup(current.path, cards[current.path]?.repoId ?? "")}
-                onSkip={() => dropCard(current.path)}
+                onSkip={() => {
+                  dropCard(current.path);
+                  void openTabsFor(current.path);
+                }}
                 onAlways={() => {
                   const repoId = cards[current.path]?.repoId;
                   if (!repoId) return;
                   void api.repoUpdate(repoId, { setupPolicy: "run" }).then(() => runSetup(current.path, repoId), () => {});
                 }}
                 onStartNow={() => gate.startNow(current.path)}
+                onOpenTabs={() => gate.openTabs(current.path)}
                 onOpenSetup={() => {
                   const id = gate.setupTab(current.path);
                   if (id) setFront((f) => ({ worktree: current.path, id, seq: (f?.seq ?? 0) + 1 }));

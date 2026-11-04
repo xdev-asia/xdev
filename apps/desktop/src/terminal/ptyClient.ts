@@ -18,6 +18,8 @@ export class PtyClient {
   private started: Promise<unknown> = Promise.resolve();
   private disposed = false;
   private live = false;
+  /** Typed once the pty exists; a tab that is not on screen has none yet. */
+  private queued: string[] = [];
 
   constructor(
     private readonly api: Api,
@@ -57,6 +59,7 @@ export class PtyClient {
     );
     this.size = [cols, rows];
     this.live = true;
+    for (const text of this.queued.splice(0)) void this.input(text).catch(() => {});
     return info;
   }
 
@@ -74,6 +77,12 @@ export class PtyClient {
     }
   }
 
+  /** `input` now when the pty is running, else as soon as it has started. */
+  typeWhenReady(text: string): void {
+    if (this.live) void this.input(text).catch(() => {});
+    else this.queued.push(text);
+  }
+
   input(text: string): Promise<void> {
     return this.api.ptyWrite(this.id, this.encoder.encode(text));
   }
@@ -88,6 +97,7 @@ export class PtyClient {
   /** Kills the pty, after a spawn still in flight has landed. */
   dispose(): Promise<void> {
     this.disposed = true;
+    this.queued = [];
     return this.started.then(() => this.api.ptyKill(this.id)).catch(() => {});
   }
 }

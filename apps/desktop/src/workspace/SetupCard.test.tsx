@@ -16,7 +16,7 @@ function nodes(value: unknown): Node[] {
   return [node, ...nodes(node.props.children)];
 }
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
-const actions = { onSave: vi.fn(), onConfigure: vi.fn(), onDismiss: vi.fn(), onRun: vi.fn(), onSkip: vi.fn(), onAlways: vi.fn(), onStartNow: vi.fn(), onOpenSetup: vi.fn() };
+const actions = { onOpenTabs: vi.fn(), onSave: vi.fn(), onConfigure: vi.fn(), onDismiss: vi.fn(), onRun: vi.fn(), onSkip: vi.fn(), onAlways: vi.fn(), onStartNow: vi.fn(), onOpenSetup: vi.fn() };
 const draw = (state: SetupCardState) => nodes(SetupCard({ state, ...actions }));
 const press = (all: Node[], label: string) => all.find((n) => n.type === "button" && n.props.children === label)!.props.onClick();
 const labels = (all: Node[]) => all.filter((n) => n.type === "button").map((n) => n.props.children);
@@ -61,4 +61,9 @@ it("is a plain bordered panel: no stripe, no inline colour", () => {
   const root = draw({ kind: "ask" })[0];
   expect(root.props.className).toBe("ws-setup-card");
   expect(root.props.style).toBeUndefined();
+});
+
+it("a failure with default tabs waiting offers them; without a waiting agent there is no Start anyway", () => {
+  const failed = draw({ kind: "failed", code: 1, agent: false, tabs: true });
+  expect(labels(failed)).toEqual([en("setup.card.openSetup"), en("setup.card.openTabs")]);
 });

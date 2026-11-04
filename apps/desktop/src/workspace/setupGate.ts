@@ -1,7 +1,7 @@
 import type { Sessions } from "./sessions";
 
 /** What a worktree's waiting agents see: setup still runs, or it failed and the person must choose. */
-export type GateState = { phase: "running" } | { phase: "failed"; code: number | null };
+export type GateState = { phase: "running" } | { phase: "failed"; code: number | null; /** An agent launch waits. */ agent: boolean; /** Default tabs wait for a go-ahead. */ tabs: boolean };
 
 interface Watch {
   tabId: string;
@@ -9,6 +9,8 @@ interface Watch {
   /** Agent launches held back until the setup tab ends. */
   pending: (() => void)[];
   failed: { code: number | null } | null;
+  /** Opens the default tabs; runs when setup exits 0, or when the person asks after a failure. */
+  tabs: (() => void) | null;
 }
 
 /**
@@ -31,10 +33,27 @@ export class SetupGate {
     };
   }
 
-  /** The setup tab `tabId` of `worktree` was opened; `wait` is the repo's wait-for-setup setting. */
-  track(worktree: string, tabId: string, wait: boolean): void {
-    this.watches.set(worktree, { tabId, wait, pending: [], failed: null });
+  /** The setup tab `tabId` of `worktree` was opened; `wait` is the repo's wait-for-setup setting. `tabs` opens the default tabs once setup exits 0. */
+  track(worktree: string, tabId: string, wait: boolean, tabs: (() => void) | null = null): void {
+    this.watches.set(worktree, { tabId, wait, pending: [], failed: null, tabs });
     this.sync();
+  }
+
+  /** Setup failed and the default tabs are still waiting to be opened by hand. */
+  tabsOffered(worktree: string): boolean {
+    const watch = this.watches.get(worktree);
+    return watch?.failed != null && watch.tabs !== null;
+  }
+
+  /** Opens the default tabs that waited on a failed setup. */
+  openTabs(worktree: string): void {
+    const watch = this.watches.get(worktree);
+    const open = watch?.tabs;
+    if (!watch || !open) return;
+    watch.tabs = null;
+    if (watch.pending.length === 0) this.watches.delete(worktree);
+    this.bump();
+    open();
   }
 
   /** The id of the setup tab being tracked, if any; the shell fronts it for "Open setup tab". */
@@ -59,8 +78,8 @@ export class SetupGate {
   /** Null when nothing waits on setup in this worktree. */
   state(worktree: string): GateState | null {
     const watch = this.watches.get(worktree);
-    if (!watch || watch.pending.length === 0) return null;
-    return watch.failed ? { phase: "failed", code: watch.failed.code } : { phase: "running" };
+    if (!watch || (watch.pending.length === 0 && !this.tabsOffered(worktree))) return null;
+    return watch.failed ? { phase: "failed", code: watch.failed.code, agent: watch.pending.length > 0, tabs: watch.tabs !== null } : { phase: "running" };
   }
 
   /** A number that changes with every state change, for `useSyncExternalStore`. */
@@ -83,9 +102,12 @@ export class SetupGate {
     for (const [worktree, watch] of [...this.watches]) {
       const tab = this.sessions.tabs(worktree).find((t) => t.id === watch.tabId);
       // A closed setup tab has nothing more to wait for.
-      if (!tab || tab.exitCode === 0) this.release(worktree);
-      else if (tab.exitCode !== undefined && !watch.failed) {
-        if (watch.pending.length === 0) this.watches.delete(worktree);
+      if (!tab || tab.exitCode === 0) {
+        const tabs = tab ? watch.tabs : null;
+        this.release(worktree);
+        tabs?.();
+      } else if (tab.exitCode !== undefined && !watch.failed) {
+        if (watch.pending.length === 0 && !watch.tabs) this.watches.delete(worktree);
         else watch.failed = { code: tab.exitCode };
         this.bump();
       }
