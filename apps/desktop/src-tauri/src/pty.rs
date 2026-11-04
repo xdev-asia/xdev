@@ -170,6 +170,8 @@ pub struct Ptys {
     host_set: Condvar,
     /// The UI's answer to "On quit: Ask"; none until it answers.
     quit_choice: Mutex<Option<bool>>,
+    /// The folder each PTY started in, so the app CLI knows its caller's worktree.
+    cwds: Mutex<HashMap<String, PathBuf>>,
 }
 
 impl Default for Ptys {
@@ -201,6 +203,7 @@ impl Ptys {
             host: Mutex::new(None),
             host_set: Condvar::new(),
             quit_choice: Mutex::new(None),
+            cwds: Mutex::default(),
         }
     }
 
@@ -273,6 +276,15 @@ impl Ptys {
     pub(crate) fn set_host(&self, host: Arc<dyn PtyHost>, status: PtydStatus) {
         *self.host.lock().unwrap_or_else(PoisonError::into_inner) = Some((host, status));
         self.host_set.notify_all();
+    }
+
+    fn cwds(&self) -> MutexGuard<'_, HashMap<String, PathBuf>> {
+        self.cwds.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The folder the PTY `id` started in; none for an unknown id.
+    pub(crate) fn cwd_of(&self, id: &str) -> Option<PathBuf> {
+        self.cwds().get(id).cloned()
     }
 
     fn passes(&self) -> MutexGuard<'_, HashSet<String>> {
@@ -453,6 +465,7 @@ pub(crate) fn spawn_launch(
         "profile": info.profile,
         "info": info,
     });
+    ptys.cwds().insert(id.clone(), cwd.clone());
     let spec = SpawnSpec {
         program,
         args,
@@ -465,7 +478,9 @@ pub(crate) fn spawn_launch(
         on_output: Box::new(on_output),
         on_exit: Box::new(on_exit),
     };
-    let handle = ptys.host().spawn(&id, spec, meta, sink)?;
+    let handle = ptys.host().spawn(&id, spec, meta, sink).inspect_err(|_| {
+        ptys.cwds().remove(&id);
+    })?;
     info.pid = handle.pid();
     map.insert(id, handle);
     Ok(info)
@@ -766,8 +781,13 @@ pub fn pty_ack(ptys: State<'_, Ptys>, id: String, n: usize) -> Result<(), CmdErr
 // Off the main thread: ending a process tree waits on taskkill and the console.
 #[tauri::command(async)]
 pub fn pty_kill(ptys: State<'_, Ptys>, id: String) {
+    pty_kill_in(&ptys, &id);
+}
+
+fn pty_kill_in(ptys: &Ptys, id: &str) {
     // An unknown id has already ended. A service PTY ends only on `kill`.
-    let handle = ptys.map().remove(&id);
+    let handle = ptys.map().remove(id);
+    ptys.cwds().remove(id);
     if let Some(handle) = handle {
         handle.kill();
     }
@@ -809,6 +829,9 @@ pub fn pty_attach(
     }
     let (handle, attached) = host.attach(&id, from_seq, sink)?;
     map.insert(id.clone(), handle);
+    if let Some(cwd) = session.meta["worktree"].as_str() {
+        ptys.cwds().insert(id.clone(), PathBuf::from(cwd));
+    }
     Ok(PtyAttached {
         info: info_of(&id, &session),
         seq: attached.seq,
@@ -1562,6 +1585,19 @@ b",
         assert!(!result.unwrap().agent);
         assert!(!data.path().join("audit.jsonl").exists());
         ptys.kill_all();
+    }
+
+    #[test]
+    fn a_pty_remembers_its_cwd_until_killed() {
+        let data = tempfile::tempdir().unwrap();
+        let ptys = Ptys::default();
+        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
+        let (result, _) = start(&ptys, data.path(), "c", launch);
+        result.unwrap();
+        assert_eq!(ptys.cwd_of("c"), Some(std::env::temp_dir()));
+        assert_eq!(ptys.cwd_of("other"), None);
+        pty_kill_in(&ptys, "c");
+        assert_eq!(ptys.cwd_of("c"), None);
     }
 
     #[test]

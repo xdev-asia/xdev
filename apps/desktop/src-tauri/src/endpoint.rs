@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use xdev_ipc::{IpcError, Stream};
-use xdev_workspace::Registry;
+use xdev_workspace::{Registry, path_key};
 
 use crate::atomic::write_atomic;
 
@@ -86,11 +86,47 @@ pub struct EndpointFile {
     pub started_ms: i64,
 }
 
-/// The scope of `target` for a caller in `caller_worktree`.
-#[allow(dead_code)] // Used by the verbs (B2).
+/// The recorded worktree or primary checkout that holds `cwd`: the
+/// deepest one whose folder is `cwd` or one of its parents.
+pub fn caller_worktree(reg: &Registry, cwd: &Path) -> Option<PathBuf> {
+    let key = path_key(cwd);
+    let holds = |p: &Path| {
+        let k = path_key(p);
+        key == k || key.starts_with(&format!("{k}/"))
+    };
+    reg.repos
+        .iter()
+        .map(|r| &r.path)
+        .chain(reg.worktrees.iter().map(|m| &m.path))
+        .filter(|p| holds(p))
+        .max_by_key(|p| path_key(p).len())
+        .cloned()
+}
+
+/// The scope of `target` for a caller in `caller_worktree`: its own, its
+/// parent or child (`WorktreeMeta.parent`), another, or no caller at all.
 pub fn scope_of(caller_worktree: Option<&Path>, target: &Path, reg: &Registry) -> Scope {
-    let _ = (caller_worktree, target, reg);
-    Scope::External
+    let Some(caller) = caller_worktree else {
+        return Scope::External;
+    };
+    let (me, it) = (path_key(caller), path_key(target));
+    if me == it {
+        return Scope::Own;
+    }
+    let parent_of = |key: &str| {
+        reg.worktrees
+            .iter()
+            .find(|m| path_key(&m.path) == key)
+            .and_then(|m| m.parent.as_deref())
+            .map(path_key)
+    };
+    if parent_of(&it).as_deref() == Some(me.as_str())
+        || parent_of(&me).as_deref() == Some(it.as_str())
+    {
+        Scope::Family
+    } else {
+        Scope::Other
+    }
 }
 
 /// Requests per second a connection may send, and how many may come at once.
@@ -528,6 +564,55 @@ mod tests {
         let (mut w, mut r) = hello(&f);
         w.write_all(b"not json\n").unwrap();
         assert_eq!(recv(&mut r)["error"]["code"], "bad_request");
+    }
+
+    fn registry() -> Registry {
+        let meta = |path: &str, parent: Option<&str>| xdev_workspace::WorktreeMeta {
+            repo_id: "r".into(),
+            path: path.into(),
+            parent: parent.map(PathBuf::from),
+            ..Default::default()
+        };
+        Registry {
+            repos: vec![xdev_workspace::RepoEntry {
+                id: "r".into(),
+                path: "/src/repo".into(),
+                ..Default::default()
+            }],
+            worktrees: vec![
+                meta("/wt/lead", None),
+                meta("/wt/child", Some("/wt/lead")),
+                meta("/wt/lead-2", None),
+            ],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn the_caller_worktree_is_the_deepest_holder_of_its_cwd() {
+        let reg = registry();
+        let at = |p: &str| caller_worktree(&reg, Path::new(p)).map(|p| path_key(&p));
+        assert_eq!(at("/wt/lead").as_deref(), Some("/wt/lead"));
+        assert_eq!(at("/wt/lead/src/deep").as_deref(), Some("/wt/lead"));
+        // A sibling whose name starts the same is not inside.
+        assert_eq!(at("/wt/lead-2/x").as_deref(), Some("/wt/lead-2"));
+        assert_eq!(at("/src/repo/a").as_deref(), Some("/src/repo"));
+        assert_eq!(at("/elsewhere"), None);
+    }
+
+    #[test]
+    fn scopes_are_own_family_other_and_external() {
+        let reg = registry();
+        let scope = |caller: Option<&str>, target: &str| {
+            scope_of(caller.map(Path::new), Path::new(target), &reg)
+        };
+        assert_eq!(scope(Some("/wt/lead"), "/wt/lead/"), Scope::Own);
+        assert_eq!(scope(Some("/wt/lead"), "/wt/child"), Scope::Family);
+        assert_eq!(scope(Some("/wt/child"), "/wt/lead"), Scope::Family);
+        assert_eq!(scope(Some("/wt/child"), "/wt/lead-2"), Scope::Other);
+        assert_eq!(scope(Some("/src/repo"), "/wt/lead"), Scope::Other);
+        assert_eq!(scope(None, "/wt/lead"), Scope::External);
+        assert_eq!(Scope::Family.as_str(), "family");
     }
 
     #[test]
