@@ -44,6 +44,11 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("agents.shells", "settings.agents.shells", ["shell", "bash", "powershell", "zsh", "program", "args"]),
   e("agents.accountSwitch", "settings.agents.accountSwitch.label", ["account", "switch", "restart", "keep", "ask", "running", "agent", "tài khoản", "tai khoan", "chuyển", "chuyen", "khởi động lại", "khoi dong lai", "giữ", "giu"], "settings.agents.accountSwitch.hint"),
   e("agents.statusHooks", "settings.agents.statusHooks.label", ["hooks", "status", "trạng thái", "trang thai"], "settings.agents.statusHooks.what"),
+  // Orchestration
+  e("orchestration.skill", "settings.orchestration.skill.title", ["orchestration", "skill", "install", "coordinate", "agents", "handoff", "worker", "điều phối", "dieu phoi", "cài đặt", "cai dat", "bàn giao", "ban giao"], "settings.orchestration.skill.text"),
+  e("orchestration.depth", "settings.orchestration.depth.label", ["nested", "depth", "worker", "child", "spawn", "orchestration", "lồng nhau", "long nhau", "độ sâu", "do sau", "điều phối", "dieu phoi"], "settings.orchestration.depth.hint"),
+  e("orchestration.autoClose", "settings.orchestration.autoClose.label", ["auto-close", "close", "release", "finished", "worker", "tab", "terminal", "orchestration", "đóng", "dong", "tự đóng", "tu dong", "điều phối", "dieu phoi"], "settings.orchestration.autoClose.hint"),
+  e("orchestration.howTo", "settings.orchestration.howTo.title", ["how to", "prompt", "handoff", "child agents", "parallel", "sequence", "worktree", "orchestration", "cách dùng", "cach dung", "hướng dẫn", "huong dan", "điều phối", "dieu phoi"]),
   // Stats & Usage
   e("usage.display", "settings.usage.display", ["usage", "percent", "percentage", "used", "remaining", "left", "meter", "footer", "đã dùng", "da dung", "còn lại", "con lai", "phần trăm", "phan tram"], "settings.usage.displayHint"),
   e("usage.footer.claude", "settings.usage.footer.claude", ["footer", "meter", "claude", "usage", "quota", "thanh", "mức dùng", "muc dung", "chân trang", "chan trang"]),
