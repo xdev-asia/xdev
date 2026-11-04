@@ -7,7 +7,9 @@
 
 use std::time::Duration;
 
+pub mod avatar;
 pub mod callback;
+pub mod http;
 pub mod link;
 pub mod pkce;
 
@@ -33,3 +35,14 @@ pub const E_CODE: &str = "account_code";
 pub const E_EXPIRED: &str = "account_expired";
 /// The attempt is older than `ATTEMPT_TTL`.
 pub const E_TIMEOUT: &str = "account_timeout";
+
+pub use avatar::{AVATAR_MAX, avatar_allowed, data_url};
+pub use callback::{Callback, parse_callback, same_state};
+#[cfg(any(test, feature = "test-util"))]
+pub use http::FakeTransport;
+pub use http::{
+    CallError, Me, Method, Offline, Request, Response, TokenReply, Transport, exchange,
+    fetch_avatar, me, sign_out,
+};
+pub use link::{authorize_url, base_url, clean_device, device_name};
+pub use pkce::{PkcePair, Secret, b64url, random_43, s256};
