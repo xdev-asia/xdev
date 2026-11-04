@@ -5,6 +5,8 @@ import { createMockApi, toApiError, type Api, type Profile, type ProfilesView, t
 import { fileTabs } from "@/files/fileTabs";
 import { UnsavedDialog } from "@/files/UnsavedDialog";
 import { translate } from "@/i18n";
+import { resetNavigationSettingsForTests, setNavigationSettings } from "@/settings/navigationSettings";
+import { NAVIGATION_DEFAULTS } from "@/settings/generalDefaults";
 import { useKeymap } from "@/keys/keymap";
 import { Terminal, type TerminalHandle } from "@/terminal/Terminal";
 import { ContextMenu } from "@/ui/ContextMenu";
@@ -105,8 +107,8 @@ async function run(term: Node) {
 }
 
 let sessions: Sessions | null = null;
-beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; store.view = null; });
-afterEach(() => { sessions?.dispose(); sessions = null; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; store.view = null; resetNavigationSettingsForTests(); });
+afterEach(() => { sessions?.dispose(); sessions = null; vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 it("plus menu starts claude in the worktree after approval", async () => {
   const api = createMockApi({});
@@ -1042,6 +1044,48 @@ it("ctrl_tab_cycles_and_alt_n_picks_a_tab", () => {
   const e = press(view, { key: "4", code: "Digit4", altKey: true });
   expect(e.preventDefault).not.toHaveBeenCalled();
   expect(selected(view)).toEqual([c]);
+});
+
+it("ctrl_tab_in_mru_mode_goes_to_the_tab_used_before_and_keeps_walking_one_list", () => {
+  vi.useFakeTimers();
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const [a, b, c] = ["shell", "shell", "shell"].map((p) => live.open(A, p as "shell").id);
+  // Focus order: c now, b before it, a before that.
+  for (const id of [a, b, c]) live.noteFocused(A, id);
+  const view = harness(api, live);
+  expect(selected(view)).toEqual([c]);
+  press(view, CTRL_TAB);
+  expect(selected(view)).toEqual([b]);
+  // Held: the list is the one the walk started with, although the focus moved.
+  press(view, CTRL_TAB);
+  expect(selected(view)).toEqual([a]);
+  press(view, { ...CTRL_TAB, shiftKey: true });
+  expect(selected(view)).toEqual([b]);
+  // The walk passed through a without recording it; once the focus settles only b is the newest.
+  expect(live.recentTabs(A)).toEqual([c, b, a]);
+  view.draw();
+  vi.advanceTimersByTime(600);
+  expect(live.recentTabs(A)[0]).toBe(b);
+  // A new walk starts from the new order: b, c, a.
+  press(view, CTRL_TAB);
+  expect(selected(view)).toEqual([c]);
+});
+
+it("ctrl_tab_in_strip_mode_follows_the_strip_order", () => {
+  vi.useFakeTimers();
+  setNavigationSettings({ ...NAVIGATION_DEFAULTS, tabOrder: "sequential" });
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const [a, b, c] = ["shell", "shell", "shell"].map((p) => live.open(A, p as "shell").id);
+  for (const id of [a, b, c]) live.noteFocused(A, id);
+  const view = harness(api, live);
+  expect(selected(view)).toEqual([c]);
+  // MRU would go to b; the strip wraps to a.
+  press(view, CTRL_TAB);
+  expect(selected(view)).toEqual([a]);
+  press(view, CTRL_TAB);
+  expect(selected(view)).toEqual([b]);
 });
 
 const CTRL_SHIFT_D = { key: "D", code: "KeyD", ctrlKey: true, shiftKey: true };
