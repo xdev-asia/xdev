@@ -4,8 +4,8 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use tauri::State;
 use tauri::ipc::Channel;
@@ -141,42 +141,108 @@ pub fn file_reveal(
 
 // Quick open and search in files.
 
-/// The searches running now, by the id the UI gave each.
-#[derive(Default)]
+/// The searches running now, by the id the UI gave each, with the flag that
+/// stops each one. Clones share the map.
+#[derive(Default, Clone)]
 pub struct Searches {
-    _runs: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    runs: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+}
+
+impl Searches {
+    fn runs(&self) -> MutexGuard<'_, HashMap<String, Arc<AtomicBool>>> {
+        self.runs.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// A new run under `id`; the one there before is told to stop.
+    fn start(&self, id: &str) -> Arc<AtomicBool> {
+        let flag = Arc::new(AtomicBool::new(false));
+        if let Some(old) = self.runs().insert(id.to_owned(), Arc::clone(&flag)) {
+            old.store(true, Ordering::SeqCst);
+        }
+        flag
+    }
+
+    /// Forgets the run `flag` under `id`, unless a newer run took the id.
+    fn finish(&self, id: &str, flag: &Arc<AtomicBool>) {
+        let mut runs = self.runs();
+        if runs.get(id).is_some_and(|f| Arc::ptr_eq(f, flag)) {
+            runs.remove(id);
+        }
+    }
+
+    fn cancel(&self, id: &str) {
+        if let Some(flag) = self.runs().remove(id) {
+            flag.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[cfg(test)]
+    fn running(&self) -> Vec<String> {
+        self.runs().keys().cloned().collect()
+    }
+}
+
+fn list(data: &Path, worktree: &Path) -> Result<FileList, CmdError> {
+    Ok(list_files(&root(data, worktree)?)?)
+}
+
+/// Runs `query` under `id`, cancelling the run that had the id. Once
+/// cancelled, by `cancel` or a newer run, `send` hears nothing more.
+fn search(
+    searches: &Searches,
+    data: &Path,
+    worktree: &Path,
+    query: &SearchQuery,
+    id: &str,
+    send: &mut dyn FnMut(SearchEvent),
+) -> Result<(), CmdError> {
+    let root = root(data, worktree)?;
+    let flag = searches.start(id);
+    let out = search_text(&root, query, &flag, &mut |event| {
+        if !flag.load(Ordering::SeqCst) {
+            send(event);
+        }
+    });
+    searches.finish(id, &flag);
+    Ok(out?)
 }
 
 /// Every file of the worktree `.gitignore` keeps, for quick open.
 #[tauri::command(async)]
 pub fn files_list(state: State<'_, AppState>, worktree: PathBuf) -> Result<FileList, CmdError> {
-    Ok(list_files(&root(data_dir(&state)?, &worktree)?)?)
+    list(data_dir(&state)?, &worktree)
 }
 
-/// Searches the worktree's files, sending `SearchEvent`s on `on_event`. A new
-/// search with the same `id` cancels the old one.
-#[tauri::command(async)]
-pub fn files_search(
+/// Searches the worktree's files on a blocking thread, sending `SearchEvent`s
+/// on `on_event`. A new search with the same `id` cancels the old one.
+#[tauri::command]
+pub async fn files_search(
     state: State<'_, AppState>,
-    _searches: State<'_, Searches>,
+    searches: State<'_, Searches>,
     worktree: PathBuf,
     query: SearchQuery,
     id: String,
     on_event: Channel<SearchEvent>,
 ) -> Result<(), CmdError> {
-    let _ = id;
-    let root = root(data_dir(&state)?, &worktree)?;
-    let cancel = AtomicBool::new(false);
-    Ok(search_text(&root, &query, &cancel, &mut |event| {
-        // The window may be gone; nobody is listening then.
-        let _ = on_event.send(event);
-    })?)
+    let data = data_dir(&state)?.to_path_buf();
+    let searches = Searches::clone(&searches);
+    tauri::async_runtime::spawn_blocking(move || {
+        search(&searches, &data, &worktree, &query, &id, &mut |event| {
+            // The window may be gone; nobody is listening then.
+            let _ = on_event.send(event);
+        })
+    })
+    .await
+    .map_err(|e| CmdError {
+        code: "io",
+        detail: Some(e.to_string()),
+    })?
 }
 
 /// Stops the search named `id`; nothing when it is not running.
 #[tauri::command]
-pub fn files_search_cancel(_searches: State<'_, Searches>, id: String) -> Result<(), CmdError> {
-    let _ = id;
+pub fn files_search_cancel(searches: State<'_, Searches>, id: String) -> Result<(), CmdError> {
+    searches.cancel(&id);
     Ok(())
 }
 
@@ -328,5 +394,157 @@ mod tests {
             code(trash_with(&fx.data, &fx.repo, "gone.txt", &bin)),
             "not_found"
         );
+    }
+
+    fn needle_query() -> SearchQuery {
+        SearchQuery {
+            text: "needle".into(),
+            case_sensitive: false,
+            whole_word: false,
+            regex: false,
+            include: vec![],
+            exclude: vec![],
+        }
+    }
+
+    #[test]
+    fn search_commands_refuse_a_worktree_the_registry_does_not_know() {
+        let fx = fixture();
+        fs::write(fx.stranger.join("n.txt"), "needle\n").unwrap();
+        let searches = Searches::default();
+        assert_eq!(code(list(&fx.data, &fx.stranger)), "worktree_unknown");
+        let mut seen = Vec::new();
+        let r = search(
+            &searches,
+            &fx.data,
+            &fx.stranger,
+            &needle_query(),
+            "s",
+            &mut |e| seen.push(e),
+        );
+        assert_eq!(code(r), "worktree_unknown");
+        assert!(seen.is_empty());
+        assert!(searches.running().is_empty());
+    }
+
+    #[test]
+    fn a_known_worktree_is_listed_and_searched() {
+        let fx = fixture();
+        fs::write(fx.repo.join("n.txt"), "a needle\n").unwrap();
+        assert_eq!(
+            list(&fx.data, &fx.repo).unwrap().files,
+            vec!["a.txt".to_owned(), "n.txt".to_owned()]
+        );
+        let searches = Searches::default();
+        let mut seen = Vec::new();
+        search(
+            &searches,
+            &fx.data,
+            &fx.repo,
+            &needle_query(),
+            "s",
+            &mut |e| seen.push(e),
+        )
+        .unwrap();
+        assert!(
+            matches!(&seen[..], [SearchEvent::Batch { files }, SearchEvent::Done { hits: 1, .. }] if files[0].rel == "n.txt")
+        );
+        // A finished search leaves nothing behind.
+        assert!(searches.running().is_empty());
+    }
+
+    /// Enough matching files for more than one batch.
+    fn many_hits(fx: &Fixture) {
+        for i in 0..120 {
+            fs::write(fx.repo.join(format!("f{i:03}.txt")), "needle\n").unwrap();
+        }
+    }
+
+    #[test]
+    fn a_second_search_with_the_same_id_silences_the_first() {
+        let fx = fixture();
+        many_hits(&fx);
+        let searches = Searches::default();
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+        let mut after_second = 0;
+        search(
+            &searches,
+            &fx.data,
+            &fx.repo,
+            &needle_query(),
+            "panel",
+            &mut |e| {
+                if first.is_empty() {
+                    first.push(e);
+                    // The panel starts a new search while the first runs.
+                    search(
+                        &searches,
+                        &fx.data,
+                        &fx.repo,
+                        &needle_query(),
+                        "panel",
+                        &mut |e| second.push(e),
+                    )
+                    .unwrap();
+                } else {
+                    after_second += 1;
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(first.len(), 1);
+        assert_eq!(
+            after_second, 0,
+            "the first search spoke after the second started"
+        );
+        assert!(matches!(
+            second.last(),
+            Some(SearchEvent::Done { hits: 120, .. })
+        ));
+        assert!(searches.running().is_empty());
+    }
+
+    #[test]
+    fn cancel_stops_a_running_search_and_ignores_unknown_ids() {
+        let fx = fixture();
+        many_hits(&fx);
+        let searches = Searches::default();
+        searches.cancel("nobody");
+        let mut seen = Vec::new();
+        search(
+            &searches,
+            &fx.data,
+            &fx.repo,
+            &needle_query(),
+            "panel",
+            &mut |e| {
+                seen.push(e);
+                searches.cancel("panel");
+            },
+        )
+        .unwrap();
+        assert_eq!(seen.len(), 1);
+        assert!(matches!(seen[0], SearchEvent::Batch { .. }));
+        assert!(searches.running().is_empty());
+    }
+
+    #[test]
+    fn searches_with_other_ids_run_side_by_side() {
+        let searches = Searches::default();
+        let a = searches.start("a");
+        let b = searches.start("b");
+        let mut ids = searches.running();
+        ids.sort();
+        assert_eq!(ids, vec!["a", "b"]);
+        // An old run ending does not drop the newer one under its id.
+        let a2 = searches.start("a");
+        assert!(a.load(Ordering::SeqCst));
+        searches.finish("a", &a);
+        assert_eq!(searches.running().len(), 2);
+        searches.finish("a", &a2);
+        searches.finish("b", &b);
+        assert!(!b.load(Ordering::SeqCst));
+        assert!(searches.running().is_empty());
     }
 }
