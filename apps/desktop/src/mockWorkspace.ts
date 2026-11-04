@@ -4,6 +4,7 @@ import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
 import type { Api, ApiError, Check, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
+import { REPO_COLORS, isHexColor } from "@/workspace/repoIdentity";
 
 type WorkspaceApi = Pick<
   Api,
@@ -104,9 +105,7 @@ export type MockWorkspaceSeed = {
 // `ARCHIVE_DAYS` in Rust: archived entries show under Archived this long.
 const ARCHIVE_MS = 7 * 86_400_000;
 // `REPO_COLORS`, `ISSUE_COMMAND_MAX` and the icon rule in Rust.
-const REPO_COLORS = ["slate", "red", "orange", "yellow", "green", "teal", "violet", "pink"];
 const ISSUE_COMMAND_MAX = 64 * 1024;
-const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 function oneEmoji(text: string): boolean {
   if (new TextEncoder().encode(text).length > 16) return false;
   const parts = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)];
@@ -626,7 +625,7 @@ export function createMockWorkspace(
         return reject("bad_path", worktreeRoot);
       }
       const { color, icon, localIssueCommand } = patch;
-      if (typeof color === "string" && !REPO_COLORS.includes(color) && !HEX_COLOR.test(color)) return reject("bad_color", color);
+      if (typeof color === "string" && !(REPO_COLORS as readonly string[]).includes(color) && !isHexColor(color)) return reject("bad_color", color);
       if (icon?.kind === "emoji" && !oneEmoji(icon.value)) return reject("bad_icon", icon.value);
       if (localIssueCommand !== undefined && new TextEncoder().encode(localIssueCommand).length > ISSUE_COMMAND_MAX) return reject("too_large", "issue command");
       if (shortName !== undefined) repo.shortName = shortName;

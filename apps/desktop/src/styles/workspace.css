@@ -33,6 +33,15 @@
   --x-color-warn-soft: var(--warn-bg);
   --x-color-ok: var(--ok);
   --x-color-danger: var(--danger);
+  /* Project colours (RepoBadge): eight names over the palette, so light and dark follow it. */
+  --x-color-tag-slate: var(--text-2);
+  --x-color-tag-red: var(--danger);
+  --x-color-tag-orange: var(--orange);
+  --x-color-tag-yellow: var(--warn);
+  --x-color-tag-green: var(--ok);
+  --x-color-tag-teal: color-mix(in srgb, var(--ok) 50%, var(--signal));
+  --x-color-tag-violet: var(--violet);
+  --x-color-tag-pink: color-mix(in srgb, var(--danger) 50%, var(--violet));
 }
 
 .ws-shell :focus-visible {
@@ -3085,4 +3094,67 @@ button.ws-tree-row:focus-visible {
 
 .ws-issue[data-state="closed"] .ws-checks-title {
   color: var(--text-2);
+}
+
+/* Project badge: the colour and icon of a project. A preset reads a token; a custom hex is set inline. */
+
+.ws-badge {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: var(--radius-s);
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+
+.ws-badge-sm {
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+}
+
+.ws-badge-md {
+  width: 22px;
+  height: 22px;
+  font-size: 13px;
+}
+
+/* The fill is bright in dark and deep in light, so the page background is the readable ink. */
+.ws-badge[class*="ws-badge-tag-"] {
+  color: var(--bg-0);
+}
+
+.ws-badge-tag-slate {
+  background: var(--x-color-tag-slate);
+}
+
+.ws-badge-tag-red {
+  background: var(--x-color-tag-red);
+}
+
+.ws-badge-tag-orange {
+  background: var(--x-color-tag-orange);
+}
+
+.ws-badge-tag-yellow {
+  background: var(--x-color-tag-yellow);
+}
+
+.ws-badge-tag-green {
+  background: var(--x-color-tag-green);
+}
+
+.ws-badge-tag-teal {
+  background: var(--x-color-tag-teal);
+}
+
+.ws-badge-tag-violet {
+  background: var(--x-color-tag-violet);
+}
+
+.ws-badge-tag-pink {
+  background: var(--x-color-tag-pink);
 }

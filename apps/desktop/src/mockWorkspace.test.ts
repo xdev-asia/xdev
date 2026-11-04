@@ -185,6 +185,31 @@ describe("mock workspace", () => {
     await api.repoUpdate(other.id, { shortName: "front" });
   });
 
+  it("the demo repo has an identity, and repoUpdate sets, clears and checks it", async () => {
+    const api = createMockWorkspace();
+    const [repo] = await api.workspaceList();
+    expect(repo).toMatchObject({ color: "teal", icon: { kind: "emoji", value: "🚀" }, ghAccount: null, localIssueCommand: "" });
+    const other = await api.repoAdd("/home/me/web");
+    expect(other).toMatchObject({ color: null, icon: null, ghAccount: null });
+    for (const color of ["pink", "#abc", "#AABBCC"]) await api.repoUpdate(other.id, { color });
+    for (const bad of ["", "#abcd", "abc", "blue"]) await expect(api.repoUpdate(other.id, { color: bad })).rejects.toMatchObject({ code: "bad_color" });
+    for (const bad of ["", "ab", "🚀🚀", "x🚀"]) await expect(api.repoUpdate(other.id, { icon: { kind: "emoji", value: bad } })).rejects.toMatchObject({ code: "bad_icon" });
+    await expect(api.repoUpdate(other.id, { localIssueCommand: "x".repeat(64 * 1024 + 1) })).rejects.toMatchObject({ code: "too_large" });
+    const set = await api.repoUpdate(other.id, { icon: { kind: "emoji", value: "👩‍💻" }, ghAccount: { host: "github.com", user: "me" }, localIssueCommand: "Fix {title}" });
+    expect(set).toMatchObject({ icon: { kind: "emoji", value: "👩‍💻" }, ghAccount: { host: "github.com", user: "me" }, localIssueCommand: "Fix {title}" });
+    // An absent key leaves the field; null clears it.
+    await api.repoUpdate(other.id, { shortName: "front" });
+    expect((await api.workspaceList())[1]).toMatchObject({ color: "#AABBCC", ghAccount: { user: "me" } });
+    const cleared = await api.repoUpdate(other.id, { color: null, icon: null, ghAccount: null, localIssueCommand: "" });
+    expect(cleared).toMatchObject({ color: null, icon: null, ghAccount: null, localIssueCommand: "" });
+  });
+
+  it("ghLogins lists the demo logins with one active", async () => {
+    const logins = await createMockWorkspace().ghLogins();
+    expect(logins.length).toBeGreaterThan(1);
+    expect(logins.filter((l) => l.active)).toHaveLength(1);
+  });
+
   it("adopt moves a found worktree into worktrees", async () => {
     const outside = { path: "/demo/wt/hand-made", name: "hand-made", branch: "hand", head: "5".repeat(40), start: null, primary: false, pinned: false, detached: false, ...NO_DETAILS };
     const api = createMockWorkspace({ ...DEMO_WORKSPACE, found: { "demo-xdev": [outside] } });
