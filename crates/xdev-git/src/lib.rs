@@ -65,6 +65,10 @@ pub enum GitError {
     IssueOtherRepo(String),
     #[error("a commit hook failed: {output}")]
     Hook { output: String },
+    #[error("a file is still unmerged")]
+    StillConflicted,
+    #[error("no merge, rebase, cherry-pick or revert in progress")]
+    NoConflict,
     #[error("timeout")]
     Timeout,
     #[error("not a clone URL xDev accepts: {0}")]
@@ -101,6 +105,8 @@ impl GitError {
             GitError::Hook { .. } => "hook_failed",
             GitError::BadUrl(_) => "bad_arg",
             GitError::Cancelled => "cancelled",
+            GitError::StillConflicted => "still_conflicted",
+            GitError::NoConflict => "no_conflict",
             GitError::BadId(_) | GitError::Timeout | GitError::Failed { .. } => "git",
             GitError::Io(_) => "io",
         }
