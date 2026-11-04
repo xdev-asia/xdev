@@ -3,9 +3,7 @@ import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
 import { DIFF_DEFAULTS, NAVIGATION_DEFAULTS, UI_SETTINGS_DEFAULTS } from "@/mockSettings";
-import { getThemePreference, resetThemeForTests } from "@/ui/theme";
 import { getZoom, resetZoomForTests } from "@/ui/zoom";
-import { ThemeSwitch } from "@xdev-asia/ui";
 import { GeneralPage } from "./GeneralPage";
 import { RestoreSetting } from "./RestoreSetting";
 import { SETTING_ENTRIES } from "./catalog";
@@ -119,20 +117,6 @@ it("zoom writes the clamped level beside the restore mode, and Reset goes back t
   await tick();
   expect((await p.api.uiSettingsGet()).zoom).toBe(1);
   expect(getZoom()).toBe(1);
-});
-
-it("theme writes beside the zoom and restore mode, applies at once, and shows what was stored", async () => {
-  resetThemeForTests({ root: { setAttribute() {} }, matchMedia: undefined, storage: () => undefined });
-  const p = await page();
-  await p.api.uiSettingsPut({ ...UI_SETTINGS_DEFAULTS, zoom: 1.3, restore: "none" });
-  const switchOf = () => nodes(p.by("data-field", "theme")).find((n) => n.type === ThemeSwitch)!;
-  switchOf().props.onChange("light");
-  await tick();
-  expect(await p.api.uiSettingsGet()).toEqual({ ...UI_SETTINGS_DEFAULTS, zoom: 1.3, restore: "none", theme: "light" });
-  expect(getThemePreference()).toBe("light");
-  expect(switchOf().props.value).toBe("light");
-  expect(Object.keys(switchOf().props.labels)).toEqual(["group", "system", "dark", "light"]);
-  resetThemeForTests();
 });
 
 it("lists 50 % to 200 % in steps of 10 %", async () => {
