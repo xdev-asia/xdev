@@ -7,8 +7,8 @@ use xdev_git::{BaseRefresh, Repo};
 use xdev_workspace::{
     BranchPrefix, CreateOptions, Registry, RepoPatch, ScriptSource, SetupPolicy, WorkspaceError,
     WorktreeStat, add_repo, adopt_worktree, archive_worktree, create_worktree,
-    create_worktree_linked, create_worktree_with, forget_repo, list, path_key, refresh_base,
-    remove_worktree, set_pinned, stat, update_repo, valid_short_name,
+    create_worktree_linked, create_worktree_with, forget_repo, list, name_preview, path_key,
+    refresh_base, remove_worktree, set_pinned, stat, update_repo, valid_short_name,
 };
 
 /// Runs setup commands; never used for the code under test.
@@ -1105,4 +1105,123 @@ fn a_real_change_still_blocks_remove_and_keeps_the_links() {
     assert!(matches!(err, WorkspaceError::Dirty(_)));
     assert!(path.join("node_modules/x").is_file());
     main_is_intact(&main);
+}
+
+fn suffixing() -> CreateOptions {
+    CreateOptions {
+        suffix: true,
+        ..CreateOptions::default()
+    }
+}
+
+fn make(
+    reg: &mut Registry,
+    id: &str,
+    name: &str,
+    opts: &CreateOptions,
+) -> xdev_workspace::WorktreeView {
+    create_worktree_with(reg, id, name, None, 1, 0, opts).unwrap()
+}
+
+#[test]
+fn taken_branch_gets_a_suffix_and_the_typed_title() {
+    let (mut reg, id, _main) = registered();
+    let first = make(&mut reg, &id, "feat one", &suffixing());
+    assert_eq!(first.branch.as_deref(), Some("feat-one"));
+    assert_eq!(first.title, None);
+    let second = make(&mut reg, &id, "feat one", &suffixing());
+    assert_eq!(second.branch.as_deref(), Some("feat-one-2"));
+    assert!(second.path.ends_with("-feat-one-2"));
+    assert_eq!(second.title.as_deref(), Some("feat one"));
+    let third = make(&mut reg, &id, "feat one", &suffixing());
+    assert_eq!(third.branch.as_deref(), Some("feat-one-3"));
+    assert_eq!(third.title.as_deref(), Some("feat one"));
+}
+
+#[test]
+fn taken_folder_only_gets_a_suffix() {
+    let (mut reg, id, _main) = registered();
+    let root = list(&mut reg).unwrap()[0].worktree_root.clone();
+    let repo = list(&mut reg).unwrap()[0].short_name.clone();
+    fs::create_dir_all(Path::new(&root).join(format!("{repo}-hand"))).unwrap();
+    let view = make(&mut reg, &id, "hand", &suffixing());
+    assert_eq!(view.branch.as_deref(), Some("hand-2"));
+}
+
+#[test]
+fn a_branch_without_a_worktree_also_counts_as_taken() {
+    let (mut reg, id, main) = registered();
+    git(main.path(), &["branch", "side"]);
+    let view = make(&mut reg, &id, "side", &suffixing());
+    assert_eq!(view.branch.as_deref(), Some("side-2"));
+}
+
+#[test]
+fn ninety_nine_taken_is_branch_exists() {
+    let (mut reg, id, main) = registered();
+    git(main.path(), &["branch", "busy"]);
+    for n in 2..=99 {
+        git(main.path(), &["branch", &format!("busy-{n}")]);
+    }
+    let err = create_worktree_with(&mut reg, &id, "busy", None, 1, 0, &suffixing()).unwrap_err();
+    assert!(matches!(err, WorkspaceError::BranchExists(b) if b == "busy"));
+}
+
+#[test]
+fn a_full_length_name_keeps_its_suffix() {
+    let (mut reg, id, _main) = registered();
+    let name = "a".repeat(60);
+    let first = make(&mut reg, &id, &name, &suffixing());
+    assert_eq!(first.branch.as_deref().map(str::len), Some(48));
+    let second = make(&mut reg, &id, &name, &suffixing());
+    let branch = second.branch.unwrap();
+    assert_eq!(branch.len(), 48);
+    assert!(branch.ends_with("-2"));
+}
+
+#[test]
+fn suffix_off_keeps_the_errors() {
+    let (mut reg, id, _main) = registered();
+    make(&mut reg, &id, "dup", &CreateOptions::default());
+    let err = create_worktree_with(&mut reg, &id, "dup", None, 1, 0, &CreateOptions::default())
+        .unwrap_err();
+    assert!(matches!(err, WorkspaceError::BranchExists(_)));
+}
+
+#[test]
+fn blank_name_still_picks_a_free_word_without_a_title() {
+    let (mut reg, id, _main) = registered();
+    let a = make(&mut reg, &id, "", &suffixing());
+    let b = make(&mut reg, &id, "  ", &suffixing());
+    assert_ne!(a.branch, b.branch);
+    assert_eq!(a.title, None);
+    assert_eq!(b.title, None);
+}
+
+#[test]
+fn an_emoji_in_the_typed_name_is_kept_as_the_title() {
+    let (mut reg, id, _main) = registered();
+    let view = make(&mut reg, &id, "🚀 launch", &suffixing());
+    assert_eq!(view.branch.as_deref(), Some("launch"));
+    assert_eq!(view.title.as_deref(), Some("🚀 launch"));
+}
+
+#[test]
+fn preview_shows_the_name_a_create_would_get_and_makes_nothing() {
+    let (mut reg, id, _main) = registered();
+    let free = name_preview(&reg, &id, "feat one", &suffixing()).unwrap();
+    assert_eq!(free.branch, "feat-one");
+    assert!(!free.suffixed);
+    make(&mut reg, &id, "feat one", &suffixing());
+    let taken = name_preview(&reg, &id, "feat one", &suffixing()).unwrap();
+    assert_eq!(taken.branch, "feat-one-2");
+    assert!(taken.folder.ends_with("-feat-one-2"));
+    assert!(taken.suffixed);
+    assert_eq!(list(&mut reg).unwrap()[0].worktrees.len(), 2);
+    let blank = name_preview(&reg, &id, "  ", &suffixing()).unwrap();
+    assert!(!blank.suffixed && blank.branch.is_empty());
+    let err = name_preview(&reg, &id, "...", &suffixing()).unwrap_err();
+    assert_eq!(err.code(), "bad_name");
+    let err = name_preview(&reg, &id, "feat one", &CreateOptions::default()).unwrap_err();
+    assert_eq!(err.code(), "branch_exists");
 }
