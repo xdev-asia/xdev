@@ -75,7 +75,7 @@ pub struct Settings {
 }
 
 /// The order Ctrl+Tab walks the tabs of a worktree.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub enum TabOrder {
@@ -84,6 +84,18 @@ pub enum TabOrder {
     Mru,
     /// The order of the tab strip.
     Sequential,
+}
+
+/// An unknown value is the default, like `RestoreMode`, so one bad field
+/// does not cost the section.
+impl<'de> serde::Deserialize<'de> for TabOrder {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("sequential") => TabOrder::Sequential,
+            _ => TabOrder::Mru,
+        })
+    }
 }
 
 /// Settings → General → Navigation. A field that does not parse falls back
@@ -112,13 +124,24 @@ impl Default for NavigationSettings {
 }
 
 /// How a diff opens.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub enum DiffView {
     #[default]
     Inline,
     Split,
+}
+
+/// An unknown value is the default, as for `TabOrder`.
+impl<'de> serde::Deserialize<'de> for DiffView {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("split") => DiffView::Split,
+            _ => DiffView::Inline,
+        })
+    }
 }
 
 /// Settings → General → Diff: the starting options of the review view.
@@ -1320,6 +1343,76 @@ then sum up"
         let loaded = load(&path);
         assert_eq!(loaded.editor, EditorSettings::default());
         assert_eq!(loaded.ui.zoom, 1.5);
+    }
+
+    #[test]
+    fn navigation_and_diff_have_their_defaults() {
+        let s = Settings::default();
+        assert_eq!(s.navigation.tab_order, TabOrder::Mru);
+        assert!(s.navigation.confirm_close_pinned);
+        assert!(s.navigation.confirm_close_running);
+        assert!(s.navigation.ask_before_delete_worktree);
+        assert_eq!(s.diff.default_view, DiffView::Inline);
+        assert!(!s.diff.ignore_whitespace);
+        assert!(s.diff.collapse_unchanged);
+        assert!(!s.diff.word_wrap);
+        assert!(!s.diff.file_tree);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(&path, r#"{ "version": 1 }"#).unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.navigation, NavigationSettings::default());
+        assert_eq!(loaded.diff, DiffSettings::default());
+    }
+
+    #[test]
+    fn a_bad_navigation_field_keeps_the_rest_of_the_section() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(
+            &path,
+            r#"{ "navigation": { "tabOrder": "bogus", "confirmClosePinned": false } }"#,
+        )
+        .unwrap();
+        let nav = load(&path).navigation;
+        assert!(!nav.confirm_close_pinned);
+        assert_eq!(nav.tab_order, TabOrder::Mru);
+        assert!(nav.confirm_close_running);
+    }
+
+    #[test]
+    fn navigation_and_diff_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let navigation = NavigationSettings {
+            tab_order: TabOrder::Sequential,
+            confirm_close_pinned: false,
+            confirm_close_running: false,
+            ask_before_delete_worktree: false,
+        };
+        let diff = DiffSettings {
+            default_view: DiffView::Split,
+            ignore_whitespace: true,
+            collapse_unchanged: false,
+            word_wrap: true,
+            file_tree: true,
+        };
+        save(
+            &path,
+            &Settings {
+                navigation: navigation.clone(),
+                diff: diff.clone(),
+                ..Settings::default()
+            },
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.navigation, navigation);
+        assert_eq!(loaded.diff, diff);
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("\"tabOrder\": \"sequential\""), "{raw}");
+        assert!(raw.contains("\"defaultView\": \"split\""), "{raw}");
     }
 
     #[test]

@@ -163,6 +163,39 @@ mod tests {
             json(&[SettingsSection::QuickCommands]),
             r#"{"sections":["quickCommands"]}"#
         );
+        assert_eq!(
+            json(&[SettingsSection::Navigation, SettingsSection::Diff]),
+            r#"{"sections":["navigation","diff"]}"#
+        );
+    }
+
+    #[test]
+    fn navigation_and_diff_are_stored_beside_the_rest() {
+        let (_dir, store) = store();
+        store
+            .update(|s| s.last_vault = Some("D:/docs".into()))
+            .unwrap();
+        // What the put commands store.
+        let navigation = settings::NavigationSettings {
+            tab_order: settings::TabOrder::Sequential,
+            ..settings::NavigationSettings::default()
+        };
+        let diff = settings::DiffSettings {
+            default_view: settings::DiffView::Split,
+            ..settings::DiffSettings::default()
+        };
+        let stored = store
+            .update(|s| {
+                s.navigation = navigation.clone();
+                s.diff = diff.clone();
+            })
+            .unwrap();
+        assert_eq!(stored.navigation, navigation);
+        assert_eq!(stored.diff, diff);
+        let loaded = store.read();
+        assert_eq!(loaded.navigation, navigation);
+        assert_eq!(loaded.diff, diff);
+        assert_eq!(loaded.last_vault.as_deref(), Some("D:/docs"));
     }
 
     #[test]
