@@ -6,13 +6,14 @@ use std::sync::{Mutex, OnceLock};
 
 use tauri::State;
 use xdev_git::{
-    GhExec, GitError, Issue, IssueDetail, IssueQuery, SystemGh, issue_list, issue_open_web,
-    issue_view as gh_issue_view, parse_issue_ref, repo_name,
+    GhAccount, GhExec, GitError, Issue, IssueDetail, IssueQuery, SystemGh, issue_list,
+    issue_open_web, issue_view as gh_issue_view, parse_issue_ref, repo_name,
 };
 use xdev_workspace::{Registry, WorkspaceError};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError};
+use crate::ship::run_gh;
 
 /// `owner/repo` by repo id, asked of `gh` once per process.
 fn names() -> &'static Mutex<HashMap<String, String>> {
@@ -27,6 +28,16 @@ fn main_path(data: &Path, repo_id: &str) -> Result<PathBuf, CmdError> {
         .iter()
         .find(|r| r.id == repo_id)
         .map(|r| r.path.clone())
+        .ok_or_else(|| WorkspaceError::RepoUnknown(repo_id.to_owned()).into())
+}
+
+/// The `gh` login the repo is bound to, if any.
+fn account_of(data: &Path, repo_id: &str) -> Result<Option<GhAccount>, CmdError> {
+    let reg = Registry::load(data)?;
+    reg.repos
+        .iter()
+        .find(|r| r.id == repo_id)
+        .map(|r| r.gh_account.clone())
         .ok_or_else(|| WorkspaceError::RepoUnknown(repo_id.to_owned()).into())
 }
 
@@ -92,7 +103,11 @@ pub fn issues_list(
     repo_id: String,
     query: IssueQuery,
 ) -> Result<Vec<Issue>, CmdError> {
-    list_with(&SystemGh, data_dir(&state)?, &repo_id, &query)
+    let data = data_dir(&state)?;
+    let account = account_of(data, &repo_id)?;
+    run_gh(&SystemGh, account, |gh| {
+        list_with(gh, data, &repo_id, &query)
+    })
 }
 
 #[tauri::command(async)]
@@ -101,7 +116,11 @@ pub fn issue_view(
     repo_id: String,
     number: u64,
 ) -> Result<IssueDetail, CmdError> {
-    view_with(&SystemGh, data_dir(&state)?, &repo_id, number)
+    let data = data_dir(&state)?;
+    let account = account_of(data, &repo_id)?;
+    run_gh(&SystemGh, account, |gh| {
+        view_with(gh, data, &repo_id, number)
+    })
 }
 
 #[tauri::command(async)]
@@ -110,7 +129,11 @@ pub fn issue_open(
     repo_id: String,
     number: u64,
 ) -> Result<(), CmdError> {
-    open_with(&SystemGh, data_dir(&state)?, &repo_id, number)
+    let data = data_dir(&state)?;
+    let account = account_of(data, &repo_id)?;
+    run_gh(&SystemGh, account, |gh| {
+        open_with(gh, data, &repo_id, number)
+    })
 }
 
 /// Parses `text` and reads the issue; an issue URL of another repo is
@@ -121,7 +144,11 @@ pub fn issue_resolve(
     repo_id: String,
     text: String,
 ) -> Result<Option<Issue>, CmdError> {
-    resolve_with(&SystemGh, data_dir(&state)?, &repo_id, &text)
+    let data = data_dir(&state)?;
+    let account = account_of(data, &repo_id)?;
+    run_gh(&SystemGh, account, |gh| {
+        resolve_with(gh, data, &repo_id, &text)
+    })
 }
 
 #[cfg(test)]
@@ -181,6 +208,31 @@ mod tests {
         });
         reg.save(&data).unwrap();
         (tmp, data)
+    }
+
+    #[test]
+    fn account_of_reads_the_repos_binding() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reg = Registry::load(tmp.path()).unwrap();
+        reg.repos.push(xdev_workspace::RepoEntry {
+            id: "r".into(),
+            gh_account: Some(GhAccount {
+                host: "github.com".into(),
+                user: "u".into(),
+            }),
+            ..xdev_workspace::RepoEntry::default()
+        });
+        reg.repos.push(xdev_workspace::RepoEntry {
+            id: "plain".into(),
+            ..xdev_workspace::RepoEntry::default()
+        });
+        reg.save(tmp.path()).unwrap();
+        assert_eq!(account_of(tmp.path(), "r").unwrap().unwrap().user, "u");
+        assert_eq!(account_of(tmp.path(), "plain").unwrap(), None);
+        assert_eq!(
+            account_of(tmp.path(), "nope").unwrap_err().code,
+            "repo_unknown"
+        );
     }
 
     #[test]

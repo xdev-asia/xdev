@@ -31,7 +31,8 @@ pub use groups::{
 };
 pub use hooks::{
     DefaultTab, FILE_NAME, HookKind, HookRun, HookScript, RepoHooks, SHARED_MAX, TABS_MAX,
-    TRUST_FILE, detect_setup, hook_env, hooks_for, shared_to_link, trust, trust_hook,
+    TRUST_FILE, detect_setup, effective_issue_command, hook_env, hooks_for, issue_command_for,
+    shared_to_link, trust, trust_hook,
 };
 pub use kept::{
     ARCHIVE_DAYS, KeptBranch, KeptReason, KeptView, archive_worktree, kept_delete, kept_keep,
