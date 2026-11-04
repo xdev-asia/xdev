@@ -479,6 +479,11 @@ export class Sessions {
     return tabs.length > 0 && tabs.every((t) => t.asleep);
   }
 
+  /** The worktree has a tab that may be put to sleep: awake, and not an agent that works or waits for the person. */
+  sleepable(worktree: string): boolean {
+    return this.tabs(worktree).some((t) => !t.asleep && !busy(t));
+  }
+
   private replace(old: Entry, account: string | null, resumeOf: string | null, agentSession: string | null): Tab {
     const id = old.tab.id;
     this.clear(this.settle, id);
