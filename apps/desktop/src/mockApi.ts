@@ -29,6 +29,7 @@ import { createMockOpenIn, type MockOpenIn } from "./mockOpenIn";
 import { createMockProfiles } from "./mockProfiles";
 import { createMockPty, type MockPtyd } from "./mockPty";
 import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
+import { createMockXdevId, type MockXdevId } from "./mockXdevId";
 import { createMockSettings, createSettingsHub } from "./mockSettings";
 import { createMockStatus, type MockStatus } from "./mockStatus";
 import { createMockSquads } from "./mockSquads";
@@ -348,7 +349,7 @@ function snippet(text: string, terms: string[]): string | null {
   return out.replace(/\s+/g, " ").trim();
 }
 
-export type MockApi = Api & MockPtyd & Omit<MockCli, keyof Api> & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & Pick<MockOpenIn, "__openInCalls"> & Pick<MockFiles, "__editFile" | "__fileReveals"> & {
+export type MockApi = Api & MockPtyd & Omit<MockCli, keyof Api> & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & Pick<MockXdevId, "__xdevIdExpire" | "__xdevIdDeepLink" | "__xdevIdManages"> & Pick<MockOpenIn, "__openInCalls"> & Pick<MockFiles, "__editFile" | "__fileReveals"> & {
   // Changes a file the way another program would (`null` deletes it); xDev did not write it.
   __editOutside(path: string, content: string | null): void;
   // Writes a file the way `propose_update` does over MCP; throws an ApiError like the real tool.
@@ -367,6 +368,8 @@ type MockOptions = {
   workspace?: MockWorkspaceSeed;
   // The text of `keybindings.json`; no file when left out.
   keybindings?: string | null;
+  // The xDev ID account the mock starts with.
+  xdevId?: "signedOut" | "signedIn";
 };
 
 export function createMockApi(seed: Record<string, string>, options: MockOptions = {}): MockApi {
@@ -568,6 +571,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockIssues(),
     ...settingsApi,
     ...createMockKeybindings(options.keybindings ?? null),
+    ...createMockXdevId(options.xdevId),
     ...createMockKit(async () => (await settingsApi.usageSettings()).scan),
     ...createMockOpenIn(settingsHub.emit, workspace.repoAdd),
     ...createMockAgentSessions(),

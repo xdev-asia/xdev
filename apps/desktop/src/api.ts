@@ -106,6 +106,7 @@ import type {
   CliAsk,
   CliOpenTab,
   TabReport,
+  XdevIdState,
 } from "@xdev/bindings";
 import type {
   AgentSession,
@@ -316,6 +317,13 @@ export type PtyProfile = string;
 // Rust builds `CmdError.code` from each crate's `code()` as a plain string, so the codes the UI
 // knows how to translate are listed here by hand.
 export type ErrorCode =
+  | "account_keychain"
+  | "account_unavailable"
+  | "account_link"
+  | "account_state"
+  | "account_code"
+  | "account_expired"
+  | "account_timeout"
   | "not_found"
   | "outside_vault"
   | "no_vault"
@@ -547,6 +555,16 @@ export interface Api {
   keybindingsReveal(): Promise<void>;
   // After our own write and when the file changes on disk.
   onKeybindingsChanged(fn: (text: string | null) => void): Promise<() => void>;
+  // xDev ID (the person's xDev account). The token never leaves Rust.
+  xdevIdState(): Promise<XdevIdState>;
+  xdevIdSignIn(): Promise<XdevIdState>;
+  xdevIdPaste(link: string): Promise<XdevIdState>;
+  xdevIdCancel(): Promise<XdevIdState>;
+  xdevIdSignOut(): Promise<XdevIdState>;
+  xdevIdRefresh(): Promise<XdevIdState>;
+  xdevIdManage(): Promise<void>;
+  // `xdev-id://changed`: after sign-in, sign-out, expiry, refresh or a new avatar.
+  onXdevIdChanged(cb: (s: XdevIdState) => void): Promise<() => void>;
   // The terminal policy and the hint toggle (settings.json `keys`); the put returns what was stored.
   keySettingsGet(): Promise<KeySettings>;
   keySettingsPut(s: KeySettings): Promise<KeySettings>;
@@ -925,6 +943,13 @@ function seen({ path, hash }: Seen): Seen {
 }
 
 export const ERROR_CODES: readonly ErrorCode[] = [
+  "account_keychain",
+  "account_unavailable",
+  "account_link",
+  "account_state",
+  "account_code",
+  "account_expired",
+  "account_timeout",
   "not_found",
   "outside_vault",
   "no_vault",
@@ -1110,6 +1135,14 @@ const tauriApi: Api = {
   keybindingsWrite: (text) => call("keybindings_write", { text }),
   keybindingsReveal: () => call("keybindings_reveal"),
   onKeybindingsChanged: (fn) => listen<KeybindingsChanged>("keybindings://changed", (e) => fn(e.payload.text)),
+  xdevIdState: () => call("xdev_id_state"),
+  xdevIdSignIn: () => call("xdev_id_sign_in"),
+  xdevIdPaste: (link) => call("xdev_id_paste", { link }),
+  xdevIdCancel: () => call("xdev_id_cancel"),
+  xdevIdSignOut: () => call("xdev_id_sign_out"),
+  xdevIdRefresh: () => call("xdev_id_refresh"),
+  xdevIdManage: () => call("xdev_id_manage"),
+  onXdevIdChanged: (cb) => listen<XdevIdState>("xdev-id://changed", (e) => cb(e.payload)),
   keySettingsGet: () => call("key_settings_get"),
   keySettingsPut: (settings) => call("key_settings_put", { settings }),
   gitUserName: () => call("git_user_name"),
@@ -1318,7 +1351,9 @@ const tauriApi: Api = {
 
 function browserApi(): Api {
   const params = new URLSearchParams(location.search);
-  const mock = createMockApi(DEMO_SEED, { repo: !params.has("norepo"), commits: DEMO_COMMITS, runDelayMs: 4000 });
+  // `?account=in` previews the signed-in xDev ID.
+  const xdevId = params.get("account") === "in" ? "signedIn" : "signedOut";
+  const mock = createMockApi(DEMO_SEED, { repo: !params.has("norepo"), commits: DEMO_COMMITS, runDelayMs: 4000, xdevId });
   // Lets the preview simulate an AI agent or another editor from the devtools console.
   Object.assign(window, { xdevMock: mock });
   // The preview lands in the demo vault so the main layout is reachable without a dialog;
