@@ -13,7 +13,11 @@ import { useKeymap, type ActionId } from "@/keys/keymap";
 import { setTerminalKeyHost, startDiagnosticToasts } from "@/keys/terminalKey";
 import { startAutosave } from "@/files/autosave";
 import { fileTabId, fileTabs } from "@/files/fileTabs";
-import { onOpenFile, type OpenFileRequest } from "@/files/openFile";
+import { onOpenFile, openFile as requestOpenFile, type OpenFileRequest } from "@/files/openFile";
+import { paneOf, splitPane } from "./paneTree";
+import { QuickOpenDialog } from "@/search/QuickOpenDialog";
+import { recentFiles } from "@/search/recentFiles";
+import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
 import { openRestoredFile, restoreLayout, startLayoutSave, undoRestore } from "./layoutPersist";
@@ -76,7 +80,7 @@ function storeSelected(path: string): void {
 }
 
 type View = "workspace" | "docs" | "settings";
-type PanelTab = "files" | "changes" | "checks";
+type PanelTab = "files" | "search" | "changes" | "checks";
 type Creating = { repoId: string; busy: boolean; error?: ApiError["code"]; name?: string };
 type SetupCardAt = { kind: "detected"; command: string; repoId: string } | { kind: "ask"; repoId: string };
 type TrustAsk = { path: string; repoId: string; kind: HookKind; text: string; hash: string; changed: boolean; busy: boolean; error?: ApiError["code"] };
@@ -155,6 +159,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [prs] = useState(() => new PrStore(api));
   // The jump palette, and the settings section it asked for; a new `seq` is a new request.
   const [jumpOpen, setJumpOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
+  // A new value asks the search tab for the keyboard.
+  const [searchFocus, setSearchFocus] = useState(0);
   // Asks the front terminal of a worktree to take keyboard focus, as the palette closes.
   const [termFocus, setTermFocus] = useState<{ worktree: string; seq: number } | null>(null);
   const focusTerminal = (worktree: string) => setTermFocus((f) => ({ worktree, seq: (f?.seq ?? 0) + 1 }));
@@ -437,6 +444,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setFront((f) => ({ worktree: wt.path, id: fileTabId(req.rel), seq: (f?.seq ?? 0) + 1 }));
   };
   useEffect(() => onOpenFile((req) => live.openFileTab(req)), [live]);
+  useEffect(() => onOpenFile((req) => recentFiles.touch(req.worktree, req.rel)), []);
+  // Ctrl+Enter in quick open: the file goes into a new pane to the right of the focused one.
+  function openFileSide(worktree: string, rel: string, line?: number): void {
+    const layout = sessions?.layout(worktree);
+    const id = fileTabId(rel);
+    if (sessions && layout && !paneOf(layout, id)) sessions.setLayout(worktree, splitPane(layout, layout.focused, "right", id));
+    requestOpenFile({ worktree, rel, line });
+  }
   useEffect(() => startAutosave(api, fileTabs, t), [api, t]);
 
   function toggleBell(): void {
@@ -498,14 +513,25 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       openSessionsPanel(null);
     },
     "search.open": () => openSearch(),
+    "quickOpen.open": () => {
+      if (!current) {
+        pushToast({ text: t("quickOpen.noWorktree") });
+        return;
+      }
+      setQuickOpen(true);
+    },
     "settings.open": () => openSettings(),
     "quickCommands.open": () => setQuickSeq((n) => n + 1),
     "settings.shortcuts": () => openSettings("keys"),
     "sidebar.left.toggle": () => setSidebarOpen((o) => !o),
     "sidebar.right.toggle": () => setRightOpen((o) => !o),
     "panel.explorer": () => panelKey("files"),
-    // The file tree has no search box of its own, so the jump palette is the search.
-    "panel.search": () => setJumpOpen(true),
+    "panel.search": () => {
+      show("workspace");
+      setRightOpen(true);
+      setPanelTab("search");
+      setSearchFocus((n) => n + 1);
+    },
     "panel.sourceControl": () => panelKey("changes"),
     "zoom.in": () => void stepZoom(api, ZOOM_STEP),
     "zoom.out": () => void stepZoom(api, -ZOOM_STEP),
@@ -517,7 +543,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       "worktree.prev": () => worktreeKey({ step: -1 }),
       ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`worktree.select.${n}` as ActionId, () => worktreeKey({ nth: n })])),
     },
-    { when: () => view === "workspace" && !dialogOpen && !jumpOpen },
+    { when: () => view === "workspace" && !dialogOpen && !jumpOpen && !quickOpen },
   );
 
   // The Open In apps for the worktree menu; read again when Settings changes them.
@@ -1086,6 +1112,23 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                 type="button"
                 role="tab"
                 className="ws-panel-tab"
+                aria-selected={panelTab === "search"}
+                aria-label={t("search.files.tab")}
+                title={t("search.files.tab")}
+                onClick={() => {
+                  setPanelTab("search");
+                  setSearchFocus((n) => n + 1);
+                }}
+              >
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="6.5" />
+                  <path d="m16 16 4.5 4.5" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className="ws-panel-tab"
                 aria-selected={panelTab === "changes"}
                 aria-label={count > 0 ? t("workspace.panel.changesCount", { count }) : t("workspace.panel.changes")}
                 title={t("workspace.panel.changes")}
@@ -1133,6 +1176,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
               )}
+            </div>
+            <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "search"}>
+              <SearchPanel
+                key={current?.path ?? ""}
+                api={api}
+                worktree={current?.path ?? null}
+                focusSeq={searchFocus}
+                onOpen={(rel, at) => current && requestOpenFile({ worktree: current.path, rel, line: at.line, column: at.column })}
+              />
             </div>
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "changes"}>
               {current ? (
@@ -1208,6 +1260,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           }}
         />
       )}
+      <QuickOpenDialog
+        open={quickOpen}
+        api={api}
+        worktree={current?.path ?? null}
+        recent={recentFiles}
+        onClose={() => setQuickOpen(false)}
+        onOpen={(rel, { line, side }) => {
+          if (!current) return;
+          if (side) openFileSide(current.path, rel, line);
+          else requestOpenFile({ worktree: current.path, rel, line });
+        }}
+      />
       <PaletteHost
         open={jumpOpen}
         onClose={() => setJumpOpen(false)}
