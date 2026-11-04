@@ -14,7 +14,8 @@ pub const PASTE_MAX_PIXELS: u64 = 32 * 1024 * 1024;
 pub const PASTE_MAX_BYTES: usize = 18_874_368;
 /// A saved paste older than this is deleted the next time one is saved.
 pub const PASTE_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
-/// Most saved pastes kept; the oldest go first.
+/// Most saved pastes kept; the oldest go first. After more than this many pastes within 24 h the
+/// cap drops a recent paste, even one an agent has not read yet. Accepted.
 pub const PASTE_MAX_FILES: usize = 50;
 
 const PASTE_PREFIX: &str = "xdev-paste-";
