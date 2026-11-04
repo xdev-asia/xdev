@@ -48,3 +48,12 @@ it("a scheme id gives its palette", () => {
   expect(theme).toEqual(s.colors);
   expect(theme.background).toBe(s.colors.background);
 });
+
+it("a custom id resolves to its colours, and an unknown one still falls back to the app look", () => {
+  const colors = { ...TERMINAL_SCHEMES[0].colors, background: "#123456" };
+  const custom = [{ id: "custom-mine", name: "Mine", mode: "dark" as const, colors }];
+  expect(terminalTheme("custom-mine", token, custom)).toEqual(colors);
+  expect(terminalTheme("custom-gone", token, custom)).toEqual({ background: "#101010", foreground: "#eeeeee" });
+  // The bundled schemes win over a custom one with the same id.
+  expect(terminalTheme(TERMINAL_SCHEMES[0].id, token, [{ ...custom[0], id: TERMINAL_SCHEMES[0].id }])).toEqual(TERMINAL_SCHEMES[0].colors);
+});
