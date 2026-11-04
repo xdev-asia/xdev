@@ -9,6 +9,8 @@ import { UnsavedDialog } from "@/files/UnsavedDialog";
 import { useI18n } from "@/i18n";
 import { useKeymap } from "@/keys/keymap";
 import { useNavigationSettings } from "@/settings/navigationSettings";
+import { useUsageSettings } from "@/settings/usageSettings";
+import { useCacheTimers } from "./cacheTimer";
 import { buildSections } from "@/quickCommands/model";
 import { QuickCommandsControl } from "@/quickCommands/QuickCommandsControl";
 import { runWithToast } from "@/quickCommands/runUi";
@@ -129,6 +131,9 @@ export function WorktreeTabs(props: {
   const subscribe = useCallback((listener: () => void) => sessions.subscribe(listener), [sessions]);
   const snapshot = () => sessions.tabs(worktree);
   const tabs = useSyncExternalStore(subscribe, snapshot, snapshot);
+  const usage = useUsageSettings();
+  // Seen from the outside: the transitions of the tabs' status, not a time read from the agent.
+  const cacheTimers = useCacheTimers(tabs, usage.cacheTimer);
   const layoutSnapshot = () => sessions.layout(worktree);
   const stored = useSyncExternalStore(subscribe, layoutSnapshot, layoutSnapshot);
 
@@ -469,6 +474,7 @@ export function WorktreeTabs(props: {
       <TabStrip
         pane={leaf.id}
         items={items}
+        cache={usage.cacheTimer ? { timers: cacheTimers, ttlMs: usage.cacheTtlMs } : undefined}
         active={leaf.active}
         groups={groups}
         menuOpen={menuPane === leaf.id}

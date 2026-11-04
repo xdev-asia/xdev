@@ -107,3 +107,14 @@ it("the saved mode defaults to detailed", () => {
   vi.stubGlobal("localStorage", { getItem: () => { throw new Error("blocked"); } });
   expect(loadUsageMode()).toBe("detailed");
 });
+
+it("Remaining shows 60 % left for 40 % used in the bars and the numbers", () => {
+  const out = html({ display: "remaining" });
+  expect(out).toMatch(/role="meter"[^>]*aria-valuenow="60"/);
+  expect(out).toMatch(/role="meter"[^>]*aria-valuenow="88"/);
+  expect(out).toContain("60%");
+  expect(out).not.toContain("40%");
+  expect(out).toContain(en("usage.stats.left"));
+  const compact = html({ display: "remaining", mode: "compact" });
+  expect(compact).toMatch(/role="meter"[^>]*aria-valuenow="60"/);
+});

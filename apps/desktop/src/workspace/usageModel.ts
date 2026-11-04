@@ -1,4 +1,4 @@
-import type { Accounts, Quota } from "@/api";
+import type { Accounts, ProviderSwitches, Quota, UsageDisplay } from "@/api";
 import type { useI18n } from "@/i18n";
 
 type T = ReturnType<typeof useI18n>["t"];
@@ -69,4 +69,21 @@ export function resetLabel(resetsAt: number | null, now: number, t: T): string {
   }
   const when = new Date(resetsAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   return t("usage.popover.reset.at", { when });
+}
+
+/** The number a meter shows: whole percent used, or what is left (never below 0). */
+export function shownPercent(used: number, display: UsageDisplay): number {
+  return display === "remaining" ? Math.max(0, 100 - used) : used;
+}
+
+/**
+ * The quotas that get a footer meter. A quota whose account is not known stays (its provider
+ * cannot be told); one whose provider switch is off goes.
+ */
+export function footerQuota(quota: readonly Quota[], accounts: Accounts | null, on: ProviderSwitches): Quota[] {
+  const providers = new Map((accounts?.accounts ?? []).map((a) => [a.name, a.provider]));
+  return quota.filter((q) => {
+    const provider = providers.get(q.name);
+    return provider === undefined || on[provider];
+  });
 }

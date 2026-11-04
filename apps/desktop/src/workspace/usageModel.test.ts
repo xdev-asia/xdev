@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { Accounts, Quota } from "@/api";
 import { translate } from "@/i18n";
-import { resetLabel, usageRows } from "./usageModel";
+import { footerQuota, resetLabel, shownPercent, usageRows } from "./usageModel";
 
 const t = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 const now = Date.parse("2026-11-04T10:00:00Z");
@@ -48,4 +48,17 @@ it("resetLabel: relative under a day, date and time beyond", () => {
   expect(resetLabel(now + 130 * 60_000, now, t)).toBe("Resets in 2 h 10 min");
   expect(resetLabel(now + 25 * 3_600_000, now, t)).toMatch(/^Resets .*\d/);
   expect(resetLabel(now + 25 * 3_600_000, now, t)).not.toContain(" in ");
+});
+
+it("shows used as it is and remaining as 100 minus used, never below 0", () => {
+  expect([0, 70, 100, 130].map((u) => shownPercent(u, "used"))).toEqual([0, 70, 100, 130]);
+  expect([0, 70, 100, 130].map((u) => shownPercent(u, "remaining"))).toEqual([100, 30, 0, 0]);
+});
+it("drops the quota of a provider that is switched off and keeps one with no known account", () => {
+  const list = [quota("c"), quota("x"), quota("u")];
+  const acc = accounts([["c", "claude"], ["x", "codex"]]);
+  expect(footerQuota(list, acc, { claude: true, codex: true }).map((q) => q.name)).toEqual(["c", "x", "u"]);
+  expect(footerQuota(list, acc, { claude: true, codex: false }).map((q) => q.name)).toEqual(["c", "u"]);
+  expect(footerQuota(list, acc, { claude: false, codex: false }).map((q) => q.name)).toEqual(["u"]);
+  expect(footerQuota(list, null, { claude: false, codex: false }).map((q) => q.name)).toEqual(["c", "x", "u"]);
 });
