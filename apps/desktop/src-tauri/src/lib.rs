@@ -232,6 +232,7 @@ pub fn run() {
             workspace::repo_create,
             workspace::worktree_name_preview,
             workspace::repo_update,
+            ship::gh_logins,
             workspace::repo_hooks,
             workspace::repo_hook_trust,
             workspace::worktree_archive_run,
