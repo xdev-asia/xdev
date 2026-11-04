@@ -4,7 +4,10 @@
 #![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use serde_json::Value;
+use tauri::{AppHandle, State};
+
+use crate::endpoint::{AppError, Caller, Handler, Request};
 
 /// One terminal tab as the UI sees it; the UI owns the state machine.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,4 +65,24 @@ pub fn cli_tabs_report(hub: State<'_, CliHub>, tabs: Vec<TabReport>, selected: O
 #[tauri::command]
 pub fn cli_approve(hub: State<'_, CliHub>, request: u64, allow: bool) {
     let _ = (hub, request, allow);
+}
+
+/// The endpoint's handler in the running app: reads the app's state per call.
+pub struct AppVerbs {
+    pub app: AppHandle,
+}
+
+impl Handler for AppVerbs {
+    fn handle(
+        &self,
+        req: &Request,
+        caller: &Caller,
+        gone: &dyn Fn() -> bool,
+    ) -> Result<Value, AppError> {
+        let _ = (&self.app, caller, gone);
+        Err(AppError::new(
+            "bad_request",
+            format!("unknown method {}", req.method),
+        ))
+    }
 }

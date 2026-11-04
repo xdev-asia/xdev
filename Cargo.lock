@@ -6225,6 +6225,7 @@ dependencies = [
  "xdev-ai",
  "xdev-core",
  "xdev-git",
+ "xdev-ipc",
  "xdev-kit",
  "xdev-policy",
  "xdev-pty",
