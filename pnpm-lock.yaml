@@ -213,6 +213,9 @@ importers:
       '@tauri-apps/plugin-dialog':
         specifier: ^2.8.4
         version: 2.8.4
+      '@xdev-asia/ui':
+        specifier: ^1.1.1
+        version: 1.1.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@xdev/bindings':
         specifier: workspace:*
         version: link:../../packages/bindings
@@ -753,6 +756,14 @@ packages:
 
   '@vitest/spy@5.0.5':
     resolution: {integrity: sha512-lwJRExuH417257Q5wv9QYugN9IMJkoxcrKrYxGPQkBzl7wlNpTUxD/5yNX4ESKVUIShKPgkGchYPFMWOOk0wzw==}
+
+  '@xdev-asia/ui@1.1.1':
+    resolution: {integrity: sha512-wI/VIzzNeUjVswcFQK3o3yDnC6pBPXm1tLpQmYR+D1ZaHS1zD+FBcZxGGV1wPi6vtHhCg1r0Wyl+wwhTgWVbuw==, tarball: https://npm.pkg.github.com/download/@xdev-asia/ui/1.1.1/57eecfdf787c51d68070ffbb80f2af88a10ace42}
+    engines: {node: '>=24'}
+    hasBin: true
+    peerDependencies:
+      react: ^19.0.0
+      react-dom: ^19.0.0
 
   '@xterm/addon-fit@0.11.0':
     resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
@@ -1473,6 +1484,11 @@ snapshots:
       vite: 8.3.5(@types/node@26.6.6)
 
   '@vitest/spy@5.0.5': {}
+
+  '@xdev-asia/ui@1.1.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+    dependencies:
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
 
   '@xterm/addon-fit@0.11.0': {}
 
