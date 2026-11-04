@@ -14,13 +14,17 @@ import {
 } from "@/api";
 import { useProfiles } from "@/agents/profileStore";
 import { patchStatusSettings, setStatusSettings } from "@/status/statusSettings";
-import { Button, Disclosure, Switch } from "@xdev-asia/ui";
+import { Button, Disclosure, Field, Switch } from "@xdev-asia/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
 import { pushToast } from "@/workspace/toastStore";
 import { SettingGroup, SettingRow } from "@/settings/SettingRow";
 import type { SettingsSectionProps } from "@/settings/sections";
 import { freeId } from "./agentForm";
+
+/** Idle minutes before an agent tab sleeps: the range the settings file holds it to. */
+const SLEEP_AFTER_MIN_MIN = 1;
+const SLEEP_AFTER_MIN_MAX = 1440;
 import { ProfileEditor } from "./ProfileEditor";
 import { ShellsSection } from "./ShellsSection";
 
@@ -46,6 +50,8 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
   // What the conversation index holds; read again whenever the consent or the index may have moved.
   const [searchStatus, setSearchStatus] = useState<SessionSearchStatus | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  // The minutes field while it is being typed in; null shows the saved value.
+  const [sleepDraft, setSleepDraft] = useState<string | null>(null);
 
   useEffect(() => {
     api.profiles().then(setView, (e) => setError(toApiError(e).code));
@@ -85,6 +91,26 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
     } catch (e) {
       setError(toApiError(e).code);
     }
+  }
+
+  async function putAgents(next: Partial<AgentsSettings>): Promise<void> {
+    if (!switchPolicy) return;
+    setError(undefined);
+    try {
+      setSwitchPolicy(await api.agentsSettingsPut({ ...switchPolicy, ...next }));
+    } catch (e) {
+      setError(toApiError(e).code);
+    }
+  }
+
+  function commitSleepMinutes(): void {
+    const raw = sleepDraft;
+    setSleepDraft(null);
+    if (raw === null || !switchPolicy) return;
+    const value = Number(raw.trim());
+    if (raw.trim() === "" || !Number.isFinite(value)) return;
+    const minutes = Math.min(SLEEP_AFTER_MIN_MAX, Math.max(SLEEP_AFTER_MIN_MIN, Math.round(value)));
+    if (minutes !== switchPolicy.sleepAfterMin) void putAgents({ sleepAfterMin: minutes });
   }
 
   async function clearSearch(): Promise<void> {
@@ -352,6 +378,40 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
           {t("sessionSearch.clear")}
         </Button>
       </Disclosure>
+      </SettingRow>
+
+      <SettingRow id="agents.autoSleep" filter={filter}>
+      <h4 className="settings-group">{t("settings.agents.autoSleep")}</h4>
+      <ul className="settings-list" data-section="auto-sleep">
+        <li className="settings-item">
+          <div className="settings-item-text">
+            <strong>{t("settings.agents.autoSleep.label")}</strong>
+            <span className="settings-path">{t("settings.agents.autoSleep.hint")}</span>
+          </div>
+          <Switch
+            checked={switchPolicy?.autoSleep ?? false}
+            aria-label={t("settings.agents.autoSleep.label")}
+            disabled={!switchPolicy}
+            data-field="autoSleep"
+            onChange={(e) => void putAgents({ autoSleep: e.target.checked })}
+          />
+        </li>
+        <li className="settings-item">
+          <Field
+            label={t("settings.agents.sleepAfter.label")}
+            hint={t("settings.agents.sleepAfter.hint")}
+            type="number"
+            min={SLEEP_AFTER_MIN_MIN}
+            max={SLEEP_AFTER_MIN_MAX}
+            data-field="sleepAfterMin"
+            disabled={!switchPolicy?.autoSleep}
+            value={sleepDraft ?? String(switchPolicy?.sleepAfterMin ?? 30)}
+            onChange={(e) => setSleepDraft(e.target.value)}
+            onBlur={commitSleepMinutes}
+            onKeyDown={(e) => e.key === "Enter" && commitSleepMinutes()}
+          />
+        </li>
+      </ul>
       </SettingRow>
 
       <SettingRow id="agents.statusHooks" filter={filter}>

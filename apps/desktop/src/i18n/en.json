@@ -2136,5 +2136,10 @@
   "sleep.wake": "Wake",
   "sleep.badge": "Asleep",
   "sleep.tab.title": "This terminal is asleep",
-  "sleep.tab.hint": "Waking it starts the agent session again where it stopped."
+  "sleep.tab.hint": "Waking it starts the agent session again where it stopped.",
+  "settings.agents.autoSleep": "Auto sleep",
+  "settings.agents.autoSleep.label": "Put finished agent tabs to sleep",
+  "settings.agents.autoSleep.hint": "Experimental. A finished agent tab you are not looking at is closed after the idle time below. Waking it resumes the same session.",
+  "settings.agents.sleepAfter.label": "Sleep after (minutes)",
+  "settings.agents.sleepAfter.hint": "From 1 to 1440 minutes without output."
 }

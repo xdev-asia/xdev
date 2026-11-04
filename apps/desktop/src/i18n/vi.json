@@ -2136,5 +2136,10 @@
   "sleep.wake": "Đánh thức",
   "sleep.badge": "Đang ngủ",
   "sleep.tab.title": "Terminal này đang ngủ",
-  "sleep.tab.hint": "Đánh thức sẽ chạy lại phiên agent từ chỗ đã dừng."
+  "sleep.tab.hint": "Đánh thức sẽ chạy lại phiên agent từ chỗ đã dừng.",
+  "settings.agents.autoSleep": "Tự động cho ngủ",
+  "settings.agents.autoSleep.label": "Cho tab agent đã xong đi ngủ",
+  "settings.agents.autoSleep.hint": "Thử nghiệm. Tab agent đã xong mà bạn không xem sẽ được đóng sau thời gian nhàn rỗi bên dưới. Đánh thức sẽ tiếp tục đúng phiên đó.",
+  "settings.agents.sleepAfter.label": "Cho ngủ sau (phút)",
+  "settings.agents.sleepAfter.hint": "Từ 1 đến 1440 phút không có đầu ra."
 }
