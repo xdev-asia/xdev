@@ -772,7 +772,7 @@ export function createMockWorkspace(
       if (!repo) return reject("repo_unknown", repoId);
       // As `names::sparse_dirs`: at most 50 relative folders, none empty, with `..` or a leading `-`.
       const sparse = request?.sparse ?? [];
-      if (sparse.length > 50 || sparse.some((d) => d.trim() === "" || d.startsWith("-") || isAbsolute(d) || d.split(/[\\/]/).includes(".."))) {
+      if (sparse.length > 50 || sparse.some((d) => d.trim() !== "" && (d.trim().startsWith("-") || isAbsolute(d.trim()))) || sparse.some((d) => d.split(/[\\/]/).includes(".."))) {
         return reject("bad_sparse", sparse.join(", "));
       }
       const existing = request?.existing?.trim() ?? "";

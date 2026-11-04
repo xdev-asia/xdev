@@ -44,6 +44,10 @@ it("gives a pull request branch, pr-<n> for a fork, and rejects an unknown numbe
   await expect(api.prOpen("r", 99)).rejects.toMatchObject({ code: "pr_not_found" });
 });
 
+it("opening an unknown project fails as gh does", async () => {
+  await expect(api.projectOpen("r", 999)).rejects.toMatchObject({ code: "gh_failed" });
+});
+
 it("lists an open and a closed project", async () => {
   expect((await api.projectsList("r")).map((p) => p.closed)).toEqual([false, true]);
 });

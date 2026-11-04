@@ -153,6 +153,7 @@ it("a blank title cannot be sent; a title creates the issue and hands it back", 
   const submit = () => view.nodes().find((n) => n.type === "form")!.props.onSubmit({ preventDefault() {} });
   const button = () => view.nodes().find((n) => n.props.type === "submit")!;
   expect(button().props.disabled).toBe(true);
+  expect(view.nodes().find((n) => n.type === "input")!.props.maxLength).toBe(256);
   submit();
   expect(create).not.toHaveBeenCalled();
   view.nodes().find((n) => n.type === "input")!.props.onChange({ target: { value: "  Footer is cut  " } });

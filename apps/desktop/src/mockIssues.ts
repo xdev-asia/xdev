@@ -122,7 +122,7 @@ export function createMockIssues(): IssuesApi {
       return structuredClone(PROJECTS);
     },
     async projectOpen(_repoId, number) {
-      if (!PROJECTS.some((p) => p.number === number)) return reject("not_found");
+      if (!PROJECTS.some((p) => p.number === number)) return reject("gh_failed");
     },
     async issueResolve(_repoId, text) {
       const t = text.trim();

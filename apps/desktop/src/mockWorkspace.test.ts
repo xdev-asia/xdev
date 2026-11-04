@@ -465,11 +465,13 @@ describe("mock repo hooks", () => {
   it("checks the sparse folders", async () => {
     const api = createMockWorkspace();
     const [repo] = await api.workspaceList();
-    for (const bad of ["../out", "/abs", "-x", "a\\..\\b", " "]) {
+    for (const bad of ["../out", "/abs", "-x", "a\\..\\b"]) {
       await expect(api.worktreeCreate(repo.id, "s", null, { existing: null, sparse: [bad] })).rejects.toMatchObject({ code: "bad_sparse" });
     }
     await expect(api.worktreeCreate(repo.id, "s", null, { existing: null, sparse: Array.from({ length: 51 }, (_, i) => `d${i}`) })).rejects.toMatchObject({ code: "bad_sparse" });
     expect((await api.worktreeCreate(repo.id, "s", null, { existing: null, sparse: ["src", "docs/api"] })).worktree.branch).toBe("s");
+    // Blank entries are skipped, as the desktop does.
+    expect((await api.worktreeCreate(repo.id, "s2", null, { existing: null, sparse: [" ", ""] })).worktree.branch).toBe("s2");
   });
 
   it("previews the name a create would get, without making anything", async () => {

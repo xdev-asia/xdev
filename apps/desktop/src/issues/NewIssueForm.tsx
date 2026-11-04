@@ -1,4 +1,4 @@
-import { Button } from "@xdev-asia/ui";
+import { Button, Textarea } from "@xdev-asia/ui";
 import { useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type ApiError, type Issue } from "@/api";
@@ -38,12 +38,9 @@ export function NewIssueForm(props: { api: Api; repoId: string; onCreated(issue:
       <div className="ws-fields">
         <label className="ws-field">
           <span>{t("issues.new.title")}</span>
-          <input type="text" value={title} autoFocus disabled={busy} onChange={(e) => setTitle(e.target.value)} />
+          <input type="text" value={title} maxLength={256} autoFocus disabled={busy} onChange={(e) => setTitle(e.target.value)} />
         </label>
-        <label className="ws-field">
-          <span>{t("issues.new.body")}</span>
-          <textarea value={body} rows={6} disabled={busy} onChange={(e) => setBody(e.target.value)} />
-        </label>
+        <Textarea label={t("issues.new.body")} value={body} rows={6} disabled={busy} onChange={(e) => setBody(e.target.value)} />
       </div>
       {error && (
         <p className="error-text" role="alert">
