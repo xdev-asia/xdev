@@ -131,6 +131,14 @@ impl Registry {
             reg.add(&entry.name, entry.provider, entry.dir)
                 .map_err(|_| AiError::BadRegistry)?;
         }
+        // A hand edit that names no such account, or a second one for a
+        // provider, is left out: the effect is the CLI's own home, which is
+        // safer than refusing the whole file.
+        for entry in disk.active {
+            if reg.active(entry.provider).is_none() {
+                let _ = reg.activate(entry.provider, Some(&entry.name));
+            }
+        }
         Ok(reg)
     }
 
@@ -175,6 +183,7 @@ impl Registry {
             .iter()
             .position(|a| a.name == name)
             .ok_or(AiError::NotFound)?;
+        self.active.retain(|a| a.name != name);
         Ok(self.accounts.remove(index))
     }
 
@@ -194,14 +203,28 @@ impl Registry {
     /// the provider's tabs run on the CLI's own home. An unknown name or
     /// another provider's account is `NotFound`.
     pub fn activate(&mut self, provider: Provider, name: Option<&str>) -> Result<(), AiError> {
-        let _ = (provider, name);
-        Err(AiError::NotFound)
+        if let Some(name) = name
+            && !self
+                .get(name)
+                .is_some_and(|entry| entry.provider == provider)
+        {
+            return Err(AiError::NotFound);
+        }
+        self.active.retain(|a| a.provider != provider);
+        if let Some(name) = name {
+            self.active.push(ActiveAccount {
+                provider,
+                name: name.to_owned(),
+            });
+        }
+        Ok(())
     }
 
     /// The active account of `provider`, when it names a registered one.
     pub fn active(&self, provider: Provider) -> Option<&AccountEntry> {
-        let _ = provider;
-        None
+        let active = self.active.iter().find(|a| a.provider == provider)?;
+        self.get(&active.name)
+            .filter(|entry| entry.provider == provider)
     }
 }
 

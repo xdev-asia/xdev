@@ -158,3 +158,121 @@ fn provider_names() {
         Err(AiError::UnknownProvider)
     ));
 }
+
+// --- active account ---
+
+fn two_providers(data: &TempDir) -> Registry {
+    let mut reg = Registry::load(data.path()).unwrap();
+    reg.add("work", Provider::Claude, data.path().join("w"))
+        .unwrap();
+    reg.add("home", Provider::Claude, data.path().join("h"))
+        .unwrap();
+    reg.add("gpt", Provider::Codex, data.path().join("g"))
+        .unwrap();
+    reg
+}
+
+#[test]
+fn activate_sets_one_per_provider() {
+    let data = TempDir::new().unwrap();
+    let mut reg = two_providers(&data);
+    assert!(reg.active(Provider::Claude).is_none());
+    reg.activate(Provider::Claude, Some("work")).unwrap();
+    reg.activate(Provider::Codex, Some("gpt")).unwrap();
+    reg.activate(Provider::Claude, Some("home")).unwrap();
+    assert_eq!(reg.active(Provider::Claude).unwrap().name, "home");
+    assert_eq!(reg.active(Provider::Codex).unwrap().name, "gpt");
+    assert_eq!(reg.active.len(), 2);
+    // None goes back to the CLI's own home for that provider only.
+    reg.activate(Provider::Claude, None).unwrap();
+    assert!(reg.active(Provider::Claude).is_none());
+    assert_eq!(reg.active(Provider::Codex).unwrap().name, "gpt");
+}
+
+#[test]
+fn activate_unknown_or_other_provider_is_not_found() {
+    let data = TempDir::new().unwrap();
+    let mut reg = two_providers(&data);
+    reg.activate(Provider::Claude, Some("work")).unwrap();
+    for (provider, name) in [
+        (Provider::Claude, "nobody"),
+        (Provider::Claude, "gpt"),
+        (Provider::Codex, "work"),
+    ] {
+        let err = reg.activate(provider, Some(name)).unwrap_err();
+        assert!(matches!(err, AiError::NotFound), "{name}: {err:?}");
+        assert_eq!(err.code(), "not_found");
+    }
+    // A refused activation leaves the active account as it was.
+    assert_eq!(reg.active(Provider::Claude).unwrap().name, "work");
+    assert!(reg.active(Provider::Codex).is_none());
+}
+
+#[test]
+fn remove_of_the_active_account_clears_it() {
+    let data = TempDir::new().unwrap();
+    let mut reg = two_providers(&data);
+    reg.activate(Provider::Claude, Some("work")).unwrap();
+    reg.activate(Provider::Codex, Some("gpt")).unwrap();
+    reg.remove("home").unwrap();
+    assert_eq!(reg.active(Provider::Claude).unwrap().name, "work");
+    reg.remove("work").unwrap();
+    assert!(reg.active(Provider::Claude).is_none());
+    assert_eq!(reg.active.len(), 1);
+    assert_eq!(reg.active(Provider::Codex).unwrap().name, "gpt");
+}
+
+#[test]
+fn save_keeps_the_active_accounts() {
+    let data = TempDir::new().unwrap();
+    let mut reg = two_providers(&data);
+    reg.activate(Provider::Claude, Some("home")).unwrap();
+    reg.save(data.path()).unwrap();
+
+    let file = fs::read_to_string(data.path().join("accounts.json")).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&file).unwrap();
+    assert_eq!(json["version"], 1);
+    assert_eq!(
+        json["active"],
+        serde_json::json!([{ "provider": "claude", "name": "home" }])
+    );
+    let back = Registry::load(data.path()).unwrap();
+    assert_eq!(back, reg);
+    assert_eq!(back.active(Provider::Claude).unwrap().name, "home");
+}
+
+#[test]
+fn a_file_without_active_loads_with_none() {
+    let data = TempDir::new().unwrap();
+    let text = r#"{"version":1,"reserve_percent":30,"accounts":[
+        {"name":"work","provider":"claude","dir":"w"}]}"#;
+    fs::write(data.path().join("accounts.json"), text).unwrap();
+    let reg = Registry::load(data.path()).unwrap();
+    assert_eq!(reg.accounts.len(), 1);
+    assert!(reg.active.is_empty());
+    assert!(reg.active(Provider::Claude).is_none());
+}
+
+#[test]
+fn an_active_entry_that_names_no_account_is_dropped_on_load() {
+    let data = TempDir::new().unwrap();
+    // Hand edits: a gone account, another provider's, and a second entry
+    // for one provider. Each is left out rather than refusing the file.
+    let text = r#"{"version":1,"reserve_percent":30,"accounts":[
+        {"name":"work","provider":"claude","dir":"w"},
+        {"name":"gpt","provider":"codex","dir":"g"}],
+        "active":[
+        {"provider":"claude","name":"gone"},
+        {"provider":"codex","name":"work"},
+        {"provider":"claude","name":"work"},
+        {"provider":"claude","name":"work"}]}"#;
+    fs::write(data.path().join("accounts.json"), text).unwrap();
+    let reg = Registry::load(data.path()).unwrap();
+    assert_eq!(
+        reg.active,
+        vec![xdev_ai::ActiveAccount {
+            provider: Provider::Claude,
+            name: "work".into()
+        }]
+    );
+}
