@@ -66,6 +66,85 @@ pub struct Settings {
     /// Settings → Editor, for file tabs; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub editor: EditorSettings,
+    /// Settings → General, Navigation group; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub navigation: NavigationSettings,
+    /// Settings → General, Diff group; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub diff: DiffSettings,
+}
+
+/// The order Ctrl+Tab walks the tabs of a worktree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum TabOrder {
+    /// Most recently used first, as in the reference app.
+    #[default]
+    Mru,
+    /// The order of the tab strip.
+    Sequential,
+}
+
+/// Settings → General → Navigation. A field that does not parse falls back
+/// to its default on its own.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct NavigationSettings {
+    pub tab_order: TabOrder,
+    /// Ask before closing a pinned tab.
+    pub confirm_close_pinned: bool,
+    /// Ask before closing a tab that has a running process.
+    pub confirm_close_running: bool,
+    pub ask_before_delete_worktree: bool,
+}
+
+impl Default for NavigationSettings {
+    fn default() -> Self {
+        NavigationSettings {
+            tab_order: TabOrder::default(),
+            confirm_close_pinned: true,
+            confirm_close_running: true,
+            ask_before_delete_worktree: true,
+        }
+    }
+}
+
+/// How a diff opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum DiffView {
+    #[default]
+    Inline,
+    Split,
+}
+
+/// Settings → General → Diff: the starting options of the review view.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct DiffSettings {
+    pub default_view: DiffView,
+    pub ignore_whitespace: bool,
+    /// On, unlike the reference app: it is what xDev users have today.
+    pub collapse_unchanged: bool,
+    pub word_wrap: bool,
+    /// Only stored; the combined diff does not draw a tree yet.
+    pub file_tree: bool,
+}
+
+impl Default for DiffSettings {
+    fn default() -> Self {
+        DiffSettings {
+            default_view: DiffView::default(),
+            ignore_whitespace: false,
+            collapse_unchanged: true,
+            word_wrap: false,
+            file_tree: false,
+        }
+    }
 }
 
 /// How file tabs edit. Values outside the ranges below are clamped when
@@ -410,6 +489,8 @@ pub enum SettingsSection {
     QuickCommands,
     OpenIn,
     Editor,
+    Navigation,
+    Diff,
 }
 
 /// What a `settings://changed` event carries.
