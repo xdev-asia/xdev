@@ -374,6 +374,7 @@ pub fn run() {
             xdev_id::xdev_id_cancel,
             xdev_id::xdev_id_sign_out,
             xdev_id::xdev_id_refresh,
+            xdev_id::xdev_id_reopen,
             xdev_id::xdev_id_manage,
         ])
         .build(tauri::generate_context!())

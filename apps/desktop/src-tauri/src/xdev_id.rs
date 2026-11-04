@@ -225,6 +225,15 @@ impl XdevIdHub {
         Ok(state)
     }
 
+    /// The link of the running attempt, to open it again. It starts no new attempt, so a
+    /// callback from the first browser tab still matches.
+    pub fn reopen_link(&self) -> Result<String, CmdError> {
+        match self.state() {
+            XdevIdState::SigningIn { link } => Ok(link),
+            _ => Err(fail(E_STATE)),
+        }
+    }
+
     pub fn manage_url(&self) -> String {
         format!("{}/", self.base)
     }
@@ -287,6 +296,14 @@ pub fn xdev_id_sign_out(
 #[tauri::command(async)]
 pub fn xdev_id_refresh(app: AppHandle, hub: State<'_, XdevIdHub>) -> XdevIdState {
     hub.refresh(&emitter(&app))
+}
+
+#[tauri::command(async)]
+pub fn xdev_id_reopen(app: AppHandle, hub: State<'_, XdevIdHub>) -> Result<(), CmdError> {
+    let link = hub.reopen_link()?;
+    app.opener()
+        .open_url(link, None::<&str>)
+        .map_err(|_| fail(E_UNAVAILABLE))
 }
 
 #[tauri::command(async)]
@@ -597,6 +614,21 @@ mod tests {
             .unwrap_err();
         assert_eq!((err.code, err.detail), (E_KEYCHAIN, None));
         assert_eq!(hub.state(), XdevIdState::SignedOut { notice: None });
+    }
+
+    #[test]
+    fn reopen_returns_the_running_link_and_starts_nothing() {
+        let (hub, _, http) = hub(ok_replies());
+        let now = Instant::now();
+        let err = hub.reopen_link().unwrap_err();
+        assert_eq!((err.code, err.detail), (E_STATE, None));
+        let link = hub.begin(([1; 32], [2; 32]), "d", now, &silent).unwrap();
+        assert_eq!(hub.reopen_link().unwrap(), link);
+        assert_eq!(hub.reopen_link().unwrap(), link);
+        // The same attempt is still the one that completes.
+        assert!(hub.deep_link(&link_for([2; 32]), now, &silent));
+        assert_eq!(http.requests().len(), 2);
+        assert_eq!(hub.reopen_link().unwrap_err().code, E_STATE);
     }
 
     #[test]
