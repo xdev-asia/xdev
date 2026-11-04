@@ -3,6 +3,7 @@
 //! is not blocked, system sleep only.
 
 use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
 
 #[cfg(windows)]
 mod win;
@@ -41,6 +42,57 @@ struct Helper {
     program: &'static str,
     args: Vec<String>,
     child: Option<Child>,
+}
+
+/// How long a fresh helper is watched for an early exit (a missing D-Bus, a refused request).
+#[cfg_attr(windows, allow(dead_code))]
+const EARLY_EXIT_WINDOW: Duration = Duration::from_millis(300);
+
+#[cfg_attr(windows, allow(dead_code))]
+impl Helper {
+    /// Makes sure the helper runs. A helper that has exited since is reaped and started again; one that
+    /// exits within `EARLY_EXIT_WINDOW` of its start is reaped and reported as an error.
+    fn start(&mut self) -> Result<(), String> {
+        if let Some(child) = self.child.as_mut() {
+            match child.try_wait() {
+                Ok(None) => return Ok(()),
+                Ok(Some(_)) => self.child = None,
+                Err(_) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    self.child = None;
+                }
+            }
+        }
+        let mut child = Command::new(self.program)
+            .args(&self.args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("{}: {e}", self.program))?;
+        let started = Instant::now();
+        loop {
+            match child.try_wait() {
+                // try_wait reaped it.
+                Ok(Some(status)) => {
+                    return Err(format!("{}: exited at once ({status})", self.program));
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!("{}: {e}", self.program));
+                }
+            }
+            if started.elapsed() >= EARLY_EXIT_WINDOW {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        self.child = Some(child);
+        Ok(())
+    }
 }
 
 #[cfg_attr(windows, allow(dead_code))]
@@ -87,25 +139,13 @@ impl SleepBlock {
         !matches!(self.0, Kind::None)
     }
 
-    /// Asks the OS to stay awake; a second call while held does nothing.
+    /// Asks the OS to stay awake; a second call while held does nothing. A helper that is not running
+    /// any more counts as not held and is started again.
     pub fn hold(&mut self) -> Result<(), String> {
         match &mut self.0 {
             #[cfg(windows)]
             Kind::Windows(request) => request.hold(REASON),
-            Kind::Helper(helper) => {
-                if helper.child.is_some() {
-                    return Ok(());
-                }
-                let child = Command::new(helper.program)
-                    .args(&helper.args)
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()
-                    .map_err(|e| format!("{}: {e}", helper.program))?;
-                helper.child = Some(child);
-                Ok(())
-            }
+            Kind::Helper(helper) => helper.start(),
             Kind::None => Err("not available".to_owned()),
         }
     }
@@ -168,6 +208,49 @@ mod tests {
         block.hold().unwrap();
         block.hold().unwrap();
         block.release();
+        block.release();
+    }
+
+    #[cfg(unix)]
+    fn helper(program: &'static str, args: &[&str]) -> SleepBlock {
+        SleepBlock(Kind::Helper(Helper {
+            program,
+            args: args.iter().map(|a| (*a).to_owned()).collect(),
+            child: None,
+        }))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_that_exits_at_once_is_an_error_and_is_reaped() {
+        let mut block = helper("false", &[]);
+        assert!(block.hold().unwrap_err().contains("exited at once"));
+        match &block.0 {
+            Kind::Helper(h) => assert!(h.child.is_none()),
+            _ => unreachable!(),
+        }
+        // Asking again tries again instead of believing it is held.
+        assert!(block.hold().is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_that_died_later_is_started_again() {
+        let mut block = helper("sleep", &["30"]);
+        block.hold().unwrap();
+        if let Kind::Helper(h) = &mut block.0 {
+            let child = h.child.as_mut().unwrap();
+            child.kill().unwrap();
+            // Wait for the exit to show, without reaping through `Child::wait` first.
+            let t = Instant::now();
+            while child.try_wait().unwrap().is_none() && t.elapsed() < Duration::from_secs(5) {}
+            // `try_wait` reaped it; the slot still holds the dead child.
+        }
+        block.hold().unwrap();
+        match &mut block.0 {
+            Kind::Helper(h) => assert!(h.child.as_mut().unwrap().try_wait().unwrap().is_none()),
+            _ => unreachable!(),
+        }
         block.release();
     }
 
