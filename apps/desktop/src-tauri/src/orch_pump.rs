@@ -30,6 +30,8 @@ pub struct Pointer {
 
 /// Writes bytes to a tab's terminal; false when it could not.
 pub type Writer = Arc<dyn Fn(&str, &[u8]) -> bool + Send + Sync>;
+/// Whether a tab is, right now, an idle agent tab that may be typed into.
+pub type Probe = Arc<dyn Fn(&str) -> bool + Send + Sync>;
 
 /// What the pump remembers: per mailbox, the newest message it pointed at and
 /// when; per watched tab, how it looked last.
@@ -63,7 +65,7 @@ fn pointer_text(unread: u32, run: Option<&str>) -> String {
     format!("You have {unread} orchestration message(s). Run `xdev orchestration check{run}`.")
 }
 
-fn is_idle(t: &TabReport) -> bool {
+pub fn is_idle(t: &TabReport) -> bool {
     !t.exited && (t.status == "idle" || t.status == "done")
 }
 
@@ -87,7 +89,7 @@ impl Pump {
             let Some(tab) = tabs.iter().find(|t| t.id == w.tab) else {
                 continue;
             };
-            if !is_idle(tab) || has_waiter(&w.address) {
+            if !tab.agent || !is_idle(tab) || has_waiter(&w.address) {
                 continue;
             }
             if let Some(&(seq, at)) = pointed.get(&w.address)
@@ -164,12 +166,14 @@ impl Pump {
         }
     }
 
-    /// Types the pointers after `delay`, on a timer thread. A failed write
-    /// keeps the mail and forgets the pointer.
+    /// Types the pointers after `delay`, on a timer thread, into each tab that
+    /// `idle` still finds idle then. A skipped or failed write keeps the mail
+    /// and forgets the pointer, so a later pass points again.
     pub fn deliver(
         self: &Arc<Self>,
         plans: Vec<Pointer>,
         delay: Duration,
+        idle: Probe,
         write: Writer,
     ) -> Option<std::thread::JoinHandle<()>> {
         if plans.is_empty() {
@@ -179,6 +183,10 @@ impl Pump {
         Some(std::thread::spawn(move || {
             std::thread::sleep(delay);
             for p in plans {
+                if !idle(&p.tab) {
+                    pump.forget(&p);
+                    continue;
+                }
                 let mut bytes = p.text.clone().into_bytes();
                 bytes.push(b'\r');
                 if !write(&p.tab, &bytes) {
@@ -241,6 +249,10 @@ mod tests {
 
     fn nobody(_: &str) -> bool {
         false
+    }
+
+    fn still_idle() -> Probe {
+        Arc::new(|_| true)
     }
 
     #[test]
@@ -324,7 +336,7 @@ mod tests {
             log.lock().unwrap().push((tab.to_owned(), bytes.to_vec()));
             false
         });
-        pump.deliver(plans, Duration::ZERO, fail)
+        pump.deliver(plans, Duration::ZERO, still_idle(), fail)
             .unwrap()
             .join()
             .unwrap();
@@ -488,9 +500,33 @@ mod tests {
     }
 
     #[test]
+    fn a_tab_that_got_busy_before_the_write_is_skipped_and_pointed_at_later() {
+        let pump = Arc::new(Pump::default());
+        let wakes = [wake("dispatch:d1", "t1", 1, 3)];
+        let idle = [tab("t1", "idle", false)];
+        let plans = pump.plan(&wakes, &idle, &nobody, 1_000);
+        let writes = Arc::new(Mutex::new(0));
+        let log = Arc::clone(&writes);
+        let write: Writer = Arc::new(move |_, _| {
+            *log.lock().unwrap() += 1;
+            true
+        });
+        let busy: Probe = Arc::new(|_| false);
+        pump.deliver(plans, Duration::ZERO, busy, write)
+            .unwrap()
+            .join()
+            .unwrap();
+        assert_eq!(*writes.lock().unwrap(), 0);
+        assert_eq!(pump.plan(&wakes, &idle, &nobody, 1_001).len(), 1);
+    }
+
+    #[test]
     fn nothing_to_deliver_starts_no_thread() {
         let pump = Arc::new(Pump::default());
         let w: Writer = Arc::new(|_, _| true);
-        assert!(pump.deliver(Vec::new(), Duration::ZERO, w).is_none());
+        assert!(
+            pump.deliver(Vec::new(), Duration::ZERO, still_idle(), w)
+                .is_none()
+        );
     }
 }

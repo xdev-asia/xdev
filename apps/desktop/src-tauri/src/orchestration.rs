@@ -314,9 +314,16 @@ fn pump_once(app: &AppHandle) {
         let ptys = handle.state::<crate::pty::Ptys>();
         ptys.with(tab, |s| s.write(bytes.to_vec())).is_ok()
     });
+    let probe = app.clone();
+    let idle: crate::orch_pump::Probe = Arc::new(move |tab| {
+        let (tabs, _) = probe.state::<crate::cli_verbs::CliHub>().board.tabs();
+        tabs.iter()
+            .any(|t| t.id == tab && t.agent && crate::orch_pump::is_idle(t))
+    });
     hub.pump.deliver(
         plans,
         Duration::from_millis(crate::orch_pump::WRITE_DELAY_MS),
+        idle,
         write,
     );
 }
