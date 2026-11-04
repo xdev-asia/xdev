@@ -150,6 +150,27 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
         {t("settings.git.compareHint")}
       </small>
       </SettingRow>
+      <SettingRow id="git.groupOrder" filter={filter}>
+      <h4 className="settings-group" id="settings-git-grouporder">
+        {t("settings.git.groupOrder")}
+      </h4>
+      <div className="segmented settings-git-modes" role="group" aria-labelledby="settings-git-grouporder" aria-describedby="settings-git-grouporder-hint">
+        {(["changes-first", "staged-first"] as const).map((order) => (
+          <button
+            key={order}
+            type="button"
+            data-group-order={order}
+            aria-pressed={git.sourceControlGroupOrder === order}
+            onClick={() => change({ sourceControlGroupOrder: order })}
+          >
+            {t(`settings.git.groupOrder.${order}`)}
+          </button>
+        ))}
+      </div>
+      <small id="settings-git-grouporder-hint" className="settings-hint">
+        {t("settings.git.groupOrderHint")}
+      </small>
+      </SettingRow>
       <SettingRow id="git.refresh" filter={filter}>
       <div className="settings-item settings-git-row">
         <div className="settings-git-text">

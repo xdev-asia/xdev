@@ -2148,5 +2148,9 @@
   "sidebar.options.props.agents": "Agent",
   "sidebar.options.props.diffStat": "Số dòng",
   "sidebar.options.props.pr": "Pull request",
-  "sidebar.options.props.projectChip": "Dự án"
+  "sidebar.options.props.projectChip": "Dự án",
+  "settings.git.groupOrder": "Thứ tự nhóm kiểm soát mã nguồn",
+  "settings.git.groupOrder.changes-first": "Thay đổi trước",
+  "settings.git.groupOrder.staged-first": "Đã stage trước",
+  "settings.git.groupOrderHint": "Xung đột luôn nằm trên cùng."
 }

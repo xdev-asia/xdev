@@ -14,3 +14,7 @@ Task 6: complete (cardModel, WorktreeList draws from prefs; compact CSS). i18n k
 ## Task 7: complete
 - SidebarOptions popover (Group by, Sort by, Layout, 9 card props) next to the filters; tests call the panel with a mocked useState.
 - Deviation: Popover and Segmented come from @xdev-asia/ui, so no new xdev-ui part was needed.
+
+## Task 8: complete
+- Setting in Settings > Git, catalog entry git.groupOrder, WorktreeChanges draws conflicts, then the chosen order.
+- Behaviour change (R5): staged was drawn first before; the default is now changes-first. Flag in the PR text.

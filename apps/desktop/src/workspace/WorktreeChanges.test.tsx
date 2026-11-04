@@ -1023,3 +1023,21 @@ it("Resolve with agent hands the agent the operation, branch and files; hidden w
   expect(nodes(bar(off)).some((n) => n.props.children === en("conflicts.resolve"))).toBe(false);
   expect(nodes(bar(off)).some((n) => n.props.children === en("conflicts.abort"))).toBe(true);
 });
+
+const groupNames = (view: ReturnType<typeof changes>) =>
+  view.all().map((n) => n.props["data-group"]).filter((g) => g === "conflicts" || g === "staged" || g === "changes");
+
+it("draws Changes before Staged by default and Staged first when the setting says so", async () => {
+  const first = createMockApi({});
+  vi.spyOn(first, "worktreeStageState").mockResolvedValue(mixed);
+  const a = changes(first);
+  await tick();
+  expect(groupNames(a)).toEqual(["changes", "staged"]);
+
+  const second = createMockApi({});
+  await second.setGitSettings({ ...(await second.gitSettings()), sourceControlGroupOrder: "staged-first" });
+  vi.spyOn(second, "worktreeStageState").mockResolvedValue(mixed);
+  const b = changes(second);
+  await tick();
+  expect(groupNames(b)).toEqual(["staged", "changes"]);
+});
