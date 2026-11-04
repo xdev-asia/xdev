@@ -217,6 +217,28 @@ describe("Sessions.restore: the terminal service", () => {
     expect(report).toMatchObject({ fresh: 1 });
   });
 
+  it("keeps an exit the service reports before the attach returns", async () => {
+    const api = running();
+    api.__ptydHold({ id: "done-1", output: "bye", info: { agent: true, profile: "claude", cli: "claude" } });
+    const exits: ((e: { id: string; code: number | null }) => void)[] = [];
+    const listen = api.onPtyExit.bind(api);
+    api.onPtyExit = (cb) => {
+      exits.push(cb);
+      return listen(cb);
+    };
+    const attach = api.ptyAttach.bind(api);
+    // Like Rust: the attach of a pty that has ended sends its exit event before the reply.
+    vi.spyOn(api, "ptyAttach").mockImplementation(async (id, fromSeq, onData) => {
+      const got = await attach(id, fromSeq, onData);
+      for (const cb of exits) cb({ id, code: 3 });
+      return got;
+    });
+    const s = (sessions = new Sessions(api));
+    const report = await s.restore(snap({ [A]: one({ t1: claude({ agentSession: "abc", ptyId: "done-1" }) }) }), "all", never);
+    expect(report.attached).toBe(1);
+    expect(s.tabs(A)[0]).toMatchObject({ id: "done-1", exitCode: 3 });
+  });
+
   it("attaches a live shell in agentsOnly too, which would otherwise skip it", async () => {
     const api = running();
     api.__ptydHold({ id: "sh-1" });
