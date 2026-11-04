@@ -6,6 +6,7 @@ import { translate } from "@/i18n";
 import { AgentsPage } from "./AgentsPage";
 import { ProfileEditor } from "./ProfileEditor";
 import { AGENTS_SETTINGS_DEFAULTS } from "@/mockSettings";
+import { getToasts, resetToastsForTests } from "@/workspace/toastStore";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
 const store = vi.hoisted(() => ({ update: vi.fn(), reload: vi.fn(), view: null }));
@@ -232,4 +233,63 @@ it("account_switch_policy_follows_a_settings_change_from_elsewhere", async () =>
   await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, accountSwitch: "restart" });
   await tick();
   expect(p.all().find((n) => n.props["data-field"] === "accountSwitch")!.props.value).toBe("restart");
+});
+
+// Conversation search: off until the person says yes.
+const confirm = (p: Awaited<ReturnType<typeof page>>) => p.all().find((n) => n.type === ConfirmDialog && n.props.title === en("sessionSearch.clear.title"))!;
+const searchSwitch = (p: Awaited<ReturnType<typeof page>>) => p.all().find((n) => n.props["data-field"] === "sessionSearch")!;
+
+it("session_search_switch_is_off_by_default_and_turning_it_on_puts_the_consent", async () => {
+  const p = await page();
+  expect(searchSwitch(p).props.checked).toBe(false);
+  const put = vi.spyOn(p.api, "agentsSettingsPut");
+  searchSwitch(p).props.onChange({ target: { checked: true } });
+  await tick();
+  expect(put).toHaveBeenCalledWith({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+  expect(searchSwitch(p).props.checked).toBe(true);
+});
+
+it("session_search_status_line_shows_the_counts_once_on", async () => {
+  const p = await page();
+  const line = () => p.all().find((n) => n.props["data-field"] === "sessionSearchStatus");
+  expect(line()).toBeUndefined();
+  await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+  await tick();
+  const status = await p.api.sessionSearchStatus();
+  expect(line()!.props.children).toBe(en("sessionSearch.status", { sessions: status.sessions, messages: status.messages }));
+});
+
+it("session_search_clear_asks_first_then_clears_toasts_and_reads_off", async () => {
+  resetToastsForTests();
+  const p = await page();
+  await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+  await tick();
+  const clear = vi.spyOn(p.api, "sessionSearchClear");
+  expect(confirm(p).props.open).toBe(false);
+  p.all().find((n) => n.props["data-field"] === "sessionSearchClear")!.props.onClick();
+  expect(confirm(p).props.open).toBe(true);
+  expect(clear).not.toHaveBeenCalled();
+  confirm(p).props.onConfirm();
+  await tick();
+  expect(clear).toHaveBeenCalledTimes(1);
+  expect(getToasts().map((x) => x.text)).toEqual([en("sessionSearch.cleared")]);
+  expect(searchSwitch(p).props.checked).toBe(false);
+  expect(confirm(p).props.open).toBe(false);
+});
+
+it("session_search_clear_failure_shows_the_error_toast", async () => {
+  resetToastsForTests();
+  const p = await page();
+  vi.spyOn(p.api, "sessionSearchClear").mockRejectedValue({ code: "io" });
+  confirm(p).props.onConfirm();
+  await tick();
+  expect(getToasts().map((x) => x.text)).toEqual([en("error.io")]);
+});
+
+it("session_search_strings_exist_in_both_languages", async () => {
+  const en_ = (await import("@/i18n/en.json")).default as Record<string, string>;
+  const vi_ = (await import("@/i18n/vi.json")).default as Record<string, string>;
+  const keys = Object.keys(en_).filter((k) => k.startsWith("sessionSearch.") || k.startsWith("settings.agents.sessionSearch"));
+  expect(keys.length).toBeGreaterThanOrEqual(8);
+  for (const k of keys) expect(vi_).toHaveProperty(k);
 });
