@@ -44,11 +44,11 @@ describe("diff settings", () => {
     expect(fromDiffSettings(DIFF_DEFAULTS)).toEqual(DEFAULT_VIEW);
   });
 
-  it("maps every setting to its option and back, keeping fileTree", () => {
+  it("maps every setting to its option and back, fileTree included", () => {
     const opts = fromDiffSettings(split, { lineNumbers: false, listWidth: 300 });
-    expect(opts).toEqual({ layout: "split", ignoreWhitespace: true, collapse: false, wrap: true, lineNumbers: false, listWidth: 300 });
+    expect(opts).toEqual({ layout: "split", ignoreWhitespace: true, collapse: false, wrap: true, tree: true, lineNumbers: false, listWidth: 300 });
     expect(toDiffSettings(opts, split)).toEqual(split);
-    expect(toDiffSettings({ ...opts, layout: "inline", wrap: false }, split)).toEqual({ ...split, defaultView: "inline", wordWrap: false });
+    expect(toDiffSettings({ ...opts, layout: "inline", wrap: false, tree: false }, split)).toEqual({ ...split, defaultView: "inline", wordWrap: false, fileTree: false });
   });
 
   it("the part a view keeps for itself round-trips and clamps", () => {

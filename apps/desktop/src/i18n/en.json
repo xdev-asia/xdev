@@ -2152,5 +2152,13 @@
   "settings.git.groupOrder": "Source control group order",
   "settings.git.groupOrder.changes-first": "Changes first",
   "settings.git.groupOrder.staged-first": "Staged first",
-  "settings.git.groupOrderHint": "Conflicts always stay on top."
+  "settings.git.groupOrderHint": "Conflicts always stay on top.",
+  "review.view": "File list",
+  "review.view.list": "List",
+  "review.view.tree": "Tree",
+  "review.tree": "Changed files by folder",
+  "review.tree.changed": "Has changes",
+  "review.kind.added": "Added",
+  "review.kind.modified": "Modified",
+  "review.kind.deleted": "Deleted"
 }

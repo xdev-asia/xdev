@@ -5,6 +5,7 @@ import { createMockApi, type Api } from "@/api";
 import { translate } from "@/i18n";
 import { BasePicker } from "./BasePicker";
 import { FileDiff } from "./FileDiff";
+import { TreeView } from "@xdev-asia/ui";
 import { ReviewView } from "./ReviewView";
 import { touchChanges } from "@/workspace/changesBus";
 import { VIEW_KEY } from "./viewOptions";
@@ -356,4 +357,26 @@ it("a file both staged and unstaged offers Stage and Unstage", () => {
   const plain = labels({ path: "a.ts", kind: "modified", staged: false, unstaged: true });
   expect(plain).toContain(`>${en("review.stage")}<`);
   expect(plain).not.toContain(en("review.unstage"));
+});
+
+it("draws the file tree when the setting asks for it, folds a folder and saves the choice", async () => {
+  memoryStorage();
+  const api = createMockApi({});
+  await api.diffSettingsPut({ defaultView: "inline", ignoreWhitespace: false, collapseUnchanged: true, wordWrap: false, fileTree: true });
+  const v = review(api);
+  await tick();
+  const tree = v.all().find((n) => n.type === TreeView)!;
+  expect(tree).toBeDefined();
+  expect(tree.props.rows.some((r: { kind: string }) => r.kind === "dir")).toBe(true);
+  expect(v.all().some((n) => n.props.className === "rv-list-item")).toBe(false);
+
+  // Back to the list: the change is local until Save as default, which writes fileTree.
+  const put = vi.spyOn(api, "diffSettingsPut");
+  v.all().find((n) => n.props["data-view"] === "list")!.props.onClick();
+  expect(v.all().some((n) => n.type === TreeView)).toBe(false);
+  expect(put).not.toHaveBeenCalled();
+  expect(saveButton(v).props.disabled).toBe(false);
+  saveButton(v).props.onClick();
+  await tick();
+  expect(put).toHaveBeenCalledWith(expect.objectContaining({ fileTree: false }));
 });
