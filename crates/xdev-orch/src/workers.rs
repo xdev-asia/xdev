@@ -18,6 +18,15 @@ use crate::store::{DISPATCH_COLS, Store, WORKER_COLS, dispatch_row, enum_text, w
 /// Failed starts in one `--retry-of` chain before the breaker opens.
 pub const BREAKER_LIMIT: u32 = 3;
 
+/// What one sweep did to a worker's tab.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Swept {
+    pub dispatch: String,
+    pub tab: String,
+    /// Close the tab now (the worker is marked released).
+    pub close: bool,
+}
+
 /// What a start is going to do.
 #[derive(Debug, Clone)]
 pub struct StartPlan {
@@ -472,6 +481,53 @@ impl Store {
         Ok(w)
     }
 
+    /// One pass of the auto-close sweeper over finished workers (succeeded or
+    /// failed) that are not kept and not released and whose tab is on the
+    /// board; `status_of` gives a tab's status, none when it is off the board.
+    /// A busy tab (`working`, `needs-you`) cancels its countdown; a quiet one
+    /// starts it ([`CLOSE_AFTER_MS`]); one whose time has come is marked
+    /// released and reported with `close`. Only the workers that changed.
+    pub fn worker_sweep(
+        &self,
+        status_of: &dyn Fn(&str) -> Option<String>,
+        now_ms: i64,
+    ) -> Result<Vec<Swept>, OrchError> {
+        let mut st = self.conn.prepare(&format!(
+            "SELECT {WORKER_COLS} FROM workers
+             WHERE state IN ('succeeded', 'failed') AND kept = 0 AND released = 0
+               AND tab IS NOT NULL ORDER BY created_ms, rowid"
+        ))?;
+        let workers = st
+            .query_map([], worker_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut out = Vec::new();
+        for w in workers {
+            let Some(tab) = w.tab.clone() else { continue };
+            let Some(status) = status_of(&tab) else {
+                continue;
+            };
+            let busy = status == "working" || status == "needs-you";
+            let (close, set) = match (busy, w.closes_at_ms) {
+                (true, Some(_)) => (false, Some(None)),
+                (true, None) => continue,
+                (false, None) => (false, Some(Some(now_ms + CLOSE_AFTER_MS))),
+                (false, Some(at)) if now_ms >= at => (true, None),
+                (false, Some(_)) => continue,
+            };
+            if close {
+                self.worker_mark_released(&w.dispatch_id, now_ms)?;
+            } else if let Some(at) = set {
+                self.worker_set_closes_at(&w.dispatch_id, at, now_ms)?;
+            }
+            out.push(Swept {
+                dispatch: w.dispatch_id,
+                tab,
+                close,
+            });
+        }
+        Ok(out)
+    }
+
     /// Workers that are ready and have a tab: the ones whose tab the pump
     /// watches for a stop.
     pub fn ready_workers(&self) -> Result<Vec<Worker>, OrchError> {
@@ -889,6 +945,48 @@ mod tests {
         let v = s.worker_view(&id).unwrap();
         assert_eq!(v.worker.state, WorkerState::Ready);
         assert_eq!(s.worker_view("nope").unwrap_err().code, "not_found");
+    }
+
+    #[test]
+    fn the_sweeper_counts_down_cancels_when_busy_and_closes_when_due() {
+        let (s, run, task) = world();
+        let id = ready_worker(&s, &run, &task);
+        s.worker_settle(&id, WorkerState::Succeeded, None, true, 1_000)
+            .unwrap();
+        let at = 1_000 + CLOSE_AFTER_MS;
+        let on = |st: &'static str| move |_: &str| Some(st.to_owned());
+        // Busy: the countdown set by settling is cancelled.
+        let a = s.worker_sweep(&on("working"), 2_000).unwrap();
+        assert_eq!(a.len(), 1);
+        assert!(!a[0].close);
+        assert_eq!(s.worker_get(&id).unwrap().closes_at_ms, None);
+        assert!(s.worker_sweep(&on("working"), 3_000).unwrap().is_empty());
+        // Quiet again: it starts over from now.
+        s.worker_sweep(&on("idle"), 4_000).unwrap();
+        assert_eq!(
+            s.worker_get(&id).unwrap().closes_at_ms,
+            Some(4_000 + CLOSE_AFTER_MS)
+        );
+        assert!(s.worker_sweep(&on("idle"), at).unwrap().is_empty());
+        // Due: close, once.
+        let due = s.worker_sweep(&on("idle"), 4_000 + CLOSE_AFTER_MS).unwrap();
+        assert_eq!(due.len(), 1);
+        assert!(due[0].close);
+        assert!(s.worker_get(&id).unwrap().released);
+        assert!(s.worker_sweep(&on("idle"), at * 9).unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_sweeper_skips_kept_workers_and_tabs_off_the_board() {
+        let (s, run, task) = world();
+        let id = ready_worker(&s, &run, &task);
+        s.worker_settle(&id, WorkerState::Failed, None, true, 1_000)
+            .unwrap();
+        assert!(s.worker_sweep(&|_| None, 9_999_999).unwrap().is_empty());
+        s.worker_set_kept(&id, true, 2_000).unwrap();
+        let idle = |_: &str| Some("idle".to_owned());
+        assert!(s.worker_sweep(&idle, 9_999_999).unwrap().is_empty());
+        assert!(!s.worker_get(&id).unwrap().released);
     }
 
     #[test]
