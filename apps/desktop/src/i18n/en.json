@@ -2171,5 +2171,21 @@
   "editor.conflict.bar": "Conflict {n} of {total}",
   "editor.conflict.current": "Accept current",
   "editor.conflict.incoming": "Accept incoming",
-  "editor.conflict.both": "Accept both"
+  "editor.conflict.both": "Accept both",
+  "account.title": "Account",
+  "account.xdevId": "xDev ID",
+  "account.about": "Sign in to link this app to your xDev ID. Every local feature works without an account.",
+  "account.signIn": "Sign in to xDev",
+  "account.waiting.title": "Finish signing in in your browser",
+  "account.waiting.body": "Confirm on id.xdev.asia. xDev updates by itself when you are done.",
+  "account.openAgain": "Open the page again",
+  "account.copyLink": "Copy link",
+  "account.copied": "Link copied",
+  "account.cancel": "Cancel",
+  "account.paste.toggle": "Browser did not return to xDev?",
+  "account.paste.label": "Sign-in link from the browser",
+  "account.paste.hint": "Paste the link that starts with xdev://auth/callback.",
+  "account.paste.submit": "Continue",
+  "account.manage": "Manage account",
+  "account.signOut": "Sign out"
 }
