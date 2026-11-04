@@ -10,7 +10,8 @@ import { checksSummary } from "./ship";
 import type { TabStatus } from "./status";
 import { StatusGlyph } from "./StatusGlyph";
 import { folderMenuItems, groupMenuItems, projectMenuItems, worktreeMenuItems } from "./worktreeMenu";
-import { dropMove, flattenRepos, moveTarget, nestRows, visibleEntries, type Move, type NestRow, type WtEntry } from "./sidebarModel";
+import { dropMove, flattenRepos, moveTarget, nestRows, pinnedEntries, visibleEntries, type Move, type NestRow, type WtEntry } from "./sidebarModel";
+import { RepoBadge } from "./RepoBadge";
 import { SidebarFilters } from "./SidebarFilters";
 import { WorkItemChip } from "./WorkItemChip";
 import { ContextMenu } from "@/ui/ContextMenu";
@@ -125,6 +126,8 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const [folded, setFolded] = useState<string[]>([]);
   const [shut, setShut] = useState<string[]>([]);
   const [archivedOpen, setArchivedOpen] = useState<string[]>([]);
+  // The Pinned group is folded.
+  const [pinnedShut, setPinnedShut] = useState(false);
   // The id being dragged in the project list.
   const [dragging, setDragging] = useState<string | null>(null);
   const prefs = props.prefs ?? NO_FILTERS;
@@ -138,7 +141,8 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const copy = (text: string) => props.onCopy?.(text);
 
   // Rows are plain calls, not components, so the list keeps one set of hooks.
-  const row = ({ entry: { wt, repo }, depth, children }: NestRow) => {
+  // `pinnedGroup`: the row sits in the Pinned group, which names the project on every row.
+  const row = ({ entry: { wt, repo }, depth, children }: NestRow, pinnedGroup: boolean) => {
     const status = props.dots[wt.path] ?? null;
     const open = menu?.kind === "worktree" && menu.key === wt.path;
     const stat = props.stats?.[wt.path];
@@ -184,7 +188,12 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           </span>
           <span className="ws-wt-sub">
             {wt.primary && <span className="ws-tag">{t("workspace.primary")}</span>}
-            {many && <span className="ws-tag">{repo.shortName}</span>}
+            {(many || pinnedGroup) && (
+              <span className="ws-tag ws-tag-project" data-project-chip={repo.id}>
+                <RepoBadge repo={repo} />
+                {repo.shortName}
+              </span>
+            )}
             <span className="ws-wt-branch" title={wt.branch ?? undefined}>
               {wt.branch ?? t("workspace.detached")}
             </span>
@@ -270,9 +279,19 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   // The repo is named on a row only when more than one repo is listed.
   const many = repoList.length > 1;
   const shown = visibleEntries(entries, prefs, props.selected);
-  const sections = groupWorktrees(shown.entries, (path) => props.dots[path] ?? null).map((s) => ({ group: s.group, items: nestRows(s.items, new Set(folded)) }));
+  // Pinned worktrees get their own group first and are left out of the status sections.
+  const shownPaths = new Set(shown.entries.map((e) => e.path));
+  const pinnedRows = nestRows(pinnedEntries(tree ?? []).filter((e) => shownPaths.has(e.path)), new Set(folded));
+  const pinnedPaths = new Set(pinnedRows.map((r) => r.entry.path));
+  const sections = groupWorktrees(
+    shown.entries.filter((e) => !pinnedPaths.has(e.path)),
+    (path) => props.dots[path] ?? null,
+  ).map((s) => ({ group: s.group, items: nestRows(s.items, new Set(folded)) }));
   const gone = repoList.filter((repo) => repo.missing);
-  const order = sections.filter((s) => !collapsed.includes(s.group)).flatMap((s) => s.items.map((r) => r.entry.path));
+  const order = [
+    ...(pinnedShut ? [] : pinnedRows.map((r) => r.entry.path)),
+    ...sections.filter((s) => !collapsed.includes(s.group)).flatMap((s) => s.items.map((r) => r.entry.path)),
+  ];
   const { onOrder } = props;
   useEffect(() => onOrder?.(order), [order.join(",")]);
 
@@ -288,10 +307,26 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           <span className="ws-group-name">{t(`workspace.group.${group}`)}</span>
           <span className="ws-group-count">{items.length}</span>
         </button>
-        {open && <ul className="ws-wts">{items.map(row)}</ul>}
+        {open && <ul className="ws-wts">{items.map((r) => row(r, false))}</ul>}
       </li>
     );
   };
+
+  const pinnedSection = () => (
+    <li key="pinned" className="ws-group ws-group-pinned" data-group="pinned">
+      <button type="button" className="ws-group-head" data-group="pinned" aria-expanded={!pinnedShut} onClick={() => setPinnedShut(!pinnedShut)}>
+        <svg aria-hidden="true" className="ws-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+        <svg className="ws-pin" aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z" />
+        </svg>
+        <span className="ws-group-name">{t("sidebar.pinned.title")}</span>
+        <span className="ws-group-count">{pinnedRows.length}</span>
+      </button>
+      {!pinnedShut && <ul className="ws-wts">{pinnedRows.map((r) => row(r, true))}</ul>}
+    </li>
+  );
 
   // A create still running: name, spinner, Cancel. One that failed: why, Retry and Dismiss.
   const pendingRow = (job: PendingCreate) => (
@@ -489,6 +524,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       if (repo.missing) return [];
       return [
         <li key={repo.id} className="ws-repo" data-repo={repo.id} title={repo.path} tabIndex={0} data-dragging={dragging === repo.id ? "true" : undefined} onContextMenu={projectMenu(repo)} {...reorder(repo.id)}>
+          <RepoBadge repo={repo} />
           <span className="ws-repo-name">{repo.shortName}</span>
           {projectMore(repo)}
         </li>,
@@ -625,7 +661,12 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
             {pending.map(pendingRow)}
           </ul>
         )}
-        {sections.length > 0 && <ul className="ws-groups">{sections.map(section)}</ul>}
+        {(sections.length > 0 || pinnedRows.length > 0) && (
+          <ul className="ws-groups">
+            {pinnedRows.length > 0 && pinnedSection()}
+            {sections.map(section)}
+          </ul>
+        )}
         {hasProjects && (
           <ul className="ws-repos" aria-label={t("project.heading")}>
             {(tree ?? []).flatMap(projectItem)}

@@ -5,10 +5,11 @@ use std::process::Command;
 use tempfile::TempDir;
 use xdev_git::{BaseRefresh, Repo};
 use xdev_workspace::{
-    BranchPrefix, CreateOptions, Registry, RepoPatch, STAGING, ScriptSource, SetupPolicy, Trash,
-    WorkspaceError, WorktreeStat, add_repo, adopt_worktree, create_worktree, create_worktree_with,
-    forget_repo, list, name_preview, path_key, refresh_base, remove_worktree, set_pinned, stat,
-    sweep_with, update_repo, valid_short_name,
+    BranchPrefix, CreateOptions, GhAccount, ISSUE_COMMAND_MAX, Registry, RepoIcon, RepoPatch,
+    STAGING, ScriptSource, SetupPolicy, Trash, WorkspaceError, WorktreeStat, add_repo,
+    adopt_worktree, create_worktree, create_worktree_with, forget_repo, list, name_preview,
+    path_key, refresh_base, remove_worktree, set_pinned, stat, sweep_with, update_repo,
+    valid_short_name,
 };
 #[cfg(unix)]
 use xdev_workspace::{archive_worktree, create_worktree_linked};
@@ -1427,4 +1428,175 @@ fn update_refuses_a_bad_docs_dir_and_writes_nothing() {
         assert_eq!(err.code(), "bad_path", "{bad:?}");
         assert_eq!(reg, before);
     }
+}
+
+fn patch_err(reg: &mut Registry, id: &str, patch: RepoPatch) -> String {
+    let before = reg.clone();
+    let err = update_repo(reg, id, patch).unwrap_err();
+    assert_eq!(*reg, before, "a refused patch changes nothing");
+    err.code().to_owned()
+}
+
+#[test]
+fn update_sets_and_clears_identity() {
+    let (mut reg, id, _main) = registered();
+    assert_eq!(reg.repos[0].color, None);
+    let view = update_repo(
+        &mut reg,
+        &id,
+        RepoPatch {
+            color: Some(Some("teal".into())),
+            icon: Some(Some(RepoIcon::Emoji {
+                value: "🚀".into()
+            })),
+            gh_account: Some(Some(GhAccount {
+                host: "github.com".into(),
+                user: "me".into(),
+            })),
+            local_issue_command: Some("Fix #{number}".into()),
+            ..RepoPatch::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(view.color.as_deref(), Some("teal"));
+    assert_eq!(
+        view.icon,
+        Some(RepoIcon::Emoji {
+            value: "🚀".into()
+        })
+    );
+    assert_eq!(
+        view.gh_account.as_ref().map(|a| a.user.as_str()),
+        Some("me")
+    );
+    assert_eq!(view.local_issue_command, "Fix #{number}");
+
+    // An absent field is left alone.
+    update_repo(&mut reg, &id, RepoPatch::default()).unwrap();
+    assert_eq!(reg.repos[0].color.as_deref(), Some("teal"));
+
+    // `Some(None)` clears, an empty command clears.
+    let view = update_repo(
+        &mut reg,
+        &id,
+        RepoPatch {
+            color: Some(None),
+            icon: Some(None),
+            gh_account: Some(None),
+            local_issue_command: Some(String::new()),
+            ..RepoPatch::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(view.color, None);
+    assert_eq!(view.icon, None);
+    assert_eq!(view.gh_account, None);
+    assert_eq!(view.local_issue_command, "");
+}
+
+#[test]
+fn update_checks_the_colour() {
+    let (mut reg, id, _main) = registered();
+    for ok in ["slate", "pink", "#abc", "#aabbcc", "#ABC", "#A1b2C3"] {
+        let patch = RepoPatch {
+            color: Some(Some(ok.into())),
+            ..RepoPatch::default()
+        };
+        update_repo(&mut reg, &id, patch).unwrap_or_else(|e| panic!("{ok}: {e}"));
+    }
+    for bad in [
+        "",
+        "#abcd",
+        "#ab",
+        "abc",
+        "#ggg",
+        "#aabbccdd",
+        "blue",
+        "Teal",
+        "#abc ",
+    ] {
+        let patch = RepoPatch {
+            color: Some(Some(bad.into())),
+            ..RepoPatch::default()
+        };
+        assert_eq!(patch_err(&mut reg, &id, patch), "bad_color", "{bad:?}");
+    }
+}
+
+#[test]
+fn update_checks_the_icon() {
+    let (mut reg, id, _main) = registered();
+    let emoji = |v: &str| RepoPatch {
+        icon: Some(Some(RepoIcon::Emoji { value: v.into() })),
+        ..RepoPatch::default()
+    };
+    // One grapheme, however many scalars: a flag, a ZWJ pair, a keycap, a skin tone.
+    for ok in ["🚀", "🇻🇳", "👩‍💻", "1️⃣", "👍🏽", "❤️"] {
+        update_repo(&mut reg, &id, emoji(ok)).unwrap_or_else(|e| panic!("{ok}: {e}"));
+    }
+    update_repo(
+        &mut reg,
+        &id,
+        RepoPatch {
+            icon: Some(Some(RepoIcon::Letter)),
+            ..RepoPatch::default()
+        },
+    )
+    .unwrap();
+    for bad in ["", "🚀🚀", "ab", "a", " ", "🚀 ", "x🚀"] {
+        assert_eq!(patch_err(&mut reg, &id, emoji(bad)), "bad_icon", "{bad:?}");
+    }
+    // Over 16 bytes even as one cluster.
+    let long = format!("🚀{}", "\u{200d}".repeat(10));
+    assert_eq!(patch_err(&mut reg, &id, emoji(&long)), "bad_icon");
+}
+
+#[test]
+fn update_caps_the_issue_command() {
+    let (mut reg, id, _main) = registered();
+    let cmd = |n: usize| RepoPatch {
+        local_issue_command: Some("a".repeat(n)),
+        ..RepoPatch::default()
+    };
+    update_repo(&mut reg, &id, cmd(ISSUE_COMMAND_MAX)).unwrap();
+    assert_eq!(
+        patch_err(&mut reg, &id, cmd(ISSUE_COMMAND_MAX + 1)),
+        "too_large"
+    );
+}
+
+#[test]
+fn update_with_a_bad_identity_writes_nothing_else() {
+    let (mut reg, id, _main) = registered();
+    let code = patch_err(
+        &mut reg,
+        &id,
+        RepoPatch {
+            short_name: Some("renamed".into()),
+            color: Some(Some("#abcd".into())),
+            ..RepoPatch::default()
+        },
+    );
+    assert_eq!(code, "bad_color");
+}
+
+#[test]
+fn an_old_registry_file_loads_with_identity_defaults() {
+    let (mut reg, id, _main) = registered();
+    let mut json = serde_json::to_value(&reg).unwrap();
+    json["version"] = 1.into();
+    let repo = json["repos"][0].as_object_mut().unwrap();
+    for key in ["color", "icon", "gh_account", "local_issue_command"] {
+        repo.remove(key);
+    }
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("workspace.json"), json.to_string()).unwrap();
+    reg = Registry::load(dir.path()).unwrap();
+    let repo = &reg.repos[0];
+    assert_eq!(repo.id, id);
+    assert_eq!(
+        (&repo.color, &repo.icon, &repo.gh_account),
+        (&None, &None, &None)
+    );
+    assert_eq!(repo.local_issue_command, "");
 }

@@ -51,4 +51,17 @@ unknown: Array<string>,
 /**
  * Entries left out by validation, each with the reason.
  */
-problems: Array<string>, };
+problems: Array<string>, 
+/**
+ * `issue_command`: the shared prompt template for a worktree started
+ * from an issue; `None` when absent or blank.
+ */
+issueCommand: string | null, 
+/**
+ * Blake3 hex of `issue_command`.
+ */
+issueCommandHash: string | null, 
+/**
+ * There is a shared command and the person trusted this hash.
+ */
+issueCommandTrusted: boolean, };

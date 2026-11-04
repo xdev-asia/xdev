@@ -2,9 +2,10 @@ import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
 import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
-import type { Api, ApiError, Check, Commit, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, Check, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 import { fromWork } from "@/workspace/branchName";
+import { REPO_COLORS, isHexColor } from "@/workspace/repoIdentity";
 
 type WorkspaceApi = Pick<
   Api,
@@ -14,6 +15,7 @@ type WorkspaceApi = Pick<
   | "repoCreate"
   | "worktreeNamePreview"
   | "repoUpdate"
+  | "ghLogins"
   | "repoHooks"
   | "repoHookTrust"
   | "repoFileCommands"
@@ -113,6 +115,18 @@ export type MockWorkspaceSeed = {
 
 // `ARCHIVE_DAYS` in Rust: archived entries show under Archived this long.
 const ARCHIVE_MS = 7 * 86_400_000;
+// `REPO_COLORS`, `ISSUE_COMMAND_MAX` and the icon rule in Rust.
+const ISSUE_COMMAND_MAX = 64 * 1024;
+function oneEmoji(text: string): boolean {
+  if (new TextEncoder().encode(text).length > 16) return false;
+  const parts = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)];
+  return parts.length === 1 && /\p{Extended_Pictographic}|\p{Regional_Indicator}|^[0-9#*]\uFE0F?\u20E3$/u.test(text);
+}
+// What `gh auth status` lists in the demo: two logins on one host.
+const ghLogins: GhLogin[] = [
+  { host: "github.com", user: "work-me", active: true },
+  { host: "github.com", user: "me", active: false },
+];
 // `TITLE_MAX` and `COMMENT_MAX` in Rust.
 const TITLE_MAX = 120;
 const COMMENT_MAX = 2000;
@@ -138,6 +152,8 @@ export type MockRepoFile = {
   tabs?: DefaultTab[];
   unknown?: string[];
   problems?: string[];
+  // `issue_command`: the shared prompt template for a worktree started from an issue.
+  issueCommand?: string;
   // Shared paths that fail to link on create, with the error.
   linkErrors?: Record<string, string>;
 };
@@ -167,6 +183,10 @@ export const DEMO_WORKSPACE: MockWorkspaceSeed = {
       localSetup: "",
       localArchive: "",
       docsDir: "docs",
+      color: "teal",
+      icon: { kind: "emoji", value: "🚀" },
+      ghAccount: null,
+      localIssueCommand: "",
       missing: false,
       worktrees: [
         worktree("/demo/xdev", "xdev", "main", true),
@@ -494,7 +514,15 @@ export function createMockWorkspace(
       tabsHash,
       unknown: [...(file?.unknown ?? [])],
       problems: [...(file?.problems ?? [])],
+      ...issueOf(repo, file),
     };
+  }
+
+  // `issue_command` of xdev.toml: blank is none, trusted by hash like the scripts.
+  function issueOf(repo: RepoView, file: MockRepoFile | undefined) {
+    const text = file?.issueCommand !== undefined && file.issueCommand.trim() !== "" ? file.issueCommand : null;
+    const hash = text === null ? null : mockHash(text);
+    return { issueCommand: text, issueCommandHash: hash, issueCommandTrusted: hash !== null && trusted.has(`${repo.id}:issueCommand:${hash}`) };
   }
 
   function hooksOf(path: string): { repo: RepoView; file: MockRepoFile | undefined; hooks: RepoHooks } | null {
@@ -569,6 +597,10 @@ export function createMockWorkspace(
       localSetup: "",
       localArchive: "",
       docsDir: "docs",
+      color: null,
+      icon: null,
+      ghAccount: null,
+      localIssueCommand: "",
       missing: false,
       worktrees: [worktree(root, shortName, "main", true)],
       found: [],
@@ -618,6 +650,10 @@ export function createMockWorkspace(
       if (worktreeRoot !== undefined && (!isAbsolute(worktreeRoot) || within(trimPath(worktreeRoot), repo.path))) {
         return reject("bad_path", worktreeRoot);
       }
+      const { color, icon, localIssueCommand } = patch;
+      if (typeof color === "string" && !(REPO_COLORS as readonly string[]).includes(color) && !isHexColor(color)) return reject("bad_color", color);
+      if (icon?.kind === "emoji" && !oneEmoji(icon.value)) return reject("bad_icon", icon.value);
+      if (localIssueCommand !== undefined && new TextEncoder().encode(localIssueCommand).length > ISSUE_COMMAND_MAX) return reject("too_large", "issue command");
       if (shortName !== undefined) repo.shortName = shortName;
       if (baseRef !== undefined) repo.baseRef = baseRef;
       if (worktreeRoot !== undefined) repo.worktreeRoot = trimPath(worktreeRoot);
@@ -626,7 +662,14 @@ export function createMockWorkspace(
       if (patch.scriptSource !== undefined) repo.scriptSource = patch.scriptSource;
       if (patch.localSetup !== undefined) repo.localSetup = patch.localSetup;
       if (patch.localArchive !== undefined) repo.localArchive = patch.localArchive;
+      if (color !== undefined) repo.color = color;
+      if (icon !== undefined) repo.icon = icon;
+      if (patch.ghAccount !== undefined) repo.ghAccount = patch.ghAccount;
+      if (localIssueCommand !== undefined) repo.localIssueCommand = localIssueCommand;
       return structuredClone(repo);
+    },
+    async ghLogins() {
+      return structuredClone(ghLogins);
     },
     async repoHooks(path) {
       const found = hooksOf(path);
@@ -636,8 +679,8 @@ export function createMockWorkspace(
     async repoHookTrust(path, kind, hash) {
       const found = hooksOf(path);
       if (!found) return reject("worktree_unknown", path);
-      if (kind === "shared" || kind === "tabs") {
-        const current = kind === "shared" ? found.hooks.sharedHash : found.hooks.tabsHash;
+      if (kind === "shared" || kind === "tabs" || kind === "issueCommand") {
+        const current = kind === "shared" ? found.hooks.sharedHash : kind === "tabs" ? found.hooks.tabsHash : found.hooks.issueCommandHash;
         if (current === null || current !== hash) return reject("hook_untrusted", kind);
         trusted.add(`${found.repo.id}:${kind}:${hash}`);
         return hooksOf(path)!.hooks;

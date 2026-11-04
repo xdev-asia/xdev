@@ -25,6 +25,14 @@ export function flattenRepos(items: SidebarItem[]): RepoView[] {
   return items.flatMap((i) => (i.kind === "repo" ? [i.repo] : i.kind === "group" ? flattenRepos(i.items) : []));
 }
 
+/**
+ * The pinned worktrees, repo by repo in the order the sidebar shows the repos (groups opened up), and
+ * within a repo in the order it lists them; the app keeps no time of the pin.
+ */
+export function pinnedEntries(items: SidebarItem[]): WtEntry[] {
+  return flattenRepos(items).flatMap((repo) => repo.worktrees.filter((wt) => wt.pinned).map((wt): WtEntry => ({ path: wt.path, wt, repo })));
+}
+
 /** The kept branches of every repo, by repo id. */
 export function keptByRepo(items: SidebarItem[]): Record<string, KeptView[]> {
   const out: Record<string, KeptView[]> = {};

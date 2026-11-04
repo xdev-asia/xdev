@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use xdev_git::GhAccount;
+
 use crate::WorkspaceError;
 use crate::groups::{FolderEntry, RepoGroup};
 use crate::kept::KeptBranch;
@@ -36,6 +38,37 @@ pub struct RepoEntry {
     /// `None` means `docs`. Absent in older files.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docs_dir: Option<String>,
+    /// A `REPO_COLORS` name or `#rgb` / `#rrggbb`; `None` is the neutral badge.
+    #[serde(default)]
+    pub color: Option<String>,
+    /// `None` shows the first letter of the short name.
+    #[serde(default)]
+    pub icon: Option<RepoIcon>,
+    /// The `gh` login this repo's `gh` calls run as; `None` is `gh`'s own default.
+    #[serde(default)]
+    pub gh_account: Option<GhAccount>,
+    /// This machine's issue prompt template.
+    #[serde(default)]
+    pub local_issue_command: String,
+}
+
+/// The colour names a repo badge has a design token for.
+pub const REPO_COLORS: [&str; 8] = [
+    "slate", "red", "orange", "yellow", "green", "teal", "violet", "pink",
+];
+
+/// Longest issue command, in bytes.
+pub const ISSUE_COMMAND_MAX: usize = 64 * 1024;
+
+/// What a repo badge shows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum RepoIcon {
+    /// The first letter of the short name.
+    Letter,
+    /// One grapheme, at most 16 bytes.
+    Emoji { value: String },
 }
 
 /// Whether setup runs after a worktree is created.
