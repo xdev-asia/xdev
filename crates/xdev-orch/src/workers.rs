@@ -460,6 +460,10 @@ impl Store {
             now_ms,
         )?;
         self.promote_dependants(&d.run_id, now_ms)?;
+        self.conn.execute(
+            "UPDATE workers SET finished_ms = ?2 WHERE dispatch_id = ?1",
+            params![dispatch_id, now_ms],
+        )?;
         let closes = (auto_close && !w.kept).then_some(now_ms + CLOSE_AFTER_MS);
         self.worker_set_closes_at(dispatch_id, closes, now_ms)?;
         self.worker_get(dispatch_id)
@@ -564,12 +568,12 @@ impl Store {
         since_ms: i64,
         now_ms: i64,
     ) -> Result<Vec<Swept>, OrchError> {
-        // A worker with no countdown that last changed before auto-close was
+        // A worker with no countdown that finished before auto-close was
         // turned on (`since_ms`) finished while it was off: it stays open.
         let mut st = self.conn.prepare(&format!(
             "SELECT {WORKER_COLS}, close_asked_ms FROM workers
              WHERE state IN ('succeeded', 'failed') AND kept = 0 AND released = 0
-               AND tab IS NOT NULL AND (closes_at_ms IS NOT NULL OR updated_ms >= ?1)
+               AND tab IS NOT NULL AND (closes_at_ms IS NOT NULL OR finished_ms >= ?1)
              ORDER BY created_ms, rowid"
         ))?;
         let workers = st
@@ -591,6 +595,12 @@ impl Store {
                 (Some(at), Some(_)) if now_ms >= at + CLOSE_RETRY_MS => {
                     self.worker_close_asked(&w.dispatch_id, now_ms)?;
                     true
+                }
+                // Asked, but the tab is busy again: drop the ask and restart
+                // the countdown.
+                (Some(_), Some(status)) if status == "working" || status == "needs-you" => {
+                    self.worker_clear_close(&w.dispatch_id, now_ms)?;
+                    false
                 }
                 (Some(_), Some(_)) | (None, None) => continue,
                 (None, Some(status)) => {
@@ -621,6 +631,16 @@ impl Store {
             });
         }
         Ok(out)
+    }
+
+    /// Drops a close ask and the countdown behind it.
+    fn worker_clear_close(&self, dispatch_id: &str, now_ms: i64) -> Result<(), OrchError> {
+        self.conn.execute(
+            "UPDATE workers SET close_asked_ms = NULL, closes_at_ms = NULL, updated_ms = ?2
+             WHERE dispatch_id = ?1",
+            params![dispatch_id, now_ms],
+        )?;
+        Ok(())
     }
 
     /// Records that the tab of a worker was asked to close at `now_ms`.
@@ -1134,6 +1154,34 @@ mod tests {
     }
 
     #[test]
+    fn a_tab_asked_to_close_that_turns_busy_is_not_asked_again() {
+        let (s, run, task) = world();
+        let id = ready_worker(&s, &run, &task);
+        s.worker_settle(&id, WorkerState::Succeeded, None, true, 1_000)
+            .unwrap();
+        let on = |st: &'static str| move |_: &str| Some(st.to_owned());
+        let due_at = 1_000 + CLOSE_AFTER_MS;
+        assert!(s.worker_sweep(&on("idle"), 0, due_at).unwrap()[0].close);
+        // The user works in the tab again: the ask is dropped.
+        s.worker_sweep(&on("working"), 0, due_at + 1).unwrap();
+        let w = s.worker_get(&id).unwrap();
+        assert_eq!((w.closes_at_ms, w.released), (None, false));
+        assert!(
+            s.worker_sweep(&on("working"), 0, due_at + 2 * CLOSE_RETRY_MS)
+                .unwrap()
+                .is_empty()
+        );
+        // Quiet again: a fresh countdown, no immediate close.
+        let quiet = due_at + 3 * CLOSE_RETRY_MS;
+        let r = s.worker_sweep(&on("idle"), 0, quiet).unwrap();
+        assert!(r.iter().all(|w| !w.close));
+        assert_eq!(
+            s.worker_get(&id).unwrap().closes_at_ms,
+            Some(quiet + CLOSE_AFTER_MS)
+        );
+    }
+
+    #[test]
     fn a_worker_that_finished_before_auto_close_was_on_stays_open() {
         let (s, run, task) = world();
         let id = ready_worker(&s, &run, &task);
@@ -1146,6 +1194,20 @@ mod tests {
         assert_eq!(s.worker_get(&id).unwrap().closes_at_ms, None);
         // On since before it finished: it gets its countdown.
         assert_eq!(s.worker_sweep(&idle, 500, 9_000).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_unrelated_write_does_not_make_an_old_finish_count_as_new() {
+        let (s, run, task) = world();
+        let id = ready_worker(&s, &run, &task);
+        s.worker_settle(&id, WorkerState::Succeeded, None, false, 1_000)
+            .unwrap();
+        // Keeping and un-keeping later touches the row, not the finish.
+        s.worker_set_kept(&id, true, 5_000).unwrap();
+        s.worker_set_kept(&id, false, 6_000).unwrap();
+        let idle = |_: &str| Some("idle".to_owned());
+        assert!(s.worker_sweep(&idle, 2_000, 9_000).unwrap().is_empty());
+        assert_eq!(s.worker_get(&id).unwrap().closes_at_ms, None);
     }
 
     #[test]

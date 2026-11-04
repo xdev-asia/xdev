@@ -7,7 +7,7 @@ use std::cell::Cell;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -62,7 +62,8 @@ CREATE TABLE workers (
     released INTEGER NOT NULL DEFAULT 0,
     created_ms INTEGER NOT NULL,
     updated_ms INTEGER NOT NULL,
-    close_asked_ms INTEGER
+    close_asked_ms INTEGER,
+    finished_ms INTEGER
 );
 CREATE INDEX workers_tab ON workers (tab);
 CREATE TABLE messages (
@@ -102,6 +103,10 @@ CREATE TABLE receipts (
     method TEXT NOT NULL,
     answer TEXT NOT NULL,
     created_ms INTEGER NOT NULL
+);
+CREATE TABLE meta (
+    key TEXT PRIMARY KEY,
+    value INTEGER NOT NULL
 );
 ";
 
@@ -334,6 +339,29 @@ impl Store {
         }
     }
 
+    /// A number kept under `key` (for state the app must keep across runs).
+    pub fn meta_get(&self, key: &str) -> Result<Option<i64>, OrchError> {
+        Ok(self
+            .conn
+            .query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0))
+            .optional()?)
+    }
+
+    /// Keeps `value` under `key`; none forgets it.
+    pub fn meta_set(&self, key: &str, value: Option<i64>) -> Result<(), OrchError> {
+        match value {
+            Some(v) => self.conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?1, ?2)
+                 ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                params![key, v],
+            )?,
+            None => self
+                .conn
+                .execute("DELETE FROM meta WHERE key = ?1", [key])?,
+        };
+        Ok(())
+    }
+
     /// A fresh id: `<prefix>_<12 hex>`; never the same twice from one store.
     pub fn next_id(&self, prefix: &str) -> String {
         let n = self.counter.get() + 1;
@@ -364,6 +392,7 @@ mod tests {
                 "dispatches",
                 "gates",
                 "messages",
+                "meta",
                 "receipts",
                 "runs",
                 "tab_runs",
@@ -371,6 +400,17 @@ mod tests {
                 "workers"
             ]
         );
+    }
+
+    #[test]
+    fn meta_keeps_a_number_until_it_is_forgotten() {
+        let s = Store::open_in_memory().unwrap();
+        assert_eq!(s.meta_get("k").unwrap(), None);
+        s.meta_set("k", Some(5)).unwrap();
+        s.meta_set("k", Some(7)).unwrap();
+        assert_eq!(s.meta_get("k").unwrap(), Some(7));
+        s.meta_set("k", None).unwrap();
+        assert_eq!(s.meta_get("k").unwrap(), None);
     }
 
     #[test]

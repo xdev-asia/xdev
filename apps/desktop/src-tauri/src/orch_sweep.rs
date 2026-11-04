@@ -13,23 +13,43 @@ use crate::orchestration::{OrchHub, WorkerChanged, WorkerClose};
 /// How often the sweeper looks.
 pub const TICK: Duration = Duration::from_secs(1);
 
+/// The store key of the time auto-close was turned on.
+const SINCE_KEY: &str = "auto_close_since_ms";
+
 /// When auto-close was last turned on, so a worker that finished while it
-/// was off keeps its tab.
+/// was off keeps its tab. The time is kept in the store, so a restart with
+/// the setting on does not forget it.
 #[derive(Debug, Default)]
 pub struct AutoClose {
     was_on: Option<bool>,
-    since_ms: i64,
+    since_ms: Option<i64>,
 }
 
 impl AutoClose {
     /// With the setting `on` at `now_ms`: none when off, else the time it
-    /// was turned on (0 when it was on from the start).
-    pub fn since(&mut self, on: bool, now_ms: i64) -> Option<i64> {
-        if on && self.was_on == Some(false) {
-            self.since_ms = now_ms;
+    /// was turned on (0 when it was on from the start). `load` reads the
+    /// kept time (once, when the app starts); `save` keeps a new one, or
+    /// forgets it (none) while the setting is off.
+    pub fn since(
+        &mut self,
+        on: bool,
+        now_ms: i64,
+        load: &dyn Fn() -> Option<i64>,
+        save: &dyn Fn(Option<i64>),
+    ) -> Option<i64> {
+        let was = self.was_on.replace(on);
+        if !on {
+            if was != Some(false) {
+                save(None);
+            }
+            self.since_ms = None;
+            return None;
         }
-        self.was_on = Some(on);
-        on.then_some(self.since_ms)
+        if was == Some(false) {
+            self.since_ms = Some(now_ms);
+            save(Some(now_ms));
+        }
+        Some(*self.since_ms.get_or_insert_with(|| load().unwrap_or(0)))
     }
 }
 
@@ -89,14 +109,28 @@ pub fn start(app: AppHandle) {
                     .worker_auto_close
             });
             let now = crate::workspace::clock().0;
-            let Some(since) = auto.since(on, now) else {
-                continue;
-            };
             let state = app.state::<crate::commands::AppState>();
             let Ok(data) = crate::accounts::data_dir(&state) else {
                 continue;
             };
-            if !data.join("orchestration.db").is_file() {
+            let has_db = data.join("orchestration.db").is_file();
+            let load = || {
+                if !has_db {
+                    return None;
+                }
+                hub.with_store(data, |s| s.meta_get(SINCE_KEY))
+                    .ok()
+                    .flatten()
+            };
+            let save = |v: Option<i64>| {
+                if has_db {
+                    let _ = hub.with_store(data, |s| s.meta_set(SINCE_KEY, v));
+                }
+            };
+            let Some(since) = auto.since(on, now, &load, &save) else {
+                continue;
+            };
+            if !has_db {
                 continue;
             }
             let board = app.state::<crate::cli_verbs::CliHub>();
@@ -130,14 +164,26 @@ mod tests {
 
     #[test]
     fn auto_close_counts_from_when_it_was_turned_on() {
+        let kept = std::cell::Cell::new(None);
+        let load = || kept.get();
+        let save = |v: Option<i64>| kept.set(v);
         let mut a = AutoClose::default();
         // On from the start: every finished worker counts.
-        assert_eq!(a.since(true, 1_000), Some(0));
-        assert_eq!(a.since(true, 2_000), Some(0));
-        assert_eq!(a.since(false, 3_000), None);
+        assert_eq!(a.since(true, 1_000, &load, &save), Some(0));
+        assert_eq!(a.since(true, 2_000, &load, &save), Some(0));
+        assert_eq!(a.since(false, 3_000, &load, &save), None);
+        assert_eq!(kept.get(), None);
         // Turned on again: only workers that finish from now on.
-        assert_eq!(a.since(true, 4_000), Some(4_000));
-        assert_eq!(a.since(true, 5_000), Some(4_000));
+        assert_eq!(a.since(true, 4_000, &load, &save), Some(4_000));
+        assert_eq!(a.since(true, 5_000, &load, &save), Some(4_000));
+        assert_eq!(kept.get(), Some(4_000));
+        // A restart with the setting still on: the kept time is read back.
+        let mut b = AutoClose::default();
+        assert_eq!(b.since(true, 9_000, &load, &save), Some(4_000));
+        // A restart with it off forgets the time.
+        let mut c = AutoClose::default();
+        assert_eq!(c.since(false, 9_500, &load, &save), None);
+        assert_eq!(kept.get(), None);
     }
 
     #[test]

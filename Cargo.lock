@@ -6308,6 +6308,7 @@ dependencies = [
  "blake3",
  "dunce",
  "notify-debouncer-full",
+ "rusqlite",
  "serde",
  "serde_json",
  "tauri",
