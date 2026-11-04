@@ -96,6 +96,9 @@ import type {
   WorktreeStat,
   WorktreeView,
   WorktreeCreated,
+  LivePort,
+  PortQuery,
+  WorktreePorts,
   Linked,
   DefaultTab,
   DetailsPatch,
@@ -329,6 +332,9 @@ export type {
   DefaultTab,
   Linked,
   WorktreeCreated,
+  LivePort,
+  PortQuery,
+  WorktreePorts,
   HookRun,
   KeySettings,
   TerminalKeyPolicy,
@@ -827,6 +833,10 @@ export interface Api {
   keptKeep(repoId: string, branch: string): Promise<void>;
   // Deletes a kept branch from git. Rejects with `needs_approval` until `confirmed`, `kept_unknown`.
   branchDelete(repoId: string, branch: string, confirmed: boolean): Promise<void>;
+  // The TCP ports each worktree's terminals listen on, in the order asked.
+  portsScan(queries: PortQuery[]): Promise<WorktreePorts[]>;
+  // Ends the process on a port. Rejects with `needs_approval` until `confirmed`, `port_unknown`.
+  portStop(ptyIds: string[], pid: number, confirmed: boolean): Promise<void>;
   // Repos (with their kept branches), plain folders and groups in shown order.
   workspaceSidebar(): Promise<SidebarItem[]>;
   // The top-level order; unknown ids are skipped and items left out follow in the order added.
@@ -1417,6 +1427,8 @@ const tauriApi: Api = {
   worktreeRestore: (repoId, branch) => call("worktree_restore", { repoId, branch }),
   keptKeep: (repoId, branch) => call("kept_keep", { repoId, branch }),
   branchDelete: (repoId, branch, confirmed) => call("branch_delete", { repoId, branch, confirmed }),
+  portsScan: (queries) => call("ports_scan", { queries }),
+  portStop: (ptyIds, pid, confirmed) => call("port_stop", { ptyIds, pid, confirmed }),
   workspaceSidebar: () => call("workspace_sidebar"),
   sidebarOrder: (ids) => call("sidebar_order", { ids }),
   groupPut: (id, name) => call("group_put", { id, name }),

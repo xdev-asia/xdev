@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type CreateRequest, type PrSummary, type MenuAction } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type LivePort, type Issue, type IssueDetail, type CreateRequest, type PrSummary, type MenuAction } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
@@ -23,6 +23,8 @@ import { recentFiles } from "@/search/recentFiles";
 import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
+import { usePorts } from "./usePorts";
+import { endpoint, browserUrl } from "./PortsChip";
 import { startAutoRename } from "./autoRename";
 import { startAutoTabTitle } from "./autoTabTitle";
 import { startAutoSleep } from "./autoSleep";
@@ -474,6 +476,17 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useSyncExternalStore(stats.subscribe, stats.snapshot, stats.snapshot);
   useSyncExternalStore(useCallback((fn: () => void) => prs.subscribe(fn), [prs]), () => prs.snapshot(), () => prs.snapshot());
 
+  const portsSource = sessions ? { ptyIds: (path: string) => sessions.tabs(path).map((tab) => tab.id) } : null;
+  const { ports: livePorts, rescan: rescanPorts } = usePorts(api, portsSource, paths, prefs.card.ports && !prefs.compactCards);
+  async function stopPort(wt: WorktreeView, port: LivePort): Promise<void> {
+    try {
+      await api.portStop(sessions?.tabs(wt.path).map((tab) => tab.id) ?? [], port.pid, true);
+      pushToast({ text: t("ports.stopped", { port: port.port }) });
+    } catch (e) {
+      pushToast({ text: t(`error.${toApiError(e).code}`) });
+    }
+    await rescanPorts();
+  }
   const dots: Record<string, TabStatus | null> = Object.fromEntries(paths.map((p) => [p, sessions?.dot(p) ?? null]));
   const activity: Record<string, number | null> = Object.fromEntries(paths.map((p) => [p, sessions?.lastActivity(p) ?? null]));
   const profiles: Record<string, PtyProfile[]> = Object.fromEntries(paths.map((p) => [p, sessions?.profilesOf(p) ?? []]));
@@ -1751,6 +1764,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             selected={current?.path ?? null}
             dots={dots}
             stats={stats.all()}
+            ports={livePorts}
+            onOpenPort={(port) => window.open(browserUrl(port), "_blank", "noopener")}
+            onCopyPort={(port) => {
+              void copy(endpoint(port));
+              pushToast({ text: t("ports.copied", { address: endpoint(port) }) });
+            }}
+            onStopPort={stopPort}
             activity={activity}
             profiles={profiles}
             prs={prMap}
