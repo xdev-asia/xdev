@@ -6298,6 +6298,7 @@ dependencies = [
  "blake3",
  "dunce",
  "ignore",
+ "regex",
  "serde",
  "serde_json",
  "tempfile",

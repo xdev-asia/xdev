@@ -49,6 +49,8 @@ keyring = { version = "4.2.0", default-features = false, features = ["v1"] }
 notify-debouncer-full = "0.7.0"
 # Pseudo consoles on every OS (ConPTY on Windows); pinned, its API moves between minors.
 portable-pty = "=0.9.0"
+# Search in files; already in the build through `ignore`.
+regex = "1.13.1"
 # Bundled SQLite ships FTS5 and behaves the same on every OS.
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
