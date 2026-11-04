@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import type { JSX } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Freshness } from "@/api";
