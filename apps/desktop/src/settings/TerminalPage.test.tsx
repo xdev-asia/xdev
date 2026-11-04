@@ -4,7 +4,13 @@ import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
 import { getTerminalSettings, resetTerminalSettingsForTests, TERMINAL_DEFAULTS } from "@/terminal/terminalSettings";
 import { RestoreSetting } from "./RestoreSetting";
+import { runSearch } from "./searchModel";
+import { SettingGroup, SettingRow } from "./SettingRow";
 import { CLIPBOARD_SWITCHES, TerminalPage } from "./TerminalPage";
+import { TerminalBehaviourSection } from "./terminal/TerminalBehaviourSection";
+import { ANSI_KEYS, TerminalLookSection } from "./terminal/TerminalLookSection";
+import { DEFAULT_WORD_SEPARATORS } from "./terminalDefaults";
+import { TERMINAL_SCHEMES } from "@/terminal/terminalThemes";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
 vi.mock("react", async (original) => {
@@ -28,6 +34,10 @@ function nodes(value: unknown): Node[] {
   if (Array.isArray(value)) return value.flatMap(nodes);
   if (!value || typeof value !== "object" || !("props" in value)) return [];
   const node = value as Node;
+  // The two section files and the search wrappers are components; draw them where the page puts them.
+  if (node.type === TerminalLookSection || node.type === TerminalBehaviourSection || node.type === SettingRow || node.type === SettingGroup) {
+    return nodes((node.type as (p: unknown) => unknown)(node.props));
+  }
   return [node, ...nodes(node.props.children)];
 }
 const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
@@ -41,18 +51,23 @@ beforeEach(() => {
   resetTerminalSettingsForTests();
 });
 
-async function page(stored: Partial<typeof TERMINAL_DEFAULTS> = {}) {
+async function page(stored: Partial<typeof TERMINAL_DEFAULTS> = {}, filter?: Parameters<typeof TerminalPage>[0]["filter"]) {
   const api = createMockApi({});
   await api.terminalSettingsPut({ ...TERMINAL_DEFAULTS, ...stored });
   const draw = () => {
     hooks.cursor = 0;
     hooks.active = true;
-    try { return TerminalPage({ api, onChanged: vi.fn() }); } finally { hooks.active = false; }
+    try { return TerminalPage({ api, onChanged: vi.fn(), filter }); } finally { hooks.active = false; }
   };
   draw();
   hooks.effects.splice(0).forEach((e) => e());
   await tick();
-  const all = () => nodes(draw());
+  // The sections hold hooks too, so they are drawn while the hook stand-ins are on.
+  const all = () => {
+    hooks.cursor = 0;
+    hooks.active = true;
+    try { return nodes(TerminalPage({ api, onChanged: vi.fn(), filter })); } finally { hooks.active = false; }
+  };
   const field = (name: string) => all().find((n) => n.props["data-field"] === name)!;
   const sw = (name: string) => nodes(all().find((n) => n.props["data-switch"] === name)).find((n) => n.props.role === "switch")!;
   const button = (label: string) => all().find((n) => n.type === "button" && n.props.children === label)!;
@@ -170,4 +185,150 @@ it("the service switch says it takes effect at the next start", async () => {
   const p = await page();
   const text = JSON.stringify(nodes(p.all().find((n) => n.props["data-switch"] === "service")).map((n) => n.props.children));
   expect(text).toContain(en("settings.terminal.service.hint"));
+});
+
+const gpuRadio = (p: Awaited<ReturnType<typeof page>>, m: string) => p.all().find((n) => n.props["data-gpu"] === m)!;
+const bellRadio = (p: Awaited<ReturnType<typeof page>>, m: string) => p.all().find((n) => n.props["data-bell"] === m)!;
+
+it("the theme select lists App and every scheme, and puts only the theme", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  const options = nodes(p.field("theme")).filter((n) => n.type === "option").map((n) => n.props.value);
+  expect(options).toEqual(["app", ...TERMINAL_SCHEMES.map((s) => s.id)]);
+  expect(p.field("theme").props.value).toBe("app");
+  p.field("theme").props.onChange({ target: { value: "nord" } });
+  await tick();
+  expect(put).toHaveBeenCalledTimes(1);
+  expect(put).toHaveBeenCalledWith({ ...TERMINAL_DEFAULTS, theme: "nord" });
+  expect(getTerminalSettings().theme).toBe("nord");
+});
+
+it("the swatch strip follows the select", async () => {
+  const p = await page();
+  expect(p.all().filter((n) => n.props["data-swatch"])).toHaveLength(0);
+  p.field("theme").props.onChange({ target: { value: "dracula" } });
+  await tick();
+  const swatches = p.all().filter((n) => n.props["data-swatch"]);
+  expect(swatches.map((n) => n.props["data-swatch"])).toEqual([...ANSI_KEYS]);
+  const dracula = TERMINAL_SCHEMES.find((s) => s.id === "dracula")!;
+  expect(swatches.map((n) => n.props.style.background)).toEqual(ANSI_KEYS.map((k) => dracula.colors[k]));
+  p.field("theme").props.onChange({ target: { value: "nord" } });
+  await tick();
+  const nord = TERMINAL_SCHEMES.find((s) => s.id === "nord")!;
+  expect(p.all().filter((n) => n.props["data-swatch"]).map((n) => n.props.style.background)).toEqual(ANSI_KEYS.map((k) => nord.colors[k]));
+});
+
+it("an unknown stored theme shows as App", async () => {
+  const p = await page({ theme: "gone" });
+  expect(p.field("theme").props.value).toBe("app");
+});
+
+it("GPU radios put once with only the gpu, and show the hint", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  expect(gpuRadio(p, "auto").props.checked).toBe(true);
+  gpuRadio(p, "off").props.onChange();
+  await tick();
+  expect(put).toHaveBeenCalledTimes(1);
+  expect(put).toHaveBeenCalledWith({ ...TERMINAL_DEFAULTS, gpu: "off" });
+  expect(gpuRadio(p, "off").props.checked).toBe(true);
+  expect(JSON.stringify(p.all().map((n) => n.props.children))).toContain(en("settings.terminal.render.gpuHint"));
+});
+
+it("minimum contrast, scroll speed and fast scroll speed each put once, only their field, clamped", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  p.field("minimumContrast").props.onChange({ target: { value: "4.5" } });
+  expect(put).not.toHaveBeenCalled();
+  p.field("minimumContrast").props.onBlur();
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, minimumContrast: 4.5 });
+  p.field("scrollSensitivity").props.onChange({ target: { value: "9" } });
+  p.field("scrollSensitivity").props.onKeyDown({ key: "Enter" });
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, minimumContrast: 4.5, scrollSensitivity: 9 });
+  expect(p.field("scrollSensitivity").props.value).toBe("3");
+  p.field("fastScrollSensitivity").props.onChange({ target: { value: "7.5" } });
+  p.field("fastScrollSensitivity").props.onBlur();
+  await tick();
+  expect(put).toHaveBeenCalledTimes(3);
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, minimumContrast: 4.5, scrollSensitivity: 3, fastScrollSensitivity: 7.5 });
+});
+
+it("a number that is not a number, or did not change, writes nothing", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  p.field("minimumContrast").props.onChange({ target: { value: "" } });
+  p.field("minimumContrast").props.onBlur();
+  p.field("scrollSensitivity").props.onChange({ target: { value: "1.15" } });
+  p.field("scrollSensitivity").props.onBlur();
+  await tick();
+  expect(put).not.toHaveBeenCalled();
+  expect(p.field("minimumContrast").props.value).toBe("1");
+});
+
+it("focus follows mouse is a switch that puts only its field", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  expect(p.sw("focusFollowsMouse").props["aria-checked"]).toBe(false);
+  p.sw("focusFollowsMouse").props.onClick();
+  await tick();
+  expect(put).toHaveBeenCalledTimes(1);
+  expect(put).toHaveBeenCalledWith({ ...TERMINAL_DEFAULTS, focusFollowsMouse: true });
+});
+
+it("bell radios put once with only the bell; the hint points to Notifications", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  expect(bellRadio(p, "none").props.checked).toBe(true);
+  bellRadio(p, "sound").props.onChange();
+  await tick();
+  expect(put).toHaveBeenCalledTimes(1);
+  expect(put).toHaveBeenCalledWith({ ...TERMINAL_DEFAULTS, bell: "sound" });
+  expect(JSON.stringify(p.all().map((n) => n.props.children))).toContain(en("settings.terminal.bell.hint"));
+});
+
+it("word separators: committed on blur, Reset shown only when not default and puts the default", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  expect(p.all().some((n) => n.props["data-field"] === "words-reset")).toBe(false);
+  p.field("wordSeparators").props.onChange({ target: { value: " /" } });
+  expect(put).not.toHaveBeenCalled();
+  p.field("wordSeparators").props.onBlur();
+  await tick();
+  expect(put).toHaveBeenCalledTimes(1);
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, wordSeparators: " /" });
+  const reset = p.all().find((n) => n.props["data-field"] === "words-reset")!;
+  reset.props.onClick();
+  await tick();
+  expect(put).toHaveBeenCalledTimes(2);
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, wordSeparators: DEFAULT_WORD_SEPARATORS });
+  expect(p.all().some((n) => n.props["data-field"] === "words-reset")).toBe(false);
+});
+
+it("empty word separators put the default", async () => {
+  const p = await page({ wordSeparators: " /" });
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  p.field("wordSeparators").props.onChange({ target: { value: "" } });
+  p.field("wordSeparators").props.onBlur();
+  await tick();
+  expect(put).toHaveBeenCalledTimes(1);
+  expect(put).toHaveBeenCalledWith({ ...TERMINAL_DEFAULTS, wordSeparators: DEFAULT_WORD_SEPARATORS });
+});
+
+it("word separators without a space show a hint", async () => {
+  const hint = (p: Awaited<ReturnType<typeof page>>) => p.all().some((n) => n.props["data-field"] === "words-hint");
+  expect(hint(await page())).toBe(false);
+  expect(hint(await page({ wordSeparators: "/." }))).toBe(true);
+});
+
+it("search shows only the matching row (webgl, chuông)", async () => {
+  const t = (key: string) => en(key);
+  const rows = async (query: string) => {
+    const { ids } = runSearch(query, t, () => "Terminal");
+    const p = await page({}, { query, ids });
+    return p.all().map((n) => n.props["data-setting-id"]).filter(Boolean);
+  };
+  expect(await rows("webgl")).toEqual(["terminal.gpu"]);
+  expect(await rows("chuông")).toEqual(["terminal.bell"]);
 });

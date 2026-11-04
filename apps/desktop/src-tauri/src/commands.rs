@@ -149,10 +149,11 @@ pub fn set_git_settings(
         .map(|s| s.git)
 }
 
-/// Settings → Terminal as stored; the defaults when nothing is.
+/// Settings → Terminal as stored, clamped so a hand-edited file never reaches xterm out of
+/// range; the defaults when nothing is stored.
 #[tauri::command(async)]
 pub fn terminal_settings_get(app: AppHandle) -> settings::TerminalSettings {
-    settings_store::read(&app).terminal
+    settings_store::read(&app).terminal.clamped()
 }
 
 /// Stores Settings → Terminal with every number clamped to its range, and
@@ -282,6 +283,23 @@ pub fn agents_settings_put(
 ) -> Result<settings::AgentsSettings, CmdError> {
     settings_store::write(&app, &[SettingsSection::Agents], |s| s.agents = settings)
         .map(|s| s.agents)
+}
+
+/// Settings → Stats & Usage as stored; the defaults when nothing is.
+#[tauri::command(async)]
+pub fn usage_settings_get(app: AppHandle) -> settings::UsageSettings {
+    settings_store::read(&app).usage
+}
+
+/// Stores Settings → Stats & Usage and returns what was stored. A cache
+/// lifetime that is not one of the two known ones is stored as the short one.
+#[tauri::command(async)]
+pub fn usage_settings_put(
+    app: AppHandle,
+    settings: settings::UsageSettings,
+) -> Result<settings::UsageSettings, CmdError> {
+    let settings = settings.normalized();
+    settings_store::write(&app, &[SettingsSection::Usage], |s| s.usage = settings).map(|s| s.usage)
 }
 
 /// The global git `user.name` that the git-username prefix shows; a repo's

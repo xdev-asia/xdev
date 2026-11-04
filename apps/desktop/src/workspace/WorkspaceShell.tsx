@@ -58,7 +58,11 @@ import { openDefaultTabs } from "./defaultTabs";
 import { failedLinks } from "./linkReport";
 import { decideSetup, hasPending, pendingLists, type PendingLists } from "./setupFlow";
 import { SetupGate } from "./setupGate";
+import { startCliReport } from "./cliReport";
+import { startCliEvents } from "./cliEvents";
 import { TrustDialog } from "./TrustDialog";
+import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
+import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
 import { QuitDialog } from "./QuitDialog";
 import { askQuit, type QuitAsk, type QuitChoice } from "./quitGuard";
 import { getTerminalSettings } from "@/terminal/terminalSettings";
@@ -212,7 +216,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [bellOpen, setBellOpen] = useState(false);
   const statusSettings = useStatusSettings();
   // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
-  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null }));
+  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {} }));
 
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
@@ -375,6 +379,31 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       if (typeof window !== "undefined") window.removeEventListener("beforeunload", close);
     };
   }, [sessions]);
+
+  // The active account changed (Accounts, the usage popover, a removal): the running agent tabs that
+  // follow it are restarted, kept or asked about by the `agents.accountSwitch` setting.
+  // Switches queue: a second one while the dialog is open waits its turn instead of replacing the first.
+  const [switches, setSwitching] = useState<PendingSwitch[]>([]);
+  const switching = switches[0] ?? null;
+  useEffect(() => {
+    if (!sessions) return;
+    const watcher = watchAccountSwitch({
+      api,
+      sessions,
+      notify: (key, vars) => pushToast({ text: live.t(key, vars) }),
+      ask: (p) => setSwitching((q) => [...q, p]),
+    });
+    return () => watcher.stop();
+  }, [api, sessions]);
+  async function answerSwitch(pending: PendingSwitch, restart: string[] | null, remember: boolean): Promise<void> {
+    setSwitching((q) => q.filter((p) => p !== pending));
+    if (remember) {
+      // "Don't ask again" stores what was chosen; a failed write only means it asks again.
+      const current = await api.agentsSettings().catch(() => null);
+      if (current) await api.agentsSettingsPut({ ...current, accountSwitch: restart ? "restart" : "keep" }).catch(() => {});
+    }
+    if (restart && sessions) await restartTabs({ api, sessions, notify: (key, vars) => pushToast({ text: live.t(key, vars) }) }, pending, restart);
+  }
 
   const paths = repos?.flatMap((r) => r.worktrees.map((w) => w.path)) ?? [];
   const subscribe = useCallback((listener: () => void) => sessions?.subscribe(listener) ?? (() => {}), [sessions]);
@@ -570,6 +599,24 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setFront((f) => ({ worktree: wt.path, id: fileTabId(req.rel), seq: (f?.seq ?? 0) + 1 }));
   };
   useEffect(() => onOpenFile((req) => live.openFileTab(req)), [live]);
+  live.selected = current?.path ?? null;
+  live.reload = () => void load();
+  // `xdev worktree create --agent/--prompt`: the profile opens unfocused and gets the prompt once setup lets agents start.
+  live.cliOpen = (worktree, profile, prompt) => void openDefaultAgent(worktree, profile || undefined, prompt ?? undefined);
+  // The app CLI: the tabs as `xdev terminal` sees them, and what its endpoint asks of the window.
+  useEffect(() => {
+    if (!sessions) return;
+    const reporter = startCliReport(api, sessions, () => live.selected);
+    live.cliPoke = reporter.poke;
+    const stopEvents = startCliEvents(api, { reload: () => live.reload(), openTab: (w, p, prompt) => live.cliOpen(w, p, prompt), t: (key, vars) => live.t(key, vars) });
+    return () => {
+      reporter.stop();
+      stopEvents();
+      live.cliPoke = () => {};
+    };
+  }, [api, sessions]);
+  const selectedPath = current?.path ?? null;
+  useEffect(() => live.cliPoke(), [selectedPath]);
   useEffect(() => onOpenFile((req) => recentFiles.touch(req.worktree, req.rel)), []);
   // Ctrl+Enter in quick open: the file goes into a new pane to the right of the focused one.
   function openFileSide(worktree: string, rel: string, line?: number): void {
@@ -1233,9 +1280,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (next === "docs") setDocsMounted(true);
   }
 
+  // Usage details & history live on the Stats & Usage settings page; the Kit app keeps its own tab.
   function openUsage(): void {
-    setKitOpen((k) => ({ tab: "usage", seq: (k?.seq ?? 0) + 1 }));
-    show("docs");
+    openSettings("usage");
   }
 
   function openTask(id: string): void {
@@ -1765,6 +1812,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         version={pkg.version}
         onOpenUsage={openUsage}
         onManageAccounts={openAccounts}
+        onUseAccount={(provider, name) =>
+          void api.accountActivate(provider, name).catch((e) => pushToast({ text: t("accounts.switch.failed", { code: toApiError(e).code }) }))
+        }
         hidden={view === "docs"}
       />
 
@@ -1865,6 +1915,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             // Without the lists the flow goes on: setup cards, setup itself.
             if (ask.kind === "lists") void setupAfterCreate(ask.path, ask.repoId, true);
           }}
+        />
+      )}
+      {switching && sessions && (
+        <AccountSwitchDialog
+          provider={switching.provider}
+          from={switching.from}
+          to={switching.to}
+          rows={switching.tabIds.flatMap((id): SwitchRow[] => {
+            const tab = sessions.tab(id);
+            if (!tab) return [];
+            const name = tab.title ?? profileName(null, tab.profileId, t);
+            return [{ id, label: `${name} · ${tab.worktree.split(/[\\/]/).filter(Boolean).pop() ?? tab.worktree}`, working: tab.status === "working" }];
+          })}
+          onRestart={(ids, remember) => void answerSwitch(switching, ids, remember)}
+          onKeep={(remember) => void answerSwitch(switching, null, remember)}
         />
       )}
       {quitting && <QuitDialog ask={quitting.ask} onChoose={quitting.answer} />}

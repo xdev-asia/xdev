@@ -99,6 +99,9 @@ import type {
   ScriptSource,
   QuickCommand,
   FileCommands,
+  CliAsk,
+  CliOpenTab,
+  TabReport,
 } from "@xdev/bindings";
 import type {
   AgentSession,
@@ -125,6 +128,12 @@ import type {
   SessionRow,
   Agent,
   Skill,
+  UsageDisplay,
+  UsageReport,
+  UsageReportArgs,
+  UsageScope,
+  UsageSettings,
+  ProviderSwitches,
   UsageSummary,
   WriteOutcome,
 } from "@xdev/bindings";
@@ -141,8 +150,10 @@ export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill
 export type { Agent, AgentSession, SessionQuery, SessionRow };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, SwitchRunning };
+export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
+export type { CliAsk, CliOpenTab, TabReport };
 export type { RestoreMode } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
 
@@ -250,6 +261,8 @@ export type {
   TerminalSettings,
   FontWeight,
   CursorStyle,
+  TerminalGpu,
+  TerminalBell,
   SettingsSection,
   SettingsChanged,
   SetupPolicy,
@@ -798,6 +811,8 @@ export interface Api {
   kitSkillRestore(removed: string, to: string, worktree: string | null): Promise<void>;
   // Days are local `YYYY-MM-DD`; `refresh` reads the new session log bytes first.
   kitUsage(sinceDay: string, untilDay: string, refresh: boolean): Promise<UsageSummary>;
+  // The Stats page: filtered by agent and scope, and by `usage.scan` (an agent whose scan is off is not read).
+  kitUsageReport(args: Omit<UsageReportArgs, "utcOffsetMinutes">): Promise<UsageReport>;
   // Whether each relative path exists under `root` (an agent home, repo or worktree).
   kitPathsExist(root: string, paths: string[]): Promise<boolean[]>;
   // Newest first, at most `limit` (and 1000).
@@ -870,6 +885,8 @@ export interface Api {
   // Settings → Agents; the put returns what was stored.
   agentsSettings(): Promise<AgentsSettings>;
   agentsSettingsPut(v: AgentsSettings): Promise<AgentsSettings>;
+  usageSettings(): Promise<UsageSettings>;
+  usageSettingsPut(v: UsageSettings): Promise<UsageSettings>;
 
   // Layout
   // The tabs and splits saved for the next start (`<data_dir>/layout.json`); null when none is saved
@@ -878,6 +895,18 @@ export interface Api {
   // Replaces the saved layout. Rejects with `bad_arg` when `version` is not `LAYOUT_VERSION` and
   // `too_large` past 1 MiB.
   layoutSave(snapshot: LayoutSnapshot): Promise<void>;
+  // The app CLI (`xdev status | worktree | terminal`). The UI owns the tab states: it reports every
+  // tab (and the worktree in front) when they change, and `xdev terminal wait` reads them.
+  cliTabsReport(tabs: TabReport[], selected: string | null): Promise<void>;
+  // The person's answer to a `cli://ask`; an unknown or late request is ignored.
+  cliApprove(request: number, allow: boolean): Promise<void>;
+  // The CLI changed the registry (`workspace://changed`): the sidebar loads again.
+  onWorkspaceChanged(cb: () => void): Promise<() => void>;
+  // `xdev worktree create --agent/--prompt` (`cli://open-tab`): open `profile` (empty: the default
+  // agent) in `worktree` without focusing it, and type `prompt` once it is ready.
+  onCliOpenTab(cb: (e: CliOpenTab) => void): Promise<() => void>;
+  // A CLI write that needs the person (`cli://ask`); answer with `cliApprove`.
+  onCliAsk(cb: (e: CliAsk) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -1232,6 +1261,7 @@ const tauriApi: Api = {
   // The local offset (UTC+7 is 420) decides which day a log line belongs to.
   kitUsage: (sinceDay, untilDay, refresh) =>
     call("kit_usage", { sinceDay, untilDay, refresh, utcOffsetMinutes: -new Date().getTimezoneOffset() }),
+  kitUsageReport: (args) => call("kit_usage_report", { args: { ...args, utcOffsetMinutes: -new Date().getTimezoneOffset() } }),
   kitPathsExist: (root, paths) => call("kit_paths_exist", { root, paths }),
   kitPromptHistory: (limit) => call("kit_prompt_history", { limit }),
   agentSessions: (query, refresh) => call("agent_sessions", { query, refresh }),
@@ -1264,8 +1294,15 @@ const tauriApi: Api = {
   diffSettingsPut: (settings) => call("diff_settings_put", { settings }),
   agentsSettings: () => call("agents_settings_get"),
   agentsSettingsPut: (settings) => call("agents_settings_put", { settings }),
+  usageSettings: () => call("usage_settings_get"),
+  usageSettingsPut: (settings) => call("usage_settings_put", { settings }),
   layoutLoad: () => call("layout_load"),
   layoutSave: (snapshot) => call("layout_save", { snapshot }),
+  cliTabsReport: (tabs, selected) => call("cli_tabs_report", { tabs, selected }),
+  cliApprove: (request, allow) => call("cli_approve", { request, allow }),
+  onWorkspaceChanged: (cb) => listen("workspace://changed", () => cb()),
+  onCliOpenTab: (cb) => listen<CliOpenTab>("cli://open-tab", (e) => cb(e.payload)),
+  onCliAsk: (cb) => listen<CliAsk>("cli://ask", (e) => cb(e.payload)),
 };
 
 function browserApi(): Api {

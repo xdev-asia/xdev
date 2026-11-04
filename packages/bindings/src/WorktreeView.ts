@@ -29,4 +29,8 @@ defaultBranch: boolean,
  * The branch name was picked by the app and may still be renamed from
  * the first prompt.
  */
-autoName: boolean, };
+autoName: boolean, 
+/**
+ * When the app CLI last created or changed it; absent when it never did.
+ */
+setByCliMs?: number, };

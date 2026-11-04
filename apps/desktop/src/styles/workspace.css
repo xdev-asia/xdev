@@ -1024,6 +1024,19 @@
   line-height: 16px;
 }
 
+.ws-tab-cache {
+  flex: none;
+  font-family: var(--x-font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--x-color-muted);
+}
+
+.ws-tab-cache-cold {
+  font-family: inherit;
+  text-transform: uppercase;
+}
+
 .ws-tab-skip-dot {
   width: 6px;
   height: 6px;
@@ -2880,6 +2893,14 @@ button.ws-tree-row:focus-visible {
   font-size: 11px;
 }
 
+/* A worktree the app CLI made or changed: plain text, no colour of its own. */
+.ws-wt-cli {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
 .ws-work-item {
   cursor: pointer;
 }
@@ -3229,4 +3250,31 @@ button.ws-tree-row:focus-visible {
 
 .ws-repo .ws-badge {
   margin-right: 6px;
+}
+
+.ws-usage-active {
+  color: var(--x-color-ok);
+  font-weight: 600;
+}
+
+.ws-usage-use {
+  margin-left: auto;
+}
+
+.ws-switch-list {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.ws-switch-working {
+  color: var(--x-color-warn);
+  font-size: 0.9em;
 }

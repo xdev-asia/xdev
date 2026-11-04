@@ -1,7 +1,8 @@
-import type { AgentsSettings, Api, DiffSettings, EditorSettings, KeySettings, NavigationSettings, SettingsChanged, SettingsSection, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
+import type { AgentsSettings, Api, UsageSettings, DiffSettings, EditorSettings, KeySettings, NavigationSettings, SettingsChanged, SettingsSection, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
 import { clampEditorSettings, EDITOR_DEFAULTS } from "./files/editorDefaults";
 import { KEY_SETTINGS_DEFAULTS } from "./keys/bindingsStore";
 import { DIFF_DEFAULTS, NAVIGATION_DEFAULTS } from "./settings/generalDefaults";
+import { CACHE_TTL_LONG_MS, CACHE_TTL_SHORT_MS, USAGE_DEFAULTS } from "./settings/usageDefaults";
 import { clampTerminalSettings, TERMINAL_DEFAULTS } from "./settings/terminalDefaults";
 
 /** Called by a mock's settings write, the way Rust emits `settings://changed`. */
@@ -26,6 +27,8 @@ type SettingsApi = Pick<
   | "diffSettingsPut"
   | "agentsSettings"
   | "agentsSettingsPut"
+  | "usageSettings"
+  | "usageSettingsPut"
 >;
 
 /** `SidebarPrefs::default()` in Rust: every row shows. */
@@ -36,7 +39,7 @@ export { KEY_SETTINGS_DEFAULTS };
 export const UI_SETTINGS_DEFAULTS: UiSettings = { zoom: 1, restore: "all" };
 export const ZOOM_LIMITS = { min: 0.5, max: 2 } as const;
 
-export { DIFF_DEFAULTS, NAVIGATION_DEFAULTS };
+export { DIFF_DEFAULTS, NAVIGATION_DEFAULTS, USAGE_DEFAULTS };
 /** `AgentsSettings::default()` in Rust: a switch asks about running tabs. */
 export const AGENTS_SETTINGS_DEFAULTS: AgentsSettings = { accountSwitch: "ask" };
 
@@ -66,6 +69,7 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
   let navigation: NavigationSettings = { ...NAVIGATION_DEFAULTS };
   let diff: DiffSettings = { ...DIFF_DEFAULTS };
   let agents: AgentsSettings = { ...AGENTS_SETTINGS_DEFAULTS };
+  let usage: UsageSettings = structuredClone(USAGE_DEFAULTS);
   return {
     onSettingsChanged: hub.onSettingsChanged,
     async terminalSettings() {
@@ -132,6 +136,15 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
       agents = { ...AGENTS_SETTINGS_DEFAULTS, ...next };
       hub.emit(["agents"]);
       return { ...agents };
+    },
+    async usageSettings() {
+      return structuredClone(usage);
+    },
+    async usageSettingsPut(next) {
+      // Rust turns a cache lifetime that is not one of the two known ones into the short one.
+      usage = structuredClone({ ...next, cacheTtlMs: next.cacheTtlMs === CACHE_TTL_LONG_MS ? CACHE_TTL_LONG_MS : CACHE_TTL_SHORT_MS });
+      hub.emit(["usage"]);
+      return structuredClone(usage);
     },
   };
 }
