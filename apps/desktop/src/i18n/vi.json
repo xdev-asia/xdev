@@ -867,6 +867,7 @@
   "ship.amend.pushed.body": "Commit này đã có trên remote. Nếu sửa, lần đẩy tiếp theo phải là force push.",
   "ship.amend.pushed.confirm": "Vẫn sửa",
   "ship.hook.fix": "Nhờ agent sửa",
+  "ship.push.fix": "Nhờ agent sửa",
   "ship.hook.copy": "Sao chép output",
   "ship.hook.output": "Output của hook",
   "ship.fix.noTab": "Chưa có tab agent nào sẵn sàng kịp lúc. Hãy mở một tab rồi thử lại.",

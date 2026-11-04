@@ -867,6 +867,7 @@
   "ship.amend.pushed.body": "This commit is already on the remote. Amending it means the next push must be a force push.",
   "ship.amend.pushed.confirm": "Amend anyway",
   "ship.hook.fix": "Fix with agent",
+  "ship.push.fix": "Fix with agent",
   "ship.hook.copy": "Copy output",
   "ship.hook.output": "Hook output",
   "ship.fix.noTab": "No agent tab got ready in time. Open one and try again.",
