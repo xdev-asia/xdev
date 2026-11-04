@@ -72,10 +72,20 @@ pub fn build(i: &PreambleInput<'_>) -> Result<String, OrchError> {
     }
     out.push_str("=== TASK ===\n");
     out.push_str(i.spec);
-    if !i.spec.ends_with('\n') {
+    if !out.ends_with('\n') {
         out.push('\n');
     }
-    Ok(out)
+    Ok(plain(&out))
+}
+
+/// `text` with CRLF made LF and every control character but newline and tab
+/// dropped (a lone CR too), so a spec can neither end a bracketed paste nor
+/// press Enter half way.
+fn plain(text: &str) -> String {
+    text.replace("\r\n", "\n")
+        .chars()
+        .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
+        .collect()
 }
 
 #[cfg(test)]
@@ -142,5 +152,20 @@ mod tests {
         let big = "x".repeat(SPEC_BUDGET + 1);
         let e = build(&input(1, 2, &big)).unwrap_err();
         assert_eq!(e.code, "worker_prompt_too_large");
+    }
+
+    #[test]
+    fn control_characters_never_reach_the_terminal() {
+        let spec = "a\u{1b}[201~rm -rf /\r\nb\tc\u{0}\u{7}\u{7f}d\re";
+        let got = build(&input(1, 1, spec)).unwrap();
+        assert!(
+            got.ends_with("=== TASK ===\na[201~rm -rf /\nb\tcde\n"),
+            "{got:?}"
+        );
+        assert!(
+            !got.chars()
+                .any(|c| c.is_control() && c != '\n' && c != '\t'),
+            "{got:?}"
+        );
     }
 }
