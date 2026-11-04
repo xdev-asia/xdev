@@ -554,15 +554,19 @@ impl Store {
     pub fn worker_sweep(
         &self,
         status_of: &dyn Fn(&str) -> Option<String>,
+        since_ms: i64,
         now_ms: i64,
     ) -> Result<Vec<Swept>, OrchError> {
+        // A worker with no countdown that last changed before auto-close was
+        // turned on (`since_ms`) finished while it was off: it stays open.
         let mut st = self.conn.prepare(&format!(
             "SELECT {WORKER_COLS} FROM workers
              WHERE state IN ('succeeded', 'failed') AND kept = 0 AND released = 0
-               AND tab IS NOT NULL ORDER BY created_ms, rowid"
+               AND tab IS NOT NULL AND (closes_at_ms IS NOT NULL OR updated_ms >= ?1)
+             ORDER BY created_ms, rowid"
         ))?;
         let workers = st
-            .query_map([], worker_row)?
+            .query_map([since_ms], worker_row)?
             .collect::<Result<Vec<_>, _>>()?;
         let mut out = Vec::new();
         for w in workers {
@@ -1053,24 +1057,41 @@ mod tests {
         let at = 1_000 + CLOSE_AFTER_MS;
         let on = |st: &'static str| move |_: &str| Some(st.to_owned());
         // Busy: the countdown set by settling is cancelled.
-        let a = s.worker_sweep(&on("working"), 2_000).unwrap();
+        let a = s.worker_sweep(&on("working"), 0, 2_000).unwrap();
         assert_eq!(a.len(), 1);
         assert!(!a[0].close);
         assert_eq!(s.worker_get(&id).unwrap().closes_at_ms, None);
-        assert!(s.worker_sweep(&on("working"), 3_000).unwrap().is_empty());
+        assert!(s.worker_sweep(&on("working"), 0, 3_000).unwrap().is_empty());
         // Quiet again: it starts over from now.
-        s.worker_sweep(&on("idle"), 4_000).unwrap();
+        s.worker_sweep(&on("idle"), 0, 4_000).unwrap();
         assert_eq!(
             s.worker_get(&id).unwrap().closes_at_ms,
             Some(4_000 + CLOSE_AFTER_MS)
         );
-        assert!(s.worker_sweep(&on("idle"), at).unwrap().is_empty());
+        assert!(s.worker_sweep(&on("idle"), 0, at).unwrap().is_empty());
         // Due: close, once.
-        let due = s.worker_sweep(&on("idle"), 4_000 + CLOSE_AFTER_MS).unwrap();
+        let due = s
+            .worker_sweep(&on("idle"), 0, 4_000 + CLOSE_AFTER_MS)
+            .unwrap();
         assert_eq!(due.len(), 1);
         assert!(due[0].close);
         assert!(s.worker_get(&id).unwrap().released);
-        assert!(s.worker_sweep(&on("idle"), at * 9).unwrap().is_empty());
+        assert!(s.worker_sweep(&on("idle"), 0, at * 9).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_worker_that_finished_before_auto_close_was_on_stays_open() {
+        let (s, run, task) = world();
+        let id = ready_worker(&s, &run, &task);
+        // Settled while the setting was off: no countdown.
+        s.worker_settle(&id, WorkerState::Succeeded, None, false, 1_000)
+            .unwrap();
+        let idle = |_: &str| Some("idle".to_owned());
+        // Turned on at 2 000: it finished before, so it is left alone.
+        assert!(s.worker_sweep(&idle, 2_000, 9_000).unwrap().is_empty());
+        assert_eq!(s.worker_get(&id).unwrap().closes_at_ms, None);
+        // On since before it finished: it gets its countdown.
+        assert_eq!(s.worker_sweep(&idle, 500, 9_000).unwrap().len(), 1);
     }
 
     #[test]
@@ -1079,10 +1100,10 @@ mod tests {
         let id = ready_worker(&s, &run, &task);
         s.worker_settle(&id, WorkerState::Failed, None, true, 1_000)
             .unwrap();
-        assert!(s.worker_sweep(&|_| None, 9_999_999).unwrap().is_empty());
+        assert!(s.worker_sweep(&|_| None, 0, 9_999_999).unwrap().is_empty());
         s.worker_set_kept(&id, true, 2_000).unwrap();
         let idle = |_: &str| Some("idle".to_owned());
-        assert!(s.worker_sweep(&idle, 9_999_999).unwrap().is_empty());
+        assert!(s.worker_sweep(&idle, 0, 9_999_999).unwrap().is_empty());
         assert!(!s.worker_get(&id).unwrap().released);
     }
 

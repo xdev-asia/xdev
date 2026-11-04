@@ -13,12 +13,33 @@ use crate::orchestration::{OrchHub, WorkerChanged, WorkerClose};
 /// How often the sweeper looks.
 pub const TICK: Duration = Duration::from_secs(1);
 
-/// One pass. `emit` sends the UI its events: `close-worker` for a tab that is
+/// When auto-close was last turned on, so a worker that finished while it
+/// was off keeps its tab.
+#[derive(Debug, Default)]
+pub struct AutoClose {
+    was_on: Option<bool>,
+    since_ms: i64,
+}
+
+impl AutoClose {
+    /// With the setting `on` at `now_ms`: none when off, else the time it
+    /// was turned on (0 when it was on from the start).
+    pub fn since(&mut self, on: bool, now_ms: i64) -> Option<i64> {
+        if on && self.was_on == Some(false) {
+            self.since_ms = now_ms;
+        }
+        self.was_on = Some(on);
+        on.then_some(self.since_ms)
+    }
+}
+
+/// One pass over workers that finished from `since_ms` on. `emit` sends the UI its events: `close-worker` for a tab that is
 /// due, `worker-changed` for every strip that changed. How many tabs it asked
 /// to close.
 pub fn sweep_once(
     hub: &OrchHub,
     data: &Path,
+    since_ms: i64,
     tabs: &[TabReport],
     now_ms: i64,
     emit: &dyn Fn(&str, Value),
@@ -32,7 +53,7 @@ pub fn sweep_once(
             }
         })
     };
-    let Ok(swept) = hub.with_store(data, |s| s.worker_sweep(&status_of, now_ms)) else {
+    let Ok(swept) = hub.with_store(data, |s| s.worker_sweep(&status_of, since_ms, now_ms)) else {
         return 0;
     };
     let mut closed = 0;
@@ -54,17 +75,23 @@ pub fn sweep_once(
 }
 
 /// Starts the sweeper thread; it ticks every second while the setting is on.
+/// The setting is read once and then kept fresh by the settings command.
 pub fn start(app: AppHandle) {
     use tauri::{Emitter, Manager};
     std::thread::spawn(move || {
+        let mut auto = AutoClose::default();
         loop {
             std::thread::sleep(TICK);
-            if !crate::settings_store::read(&app)
-                .orchestration
-                .worker_auto_close
-            {
+            let hub = app.state::<OrchHub>();
+            let on = hub.auto_close(|| {
+                crate::settings_store::read(&app)
+                    .orchestration
+                    .worker_auto_close
+            });
+            let now = crate::workspace::clock().0;
+            let Some(since) = auto.since(on, now) else {
                 continue;
-            }
+            };
             let state = app.state::<crate::commands::AppState>();
             let Ok(data) = crate::accounts::data_dir(&state) else {
                 continue;
@@ -72,13 +99,12 @@ pub fn start(app: AppHandle) {
             if !data.join("orchestration.db").is_file() {
                 continue;
             }
-            let hub = app.state::<OrchHub>();
             let board = app.state::<crate::cli_verbs::CliHub>();
             let (tabs, _) = board.board.tabs();
             let emit = |event: &str, payload: Value| {
                 let _ = app.emit(event, payload);
             };
-            sweep_once(&hub, data, &tabs, crate::workspace::clock().0, &emit);
+            sweep_once(&hub, data, since, &tabs, now, &emit);
         }
     });
 }
@@ -100,6 +126,18 @@ mod tests {
             last_output_ms: 0,
             exited: false,
         }
+    }
+
+    #[test]
+    fn auto_close_counts_from_when_it_was_turned_on() {
+        let mut a = AutoClose::default();
+        // On from the start: every finished worker counts.
+        assert_eq!(a.since(true, 1_000), Some(0));
+        assert_eq!(a.since(true, 2_000), Some(0));
+        assert_eq!(a.since(false, 3_000), None);
+        // Turned on again: only workers that finish from now on.
+        assert_eq!(a.since(true, 4_000), Some(4_000));
+        assert_eq!(a.since(true, 5_000), Some(4_000));
     }
 
     #[test]
@@ -142,20 +180,21 @@ mod tests {
         let emit = |e: &str, p: Value| events.lock().unwrap().push((e.to_owned(), p));
         let idle = [tab("t1", "idle")];
         let due = 1_000 + xdev_orch::CLOSE_AFTER_MS;
-        assert_eq!(sweep_once(&hub, dir.path(), &idle, due - 1, &emit), 0);
+        assert_eq!(sweep_once(&hub, dir.path(), 0, &idle, due - 1, &emit), 0);
         assert!(events.lock().unwrap().is_empty());
         // Working again cancels; the strip is told.
         let busy = [tab("t1", "working")];
-        sweep_once(&hub, dir.path(), &busy, due - 1, &emit);
+        sweep_once(&hub, dir.path(), 0, &busy, due - 1, &emit);
         assert_eq!(
             events.lock().unwrap()[0].0,
             "orchestration://worker-changed"
         );
         // Quiet, then due.
-        sweep_once(&hub, dir.path(), &idle, 5_000, &emit);
+        sweep_once(&hub, dir.path(), 0, &idle, 5_000, &emit);
         let n = sweep_once(
             &hub,
             dir.path(),
+            0,
             &idle,
             5_000 + xdev_orch::CLOSE_AFTER_MS,
             &emit,
@@ -169,6 +208,6 @@ mod tests {
         assert_eq!(close.1["dispatch"], d);
         assert_eq!(close.1["tab"], "t1");
         // Released: never again.
-        assert_eq!(sweep_once(&hub, dir.path(), &idle, 99_999_999, &emit), 0);
+        assert_eq!(sweep_once(&hub, dir.path(), 0, &idle, 99_999_999, &emit), 0);
     }
 }
