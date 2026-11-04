@@ -29,6 +29,14 @@ it("tabTitleFromPrompt: cuts by code points, drops control and bidi marks, masks
   expect(tabTitleFromPrompt("use sk_live_abcdefghijklmnopqrstuvwxyz0123 here")).toBe("use … here");
 });
 
+it("tabTitleFromPrompt: names, branches and file names stay; keys and shas are masked", () => {
+  expect(tabTitleFromPrompt("fix handleWorktreeTabsContextMenu")).toBe("fix handleWorktreeTabsContextMenu");
+  expect(tabTitleFromPrompt("on feat-keep-awake-polling-off-main")).toBe("on feat-keep-awake-polling-off-main");
+  expect(tabTitleFromPrompt("open sessions_snapshot_restore_test.ts")).toBe("open sessions_snapshot_restore_test.ts");
+  expect(tabTitleFromPrompt(`token ghp_${"aB3".repeat(12)} leaked`)).toBe("token … leaked");
+  expect(tabTitleFromPrompt("revert 0123456789abcdef0123456789abcdef01234567")).toBe("revert …");
+});
+
 function tab(over: Partial<Tab> = {}): Tab {
   return { id: "t1", worktree: PATH, profileId: "claude", account: null, accountSource: null, permissions: "ask", agent: true, status: "working", cli: "claude", unread: false, unreadAt: null, unreadReason: null, title: null, renamed: false, autoTitled: false, resumeOf: null, forkOf: null, agentSession: "abc", openedAt: 0, pinned: false, color: "none", client: {} as never, ...over };
 }
