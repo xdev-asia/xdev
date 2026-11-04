@@ -82,6 +82,8 @@ export function WorktreeChanges(props: {
   const [askPushed, setAskPushed] = useState(false);
   // Bumped when the branch may have moved, so the ship bar reads again.
   const [shipKey, setShipKey] = useState(0);
+  // The base ref the ship bar compares against; a change reloads the history graph.
+  const [base, setBase] = useState<string | undefined>(undefined);
   // Settings → Git, read with the list so a change there shows on the next focus.
   const [git, setGit] = useState<GitSettings>(DEFAULT_GIT_SETTINGS);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -479,6 +481,7 @@ export function WorktreeChanges(props: {
           git={git}
           onCommit={() => (message.trim() === "" ? field.current?.focus() : blocked ? undefined : void commit())}
           onChanged={() => props.onShipChanged?.()}
+          onBase={setBase}
           hasMessage={message.trim() !== ""}
           onCommitFirst={() => (blocked ? Promise.resolve(false) : commit())}
           onFixPush={props.onFixPush}
@@ -609,7 +612,7 @@ export function WorktreeChanges(props: {
           </label>
         )}
       </ConfirmDialog>
-      <HistoryPanel api={api} worktree={path} reloadKey={shipKey} onOpenCommit={(id, file) => props.onOpenCommit?.(id, file)} />
+      <HistoryPanel api={api} worktree={path} base={base} reloadKey={shipKey} onOpenCommit={(id, file) => props.onOpenCommit?.(id, file)} />
     </div>
   );
 }

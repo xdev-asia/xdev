@@ -69,6 +69,8 @@ export function ShipBar(props: {
   // Commits (or amends) the checked files as the Commit button does; true when a commit was made.
   // The Commit & … entries stop when it is false.
   onCommitFirst?(): Promise<boolean>;
+  // The base ref the bar compares against, whenever it changes.
+  onBase?(base: string): void;
 }): JSX.Element {
   const { api, worktree, prs } = props;
   const git = props.git ?? DEFAULT_GIT_SETTINGS;
@@ -105,6 +107,12 @@ export function ShipBar(props: {
       if (seq === reads.current) setError(toApiError(e));
     }
   }
+
+  const shipBase = ship?.base;
+  useEffect(() => {
+    if (shipBase !== undefined) props.onBase?.(shipBase);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shipBase]);
 
   useEffect(() => {
     void refresh();
