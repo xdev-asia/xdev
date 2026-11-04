@@ -1,4 +1,4 @@
-import type { Api, HookDetail, PtyInfo, PtyProfile, RestoreMode } from "@/api";
+import { toApiError, type Api, type HookDetail, type PtyInfo, type PtyProfile, type RestoreMode } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
 import { addTab, leaves, paneOf, pinFirst, removeTab, replaceTab, single, splitPane, type PaneDir, type PaneLayout } from "./paneTree";
 import { LAYOUT_VERSION, fromSnapshot, toSnapshot, type LayoutSnapshot, type RestoreOptions, type RestoreReport, type SessionFallback, type TabSnapshot, type WorktreeSnapshot } from "./layoutSnapshot";
@@ -263,9 +263,14 @@ export class Sessions {
     this.attaching.set(id, null);
     try {
       await entry.tab.client.attach(from);
-    } catch {
-      this.attaching.delete(id);
-      return null;
+    } catch (e) {
+      // Only a pty the service does not hold comes back the usual way (a resume); any other failure
+      // keeps the tab, which attaches again when it starts and shows that error if it fails again.
+      if (toApiError(e).code === "pty_gone") {
+        this.attaching.delete(id);
+        return null;
+      }
+      entry.tab.client.attachOnStart(from);
     }
     const color = TAB_COLORS.includes(snap.color) ? snap.color : "none";
     entry.tab = {
