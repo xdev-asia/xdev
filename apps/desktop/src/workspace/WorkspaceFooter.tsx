@@ -128,7 +128,7 @@ export function LiveWorkspaceFooter(props: {
   hidden?: boolean;
 }): JSX.Element {
   const { api, hidden, ...rest } = props;
-  const quota = useQuota(api, hidden === true);
+  const { quota } = useQuota(api, hidden === true);
   const update = useUpdate(api);
   return <WorkspaceFooter {...rest} hidden={hidden} quota={quota} update={update.state} onRestartUpdate={update.restart} />;
 }

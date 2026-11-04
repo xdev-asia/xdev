@@ -199,7 +199,7 @@ function VaultView(props: { vault: Vault; kit?: KitHost; onChangeFolder(): Promi
   const [typeInto, setTypeInto] = useState<string | null>(null);
   const { state } = doc;
   const searchOpen = query.trim() !== "";
-  const quota = useQuota(api, app === "accounts");
+  const { quota } = useQuota(api, app === "accounts");
   const update = useUpdate(api);
   const loading = state.status === "loading";
 
