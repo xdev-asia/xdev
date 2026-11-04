@@ -4,13 +4,16 @@
 
 pub mod error;
 pub mod ids;
+pub mod mail;
 pub mod model;
+pub mod render;
 pub mod runs;
 pub mod skills;
 pub mod store;
 pub mod tasks;
 
 pub use error::OrchError;
+pub use mail::{CheckOpts, Identity, InboxRow, NewMessage, SendReceipt};
 pub use model::*;
 pub use runs::RunDetail;
 pub use skills::{SKILL_NAME, SkillAgent, SkillStatus, SkillTarget};

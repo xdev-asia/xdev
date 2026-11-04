@@ -153,6 +153,12 @@ impl OrchHub {
         }
     }
 
+    /// Wakes every `check --wait` and the pump: new mail was written.
+    pub fn notify_mail(&self) {
+        *self.mail_gen.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+        self.mail.notify_all();
+    }
+
     pub fn next_read(&self) -> u64 {
         self.next_read.fetch_add(1, Ordering::Relaxed) + 1
     }
@@ -395,6 +401,95 @@ pub fn handle(
             })?;
             to_value(&task)
         }
+        "send" => {
+            let to = text_param(req, "to")
+                .ok_or_else(|| AppError::new("bad_request", "send needs --to"))?;
+            let kind = enum_param(req, "type")?.unwrap_or(xdev_orch::MessageType::Status);
+            let priority = enum_param(req, "priority")?.unwrap_or(xdev_orch::Priority::Normal);
+            let mut payload = match text_param(req, "payload") {
+                Some(p) => Some(serde_json::from_str::<Value>(&p).map_err(|e| {
+                    AppError::new("bad_request", format!("--payload is not JSON: {e}"))
+                })?),
+                None => req
+                    .params
+                    .get("payload")
+                    .filter(|v| !v.is_string())
+                    .cloned(),
+            };
+            if let Some(outcome) = text_param(req, "outcome") {
+                let mut obj = match payload.take() {
+                    Some(Value::Object(o)) => o,
+                    _ => serde_json::Map::new(),
+                };
+                obj.insert("outcome".to_owned(), Value::String(outcome));
+                payload = Some(Value::Object(obj));
+            }
+            let msg = xdev_orch::NewMessage {
+                to,
+                kind,
+                subject: text_param(req, "subject").unwrap_or_default(),
+                body: text_param(req, "body").unwrap_or_default(),
+                priority,
+                payload,
+                thread: text_param(req, "thread"),
+            };
+            let (tabs, _) = ctx.board.tabs();
+            let idle = |tab: &str| {
+                tabs.iter()
+                    .any(|t| t.id == tab && !t.exited && (t.status == "idle" || t.status == "done"))
+            };
+            let receipt = ctx.orch.with_store(ctx.data, |s| {
+                let me = s.identity(acting.tab.as_deref(), acting.run.as_deref())?;
+                s.send(&me, &msg, ctx.now_ms, &idle)
+            })?;
+            if receipt.count > 0 {
+                ctx.orch.notify_mail();
+            }
+            to_value(&receipt)
+        }
+        "check" => {
+            let types: Vec<xdev_orch::MessageType> = strings_param(req, "types")
+                .iter()
+                .map(|t| {
+                    xdev_orch::store::enum_from(t)
+                        .map_err(|_| AppError::new("bad_request", format!("unknown type {t}")))
+                })
+                .collect::<Result<_, _>>()?;
+            let opts = xdev_orch::CheckOpts {
+                peek: flag(req, "peek"),
+                all: flag(req, "all"),
+                types,
+            };
+            let got = ctx.orch.with_store(ctx.data, |s| {
+                let me = s.identity(acting.tab.as_deref(), acting.run.as_deref())?;
+                s.check(&me.address, &opts, ctx.now_ms)
+            })?;
+            to_value(&got)
+        }
+        "inbox" => {
+            let limit = req
+                .params
+                .get("limit")
+                .and_then(Value::as_u64)
+                .map_or(20, |n| n.clamp(1, 200) as usize);
+            let full = flag(req, "full");
+            let rows = ctx.orch.with_store(ctx.data, |s| {
+                let me = s.identity(acting.tab.as_deref(), acting.run.as_deref())?;
+                s.inbox(&me.address, limit, full)
+            })?;
+            to_value(&rows)
+        }
+        "reply" => {
+            let id = text_param(req, "id")
+                .ok_or_else(|| AppError::new("bad_request", "reply needs a message id"))?;
+            let body = text_param(req, "body").unwrap_or_default();
+            let receipt = ctx.orch.with_store(ctx.data, |s| {
+                let me = s.identity(acting.tab.as_deref(), acting.run.as_deref())?;
+                s.reply(&me, &id, &body, ctx.now_ms)
+            })?;
+            ctx.orch.notify_mail();
+            to_value(&receipt)
+        }
         other => Err(AppError::new(
             "unsupported",
             format!("orchestration {other} is not built yet"),
@@ -485,6 +580,57 @@ mod tests {
         assert_eq!(missing.unwrap_err().code, "not_found");
         let outside = f.call(None, "orchestration.run-use", json!({"id": a["id"]}));
         assert_eq!(outside.unwrap_err().code, "no_run");
+    }
+
+    #[test]
+    fn mail_verbs_send_check_inbox_and_reply_between_two_runs_tabs() {
+        let f = crate::cli_verbs::tests::fixture();
+        let call =
+            |tab: &str, m: &str, p: Value| f.call(Some(tab), &format!("orchestration.{m}"), p);
+        let run = call("p-lead", "run-create", json!({"objective": "o"})).unwrap();
+        let to = format!("run:{}", run["id"].as_str().unwrap());
+
+        // A second tab joins the run and mails the coordinator.
+        call("p-child", "run-use", json!({"id": run["id"]})).unwrap();
+        let sent = call(
+            "p-child",
+            "send",
+            json!({"to": to, "type": "question", "subject": "q", "body": "which?", "payload": "{\"a\":1}"}),
+        )
+        .unwrap();
+        assert_eq!(sent["count"], 1);
+        let bad = call("p-child", "send", json!({"to": to, "payload": "{nope"}));
+        assert_eq!(bad.unwrap_err().code, "bad_request");
+        let group = call(
+            "p-child",
+            "send",
+            json!({"to": "@all", "type": "heartbeat"}),
+        );
+        assert_eq!(group.unwrap_err().code, "bad_request");
+
+        let inbox = call("p-lead", "inbox", json!({})).unwrap();
+        assert_eq!(inbox.as_array().unwrap().len(), 1);
+        assert_eq!(inbox[0]["read"], false);
+        let peek = call("p-lead", "check", json!({"peek": true})).unwrap();
+        assert_eq!(peek["messages"].as_array().unwrap().len(), 1);
+        let got = call("p-lead", "check", json!({})).unwrap();
+        let msg = &got["messages"][0];
+        assert_eq!(msg["body"], "which?");
+        assert_eq!(msg["payload"]["a"], 1);
+        assert_eq!(got["rendered"].as_array().unwrap().len(), 1);
+        assert_eq!(got["remaining"], 0);
+        let none = call("p-lead", "check", json!({})).unwrap();
+        assert!(none["messages"].as_array().unwrap().is_empty());
+
+        // Only the addressee answers; the answer is mail for the asker.
+        // Both tabs are coordinators of one run and share its mailbox, so the
+        // answer to a message sent by the run lands in the run's mailbox.
+        let missing = call("p-lead", "reply", json!({"id": "msg_nope", "body": "x"}));
+        assert_eq!(missing.unwrap_err().code, "not_found");
+        call("p-lead", "reply", json!({"id": msg["id"], "body": "this"})).unwrap();
+        let back = call("p-lead", "check", json!({"types": ["status"]})).unwrap();
+        assert_eq!(back["messages"][0]["subject"], "Re: q");
+        assert_eq!(back["messages"][0]["threadId"], msg["id"]);
     }
 
     #[test]
