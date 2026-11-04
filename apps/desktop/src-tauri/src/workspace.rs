@@ -148,7 +148,7 @@ pub(crate) fn lock_guard(lock: &WorkspaceLock) -> std::sync::MutexGuard<'_, ()> 
 
 /// Loads the registry, runs `f`, and saves when `f` changed it. A failing
 /// `f` saves nothing.
-fn update<T>(
+pub(crate) fn update<T>(
     data: &Path,
     lock: &WorkspaceLock,
     f: impl FnOnce(&mut Registry) -> Result<T, WorkspaceError>,
