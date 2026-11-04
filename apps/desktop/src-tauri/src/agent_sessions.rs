@@ -2,12 +2,17 @@
 //! machine, matched to the workspace's repos and worktrees, filtered and
 //! sorted for the Sessions panel.
 
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use xdev_kit::{Agent, AgentSession, Home, SessionIndex};
+use xdev_kit::{
+    Agent, AgentSession, FileMark, Home, SessionIndex, TextRole, TranscriptEvent, scan_transcripts,
+};
+use xdev_store::{SessionTextIndex, StoreError, StoredText, remove_session_index};
 use xdev_workspace::{Registry, path_key};
 
 use crate::commands::{AppState, CmdError};
@@ -109,30 +114,93 @@ pub struct SessionSearchStatus {
     pub indexing: bool,
 }
 
-/// The state of the text index; counts stay zero until the index is built.
+/// The text index file, apart from the doc store and the metadata index.
+fn search_path(data: &Path) -> PathBuf {
+    data.join("kit").join("session-search.sqlite")
+}
+
+fn store_err(e: StoreError) -> CmdError {
+    CmdError {
+        code: "io",
+        detail: Some(e.to_string()),
+    }
+}
+
+/// True while a refresh reads logs into the text index.
+static INDEXING: AtomicBool = AtomicBool::new(false);
+
+struct Indexing;
+
+impl Indexing {
+    fn begin() -> Indexing {
+        INDEXING.store(true, Ordering::SeqCst);
+        Indexing
+    }
+}
+
+impl Drop for Indexing {
+    fn drop(&mut self) {
+        INDEXING.store(false, Ordering::SeqCst);
+    }
+}
+
+/// The state of the text index. It never creates the index: with no consent
+/// or no file the counts are zero.
 #[tauri::command(async)]
-pub fn session_search_status(app: tauri::AppHandle) -> Result<SessionSearchStatus, CmdError> {
+pub fn session_search_status(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<SessionSearchStatus, CmdError> {
     let enabled = crate::settings_store::read(&app).agents.session_search;
+    let ctx = Ctx::of(&state)?;
+    let path = search_path(&ctx.data);
+    let (mut sessions, mut messages, mut updated_at) = (0, 0, None);
+    if enabled && path.is_file() {
+        let index = SessionTextIndex::open(&path).map_err(store_err)?;
+        (sessions, messages) = index.counts().map_err(store_err)?;
+        updated_at = index.updated_at().map_err(store_err)?;
+    }
     Ok(SessionSearchStatus {
         enabled,
-        sessions: 0,
-        messages: 0,
-        updated_at: None,
-        indexing: false,
+        sessions,
+        messages,
+        updated_at,
+        indexing: INDEXING.load(Ordering::SeqCst),
     })
+}
+
+type Saved = Result<crate::settings::AgentsSettings, CmdError>;
+
+/// Stores `settings` with the search off first, and only then deletes the
+/// index, so a failed delete never leaves the search on over a half-removed
+/// index. Returns what `store` returned.
+fn clear_search(
+    mut settings: crate::settings::AgentsSettings,
+    store: impl FnOnce(crate::settings::AgentsSettings) -> Saved,
+    path: &Path,
+) -> Saved {
+    settings.session_search = false;
+    let saved = store(settings)?;
+    remove_session_index(path).map_err(store_err)?;
+    Ok(saved)
 }
 
 /// Turns the search off, then deletes the text index.
 #[tauri::command(async)]
-pub fn session_search_clear(
-    app: tauri::AppHandle,
-) -> Result<crate::settings::AgentsSettings, CmdError> {
-    let mut agents = crate::settings_store::read(&app).agents;
-    agents.session_search = false;
-    crate::settings_store::write(&app, &[crate::settings::SettingsSection::Agents], |s| {
-        s.agents = agents
-    })
-    .map(|s| s.agents)
+pub fn session_search_clear(app: tauri::AppHandle, state: State<'_, AppState>) -> Saved {
+    let ctx = Ctx::of(&state)?;
+    // A refresh holds this lock while it writes the index.
+    let _guard = INDEX.lock().unwrap_or_else(PoisonError::into_inner);
+    clear_search(
+        crate::settings_store::read(&app).agents,
+        |agents| {
+            crate::settings_store::write(&app, &[crate::settings::SettingsSection::Agents], |s| {
+                s.agents = agents
+            })
+            .map(|s| s.agents)
+        },
+        &search_path(&ctx.data),
+    )
 }
 
 /// The index of the last data dir asked for, kept between calls so a list
@@ -142,6 +210,7 @@ static INDEX: Mutex<Option<(PathBuf, SessionIndex)>> = Mutex::new(None);
 /// `refresh` reads the new log bytes first; it runs on a blocking thread.
 #[tauri::command]
 pub async fn agent_sessions(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     query: SessionQuery,
     refresh: bool,
@@ -151,8 +220,13 @@ pub async fn agent_sessions(
     }
     let ctx = Ctx::of(&state)?;
     let cutoff = refresh.then(|| history_cutoff(now_ms(), HISTORY_DAYS));
+    // Conversation text is read and searched only after the person agreed.
+    let search = crate::settings_store::read(&app)
+        .agents
+        .session_search
+        .then(|| search_path(&ctx.data));
     tauri::async_runtime::spawn_blocking(move || {
-        sessions(&ctx.data, || ctx.homes(), &query, cutoff)
+        sessions(&ctx.data, || ctx.homes(), &query, cutoff, search.as_deref())
     })
     .await
     .map_err(|e| CmdError {
@@ -169,6 +243,7 @@ fn sessions(
     homes: impl FnOnce() -> Vec<Home>,
     query: &SessionQuery,
     refresh: Option<i64>,
+    search: Option<&Path>,
 ) -> Result<Vec<SessionRow>, CmdError> {
     let mut guard = INDEX.lock().unwrap_or_else(PoisonError::into_inner);
     if guard.as_ref().is_none_or(|(dir, _)| dir != data) {
@@ -178,14 +253,78 @@ fn sessions(
         unreachable!("set just above");
     };
     if let Some(cutoff) = refresh {
-        index.refresh(&homes());
+        let homes = homes();
+        index.refresh(&homes);
         index.prune(cutoff);
         index.save(data)?;
+        if let Some(path) = search {
+            let keep: HashSet<String> = index.list().iter().map(|s| s.key.clone()).collect();
+            refresh_text(path, &homes, &keep)?;
+        }
     }
+    let hits = match (search, query.text.as_deref()) {
+        (Some(path), Some(text)) if !text.trim().is_empty() && path.is_file() => {
+            text_hits(path, text)?
+        }
+        _ => HashMap::new(),
+    };
     let folders = Folders::of(&Registry::load(data)?);
-    Ok(select(&index.list(), &folders, query, &|p| {
-        Path::new(p).is_dir()
-    }))
+    Ok(select(
+        &index.list(),
+        &folders,
+        query,
+        &|p| Path::new(p).is_dir(),
+        &hits,
+    ))
+}
+
+/// Reads what is new in the logs into the text index, then drops the texts
+/// of sessions the metadata index no longer holds (`keep`). One transaction
+/// per call; the caller holds the `INDEX` lock.
+fn refresh_text(path: &Path, homes: &[Home], keep: &HashSet<String>) -> Result<(), CmdError> {
+    let _busy = Indexing::begin();
+    let mut index = SessionTextIndex::open(path).map_err(store_err)?;
+    let mut marks: BTreeMap<String, FileMark> = index
+        .marks()
+        .map_err(store_err)?
+        .into_iter()
+        .filter_map(|(file, json)| Some((file, serde_json::from_str(&json).ok()?)))
+        .collect();
+    let before = marks.clone();
+    let (mut texts, mut reset, mut gone) = (Vec::new(), Vec::new(), Vec::new());
+    scan_transcripts(homes, &mut marks, &mut |event| match event {
+        TranscriptEvent::Reset { file } => reset.push(file),
+        TranscriptEvent::Gone { file } => gone.push(file),
+        TranscriptEvent::Text(t) => texts.push(StoredText {
+            file: t.file,
+            session_key: t.session_key,
+            role: u8::from(t.role == TextRole::Assistant),
+            text: t.text,
+            at: t.at,
+        }),
+    });
+    let changed: Vec<(String, String)> = marks
+        .iter()
+        .filter(|(file, mark)| before.get(*file) != Some(*mark))
+        .filter_map(|(file, mark)| Some((file.clone(), serde_json::to_string(mark).ok()?)))
+        .collect();
+    if !(texts.is_empty() && reset.is_empty() && gone.is_empty() && changed.is_empty()) {
+        index
+            .apply(texts, &changed, &reset, &gone)
+            .map_err(store_err)?;
+    }
+    index.retain_sessions(keep).map_err(store_err)
+}
+
+/// The best snippet of each session whose messages hold the words of `text`.
+fn text_hits(path: &Path, text: &str) -> Result<HashMap<String, String>, CmdError> {
+    let index = SessionTextIndex::open(path).map_err(store_err)?;
+    Ok(index
+        .search(text, LIMIT_MAX as usize)
+        .map_err(store_err)?
+        .into_iter()
+        .map(|h| (h.session_key, h.snippet))
+        .collect())
 }
 
 /// The sessions that ran inside the worktree at `path`, newest first, after
@@ -210,6 +349,7 @@ pub(crate) fn worktree_sessions(
         homes,
         &query,
         Some(history_cutoff(now_ms(), HISTORY_DAYS)),
+        None,
     )
 }
 
@@ -276,12 +416,15 @@ fn matches(session: &AgentSession, words: &[String]) -> bool {
 }
 
 /// Filters, sorts and cuts `all` for `query`. `exists` tells whether a
-/// folder is still on the disk.
+/// folder is still on the disk. `hits` holds the snippet of each session
+/// (by key) whose messages matched the text; such a session is picked even
+/// when its metadata does not match.
 fn select(
     all: &[&AgentSession],
     folders: &Folders,
     query: &SessionQuery,
     exists: &dyn Fn(&str) -> bool,
+    hits: &HashMap<String, String>,
 ) -> Vec<SessionRow> {
     let words: Vec<String> = query
         .text
@@ -301,7 +444,7 @@ fn select(
         .copied()
         .filter(|s| query.agent.is_none_or(|a| s.agent == a))
         .filter(|s| query.home_id.as_ref().is_none_or(|h| s.home_id == *h))
-        .filter(|s| matches(s, &words))
+        .filter(|s| matches(s, &words) || hits.contains_key(&s.key))
         .map(|s| (s, s.cwd.as_deref().and_then(|c| folders.find(c))))
         .filter(|(_, found)| {
             let Some(want) = scope_key.as_deref() else {
@@ -332,7 +475,7 @@ fn select(
             session: s.clone(),
             worktree: found.map(|(f, _)| f.to_string()),
             repo: found.map(|(_, r)| r.to_string()),
-            hit: None,
+            hit: hits.get(&s.key).cloned(),
         })
         .collect()
 }

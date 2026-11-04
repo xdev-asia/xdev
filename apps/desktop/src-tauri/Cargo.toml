@@ -31,6 +31,7 @@ xdev-ipc.workspace = true
 xdev-kit.workspace = true
 xdev-policy.workspace = true
 xdev-pty.workspace = true
+xdev-store.workspace = true
 xdev-workspace.workspace = true
 
 [dev-dependencies]
