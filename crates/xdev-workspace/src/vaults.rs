@@ -33,9 +33,50 @@ pub struct VaultView {
     pub exists: bool,
 }
 
+const DEFAULT_DOCS_DIR: &str = "docs";
+
+/// The repo's docs folder as a relative path, `docs` when none is set.
+pub(crate) fn docs_dir_text(entry: &RepoEntry) -> String {
+    entry
+        .docs_dir
+        .clone()
+        .unwrap_or_else(|| DEFAULT_DOCS_DIR.to_owned())
+}
+
 /// The folder a repo's own vault lives in.
 pub fn repo_docs_dir(entry: &RepoEntry) -> PathBuf {
-    entry.path.join("docs")
+    entry.path.join(docs_dir_text(entry))
+}
+
+/// Checks a docs folder typed by the person. Returns `None` for an empty
+/// string (back to the default), else the folder with `/` separators and no
+/// `.` parts. A `..` part, a root, a drive or a UNC prefix is refused, in
+/// either separator, whatever the host OS.
+pub fn validate_docs_dir(s: &str) -> Result<Option<String>, WorkspaceError> {
+    let text = s.trim();
+    if text.is_empty() {
+        return Ok(None);
+    }
+    let bad = || WorkspaceError::BadPath(text.to_owned());
+    let unified = text.replace('\\', "/");
+    let drive = unified.as_bytes();
+    if unified.starts_with('/')
+        || (drive.len() >= 2 && drive[0].is_ascii_alphabetic() && drive[1] == b':')
+    {
+        return Err(bad());
+    }
+    let mut parts = Vec::new();
+    for part in unified.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => return Err(bad()),
+            p => parts.push(p),
+        }
+    }
+    if parts.is_empty() {
+        return Err(bad());
+    }
+    Ok(Some(parts.join("/")))
 }
 
 fn lossy(path: &Path) -> String {
