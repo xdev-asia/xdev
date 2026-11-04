@@ -34,6 +34,7 @@ xdev-awake.workspace = true
 xdev-core.workspace = true
 xdev-git.workspace = true
 xdev-id.workspace = true
+xdev-input-source.workspace = true
 xdev-ipc.workspace = true
 xdev-kit.workspace = true
 xdev-orch.workspace = true
@@ -41,9 +42,6 @@ xdev-policy.workspace = true
 xdev-pty.workspace = true
 xdev-store.workspace = true
 xdev-workspace.workspace = true
-
-[target.'cfg(target_os = "macos")'.dependencies]
-core-foundation = "0.10"
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
