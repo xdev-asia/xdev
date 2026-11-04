@@ -2160,5 +2160,9 @@
   "review.tree.changed": "Has changes",
   "review.kind.added": "Added",
   "review.kind.modified": "Modified",
-  "review.kind.deleted": "Deleted"
+  "review.kind.deleted": "Deleted",
+  "editor.conflict.bar": "Merge conflict",
+  "editor.conflict.current": "Accept current",
+  "editor.conflict.incoming": "Accept incoming",
+  "editor.conflict.both": "Accept both"
 }
