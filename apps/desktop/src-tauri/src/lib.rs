@@ -30,6 +30,7 @@ mod ship;
 mod squads;
 mod status;
 mod tasks;
+mod tray;
 mod updater;
 mod workspace;
 
@@ -72,6 +73,13 @@ pub fn run() {
         .manage(status::Shown::default())
         .manage(cli_verbs::CliHub::default())
         .manage(keybindings::LastSent::default())
+        .on_window_event(|window, event| {
+            if window.label() == "main"
+                && let tauri::WindowEvent::Focused(true) = event
+            {
+                shell::window_focused(window.app_handle());
+            }
+        })
         .setup(move |app| {
             updater::start(app.handle().clone());
             workspace::start_sweep(app.handle());
@@ -80,6 +88,7 @@ pub fn run() {
                 app.manage(settings_store::SettingsStore::new(file));
             }
             workspace::start_migrations(app.handle());
+            tray::sync(app.handle());
             // Off the main thread: starting the service may take a moment.
             {
                 let app = app.handle().clone();
@@ -145,6 +154,8 @@ pub fn run() {
             shell::shell_close_requested,
             shell::shell_quit,
             shell::shell_quit_cancelled,
+            shell::shell_labels_set,
+            shell::tray_attention,
             updater::update_check,
             updater::update_phase,
             commands::open_vault,
@@ -367,6 +378,7 @@ pub fn run() {
         .expect("failed to start xDev")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
+                tray::remove(app);
                 let mode = shell::quit_mode(app);
                 let on_quit = shell::on_quit_for(mode, settings_store::read(app).terminal.on_quit);
                 app.state::<pty::Ptys>().quit(on_quit);

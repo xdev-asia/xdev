@@ -261,8 +261,13 @@ pub fn shell_close_requested(
 /// anything) and closed, so the webview's quit guard decides as for a click on
 /// the close button.
 #[tauri::command]
-pub fn shell_quit(app: AppHandle, state: State<'_, ShellState>, mode: QuitMode) {
-    state.set_quitting(Some(mode));
+pub fn shell_quit(app: AppHandle, mode: QuitMode) {
+    quit(&app, mode);
+}
+
+/// [`shell_quit`] for Rust callers (the tray and the native menu).
+pub fn quit(app: &AppHandle, mode: QuitMode) {
+    app.state::<ShellState>().set_quitting(Some(mode));
     let Some(window) = app.get_webview_window(MAIN) else {
         // No window to ask: leave now.
         app.exit(0);
@@ -274,6 +279,38 @@ pub fn shell_quit(app: AppHandle, state: State<'_, ShellState>, mode: QuitMode) 
     if window.close().is_err() {
         app.exit(0);
     }
+}
+
+/// Whether the attention dot is wanted: only while the window cannot be seen.
+fn attention_wanted(visible: bool, minimized: bool) -> bool {
+    !visible || minimized
+}
+
+/// The webview sends the labels of the tray and native menu in the person's
+/// language; both are rebuilt with them.
+#[tauri::command]
+pub fn shell_labels_set(app: AppHandle, state: State<'_, ShellState>, labels: ShellLabels) {
+    *state.labels.lock().unwrap_or_else(|e| e.into_inner()) = labels;
+    crate::tray::sync(&app);
+}
+
+/// An agent needs the person: light the tray dot if they cannot see the window.
+#[tauri::command]
+pub fn tray_attention(app: AppHandle) {
+    let hidden = app.get_webview_window(MAIN).is_none_or(|w| {
+        attention_wanted(
+            w.is_visible().unwrap_or(true),
+            w.is_minimized().unwrap_or(false),
+        )
+    });
+    if hidden {
+        crate::tray::set_attention(&app, true);
+    }
+}
+
+/// The main window came to the front: the dot has done its job.
+pub fn window_focused(app: &AppHandle) {
+    crate::tray::set_attention(app, false);
 }
 
 /// The person answered the quit guard with Cancel.
@@ -335,6 +372,13 @@ mod tests {
             assert_eq!(on_quit_for(Some(QuitMode::Restart), setting), setting);
             assert_eq!(on_quit_for(None, setting), setting);
         }
+    }
+
+    #[test]
+    fn the_dot_is_for_a_window_that_cannot_be_seen() {
+        assert!(attention_wanted(false, false));
+        assert!(attention_wanted(true, true));
+        assert!(!attention_wanted(true, false));
     }
 
     #[test]
