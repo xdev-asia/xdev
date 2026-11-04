@@ -136,6 +136,9 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("repos.issueCommand", "settings.repos.issue", ["issue", "prompt", "template", "agent", "github", "lệnh", "lenh", "mẫu", "mau"], "settings.repos.issue.hint"),
   e("repos.repoFile", "settings.repos.file", ["xdev.toml", "shared", "tabs", "unknown", "node_modules", "tab mặc định", "tab mac dinh"], "settings.repos.file.hint"),
   e("repos.sharedScripts", "settings.repos.scripts.shared", ["trust", "script", "tin cậy", "tin cay"], "settings.repos.scripts.trustNote"),
+  // Account
+  e("account.xdevId", "account.xdevId", ["account", "sign in", "sign out", "login", "xdev id", "tài khoản", "tai khoan", "đăng nhập", "dang nhap", "đăng xuất", "dang xuat"], "account.about"),
+  e("account.server", "account.server.title", ["server", "on-prem", "self-hosted", "url", "address", "xdev id", "máy chủ", "may chu", "địa chỉ", "dia chi"], "account.server.hint"),
   // Open in
   e("openIn.apps", "openIn.title", ["editor", "vscode", "app", "command", "args", "mở bằng", "mo bang"], "openIn.intro"),
   // Git

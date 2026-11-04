@@ -28,7 +28,7 @@ use crate::settings::{
     AgentsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings, KeySettings,
     MacOptionAsAlt, NavigationSettings, OpenInSettings, OrchestrationSettings, RestoreMode,
     SettingsChanged, ShellSettings, SidebarLook, SidebarPrefs, StatusBarItems, StatusSettings,
-    TerminalSettings, Theme, UiSettings, UpdateChannel, UsageSettings,
+    TerminalSettings, Theme, UiSettings, UpdateChannel, UsageSettings, XdevIdSettings,
 };
 use crate::shell::{CloseIntent, CloseRequest, HelpLink, MenuEvent, QuitMode, ShellLabels};
 use crate::ship::ShipView;
@@ -39,10 +39,14 @@ use crate::updater::{UpdateInfo, UpdatePhase};
 use crate::workspace::{
     CloneProgress, CreateRequest, WorktreeChange, WorktreeCreated, WorktreeFileDiff,
 };
+use ::xdev_id::XdevIdState;
 
 /// Each type's dependencies are written with it, so only the roots are here.
 fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     CmdError::export_all(cfg)?;
+    XdevIdState::export_all(cfg)?;
+    ::xdev_id::XdevIdServer::export_all(cfg)?;
+    ::xdev_id::ServerSource::export_all(cfg)?;
     Changed::export_all(cfg)?;
     VaultSetup::export_all(cfg)?;
     VcsState::export_all(cfg)?;
@@ -112,6 +116,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     AgentsSettings::export_all(cfg)?;
     AwakeView::export_all(cfg)?;
     UsageSettings::export_all(cfg)?;
+    XdevIdSettings::export_all(cfg)?;
     OrchestrationSettings::export_all(cfg)?;
     WorkerOpen::export_all(cfg)?;
     WorkerOpenOutcome::export_all(cfg)?;
