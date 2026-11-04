@@ -1,4 +1,4 @@
-import { dropPayloads, type TargetShell } from "./pathPaste";
+import { dropPayloads, type ShellKind } from "./pathPaste";
 
 export type DropEvent = {
   type: "enter" | "over" | "drop" | "leave";
@@ -6,7 +6,7 @@ export type DropEvent = {
   position?: { x: number; y: number };
 };
 
-type DropTarget = { write(data: string): Promise<void>; ready(): boolean; focus(): void };
+type DropTarget = { write(data: string): Promise<void>; ready(): boolean; focus(): void; shell(): ShellKind };
 
 const DROP_CLASS = "terminal-drop";
 
@@ -33,9 +33,10 @@ export function startFileDrop(deps: {
   /** Physical pixels per CSS pixel. */
   scale(): number;
   hit(x: number, y: number): Element | null;
-  shell: TargetShell;
   /** A write failed. */
   onError(): void;
+  /** Some dropped paths were left out: they cannot be written safely for the pane's shell. */
+  onRejected(count: number): void;
 }): () => void {
   let marked: HTMLElement | null = null;
 
@@ -60,8 +61,10 @@ export function startFileDrop(deps: {
     if (e.type !== "drop") return mark(pane?.[0] ?? null);
     mark(null);
     if (!pane || !e.paths?.length || !pane[1].ready()) return;
+    const { payloads, rejected } = dropPayloads(e.paths, pane[1].shell());
+    if (rejected > 0) deps.onRejected(rejected);
     try {
-      for (const data of dropPayloads(e.paths, deps.shell)) await pane[1].write(data);
+      for (const data of payloads) await pane[1].write(data);
     } catch {
       deps.onError();
       return;

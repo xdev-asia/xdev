@@ -2183,6 +2183,7 @@
   "settings.terminal.keyboard.state.right": "The right Option key sends Alt/Esc; the left one types special characters.",
   "settings.terminal.keyboard.choose": "Choose Both for Option shortcuts, Off for accents and symbols, or Left or Right to use one Option key for each.",
   "terminal.input.dropFailed": "Could not insert the dropped paths.",
+  "terminal.input.dropRejected": "Some dropped paths were left out: a name with a control character or a character this shell cannot take safely.",
   "terminal.input.imageSaveFailed": "Could not save the clipboard image.",
   "terminal.input.imageTooLarge": "The clipboard image is too large."
 }
