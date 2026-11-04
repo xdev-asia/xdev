@@ -1703,6 +1703,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         version={pkg.version}
         onOpenUsage={openUsage}
         onManageAccounts={openAccounts}
+        onUseAccount={(provider, name) => void api.accountActivate(provider, name).catch(() => {})}
         hidden={view === "docs"}
       />
 

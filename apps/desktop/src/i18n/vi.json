@@ -1785,6 +1785,7 @@
   "usage.popover.state.unknown": "Chưa rõ",
   "usage.popover.signIn": "Đăng nhập lại tài khoản {name}",
   "usage.popover.details": "Chi tiết & lịch sử mức dùng",
+  "usage.popover.use": "Dùng",
   "usage.popover.manage": "Quản lý tài khoản…",
   "usage.popover.open": "Xem mức dùng từng tài khoản",
   "workspace.children": "{count}",

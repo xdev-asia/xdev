@@ -3086,3 +3086,12 @@ button.ws-tree-row:focus-visible {
 .ws-issue[data-state="closed"] .ws-checks-title {
   color: var(--text-2);
 }
+
+.ws-usage-active {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.ws-usage-use {
+  margin-left: auto;
+}

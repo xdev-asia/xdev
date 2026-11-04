@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
-import type { Accounts, Quota } from "@/api";
+import type { Accounts, Provider, Quota } from "@/api";
 import { useI18n } from "@/i18n";
 import { resetLabel, USAGE_MODE_KEY, usageRows, type UsageMode, type UsageRow } from "./usageModel";
 
@@ -47,6 +47,8 @@ export interface UsagePopoverViewProps {
   onRefresh(): void;
   onOpenDetails(): void;
   onManageAccounts(): void;
+  /** Makes `account` the active one of `provider`; without it the rows have no "Use" action. */
+  onUse?(provider: Provider, account: string): void;
   onClose(): void;
 }
 
@@ -99,6 +101,12 @@ export function UsagePopoverView(props: UsagePopoverViewProps): JSX.Element {
                   <div className="ws-usage-line">
                     <span className="ws-usage-name">{row.account}</span>
                     {row.provider && <span className="ws-usage-provider">{row.provider}</span>}
+                    {row.active && <span className="ws-usage-active" data-action="usage-active">{t("accounts.switch.active")}</span>}
+                    {!row.active && !row.signIn && row.provider && props.onUse && (
+                      <button type="button" className="ws-usage-btn ws-usage-use" data-action="usage-use" aria-label={t("accounts.switch.useAria", { name: row.account })} onClick={() => props.onUse?.(row.provider as Provider, row.account)}>
+                        {t("usage.popover.use")}
+                      </button>
+                    )}
                     {mode === "compact" && top ? (
                       <>
                         <Bar state={row.state} percent={top.percent ?? 0} label={`${row.account}: ${top.label}`} />
@@ -149,6 +157,7 @@ export function UsagePopover(props: {
   onRefresh(): void;
   onOpenDetails(): void;
   onManageAccounts(): void;
+  onUse?(provider: Provider, account: string): void;
   onClose(): void;
 }): JSX.Element {
   const { t } = useI18n();
@@ -173,6 +182,7 @@ export function UsagePopover(props: {
       onRefresh={props.onRefresh}
       onOpenDetails={props.onOpenDetails}
       onManageAccounts={props.onManageAccounts}
+      onUse={props.onUse}
       onClose={props.onClose}
     />
   );
