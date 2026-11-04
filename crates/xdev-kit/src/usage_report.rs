@@ -98,11 +98,12 @@ pub fn report(index: &UsageIndex, q: &ReportQuery) -> UsageReport {
     }
 }
 
-/// Folder paths as comparable keys: on Windows the separators are one kind
-/// and the case is folded, as the file system does.
+/// Folder paths as comparable keys: on Windows the separators are one kind,
+/// the case is folded as the file system does, and a canonical spelling
+/// (`\\?\E:\x`, `\\?\UNC\host\share`) reads as its plain one.
 fn key(path: &str) -> String {
     let mut k = if cfg!(windows) {
-        path.replace('\\', "/").to_lowercase()
+        windows_key(path)
     } else {
         path.to_owned()
     };
@@ -110,6 +111,18 @@ fn key(path: &str) -> String {
         k.pop();
     }
     k
+}
+
+/// The Windows form of a key, a pure string function so it is testable on
+/// every OS.
+fn windows_key(path: &str) -> String {
+    let text = path.replace('\\', "/").to_lowercase();
+    if let Some(rest) = text.strip_prefix("//?/unc/") {
+        format!("//{rest}")
+    } else {
+        text.strip_prefix("//?/")
+            .map_or(text.clone(), str::to_owned)
+    }
 }
 
 /// Whether `folder` is one of `roots` or inside one, by path component, not
@@ -136,6 +149,13 @@ mod tests {
 
     use super::*;
     use crate::{Home, HomeSource, UsageQuery, summarize};
+
+    #[test]
+    fn windows_key_reads_a_canonical_path_as_its_plain_spelling() {
+        assert_eq!(windows_key(r"\\?\E:\Codes\xDev"), "e:/codes/xdev");
+        assert_eq!(windows_key(r"\\?\UNC\Host\Share\x"), "//host/share/x");
+        assert_eq!(windows_key(r"E:\Codes\xDev"), "e:/codes/xdev");
+    }
 
     fn tok(n: u64) -> Tokens {
         Tokens {
