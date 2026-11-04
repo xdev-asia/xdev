@@ -397,6 +397,30 @@ fn script_of(
     })
 }
 
+/// The shared paths of the worktree's `xdev.toml` (else the primary
+/// checkout's), trusted or not; empty when the file is missing or unusable.
+/// Used to take the links out before a folder goes, which is safe for any
+/// list: only a link at that path is removed.
+pub(crate) fn shared_list(repo: &RepoEntry, worktree: &Path) -> Vec<String> {
+    shared_of(repo, worktree)
+        .ok()
+        .flatten()
+        .map(|file| file.shared)
+        .unwrap_or_default()
+}
+
+/// The shared paths to link into a new worktree of `repo_id`: the primary
+/// checkout's list, when the person trusted exactly it.
+pub fn shared_to_link(reg: &Registry, data: &Path, repo_id: &str) -> Vec<String> {
+    let Some(repo) = reg.repos.iter().find(|r| r.id == repo_id) else {
+        return Vec::new();
+    };
+    match hooks_for(reg, data, &repo.path) {
+        Ok(hooks) if hooks.shared_trusted => hooks.shared,
+        _ => Vec::new(),
+    }
+}
+
 /// The hooks of the worktree at `worktree`.
 pub fn hooks_for(
     reg: &Registry,

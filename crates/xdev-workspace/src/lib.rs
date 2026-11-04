@@ -27,7 +27,7 @@ pub use groups::{
 };
 pub use hooks::{
     DefaultTab, FILE_NAME, HookKind, HookRun, HookScript, RepoHooks, SHARED_MAX, TABS_MAX,
-    TRUST_FILE, detect_setup, hook_env, hooks_for, trust, trust_hook,
+    TRUST_FILE, detect_setup, hook_env, hooks_for, shared_to_link, trust, trust_hook,
 };
 pub use kept::{
     ARCHIVE_DAYS, KeptBranch, KeptReason, KeptView, archive_worktree, kept_delete, kept_keep,
@@ -37,8 +37,9 @@ pub use names::{PrefixIssue, normalize_prefix, prefix_issue};
 pub use ops::{
     BranchPrefix, COMMENT_MAX, CreateOptions, DetailsPatch, DirEntry, DirListing, ITEM_URL_MAX,
     Removed, RepoPatch, RepoView, TITLE_MAX, WorktreeStat, WorktreeView, add_repo, adopt_worktree,
-    create_worktree, create_worktree_with, forget_repo, list, list_dir, path_key, refresh_base,
-    remove_worktree, set_details, set_pinned, stat, update_repo, valid_short_name,
+    create_worktree, create_worktree_linked, create_worktree_with, forget_repo, list, list_dir,
+    path_key, refresh_base, remove_worktree, set_details, set_pinned, stat, update_repo,
+    valid_short_name,
 };
 pub use registry::{
     MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, VaultEntry, WorkItem, WorkItemKind,
