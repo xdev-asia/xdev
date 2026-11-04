@@ -31,6 +31,9 @@ pub enum IpcError {
     InUse,
     #[error("nothing listens on the endpoint")]
     NotRunning,
+    /// Only on Windows, where pipe names are machine-wide.
+    #[error("another user's process listens on the endpoint")]
+    Foreign,
     #[error("the peer did not prove it is the same user")]
     Auth,
     #[error(transparent)]
@@ -88,16 +91,33 @@ impl Endpoint {
     }
 
     fn listen(&self) -> Result<Listener, IpcError> {
-        ListenerOptions::new()
-            .name(self.socket_name()?)
+        let options = ListenerOptions::new().name(self.socket_name()?);
+        // A pipe takes the default DACL otherwise, which lets other users
+        // open it; a socket file is kept to the user by its private dir.
+        #[cfg(windows)]
+        let options = {
+            use interprocess::os::windows::local_socket::ListenerOptionsExt as _;
+            options.security_descriptor(win::only_current_user()?)
+        };
+        options
             .create_sync()
             .map(Listener)
             .map_err(|e| match e.kind() {
                 ErrorKind::AddrInUse => IpcError::InUse,
-                // A second pipe server instance is refused with access denied.
-                ErrorKind::PermissionDenied if cfg!(windows) => IpcError::InUse,
+                // A pipe name that has a server already refuses a first
+                // instance with access denied, whoever the server runs as.
+                ErrorKind::PermissionDenied if cfg!(windows) => self.held_by(e),
                 _ => IpcError::Io(e),
             })
+    }
+
+    /// Who holds the pipe name that refused a listener with `denied`.
+    fn held_by(&self, denied: io::Error) -> IpcError {
+        match self.connect() {
+            Ok(_) => IpcError::InUse,
+            Err(IpcError::Foreign) => IpcError::Foreign,
+            Err(_) => IpcError::Io(denied),
+        }
     }
 
     /// A socket file that nothing answers on. Never on Windows: a pipe goes
@@ -113,28 +133,29 @@ impl Endpoint {
         false
     }
 
-    /// `IpcError::NotRunning` when nothing answers.
+    /// `IpcError::NotRunning` when nothing answers; `IpcError::Foreign` on
+    /// Windows when another user's process does.
     pub fn connect(&self) -> Result<Stream, IpcError> {
-        self.open().map(Stream::new).map_err(|e| match e.kind() {
-            ErrorKind::NotFound | ErrorKind::ConnectionRefused => IpcError::NotRunning,
-            // A listener keeps a free instance at all times, so no free
-            // instance for this long means no listener.
-            ErrorKind::TimedOut if cfg!(windows) => IpcError::NotRunning,
-            _ => IpcError::Io(e),
-        })
+        self.open().map(Stream::new)
     }
 
     #[cfg(not(windows))]
-    fn open(&self) -> io::Result<ls::Stream> {
-        ls::Stream::connect(self.socket_name()?)
+    fn open(&self) -> Result<ls::Stream, IpcError> {
+        self.socket_name()
+            .and_then(ls::Stream::connect)
+            .map_err(connect_error)
     }
 
     /// A pipe whose instances are all taken makes a client wait for one; the
     /// local socket API waits for ever, and ignores a wait mode. That wait
     /// never ends on a name that outlived its listener because a peer still
     /// holds a connected instance, so this one gives up at `CONNECT_WAIT`.
+    ///
+    /// Pipe names are machine-wide, so another user can create this one
+    /// first and read what a client sends, the token included: the client
+    /// talks only to a server that runs as its own user.
     #[cfg(windows)]
-    fn open(&self) -> io::Result<ls::Stream> {
+    fn open(&self) -> Result<ls::Stream, IpcError> {
         use interprocess::ConnectWaitMode;
         use interprocess::os::windows::named_pipe::{DuplexPipeStream, local_socket, pipe_mode};
         // The path `GenericNamespaced` gives the name.
@@ -142,8 +163,13 @@ impl Endpoint {
         let pipe = DuplexPipeStream::<pipe_mode::Bytes>::connect_by_path_with_wait_mode(
             path.as_str(),
             ConnectWaitMode::Timeout(CONNECT_WAIT),
-        )?;
-        Ok(local_socket::Stream::from(pipe).into())
+        )
+        .map_err(connect_error)?;
+        // A server whose user cannot be told counts as another user's.
+        match pipe.server_process_id().and_then(win::runs_as_current_user) {
+            Ok(true) => Ok(local_socket::Stream::from(pipe).into()),
+            _ => Err(IpcError::Foreign),
+        }
     }
 
     #[cfg(windows)]
@@ -156,6 +182,19 @@ impl Endpoint {
     fn socket_name(&self) -> io::Result<ls::Name<'_>> {
         use interprocess::local_socket::{GenericFilePath, ToFsName};
         self.path.as_path().to_fs_name::<GenericFilePath>()
+    }
+}
+
+fn connect_error(e: io::Error) -> IpcError {
+    match e.kind() {
+        ErrorKind::NotFound | ErrorKind::ConnectionRefused => IpcError::NotRunning,
+        // A listener keeps a free instance at all times, so no free
+        // instance for this long means no listener.
+        ErrorKind::TimedOut if cfg!(windows) => IpcError::NotRunning,
+        // Our listener's DACL lets this user in, so this pipe is another
+        // user's.
+        ErrorKind::PermissionDenied if cfg!(windows) => IpcError::Foreign,
+        _ => IpcError::Io(e),
     }
 }
 
@@ -345,6 +384,28 @@ mod tests {
         let e = ep(dir.path());
         let _first = e.bind().unwrap();
         assert!(matches!(e.bind(), Err(IpcError::InUse)));
+    }
+
+    /// Another user's pipe, as this user sees it: one whose DACL leaves this
+    /// user out (here it grants SYSTEM alone).
+    #[cfg(windows)]
+    #[test]
+    fn a_pipe_this_user_may_not_open_is_foreign() {
+        use interprocess::os::windows::local_socket::ListenerOptionsExt as _;
+        use interprocess::os::windows::security_descriptor::SecurityDescriptor;
+        let dir = tempfile::tempdir().unwrap();
+        let e = ep(dir.path());
+        let sd = SecurityDescriptor::deserialize(
+            &widestring::U16CString::from_str("D:P(A;;GA;;;SY)").unwrap(),
+        )
+        .unwrap();
+        let _theirs = ListenerOptions::new()
+            .name(e.socket_name().unwrap())
+            .security_descriptor(sd)
+            .create_sync()
+            .unwrap();
+        assert!(matches!(e.connect(), Err(IpcError::Foreign)));
+        assert!(matches!(e.bind(), Err(IpcError::Foreign)));
     }
 
     #[test]
