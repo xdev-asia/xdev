@@ -14,6 +14,7 @@ pub mod link;
 pub mod pkce;
 pub mod session;
 pub mod store;
+pub mod ureq_transport;
 
 pub const DEFAULT_BASE: &str = "https://id.xdev.asia";
 pub const KEYRING_SERVICE: &str = "xdev";
@@ -52,3 +53,4 @@ pub use session::{Begin, Redeem, Session, XdevIdState, XdevIdUser};
 pub use store::{
     Keychain, MemoryStore, StoreError, Stored, StoredUser, TokenStore, decode_stored, encode_stored,
 };
+pub use ureq_transport::UreqTransport;
