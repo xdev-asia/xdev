@@ -407,7 +407,7 @@ it("delete asks, closes sessions, then removes; dirty needs the second step", as
   dialog().props.onConfirm();
   await tick();
   expect(close).toHaveBeenCalledWith("/demo/wt/xdev-oak");
-  expect(remove).toHaveBeenCalledWith("/demo/wt/xdev-oak", false, true);
+  expect(remove).toHaveBeenCalledWith("/demo/wt/xdev-oak", false, true, false);
   expect(close.mock.invocationCallOrder[0]).toBeLessThan(remove.mock.invocationCallOrder[0]);
   expect(dialog().props.dirty).toBe(true);
   markup = renderToStaticMarkup(dialog());
@@ -417,7 +417,7 @@ it("delete asks, closes sessions, then removes; dirty needs the second step", as
 
   dialog().props.onConfirm();
   await tick();
-  expect(remove).toHaveBeenLastCalledWith("/demo/wt/xdev-oak", true, true);
+  expect(remove).toHaveBeenLastCalledWith("/demo/wt/xdev-oak", true, true, false);
   expect(view.of(RemoveWorktreeDialog)).toHaveLength(0);
   expect(view.worktree("oak")).toBeUndefined();
 
@@ -425,7 +425,7 @@ it("delete asks, closes sessions, then removes; dirty needs the second step", as
   view.list().props.onRemove(view.worktree("elm"));
   dialog().props.onConfirm();
   await tick();
-  expect(remove).toHaveBeenLastCalledWith("/demo/wt/xdev-elm", false, true);
+  expect(remove).toHaveBeenLastCalledWith("/demo/wt/xdev-elm", false, true, false);
   expect(view.of(RemoveWorktreeDialog)).toHaveLength(0);
   expect(view.worktree("elm")).toBeUndefined();
 });
@@ -1095,14 +1095,14 @@ it("askBeforeDeleteWorktree off removes at once with the dialog's defaults; a di
   expect(view.of(RemoveWorktreeDialog)).toHaveLength(0);
   await tick();
   expect(close).toHaveBeenCalledWith("/demo/wt/xdev-elm");
-  expect(remove).toHaveBeenCalledWith("/demo/wt/xdev-elm", false, true);
+  expect(remove).toHaveBeenCalledWith("/demo/wt/xdev-elm", false, true, false);
   expect(view.of(RemoveWorktreeDialog)).toHaveLength(0);
   expect(view.worktree("elm")).toBeUndefined();
 
   // Uncommitted work: the removal is refused, and the forced delete needs its own yes.
   view.list().props.onRemove(view.worktree("oak"));
   await tick();
-  expect(remove).toHaveBeenLastCalledWith("/demo/wt/xdev-oak", false, true);
+  expect(remove).toHaveBeenLastCalledWith("/demo/wt/xdev-oak", false, true, false);
   expect(dialog().props.dirty).toBe(true);
   expect(view.worktree("oak")).toBeDefined();
 });
@@ -1351,7 +1351,7 @@ it("with askBeforeDeleteWorktree off, ctrl+shift+backspace deletes the open work
   view.draw();
   fire("keydown", DEL_KEY);
   await settle();
-  expect(remove).toHaveBeenCalledWith("/demo/wt/xdev-elm", false, true);
+  expect(remove).toHaveBeenCalledWith("/demo/wt/xdev-elm", false, true, false);
   expect(view.of(RemoveWorktreeDialog)).toHaveLength(0);
   expect(view.worktree("elm")).toBeUndefined();
 });
@@ -1365,7 +1365,34 @@ it("a delete that kept a branch offers a review", async () => {
   view.of(RemoveWorktreeDialog)[0].props.onConfirm(false);
   await settle();
   expect(view.of(RemoveWorktreeDialog)).toHaveLength(0);
-  expect(getToasts().some((x) => x.text === en("review.notice", { count: 1 }))).toBe(true);
+  const toast = getToasts().find((x) => x.text === en("review.keptOne.title"))!;
+  expect(toast.actions![0].label).toBe(en("review.keptOne.delete"));
+  const del = vi.spyOn(api, "branchDelete").mockResolvedValue(undefined as never);
+  toast.actions![0].run();
+  expect(del).toHaveBeenCalledWith("demo-xdev", "oak", true);
+});
+
+it("Always force and Always delete kept branches go to worktreeRemove, even for a clean row", async () => {
+  setNavigationSettings({ ...NAVIGATION_DEFAULTS, alwaysForceDeleteWorktrees: true, alwaysDeleteKeptBranches: true });
+  const api = createMockApi({});
+  const remove = vi.spyOn(api, "worktreeRemove");
+  const view = await harness(api);
+  view.list().props.onRemove(view.worktree("oak"));
+  view.of(RemoveWorktreeDialog)[0].props.onConfirm(false);
+  await settle();
+  expect(remove).toHaveBeenCalledWith("/demo/wt/xdev-oak", true, true, true);
+});
+
+it("Don't ask again saves askBeforeDeleteWorktree off and toasts with Open settings", async () => {
+  const api = createMockApi({});
+  const put = vi.spyOn(api, "navigationSettingsPut");
+  const view = await harness(api);
+  view.list().props.onRemove(view.worktree("oak"));
+  view.of(RemoveWorktreeDialog)[0].props.onDontAsk(true);
+  await settle();
+  expect(put).toHaveBeenCalledWith({ ...NAVIGATION_DEFAULTS, askBeforeDeleteWorktree: false });
+  const toast = getToasts().find((x) => x.text === en("workspace.remove.skipToast"))!;
+  expect(toast.actions![0].label).toBe(en("workspace.remove.openSettings"));
 });
 
 it("the issues tab shows the panel of the current repo", async () => {
