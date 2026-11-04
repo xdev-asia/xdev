@@ -8,6 +8,7 @@ import { profileLetter, profileName, useProfiles } from "@/agents/profileStore";
 import { ago } from "./ago";
 import { cardParts } from "./cardModel";
 import { groupBy, orderedWorktrees, type Section } from "./groups";
+import { orderItems } from "./projectOrder";
 import { recentSnapshot, sortEntries, type RecentSnapshot } from "./sidebarSort";
 import type { PendingCreate } from "./pendingCreates";
 import { checksSummary } from "./ship";
@@ -324,10 +325,14 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   };
 
   const repoList = flattenRepos(tree ?? []);
-  const entries: Entry[] = repoList.flatMap((repo) => repo.worktrees.map((wt) => ({ path: wt.path, wt, repo })));
-  // The recent order is a snapshot: retaken when the sort, the set of worktrees or the window focus changes.
-  const snapshot = recentSnapshot(recent, { sort: prefs.sort, paths: entries.map((e) => e.path), activity: props.activity, focus });
+  const manualEntries: Entry[] = repoList.flatMap((repo) => repo.worktrees.map((wt) => ({ path: wt.path, wt, repo })));
+  // The recent order is a snapshot: retaken when the sort, the project order, the set of worktrees or the window focus changes.
+  const snapshot = recentSnapshot(recent, { sort: prefs.sort, projectOrder: prefs.projectOrder, paths: manualEntries.map((e) => e.path), activity: props.activity, focus });
   if (snapshot !== recent) setRecent(snapshot);
+  // Recent project order: repo headings and project sections follow the newest output; dragging is off.
+  const projectsByRecent = prefs.projectOrder === "recent";
+  const drawnTree = projectsByRecent ? orderItems(tree ?? [], snapshot.activity) : (tree ?? []);
+  const entries: Entry[] = projectsByRecent ? flattenRepos(drawnTree).flatMap((repo) => repo.worktrees.map((wt) => ({ path: wt.path, wt, repo }))) : manualEntries;
   const sortRows = <T extends { path: string }>(list: readonly T[]): T[] => sortEntries(list, prefs.sort, snapshot.activity, (path) => props.dots[path]);
   // The repo is named on a row only when more than one repo is listed.
   const many = repoList.length > 1;
@@ -338,14 +343,17 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const pinnedPaths = new Set(pinnedRows.map((r) => r.entry.path));
   // Sections come from the rows in sidebar order, so a sort never reorders the sections; it sorts inside each.
   const sections = groupBy(
-    shown.entries.filter((e) => !pinnedPaths.has(e.path)),
+    shown.entries.filter((e) => prefs.pinnedInGroups || !pinnedPaths.has(e.path)),
     prefs.groupBy,
     { dotOf: (path) => props.dots[path] ?? null, prOf: (path) => props.prs?.[path]?.pr?.state ?? null },
   ).map((s): Section<NestRow> => ({ ...s, items: nestRows(sortRows(s.items), new Set(folded)) }));
   const gone = repoList.filter((repo) => repo.missing);
+  // A pinned row drawn twice (Pinned in groups) is listed once, at its first place.
   const order = [
-    ...(pinnedShut ? [] : pinnedRows.map((r) => r.entry.path)),
-    ...orderedWorktrees(sections.map((s) => ({ key: s.key, items: s.items.map((r) => ({ path: r.entry.path })) })), collapsed),
+    ...new Set([
+      ...(pinnedShut ? [] : pinnedRows.map((r) => r.entry.path)),
+      ...orderedWorktrees(sections.map((s) => ({ key: s.key, items: s.items.map((r) => ({ path: r.entry.path })) })), collapsed),
+    ]),
   ];
   const { onOrder } = props;
   useEffect(() => onOrder?.(order), [order.join(",")]);
@@ -528,8 +536,9 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   };
   // Drag and Alt+Arrow on a heading reorder repos, folders and groups.
   const reorder = (id: string) => ({
-    draggable: props.onReorder !== undefined || props.onGroupMove !== undefined,
+    draggable: !projectsByRecent && (props.onReorder !== undefined || props.onGroupMove !== undefined),
     onDragStart: (e: { dataTransfer?: { setData?(type: string, value: string): void }; stopPropagation?(): void }) => {
+      if (projectsByRecent) return;
       e.stopPropagation?.();
       e.dataTransfer?.setData?.("text/plain", id);
       setDragging(id);
@@ -546,7 +555,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       if (from) apply(dropMove(tree ?? [], from, id));
     },
     onKeyDown: (e: { key: string; altKey: boolean; target: unknown; currentTarget: unknown; preventDefault(): void }) => {
-      if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown") || e.target !== e.currentTarget) return;
+      if (projectsByRecent || !e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown") || e.target !== e.currentTarget) return;
       e.preventDefault();
       apply(moveTarget(tree ?? [], id, e.key === "ArrowUp" ? -1 : 1));
     },
@@ -764,7 +773,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         )}
         {hasProjects && (
           <ul className="ws-repos" aria-label={t("project.heading")}>
-            {(tree ?? []).flatMap(projectItem)}
+            {drawnTree.flatMap(projectItem)}
           </ul>
         )}
         {withFound.map(foundGroup)}
