@@ -329,26 +329,31 @@ fn pump_once(app: &AppHandle) {
     let now = crate::workspace::clock().0;
     if let Ok(ready) = hub.with_store(data, |s| s.ready_workers()) {
         let edges = hub.pump.stops(&ready, &tabs);
-        let read = |tab: &str| {
-            let request = hub.next_read();
-            let ask = ReadTab {
-                request,
-                tab: tab.to_owned(),
-                max_chars: 2000,
-            };
-            hub.reads
-                .ask(
+        let app = app.clone();
+        let data = data.to_owned();
+        crate::orch_pump::off_pump(edges, move |edges| {
+            let hub = app.state::<OrchHub>();
+            let read = |tab: &str| {
+                let request = hub.next_read();
+                let ask = ReadTab {
                     request,
-                    || {
-                        if let Ok(p) = to_value(&ask) {
-                            let _ = tauri::Emitter::emit(app, "orchestration://read-tab", p);
-                        }
-                    },
-                    Duration::from_secs(2),
-                )
-                .unwrap_or_default()
-        };
-        crate::orch_pump::escalate(&hub, data, &edges, &read, now);
+                    tab: tab.to_owned(),
+                    max_chars: 2000,
+                };
+                hub.reads
+                    .ask(
+                        request,
+                        || {
+                            if let Ok(p) = to_value(&ask) {
+                                let _ = tauri::Emitter::emit(&app, "orchestration://read-tab", p);
+                            }
+                        },
+                        Duration::from_secs(2),
+                    )
+                    .unwrap_or_default()
+            };
+            crate::orch_pump::escalate(&hub, &data, &edges, &read, now);
+        });
     }
     let plans = hub.pump.plan(&wakes, &tabs, &|a| hub.has_waiter(a), now);
     let handle = app.clone();

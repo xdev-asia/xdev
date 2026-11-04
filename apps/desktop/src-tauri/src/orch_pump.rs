@@ -220,6 +220,18 @@ pub fn escalate(
     wrote
 }
 
+/// Runs `job` over the stops on a thread of its own, so the tab reads it
+/// waits on never hold the pump; none when there is nothing to report.
+pub fn off_pump(
+    edges: Vec<StopEdge>,
+    job: impl FnOnce(Vec<StopEdge>) + Send + 'static,
+) -> Option<std::thread::JoinHandle<()>> {
+    if edges.is_empty() {
+        return None;
+    }
+    Some(std::thread::spawn(move || job(edges)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -518,6 +530,30 @@ mod tests {
             .unwrap();
         assert_eq!(*writes.lock().unwrap(), 0);
         assert_eq!(pump.plan(&wakes, &idle, &nobody, 1_001).len(), 1);
+    }
+
+    #[test]
+    fn a_slow_tab_read_for_a_stop_never_holds_the_pump() {
+        let edge = StopEdge {
+            dispatch: "d1".into(),
+            reason: StopReason::Finished,
+            edge_ms: 5,
+            tab: "t1".into(),
+        };
+        let (go, wait) = std::sync::mpsc::channel::<()>();
+        let (done, seen) = std::sync::mpsc::channel::<Vec<StopEdge>>();
+        let job = move |edges: Vec<StopEdge>| {
+            // The read is still pending: the job cannot finish yet.
+            wait.recv_timeout(Duration::from_secs(10)).unwrap();
+            done.send(edges).unwrap();
+        };
+        let started = std::time::Instant::now();
+        let h = off_pump(vec![edge.clone()], job).unwrap();
+        assert!(started.elapsed() < Duration::from_secs(2));
+        go.send(()).unwrap();
+        h.join().unwrap();
+        assert_eq!(seen.recv().unwrap(), vec![edge]);
+        assert!(off_pump(Vec::new(), |_| {}).is_none());
     }
 
     #[test]
