@@ -1,11 +1,11 @@
-import { toApiError, type AccountSource, type Api, type HookDetail, type PtyInfo, type PtyProfile, type RestoreMode } from "@/api";
+import { PROVIDERS, toApiError, type AccountSource, type Api, type HookDetail, type PtyInfo, type PtyProfile, type RestoreMode } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
 import { ownAccount } from "./ownAccount";
 
 // Where `ownAccount` lives to keep it free of the api import; callers may still take it from here.
 export { ownAccount };
 import { addTab, leaves, paneOf, pinFirst, removeTab, replaceTab, single, splitPane, type PaneDir, type PaneLayout } from "./paneTree";
-import { LAYOUT_VERSION, fromSnapshot, toSnapshot, type LayoutSnapshot, type RestoreOptions, type RestoreReport, type SessionFallback, type TabSnapshot, type WorktreeSnapshot } from "./layoutSnapshot";
+import { LAYOUT_VERSION, fromSnapshot, toSnapshot, type LayoutSnapshot, restoredAccount, type RestoreOptions, type RestoreReport, type SessionFallback, type TabSnapshot, type WorktreeSnapshot } from "./layoutSnapshot";
 import { DONE_QUIET_MS, INTERRUPT_MS, NO_CAPS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type Caps, type StatusEvent, type StatusState, type TabStatus } from "./status";
 
 /** The CLI behind a tab, for its hook caps and title rules; null for custom profiles and shells. */
@@ -130,6 +130,8 @@ export class Sessions {
   private hooksOn = true;
   // A restore runs once per app run.
   private restored = false;
+  /** The active account of each CLI while a restore runs; null when it could not be read. */
+  private restoreActive: ReadonlyMap<string, string | null> | null = null;
   /** Saved worktrees this run could not load (a missing repo): kept in every snapshot until `dropCarried`. */
   private carried = new Map<string, WorktreeSnapshot>();
   // Restored tabs whose terminal starts when they are first shown.
@@ -203,6 +205,8 @@ export class Sessions {
     // Tabs whose pty still runs in the terminal service come back attached to it, before any resume.
     const state = (await this.api.ptydStatus().catch(() => null))?.state;
     const attach = state === "running" || state === "old-version";
+    const found = await this.api.accounts().catch(() => null);
+    this.restoreActive = found ? new Map(PROVIDERS.map((p): [string, string | null] => [p, found.active.find((a) => a.provider === p)?.name ?? null])) : null;
     for (const [worktree, one] of Object.entries(s.worktrees)) {
       if (options.known && !options.known(worktree)) {
         report.skipped.push({ worktree, reason: "unknownWorktree" });
@@ -265,6 +269,8 @@ export class Sessions {
     if (typeof id !== "string" || !id || this.entries.has(id)) return null;
     const cli = snap.cli === undefined ? cliOf(snap.profileId) : snap.cli;
     const entry = this.entry(worktree, snap.profileId, snap.account, cli, null, snap.title, id);
+    // The pty is running under the saved account; where that came from decides whether a restart follows the active one.
+    entry.tab = { ...entry.tab, accountSource: snap.accountSource ?? null };
     const from = typeof snap.seq === "number" && snap.seq >= 0 ? snap.seq : 0;
     this.attaching.set(id, null);
     try {
@@ -304,22 +310,23 @@ export class Sessions {
   /** One terminal tab of a snapshot, or null when `mode` or a missing session leaves it out. */
   private async restoreTerminal(worktree: string, snap: Extract<TabSnapshot, { kind: "terminal" }>, mode: RestoreMode, fallback: SessionFallback, report: RestoreReport): Promise<Tab | null> {
     const cli = snap.cli === undefined ? cliOf(snap.profileId) : snap.cli;
+    const account = restoredAccount(snap, cli, this.restoreActive);
     let tab: Tab;
     if (snap.agent) {
       let id = snap.agentSession;
       if (!id && cli) id = await fallback(worktree, cli, snap.openedAt).catch(() => null);
       if (id) {
-        tab = this.resume(worktree, snap.profileId, snap.account, id, snap.title, cli);
+        tab = this.resume(worktree, snap.profileId, account, id, snap.title, cli);
         report.resumed++;
       } else if (mode === "all") {
-        tab = this.open(worktree, snap.profileId, snap.account, cli);
+        tab = this.open(worktree, snap.profileId, account, cli);
         report.fresh++;
       } else {
         report.skipped.push({ worktree, reason: "noSession" });
         return null;
       }
     } else if (mode === "all") {
-      tab = this.open(worktree, snap.profileId, snap.account, cli);
+      tab = this.open(worktree, snap.profileId, account, cli);
       report.fresh++;
     } else return null;
     const entry = this.entries.get(tab.id)!;

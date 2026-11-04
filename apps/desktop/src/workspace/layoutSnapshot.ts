@@ -1,6 +1,5 @@
-import type { PtyProfile, RestoreMode } from "@/api";
+import type { AccountSource, PtyProfile, RestoreMode } from "@/api";
 import { leaves, removeTab, replaceTab, type PaneLayout } from "./paneTree";
-import { ownAccount } from "./ownAccount";
 import type { Tab, TabCli, TabColor } from "./sessions";
 
 // What `layout.json` holds: per worktree, its pane layout and enough of each tab to open it again.
@@ -33,7 +32,10 @@ export type TabSnapshot =
   | {
       kind: "terminal";
       profileId: PtyProfile;
+      /** The account the tab ran under when saved; with `accountSource`, how a restore treats it. */
       account: string | null;
+      /** Where that account came from. Absent in older snapshots, whose `account` is the tab's own pick. */
+      accountSource?: AccountSource | null;
       cli?: TabCli;
       title: string | null;
       renamed: boolean;
@@ -84,6 +86,19 @@ export interface RestoreOptions {
 
 export type { RestoreMode };
 
+/**
+ * The account to open a restored terminal with: the tab's own pick stays pinned. A tab that followed
+ * the active account follows it again, unless the active account is not the one it ran under (it
+ * changed since the save): the saved conversation lives under the saved account, so the tab is pinned
+ * to that. `active` maps a CLI to its active account now; null when it could not be read.
+ */
+export function restoredAccount(snap: { account: string | null; accountSource?: AccountSource | null; cli?: TabCli }, cli: TabCli, active: ReadonlyMap<string, string | null> | null): string | null {
+  const source = snap.accountSource;
+  if (source === undefined || source === "tab") return snap.account;
+  if (source === "active" && cli !== null && active && (active.get(cli) ?? null) !== snap.account) return snap.account;
+  return null;
+}
+
 const REVIEW_ID = "review:";
 const FILE_ID = "file:";
 
@@ -118,8 +133,10 @@ export function toSnapshot(layout: PaneLayout, tabOf: (id: string) => Tab | null
     tabs[to] = {
       kind: "terminal",
       profileId: tab.profileId,
-      // Only a pick of the tab itself: the profile's or the active account is looked up again at the next start.
-      account: ownAccount(tab),
+      // The account in use and where it came from: a restore follows the active account again only
+      // while it is still the one the tab ran under (see `restoredAccount`).
+      account: tab.account,
+      accountSource: tab.accountSource,
       cli: tab.cli,
       title: tab.title,
       renamed: tab.renamed,
