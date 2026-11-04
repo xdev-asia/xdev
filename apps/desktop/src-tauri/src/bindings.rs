@@ -91,6 +91,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     WorktreeChange::export_all(cfg)?;
     WorktreeCreated::export_all(cfg)?;
     xdev_workspace::Linked::export_all(cfg)?;
+    xdev_workspace::CreateProject::export_all(cfg)?;
+    xdev_workspace::Created::export_all(cfg)?;
+    xdev_workspace::NamePreview::export_all(cfg)?;
     xdev_workspace::DefaultTab::export_all(cfg)?;
     WorktreeFileDiff::export_all(cfg)?;
     ReviewData::export_all(cfg)?;

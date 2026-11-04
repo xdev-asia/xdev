@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail } from "@/api";
 import { DocsApp } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
@@ -852,6 +852,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (repo.worktrees[0]) select(repo.worktrees[0]);
   }
 
+  // A Git project is added and selected like a clone; a folder shows in the sidebar.
+  async function projectCreated(created: Created): Promise<void> {
+    setAdding(false);
+    await load();
+    if (created.kind === "git" && created.repo.worktrees[0]) select(created.repo.worktrees[0]);
+  }
+
   async function pin(wt: WorktreeView): Promise<void> {
     setNotice(undefined);
     try {
@@ -1685,6 +1692,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           name={creating.name}
           agents={creating.agents}
           defaultAgent={creating.defaultAgent}
+          namePreview={api.worktreeNamePreview}
           onCreate={(repoId, name, from, extra) => create(repoId, name, from, extra)}
           resolveIssue={(repoId, text) => api.issueResolve(repoId, text)}
           onStartIssue={(repoId, issue) => {
@@ -1781,6 +1789,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           startFolder={parentOf(repos?.[repos.length - 1]?.path ?? "")}
           onOpenFolder={() => void addRepoFolder()}
           onCloned={(repo) => void repoCloned(repo)}
+          onCreated={(created) => void projectCreated(created)}
           onCancel={() => setAdding(false)}
         />
       )}

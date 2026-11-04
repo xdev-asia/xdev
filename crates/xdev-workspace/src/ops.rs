@@ -2,6 +2,9 @@ use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::thread;
+use std::time::Duration;
 
 use serde::{Deserialize, Deserializer, Serialize};
 use xdev_git::{BaseRefresh, GitError, Repo, WorktreeEntry};
@@ -9,6 +12,7 @@ use xdev_git::{BaseRefresh, GitError, Repo, WorktreeEntry};
 use crate::hooks;
 use crate::kept::{KeptBranch, KeptReason, keep};
 use crate::registry::normalize;
+use crate::staging;
 use crate::{
     Linked, MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, WorkItem, WorkStatus,
     WorkspaceError, WorktreeMeta, link_shared, names, repo_id, unlink_shared,
@@ -87,6 +91,15 @@ pub fn path_key(path: &Path) -> String {
 
 pub(crate) fn lossy(path: &Path) -> String {
     path.to_string_lossy().into_owned()
+}
+
+/// Every repo whose folder is still there.
+pub(crate) fn find_repo_entries(reg: &Registry) -> Vec<RepoEntry> {
+    reg.repos
+        .iter()
+        .filter(|r| r.path.is_dir())
+        .cloned()
+        .collect()
 }
 
 pub(crate) fn find_repo(reg: &Registry, id: &str) -> Result<RepoEntry, WorkspaceError> {
@@ -426,7 +439,11 @@ fn sync_repo(
     reg.worktrees
         .retain(|m| m.repo_id != entry.id || known.contains(&path_key(&m.path)));
 
-    let live = || linked.iter().filter(|e| !e.prunable);
+    let live = || {
+        linked
+            .iter()
+            .filter(|e| !e.prunable && !staging::in_staging(&e.path))
+    };
     let recorded = |reg: &Registry, wt: &WorktreeEntry| {
         let key = path_key(&wt.path);
         reg.worktrees
@@ -581,6 +598,16 @@ fn pick_free(
     }
 }
 
+/// The title a new worktree shows: what was typed, when a suffix kept the
+/// branch from matching it or the text has an emoji the branch drops;
+/// otherwise unset, and the row shows its folder name.
+fn shown_title(typed: &str, suffixed: bool) -> Option<String> {
+    let emoji = typed.chars().any(|c| {
+        matches!(c as u32, 0x1F000..=0x1FAFF | 0x2600..=0x27BF | 0x2B00..=0x2BFF | 0xFE0F | 0x200D)
+    });
+    (suffixed || emoji).then(|| typed.chars().take(TITLE_MAX).collect())
+}
+
 fn worktree_folder(entry: &RepoEntry, slug: &str) -> PathBuf {
     entry
         .worktree_root
@@ -607,6 +634,99 @@ pub struct CreateOptions {
     /// Paths of the main checkout to link into the new worktree; the caller
     /// passes the list only when the person trusted it.
     pub shared: Vec<String>,
+    /// A name whose branch or folder is taken gets `-2`, `-3`, … instead of
+    /// an error; the desktop app sets it, the CLI chooses.
+    pub suffix: bool,
+}
+
+/// What a typed worktree name would become; see `name_preview`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct NamePreview {
+    pub branch: String,
+    /// The folder's name under the worktree root.
+    pub folder: String,
+    /// A suffix was added because the typed name is taken.
+    pub suffixed: bool,
+}
+
+/// The branch and folder `name` (not blank) gets: the first of `leaf`,
+/// `leaf-2`, … that is free when `opts.suffix`, else `leaf` or an error.
+struct Named {
+    branch: String,
+    folder: PathBuf,
+    /// A suffix was added.
+    suffixed: bool,
+}
+
+fn name_typed(
+    repo: &Repo,
+    entry: &RepoEntry,
+    prefix: Option<&str>,
+    name: &str,
+    suffix: bool,
+) -> Result<Named, WorkspaceError> {
+    let leaf = names::slug(name);
+    let first = prefixed(prefix, &leaf);
+    // Before `branch_exists`, which reads `main~1` as a branch that exists.
+    if leaf.is_empty() || !repo.valid_branch_name(&first)? {
+        return Err(WorkspaceError::BadName(name.to_owned()));
+    }
+    let tries = if suffix { names::SUFFIX_MAX } else { 1 };
+    for n in 1..=tries {
+        let leaf_n = names::suffixed(&leaf, n);
+        let branch = prefixed(prefix, &leaf_n);
+        let folder = worktree_folder(entry, &leaf_n);
+        let branch_taken = repo.branch_exists(&branch)?;
+        if !branch_taken && !folder.exists() {
+            return Ok(Named {
+                branch,
+                folder,
+                suffixed: n > 1,
+            });
+        }
+        if !suffix {
+            return Err(if branch_taken {
+                WorkspaceError::BranchExists(branch)
+            } else {
+                WorkspaceError::WorktreeExists(folder)
+            });
+        }
+    }
+    Err(WorkspaceError::BranchExists(first))
+}
+
+/// What `create_worktree_with` would name the branch and folder for `name`,
+/// without making anything. A blank `name` gets a random free word at
+/// creation, so there is nothing to show: empty strings.
+pub fn name_preview(
+    reg: &Registry,
+    repo_id: &str,
+    name: &str,
+    opts: &CreateOptions,
+) -> Result<NamePreview, WorkspaceError> {
+    let entry = find_repo(reg, repo_id)?;
+    let repo = Repo::discover(&entry.path)?;
+    let name = name.trim();
+    if name.is_empty() {
+        return Ok(NamePreview {
+            branch: String::new(),
+            folder: String::new(),
+            suffixed: false,
+        });
+    }
+    let prefix = branch_prefix(&repo, &opts.prefix)?;
+    let named = name_typed(&repo, &entry, prefix.as_deref(), name, opts.suffix)?;
+    Ok(NamePreview {
+        branch: named.branch,
+        folder: named
+            .folder
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        suffixed: named.suffixed,
+    })
 }
 
 /// Fetches the base a new worktree of `repo_id` would start from (`from`,
@@ -703,29 +823,24 @@ pub fn create_worktree_linked(
     let repo = Repo::discover(&entry.path)?;
     let prefix = branch_prefix(&repo, &opts.prefix)?;
     let name = name.trim();
-    let leaf = if name.is_empty() {
-        pick_free(
+    let (slug, folder, title) = if name.is_empty() {
+        let leaf = pick_free(
             &repo,
             &entry,
             &repo.list_worktrees()?,
             prefix.as_deref(),
             seed,
-        )?
+        )?;
+        let slug = prefixed(prefix.as_deref(), &leaf);
+        if !repo.valid_branch_name(&slug)? {
+            return Err(WorkspaceError::BadName(name.to_owned()));
+        }
+        (slug, worktree_folder(&entry, &leaf), None)
     } else {
-        names::slug(name)
+        let named = name_typed(&repo, &entry, prefix.as_deref(), name, opts.suffix)?;
+        let title = shown_title(name, named.suffixed);
+        (named.branch, named.folder, title)
     };
-    let slug = prefixed(prefix.as_deref(), &leaf);
-    // Before `branch_exists`, which reads `main~1` as a branch that exists.
-    if leaf.is_empty() || !repo.valid_branch_name(&slug)? {
-        return Err(WorkspaceError::BadName(name.to_owned()));
-    }
-    if repo.branch_exists(&slug)? {
-        return Err(WorkspaceError::BranchExists(slug));
-    }
-    let folder = worktree_folder(&entry, &leaf);
-    if folder.exists() {
-        return Err(WorkspaceError::WorktreeExists(folder));
-    }
     let from = from
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -737,23 +852,7 @@ pub fn create_worktree_linked(
         }
         Err(e) => return Err(e.into()),
     };
-    fs::create_dir_all(&entry.worktree_root)?;
-    repo.add_worktree(&folder, &slug, &start)?;
-    // Kept in git's spelling of the path, which may differ from `folder`
-    // when the root lies behind a link; `list` matches on it.
-    let git_entry = repo
-        .list_worktrees()?
-        .into_iter()
-        .find(|e| e.branch.as_deref() == Some(slug.as_str()))
-        .unwrap_or_else(|| WorktreeEntry {
-            path: folder,
-            head: Some(start.clone()),
-            branch: Some(slug),
-            detached: false,
-            bare: false,
-            locked: false,
-            prunable: false,
-        });
+    let git_entry = add_staged(&repo, &entry, &folder, &slug, &start, seed)?;
     let meta = WorktreeMeta {
         repo_id: entry.id.clone(),
         path: git_entry.path.clone(),
@@ -761,6 +860,7 @@ pub fn create_worktree_linked(
         created_ms: now_ms,
         made_here: true,
         made_by: opts.made_by,
+        title,
         ..WorktreeMeta::default()
     };
     let linked = link_shared(&entry.path, &git_entry.path, &opts.shared);
@@ -775,9 +875,85 @@ pub fn create_worktree_linked(
     Ok((view, linked))
 }
 
+/// How many times, and how far apart, the move out of staging is tried.
+const MOVE_TRIES: u32 = 3;
+const MOVE_GAP: Duration = Duration::from_millis(500);
+
+static STAGING_RUNS: AtomicU64 = AtomicU64::new(0);
+
+/// Makes the worktree in a staging folder and moves it to `folder` when git
+/// is done, so a half-made one never sits under its real name. Any failure
+/// takes the staging worktree and the new branch back. Returns git's entry
+/// for the worktree at its final place.
+fn add_staged(
+    repo: &Repo,
+    entry: &RepoEntry,
+    folder: &Path,
+    slug: &str,
+    start: &str,
+    seed: u64,
+) -> Result<WorktreeEntry, WorkspaceError> {
+    fs::create_dir_all(&entry.worktree_root)?;
+    let nonce = seed ^ STAGING_RUNS.fetch_add(1, Ordering::Relaxed);
+    let stage = staging::staging_dir(&entry.worktree_root, std::process::id(), nonce);
+    let undo = |at: &Path| {
+        let _ = repo.remove_fresh_worktree(at);
+        let _ = repo.delete_branch(slug);
+        if let Some(dir) = stage.parent() {
+            // Only goes when no other run is staging in it.
+            let _ = fs::remove_dir(dir);
+        }
+    };
+    if let Some(dir) = stage.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    if let Err(e) = repo.add_worktree(&stage, slug, start) {
+        undo(&stage);
+        return Err(e.into());
+    }
+    if let Err(e) = move_out(repo, &stage, folder) {
+        undo(&stage);
+        return Err(e);
+    }
+    if let Some(dir) = stage.parent() {
+        let _ = fs::remove_dir(dir);
+    }
+    // Kept in git's spelling of the path, which may differ from `folder`
+    // when the root lies behind a link; `list` matches on it.
+    let listed = repo.list_worktrees().inspect_err(|_| undo(folder))?;
+    Ok(listed
+        .into_iter()
+        .find(|e| e.branch.as_deref() == Some(slug))
+        .unwrap_or_else(|| WorktreeEntry {
+            path: folder.to_owned(),
+            head: Some(start.to_owned()),
+            branch: Some(slug.to_owned()),
+            detached: false,
+            bare: false,
+            locked: false,
+            prunable: false,
+        }))
+}
+
+/// `git worktree move`, tried again when something holds the folder for a
+/// moment (a scanner on Windows); a target that appeared is not retried.
+fn move_out(repo: &Repo, stage: &Path, folder: &Path) -> Result<(), WorkspaceError> {
+    for attempt in 1..=MOVE_TRIES {
+        if folder.symlink_metadata().is_ok() {
+            return Err(WorkspaceError::WorktreeExists(folder.to_owned()));
+        }
+        match repo.move_worktree(stage, folder) {
+            Ok(()) => return Ok(()),
+            Err(e) if attempt == MOVE_TRIES => return Err(e.into()),
+            Err(_) => thread::sleep(MOVE_GAP),
+        }
+    }
+    Ok(())
+}
+
 /// The branch tip is in the history of `base_ref`, so deleting the branch
 /// loses no commit.
-fn is_merged(repo: &Repo, branch: &str, base_ref: &str) -> Result<bool, WorkspaceError> {
+pub(crate) fn is_merged(repo: &Repo, branch: &str, base_ref: &str) -> Result<bool, WorkspaceError> {
     let full = format!("refs/heads/{branch}");
     let Some(tip) = repo.resolve_ref(&full)? else {
         return Ok(false);
@@ -1591,5 +1767,44 @@ mod tests {
     fn no_git_stays_an_error() {
         let err = or_missing(Err(GitError::NoGit.into()), &entry()).unwrap_err();
         assert_eq!(err.code(), "no_git");
+    }
+
+    #[test]
+    fn a_move_that_fails_leaves_no_branch_and_no_staging_worktree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let main = tmp.path().join("main");
+        fs::create_dir(&main).unwrap();
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .current_dir(&main)
+                .args(["-c", "user.name=T", "-c", "user.email=t@example.com"])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "git {args:?}: {out:?}");
+            String::from_utf8(out.stdout).unwrap()
+        };
+        git(&["init", "-q"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "one"]);
+        let start = git(&["rev-parse", "HEAD"]).trim().to_owned();
+        let repo = Repo::discover(&main).unwrap();
+        let entry = RepoEntry {
+            id: "id".into(),
+            short_name: "main".into(),
+            path: main.clone(),
+            base_ref: "HEAD".into(),
+            worktree_root: tmp.path().join("wt"),
+            ..RepoEntry::default()
+        };
+        // The folder appeared after the name was checked.
+        let folder = worktree_folder(&entry, "late");
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join("x"), "x").unwrap();
+        let err = add_staged(&repo, &entry, &folder, "late", &start, 1).unwrap_err();
+        assert_eq!(err.code(), "worktree_exists");
+        assert!(!repo.branch_exists("late").unwrap());
+        assert_eq!(repo.list_worktrees().unwrap().len(), 1);
+        assert!(!entry.worktree_root.join(staging::STAGING).exists());
+        assert!(folder.join("x").exists());
     }
 }

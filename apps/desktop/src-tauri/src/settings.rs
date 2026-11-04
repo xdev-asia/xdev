@@ -752,6 +752,8 @@ impl GitSettings {
         xdev_workspace::CreateOptions {
             prefix,
             made_by: xdev_workspace::MadeBy::App,
+            // A taken name is made as `name-2`; the desktop never refuses it.
+            suffix: true,
             ..xdev_workspace::CreateOptions::default()
         }
     }

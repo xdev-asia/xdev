@@ -1,10 +1,11 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type ApiError, type Issue, type RepoView, type WorkItem, type WorkItemKind } from "@/api";
+import { toApiError, type ApiError, type Issue, type NamePreview, type RepoView, type WorkItem, type WorkItemKind } from "@/api";
 import { isIssueRef } from "@/issues/issueStart";
 import { useI18n } from "@/i18n";
 import { expandShortcodes, hasEmoji, slugFromTitle } from "./emoji";
+import { schedulePreview } from "./namePreview";
 import { parseItem } from "./workItemInput";
 
 /** What the dialog adds to the name and base: the title, the agent, the parent and the work item. */
@@ -47,6 +48,18 @@ export function buildCreate(form: Form): { name: string; extra: CreateExtra } | 
   };
 }
 
+/** "Will be created as `folder` on branch `branch`", only when a taken name got a suffix. */
+export function PreviewHint(props: { preview: NamePreview | null }): JSX.Element | null {
+  const { t } = useI18n();
+  const { preview } = props;
+  if (!preview?.suffixed) return null;
+  return (
+    <small role="status" data-preview>
+      {t("createWorktree.preview.willBe", { folder: preview.folder, branch: preview.branch })}
+    </small>
+  );
+}
+
 // Mounted only while open, so every opening starts from blank fields.
 export function CreateWorktreeDialog(props: {
   repos: RepoView[];
@@ -57,6 +70,8 @@ export function CreateWorktreeDialog(props: {
   defaultAgent?: string | null;
   /** A name to start with, such as one typed into the jump palette. */
   name?: string;
+  /** The name a create would get; without it no preview shows. */
+  namePreview?(repoId: string, name: string): Promise<NamePreview>;
   onCreate(repoId: string, name: string, from: string | null, extra: CreateExtra): void;
   /** Reads the issue a an issue number with a hash, or an issue URL, in the name field points to. */
   resolveIssue?(repoId: string, text: string): Promise<Issue | null>;
@@ -79,6 +94,7 @@ export function CreateWorktreeDialog(props: {
   const [itemUrl, setItemUrl] = useState("");
   const [itemKind, setItemKind] = useState<WorkItemKind>("pr");
   const [found, setFound] = useState<Found | null>(null);
+  const [preview, setPreview] = useState<NamePreview | null>(null);
 
   useEffect(() => {
     const d = dialog.current;
@@ -88,6 +104,13 @@ export function CreateWorktreeDialog(props: {
   // A repo whose folder is gone cannot take a new worktree.
   const choices = props.repos.filter((r) => !r.missing);
   const repo = choices.find((r) => r.id === repoId) ?? choices[0];
+  // The name as Create would send it, so the preview matches what is made.
+  const sent = hasEmoji(name.trim()) ? slugFromTitle(name.trim()) : name.trim();
+  const { namePreview } = props;
+  useEffect(() => {
+    if (!namePreview) return;
+    return schedulePreview(namePreview, repo?.id ?? "", sent, setPreview);
+  }, [namePreview, repo?.id, sent]);
   // A parent is another worktree of the repo that is not the main checkout and not itself a child.
   const parents = (repo?.worktrees ?? []).filter((w) => !w.primary && w.parent === null);
   const parentPath = parents.some((w) => w.path === parent) ? parent : "";
@@ -169,6 +192,7 @@ export function CreateWorktreeDialog(props: {
                 {issue ? t("workspace.create.issueFound", { number: issue.number, title: issue.title }) : resolved?.error ? t(`error.${resolved.error}`) : t("workspace.create.issueLooking")}
               </small>
             )}
+            <PreviewHint preview={preview} />
           </label>
           <label className="ws-field">
             <span>{t("workspace.create.from")}</span>

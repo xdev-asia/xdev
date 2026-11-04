@@ -64,6 +64,7 @@ pub fn run() {
         .manage(keybindings::LastSent::default())
         .setup(move |app| {
             updater::start(app.handle().clone());
+            workspace::start_sweep(app.handle());
             // Every settings read and write goes through this store.
             if let Some(file) = commands::settings_path(app.handle()) {
                 app.manage(settings_store::SettingsStore::new(file));
@@ -208,6 +209,8 @@ pub fn run() {
             workspace::repo_clone,
             workspace::repo_clone_cancel,
             workspace::repo_clone_name,
+            workspace::repo_create,
+            workspace::worktree_name_preview,
             workspace::repo_update,
             workspace::repo_hooks,
             workspace::repo_hook_trust,

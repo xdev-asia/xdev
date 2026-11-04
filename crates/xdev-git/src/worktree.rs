@@ -104,14 +104,7 @@ impl Repo {
     /// Whether `name` can be a new branch name: git's own rules, and not
     /// something a command would read as an option or as `@{-1}`.
     pub fn valid_branch_name(&self, name: &str) -> Result<bool, GitError> {
-        if name.is_empty() || name.starts_with('-') || name.chars().any(char::is_control) {
-            return Ok(false);
-        }
-        let (status, out) =
-            run::run_status(&self.workdir, &["check-ref-format", "--branch", name], None)?;
-        // `--branch` expands `@{-1}` to a branch name; a name that comes
-        // back changed was not a plain name.
-        Ok(status == Some(0) && String::from_utf8_lossy(&out).trim() == name)
+        branch_name_ok(&self.workdir, name)
     }
 
     /// `full` is a complete ref name such as `refs/heads/x`.
@@ -176,6 +169,34 @@ impl Repo {
                 &["worktree", "remove", "--force", utf8(path)?],
                 None,
             )?;
+        }
+        run::run(&self.workdir, &["worktree", "prune"], None).map(drop)
+    }
+
+    /// `git worktree move`: a worktree to a new folder. Git moves into a
+    /// folder that exists, as `mv` does, so one that is there is refused
+    /// here instead of getting the worktree inside it.
+    pub fn move_worktree(&self, from: &Path, to: &Path) -> Result<(), GitError> {
+        if to.symlink_metadata().is_ok() {
+            return Err(GitError::Io(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "the target folder exists",
+            )));
+        }
+        run::run(
+            &self.workdir,
+            &["worktree", "move", utf8(from)?, utf8(to)?],
+            None,
+        )
+        .map(drop)
+    }
+
+    /// Takes back a worktree this run just added and nothing was done in:
+    /// git's record and the folder go, and a folder git cannot remove is
+    /// deleted outright, since only this run ever wrote to it.
+    pub fn remove_fresh_worktree(&self, path: &Path) -> Result<(), GitError> {
+        if path.exists() && self.remove_worktree(path).is_err() {
+            std::fs::remove_dir_all(path)?;
         }
         run::run(&self.workdir, &["worktree", "prune"], None).map(drop)
     }
@@ -251,6 +272,22 @@ impl Repo {
             stderr: String::new(),
         })
     }
+}
+
+/// `Repo::valid_branch_name` for a branch that has no repo yet: git runs in
+/// the temp folder, so no repo's own config is read.
+pub fn valid_branch_name(name: &str) -> Result<bool, GitError> {
+    branch_name_ok(&std::env::temp_dir(), name)
+}
+
+fn branch_name_ok(dir: &Path, name: &str) -> Result<bool, GitError> {
+    if name.is_empty() || name.starts_with('-') || name.chars().any(char::is_control) {
+        return Ok(false);
+    }
+    let (status, out) = run::run_status(dir, &["check-ref-format", "--branch", name], None)?;
+    // `--branch` expands `@{-1}` to a branch name; a name that comes back
+    // changed was not a plain name.
+    Ok(status == Some(0) && String::from_utf8_lossy(&out).trim() == name)
 }
 
 /// The global `user.name`, trimmed; `None` when unset or blank. Run from
