@@ -17,6 +17,7 @@ import { onOpenFile, openFile as requestOpenFile, type OpenFileRequest } from "@
 import { paneOf, splitPane } from "./paneTree";
 import { QuickOpenDialog } from "@/search/QuickOpenDialog";
 import { recentFiles } from "@/search/recentFiles";
+import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
 import { copyText } from "@/terminal/terminalActions";
@@ -78,7 +79,7 @@ function storeSelected(path: string): void {
 }
 
 type View = "workspace" | "docs" | "settings";
-type PanelTab = "files" | "changes" | "checks";
+type PanelTab = "files" | "search" | "changes" | "checks";
 type Creating = { repoId: string; busy: boolean; error?: ApiError["code"]; name?: string };
 type SetupCardAt = { kind: "detected"; command: string; repoId: string } | { kind: "ask"; repoId: string };
 type TrustAsk = { path: string; repoId: string; kind: HookKind; text: string; hash: string; changed: boolean; busy: boolean; error?: ApiError["code"] };
@@ -158,6 +159,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The jump palette, and the settings section it asked for; a new `seq` is a new request.
   const [jumpOpen, setJumpOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  // A new value asks the search tab for the keyboard.
+  const [searchFocus, setSearchFocus] = useState(0);
   // Asks the front terminal of a worktree to take keyboard focus, as the palette closes.
   const [termFocus, setTermFocus] = useState<{ worktree: string; seq: number } | null>(null);
   const focusTerminal = (worktree: string) => setTermFocus((f) => ({ worktree, seq: (f?.seq ?? 0) + 1 }));
@@ -490,8 +493,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     "sidebar.left.toggle": () => setSidebarOpen((o) => !o),
     "sidebar.right.toggle": () => setRightOpen((o) => !o),
     "panel.explorer": () => panelKey("files"),
-    // The file tree has no search box of its own, so the jump palette is the search.
-    "panel.search": () => setJumpOpen(true),
+    "panel.search": () => {
+      show("workspace");
+      setRightOpen(true);
+      setPanelTab("search");
+      setSearchFocus((n) => n + 1);
+    },
     "panel.sourceControl": () => panelKey("changes"),
     "zoom.in": () => void stepZoom(api, ZOOM_STEP),
     "zoom.out": () => void stepZoom(api, -ZOOM_STEP),
@@ -1072,6 +1079,23 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                 type="button"
                 role="tab"
                 className="ws-panel-tab"
+                aria-selected={panelTab === "search"}
+                aria-label={t("search.files.tab")}
+                title={t("search.files.tab")}
+                onClick={() => {
+                  setPanelTab("search");
+                  setSearchFocus((n) => n + 1);
+                }}
+              >
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="6.5" />
+                  <path d="m16 16 4.5 4.5" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className="ws-panel-tab"
                 aria-selected={panelTab === "changes"}
                 aria-label={count > 0 ? t("workspace.panel.changesCount", { count }) : t("workspace.panel.changes")}
                 title={t("workspace.panel.changes")}
@@ -1119,6 +1143,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
               )}
+            </div>
+            <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "search"}>
+              <SearchPanel
+                key={current?.path ?? ""}
+                api={api}
+                worktree={current?.path ?? null}
+                focusSeq={searchFocus}
+                onOpen={(rel, at) => current && requestOpenFile({ worktree: current.path, rel, line: at.line, column: at.column })}
+              />
             </div>
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "changes"}>
               {current ? (
