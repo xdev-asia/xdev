@@ -74,6 +74,8 @@ That key is separate from Apple and Microsoft code-signing certificates.
   `build` job then runs in the `release` environment and a reviewer must
   approve it, as for a stable release. The build sets the app version to
   `rc_version`, so an installed candidate does not offer itself again.
+  Candidates ship no MSI (it rejects a non-numeric pre-release); the updater
+  uses the NSIS installer.
 - The `rc-latest` job also runs in `release` (a second approval) and writes
   `latest.json` for the same five bundles. With `rc_publish` off it is a dry
   run: `latest.json` is attached to the run and nothing is uploaded. With it
