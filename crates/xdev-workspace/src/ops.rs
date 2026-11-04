@@ -827,6 +827,7 @@ pub fn create_worktree_linked(
     let repo = Repo::discover(&entry.path)?;
     let prefix = branch_prefix(&repo, &opts.prefix)?;
     let name = name.trim();
+    let auto_name = name.is_empty();
     let (slug, folder, title) = if name.is_empty() {
         let leaf = pick_free(
             &repo,
@@ -865,6 +866,7 @@ pub fn create_worktree_linked(
         made_here: true,
         made_by: opts.made_by,
         title,
+        auto_name,
         ..WorktreeMeta::default()
     };
     let linked = link_shared(&entry.path, &git_entry.path, &opts.shared);
