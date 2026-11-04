@@ -1,4 +1,4 @@
-import type { Api, ApiError, Home, MemorySet, PromptEntry, Skill, UsageSummary } from "./api";
+import type { Agent, Api, ApiError, Home, MemorySet, ProviderSwitches, PromptEntry, Skill, UsageReport, UsageSummary } from "./api";
 import { DEMO_WORKSPACE } from "./mockWorkspace";
 
 type KitApi = Pick<
@@ -14,6 +14,7 @@ type KitApi = Pick<
   | "kitSkillRemove"
   | "kitSkillRestore"
   | "kitUsage"
+  | "kitUsageReport"
   | "kitPathsExist"
   | "kitPromptHistory"
 >;
@@ -34,6 +35,8 @@ const NAME = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const REMOVED_ROOT = "/demo/data/kit/removed";
 const HISTORY_MAX = 1000;
 const DAY_MS = 86_400_000;
+// The earliest session of the demo's logs.
+const TRACKING_SINCE = "2026-01-01T00:00:00Z";
 
 const MEMORY_TEXT = [
   "# Working notes",
@@ -101,7 +104,8 @@ function sum(list: Tokens[]): Tokens {
 const weight = (t: Tokens) => t.input + t.output + t.cache_read + t.cache_write;
 
 /** In-memory agent kit that follows the Rust commands: the same error codes, stamps and roots. */
-export function createMockKit(): KitApi {
+/** `scan` says which agents' logs may be read, like `usage.scan`; the default reads both. */
+export function createMockKit(scan: () => Promise<ProviderSwitches> = async () => ({ claude: true, codex: true })): KitApi {
   const knownTrees = new Set(DEMO_WORKSPACE.repos.flatMap((r) => r.worktrees.map((w) => w.path)));
   // Skill folders by path. Two skills share a name across the homes, so the demo has duplicates.
   const skills = new Map<string, SkillRow>([
@@ -173,7 +177,7 @@ export function createMockKit(): KitApi {
     return HOMES.some((h) => skillsDir === `${h.path}/skills`) ? skillsDir : null;
   }
 
-  return {
+  const api: KitApi = {
     async kitHomes() {
       return structuredClone(HOMES);
     },
@@ -290,6 +294,32 @@ export function createMockKit(): KitApi {
         ],
       };
     },
+    async kitUsageReport(args) {
+      const off = await scan();
+      const agents: Agent[] = (args.agent === null ? (["claude", "codex"] as Agent[]) : [args.agent]).filter((a) => off[a]);
+      const empty = { days: [], by_home: [], by_folder: [], by_model: [], top_sessions: [] } satisfies UsageSummary;
+      if (agents.length === 0) return { summary: empty, by_agent: [], sessions: 0, tracking_since: null };
+      // All time reaches back a year in the demo; the first session is the same whatever the range.
+      const since = args.sinceDay ?? addDay(args.untilDay, -365);
+      const full = await api.kitUsage(since, args.untilDay, false);
+      // The demo's tokens are 70 % Claude, 30 % Codex.
+      const share: Record<Agent, number> = { claude: 7, codex: 3 };
+      const num = agents.reduce((n, a) => n + share[a], 0);
+      const homeAgent = (id: string): Agent => (id === "own-codex" ? "codex" : "claude");
+      const days: UsageSummary["days"] = full.days.map(([d, t]) => [d, scaled(t, num, 10)]);
+      const by_agent = agents
+        .map((a) => [a, scaled(sum(full.days.map(([, t]) => t)), share[a], 10)] as [Agent, Tokens])
+        .sort((a, b) => weight(b[1]) - weight(a[1]));
+      const top_sessions = full.top_sessions.filter((s) => agents.includes(s.agent));
+      const summary: UsageSummary = {
+        days,
+        by_home: full.by_home.filter(([id]) => agents.includes(homeAgent(id))),
+        by_folder: [["/demo/xdev", sum(days.map(([, t]) => t))]],
+        by_model: full.by_model.filter(([m]) => agents.includes(m === "gpt-5" ? "codex" : "claude")),
+        top_sessions,
+      };
+      return { summary, by_agent, sessions: top_sessions.length, tracking_since: Date.parse(TRACKING_SINCE) } satisfies UsageReport;
+    },
     async kitPathsExist(root, paths) {
       const home = HOMES.find((h) => h.path === root);
       if (!home && !knownTrees.has(root)) return reject("outside", root);
@@ -302,4 +332,5 @@ export function createMockKit(): KitApi {
       return structuredClone([...DEMO_HISTORY].sort((a, b) => b.at - a.at).slice(0, Math.min(Math.max(limit, 0), HISTORY_MAX)));
     },
   };
+  return api;
 }
