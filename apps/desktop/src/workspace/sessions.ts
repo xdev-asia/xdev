@@ -191,6 +191,9 @@ export class Sessions {
     if (this.restored) return report;
     this.restored = true;
     if (mode === "none" || !s || s.version !== LAYOUT_VERSION || typeof s.worktrees !== "object" || !s.worktrees) return report;
+    // Tabs whose pty still runs in the terminal service come back attached to it, before any resume.
+    const state = (await this.api.ptydStatus().catch(() => null))?.state;
+    const attach = state === "running" || state === "old-version";
     for (const [worktree, one] of Object.entries(s.worktrees)) {
       if (options.known && !options.known(worktree)) {
         report.skipped.push({ worktree, reason: "unknownWorktree" });
@@ -199,7 +202,7 @@ export class Sessions {
       }
       if (this.layouts.has(worktree) || !one || typeof one.tabs !== "object" || !one.layout) continue;
       try {
-        await this.restoreWorktree(worktree, one, mode, fallback, options, report);
+        await this.restoreWorktree(worktree, one, mode, fallback, options, report, attach);
       } catch {
         // A snapshot this build cannot read (hand-edited, from a bug) must not stop the other worktrees.
       }
@@ -207,7 +210,7 @@ export class Sessions {
     return report;
   }
 
-  private async restoreWorktree(worktree: string, one: WorktreeSnapshot, mode: RestoreMode, fallback: SessionFallback, options: RestoreOptions, report: RestoreReport): Promise<void> {
+  private async restoreWorktree(worktree: string, one: WorktreeSnapshot, mode: RestoreMode, fallback: SessionFallback, options: RestoreOptions, report: RestoreReport, attach: boolean): Promise<void> {
     const ids = new Map<string, string>();
     const files = new Set<string>();
     const opened: string[] = [];
@@ -221,7 +224,7 @@ export class Sessions {
           const ok = await (options.openFile?.(worktree, snap.rel) ?? Promise.resolve(false)).catch(() => false);
           if (ok) files.add(key);
         } else if (snap.kind === "terminal") {
-          const tab = await this.restoreTerminal(worktree, snap, mode, fallback, report);
+          const tab = (attach && (await this.attachTerminal(worktree, snap, report))) || (await this.restoreTerminal(worktree, snap, mode, fallback, report));
           if (!tab) continue;
           ids.set(key, tab.id);
           opened.push(tab.id);
@@ -241,6 +244,41 @@ export class Sessions {
   /** Paths of the worktrees whose saved entry is carried. */
   carriedWorktrees(): string[] {
     return [...this.carried.keys()];
+  }
+
+  /**
+   * One terminal tab of a snapshot attached to its pty in the terminal service, with the output made
+   * since it was saved; null when the service does not hold it (`pty_gone`), and the tab then comes
+   * back the usual way. A live pty comes back whatever the mode, as nothing about it restarts.
+   */
+  private async attachTerminal(worktree: string, snap: Extract<TabSnapshot, { kind: "terminal" }>, report: RestoreReport): Promise<Tab | null> {
+    const id = snap.ptyId;
+    if (typeof id !== "string" || !id || this.entries.has(id)) return null;
+    const cli = snap.cli === undefined ? cliOf(snap.profileId) : snap.cli;
+    const entry = this.entry(worktree, snap.profileId, snap.account, cli, null, snap.title, id);
+    try {
+      await entry.tab.client.attach(typeof snap.seq === "number" && snap.seq >= 0 ? snap.seq : 0);
+    } catch {
+      return null;
+    }
+    const color = TAB_COLORS.includes(snap.color) ? snap.color : "none";
+    entry.tab = {
+      ...entry.tab,
+      agent: snap.agent,
+      agentSession: snap.agentSession,
+      openedAt: snap.openedAt,
+      renamed: snap.renamed === true,
+      pinned: snap.pinned === true,
+      color,
+    };
+    this.entries.set(id, entry);
+    this.cache.delete(worktree);
+    const layout = this.layouts.get(worktree);
+    this.layouts.set(worktree, layout ? addTab(layout, id) : single(id));
+    this.lazy.add(id);
+    report.attached = (report.attached ?? 0) + 1;
+    this.emit();
+    return entry.tab;
   }
 
   /** One terminal tab of a snapshot, or null when `mode` or a missing session leaves it out. */
@@ -771,8 +809,7 @@ export class Sessions {
     this.emit();
   }
 
-  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null): Entry {
-    const id = crypto.randomUUID();
+  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null, id: string = crypto.randomUUID()): Entry {
     const tab: Tab = {
       id,
       worktree,

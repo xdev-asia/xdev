@@ -46,6 +46,7 @@ import { TabStrip, type MenuGroup, type StripItem } from "./TabStrip";
 import { cycleTab, mruOrder, nthTab } from "./tabNav";
 import { TabTitleDialog } from "./TabTitleDialog";
 import { titleStatus } from "./titles";
+import { PtydBanner } from "@/terminal/PtydBanner";
 
 // Offered while the profile view has not loaded: the built-in agents and the default shell.
 const FALLBACK_AGENTS: readonly PtyProfile[] = ["claude", "codex"];
@@ -517,6 +518,7 @@ export function WorktreeTabs(props: {
 
   return (
     <div className="ws-tabs" hidden={!visible}>
+      <PtydBanner api={api} />
       {error && (
         <div className="banner banner-warn ws-tabs-banner" role="alert">
           <div className="banner-text">

@@ -82,6 +82,36 @@ describe("window close", () => {
     saver.stop();
   });
 
+  it("a guard that says no keeps the window open and saves nothing; yes saves and closes", async () => {
+    const api = createMockApi({});
+    const save = vi.spyOn(api, "layoutSave");
+    const s = (sessions = new Sessions(api));
+    const saver = startLayoutSave(api, s);
+    let handler: ((e: { preventDefault(): void }) => void | Promise<void>) | null = null;
+    const win = {
+      onCloseRequested: async (h: (e: { preventDefault(): void }) => void | Promise<void>) => {
+        handler = h;
+        return () => {};
+      },
+    };
+    let answer = false;
+    const stop = watchWindowClose(saver, win, async () => answer);
+    await Promise.resolve();
+    await Promise.resolve();
+    s.open(A, "shell");
+    const kept = { preventDefault: vi.fn() };
+    await handler!(kept);
+    expect(kept.preventDefault).toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    answer = true;
+    const closed = { preventDefault: vi.fn() };
+    await handler!(closed);
+    expect(closed.preventDefault).not.toHaveBeenCalled();
+    expect(save).toHaveBeenCalledTimes(1);
+    stop();
+    saver.stop();
+  });
+
   it("is a no-op without a window", () => {
     const api = createMockApi({});
     const s = (sessions = new Sessions(api));

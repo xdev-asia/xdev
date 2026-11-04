@@ -42,6 +42,10 @@ export type TabSnapshot =
       agentSession: string | null;
       /** When the tab was opened, in ms; the fallback looks for sessions that started after it. */
       openedAt: number;
+      /** The pty id in the terminal service, which a restore attaches to first. */
+      ptyId?: string;
+      /** How many output bytes the tab had drawn; the attach replays from there. */
+      seq?: number;
     }
   | { kind: "review" }
   | { kind: "file"; rel: string };
@@ -53,6 +57,8 @@ export type TabSnapshot =
 export type SessionFallback = (worktree: string, cli: TabCli, since: number) => Promise<string | null>;
 
 export interface RestoreReport {
+  /** Tabs whose pty was still running in the terminal service; left out when none was. */
+  attached?: number;
   /** Agent tabs that came back as their own conversation. */
   resumed: number;
   /** Tabs that came back as a new process: shells, and agents with no session to resume. */
@@ -120,6 +126,8 @@ export function toSnapshot(layout: PaneLayout, tabOf: (id: string) => Tab | null
       agent: tab.agent,
       agentSession: tab.agentSession,
       openedAt: tab.openedAt,
+      ptyId: tab.id,
+      seq: tab.client.seq,
     };
   });
   return next ? { layout: next, tabs } : null;

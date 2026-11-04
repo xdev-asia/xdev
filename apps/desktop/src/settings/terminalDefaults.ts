@@ -14,6 +14,9 @@ export const TERMINAL_DEFAULTS: TerminalSettings = {
   copyOnSelect: true,
   rightClickPaste: !IS_MAC,
   osc52Clipboard: true,
+  service: true,
+  onQuit: "keep",
+  ringMb: 2,
 };
 
 // The ranges Rust clamps a stored value to (`TerminalSettings::clamped`).
@@ -21,6 +24,7 @@ export const TERMINAL_LIMITS = {
   fontSize: { min: 8, max: 32 },
   lineHeight: { min: 1, max: 2 },
   scrollback: { min: 0, max: 100000 },
+  ringMb: { min: 1, max: 16 },
 } as const;
 
 const clamp = (n: number, { min, max }: { min: number; max: number }) => Math.max(min, Math.min(max, n));
@@ -32,5 +36,6 @@ export function clampTerminalSettings(s: TerminalSettings): TerminalSettings {
     fontSize: clamp(Math.round(s.fontSize), TERMINAL_LIMITS.fontSize),
     lineHeight: clamp(s.lineHeight, TERMINAL_LIMITS.lineHeight),
     scrollback: clamp(Math.round(s.scrollback), TERMINAL_LIMITS.scrollback),
+    ringMb: clamp(Math.round(s.ringMb), TERMINAL_LIMITS.ringMb),
   };
 }

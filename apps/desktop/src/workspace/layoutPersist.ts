@@ -46,20 +46,27 @@ export function startLayoutSave(api: Pick<Api, "layoutSave">, sessions: Sessions
 
 /** The part of a Tauri window that `watchWindowClose` uses. */
 export interface CloseWindow {
-  onCloseRequested(handler: () => void | Promise<void>): Promise<() => void>;
+  onCloseRequested(handler: (event?: { preventDefault(): void }) => void | Promise<void>): Promise<() => void>;
 }
 
 /**
  * Flushes the pending save when the window is asked to close (`beforeunload` is not reliable in a
- * Tauri window). The handler does not prevent the close. With no window (tests, a browser) it does
- * nothing. Returns a function that stops listening.
+ * Tauri window). `guard` runs first; when it says no, the close is prevented and nothing is saved.
+ * It is the one close listener: Tauri closes the window after each listener that did not prevent it.
+ * With no window (tests, a browser) it does nothing. Returns a function that stops listening.
  */
-export function watchWindowClose(saver: Pick<LayoutSaver, "flush">, win: CloseWindow | null): () => void {
+export function watchWindowClose(saver: Pick<LayoutSaver, "flush">, win: CloseWindow | null, guard?: () => Promise<boolean>): () => void {
   if (!win) return () => {};
   let off: (() => void) | null = null;
   let stopped = false;
   win
-    .onCloseRequested(() => saver.flush())
+    .onCloseRequested(async (event) => {
+      if (guard && !(await guard().catch(() => true))) {
+        event?.preventDefault();
+        return;
+      }
+      await saver.flush();
+    })
     .then((un) => {
       if (stopped) un();
       else off = un;

@@ -15,7 +15,7 @@ use crate::keybindings::{KeybindingsChanged, KeybindingsText};
 use crate::kit::{KitText, PromptEntry};
 use crate::open_in::OpenTarget;
 use crate::profiles::ProfilesView;
-use crate::pty::{PtyExit, PtyInfo};
+use crate::pty::{PtyAttached, PtyExit, PtyInfo, PtydStatus};
 use crate::quick_commands::{FileCommands, QuickCommand};
 use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
@@ -64,6 +64,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_agent::CustomShell::export_all(cfg)?;
     PtyInfo::export_all(cfg)?;
     PtyExit::export_all(cfg)?;
+    PtyAttached::export_all(cfg)?;
+    PtydStatus::export_all(cfg)?;
+    xdev_pty::proto::SessionInfo::export_all(cfg)?;
     StatusSettings::export_all(cfg)?;
     TerminalSettings::export_all(cfg)?;
     SettingsChanged::export_all(cfg)?;
