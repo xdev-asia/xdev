@@ -21,9 +21,10 @@ pub use clone::{CloneEvent, check_clone_url, clone_name, clone_repo, parse_progr
 pub use conflict::{ConflictOp, ConflictState};
 pub use gh::{
     Check, CheckBucket, GhAccount, GhEnv, GhExec, GhLogin, GhOutput, ISSUE_BODY_MAX,
-    ISSUE_LIMIT_MAX, Issue, IssueComment, IssueDetail, IssueQuery, IssueState, PrDraft, PrState,
-    PrView, SystemGh, TokenGh, gh_logins, issue_list, issue_open_web, issue_view, parse_issue_ref,
-    pr_checks, pr_create, pr_open_web, pr_view, repo_name, run_failed_log,
+    ISSUE_LIMIT_MAX, Issue, IssueComment, IssueDetail, IssueQuery, IssueState, PrDraft, PrFilter,
+    PrQuery, PrState, PrSummary, PrView, SystemGh, TokenGh, gh_logins, issue_list, issue_open_web,
+    issue_view, parse_issue_ref, pr_checks, pr_create, pr_get, pr_list, pr_open_number,
+    pr_open_web, pr_view, repo_name, run_failed_log,
 };
 pub use history::Commit;
 pub use remote::{BaseRange, BaseRefresh, Upstream};
@@ -64,6 +65,8 @@ pub enum GitError {
     Gh(String),
     #[error("no such issue")]
     IssueNotFound,
+    #[error("no such pull request")]
+    PrNotFound,
     #[error("the issue belongs to another repo: {0}")]
     IssueOtherRepo(String),
     #[error("a commit hook failed: {output}")]
@@ -105,6 +108,7 @@ impl GitError {
             GitError::NotGithub => "not_github",
             GitError::Gh(_) => "gh_failed",
             GitError::IssueNotFound => "issue_not_found",
+            GitError::PrNotFound => "pr_not_found",
             GitError::IssueOtherRepo(_) => "issue_other_repo",
             GitError::Hook { .. } => "hook_failed",
             GitError::BadUrl(_) => "bad_arg",

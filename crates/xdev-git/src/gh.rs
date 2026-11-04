@@ -623,6 +623,152 @@ pub fn issue_open_web(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<(), Gi
     Ok(())
 }
 
+const PR_LIST_FIELDS: &str =
+    "number,url,state,isDraft,title,baseRefName,headRefName,author,updatedAt,isCrossRepository";
+
+/// A row of `gh pr list` or `gh pr view <n>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct PrSummary {
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
+    pub number: u64,
+    pub url: String,
+    pub state: PrState,
+    pub title: String,
+    pub base: String,
+    pub head: String,
+    pub author: Option<String>,
+    /// RFC 3339 as `gh` prints it.
+    pub updated_at: String,
+    /// The head lives in another repo (`isCrossRepository`).
+    pub fork: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum PrFilter {
+    Open,
+    Closed,
+    Merged,
+    All,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct PrQuery {
+    /// `None` reads as open.
+    pub state: Option<PrFilter>,
+    /// `--author @me`.
+    pub mine: bool,
+    /// `review-requested:@me`, joined with `search`.
+    pub needs_review: bool,
+    /// At most 256 chars.
+    pub search: Option<String>,
+    /// Default 100, capped at `ISSUE_LIMIT_MAX`.
+    pub limit: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawPrSummary {
+    number: u64,
+    url: String,
+    state: String,
+    #[serde(default)]
+    is_draft: bool,
+    title: String,
+    base_ref_name: String,
+    head_ref_name: String,
+    author: Option<RawLogin>,
+    #[serde(default)]
+    updated_at: String,
+    #[serde(default)]
+    is_cross_repository: bool,
+}
+
+impl From<RawPrSummary> for PrSummary {
+    fn from(raw: RawPrSummary) -> PrSummary {
+        let state = match raw.state.as_str() {
+            "MERGED" => PrState::Merged,
+            "CLOSED" => PrState::Closed,
+            _ if raw.is_draft => PrState::Draft,
+            _ => PrState::Open,
+        };
+        PrSummary {
+            number: raw.number,
+            url: raw.url,
+            state,
+            title: raw.title,
+            base: raw.base_ref_name,
+            head: raw.head_ref_name,
+            author: login(raw.author),
+            updated_at: raw.updated_at,
+            fork: raw.is_cross_repository,
+        }
+    }
+}
+
+pub fn pr_list(gh: &dyn GhExec, cwd: &Path, q: &PrQuery) -> Result<Vec<PrSummary>, GitError> {
+    let limit = q
+        .limit
+        .unwrap_or(DEFAULT_ISSUE_LIMIT)
+        .clamp(1, ISSUE_LIMIT_MAX)
+        .to_string();
+    let mut search: String = q
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.chars().take(SEARCH_MAX).collect())
+        .unwrap_or_default();
+    if q.needs_review {
+        search = format!("review-requested:@me {search}").trim().to_owned();
+    }
+    let mut args = vec!["pr", "list", "--json", PR_LIST_FIELDS, "--limit", &limit];
+    match q.state {
+        Some(PrFilter::Closed) => args.extend(["--state", "closed"]),
+        Some(PrFilter::Merged) => args.extend(["--state", "merged"]),
+        Some(PrFilter::All) => args.extend(["--state", "all"]),
+        Some(PrFilter::Open) | None => {}
+    }
+    if q.mine {
+        args.extend(["--author", "@me"]);
+    }
+    if !search.is_empty() {
+        args.extend(["--search", &search]);
+    }
+    let out = ok(gh.run(cwd, &args, None)?)?;
+    let raw: Vec<RawPrSummary> = serde_json::from_str(&out.stdout).map_err(parse_error)?;
+    Ok(raw.into_iter().map(PrSummary::from).collect())
+}
+
+pub fn pr_get(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<PrSummary, GitError> {
+    let number = number.to_string();
+    let out = gh.run(
+        cwd,
+        &["pr", "view", &number, "--json", PR_LIST_FIELDS],
+        None,
+    )?;
+    if out.status != Some(0) {
+        if out.stderr.contains("Could not resolve") {
+            return Err(GitError::PrNotFound);
+        }
+        return Err(classify(&out));
+    }
+    let raw: RawPrSummary = serde_json::from_str(&out.stdout).map_err(parse_error)?;
+    Ok(raw.into())
+}
+
+/// Opens pull request `number` in the browser through `gh`.
+pub fn pr_open_number(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<(), GitError> {
+    let number = number.to_string();
+    ok(gh.run(cwd, &["pr", "view", &number, "--web"], None)?)?;
+    Ok(())
+}
+
 fn spawn_error(e: io::Error) -> GitError {
     match e.kind() {
         io::ErrorKind::NotFound => GitError::GhMissing,
@@ -939,6 +1085,103 @@ mod tests {
 
     fn args_of(fake: &Fake) -> Vec<String> {
         fake.calls.borrow()[0].0.clone()
+    }
+
+    fn raw_pr(n: u64, state: &str, draft: bool, fork: bool) -> String {
+        format!(
+            r#"{{"number":{n},"url":"https://github.com/o/r/pull/{n}","state":"{state}","isDraft":{draft},"title":"T{n}","baseRefName":"main","headRefName":"feat/{n}","author":{{"login":"hubot"}},"updatedAt":"2026-11-03T09:15:00Z","isCrossRepository":{fork}}}"#
+        )
+    }
+
+    #[test]
+    fn pr_list_default_args_and_mapping() {
+        let body = format!(
+            "[{},{},{}]",
+            raw_pr(1, "OPEN", false, false),
+            raw_pr(2, "OPEN", true, true),
+            raw_pr(3, "MERGED", false, false)
+        );
+        let fake = Fake::new(vec![out(0, &body, "")]);
+        let prs = pr_list(&fake, cwd(), &PrQuery::default()).unwrap();
+        assert_eq!(
+            args_of(&fake),
+            ["pr", "list", "--json", PR_LIST_FIELDS, "--limit", "100"]
+        );
+        assert_eq!(prs[0].state, PrState::Open);
+        assert_eq!(prs[0].author.as_deref(), Some("hubot"));
+        assert!(!prs[0].fork);
+        assert_eq!(prs[1].state, PrState::Draft);
+        assert!(prs[1].fork);
+        assert_eq!(prs[2].state, PrState::Merged);
+        assert_eq!(prs[2].head, "feat/3");
+    }
+
+    #[test]
+    fn pr_list_args_follow_the_query() {
+        let fake = Fake::new(vec![out(0, "[]", ""), out(0, "[]", ""), out(0, "[]", "")]);
+        let q = PrQuery {
+            state: Some(PrFilter::Merged),
+            mine: true,
+            needs_review: true,
+            search: Some("  footer ".into()),
+            limit: Some(9999),
+        };
+        pr_list(&fake, cwd(), &q).unwrap();
+        assert_eq!(
+            args_of(&fake)[4..],
+            [
+                "--limit",
+                "200",
+                "--state",
+                "merged",
+                "--author",
+                "@me",
+                "--search",
+                "review-requested:@me footer"
+            ]
+        );
+        let q = PrQuery {
+            needs_review: true,
+            ..PrQuery::default()
+        };
+        pr_list(&fake, cwd(), &q).unwrap();
+        assert_eq!(
+            fake.calls.borrow()[1].0.last().unwrap(),
+            "review-requested:@me"
+        );
+        let q = PrQuery {
+            state: Some(PrFilter::All),
+            ..PrQuery::default()
+        };
+        pr_list(&fake, cwd(), &q).unwrap();
+        assert!(fake.calls.borrow()[2].0.contains(&"all".to_owned()));
+    }
+
+    #[test]
+    fn pr_get_maps_fork_and_not_found() {
+        let fake = Fake::new(vec![
+            out(0, &raw_pr(13, "OPEN", false, true), ""),
+            out(
+                1,
+                "",
+                "GraphQL: Could not resolve to a PullRequest with the number of 99.",
+            ),
+        ]);
+        let pr = pr_get(&fake, cwd(), 13).unwrap();
+        assert!(pr.fork);
+        assert_eq!(
+            fake.calls.borrow()[0].0,
+            ["pr", "view", "13", "--json", PR_LIST_FIELDS]
+        );
+        let err = pr_get(&fake, cwd(), 99).unwrap_err();
+        assert_eq!(err.code(), "pr_not_found");
+    }
+
+    #[test]
+    fn pr_open_number_runs_view_web() {
+        let fake = Fake::new(vec![out(0, "", "")]);
+        pr_open_number(&fake, cwd(), 7).unwrap();
+        assert_eq!(args_of(&fake), ["pr", "view", "7", "--web"]);
     }
 
     #[test]
