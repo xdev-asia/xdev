@@ -131,4 +131,16 @@ mod tests {
             thread::sleep(Duration::from_millis(100));
         }
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn term_group_stops_the_group_without_a_kill() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "sleep 30"]).stdin(Stdio::null());
+        own_group(&mut cmd);
+        let mut child = cmd.spawn().unwrap();
+        term_group(child.id());
+        let status = child.wait().unwrap();
+        assert!(!status.success());
+    }
 }
