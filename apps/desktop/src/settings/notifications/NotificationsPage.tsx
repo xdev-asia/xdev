@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type ApiError, type StatusSettings } from "@/api";
 import { useI18n } from "@/i18n";
+import { SettingGroup, SettingRow, settingShown } from "@/settings/SettingRow";
 import type { SettingsSectionProps } from "@/settings/sections";
 import { playStatusSound } from "@/status/sound";
 import { patchStatusSettings, setStatusSettings } from "@/status/statusSettings";
@@ -12,6 +13,7 @@ export type Channel = (typeof CHANNELS)[number];
 // The events that can raise a channel; each has its own switch under the master one.
 export const EVENTS = ["onNeedsInput", "onDone", "onFailed", "onBell"] as const;
 export type EventSwitch = (typeof EVENTS)[number];
+const EVENT_IDS = ["notifications.enabled", ...EVENTS.map((e) => `notifications.${e}`), "notifications.suppressWhenFocused"];
 
 export function clampVolume(value: number): number {
   return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
@@ -23,7 +25,7 @@ function fileName(path: string): string {
 
 /** Settings → Notifications: one switch per status channel, and the sound's file and volume. */
 export function NotificationsPage(props: SettingsSectionProps & { onSaved?(settings: StatusSettings): void }): JSX.Element {
-  const { api } = props;
+  const { api, filter } = props;
   const { t } = useI18n();
   const [settings, setSettings] = useState<StatusSettings | null>(null);
   // The volume while the slider moves; saved when it is let go.
@@ -114,9 +116,11 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
         </p>
       )}
 
+      <SettingGroup ids={EVENT_IDS} filter={filter}>
       <h4 className="settings-group">{t("settings.notifications.events")}</h4>
       <ul className="settings-list">
-        <li className="settings-item" data-master="enabled">
+        {settingShown(filter, "notifications.enabled") && (
+        <li className="settings-item" data-master="enabled" data-setting-id="notifications.enabled">
           <div className="settings-item-text">
             <strong>{t("settings.notifications.enabled")}</strong>
             <span className="settings-path">{t("settings.notifications.enabledHint")}</span>
@@ -131,8 +135,9 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
             onClick={() => void put({ enabled: !current.enabled })}
           />
         </li>
-        {EVENTS.map((e) => (
-          <li key={e} className="settings-item" data-event={e}>
+        )}
+        {EVENTS.map((e) => settingShown(filter, `notifications.${e}`) && (
+          <li key={e} className="settings-item" data-event={e} data-setting-id={`notifications.${e}`}>
             <div className="settings-item-text">
               <strong>{t(`settings.notifications.${e}`)}</strong>
               <span className="settings-path">{t(`settings.notifications.${e}Hint`)}</span>
@@ -148,7 +153,8 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
             />
           </li>
         ))}
-        <li className="settings-item" data-option="suppressWhenFocused">
+        {settingShown(filter, "notifications.suppressWhenFocused") && (
+        <li className="settings-item" data-option="suppressWhenFocused" data-setting-id="notifications.suppressWhenFocused">
           <div className="settings-item-text">
             <strong>{t("settings.notifications.suppressWhenFocused")}</strong>
             <span className="settings-path">{t("settings.notifications.suppressWhenFocusedHint")}</span>
@@ -163,8 +169,11 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
             onClick={() => void put({ suppressWhenFocused: !current.suppressWhenFocused })}
           />
         </li>
+        )}
       </ul>
+      </SettingGroup>
 
+      <SettingRow id="notifications.channels" filter={filter}>
       <h4 className="settings-group">{t("settings.notifications.channels")}</h4>
       <p className="settings-empty">{t("settings.notifications.channelsHint")}</p>
       <ul className="settings-list">
@@ -186,7 +195,9 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
           </li>
         ))}
       </ul>
+      </SettingRow>
 
+      <SettingRow id="notifications.sound" filter={filter}>
       <h4 className="settings-group">{t("settings.notifications.soundGroup")}</h4>
       <div className="ws-fields">
         <label className="ws-field notif-volume">
@@ -243,6 +254,7 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
       ) : (
         <p className="settings-empty">{t("settings.notifications.soundFileHint")}</p>
       )}
+      </SettingRow>
     </div>
   );
 }

@@ -997,7 +997,7 @@ it("the toast host is mounted, and its Open Shortcuts button opens that page fil
   view.draw();
   const settings = view.of(SettingsView)[0];
   expect(settings.props.initial).toBe("keys");
-  expect(settings.props.filter).toBe("panel.sourceControl");
+  expect(settings.props.arg).toBe("panel.sourceControl");
 });
 
 it("sidebar and panel keys toggle the left sidebar and the right panel", async () => {

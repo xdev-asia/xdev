@@ -20,7 +20,7 @@ export interface PaletteActions {
   frontTab(worktree: string, id: string): void;
   /** Shows the workspace view, leaving settings or docs. */
   showWorkspace(): void;
-  openSettings(section?: string): void;
+  openSettings(section?: string, target?: string): void;
   newWorktree(name?: string): void;
   addRepo(): void;
   searchDocs(): void;
@@ -145,7 +145,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
         detached: t("workspace.detached"),
         onPick: (wt) => actions.selectWorktree(wt),
       }),
-      ...settingItems(t, (id) => actions.openSettings(id)),
+      ...settingItems(t, (id, target) => (target ? actions.openSettings(id, target) : actions.openSettings(id))),
       ...actionItems(t, handlers),
       ...(current && actions.runQuickCommand && actions.newQuickCommand
         ? quickCommandItems([...picked.global, ...picked.project], repoOfCurrent?.shortName ?? "", t, { run: actions.runQuickCommand, create: actions.newQuickCommand })

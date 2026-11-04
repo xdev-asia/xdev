@@ -4,12 +4,15 @@ import { toApiError, type ApiError, type CursorStyle, type FontWeight, type Term
 import { useI18n } from "@/i18n";
 import { setTerminalSettings, TERMINAL_DEFAULTS, TERMINAL_LIMITS } from "@/terminal/terminalSettings";
 import { RestoreSetting } from "./RestoreSetting";
+import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
 export const FONT_WEIGHTS: FontWeight[] = ["normal", "medium", "bold"];
 export const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
 // The switches of the Clipboard group, in the order the page lists them.
 export const CLIPBOARD_SWITCHES = ["copyOnSelect", "rightClickPaste", "osc52Clipboard"] as const;
+const FONT_IDS = ["terminal.fontFamily", "terminal.fontSize", "terminal.fontWeight", "terminal.lineHeight"];
+const CURSOR_IDS = ["terminal.cursorStyle", "terminal.cursorBlink"];
 type NumberField = "fontSize" | "lineHeight" | "scrollback";
 type Draft = Partial<Record<NumberField | "fontFamily", string>>;
 
@@ -21,7 +24,7 @@ function without(draft: Draft, field: keyof Draft): Draft {
 
 /** Settings → Terminal: font, cursor, buffer and clipboard of every terminal pane. */
 export function TerminalPage(props: SettingsSectionProps): JSX.Element {
-  const { api } = props;
+  const { api, filter } = props;
   const { t } = useI18n();
   const [settings, setSettings] = useState<TerminalSettings | null>(null);
   // A field while it is being typed in; written when it loses focus or on Enter.
@@ -113,8 +116,10 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
         </p>
       )}
 
+      <SettingGroup ids={FONT_IDS} filter={filter}>
       <h4 className="settings-group">{t("settings.terminal.font")}</h4>
       <div className="ws-fields">
+        <SettingRow id="terminal.fontFamily" filter={filter}>
         <label className="ws-field">
           <span>{t("settings.terminal.fontFamily")}</span>
           <input
@@ -130,10 +135,14 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
           />
           <small className="settings-hint">{t("settings.terminal.fontFamilyHint")}</small>
         </label>
+        </SettingRow>
+        <SettingRow id="terminal.fontSize" filter={filter}>
         <label className="ws-field">
           <span>{t("settings.terminal.fontSize")}</span>
           {numberInput("fontSize", 1)}
         </label>
+        </SettingRow>
+        <SettingRow id="terminal.fontWeight" filter={filter}>
         <label className="ws-field">
           <span>{t("settings.terminal.fontWeight")}</span>
           <select
@@ -149,10 +158,13 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
             ))}
           </select>
         </label>
+        </SettingRow>
+        <SettingRow id="terminal.lineHeight" filter={filter}>
         <label className="ws-field">
           <span>{t("settings.terminal.lineHeight")}</span>
           {numberInput("lineHeight", 0.1)}
         </label>
+        </SettingRow>
       </div>
       <p className="settings-empty">{t("settings.terminal.preview")}</p>
       <pre
@@ -167,8 +179,11 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
       >
         {t("settings.terminal.previewText")}
       </pre>
+      </SettingGroup>
 
+      <SettingGroup ids={CURSOR_IDS} filter={filter}>
       <h4 className="settings-group">{t("settings.terminal.cursor")}</h4>
+      <SettingRow id="terminal.cursorStyle" filter={filter}>
       <div className="ws-fields">
         <div className="ws-field" role="radiogroup" aria-label={t("settings.terminal.cursorStyle")}>
           <span>{t("settings.terminal.cursorStyle")}</span>
@@ -190,8 +205,10 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
           </div>
         </div>
       </div>
+      </SettingRow>
       <ul className="settings-list">
-        <li className="settings-item" data-switch="cursorBlink">
+        {settingShown(filter, "terminal.cursorBlink") && (
+        <li className="settings-item" data-switch="cursorBlink" data-setting-id="terminal.cursorBlink">
           <div className="settings-item-text">
             <strong>{t("settings.terminal.cursorBlink")}</strong>
           </div>
@@ -205,8 +222,11 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
             onClick={() => void patch({ cursorBlink: !current.cursorBlink })}
           />
         </li>
+        )}
       </ul>
+      </SettingGroup>
 
+      <SettingRow id="terminal.scrollback" filter={filter}>
       <h4 className="settings-group">{t("settings.terminal.buffer")}</h4>
       <div className="ws-fields">
         <label className="ws-field">
@@ -215,11 +235,13 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
           <small className="settings-hint">{t("settings.terminal.scrollbackHint")}</small>
         </label>
       </div>
+      </SettingRow>
 
+      <SettingGroup ids={CLIPBOARD_SWITCHES.map((k) => `terminal.${k}`)} filter={filter}>
       <h4 className="settings-group">{t("settings.terminal.clipboard")}</h4>
       <ul className="settings-list">
-        {CLIPBOARD_SWITCHES.map((k) => (
-          <li key={k} className="settings-item" data-switch={k}>
+        {CLIPBOARD_SWITCHES.map((k) => settingShown(filter, `terminal.${k}`) && (
+          <li key={k} className="settings-item" data-switch={k} data-setting-id={`terminal.${k}`}>
             <div className="settings-item-text">
               <strong>{t(`settings.terminal.${k}`)}</strong>
               {k === "osc52Clipboard" && <span className="settings-path">{t("settings.terminal.osc52ClipboardHint")}</span>}
@@ -236,14 +258,19 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
           </li>
         ))}
       </ul>
+      </SettingGroup>
 
-      <RestoreSetting api={api} />
+      <SettingRow id="terminal.restore" filter={filter}>
+        <RestoreSetting api={api} />
+      </SettingRow>
 
+      <SettingRow id="terminal.reset" filter={filter}>
       <div className="settings-actions settings-actions-start">
         <button type="button" className="btn-secondary" disabled={busy} onClick={() => void put({ ...TERMINAL_DEFAULTS })}>
           {t("settings.terminal.reset")}
         </button>
       </div>
+      </SettingRow>
     </div>
   );
 }

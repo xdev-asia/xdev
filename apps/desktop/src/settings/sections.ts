@@ -15,8 +15,19 @@ export interface SettingsSectionProps {
   api: Api;
   // Something the workspace lists changed, so it reloads.
   onChanged(): void;
-  // A search the section starts with (Shortcuts: an action id the toast asked for).
-  filter?: string;
+  // What the opener asked the section to start with (Shortcuts: an action id, Repos: a repo id,
+  // Quick commands: "new").
+  arg?: string;
+  // The settings search; set while a query is typed or a palette item asked for one control.
+  filter?: SettingsFilter;
+}
+
+export interface SettingsFilter {
+  query: string;
+  // Entry ids that match; a SettingRow whose id is not here renders nothing.
+  ids: ReadonlySet<string>;
+  // The entry the palette opened: scrolled into view and highlighted once.
+  target?: string;
 }
 
 export interface SettingsSection {
