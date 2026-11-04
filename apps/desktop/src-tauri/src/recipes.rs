@@ -24,8 +24,6 @@ pub const PR_VARS: [&str; 9] = [
 ];
 
 /// What a branch name template can name.
-// Used by `worktree_suggest_branch` (B4).
-#[allow(dead_code)]
 pub const BRANCH_VARS: [&str; 3] = ["basePrompt", "firstPrompt", "assistantMessage"];
 
 /// What a conflict resolution template can name.

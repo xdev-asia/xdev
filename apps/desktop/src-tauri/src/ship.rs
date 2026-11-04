@@ -18,8 +18,10 @@ use xdev_policy::{Action, Gate, Verdict};
 use xdev_workspace::{Registry, WorkspaceError, path_key};
 
 use crate::accounts::data_dir;
+use crate::agent_sessions::{SessionRow, worktree_sessions};
 use crate::commands::{AppState, CmdError, load_git_settings};
-use crate::recipes::{COMMIT_VARS, PR_VARS, render};
+use crate::kit::Ctx;
+use crate::recipes::{BRANCH_VARS, COMMIT_VARS, PR_VARS, render};
 use crate::settings::Recipe;
 use crate::tasks::{gate, provider_runner};
 use crate::workspace::{bad_arg, inside, parent_within, start_of};
@@ -594,18 +596,83 @@ pub fn worktree_draft_pr(
     )
 }
 
+/// The built-in branch name prompt; `{basePrompt}` is this and the request.
+const BRANCH_BASE: &str = "Name a git branch for the work that starts with the request below. \
+     Answer with the name only: at most 4 lowercase words joined with dashes, \
+     no quotes and no commentary.";
+
+/// A branch leaf for the work that starts with `first_prompt`: the agent's
+/// first line through the slug rules, cut to 4 words. Whatever the agent
+/// does wrong (no runner, an error, nothing usable) falls back to the first
+/// words of the prompt; a prompt with no usable word is `bad_name`.
+fn suggest_with(
+    runner: Option<&dyn Runner>,
+    repo: &Repo,
+    first_prompt: &str,
+    recipe: &Recipe,
+) -> Result<String, CmdError> {
+    let fallback = names_from_work(first_prompt);
+    if fallback.is_empty() {
+        return Err(err("bad_name", None));
+    }
+    let Some(runner) = runner else {
+        return Ok(fallback);
+    };
+    let base = format!("{BRANCH_BASE}\n\n{first_prompt}");
+    // `xDev keeps no assistant text (R2): the variable is there, empty.
+    let vars = [
+        ("basePrompt", base.as_str()),
+        ("firstPrompt", first_prompt),
+        ("assistantMessage", ""),
+    ];
+    debug_assert!(vars.iter().map(|(name, _)| *name).eq(BRANCH_VARS));
+    let answer = ask(runner, repo, render(&recipe.template, &vars), &recipe.args);
+    let line = answer
+        .ok()
+        .and_then(|a| a.lines().find(|l| !l.trim().is_empty()).map(str::to_owned));
+    // The agent's dashes separate words, so 4 words are 4 dashed parts.
+    let named = line
+        .map(|l| names_from_work(&l.replace(['-', '_', '/', '.'], " ")))
+        .unwrap_or_default();
+    Ok(if named.is_empty() { fallback } else { named })
+}
+
+fn names_from_work(prompt: &str) -> String {
+    xdev_workspace::from_work(prompt)
+}
+
+/// The title of the session `session` names (its id or `<home>:<id>`), else
+/// of the first row, which is the latest.
+fn first_prompt(rows: &[SessionRow], session: Option<&str>) -> Option<String> {
+    let row = match session {
+        Some(id) => rows
+            .iter()
+            .find(|r| r.session.id == id || r.session.key == id)?,
+        None => rows.first()?,
+    };
+    row.session.title.clone().filter(|t| !t.trim().is_empty())
+}
+
 /// A branch name for the work of `session` (else the latest session of the
 /// worktree), from the branch-name recipe's agent or the first words of the
 /// prompt. Makes no change; Settings → Git, auto rename, does not apply.
 #[tauri::command(async)]
 pub fn worktree_suggest_branch(
-    _app: AppHandle,
-    _state: State<'_, AppState>,
-    _path: PathBuf,
-    _session: Option<String>,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: PathBuf,
+    session: Option<String>,
 ) -> Result<String, CmdError> {
-    // Contract stub; B4 fills it in.
-    Err(err("unsupported", None))
+    let data = data_dir(&state)?;
+    locate(data, &path)?;
+    let ctx = Ctx::of(&state)?;
+    let rows = worktree_sessions(&ctx.data, || ctx.homes(), &path)?;
+    let prompt = first_prompt(&rows, session.as_deref()).ok_or_else(|| err("bad_name", None))?;
+    let recipe = load_git_settings(&app).recipes.branch_name;
+    // A recipe whose agent cannot run drafts (or the gate says no) still
+    // names the branch, from the prompt.
+    let runner = draft_runner(data, &path, &recipe).ok();
+    suggest_with(runner.as_deref(), &Repo::discover(&path)?, &prompt, &recipe)
 }
 
 /// Settings → Git: count the range against the upstream.
@@ -1109,6 +1176,27 @@ mod tests {
         }
     }
 
+    fn prompt_row(id: &str, title: Option<&str>) -> SessionRow {
+        SessionRow {
+            session: xdev_kit::AgentSession {
+                key: format!("h:{id}"),
+                id: id.to_owned(),
+                home_id: "h".to_owned(),
+                agent: xdev_kit::Agent::Claude,
+                cwd: None,
+                branch: None,
+                title: title.map(str::to_owned),
+                model: None,
+                first: 0,
+                last: 0,
+                messages: 1,
+            },
+            worktree: None,
+            repo: None,
+            resumable: true,
+        }
+    }
+
     fn repo_of(fx: &Fixture) -> Repo {
         Repo::discover(&fx.wt).unwrap()
     }
@@ -1255,6 +1343,104 @@ mod tests {
         let req = runner.reqs.borrow()[0].clone();
         assert!(req.tools.is_empty());
         assert_eq!(req.model, None);
+    }
+
+    #[test]
+    fn suggest_takes_the_runner_answer_through_the_slug_rules() {
+        let fx = fixture();
+        let runner = FakeRunner::new(Ok(
+            "```\nFix the Footer's usage-meter rounding\n```\nbecause",
+        ));
+        let name = suggest_with(
+            Some(&runner),
+            &repo_of(&fx),
+            "fix the footer usage meter rounding",
+            &Recipe::default(),
+        )
+        .unwrap();
+        assert_eq!(name, "fix-the-footers-usage");
+        // The prompt carries the request, with no tools.
+        let req = runner.reqs.borrow()[0].clone();
+        assert!(req.prompt.contains("fix the footer usage meter rounding"));
+        assert!(req.tools.is_empty());
+    }
+
+    #[test]
+    fn suggest_renders_the_recipe_template_with_its_variables() {
+        let fx = fixture();
+        let runner = FakeRunner::new(Ok("name-it"));
+        let recipe = Recipe {
+            agent: None,
+            args: vec!["--x".to_owned()],
+            template: "FIRST[{firstPrompt}] ASSISTANT[{assistantMessage}] BASE[{basePrompt}]"
+                .to_owned(),
+        };
+        suggest_with(Some(&runner), &repo_of(&fx), "do the thing", &recipe).unwrap();
+        let req = runner.reqs.borrow()[0].clone();
+        assert!(
+            req.prompt
+                .starts_with("FIRST[do the thing] ASSISTANT[] BASE[")
+        );
+        assert_eq!(req.args, ["--x"]);
+    }
+
+    #[test]
+    fn suggest_falls_back_to_the_first_words_when_the_runner_fails_or_says_nothing() {
+        let fx = fixture();
+        for answer in [Err("claude_missing"), Ok("   "), Ok("日本語")] {
+            let runner = FakeRunner::new(answer);
+            let name = suggest_with(
+                Some(&runner),
+                &repo_of(&fx),
+                "fix the footer usage meter rounding",
+                &Recipe::default(),
+            )
+            .unwrap();
+            assert_eq!(name, "fix-the-footer-usage", "{answer:?}");
+        }
+        // No runner at all (a profile without one): the same fallback.
+        let name = suggest_with(
+            None,
+            &repo_of(&fx),
+            "Add login page now please",
+            &Recipe::default(),
+        )
+        .unwrap();
+        assert_eq!(name, "add-login-page-now");
+    }
+
+    #[test]
+    fn suggest_without_a_usable_prompt_is_bad_name() {
+        let fx = fixture();
+        let runner = FakeRunner::new(Ok("anything"));
+        for prompt in ["", "   ", "日本語 だけ", "... ---"] {
+            let e =
+                suggest_with(Some(&runner), &repo_of(&fx), prompt, &Recipe::default()).unwrap_err();
+            assert_eq!(e.code, "bad_name", "{prompt:?}");
+        }
+        // The runner is not asked about nothing.
+        assert!(runner.reqs.borrow().is_empty());
+    }
+
+    #[test]
+    fn the_prompt_comes_from_the_named_session_else_the_latest() {
+        let row = |id: &str, title: Option<&str>| prompt_row(id, title);
+        let rows = [
+            row("new", Some("latest work")),
+            row("old", Some("older work")),
+        ];
+        assert_eq!(
+            first_prompt(&rows, Some("old")).as_deref(),
+            Some("older work")
+        );
+        assert_eq!(first_prompt(&rows, None).as_deref(), Some("latest work"));
+        // `<home>:<id>` keys work too.
+        assert_eq!(
+            first_prompt(&rows, Some("h:old")).as_deref(),
+            Some("older work")
+        );
+        assert_eq!(first_prompt(&rows, Some("nope")), None);
+        assert_eq!(first_prompt(&[row("x", None)], None), None);
     }
 
     #[test]
