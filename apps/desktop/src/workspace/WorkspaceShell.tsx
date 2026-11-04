@@ -4,7 +4,7 @@ import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
 import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail } from "@/api";
-import { DocsApp } from "@/DocsApp";
+import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useI18n } from "@/i18n";
@@ -135,7 +135,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // A request for the Agent kit to open a tab; a new `seq` is a new request.
   const [kitOpen, setKitOpen] = useState<{ tab: KitTab; seq: number } | null>(null);
   // A request for the docs view to show one of its apps (the usage popover asks for Accounts).
-  const [appRequest, setAppRequest] = useState<{ app: AppId; seq: number } | null>(null);
+  const [appRequest, setAppRequest] = useState<AppRequest | null>(null);
   // The tab in front of each worktree, which is where a prompt from the Agent kit is typed.
   const [shownTab, setShownTab] = useState<Record<string, string | null>>({});
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -1215,6 +1215,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     show("docs");
   }
 
+  function openTask(id: string): void {
+    setAppRequest((r) => ({ app: "tasks", task: id, seq: (r?.seq ?? 0) + 1 }));
+    show("docs");
+  }
+
   function openAccounts(): void {
     setAppRequest((r) => ({ app: "accounts", seq: (r?.seq ?? 0) + 1 }));
     show("docs");
@@ -1764,9 +1769,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         repos={repos}
         sessions={sessions}
         history={history}
+        tasks={() => api.tasks()}
         current={current}
         shownTab={current ? shownTab[current.path] ?? null : null}
         actions={{
+          openTask,
           selectWorktree: (wt) => {
             select(wt);
             show("workspace");
