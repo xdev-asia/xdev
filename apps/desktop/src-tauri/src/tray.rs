@@ -91,11 +91,12 @@ pub fn attention_dot_mono(rgba: &mut [u8], width: u32, height: u32) {
     if coloured.len() != rgba.len() {
         return;
     }
-    for (out, with_dot) in rgba.chunks_exact_mut(4).zip(coloured.chunks_exact(4)) {
+    for at in (0..rgba.len()).step_by(4) {
+        let with_dot = &coloured[at..at + 4];
         if with_dot[..3] == ATTENTION_RGB && with_dot[3] == 255 {
-            out.copy_from_slice(&[0, 0, 0, 255]);
+            rgba[at..at + 4].copy_from_slice(&[0, 0, 0, 255]);
         } else {
-            out.copy_from_slice(with_dot);
+            rgba[at..at + 4].copy_from_slice(with_dot);
         }
     }
 }
@@ -381,15 +382,19 @@ mod tests {
         // The dot: black, opaque, in the same corner as the coloured one.
         assert_eq!(pixel(&rgba, w, w - 5, 5), [0, 0, 0, 255]);
         // No pixel holds the warn colour: a template carries no colour.
-        assert!(rgba.chunks_exact(4).all(|p| p[..3] != ATTENTION_RGB));
+        assert!(
+            (0..rgba.len())
+                .step_by(4)
+                .all(|at| rgba[at..at + 3] != ATTENTION_RGB)
+        );
         // The ring is cleared and the centre is untouched, as in the coloured dot.
         assert!((0..w).any(|x| pixel(&rgba, w, x, 5)[3] == 0));
         assert_eq!(pixel(&rgba, w, 12, 20), [10, 10, 10, 10]);
         // Same shape as the coloured dot.
         let mut coloured = vec![10u8; (w * h * 4) as usize];
         attention_dot(&mut coloured, w, h);
-        for (m, c) in rgba.chunks_exact(4).zip(coloured.chunks_exact(4)) {
-            assert_eq!(m[3], c[3]);
+        for at in (0..rgba.len()).step_by(4) {
+            assert_eq!(rgba[at + 3], coloured[at + 3]);
         }
     }
 
