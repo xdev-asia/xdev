@@ -5,7 +5,9 @@ import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { useI18n } from "@/i18n";
 import { profileLetter, profileName, useProfiles } from "@/agents/profileStore";
 import { ago } from "./ago";
-import { groupWorktrees, type Group } from "./groups";
+import { cardParts } from "./cardModel";
+import { groupBy, orderedWorktrees, type Section } from "./groups";
+import { sortEntries } from "./sidebarSort";
 import type { PendingCreate } from "./pendingCreates";
 import { checksSummary } from "./ship";
 import type { TabStatus } from "./status";
@@ -120,7 +122,8 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const { view } = useProfiles();
   // The worktree or repo whose menu is open.
   const [menu, setMenu] = useState<OpenMenu | null>(null);
-  const [collapsed, setCollapsed] = useState<Group[]>([]);
+  // Folded sections, by their mode-scoped key.
+  const [collapsed, setCollapsed] = useState<string[]>([]);
   // Parent worktree paths whose children are folded away; project groups and "Archived" lists folded.
   const [folded, setFolded] = useState<string[]>([]);
   const [shut, setShut] = useState<string[]>([]);
@@ -134,13 +137,15 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   // The repos whose "Found outside xDev" group is open; all start closed.
   const [foundOpen, setFoundOpen] = useState<string[]>([]);
 
-  const toggle = (group: Group) =>
-    setCollapsed(collapsed.includes(group) ? collapsed.filter((c) => c !== group) : [...collapsed, group]);
+  const toggle = (key: string) =>
+    setCollapsed(collapsed.includes(key) ? collapsed.filter((c) => c !== key) : [...collapsed, key]);
   const apps = props.openInApps ?? [];
   const copy = (text: string) => props.onCopy?.(text);
 
   // Rows are plain calls, not components, so the list keeps one set of hooks.
   // `pinnedGroup`: the row sits in the Pinned group, which names the project on every row.
+  const parts = cardParts(prefs);
+  const compact = prefs.compactCards;
   const row = ({ entry: { wt, repo }, depth, children }: NestRow, pinnedGroup: boolean) => {
     const status = props.dots[wt.path] ?? null;
     const open = menu?.kind === "worktree" && menu.key === wt.path;
@@ -154,6 +159,31 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     const summary = pr && found?.checks ? checksSummary(found.checks) : null;
     const unread = props.unread?.[wt.path] === true;
     const statusLabel = status ? t(`workspace.status.${status}`) : "";
+    const statNode = counts && parts.has("diffStat") && (
+      <span className="ws-stat" title={t("workspace.row.stat", counts)}>
+        <span className="ws-stat-add">{`+${counts.added}`}</span>{" "}
+        <span className="ws-stat-del">{`−${counts.removed}`}</span>
+      </span>
+    );
+    const prNode = pr && parts.has("pr") && (
+      <span
+        className="ws-pr"
+        role="img"
+        aria-label={
+          summary
+            ? t("ship.chip.labelChecks", { number: pr.number, state: t(`checks.state.${pr.state}`).toLowerCase(), checks: t(`checks.summary.${summary}`) })
+            : t("ship.chip.label", { number: pr.number, state: t(`checks.state.${pr.state}`).toLowerCase() })
+        }
+      >
+        <span className="ws-dot" data-pr={pr.state} aria-hidden="true" />
+        {`#${pr.number}`}
+        {summary && <span className="ws-dot" data-check={summary} aria-hidden="true" />}
+      </span>
+    );
+    const showAgents = parts.has("agents") ? agents : [];
+    const showStatus = parts.has("workStatus") ? wt.status : null;
+    const showItem = parts.has("workItem") ? wt.item : null;
+    const showCli = parts.has("workStatus") ? wt.setByCliMs : null;
     return (
       <li key={wt.path} className={(unread ? "ws-wt ws-wt-unread" : "ws-wt") + (depth === 2 ? " ws-wt-child" : "")} data-path={wt.path} data-depth={depth} data-picked={props.picked?.has(wt.path) ? "true" : undefined}>
         <button
@@ -183,21 +213,27 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
               {wt.title ?? wt.name}
             </span>
             {wt.pinned && <PinMark t={t} />}
-            {seen !== null && <span className="ws-wt-time">{ago(seen, props.now ?? Date.now(), t)}</span>}
+            {seen !== null && parts.has("time") && <span className="ws-wt-time">{ago(seen, props.now ?? Date.now(), t)}</span>}
+            {compact && statNode}
+            {compact && prNode}
           </span>
+          {!compact && (parts.has("branch") || parts.has("projectChip") || wt.primary) && (
           <span className="ws-wt-sub">
             {wt.primary && <span className="ws-tag">{t("workspace.primary")}</span>}
-            {(many || pinnedGroup) && (
+            {(many || pinnedGroup) && parts.has("projectChip") && (
               <span className="ws-tag ws-tag-project" data-project-chip={repo.id}>
                 <RepoBadge repo={repo} />
                 {repo.shortName}
               </span>
             )}
-            <span className="ws-wt-branch" title={wt.branch ?? undefined}>
-              {wt.branch ?? t("workspace.detached")}
-            </span>
+            {parts.has("branch") && (
+              <span className="ws-wt-branch" title={wt.branch ?? undefined}>
+                {wt.branch ?? t("workspace.detached")}
+              </span>
+            )}
           </span>
-          {wt.comment.trim() !== "" && (
+          )}
+          {!compact && parts.has("comment") && wt.comment.trim() !== "" && (
             <span
               className="ws-wt-comment"
               title={wt.comment}
@@ -209,46 +245,27 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
               {wt.comment.split("\n")[0]}
             </span>
           )}
-          {(agents.length > 0 || counts || pr || wt.status || wt.item || wt.setByCliMs != null) && (
+          {!compact && (showAgents.length > 0 || statNode || prNode || showStatus || showItem || showCli != null) && (
             <span className="ws-wt-meta">
-              {wt.status && (
-                <span className="ws-chip ws-wt-status" data-work={wt.status}>
-                  {t(`workspace.work.${wt.status}`)}
+              {showStatus && (
+                <span className="ws-chip ws-wt-status" data-work={showStatus}>
+                  {t(`workspace.work.${showStatus}`)}
                 </span>
               )}
-              {wt.setByCliMs != null && (
-                <span className="ws-wt-cli" title={t("cli.mark.title", { ago: ago(wt.setByCliMs, props.now ?? Date.now(), t) })}>
+              {showCli != null && (
+                <span className="ws-wt-cli" title={t("cli.mark.title", { ago: ago(showCli, props.now ?? Date.now(), t) })}>
                   {t("cli.mark")}
                 </span>
               )}
-              {wt.item && props.onCopyLink && <WorkItemChip item={wt.item} onCopy={props.onCopyLink} />}
-              {agents.map((p) => (
+              {showItem && props.onCopyLink && <WorkItemChip item={showItem} onCopy={props.onCopyLink} />}
+              {showAgents.map((p) => (
                 <span key={p} className="ws-chip" data-profile={p} title={profileName(view, p, t)}>
                   {profileLetter(view, p)}
                 </span>
               ))}
               <span className="ws-wt-spacer" />
-              {counts && (
-                <span className="ws-stat" title={t("workspace.row.stat", counts)}>
-                  <span className="ws-stat-add">{`+${counts.added}`}</span>{" "}
-                  <span className="ws-stat-del">{`−${counts.removed}`}</span>
-                </span>
-              )}
-              {pr && (
-                <span
-                  className="ws-pr"
-                  role="img"
-                  aria-label={
-                    summary
-                      ? t("ship.chip.labelChecks", { number: pr.number, state: t(`checks.state.${pr.state}`).toLowerCase(), checks: t(`checks.summary.${summary}`) })
-                      : t("ship.chip.label", { number: pr.number, state: t(`checks.state.${pr.state}`).toLowerCase() })
-                  }
-                >
-                  <span className="ws-dot" data-pr={pr.state} aria-hidden="true" />
-                  {`#${pr.number}`}
-                  {summary && <span className="ws-dot" data-check={summary} aria-hidden="true" />}
-                </span>
-              )}
+              {statNode}
+              {prNode}
             </span>
           )}
         </button>
@@ -285,33 +302,52 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const shown = visibleEntries(entries, prefs, props.selected);
   // Pinned worktrees get their own group first and are left out of the status sections.
   const shownPaths = new Set(shown.entries.map((e) => e.path));
-  const pinnedRows = nestRows(pinnedEntries(tree ?? []).filter((e) => shownPaths.has(e.path)), new Set(folded));
+  const pinnedRows = nestRows(sortEntries(pinnedEntries(tree ?? []).filter((e) => shownPaths.has(e.path)), prefs.sort, props.activity), new Set(folded));
   const pinnedPaths = new Set(pinnedRows.map((r) => r.entry.path));
-  const sections = groupWorktrees(
-    shown.entries.filter((e) => !pinnedPaths.has(e.path)),
-    (path) => props.dots[path] ?? null,
-  ).map((s) => ({ group: s.group, items: nestRows(s.items, new Set(folded)) }));
+  const sections = groupBy(
+    sortEntries(shown.entries.filter((e) => !pinnedPaths.has(e.path)), prefs.sort, props.activity),
+    prefs.groupBy,
+    { dotOf: (path) => props.dots[path] ?? null, prOf: (path) => props.prs?.[path]?.pr?.state ?? null },
+  ).map((s): Section<NestRow> => ({ ...s, items: nestRows(s.items, new Set(folded)) }));
   const gone = repoList.filter((repo) => repo.missing);
   const order = [
     ...(pinnedShut ? [] : pinnedRows.map((r) => r.entry.path)),
-    ...sections.filter((s) => !collapsed.includes(s.group)).flatMap((s) => s.items.map((r) => r.entry.path)),
+    ...orderedWorktrees(sections.map((s) => ({ key: s.key, items: s.items.map((r) => ({ path: r.entry.path })) })), collapsed),
   ];
   const { onOrder } = props;
   useEffect(() => onOrder?.(order), [order.join(",")]);
 
-  const section = ({ group, items }: { group: Group; items: NestRow[] }) => {
-    const open = !collapsed.includes(group);
+  const sectionName = (s: Section<NestRow>): string => {
+    if (s.mode === "activity") return t(`workspace.group.${s.id}`);
+    if (s.mode === "project") return s.repo?.shortName ?? s.id;
+    if (s.mode === "status") return s.id === "none" ? t("workspace.groupBy.status.none") : t(`workspace.work.${s.id}`);
+    return t(`workspace.groupBy.pr.${s.id}`);
+  };
+
+  const section = (s: Section<NestRow>) => {
+    // No grouping: the rows stand alone, without a heading.
+    if (s.mode === "none") {
+      return (
+        <li key={s.key} className="ws-group ws-group-bare" data-group="none">
+          <ul className="ws-wts">{s.items.map((r) => row(r, false))}</ul>
+        </li>
+      );
+    }
+    const open = !collapsed.includes(s.key);
+    const dataGroup = s.mode === "activity" ? s.id : s.key;
     return (
-      <li key={group} className="ws-group" data-group={group}>
-        <button type="button" className="ws-group-head" data-group={group} aria-expanded={open} onClick={() => toggle(group)}>
+      <li key={s.key} className="ws-group" data-group={dataGroup}>
+        <button type="button" className="ws-group-head" data-group={dataGroup} aria-expanded={open} onClick={() => toggle(s.key)}>
           <svg aria-hidden="true" className="ws-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="m6 9 6 6 6-6" />
           </svg>
-          <span className={group === "working" ? "ws-group-dot ws-pulse" : "ws-group-dot"} data-group={group} aria-hidden="true" />
-          <span className="ws-group-name">{t(`workspace.group.${group}`)}</span>
-          <span className="ws-group-count">{items.length}</span>
+          {s.mode === "activity" && <span className={s.id === "working" ? "ws-group-dot ws-pulse" : "ws-group-dot"} data-group={s.id} aria-hidden="true" />}
+          {s.mode === "pr" && s.id !== "none" && <span className="ws-dot" data-pr={s.id} aria-hidden="true" />}
+          {s.mode === "project" && s.repo && <RepoBadge repo={s.repo} />}
+          <span className="ws-group-name">{sectionName(s)}</span>
+          <span className="ws-group-count">{s.items.length}</span>
         </button>
-        {open && <ul className="ws-wts">{items.map((r) => row(r, false))}</ul>}
+        {open && <ul className="ws-wts">{s.items.map((r) => row(r, false))}</ul>}
       </li>
     );
   };
@@ -632,6 +668,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   return (
     <div
       className="ws-worktrees"
+      data-layout={compact ? "compact" : undefined}
       onKeyDown={(e) => {
         const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
         if (typing) return;
