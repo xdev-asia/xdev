@@ -8,7 +8,7 @@ import { ago } from "@/workspace/ago";
 import type { Sessions } from "@/workspace/sessions";
 import type { ActivityFeed, FeedEntry } from "./feed";
 import { loadActivityOptions, saveActivityOptions, type ActivityOptions } from "./options";
-import { activityThreads, type ThreadGroup, type WorktreeName } from "./threads";
+import { activityThreads, hasAgentThreads, type ThreadGroup, type WorktreeName } from "./threads";
 
 export type ActivityTab = "threads" | "feed";
 type T = (key: string, vars?: Record<string, string | number>) => string;
@@ -185,7 +185,7 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
     .flatMap((w) => sessions.tabs(w))
     .map((tb) => ({ tab: tb, lastOutput: sessions.lastOutput(tb.id) }));
   const groups = activityThreads(sources, props.names, query, options);
-  const anyThreads = activityThreads(sources, props.names, "", { ...options, showIdle: false }).length > 0;
+  const anyThreads = hasAgentThreads(sources);
 
   return (
     <ActivityView
