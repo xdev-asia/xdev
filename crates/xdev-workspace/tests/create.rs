@@ -194,7 +194,14 @@ fn with_an_identity_the_first_commit_is_made() {
 
 #[test]
 fn without_an_identity_the_folder_stays_and_nothing_is_added() {
-    run_children("idnone_", "", 1);
+    // No identity, and no guess from the host name (macOS git makes one).
+    run_children(
+        "idnone_",
+        "[user]
+	useConfigOnly = true
+",
+        1,
+    );
 }
 
 #[test]
