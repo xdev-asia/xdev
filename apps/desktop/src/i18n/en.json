@@ -1744,7 +1744,7 @@
   "termMenu.paste": "Paste",
   "termMenu.selectAll": "Select All",
   "termMenu.forkSession": "Fork session",
-  "termMenu.handOff": "Hand off to another agent",
+  "termMenu.handOff": "Hand off to another agent…",
   "agentFork.handOff.title": "Hand off to another agent",
   "agentFork.handOff.agent": "Agent",
   "agentFork.handOff.worktree": "Worktree",
