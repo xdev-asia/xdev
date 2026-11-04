@@ -60,6 +60,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .manage(updater::Pending::default())
+        .manage(updater::Phase::default())
         // Terminals wait until the start below has picked where they run.
         .manage(pty::Ptys::pending())
         .manage(workspace::WorkspaceLock::default())
@@ -140,6 +141,8 @@ pub fn run() {
             updater::update_status,
             updater::update_restart,
             updater::update_notify,
+            updater::update_check,
+            updater::update_phase,
             commands::open_vault,
             commands::last_vault,
             commands::git_settings,
