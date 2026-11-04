@@ -150,6 +150,7 @@ export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { CliAsk, CliOpenTab, TabReport };
 export type { FileKind } from "@xdev/bindings";
 export type { RestoreMode } from "@xdev/bindings";
+export type { Theme } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
 
 // The IPC types come from Rust; see packages/bindings/README.md.

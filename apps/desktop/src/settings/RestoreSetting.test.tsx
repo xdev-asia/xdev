@@ -33,7 +33,7 @@ beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hook
 
 it("shows the stored mode and writes the pick, keeping the zoom", async () => {
   const api = createMockApi({});
-  await api.uiSettingsPut({ zoom: 1.2, restore: "all" });
+  await api.uiSettingsPut({ zoom: 1.2, restore: "all", theme: "system" });
   const draw = () => {
     hooks.cursor = 0;
     hooks.active = true;

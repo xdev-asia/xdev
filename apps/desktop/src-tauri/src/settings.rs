@@ -486,6 +486,8 @@ pub struct UiSettings {
     pub zoom: f32,
     /// Which tabs come back on start. A file from before it loads `All`.
     pub restore: RestoreMode,
+    /// Light, dark, or follow the system. A file from before it loads `System`.
+    pub theme: Theme,
 }
 
 impl Default for UiSettings {
@@ -493,7 +495,32 @@ impl Default for UiSettings {
         UiSettings {
             zoom: 1.0,
             restore: RestoreMode::All,
+            theme: Theme::System,
         }
+    }
+}
+
+/// Settings → General → Theme. A value this build does not know reads as
+/// `System`, so it does not reset the zoom beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    /// Follow the operating system's light or dark setting.
+    #[default]
+    System,
+    Dark,
+    Light,
+}
+
+impl<'de> serde::Deserialize<'de> for Theme {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("dark") => Theme::Dark,
+            Some("light") => Theme::Light,
+            _ => Theme::System,
+        })
     }
 }
 
@@ -1774,6 +1801,46 @@ then sum up"
     }
 
     #[test]
+    fn a_file_without_theme_loads_system() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(&path, r#"{"ui":{"zoom":1.5,"restore":"none"}}"#).unwrap();
+        let ui = load(&path).ui;
+        assert_eq!(ui.theme, Theme::System);
+        assert_eq!(ui.zoom, 1.5);
+        assert_eq!(ui.restore, RestoreMode::None);
+
+        fs::write(&path, r#"{"ui":{"zoom":1.5,"theme":"sepia"}}"#).unwrap();
+        let ui = load(&path).ui;
+        assert_eq!(ui.theme, Theme::System);
+        assert_eq!(ui.zoom, 1.5);
+    }
+
+    #[test]
+    fn each_theme_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        for (theme, text) in [
+            (Theme::System, "system"),
+            (Theme::Dark, "dark"),
+            (Theme::Light, "light"),
+        ] {
+            let settings = Settings {
+                ui: UiSettings {
+                    theme,
+                    ..UiSettings::default()
+                },
+                ..Settings::default()
+            };
+            save(&path, &settings).unwrap();
+            let json: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            assert_eq!(json["ui"]["theme"], text);
+            assert_eq!(load(&path).ui, settings.ui);
+        }
+    }
+
+    #[test]
     fn each_restore_mode_round_trips() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(FILE_NAME);
@@ -1786,6 +1853,7 @@ then sum up"
                 ui: UiSettings {
                     zoom: 1.25,
                     restore: mode,
+                    ..UiSettings::default()
                 },
                 ..Settings::default()
             };

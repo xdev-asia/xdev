@@ -36,7 +36,7 @@ export const SIDEBAR_PREFS_DEFAULTS: SidebarPrefs = { hideDefault: false, hideDe
 
 export { KEY_SETTINGS_DEFAULTS };
 /** `UiSettings::default()` in Rust, and the range `ui_settings_put` clamps the zoom to. */
-export const UI_SETTINGS_DEFAULTS: UiSettings = { zoom: 1, restore: "all" };
+export const UI_SETTINGS_DEFAULTS: UiSettings = { zoom: 1, restore: "all", theme: "system" };
 export const ZOOM_LIMITS = { min: 0.5, max: 2 } as const;
 
 export { DIFF_DEFAULTS, NAVIGATION_DEFAULTS, USAGE_DEFAULTS };
@@ -93,7 +93,7 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
     },
     async uiSettingsPut(next) {
       const zoom = Number.isFinite(next.zoom) ? next.zoom : UI_SETTINGS_DEFAULTS.zoom;
-      ui = { zoom: Math.max(ZOOM_LIMITS.min, Math.min(ZOOM_LIMITS.max, zoom)), restore: next.restore };
+      ui = { zoom: Math.max(ZOOM_LIMITS.min, Math.min(ZOOM_LIMITS.max, zoom)), restore: next.restore, theme: next.theme };
       hub.emit(["ui"]);
       return { ...ui };
     },

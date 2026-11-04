@@ -3,7 +3,9 @@ import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
 import { DIFF_DEFAULTS, NAVIGATION_DEFAULTS } from "@/mockSettings";
+import { getThemePreference, resetThemeForTests } from "@/ui/theme";
 import { getZoom, resetZoomForTests } from "@/ui/zoom";
+import { ThemeSwitch } from "@xdev-asia/ui";
 import { GeneralPage } from "./GeneralPage";
 import { RestoreSetting } from "./RestoreSetting";
 import { SETTING_ENTRIES } from "./catalog";
@@ -103,10 +105,10 @@ it("the diff view and the diff switches write through the api", async () => {
 
 it("zoom writes the clamped level beside the restore mode, and Reset goes back to 100 %", async () => {
   const p = await page();
-  await p.api.uiSettingsPut({ zoom: 1, restore: "none" });
+  await p.api.uiSettingsPut({ zoom: 1, restore: "none", theme: "system" });
   p.by("data-field", "zoom").props.onChange({ target: { value: "1.5" } });
   await tick();
-  expect(await p.api.uiSettingsGet()).toEqual({ zoom: 1.5, restore: "none" });
+  expect(await p.api.uiSettingsGet()).toEqual({ zoom: 1.5, restore: "none", theme: "system" });
   expect(getZoom()).toBe(1.5);
   expect(p.by("data-field", "zoom").props.value).toBe(1.5);
   // Outside the range it is clamped, as everywhere else.
@@ -117,6 +119,20 @@ it("zoom writes the clamped level beside the restore mode, and Reset goes back t
   await tick();
   expect((await p.api.uiSettingsGet()).zoom).toBe(1);
   expect(getZoom()).toBe(1);
+});
+
+it("theme writes beside the zoom and restore mode, applies at once, and shows what was stored", async () => {
+  resetThemeForTests({ root: { setAttribute() {} }, matchMedia: undefined, storage: () => undefined });
+  const p = await page();
+  await p.api.uiSettingsPut({ zoom: 1.3, restore: "none", theme: "system" });
+  const switchOf = () => nodes(p.by("data-field", "theme")).find((n) => n.type === ThemeSwitch)!;
+  switchOf().props.onChange("light");
+  await tick();
+  expect(await p.api.uiSettingsGet()).toEqual({ zoom: 1.3, restore: "none", theme: "light" });
+  expect(getThemePreference()).toBe("light");
+  expect(switchOf().props.value).toBe("light");
+  expect(Object.keys(switchOf().props.labels)).toEqual(["group", "system", "dark", "light"]);
+  resetThemeForTests();
 });
 
 it("lists 50 % to 200 % in steps of 10 %", async () => {

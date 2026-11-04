@@ -27,8 +27,12 @@ import "./styles/quickCommands.css";
 import { startEditorSettingsSync } from "./files/editorSettings";
 import { startNavigationSettingsSync } from "./settings/navigationSettings";
 import { startUsageSync } from "./settings/usageSettings";
+import { applyCachedTheme, startThemeSync } from "./ui/theme";
 import "./styles/agentSessions.css";
 
+// Before the first render, so the window opens in the theme it closed in.
+applyCachedTheme();
+startThemeSync(api);
 // Shared copies load before the first pane; `settings://changed` keeps them current after that.
 void loadStatusSettings(api);
 void loadTerminalSettings(api);

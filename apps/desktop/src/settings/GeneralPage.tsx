@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type ApiError, type DiffSettings, type NavigationSettings } from "@/api";
+import { ThemeSwitch } from "@xdev-asia/ui";
+import { toApiError, type ApiError, type DiffSettings, type NavigationSettings, type Theme } from "@/api";
 import { useI18n, type Locale } from "@/i18n";
+import { setThemePreference } from "@/ui/theme";
 import { clampZoom, getZoom, stepZoom, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from "@/ui/zoom";
 import { setNavigationSettings } from "./navigationSettings";
 import { RestoreSetting } from "./RestoreSetting";
@@ -16,7 +18,7 @@ export const DIFF_SWITCHES = ["ignoreWhitespace", "collapseUnchanged", "wordWrap
 // Catalog ids of the page, per group; a switch adds its key (`general.nav.confirmClosePinned`).
 const NAVIGATION_IDS = ["general.tabOrder", ...NAVIGATION_SWITCHES.map((k) => `general.nav.${k}`)];
 const LOCALES: Locale[] = ["en", "vi"];
-const WORKSPACE_IDS = ["general.language", "general.zoom", "general.restore", "general.openIn"];
+const WORKSPACE_IDS = ["general.language", "general.theme", "general.zoom", "general.restore", "general.openIn"];
 const DIFF_IDS = ["general.diffView", ...DIFF_SWITCHES.map((k) => `general.diff.${k}`)];
 export const ZOOM_LEVELS: number[] = Array.from({ length: Math.round((ZOOM_MAX - ZOOM_MIN) / ZOOM_STEP) + 1 }, (_, i) => clampZoom(ZOOM_MIN + i * ZOOM_STEP));
 
@@ -27,6 +29,7 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
   const [navigation, setNavigation] = useState<NavigationSettings | null>(null);
   const [diff, setDiff] = useState<DiffSettings | null>(null);
   const [zoom, setZoom] = useState(() => getZoom());
+  const [theme, setTheme] = useState<Theme | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError["code"]>();
 
@@ -34,7 +37,10 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
     const fail = (e: unknown) => setError(toApiError(e).code);
     api.navigationSettings().then(setNavigation, fail);
     api.diffSettings().then(setDiff, fail);
-    api.uiSettingsGet().then((s) => setZoom(clampZoom(s.zoom)), fail);
+    api.uiSettingsGet().then((s) => {
+      setZoom(clampZoom(s.zoom));
+      setTheme(s.theme);
+    }, fail);
   }, [api]);
 
   // Each write returns what was stored; the page shows that, not what it asked for.
@@ -62,6 +68,15 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
   // A step from the level the window shows; `0` resets to 100 %.
   const pickZoom = (next: number | null) =>
     write(async () => setZoom(await stepZoom(api, next === null ? 0 : clampZoom(next) - getZoom())));
+
+  // Read again before the put: the zoom or restore mode may have changed since the page opened. The
+  // stored answer is what shows and what the window applies.
+  const pickTheme = (next: Theme) =>
+    write(async () => {
+      const stored = await api.uiSettingsPut({ ...(await api.uiSettingsGet()), theme: next });
+      setTheme(stored.theme);
+      setThemePreference(stored.theme);
+    });
 
   const sw = (id: string, key: string, label: string, on: boolean, flip: () => void, hint?: string) => (
     <li className="settings-item" data-switch={key} data-setting-id={id} key={key}>
@@ -135,6 +150,26 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
             ))}
           </select>
         </label>
+      </div>
+      </SettingRow>
+      <SettingRow id="general.theme" filter={filter}>
+      <div className="ws-fields">
+        <div className="ws-field" data-field="theme">
+          <span>{t("settings.general.theme")}</span>
+          {theme && (
+            <ThemeSwitch
+              value={theme}
+              onChange={(next) => void pickTheme(next)}
+              labels={{
+                group: t("settings.general.theme"),
+                system: t("settings.general.theme.system"),
+                dark: t("settings.general.theme.dark"),
+                light: t("settings.general.theme.light"),
+              }}
+            />
+          )}
+          <small className="settings-hint">{t("settings.general.themeHint")}</small>
+        </div>
       </div>
       </SettingRow>
       <SettingRow id="general.zoom" filter={filter}>
