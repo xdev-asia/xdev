@@ -66,13 +66,12 @@ impl Scope {
     }
 }
 
-/// The first frame of a connection.
+/// The first frame of a connection. The client also sends its name
+/// (`client`); nothing reads it yet, so it is not kept.
 #[derive(Debug, Deserialize)]
 pub struct Hello {
     pub protocol: u32,
     pub token: String,
-    #[serde(default)]
-    pub client: String,
     pub caller: Option<Caller>,
 }
 
