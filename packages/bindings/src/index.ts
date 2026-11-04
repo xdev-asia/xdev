@@ -87,6 +87,7 @@ export type { KitText } from "./KitText";
 export type { LineHit } from "./LineHit";
 export type { Linked } from "./Linked";
 export type { LoginStart } from "./LoginStart";
+export type { MacOptionAsAlt } from "./MacOptionAsAlt";
 export type { MadeBy } from "./MadeBy";
 export type { MemoryFile } from "./MemoryFile";
 export type { MemoryIssue } from "./MemoryIssue";

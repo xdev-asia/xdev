@@ -8,6 +8,7 @@ import {
   DEMO_COMMITS,
   DEMO_SEED,
   EXPORT_MARKER,
+  setMockClipboardImage,
   type SeedCommit,
 } from "./mockApi";
 
@@ -36,6 +37,21 @@ async function opened(files: Record<string, string> = seed) {
 }
 
 describe("mock api", () => {
+  it("has no clipboard image by default and reports the US input source", async () => {
+    const api = createMockApi(seed);
+    expect(await api.clipboardImageSave()).toBeNull();
+    expect(await api.keyboardInputSource()).toBe("com.apple.keylayout.US");
+  });
+
+  it("returns the clipboard image path, or rejects with the error, as set", async () => {
+    const api = createMockApi(seed);
+    setMockClipboardImage("/tmp/x.png");
+    expect(await api.clipboardImageSave()).toBe("/tmp/x.png");
+    setMockClipboardImage({ code: "too_large" });
+    await expect(api.clipboardImageSave()).rejects.toEqual({ code: "too_large" });
+    setMockClipboardImage(null);
+  });
+
   it("rejects calls before a vault is open", async () => {
     await expect(createMockApi(seed).listDocs()).rejects.toEqual({ code: "no_vault" });
   });

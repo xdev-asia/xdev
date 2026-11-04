@@ -274,6 +274,7 @@ export type {
   CursorStyle,
   TerminalGpu,
   TerminalBell,
+  MacOptionAsAlt,
   SettingsSection,
   SettingsChanged,
   SetupPolicy,
@@ -533,6 +534,10 @@ export interface Api {
   // Settings -> Terminal; the put returns what was stored, with numbers clamped to their ranges.
   terminalSettings(): Promise<TerminalSettings>;
   terminalSettingsPut(s: TerminalSettings): Promise<TerminalSettings>;
+  /** Saves the clipboard image as a PNG in the temp folder; null when the clipboard holds no image. Rejects `too_large`. */
+  clipboardImageSave(): Promise<string | null>;
+  /** macOS keyboard input source id; null elsewhere. */
+  keyboardInputSource(): Promise<string | null>;
   /** Calls `listener` after any settings write, from this window or another. Returns the unsubscribe. */
   onSettingsChanged(listener: (e: SettingsChanged) => void): () => void;
   // Window view settings (zoom, 0.5..2); the put returns what was stored, clamped.
@@ -1100,6 +1105,8 @@ const tauriApi: Api = {
   setGitSettings: (git) => call("set_git_settings", { git }),
   terminalSettings: () => call("terminal_settings_get"),
   terminalSettingsPut: (settings) => call("terminal_settings_put", { settings }),
+  clipboardImageSave: () => call("clipboard_image_save"),
+  keyboardInputSource: () => call("keyboard_input_source"),
   onSettingsChanged: (listener) => {
     const unlisten = listen<SettingsChanged>("settings://changed", (e) => listener(e.payload));
     return () => void unlisten.then((stop) => stop());

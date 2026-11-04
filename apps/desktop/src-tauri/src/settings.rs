@@ -705,6 +705,9 @@ pub struct TerminalSettings {
     pub minimum_contrast: f32,
     #[serde(deserialize_with = "lenient_bool_false")]
     pub focus_follows_mouse: bool,
+    /// macOS only: whether the Option key sends Alt/Esc sequences or composes characters.
+    #[serde(deserialize_with = "lenient")]
+    pub mac_option_as_alt: MacOptionAsAlt,
 }
 
 /// The default double-click word separators, the reference app's.
@@ -738,6 +741,7 @@ impl Default for TerminalSettings {
             fast_scroll_sensitivity: 5.0,
             minimum_contrast: 1.0,
             focus_follows_mouse: false,
+            mac_option_as_alt: MacOptionAsAlt::Auto,
         }
     }
 }
@@ -873,6 +877,19 @@ pub enum TerminalBell {
     None,
     Visual,
     Sound,
+}
+
+/// Settings → Terminal → "Option as Alt" (macOS): which Option keys send Alt/Esc sequences.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum MacOptionAsAlt {
+    #[default]
+    Auto,
+    Both,
+    Left,
+    Right,
+    Off,
 }
 
 /// One part of the settings file, as a `settings://changed` event names it.
@@ -1720,6 +1737,7 @@ mod tests {
             fast_scroll_sensitivity: 8.0,
             minimum_contrast: 4.5,
             focus_follows_mouse: true,
+            mac_option_as_alt: MacOptionAsAlt::Left,
         };
         let settings = Settings {
             terminal: terminal.clone(),
