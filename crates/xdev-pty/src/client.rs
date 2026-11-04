@@ -231,7 +231,7 @@ fn hello(endpoint: &Endpoint, dir: &Path, app_version: &str) -> Result<Client, H
     };
     let io = |e: io::Error| Hello::Io(e.to_string());
     let mut w = r.try_clone().map_err(io)?;
-    r.set_read_timeout(Some(START_WAIT)).map_err(io)?;
+    r.set_read_deadline(Some(START_WAIT)).map_err(io)?;
     write_frame(
         &mut w,
         &Frame::Hello {
@@ -256,11 +256,15 @@ fn hello(endpoint: &Endpoint, dir: &Path, app_version: &str) -> Result<Client, H
         Ok(Some(Frame::Error { code, .. })) if code == "ptyd_version" => {
             return Err(Hello::Version);
         }
+        // A service that never answers is not one this client can use.
+        Err(ProtoError::Io(e)) if e.kind() == io::ErrorKind::TimedOut => {
+            return Err(Hello::Io(e.to_string()));
+        }
         // Closed with no answer: the token was not the service's.
         Ok(_) | Err(ProtoError::Io(_)) => return Err(Hello::Auth),
         Err(e) => return Err(Hello::Io(e.to_string())),
     };
-    r.set_read_timeout(None).map_err(io)?;
+    r.set_read_deadline(None).map_err(io)?;
     let inner = Arc::new(Inner {
         w: Mutex::new(w),
         subs: Mutex::default(),

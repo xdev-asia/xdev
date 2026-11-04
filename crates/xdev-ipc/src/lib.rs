@@ -5,16 +5,25 @@
 use std::fs;
 use std::io::{self, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use interprocess::TryClone;
-use interprocess::local_socket::traits::{Listener as _, Stream as _};
+use interprocess::local_socket::traits::Listener as _;
+#[cfg(not(windows))]
+use interprocess::local_socket::traits::Stream as _;
 use interprocess::local_socket::{self as ls, ListenerOptions};
+
+#[cfg(windows)]
+mod win;
 
 /// Random bytes in a token; the file holds them as hex.
 pub const TOKEN_BYTES: usize = 32;
 
 const TOKEN_FILE: &str = "token";
+
+/// How long a Windows client waits for a pipe instance to come free.
+#[cfg(windows)]
+const CONNECT_WAIT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, thiserror::Error)]
 pub enum IpcError {
@@ -105,12 +114,35 @@ impl Endpoint {
 
     /// `IpcError::NotRunning` when nothing answers.
     pub fn connect(&self) -> Result<Stream, IpcError> {
+        self.open().map(Stream::new).map_err(|e| match e.kind() {
+            ErrorKind::NotFound | ErrorKind::ConnectionRefused => IpcError::NotRunning,
+            // A listener keeps a free instance at all times, so no free
+            // instance for this long means no listener.
+            ErrorKind::TimedOut if cfg!(windows) => IpcError::NotRunning,
+            _ => IpcError::Io(e),
+        })
+    }
+
+    #[cfg(not(windows))]
+    fn open(&self) -> io::Result<ls::Stream> {
         ls::Stream::connect(self.socket_name()?)
-            .map(Stream)
-            .map_err(|e| match e.kind() {
-                ErrorKind::NotFound | ErrorKind::ConnectionRefused => IpcError::NotRunning,
-                _ => IpcError::Io(e),
-            })
+    }
+
+    /// A pipe whose instances are all taken makes a client wait for one; the
+    /// local socket API waits for ever, and ignores a wait mode. That wait
+    /// never ends on a name that outlived its listener because a peer still
+    /// holds a connected instance, so this one gives up at `CONNECT_WAIT`.
+    #[cfg(windows)]
+    fn open(&self) -> io::Result<ls::Stream> {
+        use interprocess::ConnectWaitMode;
+        use interprocess::os::windows::named_pipe::{DuplexPipeStream, local_socket, pipe_mode};
+        // The path `GenericNamespaced` gives the name.
+        let path = format!(r"\\.\pipe\{}", self.name);
+        let pipe = DuplexPipeStream::<pipe_mode::Bytes>::connect_by_path_with_wait_mode(
+            path.as_str(),
+            ConnectWaitMode::Timeout(CONNECT_WAIT),
+        )?;
+        Ok(local_socket::Stream::from(pipe).into())
     }
 
     #[cfg(windows)]
@@ -130,36 +162,99 @@ pub struct Listener(ls::Listener);
 
 impl Listener {
     pub fn accept(&self) -> Result<Stream, IpcError> {
-        Ok(Stream(self.0.accept()?))
+        Ok(Stream::new(self.0.accept()?))
     }
 }
 
-pub struct Stream(ls::Stream);
+pub struct Stream {
+    // Declared before `inner`, so it stops before the handle it watches closes.
+    #[cfg(windows)]
+    watch: Option<win::Watchdog>,
+    #[cfg(not(windows))]
+    until: Option<Instant>,
+    inner: ls::Stream,
+}
 
 impl Stream {
-    pub fn try_clone(&self) -> io::Result<Stream> {
-        Ok(Stream(self.0.try_clone()?))
+    fn new(inner: ls::Stream) -> Stream {
+        Stream {
+            #[cfg(windows)]
+            watch: None,
+            #[cfg(not(windows))]
+            until: None,
+            inner,
+        }
     }
 
-    /// `None` blocks for ever; a read past it fails with `TimedOut` or `WouldBlock`.
-    pub fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
-        self.0.set_recv_timeout(timeout)
+    /// A clone has no read deadline of its own.
+    pub fn try_clone(&self) -> io::Result<Stream> {
+        Ok(Stream::new(self.inner.try_clone()?))
+    }
+
+    /// Reads fail with `TimedOut` once `limit` from now has passed, until the
+    /// next call; `None` lets them block for ever. On Windows a read blocked at
+    /// the deadline is cancelled, so the caller can drop a silent peer.
+    pub fn set_read_deadline(&mut self, limit: Option<Duration>) -> io::Result<()> {
+        let until = limit.and_then(|d| Instant::now().checked_add(d));
+        #[cfg(windows)]
+        match (until, &self.watch) {
+            (Some(until), Some(watch)) => watch.set(until),
+            (Some(until), None) => {
+                use std::os::windows::io::AsHandle;
+                let ls::Stream::NamedPipe(pipe) = &self.inner;
+                self.watch = Some(win::Watchdog::start(pipe.inner().as_handle(), until)?);
+            }
+            (None, _) => self.watch = None,
+        }
+        #[cfg(not(windows))]
+        {
+            self.until = until;
+            if until.is_none() {
+                self.inner.set_recv_timeout(None)?;
+            }
+        }
+        Ok(())
     }
 }
 
 impl Read for Stream {
+    #[cfg(windows)]
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf)
+        match &self.watch {
+            Some(watch) => watch.read(|| self.inner.read(buf)),
+            None => self.inner.read(buf),
+        }
     }
+
+    #[cfg(not(windows))]
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let Some(until) = self.until else {
+            return self.inner.read(buf);
+        };
+        let left = until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(timed_out());
+        }
+        self.inner.set_recv_timeout(Some(left))?;
+        match self.inner.read(buf) {
+            Err(e) if e.kind() == ErrorKind::WouldBlock => Err(timed_out()),
+            other => other,
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn timed_out() -> io::Error {
+    io::Error::new(ErrorKind::TimedOut, "no data before the read deadline")
 }
 
 impl Write for Stream {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.write(buf)
+        self.inner.write(buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.0.flush()
+        self.inner.flush()
     }
 }
 
@@ -252,6 +347,18 @@ mod tests {
     }
 
     #[test]
+    fn a_name_that_outlived_its_listener_is_not_running() {
+        let dir = tempfile::tempdir().unwrap();
+        let e = ep(dir.path());
+        let listener = e.bind().unwrap();
+        let _client = e.connect().unwrap();
+        let _served = listener.accept().unwrap();
+        drop(listener);
+        // The connected pair still holds the name on Windows.
+        assert!(matches!(e.connect(), Err(IpcError::NotRunning)));
+    }
+
+    #[test]
     fn connect_with_nothing_bound_is_not_running() {
         let dir = tempfile::tempdir().unwrap();
         assert!(matches!(
@@ -302,18 +409,83 @@ mod tests {
         server.join().unwrap();
     }
 
+    // Bounds are generous: they tell a read that gives up from one that hangs,
+    // and shared CI runners are slow.
+    const HANG: Duration = Duration::from_secs(5);
+
     #[test]
-    fn a_read_timeout_ends_a_silent_read() {
+    fn a_read_deadline_ends_a_silent_read() {
         let dir = tempfile::tempdir().unwrap();
         let e = ep(dir.path());
         let listener = e.bind().unwrap();
         let server = thread::spawn(move || listener.accept().unwrap());
         let mut c = e.connect().unwrap();
         let _held = server.join().unwrap();
-        c.set_read_timeout(Some(std::time::Duration::from_millis(100)))
+        c.set_read_deadline(Some(Duration::from_millis(100)))
             .unwrap();
+        let start = Instant::now();
         let mut buf = [0; 1];
-        assert!(c.read(&mut buf).is_err());
+        let err = c.read(&mut buf).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::TimedOut, "{err}");
+        assert!(start.elapsed() < HANG);
+        // Past the deadline every read fails at once.
+        assert_eq!(c.read(&mut buf).unwrap_err().kind(), ErrorKind::TimedOut);
+    }
+
+    #[test]
+    fn a_new_deadline_or_none_reads_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let e = ep(dir.path());
+        let listener = e.bind().unwrap();
+        let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
+        let server = thread::spawn(move || {
+            let mut s = listener.accept().unwrap();
+            for byte in b"ab" {
+                go_rx.recv().unwrap();
+                s.write_all(&[*byte]).unwrap();
+            }
+            // Holds the pipe open until the client is done.
+            let _ = go_rx.recv();
+        });
+        let mut c = e.connect().unwrap();
+        let mut buf = [0; 1];
+        c.set_read_deadline(Some(Duration::from_millis(50)))
+            .unwrap();
+        assert_eq!(c.read(&mut buf).unwrap_err().kind(), ErrorKind::TimedOut);
+        // Nothing is lost to the read that gave up.
+        c.set_read_deadline(Some(HANG)).unwrap();
+        go_tx.send(()).unwrap();
+        c.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, b"a");
+        c.set_read_deadline(None).unwrap();
+        go_tx.send(()).unwrap();
+        c.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, b"b");
+        drop(go_tx);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn a_deadline_lets_the_server_drop_a_silent_peer() {
+        let dir = tempfile::tempdir().unwrap();
+        let e = ep(dir.path());
+        let listener = e.bind().unwrap();
+        let server = thread::spawn(move || {
+            let mut s = listener.accept().unwrap();
+            let _w = s.try_clone().unwrap();
+            s.set_read_deadline(Some(Duration::from_millis(100)))
+                .unwrap();
+            let mut buf = [0; 1];
+            let err = s.read(&mut buf).unwrap_err();
+            assert_eq!(err.kind(), ErrorKind::TimedOut, "{err}");
+            // Both handles go here: the peer is cut off.
+        });
+        let mut c = e.connect().unwrap();
+        server.join().unwrap();
+        c.set_read_deadline(Some(HANG)).unwrap();
+        let mut buf = [0; 1];
+        // End of stream, not the client's own deadline.
+        assert_eq!(c.read(&mut buf).unwrap(), 0);
     }
 
     #[test]
