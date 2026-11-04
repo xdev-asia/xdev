@@ -3,7 +3,7 @@ import type { Api } from "./api";
 
 type XdevIdApi = Pick<
   Api,
-  "xdevIdState" | "xdevIdSignIn" | "xdevIdPaste" | "xdevIdCancel" | "xdevIdSignOut" | "xdevIdRefresh" | "xdevIdManage" | "onXdevIdChanged"
+  "xdevIdState" | "xdevIdSignIn" | "xdevIdPaste" | "xdevIdCancel" | "xdevIdSignOut" | "xdevIdRefresh" | "xdevIdReopen" | "xdevIdManage" | "onXdevIdChanged"
 >;
 
 export type MockXdevId = XdevIdApi & {
@@ -13,6 +13,8 @@ export type MockXdevId = XdevIdApi & {
   __xdevIdDeepLink(): void;
   // How often `xdevIdManage` ran.
   __xdevIdManages(): number;
+  // How often `xdevIdReopen` ran.
+  __xdevIdReopens(): number;
 };
 
 export const MOCK_XDEV_ID_LINK = "https://id.xdev.asia/desktop?challenge=demo&state=demo&device=Demo";
@@ -23,6 +25,7 @@ const CALLBACK = "xdev://auth/callback?";
 export function createMockXdevId(initial: "signedOut" | "signedIn" = "signedOut"): MockXdevId {
   let state: XdevIdState = initial === "signedIn" ? { state: "signedIn", user: DEMO_USER } : { state: "signedOut", notice: null };
   let manages = 0;
+  let reopens = 0;
   const listeners = new Set<(s: XdevIdState) => void>();
   const set = (next: XdevIdState): XdevIdState => {
     state = next;
@@ -39,9 +42,9 @@ export function createMockXdevId(initial: "signedOut" | "signedIn" = "signedOut"
       return set({ state: "signingIn", link: MOCK_XDEV_ID_LINK });
     },
     async xdevIdPaste(link) {
-      if (state.state !== "signingIn") throw { code: "account_state" };
       const text = link.trim();
       if (!text.startsWith(CALLBACK) || !/[?&]code=/.test(text)) throw { code: "account_link" };
+      if (state.state !== "signingIn") throw { code: "account_state" };
       if (new URLSearchParams(text.slice(CALLBACK.length)).get("state") !== "demo") throw { code: "account_state" };
       return set(signedIn());
     },
@@ -53,6 +56,10 @@ export function createMockXdevId(initial: "signedOut" | "signedIn" = "signedOut"
     },
     async xdevIdRefresh() {
       return state;
+    },
+    async xdevIdReopen() {
+      if (state.state !== "signingIn") throw { code: "account_state" };
+      reopens += 1;
     },
     async xdevIdManage() {
       manages += 1;
@@ -70,5 +77,6 @@ export function createMockXdevId(initial: "signedOut" | "signedIn" = "signedOut"
       if (state.state === "signingIn") set(signedIn());
     },
     __xdevIdManages: () => manages,
+    __xdevIdReopens: () => reopens,
   };
 }

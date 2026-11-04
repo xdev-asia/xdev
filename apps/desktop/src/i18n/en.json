@@ -2172,7 +2172,7 @@
   "editor.conflict.current": "Accept current",
   "editor.conflict.incoming": "Accept incoming",
   "editor.conflict.both": "Accept both",
-  "account.title": "Account",
+  "account.title": "xDev ID",
   "account.xdevId": "xDev ID",
   "account.about": "Sign in to link this app to your xDev ID. Every local feature works without an account.",
   "account.signIn": "Sign in to xDev",

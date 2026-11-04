@@ -562,6 +562,8 @@ export interface Api {
   xdevIdCancel(): Promise<XdevIdState>;
   xdevIdSignOut(): Promise<XdevIdState>;
   xdevIdRefresh(): Promise<XdevIdState>;
+  /** Opens the running attempt's link again; starts no new attempt. */
+  xdevIdReopen(): Promise<void>;
   xdevIdManage(): Promise<void>;
   // `xdev-id://changed`: after sign-in, sign-out, expiry, refresh or a new avatar.
   onXdevIdChanged(cb: (s: XdevIdState) => void): Promise<() => void>;
@@ -1141,6 +1143,7 @@ const tauriApi: Api = {
   xdevIdCancel: () => call("xdev_id_cancel"),
   xdevIdSignOut: () => call("xdev_id_sign_out"),
   xdevIdRefresh: () => call("xdev_id_refresh"),
+  xdevIdReopen: () => call("xdev_id_reopen"),
   xdevIdManage: () => call("xdev_id_manage"),
   onXdevIdChanged: (cb) => listen<XdevIdState>("xdev-id://changed", (e) => cb(e.payload)),
   keySettingsGet: () => call("key_settings_get"),

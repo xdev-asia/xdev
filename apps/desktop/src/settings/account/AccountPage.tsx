@@ -26,6 +26,7 @@ export function AccountPage(props: SettingsSectionProps): JSX.Element {
     let stop: (() => void) | undefined;
     const apply = (next: XdevIdState): void => {
       if (!live) return;
+      setCopied(false);
       setState(next);
       setError(undefined);
       setPasteError(undefined);
@@ -39,8 +40,10 @@ export function AccountPage(props: SettingsSectionProps): JSX.Element {
       else off();
     });
     // The service renews the session on this call; a failure keeps what is shown.
+    // Its answer is the current state: the read above may predate the keychain load, and the
+    // change event may fire before the listener is attached.
     void api.xdevIdRefresh().then(
-      () => undefined,
+      (s) => live && setState(s),
       () => undefined,
     );
     return () => {
@@ -51,6 +54,7 @@ export function AccountPage(props: SettingsSectionProps): JSX.Element {
 
   function run(call: () => Promise<XdevIdState>): void {
     setError(undefined);
+    setCopied(false);
     call().then(setState, (e: unknown) => setError(toApiError(e).code));
   }
 
@@ -109,7 +113,11 @@ export function AccountPage(props: SettingsSectionProps): JSX.Element {
                 <span>{t("account.waiting.body")}</span>
               </div>
               <div className="settings-actions">
-                <Button type="button" variant="secondary" onClick={() => run(() => api.xdevIdSignIn())}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void api.xdevIdReopen().catch((e: unknown) => setError(toApiError(e).code))}
+                >
                   {t("account.openAgain")}
                 </Button>
                 <Button type="button" variant="secondary" onClick={() => copy(state.link)}>

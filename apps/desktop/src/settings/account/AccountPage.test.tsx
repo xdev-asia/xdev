@@ -33,8 +33,9 @@ const en = (key: string) => translate("en", key);
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; });
 
-async function view(xdevId?: "signedOut" | "signedIn") {
+async function view(xdevId?: "signedOut" | "signedIn", prepare?: (api: ReturnType<typeof createMockApi>) => void) {
   const api = createMockApi({}, { xdevId });
+  prepare?.(api);
   const draw = () => {
     hooks.cursor = 0;
     hooks.active = true;
@@ -151,4 +152,52 @@ it("a failed sign in shows its error code as a banner", async () => {
   await tick();
   expect(v.banners()).toEqual([en("error.account_keychain")]);
   expect(v.labels()).toEqual([en("account.signIn")]);
+});
+
+it("Open the page again reopens the running attempt and starts no new one", async () => {
+  const v = await view();
+  v.button(en("account.signIn"))!.props.onClick();
+  await tick();
+  const signIn = vi.spyOn(v.api, "xdevIdSignIn");
+  const reopen = vi.spyOn(v.api, "xdevIdReopen");
+  v.button(en("account.openAgain"))!.props.onClick();
+  await tick();
+  expect(reopen).toHaveBeenCalledTimes(1);
+  expect(signIn).not.toHaveBeenCalled();
+  expect(v.labels()).toContain(en("account.cancel"));
+
+  vi.spyOn(v.api, "xdevIdReopen").mockRejectedValue({ code: "account_state" });
+  v.button(en("account.openAgain"))!.props.onClick();
+  await tick();
+  expect(v.banners()).toEqual([en("error.account_state")]);
+});
+
+it("the state the first refresh returns is shown even when the first read said signed out", async () => {
+  const v = await view("signedIn", (api) => {
+    // Settings opened before the keychain loaded: the read is stale, the refresh is current.
+    vi.spyOn(api, "xdevIdState").mockResolvedValue({ state: "signedOut", notice: null });
+  });
+  expect(v.labels()).toEqual([en("account.manage"), en("account.signOut")]);
+});
+
+it("Link copied clears when the attempt ends", async () => {
+  const writes: string[] = [];
+  vi.stubGlobal("navigator", { clipboard: { writeText: async (text: string) => void writes.push(text) } });
+  try {
+    const v = await view();
+    v.button(en("account.signIn"))!.props.onClick();
+    await tick();
+    v.button(en("account.copyLink"))!.props.onClick();
+    await tick();
+    const copied = () => v.all().some((n) => n.props.children === en("account.copied"));
+    expect(writes).toHaveLength(1);
+    expect(copied()).toBe(true);
+    v.button(en("account.cancel"))!.props.onClick();
+    await tick();
+    v.button(en("account.signIn"))!.props.onClick();
+    await tick();
+    expect(copied()).toBe(false);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
