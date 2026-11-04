@@ -8,7 +8,7 @@ use crate::redact::redact_text;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 pub const MAX_REPORTS: usize = 5;
 pub const MAX_BREADCRUMBS: usize = 30;
@@ -236,10 +236,46 @@ fn save(path: &Path, reports: &[CrashReport]) -> Result<(), CmdError> {
     last
 }
 
-/// Adds a report, newest first, keeping five. A file that cannot be read is
-/// replaced: a broken store must not stop the next crash from being kept.
+/// Held around every read-change-write of the store, so two writers cannot
+/// each read the old file and drop the other's change.
+static STORE: Mutex<()> = Mutex::new(());
+
+fn lock_store() -> MutexGuard<'static, ()> {
+    STORE.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+/// For the panic hook: waits a short, bounded time, then gives up, so a
+/// panic never hangs on a lock held by a thread that is itself stuck.
+fn try_lock_store() -> Option<MutexGuard<'static, ()>> {
+    for _ in 0..50 {
+        match STORE.try_lock() {
+            Ok(guard) => return Some(guard),
+            Err(std::sync::TryLockError::Poisoned(p)) => return Some(p.into_inner()),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+    }
+    None
+}
+
+/// Adds a report, newest first, keeping five. A file that is not valid JSON
+/// is replaced: a broken store must not stop the next crash from being kept.
+/// A read error (a file held for a moment) is returned instead, because
+/// starting fresh would wipe the stored reports.
 pub(crate) fn record(path: &Path, report: CrashReport) -> Result<(), CmdError> {
-    let mut reports = load(path).unwrap_or_default();
+    let _guard = lock_store();
+    record_locked(path, report)
+}
+
+fn record_locked(path: &Path, report: CrashReport) -> Result<(), CmdError> {
+    let mut reports = match std::fs::read_to_string(path) {
+        Ok(text) => serde_json::from_str::<Store>(&text)
+            .map(|s| s.reports)
+            .unwrap_or_default(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(store_error(e)),
+    };
     reports.insert(0, report);
     reports.truncate(MAX_REPORTS);
     save(path, &reports)
@@ -253,6 +289,7 @@ pub(crate) fn latest(path: &Path) -> Result<Option<CrashReport>, CmdError> {
 /// The newest pending report, marked dismissed at once so it prompts once.
 /// The returned copy still says pending.
 pub(crate) fn take_pending(path: &Path) -> Result<Option<CrashReport>, CmdError> {
+    let _guard = lock_store();
     let mut reports = load(path)?;
     let Some(report) = reports
         .iter_mut()
@@ -269,6 +306,7 @@ pub(crate) fn take_pending(path: &Path) -> Result<Option<CrashReport>, CmdError>
 /// Dismisses `id`, and pending reports of the same storm: the same reason,
 /// exit code, version and platform within five seconds.
 pub(crate) fn dismiss(path: &Path, id: &str) -> Result<(), CmdError> {
+    let _guard = lock_store();
     let mut reports = load(path)?;
     let Some(target) = reports.iter().find(|r| r.id == id).cloned() else {
         return Ok(());
@@ -416,8 +454,10 @@ pub fn install_panic_hook(local: Option<PathBuf>, crumbs: Arc<Breadcrumbs>) {
                     location.as_deref().unwrap_or("unknown")
                 ),
             );
-            if let Some(local) = &local {
-                let _ = record(&store_path(local), report);
+            if let Some(local) = &local
+                && let Some(_guard) = try_lock_store()
+            {
+                let _ = record_locked(&store_path(local), report);
             }
         }));
         previous(info);
@@ -677,6 +717,44 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_records_all_land() {
+        let dir = long_temp_dir("crash-lock");
+        let path = Arc::new(store_path(dir.path()));
+        let handles: Vec<_> = (0..MAX_REPORTS)
+            .map(|i| {
+                let path = Arc::clone(&path);
+                std::thread::spawn(move || {
+                    let r = panic_report(
+                        None,
+                        "t",
+                        &format!("m{i}"),
+                        vec![],
+                        format!("id{i}"),
+                        i as i64,
+                        None,
+                    );
+                    record(&path, r).unwrap();
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(load(&path).unwrap().len(), MAX_REPORTS);
+    }
+
+    #[test]
+    fn a_read_error_is_returned_not_treated_as_empty() {
+        let dir = long_temp_dir("crash-io");
+        // A folder where the file should be: reading it fails, and it is
+        // not a missing file or bad JSON.
+        let path = store_path(dir.path());
+        std::fs::create_dir(&path).unwrap();
+        let r = panic_report(None, "t", "m", vec![], "id".into(), 1, None);
+        assert!(record(&path, r).is_err());
+    }
+
+    #[test]
     fn a_panic_report_has_location_thread_and_message() {
         let r = panic_report(
             Some("src/a.rs:1:2"),
@@ -710,7 +788,9 @@ mod tests {
         let mut found = None;
         for _ in 0..40 {
             if let Ok(reports) = load(&path)
-                && let Some(r) = reports.into_iter().find(|r| r.reason == "panic")
+                && let Some(r) = reports
+                    .into_iter()
+                    .find(|r| value(r, "message") == "hook test panic")
             {
                 found = Some(r);
                 break;
