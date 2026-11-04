@@ -225,6 +225,8 @@ pub struct WorkerReceipt {
 #[serde(rename_all = "camelCase")]
 pub struct CheckResult {
     pub messages: Vec<Message>,
+    /// One text block per message, as an agent reads it.
+    pub rendered: Vec<String>,
     pub remaining: u32,
     pub next: String,
 }

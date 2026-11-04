@@ -212,9 +212,7 @@ pub(crate) fn worker_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Worker> {
     })
 }
 
-#[allow(dead_code)] // used from the task that reads them
 pub(crate) const MESSAGE_COLS: &str = "id, run_id, from_addr, to_addr, subject, body, kind, priority, thread_id, payload, read, seq, created_ms, delivered_ms";
-#[allow(dead_code)] // used from the task that reads them
 pub(crate) fn message_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
     let payload: Option<String> = r.get(9)?;
     Ok(Message {

@@ -221,7 +221,7 @@ impl TabBoard {
         }
     }
 
-    fn tabs(&self) -> (Vec<TabReport>, Option<String>) {
+    pub(crate) fn tabs(&self) -> (Vec<TabReport>, Option<String>) {
         let board = self.lock();
         (board.tabs.clone(), board.selected.clone())
     }
