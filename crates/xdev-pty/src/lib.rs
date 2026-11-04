@@ -6,6 +6,7 @@
 pub mod proto;
 mod pump;
 pub mod ring;
+pub mod service;
 mod session;
 
 pub use pump::{COALESCE, Flow, READ_CHUNK, WINDOW};

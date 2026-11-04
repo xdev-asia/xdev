@@ -6309,6 +6309,7 @@ dependencies = [
  "thiserror 2.0.21",
  "ts-rs",
  "xdev-ai",
+ "xdev-ipc",
 ]
 
 [[package]]
