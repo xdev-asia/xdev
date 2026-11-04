@@ -140,7 +140,9 @@ jobs:
       - name: Build desktop installers
         working-directory: apps/desktop
         run: |
-          args=(--target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}")
+          # The terminal service ships next to the app (tauri.ptyd.conf.json);
+          # beforeBuildCommand builds it.
+          args=(--target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}" --config src-tauri/tauri.ptyd.conf.json)
           if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
             args+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
           fi
