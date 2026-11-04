@@ -10,6 +10,7 @@ import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useI18n } from "@/i18n";
 import { SurfaceBoundary } from "@/components/SurfaceBoundary";
+import { CrashHost } from "@/crash/CrashHost";
 import { PaletteHost } from "@/palette/PaletteHost";
 import { NavButtons } from "@/nav/NavButtons";
 import { useNavHistory } from "@/nav/useNavHistory";
@@ -2378,6 +2379,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         }}
         onCancel={() => setConfirmEndAll(false)}
       />
+      <CrashHost api={api} />
       <Toasts />
       {adding && (
         <AddProjectDialog

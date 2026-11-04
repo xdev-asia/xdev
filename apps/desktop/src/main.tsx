@@ -4,6 +4,7 @@ import { api } from "./api";
 import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { I18nProvider } from "./i18n";
+import { startCrashBreadcrumbs } from "./crash/crashEvents";
 import { startBindingsSync } from "./keys/bindingsStore";
 import { loadStatusSettings } from "./status/statusSettings";
 import { startCustomSchemesSync } from "./terminal/customSchemes";
@@ -50,6 +51,8 @@ startUsageSync(api);
 startAutomationsSettingsSync(api);
 // The shortcuts: keybindings.json over the defaults, and the terminal key policy.
 startBindingsSync(api);
+// Window errors and rejected promises are kept as breadcrumbs for the next crash report.
+startCrashBreadcrumbs(api);
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

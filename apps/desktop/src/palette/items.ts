@@ -163,6 +163,19 @@ export function actionItems(t: T, acts: Partial<Record<ActionName, () => void>>)
   return out;
 }
 
+/** "Show last crash report": opens the crash dialog with the latest report of any status. */
+export function crashItems(t: T, open: () => void): PaletteItem[] {
+  return [
+    {
+      id: "crash:last",
+      kind: "action",
+      title: t("palette.crash.last"),
+      keywords: t("palette.crash.last.keywords").split(/\s+/).filter(Boolean),
+      run: open,
+    },
+  ];
+}
+
 /** The same check as the create-worktree dialog. */
 export function validWorktreeName(name: string): boolean {
   const n = name.trim();

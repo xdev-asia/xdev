@@ -65,6 +65,43 @@ kbd {
   font-size: 18px;
 }
 
+.crash-dialog {
+  width: 100%;
+  max-width: 440px;
+}
+
+.crash-summary {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 var(--x-space-3);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.crash-summary span {
+  color: var(--x-color-muted);
+}
+
+.crash-section {
+  display: grid;
+  gap: var(--x-space-2);
+  margin-bottom: var(--x-space-3);
+}
+
+.crash-label {
+  font-size: 12px;
+  color: var(--x-color-muted);
+}
+
+.crash-code .connect-code pre {
+  max-height: 200px;
+  overflow: auto;
+}
+
+.crash-dialog .dialog-actions {
+  margin-top: var(--x-space-3);
+}
+
 .app-crash-body {
   margin: 0;
   max-width: 60ch;
