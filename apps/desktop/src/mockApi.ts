@@ -33,6 +33,7 @@ import { createMockProfiles, type MockProfiles } from "./mockProfiles";
 import { createMockThemes, type MockThemes } from "./mockThemes";
 import { createMockPower } from "./mockPower";
 import { createMockPty, type MockPtyd } from "./mockPty";
+import { createMockCrash, type MockCrash } from "./mockCrash";
 import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
 import { createMockXdevId, type MockXdevId } from "./mockXdevId";
 import { createMockPorts } from "./mockPorts";
@@ -366,7 +367,7 @@ function snippet(text: string, terms: string[]): string | null {
   return out.replace(/\s+/g, " ").trim();
 }
 
-export type MockApi = Api & MockPtyd & Omit<MockCli, keyof Api> & Omit<MockAutomations, keyof Api> & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & Pick<MockXdevId, "__xdevIdExpire" | "__xdevIdDeepLink" | "__xdevIdManages" | "__xdevIdReopens"> & Pick<MockOpenIn, "__openInCalls"> & Pick<MockTermLinks, "__openedUrls" | "__defaultOpens"> & Pick<MockFiles, "__editFile" | "__fileReveals" | "__watchers" | "__overflow" | "__fileOpens" | "__failBytes"> & Pick<MockProfiles, "__installed" | "__docsOpened"> & Pick<MockThemes, "__paths"> & Pick<MockKit, "__shareLog"> & Pick<MockShell, "__menu" | "__quitMode" | "__attention" | "__opened" | "__labels" | "__windowCalls" | "__closeIntent"> & {
+export type MockApi = Api & MockPtyd & Omit<MockCli, keyof Api> & Omit<MockAutomations, keyof Api> & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & Pick<MockXdevId, "__xdevIdExpire" | "__xdevIdDeepLink" | "__xdevIdManages" | "__xdevIdReopens"> & Pick<MockOpenIn, "__openInCalls"> & Pick<MockCrash, "__crash" | "__startupFail" | "__exports" | "__relaunches" | "__logReveals"> & Pick<MockTermLinks, "__openedUrls" | "__defaultOpens"> & Pick<MockFiles, "__editFile" | "__fileReveals" | "__watchers" | "__overflow" | "__fileOpens" | "__failBytes"> & Pick<MockProfiles, "__installed" | "__docsOpened"> & Pick<MockThemes, "__paths"> & Pick<MockKit, "__shareLog"> & Pick<MockShell, "__menu" | "__quitMode" | "__attention" | "__opened" | "__labels" | "__windowCalls" | "__closeIntent"> & {
   // Changes a file the way another program would (`null` deletes it); xDev did not write it.
   __editOutside(path: string, content: string | null): void;
   // Writes a file the way `propose_update` does over MCP; throws an ApiError like the real tool.
@@ -607,6 +608,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockTermLinks(workspace.filesList),
     ...createMockAgentSessions(settingsApi),
     ...createMockLayout(),
+    ...createMockCrash(),
     ...createMockCli(),
     ...createMockAutomations(),
     ...createMockQuickCommands(

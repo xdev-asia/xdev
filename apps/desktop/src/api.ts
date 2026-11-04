@@ -1,7 +1,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import type {
   Accounts,
   AccountSource,
@@ -158,6 +158,11 @@ import type {
   CliAsk,
   CliOpenTab,
   TabReport,
+  CrashDetail,
+  CrashReport,
+  RenderCrash,
+  StartupReport,
+  StartupStep,
   XdevIdState,
   XdevIdServer,
   FsChanged,
@@ -260,6 +265,7 @@ export type { AiKeyStatus } from "@xdev/bindings";
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { CliAsk, CliOpenTab, TabReport };
 export type { OrchestrationSettings, SkillStatus, WorkerLifetime, WorkerOpen, WorkerOpenOutcome, WorkerClose, ReadTab, WorkerChanged };
+export type { Breadcrumb, CrashDetail, CrashReport, RenderCrash, StartupReport, StartupStep } from "@xdev/bindings";
 export type { RestoreMode } from "@xdev/bindings";
 export type { Theme, EditorTheme, SidebarLook, StatusBarItems } from "@xdev/bindings";
 export type { CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview } from "@xdev/bindings";
@@ -619,7 +625,9 @@ export type ErrorCode =
   | "still_conflicted"
   | "bad_color"
   | "bad_icon"
-  | "gh_account_missing";
+  | "gh_account_missing"
+  | "crash_store"
+  | "diag_write";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -1307,6 +1315,29 @@ export interface Api {
   onAutomationDispatch(cb: (e: AutomationDispatch) => void): Promise<() => void>;
   // `automations://changed`: an automation or run changed; load the list again.
   onAutomationsChanged(cb: (e: AutomationsChanged) => void): Promise<() => void>;
+
+  // Crash reports stay on this machine (`<local_dir>/crash-reports.json`); nothing is sent.
+  // A boundary caught a render error: keeps a report and returns it, so it can be shown at once.
+  crashRecordRender(crash: RenderCrash): Promise<CrashReport | null>;
+  // Adds a breadcrumb (the last 30 go into the next report). Never rejects.
+  crashBreadcrumb(name: string, data: CrashDetail[]): Promise<void>;
+  // The newest pending report, once: it is marked dismissed as it is taken.
+  crashTakePending(): Promise<CrashReport | null>;
+  // The newest report of any status.
+  crashLatest(): Promise<CrashReport | null>;
+  // Dismisses a report, and pending ones of the same storm within 5 s.
+  crashDismiss(id: string): Promise<void>;
+  // The setup steps of this start; the UI adds its own with `startupMark`.
+  startupReport(): Promise<StartupReport>;
+  startupMark(step: StartupStep): Promise<void>;
+  // Restarts the app.
+  appRelaunch(): Promise<void>;
+  // Writes the redacted diagnostics file to `path`; returns its size in bytes. Rejects with `diag_write`.
+  diagnosticsExport(path: string): Promise<number>;
+  // Opens the folder of the app log.
+  diagnosticsRevealLogs(): Promise<void>;
+  // Asks where to save the diagnostics file; null when cancelled.
+  pickDiagnosticsPath(defaultName: string): Promise<string | null>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -1482,6 +1513,8 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "bad_color",
   "bad_icon",
   "gh_account_missing",
+  "crash_store",
+  "diag_write",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -1872,6 +1905,39 @@ const tauriApi: Api = {
   onOrchestrationCloseWorker: (cb) => listen<WorkerClose>("orchestration://close-worker", (e) => cb(e.payload)),
   onOrchestrationReadTab: (cb) => listen<ReadTab>("orchestration://read-tab", (e) => cb(e.payload)),
   onOrchestrationWorkerChanged: (cb) => listen<WorkerChanged>("orchestration://worker-changed", (e) => cb(e.payload)),
+  crashRecordRender: (crash) => call("crash_record_render", { crash }),
+  crashBreadcrumb: (name, data) => call("crash_breadcrumb", { name, data }),
+  crashTakePending: () => call("crash_take_pending"),
+  crashLatest: () => call("crash_latest"),
+  crashDismiss: (id) => call("crash_dismiss", { id }),
+  startupReport: () => call("startup_report"),
+  startupMark: (step) => call("startup_mark", { step }),
+  appRelaunch: () => call("app_relaunch"),
+  diagnosticsExport: (path) => call("diagnostics_export", { path }),
+  diagnosticsRevealLogs: () => call("diagnostics_reveal_logs"),
+  async pickDiagnosticsPath(defaultName) {
+    const picked = await save({ defaultPath: defaultName, filters: [{ name: "Diagnostics", extensions: ["ndjson"] }] });
+    return typeof picked === "string" ? picked : null;
+  },
+};
+
+const DEMO_CRASH: CrashReport = {
+  id: "demo-crash",
+  createdAt: Date.now() - 60_000,
+  status: "pending",
+  source: "main",
+  process: "app",
+  reason: "panic",
+  exitCode: null,
+  appVersion: "0.0.0",
+  platform: "demo",
+  arch: "demo",
+  details: [
+    { key: "location", value: "src/workspace.rs:10:5" },
+    { key: "thread", value: "main" },
+    { key: "message", value: "index out of bounds" },
+  ],
+  breadcrumbs: [{ at: Date.now() - 61_000, name: "renderer_error", data: [{ key: "message", value: "demo" }] }],
 };
 
 function browserApi(): Api {
@@ -1886,6 +1952,9 @@ function browserApi(): Api {
   // The preview lands in the demo vault so the main layout is reachable without a dialog;
   // `?welcome` simulates a first launch instead.
   const firstRun = params.has("welcome");
+  // `?crash` seeds a pending panic report; `?startupfail` a failed layout restore.
+  if (params.has("crash")) mock.__crash(DEMO_CRASH);
+  if (params.has("startupfail")) mock.__startupFail("layout.restore", "layout.json did not parse");
   let seeded = false;
   return {
     ...mock,
