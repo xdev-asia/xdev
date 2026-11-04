@@ -101,3 +101,78 @@ it("lists terminal after notifications and opens its page", () => {
   hooks.values = [];
   expect(view("terminal").shown().type).toBe(TerminalPage);
 });
+
+// --- settings search ---
+
+import { SettingsSearch } from "./SettingsSearch";
+
+function search(initial?: string, target?: string) {
+  const api = createMockApi({});
+  const draw = () => {
+    hooks.cursor = 0;
+    hooks.active = true;
+    try { return nodes(SettingsView({ api, onChanged() {}, initial, target })); } finally { hooks.active = false; }
+  };
+  const box = () => draw().find((n) => n.type === SettingsSearch)!;
+  const items = () => draw().filter((n) => n.props.className === "settings-nav-item");
+  const body = () => draw().find((n) => n.props.className === "settings-body")!;
+  const page = () => nodes(body().props.children)[0];
+  return { draw, box, items, body, page };
+}
+
+it("has a search box above the section list", () => {
+  const v = search();
+  const all = v.draw();
+  const nav = all.find((n) => n.props.className === "settings-nav")!;
+  expect(nodes(nav.props.children)[0].type).toBe("h2");
+  expect(nodes(nav.props.children).findIndex((n) => n.type === SettingsSearch)).toBeLessThan(nodes(nav.props.children).findIndex((n) => n.props.className === "settings-nav-item"));
+  expect(v.items()).toHaveLength(SECTIONS.length);
+  expect(v.page().props.filter).toBeUndefined();
+});
+
+it("a query keeps only the sections with hits, with their hit count", () => {
+  const v = search();
+  v.box().props.onChange("font");
+  const items = v.items();
+  expect(items.map((n) => n.props.children[0])).toEqual([en("settings.terminal.title"), en("files.settings.title")]);
+  expect(items.every((n) => typeof n.props.children[1] === "object")).toBe(true);
+});
+
+it("the page gets the filter, and the active section moves to the best hit when it has none", () => {
+  const v = search("agents");
+  expect(v.page().type).toBe(AgentsPage);
+  v.box().props.onChange("branch prefix");
+  expect(v.page().props.filter.query).toBe("branch prefix");
+  expect(v.page().props.filter.ids.has("git.prefix")).toBe(true);
+  expect(v.page().type).not.toBe(AgentsPage);
+  expect(v.items().map((n) => n.props["aria-current"])).toContain("page");
+});
+
+it("keeps the active section when it has a hit", () => {
+  const v = search("editor");
+  v.box().props.onChange("font");
+  expect(v.page().props.filter.ids.has("editor.fontSize")).toBe(true);
+  expect(v.page().type).toBe(SECTIONS.find((s) => s.id === "editor")!.Component);
+});
+
+it("says so when nothing matches", () => {
+  const v = search();
+  v.box().props.onChange("zzzzqqq");
+  expect(v.items()).toHaveLength(0);
+  const empty = v.draw().find((n) => n.props.role === "status" && n.props["data-search"] === "none")!;
+  expect(empty.props.children).toBe(translate("en", "settings.search.none", { query: "zzzzqqq" }));
+});
+
+it("clearing the query shows every section again", () => {
+  const v = search();
+  v.box().props.onChange("font");
+  v.box().props.onChange("");
+  expect(v.items()).toHaveLength(SECTIONS.length);
+  expect(v.page().props.filter).toBeUndefined();
+});
+
+it("a palette target opens its section with the filter holding every id and the target", () => {
+  const v = search("git", "git.prefix");
+  expect(v.page().props.filter.target).toBe("git.prefix");
+  expect(v.page().props.filter.ids.has("git.refresh")).toBe(true);
+});

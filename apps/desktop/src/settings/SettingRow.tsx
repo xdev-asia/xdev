@@ -19,7 +19,7 @@ export function SettingGroup(props: { ids: readonly string[]; filter?: SettingsF
   return <>{props.children}</>;
 }
 
-type Target = { scrollIntoView?(o: { block: string }): void; classList: { add(c: string): void; remove(c: string): void } };
+type Target = { scrollIntoView?(o: { block: ScrollLogicalPosition }): void; classList: { add(c: string): void; remove(c: string): void } };
 
 export const FLASH_CLASS = "setting-flash";
 const POLL_MS = 100;
