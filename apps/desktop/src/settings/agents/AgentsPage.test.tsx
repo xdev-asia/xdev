@@ -223,3 +223,12 @@ it("account_switch_strings_exist_in_both_languages", async () => {
   expect(keys.length).toBeGreaterThanOrEqual(8);
   for (const k of keys) expect(vi_).toHaveProperty(k);
 });
+
+it("account_switch_policy_follows_a_settings_change_from_elsewhere", async () => {
+  const p = await page();
+  // The page's own draw collected two effects now; the second one subscribes.
+  expect(p.all().find((n) => n.props["data-field"] === "accountSwitch")!.props.value).toBe("ask");
+  await p.api.agentsSettingsPut({ accountSwitch: "restart" });
+  await tick();
+  expect(p.all().find((n) => n.props["data-field"] === "accountSwitch")!.props.value).toBe("restart");
+});

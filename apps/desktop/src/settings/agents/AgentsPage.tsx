@@ -48,6 +48,15 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
     api.agentsSettings().then(setSwitchPolicy, (e) => setError(toApiError(e).code));
   }, [api]);
 
+  // Another window or a file edit can change the policy; follow it.
+  useEffect(
+    () =>
+      api.onSettingsChanged(({ sections }) => {
+        if (sections.includes("agents")) api.agentsSettings().then(setSwitchPolicy, () => {});
+      }),
+    [api],
+  );
+
   async function pickSwitch(next: SwitchRunning): Promise<void> {
     if (!switchPolicy || next === switchPolicy.accountSwitch) return;
     setError(undefined);
