@@ -50,6 +50,14 @@ pub enum Action {
         worktree: PathBuf,
         paths: Vec<String>,
     },
+    /// A worktree verb of the app CLI (`op` is `create` or `set`) on
+    /// `worktree`, from a caller whose `scope` is `own`, `family`, `other`
+    /// or `external`. The scope is a label, not an identity.
+    CliWorktree {
+        op: String,
+        worktree: PathBuf,
+        scope: String,
+    },
 }
 
 /// `Ask` stops until a person approves; nothing proceeds on silence.
@@ -181,6 +189,9 @@ impl Gate for Policy {
             // Loses work that git cannot bring back: a person confirms every time.
             Action::Discard { .. } => Verdict::Ask {
                 reason: "discarding changes always asks".to_owned(),
+            },
+            Action::CliWorktree { op, scope, .. } => Verdict::Ask {
+                reason: format!("cli worktree {op} from scope {scope} asks"),
             },
             Action::LaunchAgent {
                 profile,

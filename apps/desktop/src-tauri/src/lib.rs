@@ -3,7 +3,9 @@ mod agent_sessions;
 mod atomic;
 #[cfg(test)]
 mod bindings;
+mod cli_verbs;
 mod commands;
+mod endpoint;
 mod files;
 mod hooks;
 mod issues;
@@ -64,6 +66,7 @@ pub fn run() {
         .manage(profiles::ProfilesLock::default())
         .manage(files::Searches::default())
         .manage(status::Shown::default())
+        .manage(cli_verbs::CliHub::default())
         .manage(keybindings::LastSent::default())
         .setup(move |app| {
             updater::start(app.handle().clone());
@@ -317,6 +320,8 @@ pub fn run() {
             quick_commands::quick_commands_recent,
             quick_commands::repo_file_commands,
             quick_commands::repo_file_commands_trust,
+            cli_verbs::cli_tabs_report,
+            cli_verbs::cli_approve,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")

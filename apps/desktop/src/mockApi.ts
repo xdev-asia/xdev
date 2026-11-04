@@ -24,6 +24,7 @@ import { createMockQuickCommands } from "./mockQuickCommands";
 import { createMockIssues } from "./mockIssues";
 import { createMockKit } from "./mockKit";
 import { createMockLayout } from "./mockLayout";
+import { createMockCli } from "./mockCli";
 import { createMockOpenIn, type MockOpenIn } from "./mockOpenIn";
 import { createMockProfiles } from "./mockProfiles";
 import { createMockPty, type MockPtyd } from "./mockPty";
@@ -570,6 +571,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockOpenIn(settingsHub.emit, workspace.repoAdd),
     ...createMockAgentSessions(),
     ...createMockLayout(),
+    ...createMockCli(),
     ...createMockQuickCommands(
       {
         agentProfiles: async () => (await profiles.profiles()).profiles.map((p) => p.profile.id),
