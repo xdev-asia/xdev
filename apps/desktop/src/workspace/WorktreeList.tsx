@@ -328,7 +328,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   // The recent order is a snapshot: retaken when the sort, the set of worktrees or the window focus changes.
   const snapshot = recentSnapshot(recent, { sort: prefs.sort, paths: entries.map((e) => e.path), activity: props.activity, focus });
   if (snapshot !== recent) setRecent(snapshot);
-  const sortRows = <T extends { path: string }>(list: readonly T[]): T[] => sortEntries(list, prefs.sort, snapshot.activity);
+  const sortRows = <T extends { path: string }>(list: readonly T[]): T[] => sortEntries(list, prefs.sort, snapshot.activity, (path) => props.dots[path]);
   // The repo is named on a row only when more than one repo is listed.
   const many = repoList.length > 1;
   const shown = visibleEntries(entries, prefs, props.selected);
