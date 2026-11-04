@@ -308,8 +308,22 @@ pub fn issue_view(_gh: &dyn GhExec, _cwd: &Path, _number: u64) -> Result<IssueDe
 
 /// "#123", "123", or "https://github.com/<owner>/<repo>/issues/123" gives
 /// (`owner/repo` or `None`, 123).
-pub fn parse_issue_ref(_text: &str) -> Option<(Option<String>, u64)> {
-    todo!("B1")
+pub fn parse_issue_ref(text: &str) -> Option<(Option<String>, u64)> {
+    let text = text.trim();
+    let number = |s: &str| {
+        let digits = !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+        s.parse::<u64>().ok().filter(|n| digits && *n > 0)
+    };
+    if let Some(rest) = text.strip_prefix("https://github.com/") {
+        let parts: Vec<&str> = rest.trim_end_matches('/').split('/').collect();
+        return match parts.as_slice() {
+            [owner, repo, "issues", n] if !owner.is_empty() && !repo.is_empty() => {
+                number(n).map(|n| (Some(format!("{owner}/{repo}")), n))
+            }
+            _ => None,
+        };
+    }
+    number(text.strip_prefix('#').unwrap_or(text)).map(|n| (None, n))
 }
 
 fn spawn_error(e: io::Error) -> GitError {
@@ -580,5 +594,33 @@ mod tests {
         let err = pr_view(&fake, cwd()).unwrap_err();
         assert_eq!(err.code(), "gh_failed");
         assert!(matches!(err, GitError::Gh(ref s) if s == "boom"));
+    }
+
+    #[test]
+    fn parse_issue_ref_reads_numbers_and_urls() {
+        for text in ["#12", "12", " #12 "] {
+            assert_eq!(parse_issue_ref(text), Some((None, 12)), "{text}");
+        }
+        let url = Some((Some("o/r".to_owned()), 12));
+        assert_eq!(parse_issue_ref("https://github.com/o/r/issues/12"), url);
+        assert_eq!(parse_issue_ref("https://github.com/o/r/issues/12/"), url);
+    }
+
+    #[test]
+    fn parse_issue_ref_refuses_the_rest() {
+        for text in [
+            "https://github.com/o/r/pull/12",
+            "#0",
+            "0",
+            "99999999999999999999",
+            "",
+            "#",
+            "#1x",
+            "-3",
+            "https://example.com/o/r/issues/12",
+            "https://github.com/o/r/issues/12/files",
+        ] {
+            assert_eq!(parse_issue_ref(text), None, "{text}");
+        }
     }
 }
