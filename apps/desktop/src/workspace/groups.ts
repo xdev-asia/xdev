@@ -56,7 +56,8 @@ export interface GroupContext {
 /** Entries bucketed by a fixed list of ids, "none" last; empty sections left out. One pass. */
 function byIds<T>(mode: SidebarGroupBy, entries: T[], order: readonly string[], idOf: (e: T) => string): Section<T>[] {
   const buckets = new Map<string, T[]>([...order, "none"].map((id) => [id, []]));
-  for (const e of entries) buckets.get(idOf(e))!.push(e);
+  // An id outside the list (a value a newer build wrote) falls back to "none".
+  for (const e of entries) (buckets.get(idOf(e)) ?? buckets.get("none")!).push(e);
   return [...buckets].filter(([, items]) => items.length > 0).map(([id, items]) => ({ key: `${mode}:${id}`, mode, id, items }));
 }
 
