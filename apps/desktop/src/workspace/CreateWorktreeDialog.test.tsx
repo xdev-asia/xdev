@@ -89,3 +89,13 @@ it("keeps Advanced closed and offers Create more", () => {
   expect(adv?.props.defaultExpanded).toBe(false);
   expect(all.some((n) => n.props.label === translate("en", "workspace.create.createMore"))).toBe(true);
 });
+
+it("offers the Branch tab only when branches can be read, and keeps a base field on the Name tab", () => {
+  const repos = DEMO_WORKSPACE.repos;
+  const tabs = (branches?: () => Promise<never[]>) => {
+    const all = nodes(CreateWorktreeDialog({ repos, repoId: repos[0].id, agents: AGENTS, branches, onCreate: vi.fn(), onCancel: vi.fn() }));
+    return all.find((n) => Array.isArray(n.props.options) && n.props.label === translate("en", "workspace.create.tab.label"))!.props.options.map((o: { value: string }) => o.value);
+  };
+  expect(tabs()).toEqual(["name"]);
+  expect(tabs(async () => [])).toEqual(["name", "branch"]);
+});
