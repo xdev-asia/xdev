@@ -75,3 +75,12 @@ it("carries the sidebar layout through a prefs put", async () => {
   expect(await api.sidebarPrefsPut(next)).toEqual(next);
   expect(await api.sidebarPrefsGet()).toEqual(next);
 });
+
+it("emits the shell section on a shell settings put through the mock api", async () => {
+  const api = createMockApi({});
+  const seen = vi.fn();
+  api.onSettingsChanged((e) => seen(e.sections));
+  const stored = await api.shellSettingsPut({ ...(await api.shellSettings()), minimizeToTray: true });
+  expect(stored.minimizeToTray).toBe(true);
+  expect(seen).toHaveBeenCalledWith(["shell"]);
+});

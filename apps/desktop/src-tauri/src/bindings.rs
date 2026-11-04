@@ -25,10 +25,11 @@ use crate::settings::{
     OpenInSettings, RestoreMode, SettingsChanged, ShellSettings, SidebarPrefs, StatusSettings,
     TerminalSettings, Theme, UiSettings, UpdateChannel, UsageSettings,
 };
+use crate::shell::{CloseIntent, HelpLink, MenuEvent, QuitMode, ShellLabels};
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
-use crate::updater::UpdateInfo;
+use crate::updater::{UpdateInfo, UpdatePhase};
 use crate::workspace::{CloneProgress, WorktreeChange, WorktreeCreated, WorktreeFileDiff};
 
 /// Each type's dependencies are written with it, so only the roots are here.
@@ -73,6 +74,12 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     SettingsChanged::export_all(cfg)?;
     ShellSettings::export_all(cfg)?;
     UpdateChannel::export_all(cfg)?;
+    CloseIntent::export_all(cfg)?;
+    QuitMode::export_all(cfg)?;
+    HelpLink::export_all(cfg)?;
+    MenuEvent::export_all(cfg)?;
+    ShellLabels::export_all(cfg)?;
+    UpdatePhase::export_all(cfg)?;
     KeySettings::export_all(cfg)?;
     UiSettings::export_all(cfg)?;
     RestoreMode::export_all(cfg)?;

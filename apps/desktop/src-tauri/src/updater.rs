@@ -24,6 +24,28 @@ pub struct UpdateInfo {
     notes: Option<String>,
 }
 
+/// Where a manual or background update check stands; the UI shows it in
+/// Settings → General → Updates. Sent as the `update-phase` event on change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum UpdatePhase {
+    Idle,
+    Checking,
+    UpToDate,
+    Downloading {
+        version: String,
+        percent: Option<u8>,
+    },
+    Ready {
+        version: String,
+        notes: Option<String>,
+    },
+    Error {
+        detail: String,
+    },
+}
+
 /// The downloaded, verified-on-install update waiting for a restart or quit.
 #[derive(Default)]
 pub struct Pending(Mutex<Option<(Update, Vec<u8>)>>);

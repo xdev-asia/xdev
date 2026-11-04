@@ -580,6 +580,27 @@ it("routes account calls through Tauri and normalizes their errors", async () =>
   } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
 });
 
+it("routes shell and update calls through Tauri with the argument names Rust expects", async () => {
+  vi.resetModules();
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    const settings = { minimizeToTray: true, menuBarIcon: true, trayNoticeShown: false, updateChannel: "rc" as const };
+    await api.shellSettings(); await api.shellSettingsPut(settings);
+    await api.shellCloseRequested("xDev", "Still running"); await api.shellQuit("end-all"); await api.shellQuitCancelled();
+    await api.helpOpen("docs"); await api.trayAttention(); await api.windowReload(); await api.windowDevtoolsToggle();
+    await api.updateCheck(true); await api.updatePhase();
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["shell_settings_get", undefined], ["shell_settings_put", { settings }],
+      ["shell_close_requested", { noticeTitle: "xDev", noticeBody: "Still running" }], ["shell_quit", { mode: "end-all" }], ["shell_quit_cancelled", undefined],
+      ["help_open", { link: "docs" }], ["tray_attention", undefined], ["window_reload", undefined], ["window_devtools_toggle", undefined],
+      ["update_check", { rc: true }], ["update_phase", undefined],
+    ]);
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
+});
+
 it("sends the docs folder of a repo update to Tauri as docsDir", async () => {
   vi.resetModules();
   vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
