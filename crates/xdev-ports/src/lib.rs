@@ -2,6 +2,7 @@
 //! which worktree each belongs to, and the URLs a terminal printed for them.
 //! Everything here reads local tables only; nothing touches the network.
 
+pub mod parse;
 mod probe;
 
 pub use probe::{Listener, OsProbe, Probe, Proc, PtyRoot, ScanError};
