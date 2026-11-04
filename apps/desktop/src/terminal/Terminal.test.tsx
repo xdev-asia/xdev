@@ -4,6 +4,7 @@ import { translate } from "@/i18n";
 import { resetBindingsForTests, setKeySettings } from "@/keys/bindingsStore";
 import { PtyClient } from "./ptyClient";
 import { Terminal } from "./Terminal";
+import { TERMINAL_SCHEMES } from "./terminalThemes";
 import { resetTerminalSettingsForTests, setTerminalSettings, TERMINAL_DEFAULTS } from "./terminalSettings";
 
 // The first ref is the xterm host; the rest keep their initial value.
@@ -234,14 +235,48 @@ it("builds the xterm options from the stored settings", () => {
   expect(hooks.options).toMatchObject({ fontSize: 17, scrollback: 42, cursorStyle: "bar", fontWeight: "500", cursorBlink: true });
 });
 
+it("the stored theme builds the xterm and the pane takes its background", () => {
+  const pane = { style: { background: "" } };
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, theme: "dracula", wordSeparators: " /" });
+  const { effect } = mount({ api: createMockApi({}), id: "th-1" });
+  (hooks.store[0].current as { parentElement?: unknown }).parentElement = pane;
+  effect();
+  const dracula = TERMINAL_SCHEMES.find((x) => x.id === "dracula")!;
+  expect(hooks.options.theme).toEqual(dracula.colors);
+  expect(hooks.options.wordSeparator).toBe(" /");
+  expect(pane.style.background).toBe(dracula.colors.background);
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, theme: "app" });
+  // The app theme: the tokens (empty here), so the pane drops its own background.
+  expect(pane.style.background).toBe("");
+});
+
 it("a store change updates the options and fits again", async () => {
   const { effect } = mount({ api: createMockApi({}), id: "o-2" });
   (hooks.store[0].current as { clientWidth: number }).clientWidth = 800;
   (hooks.store[0].current as { clientHeight: number }).clientHeight = 600;
   const cleanup = effect() as () => void;
   const before = hooks.fits;
-  setTerminalSettings({ ...TERMINAL_DEFAULTS, fontSize: 20, lineHeight: 1.4 });
-  expect(hooks.options).toMatchObject({ fontSize: 20, lineHeight: 1.4 });
+  setTerminalSettings({
+    ...TERMINAL_DEFAULTS,
+    fontSize: 20,
+    lineHeight: 1.4,
+    theme: "nord",
+    wordSeparators: " /",
+    scrollSensitivity: 2,
+    fastScrollSensitivity: 8,
+    minimumContrast: 4.5,
+  });
+  expect(hooks.options).toMatchObject({
+    fontSize: 20,
+    lineHeight: 1.4,
+    wordSeparator: " /",
+    scrollSensitivity: 2,
+    fastScrollSensitivity: 8,
+    minimumContrastRatio: 4.5,
+  });
+  expect((hooks.options.theme as { background: string }).background).toBe(
+    TERMINAL_SCHEMES.find((x) => x.id === "nord")?.colors.background,
+  );
   expect(hooks.fits).toBe(before + 1);
   cleanup();
   // A disposed pane no longer listens.
