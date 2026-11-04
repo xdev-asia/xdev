@@ -9,6 +9,8 @@ import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useI18n } from "@/i18n";
 import { PaletteHost } from "@/palette/PaletteHost";
+import { NavButtons } from "@/nav/NavButtons";
+import { useNavHistory } from "@/nav/useNavHistory";
 import { useKeymap, type ActionId } from "@/keys/keymap";
 import { setTerminalKeyHost, startDiagnosticToasts } from "@/keys/terminalKey";
 import { startAutosave } from "@/files/autosave";
@@ -577,6 +579,24 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     storeSelected(wt.path);
   }
 
+  // Back / forward through the worktrees visited; always ends in the workspace view.
+  const nav = useNavHistory({
+    current: current?.path ?? null,
+    tab: current ? (shownTab[current.path] ?? null) : null,
+    alive: (path) => all.some((w) => w.path === path),
+    go: (entry) => {
+      const wt = all.find((w) => w.path === entry.worktree);
+      if (!wt) return;
+      select(wt);
+      show("workspace");
+      if (entry.tab && sessions?.tabs(wt.path).some((x) => x.id === entry.tab)) {
+        const id = entry.tab;
+        setFront((f) => ({ worktree: wt.path, id, seq: (f?.seq ?? 0) + 1 }));
+      }
+      focusTerminal(wt.path);
+    },
+  });
+
   // Ctrl+Shift+Up / Down and Ctrl+1..9: walk the worktrees as the sidebar draws them.
   function worktreeKey(to: { step: 1 | -1 } | { nth: number }): boolean {
     const path = worktreeTarget(order, current?.path ?? null, to);
@@ -627,6 +647,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     "settings.open": () => openSettings(),
     "quickCommands.open": () => setQuickSeq((n) => n + 1),
     "settings.shortcuts": () => openSettings("keys"),
+    "worktree.history.back": () => nav.back(),
+    "worktree.history.forward": () => nav.forward(),
     "sidebar.left.toggle": () => setSidebarOpen((o) => !o),
     "sidebar.right.toggle": () => setRightOpen((o) => !o),
     "panel.explorer": () => panelKey("files"),
@@ -1260,6 +1282,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             <path d="M9 4v16" />
           </svg>
         </button>
+        <NavButtons canBack={nav.canBack} canForward={nav.canForward} onBack={nav.back} onForward={nav.forward} />
         <BrandMark className="ws-logo" size={18} />
         <span className="ws-brand">xDev</span>
         {/* The docs app shows its own folder, so the crumbs go with the workspace view. */}
