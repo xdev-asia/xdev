@@ -38,9 +38,8 @@ impl Repo {
     }
 
     /// `git branch -m old new`. The branch may be checked out.
-    pub fn rename_branch(&self, _old: &str, _new: &str) -> Result<(), GitError> {
-        // Contract stub; B1 fills it in.
-        Err(GitError::NoRepo)
+    pub fn rename_branch(&self, old: &str, new: &str) -> Result<(), GitError> {
+        run::run(&self.workdir, &["branch", "-m", "--", old, new], None).map(drop)
     }
 
     /// `user.name` as this repo sees it (its own config, then the global
