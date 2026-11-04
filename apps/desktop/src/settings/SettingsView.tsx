@@ -10,6 +10,7 @@ export function SettingsView(props: { api: Api; onChanged(): void; initial?: str
   const [active, setActive] = useState(() => (SECTIONS.some((s) => s.id === props.initial) ? props.initial! : SECTIONS[0].id));
   const section = SECTIONS.find((s) => s.id === active) ?? SECTIONS[0];
   const { Component } = section;
+  const openSection = (id: string) => SECTIONS.some((s) => s.id === id) && setActive(id);
   return (
     <div className="settings">
       <nav className="settings-nav" aria-label={t("settings.label")}>
@@ -27,7 +28,7 @@ export function SettingsView(props: { api: Api; onChanged(): void; initial?: str
         ))}
       </nav>
       <section className="settings-body" aria-label={t(section.labelKey)}>
-        <Component key={section.id} api={props.api} onChanged={props.onChanged} filter={props.filter} />
+        <Component key={section.id} api={props.api} onChanged={props.onChanged} filter={props.filter} openSection={openSection} />
       </section>
     </div>
   );

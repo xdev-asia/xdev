@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
 import { getTerminalSettings, resetTerminalSettingsForTests, TERMINAL_DEFAULTS } from "@/terminal/terminalSettings";
+import { RestoreSetting } from "./RestoreSetting";
 import { CLIPBOARD_SWITCHES, TerminalPage } from "./TerminalPage";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
@@ -74,6 +75,11 @@ it("renders the stored values", async () => {
     en("settings.terminal.osc52Clipboard"),
   ]);
   expect(p.field("preview").props.style).toMatchObject({ fontFamily: "Fira Code", fontSize: 16 });
+});
+
+it("no longer holds the restore setting; General does", async () => {
+  const p = await page();
+  expect(p.all().some((n) => n.type === RestoreSetting)).toBe(false);
 });
 
 it("a toggle puts once with only the changed field and updates the shared copy", async () => {
