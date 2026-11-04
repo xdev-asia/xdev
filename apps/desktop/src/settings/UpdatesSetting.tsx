@@ -36,8 +36,19 @@ export function UpdatesView(props: UpdatesViewProps): JSX.Element {
           <div className="ws-field" data-field="updates">
             {props.version !== null && <span data-field="version">{t("settings.general.updates.version", { version: props.version })}</span>}
             <p className="settings-hint" role="status" data-field="update-status">
-              {working && <Spinner label={t(line.key, line.vars)} />} {t(line.key, line.vars)}
+              {/* The status text names the work; the spinner is only the picture of it. */}
+              {working && (
+                <span aria-hidden="true">
+                  <Spinner label={t(line.key, line.vars)} />
+                </span>
+              )}{" "}
+              {t(line.key, line.vars)}
             </p>
+            {state.phase.kind === "error" && state.phase.detail && (
+              <small className="settings-hint" data-field="update-error-detail">
+                {state.phase.detail}
+              </small>
+            )}
             {notes && (
               <details data-field="update-notes">
                 <summary>{t("settings.general.updates.notes")}</summary>

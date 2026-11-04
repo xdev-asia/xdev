@@ -57,3 +57,4 @@ That key is separate from Apple and Microsoft code-signing certificates.
   signed with a Developer ID.
 
 - A manual "Check for updates" (Settings, General, and the tray and macOS menu) runs the same signed check as the background one; it adds no new trust path and no new key.
+- Release builds ship with the Tauri `devtools` feature on, so Help, Toggle developer tools opens the web inspector in an installed app. It runs only on the person's own machine and adds no network surface or capability.

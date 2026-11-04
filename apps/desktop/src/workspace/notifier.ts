@@ -88,7 +88,8 @@ export function createNotifier(deps: NotifierDeps): Notifier {
       return;
     }
     // The tray dot, once per burst: it is for a window the person cannot see (Rust decides that).
-    await deps.api.trayAttention().catch(() => {});
+    // Not awaited: a slow tray call must not hold the OS notification back.
+    void deps.api.trayAttention().catch(() => {});
     let sent = false;
     if (settings.os) {
       try {

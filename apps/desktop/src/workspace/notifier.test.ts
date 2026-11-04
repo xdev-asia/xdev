@@ -195,6 +195,13 @@ it("does not light the tray when the master switch or the event is off", async (
   expect(litQuiet).not.toHaveBeenCalled();
 });
 
+it("a tray call that never answers does not hold the OS notification back", async () => {
+  const s = setup();
+  vi.spyOn(s.api, "trayAttention").mockReturnValue(new Promise(() => {}));
+  await s.notifier.attention(tab("a"), "needs-you", names);
+  expect(s.notify).toHaveBeenCalledTimes(1);
+});
+
 it("a failing tray call never stops the OS notification", async () => {
   const s = setup();
   vi.spyOn(s.api, "trayAttention").mockRejectedValue(new Error("no tray"));
