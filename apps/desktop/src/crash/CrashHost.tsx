@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import type { Api, CrashReport } from "@/api";
 import { SurfaceBoundary } from "@/components/SurfaceBoundary";
 import { CrashDialog } from "./CrashDialog";
 import { onCrashOpen } from "./crashEvents";
+import { takeOnce } from "./takeOnce";
 
 /**
  * Owns the crash dialog. Opens it for the pending report of the last run (once), for a new boundary
@@ -12,12 +13,15 @@ import { onCrashOpen } from "./crashEvents";
 export function CrashHost(props: { api: Pick<Api, "crashTakePending" | "crashLatest" | "crashDismiss"> }): JSX.Element {
   const { api } = props;
   const [shown, setShown] = useState<{ report: CrashReport | null } | null>(null);
+  // Kept across effect runs, so StrictMode's second run still gets the report the first one took.
+  const take = useRef<(() => Promise<CrashReport | null>) | null>(null);
 
   useEffect(() => {
     let live = true;
     // `crashTakePending` marks the report dismissed as it hands it out, so this prompts once.
-    void api
-      .crashTakePending()
+    take.current ??= takeOnce(() => api.crashTakePending());
+    void take
+      .current()
       .then((report) => live && report && setShown({ report }))
       .catch(() => {});
     const off = onCrashOpen((open) => {
