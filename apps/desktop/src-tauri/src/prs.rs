@@ -482,10 +482,7 @@ mod tests {
         // A branch the user had before is reused, not made, so it stays.
         git(&main, &["branch", "mine"]);
         let fake = Fake::new(vec![(0, &pr(7, "mine", false), "")]);
-        assert_eq!(
-            branch_with(&fake, &data, "r-d1", 7).unwrap().branch,
-            "mine"
-        );
+        assert_eq!(branch_with(&fake, &data, "r-d1", 7).unwrap().branch, "mine");
         assert!(!discard_with(&data, "r-d1", "mine").unwrap());
         assert!(exists("mine"));
         // A branch the flow never saw stays too.
