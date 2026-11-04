@@ -11,8 +11,8 @@ use tauri::{AppHandle, State};
 use xdev_agent::{AgentError, Cancel, Cli, Profiles, RunRequest, Runner};
 use xdev_ai::Provider;
 use xdev_git::{
-    BaseRange, Check, GhExec, PrDraft, PrView, Repo, SystemGh, Upstream, pr_checks, pr_create,
-    pr_open_web, pr_view, run_failed_log,
+    BaseRange, Check, GhAccount, GhEnv, GhExec, GhLogin, GhOutput, GitError, PrDraft, PrView, Repo,
+    SystemGh, TokenGh, Upstream, pr_checks, pr_create, pr_open_web, pr_view, run_failed_log,
 };
 use xdev_policy::{Action, Gate, Verdict};
 use xdev_workspace::{Registry, WorkspaceError, path_key};
@@ -69,6 +69,30 @@ struct Known {
     base_ref: String,
     /// `None` for the primary checkout.
     start: Option<String>,
+    /// The `gh` login the repo is bound to; `None` is `gh`'s own default.
+    gh_account: Option<GhAccount>,
+}
+
+/// Runs `f` with `gh` as the repo's bound login, or plain `gh` when it has
+/// none. A login `gh` no longer holds fails the call with `gh_account_missing`.
+pub(crate) fn run_gh<E: GhEnv, R>(
+    inner: &E,
+    account: Option<GhAccount>,
+    f: impl FnOnce(&dyn GhExec) -> R,
+) -> R {
+    match account {
+        Some(account) => f(&TokenGh { inner, account }),
+        None => f(&GhPlain(inner)),
+    }
+}
+
+/// An unbound call: no token, so `gh` picks its own login.
+struct GhPlain<'a, E: GhEnv>(&'a E);
+
+impl<E: GhEnv> GhExec for GhPlain<'_, E> {
+    fn run(&self, cwd: &Path, args: &[&str], stdin: Option<&str>) -> Result<GhOutput, GitError> {
+        self.0.run_env(cwd, args, stdin, &[])
+    }
 }
 
 fn locate(data: &Path, path: &Path) -> Result<Known, CmdError> {
@@ -80,12 +104,14 @@ fn locate(data: &Path, path: &Path) -> Result<Known, CmdError> {
         return Ok(Known {
             base_ref: repo.base_ref.clone(),
             start: Some(meta.start.clone()),
+            gh_account: repo.gh_account.clone(),
         });
     }
     match reg.repos.iter().find(|r| path_key(&r.path) == key) {
         Some(repo) => Ok(Known {
             base_ref: repo.base_ref.clone(),
             start: None,
+            gh_account: repo.gh_account.clone(),
         }),
         None => Err(WorkspaceError::WorktreeUnknown(path.to_owned()).into()),
     }
@@ -516,8 +542,8 @@ fn draft_runner(data: &Path, path: &Path, recipe: &Recipe) -> Result<Box<dyn Run
 
 #[tauri::command(async)]
 pub fn worktree_pr(state: State<'_, AppState>, path: PathBuf) -> Result<Option<PrView>, CmdError> {
-    locate(data_dir(&state)?, &path)?;
-    pr_with(&SystemGh, &path)
+    let known = locate(data_dir(&state)?, &path)?;
+    run_gh(&SystemGh, known.gh_account, |gh| pr_with(gh, &path))
 }
 
 #[tauri::command(async)]
@@ -527,7 +553,10 @@ pub fn worktree_pr_create(
     draft: PrDraft,
 ) -> Result<PrView, CmdError> {
     let known = locate(data_dir(&state)?, &path)?;
-    create_pr_with(&SystemGh, &Repo::discover(&path)?, &known.base_ref, draft)
+    let repo = Repo::discover(&path)?;
+    run_gh(&SystemGh, known.gh_account, |gh| {
+        create_pr_with(gh, &repo, &known.base_ref, draft)
+    })
 }
 
 #[tauri::command(async)]
@@ -536,8 +565,10 @@ pub fn worktree_pr_checks(
     path: PathBuf,
     number: u64,
 ) -> Result<Vec<Check>, CmdError> {
-    locate(data_dir(&state)?, &path)?;
-    Ok(pr_checks(&SystemGh, &path, number)?)
+    let known = locate(data_dir(&state)?, &path)?;
+    run_gh(&SystemGh, known.gh_account, |gh| {
+        Ok(pr_checks(gh, &path, number)?)
+    })
 }
 
 /// The log of the failed job behind a check's `link`, for the Fix checks
@@ -548,8 +579,10 @@ pub fn worktree_check_log(
     path: PathBuf,
     link: String,
 ) -> Result<Option<String>, CmdError> {
-    locate(data_dir(&state)?, &path)?;
-    Ok(run_failed_log(&SystemGh, &path, &link)?)
+    let known = locate(data_dir(&state)?, &path)?;
+    run_gh(&SystemGh, known.gh_account, |gh| {
+        Ok(run_failed_log(gh, &path, &link)?)
+    })
 }
 
 #[tauri::command(async)]
@@ -558,8 +591,16 @@ pub fn worktree_pr_open(
     path: PathBuf,
     checks: bool,
 ) -> Result<(), CmdError> {
-    locate(data_dir(&state)?, &path)?;
-    Ok(pr_open_web(&SystemGh, &path, checks)?)
+    let known = locate(data_dir(&state)?, &path)?;
+    run_gh(&SystemGh, known.gh_account, |gh| {
+        Ok(pr_open_web(gh, &path, checks)?)
+    })
+}
+
+/// The logins `gh` holds, for the project settings picker.
+#[tauri::command(async)]
+pub fn gh_logins() -> Result<Vec<GhLogin>, CmdError> {
+    Ok(xdev_git::gh_logins(&SystemGh)?)
 }
 
 #[tauri::command(async)]
@@ -1103,7 +1144,7 @@ mod tests {
 
     use std::cell::RefCell;
     use xdev_agent::RunOutcome;
-    use xdev_git::{GhOutput, GitError};
+    use xdev_git::{GhAccount, GhEnv, GhOutput, GitError};
 
     struct FakeGh {
         calls: RefCell<Vec<Vec<String>>>,
@@ -1702,5 +1743,96 @@ mod tests {
         assert!(prompt.contains("b.txt"), "{prompt}");
         assert!(prompt.contains("+two lines"), "{prompt}");
         assert!(prompt.ends_with("||"), "{prompt}");
+    }
+
+    /// The args and the environment of one call.
+    type EnvCall = (Vec<String>, Vec<(String, String)>);
+
+    /// A `gh` that records the environment of each call.
+    struct EnvGh {
+        calls: RefCell<Vec<EnvCall>>,
+        script: RefCell<Vec<GhOutput>>,
+    }
+
+    impl EnvGh {
+        fn new(mut script: Vec<GhOutput>) -> EnvGh {
+            script.reverse();
+            EnvGh {
+                calls: RefCell::default(),
+                script: RefCell::new(script),
+            }
+        }
+    }
+
+    impl GhEnv for EnvGh {
+        fn run_env(
+            &self,
+            _: &Path,
+            args: &[&str],
+            _: Option<&str>,
+            env: &[(&str, &str)],
+        ) -> Result<GhOutput, GitError> {
+            self.calls.borrow_mut().push((
+                args.iter().map(|a| a.to_string()).collect(),
+                env.iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            ));
+            Ok(self.script.borrow_mut().pop().expect("scripted gh call"))
+        }
+    }
+
+    fn bound(user: &str) -> Option<GhAccount> {
+        Some(GhAccount {
+            host: "github.com".into(),
+            user: user.into(),
+        })
+    }
+
+    const NO_PR: &str = "no pull requests found for branch \"feat\"";
+
+    #[test]
+    fn locate_carries_the_repos_gh_binding() {
+        let fx = fixture();
+        assert_eq!(locate(&fx.data, &fx.wt).unwrap().gh_account, None);
+        let mut reg = Registry::load(&fx.data).unwrap();
+        reg.repos[0].gh_account = bound("u");
+        reg.save(&fx.data).unwrap();
+        // The worktree and the primary checkout both read the repo's binding.
+        assert_eq!(locate(&fx.data, &fx.wt).unwrap().gh_account, bound("u"));
+        assert_eq!(locate(&fx.data, &fx.main).unwrap().gh_account, bound("u"));
+    }
+
+    #[test]
+    fn a_bound_call_gets_the_token_first_and_runs_with_it() {
+        let inner = EnvGh::new(vec![gh_out(0, "gho_x\n", ""), gh_out(1, "", NO_PR)]);
+        let view = run_gh(&inner, bound("u"), |gh| pr_with(gh, Path::new(".")));
+        assert_eq!(view.unwrap(), None);
+        let calls = inner.calls.borrow();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(
+            calls[0].0,
+            ["auth", "token", "--hostname", "github.com", "--user", "u"]
+        );
+        assert_eq!(&calls[1].0[..2], ["pr", "view"]);
+        assert_eq!(calls[1].1, [("GH_TOKEN".to_owned(), "gho_x".to_owned())]);
+    }
+
+    #[test]
+    fn a_call_bound_to_a_gone_login_is_not_run_as_another() {
+        let inner = EnvGh::new(vec![gh_out(1, "", "no oauth token found")]);
+        let res = run_gh(&inner, bound("u"), |gh| pr_with(gh, Path::new(".")));
+        assert_eq!(code(res), "gh_account_missing");
+        assert_eq!(inner.calls.borrow().len(), 1);
+    }
+
+    #[test]
+    fn an_unbound_call_is_one_plain_call() {
+        let inner = EnvGh::new(vec![gh_out(1, "", NO_PR)]);
+        let view = run_gh(&inner, None, |gh| pr_with(gh, Path::new(".")));
+        assert_eq!(view.unwrap(), None);
+        let calls = inner.calls.borrow();
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0].1.is_empty(), "no token without a binding");
     }
 }

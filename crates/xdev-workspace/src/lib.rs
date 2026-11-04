@@ -17,6 +17,7 @@ mod vaults;
 use std::io;
 use std::path::PathBuf;
 
+pub use xdev_git::GhAccount;
 use xdev_git::GitError;
 
 pub use create::{CreateProject, Created, PROJECT_NAME_MAX, ProjectKind, create_project};
@@ -30,7 +31,8 @@ pub use groups::{
 };
 pub use hooks::{
     DefaultTab, FILE_NAME, HookKind, HookRun, HookScript, RepoHooks, SHARED_MAX, TABS_MAX,
-    TRUST_FILE, detect_setup, hook_env, hooks_for, shared_to_link, trust, trust_hook,
+    TRUST_FILE, detect_setup, effective_issue_command, hook_env, hooks_for, issue_command_for,
+    shared_to_link, trust, trust_hook,
 };
 pub use kept::{
     ARCHIVE_DAYS, KeptBranch, KeptReason, KeptView, archive_worktree, kept_delete, kept_keep,
@@ -45,8 +47,8 @@ pub use ops::{
     set_details, set_pinned, stat, update_repo, valid_short_name,
 };
 pub use registry::{
-    MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, VaultEntry, WorkItem, WorkItemKind,
-    WorkStatus, WorktreeMeta, repo_id,
+    ISSUE_COMMAND_MAX, MadeBy, REPO_COLORS, Registry, RepoEntry, RepoIcon, ScriptSource,
+    SetupPolicy, VaultEntry, WorkItem, WorkItemKind, WorkStatus, WorktreeMeta, repo_id,
 };
 pub use repo_commands::{
     COMMAND_LABEL_MAX, COMMAND_PROMPT_MAX, COMMAND_TEXT_MAX, RepoAction, RepoCommand, RepoCommands,
@@ -140,6 +142,15 @@ pub enum WorkspaceError {
     /// The branch has an upstream; renaming it would break the pull request.
     #[error("the branch has an upstream: {0}")]
     BranchPushed(String),
+    /// Not a colour name and not `#rgb` / `#rrggbb`.
+    #[error("not a usable colour: {0}")]
+    BadColor(String),
+    /// Not one emoji.
+    #[error("not a usable icon: {0}")]
+    BadIcon(String),
+    /// A text over its size cap.
+    #[error("too large: {0}")]
+    TooLarge(String),
 }
 
 impl WorkspaceError {
@@ -177,6 +188,9 @@ impl WorkspaceError {
             WorkspaceError::FolderUnknown(_) => "folder_unknown",
             WorkspaceError::FolderExists(_) => "folder_exists",
             WorkspaceError::BranchPushed(_) => "branch_pushed",
+            WorkspaceError::BadColor(_) => "bad_color",
+            WorkspaceError::BadIcon(_) => "bad_icon",
+            WorkspaceError::TooLarge(_) => "too_large",
         }
     }
 }

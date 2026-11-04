@@ -20,10 +20,10 @@ use std::path::{Path, PathBuf};
 pub use clone::{CloneEvent, check_clone_url, clone_name, clone_repo, parse_progress};
 pub use conflict::{ConflictOp, ConflictState};
 pub use gh::{
-    Check, CheckBucket, GhExec, GhOutput, ISSUE_BODY_MAX, ISSUE_LIMIT_MAX, Issue, IssueComment,
-    IssueDetail, IssueQuery, IssueState, PrDraft, PrState, PrView, SystemGh, issue_list,
-    issue_open_web, issue_view, parse_issue_ref, pr_checks, pr_create, pr_open_web, pr_view,
-    repo_name, run_failed_log,
+    Check, CheckBucket, GhAccount, GhEnv, GhExec, GhLogin, GhOutput, ISSUE_BODY_MAX,
+    ISSUE_LIMIT_MAX, Issue, IssueComment, IssueDetail, IssueQuery, IssueState, PrDraft, PrState,
+    PrView, SystemGh, TokenGh, gh_logins, issue_list, issue_open_web, issue_view, parse_issue_ref,
+    pr_checks, pr_create, pr_open_web, pr_view, repo_name, run_failed_log,
 };
 pub use history::Commit;
 pub use remote::{BaseRange, BaseRefresh, Upstream};
@@ -53,6 +53,9 @@ pub enum GitError {
     Diverged,
     #[error("gh not found")]
     GhMissing,
+    /// The login a repo is bound to is no longer in `gh`.
+    #[error("the bound gh login is gone")]
+    GhAccountMissing,
     #[error("gh is not logged in")]
     GhAuth,
     #[error("the repo has no GitHub remote")]
@@ -98,6 +101,7 @@ impl GitError {
             GitError::Diverged => "pull_diverged",
             GitError::GhMissing => "gh_missing",
             GitError::GhAuth => "gh_auth",
+            GitError::GhAccountMissing => "gh_account_missing",
             GitError::NotGithub => "not_github",
             GitError::Gh(_) => "gh_failed",
             GitError::IssueNotFound => "issue_not_found",

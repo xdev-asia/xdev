@@ -25,6 +25,10 @@
   --orange: #f0a070;
   --orange-bg: rgba(240, 160, 112, 0.12);
 
+  /* The ink on a custom badge fill, chosen from the fill's luminance. */
+  --badge-ink-dark: #000;
+  --badge-ink-light: #fff;
+
   --radius-s: 4px;
   --radius-m: 6px;
   --radius-l: 8px;

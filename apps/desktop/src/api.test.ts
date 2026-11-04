@@ -590,8 +590,8 @@ it("sends the docs folder of a repo update to Tauri as docsDir", async () => {
     await api.repoUpdate("r1", { docsDir: "handbook" });
     await api.repoUpdate("r1", { docsDir: "" });
     expect(vi.mocked(invoke).mock.calls).toEqual([
-      ["repo_update", { id: "r1", docsDir: "handbook" }],
-      ["repo_update", { id: "r1", docsDir: "" }],
+      ["repo_update", { id: "r1", patch: { docsDir: "handbook" } }],
+      ["repo_update", { id: "r1", patch: { docsDir: "" } }],
     ]);
   } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
 });

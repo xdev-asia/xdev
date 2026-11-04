@@ -21,12 +21,12 @@ use xdev_git::{ChangeKind, GitError, Repo};
 use xdev_policy::{Action, Verdict};
 use xdev_workspace::{
     CreateOptions, CreateProject, Created, DetailsPatch, FolderEntry, HookKind, HookRun, Linked,
-    NamePreview, Registry, Removed, RepoHooks, RepoPatch, RepoView, ScriptSource, SetupPolicy,
-    SidebarItem, VaultView, WorkspaceError, WorktreeStat, WorktreeView, add_repo, add_vault,
-    adopt_worktree, archive_worktree, create_project, create_worktree_linked, forget_repo,
-    forget_vault, hooks_for, kept_delete, list, list_vaults, name_preview, path_key, refresh_base,
-    remove_worktree, repo_docs_dir, restore_worktree, set_details, set_order, set_pinned,
-    shared_to_link, sidebar, stat, trust_hook, update_repo,
+    NamePreview, Registry, Removed, RepoHooks, RepoPatch, RepoView, SidebarItem, VaultView,
+    WorkspaceError, WorktreeStat, WorktreeView, add_repo, add_vault, adopt_worktree,
+    archive_worktree, create_project, create_worktree_linked, forget_repo, forget_vault, hooks_for,
+    kept_delete, list, list_vaults, name_preview, path_key, refresh_base, remove_worktree,
+    repo_docs_dir, restore_worktree, set_details, set_order, set_pinned, shared_to_link, sidebar,
+    stat, trust_hook, update_repo,
 };
 
 use crate::accounts::data_dir;
@@ -458,6 +458,8 @@ pub fn repo_forget(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "type", rename_all = "camelCase")]
+// One event per progress line, a few per clone: the size gap costs nothing.
+#[allow(clippy::large_enum_variant)]
 pub enum CloneProgress {
     /// A git progress phase such as `Receiving objects`.
     Phase {
@@ -689,30 +691,12 @@ fn trash_folder(path: &Path) -> io::Result<()> {
 }
 
 #[tauri::command(async)]
-#[allow(clippy::too_many_arguments)]
 pub fn repo_update(
     state: State<'_, AppState>,
     lock: State<'_, WorkspaceLock>,
     id: String,
-    short_name: Option<String>,
-    base_ref: Option<String>,
-    worktree_root: Option<PathBuf>,
-    setup_policy: Option<SetupPolicy>,
-    script_source: Option<ScriptSource>,
-    local_setup: Option<String>,
-    local_archive: Option<String>,
-    docs_dir: Option<String>,
+    patch: RepoPatch,
 ) -> Result<RepoView, CmdError> {
-    let patch = RepoPatch {
-        short_name,
-        base_ref,
-        worktree_root,
-        setup_policy,
-        script_source,
-        local_setup,
-        local_archive,
-        docs_dir,
-    };
     update(data_dir(&state)?, &lock, |reg| update_repo(reg, &id, patch))
 }
 
