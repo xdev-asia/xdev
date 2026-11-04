@@ -295,6 +295,11 @@
   background: var(--bg-1);
 }
 
+/* Settings > Appearance > Left sidebar > Tinted: `applyAppearance` sets data-sidebar on the root. */
+[data-sidebar="tinted"] .ws-sidebar {
+  background: var(--side-tint);
+}
+
 .ws-nav {
   display: flex;
   flex-direction: column;

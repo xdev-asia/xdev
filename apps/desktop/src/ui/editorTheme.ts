@@ -53,6 +53,6 @@ export function currentEditorTheme(): ResolvedTheme | undefined {
 
 /** For an editor host: `<div data-theme={useEditorTheme()}>`. Re-renders when the setting or the app theme changes. */
 export function useEditorTheme(): ResolvedTheme | undefined {
-  const s = useSyncExternalStore(onEditorThemeChange, () => snapshot);
+  const s = useSyncExternalStore(onEditorThemeChange, () => snapshot, () => snapshot);
   return editorThemeFor(s.app, s.prefs);
 }
