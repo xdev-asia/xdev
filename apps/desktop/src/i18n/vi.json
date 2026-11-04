@@ -2128,5 +2128,17 @@
   "keepAwake.hint.off": "Máy ngủ như bình thường.",
   "keepAwake.hint.agent": "Giữ máy thức khi có agent đang chạy.",
   "keepAwake.hint.on": "Giữ máy thức khi xDev đang mở.",
-  "keepAwake.unsupported": "Máy này không có cách giữ thức từ xDev."
+  "keepAwake.unsupported": "Máy này không có cách giữ thức từ xDev.",
+  "settings.agents.keepAwake": "Giữ máy không ngủ",
+  "settings.agents.keepAwake.label": "Khi máy sắp chuyển sang chế độ ngủ",
+  "settings.agents.keepAwake.hint": "Chỉ chặn chế độ ngủ; màn hình vẫn có thể tắt. Chân trang hiển thị và đổi chế độ hiện tại.",
+  "settings.agents.keepAwake.off": "Tắt",
+  "settings.agents.keepAwake.agent": "Khi agent chạy",
+  "settings.agents.keepAwake.on": "Luôn luôn",
+  "settings.agents.keepAwake.offHint": "Máy ngủ như bình thường.",
+  "settings.agents.keepAwake.agentHint": "Giữ máy thức khi có tab agent đang chạy.",
+  "settings.agents.keepAwake.onHint": "Giữ máy thức khi xDev đang mở.",
+  "settings.agents.autoTabTitle": "Tên tab",
+  "settings.agents.autoTabTitle.label": "Đặt tên tab agent từ lời nhắc đầu tiên",
+  "settings.agents.autoTabTitle.hint": "Tab bạn chưa đổi tên sẽ có tên ngắn lấy từ lời nhắc đầu tiên. Tên bạn tự đặt luôn được ưu tiên."
 }
