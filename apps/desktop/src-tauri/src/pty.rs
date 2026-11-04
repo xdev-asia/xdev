@@ -888,6 +888,7 @@ mod tests {
         let l = Launch {
             permissions: Permissions::AcceptEdits,
             account: Some("work".into()),
+            account_source: Some(AccountSource::Active),
             ..agent()
         };
         approve_launch(&ptys, data.path(), &l).unwrap();
@@ -896,6 +897,9 @@ mod tests {
         assert_eq!(info.profile, "claude");
         assert_eq!(info.permissions, "accept-edits");
         assert_eq!(info.account.as_deref(), Some("work"));
+        assert_eq!(info.account_source, Some(AccountSource::Active));
+        let json = serde_json::to_value(&info).unwrap();
+        assert_eq!(json["accountSource"], "active");
     }
 
     #[test]
