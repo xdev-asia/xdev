@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type Agent, type ApiError, type UsageDisplay, type UsageReport, type UsageScope, type UsageSettings } from "@/api";
 import { useI18n } from "@/i18n";
-import { displayPath, totalOf, type Tokens } from "@/kit/kitUi";
+import { displayPath, formatCount, totalOf, type Tokens } from "@/kit/kitUi";
 import { TokenTable } from "@/kit/UsageTab";
 import { UsageChart } from "@/kit/UsageChart";
 import { rangeDays, type UsageRange } from "@/kit/usageRange";
@@ -26,7 +26,7 @@ const SCAN_IDS = AGENTS.map((a) => `usage.scan.${a}`);
 /** Settings → Stats & Usage: what the agents on this machine spent, from their local logs. */
 export function UsagePage(props: SettingsSectionProps): JSX.Element {
   const { api, filter } = props;
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   // The window's shared copy: a change made elsewhere shows here, and a save starts from it.
   const shared = useUsageSettings();
   const [loaded, setLoaded] = useState(false);
@@ -140,8 +140,8 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
       <div className="usage-tiles">
         {(
           [
-            ["sessions", String(report?.sessions ?? 0)],
-            ["tokens", String(tokens)],
+            ["sessions", formatCount(report?.sessions ?? 0, locale)],
+            ["tokens", formatCount(tokens, locale)],
             ["since", since],
           ] as const
         ).map(([key, value]) => (
