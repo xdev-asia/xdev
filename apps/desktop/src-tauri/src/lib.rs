@@ -140,6 +140,8 @@ pub fn run() {
             commands::diff_settings_put,
             commands::agents_settings_get,
             commands::agents_settings_put,
+            commands::usage_settings_get,
+            commands::usage_settings_put,
             keybindings::keybindings_read,
             keybindings::keybindings_write,
             keybindings::keybindings_reveal,
