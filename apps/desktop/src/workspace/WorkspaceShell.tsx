@@ -16,6 +16,7 @@ import { fileTabId, fileTabs } from "@/files/fileTabs";
 import { onOpenFile, type OpenFileRequest } from "@/files/openFile";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
+import { openRestoredFile, restoreLayout, startLayoutSave, undoRestore } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
@@ -210,6 +211,38 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     void load();
     // Loaded once; every action below reloads after it changes the list.
   }, [api]);
+
+  // Layout restore: once per run, after the registry is known and before the saver starts (a saver that
+  // ran first would replace the stored layout with an empty one). Nothing runs without a worktree.
+  const restoreStarted = useRef(false);
+  const saver = useRef<ReturnType<typeof startLayoutSave> | null>(null);
+  const flushOnClose = useRef(() => saver.current?.flush());
+  useEffect(() => {
+    if (!sessions || !repos || repos.length === 0 || restoreStarted.current) return;
+    restoreStarted.current = true;
+    const known = new Set(repos.flatMap((r) => r.worktrees.map((w) => w.path)));
+    void restoreLayout(api, sessions, (w) => known.has(w), openRestoredFile(api, fileTabs)).then((got) => {
+      // The store was replaced (dev double mount) while the restore ran: this run is over.
+      if (!restoreStarted.current) return;
+      saver.current = startLayoutSave(api, sessions);
+      if (typeof window !== "undefined") window.addEventListener("beforeunload", flushOnClose.current);
+      if (!got || got.report.opened.length === 0) return;
+      const { resumed, fresh, opened } = got.report;
+      pushToast({
+        text: live.t("layout.restored", { resumed, fresh }),
+        actions: [{ label: live.t("layout.undo"), run: () => void undoRestore(sessions, opened) }],
+      });
+    });
+  }, [sessions, repos]);
+  useEffect(() => {
+    const close = flushOnClose.current;
+    return () => {
+      restoreStarted.current = false;
+      saver.current?.stop();
+      saver.current = null;
+      if (typeof window !== "undefined") window.removeEventListener("beforeunload", close);
+    };
+  }, [sessions]);
 
   const paths = repos?.flatMap((r) => r.worktrees.map((w) => w.path)) ?? [];
   const subscribe = useCallback((listener: () => void) => sessions?.subscribe(listener) ?? (() => {}), [sessions]);
