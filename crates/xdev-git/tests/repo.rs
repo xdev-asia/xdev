@@ -177,6 +177,8 @@ fn codes_are_stable() {
         (GitError::GhAuth, "gh_auth"),
         (GitError::NotGithub, "not_github"),
         (GitError::Gh(String::new()), "gh_failed"),
+        (GitError::IssueNotFound, "issue_not_found"),
+        (GitError::IssueOtherRepo(String::new()), "issue_other_repo"),
         (GitError::BadId(String::new()), "git"),
         (GitError::Timeout, "git"),
         (
