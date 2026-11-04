@@ -1,7 +1,7 @@
 import type { Api, HookDetail, PtyInfo, PtyProfile, RestoreMode } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
 import { addTab, leaves, paneOf, pinFirst, removeTab, replaceTab, single, splitPane, type PaneDir, type PaneLayout } from "./paneTree";
-import { LAYOUT_VERSION, type LayoutSnapshot, type RestoreReport, type SessionFallback } from "./layoutSnapshot";
+import { LAYOUT_VERSION, fromSnapshot, toSnapshot, type LayoutSnapshot, type RestoreOptions, type RestoreReport, type SessionFallback, type TabSnapshot, type WorktreeSnapshot } from "./layoutSnapshot";
 import { DONE_QUIET_MS, INTERRUPT_MS, NO_CAPS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type Caps, type StatusEvent, type StatusState, type TabStatus } from "./status";
 
 /** The CLI behind a tab, for its hook caps and title rules; null for custom profiles and shells. */
@@ -116,6 +116,10 @@ export class Sessions {
   private readonly stale = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly unlisten: Promise<() => void>[];
   private hooksOn = true;
+  // A restore runs once per app run.
+  private restored = false;
+  // Restored tabs whose terminal starts when they are first shown.
+  private readonly lazy = new Set<string>();
   // Tabs the person closed, newest last.
   private readonly closed: ClosedTab[] = [];
 
@@ -128,7 +132,10 @@ export class Sessions {
     this.unlisten = [
       api.onPtyExit((e) => this.apply(e.id, { kind: "exit", code: e.code })),
       // Windows compare against this clock, so a hook is timed when it arrives.
-      api.onPtyHook((h) => this.apply(h.id, { kind: "hook", event: h.event, at: this.now(), detail: h.detail })),
+      api.onPtyHook((h) => {
+        this.apply(h.id, { kind: "hook", event: h.event, at: this.now(), detail: h.detail });
+        this.noteSession(h.id, h.session ?? null);
+      }),
     ];
   }
 
@@ -157,24 +164,103 @@ export class Sessions {
     return entry.tab;
   }
 
-  /** What `layout.json` keeps of every worktree's tabs and panes. Contract stub: Lane U fills it in. */
+  /** What `layout.json` keeps of every worktree's tabs and panes; only `savedAt` depends on the clock. */
   snapshot(): LayoutSnapshot {
-    return { version: LAYOUT_VERSION, savedAt: this.now(), worktrees: {} };
+    const worktrees: LayoutSnapshot["worktrees"] = {};
+    for (const [path, layout] of this.layouts) {
+      const one = toSnapshot(layout, (id) => this.entries.get(id)?.tab ?? null);
+      if (one) worktrees[path] = one;
+    }
+    return { version: LAYOUT_VERSION, savedAt: this.now(), worktrees };
   }
 
   /**
-   * Opens the tabs of `s` again by `mode`, once per app run. Contract stub: Lane U fills it in.
+   * Opens the tabs of `s` again by `mode`, once per app run (a second call does nothing). Worktrees
+   * that are not in the registry, or that already have tabs, are left alone. Each tab goes through
+   * the normal `open` / `resume`, so the policy and setup gates apply when its pty starts.
    */
-  async restore(s: LayoutSnapshot, mode: RestoreMode, fallback: SessionFallback): Promise<RestoreReport> {
-    void s;
-    void mode;
-    void fallback;
-    return { resumed: 0, fresh: 0, skipped: [] };
+  async restore(s: LayoutSnapshot, mode: RestoreMode, fallback: SessionFallback, options: RestoreOptions = {}): Promise<RestoreReport> {
+    const report: RestoreReport = { resumed: 0, fresh: 0, skipped: [], opened: [] };
+    if (this.restored) return report;
+    this.restored = true;
+    if (mode === "none" || !s || s.version !== LAYOUT_VERSION || typeof s.worktrees !== "object" || !s.worktrees) return report;
+    for (const [worktree, one] of Object.entries(s.worktrees)) {
+      if (options.known && !options.known(worktree)) {
+        report.skipped.push({ worktree, reason: "unknownWorktree" });
+        continue;
+      }
+      if (this.layouts.has(worktree) || !one || typeof one.tabs !== "object" || !one.layout) continue;
+      try {
+        await this.restoreWorktree(worktree, one, mode, fallback, options, report);
+      } catch {
+        // A snapshot this build cannot read (hand-edited, from a bug) must not stop the other worktrees.
+      }
+    }
+    return report;
+  }
+
+  private async restoreWorktree(worktree: string, one: WorktreeSnapshot, mode: RestoreMode, fallback: SessionFallback, options: RestoreOptions, report: RestoreReport): Promise<void> {
+    const ids = new Map<string, string>();
+    const files = new Set<string>();
+    const opened: string[] = [];
+    for (const leaf of leaves(one.layout)) {
+      if (leaf.kind !== "leaf") continue;
+      for (const key of leaf.tabs) {
+        const snap = one.tabs[key];
+        if (!snap) continue;
+        if (snap.kind === "review") files.add(key);
+        else if (snap.kind === "file") {
+          const ok = await (options.openFile?.(worktree, snap.rel) ?? Promise.resolve(false)).catch(() => false);
+          if (ok) files.add(key);
+        } else if (snap.kind === "terminal") {
+          const tab = await this.restoreTerminal(worktree, snap, mode, fallback, report);
+          if (!tab) continue;
+          ids.set(key, tab.id);
+          opened.push(tab.id);
+        }
+      }
+    }
+    const layout = fromSnapshot(one.layout, ids, (id) => files.has(id));
+    report.opened.push(...opened);
+    if (layout) this.setLayout(worktree, layout);
+  }
+
+  /** One terminal tab of a snapshot, or null when `mode` or a missing session leaves it out. */
+  private async restoreTerminal(worktree: string, snap: Extract<TabSnapshot, { kind: "terminal" }>, mode: RestoreMode, fallback: SessionFallback, report: RestoreReport): Promise<Tab | null> {
+    const cli = snap.cli === undefined ? cliOf(snap.profileId) : snap.cli;
+    let tab: Tab;
+    if (snap.agent) {
+      let id = snap.agentSession;
+      if (!id && cli) id = await fallback(worktree, cli, snap.openedAt).catch(() => null);
+      if (id) {
+        tab = this.resume(worktree, snap.profileId, snap.account, id, snap.title, cli);
+        report.resumed++;
+      } else if (mode === "all") {
+        tab = this.open(worktree, snap.profileId, snap.account, cli);
+        report.fresh++;
+      } else {
+        report.skipped.push({ worktree, reason: "noSession" });
+        return null;
+      }
+    } else if (mode === "all") {
+      tab = this.open(worktree, snap.profileId, snap.account, cli);
+      report.fresh++;
+    } else return null;
+    const entry = this.entries.get(tab.id)!;
+    const color = TAB_COLORS.includes(snap.color) ? snap.color : "none";
+    this.lazy.add(tab.id);
+    this.update(entry, { title: snap.title, renamed: snap.renamed === true, pinned: snap.pinned === true, color });
+    return entry.tab;
   }
 
   /** Every tab that resumed an agent session, in the order they opened. */
   resumed(): Tab[] {
     return [...this.entries.values()].filter((e) => e.tab.resumeOf !== null).map((e) => e.tab);
+  }
+
+  /** A restored tab that has not been shown yet: its view leaves the terminal unstarted until it is. */
+  deferred(id: string): boolean {
+    return this.lazy.has(id);
   }
 
   /** A tab by its pty id; `null` when it is gone. */
@@ -341,6 +427,13 @@ export class Sessions {
       this.watchStale(e, before);
     }
     this.sync();
+  }
+
+  /** The agent's own session id from a hook; the latest one wins, a hook without one changes nothing. */
+  private noteSession(id: string, session: string | null): void {
+    const entry = this.entries.get(id);
+    if (!entry || !session || entry.tab.agentSession === session) return;
+    this.update(entry, { agentSession: session });
   }
 
   /** A keystroke batch from the person. Escape or Ctrl-C on a hooked working pane may stop its turn. */
@@ -682,6 +775,7 @@ export class Sessions {
       this.clear(this.announce, e.tab.id);
       this.clear(this.stale, e.tab.id);
       this.entries.delete(e.tab.id);
+      this.lazy.delete(e.tab.id);
       this.cache.delete(e.tab.worktree);
       const layout = this.layouts.get(e.tab.worktree);
       if (layout) {
