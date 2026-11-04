@@ -11,7 +11,7 @@ export function RepoBadge(props: { repo: Pick<RepoView, "shortName" | "color" | 
   const glyph = icon?.kind === "emoji" ? icon.value : ([...shortName][0] ?? "?").toUpperCase();
   const classes = ["ws-badge", `ws-badge-${props.size ?? "sm"}`, preset ? `ws-badge-tag-${preset}` : ""].filter(Boolean).join(" ");
   return (
-    <span className={classes} data-color={preset ?? (hex ? "custom" : "none")} style={hex ? { background: hex, color: hexInk(hex) } : undefined} aria-hidden="true">
+    <span className={classes} data-color={preset ?? (hex ? "custom" : "none")} data-ink={hex ? hexInk(hex) : undefined} style={hex ? { background: hex } : undefined} aria-hidden="true">
       {glyph}
     </span>
   );

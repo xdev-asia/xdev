@@ -641,6 +641,7 @@
   "settings.repos.identity.color.pink": "Hồng",
   "settings.repos.identity.color.custom": "Mã hex tuỳ chọn",
   "settings.repos.identity.color.hint": "Hiện thành huy hiệu nhỏ ở tiêu đề và chip của dự án. Màu tuỳ chọn có dạng #rgb hoặc #rrggbb.",
+  "settings.repos.identity.color.placeholder": "#3a7",
   "settings.repos.identity.badColor": "Dùng một màu trong danh sách hoặc mã hex như #3a7 hay #33aa77.",
   "settings.repos.identity.icon": "Biểu tượng",
   "settings.repos.identity.icon.letter": "Chữ cái",

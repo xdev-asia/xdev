@@ -1545,9 +1545,12 @@ mod tests {
         assert!(prompt.ends_with("||"), "{prompt}");
     }
 
+    /// The args and the environment of one call.
+    type EnvCall = (Vec<String>, Vec<(String, String)>);
+
     /// A `gh` that records the environment of each call.
     struct EnvGh {
-        calls: RefCell<Vec<(Vec<String>, Vec<(String, String)>)>>,
+        calls: RefCell<Vec<EnvCall>>,
         script: RefCell<Vec<GhOutput>>,
     }
 

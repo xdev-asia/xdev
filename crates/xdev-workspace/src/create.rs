@@ -37,6 +37,8 @@ pub struct CreateProject {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "lowercase")]
+// A repo view per create, never in bulk: the size gap costs nothing.
+#[allow(clippy::large_enum_variant)]
 pub enum Created {
     Git { repo: RepoView },
     Folder { folder: FolderEntry },
