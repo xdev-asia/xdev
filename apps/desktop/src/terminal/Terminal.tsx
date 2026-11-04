@@ -94,10 +94,14 @@ export function Terminal(props: {
     const css = getComputedStyle(el);
     const color = (name: string) => css.getPropertyValue(name).trim() || undefined;
     const mono = color("--x-font-mono");
-    const term = new XTerm({
-      ...xtermOptions(getTerminalSettings(), mono),
-      theme: { background: color("--x-color-surface"), foreground: color("--x-color-ink") },
-    });
+    const initial = xtermOptions(getTerminalSettings(), mono, color);
+    const term = new XTerm(initial);
+    // The pane and the padding around the host take the theme's background (the app theme: the CSS one).
+    const pane = el.parentElement;
+    const paint = (background: string | undefined) => {
+      if (pane) pane.style.background = background && getTerminalSettings().theme !== "app" ? background : "";
+    };
+    paint(initial.theme.background);
     const fit = new FitAddon();
     const finder = new SearchAddon();
     search.current = finder;
@@ -183,7 +187,7 @@ export function Terminal(props: {
     el.addEventListener("contextmenu", onContextMenu, true);
     // A change in Settings applies to this pane at once, with no restart.
     const offSettings = subscribeTerminalSettings(() => {
-      const next = xtermOptions(getTerminalSettings(), mono);
+      const next = xtermOptions(getTerminalSettings(), mono, color);
       term.options.fontFamily = next.fontFamily;
       term.options.fontSize = next.fontSize;
       term.options.fontWeight = next.fontWeight;
@@ -191,6 +195,12 @@ export function Terminal(props: {
       term.options.cursorStyle = next.cursorStyle;
       term.options.cursorBlink = next.cursorBlink;
       term.options.scrollback = next.scrollback;
+      term.options.theme = next.theme;
+      paint(next.theme.background);
+      term.options.wordSeparator = next.wordSeparator;
+      term.options.scrollSensitivity = next.scrollSensitivity;
+      term.options.fastScrollSensitivity = next.fastScrollSensitivity;
+      term.options.minimumContrastRatio = next.minimumContrastRatio;
       fitVisible();
       // A font that has not loaded yet measures wrong; measure again when it has.
       if (typeof document !== "undefined") void document.fonts?.ready.then(() => alive && fitVisible());
