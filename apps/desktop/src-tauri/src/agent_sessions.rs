@@ -154,12 +154,11 @@ pub fn session_search_status(
     let enabled = crate::settings_store::read(&app).agents.session_search;
     let ctx = Ctx::of(&state)?;
     let path = search_path(&ctx.data);
-    let (mut sessions, mut messages, mut updated_at) = (0, 0, None);
-    if enabled && path.is_file() {
-        let index = SessionTextIndex::open(&path).map_err(store_err)?;
-        (sessions, messages) = index.counts().map_err(store_err)?;
-        updated_at = index.updated_at().map_err(store_err)?;
-    }
+    let (sessions, messages, updated_at) = if enabled {
+        read_counts(&path)?
+    } else {
+        (0, 0, None)
+    };
     Ok(SessionSearchStatus {
         enabled,
         sessions,
@@ -167,6 +166,17 @@ pub fn session_search_status(
         updated_at,
         indexing: INDEXING.load(Ordering::SeqCst),
     })
+}
+
+/// `(sessions, messages, last update)` of the index file, read-only: a missing
+/// file counts as empty and is never created, and no connection stays open
+/// after the call (a clear must be able to delete the file).
+fn read_counts(path: &Path) -> Result<(u32, u32, Option<i64>), CmdError> {
+    let Some(index) = SessionTextIndex::open_read_only(path).map_err(store_err)? else {
+        return Ok((0, 0, None));
+    };
+    let (sessions, messages) = index.counts().map_err(store_err)?;
+    Ok((sessions, messages, index.updated_at().map_err(store_err)?))
 }
 
 type Saved = Result<crate::settings::AgentsSettings, CmdError>;
@@ -220,13 +230,19 @@ pub async fn agent_sessions(
     }
     let ctx = Ctx::of(&state)?;
     let cutoff = refresh.then(|| history_cutoff(now_ms(), HISTORY_DAYS));
-    // Conversation text is read and searched only after the person agreed.
-    let search = crate::settings_store::read(&app)
-        .agents
-        .session_search
-        .then(|| search_path(&ctx.data));
+    // Conversation text is read and searched only after the person agreed. The
+    // path is only a candidate: consent is read again under the lock.
+    let search = search_path(&ctx.data);
     tauri::async_runtime::spawn_blocking(move || {
-        sessions(&ctx.data, || ctx.homes(), &query, cutoff, search.as_deref())
+        let consent = || crate::settings_store::read(&app).agents.session_search;
+        sessions_with_consent(
+            &ctx.data,
+            || ctx.homes(),
+            &query,
+            cutoff,
+            Some(&search),
+            &consent,
+        )
     })
     .await
     .map_err(|e| CmdError {
@@ -245,6 +261,19 @@ fn sessions(
     refresh: Option<i64>,
     search: Option<&Path>,
 ) -> Result<Vec<SessionRow>, CmdError> {
+    sessions_with_consent(data, homes, query, refresh, search, &|| true)
+}
+
+/// `sessions`, with `consent` asked once the `INDEX` lock is held: a clear
+/// takes the same lock, so what it turned off cannot be read again after it.
+fn sessions_with_consent(
+    data: &Path,
+    homes: impl FnOnce() -> Vec<Home>,
+    query: &SessionQuery,
+    refresh: Option<i64>,
+    search: Option<&Path>,
+    consent: &dyn Fn() -> bool,
+) -> Result<Vec<SessionRow>, CmdError> {
     let mut guard = INDEX.lock().unwrap_or_else(PoisonError::into_inner);
     if guard.as_ref().is_none_or(|(dir, _)| dir != data) {
         *guard = Some((data.to_path_buf(), SessionIndex::load(data)));
@@ -252,6 +281,7 @@ fn sessions(
     let Some((_, index)) = guard.as_mut() else {
         unreachable!("set just above");
     };
+    let search = search.filter(|_| consent());
     if let Some(cutoff) = refresh {
         let homes = homes();
         index.refresh(&homes);
@@ -278,10 +308,51 @@ fn sessions(
     ))
 }
 
+/// Messages held before a batch is written to the text index.
+const TEXT_BATCH: usize = 2_000;
+
 /// Reads what is new in the logs into the text index, then drops the texts
-/// of sessions the metadata index no longer holds (`keep`). One transaction
-/// per call; the caller holds the `INDEX` lock.
+/// of sessions the metadata index no longer holds (`keep`). The caller holds
+/// the `INDEX` lock.
 fn refresh_text(path: &Path, homes: &[Home], keep: &HashSet<String>) -> Result<(), CmdError> {
+    refresh_text_in(path, homes, keep, TEXT_BATCH)
+}
+
+/// Texts, marks and drops waiting for the next transaction.
+#[derive(Default)]
+struct Pending {
+    texts: Vec<StoredText>,
+    marks: Vec<(String, String)>,
+    reset: Vec<String>,
+    gone: Vec<String>,
+}
+
+impl Pending {
+    fn write(&mut self, index: &mut SessionTextIndex) -> Result<(), CmdError> {
+        let all = std::mem::take(self);
+        if all.texts.is_empty()
+            && all.marks.is_empty()
+            && all.reset.is_empty()
+            && all.gone.is_empty()
+        {
+            return Ok(());
+        }
+        index
+            .apply(all.texts, &all.marks, &all.reset, &all.gone)
+            .map_err(store_err)
+    }
+}
+
+/// `refresh_text` writing a transaction whenever `batch` messages are
+/// waiting, cut only between files and with the marks of those files, so a
+/// first build over a long history keeps few messages in memory and a failure
+/// leaves a consistent index that the next refresh goes on from.
+fn refresh_text_in(
+    path: &Path,
+    homes: &[Home],
+    keep: &HashSet<String>,
+    batch: usize,
+) -> Result<(), CmdError> {
     let _busy = Indexing::begin();
     let mut index = SessionTextIndex::open(path).map_err(store_err)?;
     let mut marks: BTreeMap<String, FileMark> = index
@@ -291,28 +362,38 @@ fn refresh_text(path: &Path, homes: &[Home], keep: &HashSet<String>) -> Result<(
         .filter_map(|(file, json)| Some((file, serde_json::from_str(&json).ok()?)))
         .collect();
     let before = marks.clone();
-    let (mut texts, mut reset, mut gone) = (Vec::new(), Vec::new(), Vec::new());
-    scan_transcripts(homes, &mut marks, &mut |event| match event {
-        TranscriptEvent::Reset { file } => reset.push(file),
-        TranscriptEvent::Gone { file } => gone.push(file),
-        TranscriptEvent::Text(t) => texts.push(StoredText {
-            file: t.file,
-            session_key: t.session_key,
-            role: u8::from(t.role == TextRole::Assistant),
-            text: t.text,
-            at: t.at,
-        }),
+    let mut pending = Pending::default();
+    let mut failed: Option<CmdError> = None;
+    scan_transcripts(homes, &mut marks, &mut |event| {
+        if failed.is_some() {
+            return;
+        }
+        match event {
+            TranscriptEvent::Reset { file } => pending.reset.push(file),
+            TranscriptEvent::Gone { file } => pending.gone.push(file),
+            TranscriptEvent::Text(t) => pending.texts.push(StoredText {
+                file: t.file,
+                session_key: t.session_key,
+                role: u8::from(t.role == TextRole::Assistant),
+                text: t.text,
+                at: t.at,
+            }),
+            TranscriptEvent::Done { file, mark } => {
+                if before.get(&file) != Some(&mark)
+                    && let Ok(json) = serde_json::to_string(&mark)
+                {
+                    pending.marks.push((file, json));
+                }
+                if pending.texts.len() >= batch {
+                    failed = pending.write(&mut index).err();
+                }
+            }
+        }
     });
-    let changed: Vec<(String, String)> = marks
-        .iter()
-        .filter(|(file, mark)| before.get(*file) != Some(*mark))
-        .filter_map(|(file, mark)| Some((file.clone(), serde_json::to_string(mark).ok()?)))
-        .collect();
-    if !(texts.is_empty() && reset.is_empty() && gone.is_empty() && changed.is_empty()) {
-        index
-            .apply(texts, &changed, &reset, &gone)
-            .map_err(store_err)?;
+    if let Some(e) = failed {
+        return Err(e);
     }
+    pending.write(&mut index)?;
     index.retain_sessions(keep).map_err(store_err)
 }
 
