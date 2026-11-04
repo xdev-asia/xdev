@@ -197,3 +197,8 @@ it("running a setting entry opens its section with the entry as target", () => {
   item.run();
   expect(onPick).toHaveBeenCalledWith("git", "git.prefix");
 });
+
+it("tab and worktree items carry the repo folder", () => {
+  expect(worktreeItems(repos, { dot: () => null, activity: () => null, detached: "d", onPick() {} })[0].repo).toBe(repos[0].path);
+  expect(tabItems(repos, () => [{ id: "t", worktree: "/wt/oak", profileId: "p", agent: false, status: "idle" } as unknown as Tab], { name: () => "n", onPick() {} })[0].repo).toBe(repos[0].path);
+});
