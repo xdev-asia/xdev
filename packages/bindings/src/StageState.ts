@@ -15,4 +15,8 @@ unstaged: boolean,
 /**
  * The file is not tracked at all.
  */
-untracked: boolean, };
+untracked: boolean, 
+/**
+ * Unmerged: a merge, rebase, cherry-pick or revert stopped on it.
+ */
+conflicted: boolean, };

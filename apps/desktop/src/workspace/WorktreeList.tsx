@@ -48,6 +48,7 @@ export interface WorktreeListProps {
   /** Opens the review of the branches a repo kept. */
   onReviewBranches?(repoId: string): void;
   onEditDetails?(worktree: WorktreeView): void;
+  onRenameBranch?(worktree: WorktreeView): void;
   onArchive?(worktree: WorktreeView): void;
   /** A click on a work item chip: the shell copies the URL. */
   onCopyLink?(url: string): void;
@@ -553,6 +554,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         onMarkRead: props.onMarkRead && (() => props.onMarkRead?.(wt)),
         onRemove: () => props.onRemove(wt),
         onEditDetails: props.onEditDetails && (() => props.onEditDetails?.(wt)),
+        onRenameBranch: props.onRenameBranch && (() => props.onRenameBranch?.(wt)),
         onArchive: props.onArchive && (() => props.onArchive?.(wt)),
       });
     } else if (menu.kind === "folder") {

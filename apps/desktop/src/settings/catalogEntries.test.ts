@@ -27,3 +27,11 @@ describe("SETTING_ENTRIES", () => {
     for (const x of SETTING_ENTRIES) for (const k of x.keywords) expect(k, x.id).toBe(k.toLowerCase());
   });
 });
+
+describe("the auto rename entry", () => {
+  it("is searchable by what a person would type", () => {
+    const entry = SETTING_ENTRIES.find((x) => x.id === "git.autoRename")!;
+    expect(entry.section).toBe("git");
+    expect(entry.keywords).toEqual(expect.arrayContaining(["rename", "branch", "đổi tên"]));
+  });
+});

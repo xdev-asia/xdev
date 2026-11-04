@@ -144,6 +144,31 @@ fn sessions(
     }))
 }
 
+/// The sessions that ran inside the worktree at `path`, newest first, after
+/// reading the logs' new bytes. For naming a branch from the first prompt.
+pub(crate) fn worktree_sessions(
+    data: &Path,
+    homes: impl FnOnce() -> Vec<Home>,
+    path: &Path,
+) -> Result<Vec<SessionRow>, CmdError> {
+    let query = SessionQuery {
+        text: None,
+        scope: SessionScope::Worktree {
+            path: path.to_string_lossy().into_owned(),
+        },
+        agent: None,
+        home_id: None,
+        sort: SessionSort::LastDesc,
+        limit: 50,
+    };
+    sessions(
+        data,
+        homes,
+        &query,
+        Some(history_cutoff(now_ms(), HISTORY_DAYS)),
+    )
+}
+
 /// The registry folder (worktree or repo checkout) a session ran in, and its
 /// repo: the longest registry path that holds `cwd`.
 struct Folders {

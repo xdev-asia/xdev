@@ -19,6 +19,8 @@ export type { Cli } from "./Cli";
 export type { CloneProgress } from "./CloneProgress";
 export type { CmdError } from "./CmdError";
 export type { Commit } from "./Commit";
+export type { ConflictOp } from "./ConflictOp";
+export type { ConflictState } from "./ConflictState";
 export type { ContextUse } from "./ContextUse";
 export type { CreateProject } from "./CreateProject";
 export type { Created } from "./Created";
