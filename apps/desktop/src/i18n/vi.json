@@ -481,6 +481,7 @@
   "error.pty_spawn": "Không khởi động được terminal.",
   "error.pty_resize": "Không đổi được kích thước terminal.",
   "error.pty_gone": "Terminal này đã kết thúc.",
+  "ptyd.truncated": "— output đã bị cắt bớt —",
   "error.ptyd_unreachable": "Dịch vụ terminal không phản hồi.",
   "error.ptyd_auth": "Dịch vụ terminal từ chối kết nối.",
   "error.ptyd_version": "Dịch vụ terminal thuộc phiên bản xDev khác.",
