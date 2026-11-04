@@ -108,8 +108,9 @@ function typedRows(input: RankInput, toks: string[]): Row[] {
 }
 
 /** The rows the palette shows for this query and filter, with digits on the first nine items. */
-export function rank(input: RankInput): Row[] {
-  const query = input.query.trim();
+export function rank(all: RankInput): Row[] {
+  const query = all.query.trim();
+  const input = { ...all, items: all.items.filter((i) => query.length >= (i.minQuery ?? 0)) };
   let rows: Row[];
   if (query === "") {
     if (input.filter === "all") rows = recentRows(input);
