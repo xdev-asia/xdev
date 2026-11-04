@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, State};
-use xdev_git::{CommitFiles, LOG_LIMIT_MAX, Repo, RepoLog};
+use xdev_git::{CommitFiles, LOG_LIMIT_MAX, Repo, RepoLog, commit_url, file_url};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError};
@@ -13,16 +13,8 @@ use crate::workspace::{
 };
 
 /// Opens a URL outside the app. A fake stands in for it in tests.
-#[allow(dead_code)] // used by the open commands in the host URL task
 pub(crate) trait UrlOpener {
     fn open(&self, url: &str) -> Result<(), CmdError>;
-}
-
-fn not_ready() -> CmdError {
-    CmdError {
-        code: "git",
-        detail: Some("not implemented".to_owned()),
-    }
 }
 
 fn log_with(data: &Path, path: &Path, limit: usize, skip: usize) -> Result<RepoLog, CmdError> {
@@ -79,14 +71,36 @@ fn commit_file_with(
     })
 }
 
+/// The URL is built here and never comes from the UI; only these three
+/// hosts over https are opened.
+fn guarded(url: String) -> Result<String, CmdError> {
+    const HOSTS: [&str; 3] = [
+        "https://github.com/",
+        "https://gitlab.com/",
+        "https://bitbucket.org/",
+    ];
+    if HOSTS.iter().any(|h| url.starts_with(h)) {
+        Ok(url)
+    } else {
+        Err(CmdError {
+            code: "no_web_remote",
+            detail: None,
+        })
+    }
+}
+
 fn open_commit_with(
     opener: &dyn UrlOpener,
     data: &Path,
     path: &Path,
     id: &str,
 ) -> Result<(), CmdError> {
-    let _ = (opener, data, path, id);
-    Err(not_ready())
+    known_checkout(data, path)?;
+    let repo = Repo::discover(path)?;
+    // Refuses anything but a full hex id, and an id this repo lacks.
+    repo.first_parent(id)?;
+    let host = repo.origin_host()?.ok_or(xdev_git::GitError::NoWebRemote)?;
+    opener.open(&guarded(commit_url(&host, id))?)
 }
 
 fn open_file_with(
@@ -97,13 +111,18 @@ fn open_file_with(
     line: Option<u32>,
     end_line: Option<u32>,
 ) -> Result<(), CmdError> {
-    let _ = (opener, data, path, file, line, end_line);
-    Err(not_ready())
+    known_checkout(data, path)?;
+    inside(path, file).ok_or_else(|| bad_arg(file))?;
+    let repo = Repo::discover(path)?;
+    let (host, git_ref) = repo
+        .file_host_target()?
+        .ok_or(xdev_git::GitError::NoWebRemote)?;
+    let file = file.replace('\\', "/");
+    opener.open(&guarded(file_url(&host, &git_ref, &file, line, end_line))?)
 }
 
 /// The opener plugin, called from Rust only; the webview has no permission
 /// to call it.
-#[allow(dead_code)]
 struct PluginOpener<'a>(&'a AppHandle);
 
 impl UrlOpener for PluginOpener<'_> {
@@ -356,5 +375,122 @@ mod tests {
             code(commit_file_with(&fx.data, &stranger, &id, "a.txt")),
             "worktree_unknown"
         );
+    }
+
+    struct FakeOpener(std::cell::RefCell<Vec<String>>);
+
+    impl FakeOpener {
+        fn new() -> FakeOpener {
+            FakeOpener(Default::default())
+        }
+        fn opened(&self) -> Vec<String> {
+            self.0.borrow().clone()
+        }
+    }
+
+    impl UrlOpener for FakeOpener {
+        fn open(&self, url: &str) -> Result<(), CmdError> {
+            self.0.borrow_mut().push(url.to_owned());
+            Ok(())
+        }
+    }
+
+    fn hosted(fx: &Fixture) {
+        git(
+            &fx.main,
+            &["remote", "add", "origin", "git@github.com:o/r.git"],
+        );
+    }
+
+    #[test]
+    fn a_commit_opens_on_the_origin_host() {
+        let fx = fixture();
+        hosted(&fx);
+        let id = git(&fx.main, &["rev-parse", "HEAD"]);
+        let opener = FakeOpener::new();
+        open_commit_with(&opener, &fx.data, &fx.main, &id).unwrap();
+        assert_eq!(
+            opener.opened(),
+            [format!("https://github.com/o/r/commit/{id}")]
+        );
+    }
+
+    #[test]
+    fn without_a_web_remote_nothing_is_opened() {
+        let fx = fixture();
+        let id = git(&fx.main, &["rev-parse", "HEAD"]);
+        let opener = FakeOpener::new();
+        assert_eq!(
+            code(open_commit_with(&opener, &fx.data, &fx.main, &id)),
+            "no_web_remote"
+        );
+        assert_eq!(
+            code(open_file_with(
+                &opener, &fx.data, &fx.main, "a.txt", None, None
+            )),
+            "no_web_remote"
+        );
+        git(
+            &fx.main,
+            &["remote", "add", "origin", "git@example.com:o/r.git"],
+        );
+        assert_eq!(
+            code(open_commit_with(&opener, &fx.data, &fx.main, &id)),
+            "no_web_remote"
+        );
+        assert!(opener.opened().is_empty());
+    }
+
+    #[test]
+    fn a_file_opens_with_its_lines_and_a_bad_request_opens_nothing() {
+        let fx = fixture();
+        hosted(&fx);
+        let opener = FakeOpener::new();
+        open_file_with(&opener, &fx.data, &fx.main, "a.txt", Some(2), Some(5)).unwrap();
+        let url = &opener.opened()[0];
+        assert!(url.starts_with("https://github.com/o/r/blob/"), "{url}");
+        assert!(url.ends_with("/a.txt#L2-L5"), "{url}");
+
+        let id = git(&fx.main, &["rev-parse", "HEAD"]);
+        for bad in ["../a.txt", "/etc/passwd", ""] {
+            assert_eq!(
+                code(open_file_with(&opener, &fx.data, &fx.main, bad, None, None)),
+                "bad_arg"
+            );
+        }
+        for bad in ["--output=x", "HEAD", "zz"] {
+            assert_eq!(
+                code(open_commit_with(&opener, &fx.data, &fx.main, bad)),
+                "git",
+                "{bad}"
+            );
+        }
+        let stranger = fx.main.join("..");
+        assert_eq!(
+            code(open_commit_with(&opener, &fx.data, &stranger, &id)),
+            "worktree_unknown"
+        );
+        assert_eq!(opener.opened().len(), 1);
+    }
+
+    #[test]
+    fn only_https_urls_on_the_three_hosts_pass_the_guard() {
+        for ok in [
+            "https://github.com/o/r",
+            "https://gitlab.com/g/r",
+            "https://bitbucket.org/w/r",
+        ] {
+            assert_eq!(guarded(ok.to_owned()).unwrap(), ok);
+        }
+        for bad in [
+            "http://github.com/o/r",
+            "https://github.com.evil.example/o/r",
+            "https://evil.example/github.com/",
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "",
+        ] {
+            assert_eq!(code(guarded(bad.to_owned())), "no_web_remote", "{bad}");
+        }
     }
 }
