@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import { EmptyState, ListRow, SearchInput, Segmented } from "@xdev-asia/ui";
+import { Button, EmptyState, ListRow, SearchInput, Segmented } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import type { Tab } from "@/workspace/sessions";
 import { ActivityView, optionItems, type ActivityViewProps } from "./ActivityPanel";
@@ -64,7 +64,9 @@ it("the search box reports the text and clears", () => {
 
 it("the options button asks for the menu; its items toggle with a check", () => {
   const { calls, tree } = view();
-  const button = tree.find((n) => n.props.className === "act-options")!;
+  const button = of(tree, Button)[0]!;
+  expect(button.props.variant).toBe("secondary");
+  expect(button.props.type).toBe("button");
   button.props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 4, bottom: 9 }) } });
   expect(calls.menu).toEqual([{ x: 4, y: 9 }]);
   const picked: unknown[] = [];
@@ -99,6 +101,8 @@ it("the feed lists changes and a row jumps; Clear empties it", () => {
     tab: "Fix footer", from: en("workspace.tabs.status.working"), to: en("workspace.tabs.status.done") }));
   row.props.onClick();
   expect(calls.jump).toEqual(["a"]);
-  tree.find((n) => n.props.className === "act-options")!.props.onClick();
+  const clear = of(tree, Button)[0]!;
+  expect(clear.props.variant).toBe("secondary");
+  clear.props.onClick();
   expect(calls.clear).toBe(1);
 });

@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
-import { EmptyState, ListRow, SearchInput, Segmented } from "@xdev-asia/ui";
+import { Button, EmptyState, ListRow, SearchInput, Segmented } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import { AgentIcon } from "@/workspace/AgentIcon";
@@ -121,9 +121,9 @@ export function ActivityView(props: ActivityViewProps): JSX.Element {
               onChange={(e) => props.onQuery(e.target.value)}
               onClear={() => props.onQuery("")}
             />
-            <button
+            <Button
+              variant="secondary"
               type="button"
-              className="act-options"
               aria-haspopup="menu"
               aria-expanded={props.menuAt !== null}
               onClick={(e) => {
@@ -132,12 +132,12 @@ export function ActivityView(props: ActivityViewProps): JSX.Element {
               }}
             >
               {t("activity.options")}
-            </button>
+            </Button>
           </>
         ) : (
-          <button type="button" className="act-options" disabled={props.feed.length === 0} onClick={props.onClearFeed}>
+          <Button variant="secondary" type="button" disabled={props.feed.length === 0} onClick={props.onClearFeed}>
             {t("activity.clear")}
-          </button>
+          </Button>
         )}
       </div>
       {list.length === 0 ? (

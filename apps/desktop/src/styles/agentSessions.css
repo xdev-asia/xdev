@@ -225,22 +225,6 @@
   border-bottom: 1px solid var(--line);
 }
 
-.act-options {
-  min-height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-s);
-  background: transparent;
-  color: var(--text-2);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.act-options:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 .act-list {
   flex: 1;
   margin: 0;

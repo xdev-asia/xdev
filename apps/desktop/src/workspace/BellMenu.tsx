@@ -1,4 +1,5 @@
 import type { JSX, KeyboardEvent } from "react";
+import { Button } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
 import { ago } from "./ago";
 import type { Tab } from "./sessions";
@@ -65,9 +66,9 @@ export function BellMenu(props: { rows: BellRow[]; now: number; onJump(tab: Tab)
           </div>
         )}
         {props.onViewActivity && (
-          <button type="button" className="ws-bell-activity" onClick={props.onViewActivity}>
+          <Button variant="secondary" type="button" className="ws-bell-activity" onClick={props.onViewActivity}>
             {t("status.bell.viewActivity")}
-          </button>
+          </Button>
         )}
       </div>
     </>
