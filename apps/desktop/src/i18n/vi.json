@@ -226,6 +226,7 @@
   "accounts.switch.cliDefault": "Dùng mặc định của CLI",
   "accounts.switch.cliDefaultAria": "Thôi dùng {name} làm tài khoản đang hoạt động; dùng mặc định của CLI",
   "accounts.switch.cliDefaultName": "mặc định của CLI",
+  "accounts.switch.failed": "Không chuyển được tài khoản ({code}).",
   "accounts.switch.carryFailed": "Không chuyển được cuộc trò chuyện của {tab} sang tài khoản mới. Tab đã khởi động lại với cuộc trò chuyện mới.",
   "accounts.switch.dialog.title": "Khởi động lại agent với tài khoản mới?",
   "accounts.switch.dialog.body": "Tài khoản {provider} đang hoạt động đã đổi từ {from} sang {to}. Các tab này vẫn chạy bằng tài khoản cũ.",
