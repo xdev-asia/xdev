@@ -1,0 +1,165 @@
+import { useEffect, useState } from "react";
+import type { JSX } from "react";
+import { toApiError, type ApiError, type DiffSettings, type NavigationSettings } from "@/api";
+import { useI18n } from "@/i18n";
+import { clampZoom, getZoom, stepZoom, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from "@/ui/zoom";
+import { RestoreSetting } from "./RestoreSetting";
+import type { SettingsSectionProps } from "./sections";
+
+export const TAB_ORDERS: NavigationSettings["tabOrder"][] = ["mru", "sequential"];
+export const DIFF_VIEWS: DiffSettings["defaultView"][] = ["inline", "split"];
+export const NAVIGATION_SWITCHES = ["confirmClosePinned", "confirmCloseRunning", "askBeforeDeleteWorktree"] as const;
+export const DIFF_SWITCHES = ["ignoreWhitespace", "collapseUnchanged", "wordWrap", "fileTree"] as const;
+// 50 % … 200 % in steps of `ZOOM_STEP`.
+export const ZOOM_LEVELS: number[] = Array.from({ length: Math.round((ZOOM_MAX - ZOOM_MIN) / ZOOM_STEP) + 1 }, (_, i) => clampZoom(ZOOM_MIN + i * ZOOM_STEP));
+
+/** Settings → General: navigation, workspace and diff preferences of the whole app. */
+export function GeneralPage(props: SettingsSectionProps): JSX.Element {
+  const { api, openSection } = props;
+  const { t } = useI18n();
+  const [navigation, setNavigation] = useState<NavigationSettings | null>(null);
+  const [diff, setDiff] = useState<DiffSettings | null>(null);
+  const [zoom, setZoom] = useState(() => getZoom());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<ApiError["code"]>();
+
+  useEffect(() => {
+    const fail = (e: unknown) => setError(toApiError(e).code);
+    api.navigationSettings().then(setNavigation, fail);
+    api.diffSettings().then(setDiff, fail);
+    api.uiSettingsGet().then((s) => setZoom(clampZoom(s.zoom)), fail);
+  }, [api]);
+
+  // Each write returns what was stored; the page shows that, not what it asked for.
+  async function write(run: () => Promise<void>): Promise<void> {
+    if (busy) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await run();
+    } catch (e) {
+      setError(toApiError(e).code);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const patchNavigation = (change: Partial<NavigationSettings>) =>
+    navigation && write(async () => setNavigation(await api.navigationSettingsPut({ ...navigation, ...change })));
+  const patchDiff = (change: Partial<DiffSettings>) =>
+    diff && write(async () => setDiff(await api.diffSettingsPut({ ...diff, ...change })));
+  // A step from the level the window shows; `0` resets to 100 %.
+  const pickZoom = (next: number | null) =>
+    write(async () => setZoom(await stepZoom(api, next === null ? 0 : clampZoom(next) - getZoom())));
+
+  const sw = (key: string, label: string, on: boolean, flip: () => void, hint?: string) => (
+    <li className="settings-item" data-switch={key} key={key}>
+      <div className="settings-item-text">
+        <strong>{label}</strong>
+        {hint && <span className="settings-path">{hint}</span>}
+      </div>
+      <button type="button" role="switch" className="agent-switch" aria-checked={on} aria-label={label} disabled={busy} onClick={flip} />
+    </li>
+  );
+
+  return (
+    <div className="settings-page">
+      <header className="settings-head">
+        <h3>{t("settings.general.title")}</h3>
+        <p>{t("settings.general.intro")}</p>
+      </header>
+      {error && (
+        <p className="error-text" role="alert">
+          {t(`error.${error}`)}
+        </p>
+      )}
+
+      <h4 className="settings-group">{t("settings.general.navigation")}</h4>
+      {navigation && (
+        <>
+          <div className="ws-fields">
+            <div className="ws-field" role="radiogroup" aria-label={t("settings.general.tabOrder")}>
+              <span>{t("settings.general.tabOrder")}</span>
+              <div className="segmented">
+                {TAB_ORDERS.map((o) => (
+                  <button
+                    key={o}
+                    type="button"
+                    role="radio"
+                    data-tab-order={o}
+                    aria-checked={navigation.tabOrder === o}
+                    disabled={busy}
+                    onClick={() => void patchNavigation({ tabOrder: o })}
+                  >
+                    {t(`settings.general.tabOrder.${o}`)}
+                  </button>
+                ))}
+              </div>
+              <small className="settings-hint">{t("settings.general.tabOrderHint")}</small>
+            </div>
+          </div>
+          <ul className="settings-list">
+            {NAVIGATION_SWITCHES.map((k) =>
+              sw(k, t(`settings.general.${k}`), navigation[k], () => void patchNavigation({ [k]: !navigation[k] }), k === "confirmCloseRunning" ? t("settings.general.confirmCloseRunningHint") : undefined),
+            )}
+          </ul>
+        </>
+      )}
+
+      <h4 className="settings-group">{t("settings.general.workspace")}</h4>
+      <div className="ws-fields">
+        <label className="ws-field">
+          <span>{t("settings.general.zoom")}</span>
+          <select value={zoom} disabled={busy} data-field="zoom" onChange={(e) => void pickZoom(Number(e.target.value))}>
+            {ZOOM_LEVELS.map((z) => (
+              <option key={z} value={z}>
+                {Math.round(z * 100)} %
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="settings-actions settings-actions-start">
+          <button type="button" className="btn-secondary" data-act="zoom-reset" disabled={busy} onClick={() => void pickZoom(null)}>
+            {t("settings.general.zoomReset")}
+          </button>
+        </div>
+      </div>
+      <RestoreSetting api={api} />
+      {openSection && (
+        <div className="settings-actions settings-actions-start">
+          <button type="button" className="btn-secondary" data-act="open-in" onClick={() => openSection("openIn")}>
+            {t("settings.general.openIn")}
+          </button>
+        </div>
+      )}
+
+      <h4 className="settings-group">{t("settings.general.diff")}</h4>
+      {diff && (
+        <>
+          <div className="ws-fields">
+            <div className="ws-field" role="radiogroup" aria-label={t("settings.general.diffView")}>
+              <span>{t("settings.general.diffView")}</span>
+              <div className="segmented">
+                {DIFF_VIEWS.map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    role="radio"
+                    data-diff-view={v}
+                    aria-checked={diff.defaultView === v}
+                    disabled={busy}
+                    onClick={() => void patchDiff({ defaultView: v })}
+                  >
+                    {t(`settings.general.diffView.${v}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <ul className="settings-list">
+            {DIFF_SWITCHES.map((k) => sw(k, t(`settings.general.${k}`), diff[k], () => void patchDiff({ [k]: !diff[k] }), k === "fileTree" ? t("settings.general.fileTreeHint") : undefined))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}

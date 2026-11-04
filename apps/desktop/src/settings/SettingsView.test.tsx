@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
 import { AgentsPage } from "./agents/AgentsPage";
+import { GeneralPage } from "./GeneralPage";
 import { translate } from "@/i18n";
 import { NotificationsPage } from "./notifications/NotificationsPage";
 import { TerminalPage } from "./TerminalPage";
@@ -46,10 +47,11 @@ function view(initial?: string) {
   return { api, onChanged, draw, items, body, shown };
 }
 
-it("opens Agents first and switches to Vaults", () => {
+it("opens General first and switches to Vaults", () => {
   const v = view();
-  expect(SECTIONS.map((s) => s.id)).toEqual(["agents", "notifications", "terminal", "editor", "repos", "openIn", "git", "vaults", "keys", "qcmd"]);
+  expect(SECTIONS.map((s) => s.id)).toEqual(["general", "agents", "notifications", "terminal", "editor", "repos", "openIn", "git", "vaults", "keys", "qcmd"]);
   expect(v.items().map((n) => n.props.children)).toEqual([
+    en("settings.general.title"),
     en("settings.agents.title"),
     en("settings.notifications.title"),
     en("settings.terminal.title"),
@@ -61,31 +63,31 @@ it("opens Agents first and switches to Vaults", () => {
     en("keys.title"),
     en("qcmd.title"),
   ]);
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
-  expect(v.shown().type).toBe(AgentsPage);
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
+  expect(v.shown().type).toBe(GeneralPage);
   expect(v.shown().props.api).toBe(v.api);
   expect(v.shown().props.onChanged).toBe(v.onChanged);
 
-  v.items()[7].props.onClick();
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, undefined, "page", undefined, undefined]);
+  v.items()[8].props.onClick();
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, "page", undefined, undefined]);
   expect(v.shown().type).toBe(VaultsSettings);
   expect(v.body().props["aria-label"]).toBe(en("settings.vaults.title"));
 });
 
-it("settings_button_opens_agents_page", () => {
+it("an initial section opens that page", () => {
   expect(view("agents").shown().type).toBe(AgentsPage);
 });
 
 it("an unknown initial section falls back to the first", () => {
   expect(view("vaults").shown().type).toBe(VaultsSettings);
   hooks.values = [];
-  expect(view("nope").shown().type).toBe(AgentsPage);
+  expect(view("nope").shown().type).toBe(GeneralPage);
 });
 
 it("lists notifications after agents and opens its page", () => {
   const v = view();
-  v.items()[1].props.onClick();
-  expect(v.items()[1].props["aria-current"]).toBe("page");
+  v.items()[2].props.onClick();
+  expect(v.items()[2].props["aria-current"]).toBe("page");
   expect(v.shown().type).toBe(NotificationsPage);
   expect(v.body().props["aria-label"]).toBe(en("settings.notifications.title"));
   hooks.values = [];
@@ -94,10 +96,21 @@ it("lists notifications after agents and opens its page", () => {
 
 it("lists terminal after notifications and opens its page", () => {
   const v = view();
-  v.items()[2].props.onClick();
-  expect(v.items()[2].props["aria-current"]).toBe("page");
+  v.items()[3].props.onClick();
+  expect(v.items()[3].props["aria-current"]).toBe("page");
   expect(v.shown().type).toBe(TerminalPage);
   expect(v.body().props["aria-label"]).toBe(en("settings.terminal.title"));
   hooks.values = [];
   expect(view("terminal").shown().type).toBe(TerminalPage);
+});
+
+it("hands a section the way to open another one", () => {
+  const v = view();
+  v.shown().props.openSection("openIn");
+  expect(v.items()[6].props["aria-current"]).toBe("page");
+  expect(v.body().props["aria-label"]).toBe(en("openIn.title"));
+  hooks.values = [];
+  const w = view();
+  w.shown().props.openSection("nope");
+  expect(w.shown().type).toBe(GeneralPage);
 });

@@ -3,7 +3,6 @@ import type { JSX } from "react";
 import { toApiError, type ApiError, type CursorStyle, type FontWeight, type TerminalSettings } from "@/api";
 import { useI18n } from "@/i18n";
 import { setTerminalSettings, TERMINAL_DEFAULTS, TERMINAL_LIMITS } from "@/terminal/terminalSettings";
-import { RestoreSetting } from "./RestoreSetting";
 import type { SettingsSectionProps } from "./sections";
 
 export const FONT_WEIGHTS: FontWeight[] = ["normal", "medium", "bold"];
@@ -236,8 +235,6 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
           </li>
         ))}
       </ul>
-
-      <RestoreSetting api={api} />
 
       <div className="settings-actions settings-actions-start">
         <button type="button" className="btn-secondary" disabled={busy} onClick={() => void put({ ...TERMINAL_DEFAULTS })}>
