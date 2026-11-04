@@ -368,6 +368,8 @@ type MockOptions = {
   workspace?: MockWorkspaceSeed;
   // The text of `keybindings.json`; no file when left out.
   keybindings?: string | null;
+  // A version the update check finds; nothing newer when left out.
+  update?: string | null;
 };
 
 export function createMockApi(seed: Record<string, string>, options: MockOptions = {}): MockApi {
@@ -565,7 +567,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       (provider) => active.find((a) => a.provider === provider)?.name ?? null,
     ),
     ...createMockStatus(settingsHub.emit),
-    ...createMockShell(settingsHub.emit),
+    ...createMockShell(settingsHub.emit, options.update ?? null),
     ...workspace,
     ...createMockIssues(),
     ...settingsApi,
@@ -587,6 +589,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     async updateStatus() { return null; },
     async onUpdateReady() { return () => {}; },
     async restartToUpdate() {},
+    async appVersion() { return "0.0.0-dev"; },
     async notifyUpdate() {},
     async addAccount(name, provider, dir) {
       if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(name)) return reject("bad_name");

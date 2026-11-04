@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { ThemeSwitch } from "@xdev-asia/ui";
-import { toApiError, type ApiError, type DiffSettings, type NavigationSettings, type Theme } from "@/api";
+import { toApiError, type ApiError, type DiffSettings, type NavigationSettings, type ShellSettings, type Theme } from "@/api";
 import { useI18n, type Locale } from "@/i18n";
+import { PLATFORM } from "@/platform";
 import { setThemePreference } from "@/ui/theme";
 import { clampZoom, getZoom, stepZoom, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from "@/ui/zoom";
 import { setNavigationSettings } from "./navigationSettings";
 import { RestoreSetting } from "./RestoreSetting";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
+import { UpdatesSetting } from "./UpdatesSetting";
 import type { SettingsSectionProps } from "./sections";
 
 export const TAB_ORDERS: NavigationSettings["tabOrder"][] = ["mru", "sequential"];
@@ -19,6 +21,7 @@ export const DIFF_SWITCHES = ["ignoreWhitespace", "collapseUnchanged", "wordWrap
 const NAVIGATION_IDS = ["general.tabOrder", ...NAVIGATION_SWITCHES.map((k) => `general.nav.${k}`)];
 const LOCALES: Locale[] = ["en", "vi"];
 const WORKSPACE_IDS = ["general.language", "general.theme", "general.zoom", "general.restore", "general.openIn"];
+const UPDATE_IDS = ["general.updates", "general.updateChannel"];
 const DIFF_IDS = ["general.diffView", ...DIFF_SWITCHES.map((k) => `general.diff.${k}`)];
 export const ZOOM_LEVELS: number[] = Array.from({ length: Math.round((ZOOM_MAX - ZOOM_MIN) / ZOOM_STEP) + 1 }, (_, i) => clampZoom(ZOOM_MIN + i * ZOOM_STEP));
 
@@ -30,6 +33,7 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
   const [diff, setDiff] = useState<DiffSettings | null>(null);
   const [zoom, setZoom] = useState(() => getZoom());
   const [theme, setTheme] = useState<Theme | null>(null);
+  const [shell, setShell] = useState<ShellSettings | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError["code"]>();
 
@@ -37,6 +41,7 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
     const fail = (e: unknown) => setError(toApiError(e).code);
     api.navigationSettings().then(setNavigation, fail);
     api.diffSettings().then(setDiff, fail);
+    api.shellSettings().then(setShell, fail);
     api.uiSettingsGet().then((s) => {
       setZoom(clampZoom(s.zoom));
       setTheme(s.theme);
@@ -65,6 +70,9 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
     });
   const patchDiff = (change: Partial<DiffSettings>) =>
     diff && write(async () => setDiff(await api.diffSettingsPut({ ...diff, ...change })));
+  // Read again before the put: the update channel may have changed (a Shift check) since the page opened.
+  const patchShell = (change: Partial<ShellSettings>) =>
+    shell && write(async () => setShell(await api.shellSettingsPut({ ...(await api.shellSettings()), ...change })));
   // A step from the level the window shows; `0` resets to 100 %.
   const pickZoom = (next: number | null) =>
     write(async () => setZoom(await stepZoom(api, next === null ? 0 : clampZoom(next) - getZoom())));
@@ -87,6 +95,9 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
       <button type="button" role="switch" className="agent-switch" aria-checked={on} aria-label={label} disabled={busy} onClick={flip} />
     </li>
   );
+
+  // The tray is on Windows and the menu bar on macOS; Linux has neither.
+  const windowIds = PLATFORM === "win" ? ["general.minimizeToTray"] : PLATFORM === "mac" ? ["general.menuBarIcon"] : [];
 
   return (
     <div className="settings-page">
@@ -203,6 +214,23 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
           </div>
         </SettingRow>
       )}
+      </SettingGroup>
+
+      {windowIds.length > 0 && (
+      <SettingGroup ids={windowIds} filter={filter}>
+      <h4 className="settings-group">{t("settings.general.window")}</h4>
+      {shell && (
+        <ul className="settings-list">
+          {PLATFORM === "win" && settingShown(filter, "general.minimizeToTray") && sw("general.minimizeToTray", "minimizeToTray", t("settings.general.minimizeToTray"), shell.minimizeToTray, () => void patchShell({ minimizeToTray: !shell.minimizeToTray }), t("settings.general.minimizeToTrayHint"))}
+          {PLATFORM === "mac" && settingShown(filter, "general.menuBarIcon") && sw("general.menuBarIcon", "menuBarIcon", t("settings.general.menuBarIcon"), shell.menuBarIcon, () => void patchShell({ menuBarIcon: !shell.menuBarIcon }), t("settings.general.menuBarIconHint"))}
+        </ul>
+      )}
+      </SettingGroup>
+      )}
+
+      <SettingGroup ids={UPDATE_IDS} filter={filter}>
+      <h4 className="settings-group">{t("settings.general.updates")}</h4>
+      <UpdatesSetting api={api} filter={filter} onError={setError} />
       </SettingGroup>
 
       <SettingGroup ids={DIFF_IDS} filter={filter}>
