@@ -882,16 +882,79 @@ pub fn create_worktree_linked(
 }
 
 /// Renames the branch of the worktree at `path` to `leaf` under the same
-/// prefix, taking `-2`, `-3`, … when `leaf` is taken. The folder never
-/// moves. Refused with an upstream (`BranchPushed`) or a detached `HEAD`.
+/// prefix, taking `-2`, `-3`, … when `leaf` is taken (`opts.suffix`). The
+/// folder never moves: open terminals work in it. Refused with an upstream
+/// (`BranchPushed`) or a detached `HEAD`. The shown title becomes the words
+/// of the new name when it was unset, and the worktree is no longer
+/// auto-named.
 pub fn rename_branch(
-    _reg: &mut Registry,
+    reg: &mut Registry,
     path: &Path,
-    _leaf: &str,
-    _opts: &CreateOptions,
+    leaf: &str,
+    opts: &CreateOptions,
 ) -> Result<WorktreeView, WorkspaceError> {
-    // Contract stub; B3 fills it in.
-    Err(WorkspaceError::WorktreeUnknown(path.to_owned()))
+    let key = path_key(path);
+    let Some(index) = reg.worktrees.iter().position(|m| path_key(&m.path) == key) else {
+        return Err(if reg.repos.iter().any(|r| path_key(&r.path) == key) {
+            WorkspaceError::Primary(path.to_owned())
+        } else {
+            WorkspaceError::WorktreeUnknown(path.to_owned())
+        });
+    };
+    let entry = find_repo(reg, &reg.worktrees[index].repo_id)?;
+    let repo = Repo::discover(path)?;
+    let old = repo
+        .current_branch()?
+        .ok_or_else(|| WorkspaceError::Detached(path.to_owned()))?;
+    if repo.upstream()?.is_some() {
+        return Err(WorkspaceError::BranchPushed(old));
+    }
+    // The branch keeps whatever stands in front of its last `/`.
+    let prefix = old.rsplit_once('/').map(|(p, _)| p);
+    let leaf = names::slug(leaf);
+    if leaf.is_empty() || !repo.valid_branch_name(&prefixed(prefix, &leaf))? {
+        return Err(WorkspaceError::BadName(leaf));
+    }
+    let tries = if opts.suffix { names::SUFFIX_MAX } else { 1 };
+    let mut chosen = None;
+    for n in 1..=tries {
+        let leaf_n = names::suffixed(&leaf, n);
+        let branch = prefixed(prefix, &leaf_n);
+        if branch == old {
+            chosen = Some((leaf_n, false));
+            break;
+        }
+        if !repo.branch_exists(&branch)? {
+            chosen = Some((leaf_n, true));
+            break;
+        }
+    }
+    let Some((leaf, moves)) = chosen else {
+        return Err(WorkspaceError::BranchExists(prefixed(prefix, &leaf)));
+    };
+    let new = prefixed(prefix, &leaf);
+    if moves {
+        repo.rename_branch(&old, &new)?;
+    }
+    let meta = &mut reg.worktrees[index];
+    meta.auto_name = false;
+    if meta.title.is_none() {
+        let words: String = leaf.replace(['-', '_', '/'], " ");
+        meta.title = Some(words.chars().take(TITLE_MAX).collect());
+    }
+    let meta = meta.clone();
+    let git_entry = repo
+        .list_worktrees()?
+        .into_iter()
+        .find(|e| path_key(&e.path) == key)
+        .ok_or_else(|| WorkspaceError::WorktreeUnknown(path.to_owned()))?;
+    let default = default_short(&repo, &entry.base_ref)?;
+    Ok(view_of(
+        &git_entry,
+        &entry.short_name,
+        Some(&meta),
+        default.as_deref(),
+    ))
 }
 
 /// How many times, and how far apart, the move out of staging is tried.
