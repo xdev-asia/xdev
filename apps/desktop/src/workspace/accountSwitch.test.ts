@@ -122,10 +122,10 @@ describe("Sessions keep the account source", () => {
     expect(live.tab(again.id)).toMatchObject({ accountSource: "active" });
   });
 
-  it("the snapshot leaves out an account the tab did not pick", async () => {
+  it("the snapshot keeps the account in use and where it came from", async () => {
     const { live } = await started();
     const snap = live.snapshot();
     const [one] = Object.values(Object.values(snap.worktrees)[0].tabs);
-    expect(one).toMatchObject({ kind: "terminal", account: null });
+    expect(one).toMatchObject({ kind: "terminal", account: "claude-2", accountSource: "active" });
   });
 });
