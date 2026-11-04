@@ -23,7 +23,7 @@ import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
 import { startAutoRename } from "./autoRename";
-import { dueForSleep } from "./autoSleep";
+import { startAutoSleep } from "./autoSleep";
 import { currentCloseWindow, openRestoredFile, restoreLayout, sessionFallback, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
@@ -437,33 +437,22 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const current = all.find((w) => w.path === selected) ?? all[0] ?? null;
 
   // Auto sleep: once a minute, tabs of finished agents that nobody looks at and that went quiet sleep.
-  // The settings are read on each tick, so a change takes effect without a subscription.
-  const sleepSkip = current?.path ?? null;
+  // The inputs sit in a ref, so a worktree switch does not restart the timer; the settings are read on each tick.
+  const sleepLive = useRef({ paths, current: current?.path ?? null });
+  sleepLive.current = { paths, current: current?.path ?? null };
   useEffect(() => {
     if (!sessions) return;
-    let busy = false;
-    const timer = setInterval(() => {
-      if (busy) return;
-      busy = true;
-      void (async () => {
-        try {
-          const settings = await api.agentsSettings();
-          if (!settings.autoSleep) return;
-          const tabs = paths.flatMap((p) => sessions.tabs(p));
-          // The worktree on screen is never touched.
-          const onScreen = new Set(sleepSkip ? sessions.tabs(sleepSkip).map((t) => t.id) : []);
-          const due = dueForSleep(tabs, (id) => sessions.lastOutput(id), onScreen, Date.now(), settings.sleepAfterMin * 60_000);
-          const fallback = sessionFallback(api);
-          for (const id of due) await sessions.hibernate(id, fallback);
-        } catch {
-          // A failed read or sleep is tried again on the next tick.
-        } finally {
-          busy = false;
-        }
-      })();
-    }, AUTO_SLEEP_TICK_MS);
-    return () => clearInterval(timer);
-  }, [api, sessions, sleepSkip, paths.join("|")]);
+    return startAutoSleep({
+      tickMs: AUTO_SLEEP_TICK_MS,
+      settings: () => api.agentsSettings(),
+      tabs: () => sleepLive.current.paths.flatMap((p) => sessions.tabs(p)),
+      // The worktree on screen is never touched.
+      onScreen: () => new Set(sleepLive.current.current ? sessions.tabs(sleepLive.current.current).map((t) => t.id) : []),
+      lastOutput: (id) => sessions.lastOutput(id),
+      now: () => Date.now(),
+      sleep: (id) => sessions.hibernate(id, sessionFallback(api)),
+    });
+  }, [api, sessions]);
   const currentRepo = repos?.find((r) => r.worktrees.some((w) => w.path === current?.path)) ?? null;
   const branch = current ? (current.branch ?? t("workspace.detached")) : null;
   // Noted during render, so the first frame of a worktree already has its tabs.
