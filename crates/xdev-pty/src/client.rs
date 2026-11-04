@@ -165,6 +165,8 @@ impl Sub {
 enum Hello {
     NotRunning,
     Auth,
+    /// Another user's process holds the endpoint; never sent the token.
+    Foreign(String),
     Version,
     Io(String),
 }
@@ -184,7 +186,7 @@ pub fn ensure(opts: &StartOptions) -> Result<Client, ClientError> {
     loop {
         match hello(&endpoint, &opts.dir, &opts.app_version) {
             Ok(client) => return Ok(client),
-            Err(Hello::Version) => return Err(hello_error(Hello::Version)),
+            Err(e @ (Hello::Version | Hello::Foreign(_))) => return Err(hello_error(e)),
             // Not bound yet, or bound with its token not written yet.
             Err(_) if start.elapsed() < START_WAIT => thread::sleep(POLL),
             Err(e) => {
@@ -216,6 +218,7 @@ fn hello_error(e: Hello) -> ClientError {
     match e {
         Hello::NotRunning => ClientError::new("ptyd_unreachable", None),
         Hello::Auth => ClientError::new("ptyd_auth", None),
+        Hello::Foreign(d) => ClientError::new("ptyd_auth", d),
         Hello::Version => ClientError::new("ptyd_version", None),
         Hello::Io(d) => ClientError::new("ptyd_unreachable", d),
     }
@@ -229,6 +232,7 @@ pub fn connect(dir: &Path, endpoint: &Endpoint, app_version: &str) -> Result<Cli
 fn hello(endpoint: &Endpoint, dir: &Path, app_version: &str) -> Result<Client, Hello> {
     let mut r = endpoint.connect().map_err(|e| match e {
         IpcError::NotRunning => Hello::NotRunning,
+        e @ IpcError::Foreign => Hello::Foreign(e.to_string()),
         e => Hello::Io(e.to_string()),
     })?;
     let token = match read_token(dir) {

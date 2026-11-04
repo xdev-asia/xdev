@@ -1,6 +1,7 @@
 //! What the pipe API of `interprocess` does not cover on Windows: a read that
-//! gives up at a deadline. A named pipe has no receive timeout, so a watchdog
-//! thread cancels the blocked read once the deadline has passed.
+//! gives up at a deadline, and the user a process runs as. A named pipe has
+//! no receive timeout, so a watchdog thread cancels the blocked read once the
+//! deadline has passed.
 
 use std::io;
 use std::os::windows::io::{AsRawHandle, BorrowedHandle};
@@ -9,7 +10,17 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use interprocess::os::windows::security_descriptor::SecurityDescriptor;
+use widestring::U16CString;
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, LocalFree};
+use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
+use windows_sys::Win32::Security::{
+    EqualSid, GetTokenInformation, TOKEN_QUERY, TOKEN_USER, TokenUser,
+};
 use windows_sys::Win32::System::IO::CancelIoEx;
+use windows_sys::Win32::System::Threading::{
+    GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
+};
 
 /// How often a cancel is sent again while the read has not ended: the read
 /// may not have reached the pipe yet when the first one went out.
@@ -144,5 +155,136 @@ fn cancel_io(raw: usize) {
     // failure (nothing to cancel) is harmless.
     unsafe {
         CancelIoEx(raw as _, ptr::null());
+    }
+}
+
+/// A pipe security descriptor that grants this user full access and nobody
+/// else any, so another user can neither connect nor add a server instance.
+pub(crate) fn only_current_user() -> io::Result<SecurityDescriptor> {
+    // D: the DACL; P: protected, nothing inherited; one ACE allowing (A)
+    // generic all (GA) to the SID.
+    let sddl = format!("D:P(A;;GA;;;{})", current_user_sid()?);
+    let sddl =
+        U16CString::from_str(sddl).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    SecurityDescriptor::deserialize(&sddl)
+}
+
+/// The SID of the user this process runs as, in its string form (`S-1-5-...`).
+pub(crate) fn current_user_sid() -> io::Result<String> {
+    let user = user_of(current_process())?;
+    sid_string(&user)
+}
+
+/// Whether process `pid` runs as the same user as this one. An error when it
+/// cannot be told, which callers treat as "no".
+pub(crate) fn runs_as_current_user(pid: u32) -> io::Result<bool> {
+    let theirs = user_of(open_process(pid)?.0)?;
+    let mine = user_of(current_process())?;
+    Ok(same_sid(&theirs, &mine))
+}
+
+/// A handle closed on drop.
+struct Owned(HANDLE);
+
+impl Drop for Owned {
+    #[allow(unsafe_code)]
+    fn drop(&mut self) {
+        // SAFETY: `self.0` is a handle this module opened and nothing else
+        // closes.
+        unsafe {
+            CloseHandle(self.0);
+        }
+    }
+}
+
+/// A `TOKEN_USER` and the SID it points into, in a buffer aligned for it.
+struct TokenUserBuf(Vec<u64>);
+
+impl TokenUserBuf {
+    #[allow(unsafe_code)]
+    fn sid(&self) -> *mut core::ffi::c_void {
+        // SAFETY: `GetTokenInformation` filled the buffer with a `TOKEN_USER`;
+        // a `Vec<u64>` is aligned for it, and the SID it points to lives in
+        // the same buffer.
+        unsafe { (*self.0.as_ptr().cast::<TOKEN_USER>()).User.Sid }
+    }
+}
+
+#[allow(unsafe_code)]
+fn current_process() -> HANDLE {
+    // SAFETY: no arguments; the pseudo handle needs no closing.
+    unsafe { GetCurrentProcess() }
+}
+
+#[allow(unsafe_code)]
+fn open_process(pid: u32) -> io::Result<Owned> {
+    // SAFETY: plain call; a null result is checked.
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if process.is_null() {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(Owned(process))
+}
+
+#[allow(unsafe_code)]
+fn user_of(process: HANDLE) -> io::Result<TokenUserBuf> {
+    let mut token: HANDLE = ptr::null_mut();
+    // SAFETY: `process` is open for the call; `token` is a valid out pointer.
+    if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let token = Owned(token);
+    let mut len = 0u32;
+    // SAFETY: a size query: no buffer, `len` is a valid out pointer. It fails
+    // with ERROR_INSUFFICIENT_BUFFER and sets `len`.
+    unsafe { GetTokenInformation(token.0, TokenUser, ptr::null_mut(), 0, &mut len) };
+    if len == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut buf = TokenUserBuf(vec![0u64; (len as usize).div_ceil(8)]);
+    // SAFETY: `buf` holds at least `len` bytes, aligned for a `TOKEN_USER`.
+    let ok = unsafe {
+        GetTokenInformation(token.0, TokenUser, buf.0.as_mut_ptr().cast(), len, &mut len)
+    };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(buf)
+}
+
+#[allow(unsafe_code)]
+fn same_sid(a: &TokenUserBuf, b: &TokenUserBuf) -> bool {
+    // SAFETY: both SIDs are valid for as long as their buffers live.
+    unsafe { EqualSid(a.sid(), b.sid()) != 0 }
+}
+
+#[allow(unsafe_code)]
+fn sid_string(user: &TokenUserBuf) -> io::Result<String> {
+    let mut text: *mut u16 = ptr::null_mut();
+    // SAFETY: the SID is valid; `text` is a valid out pointer.
+    if unsafe { ConvertSidToStringSidW(user.sid(), &mut text) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: on success `text` is a NUL-terminated string the system
+    // allocated; it is read up to the NUL, then freed once with `LocalFree`.
+    unsafe {
+        let mut len = 0;
+        while *text.add(len) != 0 {
+            len += 1;
+        }
+        let sid = String::from_utf16_lossy(std::slice::from_raw_parts(text, len));
+        LocalFree(text.cast());
+        Ok(sid)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn this_process_runs_as_its_own_user() {
+        assert!(current_user_sid().unwrap().starts_with("S-1-"));
+        assert!(runs_as_current_user(std::process::id()).unwrap());
     }
 }
