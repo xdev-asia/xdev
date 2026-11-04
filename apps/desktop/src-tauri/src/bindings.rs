@@ -28,6 +28,7 @@ use crate::settings::{
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
+use crate::terminal_themes::{CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview};
 use crate::updater::UpdateInfo;
 use crate::workspace::{CloneProgress, WorktreeChange, WorktreeCreated, WorktreeFileDiff};
 
@@ -75,6 +76,11 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     UiSettings::export_all(cfg)?;
     RestoreMode::export_all(cfg)?;
     Theme::export_all(cfg)?;
+    CustomScheme::export_all(cfg)?;
+    SchemePreview::export_all(cfg)?;
+    OnNameTaken::export_all(cfg)?;
+    SchemeMode::export_all(cfg)?;
+    SchemeColors::export_all(cfg)?;
     EditorTheme::export_all(cfg)?;
     SidebarLook::export_all(cfg)?;
     StatusBarItems::export_all(cfg)?;
