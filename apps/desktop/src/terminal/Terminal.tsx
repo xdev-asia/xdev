@@ -12,6 +12,7 @@ import { PtyClient } from "./ptyClient";
 import { createTerminalHandle } from "./terminalActions";
 import { getTerminalSettings, subscribeTerminalSettings } from "./terminalSettings";
 import { decodeOsc52Write, xtermOptions } from "./terminalOptions";
+import { TerminalFind } from "./TerminalFind";
 import { createBell } from "./terminalBell";
 import { attachRenderer } from "./terminalRenderer";
 
@@ -71,15 +72,24 @@ export function Terminal(props: {
   const search = useRef<SearchAddon | null>(null);
   const xterm = useRef<XTerm | null>(null);
   const seen = useRef(props.focusSeq);
-  const [finding, setFinding] = useState(false);
-  const [query, setQuery] = useState("");
+  // The find bar: open or not, what it opens with, and a counter that re-focuses it (Ctrl+F while open).
+  const [find, setFind] = useState({ open: false, initial: "", seq: 0 });
+  const lastQuery = useRef("");
   // Callbacks change every render; the effect below runs once per pty.
   const handlers = useRef(props);
   handlers.current = props;
   const clientRef = useRef<PtyClient | null>(null);
+  // Opens the find bar, or focuses it when open. A one-line selection becomes the query.
+  const openFind = () => {
+    const selected = xterm.current?.getSelection() ?? "";
+    const seed = selected && !/[\r\n]/.test(selected) ? selected : lastQuery.current;
+    setFind((f) => ({ open: true, initial: f.open ? f.initial : seed, seq: f.seq + 1 }));
+  };
+  const openFindRef = useRef(openFind);
+  openFindRef.current = openFind;
   // One handle per view; it reads the live xterm on each call.
   const handle = useRef(
-    createTerminalHandle({ term: () => xterm.current, client: () => clientRef.current, find: () => setFinding(true) }),
+    createTerminalHandle({ term: () => xterm.current, client: () => clientRef.current, find: () => openFindRef.current() }),
   );
   useImperativeHandle(props.handleRef, () => handle.current, []);
 
@@ -97,7 +107,8 @@ export function Terminal(props: {
     const color = (name: string) => css.getPropertyValue(name).trim() || undefined;
     const mono = color("--x-font-mono");
     const initial = xtermOptions(getTerminalSettings(), mono, color);
-    const term = new XTerm(initial);
+    // Proposed API: search decorations (and with them the match count) need it.
+    const term = new XTerm({ ...initial, allowProposedApi: true });
     // The pane and the padding around the host take the theme's background (the app theme: the CSS one).
     const pane = el.parentElement;
     const paint = (background: string | undefined) => {
@@ -106,7 +117,7 @@ export function Terminal(props: {
     paint(initial.theme.background);
     const bell = createBell(pane ?? el);
     const fit = new FitAddon();
-    const finder = new SearchAddon();
+    const finder = new SearchAddon({ highlightLimit: 1000 });
     search.current = finder;
     xterm.current = term;
     term.loadAddon(fit);
@@ -124,7 +135,7 @@ export function Terminal(props: {
       if (action === null) return true;
       switch (action) {
         case "terminal.find":
-          setFinding(true);
+          openFindRef.current();
           break;
         case "terminal.clear":
           term.clear();
@@ -270,24 +281,15 @@ export function Terminal(props: {
 
   return (
     <div className="terminal-pane">
-      {finding && (
-        <input
-          className="terminal-find"
-          type="search"
-          autoFocus
-          aria-label={t("terminal.search")}
-          placeholder={t("terminal.search")}
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            search.current?.findNext(e.target.value, { incremental: true });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              if (e.shiftKey) search.current?.findPrevious(query);
-              else search.current?.findNext(query);
-            }
-            if (e.key === "Escape") setFinding(false);
+      {find.open && search.current && (
+        <TerminalFind
+          search={search.current}
+          initial={find.initial}
+          focusSeq={find.seq}
+          onQuery={(q) => void (lastQuery.current = q)}
+          onClose={() => {
+            setFind((f) => ({ ...f, open: false }));
+            xterm.current?.focus();
           }}
         />
       )}
