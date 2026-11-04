@@ -355,15 +355,18 @@ export class Sessions {
   }
 
   /**
-   * `restart` under `account`: for a tab that follows the active account, the one it follows now. The
-   * tab keeps its account source and resumes its agent session (the latest one its hooks reported);
-   * `fresh` starts a new conversation instead. `null` for an unknown id.
+   * `restart` after an account switch. Only a tab that picked its account itself is started with
+   * `account`; one that follows the active (or its profile's) account is started with none and looks
+   * the account up again, so it keeps following it through the next switch. The tab keeps its account
+   * source and resumes its agent session (the latest one its hooks reported); `fresh` starts a new
+   * conversation instead. `null` for an unknown id.
    */
   restartAs(id: string, account: string | null, fresh = false): Tab | null {
     const old = this.entries.get(id);
     if (!old) return null;
     const session = fresh ? null : (old.tab.agentSession ?? old.tab.resumeOf);
-    return this.replace(old, account, session, session);
+    const own = old.tab.accountSource === "tab" ? account : null;
+    return this.replace(old, own, session, session);
   }
 
   private replace(old: Entry, account: string | null, resumeOf: string | null, agentSession: string | null): Tab {

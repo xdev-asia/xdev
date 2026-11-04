@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
 import type { SwitchRunning } from "@/api";
-import { Sessions, type Tab } from "./sessions";
+import { ownAccount, Sessions, type Tab } from "./sessions";
 import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
 
 const WT = "/demo/wt/xdev-oak";
+// What the terminal view does for a restarted tab: starts its pty, which reports the account it got.
+const boot = async (live: Sessions) => {
+  for (const t of live.tabs(WT)) live.noteStarted(t.id, await t.client.start(WT, "claude", 80, 24, () => {}, ownAccount(t)));
+};
 const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
 describe("account switch flow", () => {
@@ -60,6 +64,7 @@ describe("account switch flow", () => {
     await tick();
     expect(ask).not.toHaveBeenCalled();
     expect(carry.mock.calls.map((c) => [c[1], c[2], c[3], c[4]])).toEqual([["claude-2", "claude-3", "s-a", WT], ["claude-2", "claude-3", "s-b", WT]]);
+    await boot(live);
     const now = only(live);
     expect(now).toHaveLength(2);
     expect(now.map((t) => t.id)).not.toContain(a.id);
@@ -139,6 +144,7 @@ describe("account switch flow", () => {
     const b = await agent("kept");
     await api.accountActivate("claude", "claude-3");
     await tick();
+    await boot(live);
     const [first, second] = only(live);
     expect(first).toMatchObject({ resumeOf: null, agentSession: null, account: "claude-3" });
     expect(second.resumeOf).toBe("kept");
@@ -154,6 +160,7 @@ describe("account switch flow", () => {
     await api.accountActivate("claude", "claude-3");
     await tick();
     expect(carry).not.toHaveBeenCalled();
+    await boot(live);
     expect(only(live)[0].account).toBe("claude-3");
   });
 

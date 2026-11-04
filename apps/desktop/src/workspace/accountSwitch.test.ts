@@ -68,11 +68,31 @@ describe("Sessions keep the account source", () => {
     const { live, tab: t } = await started(api);
     await api.accountActivate("claude", "claude-3");
     const next = live.restartAs(t.id, "claude-3")!;
-    expect(next).toMatchObject({ account: "claude-3", accountSource: "active", pinned: t.pinned });
+    // A tab that follows the active account starts with no override and reads the account again.
+    expect(next).toMatchObject({ account: null, accountSource: "active", pinned: t.pinned });
     const info = await start(next);
     live.noteStarted(next.id, info);
     expect(live.tab(next.id)).toMatchObject({ account: "claude-3", accountSource: "active" });
     expect(live.restartAs("gone", "claude-3")).toBeNull();
+  });
+
+  it("a tab that follows the active account keeps following it through the next switch after restartAs", async () => {
+    const api = createMockApi({});
+    const { live, tab: t } = await started(api);
+    await api.accountActivate("claude", "claude-3");
+    const next = live.restartAs(t.id, "claude-3")!;
+    expect(ownAccount(next)).toBeNull();
+    const info = await start(next);
+    expect(info).toMatchObject({ account: "claude-3", accountSource: "active" });
+    live.noteStarted(next.id, info);
+    expect(affectedTabs(live.tabs(WT), "claude", "claude-3").map((x) => x.id)).toEqual([next.id]);
+  });
+
+  it("restartAs keeps the override for a tab that picked its account itself", async () => {
+    const api = createMockApi({});
+    const { live, tab: t } = await started(api, { account: "claude-3", source: "tab" });
+    const next = live.restartAs(t.id, "claude-2")!;
+    expect(next).toMatchObject({ account: "claude-2", accountSource: "tab" });
   });
 
   it("restart keeps a tab's own account as its own", async () => {
