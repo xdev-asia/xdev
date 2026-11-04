@@ -581,6 +581,16 @@ fn pick_free(
     }
 }
 
+/// The title a new worktree shows: what was typed, when a suffix kept the
+/// branch from matching it or the text has an emoji the branch drops;
+/// otherwise unset, and the row shows its folder name.
+fn shown_title(typed: &str, suffixed: bool) -> Option<String> {
+    let emoji = typed.chars().any(|c| {
+        matches!(c as u32, 0x1F000..=0x1FAFF | 0x2600..=0x27BF | 0x2B00..=0x2BFF | 0xFE0F | 0x200D)
+    });
+    (suffixed || emoji).then(|| typed.chars().take(TITLE_MAX).collect())
+}
+
 fn worktree_folder(entry: &RepoEntry, slug: &str) -> PathBuf {
     entry
         .worktree_root
@@ -624,15 +634,82 @@ pub struct NamePreview {
     pub suffixed: bool,
 }
 
+/// The branch and folder `name` (not blank) gets: the first of `leaf`,
+/// `leaf-2`, … that is free when `opts.suffix`, else `leaf` or an error.
+struct Named {
+    branch: String,
+    folder: PathBuf,
+    /// A suffix was added.
+    suffixed: bool,
+}
+
+fn name_typed(
+    repo: &Repo,
+    entry: &RepoEntry,
+    prefix: Option<&str>,
+    name: &str,
+    suffix: bool,
+) -> Result<Named, WorkspaceError> {
+    let leaf = names::slug(name);
+    let first = prefixed(prefix, &leaf);
+    // Before `branch_exists`, which reads `main~1` as a branch that exists.
+    if leaf.is_empty() || !repo.valid_branch_name(&first)? {
+        return Err(WorkspaceError::BadName(name.to_owned()));
+    }
+    let tries = if suffix { names::SUFFIX_MAX } else { 1 };
+    for n in 1..=tries {
+        let leaf_n = names::suffixed(&leaf, n);
+        let branch = prefixed(prefix, &leaf_n);
+        let folder = worktree_folder(entry, &leaf_n);
+        let branch_taken = repo.branch_exists(&branch)?;
+        if !branch_taken && !folder.exists() {
+            return Ok(Named {
+                branch,
+                folder,
+                suffixed: n > 1,
+            });
+        }
+        if !suffix {
+            return Err(if branch_taken {
+                WorkspaceError::BranchExists(branch)
+            } else {
+                WorkspaceError::WorktreeExists(folder)
+            });
+        }
+    }
+    Err(WorkspaceError::BranchExists(first))
+}
+
 /// What `create_worktree_with` would name the branch and folder for `name`,
-/// without making anything.
+/// without making anything. A blank `name` gets a random free word at
+/// creation, so there is nothing to show: empty strings.
 pub fn name_preview(
-    _reg: &Registry,
-    _repo_id: &str,
-    _name: &str,
-    _opts: &CreateOptions,
+    reg: &Registry,
+    repo_id: &str,
+    name: &str,
+    opts: &CreateOptions,
 ) -> Result<NamePreview, WorkspaceError> {
-    Err(WorkspaceError::NotFound("name_preview".to_owned()))
+    let entry = find_repo(reg, repo_id)?;
+    let repo = Repo::discover(&entry.path)?;
+    let name = name.trim();
+    if name.is_empty() {
+        return Ok(NamePreview {
+            branch: String::new(),
+            folder: String::new(),
+            suffixed: false,
+        });
+    }
+    let prefix = branch_prefix(&repo, &opts.prefix)?;
+    let named = name_typed(&repo, &entry, prefix.as_deref(), name, opts.suffix)?;
+    Ok(NamePreview {
+        branch: named.branch,
+        folder: named
+            .folder
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        suffixed: named.suffixed,
+    })
 }
 
 /// Fetches the base a new worktree of `repo_id` would start from (`from`,
@@ -729,29 +806,24 @@ pub fn create_worktree_linked(
     let repo = Repo::discover(&entry.path)?;
     let prefix = branch_prefix(&repo, &opts.prefix)?;
     let name = name.trim();
-    let leaf = if name.is_empty() {
-        pick_free(
+    let (slug, folder, title) = if name.is_empty() {
+        let leaf = pick_free(
             &repo,
             &entry,
             &repo.list_worktrees()?,
             prefix.as_deref(),
             seed,
-        )?
+        )?;
+        let slug = prefixed(prefix.as_deref(), &leaf);
+        if !repo.valid_branch_name(&slug)? {
+            return Err(WorkspaceError::BadName(name.to_owned()));
+        }
+        (slug, worktree_folder(&entry, &leaf), None)
     } else {
-        names::slug(name)
+        let named = name_typed(&repo, &entry, prefix.as_deref(), name, opts.suffix)?;
+        let title = shown_title(name, named.suffixed);
+        (named.branch, named.folder, title)
     };
-    let slug = prefixed(prefix.as_deref(), &leaf);
-    // Before `branch_exists`, which reads `main~1` as a branch that exists.
-    if leaf.is_empty() || !repo.valid_branch_name(&slug)? {
-        return Err(WorkspaceError::BadName(name.to_owned()));
-    }
-    if repo.branch_exists(&slug)? {
-        return Err(WorkspaceError::BranchExists(slug));
-    }
-    let folder = worktree_folder(&entry, &leaf);
-    if folder.exists() {
-        return Err(WorkspaceError::WorktreeExists(folder));
-    }
     let from = from
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -787,6 +859,7 @@ pub fn create_worktree_linked(
         created_ms: now_ms,
         made_here: true,
         made_by: opts.made_by,
+        title,
         ..WorktreeMeta::default()
     };
     let linked = link_shared(&entry.path, &git_entry.path, &opts.shared);
