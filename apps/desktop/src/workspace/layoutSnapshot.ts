@@ -1,6 +1,6 @@
 import type { PtyProfile, RestoreMode } from "@/api";
-import type { PaneLayout } from "./paneTree";
-import type { TabCli, TabColor } from "./sessions";
+import { leaves, removeTab, replaceTab, type PaneLayout } from "./paneTree";
+import type { Tab, TabCli, TabColor } from "./sessions";
 
 // What `layout.json` holds: per worktree, its pane layout and enough of each tab to open it again.
 // The UI owns this shape; the backend checks only `version` and size (plan R3).
@@ -61,3 +61,67 @@ export interface RestoreReport {
 }
 
 export type { RestoreMode };
+
+const REVIEW_ID = "review:";
+const FILE_ID = "file:";
+
+/** Tabs that are not terminal sessions: they keep their pane id as their snapshot id. */
+const isPlace = (id: string) => id === REVIEW_ID || id.startsWith(FILE_ID);
+// The setup script's tab (`xdev:` profiles) must not run its script again on a restart.
+const isSetup = (tab: Tab) => tab.profileId.startsWith("xdev:");
+
+/**
+ * One worktree's layout and tabs as the snapshot keeps them: terminal ids become `t1`, `t2`, … in
+ * reading order; the review and file tabs keep their ids. A terminal that exited, is unknown or is a
+ * setup tab is left out and its pane collapses. Null when nothing is left to keep.
+ */
+export function toSnapshot(layout: PaneLayout, tabOf: (id: string) => Tab | null): WorktreeSnapshot | null {
+  const ids = leaves(layout).flatMap((n) => (n.kind === "leaf" ? n.tabs : []));
+  let next: PaneLayout | null = layout;
+  const tabs: Record<string, TabSnapshot> = {};
+  const live: { id: string; tab: Tab }[] = [];
+  for (const id of ids) {
+    if (id === REVIEW_ID) tabs[id] = { kind: "review" };
+    else if (id.startsWith(FILE_ID)) tabs[id] = { kind: "file", rel: id.slice(FILE_ID.length) };
+    else {
+      const tab = tabOf(id);
+      if (tab && tab.exitCode === undefined && !isSetup(tab)) live.push({ id, tab });
+      else next = next && removeTab(next, id);
+    }
+  }
+  if (!next) return null;
+  live.forEach(({ id, tab }, i) => {
+    const to = `t${i + 1}`;
+    next = next && replaceTab(next, id, to);
+    tabs[to] = {
+      kind: "terminal",
+      profileId: tab.profileId,
+      account: tab.account,
+      cli: tab.cli,
+      title: tab.title,
+      renamed: tab.renamed,
+      pinned: tab.pinned,
+      color: tab.color,
+      agent: tab.agent,
+      agentSession: tab.agentSession,
+      openedAt: tab.openedAt,
+    };
+  });
+  return next ? { layout: next, tabs } : null;
+}
+
+/**
+ * The snapshot's layout with the ids of the tabs that came back: `ids` maps a snapshot id to its new
+ * one. A tab that did not come back (a skipped shell, a file that is gone) leaves its pane; the review
+ * and file tabs not in `ids` keep their own id when `keep` says so. Null when no tab is left.
+ */
+export function fromSnapshot(layout: PaneLayout, ids: ReadonlyMap<string, string>, keep: (id: string) => boolean): PaneLayout | null {
+  const all = leaves(layout).flatMap((n) => (n.kind === "leaf" ? n.tabs : []));
+  let next: PaneLayout | null = layout;
+  for (const id of all) {
+    const to = ids.get(id);
+    if (to !== undefined) next = next && replaceTab(next, id, to);
+    else if (!(isPlace(id) && keep(id))) next = next && removeTab(next, id);
+  }
+  return next;
+}

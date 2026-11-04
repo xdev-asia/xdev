@@ -1,7 +1,7 @@
 import type { Api, HookDetail, PtyInfo, PtyProfile, RestoreMode } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
 import { addTab, leaves, paneOf, pinFirst, removeTab, replaceTab, single, splitPane, type PaneDir, type PaneLayout } from "./paneTree";
-import { LAYOUT_VERSION, type LayoutSnapshot, type RestoreReport, type SessionFallback } from "./layoutSnapshot";
+import { LAYOUT_VERSION, toSnapshot, type LayoutSnapshot, type RestoreReport, type SessionFallback } from "./layoutSnapshot";
 import { DONE_QUIET_MS, INTERRUPT_MS, NO_CAPS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type Caps, type StatusEvent, type StatusState, type TabStatus } from "./status";
 
 /** The CLI behind a tab, for its hook caps and title rules; null for custom profiles and shells. */
@@ -160,9 +160,14 @@ export class Sessions {
     return entry.tab;
   }
 
-  /** What `layout.json` keeps of every worktree's tabs and panes. Contract stub: Lane U fills it in. */
+  /** What `layout.json` keeps of every worktree's tabs and panes; only `savedAt` depends on the clock. */
   snapshot(): LayoutSnapshot {
-    return { version: LAYOUT_VERSION, savedAt: this.now(), worktrees: {} };
+    const worktrees: LayoutSnapshot["worktrees"] = {};
+    for (const [path, layout] of this.layouts) {
+      const one = toSnapshot(layout, (id) => this.entries.get(id)?.tab ?? null);
+      if (one) worktrees[path] = one;
+    }
+    return { version: LAYOUT_VERSION, savedAt: this.now(), worktrees };
   }
 
   /**
