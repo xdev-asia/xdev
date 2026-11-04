@@ -3,6 +3,8 @@ import type { Api, Quota } from "@/api";
 
 const REFRESH_MS = 300_000;
 
+export type QuotaState = { quota: Quota[] | null; loading: boolean; refresh(): void };
+
 /** Quota for the status bar; `null` until read, or when it cannot be read. */
 export function useQuota(api: Api, paused: boolean): Quota[] | null {
   const [quota, setQuota] = useState<Quota[] | null>(null);
