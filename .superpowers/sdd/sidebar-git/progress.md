@@ -10,3 +10,7 @@ Notes
 Task 4: complete (sortEntries; sidebarSort.test.ts)
 Task 5: complete (groupBy + Section keyed `mode:id`; orderedWorktrees now takes string keys; PrState exported from api.ts)
 Task 6: complete (cardModel, WorktreeList draws from prefs; compact CSS). i18n keys for groupBy and sidebar.options.* added here.
+
+## Task 7: complete
+- SidebarOptions popover (Group by, Sort by, Layout, 9 card props) next to the filters; tests call the panel with a mocked useState.
+- Deviation: Popover and Segmented come from @xdev-asia/ui, so no new xdev-ui part was needed.

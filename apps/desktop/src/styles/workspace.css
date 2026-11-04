@@ -3294,3 +3294,8 @@ button.ws-tree-row:focus-visible {
 .ws-group-bare > .ws-wts {
   margin-top: 0;
 }
+
+.ws-options { display: grid; gap: var(--x-space-3); min-width: 260px; padding: var(--x-space-3); }
+.ws-options-row { display: grid; gap: var(--x-space-1); }
+.ws-options-props { display: grid; gap: var(--x-space-1); }
+.ws-options-label { color: var(--text-3); font-size: 11px; }
