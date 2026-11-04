@@ -30,4 +30,6 @@ pub use skills::{
 };
 pub use store::Store;
 pub use tasks::{BRIEF_CHARS, NewTask, TaskFilter, brief};
-pub use workers::{BREAKER_LIMIT, CLOSE_AFTER_MS, StartPlan, StartResult, Swept, WorkerView};
+pub use workers::{
+    BREAKER_LIMIT, CLOSE_AFTER_MS, CLOSE_RETRY_MS, StartPlan, StartResult, Swept, WorkerView,
+};

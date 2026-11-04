@@ -207,7 +207,14 @@ mod tests {
             .unwrap();
         assert_eq!(close.1["dispatch"], d);
         assert_eq!(close.1["tab"], "t1");
-        // Released: never again.
+        // Released once the tab has left the board; never again.
+        let gone = 5_000 + xdev_orch::CLOSE_AFTER_MS + 1;
+        assert_eq!(sweep_once(&hub, dir.path(), 0, &[], gone, &emit), 0);
+        let released = hub
+            .with_store(dir.path(), |s| s.worker_get(&d))
+            .unwrap()
+            .released;
+        assert!(released);
         assert_eq!(sweep_once(&hub, dir.path(), 0, &idle, 99_999_999, &emit), 0);
     }
 }

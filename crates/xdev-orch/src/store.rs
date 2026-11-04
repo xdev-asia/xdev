@@ -61,7 +61,8 @@ CREATE TABLE workers (
     closes_at_ms INTEGER,
     released INTEGER NOT NULL DEFAULT 0,
     created_ms INTEGER NOT NULL,
-    updated_ms INTEGER NOT NULL
+    updated_ms INTEGER NOT NULL,
+    close_asked_ms INTEGER
 );
 CREATE INDEX workers_tab ON workers (tab);
 CREATE TABLE messages (
