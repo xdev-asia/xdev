@@ -68,6 +68,8 @@ export interface DocsViewProps {
   onAddShared(): void;
   /** A view inside asks for another section, e.g. a diff closing back to the doc. */
   onSection?(section: DocsSection): void;
+  /** A task to show in Tasks; a new `seq` for the same id shows it again. */
+  task?: { id: string; seq: number };
 }
 
 function folderName(path: string): string {
@@ -133,16 +135,23 @@ function Standalone(props: DocsViewProps): JSX.Element {
   // Set once the Agent kit has been shown; from then on it stays mounted.
   const kitSeen = useRef(false);
   if (section === "kit") kitSeen.current = true;
-  // The task a squad link asked Tasks to show.
-  const [taskFocus, setTaskFocus] = useState<string | null>(null);
+  // The task a squad link asked Tasks to show; the `task` prop (e.g. from the palette) overrides it.
+  const [taskFocus, setTaskFocus] = useState<{ id: string; seq: number } | null>(null);
+  const f = props.task ?? taskFocus;
   return (
     <>
-      {section === "tasks" && <TasksView key={taskFocus ?? ""} api={api} initial={taskFocus ?? undefined} />}
+      {section === "tasks" && (
+        <TasksView
+          key={f ? `${f.id}:${f.seq}` : ""}
+          api={api}
+          initial={f?.id}
+        />
+      )}
       {section === "squads" && (
         <SquadsView
           api={api}
           onOpenTask={(id) => {
-            setTaskFocus(id);
+            setTaskFocus((prev) => ({ id, seq: (prev?.seq ?? 0) + 1 }));
             props.onSection?.("tasks");
           }}
         />

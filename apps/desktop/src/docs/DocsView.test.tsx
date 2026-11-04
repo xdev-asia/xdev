@@ -211,3 +211,28 @@ it("a source that cannot be opened shows why instead of the doc list", async () 
   expect(v.of(Sidebar)).toHaveLength(0);
   expect(v.all().some((n) => n.props.role === "alert")).toBe(true);
 });
+
+it("a task prop shows that task, and the same id with a new seq remounts Tasks", async () => {
+  const v = await view({ section: "tasks", task: { id: "t1", seq: 1 } });
+  const first = v.of(TasksView)[0];
+  expect(first.props.initial).toBe("t1");
+  expect(first.key).toBe("t1:1");
+  v.props.task = { id: "t1", seq: 2 };
+  const again = v.of(TasksView)[0];
+  expect(again.props.initial).toBe("t1");
+  expect(again.key).toBe("t1:2");
+  v.props.task = { id: "t1", seq: 2 };
+  expect(v.of(TasksView)[0].key).toBe("t1:2");
+});
+
+it("a squad link focuses its task, and the task prop overrides it", async () => {
+  const v = await view({ section: "squads" });
+  const asked: string[] = [];
+  v.props.onSection = (s) => asked.push(s);
+  v.of(SquadsView)[0].props.onOpenTask("t9");
+  v.props.section = "tasks";
+  expect(v.of(TasksView)[0].key).toBe("t9:1");
+  v.props.task = { id: "t2", seq: 5 };
+  expect(v.of(TasksView)[0].props.initial).toBe("t2");
+  expect(asked).toEqual(["tasks"]);
+});
