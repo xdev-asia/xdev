@@ -7,6 +7,7 @@ import { useI18n } from "@/i18n";
 import { DEFAULT_GIT_SETTINGS } from "@/settings/gitDefaults";
 import { CreatePrDialog } from "./CreatePrDialog";
 import type { PrStore } from "./prs";
+import { PULL_POLICY_CODES, PullPolicyNotice } from "./PullPolicyNotice";
 import { shipAction } from "./ship";
 import { shipMenu, type MenuId, type Text } from "./shipMenu";
 
@@ -300,7 +301,8 @@ export function ShipBar(props: {
           )}
         </p>
       )}
-      {error && (
+      {error && PULL_POLICY_CODES.has(error.code) && <PullPolicyNotice onOpenGitSettings={props.onOpenGitSettings} />}
+      {error && !PULL_POLICY_CODES.has(error.code) && (
         <p className="error-text" role="alert">
           {errorText(error, op, t)}
           {fixable && (

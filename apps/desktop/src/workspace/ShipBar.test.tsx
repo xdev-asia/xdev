@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { translate } from "@/i18n";
 import { CreatePrDialog } from "./CreatePrDialog";
 import { PrStore } from "./prs";
+import { PullPolicyNotice } from "./PullPolicyNotice";
 import { ShipBar } from "./ShipBar";
 
 // Hooks are stubbed only while a component under test is called; each harness keeps its own.
@@ -508,4 +509,35 @@ it("Push before pull request opens no dialog when the push fails", async () => {
   await tick();
   expect(view.find((n) => n.type === CreatePrDialog)).toBeUndefined();
   expect(view.html()).toContain(en("error.push_rejected"));
+});
+
+it("shows the pull policy notice in place of the inline error for pull_diverged and pull_policy", async () => {
+  for (const code of ["pull_diverged", "pull_policy"]) {
+    hooks.values = []; hooks.effects = [];
+    const api = updating();
+    vi.spyOn(api, "worktreePull").mockRejectedValue({ code });
+    const onOpenGitSettings = vi.fn();
+    const prs = new PrStore(api);
+    const view = mount(() => ShipBar({ api, worktree: OAK, checked: 0, prs, onCommit: vi.fn(), onChanged: vi.fn(), onOpenGitSettings }));
+    await tick();
+    view.find((n) => n.props["aria-haspopup"] === "menu")!.props.onClick();
+    view.find((n) => n.props.role === "menuitem" && n.props.children === en("ship.more.pull"))!.props.onClick();
+    await tick();
+    const notice = view.find((n) => n.type === PullPolicyNotice)!;
+    expect(notice, code).toBeDefined();
+    expect(notice.props.onOpenGitSettings).toBe(onOpenGitSettings);
+    expect(view.find((n) => n.props.className === "error-text")).toBeUndefined();
+  }
+});
+
+it("shows no notice for other errors", async () => {
+  const api = updating();
+  vi.spyOn(api, "worktreePull").mockRejectedValue({ code: "git", detail: "x" });
+  const view = bar(api);
+  await tick();
+  view.openMenu();
+  view.item(en("ship.more.pull")).props.onClick();
+  await tick();
+  expect(view.find((n) => n.type === PullPolicyNotice)).toBeUndefined();
+  expect(view.find((n) => n.props.className === "error-text")).toBeDefined();
 });
