@@ -101,6 +101,18 @@ impl Store {
     /// Answers a pending gate. A worker that asked gets the answer as a
     /// `decision_gate` message; a coordinator gets it from `ask` itself.
     pub fn gate_resolve(&self, id: &str, resolution: &str, now_ms: i64) -> Result<Gate, OrchError> {
+        self.atomic(|s| Ok(s.resolve_gate(id, resolution, now_ms, None)?.0))
+    }
+
+    /// [`Store::gate_resolve`], with the answer mailed in `thread`; also
+    /// gives the id of that mail (none for a coordinator's gate).
+    pub(crate) fn resolve_gate(
+        &self,
+        id: &str,
+        resolution: &str,
+        now_ms: i64,
+        thread: Option<String>,
+    ) -> Result<(Gate, Option<String>), OrchError> {
         let gate = self.gate_get(id)?;
         if gate.status != GateStatus::Pending {
             return Err(OrchError::new(
@@ -115,6 +127,7 @@ impl Store {
         let asker: String =
             self.conn
                 .query_row("SELECT asker FROM gates WHERE id = ?1", [id], |r| r.get(0))?;
+        let mut mid = None;
         if asker.starts_with("dispatch:") {
             let m = NewMessage {
                 to: asker.clone(),
@@ -123,13 +136,14 @@ impl Store {
                 body: resolution.to_owned(),
                 priority: Priority::High,
                 payload: Some(serde_json::json!({ "gateId": id })),
-                thread: None,
+                thread,
             };
             let from = format!("run:{}", gate.run_id);
-            let mid = self.next_id("msg");
-            self.insert_message_with_id(&mid, &gate.run_id, &from, &asker, &m, now_ms)?;
+            let id = self.next_id("msg");
+            self.insert_message_with_id(&id, &gate.run_id, &from, &asker, &m, now_ms)?;
+            mid = Some(id);
         }
-        self.gate_get(id)
+        Ok((self.gate_get(id)?, mid))
     }
 
     /// `ask`: a worker's question is mailed to the coordinator and the worker
@@ -278,6 +292,34 @@ mod tests {
         let r = s.ask_resume(&a.gate_id).unwrap();
         assert!(!r.pending);
         assert_eq!(r.resolution.as_deref(), Some("sqlite"));
+    }
+
+    #[test]
+    fn replying_to_a_question_resolves_its_gate_and_mails_the_answer_once() {
+        let (s, lead, worker, _) = world();
+        let a = s.ask(&worker, "which db?", &[], 5).unwrap();
+        let mail = s.check(&lead.address, &CheckOpts::default(), 6).unwrap();
+        let q_id = mail.messages[0].id.clone();
+        let rep = s.reply(&lead, &q_id, "sqlite", 7).unwrap();
+        assert_eq!(rep.count, 1);
+        let r = s.ask_resume(&a.gate_id).unwrap();
+        assert!(!r.pending);
+        assert_eq!(r.resolution.as_deref(), Some("sqlite"));
+        let back = s.check(&worker.address, &CheckOpts::default(), 8).unwrap();
+        assert_eq!(back.messages.len(), 1);
+        assert_eq!(back.messages[0].kind, MessageType::DecisionGate);
+        assert_eq!(back.messages[0].body, "sqlite");
+        assert_eq!(back.messages[0].thread_id.as_deref(), Some(q_id.as_str()));
+        assert_eq!(back.messages[0].id, rep.ids[0]);
+        // A second reply to an answered question is plain mail.
+        let again = s.reply(&lead, &q_id, "or not", 9).unwrap();
+        assert_eq!(again.count, 1);
+        assert_eq!(
+            s.ask_resume(&a.gate_id).unwrap().resolution.as_deref(),
+            Some("sqlite")
+        );
+        let late = s.check(&worker.address, &CheckOpts::default(), 10).unwrap();
+        assert_eq!(late.messages[0].kind, MessageType::Status);
     }
 
     #[test]

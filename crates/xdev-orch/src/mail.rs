@@ -467,8 +467,19 @@ impl Store {
     }
 
     /// Answers a message sent to the caller: the reply goes to the original
-    /// sender, in the same thread.
+    /// sender, in the same thread. A reply to a question whose gate is still
+    /// open resolves that gate, so the asker's `ask --resume` gets it.
     pub fn reply(
+        &self,
+        from: &Identity,
+        id: &str,
+        body: &str,
+        now_ms: i64,
+    ) -> Result<SendReceipt, OrchError> {
+        self.atomic(|s| s.reply_unit(from, id, body, now_ms))
+    }
+
+    fn reply_unit(
         &self,
         from: &Identity,
         id: &str,
@@ -481,20 +492,63 @@ impl Store {
                 "message {id} was not sent to you"
             )));
         }
-        let m = NewMessage {
-            to: orig.from.clone(),
-            kind: MessageType::Status,
-            subject: format!("Re: {}", orig.subject),
-            body: body.to_owned(),
-            priority: orig.priority,
-            payload: None,
-            thread: Some(orig.thread_id.clone().unwrap_or_else(|| orig.id.clone())),
+        let thread = orig.thread_id.clone().unwrap_or_else(|| orig.id.clone());
+        let mut receipt = match self.open_gate_of(&orig)? {
+            Some(gate) => {
+                let (_, mid) = self.resolve_gate(&gate, body, now_ms, Some(thread))?;
+                let ids: Vec<String> = mid.into_iter().collect();
+                SendReceipt {
+                    count: ids.len() as u32,
+                    to: if ids.is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![orig.from.clone()]
+                    },
+                    ids,
+                    next: String::new(),
+                }
+            }
+            None => {
+                let m = NewMessage {
+                    to: orig.from.clone(),
+                    kind: MessageType::Status,
+                    subject: format!("Re: {}", orig.subject),
+                    body: body.to_owned(),
+                    priority: orig.priority,
+                    payload: None,
+                    thread: Some(thread),
+                };
+                self.send(from, &m, now_ms, &|_| false)?
+            }
         };
-        let mut receipt = self.send(from, &m, now_ms, &|_| false)?;
         if self.unread_count(&from.address)? > 0 {
             receipt.next = NEXT_FINISH_MAIL.to_owned();
         }
         Ok(receipt)
+    }
+
+    /// The still-open gate a question message carries, if any.
+    fn open_gate_of(&self, m: &Message) -> Result<Option<String>, OrchError> {
+        if m.kind != MessageType::Question {
+            return Ok(None);
+        }
+        let Some(gate) = m
+            .payload
+            .as_ref()
+            .and_then(|p| p.get("gateId"))
+            .and_then(Value::as_str)
+        else {
+            return Ok(None);
+        };
+        let open: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT id FROM gates WHERE id = ?1 AND status = 'pending'",
+                [gate],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(open)
     }
 }
 
