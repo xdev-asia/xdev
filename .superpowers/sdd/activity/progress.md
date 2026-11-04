@@ -32,3 +32,10 @@ Tasks B3+B4: complete, one commit. Deviation: the OS blockers live in a new crat
 - `activity/options.ts`: `ActivityOptions` (showIdle, groupByWorktree), saved under `xdev.activity.options`; bad JSON, wrong shape or throwing storage give the defaults, each field checked on its own.
 - `activity/threads.ts`: `activityThreads(tabs, names, query, options)`; agent tabs only, idle and exited only with showIdle, every query word matched against title, worktree name, branch and profile, newest output first (stable), optional grouping by worktree.
 - Tests: 15 in `src/activity` (feed, options, threads) pass; tsc clean.
+
+## Task U7: complete
+- `activity/ActivityPanel.tsx`: `ActivityView` (pure; xdev-ui Segmented Threads/Feed, SearchInput, EmptyState, ListRow; options menu is the app `ContextMenu` with `checked` items), `ActivityPanel` (state; options kept in localStorage; redraws on session changes and every 30 s).
+- `BellMenu`: optional `onViewActivity` renders a "View activity" button. Shell: third side tab `activity`, `ActivityFeed` created in the shell and `follow(sessions)` in an effect; the bell action opens Activity on Feed via an `ask` prop.
+- i18n `activity.*`, `status.bell.viewActivity`, `agentSessions.tab.activity` in en and vi. CSS tokens only.
+- Deviation: the plan's "no match" and "no threads" states are told apart by `anyThreads` (agent threads that are not idle, before search).
+- Tests: full vitest 238 files / 2180 tests pass; tsc clean.
