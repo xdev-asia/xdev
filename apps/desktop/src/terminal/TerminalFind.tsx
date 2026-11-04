@@ -139,7 +139,8 @@ export function TerminalFind(props: {
       input.current?.select();
       return;
     }
-    const hit = e.altKey ? TOGGLES.find((x) => x.code === e.code) : undefined;
+    // Alt alone: AltGr on Windows arrives as Ctrl+Alt and types a character, not a toggle.
+    const hit = e.altKey && !e.ctrlKey && !e.metaKey ? TOGGLES.find((x) => x.code === e.code) : undefined;
     if (hit) {
       e.preventDefault();
       toggle(hit.option);

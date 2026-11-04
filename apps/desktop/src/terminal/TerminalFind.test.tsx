@@ -139,6 +139,17 @@ it("the toggles have labels and the Alt keys flip them", () => {
   expect(f.by("case").props["aria-pressed"]).toBe(true);
 });
 
+it("AltGr (Ctrl+Alt) and Alt with Meta type a character instead of flipping a toggle", () => {
+  const { search } = fakeSearch();
+  const f = mount(search);
+  const altGr = f.key({ key: "©", code: "KeyC", altKey: true, ctrlKey: true });
+  expect(altGr.preventDefault).not.toHaveBeenCalled();
+  expect(f.by("case").props["aria-pressed"]).toBe(false);
+  const meta = f.key({ key: "r", code: "KeyR", altKey: true, metaKey: true });
+  expect(meta.preventDefault).not.toHaveBeenCalled();
+  expect(f.by("regex").props["aria-pressed"]).toBe(false);
+});
+
 it("Enter finds the next match, Shift+Enter the previous; the buttons do the same", () => {
   const { search } = fakeSearch();
   const f = mount(search);
