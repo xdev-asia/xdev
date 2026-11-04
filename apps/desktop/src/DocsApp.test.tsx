@@ -36,3 +36,17 @@ it("an app request without a task shows Tasks with no focus", async () => {
   expect(view).toBeDefined();
   expect(view?.props.initial).toBeUndefined();
 });
+
+it("the same task asked for twice remounts Tasks on it", async () => {
+  let request: AppRequest = { app: "tasks", task: "t1", seq: 1 };
+  const m = mount(VaultView, () => ({ vault, appRequest: request, onChangeFolder: async () => {} }));
+  await m.settle();
+  await tick();
+  const first = nodes(m.draw()).find((n) => n.type === TasksView);
+  request = { app: "tasks", task: "t1", seq: 2 };
+  m.draw();
+  await m.settle();
+  const second = nodes(m.draw()).find((n) => n.type === TasksView);
+  expect(second?.props.initial).toBe("t1");
+  expect(second?.key).not.toBe(first?.key);
+});

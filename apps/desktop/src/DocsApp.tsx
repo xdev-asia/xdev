@@ -177,7 +177,9 @@ export function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: App
   const kitSeen = useRef(false);
   if (app === "kit") kitSeen.current = true;
   // The task a squad link asked Tasks to show.
-  const [taskFocus, setTaskFocus] = useState<string | null>(null);
+  // `seq` bumps on each focus, so picking the same task again remounts Tasks on it.
+  const [taskFocus, setTaskFocusState] = useState<{ id: string; seq: number } | null>(null);
+  const setTaskFocus = (id: string) => setTaskFocusState((f) => ({ id, seq: (f?.seq ?? 0) + 1 }));
   const [selected, setSelected] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [rejecting, setRejecting] = useState<Change[] | null>(null);
@@ -536,7 +538,7 @@ export function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: App
         )}
       </aside>
       <main className="main">
-        {app === "tasks" && <TasksView key={taskFocus ?? ""} api={api} initial={taskFocus ?? undefined} />}
+        {app === "tasks" && <TasksView key={taskFocus ? `${taskFocus.id}:${taskFocus.seq}` : ""} api={api} initial={taskFocus?.id} />}
         {app === "squads" && (
           <SquadsView
             api={api}

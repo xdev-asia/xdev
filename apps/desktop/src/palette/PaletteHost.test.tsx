@@ -9,7 +9,7 @@ import type { TerminalHandle } from "@/terminal/Terminal";
 import { PaletteHost, type PaletteActions, type PaletteHostProps } from "./PaletteHost";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
-const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
+const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[], deps: [] as (unknown[] | undefined)[] }));
 const store = vi.hoisted(() => ({ view: null as unknown }));
 vi.mock("react", async (original) => {
   const react = await original<typeof import("react")>();
@@ -22,7 +22,8 @@ vi.mock("react", async (original) => {
     ...react,
     useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
     useSyncExternalStore: (_sub: unknown, snapshot: () => unknown) => snapshot(),
-    useEffect: (effect: any) => (hooks.active ? void hooks.effects.push(effect) : void 0),
+    useRef: (initial: unknown) => (hooks.active ? state(() => ({ current: initial }))[0] : react.useRef(initial)),
+    useEffect: (effect: any, deps?: unknown[]) => (hooks.active ? void (hooks.effects.push(effect), hooks.deps.push(deps)) : void 0),
   };
 });
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
@@ -36,7 +37,7 @@ const repos: RepoView[] = [{ id: "x", shortName: "xdev", path: "/r/x", baseRef: 
 const tabOf = (id: string, worktree: string, profileId: string, agent: boolean): Tab => ({ id, worktree, profileId, account: null, permissions: "ask", agent, status: "idle" } as Tab);
 
 beforeEach(() => {
-  hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false;
+  hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.deps = []; hooks.active = false;
   store.view = { defaultAgent: "codex", profiles: [], shells: [{ id: "shell-pwsh", name: "PowerShell" }] };
 });
 
@@ -193,6 +194,26 @@ it("reads the tasks when the palette opens and opens one on pick", async () => {
   expect(h.item("task:t1").title).toBe("Add login");
   h.item("task:t1").run();
   expect(openTask).toHaveBeenCalledWith("t1");
+});
+
+it("a new tasks reader on each render does not read the tasks again", async () => {
+  const h = host({ tasks: async () => [] });
+  h.props.actions.openTask = vi.fn();
+  h.draw();
+  const first = hooks.deps.slice();
+  hooks.deps = [];
+  // The shell passes a fresh arrow on each render.
+  const latest = vi.fn(async () => [taskOf("t2", "Fix bug")]);
+  h.props.tasks = latest;
+  h.draw();
+  expect(hooks.deps.length).toBe(first.length);
+  hooks.deps.forEach((d, i) => expect(d?.every((v, j) => Object.is(v, first[i]?.[j]))).toBe(true));
+  // An opening still reads through the newest reader.
+  hooks.effects = [];
+  h.draw();
+  hooks.effects.forEach((e) => e());
+  await settle();
+  expect(latest).toHaveBeenCalledTimes(1);
 });
 
 it("a rejected tasks() still renders the other items", async () => {

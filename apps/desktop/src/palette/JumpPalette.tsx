@@ -129,6 +129,9 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
     }
   }
 
+  // A press on a chip or the menu leaves the focus in the search box, so typing and keys still work.
+  const keepFocus = (e: { preventDefault(): void }) => e.preventDefault();
+
   function toggleMenu() {
     setMenu(menu ? null : { at: Math.max(0, menuEntries.indexOf(scope)) });
   }
@@ -138,6 +141,12 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (menu && ["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(e.key)) {
       onMenuKey(e, menu.at);
+      return;
+    }
+    // While the menu is open, Tab and the digit shortcuts would act on rows behind it: they close it instead.
+    if (menu && (e.key === "Tab" || /^[1-9]$/.test(e.key))) {
+      e.preventDefault();
+      setMenu(null);
       return;
     }
     // The search shortcut must not run behind the open palette.
@@ -196,6 +205,11 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
       className="palette"
       aria-labelledby="palette-title"
       onKeyDown={onKeyDown}
+      onMouseDown={(e) => {
+        // A press outside the menu and its button closes the menu.
+        const target = e.target as Element | null;
+        if (menu && !target?.closest?.(".pal-scope-menu, .pal-filter-btn")) setMenu(null);
+      }}
       onCancel={(e) => {
         // Escape: close through state, so `open` stays the single source of truth. An open menu takes it first.
         e.preventDefault();
@@ -231,6 +245,7 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
             aria-expanded={menu !== null}
             data-active={scope !== null}
             tabIndex={-1}
+            onMouseDown={keepFocus}
             onClick={toggleMenu}
           >
             <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -247,6 +262,7 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
                 aria-checked={path === scope}
                 className="pal-scope-item"
                 data-selected={i === menu.at}
+                onMouseDown={keepFocus}
                 onClick={() => pickScope(path)}
               >
                 {path === null ? t("palette.scope.all") : scopes[i - 1].name}
@@ -258,7 +274,7 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
       <div className="pal-filters">
         <div className="pal-kinds" role="tablist">
           {FILTERS.map((f) => (
-            <button key={f} type="button" role="tab" aria-selected={f === filter} className="pal-chip" data-active={f === filter} tabIndex={-1} onClick={() => pickFilter(f)}>
+            <button key={f} type="button" role="tab" aria-selected={f === filter} className="pal-chip" data-active={f === filter} tabIndex={-1} onMouseDown={keepFocus} onClick={() => pickFilter(f)}>
               {t(`palette.filter.${f}`)}
             </button>
           ))}
@@ -266,7 +282,7 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
         {scopeName !== null && (
           <span className="pal-chip pal-scope-chip" data-active="true">
             {scopeName}
-            <button type="button" className="pal-scope-clear" aria-label={t("palette.scope.clear")} title={t("palette.scope.clear")} tabIndex={-1} onClick={() => pickScope(null)}>
+            <button type="button" className="pal-scope-clear" aria-label={t("palette.scope.clear")} title={t("palette.scope.clear")} tabIndex={-1} onMouseDown={keepFocus} onClick={() => pickScope(null)}>
               ×
             </button>
           </span>

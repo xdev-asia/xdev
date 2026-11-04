@@ -47,45 +47,64 @@ export class NavHistory {
     return this.find(1, alive) !== -1;
   }
 
-  subscribe(listener: () => void): () => void {
+  /** Bound, so it can be handed to useSyncExternalStore as is. */
+  readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
     };
-  }
+  };
 
   /** Bumps on every change, for useSyncExternalStore. */
-  version(): number {
-    return this.ver;
-  }
+  readonly version = (): number => this.ver;
 
+  /** The next entry that way whose worktree is alive and is not the current one. */
   private find(dir: 1 | -1, alive: (worktree: string) => boolean): number {
+    const here = this.entries[this.index]?.worktree;
     for (let i = this.index + dir; i >= 0 && i < this.entries.length; i += dir) {
-      if (alive(this.entries[i].worktree)) return i;
+      const wt = this.entries[i].worktree;
+      if (wt !== here && alive(wt)) return i;
     }
     return -1;
   }
 
+  /**
+   * Drops dead entries and merges the runs of one worktree that the drop leaves side by side
+   * (A, dead B, A becomes one A). A run keeps `keep` when it holds it, else its newest entry.
+   */
+  private settle(kept: NavEntry[], keep: NavEntry): void {
+    const merged: NavEntry[] = [];
+    for (const e of kept) {
+      const last = merged[merged.length - 1];
+      if (last && last.worktree === e.worktree) {
+        if (last !== keep) merged[merged.length - 1] = e;
+      } else {
+        merged.push(e);
+      }
+    }
+    this.entries = merged;
+    this.index = merged.indexOf(keep);
+    this.bump();
+  }
+
   private step(dir: 1 | -1, alive: (worktree: string) => boolean): NavEntry | null {
     const to = this.find(dir, alive);
+    const cur = this.entries[this.index];
     if (to === -1) {
       // Nothing alive that way: the dead entries there go anyway.
-      const cur = this.entries[this.index];
       const kept = this.entries.filter((e, i) => (dir === -1 ? i >= this.index : i <= this.index) || alive(e.worktree));
       if (kept.length === this.entries.length) return null;
-      this.entries = kept;
-      this.index = kept.indexOf(cur);
-      this.bump();
+      this.settle(kept, cur);
       return null;
     }
-    // Entries passed on the way are dead: drop them and keep the index on the same entry.
+    // Entries passed on the way are dead (or the current worktree again): drop the dead ones.
     const lo = Math.min(this.index, to);
     const hi = Math.max(this.index, to);
-    const kept = this.entries.filter((e, i) => i <= lo || i >= hi || alive(e.worktree));
     const target = this.entries[to];
-    this.entries = kept;
-    this.index = kept.indexOf(target);
-    this.bump();
+    this.settle(
+      this.entries.filter((e, i) => i <= lo || i >= hi || alive(e.worktree)),
+      target,
+    );
     return target;
   }
 

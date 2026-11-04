@@ -281,6 +281,45 @@ it("Tab still cycles five chips", () => {
   expect(active[0].props.children).toBe(en("palette.filter.all"));
 });
 
+it("the chips, the Filter button, the menu and × keep the focus in the search box", () => {
+  const p = setup({ items: scoped, scopes });
+  const press = (n: Node) => {
+    const e = { preventDefault: vi.fn() };
+    n.props.onMouseDown(e);
+    expect(e.preventDefault).toHaveBeenCalled();
+  };
+  nodes(p.draw()).filter((n) => n.props.role === "tab").forEach(press);
+  press(filterBtn(p));
+  filterBtn(p).props.onClick();
+  menuItems(p).forEach(press);
+  menuItems(p)[1].props.onClick();
+  press(find(p, (n) => n.props.className === "pal-scope-clear"));
+});
+
+it("a press outside the menu closes it; a press inside does not", () => {
+  const p = setup({ items: scoped, scopes });
+  const at = (inside: boolean) => ({ target: { closest: () => (inside ? {} : null) } });
+  filterBtn(p).props.onClick();
+  p.draw().props.onMouseDown(at(true));
+  expect(nodes(p.draw()).some((n) => n.props.role === "menu")).toBe(true);
+  p.draw().props.onMouseDown(at(false));
+  expect(nodes(p.draw()).some((n) => n.props.role === "menu")).toBe(false);
+});
+
+it("Tab and digits close the open menu without acting on the rows", () => {
+  const p = setup({ items: scoped, scopes });
+  run.mockClear();
+  filterBtn(p).props.onClick();
+  p.key({ key: "Tab" });
+  expect(nodes(p.draw()).some((n) => n.props.role === "menu")).toBe(false);
+  const active = nodes(p.draw()).filter((n) => n.props.role === "tab" && n.props["aria-selected"]);
+  expect(active[0].props.children).toBe(en("palette.filter.all"));
+  filterBtn(p).props.onClick();
+  p.key({ key: "1" });
+  expect(run).not.toHaveBeenCalled();
+  expect(nodes(p.draw()).some((n) => n.props.role === "menu")).toBe(false);
+});
+
 it("reopening resets the scope", () => {
   const p = setup({ items: scoped, scopes });
   filterBtn(p).props.onClick();
