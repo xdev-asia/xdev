@@ -9,7 +9,7 @@ function wt(name: string, extra: Partial<WorktreeView> = {}): WorktreeView {
   return { path: `/wt/${name}`, name, branch: name, head: null, start: null, primary: false, pinned: false, detached: false, ...NO_DETAILS, ...extra };
 }
 function repo(id: string, worktrees: WorktreeView[]): RepoView {
-  return { id, shortName: id, path: `/code/${id}`, baseRef: "main", worktreeRoot: "/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", missing: false, worktrees, found: [] };
+  return { id, shortName: id, path: `/code/${id}`, baseRef: "main", worktreeRoot: "/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", color: null, icon: null, ghAccount: null, localIssueCommand: "", missing: false, worktrees, found: [] };
 }
 const entries = (r: RepoView): WtEntry[] => r.worktrees.map((w) => ({ path: w.path, wt: w, repo: r }));
 const asRepo = (r: RepoView): SidebarItem => ({ kind: "repo", repo: r, kept: [] });

@@ -7,14 +7,14 @@ use std::thread;
 use std::time::Duration;
 
 use serde::{Deserialize, Deserializer, Serialize};
-use xdev_git::{BaseRefresh, GitError, Repo, WorktreeEntry};
+use xdev_git::{BaseRefresh, GhAccount, GitError, Repo, WorktreeEntry};
 
 use crate::hooks;
 use crate::kept::{KeptBranch, KeptReason, keep};
 use crate::registry::normalize;
 use crate::staging;
 use crate::{
-    Linked, MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, WorkItem, WorkStatus,
+    Linked, MadeBy, Registry, RepoEntry, RepoIcon, ScriptSource, SetupPolicy, WorkItem, WorkStatus,
     WorkspaceError, WorktreeMeta, link_shared, names, repo_id, unlink_shared,
 };
 
@@ -34,6 +34,11 @@ pub struct RepoView {
     /// This machine's scripts; the shared ones come from `repo_hooks`.
     pub local_setup: String,
     pub local_archive: String,
+    pub color: Option<String>,
+    pub icon: Option<RepoIcon>,
+    pub gh_account: Option<GhAccount>,
+    /// This machine's issue prompt template; the shared one comes from `repo_hooks`.
+    pub local_issue_command: String,
     /// The folder is gone or no longer a repo; the entry stays so a
     /// reconnected drive finds it again.
     pub missing: bool,
@@ -174,15 +179,33 @@ pub fn add_repo(reg: &mut Registry, dir: &Path, now_ms: i64) -> Result<RepoView,
 }
 
 /// Edits to a repo's settings; a `None` field is left as it is.
-#[derive(Debug, Default, Clone)]
+/// An outer `None` (an absent key) leaves `color`, `icon` and `gh_account`
+/// as they are; `Some(None)` (`null`) clears them.
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RepoPatch {
+    #[serde(default)]
     pub short_name: Option<String>,
+    #[serde(default)]
     pub base_ref: Option<String>,
+    #[serde(default)]
     pub worktree_root: Option<PathBuf>,
+    #[serde(default)]
     pub setup_policy: Option<SetupPolicy>,
+    #[serde(default)]
     pub script_source: Option<ScriptSource>,
+    #[serde(default)]
     pub local_setup: Option<String>,
+    #[serde(default)]
     pub local_archive: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    pub color: Option<Option<String>>,
+    #[serde(default, deserialize_with = "present")]
+    pub icon: Option<Option<RepoIcon>>,
+    #[serde(default, deserialize_with = "present")]
+    pub gh_account: Option<Option<GhAccount>>,
+    #[serde(default)]
+    pub local_issue_command: Option<String>,
 }
 
 /// 1 to 40 characters: `[a-z0-9]` first, then `[a-z0-9._-]`. No `:` or `/`,
@@ -316,6 +339,10 @@ fn missing_view(entry: &RepoEntry) -> RepoView {
         script_source: entry.script_source,
         local_setup: entry.local_setup.clone(),
         local_archive: entry.local_archive.clone(),
+        color: entry.color.clone(),
+        icon: entry.icon.clone(),
+        gh_account: entry.gh_account.clone(),
+        local_issue_command: entry.local_issue_command.clone(),
         missing: true,
         worktrees: Vec::new(),
         found: Vec::new(),
