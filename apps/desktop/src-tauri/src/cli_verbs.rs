@@ -815,6 +815,56 @@ pub fn worktree_create(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<
     }))
 }
 
+/// The worktree a worker goes to, and whether the pick made it. `current`
+/// is the caller's; a selector is looked up; `new_child` is made under the
+/// caller's worktree and `new_top_level` under the repo's primary one.
+pub(crate) fn pick_worktree(
+    ctx: &Ctx<'_>,
+    caller: &Caller,
+    pick: &xdev_orch::WorktreePick,
+    name: Option<&str>,
+) -> Result<(String, bool), AppError> {
+    use xdev_orch::WorktreePick;
+    let all = ctx.listed()?;
+    let me = ctx.caller_worktree(caller)?;
+    let make = |parent: &Path| {
+        let req = Request {
+            id: 0,
+            method: "worktree.create".to_owned(),
+            params: json!({
+                "name": name,
+                "parent": parent.to_string_lossy(),
+            }),
+            caller: None,
+        };
+        worktree_create(ctx, &req, caller)
+    };
+    match pick {
+        WorktreePick::Current => {
+            let l = target(&all, None, me.as_deref())?;
+            Ok((l.view.path.clone(), false))
+        }
+        WorktreePick::Selector(x) => {
+            let l = target(&all, Some(x), me.as_deref())?;
+            Ok((l.view.path.clone(), false))
+        }
+        WorktreePick::NewChild => {
+            let held = target(&all, None, me.as_deref())?;
+            let made = make(Path::new(&held.view.path))?;
+            Ok((made["path"].as_str().unwrap_or_default().to_owned(), true))
+        }
+        WorktreePick::NewTopLevel => {
+            let held = target(&all, None, me.as_deref())?;
+            let primary = all
+                .iter()
+                .find(|l| l.repo_id == held.repo_id && l.view.primary)
+                .ok_or_else(no_worktree)?;
+            let made = make(Path::new(&primary.view.path))?;
+            Ok((made["path"].as_str().unwrap_or_default().to_owned(), true))
+        }
+    }
+}
+
 fn default_timeout() -> u64 {
     600
 }
@@ -947,6 +997,13 @@ pub(crate) mod tests {
         pub orch: OrchHub,
         /// The fake person: answers every ask with this, or never.
         pub answer: Option<bool>,
+        /// The fake UI: answers every `open-worker` with this, or never.
+        pub open_answer: Option<orchestration::WorkerOpenOutcome>,
+        /// `nested_worker_max_depth` the calls run under.
+        pub max_depth: u32,
+        /// Whether a write to a PTY lands; what was written.
+        pub pty_alive: bool,
+        pub pty_writes: Mutex<Vec<(String, Vec<u8>)>>,
     }
 
     pub(crate) fn fixture() -> Fixture {
@@ -1002,6 +1059,10 @@ pub(crate) mod tests {
             approvals: Approvals::default(),
             orch: OrchHub::default(),
             answer: None,
+            open_answer: None,
+            max_depth: 1,
+            pty_alive: true,
+            pty_writes: Mutex::default(),
         }
     }
 
@@ -1030,6 +1091,12 @@ pub(crate) mod tests {
                     self.approvals
                         .answer(payload["request"].as_u64().unwrap(), allow);
                 }
+                if event == "orchestration://open-worker"
+                    && let Some(outcome) = &self.open_answer
+                {
+                    let id = payload["dispatch"].as_str().unwrap().to_owned();
+                    self.orch.opens.answer(&id, outcome.clone());
+                }
                 self.events
                     .lock()
                     .unwrap()
@@ -1048,8 +1115,17 @@ pub(crate) mod tests {
                 seed: 9,
                 ask_wait: Duration::from_millis(50),
                 orch: &self.orch,
-                orch_settings: OrchestrationSettings::default(),
-                write_pty: &|_: &str, _: &[u8]| false,
+                orch_settings: OrchestrationSettings {
+                    nested_worker_max_depth: self.max_depth,
+                    ..OrchestrationSettings::default()
+                },
+                write_pty: &|id: &str, bytes: &[u8]| {
+                    self.pty_writes
+                        .lock()
+                        .unwrap()
+                        .push((id.to_owned(), bytes.to_vec()));
+                    self.pty_alive
+                },
             };
             let req = Request {
                 id: 1,
