@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 pub use clone::{CloneEvent, check_clone_url, clone_name, clone_repo, parse_progress};
 pub use gh::{
     Check, CheckBucket, GhExec, GhOutput, PrDraft, PrState, PrView, SystemGh, pr_checks, pr_create,
-    pr_open_web, pr_view,
+    pr_open_web, pr_view, run_failed_log,
 };
 pub use history::Commit;
 pub use remote::{BaseRange, BaseRefresh, Upstream};

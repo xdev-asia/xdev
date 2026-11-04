@@ -15,6 +15,8 @@ use crate::GitError;
 /// A login prompt or a slow network must not hang the UI.
 const TIMEOUT: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(20);
+/// What `run_failed_log` keeps of a log: the end, where a failure shows.
+const LOG_CAP: usize = 64 * 1024;
 const PR_FIELDS: &str = "number,url,state,isDraft,title,baseRefName,headRefName";
 
 pub struct GhOutput {
@@ -230,6 +232,41 @@ pub fn pr_checks(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<Vec<Check>,
         return Ok(Vec::new());
     }
     Err(classify(&out))
+}
+
+/// The run id in a check's link (`.../actions/runs/<id>/job/<job>`).
+fn run_id(link: &str) -> Option<&str> {
+    let (_, rest) = link.split_once("/actions/runs/")?;
+    let id = rest.split(['/', '?', '#']).next()?;
+    (!id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())).then_some(id)
+}
+
+/// The log of the failed jobs of the run behind a check's `link`, cut to its
+/// last 64 KiB. `None` when the link names no run or `gh` has no log for it
+/// (the run is still going, or its logs expired).
+pub fn run_failed_log(gh: &dyn GhExec, cwd: &Path, link: &str) -> Result<Option<String>, GitError> {
+    let Some(id) = run_id(link) else {
+        return Ok(None);
+    };
+    let out = gh.run(cwd, &["run", "view", id, "--log-failed"], None)?;
+    if out.status != Some(0) {
+        if out.stderr.contains("gh auth login") || out.stderr.contains("none of the git remotes") {
+            return Err(classify(&out));
+        }
+        return Ok(None);
+    }
+    let log = out.stdout.trim_end();
+    if log.is_empty() {
+        return Ok(None);
+    }
+    if log.len() <= LOG_CAP {
+        return Ok(Some(log.to_owned()));
+    }
+    let mut start = log.len() - LOG_CAP;
+    while !log.is_char_boundary(start) {
+        start += 1;
+    }
+    Ok(Some(format!("[cut]\n{}", &log[start..])))
 }
 
 pub fn pr_open_web(gh: &dyn GhExec, cwd: &Path, checks: bool) -> Result<(), GitError> {
@@ -506,5 +543,67 @@ mod tests {
         let err = pr_view(&fake, cwd()).unwrap_err();
         assert_eq!(err.code(), "gh_failed");
         assert!(matches!(err, GitError::Gh(ref s) if s == "boom"));
+    }
+
+    #[test]
+    fn run_failed_log_asks_for_the_run_of_the_link() {
+        let fake = Fake::new(vec![out(0, "build\tstep\terror: boom\n", "")]);
+        let link = "https://github.com/o/r/actions/runs/12345/job/678";
+        let log = run_failed_log(&fake, cwd(), link).unwrap();
+        assert_eq!(log.as_deref(), Some("build\tstep\terror: boom"));
+        assert_eq!(
+            fake.calls.borrow()[0].0,
+            ["run", "view", "12345", "--log-failed"]
+        );
+    }
+
+    #[test]
+    fn run_failed_log_keeps_the_end_of_a_long_log() {
+        let long = format!("{}END\n", "é".repeat(LOG_CAP));
+        let fake = Fake::new(vec![out(0, &long, "")]);
+        let link = "https://github.com/o/r/actions/runs/1";
+        let log = run_failed_log(&fake, cwd(), link).unwrap().unwrap();
+        assert!(log.starts_with("[cut]\n") && log.ends_with("END"));
+        assert!(log.len() <= LOG_CAP + 8, "{}", log.len());
+    }
+
+    #[test]
+    fn run_failed_log_is_none_without_a_run_or_a_log() {
+        // No call is made for a link that names no run.
+        let fake = Fake::new(vec![]);
+        for link in [
+            "",
+            "https://example.com/x",
+            "https://github.com/o/r/actions/runs/x",
+        ] {
+            assert_eq!(run_failed_log(&fake, cwd(), link).unwrap(), None, "{link}");
+        }
+        assert!(fake.calls.borrow().is_empty());
+        // A run still going, or with expired logs.
+        let fake = Fake::new(vec![
+            out(
+                1,
+                "",
+                "run 9 is still in progress; logs will be available when it is complete",
+            ),
+            out(0, "  \n", ""),
+        ]);
+        let link = "https://github.com/o/r/actions/runs/9";
+        assert_eq!(run_failed_log(&fake, cwd(), link).unwrap(), None);
+        assert_eq!(run_failed_log(&fake, cwd(), link).unwrap(), None);
+    }
+
+    #[test]
+    fn run_failed_log_reports_a_login_problem() {
+        let fake = Fake::new(vec![out(
+            4,
+            "",
+            "To get started with GitHub CLI, please run:  gh auth login",
+        )]);
+        let link = "https://github.com/o/r/actions/runs/9";
+        assert!(matches!(
+            run_failed_log(&fake, cwd(), link),
+            Err(GitError::GhAuth)
+        ));
     }
 }
