@@ -1621,5 +1621,22 @@
   "usage.popover.reset.now": "Đang đặt lại",
   "usage.popover.reset.minutes": "Đặt lại sau {minutes} phút",
   "usage.popover.reset.hours": "Đặt lại sau {hours} giờ {minutes} phút",
-  "usage.popover.reset.at": "Đặt lại lúc {when}"
+  "usage.popover.reset.at": "Đặt lại lúc {when}",
+  "usage.popover.title": "Mức dùng",
+  "usage.popover.asOf": "đọc lúc {time}",
+  "usage.popover.refresh": "Làm mới",
+  "usage.popover.loading": "Đang đọc mức dùng…",
+  "usage.popover.unreadable": "Không đọc được mức dùng.",
+  "usage.popover.empty": "Chưa có tài khoản nào.",
+  "usage.popover.mode": "Kiểu hiển thị",
+  "usage.popover.mode.detailed": "Chi tiết",
+  "usage.popover.mode.compact": "Gọn",
+  "usage.popover.state.ok": "Ổn",
+  "usage.popover.state.reserve": "Gần hết hạn mức",
+  "usage.popover.state.full": "Đã đầy",
+  "usage.popover.state.unknown": "Chưa rõ",
+  "usage.popover.signIn": "Đăng nhập lại tài khoản {name}",
+  "usage.popover.details": "Chi tiết & lịch sử mức dùng",
+  "usage.popover.manage": "Quản lý tài khoản…",
+  "usage.popover.open": "Xem mức dùng từng tài khoản"
 }
