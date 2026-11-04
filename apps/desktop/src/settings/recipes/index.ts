@@ -27,15 +27,37 @@ export const RECIPE_VARS: Record<RecipeId, readonly string[]> = {
 
 // The first lines of each fix action's built-in prompt; what the action found follows them.
 export const FIX_BASE_PROMPTS: Record<FixRecipeId, string> = {
-  fixCommitFailure: "",
-  fixPushFailure: "",
-  fixChecks: "",
+  fixCommitFailure: "The git commit hook failed. Fix the problem it reports, then stop; do not commit.",
+  fixPushFailure: "The git push failed. Fix the problem it reports, then stop; do not push.",
+  fixChecks:
+    "A check failed on this branch's pull request. Find the cause in its log, fix it here, then stop; do not commit or push.",
 };
 
-/** The prompt a fix action sends: its recipe's template over the built-in prompt and `vars`. */
+function basePrompt(id: RecipeId, vars: Record<string, string>): string {
+  if (id === "fixCommitFailure" || id === "fixPushFailure") {
+    return `${FIX_BASE_PROMPTS[id]}\n\n${vars.output ?? ""}`;
+  }
+  if (id === "fixChecks") {
+    const found = [
+      `Check: ${vars.checkName ?? ""}`,
+      vars.workflow ? `Workflow: ${vars.workflow}` : "",
+      vars.link ? `Link: ${vars.link}` : "",
+    ].filter(Boolean);
+    // Without a log (R5) the link is what the agent has to go on.
+    const log = vars.log ? `\n\nLog:\n${vars.log}` : "";
+    return `${FIX_BASE_PROMPTS[id]}\n\n${found.join("\n")}${log}`;
+  }
+  return vars.basePrompt ?? "";
+}
+
+/**
+ * The prompt a recipe sends: its template over the built-in prompt and `vars`. `{basePrompt}` is
+ * the action's own prompt with what it found, so the default template sends what xDev always did.
+ * A variable `vars` lacks is empty.
+ */
 export function fixPrompt(id: RecipeId, recipe: Recipe, vars: Record<string, string>): string {
-  // The prompts arrive with the tests of U1.
-  void id;
-  void vars;
-  return recipe.template;
+  const all: Record<string, string> = Object.fromEntries(RECIPE_VARS[id].map((name) => [name, ""]));
+  Object.assign(all, vars);
+  all.basePrompt = basePrompt(id, vars);
+  return render(recipe.template, all);
 }
