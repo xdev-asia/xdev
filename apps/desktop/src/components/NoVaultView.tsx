@@ -81,7 +81,7 @@ export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; kit?
   const { t } = useI18n();
   const [app, setApp] = useState<AppId>("docs");
   const [taskFocus, setTaskFocus] = useState<string | null>(null);
-  const quota = useQuota(api, app === "accounts");
+  const { quota } = useQuota(api, app === "accounts");
   const kitRequest = props.kit?.open ?? null;
   useEffect(() => {
     if (kitRequest) setApp("kit");
