@@ -200,6 +200,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       if (!list.some((r) => r.missing)) {
         const kept = new Set(list.flatMap((r) => r.worktrees.map((w) => w.path)));
         for (const path of sessions?.worktrees() ?? []) if (!kept.has(path)) void sessions?.closeWorktree(path);
+        // The registry is complete here, so a saved layout of a worktree it does not list is gone for good.
+        for (const path of sessions?.carriedWorktrees() ?? []) if (!kept.has(path)) sessions?.dropCarried(path);
       }
     } catch (e) {
       setNotice(toApiError(e).code);
@@ -222,7 +224,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (!sessions || !repos || repos.length === 0 || restoreStarted.current) return;
     restoreStarted.current = true;
     const known = new Set(repos.flatMap((r) => r.worktrees.map((w) => w.path)));
-    void restoreLayout(api, sessions, (w) => known.has(w), openRestoredFile(api, fileTabs)).then((got) => {
+    // A missing repo lists no worktrees though they may still exist: then the unknown ones stay saved.
+    const incomplete = repos.some((r) => r.missing);
+    void restoreLayout(api, sessions, (w) => known.has(w), openRestoredFile(api, fileTabs), () => incomplete).then((got) => {
       // The store was replaced (dev double mount) while the restore ran: this run is over.
       if (!restoreStarted.current) return;
       saver.current = startLayoutSave(api, sessions);
@@ -770,6 +774,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       }
       setRemoving({ worktree, dirty, busy: true });
       await sessions?.closeWorktree(worktree.path);
+      sessions?.dropCarried(worktree.path);
       await api.worktreeRemove(worktree.path, dirty, true);
       setRemoving(null);
       await load();

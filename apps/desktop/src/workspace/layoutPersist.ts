@@ -109,11 +109,12 @@ export async function restoreLayout(
   sessions: Sessions,
   known: (worktree: string) => boolean,
   openFile: (worktree: string, rel: string) => Promise<boolean>,
+  carry?: (worktree: string) => boolean,
 ): Promise<LayoutRestore | null> {
   try {
     const [snapshot, ui] = await Promise.all([api.layoutLoad(), api.uiSettingsGet()]);
     if (!snapshot || snapshot.version !== LAYOUT_VERSION || ui.restore === "none") return null;
-    const report = await sessions.restore(snapshot, ui.restore, sessionFallback(api), { known, openFile });
+    const report = await sessions.restore(snapshot, ui.restore, sessionFallback(api), { known, openFile, carry });
     return { mode: ui.restore, report };
   } catch {
     return null;
