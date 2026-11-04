@@ -26,16 +26,18 @@ it("reports only when 'an agent is working' changes", () => {
   const s = source();
   const report = vi.fn();
   startAgentsReport(s.src, report);
-  expect(report).not.toHaveBeenCalled();
+  expect(report.mock.calls).toEqual([[false]]);
+  s.set(0);
+  expect(report.mock.calls).toEqual([[false]]);
   s.set(1);
   s.set(2);
   s.set(1);
-  expect(report.mock.calls).toEqual([[true]]);
+  expect(report.mock.calls).toEqual([[false], [true]]);
   s.set(0);
   s.set(0);
-  expect(report.mock.calls).toEqual([[true], [false]]);
+  expect(report.mock.calls).toEqual([[false], [true], [false]]);
   s.set(3);
-  expect(report.mock.calls).toEqual([[true], [false], [true]]);
+  expect(report.mock.calls).toEqual([[false], [true], [false], [true]]);
 });
 
 it("reports true at once when an agent already works at start", () => {
@@ -53,10 +55,10 @@ it("dispose stops the reports and says nothing is working", () => {
   s.set(1);
   stop();
   expect(s.listeners.size).toBe(0);
-  expect(report.mock.calls).toEqual([[true], [false]]);
+  expect(report.mock.calls).toEqual([[false], [true], [false]]);
   s.set(0);
   s.set(1);
-  expect(report).toHaveBeenCalledTimes(2);
+  expect(report).toHaveBeenCalledTimes(3);
 });
 
 it("a failing report does not break the loop", () => {

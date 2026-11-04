@@ -20,7 +20,7 @@ export function sessionsSource(sessions: Sessions): ReportSource {
  * Stopping says `false`, so a closed window does not keep the computer awake.
  */
 export function startAgentsReport(source: ReportSource, report: (working: boolean) => void | Promise<unknown>): () => void {
-  let last = false;
+  let last: boolean | null = null;
   const send = (working: boolean) => {
     try {
       void Promise.resolve(report(working)).catch(() => {});
@@ -38,7 +38,7 @@ export function startAgentsReport(source: ReportSource, report: (working: boolea
   check();
   return () => {
     off();
-    if (last) {
+    if (last === true) {
       last = false;
       send(false);
     }
