@@ -585,6 +585,7 @@
   "error.account_code": "The sign-in link has expired or was already used. Start again.",
   "error.account_expired": "Your session ended. Sign in again.",
   "error.account_timeout": "Sign-in took too long. Start again.",
+  "error.account_server": "That is not a valid server address. Use an https address with no path, or http to this computer.",
   "apps.terminal": "Terminal",
   "terminal.folder": "Folder",
   "terminal.pickFolder": "Choose folder…",
@@ -2187,5 +2188,19 @@
   "account.paste.hint": "Paste the link that starts with xdev://auth/callback.",
   "account.paste.submit": "Continue",
   "account.manage": "Manage account",
-  "account.signOut": "Sign out"
+  "account.signOut": "Sign out",
+  "account.server.title": "Server",
+  "account.server.label": "Server address",
+  "account.server.hint": "Leave empty to use the default service. Use https, or http for a server on this computer.",
+  "account.server.save": "Save",
+  "account.server.useDefault": "Use default",
+  "account.server.current": "In use: {origin}",
+  "account.server.source.env": "Set by the XDEV_ID_URL variable, which wins over this setting.",
+  "account.server.source.setting": "From this setting.",
+  "account.server.source.default": "The default service.",
+  "account.server.invalid": "The saved server address is not valid, so the default service is used.",
+  "account.server.confirm.title": "Switch server?",
+  "account.server.confirm.body": "You will be signed out of {origin} first.",
+  "account.server.confirm.yes": "Sign out and switch",
+  "account.server.confirm.no": "Keep current server"
 }

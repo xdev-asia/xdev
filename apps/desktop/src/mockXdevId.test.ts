@@ -81,4 +81,22 @@ describe("mock xDev ID", () => {
       expect(toApiError({ code })).toEqual({ code });
     }
   });
+  it("mock_xdev_id_server_validates_saves_and_signs_out_on_a_change", async () => {
+    const api = createMockApi({}, { xdevId: "signedIn" });
+    expect(await api.xdevIdServer()).toEqual({ origin: "https://id.xdev.asia", source: "default", setting: "", invalid: false });
+    for (const bad of ["http://id.corp.test", "https://id.corp.test/p", "https://u@id.corp.test", "https://id.corp.test?x=1", "nope"]) {
+      await expect(api.xdevIdServerSet(bad)).rejects.toMatchObject({ code: "account_server" });
+    }
+    expect(await api.xdevIdState()).toMatchObject({ state: "signedIn" });
+    // The same server keeps the session.
+    await api.xdevIdServerSet("https://id.xdev.asia/");
+    expect(await api.xdevIdState()).toMatchObject({ state: "signedIn" });
+    const heard: XdevIdState[] = [];
+    await api.onXdevIdChanged((s) => heard.push(s));
+    expect(await api.xdevIdServerSet(" https://id.corp.test/ ")).toEqual({ origin: "https://id.corp.test", source: "setting", setting: "https://id.corp.test", invalid: false });
+    expect(heard).toEqual([{ state: "signedOut", notice: null }]);
+    await api.xdevIdServerSet("http://localhost:8080");
+    expect((await api.xdevIdServer()).origin).toBe("http://localhost:8080");
+    expect(await api.xdevIdServerSet("")).toMatchObject({ origin: "https://id.xdev.asia", source: "default", setting: "" });
+  });
 });

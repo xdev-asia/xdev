@@ -6,6 +6,7 @@ import { toApiError, type ApiError } from "@/api";
 import { useI18n } from "@/i18n";
 import { SettingRow } from "../SettingRow";
 import type { SettingsSectionProps } from "../sections";
+import { ServerRow } from "./ServerRow";
 
 /**
  * Settings → Account: the person's xDev ID. Display only: every local feature works signed out.
@@ -171,6 +172,7 @@ export function AccountPage(props: SettingsSectionProps): JSX.Element {
           )}
         </div>
       </SettingRow>
+      <ServerRow api={api} filter={filter} signedIn={state.state === "signedIn"} />
     </div>
   );
 }
