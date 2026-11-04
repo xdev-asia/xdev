@@ -118,7 +118,10 @@ impl Repo {
 
     /// `(remote, branch on the remote, local branch)` behind a base, or
     /// `None` when it names no remote branch.
-    fn base_source(&self, base: &str) -> Result<Option<(String, String, String)>, GitError> {
+    pub(crate) fn base_source(
+        &self,
+        base: &str,
+    ) -> Result<Option<(String, String, String)>, GitError> {
         if !self.valid_branch_name(base)? {
             return Ok(None);
         }
