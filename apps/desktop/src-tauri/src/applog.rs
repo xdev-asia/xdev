@@ -107,12 +107,21 @@ impl Rotating {
         }
         let size = fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0);
         if size > 0 && size + line.len() as u64 > self.max_bytes {
-            self.rotate()?;
+            // A rename that stays blocked must not stop logging for the rest
+            // of the session: empty the live file instead, or append anyway.
+            if self.rotate().is_err() {
+                let _ = fs::write(&self.path, b"");
+            }
         }
-        let mut f = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.path)?;
+        let mut options = OpenOptions::new();
+        options.create(true).append(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            // The log can hold paths and messages: owner only.
+            options.mode(0o600);
+        }
+        let mut f = options.open(&self.path)?;
         f.write_all(line.as_bytes())
     }
 }
@@ -210,6 +219,37 @@ mod tests {
         for file in [&path, &rotated(&path, 1), &rotated(&path, 2)] {
             assert!(fs::metadata(file).unwrap().len() <= 120);
         }
+    }
+
+    #[test]
+    fn a_blocked_rotation_does_not_stop_logging() {
+        let dir = long_temp_dir("applog");
+        let path = dir.path().join("x.log");
+        // A folder where the first rotation goes: the rename fails.
+        fs::create_dir(rotated(&path, 1)).unwrap();
+        let log = Rotating::new(path.clone(), 100, 2, None);
+        for i in 0..6 {
+            log.write("info", "t", &format!("message number {i} with padding"))
+                .unwrap();
+        }
+        let got = lines(&path);
+        assert!(!got.is_empty());
+        assert_eq!(got.last().unwrap()["msg"], "message number 5 with padding");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_log_is_owner_only_on_unix() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = long_temp_dir("applog");
+        let path = dir.path().join("x.log");
+        Rotating::new(path.clone(), 1000, 2, None)
+            .write("info", "t", "m")
+            .unwrap();
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 
     #[test]
