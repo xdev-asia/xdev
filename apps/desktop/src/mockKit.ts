@@ -307,7 +307,7 @@ export function createMockKit(scan: () => Promise<ProviderSwitches> = async () =
       const off = await scan();
       const agents: Agent[] = (args.agent === null ? (["claude", "codex"] as Agent[]) : [args.agent]).filter((a) => off[a]);
       const empty = { days: [], by_home: [], by_folder: [], by_model: [], top_sessions: [] } satisfies UsageSummary;
-      if (agents.length === 0) return { summary: empty, by_agent: [], sessions: 0, tracking_since: null, cost: NO_COST, cost_by_agent: [], recent_sessions: [] };
+      if (agents.length === 0) return { summary: empty, by_agent: [], sessions: 0, tracking_since: null, cost: NO_COST, cost_by_agent: [], recent_sessions: [], prices_as_of: "2026-11-04" };
       // All time reaches back a year in the demo; the first session is the same whatever the range.
       const since = args.sinceDay ?? addDay(args.untilDay, -365);
       const full = await api.kitUsage(since, args.untilDay, false);
@@ -333,7 +333,7 @@ export function createMockKit(scan: () => Promise<ProviderSwitches> = async () =
       const cost = price(sum(by_agent.map(([, t]) => t)));
       return {
         summary, by_agent, sessions: top_sessions.length, tracking_since: Date.parse(TRACKING_SINCE),
-        cost, cost_by_agent, recent_sessions: top_sessions,
+        cost, cost_by_agent, recent_sessions: top_sessions, prices_as_of: "2026-11-04",
       } satisfies UsageReport;
     },
     async usageShareCopyImage(png) {

@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::pricing::{cost_nanos, rates_for};
+use crate::pricing::{PRICES_AS_OF, cost_nanos, rates_for};
 use crate::{Agent, SessionUsage, Tokens, UsageIndex, UsageQuery, UsageSummary, summarize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,6 +39,8 @@ pub struct UsageReport {
     pub cost_by_agent: Vec<(Agent, Cost)>,
     /// At most 10, newest `last` first; `total` and `days` cover the range only.
     pub recent_sessions: Vec<SessionUsage>,
+    /// Day the local price table was last checked, `YYYY-MM-DD`.
+    pub prices_as_of: String,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
@@ -154,6 +156,7 @@ pub fn report(index: &UsageIndex, q: &ReportQuery) -> UsageReport {
         cost,
         cost_by_agent,
         recent_sessions: ranged,
+        prices_as_of: PRICES_AS_OF.to_owned(),
     }
 }
 
@@ -510,6 +513,12 @@ mod tests {
         assert_eq!(r.recent_sessions.len(), 10);
         assert_eq!(r.recent_sessions[0].id, "s13");
         assert_eq!(r.sessions, 14);
+    }
+
+    #[test]
+    fn the_report_names_the_price_table_date() {
+        let r = report(&UsageIndex::default(), &q(&both()));
+        assert_eq!(r.prices_as_of, crate::pricing::PRICES_AS_OF);
     }
 
     fn fixture(name: &str) -> std::path::PathBuf {

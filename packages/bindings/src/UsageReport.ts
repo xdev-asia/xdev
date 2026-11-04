@@ -34,4 +34,8 @@ cost_by_agent: Array<[Agent, Cost]>,
 /**
  * At most 10, newest `last` first; `total` and `days` cover the range only.
  */
-recent_sessions: Array<SessionUsage>, };
+recent_sessions: Array<SessionUsage>, 
+/**
+ * Day the local price table was last checked, `YYYY-MM-DD`.
+ */
+prices_as_of: string, };
