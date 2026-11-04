@@ -433,6 +433,18 @@ pub fn issue_view(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<IssueDetai
     })
 }
 
+/// `owner/repo` of the repo `cwd` belongs to, as GitHub names it.
+pub fn repo_name(gh: &dyn GhExec, cwd: &Path) -> Result<String, GitError> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Raw {
+        name_with_owner: String,
+    }
+    let out = ok(gh.run(cwd, &["repo", "view", "--json", "nameWithOwner"], None)?)?;
+    let raw: Raw = serde_json::from_str(&out.stdout).map_err(parse_error)?;
+    Ok(raw.name_with_owner)
+}
+
 /// "#123", "123", or "https://github.com/<owner>/<repo>/issues/123" gives
 /// (`owner/repo` or `None`, 123).
 pub fn parse_issue_ref(text: &str) -> Option<(Option<String>, u64)> {
@@ -882,5 +894,12 @@ mod tests {
             issue_view(&fake, cwd(), 99).unwrap_err().code(),
             "issue_not_found"
         );
+    }
+
+    #[test]
+    fn repo_name_reads_name_with_owner() {
+        let fake = Fake::new(vec![out(0, r#"{"nameWithOwner":"acme/app"}"#, "")]);
+        assert_eq!(repo_name(&fake, cwd()).unwrap(), "acme/app");
+        assert_eq!(args_of(&fake), ["repo", "view", "--json", "nameWithOwner"]);
     }
 }
