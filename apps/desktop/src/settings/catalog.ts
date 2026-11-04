@@ -47,6 +47,8 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("usage.footer.codex", "settings.usage.footer.codex", ["footer", "meter", "codex", "usage", "quota", "thanh", "mức dùng", "muc dung", "chân trang", "chan trang"]),
   e("usage.scan.claude", "settings.usage.scan.claude", ["stats", "logs", "scan", "read", "claude", "session", "thống kê", "thong ke", "đọc log", "doc log", "nhật ký", "nhat ky"], "settings.usage.scanHint"),
   e("usage.scan.codex", "settings.usage.scan.codex", ["stats", "logs", "scan", "read", "codex", "session", "thống kê", "thong ke", "đọc log", "doc log", "nhật ký", "nhat ky"], "settings.usage.scanHint"),
+  e("usage.cacheTimer", "settings.usage.cacheTimer", ["cache", "timer", "countdown", "prompt cache", "claude", "tab", "đồng hồ", "dong ho", "đếm ngược", "dem nguoc", "bộ nhớ đệm", "bo nho dem"], "settings.usage.cacheTimerHint"),
+  e("usage.cacheTtl", "settings.usage.cacheTtl", ["cache", "lifetime", "ttl", "5 minutes", "1 hour", "thời hạn", "thoi han", "5 phút", "5 phut", "1 giờ", "1 gio"]),
   // Notifications
   e("notifications.enabled", "settings.notifications.enabled", ["notify", "alert", "master", "thông báo", "thong bao"], "settings.notifications.enabledHint"),
   e("notifications.onNeedsInput", "settings.notifications.onNeedsInput", ["input", "waiting", "cần nhập", "can nhap"], "settings.notifications.onNeedsInputHint"),
