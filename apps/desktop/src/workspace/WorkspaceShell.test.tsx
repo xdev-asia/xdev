@@ -10,6 +10,8 @@ import { ChecksPanel } from "./ChecksPanel";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
+import { BulkRemoveDialog } from "./BulkRemoveDialog";
+import { getToasts } from "./toastStore";
 import { SetupCard } from "./SetupCard";
 import { TrustDialog } from "./TrustDialog";
 import { FileTree } from "./FileTree";
@@ -78,6 +80,8 @@ const text = (node: Node): string => nodes(node.props.children).map(n => (typeof
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 
+const reposOf = (n: Node): any[] => (n.props.items as { kind: string; repo?: unknown }[]).flatMap((i) => (i.kind === "repo" ? [i.repo] : []));
+
 async function harness(api = createMockApi({})) {
   const draw = () => {
     hooks.cursor = 0;
@@ -94,7 +98,7 @@ async function harness(api = createMockApi({})) {
   start();
   load();
   await tick();
-  const worktree = (name: string) => list().props.repos.flatMap((r: { worktrees: WorktreeView[] }) => r.worktrees).find((w: WorktreeView) => w.name === name) as WorktreeView;
+  const worktree = (name: string) => reposOf(list()).flatMap((r: { worktrees: WorktreeView[] }) => r.worktrees).find((w: WorktreeView) => w.name === name) as WorktreeView;
   return { api, draw, all, html, of, list, nav, worktree };
 }
 
@@ -169,7 +173,7 @@ it("header settings button opens settings", async () => {
   const settings = view.of(SettingsView)[0];
   expect(settings.props.api).toBe(api);
   // A change in settings reloads the worktree list.
-  const list = vi.spyOn(api, "workspaceList");
+  const list = vi.spyOn(api, "workspaceSidebar");
   settings.props.onChanged();
   await tick();
   expect(list).toHaveBeenCalledTimes(1);
@@ -183,12 +187,12 @@ it("adopting refreshes the list", async () => {
   const spike: WorktreeView = { path: "/demo/elsewhere/spike", name: "spike", branch: "spike", head: "6666666666666666666666666666666666666666", start: null, primary: false, pinned: false, detached: false, ...NO_DETAILS };
   const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), found: { "demo-xdev": [spike] } } });
   const view = await harness(api);
-  expect(view.list().props.repos[0].found).toHaveLength(1);
+  expect(reposOf(view.list())[0].found).toHaveLength(1);
   const adopt = vi.spyOn(api, "worktreeAdopt");
   view.list().props.onAdopt(spike);
   await tick();
   expect(adopt).toHaveBeenCalledWith("/demo/elsewhere/spike");
-  expect(view.list().props.repos[0].found).toHaveLength(0);
+  expect(reposOf(view.list())[0].found).toHaveLength(0);
   expect(view.worktree("spike")?.path).toBe("/demo/elsewhere/spike");
 
   // A second adopt of the same path is refused, and the reason shows in the list.
@@ -276,14 +280,14 @@ it("add repo opens the dialog; Open folder picks a folder and shows the new repo
   await openFolder();
   expect(pick).toHaveBeenCalledTimes(2);
   expect(add).toHaveBeenCalledWith("/code/notes");
-  expect(view.list().props.repos.map((r: { shortName: string }) => r.shortName)).toEqual(["xdev", "notes"]);
+  expect(reposOf(view.list()).map((r: { shortName: string }) => r.shortName)).toEqual(["xdev", "notes"]);
   expect(view.list().props.selected).toBe("/code/notes");
   expect(view.html()).toContain(">notes<");
 
   // Adding it again keeps the list and says why.
   vi.spyOn(api, "pickFolder").mockResolvedValueOnce("/code/notes");
   await openFolder();
-  expect(view.list().props.repos).toHaveLength(2);
+  expect(reposOf(view.list())).toHaveLength(2);
   expect(view.html()).toContain(en("error.repo_exists"));
 });
 
@@ -397,9 +401,9 @@ it("a worktree that leaves the list has its terminals closed", async () => {
   const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
   sessions.open("/demo/wt/xdev-oak", "shell");
   sessions.open("/demo/xdev", "shell");
-  const real = api.workspaceList.bind(api);
-  vi.spyOn(api, "workspaceList").mockImplementation(async () =>
-    (await real()).map(r => ({ ...r, worktrees: r.worktrees.filter(w => w.path !== "/demo/wt/xdev-oak") })),
+  const real = api.workspaceSidebar.bind(api);
+  vi.spyOn(api, "workspaceSidebar").mockImplementation(async () =>
+    (await real()).map(i => (i.kind === "repo" ? { ...i, repo: { ...i.repo, worktrees: i.repo.worktrees.filter(w => w.path !== "/demo/wt/xdev-oak") } } : i)),
   );
   // Any reload notices; here, a pin.
   view.list().props.onPin(view.worktree("elm"));
@@ -414,10 +418,10 @@ it("a missing repo keeps its worktrees' terminals", async () => {
   const view = await harness(api);
   const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
   sessions.open("/demo/wt/xdev-oak", "shell");
-  const real = api.workspaceList.bind(api);
+  const real = api.workspaceSidebar.bind(api);
   // The repo's folder is unreachable for now, so it comes back with no worktrees.
-  vi.spyOn(api, "workspaceList").mockImplementation(async () =>
-    (await real()).map(r => (r.worktrees.some(w => w.path === "/demo/wt/xdev-oak") ? { ...r, missing: true, worktrees: [] } : r)),
+  vi.spyOn(api, "workspaceSidebar").mockImplementation(async () =>
+    (await real()).map(i => (i.kind === "repo" && i.repo.worktrees.some(w => w.path === "/demo/wt/xdev-oak") ? { ...i, repo: { ...i.repo, missing: true, worktrees: [] } } : i)),
   );
   view.list().props.onPin(view.worktree("elm"));
   await tick();
@@ -557,6 +561,31 @@ it("new_worktree_opens_default_agent", async () => {
   expect(await createBirch(view)).toEqual(["codex"]);
 });
 
+it("a create with extras opens the picked agent, keeps it as the default and saves the details once", async () => {
+  const api = createMockApi({});
+  await api.profilesDefaults("ask", "codex", null);
+  const details = vi.spyOn(api, "worktreeDetails");
+  const view = await harness(api);
+  view.list().props.onCreate();
+  await tick();
+  view.draw();
+  view.of(CreateWorktreeDialog)[0].props.onCreate("demo-xdev", "rocket-birch", null, {
+    title: "🚀 birch",
+    agent: "claude",
+    setDefault: true,
+    parent: null,
+    item: { kind: "issue", url: "https://x.test/i/7", title: null },
+  });
+  await tick();
+  await tick();
+  await tick();
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  expect(sessions.tabs("/demo/wt/xdev-rocket-birch").map(t => t.profileId)).toEqual(["claude"]);
+  expect((await api.profiles()).defaultAgent).toBe("claude");
+  expect(details).toHaveBeenCalledTimes(1);
+  expect(details.mock.calls[0][1]).toEqual({ title: "🚀 birch", item: { kind: "issue", url: "https://x.test/i/7", title: null } });
+});
+
 it("new_worktree_skips_uninstalled_default", async () => {
   const api = createMockApi({});
   // Gemini is not installed in the mock.
@@ -590,7 +619,7 @@ function attend(view: Awaited<ReturnType<typeof harness>>) {
     const cleanup = effect();
     if (typeof cleanup === "function") cleanups.push(cleanup);
   }
-  const fire = (type: string) => [...(on.get(type) ?? [])].forEach((fn) => fn({}));
+  const fire = (type: string, event: unknown = {}) => [...(on.get(type) ?? [])].forEach((fn) => fn(event));
   const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
   // An agent tab with hooks in a worktree that is not on screen.
   const tab = sessions.open(OAK, "claude");
@@ -767,7 +796,7 @@ it("ctrl+j does not open the palette over a worktree dialog", async () => {
 it("ctrl+shift+down walks the worktrees in sidebar order and wraps", async () => {
   vi.stubGlobal("localStorage", storage());
   const view = await harness();
-  const order = view.list().props.repos.flatMap((r: { worktrees: WorktreeView[] }) => r.worktrees.map((w) => w.path)) as string[];
+  const order = reposOf(view.list()).flatMap((r: { worktrees: WorktreeView[] }) => r.worktrees.map((w) => w.path)) as string[];
   expect(order.length).toBeGreaterThan(1);
   view.list().props.onOrder(order);
   view.draw();
@@ -785,7 +814,7 @@ it("ctrl+shift+down walks the worktrees in sidebar order and wraps", async () =>
 it("ctrl+3 picks the third worktree the sidebar shows, and a missing one lets the key on", async () => {
   vi.stubGlobal("localStorage", storage());
   const view = await harness();
-  const all = view.list().props.repos.flatMap((r: { worktrees: WorktreeView[] }) => r.worktrees.map((w) => w.path)) as string[];
+  const all = reposOf(view.list()).flatMap((r: { worktrees: WorktreeView[] }) => r.worktrees.map((w) => w.path)) as string[];
   // A collapsed group is not in the order the list reports.
   const shown = [all[0], all[2], all[1]];
   view.list().props.onOrder(shown);
@@ -1052,4 +1081,44 @@ it("Usage details in the usage popover asks the Kit for the usage tab", async ()
   view.of(LiveWorkspaceFooter)[0].props.onOpenUsage();
   view.draw();
   expect(view.of(DocsApp)[0].props.kit.open).toMatchObject({ tab: "usage" });
+});
+
+// Ctrl+Shift+Backspace, selection and branch review.
+const DEL_KEY = { key: "Backspace", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, target: null, preventDefault() {} };
+
+it("ctrl+shift+backspace opens the delete dialog for the open worktree; two selected open the bulk dialog", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  const { fire } = attend(view);
+  view.list().props.onSelect(view.worktree("oak"));
+  await settle();
+  view.draw();
+  fire("keydown", DEL_KEY);
+  await settle();
+  expect(view.of(RemoveWorktreeDialog)).toHaveLength(1);
+  view.of(RemoveWorktreeDialog)[0].props.onCancel();
+  await settle();
+  // The list reports its visible order when it draws; the stubbed list does not.
+  view.list().props.onOrder([OAK, view.worktree("elm").path]);
+  await settle();
+  view.draw();
+  view.list().props.onPick(view.worktree("oak"), { toggle: true, range: false });
+  view.list().props.onPick(view.worktree("elm"), { toggle: true, range: false });
+  await settle();
+  view.draw();
+  fire("keydown", DEL_KEY);
+  await settle();
+  expect(view.of(BulkRemoveDialog)).toHaveLength(1);
+});
+
+it("a delete that kept a branch offers a review", async () => {
+  const api = createMockApi({});
+  const kept = { repoId: "demo-xdev", branch: "oak", path: "/x", keptMs: 1, reason: "deleted", title: null, comment: "", status: null, item: null };
+  vi.spyOn(api, "worktreeRemove").mockResolvedValue({ deletedBranch: null, kept } as never);
+  const view = await harness(api);
+  view.list().props.onRemove(view.worktree("oak"));
+  view.of(RemoveWorktreeDialog)[0].props.onConfirm(false);
+  await settle();
+  expect(view.of(RemoveWorktreeDialog)).toHaveLength(0);
+  expect(getToasts().some((x) => x.text === en("review.notice", { count: 1 }))).toBe(true);
 });
