@@ -40,3 +40,16 @@ test("agent mode holds only while agents work, and reports edges only", async ()
   await power.keepAwakeSet("off");
   expect(seen).toHaveLength(3);
 });
+
+test("saving the agents settings with another keep-awake mode reports it", async () => {
+  const { power, settings } = setup();
+  const seen: unknown[] = [];
+  await power.onKeepAwakeChanged((v) => seen.push(v));
+  const base = await settings.agentsSettings();
+  await power.agentsSettingsPut({ ...base, keepAwake: "on" });
+  expect(seen).toEqual([{ mode: "on", held: true, supported: true }]);
+  // The same mode again says nothing.
+  await power.agentsSettingsPut({ ...base, keepAwake: "on" });
+  expect(seen).toHaveLength(1);
+  expect(await power.keepAwake()).toEqual({ mode: "on", held: true, supported: true });
+});
