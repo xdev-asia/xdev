@@ -20,15 +20,19 @@ import { useI18n } from "@/i18n";
 import { pushToast } from "@/workspace/toastStore";
 import { SettingGroup, SettingRow } from "@/settings/SettingRow";
 import type { SettingsSectionProps } from "@/settings/sections";
+import { ago } from "@/workspace/ago";
 import { freeId } from "./agentForm";
 
-/** Idle minutes before an agent tab sleeps: the range the settings file holds it to. */
-const SLEEP_AFTER_MIN_MIN = 1;
-const SLEEP_AFTER_MIN_MAX = 1440;
 import { ProfileEditor } from "./ProfileEditor";
 import { ShellsSection } from "./ShellsSection";
 
 const SWITCH_CHOICES: readonly SwitchRunning[] = ["ask", "restart", "keep"];
+
+/** Idle minutes before an agent tab sleeps: the range the settings file holds it to. */
+const SLEEP_AFTER_MIN_MIN = 1;
+const SLEEP_AFTER_MIN_MAX = 1440;
+/** How often the search status is read while the index is being built. */
+const SEARCH_POLL_MS = 2_000;
 
 /** Settings → Agents: the Approvals switch, defaults, agent profiles, shells and Status hooks. */
 export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settings: StatusSettings): void }): JSX.Element {
@@ -72,6 +76,14 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
     [api],
   );
 
+  // A build can take a while; the status line follows it until it is done.
+  const indexing = switchPolicy?.sessionSearch === true && searchStatus?.indexing === true;
+  useEffect(() => {
+    if (!indexing) return;
+    const timer = setInterval(() => api.sessionSearchStatus().then(setSearchStatus, () => {}), SEARCH_POLL_MS);
+    return () => clearInterval(timer);
+  }, [api, indexing]);
+
   async function pickSwitch(next: SwitchRunning): Promise<void> {
     if (!switchPolicy || next === switchPolicy.accountSwitch) return;
     setError(undefined);
@@ -86,7 +98,8 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
     if (!switchPolicy) return;
     setError(undefined);
     try {
-      setSwitchPolicy(await api.agentsSettingsPut({ ...switchPolicy, sessionSearch: on }));
+      // Off deletes the index with the flag, so no conversation text stays behind a switch that reads off.
+      setSwitchPolicy(on ? await api.agentsSettingsPut({ ...switchPolicy, sessionSearch: true }) : await api.sessionSearchClear());
       setSearchStatus(await api.sessionSearchStatus());
     } catch (e) {
       setError(toApiError(e).code);
@@ -370,7 +383,9 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
         <p className="settings-empty" data-field="sessionSearchStatus">
           {searchStatus.indexing
             ? t("sessionSearch.indexing")
-            : t("sessionSearch.status", { sessions: searchStatus.sessions, messages: searchStatus.messages })}
+            : searchStatus.updatedAt === null
+              ? t("sessionSearch.status", { sessions: searchStatus.sessions, messages: searchStatus.messages })
+              : t("sessionSearch.statusAt", { sessions: searchStatus.sessions, messages: searchStatus.messages, ago: ago(searchStatus.updatedAt, Date.now(), t) })}
         </p>
       )}
       <Disclosure title={t("sessionSearch.advanced")} defaultExpanded={false}>

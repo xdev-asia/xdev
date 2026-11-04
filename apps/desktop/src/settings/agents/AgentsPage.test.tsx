@@ -256,7 +256,50 @@ it("session_search_status_line_shows_the_counts_once_on", async () => {
   await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
   await tick();
   const status = await p.api.sessionSearchStatus();
-  expect(line()!.props.children).toBe(en("sessionSearch.status", { sessions: status.sessions, messages: status.messages }));
+  expect(status.updatedAt).not.toBeNull();
+  expect(line()!.props.children).toBe(en("sessionSearch.statusAt", { sessions: status.sessions, messages: status.messages, ago: en("ago.now") }));
+});
+
+it("session_search_status_line_leaves_out_the_time_before_the_first_update", async () => {
+  const p = await page();
+  await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+  vi.spyOn(p.api, "sessionSearchStatus").mockResolvedValue({ enabled: true, sessions: 0, messages: 0, updatedAt: null, indexing: false });
+  p.all().find((n) => n.props["data-field"] === "sessionSearch")!.props.onChange({ target: { checked: true } });
+  await tick();
+  expect(p.all().find((n) => n.props["data-field"] === "sessionSearchStatus")!.props.children).toBe(en("sessionSearch.status", { sessions: 0, messages: 0 }));
+});
+
+it("session_search_status_is_read_again_while_it_indexes", async () => {
+  vi.useFakeTimers();
+  try {
+    const p = await page();
+    await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+    const read = vi.spyOn(p.api, "sessionSearchStatus").mockResolvedValue({ enabled: true, sessions: 0, messages: 0, updatedAt: null, indexing: true });
+    p.all().find((n) => n.props["data-field"] === "sessionSearch")!.props.onChange({ target: { checked: true } });
+    await tick();
+    hooks.effects.length = 0;
+    p.all();
+    hooks.effects.splice(0).forEach((e) => e());
+    await tick();
+    const before = read.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(read.mock.calls.length).toBeGreaterThan(before);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("turning_the_search_off_clears_the_index_instead_of_only_saving_the_flag", async () => {
+  const p = await page();
+  await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+  await tick();
+  const put = vi.spyOn(p.api, "agentsSettingsPut");
+  const clear = vi.spyOn(p.api, "sessionSearchClear");
+  searchSwitch(p).props.onChange({ target: { checked: false } });
+  await tick();
+  expect(clear).toHaveBeenCalledTimes(1);
+  expect(put).not.toHaveBeenCalled();
+  expect(searchSwitch(p).props.checked).toBe(false);
 });
 
 it("session_search_clear_asks_first_then_clears_toasts_and_reads_off", async () => {
