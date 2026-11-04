@@ -154,6 +154,19 @@ impl Repo {
         Repo::discover(dir)
     }
 
+    /// `git init` with `branch` as the first branch. Git older than 2.28
+    /// does not know `--initial-branch`: it gets a plain `init` and `HEAD`
+    /// is pointed at the branch by hand.
+    pub fn init_on(dir: &Path, branch: &str) -> Result<Repo, GitError> {
+        let flag = format!("--initial-branch={branch}");
+        if run::run(dir, &["init", "-q", &flag], None).is_err() {
+            run::run(dir, &["init", "-q"], None)?;
+            let full = format!("refs/heads/{branch}");
+            run::run(dir, &["symbolic-ref", "HEAD", &full], None)?;
+        }
+        Repo::discover(dir)
+    }
+
     /// The repo's top folder. Derived from the prefix, so it keeps the form of
     /// the vault path the caller gave and needs no extra git run.
     pub fn root(&self) -> PathBuf {

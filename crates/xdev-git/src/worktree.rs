@@ -180,6 +180,34 @@ impl Repo {
         run::run(&self.workdir, &["worktree", "prune"], None).map(drop)
     }
 
+    /// `git worktree move`: a worktree to a new folder. Git moves into a
+    /// folder that exists, as `mv` does, so one that is there is refused
+    /// here instead of getting the worktree inside it.
+    pub fn move_worktree(&self, from: &Path, to: &Path) -> Result<(), GitError> {
+        if to.symlink_metadata().is_ok() {
+            return Err(GitError::Io(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "the target folder exists",
+            )));
+        }
+        run::run(
+            &self.workdir,
+            &["worktree", "move", utf8(from)?, utf8(to)?],
+            None,
+        )
+        .map(drop)
+    }
+
+    /// Takes back a worktree this run just added and nothing was done in:
+    /// git's record and the folder go, and a folder git cannot remove is
+    /// deleted outright, since only this run ever wrote to it.
+    pub fn remove_fresh_worktree(&self, path: &Path) -> Result<(), GitError> {
+        if path.exists() && self.remove_worktree(path).is_err() {
+            std::fs::remove_dir_all(path)?;
+        }
+        run::run(&self.workdir, &["worktree", "prune"], None).map(drop)
+    }
+
     /// Deletes a local branch whether or not it is merged; a missing branch
     /// is not an error.
     pub fn delete_branch(&self, branch: &str) -> Result<(), GitError> {

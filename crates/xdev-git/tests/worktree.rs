@@ -343,3 +343,109 @@ fn changes_since_from_a_subfolder_uses_top_relative_paths() {
         .collect();
     assert_eq!(got, ["sub/n.txt", "top.txt"]);
 }
+
+/// An empty folder with no identity of its own.
+fn bare_dir() -> TempDir {
+    TempDir::with_prefix("git new ").unwrap()
+}
+
+fn set_identity(dir: &Path) {
+    for (key, value) in [
+        ("user.name", "Test User"),
+        ("user.email", "test@example.com"),
+        ("commit.gpgsign", "false"),
+    ] {
+        git(dir, &["config", key, value]);
+    }
+}
+
+#[test]
+fn init_on_names_the_first_branch() {
+    let dir = bare_dir();
+    let repo = Repo::init_on(dir.path(), "trunk").unwrap();
+    assert_eq!(repo.current_branch().unwrap().as_deref(), Some("trunk"));
+    let other = bare_dir();
+    let repo = Repo::init_on(other.path(), "feature/x").unwrap();
+    assert_eq!(repo.current_branch().unwrap().as_deref(), Some("feature/x"));
+}
+
+#[test]
+fn commit_empty_makes_one_commit() {
+    let dir = bare_dir();
+    let repo = Repo::init_on(dir.path(), "main").unwrap();
+    set_identity(dir.path());
+    let id = repo.commit_empty("Initial commit").unwrap();
+    assert_eq!(git(dir.path(), &["rev-parse", "HEAD"]).trim(), id);
+    assert_eq!(
+        git(dir.path(), &["rev-list", "--count", "HEAD"]).trim(),
+        "1"
+    );
+    assert_eq!(
+        git(dir.path(), &["log", "-1", "--format=%s"]).trim(),
+        "Initial commit"
+    );
+    assert_eq!(
+        git(dir.path(), &["show", "--stat", "--format=", "HEAD"]).trim(),
+        ""
+    );
+}
+
+#[test]
+fn commit_empty_without_identity_is_identity() {
+    let dir = bare_dir();
+    let repo = Repo::init_on(dir.path(), "main").unwrap();
+    // Local config wins over the developer's global identity.
+    git(dir.path(), &["config", "user.useConfigOnly", "true"]);
+    assert!(matches!(
+        repo.commit_empty("x").unwrap_err(),
+        GitError::Identity
+    ));
+    // Nothing was committed.
+    assert!(git(dir.path(), &["branch", "--list"]).trim().is_empty());
+}
+
+#[test]
+fn move_worktree_changes_the_folder() {
+    let (_dir, wt_parent, repo, base) = with_worktree();
+    let from = wt_parent.path().join("stage");
+    repo.add_worktree(&from, "moved", &base).unwrap();
+    let to = wt_parent.path().join("final");
+    repo.move_worktree(&from, &to).unwrap();
+    assert!(!from.exists());
+    assert!(to.join("a.txt").exists());
+    let listed = repo.list_worktrees().unwrap();
+    let entry = listed
+        .iter()
+        .find(|e| e.branch.as_deref() == Some("moved"))
+        .unwrap();
+    assert_eq!(entry.path.file_name().unwrap(), "final");
+}
+
+#[test]
+fn move_worktree_onto_an_existing_folder_fails() {
+    let (_dir, wt_parent, repo, base) = with_worktree();
+    let from = wt_parent.path().join("stage");
+    repo.add_worktree(&from, "moved", &base).unwrap();
+    let to = wt_parent.path().join("taken");
+    fs::create_dir(&to).unwrap();
+    fs::write(to.join("x"), "x").unwrap();
+    assert!(repo.move_worktree(&from, &to).is_err());
+    assert!(from.exists());
+}
+
+#[test]
+fn remove_fresh_worktree_leaves_no_record_or_folder() {
+    let (_dir, wt_parent, repo, base) = with_worktree();
+    let path = wt_parent.path().join("stage");
+    repo.add_worktree(&path, "fresh", &base).unwrap();
+    repo.remove_fresh_worktree(&path).unwrap();
+    assert!(!path.exists());
+    assert!(
+        repo.list_worktrees()
+            .unwrap()
+            .iter()
+            .all(|e| e.branch.as_deref() != Some("fresh"))
+    );
+    // Gone already is fine.
+    repo.remove_fresh_worktree(&path).unwrap();
+}
