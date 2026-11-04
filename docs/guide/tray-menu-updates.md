@@ -7,13 +7,13 @@ Settings, General, Window:
 - **Minimize to tray on close**: closing the window hides it and xDev keeps running. A notice says so the first time.
 - **Show menu bar icon**: on macOS, keeps the tray icon in the menu bar.
 
-The tray exists on Windows and macOS. Its menu: Open xDev, Settings, Check for updates, Quit xDev. On Windows a left click shows the window.
+The tray exists on Windows and macOS. Its menu: Open xDev, Settings and Check for updates (macOS), Quit and end terminals, Quit xDev. On Windows a left click shows the window.
 
 The icon gets a dot when an agent needs you (the same events as the OS notification) while the window is hidden or minimized. Focusing the window clears it.
 
 ## Quit
 
-Every quit asks the shell first, so the tray, the menu and the window close button agree. Quit keeps terminals running when "On quit" is set to keep them. **Quit and end terminals** (macOS app menu, with a confirmation) ends every terminal first.
+Every quit asks the shell first, so the tray, the menu and the window close button agree. Quit keeps terminals running when "On quit" is set to keep them. **Quit and end terminals** (tray and macOS app menu, with a confirmation) ends every terminal first.
 
 ## Menu and help
 
@@ -23,8 +23,10 @@ macOS has a native menu: xDev, Edit, View, Window, Help. Windows and Linux use t
 |---|---|
 | Keyboard shortcuts | Opens Settings, Keyboard shortcuts |
 | Documentation, Getting started, Changelog, Report an issue, Source on GitHub | Opens the page in the browser |
+| Check for updates | Opens Settings, General, Updates |
+| Reload, Toggle developer tools | Reloads the window, opens or closes the web inspector |
 | About xDev | Shows the version |
-| Restart xDev | Restarts the app, installing a downloaded update first |
+| Restart xDev | Asks the quit question as a close does, then restarts the app, installing a downloaded update first |
 
 Native menu accelerators are bound only for keys the app's own keymap does not own, so your rebinds are not swallowed.
 

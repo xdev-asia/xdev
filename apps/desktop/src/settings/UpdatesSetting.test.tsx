@@ -33,11 +33,14 @@ it("shows the version and each phase as a line", () => {
   expect(p.status()).toBe("Updates are checked on launch and every 6 hours.");
   expect(view({ phase: { kind: "up-to-date" }, restart: "idle" }).status()).toBe("You're on the latest version.");
   expect(view({ phase: { kind: "downloading", version: "0.4.0", percent: 40 }, restart: "idle" }).status()).toContain("Downloading 0.4.0… 40 %");
-  expect(view({ phase: { kind: "error", detail: "offline" }, restart: "idle" }).status()).toBe("Update check failed. offline");
+  expect(view({ phase: { kind: "error", detail: "offline" }, restart: "idle" }).status()).toBe("Update check failed.");
+  expect(text(view({ phase: { kind: "error", detail: "offline" }, restart: "idle" }).by("data-field", "update-error-detail")!.props.children)).toBe("offline");
 });
 
-it("a check in flight shows a spinner and cannot be started again", () => {
+it("a check in flight shows a spinner hidden from screen readers and cannot be started again", () => {
   const p = view({ phase: { kind: "checking" }, restart: "idle" });
+  const hidden = p.all.find((n) => n.props["aria-hidden"] === "true");
+  expect(hidden && nodes(hidden.props.children).some((n) => typeof n.type !== "string" && (n.type as { name?: string }).name === "Spinner")).toBe(true);
   expect(p.all.some((n) => typeof n.type !== "string" && (n.type as { name?: string }).name === "Spinner")).toBe(true);
   expect(p.by("data-act", "update-check")!.props.disabled).toBe(true);
   expect(view().by("data-act", "update-check")!.props.disabled).toBe(false);

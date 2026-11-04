@@ -40,6 +40,6 @@ it("reads each phase as one line", () => {
   expect(line({ kind: "downloading", version: "0.4.0", percent: 40 })).toEqual({ key: "settings.general.updates.downloading", vars: { version: "0.4.0", percent: 40 } });
   expect(line({ kind: "downloading", version: "0.4.0", percent: null })).toEqual({ key: "settings.general.updates.downloadingUnknown", vars: { version: "0.4.0" } });
   expect(line(ready)).toEqual({ key: "settings.general.updates.ready", vars: { version: "0.4.0" } });
-  expect(line({ kind: "error", detail: "offline" })).toEqual({ key: "settings.general.updates.error", vars: { detail: "offline" } });
+  expect(line({ kind: "error", detail: "offline" })).toEqual({ key: "settings.general.updates.error" });
   expect(line(ready, "failed")).toEqual({ key: "settings.general.updates.restartFailed" });
 });

@@ -42,7 +42,8 @@ export function phaseLine(state: CheckState): { key: string; vars?: Record<strin
     case "ready":
       return { key: "settings.general.updates.ready", vars: { version: p.version } };
     case "error":
-      return { key: "settings.general.updates.error", vars: { detail: p.detail } };
+      // The raw error is English text from the updater: the view shows it apart, as a hint.
+      return { key: "settings.general.updates.error" };
   }
 }
 
