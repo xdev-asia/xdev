@@ -25,6 +25,7 @@ mod review_notes;
 mod session;
 mod settings;
 mod settings_store;
+mod shell;
 mod ship;
 mod squads;
 mod status;
