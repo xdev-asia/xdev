@@ -17,7 +17,7 @@ const GROUPS: ShortcutGroup[] = ["tabs", "panes", "worktrees", "agents", "termin
 
 /** Settings → Shortcuts: every action with its chords, edited into `keybindings.json`. */
 export function ShortcutsPage(props: SettingsSectionProps): JSX.Element {
-  const { api, filter: initialQuery } = props;
+  const { api, arg: initialQuery } = props;
   const { t } = useI18n();
   const state = useBindings();
   const [query, setQuery] = useState(initialQuery ?? "");

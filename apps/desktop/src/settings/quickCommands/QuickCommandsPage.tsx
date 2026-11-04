@@ -24,7 +24,7 @@ export function QuickCommandsPage(props: SettingsSectionProps): JSX.Element {
   const [repoViews, setRepoViews] = useState<RepoView[]>([]);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
-  const [editing, setEditing] = useState<{ item: QuickCommand | null } | null>(props.filter === "new" ? { item: null } : null);
+  const [editing, setEditing] = useState<{ item: QuickCommand | null } | null>(props.arg === "new" ? { item: null } : null);
   const [deleting, setDeleting] = useState<QuickCommand | null>(null);
   const [error, setError] = useState<ApiError["code"]>();
 

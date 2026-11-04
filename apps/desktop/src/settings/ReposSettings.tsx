@@ -74,9 +74,9 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
 
   // Repo settings… in the sidebar menu asks for this repo by id.
   useEffect(() => {
-    if (!props.filter || !repos?.some((r) => r.id === props.filter)) return;
-    document.getElementById(`settings-repo-${props.filter}`)?.scrollIntoView?.({ block: "start" });
-  }, [repos === null, props.filter]);
+    if (!props.arg || !repos?.some((r) => r.id === props.arg)) return;
+    document.getElementById(`settings-repo-${props.arg}`)?.scrollIntoView?.({ block: "start" });
+  }, [repos === null, props.arg]);
 
   useEffect(() => {
     api.workspaceList().then(
