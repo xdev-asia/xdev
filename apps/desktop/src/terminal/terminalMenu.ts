@@ -23,6 +23,8 @@ export interface TerminalMenuContext {
    * (the item is hidden); the item is disabled while the tab has no session id yet.
    */
   forkSession?(): void;
+  /** Opens the hand off dialog: the same work given to another agent. Absent hides the item. */
+  handOff?(): void;
 }
 
 const SEP = (id: string): MenuItem => ({ id, labelKey: "", kind: "separator" });
@@ -44,6 +46,7 @@ export function terminalMenuItems(ctx: TerminalMenuContext): MenuItem[] {
     SEP("sep1"),
     ...(ctx.quickCommands ? [ctx.quickCommands] : []),
     ...(ctx.forkSession ? [{ id: "forkSession", labelKey: "termMenu.forkSession", disabled: !ctx.tab.agentSession, run: ctx.forkSession }] : []),
+    ...(ctx.handOff ? [{ id: "handOff", labelKey: "termMenu.handOff", run: ctx.handOff }] : []),
     { id: "copyContext", labelKey: "termMenu.copyContext", run: ctx.copyContext },
     SEP("sep2"),
     { id: "splitRight", labelKey: "termMenu.splitRight", chord: chord("pane.splitRight"), run: () => ctx.split("right") },

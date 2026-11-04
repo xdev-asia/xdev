@@ -18,7 +18,11 @@ import { getQuickCommands, selectCommands } from "@/quickCommands/store";
 import { quickCommandsSubmenu } from "@/quickCommands/submenu";
 import { ReviewView } from "@/review/ReviewView";
 import { Terminal, type TerminalHandle } from "@/terminal/Terminal";
-import { copyContext, copyText } from "@/terminal/terminalActions";
+import { CONTEXT_LINES, copyContext, copyText } from "@/terminal/terminalActions";
+import { handoffPrompt } from "@/agentSessions/handoff";
+import { HandOffDialog, type HandOffChoice } from "@/agentSessions/HandOffDialog";
+import { sendToOpenedTab } from "./agentPrompt";
+import { pushToast } from "./toastStore";
 import { terminalMenuItems } from "@/terminal/terminalMenu";
 import { registerTerminal } from "@/terminal/terminalRegistry";
 import { useApprovedStart } from "@/terminal/useApprovedStart";
@@ -105,6 +109,10 @@ export function WorktreeTabs(props: {
   /** A new value opens the Command popover of the focused pane. */
   quickSeq?: number;
   onManageQuickCommands?: () => void;
+  /** Every worktree, for the hand off dialog's picker. */
+  worktrees?: { path: string; label: string }[];
+  /** Brings a tab of any worktree to the front; used after a hand off to another worktree. */
+  onJump?(tabId: string): void;
 }): JSX.Element {
   const { api, sessions, worktree, visible, reveal } = props;
   const { t } = useI18n();
@@ -117,6 +125,8 @@ export function WorktreeTabs(props: {
   const [closing, setClosing] = useState<{ reason: CloseReason; run: () => void } | null>(null);
   // The tab whose title dialog is open, and the terminal menu (tab, pointer, that terminal's handle).
   const [titling, setTitling] = useState<string | null>(null);
+  // The hand off dialog: the source tab and its terminal text, read when the menu item was picked.
+  const [handingOff, setHandingOff] = useState<{ id: string; lines: string[] } | null>(null);
   const [termMenu, setTermMenu] = useState<{ id: string; at: { x: number; y: number }; handle: TerminalHandle } | null>(null);
   // Bumped when a key moves focus, so the terminal in front takes the keyboard.
   const [kick, setKick] = useState(0);
@@ -426,6 +436,22 @@ export function WorktreeTabs(props: {
     sessions.fork(worktree, tab.profileId, ownAccount(tab), tab.agentSession, tab.title, tab.cli);
   }
 
+  // Opens an agent in `choice.worktree` and types the source's state into it once it has started.
+  function handOff(source: Tab, lines: string[], choice: HandOffChoice): void {
+    const text = handoffPrompt({
+      fromProfile: profileName(view, source.profileId, t),
+      worktree,
+      branch: props.branch ?? null,
+      firstPrompt: source.autoTitled ? source.title : null,
+      lines,
+    });
+    const opened = sessions.open(choice.worktree, choice.profileId, null, cliFor(choice.profileId));
+    props.onJump?.(opened.id);
+    void sendToOpenedTab(sessions, choice.worktree, opened.id, text).then((sent) => {
+      pushToast({ text: sent ? t("agentFork.handedOff") : t("agentFork.notReady") });
+    });
+  }
+
   function again(tab: Tab): void {
     setError(null);
     sessions.restart(tab.id);
@@ -455,6 +481,7 @@ export function WorktreeTabs(props: {
           exitCode: tab.exitCode,
         }),
       forkSession: forkable(tab) ? () => forkSession(tab) : undefined,
+      handOff: forkable(tab) && props.worktrees ? () => setHandingOff({ id: tab.id, lines: handle.lines(CONTEXT_LINES) }) : undefined,
       copyTerminalId: () => void copyText(tab.id),
       copyPaneId: () => pane && void copyText(pane),
       quickCommands: quickCommandsSubmenu(
@@ -654,6 +681,19 @@ export function WorktreeTabs(props: {
       {dialog}
       {termMenu && byId.get(termMenu.id) && (
         <ContextMenu at={termMenu.at} items={termMenuItems(byId.get(termMenu.id)!, termMenu.handle)} onClose={() => setTermMenu(null)} />
+      )}
+      {handingOff && byId.get(handingOff.id) && props.worktrees && (
+        <HandOffDialog
+          profiles={agents.map((id) => ({ value: id, label: profileName(view, id, t) }))}
+          worktrees={props.worktrees.map((w) => ({ value: w.path, label: w.label }))}
+          sourceProfile={byId.get(handingOff.id)!.profileId}
+          sourceWorktree={worktree}
+          onConfirm={(choice) => {
+            handOff(byId.get(handingOff.id)!, handingOff.lines, choice);
+            setHandingOff(null);
+          }}
+          onCancel={() => setHandingOff(null)}
+        />
       )}
       {titling && byId.get(titling) && (
         <TabTitleDialog

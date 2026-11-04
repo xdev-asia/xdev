@@ -4,7 +4,7 @@ import type { Tab } from "@/workspace/sessions";
 import type { TerminalHandle } from "./Terminal";
 import { terminalMenuItems, type TerminalMenuContext } from "./terminalMenu";
 
-function setup(over: { selection?: boolean; paneId?: string | null; agent?: boolean; fork?: boolean; session?: string | null } = {}) {
+function setup(over: { selection?: boolean; paneId?: string | null; agent?: boolean; fork?: boolean; handOff?: boolean; session?: string | null } = {}) {
   const calls: string[] = [];
   const handle: TerminalHandle = {
     copy: async () => { calls.push("copy"); return true; },
@@ -28,6 +28,7 @@ function setup(over: { selection?: boolean; paneId?: string | null; agent?: bool
     copyTerminalId: () => void calls.push("copyTerminalId"),
     copyPaneId: () => void calls.push("copyPaneId"),
     ...(over.fork ? { forkSession: () => void calls.push("forkSession") } : {}),
+    ...(over.handOff ? { handOff: () => void calls.push("handOff") } : {}),
   };
   const items = terminalMenuItems(ctx);
   const find = (id: string) => items.find((i) => i.id === id) as MenuItem;
@@ -51,6 +52,16 @@ it("Fork session sits after Quick Commands and before Copy Context; it is hidden
   expect(setup({ agent: true }).items.some((i) => i.id === "forkSession")).toBe(false);
   const ids = setup({ agent: true, fork: true, session: "abc" }).items.map((i) => i.id);
   expect(ids.indexOf("forkSession")).toBe(ids.indexOf("copyContext") - 1);
+});
+
+it("Hand off sits right after Fork session; it is hidden when the context has none and runs the context's hand off", () => {
+  expect(setup({ agent: true, fork: true }).items.some((i) => i.id === "handOff")).toBe(false);
+  const on = setup({ agent: true, fork: true, handOff: true, session: "abc" });
+  const ids = on.items.map((i) => i.id);
+  expect(ids.indexOf("handOff")).toBe(ids.indexOf("forkSession") + 1);
+  expect(ids.indexOf("handOff")).toBe(ids.indexOf("copyContext") - 1);
+  on.find("handOff").run!();
+  expect(on.calls).toEqual(["handOff"]);
 });
 
 it("Fork session is disabled while the tab has no session id, and runs the context's fork", () => {

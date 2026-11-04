@@ -3307,3 +3307,13 @@ button.ws-tree-row:focus-visible {
   max-width: 240px;
   color: var(--text-2);
 }
+
+/* Hand off dialog: a label above each picker. Tokens only. */
+.ws-handoff-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  color: var(--text-2);
+  font-size: 12px;
+}
