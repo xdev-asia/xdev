@@ -89,6 +89,7 @@ CREATE TABLE gates (
     options TEXT NOT NULL DEFAULT '[]',
     status TEXT NOT NULL,
     resolution TEXT,
+    asker TEXT NOT NULL DEFAULT '',
     created_ms INTEGER NOT NULL
 );
 CREATE TABLE tab_runs (
@@ -233,10 +234,8 @@ pub(crate) fn message_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
     })
 }
 
-#[allow(dead_code)] // used from the task that reads them
 pub(crate) const GATE_COLS: &str =
     "id, run_id, task_id, question, options, status, resolution, created_ms";
-#[allow(dead_code)] // used from the task that reads them
 pub(crate) fn gate_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Gate> {
     Ok(Gate {
         id: r.get(0)?,
