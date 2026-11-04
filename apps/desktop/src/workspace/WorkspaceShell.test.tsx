@@ -1292,3 +1292,30 @@ it("the issues key opens the tab and closes the panel when pressed again", async
   view.draw();
   expect(panel().props.hidden).toBe(true);
 });
+
+it("Start worktree on an issue makes a worktree named from it, links the issue and opens the agent", async () => {
+  const api = createMockApi({});
+  await api.profilesDefaults("ask", "codex", null);
+  const details = vi.spyOn(api, "worktreeDetails");
+  const view = await harness(api);
+  const detail = await api.issueView("demo-xdev", 1);
+  view.of(IssuesPanel)[0].props.onStart(detail);
+  await settle();
+  const path = "/demo/wt/xdev-1-footer-meter-overflows";
+  expect(view.list().props.selected).toBe(path);
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  expect(sessions.tabs(path).map(t => t.profileId)).toEqual(["codex"]);
+  expect(details).toHaveBeenCalledTimes(1);
+  expect(details.mock.calls[0][1]).toEqual({ item: { kind: "issue", url: detail.issue.url, title: detail.issue.title } });
+});
+
+it("a second Start worktree on the same issue takes the -2 name", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  const detail = await api.issueView("demo-xdev", 1);
+  view.of(IssuesPanel)[0].props.onStart(detail);
+  await settle();
+  view.of(IssuesPanel)[0].props.onStart(detail);
+  await settle();
+  expect(view.list().props.selected).toBe("/demo/wt/xdev-1-footer-meter-overflows-2");
+});

@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { Issue, IssueDetail } from "@/api";
 import { translate } from "@/i18n";
-import { ISSUE_NAME_MAX, ISSUE_PROMPT_BODY_MAX, issuePrompt, issueWorkItem, issueWorktreeName } from "./issueStart";
+import { ISSUE_NAME_MAX, ISSUE_PROMPT_BODY_MAX, issuePrompt, issueWorkItem, issueWorktreeName, uniqueWorktreeName } from "./issueStart";
 
 const t = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 const issue = (number: number, title: string): Issue => ({
@@ -53,4 +53,10 @@ it("cuts a long body and says so for an empty one", () => {
 
 it("makes the work item from the issue", () => {
   expect(issueWorkItem(issue(12, "Fix it"))).toEqual({ kind: "issue", url: "https://github.com/o/r/issues/12", title: "Fix it" });
+});
+
+it("adds -2, -3 when the name is taken", () => {
+  expect(uniqueWorktreeName("1-fix", new Set())).toBe("1-fix");
+  expect(uniqueWorktreeName("1-fix", new Set(["1-fix"]))).toBe("1-fix-2");
+  expect(uniqueWorktreeName("1-fix", new Set(["1-fix", "1-fix-2"]))).toBe("1-fix-3");
 });
