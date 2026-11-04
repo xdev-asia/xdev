@@ -99,7 +99,7 @@ pub enum SwitchRunning {
 }
 
 /// Settings → Agents.
-#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(default, rename_all = "camelCase")]
 pub struct AgentsSettings {
@@ -110,6 +110,12 @@ pub struct AgentsSettings {
     /// Whether an agent tab is titled from its session's first prompt.
     #[serde(deserialize_with = "lenient")]
     pub auto_tab_title: bool,
+    /// Experimental: finished agent tabs sleep after `sleep_after_min` idle minutes.
+    pub auto_sleep: bool,
+    /// Idle minutes before an agent tab sleeps, held to `SLEEP_AFTER_MIN_RANGE`.
+    pub sleep_after_min: u32,
+    /// Consent to index agent conversations on this computer.
+    pub session_search: bool,
 }
 
 /// Settings → Agents → Keep computer awake.
@@ -124,6 +130,34 @@ pub enum KeepAwake {
     /// Never asks.
     #[default]
     Off,
+}
+
+/// Minutes an agent tab may idle before it sleeps: 1 minute to 24 hours.
+pub const SLEEP_AFTER_MIN_RANGE: std::ops::RangeInclusive<u32> = 1..=1440;
+/// Default idle minutes before an agent tab sleeps.
+pub const SLEEP_AFTER_MIN_DEFAULT: u32 = 30;
+
+impl Default for AgentsSettings {
+    fn default() -> Self {
+        Self {
+            account_switch: SwitchRunning::default(),
+            keep_awake: KeepAwake::default(),
+            auto_tab_title: false,
+            auto_sleep: false,
+            sleep_after_min: SLEEP_AFTER_MIN_DEFAULT,
+            session_search: false,
+        }
+    }
+}
+
+impl AgentsSettings {
+    /// Holds `sleep_after_min` inside `SLEEP_AFTER_MIN_RANGE`.
+    pub fn clamped(mut self) -> Self {
+        self.sleep_after_min = self
+            .sleep_after_min
+            .clamp(*SLEEP_AFTER_MIN_RANGE.start(), *SLEEP_AFTER_MIN_RANGE.end());
+        self
+    }
 }
 
 /// Prompt cache lifetime, 5 minutes.
@@ -2498,7 +2532,12 @@ then sum up"
             assert_eq!(
                 serde_json::to_value(&agents).unwrap(),
                 serde_json::json!({
-                    "accountSwitch": json, "keepAwake": "off", "autoTabTitle": false
+                    "accountSwitch": json,
+                    "keepAwake": "off",
+                    "autoTabTitle": false,
+                    "autoSleep": false,
+                    "sleepAfterMin": 30,
+                    "sessionSearch": false
                 })
             );
             fs::write(
@@ -2536,6 +2575,25 @@ then sum up"
         assert_eq!(loaded.keep_awake, KeepAwake::Off);
         assert!(!loaded.auto_tab_title);
         assert_eq!(loaded.account_switch, SwitchRunning::Keep);
+        let on = AgentsSettings {
+            auto_sleep: true,
+            sleep_after_min: 5,
+            session_search: true,
+            ..AgentsSettings::default()
+        };
+        fs::write(&path, serde_json::json!({ "agents": on }).to_string()).unwrap();
+        assert_eq!(load(&path).agents, on);
+    }
+
+    #[test]
+    fn sleep_after_min_is_clamped() {
+        for (given, want) in [(0, 1), (1, 1), (45, 45), (1440, 1440), (99_999, 1440)] {
+            let s = AgentsSettings {
+                sleep_after_min: given,
+                ..AgentsSettings::default()
+            };
+            assert_eq!(s.clamped().sleep_after_min, want);
+        }
     }
 
     #[test]

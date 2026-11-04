@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { AgentsSettings, Api, SessionRow } from "@/api";
+import { AGENTS_SETTINGS_DEFAULTS } from "@/mockSettings";
 import { startAutoTabTitle, tabTitleFromPrompt } from "./autoTabTitle";
 import type { Sessions, Tab } from "./sessions";
 
@@ -59,7 +60,7 @@ function setup(opts: { on?: boolean; titles?: (string | null)[] } = {}) {
   });
   let on = opts.on ?? true;
   const api = {
-    agentsSettings: vi.fn(async (): Promise<AgentsSettings> => ({ accountSwitch: "ask", keepAwake: "off", autoTabTitle: on })),
+    agentsSettings: vi.fn(async (): Promise<AgentsSettings> => ({ ...AGENTS_SETTINGS_DEFAULTS, autoTabTitle: on })),
     agentSessions,
   } as unknown as Api;
   const emit = () => {

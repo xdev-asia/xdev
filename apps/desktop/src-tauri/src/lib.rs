@@ -370,6 +370,8 @@ pub fn run() {
             kit::kit_paths_exist,
             kit::kit_prompt_history,
             agent_sessions::agent_sessions,
+            agent_sessions::session_search_status,
+            agent_sessions::session_search_clear,
             quick_commands::quick_commands_list,
             quick_commands::quick_command_upsert,
             quick_commands::quick_command_delete,

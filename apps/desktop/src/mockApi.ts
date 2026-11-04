@@ -577,7 +577,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockKeybindings(options.keybindings ?? null),
     ...createMockKit(async () => (await settingsApi.usageSettings()).scan),
     ...createMockOpenIn(settingsHub.emit, workspace.repoAdd),
-    ...createMockAgentSessions(),
+    ...createMockAgentSessions(settingsApi),
     ...createMockLayout(),
     ...createMockCli(),
     ...createMockQuickCommands(

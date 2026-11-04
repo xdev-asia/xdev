@@ -13,4 +13,9 @@ repo: string | null,
 /**
  * False when no profile can launch the session's home, or its folder is gone.
  */
-resumable: boolean, };
+resumable: boolean, 
+/**
+ * A snippet of the conversation text that matched, HTML-escaped with
+ * `<mark>` around the hits; `None` for a match in the metadata only.
+ */
+hit?: string, };

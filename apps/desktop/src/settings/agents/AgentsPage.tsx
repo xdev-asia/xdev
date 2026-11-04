@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { RadioGroup, Switch } from "@xdev-asia/ui";
+import { RadioGroup } from "@xdev-asia/ui";
 import {
   toApiError,
   type Account,
@@ -11,20 +11,31 @@ import {
   type SwitchRunning,
   type ProfilesView,
   type ProfileView,
+  type SessionSearchStatus,
   type StatusSettings,
 } from "@/api";
 import { useProfiles } from "@/agents/profileStore";
 import { patchStatusSettings, setStatusSettings } from "@/status/statusSettings";
+import { Button, Disclosure, Field, Switch } from "@xdev-asia/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
+import { pushToast } from "@/workspace/toastStore";
 import { SettingGroup, SettingRow } from "@/settings/SettingRow";
 import type { SettingsSectionProps } from "@/settings/sections";
+import { ago } from "@/workspace/ago";
 import { freeId } from "./agentForm";
+
 import { ProfileEditor } from "./ProfileEditor";
 import { ShellsSection } from "./ShellsSection";
 
 const KEEP_AWAKE_CHOICES: readonly KeepAwake[] = ["off", "agent", "on"];
 const SWITCH_CHOICES: readonly SwitchRunning[] = ["ask", "restart", "keep"];
+
+/** Idle minutes before an agent tab sleeps: the range the settings file holds it to. */
+const SLEEP_AFTER_MIN_MIN = 1;
+const SLEEP_AFTER_MIN_MAX = 1440;
+/** How often the search status is read while the index is being built. */
+const SEARCH_POLL_MS = 2_000;
 
 /** Settings → Agents: the Approvals switch, defaults, agent profiles, shells and Status hooks. */
 export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settings: StatusSettings): void }): JSX.Element {
@@ -43,32 +54,38 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
   const [statusBusy, setStatusBusy] = useState(false);
   // What a switch of the active account does to agent tabs that are running.
   const [switchPolicy, setSwitchPolicy] = useState<AgentsSettings | null>(null);
+  // What the conversation index holds; read again whenever the consent or the index may have moved.
+  const [searchStatus, setSearchStatus] = useState<SessionSearchStatus | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+  // The minutes field while it is being typed in; null shows the saved value.
+  const [sleepDraft, setSleepDraft] = useState<string | null>(null);
 
   useEffect(() => {
     api.profiles().then(setView, (e) => setError(toApiError(e).code));
     api.accounts().then((a) => setAccounts(a.accounts), () => setAccounts([]));
     api.statusSettings().then(setStatus, (e) => setError(toApiError(e).code));
     api.agentsSettings().then(setSwitchPolicy, (e) => setError(toApiError(e).code));
+    api.sessionSearchStatus().then(setSearchStatus, () => setSearchStatus(null));
   }, [api]);
 
   // Another window or a file edit can change the policy; follow it.
   useEffect(
     () =>
       api.onSettingsChanged(({ sections }) => {
-        if (sections.includes("agents")) api.agentsSettings().then(setSwitchPolicy, () => {});
+        if (!sections.includes("agents")) return;
+        api.agentsSettings().then(setSwitchPolicy, () => {});
+        api.sessionSearchStatus().then(setSearchStatus, () => {});
       }),
     [api],
   );
 
-  async function saveAgents(patch: Partial<AgentsSettings>): Promise<void> {
-    if (!switchPolicy) return;
-    setError(undefined);
-    try {
-      setSwitchPolicy(await api.agentsSettingsPut({ ...switchPolicy, ...patch }));
-    } catch (e) {
-      setError(toApiError(e).code);
-    }
-  }
+  // A build can take a while; the status line follows it until it is done.
+  const indexing = switchPolicy?.sessionSearch === true && searchStatus?.indexing === true;
+  useEffect(() => {
+    if (!indexing) return;
+    const timer = setInterval(() => api.sessionSearchStatus().then(setSearchStatus, () => {}), SEARCH_POLL_MS);
+    return () => clearInterval(timer);
+  }, [api, indexing]);
 
   async function pickSwitch(next: SwitchRunning): Promise<void> {
     if (!switchPolicy || next === switchPolicy.accountSwitch) return;
@@ -77,6 +94,49 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
       setSwitchPolicy(await api.agentsSettingsPut({ ...switchPolicy, accountSwitch: next }));
     } catch (e) {
       setError(toApiError(e).code);
+    }
+  }
+
+  async function toggleSearch(on: boolean): Promise<void> {
+    if (!switchPolicy) return;
+    setError(undefined);
+    try {
+      // Off deletes the index with the flag, so no conversation text stays behind a switch that reads off.
+      setSwitchPolicy(on ? await api.agentsSettingsPut({ ...switchPolicy, sessionSearch: true }) : await api.sessionSearchClear());
+      setSearchStatus(await api.sessionSearchStatus());
+    } catch (e) {
+      setError(toApiError(e).code);
+    }
+  }
+
+  async function putAgents(next: Partial<AgentsSettings>): Promise<void> {
+    if (!switchPolicy) return;
+    setError(undefined);
+    try {
+      setSwitchPolicy(await api.agentsSettingsPut({ ...switchPolicy, ...next }));
+    } catch (e) {
+      setError(toApiError(e).code);
+    }
+  }
+
+  function commitSleepMinutes(): void {
+    const raw = sleepDraft;
+    setSleepDraft(null);
+    if (raw === null || !switchPolicy) return;
+    const value = Number(raw.trim());
+    if (raw.trim() === "" || !Number.isFinite(value)) return;
+    const minutes = Math.min(SLEEP_AFTER_MIN_MAX, Math.max(SLEEP_AFTER_MIN_MIN, Math.round(value)));
+    if (minutes !== switchPolicy.sleepAfterMin) void putAgents({ sleepAfterMin: minutes });
+  }
+
+  async function clearSearch(): Promise<void> {
+    setConfirmClear(false);
+    try {
+      setSwitchPolicy(await api.sessionSearchClear());
+      setSearchStatus(await api.sessionSearchStatus());
+      pushToast({ id: "session-search-clear", text: t("sessionSearch.cleared") });
+    } catch (e) {
+      pushToast({ id: "session-search-clear", text: t(`error.${toApiError(e).code}`) });
     }
   }
 
@@ -314,7 +374,7 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
         value={switchPolicy?.keepAwake ?? "off"}
         disabled={!switchPolicy}
         onChange={(value) => {
-          if (switchPolicy && value !== switchPolicy.keepAwake) void saveAgents({ keepAwake: value as KeepAwake });
+          if (switchPolicy && value !== switchPolicy.keepAwake) void putAgents({ keepAwake: value as KeepAwake });
         }}
         options={KEEP_AWAKE_CHOICES.map((c) => ({ value: c, label: t(`settings.agents.keepAwake.${c}`), hint: t(`settings.agents.keepAwake.${c}Hint`) }))}
       />
@@ -328,9 +388,76 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
         label={t("settings.agents.autoTabTitle.label")}
         checked={switchPolicy?.autoTabTitle ?? false}
         disabled={!switchPolicy}
-        onChange={(e) => void saveAgents({ autoTabTitle: e.target.checked })}
+        onChange={(e) => void putAgents({ autoTabTitle: e.target.checked })}
       />
       <p className="settings-empty">{t("settings.agents.autoTabTitle.hint")}</p>
+      </SettingRow>
+
+      <SettingRow id="agents.sessionSearch" filter={filter}>
+      <h4 className="settings-group">{t("settings.agents.sessionSearch")}</h4>
+      <ul className="settings-list" data-section="session-search">
+        <li className="settings-item">
+          <div className="settings-item-text">
+            <strong>{t("settings.agents.sessionSearch.label")}</strong>
+            <span className="settings-path">{t("settings.agents.sessionSearch.hint")}</span>
+          </div>
+          <Switch
+            checked={switchPolicy?.sessionSearch ?? false}
+            aria-label={t("settings.agents.sessionSearch.label")}
+            disabled={!switchPolicy}
+            data-field="sessionSearch"
+            onChange={(e) => void toggleSearch(e.target.checked)}
+          />
+        </li>
+      </ul>
+      {switchPolicy?.sessionSearch && searchStatus && (
+        <p className="settings-empty" data-field="sessionSearchStatus">
+          {searchStatus.indexing
+            ? t("sessionSearch.indexing")
+            : searchStatus.updatedAt === null
+              ? t("sessionSearch.status", { sessions: searchStatus.sessions, messages: searchStatus.messages })
+              : t("sessionSearch.statusAt", { sessions: searchStatus.sessions, messages: searchStatus.messages, ago: ago(searchStatus.updatedAt, Date.now(), t) })}
+        </p>
+      )}
+      <Disclosure title={t("sessionSearch.advanced")} defaultExpanded={false}>
+        <Button variant="secondary" data-field="sessionSearchClear" onClick={() => setConfirmClear(true)}>
+          {t("sessionSearch.clear")}
+        </Button>
+      </Disclosure>
+      </SettingRow>
+
+      <SettingRow id="agents.autoSleep" filter={filter}>
+      <h4 className="settings-group">{t("settings.agents.autoSleep")}</h4>
+      <ul className="settings-list" data-section="auto-sleep">
+        <li className="settings-item">
+          <div className="settings-item-text">
+            <strong>{t("settings.agents.autoSleep.label")}</strong>
+            <span className="settings-path">{t("settings.agents.autoSleep.hint")}</span>
+          </div>
+          <Switch
+            checked={switchPolicy?.autoSleep ?? false}
+            aria-label={t("settings.agents.autoSleep.label")}
+            disabled={!switchPolicy}
+            data-field="autoSleep"
+            onChange={(e) => void putAgents({ autoSleep: e.target.checked })}
+          />
+        </li>
+        <li className="settings-item">
+          <Field
+            label={t("settings.agents.sleepAfter.label")}
+            hint={t("settings.agents.sleepAfter.hint")}
+            type="number"
+            min={SLEEP_AFTER_MIN_MIN}
+            max={SLEEP_AFTER_MIN_MAX}
+            data-field="sleepAfterMin"
+            disabled={!switchPolicy?.autoSleep}
+            value={sleepDraft ?? String(switchPolicy?.sleepAfterMin ?? 30)}
+            onChange={(e) => setSleepDraft(e.target.value)}
+            onBlur={commitSleepMinutes}
+            onKeyDown={(e) => e.key === "Enter" && commitSleepMinutes()}
+          />
+        </li>
+      </ul>
       </SettingRow>
 
       <SettingRow id="agents.statusHooks" filter={filter}>
@@ -366,6 +493,15 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
           void defaults("skip", current.defaultAgent, current.defaultShell);
         }}
         onCancel={() => setConfirmSkip(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmClear}
+        title={t("sessionSearch.clear.title")}
+        body={t("sessionSearch.clear.body")}
+        confirmLabel={t("sessionSearch.clear.confirm")}
+        onConfirm={() => void clearSearch()}
+        onCancel={() => setConfirmClear(false)}
       />
     </div>
   );

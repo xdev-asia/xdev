@@ -143,6 +143,7 @@ import type {
   SearchQuery,
   SessionQuery,
   SessionRow,
+  SessionSearchStatus,
   Agent,
   Skill,
   UsageDisplay,
@@ -164,7 +165,7 @@ export { createMockApi };
 export type ScriptKind = Extract<HookKind, "setup" | "archive">;
 export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
-export type { Agent, AgentSession, SessionQuery, SessionRow };
+export type { Agent, AgentSession, SessionQuery, SessionRow, SessionSearchStatus };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, AwakeView, KeepAwake, SwitchRunning };
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
@@ -888,6 +889,10 @@ export interface Api {
   // The agent sessions of every home, matched to the workspace; `refresh` reads the new log
   // bytes first. Rejects with `bad_arg` when `query.limit` is over 500.
   agentSessions(query: SessionQuery, refresh: boolean): Promise<SessionRow[]>;
+  /** What the conversation text index holds. */
+  sessionSearchStatus(): Promise<SessionSearchStatus>;
+  /** Turns the search off, then deletes the index; returns the stored settings. */
+  sessionSearchClear(): Promise<AgentsSettings>;
 
   // Quick commands
   // Every saved command (settings.json `quickCommands`), global and per repo together, in order.
@@ -1361,6 +1366,8 @@ const tauriApi: Api = {
   kitPathsExist: (root, paths) => call("kit_paths_exist", { root, paths }),
   kitPromptHistory: (limit) => call("kit_prompt_history", { limit }),
   agentSessions: (query, refresh) => call("agent_sessions", { query, refresh }),
+  sessionSearchStatus: () => call("session_search_status"),
+  sessionSearchClear: () => call("session_search_clear"),
   quickCommandsList: () => call("quick_commands_list"),
   quickCommandUpsert: (item) => call("quick_command_upsert", { item }),
   quickCommandDelete: (id) => call("quick_command_delete", { id }),

@@ -13,4 +13,16 @@ keepAwake: KeepAwake,
 /**
  * Whether an agent tab is titled from its session's first prompt.
  */
-autoTabTitle: boolean, };
+autoTabTitle: boolean, 
+/**
+ * Experimental: finished agent tabs sleep after `sleep_after_min` idle minutes.
+ */
+autoSleep: boolean, 
+/**
+ * Idle minutes before an agent tab sleeps, held to `SLEEP_AFTER_MIN_RANGE`.
+ */
+sleepAfterMin: number, 
+/**
+ * Consent to index agent conversations on this computer.
+ */
+sessionSearch: boolean, };
