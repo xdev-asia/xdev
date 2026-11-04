@@ -17,7 +17,7 @@ blake3.workspace = true
 notify-debouncer-full.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["devtools", "image-png"] }
 tauri-plugin-deep-link = "2.6.3"
 tauri-plugin-dialog = "2.8.4"
 tauri-plugin-notification = "2.6.0"
@@ -28,6 +28,7 @@ uuid = { version = "1.29", features = ["v4"] }
 trash.workspace = true
 xdev-agent.workspace = true
 xdev-ai.workspace = true
+xdev-awake.workspace = true
 xdev-core.workspace = true
 xdev-git.workspace = true
 xdev-id.workspace = true
@@ -35,7 +36,11 @@ xdev-ipc.workspace = true
 xdev-kit.workspace = true
 xdev-policy.workspace = true
 xdev-pty.workspace = true
+xdev-store.workspace = true
 xdev-workspace.workspace = true
+
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
 
 [dev-dependencies]
 dunce = "1.0.5"

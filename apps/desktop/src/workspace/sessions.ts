@@ -46,8 +46,12 @@ export interface Tab {
   title: string | null;
   /** Named by hand: later titles from the terminal leave the name alone. */
   renamed: boolean;
+  /** `title` is the one made from the first prompt (not by hand, not the program's). */
+  autoTitled: boolean;
   /** The agent session id this tab resumed; null for a new session. */
   resumeOf: string | null;
+  /** The agent session id this tab was forked from; null otherwise. Its first launch forks, a restart does not. */
+  forkOf: string | null;
   /** The agent's own session id, from its hooks (latest wins) or the resumed id; null until known. */
   agentSession: string | null;
   /** When the tab was opened or resumed, in ms. */
@@ -55,6 +59,8 @@ export interface Tab {
   /** Pinned tabs sort first and are skipped by Close Others and Close to the Right. */
   pinned: boolean;
   color: TabColor;
+  /** Put to sleep: no pty runs, the slot stays, and waking resumes `agentSession`. */
+  asleep?: true;
   /** Set once the pty exited; `null` when it was killed or its code is unknown. */
   exitCode?: number | null;
   client: PtyClient;
@@ -75,10 +81,15 @@ interface Entry {
   caps: Caps;
   /** The program's last title (OSC 0/2), kept while the tab is named by hand. */
   programTitle: string | null;
+  /** A title made from the first prompt; shown unless the tab was named by hand. */
+  autoTitle: string | null;
 }
 
 // Only an exit ends a tab: `failed` can also be a turn that failed, with the pty still alive.
 const ended = (tab: Tab) => tab.exitCode !== undefined;
+/** An agent that works or waits for the user must not be put to sleep. */
+const busy = (tab: Tab): boolean => tab.agent && (tab.status === "working" || tab.status === "needs-you");
+
 const asks = (status: TabStatus): status is Exclude<Attention, "bell"> =>
   status === "needs-you" || status === "done" || status === "failed";
 
@@ -120,6 +131,7 @@ export class Sessions {
   private seen = new Set<string>();
   private readonly marked = new Set<string>();
   private readonly attention = new Set<(tab: Tab, status: Attention, detail: HookDetail | null) => void>();
+  private readonly statusListeners = new Set<(tab: Tab, from: TabStatus, to: TabStatus, at: number) => void>();
   private interval: ReturnType<typeof setInterval> | null = null;
   // One-shot timers per tab: an interrupt settling, a done waiting to be announced.
   private readonly settle = new Map<string, ReturnType<typeof setTimeout>>();
@@ -180,6 +192,21 @@ export class Sessions {
     return entry.tab;
   }
 
+  /**
+   * Opens an agent tab that continues a copy of the CLI session `sourceId` under a new session id (the
+   * source stays as it is). The new id is unknown until the agent's hooks report it, so `agentSession`
+   * is null until then and a layout saved before that has nothing to resume.
+   */
+  fork(worktree: string, profileId: PtyProfile, account: string | null, sourceId: string, title: string | null = null, cli?: TabCli): Tab {
+    const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, null, title, crypto.randomUUID(), sourceId);
+    this.entries.set(entry.tab.id, entry);
+    this.cache.delete(worktree);
+    const layout = this.layouts.get(worktree);
+    this.layouts.set(worktree, layout ? addTab(layout, entry.tab.id) : single(entry.tab.id));
+    this.emit();
+    return entry.tab;
+  }
+
   /** What `layout.json` keeps of every worktree's tabs and panes; only `savedAt` depends on the clock. */
   snapshot(): LayoutSnapshot {
     const worktrees: LayoutSnapshot["worktrees"] = {};
@@ -201,11 +228,12 @@ export class Sessions {
     const report: RestoreReport = { resumed: 0, fresh: 0, skipped: [], opened: [] };
     if (this.restored) return report;
     this.restored = true;
-    if (mode === "none" || !s || s.version !== LAYOUT_VERSION || typeof s.worktrees !== "object" || !s.worktrees) return report;
+    if (!s || s.version !== LAYOUT_VERSION || typeof s.worktrees !== "object" || !s.worktrees) return report;
     // Tabs whose pty still runs in the terminal service come back attached to it, before any resume.
-    const state = (await this.api.ptydStatus().catch(() => null))?.state;
+    // Under `none` only the sleeping tabs come back, and they start nothing.
+    const state = mode === "none" ? undefined : (await this.api.ptydStatus().catch(() => null))?.state;
     const attach = state === "running" || state === "old-version";
-    const found = await this.api.accounts().catch(() => null);
+    const found = mode === "none" ? null : await this.api.accounts().catch(() => null);
     this.restoreActive = found ? new Map(PROVIDERS.map((p): [string, string | null] => [p, found.active.find((a) => a.provider === p)?.name ?? null])) : null;
     for (const [worktree, one] of Object.entries(s.worktrees)) {
       if (options.known && !options.known(worktree)) {
@@ -227,15 +255,23 @@ export class Sessions {
     const ids = new Map<string, string>();
     const files = new Set<string>();
     const opened: string[] = [];
+    // Under `none` nothing comes back but the sleeping tabs; the files and the review only come along with them.
+    const keep = mode !== "none" || Object.values(one.tabs).some((t) => t?.kind === "terminal" && t.asleep === true);
     for (const leaf of leaves(one.layout)) {
       if (leaf.kind !== "leaf") continue;
       for (const key of leaf.tabs) {
         const snap = one.tabs[key];
         if (!snap) continue;
-        if (snap.kind === "review") files.add(key);
-        else if (snap.kind === "file") {
-          const ok = await (options.openFile?.(worktree, snap.rel) ?? Promise.resolve(false)).catch(() => false);
-          if (ok) files.add(key);
+        if (snap.kind === "review" || snap.kind === "file") {
+          if (!keep) continue;
+          if (snap.kind === "review") files.add(key);
+          else if (await (options.openFile?.(worktree, snap.rel) ?? Promise.resolve(false)).catch(() => false)) files.add(key);
+        } else if (snap.kind === "terminal" && snap.asleep === true) {
+          const tab = this.restoreAsleep(worktree, snap, report);
+          ids.set(key, tab.id);
+          opened.push(tab.id);
+        } else if (mode === "none") {
+          continue;
         } else if (snap.kind === "terminal") {
           const tab = (attach && (await this.attachTerminal(worktree, snap, report))) || (await this.restoreTerminal(worktree, snap, mode, fallback, report));
           if (!tab) continue;
@@ -291,9 +327,11 @@ export class Sessions {
       agentSession: snap.agentSession,
       openedAt: snap.openedAt,
       renamed: snap.renamed === true,
+      autoTitled: snap.autoTitled === true && snap.renamed !== true,
       pinned: snap.pinned === true,
       color,
     };
+    if (snap.autoTitled === true && snap.title) entry.autoTitle = snap.title;
     this.entries.set(id, entry);
     const exited = this.attaching.get(id);
     this.attaching.delete(id);
@@ -305,6 +343,18 @@ export class Sessions {
     this.emit();
     if (exited) this.apply(id, { kind: "exit", code: exited.code });
     return entry.tab;
+  }
+
+  /** One sleeping terminal tab of a snapshot: no pty, no attach, and the session it wakes with. */
+  private restoreAsleep(worktree: string, snap: Extract<TabSnapshot, { kind: "terminal" }>, report: RestoreReport): Tab {
+    const cli = snap.cli === undefined ? cliOf(snap.profileId) : snap.cli;
+    const account = restoredAccount(snap, cli, null);
+    const id = snap.agent ? snap.agentSession : null;
+    const tab = id ? this.resume(worktree, snap.profileId, account, id, snap.title, cli) : this.open(worktree, snap.profileId, account, cli);
+    const color = TAB_COLORS.includes(snap.color) ? snap.color : "none";
+    this.update(this.entries.get(tab.id)!, { asleep: true, title: snap.title, renamed: snap.renamed === true, pinned: snap.pinned === true, color, openedAt: snap.openedAt, accountSource: snap.accountSource ?? null });
+    report.asleep = (report.asleep ?? 0) + 1;
+    return this.entries.get(tab.id)!.tab;
   }
 
   /** One terminal tab of a snapshot, or null when `mode` or a missing session leaves it out. */
@@ -332,7 +382,9 @@ export class Sessions {
     const entry = this.entries.get(tab.id)!;
     const color = TAB_COLORS.includes(snap.color) ? snap.color : "none";
     this.lazy.add(tab.id);
-    this.update(entry, { title: snap.title, renamed: snap.renamed === true, pinned: snap.pinned === true, color });
+    const auto = snap.autoTitled === true && snap.renamed !== true && !!snap.title;
+    if (snap.autoTitled === true && snap.title) entry.autoTitle = snap.title;
+    this.update(entry, { title: snap.title, renamed: snap.renamed === true, autoTitled: auto, pinned: snap.pinned === true, color });
     return entry.tab;
   }
 
@@ -358,7 +410,9 @@ export class Sessions {
   restart(id: string): Tab | null {
     const old = this.entries.get(id);
     if (!old) return null;
-    return this.replace(old, ownAccount(old.tab), old.tab.resumeOf, old.tab.agentSession);
+    // A forked tab continues its own session once the hooks gave its id; a second fork would copy again.
+    const resume = old.tab.forkOf === null ? old.tab.resumeOf : old.tab.agentSession;
+    return this.replace(old, ownAccount(old.tab), resume, old.tab.agentSession);
   }
 
   /**
@@ -376,14 +430,71 @@ export class Sessions {
     return this.replace(old, own, session, session);
   }
 
+  /**
+   * Puts a tab to sleep: its pty is killed, the slot and its pin, colour and title stay, and an agent
+   * keeps the session id it wakes with (the fallback looks one up when the hooks never sent it). The
+   * tab gets a new id and no terminal starts for it until `wake`. `null` for an unknown id and for an agent that is working or needs the user.
+   */
+  async hibernate(id: string, fallback: SessionFallback = async () => null): Promise<Tab | null> {
+    const old = this.entries.get(id);
+    if (!old) return null;
+    if (old.tab.asleep) return old.tab;
+    if (busy(old.tab)) return null;
+    let session = old.tab.agentSession ?? old.tab.resumeOf;
+    if (!session && old.tab.agent && old.tab.cli) session = await fallback(old.tab.worktree, old.tab.cli, old.tab.openedAt).catch(() => null);
+    // The tab may have closed or been replaced while the fallback ran.
+    const live = this.entries.get(id);
+    if (!live || live.tab.asleep || busy(live.tab)) return null;
+    const next = this.replace(live, ownAccount(live.tab), session, session);
+    this.update(this.entries.get(next.id)!, { asleep: true });
+    return this.entries.get(next.id)!.tab;
+  }
+
+  /** `hibernate` for every tab of `worktree` and of each of `children`; resolves with the tabs now asleep. */
+  async sleepWorktree(worktree: string, fallback: SessionFallback, children: readonly string[] = []): Promise<Tab[]> {
+    const ids = [worktree, ...children].flatMap((w) => this.tabs(w).map((t) => t.id));
+    const slept = await Promise.all(ids.map((id) => this.hibernate(id, fallback)));
+    return slept.filter((t): t is Tab => t !== null);
+  }
+
+  /** Starts a sleeping tab again in its place: it resumes its agent session, or is a new shell. `null` for an unknown id. */
+  wake(id: string): Tab | null {
+    const old = this.entries.get(id);
+    if (!old) return null;
+    if (!old.tab.asleep) return old.tab;
+    const session = old.tab.agentSession ?? old.tab.resumeOf;
+    const next = this.replace(old, ownAccount(old.tab), session, session);
+    this.lazy.add(next.id);
+    return next;
+  }
+
+  /** Wakes every sleeping tab of `worktree`. */
+  wakeWorktree(worktree: string): Tab[] {
+    return this.tabs(worktree).flatMap((t) => (t.asleep ? [this.wake(t.id)!] : []));
+  }
+
+  /** The worktree has tabs and every one sleeps. */
+  asleep(worktree: string): boolean {
+    const tabs = this.tabs(worktree);
+    return tabs.length > 0 && tabs.every((t) => t.asleep);
+  }
+
+  /** The worktree has a tab that may be put to sleep: awake, and not an agent that works or waits for the person. */
+  sleepable(worktree: string): boolean {
+    return this.tabs(worktree).some((t) => !t.asleep && !busy(t));
+  }
+
   private replace(old: Entry, account: string | null, resumeOf: string | null, agentSession: string | null): Tab {
     const id = old.tab.id;
     this.clear(this.settle, id);
     this.clear(this.announce, id);
     this.clear(this.stale, id);
+    this.lazy.delete(id);
     const next = this.entry(old.tab.worktree, old.tab.profileId, account, old.tab.cli, resumeOf, old.tab.title);
     // The pin and colour belong to the slot, not to the pty; so does the agent's session id, which a restart must not lose.
-    next.tab = { ...next.tab, accountSource: old.tab.accountSource, pinned: old.tab.pinned, color: old.tab.color, agentSession };
+    next.tab = { ...next.tab, accountSource: old.tab.accountSource, pinned: old.tab.pinned, color: old.tab.color, agentSession, renamed: old.tab.renamed, autoTitled: old.tab.autoTitled && !old.tab.renamed };
+    // The auto title is the slot's too: the new pty keeps it, and the title the user clears to returns to it.
+    next.autoTitle = old.autoTitle;
     const kept = [...this.entries].map(([key, e]): [string, Entry] => (key === id ? [next.tab.id, next] : [key, e]));
     this.entries.clear();
     for (const [key, e] of kept) this.entries.set(key, e);
@@ -587,8 +698,20 @@ export class Sessions {
     if (!entry) return;
     const next = title.trim().slice(0, TITLE_MAX) || null;
     entry.programTitle = next;
-    if (entry.tab.renamed || entry.tab.title === next) return;
+    if (entry.tab.renamed || entry.tab.autoTitled || entry.tab.title === next) return;
     this.update(entry, { title: next });
+  }
+
+  /** A short title made from the first prompt. It beats the program's title and loses to a name by hand. */
+  setAutoTitle(id: string, title: string): void {
+    const entry = this.entries.get(id);
+    const next = title.trim().slice(0, TITLE_MAX);
+    if (!entry || !next) return;
+    // A name by hand stays; the auto title is not kept behind it.
+    if (entry.tab.renamed) return;
+    entry.autoTitle = next;
+    if (entry.tab.autoTitled && entry.tab.title === next) return;
+    this.update(entry, { title: next, autoTitled: true });
   }
 
   /** Names a tab by hand; later titles from the terminal no longer change it. An alias of `setTitle`; blank is ignored. */
@@ -620,8 +743,10 @@ export class Sessions {
     const entry = this.entries.get(id);
     if (!entry) return;
     const next = title?.trim().slice(0, TITLE_MAX) || null;
-    const patch = next ? { title: next, renamed: true } : { title: entry.programTitle, renamed: false };
-    if (entry.tab.title === patch.title && entry.tab.renamed === patch.renamed) return;
+    const patch = next
+      ? { title: next, renamed: true, autoTitled: false }
+      : { title: entry.autoTitle ?? entry.programTitle, renamed: false, autoTitled: entry.autoTitle !== null };
+    if (entry.tab.title === patch.title && entry.tab.renamed === patch.renamed && entry.tab.autoTitled === patch.autoTitled) return;
     this.update(entry, patch);
   }
 
@@ -725,6 +850,12 @@ export class Sessions {
     return () => this.attention.delete(listener);
   }
 
+  /** Called for every status change of an agent tab, its exit included: the tab, the old and new status, and when. */
+  onStatus(listener: (tab: Tab, from: TabStatus, to: TabStatus, at: number) => void): () => void {
+    this.statusListeners.add(listener);
+    return () => this.statusListeners.delete(listener);
+  }
+
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -782,6 +913,7 @@ export class Sessions {
       // Any change ends a done that was still settling.
       this.clear(this.announce, id);
       this.update(entry, { status: next.status, ...exit });
+      if (entry.tab.agent) for (const l of [...this.statusListeners]) l(entry.tab, before.status, next.status, this.now());
     }
     // Only agents ask for the person; a closing tab's exit is expected.
     const quiet = seen && this.suppressWhenFocused();
@@ -864,7 +996,7 @@ export class Sessions {
     this.emit();
   }
 
-  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null, id: string = crypto.randomUUID()): Entry {
+  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null, id: string = crypto.randomUUID(), forkOf: string | null = null): Entry {
     const tab: Tab = {
       id,
       worktree,
@@ -881,15 +1013,17 @@ export class Sessions {
       unreadReason: null,
       title,
       renamed: false,
+      autoTitled: false,
       resumeOf,
+      forkOf,
       agentSession: resumeOf,
       openedAt: this.now(),
       pinned: false,
       color: "none",
-      client: new PtyClient(this.api, id, resumeOf ?? undefined),
+      client: new PtyClient(this.api, id, forkOf ?? resumeOf ?? undefined, forkOf !== null),
     };
     // Caps stay off until the pty says whether it got hook flags.
-    return { tab, state: start(), caps: NO_CAPS, programTitle: null };
+    return { tab, state: start(), caps: NO_CAPS, programTitle: null, autoTitle: null };
   }
 
   private remove(entries: Entry[]): void {

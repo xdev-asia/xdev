@@ -12,3 +12,16 @@ export function parseItem(url: string, kind: WorkItemKind): WorkItem | null | "b
   }
   return { kind, url: text, title: null };
 }
+
+/** The kind a GitHub link names: `/pull/<n>` is a pull request, `/issues/<n>` an issue; null for anything else. */
+export function itemKindOf(url: string): WorkItemKind | null {
+  let path: string;
+  try {
+    path = new URL(url.trim()).pathname;
+  } catch {
+    return null;
+  }
+  if (/\/pull\/\d+(\/|$)/.test(path)) return "pr";
+  if (/\/issues\/\d+(\/|$)/.test(path)) return "issue";
+  return null;
+}

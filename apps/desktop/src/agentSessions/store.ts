@@ -19,6 +19,8 @@ export interface AgentSessionsState {
   homes: string[];
   /** The list is as long as the limit, so there may be more rows. */
   more: boolean;
+  /** The person let the app index conversation text, so a search also looks inside it. */
+  contentSearch: boolean;
 }
 
 export const DEFAULT_QUERY: SessionQuery = { text: null, scope: { kind: "all" }, agent: null, homeId: null, sort: "lastDesc", limit: PAGE };
@@ -28,7 +30,7 @@ export const DEFAULT_QUERY: SessionQuery = { text: null, scope: { kind: "all" },
  * Rust read new log bytes; `setQuery` only filters what the index holds.
  */
 export class AgentSessionsStore {
-  private current: AgentSessionsState = { query: DEFAULT_QUERY, rows: [], loading: false, error: null, homes: [], more: false };
+  private current: AgentSessionsState = { query: DEFAULT_QUERY, rows: [], loading: false, error: null, homes: [], more: false, contentSearch: false };
   private readonly listeners = new Set<() => void>();
   private serial = 0;
   private watchers = 0;
@@ -38,7 +40,7 @@ export class AgentSessionsStore {
   private typing: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
-    private readonly api: Pick<Api, "agentSessions" | "onPtyExit">,
+    private readonly api: Pick<Api, "agentSessions" | "agentsSettings" | "onPtyExit">,
     sessions: Pick<Sessions, "tab"> | null,
   ) {
     // An agent that ended has just written its log: one refresh shows it.
@@ -114,10 +116,11 @@ export class AgentSessionsStore {
     this.set({ loading: true });
     try {
       const rows = await this.api.agentSessions(this.current.query, refresh);
+      const contentSearch = await this.api.agentsSettings().then((s) => s.sessionSearch, () => false);
       // A newer read owns the state.
       if (mine !== this.serial) return;
       const homes = [...new Set([...this.current.homes, ...rows.map((r) => r.session.homeId)])].sort();
-      this.set({ rows, loading: false, error: null, homes, more: rows.length >= this.current.query.limit });
+      this.set({ rows, loading: false, error: null, homes, contentSearch, more: rows.length >= this.current.query.limit });
     } catch (e) {
       if (mine === this.serial) this.set({ loading: false, error: toApiError(e) });
     }

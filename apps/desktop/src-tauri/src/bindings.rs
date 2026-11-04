@@ -8,28 +8,34 @@ use std::path::Path;
 use ts_rs::{Config, TS};
 
 use crate::accounts::{Account, Accounts, LoginStart, Models};
-use crate::agent_sessions::{SessionQuery, SessionRow};
+use crate::agent_sessions::{SessionQuery, SessionRow, SessionSearchStatus};
 use crate::cli_verbs::{CliAsk, CliOpenTab, TabReport};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
 use crate::hooks::PtyHook;
 use crate::keybindings::{KeybindingsChanged, KeybindingsText};
 use crate::kit::{KitText, PromptEntry};
 use crate::open_in::OpenTarget;
+use crate::power::AwakeView;
 use crate::profiles::ProfilesView;
 use crate::pty::{PtyAttached, PtyExit, PtyInfo, PtydStatus};
 use crate::quick_commands::{FileCommands, QuickCommand};
 use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
-    AgentsSettings, DiffSettings, EditorSettings, GitSettings, KeySettings, NavigationSettings,
-    OpenInSettings, RestoreMode, SettingsChanged, SidebarPrefs, StatusSettings, TerminalSettings,
-    Theme, UiSettings, UsageSettings, XdevIdSettings,
+    AgentsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings, KeySettings,
+    NavigationSettings, OpenInSettings, RestoreMode, SettingsChanged, ShellSettings, SidebarLook,
+    SidebarPrefs, StatusBarItems, StatusSettings, TerminalSettings, Theme, UiSettings,
+    UpdateChannel, UsageSettings, XdevIdSettings,
 };
+use crate::shell::{CloseIntent, CloseRequest, HelpLink, MenuEvent, QuitMode, ShellLabels};
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
-use crate::updater::UpdateInfo;
-use crate::workspace::{CloneProgress, WorktreeChange, WorktreeCreated, WorktreeFileDiff};
+use crate::terminal_themes::{CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview};
+use crate::updater::{UpdateInfo, UpdatePhase};
+use crate::workspace::{
+    CloneProgress, CreateRequest, WorktreeChange, WorktreeCreated, WorktreeFileDiff,
+};
 use ::xdev_id::XdevIdState;
 
 /// Each type's dependencies are written with it, so only the roots are here.
@@ -75,10 +81,27 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     StatusSettings::export_all(cfg)?;
     TerminalSettings::export_all(cfg)?;
     SettingsChanged::export_all(cfg)?;
+    ShellSettings::export_all(cfg)?;
+    UpdateChannel::export_all(cfg)?;
+    CloseIntent::export_all(cfg)?;
+    CloseRequest::export_all(cfg)?;
+    QuitMode::export_all(cfg)?;
+    HelpLink::export_all(cfg)?;
+    MenuEvent::export_all(cfg)?;
+    ShellLabels::export_all(cfg)?;
+    UpdatePhase::export_all(cfg)?;
     KeySettings::export_all(cfg)?;
     UiSettings::export_all(cfg)?;
     RestoreMode::export_all(cfg)?;
     Theme::export_all(cfg)?;
+    CustomScheme::export_all(cfg)?;
+    SchemePreview::export_all(cfg)?;
+    OnNameTaken::export_all(cfg)?;
+    SchemeMode::export_all(cfg)?;
+    SchemeColors::export_all(cfg)?;
+    EditorTheme::export_all(cfg)?;
+    SidebarLook::export_all(cfg)?;
+    StatusBarItems::export_all(cfg)?;
     OpenInSettings::export_all(cfg)?;
     OpenTarget::export_all(cfg)?;
     CloneProgress::export_all(cfg)?;
@@ -87,6 +110,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     NavigationSettings::export_all(cfg)?;
     DiffSettings::export_all(cfg)?;
     AgentsSettings::export_all(cfg)?;
+    AwakeView::export_all(cfg)?;
     UsageSettings::export_all(cfg)?;
     XdevIdSettings::export_all(cfg)?;
     KeybindingsText::export_all(cfg)?;
@@ -136,6 +160,13 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_git::IssueQuery::export_all(cfg)?;
     xdev_git::GhAccount::export_all(cfg)?;
     xdev_git::GhLogin::export_all(cfg)?;
+    xdev_git::PrSummary::export_all(cfg)?;
+    crate::prs::PrBranch::export_all(cfg)?;
+    xdev_git::PrFilter::export_all(cfg)?;
+    xdev_git::PrQuery::export_all(cfg)?;
+    xdev_git::IssueDraft::export_all(cfg)?;
+    xdev_git::ProjectSummary::export_all(cfg)?;
+    CreateRequest::export_all(cfg)?;
     xdev_workspace::RepoIcon::export_all(cfg)?;
     KitText::export_all(cfg)?;
     PromptEntry::export_all(cfg)?;
@@ -147,6 +178,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     crate::kit::UsageReportArgs::export_all(cfg)?;
     SessionQuery::export_all(cfg)?;
     SessionRow::export_all(cfg)?;
+    SessionSearchStatus::export_all(cfg)?;
     xdev_workspace::VaultView::export_all(cfg)?;
     xdev_workspace::VaultKind::export_all(cfg)?;
     QuickCommand::export_all(cfg)?;

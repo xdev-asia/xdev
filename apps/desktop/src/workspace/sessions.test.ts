@@ -162,6 +162,24 @@ describe("Sessions", () => {
     expect(live.restart("gone")).toBeNull();
   });
 
+  it("sleepable_ignores_agents_that_work_or_wait_for_the_person", () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    const agent = live.open(A, "claude");
+    live.noteStarted(agent.id, info(agent.id, true));
+    expect(live.sleepable(A)).toBe(true);
+    api.__hook(agent.id, "prompt");
+    expect(live.tabs(A)[0].status).toBe("working");
+    expect(live.sleepable(A)).toBe(false);
+    api.__hook(agent.id, "needs-input");
+    expect(live.tabs(A)[0].status).toBe("needs-you");
+    expect(live.sleepable(A)).toBe(false);
+    // A shell beside the busy agent can sleep, so the worktree still offers it.
+    live.open(A, "shell");
+    expect(live.sleepable(A)).toBe(true);
+    expect(live.sleepable(B)).toBe(false);
+  });
+
   it("shell tabs do not count for the dot", () => {
     const live = (sessions = new Sessions(createMockApi({}), () => 1_000));
     const shell = live.open(A, "shell");
@@ -370,6 +388,45 @@ describe("Sessions", () => {
     expect(live.unread(A)).toBe(false);
   });
 
+  it("onStatus hears each status change of an agent tab, with the old and the new status", () => {
+    let t = 100;
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api, () => t));
+    const tab = live.open(A, "claude");
+    const shell = live.open(A, "shell");
+    live.noteStarted(tab.id, info(tab.id, true));
+    const heard = vi.fn();
+    const off = live.onStatus(heard);
+    api.__hook(tab.id, "prompt");
+    expect(heard).toHaveBeenLastCalledWith(expect.objectContaining({ id: tab.id, status: "working" }), "idle", "working", 100);
+    t = 200;
+    api.__hook(tab.id, "needs-input");
+    expect(heard).toHaveBeenLastCalledWith(expect.objectContaining({ id: tab.id }), "working", "needs-you", 200);
+    // The same status again is not a change.
+    const calls = heard.mock.calls.length;
+    api.__hook(tab.id, "needs-input");
+    expect(heard).toHaveBeenCalledTimes(calls);
+    // A plain shell is not an agent: nothing is heard for it.
+    live.noteOutput(shell.id, 10);
+    expect(heard.mock.calls.every(([x]) => x.id === tab.id)).toBe(true);
+    off();
+    api.__hook(tab.id, "resume");
+    expect(heard).toHaveBeenCalledTimes(calls);
+  });
+
+  it("onStatus hears the exit of an agent tab", async () => {
+    const api = createMockApi({});
+    let fire: (e: { id: string; code: number | null }) => void = () => {};
+    vi.spyOn(api, "onPtyExit").mockImplementation(async (cb) => ((fire = cb), () => {}));
+    const live = (sessions = new Sessions(api));
+    const tab = live.open(A, "claude");
+    await Promise.resolve();
+    const heard = vi.fn();
+    live.onStatus(heard);
+    fire({ id: tab.id, code: 0 });
+    expect(heard).toHaveBeenCalledWith(expect.objectContaining({ id: tab.id }), "idle", expect.stringMatching(/^(exited|failed)$/), expect.any(Number));
+  });
+
   it("turn_done_on_hidden_pane_is_unread", () => {
     vi.useFakeTimers();
     let t = 42;
@@ -486,6 +543,79 @@ describe("Sessions", () => {
     live.noteTitle(other.id, "busy");
     live.noteTitle(other.id, "   ");
     expect(live.tabs(A)[1].title).toBeNull();
+  });
+
+  it("an auto title survives a restart", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "claude");
+    live.setAutoTitle(tab.id, "Fix the parser");
+    const again = live.restart(tab.id)!;
+    expect(live.tabs(A)[0]).toMatchObject({ id: again.id, title: "Fix the parser", autoTitled: true, renamed: false });
+    // A later program title does not take it over, and the auto title still comes back after a hand name.
+    live.noteTitle(again.id, "program says");
+    expect(live.tabs(A)[0].title).toBe("Fix the parser");
+    live.rename(again.id, "Mine");
+    live.setTitle(again.id, null);
+    expect(live.tabs(A)[0]).toMatchObject({ title: "Fix the parser", autoTitled: true });
+  });
+
+  it("a hand name survives a restart", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "claude");
+    live.setAutoTitle(tab.id, "Fix the parser");
+    live.rename(tab.id, "Mine");
+    const again = live.restart(tab.id)!;
+    expect(live.tabs(A)[0]).toMatchObject({ id: again.id, title: "Mine", renamed: true, autoTitled: false });
+    live.noteTitle(again.id, "program says");
+    live.setAutoTitle(again.id, "Something else");
+    expect(live.tabs(A)[0]).toMatchObject({ title: "Mine", renamed: true });
+    expect(Object.values(live.snapshot().worktrees[A].tabs)[0]).toMatchObject({ title: "Mine", renamed: true });
+  });
+
+  it("an auto title beats the program title and loses to a name by hand", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "claude");
+    live.noteTitle(tab.id, "program says");
+    live.setAutoTitle(tab.id, "  Fix the parser  ");
+    expect(live.tabs(A)[0]).toMatchObject({ title: "Fix the parser", autoTitled: true, renamed: false });
+    // The program's later titles are kept but do not show.
+    live.noteTitle(tab.id, "program again");
+    expect(live.tabs(A)[0].title).toBe("Fix the parser");
+    // Same title again: same array.
+    const before = live.tabs(A);
+    live.setAutoTitle(tab.id, "Fix the parser");
+    expect(live.tabs(A)).toBe(before);
+    // A name by hand wins; the auto title can no longer replace it.
+    live.rename(tab.id, "Mine");
+    live.setAutoTitle(tab.id, "Other");
+    expect(live.tabs(A)[0]).toMatchObject({ title: "Mine", renamed: true, autoTitled: false });
+    // Giving the name back returns the auto title, then a blank auto title is ignored.
+    live.setTitle(tab.id, null);
+    expect(live.tabs(A)[0]).toMatchObject({ title: "Fix the parser", autoTitled: true, renamed: false });
+    live.setAutoTitle(tab.id, "   ");
+    expect(live.tabs(A)[0].title).toBe("Fix the parser");
+  });
+
+  it("without an auto title, giving a name back returns the program title", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "claude");
+    live.noteTitle(tab.id, "program says");
+    live.rename(tab.id, "Mine");
+    live.setTitle(tab.id, null);
+    expect(live.tabs(A)[0]).toMatchObject({ title: "program says", autoTitled: false });
+    live.setAutoTitle("no-such-tab", "x");
+  });
+
+  it("an auto title is saved in the layout and comes back on restore", async () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "claude");
+    live.setAutoTitle(tab.id, "Fix the parser");
+    const snap = live.snapshot().worktrees[A]!;
+    const saved = Object.values(snap.tabs)[0]!;
+    expect(saved).toMatchObject({ title: "Fix the parser", autoTitled: true });
+    live.rename(tab.id, "Mine");
+    expect(Object.values(live.snapshot().worktrees[A]!.tabs)[0]).toMatchObject({ title: "Mine", renamed: true });
+    expect(Object.values(live.snapshot().worktrees[A]!.tabs)[0]).not.toHaveProperty("autoTitled");
   });
 
   it("hook caps come from the pty, and a turn-done tab needs no tick", () => {

@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { createMockApi } from "./api";
-import { DIFF_DEFAULTS, NAVIGATION_DEFAULTS, SIDEBAR_PREFS_DEFAULTS } from "./mockSettings";
+import { AGENTS_SETTINGS_DEFAULTS, DIFF_DEFAULTS, NAVIGATION_DEFAULTS, SIDEBAR_PREFS_DEFAULTS } from "./mockSettings";
 
 it("starts navigation and diff from the defaults the backend stores", async () => {
   const api = createMockApi({});
@@ -74,4 +74,21 @@ it("carries the sidebar layout through a prefs put", async () => {
   const next = { ...SIDEBAR_PREFS_DEFAULTS, groupBy: "pr" as const, sort: "recent" as const, compactCards: true, card: { ...SIDEBAR_PREFS_DEFAULTS.card, time: false } };
   expect(await api.sidebarPrefsPut(next)).toEqual(next);
   expect(await api.sidebarPrefsGet()).toEqual(next);
+});
+
+it("starts the agents settings with keep awake off and no generated tab titles", async () => {
+  const api = createMockApi({});
+  expect(await api.agentsSettings()).toEqual(AGENTS_SETTINGS_DEFAULTS);
+  const next = { ...AGENTS_SETTINGS_DEFAULTS, accountSwitch: "keep" as const, keepAwake: "agent" as const, autoTabTitle: true };
+  expect(await api.agentsSettingsPut(next)).toEqual(next);
+  expect(await api.agentsSettings()).toEqual(next);
+});
+
+it("emits the shell section on a shell settings put through the mock api", async () => {
+  const api = createMockApi({});
+  const seen = vi.fn();
+  api.onSettingsChanged((e) => seen(e.sections));
+  const stored = await api.shellSettingsPut({ ...(await api.shellSettings()), minimizeToTray: true });
+  expect(stored.minimizeToTray).toBe(true);
+  expect(seen).toHaveBeenCalledWith(["shell"]);
 });
