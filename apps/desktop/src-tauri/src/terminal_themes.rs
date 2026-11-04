@@ -380,6 +380,10 @@ fn file_of(dir: &Path, stem: &str) -> PathBuf {
 
 /// The file's bytes, refusing one over `THEME_FILE_MAX` before reading it.
 fn read_capped(path: &Path) -> Result<Vec<u8>, CmdError> {
+    // A folder (or anything else that is not a file) reads like a missing file.
+    if !path.metadata().is_ok_and(|m| m.is_file()) {
+        return Err(not_found());
+    }
     let file = fs::File::open(path).map_err(|e| match e.kind() {
         io::ErrorKind::NotFound => not_found(),
         _ => io_error(e),
@@ -899,5 +903,19 @@ mod tests {
         let long = slug(&"ab ".repeat(40), SLUG_MAX);
         assert!(long.chars().count() <= SLUG_MAX && !long.ends_with('-'));
         assert!(format!("custom-{long}").len() <= 40);
+    }
+
+    #[test]
+    fn a_directory_reads_like_a_missing_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("x.json");
+        fs::create_dir_all(&dir).unwrap();
+        assert_eq!(read_capped(&dir).unwrap_err().code, "not_found");
+        assert_eq!(
+            import(&themes_dir(tmp.path()), &dir, OnNameTaken::Fail)
+                .unwrap_err()
+                .code,
+            "not_found"
+        );
     }
 }
