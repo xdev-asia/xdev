@@ -6431,6 +6431,7 @@ dependencies = [
  "trash",
  "ts-rs",
  "uuid",
+ "windows-sys 0.61.2",
  "xdev-agent",
  "xdev-ai",
  "xdev-awake",
