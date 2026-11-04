@@ -21,7 +21,7 @@ use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
     EditorSettings, GitSettings, KeySettings, OpenInSettings, RestoreMode, SettingsChanged,
-    StatusSettings, TerminalSettings, UiSettings,
+    SidebarPrefs, StatusSettings, TerminalSettings, UiSettings,
 };
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
@@ -73,6 +73,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     OpenTarget::export_all(cfg)?;
     CloneProgress::export_all(cfg)?;
     EditorSettings::export_all(cfg)?;
+    SidebarPrefs::export_all(cfg)?;
     KeybindingsText::export_all(cfg)?;
     KeybindingsChanged::export_all(cfg)?;
     PtyHook::export_all(cfg)?;
@@ -82,6 +83,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_workspace::HookRun::export_all(cfg)?;
     xdev_workspace::WorktreeView::export_all(cfg)?;
     xdev_workspace::WorktreeStat::export_all(cfg)?;
+    xdev_workspace::DetailsPatch::export_all(cfg)?;
+    xdev_workspace::Removed::export_all(cfg)?;
+    xdev_workspace::SidebarItem::export_all(cfg)?;
     WorktreeChange::export_all(cfg)?;
     WorktreeFileDiff::export_all(cfg)?;
     ReviewData::export_all(cfg)?;

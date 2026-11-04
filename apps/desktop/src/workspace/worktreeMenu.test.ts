@@ -2,9 +2,10 @@ import { expect, it, vi } from "vitest";
 import type { OpenInApp, WorktreeView } from "@/api";
 import type { MenuItem } from "@/ui/ContextMenu";
 import { projectMenuItems, worktreeMenuItems, type WorktreeMenuContext } from "./worktreeMenu";
+import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 const wt = (over: Partial<WorktreeView> = {}): WorktreeView => ({
-  path: "/code/xdev-oak", name: "xdev-oak", branch: "feat/oak", head: null, start: null, primary: false, pinned: false, detached: false, ...over,
+  path: "/code/xdev-oak", name: "xdev-oak", branch: "feat/oak", head: null, start: null, primary: false, pinned: false, detached: false, ...NO_DETAILS, ...over,
 });
 const APPS: OpenInApp[] = [
   { id: "vscode", label: "VS Code", command: "code", args: [] },

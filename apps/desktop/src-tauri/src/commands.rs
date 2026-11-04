@@ -211,6 +211,22 @@ pub fn editor_settings_put(
     .map(|s| s.editor)
 }
 
+/// The sidebar's filters as stored; all off when nothing is.
+#[tauri::command(async)]
+pub fn sidebar_prefs_get(app: AppHandle) -> settings::SidebarPrefs {
+    settings_store::read(&app).sidebar
+}
+
+/// Stores the sidebar's filters and returns what was stored.
+#[tauri::command(async)]
+pub fn sidebar_prefs_put(
+    app: AppHandle,
+    prefs: settings::SidebarPrefs,
+) -> Result<settings::SidebarPrefs, CmdError> {
+    settings_store::write(&app, &[SettingsSection::Sidebar], |s| s.sidebar = prefs)
+        .map(|s| s.sidebar)
+}
+
 /// The global git `user.name` that the git-username prefix shows; a repo's
 /// own `user.name` wins when a worktree is created.
 #[tauri::command(async)]

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createMockApi, SETUP_PROFILE } from "./api";
 import { createMockWorkspace, DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE } from "./mockWorkspace";
+import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 const FIRST = "/demo/wt/xdev-oak";
 
@@ -165,7 +166,7 @@ describe("mock workspace", () => {
   });
 
   it("adopt moves a found worktree into worktrees", async () => {
-    const outside = { path: "/demo/wt/hand-made", name: "hand-made", branch: "hand", head: "5".repeat(40), start: null, primary: false, pinned: false, detached: false };
+    const outside = { path: "/demo/wt/hand-made", name: "hand-made", branch: "hand", head: "5".repeat(40), start: null, primary: false, pinned: false, detached: false, ...NO_DETAILS };
     const api = createMockWorkspace({ ...DEMO_WORKSPACE, found: { "demo-xdev": [outside] } });
     expect((await api.workspaceList())[0].found.map((w) => w.path)).toEqual([outside.path]);
     const adopted = await api.worktreeAdopt(outside.path);

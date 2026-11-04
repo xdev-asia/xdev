@@ -3,12 +3,14 @@ use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Deserializer, Serialize};
 use xdev_git::{BaseRefresh, GitError, Repo, WorktreeEntry};
 
+use crate::kept::{KeptBranch, KeptReason, keep};
 use crate::registry::normalize;
 use crate::{
-    Registry, RepoEntry, ScriptSource, SetupPolicy, WorkspaceError, WorktreeMeta, names, repo_id,
+    MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, WorkItem, WorkStatus, WorkspaceError,
+    WorktreeMeta, names, repo_id,
 };
 
 /// A repo as the sidebar shows it.
@@ -50,6 +52,17 @@ pub struct WorktreeView {
     pub primary: bool,
     pub pinned: bool,
     pub detached: bool,
+    /// The shown name; `None` shows `name`.
+    pub title: Option<String>,
+    pub comment: String,
+    pub status: Option<WorkStatus>,
+    /// The parent worktree's path, only while that worktree is shown for
+    /// the same repo; otherwise the row is top-level.
+    pub parent: Option<String>,
+    pub item: Option<WorkItem>,
+    pub made_by: MadeBy,
+    /// On the repo's base branch (by its short name).
+    pub default_branch: bool,
 }
 
 /// Paths from git, the registry and the UI compare in this form: `/` as the
@@ -71,11 +84,11 @@ pub fn path_key(path: &Path) -> String {
     plain.trim_end_matches('/').to_owned()
 }
 
-fn lossy(path: &Path) -> String {
+pub(crate) fn lossy(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-fn find_repo(reg: &Registry, id: &str) -> Result<RepoEntry, WorkspaceError> {
+pub(crate) fn find_repo(reg: &Registry, id: &str) -> Result<RepoEntry, WorkspaceError> {
     reg.repos
         .iter()
         .find(|r| r.id == id)
@@ -247,6 +260,8 @@ pub fn forget_repo(reg: &mut Registry, id: &str) -> Result<(), WorkspaceError> {
     find_repo(reg, id)?;
     reg.repos.retain(|r| r.id != id);
     reg.worktrees.retain(|m| m.repo_id != id);
+    reg.kept.retain(|k| k.repo_id != id);
+    crate::groups::forget_id(reg, id);
     Ok(())
 }
 
@@ -294,7 +309,11 @@ fn missing_view(entry: &RepoEntry) -> RepoView {
 }
 
 /// Where a worktree began: its fork point from the base, else its head.
-fn start_of(repo: &Repo, entry: &WorktreeEntry, base_ref: &str) -> Result<String, WorkspaceError> {
+pub(crate) fn start_of(
+    repo: &Repo,
+    entry: &WorktreeEntry,
+    base_ref: &str,
+) -> Result<String, WorkspaceError> {
     // The id first: a branch and a tag may share a name.
     let tip = entry.head.as_deref().or(entry.branch.as_deref());
     let found = match tip {
@@ -308,7 +327,31 @@ fn start_of(repo: &Repo, entry: &WorktreeEntry, base_ref: &str) -> Result<String
     Ok(found.or_else(|| entry.head.clone()).unwrap_or_default())
 }
 
-fn view_of(entry: &WorktreeEntry, short_name: &str, meta: Option<&WorktreeMeta>) -> WorktreeView {
+/// The local branch name `base_ref` stands for: `main` for `main`,
+/// `refs/heads/main`, or `origin/main` when no local branch has that whole
+/// name. `None` when it names no branch, e.g. `HEAD`.
+pub(crate) fn default_short(repo: &Repo, base_ref: &str) -> Result<Option<String>, WorkspaceError> {
+    if let Some(name) = base_ref.strip_prefix("refs/heads/") {
+        return Ok(Some(name.to_owned()));
+    }
+    if let Some(rest) = base_ref.strip_prefix("refs/remotes/") {
+        return Ok(rest.split_once('/').map(|(_, b)| b.to_owned()));
+    }
+    if base_ref == "HEAD" || base_ref.is_empty() {
+        return Ok(None);
+    }
+    match base_ref.split_once('/') {
+        Some((_, rest)) if !repo.branch_exists(base_ref)? => Ok(Some(rest.to_owned())),
+        _ => Ok(Some(base_ref.to_owned())),
+    }
+}
+
+pub(crate) fn view_of(
+    entry: &WorktreeEntry,
+    short_name: &str,
+    meta: Option<&WorktreeMeta>,
+    default: Option<&str>,
+) -> WorktreeView {
     let folder = entry
         .path
         .file_name()
@@ -325,6 +368,13 @@ fn view_of(entry: &WorktreeEntry, short_name: &str, meta: Option<&WorktreeMeta>)
         primary: meta.is_none(),
         pinned: meta.is_some_and(|m| m.pinned),
         detached: entry.detached,
+        title: meta.and_then(|m| m.title.clone()),
+        comment: meta.map(|m| m.comment.clone()).unwrap_or_default(),
+        status: meta.and_then(|m| m.status),
+        parent: meta.and_then(|m| m.parent.as_deref()).map(lossy),
+        item: meta.and_then(|m| m.item.clone()),
+        made_by: meta.map(|m| m.made_by).unwrap_or_default(),
+        default_branch: default.is_some() && entry.branch.as_deref() == default,
     }
 }
 
@@ -366,6 +416,8 @@ fn sync_repo(
         return Ok(view);
     }
     view.missing = false;
+    let default = default_short(&repo, &entry.base_ref)?;
+    let default = default.as_deref();
     let linked: Vec<&WorktreeEntry> = listed.iter().skip(1).filter(|e| !e.bare).collect();
     // A prunable entry is still listed: its record stays, in case the
     // folder comes back, but it is not shown.
@@ -390,16 +442,15 @@ fn sync_repo(
                 repo_id: entry.id.clone(),
                 path: wt.path.clone(),
                 start,
-                pinned: false,
                 created_ms: now_ms,
-                made_here: false,
+                ..WorktreeMeta::default()
             });
         }
     }
 
     if let Some(primary) = listed.first() {
         view.worktrees
-            .push(view_of(primary, &entry.short_name, None));
+            .push(view_of(primary, &entry.short_name, None, default));
     }
     let mut rest: Vec<(bool, i64, WorktreeView)> = live()
         .filter_map(|wt| {
@@ -411,16 +462,33 @@ fn sync_repo(
             Some((
                 meta.pinned,
                 meta.created_ms,
-                view_of(wt, &entry.short_name, Some(meta)),
+                view_of(wt, &entry.short_name, Some(meta), default),
             ))
         })
         .collect();
     rest.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
     view.worktrees.extend(rest.into_iter().map(|(_, _, v)| v));
+    // A parent that is not a shown linked worktree of this repo is ignored:
+    // the child shows top-level.
+    let shown: HashSet<String> = view
+        .worktrees
+        .iter()
+        .filter(|w| !w.primary)
+        .map(|w| path_key(Path::new(&w.path)))
+        .collect();
+    for wt in &mut view.worktrees {
+        if wt
+            .parent
+            .as_deref()
+            .is_some_and(|p| !shown.contains(&path_key(Path::new(p))))
+        {
+            wt.parent = None;
+        }
+    }
     view.found = live()
         .filter(|wt| !recorded(reg, wt))
         .map(|wt| {
-            let mut found = view_of(wt, &entry.short_name, None);
+            let mut found = view_of(wt, &entry.short_name, None, default);
             // `view_of` reads "no record" as the primary checkout.
             found.primary = false;
             found
@@ -474,11 +542,11 @@ pub fn adopt_worktree(
             repo_id: entry.id.clone(),
             path: wt.path.clone(),
             start: start_of(&repo, wt, &entry.base_ref)?,
-            pinned: false,
             created_ms: now_ms,
-            made_here: false,
+            ..WorktreeMeta::default()
         };
-        let view = view_of(wt, &entry.short_name, Some(&meta));
+        let default = default_short(&repo, &entry.base_ref)?;
+        let view = view_of(wt, &entry.short_name, Some(&meta), default.as_deref());
         reg.worktrees.push(meta);
         return Ok(view);
     }
@@ -533,6 +601,8 @@ pub enum BranchPrefix {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CreateOptions {
     pub prefix: BranchPrefix,
+    /// Recorded on the new worktree; the desktop app passes `App`.
+    pub made_by: MadeBy,
 }
 
 /// Fetches the base a new worktree of `repo_id` would start from (`from`,
@@ -670,11 +740,18 @@ pub fn create_worktree_with(
         repo_id: entry.id.clone(),
         path: git_entry.path.clone(),
         start,
-        pinned: false,
         created_ms: now_ms,
         made_here: true,
+        made_by: opts.made_by,
+        ..WorktreeMeta::default()
     };
-    let view = view_of(&git_entry, &entry.short_name, Some(&meta));
+    let default = default_short(&repo, &entry.base_ref)?;
+    let view = view_of(
+        &git_entry,
+        &entry.short_name,
+        Some(&meta),
+        default.as_deref(),
+    );
     reg.worktrees.push(meta);
     Ok(view)
 }
@@ -700,21 +777,193 @@ pub fn set_pinned(reg: &mut Registry, path: &Path, pinned: bool) -> Result<(), W
     Ok(())
 }
 
-/// Removes a linked worktree. Without `force` it must have no changes,
-/// untracked files included. Its branch goes too when this app made it and,
-/// unless `force`, all its commits are in `base_ref`; the branch of an
-/// imported worktree is kept.
-pub fn remove_worktree(reg: &mut Registry, path: &Path, force: bool) -> Result<(), WorkspaceError> {
+/// Longest title, in chars.
+pub const TITLE_MAX: usize = 120;
+/// Longest comment, in chars.
+pub const COMMENT_MAX: usize = 2000;
+/// Longest work item link, in chars.
+pub const ITEM_URL_MAX: usize = 2048;
+
+/// Reads a present JSON value, `null` included, as `Some`, so an absent key
+/// (`None` through `default`) and `null` (`Some(None)`) differ.
+fn present<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(d).map(Some)
+}
+
+/// Edits to a worktree's details. An outer `None` (an absent key) leaves the
+/// field as it is; `Some(None)` (`null`) clears it.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct DetailsPatch {
+    #[serde(default, deserialize_with = "present")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub title: Option<Option<String>>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub comment: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub status: Option<Option<WorkStatus>>,
+    #[serde(default, deserialize_with = "present")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub item: Option<Option<WorkItem>>,
+    #[serde(default, deserialize_with = "present")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<Option<String>>"))]
+    pub parent: Option<Option<PathBuf>>,
+}
+
+fn check_item(item: &WorkItem) -> Result<(), WorkspaceError> {
+    let url = &item.url;
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"));
+    if rest.is_none_or(str::is_empty)
+        || url.chars().count() > ITEM_URL_MAX
+        || url.chars().any(|c| c.is_control() || c.is_whitespace())
+    {
+        return Err(WorkspaceError::BadItem(url.clone()));
+    }
+    if item
+        .title
+        .as_ref()
+        .is_some_and(|t| t.chars().count() > TITLE_MAX)
+    {
+        return Err(WorkspaceError::BadItem("title too long".to_owned()));
+    }
+    Ok(())
+}
+
+/// Whether `parent` may hold the worktree at `index`: a recorded linked
+/// worktree of the same repo, not itself, with no parent of its own; and
+/// the worktree has no children. One level only.
+fn check_parent(reg: &Registry, index: usize, parent: &Path) -> Result<PathBuf, WorkspaceError> {
+    let bad = || WorkspaceError::BadParent(lossy(parent));
+    let me = &reg.worktrees[index];
+    let key = path_key(parent);
+    let my_key = path_key(&me.path);
+    if key == my_key {
+        return Err(bad());
+    }
+    let holder = reg
+        .worktrees
+        .iter()
+        .find(|m| path_key(&m.path) == key)
+        .ok_or_else(bad)?;
+    if holder.repo_id != me.repo_id || holder.parent.is_some() {
+        return Err(bad());
+    }
+    let has_children = reg
+        .worktrees
+        .iter()
+        .any(|m| m.parent.as_deref().is_some_and(|p| path_key(p) == my_key));
+    if has_children {
+        return Err(bad());
+    }
+    // The registry's own spelling, so later lookups match.
+    Ok(holder.path.clone())
+}
+
+/// Sets a linked worktree's title, comment, status, work item or parent.
+/// Every field is checked before any is written. A blank title, or a blank
+/// work item title, is cleared. Lengths count chars.
+pub fn set_details(
+    reg: &mut Registry,
+    path: &Path,
+    patch: DetailsPatch,
+) -> Result<(), WorkspaceError> {
     let key = path_key(path);
     if reg.repos.iter().any(|r| path_key(&r.path) == key) {
         return Err(WorkspaceError::Primary(path.to_owned()));
     }
-    let meta_idx = reg
+    let index = reg
         .worktrees
         .iter()
         .position(|m| path_key(&m.path) == key)
         .ok_or_else(|| WorkspaceError::WorktreeUnknown(path.to_owned()))?;
-    let meta = reg.worktrees[meta_idx].clone();
+    let blank_none = |t: String| Some(t.trim().to_owned()).filter(|t| !t.is_empty());
+    let title = patch.title.map(|t| t.and_then(blank_none));
+    if let Some(Some(t)) = &title
+        && t.chars().count() > TITLE_MAX
+    {
+        return Err(WorkspaceError::BadDetails("title".to_owned()));
+    }
+    if let Some(c) = &patch.comment
+        && c.chars().count() > COMMENT_MAX
+    {
+        return Err(WorkspaceError::BadDetails("comment".to_owned()));
+    }
+    let item = patch.item.map(|i| {
+        i.map(|i| WorkItem {
+            url: i.url.trim().to_owned(),
+            title: i.title.and_then(blank_none),
+            kind: i.kind,
+        })
+    });
+    if let Some(Some(i)) = &item {
+        check_item(i)?;
+    }
+    let parent = match patch.parent {
+        Some(Some(p)) => Some(Some(check_parent(reg, index, &p)?)),
+        other => other,
+    };
+    let meta = &mut reg.worktrees[index];
+    if let Some(t) = title {
+        meta.title = t;
+    }
+    if let Some(c) = patch.comment {
+        meta.comment = c;
+    }
+    if let Some(s) = patch.status {
+        meta.status = s;
+    }
+    if let Some(i) = item {
+        meta.item = i;
+    }
+    if let Some(p) = parent {
+        meta.parent = p;
+    }
+    Ok(())
+}
+
+/// Children of the worktree whose path key is `key` become top-level.
+pub(crate) fn orphan_children(reg: &mut Registry, key: &str) {
+    for m in &mut reg.worktrees {
+        if m.parent.as_deref().is_some_and(|p| path_key(p) == key) {
+            m.parent = None;
+        }
+    }
+}
+
+/// A linked worktree about to lose its folder, after the shared checks.
+pub(crate) struct Leaving {
+    pub idx: usize,
+    pub meta: WorktreeMeta,
+    pub entry: RepoEntry,
+    pub repo: Repo,
+    pub key: String,
+    /// Its branch, unless git lists it detached or another worktree has
+    /// the same branch checked out.
+    pub branch: Option<String>,
+}
+
+/// Finds the linked worktree at `path` and, without `force`, refuses one
+/// with changes, untracked files included.
+pub(crate) fn leaving(reg: &Registry, path: &Path, force: bool) -> Result<Leaving, WorkspaceError> {
+    let key = path_key(path);
+    if reg.repos.iter().any(|r| path_key(&r.path) == key) {
+        return Err(WorkspaceError::Primary(path.to_owned()));
+    }
+    let idx = reg
+        .worktrees
+        .iter()
+        .position(|m| path_key(&m.path) == key)
+        .ok_or_else(|| WorkspaceError::WorktreeUnknown(path.to_owned()))?;
+    let meta = reg.worktrees[idx].clone();
     let entry = find_repo(reg, &meta.repo_id)?;
     let repo = Repo::discover(&entry.path)?;
 
@@ -726,25 +975,79 @@ pub fn remove_worktree(reg: &mut Registry, path: &Path, force: bool) -> Result<(
     let branch = listed
         .iter()
         .find(|e| path_key(&e.path) == key)
+        .filter(|e| !e.detached)
         .and_then(|e| e.branch.clone())
         .filter(|b| {
-            meta.made_here
-                && !listed
-                    .iter()
-                    .any(|e| path_key(&e.path) != key && e.branch.as_deref() == Some(b))
+            !listed
+                .iter()
+                .any(|e| path_key(&e.path) != key && e.branch.as_deref() == Some(b))
         });
-    // Without `force`, commits found nowhere else keep their branch.
-    let branch = match branch {
-        Some(b) if !force && !is_merged(&repo, &b, &entry.base_ref)? => None,
-        other => other,
-    };
+    Ok(Leaving {
+        idx,
+        meta,
+        entry,
+        repo,
+        key,
+        branch,
+    })
+}
 
-    repo.remove_worktree(&meta.path)?;
-    reg.worktrees.remove(meta_idx);
-    if let Some(branch) = branch {
-        repo.delete_branch(&branch)?;
-    }
+/// Removes the folder through git and the record; children become
+/// top-level. Never touches the branch.
+pub(crate) fn drop_folder(reg: &mut Registry, l: &Leaving) -> Result<(), WorkspaceError> {
+    l.repo.remove_worktree(&l.meta.path)?;
+    reg.worktrees.remove(l.idx);
+    orphan_children(reg, &l.key);
     Ok(())
+}
+
+/// What `remove_worktree` and `archive_worktree` did with the branch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct Removed {
+    pub deleted_branch: Option<String>,
+    /// The branch left in git and added to the registry's kept list.
+    pub kept: Option<KeptBranch>,
+}
+
+/// Removes a linked worktree. Without `force` it must have no changes,
+/// untracked files included. Its branch goes too when this app made it and,
+/// unless `force`, all its commits are in `base_ref`. A branch it leaves
+/// (unmerged, or of an imported worktree) is listed in `kept` as `Deleted`.
+pub fn remove_worktree(
+    reg: &mut Registry,
+    path: &Path,
+    force: bool,
+    now_ms: i64,
+) -> Result<Removed, WorkspaceError> {
+    let l = leaving(reg, path, force)?;
+    // Without `force`, commits found nowhere else keep their branch.
+    let delete = match &l.branch {
+        Some(b) if l.meta.made_here => force || is_merged(&l.repo, b, &l.entry.base_ref)?,
+        _ => false,
+    };
+    drop_folder(reg, &l)?;
+    match l.branch.clone() {
+        Some(branch) if delete => {
+            l.repo.delete_branch(&branch)?;
+            Ok(Removed {
+                deleted_branch: Some(branch),
+                kept: None,
+            })
+        }
+        Some(branch) => {
+            let kept = keep(reg, &l.meta, branch, KeptReason::Deleted, now_ms);
+            Ok(Removed {
+                deleted_branch: None,
+                kept: Some(kept),
+            })
+        }
+        None => Ok(Removed {
+            deleted_branch: None,
+            kept: None,
+        }),
+    }
 }
 
 /// What a worktree changed against where it started, for its sidebar row.

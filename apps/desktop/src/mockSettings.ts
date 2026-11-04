@@ -1,4 +1,4 @@
-import type { Api, EditorSettings, KeySettings, SettingsChanged, SettingsSection, TerminalSettings, UiSettings } from "./api";
+import type { Api, EditorSettings, KeySettings, SettingsChanged, SettingsSection, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
 import { clampEditorSettings, EDITOR_DEFAULTS } from "./files/editorDefaults";
 import { KEY_SETTINGS_DEFAULTS } from "./keys/bindingsStore";
 import { clampTerminalSettings, TERMINAL_DEFAULTS } from "./settings/terminalDefaults";
@@ -17,7 +17,12 @@ type SettingsApi = Pick<
   | "uiSettingsPut"
   | "editorSettings"
   | "editorSettingsPut"
+  | "sidebarPrefsGet"
+  | "sidebarPrefsPut"
 >;
+
+/** `SidebarPrefs::default()` in Rust: every row shows. */
+export const SIDEBAR_PREFS_DEFAULTS: SidebarPrefs = { hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false };
 
 export { KEY_SETTINGS_DEFAULTS };
 /** `UiSettings::default()` in Rust, and the range `ui_settings_put` clamps the zoom to. */
@@ -46,6 +51,7 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
   let keys: KeySettings = { ...KEY_SETTINGS_DEFAULTS };
   let ui: UiSettings = { ...UI_SETTINGS_DEFAULTS };
   let editor: EditorSettings = { ...EDITOR_DEFAULTS };
+  let sidebar: SidebarPrefs = { ...SIDEBAR_PREFS_DEFAULTS };
   return {
     onSettingsChanged: hub.onSettingsChanged,
     async terminalSettings() {
@@ -80,6 +86,14 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
       editor = clampEditorSettings(next);
       hub.emit(["editor"]);
       return { ...editor };
+    },
+    async sidebarPrefsGet() {
+      return { ...sidebar };
+    },
+    async sidebarPrefsPut(next) {
+      sidebar = { ...SIDEBAR_PREFS_DEFAULTS, ...next };
+      hub.emit(["sidebar"]);
+      return { ...sidebar };
     },
   };
 }
