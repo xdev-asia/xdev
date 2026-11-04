@@ -1,0 +1,18 @@
+/** Values the preview under a template shows for the variables; `basePrompt` is added by the editor. */
+export const RECIPE_SAMPLES: Readonly<Record<string, string>> = {
+  branch: "feat/login-form",
+  baseBranch: "main",
+  stagedFiles: "src/login.ts\nsrc/login.test.ts",
+  stagedPatch: "diff --git a/src/login.ts b/src/login.ts\n@@ -1 +1,2 @@\n+export const login = () => {};",
+  linkedIssue: "#42 Add a login form",
+  currentTitle: "Add login form",
+  currentBody: "Adds the form.",
+  commitSummary: "feat: add login form\nfix: trim the user name",
+  changedFiles: " src/login.ts | 12 ++++++++++++\n 1 file changed, 12 insertions(+)",
+  patch: "diff --git a/src/login.ts b/src/login.ts\n@@ -1 +1,2 @@\n+export const login = () => {};",
+  output: "error: lint failed in src/login.ts",
+  checkName: "build",
+  workflow: "CI",
+  link: "https://github.com/owner/repo/actions/runs/123",
+  log: "build\tTest\terror: expected 1, got 2",
+};

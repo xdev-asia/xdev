@@ -3,7 +3,12 @@ import { render } from "./render";
 
 export { render };
 
+// Longer is cut when saved (`RECIPE_TEMPLATE_MAX` in settings.rs).
+export const RECIPE_TEMPLATE_MAX = 16 * 1024;
+
 export type RecipeId = "commitMessage" | "pullRequest" | "fixCommitFailure" | "fixPushFailure" | "fixChecks";
+// The recipes in the order the editor lists them.
+export const RECIPE_IDS: readonly RecipeId[] = ["commitMessage", "pullRequest", "fixCommitFailure", "fixPushFailure", "fixChecks"];
 export type FixRecipeId = "fixCommitFailure" | "fixPushFailure" | "fixChecks";
 
 // The variables each recipe can name; `{basePrompt}` first, as in the editor's chips.
