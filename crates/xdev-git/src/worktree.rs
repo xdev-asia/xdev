@@ -145,6 +145,40 @@ impl Repo {
         .map(drop)
     }
 
+    /// `git worktree add --no-checkout`, so a sparse list can be set before
+    /// any file is written. With `new_from` the worktree gets new branch
+    /// `branch` started there; without it `branch` must already exist.
+    pub fn add_worktree_no_checkout(
+        &self,
+        path: &Path,
+        branch: Option<&str>,
+        new_from: Option<&str>,
+    ) -> Result<(), GitError> {
+        let path = utf8(path)?;
+        let mut args = vec!["worktree", "add", "-q", "--no-checkout"];
+        match (branch, new_from) {
+            (Some(b), Some(from)) => args.extend(["-b", b, path, from]),
+            (Some(b), None) => {
+                if b.starts_with('-') || !self.branch_exists(b)? {
+                    return Err(GitError::BadId(b.to_owned()));
+                }
+                args.extend([path, b]);
+            }
+            (None, _) => return Err(GitError::BadId(String::new())),
+        }
+        run::run(&self.workdir, &args, None).map(drop)
+    }
+
+    /// Limits a worktree made with `--no-checkout` to cone folders `dirs`,
+    /// then writes those files. Git keeps the pattern list in the worktree's
+    /// own config, so the main checkout stays full.
+    pub fn sparse_set(&self, dirs: &[String]) -> Result<(), GitError> {
+        let mut args = vec!["sparse-checkout", "set", "--cone", "--"];
+        args.extend(dirs.iter().map(String::as_str));
+        run::run(&self.workdir, &args, None)?;
+        run::run(&self.workdir, &["read-tree", "-mu", "HEAD"], None).map(drop)
+    }
+
     /// Commits on local branch `branch` that `base` does not have; every
     /// commit on the branch when `base` names no commit.
     pub fn count_ahead(&self, branch: &str, base: &str) -> Result<u32, GitError> {
