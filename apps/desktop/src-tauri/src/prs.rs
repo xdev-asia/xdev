@@ -91,12 +91,19 @@ fn made_key(repo_id: &str, branch: &str) -> (String, String) {
 
 /// Records `branch` as fetched, with the commit it points at now.
 fn made_insert(repo: &Repo, repo_id: &str, branch: &str) -> Result<(), CmdError> {
-    if let Some(tip) = repo.resolve_ref(&format!("refs/heads/{branch}"))? {
-        made()
-            .lock()
-            .unwrap()
-            .insert(made_key(repo_id, branch), tip);
-    }
+    let Some(tip) = repo.resolve_ref(&format!("refs/heads/{branch}"))? else {
+        // The fetch said it made the branch but it is not there: record nothing.
+        return Err(xdev_git::GitError::Failed {
+            args: "rev-parse".into(),
+            status: None,
+            stderr: format!("the fetched branch {branch} cannot be resolved"),
+        }
+        .into());
+    };
+    made()
+        .lock()
+        .unwrap()
+        .insert(made_key(repo_id, branch), tip);
     Ok(())
 }
 
@@ -190,6 +197,8 @@ fn branch_with(
                 fetched: true,
             });
         }
+        // Taken, so the user's now: a record of an earlier fetch no longer covers it.
+        made().lock().unwrap().remove(&made_key(repo_id, &branch));
     }
     Err(xdev_workspace::WorkspaceError::BranchExists(format!("pr-{number}")).into())
 }
@@ -547,6 +556,36 @@ mod tests {
         git(&main, &["branch", "feat/x"]);
         assert!(!discard_with(&data, "r-d4", "feat/x").unwrap());
         assert!(exists("feat/x"));
+    }
+
+    #[test]
+    fn discard_keeps_the_fork_branch_a_later_call_skipped() {
+        let (_tmp, data, main) = fixture("r-d5");
+        let script = || Fake::new(vec![(0, &pr(7, "main", true), "")]);
+        assert_eq!(
+            branch_with(&script(), &data, "r-d5", 7).unwrap().branch,
+            "pr-7"
+        );
+        // `pr-7` is taken now, so the next call skips it: it is the user's, not ours to discard.
+        let second = branch_with(&script(), &data, "r-d5", 7).unwrap();
+        assert_eq!(second.branch, "pr-7-2");
+        assert!(!discard_with(&data, "r-d5", "pr-7").unwrap());
+        assert!(!git(&main, &["branch", "--list", "pr-7"]).trim().is_empty());
+        assert!(discard_with(&data, "r-d5", "pr-7-2").unwrap());
+    }
+
+    #[test]
+    fn a_fetch_whose_branch_cannot_be_resolved_is_an_error_and_not_recorded() {
+        let (_tmp, data, main) = fixture("r-d6");
+        let repo = Repo::discover(&main).unwrap();
+        assert!(made_insert(&repo, "r-d6", "no-such-branch").is_err());
+        assert!(
+            !made()
+                .lock()
+                .unwrap()
+                .contains_key(&made_key("r-d6", "no-such-branch"))
+        );
+        let _ = data;
     }
 
     #[test]
