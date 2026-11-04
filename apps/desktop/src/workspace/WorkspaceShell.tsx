@@ -16,7 +16,7 @@ import { fileTabId, fileTabs } from "@/files/fileTabs";
 import { onOpenFile, type OpenFileRequest } from "@/files/openFile";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
-import { openRestoredFile, restoreLayout, startLayoutSave, undoRestore } from "./layoutPersist";
+import { currentCloseWindow, openRestoredFile, restoreLayout, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
@@ -217,6 +217,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const restoreStarted = useRef(false);
   const saver = useRef<ReturnType<typeof startLayoutSave> | null>(null);
   const flushOnClose = useRef(() => saver.current?.flush());
+  const stopCloseWatch = useRef<() => void>(() => {});
   useEffect(() => {
     if (!sessions || !repos || repos.length === 0 || restoreStarted.current) return;
     restoreStarted.current = true;
@@ -226,6 +227,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       if (!restoreStarted.current) return;
       saver.current = startLayoutSave(api, sessions);
       if (typeof window !== "undefined") window.addEventListener("beforeunload", flushOnClose.current);
+      void currentCloseWindow().then((win) => {
+        if (!saver.current) return;
+        stopCloseWatch.current();
+        stopCloseWatch.current = watchWindowClose(saver.current, win);
+      });
       if (!got || got.report.opened.length === 0) return;
       const { resumed, fresh, opened } = got.report;
       pushToast({
@@ -240,6 +246,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       restoreStarted.current = false;
       saver.current?.stop();
       saver.current = null;
+      stopCloseWatch.current();
+      stopCloseWatch.current = () => {};
       if (typeof window !== "undefined") window.removeEventListener("beforeunload", close);
     };
   }, [sessions]);

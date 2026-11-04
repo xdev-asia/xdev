@@ -44,6 +44,45 @@ export function startLayoutSave(api: Pick<Api, "layoutSave">, sessions: Sessions
   };
 }
 
+/** The part of a Tauri window that `watchWindowClose` uses. */
+export interface CloseWindow {
+  onCloseRequested(handler: () => void | Promise<void>): Promise<() => void>;
+}
+
+/**
+ * Flushes the pending save when the window is asked to close (`beforeunload` is not reliable in a
+ * Tauri window). The handler does not prevent the close. With no window (tests, a browser) it does
+ * nothing. Returns a function that stops listening.
+ */
+export function watchWindowClose(saver: Pick<LayoutSaver, "flush">, win: CloseWindow | null): () => void {
+  if (!win) return () => {};
+  let off: (() => void) | null = null;
+  let stopped = false;
+  win
+    .onCloseRequested(() => saver.flush())
+    .then((un) => {
+      if (stopped) un();
+      else off = un;
+    })
+    .catch(() => {});
+  return () => {
+    stopped = true;
+    off?.();
+    off = null;
+  };
+}
+
+/** The current Tauri window, or null outside Tauri. */
+export async function currentCloseWindow(): Promise<CloseWindow | null> {
+  if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return null;
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    return getCurrentWindow();
+  } catch {
+    return null;
+  }
+}
+
 /** The fallback of `Sessions.restore`: the newest resumable session of the worktree that started after the tab. */
 export function sessionFallback(api: Pick<Api, "agentSessions">): SessionFallback {
   return async (worktree, cli, since) => {
