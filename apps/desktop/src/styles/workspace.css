@@ -2728,3 +2728,53 @@ button.ws-tree-row:focus-visible {
   border: 0;
   cursor: pointer;
 }
+
+/* Multi-select, bulk bar and bulk dialogs. */
+.ws-wt[data-picked="true"] {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.ws-bulk-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border, color-mix(in srgb, currentColor 15%, transparent));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.ws-bulk-count {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+
+.ws-bulk-status {
+  max-width: 9rem;
+}
+
+.ws-bulk-list {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.ws-bulk-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.ws-tick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.ws-tick input {
+  accent-color: var(--accent);
+}

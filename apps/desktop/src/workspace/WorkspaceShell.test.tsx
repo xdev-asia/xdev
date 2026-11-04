@@ -10,6 +10,8 @@ import { ChecksPanel } from "./ChecksPanel";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
+import { BulkRemoveDialog } from "./BulkRemoveDialog";
+import { getToasts } from "./toastStore";
 import { SetupCard } from "./SetupCard";
 import { TrustDialog } from "./TrustDialog";
 import { FileTree } from "./FileTree";
@@ -592,7 +594,7 @@ function attend(view: Awaited<ReturnType<typeof harness>>) {
     const cleanup = effect();
     if (typeof cleanup === "function") cleanups.push(cleanup);
   }
-  const fire = (type: string) => [...(on.get(type) ?? [])].forEach((fn) => fn({}));
+  const fire = (type: string, event: unknown = {}) => [...(on.get(type) ?? [])].forEach((fn) => fn(event));
   const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
   // An agent tab with hooks in a worktree that is not on screen.
   const tab = sessions.open(OAK, "claude");
@@ -1033,4 +1035,44 @@ it("settings and search keys open their views", async () => {
   keymap.handlers["search.open"]();
   view.draw();
   expect(view.of(DocsApp)).toHaveLength(1);
+});
+
+// Ctrl+Shift+Backspace, selection and branch review.
+const DEL_KEY = { key: "Backspace", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, target: null, preventDefault() {} };
+
+it("ctrl+shift+backspace opens the delete dialog for the open worktree; two selected open the bulk dialog", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  const { fire } = attend(view);
+  view.list().props.onSelect(view.worktree("oak"));
+  await settle();
+  view.draw();
+  fire("keydown", DEL_KEY);
+  await settle();
+  expect(view.of(RemoveWorktreeDialog)).toHaveLength(1);
+  view.of(RemoveWorktreeDialog)[0].props.onCancel();
+  await settle();
+  // The list reports its visible order when it draws; the stubbed list does not.
+  view.list().props.onOrder([OAK, view.worktree("elm").path]);
+  await settle();
+  view.draw();
+  view.list().props.onPick(view.worktree("oak"), { toggle: true, range: false });
+  view.list().props.onPick(view.worktree("elm"), { toggle: true, range: false });
+  await settle();
+  view.draw();
+  fire("keydown", DEL_KEY);
+  await settle();
+  expect(view.of(BulkRemoveDialog)).toHaveLength(1);
+});
+
+it("a delete that kept a branch offers a review", async () => {
+  const api = createMockApi({});
+  const kept = { repoId: "demo-xdev", branch: "oak", path: "/x", keptMs: 1, reason: "deleted", title: null, comment: "", status: null, item: null };
+  vi.spyOn(api, "worktreeRemove").mockResolvedValue({ deletedBranch: null, kept } as never);
+  const view = await harness(api);
+  view.list().props.onRemove(view.worktree("oak"));
+  view.of(RemoveWorktreeDialog)[0].props.onConfirm(false);
+  await settle();
+  expect(view.of(RemoveWorktreeDialog)).toHaveLength(0);
+  expect(getToasts().some((x) => x.text === en("review.notice", { count: 1 }))).toBe(true);
 });

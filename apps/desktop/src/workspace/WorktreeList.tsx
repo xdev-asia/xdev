@@ -67,6 +67,12 @@ export interface WorktreeListProps {
   /** Why the last repo or pin action failed. */
   notice?: ApiError["code"];
   onSelect(worktree: WorktreeView): void;
+  /** Worktree paths in the multi-selection. */
+  picked?: ReadonlySet<string>;
+  /** Ctrl/Cmd or Shift click: change the selection instead of opening the worktree. */
+  onPick?(worktree: WorktreeView, mods: { toggle: boolean; range: boolean }): void;
+  onSelectAll?(): void;
+  onClearPicked?(): void;
   onCreate(repoId?: string): void;
   onPin(worktree: WorktreeView): void;
   onRemove(worktree: WorktreeView): void;
@@ -145,13 +151,17 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     const unread = props.unread?.[wt.path] === true;
     const statusLabel = status ? t(`workspace.status.${status}`) : "";
     return (
-      <li key={wt.path} className={(unread ? "ws-wt ws-wt-unread" : "ws-wt") + (depth === 2 ? " ws-wt-child" : "")} data-path={wt.path} data-depth={depth}>
+      <li key={wt.path} className={(unread ? "ws-wt ws-wt-unread" : "ws-wt") + (depth === 2 ? " ws-wt-child" : "")} data-path={wt.path} data-depth={depth} data-picked={props.picked?.has(wt.path) ? "true" : undefined}>
         <button
           type="button"
           className="ws-wt-main"
           title={wt.path}
           aria-current={props.selected === wt.path ? "true" : undefined}
-          onClick={() => props.onSelect(wt)}
+          onClick={(e) => {
+            const toggle = e?.ctrlKey === true || e?.metaKey === true;
+            if (props.onPick && !wt.primary && (toggle || e?.shiftKey === true)) props.onPick(wt, { toggle, range: e.shiftKey });
+            else props.onSelect(wt);
+          }}
           onContextMenu={(e) => {
             e.preventDefault();
             setMenu({ kind: "worktree", key: wt.path, at: { x: e.clientX, y: e.clientY } });
@@ -578,7 +588,18 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   };
 
   return (
-    <div className="ws-worktrees">
+    <div
+      className="ws-worktrees"
+      onKeyDown={(e) => {
+        const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+        if (typing) return;
+        if (e.key === "Escape" && (props.picked?.size ?? 0) > 0) props.onClearPicked?.();
+        else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a" && props.onSelectAll) {
+          e.preventDefault();
+          props.onSelectAll();
+        }
+      }}
+    >
       <div className="ws-section-head">
         <h2>{t("workspace.heading")}</h2>
         {props.onPrefs && <SidebarFilters prefs={prefs} hidden={shown.hidden} onPrefs={props.onPrefs} />}
