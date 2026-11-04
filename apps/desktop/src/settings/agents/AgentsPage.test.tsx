@@ -383,6 +383,21 @@ it("session_search_clear_failure_shows_the_error_toast", async () => {
   confirm(p).props.onConfirm();
   await tick();
   expect(getToasts().map((x) => x.text)).toEqual([en("error.io")]);
+  expect(getToasts().map((x) => x.text)).toEqual([en("error.io")]);
+});
+
+it("session_search_clear_failure_reads_the_settings_and_status_again", async () => {
+  resetToastsForTests();
+  const p = await page();
+  await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+  await tick();
+  vi.spyOn(p.api, "sessionSearchClear").mockRejectedValue({ code: "io" });
+  const settings = vi.spyOn(p.api, "agentsSettings");
+  const status = vi.spyOn(p.api, "sessionSearchStatus");
+  confirm(p).props.onConfirm();
+  await tick();
+  expect(settings).toHaveBeenCalledTimes(1);
+  expect(status).toHaveBeenCalledTimes(1);
 });
 
 it("session_search_strings_exist_in_both_languages", async () => {
