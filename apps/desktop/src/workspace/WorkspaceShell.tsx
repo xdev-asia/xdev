@@ -13,7 +13,10 @@ import { useKeymap, type ActionId } from "@/keys/keymap";
 import { setTerminalKeyHost, startDiagnosticToasts } from "@/keys/terminalKey";
 import { startAutosave } from "@/files/autosave";
 import { fileTabId, fileTabs } from "@/files/fileTabs";
-import { onOpenFile, type OpenFileRequest } from "@/files/openFile";
+import { onOpenFile, openFile as requestOpenFile, type OpenFileRequest } from "@/files/openFile";
+import { paneOf, splitPane } from "./paneTree";
+import { QuickOpenDialog } from "@/search/QuickOpenDialog";
+import { recentFiles } from "@/search/recentFiles";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
 import { copyText } from "@/terminal/terminalActions";
@@ -154,6 +157,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [prs] = useState(() => new PrStore(api));
   // The jump palette, and the settings section it asked for; a new `seq` is a new request.
   const [jumpOpen, setJumpOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   // Asks the front terminal of a worktree to take keyboard focus, as the palette closes.
   const [termFocus, setTermFocus] = useState<{ worktree: string; seq: number } | null>(null);
   const focusTerminal = (worktree: string) => setTermFocus((f) => ({ worktree, seq: (f?.seq ?? 0) + 1 }));
@@ -404,6 +408,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setFront((f) => ({ worktree: wt.path, id: fileTabId(req.rel), seq: (f?.seq ?? 0) + 1 }));
   };
   useEffect(() => onOpenFile((req) => live.openFileTab(req)), [live]);
+  useEffect(() => onOpenFile((req) => recentFiles.touch(req.worktree, req.rel)), []);
+  // Ctrl+Enter in quick open: the file goes into a new pane to the right of the focused one.
+  function openFileSide(worktree: string, rel: string, line?: number): void {
+    const layout = sessions?.layout(worktree);
+    const id = fileTabId(rel);
+    if (sessions && layout && !paneOf(layout, id)) sessions.setLayout(worktree, splitPane(layout, layout.focused, "right", id));
+    requestOpenFile({ worktree, rel, line });
+  }
   useEffect(() => startAutosave(api, fileTabs, t), [api, t]);
 
   function toggleBell(): void {
@@ -465,6 +477,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       openSessionsPanel(null);
     },
     "search.open": () => openSearch(),
+    "quickOpen.open": () => {
+      if (!current) {
+        pushToast({ text: t("quickOpen.noWorktree") });
+        return;
+      }
+      setQuickOpen(true);
+    },
     "settings.open": () => openSettings(),
     "quickCommands.open": () => setQuickSeq((n) => n + 1),
     "settings.shortcuts": () => openSettings("keys"),
@@ -484,7 +503,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       "worktree.prev": () => worktreeKey({ step: -1 }),
       ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`worktree.select.${n}` as ActionId, () => worktreeKey({ nth: n })])),
     },
-    { when: () => view === "workspace" && !dialogOpen && !jumpOpen },
+    { when: () => view === "workspace" && !dialogOpen && !jumpOpen && !quickOpen },
   );
 
   // The Open In apps for the worktree menu; read again when Settings changes them.
@@ -1175,6 +1194,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           }}
         />
       )}
+      <QuickOpenDialog
+        open={quickOpen}
+        api={api}
+        worktree={current?.path ?? null}
+        recent={recentFiles}
+        onClose={() => setQuickOpen(false)}
+        onOpen={(rel, { line, side }) => {
+          if (!current) return;
+          if (side) openFileSide(current.path, rel, line);
+          else requestOpenFile({ worktree: current.path, rel, line });
+        }}
+      />
       <PaletteHost
         open={jumpOpen}
         onClose={() => setJumpOpen(false)}
