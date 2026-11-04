@@ -1693,6 +1693,8 @@
   "workspace.create.setDefault": "Set as default",
   "workspace.create.parent": "Parent worktree",
   "workspace.create.noParent": "None",
+  "workspace.create.issueFound": "Starts a worktree from issue #{number}: {title}",
+  "workspace.create.issueLooking": "Looking up the issue…",
   "workspace.create.item": "Work item",
   "workspace.create.itemKind": "Kind of work item",
   "workspace.create.itemPlaceholder": "https://… link of the pull request or issue",

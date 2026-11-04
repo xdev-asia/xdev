@@ -1624,6 +1624,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           agents={creating.agents}
           defaultAgent={creating.defaultAgent}
           onCreate={(repoId, name, from, extra) => create(repoId, name, from, extra)}
+          resolveIssue={(repoId, text) => api.issueResolve(repoId, text)}
+          onStartIssue={(repoId, issue) => {
+            setCreating(null);
+            void startFromIssue(repoId, issue);
+          }}
           onCancel={() => setCreating(null)}
         />
       )}
