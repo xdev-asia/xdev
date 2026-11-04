@@ -108,6 +108,7 @@ pub fn accounts_quota(state: State<'_, AppState>) -> Result<Vec<Quota>, CmdError
 
 #[tauri::command(async)]
 pub fn account_add(
+    app: AppHandle,
     state: State<'_, AppState>,
     name: String,
     provider: String,
@@ -117,7 +118,9 @@ pub fn account_add(
     let data = data_dir(&state)?;
     let mut registry = Registry::load(data)?;
     if let Some(dir) = dir {
-        return import(data, &mut registry, &name, provider, &dir);
+        let added = import(data, &mut registry, &name, provider, &dir)?;
+        let _ = app.emit(CHANGED_EVENT, ());
+        return Ok(added);
     }
     let dir = xdev_ai::account_dir(data, &name);
     let entry = registry.add(&name, provider, dir)?.clone();
@@ -126,6 +129,7 @@ pub fn account_add(
     provider.command()?;
     std::fs::create_dir_all(&entry.dir).map_err(AiError::from)?;
     registry.save(data)?;
+    let _ = app.emit(CHANGED_EVENT, ());
     Ok(account(&entry))
 }
 
@@ -149,11 +153,16 @@ fn import(
 }
 
 #[tauri::command(async)]
-pub fn account_remove(state: State<'_, AppState>, name: String) -> Result<(), CmdError> {
+pub fn account_remove(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<(), CmdError> {
     let data = data_dir(&state)?;
     let mut registry = Registry::load(data)?;
     registry.remove(&name)?;
     registry.save(data)?;
+    let _ = app.emit(CHANGED_EVENT, ());
     Ok(())
 }
 
@@ -187,8 +196,37 @@ pub fn account_carry_session(
     session: String,
     cwd: PathBuf,
 ) -> Result<bool, CmdError> {
-    let _ = (state, provider, from, to, session, cwd);
-    Err(AiError::SessionMissing.into())
+    let registry = Registry::load(data_dir(&state)?)?;
+    let home = xdev_ai::default_home(provider);
+    carry(&registry, home, provider, from, to, &session, &cwd)
+}
+
+/// `account_carry_session` with the registry and the CLI's own home given.
+fn carry(
+    registry: &Registry,
+    default_home: Option<PathBuf>,
+    provider: Provider,
+    from: Option<String>,
+    to: Option<String>,
+    session: &str,
+    cwd: &Path,
+) -> Result<bool, CmdError> {
+    let home = |name: Option<String>| -> Result<AccountEntry, CmdError> {
+        match name {
+            Some(name) => registry
+                .get(&name)
+                .filter(|e| e.provider == provider)
+                .cloned()
+                .ok_or_else(|| AiError::NotFound.into()),
+            None => Ok(AccountEntry {
+                name: String::new(),
+                provider,
+                dir: default_home.clone().ok_or(AiError::NotFound)?,
+            }),
+        }
+    };
+    let (from, to) = (home(from)?, home(to)?);
+    Ok(xdev_ai::carry_session(&from, &to, session, cwd)?)
 }
 
 /// The person's rules for which model a turn runs on.
@@ -343,6 +381,62 @@ mod tests {
         assert_eq!(saved.accounts[0].dir, hive.path());
         assert_eq!(saved.accounts[0].provider, Provider::Codex);
         assert!(!xdev_ai::account_dir(data.path(), "h").exists());
+    }
+
+    #[test]
+    fn carry_resolves_names_and_the_default_home() {
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tmp.path().join("data");
+        let mut registry = Registry::load(&data).unwrap();
+        registry
+            .add("work", Provider::Claude, tmp.path().join("work"))
+            .unwrap();
+        registry
+            .add("gpt", Provider::Codex, tmp.path().join("gpt"))
+            .unwrap();
+        let cli = tmp.path().join("cli");
+        let cwd = tmp.path().join("repo");
+        let id = "s1";
+        let log = cli.join("projects").join("-x").join("s1.jsonl");
+        std::fs::create_dir_all(log.parent().unwrap()).unwrap();
+        std::fs::write(&log, "x").unwrap();
+        let run = |from: Option<&str>, to: Option<&str>, home: Option<PathBuf>| {
+            carry(
+                &registry,
+                home,
+                Provider::Claude,
+                from.map(str::to_owned),
+                to.map(str::to_owned),
+                id,
+                &cwd,
+            )
+        };
+        // The CLI's own home to an account, then nothing left to copy.
+        assert!(run(None, Some("work"), Some(cli.clone())).unwrap());
+        assert!(tmp.path().join("work/projects/-x/s1.jsonl").is_file());
+        assert!(!run(None, Some("work"), Some(cli.clone())).unwrap());
+        // Back to the CLI's home, which has it.
+        assert!(!run(Some("work"), None, Some(cli.clone())).unwrap());
+        // Unknown names, another provider's account, no home at all.
+        for (from, to, home) in [
+            (Some("nope"), None, Some(cli.clone())),
+            (None, Some("gpt"), Some(cli.clone())),
+            (None, Some("work"), None),
+        ] {
+            let err = run(from, to, home).unwrap_err();
+            assert_eq!(err.code, "not_found", "{from:?} {to:?}");
+        }
+        let err = carry(
+            &registry,
+            Some(cli.clone()),
+            Provider::Claude,
+            None,
+            Some("work".into()),
+            "gone",
+            &cwd,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, "session_missing");
     }
 
     #[test]
