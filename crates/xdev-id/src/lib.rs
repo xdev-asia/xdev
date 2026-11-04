@@ -7,6 +7,7 @@
 
 use std::time::Duration;
 
+pub mod link;
 pub mod pkce;
 
 pub const DEFAULT_BASE: &str = "https://id.xdev.asia";
