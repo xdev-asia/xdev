@@ -1419,6 +1419,7 @@
   "keys.action.panel.explorer": "Hiện tệp",
   "keys.action.panel.search": "Tìm tệp",
   "keys.action.panel.sourceControl": "Hiện thay đổi",
+  "keys.action.panel.issues": "Hiện issue",
   "keys.action.terminal.clear": "Xoá màn hình terminal",
   "keys.action.terminal.copy": "Sao chép",
   "keys.action.terminal.paste": "Dán",

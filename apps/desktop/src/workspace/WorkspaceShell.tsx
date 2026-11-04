@@ -30,6 +30,7 @@ import { usePresence } from "@/status/presence";
 import { eventOn, getStatusSettings, loadStatusSettings, useStatusSettings } from "@/status/statusSettings";
 import { BellMenu, bellCount, type BellRow } from "./BellMenu";
 import { ChecksPanel } from "./ChecksPanel";
+import { IssuesPanel } from "@/issues/IssuesPanel";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { PendingCreates } from "./pendingCreates";
 import { FileTree } from "./FileTree";
@@ -82,7 +83,7 @@ function storeSelected(path: string): void {
 }
 
 type View = "workspace" | "docs" | "settings";
-type PanelTab = "files" | "search" | "changes" | "checks";
+type PanelTab = "files" | "search" | "changes" | "checks" | "issues";
 type Creating = { repoId: string; busy: boolean; error?: ApiError["code"]; name?: string };
 type SetupCardAt = { kind: "detected"; command: string; repoId: string } | { kind: "ask"; repoId: string };
 type TrustAsk = { path: string; repoId: string; kind: HookKind; text: string; hash: string; changed: boolean; busy: boolean; error?: ApiError["code"] };
@@ -564,6 +565,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       setSearchFocus((n) => n + 1);
     },
     "panel.sourceControl": () => panelKey("changes"),
+    "panel.issues": () => panelKey("issues"),
     "zoom.in": () => void stepZoom(api, ZOOM_STEP),
     "zoom.out": () => void stepZoom(api, -ZOOM_STEP),
     "zoom.reset": () => void stepZoom(api, 0),
@@ -1203,6 +1205,20 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   </span>
                 )}
               </button>
+              <button
+                type="button"
+                role="tab"
+                className="ws-panel-tab"
+                aria-selected={panelTab === "issues"}
+                aria-label={t("issues.tab")}
+                title={t("issues.tab")}
+                onClick={() => setPanelTab("issues")}
+              >
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="9" />
+                  <circle cx="12" cy="12" r="1.5" />
+                </svg>
+              </button>
             </div>
             {/* Both panels stay mounted, so the change list and the open folders survive a tab switch. */}
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "files"}>
@@ -1248,6 +1264,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "checks"}>
               {current ? (
                 <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} visible={panelTab === "checks"} />
+              ) : (
+                <p className="ws-empty">{t("workspace.panel.empty")}</p>
+              )}
+            </div>
+            <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "issues"}>
+              {currentRepo && !currentRepo.missing ? (
+                <IssuesPanel key={currentRepo.id} api={api} repoId={currentRepo.id} />
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
               )}

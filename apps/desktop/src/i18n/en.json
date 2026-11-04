@@ -1419,6 +1419,7 @@
   "keys.action.panel.explorer": "Show files",
   "keys.action.panel.search": "Search files",
   "keys.action.panel.sourceControl": "Show changes",
+  "keys.action.panel.issues": "Show issues",
   "keys.action.terminal.clear": "Clear terminal",
   "keys.action.terminal.copy": "Copy",
   "keys.action.terminal.paste": "Paste",

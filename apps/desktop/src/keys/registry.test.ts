@@ -21,7 +21,7 @@ const ALL: Record<ActionId, true> = {
   "worktree.select.9": true,
   "agent.new": true, "palette.jump": true, "search.open": true, "sessions.open": true,
   "sidebar.left.toggle": true, "sidebar.right.toggle": true,
-  "panel.explorer": true, "panel.search": true, "panel.sourceControl": true,
+  "panel.explorer": true, "panel.search": true, "panel.sourceControl": true, "panel.issues": true,
   "terminal.clear": true, "terminal.copy": true, "terminal.paste": true, "terminal.selectAll": true, "terminal.find": true,
   "zoom.in": true, "zoom.out": true, "zoom.reset": true,
   "tab.reopenClosed": true,
