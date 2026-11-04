@@ -2900,6 +2900,33 @@ button.ws-tree-row:focus-visible {
   font-size: 12px;
 }
 
+.ws-issue-open {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-issue-comments {
+  margin: 4px 0 0;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ws-issue-comment {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .ws-issue-main {
   display: flex;
   flex-direction: column;

@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, type Api, type ApiError, type IssueQuery } from "@/api";
 import { translate } from "@/i18n";
+import { IssueDetailView } from "./IssueDetailView";
 import { IssuesPanel, SEARCH_DEBOUNCE_MS } from "./IssuesPanel";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -137,4 +138,17 @@ it.each([
   const html = view.html();
   expect(html).toContain('role="alert"');
   expect(html).toContain(en(key).replace(/'/g, "&#x27;"));
+});
+
+it("opens the detail of a clicked row and comes back", async () => {
+  const { api } = spied();
+  const view = mount(api);
+  view.commit();
+  await flush();
+  view.nodes().find((n) => n.type === "button" && n.props.className === "ws-issue-open")!.props.onClick();
+  const detail = view.nodes()[0];
+  expect(detail.type).toBe(IssueDetailView);
+  expect(detail.props).toMatchObject({ repoId: "r1", number: 1 });
+  detail.props.onBack();
+  expect(view.nodes()[0].type).not.toBe(IssueDetailView);
 });
