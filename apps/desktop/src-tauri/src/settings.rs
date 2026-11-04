@@ -565,6 +565,7 @@ impl GitSettings {
         xdev_workspace::CreateOptions {
             prefix,
             made_by: xdev_workspace::MadeBy::App,
+            ..xdev_workspace::CreateOptions::default()
         }
     }
 }
