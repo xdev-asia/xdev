@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type Issue } from "@/api";
+import { toApiError, type Api, type ApiError, type Issue, type IssueDetail } from "@/api";
 import { useI18n } from "@/i18n";
 import { ago } from "@/workspace/ago";
+import { IssueDetailView } from "./IssueDetailView";
 import { issueQuery } from "./issueStart";
 
 export const SEARCH_DEBOUNCE_MS = 300;
@@ -11,8 +12,8 @@ const REASONS: readonly string[] = ["gh_missing", "gh_auth", "not_github"];
 type Filter = "open" | "closed";
 
 /** The GitHub issues of a repo: filters, search and one row per issue. */
-export function IssuesPanel(props: { api: Api; repoId: string }): JSX.Element {
-  const { api, repoId } = props;
+export function IssuesPanel(props: { api: Api; repoId: string; onStart?: (detail: IssueDetail) => void }): JSX.Element {
+  const { api, repoId, onStart } = props;
   const { t } = useI18n();
   const [state, setState] = useState<Filter>("open");
   const [mine, setMine] = useState(false);
@@ -21,6 +22,7 @@ export function IssuesPanel(props: { api: Api; repoId: string }): JSX.Element {
   const [tick, setTick] = useState(0);
   const [issues, setIssues] = useState<Issue[] | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
+  const [selected, setSelected] = useState<number | null>(null);
 
   useEffect(() => {
     if (draft === search) return;
@@ -41,6 +43,9 @@ export function IssuesPanel(props: { api: Api; repoId: string }): JSX.Element {
     };
   }, [api, repoId, state, mine, search, tick]);
 
+  if (selected !== null) {
+    return <IssueDetailView api={api} repoId={repoId} number={selected} onBack={() => setSelected(null)} onStart={onStart} />;
+  }
   const now = Date.now();
   return (
     <div className="ws-issues">
@@ -80,6 +85,7 @@ export function IssuesPanel(props: { api: Api; repoId: string }): JSX.Element {
         <ul className="ws-issues-list">
           {issues.map((issue) => (
             <li key={issue.number} className="ws-issue" data-state={issue.state}>
+              <button type="button" className="ws-issue-open" onClick={() => setSelected(issue.number)}>
               <span className="ws-checks-number">{`#${issue.number}`}</span>
               <span className="ws-issue-main">
                 <span className="ws-checks-title" title={issue.title}>
@@ -95,6 +101,7 @@ export function IssuesPanel(props: { api: Api; repoId: string }): JSX.Element {
                   <span>{ago(Date.parse(issue.updatedAt), now, t)}</span>
                 </span>
               </span>
+              </button>
             </li>
           ))}
         </ul>
