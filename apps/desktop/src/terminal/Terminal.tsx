@@ -115,7 +115,7 @@ export function Terminal(props: {
       if (pane) pane.style.background = background && getTerminalSettings().theme !== "app" ? background : "";
     };
     paint(initial.theme.background);
-    const bell = createBell(pane ?? el);
+    const bell = createBell(pane ?? el, { mode: () => getTerminalSettings().bell });
     const fit = new FitAddon();
     const finder = new SearchAddon({ highlightLimit: 1000 });
     search.current = finder;

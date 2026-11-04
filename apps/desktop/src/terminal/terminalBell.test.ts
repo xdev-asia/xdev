@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { createBell, type AudioLike } from "./terminalBell";
+import { createBell, resetBellAudioForTest, type AudioLike } from "./terminalBell";
 
-beforeEach(() => vi.useFakeTimers());
+beforeEach(() => {
+  vi.useFakeTimers();
+  resetBellAudioForTest();
+});
 afterEach(() => vi.useRealTimers());
 
 function fakePane() {
@@ -105,12 +108,15 @@ it("none does nothing, not even a throttle slot", () => {
   expect(audioFn).not.toHaveBeenCalled();
 });
 
-it("the audio context is made lazily and resumed on the first keydown", async () => {
+it("keydown makes and resumes the audio context only while the bell is sound", () => {
   const { pane, listeners } = fakePane();
   const { audio, raw } = fakeAudio("suspended");
   const audioFn = vi.fn(() => audio);
-  const bell = createBell(pane, { now: () => Date.now(), audio: audioFn });
+  let mode: "none" | "visual" | "sound" = "visual";
+  const bell = createBell(pane, { now: () => Date.now(), audio: audioFn, mode: () => mode });
+  listeners.keydown();
   expect(audioFn).not.toHaveBeenCalled();
+  mode = "sound";
   listeners.keydown();
   expect(audioFn).toHaveBeenCalledTimes(1);
   expect(raw.resume).toHaveBeenCalledTimes(1);
@@ -118,6 +124,27 @@ it("the audio context is made lazily and resumed on the first keydown", async ()
   expect(raw.resume).toHaveBeenCalledTimes(1);
   bell.ring("sound");
   expect(audioFn).toHaveBeenCalledTimes(1);
+});
+
+it("every pane shares one audio context, and disposing a pane does not close it", () => {
+  const a = fakePane();
+  const b = fakePane();
+  const { audio, raw, tones } = fakeAudio();
+  const audioFn = vi.fn(() => audio);
+  const opts = { now: () => Date.now(), audio: audioFn, mode: () => "sound" as const };
+  const bellA = createBell(a.pane, opts);
+  const bellB = createBell(b.pane, opts);
+  a.listeners.keydown();
+  b.listeners.keydown();
+  bellA.ring("sound");
+  bellB.ring("sound");
+  expect(audioFn).toHaveBeenCalledTimes(1);
+  expect(tones).toHaveLength(2);
+  bellA.dispose();
+  expect(raw.close).not.toHaveBeenCalled();
+  vi.advanceTimersByTime(300);
+  bellB.ring("sound");
+  expect(tones).toHaveLength(3);
 });
 
 it("no audio available: sound is silent and does not throw", () => {
@@ -135,7 +162,7 @@ it("dispose removes the class, the timer and the keydown listener", () => {
   bell.dispose();
   expect(classes.has("terminal-bell")).toBe(false);
   expect(listeners.keydown).toBeUndefined();
-  expect(raw.close).toHaveBeenCalled();
+  expect(raw.close).not.toHaveBeenCalled();
   bell.ring("visual");
   expect(classes.has("terminal-bell")).toBe(false);
 });
