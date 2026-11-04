@@ -1639,7 +1639,7 @@
   "settings.general.wordWrap": "Wrap long lines",
   "settings.general.fileTree": "Show the file tree in the combined diff",
   "settings.general.fileTreeHint": "Saved now; the tree itself arrives with a later release.",
-  "settings.general.saveAsDefault": "Save as default",
+  "review.opt.saveDefault": "Save as default",
   "panes.closePinned.title": "Close a pinned tab?",
   "panes.closePinned.body": "A pinned tab is one you wanted to keep. Closing it ends its terminal.",
   "panes.closePinned.confirm": "Close"
