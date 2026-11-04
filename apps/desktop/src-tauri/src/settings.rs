@@ -489,17 +489,25 @@ pub struct TerminalSettings {
     #[serde(deserialize_with = "lenient_ring_mb")]
     pub ring_mb: u8,
     /// "app" or a built-in scheme id; `[a-z0-9-]{1,40}`, anything else is "app".
+    #[serde(deserialize_with = "lenient_theme")]
     pub theme: String,
+    #[serde(deserialize_with = "lenient")]
     pub gpu: TerminalGpu,
+    #[serde(deserialize_with = "lenient")]
     pub bell: TerminalBell,
     /// Control chars dropped, at most 64 chars; empty reads as `DEFAULT_WORD_SEPARATORS`.
+    #[serde(deserialize_with = "lenient_words")]
     pub word_separators: String,
     /// 0.5..=3.0.
+    #[serde(deserialize_with = "lenient_scroll")]
     pub scroll_sensitivity: f32,
     /// 1.0..=10.0; xterm applies it with Alt held.
+    #[serde(deserialize_with = "lenient_fast")]
     pub fast_scroll_sensitivity: f32,
     /// 1.0..=21.0; 1 is off.
+    #[serde(deserialize_with = "lenient_contrast")]
     pub minimum_contrast: f32,
+    #[serde(deserialize_with = "lenient_bool_false")]
     pub focus_follows_mouse: bool,
 }
 
@@ -567,15 +575,21 @@ impl TerminalSettings {
         }
         self.word_separators = clean_word_separators(&self.word_separators);
         let default = Self::default();
-        self.scroll_sensitivity =
-            clamp_or(self.scroll_sensitivity, Self::SCROLL, default.scroll_sensitivity);
+        self.scroll_sensitivity = clamp_or(
+            self.scroll_sensitivity,
+            Self::SCROLL,
+            default.scroll_sensitivity,
+        );
         self.fast_scroll_sensitivity = clamp_or(
             self.fast_scroll_sensitivity,
             Self::FAST_SCROLL,
             default.fast_scroll_sensitivity,
         );
-        self.minimum_contrast =
-            clamp_or(self.minimum_contrast, Self::CONTRAST, default.minimum_contrast);
+        self.minimum_contrast = clamp_or(
+            self.minimum_contrast,
+            Self::CONTRAST,
+            default.minimum_contrast,
+        );
         self
     }
 }
@@ -932,6 +946,40 @@ fn lenient_service<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bool, D::E
 fn lenient_ring_mb<'de, D: serde::Deserializer<'de>>(de: D) -> Result<u8, D::Error> {
     let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
     Ok(serde_json::from_value(value).unwrap_or(TerminalSettings::default().ring_mb))
+}
+
+/// A field that does not parse reads as its own default, not the type's.
+fn lenient_or<'de, D, T>(de: D, default: T) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+    Ok(serde_json::from_value(value).unwrap_or(default))
+}
+
+fn lenient_theme<'de, D: serde::Deserializer<'de>>(de: D) -> Result<String, D::Error> {
+    lenient_or(de, THEME_APP.to_owned())
+}
+
+fn lenient_words<'de, D: serde::Deserializer<'de>>(de: D) -> Result<String, D::Error> {
+    lenient_or(de, DEFAULT_WORD_SEPARATORS.to_owned())
+}
+
+fn lenient_scroll<'de, D: serde::Deserializer<'de>>(de: D) -> Result<f32, D::Error> {
+    lenient_or(de, TerminalSettings::default().scroll_sensitivity)
+}
+
+fn lenient_fast<'de, D: serde::Deserializer<'de>>(de: D) -> Result<f32, D::Error> {
+    lenient_or(de, TerminalSettings::default().fast_scroll_sensitivity)
+}
+
+fn lenient_contrast<'de, D: serde::Deserializer<'de>>(de: D) -> Result<f32, D::Error> {
+    lenient_or(de, TerminalSettings::default().minimum_contrast)
+}
+
+fn lenient_bool_false<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bool, D::Error> {
+    lenient_or(de, false)
 }
 
 /// A list section: an entry that does not parse is left out, the rest kept;
@@ -1371,6 +1419,46 @@ mod tests {
     }
 
     #[test]
+    fn an_old_terminal_file_loads_every_new_field_at_its_default() {
+        let t: TerminalSettings = serde_json::from_str(r#"{ "fontSize": 15 }"#).unwrap();
+        let want = TerminalSettings {
+            font_size: 15,
+            ..TerminalSettings::default()
+        };
+        assert_eq!(t, want);
+        assert_eq!(t.theme, "app");
+        assert_eq!(t.word_separators, DEFAULT_WORD_SEPARATORS);
+    }
+
+    #[test]
+    fn a_bad_new_terminal_field_costs_only_itself() {
+        let t: TerminalSettings = serde_json::from_str(
+            r#"{ "gpu": "fast", "bell": 3, "scrollSensitivity": "x", "theme": 7, "fontSize": 15 }"#,
+        )
+        .unwrap();
+        let want = TerminalSettings {
+            font_size: 15,
+            ..TerminalSettings::default()
+        };
+        assert_eq!(t, want);
+        // Every other field is also its own.
+        let t: TerminalSettings = serde_json::from_str(
+            r#"{ "gpu": "on", "bell": "sound", "theme": "nord", "wordSeparators": null,
+                 "fastScrollSensitivity": [], "minimumContrast": {}, "focusFollowsMouse": "yes",
+                 "scrollSensitivity": 2.0 }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            (t.gpu, t.bell, t.theme.as_str()),
+            (TerminalGpu::On, TerminalBell::Sound, "nord")
+        );
+        assert_eq!(t.word_separators, DEFAULT_WORD_SEPARATORS);
+        assert_eq!((t.fast_scroll_sensitivity, t.minimum_contrast), (5.0, 1.0));
+        assert!(!t.focus_follows_mouse);
+        assert_eq!(t.scroll_sensitivity, 2.0);
+    }
+
+    #[test]
     fn terminal_round_trips_camel_case() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(FILE_NAME);
@@ -1697,11 +1785,14 @@ then sum up"
         // Control chars dropped, the rest kept in order.
         assert_eq!(with("app", " a\u{7}/\n\t").word_separators, " a/");
         // Cut to 64 chars (not bytes).
-        assert_eq!(with("app", &"é".repeat(100)).word_separators.chars().count(), 64);
         assert_eq!(
-            with("app", &"-".repeat(64)).word_separators,
-            "-".repeat(64)
+            with("app", &"é".repeat(100))
+                .word_separators
+                .chars()
+                .count(),
+            64
         );
+        assert_eq!(with("app", &"-".repeat(64)).word_separators, "-".repeat(64));
         // Empty, or only control chars: the default.
         for empty in ["", "\u{1}\n"] {
             assert_eq!(with("app", empty).word_separators, DEFAULT_WORD_SEPARATORS);
@@ -1721,22 +1812,38 @@ then sum up"
         };
         let hi = with(99.0, 99.0, 99.0);
         assert_eq!(
-            (hi.scroll_sensitivity, hi.fast_scroll_sensitivity, hi.minimum_contrast),
+            (
+                hi.scroll_sensitivity,
+                hi.fast_scroll_sensitivity,
+                hi.minimum_contrast
+            ),
             (3.0, 10.0, 21.0)
         );
         let lo = with(0.0, 0.0, 0.0);
         assert_eq!(
-            (lo.scroll_sensitivity, lo.fast_scroll_sensitivity, lo.minimum_contrast),
+            (
+                lo.scroll_sensitivity,
+                lo.fast_scroll_sensitivity,
+                lo.minimum_contrast
+            ),
             (0.5, 1.0, 1.0)
         );
         let nan = with(f32::NAN, f32::NAN, f32::NAN);
         assert_eq!(
-            (nan.scroll_sensitivity, nan.fast_scroll_sensitivity, nan.minimum_contrast),
+            (
+                nan.scroll_sensitivity,
+                nan.fast_scroll_sensitivity,
+                nan.minimum_contrast
+            ),
             (1.15, 5.0, 1.0)
         );
         let inf = with(f32::INFINITY, f32::NEG_INFINITY, f32::INFINITY);
         assert_eq!(
-            (inf.scroll_sensitivity, inf.fast_scroll_sensitivity, inf.minimum_contrast),
+            (
+                inf.scroll_sensitivity,
+                inf.fast_scroll_sensitivity,
+                inf.minimum_contrast
+            ),
             (1.15, 5.0, 1.0)
         );
         // In range: untouched.
@@ -1749,7 +1856,10 @@ then sum up"
             ..TerminalSettings::default()
         };
         assert_eq!(fine.clone().clamped(), fine);
-        assert_eq!(TerminalSettings::default().clamped(), TerminalSettings::default());
+        assert_eq!(
+            TerminalSettings::default().clamped(),
+            TerminalSettings::default()
+        );
     }
 
     #[test]
