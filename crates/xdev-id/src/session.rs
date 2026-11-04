@@ -122,7 +122,12 @@ impl Session {
     }
 
     /// Loads the keychain into memory. A failing store leaves the state signed out.
+    /// A sign-in that started first, or a session already held, is never overwritten by a
+    /// slow keychain read.
     pub fn load(&mut self, store: &dyn TokenStore) -> Result<(), &'static str> {
+        if self.attempt.is_some() || self.token.is_some() {
+            return Ok(());
+        }
         match store.load() {
             Err(_) => {
                 self.state = signed_out(None);
@@ -142,7 +147,8 @@ impl Session {
         }
     }
 
-    /// A new attempt; replaces any pending one. `bytes` is (verifier, state) from the OS
+    /// A new attempt; replaces any pending one. Refused with `E_STATE` while a token is
+    /// held: the person signs out first, so the old token is always revoked. `bytes` is (verifier, state) from the OS
     /// random source in production and fixed in tests. The store is probed first so a
     /// machine without a keychain fails before the browser opens.
     pub fn begin(
@@ -152,6 +158,9 @@ impl Session {
         device: &str,
         now: Instant,
     ) -> Result<Begin, &'static str> {
+        if self.token.is_some() {
+            return Err(E_STATE);
+        }
         store.load().map_err(|_| E_KEYCHAIN)?;
         let pair = PkcePair::from_bytes(bytes.0);
         let state = b64url(&bytes.1);
@@ -585,15 +594,45 @@ mod tests {
     }
 
     #[test]
-    fn a_refresh_does_not_hide_a_running_attempt() {
+    fn begin_is_refused_while_a_token_is_held() {
         let (mut s, store) = signed_in();
-        let token = s.token().unwrap();
-        s.begin(&store, (vbytes(), sbytes()), "d", Instant::now())
+        let before = s.state();
+        assert_eq!(
+            s.begin(&store, (vbytes(), sbytes()), "d", Instant::now())
+                .err(),
+            Some(E_STATE)
+        );
+        assert_eq!(s.state(), before);
+        assert_eq!(s.token().unwrap().expose(), TOKEN);
+        // After a sign-out it works again.
+        let _ = s.sign_out(&store);
+        assert!(
+            s.begin(&store, (vbytes(), sbytes()), "d", Instant::now())
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_late_load_does_not_replace_a_running_attempt() {
+        let (mut s, store, _) = started();
+        let before = s.state();
+        store
+            .save(&Stored {
+                token: Secret::new(TOKEN.into()),
+                user: None,
+            })
             .unwrap();
-        assert!(!s.refreshed(&store, &token, Err(CallError::Unauthorized)));
-        assert!(matches!(s.state(), XdevIdState::SigningIn { .. }));
-        s.cancel();
-        assert_eq!(s.state(), signed_out(None));
+        s.load(&store).unwrap();
+        assert_eq!(s.state(), before);
+        assert!(s.token().is_none());
+
+        // And a load after sign-in keeps the live session.
+        let (mut s, store) = signed_in();
+        let before = s.state();
+        store.clear().unwrap();
+        s.load(&store).unwrap();
+        assert_eq!(s.state(), before);
+        assert_eq!(s.token().unwrap().expose(), TOKEN);
     }
 
     #[test]
