@@ -1966,6 +1966,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       )}
       {editing && (
         <DetailsDialog
+          api={api}
+          repoId={repos?.find((r) => r.worktrees.some((w) => w.path === editing.worktree.path))?.id ?? ""}
           worktree={editing.worktree}
           siblings={repos?.find((r) => r.worktrees.some((w) => w.path === editing.worktree.path))?.worktrees ?? []}
           busy={editing.busy}
