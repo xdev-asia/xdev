@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { RepoView, SidebarItem, SidebarPrefs, WorkItem, WorktreeView } from "@/api";
 import { NO_DETAILS } from "./worktreeDetails";
-import { flattenRepos, itemLabel, moveTarget, nestRows, topIds, visibleEntries, type WtEntry } from "./sidebarModel";
+import { flattenRepos, itemLabel, moveTarget, nestRows, pinnedEntries, topIds, visibleEntries, type WtEntry } from "./sidebarModel";
 
 const OFF: SidebarPrefs = { hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false };
 
@@ -9,7 +9,7 @@ function wt(name: string, extra: Partial<WorktreeView> = {}): WorktreeView {
   return { path: `/wt/${name}`, name, branch: name, head: null, start: null, primary: false, pinned: false, detached: false, ...NO_DETAILS, ...extra };
 }
 function repo(id: string, worktrees: WorktreeView[]): RepoView {
-  return { id, shortName: id, path: `/code/${id}`, baseRef: "main", worktreeRoot: "/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", docsDir: "docs", missing: false, worktrees, found: [] };
+  return { id, shortName: id, path: `/code/${id}`, baseRef: "main", worktreeRoot: "/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", docsDir: "docs", color: null, icon: null, ghAccount: null, localIssueCommand: "", missing: false, worktrees, found: [] };
 }
 const entries = (r: RepoView): WtEntry[] => r.worktrees.map((w) => ({ path: w.path, wt: w, repo: r }));
 const asRepo = (r: RepoView): SidebarItem => ({ kind: "repo", repo: r, kept: [] });
@@ -88,4 +88,21 @@ it("dropping a repo on a group heading moves it in; on a row it goes before that
   expect(dropMove(items, "c", "a")).toEqual({ member: "c", group: null, index: 0 });
   expect(dropMove(items, "a", "d")).toEqual({ member: "a", group: "g", index: 1 });
   expect(dropMove(items, "a", "a")).toBeNull();
+});
+
+it("pinnedEntries lists pinned worktrees in sidebar order, repo by repo, groups opened up", () => {
+  const a = repo("a", [wt("a1"), wt("a2", { pinned: true }), wt("a3", { pinned: true })]);
+  const b = repo("b", [wt("b1", { pinned: true })]);
+  const c = repo("c", [wt("c1")]);
+  const items: SidebarItem[] = [
+    { kind: "group", group: { id: "g", name: "G", members: ["b"] }, items: [asRepo(b)] },
+    asRepo(a),
+    asRepo(c),
+  ];
+  expect(pinnedEntries(items).map((e) => [e.repo.id, e.wt.name])).toEqual([["b", "b1"], ["a", "a2"], ["a", "a3"]]);
+  // Each entry is keyed by its path and carries its repo.
+  expect(pinnedEntries(items)[1]).toMatchObject({ path: "/wt/a2", repo: { id: "a" } });
+  // Nothing pinned, nothing listed; a missing repo adds nothing.
+  expect(pinnedEntries([asRepo(c), asRepo({ ...repo("m", []), missing: true })])).toEqual([]);
+  expect(pinnedEntries([])).toEqual([]);
 });

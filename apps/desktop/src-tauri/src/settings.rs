@@ -929,6 +929,13 @@ pub struct GitRecipes {
     pub fix_push_failure: Recipe,
     #[serde(deserialize_with = "lenient")]
     pub fix_checks: Recipe,
+    /// Names a branch from the first prompt of its agent.
+    #[serde(deserialize_with = "lenient")]
+    pub branch_name: Recipe,
+    /// Asks an agent to resolve the conflicts of a merge, rebase, cherry-pick
+    /// or revert in progress.
+    #[serde(deserialize_with = "lenient")]
+    pub resolve_conflicts: Recipe,
 }
 
 impl Recipe {
@@ -955,6 +962,8 @@ impl GitRecipes {
             fix_commit_failure: self.fix_commit_failure.normalized(),
             fix_push_failure: self.fix_push_failure.normalized(),
             fix_checks: self.fix_checks.normalized(),
+            branch_name: self.branch_name.normalized(),
+            resolve_conflicts: self.resolve_conflicts.normalized(),
         }
     }
 }
@@ -984,6 +993,9 @@ pub struct GitSettings {
     pub pr_generate_on_open: bool,
     /// Open the pull request in the browser once it is created.
     pub pr_open_after_create: bool,
+    /// A worktree made with an automatic name gets a branch name from the
+    /// first prompt its agent receives.
+    pub auto_rename_branch: bool,
     /// The prompts behind the agent actions. A part that does not parse
     /// falls back to the defaults on its own.
     #[serde(deserialize_with = "lenient")]
@@ -1003,6 +1015,7 @@ impl Default for GitSettings {
             pr_draft: false,
             pr_generate_on_open: false,
             pr_open_after_create: false,
+            auto_rename_branch: true,
             recipes: GitRecipes::default(),
         }
     }
@@ -1195,6 +1208,7 @@ mod tests {
                 pr_draft: true,
                 pr_generate_on_open: true,
                 pr_open_after_create: true,
+                auto_rename_branch: false,
                 recipes: GitRecipes::default(),
             },
             status: StatusSettings {

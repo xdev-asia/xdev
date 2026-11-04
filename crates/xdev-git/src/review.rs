@@ -28,6 +28,8 @@ pub struct StageState {
     pub unstaged: bool,
     /// The path is not tracked at all (also counted in `unstaged`).
     pub untracked: bool,
+    /// The path is unmerged: both sides changed it and no one resolved it.
+    pub conflicted: bool,
 }
 
 impl Repo {
@@ -78,6 +80,7 @@ impl Repo {
                 staged: false,
                 unstaged: false,
                 untracked: false,
+                conflicted: false,
             });
             entry.untracked |= untracked;
             if staged {
@@ -108,6 +111,12 @@ impl Repo {
         )?;
         for path in fields(&untracked) {
             mark(path, false, true);
+        }
+        // Unmerged paths are in both diffs above; this marks them.
+        for path in self.unmerged()? {
+            if let Some(entry) = found.get_mut(&path) {
+                entry.conflicted = true;
+            }
         }
         Ok(found.into_values().collect())
     }

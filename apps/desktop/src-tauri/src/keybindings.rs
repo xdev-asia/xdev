@@ -307,8 +307,18 @@ mod tests {
         assert!(rx.recv_timeout(Duration::from_millis(600)).is_err());
 
         // A person edits the file.
-        fs::write(&path, "{\"version\":1,\"keybindings\":{}}").unwrap();
-        let got = rx.recv_timeout(Duration::from_secs(10)).unwrap();
-        assert_eq!(got.as_deref(), Some("{\"version\":1,\"keybindings\":{}}"));
+        // `fs::write` truncates first, so a slow machine may read the empty
+        // file once before the text lands; the text itself must follow.
+        let want = "{\"version\":1,\"keybindings\":{}}";
+        fs::write(&path, want).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let got = loop {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            let got = rx.recv_timeout(left).unwrap();
+            if got.as_deref() != Some("") {
+                break got;
+            }
+        };
+        assert_eq!(got.as_deref(), Some(want));
     }
 }

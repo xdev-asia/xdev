@@ -22,6 +22,7 @@ import { recentFiles } from "@/search/recentFiles";
 import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
+import { startAutoRename } from "./autoRename";
 import { currentCloseWindow, openRestoredFile, restoreLayout, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
@@ -36,6 +37,7 @@ import { ChecksPanel } from "./ChecksPanel";
 import { IssuesPanel } from "@/issues/IssuesPanel";
 import { CreateWorktreeDialog, type AgentChoice, type CreateExtra } from "./CreateWorktreeDialog";
 import { DetailsDialog } from "./DetailsDialog";
+import { RenameBranchDialog } from "./RenameBranchDialog";
 import { PendingCreates, type CreateArgs } from "./pendingCreates";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
@@ -49,6 +51,7 @@ import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { sendCheckFix, sendFix } from "./fixAgent";
 import { sendToAgentTab, sendToOpenedTab } from "./agentPrompt";
 import { issuePrompt, issueWorkItem, issueWorktreeName, uniqueWorktreeName } from "@/issues/issueStart";
+import { effectiveIssueCommand, issueTemplateVars, renderIssueCommand } from "@/issues/issueTemplate";
 import { sendTarget } from "./sendTarget";
 import { SetupCard, type SetupCardState } from "./SetupCard";
 import { openDefaultTabs } from "./defaultTabs";
@@ -192,6 +195,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const removeRun = useRef(0);
   const [removing, setRemoving] = useState<Removing | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
+  const [renaming, setRenaming] = useState<WorktreeView | null>(null);
   const [notice, setNotice] = useState<ApiError["code"]>();
   const [fixNote, setFixNote] = useState(false);
   // A request to bring a tab to the front of its worktree; a new `seq` is a new request.
@@ -238,7 +242,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [quickSeq, setQuickSeq] = useState(0);
   const [settingsAt, setSettingsAt] = useState<{ section?: string; arg?: string; target?: string; seq: number }>({ seq: 0 });
   // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
-  const dialogOpen = creating !== null || removing !== null || adding || groupName !== null || editing !== null || bulk !== null || review !== null;
+  const dialogOpen = creating !== null || removing !== null || adding || groupName !== null || editing !== null || renaming !== null || bulk !== null || review !== null;
   useJumpKey(useCallback(() => setJumpOpen((o) => (dialogOpen ? false : !o)), [dialogOpen]));
   // The worktrees in the order the sidebar draws them, which the worktree keys walk.
   const [order, setOrder] = useState<string[]>([]);
@@ -301,6 +305,22 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => {
     api.sidebarPrefsGet().then(setPrefs, () => {});
   }, [api]);
+
+  // A worktree made with an automatic name gets its branch named from the first prompt of its agent.
+  // The watcher reads what each render knows through this ref.
+  const renameLive = useRef<{ worktrees: WorktreeView[]; t: typeof t; reload(): void }>({ worktrees: [], t, reload() {} });
+  renameLive.current = { worktrees: (repos ?? []).flatMap((r) => r.worktrees), t, reload: () => void load() };
+  useEffect(() => {
+    if (!sessions) return;
+    return startAutoRename({
+      api,
+      sessions,
+      worktrees: () => renameLive.current.worktrees,
+      t: (key, vars) => renameLive.current.t(key, vars),
+      reload: () => renameLive.current.reload(),
+      toast: pushToast,
+    });
+  }, [api, sessions]);
 
   // Layout restore: once per run, after the registry is known and before the saver starts (a saver that
   // ran first would replace the stored layout with an empty one). Nothing runs without a worktree.
@@ -1004,13 +1024,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       const taken = new Set((repo?.worktrees ?? []).flatMap((w) => [w.name, w.branch ?? ""]));
       const name = uniqueWorktreeName(issueWorktreeName(issue), taken);
       const view = await api.profiles().catch(() => null);
+      // The repo's issue command, when it has one, in place of the built-in prompt.
+      const shared = repo ? await api.repoHooks(repo.path).catch(() => null) : null;
+      const template = effectiveIssueCommand(repo?.localIssueCommand ?? "", shared);
       create(repoId, name, null, {
         title: null,
         agent: view?.defaultAgent ?? null,
         setDefault: false,
         parent: null,
         item: issueWorkItem(issue),
-        prompt: issuePrompt(full, t),
+        prompt: template === null ? issuePrompt(full, t) : renderIssueCommand(template, issueTemplateVars(full, repo?.shortName ?? "", t)),
       });
     } catch (e) {
       setNotice(toApiError(e).code);
@@ -1294,6 +1317,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
   }
 
+  // Gives the conflicts of the operation in progress to an agent of the worktree, as its recipe says.
+  async function resolveConflicts(vars: Record<string, string>): Promise<void> {
+    if (!sessions || !current) return;
+    const path = current.path;
+    const tab = await sendFix(api, sessions, path, shownTab[path] ?? null, "resolveConflicts", vars);
+    setFixNote(!tab);
+    if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
+  }
+
   // Gives a failed check, with its log when there is one, to an agent of the worktree.
   async function fixCheck(check: Check): Promise<void> {
     if (!sessions || !current) return;
@@ -1496,6 +1528,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onRestore={(repoId, branch) => void sidebarCall(() => api.worktreeRestore(repoId, branch))}
             onArchive={(wt) => void archive(wt)}
             onEditDetails={(wt) => setEditing({ worktree: wt, busy: false })}
+            onRenameBranch={(wt) => setRenaming(wt)}
             onCopyLink={(url) => {
               void copy(url);
               pushToast({ text: t("workItem.copied") });
@@ -1724,6 +1757,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   onChanges={(list) => setChangeList({ worktree: current.path, list })}
                   onFixWithAgent={(output) => void fixWithAgent("fixCommitFailure", output)}
                   onFixPush={(output, branch) => void fixWithAgent("fixPushFailure", output, branch)}
+                  onResolveConflicts={(vars) => void resolveConflicts(vars)}
                   onOpenGitSettings={() => openSettings("git")}
                   register={registerChanges}
                 />
@@ -1938,6 +1972,17 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           error={editing.error}
           onSave={(patch) => void saveDetails(patch)}
           onCancel={() => setEditing(null)}
+        />
+      )}
+      {renaming && (
+        <RenameBranchDialog
+          api={api}
+          worktree={renaming}
+          onRenamed={() => {
+            setRenaming(null);
+            void load();
+          }}
+          onClose={() => setRenaming(null)}
         />
       )}
       {bulk && (

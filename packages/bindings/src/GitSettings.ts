@@ -40,6 +40,11 @@ prGenerateOnOpen: boolean,
  */
 prOpenAfterCreate: boolean, 
 /**
+ * A worktree made with an automatic name gets a branch name from the
+ * first prompt its agent receives.
+ */
+autoRenameBranch: boolean, 
+/**
  * The prompts behind the agent actions. A part that does not parse
  * falls back to the defaults on its own.
  */

@@ -11,15 +11,17 @@ use tauri::{AppHandle, State};
 use xdev_agent::{AgentError, Cancel, Cli, Profiles, RunRequest, Runner};
 use xdev_ai::Provider;
 use xdev_git::{
-    BaseRange, Check, GhExec, PrDraft, PrView, Repo, SystemGh, Upstream, pr_checks, pr_create,
-    pr_open_web, pr_view, run_failed_log,
+    BaseRange, Check, GhAccount, GhEnv, GhExec, GhLogin, GhOutput, GitError, PrDraft, PrView, Repo,
+    SystemGh, TokenGh, Upstream, pr_checks, pr_create, pr_open_web, pr_view, run_failed_log,
 };
 use xdev_policy::{Action, Gate, Verdict};
 use xdev_workspace::{Registry, WorkspaceError, path_key};
 
 use crate::accounts::data_dir;
+use crate::agent_sessions::{SessionRow, worktree_sessions};
 use crate::commands::{AppState, CmdError, load_git_settings};
-use crate::recipes::{COMMIT_VARS, PR_VARS, render};
+use crate::kit::Ctx;
+use crate::recipes::{BRANCH_VARS, COMMIT_VARS, PR_VARS, render};
 use crate::settings::Recipe;
 use crate::tasks::{gate, provider_runner};
 use crate::workspace::{bad_arg, inside, parent_within, start_of};
@@ -67,6 +69,30 @@ struct Known {
     base_ref: String,
     /// `None` for the primary checkout.
     start: Option<String>,
+    /// The `gh` login the repo is bound to; `None` is `gh`'s own default.
+    gh_account: Option<GhAccount>,
+}
+
+/// Runs `f` with `gh` as the repo's bound login, or plain `gh` when it has
+/// none. A login `gh` no longer holds fails the call with `gh_account_missing`.
+pub(crate) fn run_gh<E: GhEnv, R>(
+    inner: &E,
+    account: Option<GhAccount>,
+    f: impl FnOnce(&dyn GhExec) -> R,
+) -> R {
+    match account {
+        Some(account) => f(&TokenGh { inner, account }),
+        None => f(&GhPlain(inner)),
+    }
+}
+
+/// An unbound call: no token, so `gh` picks its own login.
+struct GhPlain<'a, E: GhEnv>(&'a E);
+
+impl<E: GhEnv> GhExec for GhPlain<'_, E> {
+    fn run(&self, cwd: &Path, args: &[&str], stdin: Option<&str>) -> Result<GhOutput, GitError> {
+        self.0.run_env(cwd, args, stdin, &[])
+    }
 }
 
 fn locate(data: &Path, path: &Path) -> Result<Known, CmdError> {
@@ -78,12 +104,14 @@ fn locate(data: &Path, path: &Path) -> Result<Known, CmdError> {
         return Ok(Known {
             base_ref: repo.base_ref.clone(),
             start: Some(meta.start.clone()),
+            gh_account: repo.gh_account.clone(),
         });
     }
     match reg.repos.iter().find(|r| path_key(&r.path) == key) {
         Some(repo) => Ok(Known {
             base_ref: repo.base_ref.clone(),
             start: None,
+            gh_account: repo.gh_account.clone(),
         }),
         None => Err(WorkspaceError::WorktreeUnknown(path.to_owned()).into()),
     }
@@ -514,8 +542,8 @@ fn draft_runner(data: &Path, path: &Path, recipe: &Recipe) -> Result<Box<dyn Run
 
 #[tauri::command(async)]
 pub fn worktree_pr(state: State<'_, AppState>, path: PathBuf) -> Result<Option<PrView>, CmdError> {
-    locate(data_dir(&state)?, &path)?;
-    pr_with(&SystemGh, &path)
+    let known = locate(data_dir(&state)?, &path)?;
+    run_gh(&SystemGh, known.gh_account, |gh| pr_with(gh, &path))
 }
 
 #[tauri::command(async)]
@@ -525,7 +553,10 @@ pub fn worktree_pr_create(
     draft: PrDraft,
 ) -> Result<PrView, CmdError> {
     let known = locate(data_dir(&state)?, &path)?;
-    create_pr_with(&SystemGh, &Repo::discover(&path)?, &known.base_ref, draft)
+    let repo = Repo::discover(&path)?;
+    run_gh(&SystemGh, known.gh_account, |gh| {
+        create_pr_with(gh, &repo, &known.base_ref, draft)
+    })
 }
 
 #[tauri::command(async)]
@@ -534,8 +565,10 @@ pub fn worktree_pr_checks(
     path: PathBuf,
     number: u64,
 ) -> Result<Vec<Check>, CmdError> {
-    locate(data_dir(&state)?, &path)?;
-    Ok(pr_checks(&SystemGh, &path, number)?)
+    let known = locate(data_dir(&state)?, &path)?;
+    run_gh(&SystemGh, known.gh_account, |gh| {
+        Ok(pr_checks(gh, &path, number)?)
+    })
 }
 
 /// The log of the failed job behind a check's `link`, for the Fix checks
@@ -546,8 +579,10 @@ pub fn worktree_check_log(
     path: PathBuf,
     link: String,
 ) -> Result<Option<String>, CmdError> {
-    locate(data_dir(&state)?, &path)?;
-    Ok(run_failed_log(&SystemGh, &path, &link)?)
+    let known = locate(data_dir(&state)?, &path)?;
+    run_gh(&SystemGh, known.gh_account, |gh| {
+        Ok(run_failed_log(gh, &path, &link)?)
+    })
 }
 
 #[tauri::command(async)]
@@ -556,8 +591,16 @@ pub fn worktree_pr_open(
     path: PathBuf,
     checks: bool,
 ) -> Result<(), CmdError> {
-    locate(data_dir(&state)?, &path)?;
-    Ok(pr_open_web(&SystemGh, &path, checks)?)
+    let known = locate(data_dir(&state)?, &path)?;
+    run_gh(&SystemGh, known.gh_account, |gh| {
+        Ok(pr_open_web(gh, &path, checks)?)
+    })
+}
+
+/// The logins `gh` holds, for the project settings picker.
+#[tauri::command(async)]
+pub fn gh_logins() -> Result<Vec<GhLogin>, CmdError> {
+    Ok(xdev_git::gh_logins(&SystemGh)?)
 }
 
 #[tauri::command(async)]
@@ -592,6 +635,85 @@ pub fn worktree_draft_pr(
         &plain_base(&repo, &known.base_ref),
         &recipe,
     )
+}
+
+/// The built-in branch name prompt; `{basePrompt}` is this and the request.
+const BRANCH_BASE: &str = "Name a git branch for the work that starts with the request below. \
+     Answer with the name only: at most 4 lowercase words joined with dashes, \
+     no quotes and no commentary.";
+
+/// A branch leaf for the work that starts with `first_prompt`: the agent's
+/// first line through the slug rules, cut to 4 words. Whatever the agent
+/// does wrong (no runner, an error, nothing usable) falls back to the first
+/// words of the prompt; a prompt with no usable word is `bad_name`.
+fn suggest_with(
+    runner: Option<&dyn Runner>,
+    repo: &Repo,
+    first_prompt: &str,
+    recipe: &Recipe,
+) -> Result<String, CmdError> {
+    let fallback = names_from_work(first_prompt);
+    if fallback.is_empty() {
+        return Err(err("bad_name", None));
+    }
+    let Some(runner) = runner else {
+        return Ok(fallback);
+    };
+    let base = format!("{BRANCH_BASE}\n\n{first_prompt}");
+    // `xDev keeps no assistant text (R2): the variable is there, empty.
+    let vars = [
+        ("basePrompt", base.as_str()),
+        ("firstPrompt", first_prompt),
+        ("assistantMessage", ""),
+    ];
+    debug_assert!(vars.iter().map(|(name, _)| *name).eq(BRANCH_VARS));
+    let answer = ask(runner, repo, render(&recipe.template, &vars), &recipe.args);
+    let line = answer
+        .ok()
+        .and_then(|a| a.lines().find(|l| !l.trim().is_empty()).map(str::to_owned));
+    // The agent's dashes separate words, so 4 words are 4 dashed parts.
+    let named = line
+        .map(|l| names_from_work(&l.replace(['-', '_', '/', '.'], " ")))
+        .unwrap_or_default();
+    Ok(if named.is_empty() { fallback } else { named })
+}
+
+fn names_from_work(prompt: &str) -> String {
+    xdev_workspace::from_work(prompt)
+}
+
+/// The title of the session `session` names (its id or `<home>:<id>`), else
+/// of the first row, which is the latest.
+fn first_prompt(rows: &[SessionRow], session: Option<&str>) -> Option<String> {
+    let row = match session {
+        Some(id) => rows
+            .iter()
+            .find(|r| r.session.id == id || r.session.key == id)?,
+        None => rows.first()?,
+    };
+    row.session.title.clone().filter(|t| !t.trim().is_empty())
+}
+
+/// A branch name for the work of `session` (else the latest session of the
+/// worktree), from the branch-name recipe's agent or the first words of the
+/// prompt. Makes no change; Settings → Git, auto rename, does not apply.
+#[tauri::command(async)]
+pub fn worktree_suggest_branch(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: PathBuf,
+    session: Option<String>,
+) -> Result<String, CmdError> {
+    let data = data_dir(&state)?;
+    locate(data, &path)?;
+    let ctx = Ctx::of(&state)?;
+    let rows = worktree_sessions(&ctx.data, || ctx.homes(), &path)?;
+    let prompt = first_prompt(&rows, session.as_deref()).ok_or_else(|| err("bad_name", None))?;
+    let recipe = load_git_settings(&app).recipes.branch_name;
+    // A recipe whose agent cannot run drafts (or the gate says no) still
+    // names the branch, from the prompt.
+    let runner = draft_runner(data, &path, &recipe).ok();
+    suggest_with(runner.as_deref(), &Repo::discover(&path)?, &prompt, &recipe)
 }
 
 /// Settings → Git: count the range against the upstream.
@@ -1022,7 +1144,7 @@ mod tests {
 
     use std::cell::RefCell;
     use xdev_agent::RunOutcome;
-    use xdev_git::{GhOutput, GitError};
+    use xdev_git::{GhAccount, GhEnv, GhOutput, GitError};
 
     struct FakeGh {
         calls: RefCell<Vec<Vec<String>>>,
@@ -1092,6 +1214,27 @@ mod tests {
                 }),
                 Err(code) => Err(AgentError::Runner(code.clone())),
             }
+        }
+    }
+
+    fn prompt_row(id: &str, title: Option<&str>) -> SessionRow {
+        SessionRow {
+            session: xdev_kit::AgentSession {
+                key: format!("h:{id}"),
+                id: id.to_owned(),
+                home_id: "h".to_owned(),
+                agent: xdev_kit::Agent::Claude,
+                cwd: None,
+                branch: None,
+                title: title.map(str::to_owned),
+                model: None,
+                first: 0,
+                last: 0,
+                messages: 1,
+            },
+            worktree: None,
+            repo: None,
+            resumable: true,
         }
     }
 
@@ -1241,6 +1384,104 @@ mod tests {
         let req = runner.reqs.borrow()[0].clone();
         assert!(req.tools.is_empty());
         assert_eq!(req.model, None);
+    }
+
+    #[test]
+    fn suggest_takes_the_runner_answer_through_the_slug_rules() {
+        let fx = fixture();
+        let runner = FakeRunner::new(Ok(
+            "```\nFix the Footer's usage-meter rounding\n```\nbecause",
+        ));
+        let name = suggest_with(
+            Some(&runner),
+            &repo_of(&fx),
+            "fix the footer usage meter rounding",
+            &Recipe::default(),
+        )
+        .unwrap();
+        assert_eq!(name, "fix-the-footers-usage");
+        // The prompt carries the request, with no tools.
+        let req = runner.reqs.borrow()[0].clone();
+        assert!(req.prompt.contains("fix the footer usage meter rounding"));
+        assert!(req.tools.is_empty());
+    }
+
+    #[test]
+    fn suggest_renders_the_recipe_template_with_its_variables() {
+        let fx = fixture();
+        let runner = FakeRunner::new(Ok("name-it"));
+        let recipe = Recipe {
+            agent: None,
+            args: vec!["--x".to_owned()],
+            template: "FIRST[{firstPrompt}] ASSISTANT[{assistantMessage}] BASE[{basePrompt}]"
+                .to_owned(),
+        };
+        suggest_with(Some(&runner), &repo_of(&fx), "do the thing", &recipe).unwrap();
+        let req = runner.reqs.borrow()[0].clone();
+        assert!(
+            req.prompt
+                .starts_with("FIRST[do the thing] ASSISTANT[] BASE[")
+        );
+        assert_eq!(req.args, ["--x"]);
+    }
+
+    #[test]
+    fn suggest_falls_back_to_the_first_words_when_the_runner_fails_or_says_nothing() {
+        let fx = fixture();
+        for answer in [Err("claude_missing"), Ok("   "), Ok("日本語")] {
+            let runner = FakeRunner::new(answer);
+            let name = suggest_with(
+                Some(&runner),
+                &repo_of(&fx),
+                "fix the footer usage meter rounding",
+                &Recipe::default(),
+            )
+            .unwrap();
+            assert_eq!(name, "fix-the-footer-usage", "{answer:?}");
+        }
+        // No runner at all (a profile without one): the same fallback.
+        let name = suggest_with(
+            None,
+            &repo_of(&fx),
+            "Add login page now please",
+            &Recipe::default(),
+        )
+        .unwrap();
+        assert_eq!(name, "add-login-page-now");
+    }
+
+    #[test]
+    fn suggest_without_a_usable_prompt_is_bad_name() {
+        let fx = fixture();
+        let runner = FakeRunner::new(Ok("anything"));
+        for prompt in ["", "   ", "日本語 だけ", "... ---"] {
+            let e =
+                suggest_with(Some(&runner), &repo_of(&fx), prompt, &Recipe::default()).unwrap_err();
+            assert_eq!(e.code, "bad_name", "{prompt:?}");
+        }
+        // The runner is not asked about nothing.
+        assert!(runner.reqs.borrow().is_empty());
+    }
+
+    #[test]
+    fn the_prompt_comes_from_the_named_session_else_the_latest() {
+        let row = |id: &str, title: Option<&str>| prompt_row(id, title);
+        let rows = [
+            row("new", Some("latest work")),
+            row("old", Some("older work")),
+        ];
+        assert_eq!(
+            first_prompt(&rows, Some("old")).as_deref(),
+            Some("older work")
+        );
+        assert_eq!(first_prompt(&rows, None).as_deref(), Some("latest work"));
+        // `<home>:<id>` keys work too.
+        assert_eq!(
+            first_prompt(&rows, Some("h:old")).as_deref(),
+            Some("older work")
+        );
+        assert_eq!(first_prompt(&rows, Some("nope")), None);
+        assert_eq!(first_prompt(&[row("x", None)], None), None);
     }
 
     #[test]
@@ -1502,5 +1743,96 @@ mod tests {
         assert!(prompt.contains("b.txt"), "{prompt}");
         assert!(prompt.contains("+two lines"), "{prompt}");
         assert!(prompt.ends_with("||"), "{prompt}");
+    }
+
+    /// The args and the environment of one call.
+    type EnvCall = (Vec<String>, Vec<(String, String)>);
+
+    /// A `gh` that records the environment of each call.
+    struct EnvGh {
+        calls: RefCell<Vec<EnvCall>>,
+        script: RefCell<Vec<GhOutput>>,
+    }
+
+    impl EnvGh {
+        fn new(mut script: Vec<GhOutput>) -> EnvGh {
+            script.reverse();
+            EnvGh {
+                calls: RefCell::default(),
+                script: RefCell::new(script),
+            }
+        }
+    }
+
+    impl GhEnv for EnvGh {
+        fn run_env(
+            &self,
+            _: &Path,
+            args: &[&str],
+            _: Option<&str>,
+            env: &[(&str, &str)],
+        ) -> Result<GhOutput, GitError> {
+            self.calls.borrow_mut().push((
+                args.iter().map(|a| a.to_string()).collect(),
+                env.iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            ));
+            Ok(self.script.borrow_mut().pop().expect("scripted gh call"))
+        }
+    }
+
+    fn bound(user: &str) -> Option<GhAccount> {
+        Some(GhAccount {
+            host: "github.com".into(),
+            user: user.into(),
+        })
+    }
+
+    const NO_PR: &str = "no pull requests found for branch \"feat\"";
+
+    #[test]
+    fn locate_carries_the_repos_gh_binding() {
+        let fx = fixture();
+        assert_eq!(locate(&fx.data, &fx.wt).unwrap().gh_account, None);
+        let mut reg = Registry::load(&fx.data).unwrap();
+        reg.repos[0].gh_account = bound("u");
+        reg.save(&fx.data).unwrap();
+        // The worktree and the primary checkout both read the repo's binding.
+        assert_eq!(locate(&fx.data, &fx.wt).unwrap().gh_account, bound("u"));
+        assert_eq!(locate(&fx.data, &fx.main).unwrap().gh_account, bound("u"));
+    }
+
+    #[test]
+    fn a_bound_call_gets_the_token_first_and_runs_with_it() {
+        let inner = EnvGh::new(vec![gh_out(0, "gho_x\n", ""), gh_out(1, "", NO_PR)]);
+        let view = run_gh(&inner, bound("u"), |gh| pr_with(gh, Path::new(".")));
+        assert_eq!(view.unwrap(), None);
+        let calls = inner.calls.borrow();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(
+            calls[0].0,
+            ["auth", "token", "--hostname", "github.com", "--user", "u"]
+        );
+        assert_eq!(&calls[1].0[..2], ["pr", "view"]);
+        assert_eq!(calls[1].1, [("GH_TOKEN".to_owned(), "gho_x".to_owned())]);
+    }
+
+    #[test]
+    fn a_call_bound_to_a_gone_login_is_not_run_as_another() {
+        let inner = EnvGh::new(vec![gh_out(1, "", "no oauth token found")]);
+        let res = run_gh(&inner, bound("u"), |gh| pr_with(gh, Path::new(".")));
+        assert_eq!(code(res), "gh_account_missing");
+        assert_eq!(inner.calls.borrow().len(), 1);
+    }
+
+    #[test]
+    fn an_unbound_call_is_one_plain_call() {
+        let inner = EnvGh::new(vec![gh_out(1, "", NO_PR)]);
+        let view = run_gh(&inner, None, |gh| pr_with(gh, Path::new(".")));
+        assert_eq!(view.unwrap(), None);
+        let calls = inner.calls.borrow();
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0].1.is_empty(), "no token without a binding");
     }
 }
