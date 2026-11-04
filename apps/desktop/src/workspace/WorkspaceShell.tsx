@@ -23,6 +23,7 @@ import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
 import { startAutoRename } from "./autoRename";
+import { startAutoTabTitle } from "./autoTabTitle";
 import { startKeepAwakeReport } from "@/status/keepAwake";
 import { currentCloseWindow, openRestoredFile, restoreLayout, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
@@ -321,6 +322,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       reload: () => renameLive.current.reload(),
       toast: pushToast,
     });
+  }, [api, sessions]);
+
+  // Agent tabs take a short title from their first prompt when Settings → Agents asks for it.
+  useEffect(() => {
+    if (!sessions) return;
+    return startAutoTabTitle({ api, sessions });
   }, [api, sessions]);
 
   // Layout restore: once per run, after the registry is known and before the saver starts (a saver that
