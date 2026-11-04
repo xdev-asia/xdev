@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { UiSettings } from "@/api";
+import { UI_SETTINGS_DEFAULTS } from "@/mockSettings";
 import { applyCachedTheme, getThemePreference, loadTheme, readCachedTheme, resetThemeForTests, setThemePreference, startThemeSync, THEME_CACHE_KEY } from "./theme";
 
 function setup(opts: { dark?: boolean; store?: Record<string, string>; storageThrows?: boolean } = {}) {
@@ -83,7 +84,7 @@ it("reads an unknown stored value as system", () => {
 
 it("loadTheme applies the stored preference, and a failed read changes nothing", async () => {
   const t = setup();
-  const ui: UiSettings = { zoom: 1, restore: "all", theme: "light" };
+  const ui: UiSettings = { ...UI_SETTINGS_DEFAULTS, theme: "light" };
   await loadTheme({ uiSettingsGet: async () => ui });
   expect(t.attrs["data-theme"]).toBe("light");
   await loadTheme({ uiSettingsGet: async () => Promise.reject(new Error("no")) });
@@ -92,7 +93,7 @@ it("loadTheme applies the stored preference, and a failed read changes nothing",
 
 it("startThemeSync reloads when settings://changed names ui, and only then", async () => {
   const t = setup();
-  let stored: UiSettings = { zoom: 1, restore: "all", theme: "light" };
+  let stored: UiSettings = { ...UI_SETTINGS_DEFAULTS, theme: "light" };
   let emit: (sections: string[]) => void = () => {};
   const get = vi.fn(async () => stored);
   const off = vi.fn();

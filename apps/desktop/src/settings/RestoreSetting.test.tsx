@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
+import { UI_SETTINGS_DEFAULTS } from "@/mockSettings";
 import { translate } from "@/i18n";
 import { RestoreSetting } from "./RestoreSetting";
 
@@ -33,7 +34,7 @@ beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hook
 
 it("shows the stored mode and writes the pick, keeping the zoom", async () => {
   const api = createMockApi({});
-  await api.uiSettingsPut({ zoom: 1.2, restore: "all", theme: "system" });
+  await api.uiSettingsPut({ ...UI_SETTINGS_DEFAULTS, zoom: 1.2 });
   const draw = () => {
     hooks.cursor = 0;
     hooks.active = true;

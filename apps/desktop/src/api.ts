@@ -37,6 +37,9 @@ import type {
   KeybindingsChanged,
   KeybindingsText,
   UiSettings,
+  CustomScheme,
+  OnNameTaken,
+  SchemePreview,
   OpenInSettings,
   OpenTarget,
   CloneProgress,
@@ -155,7 +158,8 @@ export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { CliAsk, CliOpenTab, TabReport };
 export type { RestoreMode } from "@xdev/bindings";
-export type { Theme } from "@xdev/bindings";
+export type { Theme, EditorTheme, SidebarLook, StatusBarItems } from "@xdev/bindings";
+export type { CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
 
 // The IPC types come from Rust; see packages/bindings/README.md.
@@ -379,6 +383,9 @@ export type ErrorCode =
   | "invalid_profile"
   | "builtin_profile"
   | "profile_off"
+  | "theme_invalid"
+  | "theme_too_large"
+  | "theme_name_taken"
   | "not_installed"
   | "outside"
   | "kit_bad_input"
@@ -511,6 +518,16 @@ export interface Api {
   // Oldest first.
   squadEvents(id: string): Promise<SquadEvent[]>;
   pickFolder(): Promise<string | null>;
+  // A native file dialog limited to `extensions` (no dot); null when cancelled.
+  pickFile(extensions: string[]): Promise<string | null>;
+  // Imported terminal schemes (`xdev-terminal-theme` files under the data dir), by name.
+  terminalThemes(): Promise<CustomScheme[]>;
+  // Reads and checks a theme file without saving it; rejects `theme_invalid` (detail: the field) or `theme_too_large`.
+  terminalThemePreview(path: string): Promise<SchemePreview>;
+  // Saves it; `theme_name_taken` when the name exists and `onTaken` is `fail`.
+  terminalThemeImport(path: string, onTaken: OnNameTaken): Promise<CustomScheme>;
+  // Moves an imported scheme to the trash.
+  terminalThemeRemove(id: string): Promise<void>;
   openVault(path: string): Promise<DocEntry[]>;
   lastVault(): Promise<string | null>;
   // `prompt` is true until the first-run offer has been answered or any folder opened.
@@ -988,6 +1005,9 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "invalid_profile",
   "builtin_profile",
   "profile_off",
+  "theme_invalid",
+  "theme_too_large",
+  "theme_name_taken",
   "not_installed",
   "outside",
   "kit_bad_input",
@@ -1082,6 +1102,14 @@ const tauriApi: Api = {
     const picked = await open({ directory: true });
     return typeof picked === "string" ? picked : null;
   },
+  async pickFile(extensions) {
+    const picked = await open({ multiple: false, directory: false, filters: [{ name: "", extensions }] });
+    return typeof picked === "string" ? picked : null;
+  },
+  terminalThemes: () => call("terminal_themes_list"),
+  terminalThemePreview: (path) => call("terminal_theme_preview", { path }),
+  terminalThemeImport: (path, onTaken) => call("terminal_theme_import", { path, onTaken }),
+  terminalThemeRemove: (id) => call("terminal_theme_remove", { id }),
   openVault: (path) => call("open_vault", { path }),
   lastVault: () => call("last_vault"),
   vaultSetup: () => call("vault_setup"),
