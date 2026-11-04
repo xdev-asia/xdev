@@ -26,6 +26,8 @@ pub struct StoredUser {
 pub struct Stored {
     pub token: Secret,
     pub user: Option<StoredUser>,
+    /// The server the token belongs to. A token is only ever sent to this origin.
+    pub origin: String,
 }
 
 #[derive(Serialize)]
@@ -33,6 +35,7 @@ struct Out<'a> {
     v: u32,
     token: &'a str,
     user: Option<&'a StoredUser>,
+    origin: &'a str,
 }
 
 #[derive(Deserialize)]
@@ -40,26 +43,34 @@ struct In {
     v: u32,
     token: String,
     user: Option<StoredUser>,
+    origin: String,
 }
 
-fn render(token: &str, user: Option<&StoredUser>) -> String {
-    serde_json::to_string(&Out { v: 1, token, user }).unwrap_or_default()
+fn render(token: &str, user: Option<&StoredUser>, origin: &str) -> String {
+    serde_json::to_string(&Out {
+        v: 1,
+        token,
+        user,
+        origin,
+    })
+    .unwrap_or_default()
 }
 
-/// `{"v":1,"token":…,"user":…}`, at most 1200 characters: the image goes first, then
+/// `{"v":1,"token":…,"user":…,"origin":…}`, at most 1200 characters: the image goes first, then
 /// the longer of name and email is cut. The token is always kept.
 pub fn encode_stored(s: &Stored) -> String {
     let token = s.token.expose();
+    let origin = s.origin.as_str();
     let Some(user) = &s.user else {
-        return render(token, None);
+        return render(token, None, origin);
     };
     let mut user = user.clone();
-    let mut text = render(token, Some(&user));
+    let mut text = render(token, Some(&user), origin);
     if text.chars().count() <= MAX_JSON {
         return text;
     }
     user.image = None;
-    text = render(token, Some(&user));
+    text = render(token, Some(&user), origin);
     while text.chars().count() > MAX_JSON && !(user.name.is_empty() && user.email.is_empty()) {
         let longer = if user.name.chars().count() >= user.email.chars().count() {
             &mut user.name
@@ -67,20 +78,21 @@ pub fn encode_stored(s: &Stored) -> String {
             &mut user.email
         };
         longer.pop();
-        text = render(token, Some(&user));
+        text = render(token, Some(&user), origin);
     }
     text
 }
 
-/// `None` on any shape error, an unknown version or an empty token.
+/// `None` on any shape error, an unknown version, an empty token or a missing origin.
 pub fn decode_stored(raw: &str) -> Option<Stored> {
     let parsed: In = serde_json::from_str(raw).ok()?;
-    if parsed.v != 1 || parsed.token.is_empty() {
+    if parsed.v != 1 || parsed.token.is_empty() || parsed.origin.is_empty() {
         return None;
     }
     Some(Stored {
         token: Secret::new(parsed.token),
         user: parsed.user,
+        origin: parsed.origin,
     })
 }
 
@@ -183,6 +195,7 @@ mod tests {
                 email: email.into(),
                 image: image.map(str::to_owned),
             }),
+            origin: "https://id.corp.test".into(),
         }
     }
 
@@ -196,9 +209,11 @@ mod tests {
         let back = decode_stored(&encode_stored(&s)).unwrap();
         assert_eq!(back.token.expose(), "tok_tok_tok_tok_tok_tok");
         assert_eq!(back.user, s.user);
+        assert_eq!(back.origin, "https://id.corp.test");
         let bare = Stored {
             token: Secret::new("t".into()),
             user: None,
+            origin: "https://id.corp.test".into(),
         };
         assert!(decode_stored(&encode_stored(&bare)).unwrap().user.is_none());
     }
@@ -208,6 +223,9 @@ mod tests {
         assert!(decode_stored(r#"{"v":2,"token":"t","user":null}"#).is_none());
         assert!(decode_stored(r#"{"token":"t"}"#).is_none());
         assert!(decode_stored(r#"{"v":1,"token":""}"#).is_none());
+        // An entry with no origin cannot say where its token may go.
+        assert!(decode_stored(r#"{"v":1,"token":"t","user":null}"#).is_none());
+        assert!(decode_stored(r#"{"v":1,"token":"t","user":null,"origin":""}"#).is_none());
         assert!(decode_stored("garbage").is_none());
         assert!(decode_stored("").is_none());
     }
@@ -225,6 +243,7 @@ mod tests {
             ("Duy", "d@x.test")
         );
         assert!(user.image.is_none());
+        assert_eq!(back.origin, "https://id.corp.test");
     }
 
     #[test]
@@ -234,6 +253,7 @@ mod tests {
         assert!(text.chars().count() <= MAX_JSON);
         let back = decode_stored(&text).unwrap();
         assert_eq!(back.token.expose(), "tok_tok_tok_tok_tok_tok");
+        assert_eq!(back.origin, "https://id.corp.test");
         let user = back.user.unwrap();
         assert!(!user.name.is_empty() && !user.email.is_empty());
         // Multi-byte names stay valid text.

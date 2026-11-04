@@ -65,9 +65,18 @@ pub struct Begin {
     pub link: String,
 }
 
+/// What a server change leaves for the caller to finish.
+pub struct Switched {
+    pub old_base: String,
+    pub token: Option<Secret>,
+    pub cleared: Result<(), &'static str>,
+}
+
 /// The one-time code and verifier to trade for a token.
 pub struct Redeem {
     pub generation: u64,
+    /// The server this attempt began at: the code and verifier go there and nowhere else.
+    pub base: String,
     pub code: Secret,
     pub verifier: Secret,
 }
@@ -93,6 +102,28 @@ impl Session {
 
     pub fn state(&self) -> XdevIdState {
         self.state.clone()
+    }
+
+    /// The server origin in use. Every request for this session goes here.
+    pub fn base(&self) -> &str {
+        &self.base
+    }
+
+    /// Points the session at another server. Returns `None` when it is the same one.
+    /// Otherwise it signs out first (the attempt is cancelled, the keychain cleared) and
+    /// hands back the old origin and the old token, so the caller revokes it at the OLD
+    /// server. The token never meets the new origin.
+    pub fn switch_server(&mut self, store: &dyn TokenStore, base: String) -> Option<Switched> {
+        if base == self.base {
+            return None;
+        }
+        let (token, cleared) = self.sign_out(store);
+        let old_base = std::mem::replace(&mut self.base, base);
+        Some(Switched {
+            old_base,
+            token,
+            cleared,
+        })
     }
 
     /// The state when no attempt is running: signed in if we hold a token and a profile.
@@ -134,6 +165,12 @@ impl Session {
                 Err(E_KEYCHAIN)
             }
             Ok(None) => {
+                self.state = signed_out(None);
+                Ok(())
+            }
+            // A token saved for another server is never used and never sent: drop it.
+            Ok(Some(stored)) if stored.origin != self.base => {
+                let _ = store.clear();
                 self.state = signed_out(None);
                 Ok(())
             }
@@ -209,6 +246,7 @@ impl Session {
             }
             Callback::Code { code, .. } => Ok(Some(Redeem {
                 generation: attempt.generation,
+                base: self.base.clone(),
                 code,
                 verifier: attempt.verifier,
             })),
@@ -237,6 +275,7 @@ impl Session {
                 let stored = Stored {
                     token: reply.token,
                     user: Some(user),
+                    origin: self.base.clone(),
                 };
                 if store.save(&stored).is_err() {
                     self.state = self.resting(Some(E_KEYCHAIN));
@@ -301,6 +340,7 @@ impl Session {
                 let stored = Stored {
                     token: token_used.clone(),
                     user: Some(user.clone()),
+                    origin: self.base.clone(),
                 };
                 // A failed write only loses the offline copy of the profile.
                 let _ = store.save(&stored);
@@ -424,6 +464,7 @@ mod tests {
                     email: "d@x.test".into(),
                     image: None,
                 }),
+                origin: BASE.into(),
             })
             .unwrap();
         s.load(&store).unwrap();
@@ -442,6 +483,81 @@ mod tests {
         let mut s = Session::new(BASE.into());
         assert_eq!(s.load(&store), Err(E_KEYCHAIN));
         assert_eq!(s.state(), signed_out(None));
+    }
+
+    #[test]
+    fn a_token_saved_for_another_server_is_dropped_on_load() {
+        let (s, store) = signed_in();
+        drop(s);
+        assert_eq!(store.load().unwrap().unwrap().origin, BASE);
+
+        let mut other = Session::new("https://id.corp.test".into());
+        other.load(&store).unwrap();
+        assert_eq!(other.state(), signed_out(None));
+        assert!(other.token().is_none());
+        assert!(store.raw().is_none());
+
+        // The same origin keeps the session.
+        let (_, store) = signed_in();
+        let mut same = Session::new(BASE.into());
+        same.load(&store).unwrap();
+        assert!(matches!(same.state(), XdevIdState::SignedIn { .. }));
+        assert!(same.token().is_some());
+    }
+
+    #[test]
+    fn a_refresh_keeps_the_origin_in_the_keychain() {
+        let (mut s, store) = signed_in();
+        let token = s.token().unwrap();
+        assert!(s.refreshed(&store, &token, Ok(me("Duy Tran"))));
+        assert_eq!(store.load().unwrap().unwrap().origin, BASE);
+    }
+
+    #[test]
+    fn switching_server_signs_out_first_and_hands_back_the_old_token() {
+        let (mut s, store) = signed_in();
+        assert!(s.switch_server(&store, BASE.into()).is_none());
+        assert!(matches!(s.state(), XdevIdState::SignedIn { .. }));
+
+        let switched = s
+            .switch_server(&store, "https://id.corp.test".into())
+            .unwrap();
+        assert_eq!(switched.old_base, BASE);
+        assert_eq!(switched.token.unwrap().expose(), TOKEN);
+        assert!(switched.cleared.is_ok());
+        assert_eq!(s.base(), "https://id.corp.test");
+        assert_eq!(s.state(), signed_out(None));
+        assert!(s.token().is_none());
+        assert!(store.raw().is_none());
+
+        // A new attempt goes to the new server.
+        let begin = s
+            .begin(&store, (vbytes(), sbytes()), "d", Instant::now())
+            .unwrap();
+        assert!(begin.link.starts_with("https://id.corp.test/desktop?"));
+    }
+
+    #[test]
+    fn switching_server_cancels_an_attempt_and_drops_its_late_result() {
+        let (mut s, store, now) = started();
+        let r = s.accept(&cb(&state_text()), now).unwrap().unwrap();
+        assert_eq!(r.base, BASE);
+        s.switch_server(&store, "https://id.corp.test".into())
+            .unwrap();
+        assert!(
+            !s.finish(&store, r.generation, Ok((reply(TOKEN), me("Duy"))))
+                .unwrap()
+        );
+        assert!(store.raw().is_none());
+
+        let (mut s, store, _) = started();
+        s.switch_server(&store, "https://id.corp.test".into())
+            .unwrap();
+        assert_eq!(s.state(), signed_out(None));
+        assert_eq!(
+            s.accept(&cb(&state_text()), Instant::now()).err(),
+            Some(E_STATE)
+        );
     }
 
     #[test]
@@ -620,6 +736,7 @@ mod tests {
             .save(&Stored {
                 token: Secret::new(TOKEN.into()),
                 user: None,
+                origin: BASE.into(),
             })
             .unwrap();
         s.load(&store).unwrap();

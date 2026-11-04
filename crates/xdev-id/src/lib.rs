@@ -53,7 +53,7 @@ pub use http::{
 pub use link::{authorize_url, base_url, check_origin, clean_device, device_name};
 pub use pkce::{PkcePair, Secret, b64url, random_43, random_pair, s256};
 pub use server::{ServerSource, XdevIdServer, resolve_server};
-pub use session::{Begin, Redeem, Session, XdevIdState, XdevIdUser};
+pub use session::{Begin, Redeem, Session, Switched, XdevIdState, XdevIdUser};
 pub use store::{
     Keychain, MemoryStore, StoreError, Stored, StoredUser, TokenStore, decode_stored, encode_stored,
 };
