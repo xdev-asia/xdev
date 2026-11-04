@@ -14,6 +14,7 @@ import { NavButtons } from "@/nav/NavButtons";
 import { useNavHistory } from "@/nav/useNavHistory";
 import { useKeymap, type ActionId } from "@/keys/keymap";
 import { setTerminalKeyHost, startDiagnosticToasts } from "@/keys/terminalKey";
+import { startOptionAsAltProbe } from "@/terminal/optionAsAlt";
 import { startAutosave } from "@/files/autosave";
 import { fileTabId, fileTabs } from "@/files/fileTabs";
 import { onOpenFile, openFile as requestOpenFile, type OpenFileRequest } from "@/files/openFile";
@@ -683,6 +684,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       setTerminalKeyHost(null);
     };
   }, [live]);
+  // macOS: which keyboard layout is active decides what "Option as Alt: auto" does.
+  useEffect(() => (IS_MAC ? startOptionAsAltProbe(() => api.keyboardInputSource()) : undefined), []);
   // The stored zoom is applied once, as the shell mounts.
   useEffect(() => {
     void loadZoom(api);

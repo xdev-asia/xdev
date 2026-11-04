@@ -8,7 +8,7 @@ import { TERMINAL_SCHEMES } from "./terminalThemes";
 import { resetTerminalSettingsForTests, setTerminalSettings, TERMINAL_DEFAULTS } from "./terminalSettings";
 
 // The first ref is the xterm host; the rest keep their initial value.
-const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[], searchOpts: undefined as unknown }));
+const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[], searchOpts: undefined as unknown, platform: "win" as string, csi: {} as Record<string, (p: unknown[]) => boolean>, bufType: "normal" }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: (initial: unknown) => [initial, () => {}],
@@ -33,6 +33,15 @@ vi.mock("react", async (original) => ({
   },
   useImperativeHandle: (ref: { current: unknown } | null | undefined, create: () => unknown) => {
     if (ref) ref.current = create();
+  },
+}));
+// The platform the pane resolves keys for; a test sets `hooks.platform`.
+vi.mock("@/platform", () => ({
+  get PLATFORM() {
+    return hooks.platform;
+  },
+  get IS_MAC() {
+    return hooks.platform === "mac";
   },
 }));
 vi.mock("@/i18n", async (original) => ({
@@ -67,7 +76,27 @@ vi.mock("@xterm/xterm", () => ({
       registerOscHandler(id: number, cb: (d: string) => boolean) {
         if (id === 52) hooks.osc = cb;
       },
+      registerCsiHandler(id: { prefix?: string; intermediates?: string; final: string }, cb: (p: unknown[]) => boolean) {
+        hooks.csi[`${id.prefix ?? ""}${id.intermediates ?? ""}${id.final}`] = cb;
+        return { dispose() {} };
+      },
+      registerEscHandler() {
+        return { dispose() {} };
+      },
     };
+    buffer = {
+      active: {
+        get type() {
+          return hooks.bufType;
+        },
+      },
+    };
+    scrollToTop() {
+      hooks.calls.push("scrollToTop");
+    }
+    scrollToBottom() {
+      hooks.calls.push("scrollToBottom");
+    }
     onSelectionChange(cb: () => void) {
       hooks.select = cb;
     }
@@ -141,6 +170,9 @@ beforeEach(() => {
   hooks.osc = null;
   hooks.options = {};
   hooks.keyHandler = null;
+  hooks.platform = "win";
+  hooks.csi = {};
+  hooks.bufType = "normal";
   hooks.calls = [];
   resetBindingsForTests();
   hooks.listeners = {};
@@ -499,4 +531,83 @@ it("Ctrl+F opens the find bar through the key handler", () => {
   effect();
   const e = { type: "keydown", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, key: "f", code: "KeyF", preventDefault: vi.fn() } as unknown as KeyboardEvent;
   expect(hooks.keyHandler?.(e)).toBe(false);
+});
+
+// ---- Keys the terminal encodes itself (multi-line input, word moves, Option as Alt) ----
+
+const typed = (init: Record<string, unknown>) => key({ key: "", keyCode: 0, isComposing: false, ...init });
+const bytes = (text: string) => new TextEncoder().encode(text);
+
+async function startedWithInput(id = "k-1") {
+  const api = createMockApi({});
+  const input = vi.spyOn(api, "ptyWrite");
+  const onInput = vi.fn();
+  const { effect } = mount({ api, id, onInput });
+  effect();
+  await tick();
+  return { handler: hooks.keyHandler!, input, onInput };
+}
+
+it("Shift+Enter writes ESC CR to the pty and nothing reaches xterm", async () => {
+  const { handler, input, onInput } = await startedWithInput();
+  const e = typed({ key: "Enter", code: "Enter", shiftKey: true });
+  expect(handler(e)).toBe(false);
+  await tick();
+  expect(input).toHaveBeenCalledWith("k-1", bytes("\x1b\r"));
+  expect(onInput).toHaveBeenCalledWith("\x1b\r");
+  expect(e.preventDefault).toHaveBeenCalled();
+});
+
+it("after the program pushes kitty flags Shift+Enter writes ESC[13;2u", async () => {
+  const { handler, input } = await startedWithInput("k-2");
+  expect(hooks.csi[">u"]([1])).toBe(false);
+  expect(handler(typed({ key: "Enter", code: "Enter", shiftKey: true }))).toBe(false);
+  await tick();
+  expect(input).toHaveBeenCalledWith("k-2", bytes("\x1b[13;2u"));
+});
+
+it("an app chord keeps its priority and writes nothing to the pty", async () => {
+  const { handler, input } = await startedWithInput("k-3");
+  expect(handler(typed({ key: "f", code: "KeyF", ctrlKey: true }))).toBe(false);
+  await tick();
+  expect(input).not.toHaveBeenCalled();
+});
+
+it("Cmd+Up scrolls to the top on macOS and writes nothing", async () => {
+  hooks.platform = "mac";
+  const { handler, input } = await startedWithInput("k-4");
+  expect(handler(typed({ key: "ArrowUp", code: "ArrowUp", metaKey: true }))).toBe(false);
+  await tick();
+  expect(hooks.calls).toEqual(["scrollToTop"]);
+  expect(input).not.toHaveBeenCalled();
+});
+
+it("a key during IME composition goes to xterm untouched", async () => {
+  const { handler, input } = await startedWithInput("k-5");
+  expect(handler(typed({ key: "Enter", code: "Enter", shiftKey: true, isComposing: true }))).toBe(true);
+  await tick();
+  expect(input).not.toHaveBeenCalled();
+});
+
+it("the left Option key sends ESC + char once it is held, and a blur forgets it", async () => {
+  hooks.platform = "mac";
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, macOptionAsAlt: "left" });
+  const { handler, input } = await startedWithInput("k-6");
+  handler(typed({ type: "keydown", key: "Alt", code: "AltLeft", location: 1, altKey: true }));
+  expect(handler(typed({ key: "a", code: "KeyA", altKey: true }))).toBe(false);
+  await tick();
+  expect(input).toHaveBeenCalledWith("k-6", bytes("\x1ba"));
+  hooks.listeners.focusout({});
+  expect(handler(typed({ key: "a", code: "KeyA", altKey: true }))).toBe(true);
+});
+
+it("macOptionIsMeta follows the setting and the detected layout", async () => {
+  hooks.platform = "mac";
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, macOptionAsAlt: "both" });
+  await startedWithInput("k-7");
+  expect(hooks.options.macOptionIsMeta).toBe(true);
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, macOptionAsAlt: "off" });
+  expect(hooks.options.macOptionIsMeta).toBe(false);
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, macOptionAsAlt: "auto" });
+  expect(hooks.options.macOptionIsMeta).toBe(false);
 });
