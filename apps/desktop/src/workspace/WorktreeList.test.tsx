@@ -7,6 +7,7 @@ import { ago } from "./ago";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import { WorktreeList, type WorktreeListProps } from "./WorktreeList";
+import { RepoBadge } from "./RepoBadge";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
@@ -35,12 +36,12 @@ const en = (key: string, vars?: Record<string, string | number>) => translate("e
 const event = { preventDefault() {} };
 
 const notes: RepoView = {
-  id: "repo-2-notes", shortName: "notes", path: "/code/notes", baseRef: "main", worktreeRoot: "/code/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", docsDir: "docs", missing: false,
+  id: "repo-2-notes", shortName: "notes", path: "/code/notes", baseRef: "main", worktreeRoot: "/code/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", docsDir: "docs", color: null, icon: null, ghAccount: null, localIssueCommand: "", missing: false,
   worktrees: [{ path: "/code/notes", name: "notes", branch: null, head: null, start: null, primary: true, pinned: false, detached: true, ...NO_DETAILS }],
   found: [],
 };
 // A repo whose folder is gone comes back with no worktrees.
-const gone: RepoView = { id: "repo-3-gone", shortName: "gone", path: "/code/gone", baseRef: "main", worktreeRoot: "/code/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", docsDir: "docs", missing: true, worktrees: [], found: [] };
+const gone: RepoView = { id: "repo-3-gone", shortName: "gone", path: "/code/gone", baseRef: "main", worktreeRoot: "/code/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", docsDir: "docs", color: null, icon: null, ghAccount: null, localIssueCommand: "", missing: true, worktrees: [], found: [] };
 const repos = (): RepoView[] => {
   const [xdev] = structuredClone(DEMO_WORKSPACE.repos);
   xdev.worktrees[2].pinned = true;
@@ -426,7 +427,8 @@ const asItem = (repo: RepoView, kept: Extract<SidebarItem, { kind: "repo" }>["ke
 it("a child worktree sits under its parent and folds away", () => {
   const [xdev] = repos();
   const [a, b] = xdev.worktrees.filter(w => !w.primary);
-  const nested = { ...xdev, worktrees: xdev.worktrees.map(w => (w.path === b.path ? { ...w, parent: a.path } : w)) };
+  // `repos()` pins elm, and a pinned row leaves its status section: unpin it so the two share one.
+  const nested = { ...xdev, worktrees: xdev.worktrees.map(w => (w.path === b.path ? { ...w, parent: a.path, pinned: false } : w)) };
   // Same status for both, so they share a section and the child nests.
   const dots = { [a.path]: "idle", [b.path]: "idle" } as typeof DOTS;
   const view = harness(dots, repos, { items: [asItem(nested)] });
@@ -462,6 +464,107 @@ it("alt+arrow on a repo row asks for a new order", () => {
   const target = {};
   row.props.onKeyDown({ key: "ArrowUp", altKey: true, target, currentTarget: target, preventDefault() {} });
   expect(seen).toEqual([[notes2.id, xdev.id]]);
+});
+
+// Project identity and the Pinned group
+const pinGroup = (view: ReturnType<typeof harness>) => view.all().find(n => n.props.className === "ws-group ws-group-pinned");
+const pinHead = (view: ReturnType<typeof harness>) => view.all().find(n => n.props.className === "ws-group-head" && n.props["data-group"] === "pinned")!;
+const pathsIn = (node: Node | undefined) => nodes(node?.props.children).filter(n => /^ws-wt( |$)/.test(n.props.className ?? "")).map(n => n.props["data-path"]);
+const countOf = (html: string, path: string) => html.split(`data-path="${path}"`).length - 1;
+
+it("nothing pinned: there is no Pinned group", () => {
+  const view = harness(DOTS, two);
+  expect(pinGroup(view)).toBeUndefined();
+  expect(view.html()).not.toContain('data-group="pinned"');
+});
+
+it("a pinned worktree moves to a Pinned group at the top and is not repeated under its status", () => {
+  const view = harness(DOTS, repos);
+  const group = pinGroup(view)!;
+  expect(group).toBeDefined();
+  // First of the groups, ahead of the status sections.
+  expect(view.all().find(n => n.props.className === "ws-groups")!.props.children[0].key).toBe("pinned");
+  expect(pathsIn(group)).toEqual(["/demo/wt/xdev-elm"]);
+  expect(nodes(pinHead(view).props.children).some(n => n.props.children === en("sidebar.pinned.title"))).toBe(true);
+  expect(nodes(pinHead(view).props.children).some(n => n.props.className === "ws-group-count" && n.props.children === 1)).toBe(true);
+  // elm was failed, so its status section is gone with it: one row, in the Pinned group only.
+  const html = view.html();
+  expect(countOf(html, "/demo/wt/xdev-elm")).toBe(1);
+  expect(countOf(html, "/demo/wt/xdev-oak")).toBe(1);
+  expect(view.all().some(n => n.props.className === "ws-group-head" && n.props["data-group"] === "needs-you")).toBe(false);
+});
+
+it("pin moves a row up and unpin returns it to its status section", () => {
+  let pinned = false;
+  const list = (): RepoView[] => {
+    const [xdev] = structuredClone(DEMO_WORKSPACE.repos);
+    xdev.worktrees[1].pinned = pinned;
+    return [xdev];
+  };
+  const view = harness({ "/demo/wt/xdev-oak": "working" }, list);
+  expect(pinGroup(view)).toBeUndefined();
+  const working = () => view.all().find(n => n.props.className === "ws-group" && n.props["data-group"] === "working");
+  expect(pathsIn(working())).toEqual(["/demo/wt/xdev-oak"]);
+
+  pinned = true;
+  expect(pathsIn(pinGroup(view))).toEqual(["/demo/wt/xdev-oak"]);
+  expect(working()).toBeUndefined();
+  expect(countOf(view.html(), "/demo/wt/xdev-oak")).toBe(1);
+  // The row menu says Unpin.
+  view.main("/demo/wt/xdev-oak").props.onContextMenu(event);
+  expect(view.item("pin")!.labelKey).toBe("workspace.unpin");
+
+  pinned = false;
+  expect(pinGroup(view)).toBeUndefined();
+  expect(pathsIn(working())).toEqual(["/demo/wt/xdev-oak"]);
+});
+
+it("rows of the Pinned group carry a project chip, even with one project", () => {
+  const view = harness(DOTS, () => {
+    const [xdev] = structuredClone(DEMO_WORKSPACE.repos);
+    xdev.worktrees[2].pinned = true;
+    return [xdev];
+  });
+  const chips = nodes(view.row("/demo/wt/xdev-elm").props.children).filter(n => n.props["data-project-chip"] !== undefined);
+  expect(chips).toHaveLength(1);
+  expect(chips[0].props["data-project-chip"]).toBe("demo-xdev");
+  const badge = nodes(chips[0].props.children).find(n => n.type === RepoBadge)!;
+  expect(badge.props.repo).toMatchObject({ shortName: "xdev", color: "teal", icon: { kind: "emoji", value: "🚀" } });
+  expect(renderToStaticMarkup(chips[0])).toContain("xdev");
+  // A row outside the group has no chip while there is one project.
+  expect(nodes(view.row("/demo/wt/xdev-oak").props.children).some(n => n.props["data-project-chip"] !== undefined)).toBe(false);
+});
+
+it("with several projects every row shows its project chip", () => {
+  const view = harness(DOTS, repos);
+  const chip = (path: string) => nodes(view.row(path).props.children).find(n => n.props["data-project-chip"] !== undefined);
+  expect(chip("/demo/wt/xdev-oak")!.props["data-project-chip"]).toBe("demo-xdev");
+  expect(chip("/code/notes")!.props["data-project-chip"]).toBe("repo-2-notes");
+});
+
+it("each project heading carries the project's badge", () => {
+  const view = harness();
+  const heading = view.all().find(n => n.props.className === "ws-repo" && n.props["data-repo"] === "demo-xdev")!;
+  const badge = nodes(heading.props.children).find(n => n.type === RepoBadge)!;
+  expect(badge.props.repo.id).toBe("demo-xdev");
+  const plain = view.all().find(n => n.props.className === "ws-repo" && n.props["data-repo"] === "repo-2-notes")!;
+  expect(nodes(plain.props.children).find(n => n.type === RepoBadge)!.props.repo.color).toBeNull();
+});
+
+it("the shown order puts the Pinned rows first, and selection works on them", () => {
+  const seen: string[][] = [];
+  const picks: unknown[] = [];
+  const view = harness(DOTS, repos, { onOrder: (paths) => seen.push(paths), onPick: (w, mods) => void picks.push([w.path, mods]) });
+  const reported = () => { hooks.effects = []; view.html(); hooks.effects.at(-1)!(); return seen.at(-1)!; };
+  expect(reported()).toEqual(["/demo/wt/xdev-elm", "/demo/wt/xdev-oak", "/demo/xdev", "/code/notes"]);
+  // Ctrl and Shift clicks on a Pinned row go to onPick, like any row.
+  view.main("/demo/wt/xdev-elm").props.onClick({ ctrlKey: true, shiftKey: false });
+  view.main("/demo/wt/xdev-elm").props.onClick({ ctrlKey: false, shiftKey: true });
+  expect(picks).toEqual([["/demo/wt/xdev-elm", { toggle: true, range: false }], ["/demo/wt/xdev-elm", { toggle: false, range: true }]]);
+  // Folding the Pinned group takes its rows out of the order.
+  pinHead(view).props.onClick();
+  expect(pinHead(view).props["aria-expanded"]).toBe(false);
+  expect(reported()).toEqual(["/demo/wt/xdev-oak", "/demo/xdev", "/code/notes"]);
 });
 
 it("a worktree the CLI changed shows a by CLI chip beside its status", () => {

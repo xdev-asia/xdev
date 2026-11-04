@@ -22,6 +22,15 @@ pub(crate) fn run(
     checked(args, spawn(workdir, args, stdin, true, TIMEOUT)?)
 }
 
+/// Like `run_output`, with extra environment variables for git.
+pub(crate) fn run_env(
+    workdir: &Path,
+    args: &[&str],
+    envs: &[(&str, &str)],
+) -> Result<Output, GitError> {
+    spawn_env(workdir, args, None, true, TIMEOUT, envs)
+}
+
 /// For commands that talk to a remote: the long timeout, and the whole
 /// result, because the caller classifies a failure by its exit code and
 /// output instead of treating it as one error.
@@ -80,6 +89,17 @@ fn spawn(
     literal: bool,
     timeout: Duration,
 ) -> Result<Output, GitError> {
+    spawn_env(workdir, args, stdin, literal, timeout, &[])
+}
+
+fn spawn_env(
+    workdir: &Path,
+    args: &[&str],
+    stdin: Option<&[u8]>,
+    literal: bool,
+    timeout: Duration,
+    envs: &[(&str, &str)],
+) -> Result<Output, GitError> {
     // Otherwise a missing folder fails the spawn with `NotFound` on Unix,
     // which would read as "git is not installed".
     if !workdir.is_dir() {
@@ -90,7 +110,8 @@ fn spawn(
     }
 
     let mut cmd = git_command(workdir, literal);
-    cmd.args(args)
+    cmd.envs(envs.iter().copied())
+        .args(args)
         .stdin(if stdin.is_some() {
             Stdio::piped()
         } else {

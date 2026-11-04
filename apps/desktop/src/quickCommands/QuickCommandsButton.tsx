@@ -1,3 +1,4 @@
+import { Icon } from "@xdev-asia/ui";
 import { useRef } from "react";
 import type { JSX, ReactNode } from "react";
 import { useI18n } from "@/i18n";
@@ -20,9 +21,7 @@ export function QuickCommandsButton(props: { open: boolean; onOpen(open: boolean
         title={t("qcmd.buttonLabel")}
         onClick={() => props.onOpen(!props.open)}
       >
-        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-          <path d="m5 8 5 4-5 4M12 17h7" />
-        </svg>
+        <Icon name="prompt" size={14} />
         <span>{t("qcmd.button")}</span>
       </button>
       {props.open && (

@@ -107,6 +107,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     ReviewData::export_all(cfg)?;
     ReviewBranch::export_all(cfg)?;
     StageState::export_all(cfg)?;
+    xdev_git::ConflictState::export_all(cfg)?;
+    xdev_git::ConflictOp::export_all(cfg)?;
     ReviewNote::export_all(cfg)?;
     xdev_workspace::DirListing::export_all(cfg)?;
     xdev_workspace::FileText::export_all(cfg)?;
@@ -127,6 +129,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_git::IssueComment::export_all(cfg)?;
     xdev_git::IssueDetail::export_all(cfg)?;
     xdev_git::IssueQuery::export_all(cfg)?;
+    xdev_git::GhAccount::export_all(cfg)?;
+    xdev_git::GhLogin::export_all(cfg)?;
+    xdev_workspace::RepoIcon::export_all(cfg)?;
     KitText::export_all(cfg)?;
     PromptEntry::export_all(cfg)?;
     xdev_kit::Home::export_all(cfg)?;

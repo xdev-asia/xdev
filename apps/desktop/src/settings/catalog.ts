@@ -92,12 +92,16 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("editor.fontSize", "files.settings.fontSize", ["font", "cỡ chữ", "co chu", "phông", "phong"]),
   e("editor.tabSize", "files.settings.tabSize", ["tab", "indent", "thụt lề", "thut le"], "files.settings.tabSizeHint"),
   // Repositories (the same fields on every repo card)
+  e("repos.color", "settings.repos.identity.color", ["colour", "color", "badge", "tag", "hex", "màu", "mau", "nhãn", "nhan"], "settings.repos.identity.color.hint"),
+  e("repos.icon", "settings.repos.identity.icon", ["icon", "emoji", "letter", "badge", "biểu tượng", "bieu tuong"]),
+  e("repos.ghAccount", "settings.repos.gh", ["github", "gh", "login", "account", "pr", "issue", "tài khoản", "tai khoan", "đăng nhập", "dang nhap"], "settings.repos.gh.hint"),
   e("repos.shortName", "settings.repos.shortName", ["name", "repo", "tên", "ten"], "settings.repos.shortNameNote"),
   e("repos.baseRef", "settings.repos.baseRef", ["base", "branch", "main", "nhánh", "nhanh"], "settings.repos.baseRefHint"),
   e("repos.worktreeRoot", "settings.repos.worktreeRoot", ["folder", "directory", "path", "thư mục", "thu muc"], "settings.repos.worktreeRootHint"),
   e("repos.scriptPolicy", "settings.repos.scripts.policy", ["setup", "script", "run", "kịch bản", "kich ban"]),
   e("repos.scriptSource", "settings.repos.scripts.source", ["setup", "script", "shared", "local", "kịch bản", "kich ban"]),
   e("repos.localScripts", "settings.repos.scripts", ["setup", "archive", "script", "kịch bản", "kich ban"], "settings.repos.scripts.localHint"),
+  e("repos.issueCommand", "settings.repos.issue", ["issue", "prompt", "template", "agent", "github", "lệnh", "lenh", "mẫu", "mau"], "settings.repos.issue.hint"),
   e("repos.repoFile", "settings.repos.file", ["xdev.toml", "shared", "tabs", "unknown", "node_modules", "tab mặc định", "tab mac dinh"], "settings.repos.file.hint"),
   e("repos.sharedScripts", "settings.repos.scripts.shared", ["trust", "script", "tin cậy", "tin cay"], "settings.repos.scripts.trustNote"),
   // Open in
@@ -106,6 +110,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("git.prefix", "settings.git.prefix", ["branch", "name", "username", "nhánh", "nhanh", "tiền tố", "tien to"]),
   e("git.compare", "settings.git.compare", ["diff", "upstream", "base", "so sánh", "so sanh"], "settings.git.compareHint"),
   e("git.refresh", "settings.git.refresh", ["fetch", "pull", "base", "create", "làm mới", "lam moi"], "settings.git.refreshHint"),
+  e("git.autoRename", "settings.git.autoRename.title", ["rename", "branch", "name", "prompt", "đổi tên", "doi ten", "nhánh", "nhanh"], "settings.git.autoRename.hint"),
   e("git.ai", "settings.git.ai.show", ["ai", "commit", "message", "source control"], "settings.git.ai.showHint"),
   e("git.pr", "settings.git.pr.title", ["pull request", "draft", "pr"]),
   // Vaults

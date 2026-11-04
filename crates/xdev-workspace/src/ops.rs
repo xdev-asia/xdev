@@ -7,7 +7,8 @@ use std::thread;
 use std::time::Duration;
 
 use serde::{Deserialize, Deserializer, Serialize};
-use xdev_git::{BaseRefresh, GitError, Repo, WorktreeEntry};
+use unicode_segmentation::UnicodeSegmentation;
+use xdev_git::{BaseRefresh, GhAccount, GitError, Repo, WorktreeEntry};
 
 use crate::hooks;
 use crate::kept::{KeptBranch, KeptReason, keep};
@@ -15,8 +16,9 @@ use crate::registry::normalize;
 use crate::staging;
 use crate::vaults::{docs_dir_text, validate_docs_dir};
 use crate::{
-    Linked, MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, WorkItem, WorkStatus,
-    WorkspaceError, WorktreeMeta, link_shared, names, repo_id, unlink_shared,
+    ISSUE_COMMAND_MAX, Linked, MadeBy, REPO_COLORS, Registry, RepoEntry, RepoIcon, ScriptSource,
+    SetupPolicy, WorkItem, WorkStatus, WorkspaceError, WorktreeMeta, link_shared, names, repo_id,
+    unlink_shared,
 };
 
 /// A repo as the sidebar shows it.
@@ -35,6 +37,11 @@ pub struct RepoView {
     /// This machine's scripts; the shared ones come from `repo_hooks`.
     pub local_setup: String,
     pub local_archive: String,
+    pub color: Option<String>,
+    pub icon: Option<RepoIcon>,
+    pub gh_account: Option<GhAccount>,
+    /// This machine's issue prompt template; the shared one comes from `repo_hooks`.
+    pub local_issue_command: String,
     /// The repo's docs folder, relative to the primary checkout; `docs` by
     /// default.
     pub docs_dir: String,
@@ -72,6 +79,9 @@ pub struct WorktreeView {
     pub made_by: MadeBy,
     /// On the repo's base branch (by its short name).
     pub default_branch: bool,
+    /// The branch name was picked by the app and may still be renamed from
+    /// the first prompt.
+    pub auto_name: bool,
     /// When the app CLI last created or changed it; absent when it never did.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
@@ -182,17 +192,36 @@ pub fn add_repo(reg: &mut Registry, dir: &Path, now_ms: i64) -> Result<RepoView,
 }
 
 /// Edits to a repo's settings; a `None` field is left as it is.
-#[derive(Debug, Default, Clone)]
+/// An outer `None` (an absent key) leaves `color`, `icon` and `gh_account`
+/// as they are; `Some(None)` (`null`) clears them.
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RepoPatch {
+    #[serde(default)]
     pub short_name: Option<String>,
+    #[serde(default)]
     pub base_ref: Option<String>,
+    #[serde(default)]
     pub worktree_root: Option<PathBuf>,
+    #[serde(default)]
     pub setup_policy: Option<SetupPolicy>,
+    #[serde(default)]
     pub script_source: Option<ScriptSource>,
+    #[serde(default)]
     pub local_setup: Option<String>,
+    #[serde(default)]
     pub local_archive: Option<String>,
     /// A relative folder; `Some("")` goes back to the default `docs`.
+    #[serde(default)]
     pub docs_dir: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    pub color: Option<Option<String>>,
+    #[serde(default, deserialize_with = "present")]
+    pub icon: Option<Option<RepoIcon>>,
+    #[serde(default, deserialize_with = "present")]
+    pub gh_account: Option<Option<GhAccount>>,
+    #[serde(default)]
+    pub local_issue_command: Option<String>,
 }
 
 /// 1 to 40 characters: `[a-z0-9]` first, then `[a-z0-9._-]`. No `:` or `/`,
@@ -204,6 +233,32 @@ pub fn valid_short_name(name: &str) -> bool {
         .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
         && name.len() <= 40
         && chars.all(|c| matches!(c, 'a'..='z' | '0'..='9' | '.' | '_' | '-'))
+}
+
+/// A `REPO_COLORS` name, or `#rgb` / `#rrggbb`.
+fn valid_color(color: &str) -> bool {
+    match color.strip_prefix('#') {
+        Some(hex) => matches!(hex.len(), 3 | 6) && hex.bytes().all(|b| b.is_ascii_hexdigit()),
+        None => REPO_COLORS.contains(&color),
+    }
+}
+
+/// Exactly one grapheme of at most 16 bytes that draws as an emoji: a
+/// pictograph, a flag, or a keycap. A letter, even an accented one, is not.
+fn valid_emoji(text: &str) -> bool {
+    if text.len() > 16 {
+        return false;
+    }
+    let mut clusters = text.graphemes(true);
+    let (Some(cluster), None) = (clusters.next(), clusters.next()) else {
+        return false;
+    };
+    cluster.contains('\u{20e3}')
+        || cluster.chars().any(|c| {
+            matches!(c as u32,
+                0x1F000..=0x1FAFF | 0x2190..=0x2BFF | 0x00A9 | 0x00AE | 0x203C | 0x2049
+                | 0x2122 | 0x2139 | 0x3030 | 0x303D | 0x3297 | 0x3299)
+        })
 }
 
 /// Changes a repo's short name, base ref or worktree folder. Every field is
@@ -239,6 +294,21 @@ pub fn update_repo(
             Ok(None) | Err(GitError::BadId(_)) => return Err(WorkspaceError::BadRef(base.clone())),
             Err(e) => return Err(e.into()),
         }
+    }
+    if let Some(Some(color)) = &patch.color
+        && !valid_color(color)
+    {
+        return Err(WorkspaceError::BadColor(color.clone()));
+    }
+    if let Some(Some(RepoIcon::Emoji { value })) = &patch.icon
+        && !valid_emoji(value)
+    {
+        return Err(WorkspaceError::BadIcon(value.clone()));
+    }
+    if let Some(text) = &patch.local_issue_command
+        && text.len() > ISSUE_COMMAND_MAX
+    {
+        return Err(WorkspaceError::TooLarge("issue command".to_owned()));
     }
     if let Some(root) = &patch.worktree_root {
         let key = path_key(root);
@@ -285,6 +355,18 @@ pub fn update_repo(
     }
     if let Some(script) = patch.local_archive {
         entry.local_archive = script;
+    }
+    if let Some(color) = patch.color {
+        entry.color = color;
+    }
+    if let Some(icon) = patch.icon {
+        entry.icon = icon;
+    }
+    if let Some(account) = patch.gh_account {
+        entry.gh_account = account;
+    }
+    if let Some(text) = patch.local_issue_command {
+        entry.local_issue_command = text;
     }
     let worktrees = reg.worktrees.clone();
     let view = sync_repo(reg, idx, 0, false);
@@ -344,6 +426,10 @@ fn missing_view(entry: &RepoEntry) -> RepoView {
         local_setup: entry.local_setup.clone(),
         local_archive: entry.local_archive.clone(),
         docs_dir: docs_dir_text(entry),
+        color: entry.color.clone(),
+        icon: entry.icon.clone(),
+        gh_account: entry.gh_account.clone(),
+        local_issue_command: entry.local_issue_command.clone(),
         missing: true,
         worktrees: Vec::new(),
         found: Vec::new(),
@@ -417,6 +503,7 @@ pub(crate) fn view_of(
         item: meta.and_then(|m| m.item.clone()),
         made_by: meta.map(|m| m.made_by).unwrap_or_default(),
         default_branch: default.is_some() && entry.branch.as_deref() == default,
+        auto_name: meta.is_some_and(|m| m.auto_name),
         set_by_cli_ms: meta.and_then(|m| m.set_by_cli_ms),
     }
 }
@@ -852,6 +939,7 @@ pub fn create_worktree_linked(
     let repo = Repo::discover(&entry.path)?;
     let prefix = branch_prefix(&repo, &opts.prefix)?;
     let name = name.trim();
+    let auto_name = name.is_empty();
     let (slug, folder, title) = if name.is_empty() {
         let leaf = pick_free(
             &repo,
@@ -890,6 +978,7 @@ pub fn create_worktree_linked(
         made_here: true,
         made_by: opts.made_by,
         title,
+        auto_name,
         ..WorktreeMeta::default()
     };
     let linked = link_shared(&entry.path, &git_entry.path, &opts.shared);
@@ -902,6 +991,82 @@ pub fn create_worktree_linked(
     );
     reg.worktrees.push(meta);
     Ok((view, linked))
+}
+
+/// Renames the branch of the worktree at `path` to `leaf` under the same
+/// prefix, taking `-2`, `-3`, … when `leaf` is taken (`opts.suffix`). The
+/// folder never moves: open terminals work in it. Refused with an upstream
+/// (`BranchPushed`) or a detached `HEAD`. The shown title becomes the words
+/// of the new name when it was unset, and the worktree is no longer
+/// auto-named.
+pub fn rename_branch(
+    reg: &mut Registry,
+    path: &Path,
+    leaf: &str,
+    opts: &CreateOptions,
+) -> Result<WorktreeView, WorkspaceError> {
+    let key = path_key(path);
+    let Some(index) = reg.worktrees.iter().position(|m| path_key(&m.path) == key) else {
+        return Err(if reg.repos.iter().any(|r| path_key(&r.path) == key) {
+            WorkspaceError::Primary(path.to_owned())
+        } else {
+            WorkspaceError::WorktreeUnknown(path.to_owned())
+        });
+    };
+    let entry = find_repo(reg, &reg.worktrees[index].repo_id)?;
+    let repo = Repo::discover(path)?;
+    let old = repo
+        .current_branch()?
+        .ok_or_else(|| WorkspaceError::Detached(path.to_owned()))?;
+    if repo.upstream()?.is_some() {
+        return Err(WorkspaceError::BranchPushed(old));
+    }
+    // The branch keeps whatever stands in front of its last `/`.
+    let prefix = old.rsplit_once('/').map(|(p, _)| p);
+    let leaf = names::slug(leaf);
+    if leaf.is_empty() || !repo.valid_branch_name(&prefixed(prefix, &leaf))? {
+        return Err(WorkspaceError::BadName(leaf));
+    }
+    let tries = if opts.suffix { names::SUFFIX_MAX } else { 1 };
+    let mut chosen = None;
+    for n in 1..=tries {
+        let leaf_n = names::suffixed(&leaf, n);
+        let branch = prefixed(prefix, &leaf_n);
+        if branch == old {
+            chosen = Some((leaf_n, false));
+            break;
+        }
+        if !repo.branch_exists(&branch)? {
+            chosen = Some((leaf_n, true));
+            break;
+        }
+    }
+    let Some((leaf, moves)) = chosen else {
+        return Err(WorkspaceError::BranchExists(prefixed(prefix, &leaf)));
+    };
+    let new = prefixed(prefix, &leaf);
+    if moves {
+        repo.rename_branch(&old, &new)?;
+    }
+    let meta = &mut reg.worktrees[index];
+    meta.auto_name = false;
+    if meta.title.is_none() {
+        let words: String = leaf.replace(['-', '_', '/'], " ");
+        meta.title = Some(words.chars().take(TITLE_MAX).collect());
+    }
+    let meta = meta.clone();
+    let git_entry = repo
+        .list_worktrees()?
+        .into_iter()
+        .find(|e| path_key(&e.path) == key)
+        .ok_or_else(|| WorkspaceError::WorktreeUnknown(path.to_owned()))?;
+    let default = default_short(&repo, &entry.base_ref)?;
+    Ok(view_of(
+        &git_entry,
+        &entry.short_name,
+        Some(&meta),
+        default.as_deref(),
+    ))
 }
 
 /// How many times, and how far apart, the move out of staging is tried.
