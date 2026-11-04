@@ -3,4 +3,4 @@
 /**
  * How rows are ordered inside a sidebar section.
  */
-export type SidebarSort = "manual" | "recent";
+export type SidebarSort = "manual" | "recent" | "name" | "smart" | "project";
