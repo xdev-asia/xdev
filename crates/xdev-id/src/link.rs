@@ -11,11 +11,13 @@ const MAX_DEVICE: usize = 64;
 /// plain-http remote host.
 pub fn base_url(env_override: Option<&str>) -> String {
     env_override
-        .and_then(checked_origin)
+        .and_then(check_origin)
         .unwrap_or_else(|| DEFAULT_BASE.to_owned())
 }
 
-fn checked_origin(raw: &str) -> Option<String> {
+/// `https://host[:port]`, or `http://` to a loopback host; no path, query, fragment or
+/// user info. The normalised origin, or `None`.
+pub fn check_origin(raw: &str) -> Option<String> {
     let url = Url::parse(raw.trim()).ok()?;
     if !url.username().is_empty()
         || url.password().is_some()
