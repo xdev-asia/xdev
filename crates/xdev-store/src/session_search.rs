@@ -302,13 +302,36 @@ pub fn remove_session_index(path: &Path) -> Result<(), StoreError> {
         PathBuf::from(name)
     };
     for file in [path.to_path_buf(), side("-wal"), side("-shm")] {
-        match fs::remove_file(&file) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.into()),
-        }
+        remove_with_retry(&file, REMOVE_TRIES, REMOVE_PAUSE, |f| fs::remove_file(f))?;
     }
     Ok(())
+}
+
+/// Tries to remove the index file this often, `REMOVE_PAUSE` apart: a status read may hold it open
+/// for a moment, and Windows refuses to delete an open file.
+const REMOVE_TRIES: u32 = 5;
+const REMOVE_PAUSE: Duration = Duration::from_millis(100);
+
+/// Runs `remove` on `file` up to `tries` times, `pause` apart, while it fails; a file that is
+/// not there counts as removed. The last error comes back when every try failed.
+fn remove_with_retry(
+    file: &Path,
+    tries: u32,
+    pause: Duration,
+    mut remove: impl FnMut(&Path) -> std::io::Result<()>,
+) -> Result<(), StoreError> {
+    let mut attempt = 1;
+    loop {
+        match remove(file) {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) if attempt >= tries => return Err(e.into()),
+            Err(_) => {
+                attempt += 1;
+                std::thread::sleep(pause);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -471,6 +494,42 @@ mod tests {
         assert!(!path.exists());
         assert!(!path.with_extension("sqlite-wal").exists());
         remove_session_index(&path).unwrap();
+    }
+
+    #[test]
+    fn a_removal_a_reader_still_blocks_is_retried_and_then_gives_up() {
+        use std::cell::Cell;
+        use std::io::{Error, ErrorKind};
+        let file = Path::new("s.sqlite");
+        let calls = Cell::new(0);
+        // A reader holds the file for the first two tries, as Windows does.
+        remove_with_retry(file, 5, Duration::ZERO, |_| {
+            calls.set(calls.get() + 1);
+            if calls.get() < 3 {
+                Err(Error::from(ErrorKind::PermissionDenied))
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap();
+        assert_eq!(calls.get(), 3);
+        // Held for good: the last error comes back after every try.
+        calls.set(0);
+        let err = remove_with_retry(file, 5, Duration::ZERO, |_| {
+            calls.set(calls.get() + 1);
+            Err(Error::from(ErrorKind::PermissionDenied))
+        })
+        .unwrap_err();
+        assert_eq!(calls.get(), 5);
+        assert!(matches!(err, StoreError::Io(e) if e.kind() == ErrorKind::PermissionDenied));
+        // A file that is not there is fine at once.
+        calls.set(0);
+        remove_with_retry(file, 5, Duration::ZERO, |_| {
+            calls.set(calls.get() + 1);
+            Err(Error::from(ErrorKind::NotFound))
+        })
+        .unwrap();
+        assert_eq!(calls.get(), 1);
     }
 
     #[test]
