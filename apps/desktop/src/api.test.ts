@@ -580,6 +580,22 @@ it("routes account calls through Tauri and normalizes their errors", async () =>
   } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
 });
 
+it("sends the docs folder of a repo update to Tauri as docsDir", async () => {
+  vi.resetModules();
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    await api.repoUpdate("r1", { docsDir: "handbook" });
+    await api.repoUpdate("r1", { docsDir: "" });
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["repo_update", { id: "r1", docsDir: "handbook" }],
+      ["repo_update", { id: "r1", docsDir: "" }],
+    ]);
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
+});
+
 it("routes agent kit calls through Tauri with the argument names Rust expects", async () => {
   vi.resetModules();
   vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));

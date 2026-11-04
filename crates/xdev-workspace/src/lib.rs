@@ -58,7 +58,10 @@ pub use search::{
 };
 pub use shared::{Linked, SharedError, link_shared, unlink_shared, validate as validate_shared};
 pub use staging::{STAGING, staging_dir, sweep, sweep_with};
-pub use vaults::{VaultKind, VaultView, add_vault, forget_vault, list_vaults, repo_docs_dir};
+pub use vaults::{
+    VaultKind, VaultView, add_vault, adopt_last_vault, forget_vault, list_vaults, repo_docs_dir,
+    validate_docs_dir,
+};
 
 /// The UI translates `code()`, never the message.
 #[derive(Debug, thiserror::Error)]

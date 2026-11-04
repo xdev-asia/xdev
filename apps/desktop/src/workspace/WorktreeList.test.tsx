@@ -34,12 +34,12 @@ const en = (key: string, vars?: Record<string, string | number>) => translate("e
 const event = { preventDefault() {} };
 
 const notes: RepoView = {
-  id: "repo-2-notes", shortName: "notes", path: "/code/notes", baseRef: "main", worktreeRoot: "/code/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", missing: false,
+  id: "repo-2-notes", shortName: "notes", path: "/code/notes", baseRef: "main", worktreeRoot: "/code/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", docsDir: "docs", missing: false,
   worktrees: [{ path: "/code/notes", name: "notes", branch: null, head: null, start: null, primary: true, pinned: false, detached: true, ...NO_DETAILS }],
   found: [],
 };
 // A repo whose folder is gone comes back with no worktrees.
-const gone: RepoView = { id: "repo-3-gone", shortName: "gone", path: "/code/gone", baseRef: "main", worktreeRoot: "/code/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", missing: true, worktrees: [], found: [] };
+const gone: RepoView = { id: "repo-3-gone", shortName: "gone", path: "/code/gone", baseRef: "main", worktreeRoot: "/code/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", docsDir: "docs", missing: true, worktrees: [], found: [] };
 const repos = (): RepoView[] => {
   const [xdev] = structuredClone(DEMO_WORKSPACE.repos);
   xdev.worktrees[2].pinned = true;

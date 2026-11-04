@@ -72,6 +72,7 @@ pub fn run() {
             if let Some(file) = commands::settings_path(app.handle()) {
                 app.manage(settings_store::SettingsStore::new(file));
             }
+            workspace::start_migrations(app.handle());
             // Off the main thread: starting the service may take a moment.
             {
                 let app = app.handle().clone();
