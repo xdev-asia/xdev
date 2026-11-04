@@ -9,11 +9,13 @@ import { counting, keepOpen, stripState } from "./workerLifetime";
  * The notice over the terminal of an orchestration worker: it closes by itself 2 minutes after it
  * finishes, unless kept. Renders nothing for a tab that is no worker.
  */
-export function WorkerStrip(props: { api: Api; tab: string; now?: () => number }): JSX.Element | null {
+export function WorkerStrip(props: { api: Api; tab: string; /** The tab has a running agent. */ running?: boolean; now?: () => number }): JSX.Element | null {
   const { api, tab } = props;
   const { t } = useI18n();
   const clock = props.now ?? Date.now;
   const [lifetime, setLifetime] = useState<WorkerLifetime | null>(null);
+  // Closing is off until the setting says on, so no strip flashes a rule that does not hold.
+  const [autoClose, setAutoClose] = useState(false);
   const [now, setNow] = useState(() => clock());
 
   useEffect(() => {
@@ -21,6 +23,10 @@ export function WorkerStrip(props: { api: Api; tab: string; now?: () => number }
     const read = (): void => {
       api.orchestrationWorkerLifetime(tab).then(
         (v) => live && setLifetime(v),
+        () => {},
+      );
+      api.orchestrationSettings().then(
+        (v) => live && setAutoClose(v.workerAutoClose),
         () => {},
       );
     };
@@ -34,7 +40,7 @@ export function WorkerStrip(props: { api: Api; tab: string; now?: () => number }
     };
   }, [api, tab]);
 
-  const state = stripState(lifetime, now);
+  const state = stripState(lifetime, now, { autoClose, running: props.running === true });
   const ticking = counting(state);
   useEffect(() => {
     if (!ticking) return;
