@@ -1600,3 +1600,34 @@ fn an_old_registry_file_loads_with_identity_defaults() {
     );
     assert_eq!(repo.local_issue_command, "");
 }
+
+#[test]
+fn a_camel_case_repo_patch_reads_as_the_ui_sends_it() {
+    // The UI sends camelCase; `null` clears, an absent key leaves alone.
+    let patch: RepoPatch = serde_json::from_str(
+        r#"{"docsDir":"notes","color":null,"shortName":"xd","localIssueCommand":"gh issue view"}"#,
+    )
+    .unwrap();
+    assert_eq!(patch.docs_dir.as_deref(), Some("notes"));
+    assert_eq!(patch.color, Some(None));
+    assert_eq!(patch.short_name.as_deref(), Some("xd"));
+    assert_eq!(patch.local_issue_command.as_deref(), Some("gh issue view"));
+    assert!(patch.icon.is_none());
+    assert!(patch.gh_account.is_none());
+    assert!(patch.base_ref.is_none());
+
+    let set: RepoPatch =
+        serde_json::from_str(r#"{"color":"teal","icon":{"kind":"emoji","value":"🚀"}}"#).unwrap();
+    assert_eq!(set.color, Some(Some("teal".to_string())));
+    assert_eq!(
+        set.icon,
+        Some(Some(RepoIcon::Emoji {
+            value: "🚀".to_string()
+        }))
+    );
+    assert!(set.docs_dir.is_none());
+
+    // A snake_case key is not the wire form, so it changes nothing.
+    let snake: RepoPatch = serde_json::from_str(r#"{"docs_dir":"notes"}"#).unwrap();
+    assert!(snake.docs_dir.is_none());
+}
