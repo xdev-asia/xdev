@@ -26,13 +26,13 @@ it("a preset colour is a class over a design token, with no inline colour", () =
   }
 });
 
-it("a custom hex is an inline background with a readable text colour", () => {
+it("a custom hex is an inline background with an ink tone chosen from its luminance", () => {
   const dark = html({ shortName: "a", color: "#112233", icon: null });
   expect(dark).toContain("background:#112233");
-  expect(dark).toContain("color:#fff");
+  expect(dark).toContain('data-ink="light"');
   const light = html({ shortName: "a", color: "#ffee88", icon: null });
   expect(light).toContain("background:#ffee88");
-  expect(light).toContain("color:#000");
+  expect(light).toContain('data-ink="dark"');
   // #rgb widens, upper case is kept as typed but compared as hex.
   expect(html({ shortName: "a", color: "#abc", icon: null })).toContain("background:#aabbcc");
 });
@@ -49,11 +49,11 @@ it("size picks the class and the badge is hidden from assistive tech", () => {
   expect(html({ shortName: "a", color: null, icon: null })).toContain('aria-hidden="true"');
 });
 
-it("hexInk picks black on light fills and white on dark ones", () => {
-  expect(hexInk("#ffffff")).toBe("#000");
-  expect(hexInk("#000000")).toBe("#fff");
-  expect(hexInk("#ffd400")).toBe("#000");
-  expect(hexInk("#3a3aa0")).toBe("#fff");
+it("hexInk picks a dark ink on light fills and a light one on dark fills", () => {
+  expect(hexInk("#ffffff")).toBe("dark");
+  expect(hexInk("#000000")).toBe("light");
+  expect(hexInk("#ffd400")).toBe("dark");
+  expect(hexInk("#3a3aa0")).toBe("light");
   expect(isHexColor("#abc") && isHexColor("#AABBCC")).toBe(true);
   expect(isHexColor("#abcd") || isHexColor("abc") || isHexColor("#ggg")).toBe(false);
 });

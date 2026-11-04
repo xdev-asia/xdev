@@ -641,6 +641,7 @@
   "settings.repos.identity.color.pink": "Pink",
   "settings.repos.identity.color.custom": "Custom hex",
   "settings.repos.identity.color.hint": "Shown as a small badge on the project's heading and chips. A custom colour is #rgb or #rrggbb.",
+  "settings.repos.identity.color.placeholder": "#3a7",
   "settings.repos.identity.badColor": "Use a colour from the list or a hex like #3a7 or #33aa77.",
   "settings.repos.identity.icon": "Icon",
   "settings.repos.identity.icon.letter": "Letter",

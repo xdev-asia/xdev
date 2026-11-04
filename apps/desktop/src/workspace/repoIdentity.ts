@@ -14,12 +14,12 @@ export function widenHex(hex: string): string {
   return h.length === 3 ? `#${[...h].map((c) => c + c).join("")}` : `#${h}`;
 }
 
-/** Black on a light fill, white on a dark one (relative luminance of the sRGB hex). */
-export function hexInk(hex: string): "#000" | "#fff" {
+/** The ink tone that reads on a custom fill: dark on a light one, light on a dark one (relative luminance of the sRGB hex). */
+export function hexInk(hex: string): "dark" | "light" {
   const full = widenHex(hex).slice(1);
   const [r, g, b] = [0, 2, 4].map((i) => {
     const c = parseInt(full.slice(i, i + 2), 16) / 255;
     return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
   });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.179 ? "#000" : "#fff";
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.179 ? "dark" : "light";
 }

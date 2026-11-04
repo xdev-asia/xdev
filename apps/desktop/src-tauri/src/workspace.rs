@@ -424,6 +424,8 @@ pub fn repo_forget(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "type", rename_all = "camelCase")]
+// One event per progress line, a few per clone: the size gap costs nothing.
+#[allow(clippy::large_enum_variant)]
 pub enum CloneProgress {
     /// A git progress phase such as `Receiving objects`.
     Phase {

@@ -1260,9 +1260,11 @@ git.corp.example
         assert!(matches!(gh_logins(&Gone), Err(GitError::GhMissing)));
     }
 
+    type EnvCall = (Vec<String>, Vec<(String, String)>);
+
     // A fake that also records the environment each call was given.
     struct EnvFake {
-        calls: RefCell<Vec<(Vec<String>, Vec<(String, String)>)>>,
+        calls: RefCell<Vec<EnvCall>>,
         script: RefCell<VecDeque<GhOutput>>,
     }
 

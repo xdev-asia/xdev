@@ -3127,6 +3127,14 @@ button.ws-tree-row:focus-visible {
   color: var(--bg-0);
 }
 
+.ws-badge[data-ink="dark"] {
+  color: var(--badge-ink-dark);
+}
+
+.ws-badge[data-ink="light"] {
+  color: var(--badge-ink-light);
+}
+
 .ws-badge-tag-slate {
   background: var(--x-color-tag-slate);
 }

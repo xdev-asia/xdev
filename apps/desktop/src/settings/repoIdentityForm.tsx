@@ -73,7 +73,7 @@ export function colorField(c: Ctx): JSX.Element {
           type="text"
           name="colorHex"
           className="ws-mono"
-          placeholder="#3a7"
+          placeholder={t("settings.repos.identity.color.placeholder")}
           value={color !== null && !isPreset(color) ? color : ""}
           spellCheck={false}
           disabled={c.disabled}
