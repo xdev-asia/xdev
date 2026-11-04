@@ -1,7 +1,9 @@
 use std::fs;
 
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
-use xdev_ai::{AiError, Provider, Registry, account_dir};
+
+use xdev_ai::{AccountEntry, AiError, Provider, Registry, account_dir, carry_session};
 
 #[test]
 fn missing_file_is_empty_registry() {
@@ -144,6 +146,7 @@ fn error_codes() {
     assert_eq!(AiError::NoClaude.code(), "no_claude");
     assert_eq!(AiError::NoCodex.code(), "no_codex");
     assert_eq!(AiError::UnknownProvider.code(), "unknown_provider");
+    assert_eq!(AiError::SessionMissing.code(), "session_missing");
     assert_eq!(AiError::Io(std::io::Error::other("x")).code(), "io");
 }
 
@@ -275,4 +278,134 @@ fn an_active_entry_that_names_no_account_is_dropped_on_load() {
             name: "work".into()
         }]
     );
+}
+
+// --- carry a session ---
+
+const ID: &str = "0b9e8c1e-4f6a-4c2b-9a51-1f2e3d4c5b6a";
+
+fn entry(provider: Provider, dir: &Path) -> AccountEntry {
+    AccountEntry {
+        name: "x".into(),
+        provider,
+        dir: dir.to_path_buf(),
+    }
+}
+
+fn write(path: &Path, text: &str) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+}
+
+/// Two Claude homes under a temp dir; the session ran in `<tmp>/repo`.
+fn claude_homes(tmp: &TempDir) -> (AccountEntry, AccountEntry, PathBuf) {
+    let from = entry(Provider::Claude, &tmp.path().join("from"));
+    let to = entry(Provider::Claude, &tmp.path().join("to"));
+    (from, to, tmp.path().join("repo"))
+}
+
+fn claude_key(cwd: &Path) -> String {
+    cwd.to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
+}
+
+#[test]
+fn carry_claude_copies_the_log_to_the_same_path() {
+    let tmp = TempDir::new().unwrap();
+    let (from, to, cwd) = claude_homes(&tmp);
+    let rel = Path::new("projects")
+        .join(claude_key(&cwd))
+        .join(format!("{ID}.jsonl"));
+    write(
+        &from.dir.join(&rel),
+        "{\"a\":1}
+",
+    );
+    assert!(carry_session(&from, &to, ID, &cwd).unwrap());
+    assert_eq!(
+        fs::read_to_string(to.dir.join(&rel)).unwrap(),
+        "{\"a\":1}
+"
+    );
+    // The source stays.
+    assert!(from.dir.join(&rel).is_file());
+    // A second carry finds it there.
+    assert!(!carry_session(&from, &to, ID, &cwd).unwrap());
+}
+
+#[test]
+fn carry_claude_finds_a_log_under_another_project_folder() {
+    let tmp = TempDir::new().unwrap();
+    let (from, to, cwd) = claude_homes(&tmp);
+    let rel = Path::new("projects")
+        .join("-elsewhere")
+        .join(format!("{ID}.jsonl"));
+    write(&from.dir.join(&rel), "x");
+    assert!(carry_session(&from, &to, ID, &cwd).unwrap());
+    assert!(to.dir.join(&rel).is_file());
+}
+
+#[test]
+fn carry_never_overwrites_what_the_target_has() {
+    let tmp = TempDir::new().unwrap();
+    let (from, to, cwd) = claude_homes(&tmp);
+    let rel = Path::new("projects")
+        .join(claude_key(&cwd))
+        .join(format!("{ID}.jsonl"));
+    write(&from.dir.join(&rel), "new");
+    // Under another project folder in the target still counts as there.
+    let theirs = to
+        .dir
+        .join("projects")
+        .join("-other")
+        .join(format!("{ID}.jsonl"));
+    write(&theirs, "old");
+    assert!(!carry_session(&from, &to, ID, &cwd).unwrap());
+    assert_eq!(fs::read_to_string(&theirs).unwrap(), "old");
+    assert!(!to.dir.join(&rel).exists());
+}
+
+#[test]
+fn carry_codex_copies_the_rollout_by_its_id() {
+    let tmp = TempDir::new().unwrap();
+    let from = entry(Provider::Codex, &tmp.path().join("from"));
+    let to = entry(Provider::Codex, &tmp.path().join("to"));
+    let rel =
+        Path::new("sessions/2026/11/04").join(format!("rollout-2026-11-04T10-00-00-{ID}.jsonl"));
+    write(&from.dir.join(&rel), "codex");
+    // Another session's log is left alone.
+    write(
+        &from
+            .dir
+            .join("sessions/2026/11/04/rollout-2026-11-04T09-00-00-other.jsonl"),
+        "o",
+    );
+    let cwd = tmp.path().join("repo");
+    assert!(carry_session(&from, &to, ID, &cwd).unwrap());
+    assert_eq!(fs::read_to_string(to.dir.join(&rel)).unwrap(), "codex");
+    assert_eq!(
+        fs::read_dir(to.dir.join("sessions/2026/11/04"))
+            .unwrap()
+            .count(),
+        1
+    );
+    assert!(!carry_session(&from, &to, ID, &cwd).unwrap());
+}
+
+#[test]
+fn carry_of_a_missing_or_bad_session_is_session_missing() {
+    let tmp = TempDir::new().unwrap();
+    let (from, to, cwd) = claude_homes(&tmp);
+    write(&from.dir.join("projects/-x/other.jsonl"), "x");
+    for id in [ID, "", "../other", "a/b", &"a".repeat(129)] {
+        let err = carry_session(&from, &to, id, &cwd).unwrap_err();
+        assert_eq!(err.code(), "session_missing", "{id}");
+    }
+    let from = entry(Provider::Codex, &tmp.path().join("cfrom"));
+    let to = entry(Provider::Codex, &tmp.path().join("cto"));
+    let err = carry_session(&from, &to, ID, &cwd).unwrap_err();
+    assert_eq!(err.code(), "session_missing");
+    assert!(!to.dir.exists());
 }

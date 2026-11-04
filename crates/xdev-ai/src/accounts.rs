@@ -239,15 +239,111 @@ pub fn carry_session(
     session: &str,
     cwd: &Path,
 ) -> Result<bool, AiError> {
-    let _ = (from, to, session, cwd);
-    Err(AiError::SessionMissing)
+    // A plain token, like the resume id: nothing in it can climb out of
+    // the home.
+    let plain = !session.is_empty()
+        && session.len() <= 128
+        && session
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    if !plain {
+        return Err(AiError::SessionMissing);
+    }
+    let src = find_session(from, session, cwd).ok_or(AiError::SessionMissing)?;
+    if find_session(to, session, cwd).is_some() {
+        return Ok(false);
+    }
+    let rel = src
+        .strip_prefix(&from.dir)
+        .map_err(|_| AiError::SessionMissing)?;
+    let dest = to.dir.join(rel);
+    let parent = dest.parent().ok_or(AiError::SessionMissing)?;
+    fs::create_dir_all(parent)?;
+    // Copy beside the target, then link it in: a link never replaces a file
+    // that appeared meanwhile, and a reader never sees half a log.
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let tmp = parent.join(format!(
+        ".carry-{}-{}.tmp",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    let linked = fs::copy(&src, &tmp).and_then(|_| fs::hard_link(&tmp, &dest));
+    let _ = fs::remove_file(&tmp);
+    match linked {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(false),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// The log of `session` under the account's home. Claude keeps it at
+/// `projects/<cwd key>/<id>.jsonl` (any project folder will do), Codex at
+/// `sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl`.
+fn find_session(account: &AccountEntry, session: &str, cwd: &Path) -> Option<PathBuf> {
+    match account.provider {
+        Provider::Claude => {
+            let projects = account.dir.join("projects");
+            let file = format!("{session}.jsonl");
+            let own = projects.join(claude_project_key(cwd)).join(&file);
+            if own.is_file() {
+                return Some(own);
+            }
+            fs::read_dir(&projects)
+                .ok()?
+                .flatten()
+                .map(|e| e.path().join(&file))
+                .find(|p| p.is_file())
+        }
+        Provider::Codex => {
+            let suffix = format!("-{session}.jsonl");
+            find_file(&account.dir.join("sessions"), &|name| {
+                name.starts_with("rollout-") && name.ends_with(&suffix)
+            })
+        }
+    }
+}
+
+/// The folder Claude keeps a project's sessions under: every char that is
+/// not ASCII alphanumeric becomes `-`.
+fn claude_project_key(cwd: &Path) -> String {
+    cwd.to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
+}
+
+/// The first file under `dir` whose name matches, depth first.
+fn find_file(dir: &Path, matches: &dyn Fn(&str) -> bool) -> Option<PathBuf> {
+    for entry in fs::read_dir(dir).ok()?.flatten() {
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        let path = entry.path();
+        if kind.is_dir() {
+            if let Some(found) = find_file(&path, matches) {
+                return Some(found);
+            }
+        } else if kind.is_file() && entry.file_name().to_str().is_some_and(matches) {
+            return Some(path);
+        }
+    }
+    None
 }
 
 /// The home a provider's CLI uses with no account: its home variable from
 /// the environment, else `~/.claude` or `~/.codex`.
 pub fn default_home(provider: Provider) -> Option<PathBuf> {
-    let _ = provider;
-    None
+    match provider {
+        Provider::Claude => {
+            if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|d| !d.is_empty()) {
+                return Some(PathBuf::from(dir));
+            }
+            let user = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+                .filter(|h| !h.is_empty())?;
+            Some(PathBuf::from(user).join(".claude"))
+        }
+        Provider::Codex => crate::codex::codex_home(None),
+    }
 }
 
 /// Sign-in state from the account's own CLI. Never fails: a missing CLI is
