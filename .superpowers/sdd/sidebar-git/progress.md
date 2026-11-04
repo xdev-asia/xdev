@@ -22,3 +22,6 @@ Task 6: complete (cardModel, WorktreeList draws from prefs; compact CSS). i18n k
 ## Task 9: complete
 - ViewOptions.tree seeded from DiffSettings.fileTree; List/Tree toggle in the review bar; TreeView + pathRows; Save as default writes fileTree.
 - No CSS needed: TreeView brings its own styles.
+
+## Task 10: complete
+- files/conflictMarkers.ts: parseConflicts and resolveBlock (7-char markers, diff3 base, CRLF kept, unclosed block and stray divider ignored).
