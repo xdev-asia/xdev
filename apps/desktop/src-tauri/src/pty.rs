@@ -355,7 +355,11 @@ impl Ptys {
         handle
     }
 
-    fn with<T>(&self, id: &str, f: impl FnOnce(&dyn PtyHandle) -> T) -> Result<T, CmdError> {
+    pub(crate) fn with<T>(
+        &self,
+        id: &str,
+        f: impl FnOnce(&dyn PtyHandle) -> T,
+    ) -> Result<T, CmdError> {
         // Output, and so acks, can come before the spawn returns; a call for
         // an id still being spawned or attached waits for it to land.
         let claims = self.claims();
@@ -441,6 +445,7 @@ pub(crate) fn launch_for(
     account: Option<&str>,
     hooks: Option<&Path>,
     resume: Option<&str>,
+    fork: bool,
 ) -> Result<Launch, CmdError> {
     let profiles = Profiles::load(data_dir).map_err(LaunchError::from)?;
     let accounts = Registry::load(data_dir)?;
@@ -463,8 +468,11 @@ pub(crate) fn launch_for(
         account,
     };
     let mut launch = resolve(id, &ctx)?;
-    if let Some(session) = resume {
-        add_resume(&mut launch, session)?;
+    match (resume, fork) {
+        (Some(session), true) => add_fork(&mut launch, session)?,
+        (Some(session), false) => add_resume(&mut launch, session)?,
+        (None, true) => return Err(crate::workspace::bad_arg("fork")),
+        (None, false) => {}
     }
     if let Some(xdev) = hooks {
         launch.add_hooks(xdev, data_dir);
@@ -475,16 +483,41 @@ pub(crate) fn launch_for(
 /// The longest session id a resume takes.
 const RESUME_ID_MAX: usize = 128;
 
+/// `add_resume`'s id and CLI rules, shared with `add_fork`.
+fn check_session_id(launch: &Launch, id: &str, arg: &'static str) -> Result<(), CmdError> {
+    let plain = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+    if id.is_empty() || id.len() > RESUME_ID_MAX || !id.chars().all(plain) || !launch.agent {
+        return Err(crate::workspace::bad_arg(arg));
+    }
+    Ok(())
+}
+
+/// Adds the args that make an agent CLI continue a copy of session `id`
+/// under a new session id: Claude `--resume <id> --fork-session` at the end;
+/// Codex the `fork <id>` subcommand first. Same id rules as `add_resume`.
+pub(crate) fn add_fork(launch: &mut Launch, id: &str) -> Result<(), CmdError> {
+    check_session_id(launch, id, "fork")?;
+    match launch.cli {
+        Some(Cli::Claude) => launch.args.extend([
+            "--resume".to_owned(),
+            id.to_owned(),
+            "--fork-session".to_owned(),
+        ]),
+        Some(Cli::Codex) => {
+            launch.args.splice(0..0, ["fork".to_owned(), id.to_owned()]);
+        }
+        _ => return Err(crate::workspace::bad_arg("fork")),
+    }
+    Ok(())
+}
+
 /// Adds the args that make an agent CLI continue session `id`: Claude
 /// `--resume <id>` at the end; Codex the `resume <id>` subcommand first, as
 /// `codex resume` takes the same options as a plain launch. The id is
 /// `[A-Za-z0-9_-]`, at most 128 chars. A shell or a custom program cannot
 /// resume.
 pub(crate) fn add_resume(launch: &mut Launch, id: &str) -> Result<(), CmdError> {
-    let plain = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
-    if id.is_empty() || id.len() > RESUME_ID_MAX || !id.chars().all(plain) || !launch.agent {
-        return Err(crate::workspace::bad_arg("resume"));
-    }
+    check_session_id(launch, id, "resume")?;
     match launch.cli {
         Some(Cli::Claude) => launch.args.extend(["--resume".to_owned(), id.to_owned()]),
         Some(Cli::Codex) => {
@@ -543,6 +576,10 @@ pub(crate) fn spawn_launch(
     let (program, args) = launch.command();
     let mut env = launch.env;
     env.push(("XDEV_PTY_ID".to_owned(), OsString::from(&id)));
+    // Agents run `xdev orchestration ...` from here.
+    if let Ok(exe) = std::env::current_exe() {
+        crate::cli_path::cli_env(&exe, &mut env);
+    }
     let mut info = PtyInfo {
         id: id.clone(),
         pid: None,
@@ -806,6 +843,7 @@ pub fn pty_spawn(
     rows: u16,
     out: Channel<InvokeResponseBody>,
     resume: Option<String>,
+    fork: Option<bool>,
 ) -> Result<PtyInfo, CmdError> {
     let data = data_dir(&state)?;
     let launch = if profile_id == SETUP_PROFILE {
@@ -818,6 +856,7 @@ pub fn pty_spawn(
             account.as_deref(),
             hooks.as_deref(),
             resume.as_deref(),
+            fork.unwrap_or(false),
         )?
     };
     let exit_id = id.clone();
@@ -849,6 +888,7 @@ pub fn pty_approve(
     profile_id: String,
     account: Option<String>,
     resume: Option<String>,
+    fork: Option<bool>,
 ) -> Result<(), CmdError> {
     let data = data_dir(&state)?;
     let hooks = hooks_now(&app);
@@ -858,6 +898,7 @@ pub fn pty_approve(
         account.as_deref(),
         hooks.as_deref(),
         resume.as_deref(),
+        fork.unwrap_or(false),
     )?;
     approve_launch(&ptys, data, &launch)
 }
@@ -1266,6 +1307,7 @@ mod tests {
             None,
             Some(Path::new("/opt/xdev")),
             None,
+            false,
         )
         .unwrap();
         assert!(!shell.hooks);
@@ -1531,7 +1573,7 @@ mod tests {
         });
         let _ = host.ptys.set(Arc::downgrade(&ptys));
         ptys.set_host(host.clone(), ptyd::status(PtydState::Running, None, None));
-        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None, None, false).unwrap();
         let (result, _) = start(&ptys, data.path(), "c", launch.clone());
         assert_eq!(result.unwrap_err().code, "pty_gone");
         assert!(host.map_free.load(Ordering::SeqCst));
@@ -1554,7 +1596,7 @@ mod tests {
             Arc::new(FakeHost::default()),
             ptyd::status(PtydState::Running, None, None),
         );
-        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None, None, false).unwrap();
         start(&ptys, data.path(), "k", launch).0.unwrap();
         assert!(ptys.cwd_of("k").is_some());
         pty_kill_in(&ptys, "k");
@@ -1567,7 +1609,7 @@ mod tests {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
         ptys.passes().insert("keep".into());
-        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None, None, false).unwrap();
         start(&ptys, data.path(), "s", launch).0.unwrap();
         ptys.kill_all();
         assert_eq!(ptys.passes().len(), 1);
@@ -1704,7 +1746,7 @@ mod tests {
     #[test]
     fn a_resume_needs_an_agent_cli_and_a_plain_id() {
         let data = tempfile::tempdir().unwrap();
-        let mut shell = launch_for(data.path(), "shell", None, None, None).unwrap();
+        let mut shell = launch_for(data.path(), "shell", None, None, None, false).unwrap();
         assert_eq!(add_resume(&mut shell, "abc").unwrap_err().code, "bad_arg");
         let mut custom = Launch {
             cli: None,
@@ -1726,7 +1768,49 @@ b",
             assert_eq!(l.args, agent().args, "{id:?} left the args alone");
         }
         assert_eq!(
-            launch_for(data.path(), "shell", None, None, Some("abc"))
+            launch_for(data.path(), "shell", None, None, Some("abc"), false)
+                .unwrap_err()
+                .code,
+            "bad_arg"
+        );
+    }
+
+    #[test]
+    fn a_claude_fork_adds_resume_and_fork_session() {
+        let mut l = with_extra_args(["--model", "m"]);
+        let before = l.args.clone();
+        add_fork(&mut l, "4f1c-9_ab").unwrap();
+        assert_eq!(l.args[..before.len()], before[..]);
+        assert_eq!(tail(&l, 3), ["--resume", "4f1c-9_ab", "--fork-session"]);
+    }
+
+    #[test]
+    fn a_codex_fork_is_the_fork_subcommand_first() {
+        let mut l = codex();
+        let before = l.args.clone();
+        add_fork(&mut l, "0199a-b").unwrap();
+        assert_eq!(l.args[..2], ["fork", "0199a-b"]);
+        assert_eq!(l.args[2..], before[..]);
+    }
+
+    #[test]
+    fn a_fork_needs_an_agent_cli_and_a_plain_id() {
+        let data = tempfile::tempdir().unwrap();
+        let mut shell = launch_for(data.path(), "shell", None, None, None, false).unwrap();
+        assert_eq!(add_fork(&mut shell, "abc").unwrap_err().code, "bad_arg");
+        let mut custom = Launch {
+            cli: None,
+            ..agent()
+        };
+        assert_eq!(add_fork(&mut custom, "abc").unwrap_err().code, "bad_arg");
+        for id in ["", "a b", "a;b", "../x", &"a".repeat(129)] {
+            let mut l = agent();
+            assert_eq!(add_fork(&mut l, id).unwrap_err().code, "bad_arg", "{id:?}");
+            assert_eq!(l.args, agent().args, "{id:?} left the args alone");
+        }
+        // A fork without a session id is a bad argument.
+        assert_eq!(
+            launch_for(data.path(), "shell", None, None, None, true)
                 .unwrap_err()
                 .code,
             "bad_arg"
@@ -1755,14 +1839,14 @@ b",
     fn launch_for_reports_unknown_and_bad_stores() {
         let data = tempfile::tempdir().unwrap();
         assert_eq!(
-            launch_for(data.path(), "vim", None, None, None)
+            launch_for(data.path(), "vim", None, None, None, false)
                 .unwrap_err()
                 .code,
             "unknown_profile"
         );
         std::fs::write(data.path().join("profiles.json"), "not json").unwrap();
         assert_eq!(
-            launch_for(data.path(), "claude", None, None, None)
+            launch_for(data.path(), "claude", None, None, None, false)
                 .unwrap_err()
                 .code,
             "bad_profiles"
@@ -1773,7 +1857,7 @@ b",
     fn shell_spawns_without_policy() {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
-        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None, None, false).unwrap();
         let (result, _) = start(&ptys, data.path(), "s", launch);
         assert!(!result.unwrap().agent);
         assert!(!data.path().join("audit.jsonl").exists());
@@ -1784,7 +1868,7 @@ b",
     fn a_pty_remembers_its_cwd_until_killed() {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
-        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None, None, false).unwrap();
         let (result, _) = start(&ptys, data.path(), "c", launch);
         result.unwrap();
         assert_eq!(ptys.cwd_of("c"), Some(std::env::temp_dir()));
@@ -1797,7 +1881,7 @@ b",
     fn duplicate_id_is_refused() {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
-        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None, None, false).unwrap();
         start(&ptys, data.path(), "d", launch.clone()).0.unwrap();
         let (again, _) = start(&ptys, data.path(), "d", launch);
         assert_eq!(again.unwrap_err().code, "pty_exists");
@@ -1808,7 +1892,7 @@ b",
     fn kill_all_ends_every_session() {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
-        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None, None, false).unwrap();
         let (one, rx1) = start(&ptys, data.path(), "1", launch.clone());
         let (two, rx2) = start(&ptys, data.path(), "2", launch);
         one.unwrap();
@@ -1824,7 +1908,7 @@ b",
     fn missing_cwd_is_not_found() {
         let data = tempfile::tempdir().unwrap();
         let ptys = Ptys::default();
-        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
+        let launch = launch_for(data.path(), "shell", None, None, None, false).unwrap();
         let err = spawn_launch(
             &ptys,
             data.path(),

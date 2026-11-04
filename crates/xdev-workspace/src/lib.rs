@@ -86,6 +86,12 @@ pub enum WorkspaceError {
     BranchExists(String),
     #[error("not a commit: {0}")]
     BadRef(String),
+    /// The branch is already checked out in a worktree.
+    #[error("the branch is checked out in a worktree: {0}")]
+    BranchInUse(String),
+    /// A sparse checkout list git would misread.
+    #[error("not a usable sparse checkout list: {0}")]
+    BadSparse(String),
     #[error("not a usable name: {0}")]
     BadName(String),
     /// The custom branch prefix set in Settings, Git, cannot start a ref.
@@ -165,6 +171,8 @@ impl WorkspaceError {
             WorkspaceError::WorktreeExists(_) => "worktree_exists",
             WorkspaceError::BranchExists(_) => "branch_exists",
             WorkspaceError::BadRef(_) => "bad_ref",
+            WorkspaceError::BranchInUse(_) => "branch_in_use",
+            WorkspaceError::BadSparse(_) => "bad_sparse",
             WorkspaceError::BadName(_) => "bad_name",
             WorkspaceError::BadPrefix(_) => "bad_branch_prefix",
             WorkspaceError::ShortNameTaken(_) => "short_name_taken",

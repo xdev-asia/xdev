@@ -813,3 +813,67 @@
   flex-wrap: wrap;
   max-width: 100%;
 }
+
+/* Orchestration page */
+.orch-coverage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.orch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--bg-2);
+  font-size: 12px;
+}
+
+.orch-chip-state {
+  color: var(--text-2);
+}
+
+.orch-prompt {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+[data-setting-field="depth"] input {
+  width: 72px;
+}
+
+.orchestration-page .settings-item {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Under 600px the section list sits on top as a wrapping row and the page uses the full width. */
+@media (max-width: 600px) {
+  .settings {
+    flex-direction: column;
+  }
+
+  .settings-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: auto;
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .settings-nav-title {
+    width: 100%;
+    margin: 0;
+  }
+
+  .settings-body {
+    padding: 16px 12px;
+  }
+}

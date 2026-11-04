@@ -27,9 +27,12 @@ import { createMockLayout } from "./mockLayout";
 import { createMockCli, type MockCli } from "./mockCli";
 import { createMockOpenIn, type MockOpenIn } from "./mockOpenIn";
 import { createMockProfiles } from "./mockProfiles";
+import { createMockThemes, type MockThemes } from "./mockThemes";
+import { createMockPower } from "./mockPower";
 import { createMockPty, type MockPtyd } from "./mockPty";
 import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
 import { createMockSettings, createSettingsHub } from "./mockSettings";
+import { createMockShell, type MockShell } from "./mockShell";
 import { createMockStatus, type MockStatus } from "./mockStatus";
 import { createMockSquads } from "./mockSquads";
 import { createMockTasks } from "./mockTasks";
@@ -355,7 +358,7 @@ function snippet(text: string, terms: string[]): string | null {
   return out.replace(/\s+/g, " ").trim();
 }
 
-export type MockApi = Api & MockPtyd & Omit<MockCli, keyof Api> & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & Pick<MockOpenIn, "__openInCalls"> & Pick<MockFiles, "__editFile" | "__fileReveals"> & {
+export type MockApi = Api & MockPtyd & Omit<MockCli, keyof Api> & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & Pick<MockOpenIn, "__openInCalls"> & Pick<MockFiles, "__editFile" | "__fileReveals"> & Pick<MockThemes, "__paths"> & Pick<MockShell, "__menu" | "__quitMode" | "__attention" | "__opened" | "__labels" | "__windowCalls" | "__closeIntent"> & {
   // Changes a file the way another program would (`null` deletes it); xDev did not write it.
   __editOutside(path: string, content: string | null): void;
   // Writes a file the way `propose_update` does over MCP; throws an ApiError like the real tool.
@@ -374,6 +377,8 @@ type MockOptions = {
   workspace?: MockWorkspaceSeed;
   // The text of `keybindings.json`; no file when left out.
   keybindings?: string | null;
+  // A version the update check finds; nothing newer when left out.
+  update?: string | null;
 };
 
 export function createMockApi(seed: Record<string, string>, options: MockOptions = {}): MockApi {
@@ -552,6 +557,8 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
 
   const settingsHub = createSettingsHub();
   const settingsApi = createMockSettings(settingsHub);
+  const themes = createMockThemes(undefined, settingsHub.emit);
+  const power = createMockPower(settingsApi);
   const workspace = createMockWorkspace(options.workspace, settingsHub.emit);
   const api: MockApi = {
     ...createMockTasks({
@@ -571,13 +578,17 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       (provider) => active.find((a) => a.provider === provider)?.name ?? null,
     ),
     ...createMockStatus(settingsHub.emit),
+    ...power,
+    ...createMockShell(settingsHub.emit, options.update ?? null),
     ...workspace,
     ...createMockIssues(),
     ...settingsApi,
+    ...themes,
+    agentsSettingsPut: power.agentsSettingsPut,
     ...createMockKeybindings(options.keybindings ?? null),
     ...createMockKit(async () => (await settingsApi.usageSettings()).scan),
     ...createMockOpenIn(settingsHub.emit, workspace.repoAdd),
-    ...createMockAgentSessions(),
+    ...createMockAgentSessions(settingsApi),
     ...createMockLayout(),
     ...createMockCli(),
     ...createMockQuickCommands(
@@ -596,7 +607,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     async quota() { return structuredClone(quotas); },
     async updateStatus() { return null; },
     async onUpdateReady() { return () => {}; },
-    async restartToUpdate() {},
+    async appVersion() { return "0.0.0-dev"; },
     async notifyUpdate() {},
     async addAccount(name, provider, dir) {
       if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(name)) return reject("bad_name");
@@ -647,6 +658,9 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     },
     async models() {
       return { claude: ["fable", "opus", "sonnet"], codex: ["gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-luna"] };
+    },
+    async pickFile() {
+      return themes.__paths()[0] ?? null;
     },
     async pickFolder() {
       return DEMO_ROOT;

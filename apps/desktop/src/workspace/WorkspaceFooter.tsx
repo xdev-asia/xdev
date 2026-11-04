@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX, ReactNode, Ref } from "react";
-import type { Accounts, Api, Provider, Quota, UsageDisplay } from "@/api";
+import type { Accounts, Api, Provider, Quota, StatusBarItems, UsageDisplay } from "@/api";
 import { useI18n } from "@/i18n";
 import { useUsageSettings } from "@/settings/usageSettings";
+import { ALL_ITEMS, useStatusBarItems } from "@/ui/statusBarItems";
 import { useQuota } from "@/shell/useQuota";
 import { useUpdate, type Update } from "@/shell/useUpdate";
+import { KeepAwakeItem } from "./KeepAwakeItem";
 import { UsagePopover } from "./UsagePopover";
 import { footerQuota, shownPercent } from "./usageModel";
 
@@ -95,14 +97,19 @@ export function WorkspaceFooter(props: {
   usageOpen?: boolean;
   usagePopover?: ReactNode;
   usageButtonRef?: Ref<HTMLButtonElement>;
+  /** Which of xDev's own items show (Settings > Appearance); all by default. The update notice and the meters are not items. */
+  items?: StatusBarItems;
+  /** The keep-awake item, shown before the version. */
+  keepAwake?: ReactNode;
   hidden?: boolean;
 }): JSX.Element {
   const { t } = useI18n();
+  const items = props.items ?? ALL_ITEMS;
   const display = props.display ?? "used";
   const meters = (props.quota ?? []).map(meterOf);
   return (
     <footer className="ws-footer" hidden={props.hidden}>
-      {props.branch && <span className="ws-mono ws-footer-branch">{`⎇ ${props.branch}`}</span>}
+      {items.branch && props.branch && <span className="ws-mono ws-footer-branch">{`⎇ ${props.branch}`}</span>}
       {meters.length > 0 &&
         (props.onToggleUsage ? (
           <button
@@ -128,21 +135,26 @@ export function WorkspaceFooter(props: {
           </span>
         ))}
       {props.usageOpen && props.usagePopover}
-      {props.onOpenUsage && (
+      {items.tokenUsage && props.onOpenUsage && (
         <button type="button" className="ws-footer-link" data-action="token-usage" onClick={props.onOpenUsage}>
           {t("kit.usage.link")}
         </button>
       )}
       <span className="ws-footer-spacer" />
-      <span className="ws-running">
-        {props.running > 0 && <span className="ws-dot ws-pulse" data-dot="working" aria-hidden="true" />}
-        {t("workspace.footer.running", { count: props.running })}
-      </span>
-      <span className="ws-waiting">
-        {props.waiting > 0 && <span className="ws-dot" data-dot="needs-you" aria-hidden="true" />}
-        {t("workspace.footer.waiting", { count: props.waiting })}
-      </span>
-      <span className="ws-mono">{`v${props.version}`}</span>
+      {items.agents && (
+        <>
+          <span className="ws-running">
+            {props.running > 0 && <span className="ws-dot ws-pulse" data-dot="working" aria-hidden="true" />}
+            {t("workspace.footer.running", { count: props.running })}
+          </span>
+          <span className="ws-waiting">
+            {props.waiting > 0 && <span className="ws-dot" data-dot="needs-you" aria-hidden="true" />}
+            {t("workspace.footer.waiting", { count: props.waiting })}
+          </span>
+        </>
+      )}
+      {props.keepAwake}
+      {items.version && <span className="ws-mono">{`v${props.version}`}</span>}
       {props.update && <UpdateItem update={props.update} onRestart={props.onRestartUpdate} />}
     </footer>
   );
@@ -171,6 +183,7 @@ export function LiveWorkspaceFooter(props: {
   const wasOpen = useRef(false);
 
   const usage = useUsageSettings();
+  const items = useStatusBarItems();
   // The accounts give the order and the provider; they are read on mount, for the footer's provider
   // switches, again each time the popover opens, and when the `onAccountsChanged` listener fires.
   useEffect(() => {
@@ -222,6 +235,7 @@ export function LiveWorkspaceFooter(props: {
     <WorkspaceFooter
       {...rest}
       hidden={hidden}
+      items={items}
       quota={quota === null ? null : footerQuota(quota, accounts, usage.footer)}
       display={usage.display}
       update={update.state}
@@ -230,6 +244,7 @@ export function LiveWorkspaceFooter(props: {
       usageOpen={open}
       usagePopover={popover}
       usageButtonRef={button}
+      keepAwake={<KeepAwakeItem api={api} />}
     />
   );
 }
