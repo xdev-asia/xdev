@@ -10,6 +10,7 @@ import { Badge, Heatmap } from "@xdev-asia/ui";
 import { TokenTable } from "@/kit/UsageTab";
 import { UsagePage } from "./UsagePage";
 import { UsageRecentSessions } from "./UsageRecentSessions";
+import { UsageShare } from "./UsageShare";
 
 vi.mock("react", async (original) => (await import("@/kit/testHooks")).patchReact(await original<typeof import("react")>()));
 vi.mock("@/i18n", async (original) => ({
@@ -280,4 +281,17 @@ it("recent sessions: Claude has a cache column, Codex a total column, and a miss
   const codex = mount(UsageRecentSessions, () => ({ agent: "codex" as const, sessions })).all();
   expect(codex.filter((n) => n.type === "th").map(textOf)).toContain(en("kit.usage.total"));
   expect(codex.find((n) => "data-recent-desc" in n.props)!.props.children).toBe(en("usage.stats.recent.desc.codex"));
+});
+
+it("the share button is on a Claude or Codex page with the figures of that agent, and not on Overview", async () => {
+  expect(ofType((await show({})).m.all(), UsageShare)).toHaveLength(0);
+  const { m } = await show({ summary: { ...fixture().summary, by_model: [["claude-opus-4-5", tk(9)]] } }, "claude");
+  const share = ofType(m.all(), UsageShare);
+  expect(share).toHaveLength(1);
+  const data = share[0]!.props.data as { provider: string; sessions: number; topModel: string | null; tokens: number };
+  expect(data.provider).toBe("claude");
+  expect(data.sessions).toBe(2);
+  expect(data.topModel).toBe("claude-opus-4-5");
+  expect(data.tokens).toBeGreaterThan(0);
+  expect(ofType((await show({}, "codex")).m.all(), UsageShare)).toHaveLength(1);
 });
