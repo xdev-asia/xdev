@@ -9,7 +9,7 @@ import { rangeDays, type UsageRange } from "@/kit/usageRange";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import { CACHE_TTL_LONG_MS, CACHE_TTL_SHORT_MS } from "./usageDefaults";
 import type { SettingsSectionProps } from "./sections";
-import { setUsageSettings } from "./usageSettings";
+import { getUsageSettings, setUsageSettings, useUsageSettings } from "./usageSettings";
 
 export type Provider = "overview" | Agent;
 export const PROVIDERS: Provider[] = ["overview", "claude", "codex"];
@@ -27,7 +27,10 @@ const SCAN_IDS = AGENTS.map((a) => `usage.scan.${a}`);
 export function UsagePage(props: SettingsSectionProps): JSX.Element {
   const { api, filter } = props;
   const { t } = useI18n();
-  const [settings, setSettings] = useState<UsageSettings | null>(null);
+  // The window's shared copy: a change made elsewhere shows here, and a save starts from it.
+  const shared = useUsageSettings();
+  const [loaded, setLoaded] = useState(false);
+  const settings: UsageSettings | null = loaded ? shared : null;
   // Session state only: none of these three is saved.
   const [provider, setProvider] = useState<Provider>("overview");
   const [scope, setScope] = useState<UsageScope>("xdev");
@@ -41,7 +44,13 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
   const saving = useRef(false);
 
   useEffect(() => {
-    api.usageSettings().then(setSettings, (e) => setError(toApiError(e).code));
+    api.usageSettings().then(
+      (stored) => {
+        setUsageSettings(stored);
+        setLoaded(true);
+      },
+      (e) => setError(toApiError(e).code),
+    );
   }, [api]);
 
   // Agents the chosen provider covers, and which of them may be read.
@@ -86,11 +95,10 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
     if (settings === null || saving.current) return;
     saving.current = true;
     try {
-      const stored = await api.usageSettingsPut({ ...settings, ...change });
+      const stored = await api.usageSettingsPut({ ...getUsageSettings(), ...change });
       setUsageSettings(stored);
       // Turning a scan on reads the logs of that agent from the start.
       if (change.scan) refresh.current = true;
-      setSettings(stored);
     } catch (e) {
       setError(toApiError(e).code);
     } finally {
