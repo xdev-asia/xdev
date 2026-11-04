@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, type Api, type Check, type PrView } from "@/api";
-import { DEMO_WORKSPACE } from "@/mockWorkspace";
+import { DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE } from "@/mockWorkspace";
 import { translate } from "@/i18n";
 import { ChecksPanel } from "./ChecksPanel";
 import { PrStore } from "./prs";
@@ -33,13 +33,14 @@ function nodes(value: unknown): Node[] {
   const node = value as Node;
   return [node, ...nodes(node.props.children)];
 }
+const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 const OAK = "/demo/wt/xdev-oak";
 const PR: PrView = { number: 7, url: "https://example.test/pull/7", state: "open", title: "Fix the thing", base: "main", head: "oak" };
 const CHECKS: Check[] = [
   { name: "build", workflow: "ci", bucket: "pass", link: null },
   { name: "test", workflow: "ci", bucket: "pending", link: null },
-  { name: "lint", workflow: "ci", bucket: "fail", link: null },
+  { name: "lint", workflow: "ci", bucket: "fail", link: "https://example.test/actions/runs/5/job/9" },
 ];
 
 function seeded(prs: Record<string, PrView> = {}, checks: Record<string, Check[]> = {}): Api {
@@ -47,13 +48,13 @@ function seeded(prs: Record<string, PrView> = {}, checks: Record<string, Check[]
 }
 
 // Draws with its own hook values; the first draw's effects run once, as on mount.
-function mount(api: Api, prs: PrStore, visible: boolean) {
+function mount(api: Api, prs: PrStore, visible: boolean, onFix?: (check: Check) => void | Promise<void>) {
   const values: unknown[] = [];
   const draw = () => {
     hooks.values = values;
     hooks.cursor = 0;
     hooks.active = true;
-    try { return ChecksPanel({ api, worktree: OAK, prs, visible }); } finally { hooks.active = false; }
+    try { return ChecksPanel({ api, worktree: OAK, prs, visible, onFix }); } finally { hooks.active = false; }
   };
   const before = hooks.effects.length;
   draw();
@@ -143,4 +144,42 @@ it("refreshes every 30 s only while pending and visible", async () => {
   mount(done, quiet, true);
   await vi.advanceTimersByTimeAsync(90_000);
   expect(calm).toHaveBeenCalledTimes(1);
+});
+
+const fixButtons = (view: ReturnType<typeof mount>) => view.all().filter((n) => n.type === "button" && n.props["data-fix"] !== undefined);
+
+it("offers Fix with agent on failed checks only, and hands the check over", async () => {
+  const api = seeded({ [OAK]: PR }, { [OAK]: CHECKS });
+  const prs = new PrStore(api);
+  await prs.load(OAK, { checks: true });
+  let done!: () => void;
+  const onFix = vi.fn(() => new Promise<void>((resolve) => { done = resolve; }));
+  const view = mount(api, prs, true, onFix);
+  await tick();
+  const buttons = fixButtons(view);
+  expect(buttons.map((b) => b.props["data-fix"])).toEqual(["lint"]);
+  expect(buttons[0]!.props.children).toBe(en("checks.fix"));
+  buttons[0]!.props.onClick();
+  expect(onFix).toHaveBeenCalledWith(CHECKS[2]);
+  // One at a time: the button waits while the prompt is prepared.
+  expect(fixButtons(view)[0]!.props.disabled).toBe(true);
+  done();
+  await tick();
+  expect(fixButtons(view)[0]!.props.disabled).toBe(false);
+});
+
+it("hides Fix with agent without a handler or with the agent actions off", async () => {
+  const api = seeded({ [OAK]: PR }, { [OAK]: CHECKS });
+  const prs = new PrStore(api);
+  await prs.load(OAK, { checks: true });
+  const bare = mount(api, prs, true);
+  await tick();
+  expect(fixButtons(bare)).toHaveLength(0);
+
+  const off = createMockApi({}, { workspace: { ...DEMO_WORKSPACE, prs: { [OAK]: PR }, checks: { [OAK]: CHECKS }, git: { ...DEFAULT_GIT_SETTINGS, sourceControlAi: false } } });
+  const offPrs = new PrStore(off);
+  await offPrs.load(OAK, { checks: true });
+  const hidden = mount(off, offPrs, true, vi.fn());
+  await tick();
+  expect(fixButtons(hidden)).toHaveLength(0);
 });

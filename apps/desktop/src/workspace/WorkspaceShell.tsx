@@ -39,7 +39,7 @@ import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { removeRepo } from "./removeRepo";
 import { VaultNav } from "./VaultNav";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
-import { sendFix } from "./fixAgent";
+import { sendCheckFix, sendFix } from "./fixAgent";
 import { sendTarget } from "./sendTarget";
 import { SetupCard, type SetupCardState } from "./SetupCard";
 import { decideSetup } from "./setupFlow";
@@ -853,6 +853,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
   }
 
+  // Gives a failed check, with its log when there is one, to an agent of the worktree.
+  async function fixCheck(check: Check): Promise<void> {
+    if (!sessions || !current) return;
+    const path = current.path;
+    const tab = await sendCheckFix(api, sessions, path, shownTab[path] ?? null, current.branch ?? "", check);
+    setFixNote(!tab);
+    if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
+  }
+
   // The docs app has the only search for now; it shows after this render, so its box is looked up then.
   function openSearch(): void {
     show("docs");
@@ -1219,7 +1228,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             </div>
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "checks"}>
               {current ? (
-                <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} visible={panelTab === "checks"} />
+                <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} visible={panelTab === "checks"} onFix={(check) => fixCheck(check)} />
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
               )}

@@ -868,6 +868,7 @@
   "ship.amend.pushed.confirm": "Amend anyway",
   "ship.hook.fix": "Fix with agent",
   "ship.push.fix": "Fix with agent",
+  "checks.fix": "Fix with agent",
   "ship.hook.copy": "Copy output",
   "ship.hook.output": "Hook output",
   "ship.fix.noTab": "No agent tab got ready in time. Open one and try again.",

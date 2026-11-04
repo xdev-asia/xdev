@@ -3,7 +3,7 @@ import { createMockApi, type Api, type GitSettings } from "@/api";
 import { DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE } from "@/mockWorkspace";
 import { FIX_BASE_PROMPTS } from "@/settings/recipes";
 import { pastePrompt } from "./agentPrompt";
-import { sendFix } from "./fixAgent";
+import { sendCheckFix, sendFix } from "./fixAgent";
 import type { Sessions, Tab } from "./sessions";
 
 afterEach(() => vi.useRealTimers());
@@ -91,4 +91,45 @@ it("uses the default recipe when the settings cannot be read", async () => {
   api.gitSettings = () => Promise.reject({ code: "io" });
   await sendFix(api, fake([a]).sessions, "/w", "a", "fixPushFailure", { output: "rejected" });
   expect(a.client.input).toHaveBeenCalledWith(pastePrompt(`${FIX_BASE_PROMPTS.fixPushFailure}\n\nrejected`));
+});
+
+const FAILED = { name: "lint", workflow: "CI", bucket: "fail" as const, link: "https://github.com/o/r/actions/runs/5/job/9" };
+
+it("a failed check goes with its log when gh gives one", async () => {
+  const a = tab("a");
+  const api = apiWith(() => {});
+  const log = vi.spyOn(api, "worktreeCheckLog").mockResolvedValue("error: boom");
+  await sendCheckFix(api, fake([a]).sessions, "/w", "a", "feat", FAILED);
+  expect(log).toHaveBeenCalledWith("/w", FAILED.link);
+  expect(a.client.input).toHaveBeenCalledWith(
+    pastePrompt(`${FIX_BASE_PROMPTS.fixChecks}\n\nCheck: lint\nWorkflow: CI\nLink: ${FAILED.link}\n\nLog:\nerror: boom`),
+  );
+});
+
+it("a failed check goes without a log when there is none, or it cannot be read", async () => {
+  const bare = `${FIX_BASE_PROMPTS.fixChecks}\n\nCheck: lint\nWorkflow: CI\nLink: ${FAILED.link}`;
+  for (const answer of [Promise.resolve(null), Promise.reject({ code: "gh_auth" })]) {
+    const a = tab("a");
+    const api = apiWith(() => {});
+    vi.spyOn(api, "worktreeCheckLog").mockReturnValue(answer);
+    await sendCheckFix(api, fake([a]).sessions, "/w", "a", "feat", FAILED);
+    expect(a.client.input).toHaveBeenCalledWith(pastePrompt(bare));
+  }
+  // No link, no lookup.
+  const a = tab("a");
+  const api = apiWith(() => {});
+  const log = vi.spyOn(api, "worktreeCheckLog");
+  await sendCheckFix(api, fake([a]).sessions, "/w", "a", "feat", { ...FAILED, link: null, workflow: null });
+  expect(log).not.toHaveBeenCalled();
+  expect(a.client.input).toHaveBeenCalledWith(pastePrompt(`${FIX_BASE_PROMPTS.fixChecks}\n\nCheck: lint`));
+});
+
+it("a custom Fix checks template gets the check's variables", async () => {
+  const a = tab("a");
+  const api = apiWith((g) => {
+    g.recipes.fixChecks.template = "{checkName} on {branch} ({workflow}): {link}\n{log}";
+  });
+  vi.spyOn(api, "worktreeCheckLog").mockResolvedValue("LOG");
+  await sendCheckFix(api, fake([a]).sessions, "/w", "a", "feat/x", FAILED);
+  expect(a.client.input).toHaveBeenCalledWith(pastePrompt(`lint on feat/x (CI): ${FAILED.link}\nLOG`));
 });

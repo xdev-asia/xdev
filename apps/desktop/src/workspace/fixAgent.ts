@@ -1,4 +1,4 @@
-import type { Api, GitSettings } from "@/api";
+import type { Api, Check, GitSettings } from "@/api";
 import { DEFAULT_GIT_SETTINGS } from "@/settings/gitDefaults";
 import { fixPrompt, type FixRecipeId } from "@/settings/recipes";
 import { sendToAgentTab, sendToChosenTab } from "./agentPrompt";
@@ -29,4 +29,27 @@ export async function sendFix(
     if (listed) return sendToChosenTab(sessions, worktree, { profile: recipe.agent }, text);
   }
   return sendToAgentTab(sessions, worktree, shown, text);
+}
+
+/**
+ * `sendFix` for a failed check: the failed job's log goes in when `gh` can give it (and the check
+ * has a link); without it the prompt still names the check and its link.
+ */
+export async function sendCheckFix(
+  api: Api,
+  sessions: Sessions,
+  worktree: string,
+  shown: string | null,
+  branch: string,
+  check: Check,
+): Promise<Tab | null> {
+  const link = check.link ?? "";
+  const log = link === "" ? "" : ((await api.worktreeCheckLog(worktree, link).catch(() => null)) ?? "");
+  return sendFix(api, sessions, worktree, shown, "fixChecks", {
+    branch,
+    checkName: check.name,
+    workflow: check.workflow ?? "",
+    link,
+    log,
+  });
 }
