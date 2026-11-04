@@ -29,6 +29,7 @@ import { createMockOpenIn, type MockOpenIn } from "./mockOpenIn";
 import { createMockProfiles } from "./mockProfiles";
 import { createMockThemes, type MockThemes } from "./mockThemes";
 import { createMockPower } from "./mockPower";
+import { createMockPorts } from "./mockPorts";
 import { createMockPty, type MockPtyd } from "./mockPty";
 import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
 import { createMockXdevId, type MockXdevId } from "./mockXdevId";
@@ -582,6 +583,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ),
     ...createMockStatus(settingsHub.emit),
     ...power,
+    ...createMockPorts(DEMO_ROOT),
     ...createMockShell(settingsHub.emit, options.update ?? null),
     ...workspace,
     ...createMockIssues(),
