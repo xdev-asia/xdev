@@ -1,4 +1,24 @@
+import type { Api } from "@/api";
 import { CONTEXT_LINES, lastLines } from "@/terminal/terminalActions";
+
+/** The longest first prompt a hand-off carries, in code points. */
+export const FIRST_PROMPT_MAX = 500;
+
+/**
+ * The first prompt of a session, from the session index (the same query as the auto tab title), cut to
+ * 500 code points. `null` when the session is unknown, the index has no prompt, or the lookup fails.
+ * It never reads the tab title, which may have been typed by hand.
+ */
+export async function sourceFirstPrompt(api: Pick<Api, "agentSessions">, worktree: string, session: string | null): Promise<string | null> {
+  if (!session) return null;
+  try {
+    const rows = await api.agentSessions({ text: session, scope: { kind: "worktree", path: worktree }, agent: null, homeId: null, sort: "lastDesc", limit: 1 }, true);
+    const title = rows.find((r) => r.session.id === session)?.session.title?.trim();
+    return title ? Array.from(title).slice(0, FIRST_PROMPT_MAX).join("") : null;
+  } catch {
+    return null;
+  }
+}
 
 export interface HandoffInput {
   /** The name of the agent that worked so far. */

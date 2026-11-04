@@ -19,7 +19,7 @@ import { quickCommandsSubmenu } from "@/quickCommands/submenu";
 import { ReviewView } from "@/review/ReviewView";
 import { Terminal, type TerminalHandle } from "@/terminal/Terminal";
 import { CONTEXT_LINES, copyContext, copyText } from "@/terminal/terminalActions";
-import { handoffPrompt } from "@/agentSessions/handoff";
+import { handoffPrompt, sourceFirstPrompt } from "@/agentSessions/handoff";
 import { HandOffDialog, type HandOffChoice } from "@/agentSessions/HandOffDialog";
 import { sendToOpenedTab } from "./agentPrompt";
 import { pushToast } from "./toastStore";
@@ -437,19 +437,19 @@ export function WorktreeTabs(props: {
   }
 
   // Opens an agent in `choice.worktree` and types the source's state into it once it has started.
-  function handOff(source: Tab, lines: string[], choice: HandOffChoice): void {
+  async function handOff(source: Tab, lines: string[], choice: HandOffChoice): Promise<void> {
+    const firstPrompt = await sourceFirstPrompt(api, worktree, source.agentSession);
     const text = handoffPrompt({
       fromProfile: profileName(view, source.profileId, t),
       worktree,
       branch: props.branch ?? null,
-      firstPrompt: source.autoTitled ? source.title : null,
+      firstPrompt,
       lines,
     });
     const opened = sessions.open(choice.worktree, choice.profileId, null, cliFor(choice.profileId));
     props.onJump?.(opened.id);
-    void sendToOpenedTab(sessions, choice.worktree, opened.id, text).then((sent) => {
-      pushToast({ text: sent ? t("agentFork.handedOff") : t("agentFork.notReady") });
-    });
+    const sent = await sendToOpenedTab(sessions, choice.worktree, opened.id, text);
+    pushToast({ text: sent ? t("agentFork.handedOff") : t("agentFork.notReady") });
   }
 
   function again(tab: Tab): void {
@@ -689,7 +689,7 @@ export function WorktreeTabs(props: {
           sourceProfile={byId.get(handingOff.id)!.profileId}
           sourceWorktree={worktree}
           onConfirm={(choice) => {
-            handOff(byId.get(handingOff.id)!, handingOff.lines, choice);
+            void handOff(byId.get(handingOff.id)!, handingOff.lines, choice);
             setHandingOff(null);
           }}
           onCancel={() => setHandingOff(null)}
