@@ -3,6 +3,10 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   Accounts,
+  AccountSource,
+  ActiveAccount,
+  AgentsSettings,
+  SwitchRunning,
   Approvals,
   Account,
   Change,
@@ -125,6 +129,7 @@ export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
 export type { Agent, AgentSession, SessionQuery, SessionRow };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
+export type { AccountSource, ActiveAccount, AgentsSettings, SwitchRunning };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FileKind } from "@xdev/bindings";
 export type { RestoreMode } from "@xdev/bindings";
@@ -285,6 +290,7 @@ export type ErrorCode =
   | "unknown_provider"
   | "bad_registry"
   | "bad_reserve"
+  | "session_missing"
   | "bad_path"
   | "no_commits"
   | "empty_goal"
@@ -402,6 +408,15 @@ export interface Api {
   addAccount(name: string, provider: Provider, dir?: string): Promise<Account>;
   loginAccount(name: string): Promise<LoginStart>;
   removeAccount(name: string): Promise<void>;
+  // Makes `name` the active account of `provider`; null goes back to the CLI's own home.
+  // Running tabs are left as they are; see `workspace/accountSwitch.ts`.
+  accountActivate(provider: Provider, name: string | null): Promise<void>;
+  // Copies the log of agent session `session` from account `from`'s home to `to`'s (null: the
+  // CLI's own home) so a restarted tab resumes it; false when `to` already has it,
+  // `session_missing` when `from` has no such log.
+  accountCarrySession(provider: Provider, from: string | null, to: string | null, session: string, cwd: string): Promise<boolean>;
+  // `accounts://changed`: after an account is added, removed or made active.
+  onAccountsChanged(cb: () => void): Promise<() => void>;
   // The first rule that matches a turn picks its model.
   routing(): Promise<Routing>;
   setRouting(routing: Routing): Promise<void>;
@@ -768,6 +783,9 @@ export interface Api {
   navigationSettingsPut(v: NavigationSettings): Promise<NavigationSettings>;
   diffSettings(): Promise<DiffSettings>;
   diffSettingsPut(v: DiffSettings): Promise<DiffSettings>;
+  // Settings → Agents; the put returns what was stored.
+  agentsSettings(): Promise<AgentsSettings>;
+  agentsSettingsPut(v: AgentsSettings): Promise<AgentsSettings>;
 
   // Layout
   // The tabs and splits saved for the next start (`<data_dir>/layout.json`); null when none is saved
@@ -803,6 +821,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "unknown_provider",
   "bad_registry",
   "bad_reserve",
+  "session_missing",
   "bad_path",
   "no_commits",
   "empty_goal",
@@ -908,6 +927,9 @@ const tauriApi: Api = {
   addAccount: (name, provider, dir) => call("account_add", { name, provider, dir: dir ?? null }),
   loginAccount: (name) => call("account_login", { name }),
   removeAccount: (name) => call("account_remove", { name }),
+  accountActivate: (provider, name) => call("account_activate", { provider, name }),
+  accountCarrySession: (provider, from, to, session, cwd) => call("account_carry_session", { provider, from, to, session, cwd }),
+  onAccountsChanged: (cb) => listen("accounts://changed", () => cb()),
   routing: () => call("routing_get"),
   setRouting: (routing) => call("routing_set", { routing }),
   models: () => call("routing_models"),
@@ -1125,6 +1147,8 @@ const tauriApi: Api = {
   navigationSettingsPut: (settings) => call("navigation_settings_put", { settings }),
   diffSettings: () => call("diff_settings_get"),
   diffSettingsPut: (settings) => call("diff_settings_put", { settings }),
+  agentsSettings: () => call("agents_settings_get"),
+  agentsSettingsPut: (settings) => call("agents_settings_put", { settings }),
   layoutLoad: () => call("layout_load"),
   layoutSave: (snapshot) => call("layout_save", { snapshot }),
 };

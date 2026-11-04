@@ -1,4 +1,4 @@
-import type { Api, ApiError, PtyExit, PtyProfile, SETUP_PROFILE as SetupProfile } from "./api";
+import type { AccountSource, Api, ApiError, Provider, PtyExit, PtyProfile, SETUP_PROFILE as SetupProfile } from "./api";
 import type { MockProfiles } from "./mockProfiles";
 import type { MockSetupRun } from "./mockWorkspace";
 
@@ -21,9 +21,11 @@ const encode = (text: string) => new TextEncoder().encode(text);
  * once; an agent running as `skip` needs it before every start.
  */
 export function createMockPty(
-  profiles: Pick<MockProfiles, "__launchError" | "__permissions">,
+  profiles: Pick<MockProfiles, "__launchError" | "__permissions"> & Partial<Pick<MockProfiles, "__account">>,
   // The setup script of the worktree at `cwd`, for `SETUP_PROFILE`.
   setupRun: (cwd: string) => Promise<MockSetupRun> = () => reject("hook_none", "setup"),
+  // The provider's active account, which a built-in agent with no account of its own runs as.
+  activeAccount: (provider: Provider) => string | null = () => null,
 ): PtyApi {
   // Like Rust, an exited terminal keeps its slot until `ptyKill`.
   const ptys = new Map<string, { onData: (bytes: Uint8Array) => void; line: string; exited: boolean }>();
@@ -53,6 +55,7 @@ export function createMockPty(
           profile: profileId,
           permissions: "ask",
           account: null,
+          accountSource: null,
           hooks: false,
           cli: null,
           hookEvents: [],
@@ -70,6 +73,19 @@ export function createMockPty(
         const ok = permissions === "skip" ? approvedOnce.delete(profileId) : approved.has(profileId);
         if (!ok) return reject("needs_approval", `start ${profileId} in a terminal`);
       }
+      // Like Rust `resolve`: the tab's account, else the profile's, else the provider's active one.
+      const provider: Provider | null = profileId === "claude" || profileId === "codex" ? profileId : null;
+      const own = agent ? (profiles.__account?.(profileId) ?? null) : null;
+      const active = provider ? activeAccount(provider) : null;
+      const [runAs, accountSource]: [string | null, AccountSource | null] = !agent
+        ? [null, null]
+        : account
+          ? [account, "tab"]
+          : own
+            ? [own, "profile"]
+            : active
+              ? [active, "active"]
+              : [null, null];
       ptys.set(id, { onData, line: "", exited: false });
       onData(encode(`xDev demo terminal (${profileId})\r\n${PROMPT}`));
       return {
@@ -79,7 +95,8 @@ export function createMockPty(
         agent,
         profile: profileId,
         permissions,
-        account,
+        account: runAs,
+        accountSource,
         // Built-in agents get hook flags while Status hooks is on: claude past the version gate, codex on its private home.
         hooks: profileId === "claude" || profileId === "codex",
         cli: profileId === "claude" || profileId === "codex" ? profileId : null,

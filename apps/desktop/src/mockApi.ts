@@ -1,6 +1,7 @@
 import type {
   Api,
   Account,
+  ActiveAccount,
   Quota,
   Routing,
   ApiError,
@@ -374,6 +375,12 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     status: { state: name === "old" ? "logged_out" : "logged_in", email: name === "old" ? null : `${name}@example.com`, plan: name === "old" ? null : "Max", org: null },
   }));
   accounts.push({ name: "codex-1", provider: "codex", dir: "/demo/accounts/codex-1", status: { state: "logged_in", email: null, plan: null, org: null } });
+  // One Claude account is active; Codex runs on the CLI's own home.
+  let active: ActiveAccount[] = [{ provider: "claude", name: "claude-2" }];
+  const accountListeners = new Set<() => void>();
+  const accountsChanged = () => {
+    for (const cb of [...accountListeners]) cb();
+  };
   let routing: Routing = { rules: [{ role: "review", provider: "claude", maxPrompt: null, model: "haiku" }] };
   const reset = new Date(Date.now() + 130 * 60_000).toISOString();
   const asOf = new Date(Date.now() - 20 * 60_000).toISOString();
@@ -549,7 +556,11 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       runDelayMs: options.runDelayMs,
     }),
     ...profiles,
-    ...createMockPty(profiles, (cwd) => workspace.__setupRun(cwd)),
+    ...createMockPty(
+      profiles,
+      (cwd) => workspace.__setupRun(cwd),
+      (provider) => active.find((a) => a.provider === provider)?.name ?? null,
+    ),
     ...createMockStatus(settingsHub.emit),
     ...workspace,
     ...createMockIssues(),
@@ -566,7 +577,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       },
       settingsHub.emit,
     ),
-    async accounts() { return structuredClone({ reservePercent: 30, accounts }); },
+    async accounts() { return structuredClone({ reservePercent: 30, accounts, active }); },
     async quota() { return structuredClone(quotas); },
     async updateStatus() { return null; },
     async onUpdateReady() { return () => {}; },
@@ -580,6 +591,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       const account: Account = { name, provider, dir: dir ?? `/demo/accounts/${name}`, status: { state: dir ? "logged_in" : "logged_out", email: null, plan: null, org: null } };
       accounts.push(account);
       quotas.push({ name, state: "unknown", reason: "logged_out", windows: [], asOf: null });
+      accountsChanged();
       return structuredClone(account);
     },
     async loginAccount(name) {
@@ -593,6 +605,25 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       if (index === -1) return reject("not_found");
       accounts.splice(index, 1);
       quotas.splice(quotas.findIndex(q => q.name === name), 1);
+      active = active.filter((a) => a.name !== name);
+      accountsChanged();
+    },
+    async accountActivate(provider, name) {
+      if (name !== null && !accounts.some((a) => a.name === name && a.provider === provider)) return reject("not_found");
+      active = active.filter((a) => a.provider !== provider);
+      if (name !== null) active.push({ provider, name });
+      accountsChanged();
+    },
+    async accountCarrySession(provider, from, to, session) {
+      const known = (name: string | null) => name === null || accounts.some((a) => a.name === name && a.provider === provider);
+      if (!known(from) || !known(to)) return reject("not_found");
+      // The demo has no session logs on disk: any plain id is "copied".
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(session)) return reject("session_missing");
+      return from !== to;
+    },
+    async onAccountsChanged(cb) {
+      accountListeners.add(cb);
+      return () => void accountListeners.delete(cb);
     },
     async routing() { return structuredClone(routing); },
     async setRouting(next) {

@@ -75,6 +75,32 @@ pub struct Settings {
     /// Settings → General, Diff group; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub diff: DiffSettings,
+    /// Settings → Agents; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub agents: AgentsSettings,
+}
+
+/// What happens to the agent tabs that run under the old active account
+/// when the person switches it.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum SwitchRunning {
+    /// A dialog lists the tabs and the person ticks the ones to restart.
+    #[default]
+    Ask,
+    /// Every such tab restarts under the new account.
+    Restart,
+    /// The tabs keep running under the old account.
+    Keep,
+}
+
+/// Settings → Agents.
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct AgentsSettings {
+    pub account_switch: SwitchRunning,
 }
 
 /// Which worktree rows the sidebar hides. All off: every row shows.
@@ -532,6 +558,7 @@ pub enum SettingsSection {
     Sidebar,
     Navigation,
     Diff,
+    Agents,
 }
 
 /// What a `settings://changed` event carries.

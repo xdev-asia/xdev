@@ -38,7 +38,7 @@ pub use hooks::{
     SESSION_MAX, append_hook, append_hook_detail, hook_args, hook_file, hooks_off, set_hooks_off,
     valid_pty_id, valid_session_id,
 };
-pub use launch::{Context, Launch, LaunchError, resolve};
+pub use launch::{AccountSource, Context, Launch, LaunchError, resolve};
 pub use profiles::{
     Approvals, Cli, CustomShell, EnvVar, Permissions, Profile, ProfileError, Profiles, builtin,
     valid_id,

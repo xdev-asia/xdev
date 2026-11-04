@@ -13,8 +13,9 @@ use serde::Serialize;
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, State};
 use xdev_agent::{
-    Cli, Context, HookEvent, Launch, LaunchError, Permissions, Profile, Profiles, ShellEntry,
-    ShellKind, default_shell_id, find_builtin, find_program, list_shells, resolve, wsl_distros,
+    AccountSource, Cli, Context, HookEvent, Launch, LaunchError, Permissions, Profile, Profiles,
+    ShellEntry, ShellKind, default_shell_id, find_builtin, find_program, list_shells, resolve,
+    wsl_distros,
 };
 use xdev_ai::Registry;
 use xdev_policy::{Action, Audited, Policy, Verdict, agent_fingerprint};
@@ -65,6 +66,9 @@ pub struct PtyInfo {
     // The approval mode the launch stands for: ask, accept-edits or skip.
     permissions: String,
     account: Option<String>,
+    // Where `account` came from: the tab, the profile or the provider's
+    // active account; null without an account.
+    account_source: Option<AccountSource>,
     // Whether the launch got the status hook flags.
     hooks: bool,
     // The hook events the launch reports (version gate, codex private home or
@@ -271,6 +275,7 @@ pub(crate) fn spawn_launch(
         profile: launch.profile,
         permissions: launch.permissions.as_str().to_owned(),
         account: launch.account,
+        account_source: launch.account_source,
         hooks: launch.hooks,
         hook_events: launch.hook_events,
         cli: launch.cli,
@@ -477,6 +482,7 @@ pub(crate) fn setup_launch(data_dir: &Path, cwd: &Path) -> Result<Launch, CmdErr
         agent: false,
         permissions: Permissions::Ask,
         account: None,
+        account_source: None,
         startup: Vec::new(),
         cli: None,
         hooks: false,
@@ -607,6 +613,7 @@ mod tests {
             agent: true,
             permissions: Permissions::Ask,
             account: None,
+            account_source: None,
             startup: vec![],
             cli: Some(Cli::Claude),
             hooks: false,
