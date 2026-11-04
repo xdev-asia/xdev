@@ -219,15 +219,27 @@ fn leads_to(dir: &Path, canonical: &Path) -> bool {
     }
 }
 
-/// Removes a link, a junction or a folder.
+/// Whether `m` (from `symlink_metadata`) is a link: a symlink or, on
+/// Windows, any reparse point such as a junction.
+fn is_link(m: &fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        if m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return true;
+        }
+    }
+    m.file_type().is_symlink()
+}
+
+/// Removes a link, a junction or a folder. A link loses only itself, never
+/// what it leads to.
 fn clear(dir: &Path) -> io::Result<()> {
     match fs::symlink_metadata(dir) {
         Err(_) => Ok(()),
-        Ok(m) if m.file_type().is_symlink() => {
-            fs::remove_file(dir).or_else(|_| fs::remove_dir(dir))
-        }
-        // A junction is a folder that `remove_dir` takes without its contents.
-        Ok(_) => fs::remove_dir(dir).or_else(|_| fs::remove_dir_all(dir)),
+        Ok(m) if is_link(&m) => fs::remove_dir(dir).or_else(|_| fs::remove_file(dir)),
+        Ok(_) => fs::remove_dir_all(dir),
     }
 }
 
@@ -454,6 +466,33 @@ pub fn auto_update(env: &SkillEnv, link: Linker<'_>) -> Result<InstallReport, Or
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn clearing_a_junction_keeps_what_it_leads_to() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("shared");
+        fs::create_dir_all(target.join("deep")).unwrap();
+        fs::write(target.join(SKILL_FILE), "keep").unwrap();
+        fs::write(target.join("deep").join("x.txt"), "keep").unwrap();
+        let link = dir.path().join("link");
+        let ok = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&link)
+            .arg(&target)
+            .output()
+            .unwrap()
+            .status
+            .success();
+        assert!(ok, "mklink /J");
+        let m = fs::symlink_metadata(&link).unwrap();
+        assert!(is_link(&m), "a junction counts as a link");
+        // Even when `remove_dir` cannot take it, the contents stay.
+        clear(&link).unwrap();
+        assert!(fs::symlink_metadata(&link).is_err(), "the link is gone");
+        assert_eq!(fs::read_to_string(target.join(SKILL_FILE)).unwrap(), "keep");
+        assert!(target.join("deep").join("x.txt").is_file());
+    }
 
     struct Home {
         _dir: tempfile::TempDir,
