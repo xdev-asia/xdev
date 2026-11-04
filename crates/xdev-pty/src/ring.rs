@@ -56,13 +56,18 @@ impl Ring {
     /// first newline past the cut, so it does not open inside an escape
     /// sequence or a half line.
     pub fn since(&self, seq: u64) -> (Vec<u8>, u64) {
+        self.read(seq, usize::MAX)
+    }
+
+    /// `since`, at most `max` bytes of it.
+    pub fn read(&self, seq: u64, max: usize) -> (Vec<u8>, u64) {
         let start = self.start();
         if seq >= self.end {
             return (Vec::new(), 0);
         }
         if seq >= start {
             let skip = (seq - start) as usize;
-            return (self.buf.range(skip..).copied().collect(), 0);
+            return (self.buf.range(skip..).take(max).copied().collect(), 0);
         }
         let skip = if self.dropped == Some(b'\n') {
             0
@@ -72,7 +77,7 @@ impl Ring {
                 .position(|&b| b == b'\n')
                 .map_or(0, |i| i + 1)
         };
-        let bytes: Vec<u8> = self.buf.range(skip..).copied().collect();
+        let bytes: Vec<u8> = self.buf.range(skip..).take(max).copied().collect();
         (bytes, start - seq + skip as u64)
     }
 }
@@ -121,6 +126,13 @@ mod tests {
         r.push(b"e");
         assert_eq!(r.since(1), (b"bcde".to_vec(), 0));
         assert_eq!(r.since(5), (Vec::new(), 0));
+    }
+
+    #[test]
+    fn read_stops_at_max() {
+        let mut r = Ring::new(8);
+        r.push(b"abcdef");
+        assert_eq!(r.read(1, 2), (b"bc".to_vec(), 0));
     }
 
     #[test]
