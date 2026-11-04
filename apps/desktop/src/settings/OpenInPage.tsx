@@ -4,6 +4,7 @@ import type { JSX } from "react";
 import { toApiError, type ApiError, type OpenInApp } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
+import { SettingRow } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
 /** At most this many apps; the same limit `open_in_settings_put` checks. */
@@ -133,6 +134,7 @@ export function OpenInPage(props: SettingsSectionProps): JSX.Element {
   return (
     <div className="settings-page">
       {header}
+      <SettingRow id="openIn.apps" filter={props.filter}>
       <ul className="openin-list">
         {apps.map((app, i) => (
           <li key={app.id} className="settings-card openin-row" data-app={app.id}>
@@ -215,6 +217,7 @@ export function OpenInPage(props: SettingsSectionProps): JSX.Element {
         </button>
         {apps.length >= MAX_APPS && <span className="settings-hint">{t("openIn.limit", { count: MAX_APPS })}</span>}
       </div>
+      </SettingRow>
       {deleting && (
         <ConfirmDialog
           open

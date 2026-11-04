@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import { toApiError, type ApiError, type BranchPrefixMode, type GitSettings as Git } from "@/api";
 import { useI18n } from "@/i18n";
 import { previewPrefix } from "./branchPrefix";
+import { SettingRow, settingShown } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
 const MODES: BranchPrefixMode[] = ["git-username", "custom", "none"];
@@ -14,7 +15,7 @@ const PR_DEFAULTS = ["prDraft", "prGenerateOnOpen", "prOpenAfterCreate"] as cons
  * updates the local base, and the Source Control agent actions with the pull request defaults.
  */
 export function GitSettings(props: SettingsSectionProps): JSX.Element {
-  const { api } = props;
+  const { api, filter } = props;
   const { t } = useI18n();
   const [git, setGit] = useState<Git | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
@@ -85,6 +86,7 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
   return (
     <div className="settings-page">
       {header}
+      <SettingRow id="git.prefix" filter={filter}>
       <h4 className="settings-group" id="settings-git-prefix">
         {t("settings.git.prefix")}
       </h4>
@@ -125,6 +127,8 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
           </label>
         </div>
       )}
+      </SettingRow>
+      <SettingRow id="git.compare" filter={filter}>
       <h4 className="settings-group" id="settings-git-compare">
         {t("settings.git.compare")}
       </h4>
@@ -144,6 +148,8 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
       <small id="settings-git-compare-hint" className="settings-hint">
         {t("settings.git.compareHint")}
       </small>
+      </SettingRow>
+      <SettingRow id="git.refresh" filter={filter}>
       <div className="settings-item settings-git-row">
         <div className="settings-git-text">
           <strong id="settings-git-refresh">{t("settings.git.refresh")}</strong>
@@ -158,9 +164,13 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
           onClick={() => change({ refreshLocalBaseOnCreate: !git.refreshLocalBaseOnCreate })}
         />
       </div>
-      <h4 className="settings-group" id="settings-git-ai-title">
-        {t("settings.git.ai.title")}
-      </h4>
+      </SettingRow>
+      {(settingShown(filter, "git.ai") || settingShown(filter, "git.pr")) && (
+        <h4 className="settings-group" id="settings-git-ai-title">
+          {t("settings.git.ai.title")}
+        </h4>
+      )}
+      <SettingRow id="git.ai" filter={filter}>
       <div className="settings-item settings-git-row">
         <div className="settings-git-text">
           <strong id="settings-git-ai">{t("settings.git.ai.show")}</strong>
@@ -175,7 +185,9 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
           onClick={() => change({ sourceControlAi: !git.sourceControlAi })}
         />
       </div>
+      </SettingRow>
       {git.sourceControlAi && (
+        <SettingRow id="git.pr" filter={filter}>
         <fieldset className="settings-git-checks">
           <legend>{t("settings.git.pr.title")}</legend>
           {PR_DEFAULTS.map((key) => (
@@ -185,6 +197,7 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
             </label>
           ))}
         </fieldset>
+        </SettingRow>
       )}
       {saveError && (
         <p className="error-text" role="alert">

@@ -13,6 +13,7 @@ import { useProfiles } from "@/agents/profileStore";
 import { patchStatusSettings, setStatusSettings } from "@/status/statusSettings";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
+import { SettingGroup, SettingRow } from "@/settings/SettingRow";
 import type { SettingsSectionProps } from "@/settings/sections";
 import { freeId } from "./agentForm";
 import { ProfileEditor } from "./ProfileEditor";
@@ -20,7 +21,7 @@ import { ShellsSection } from "./ShellsSection";
 
 /** Settings → Agents: the Approvals switch, defaults, agent profiles, shells and Status hooks. */
 export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settings: StatusSettings): void }): JSX.Element {
-  const { api } = props;
+  const { api, filter } = props;
   const { t } = useI18n();
   const store = useProfiles();
   const [view, setView] = useState<ProfilesView | null>(null);
@@ -135,6 +136,7 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
         </p>
       )}
 
+      <SettingRow id="agents.approvals" filter={filter}>
       <h4 className="settings-group">{t("settings.agents.approvals")}</h4>
       <div className="agent-seg" role="group" aria-label={t("settings.agents.approvals")}>
         <button type="button" aria-pressed={current.approvals === "ask"} disabled={busy} onClick={() => pickApprovals("ask")}>
@@ -151,9 +153,12 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
         </button>
       </div>
       <p className="settings-empty">{t(`settings.agents.approvals.${current.approvals}Hint`)}</p>
+      </SettingRow>
 
+      <SettingGroup ids={["agents.defaultAgent", "agents.defaultShell"]} filter={filter}>
       <h4 className="settings-group">{t("settings.agents.defaults")}</h4>
       <div className="ws-fields">
+        <SettingRow id="agents.defaultAgent" filter={filter}>
         <label className="ws-field">
           <span>{t("settings.agents.defaultAgent")}</span>
           <select
@@ -169,6 +174,8 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
             ))}
           </select>
         </label>
+        </SettingRow>
+        <SettingRow id="agents.defaultShell" filter={filter}>
         <label className="ws-field">
           <span>{t("settings.agents.defaultShell")}</span>
           <select
@@ -184,8 +191,11 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
             ))}
           </select>
         </label>
+        </SettingRow>
       </div>
+      </SettingGroup>
 
+      <SettingRow id="agents.profiles" filter={filter}>
       <h4 className="settings-group">{t("settings.agents.profiles")}</h4>
       <ul className="settings-list">
         {current.profiles.map((p) => (
@@ -223,14 +233,18 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
           </button>
         </div>
       )}
+      </SettingRow>
 
-      <ShellsSection
-        shells={current.shells}
-        busy={busy}
-        onAdd={(s) => void act(() => api.shellPut(s))}
-        onRemove={(id) => void act(() => api.shellRemove(id))}
-      />
+      <SettingRow id="agents.shells" filter={filter}>
+        <ShellsSection
+          shells={current.shells}
+          busy={busy}
+          onAdd={(s) => void act(() => api.shellPut(s))}
+          onRemove={(id) => void act(() => api.shellRemove(id))}
+        />
+      </SettingRow>
 
+      <SettingRow id="agents.statusHooks" filter={filter}>
       <h4 className="settings-group">{t("settings.agents.statusHooks")}</h4>
       <ul className="settings-list" data-section="status-hooks">
         <li className="settings-item">
@@ -251,6 +265,7 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
         </li>
       </ul>
       <p className="settings-empty">{t("settings.agents.statusHooks.hint")}</p>
+      </SettingRow>
 
       <ConfirmDialog
         open={confirmSkip}

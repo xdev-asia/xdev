@@ -6,6 +6,7 @@ import { setKeybindingsText, setKeySettings, useBindings } from "@/keys/bindings
 import { serializeKeybindings } from "@/keys/keybindingsFile";
 import type { ActionId } from "@/keys/keymap";
 import type { ShortcutGroup } from "@/keys/registry";
+import { SettingRow } from "@/settings/SettingRow";
 import type { SettingsSectionProps } from "@/settings/sections";
 import { ShortcutRecorder, type RecorderClash } from "./ShortcutRecorder";
 import {
@@ -149,6 +150,7 @@ export function ShortcutsPage(props: SettingsSectionProps): JSX.Element {
         <p>{t("keys.page.intro")}</p>
       </header>
 
+      <SettingRow id="keys.page" filter={props.filter}>
       <div className="settings-row keys-file">
         <span className="settings-path">{state.path || t("keys.page.noFile")}</span>
         <button type="button" className="btn-secondary" onClick={() => void api.keybindingsReveal().catch((e) => setError(toApiError(e).code))}>
@@ -230,6 +232,7 @@ export function ShortcutsPage(props: SettingsSectionProps): JSX.Element {
           </section>
         );
       })}
+      </SettingRow>
     </div>
   );
 }
