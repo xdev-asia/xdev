@@ -11,7 +11,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, mpsc};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tauri::{AppHandle, State};
 use xdev_orch::{FailedStage, OrchError, SkillStatus, Store};
 
@@ -492,8 +492,48 @@ fn to_value<T: Serialize>(v: &T) -> Result<Value, AppError> {
     serde_json::to_value(v).map_err(|e| AppError::new("store", e.to_string()))
 }
 
+/// Verbs that change nothing; a retry id is not kept for them.
+const READ_ONLY: &[&str] = &[
+    "run-current",
+    "run-list",
+    "run-show",
+    "task-show",
+    "task-list",
+    "worker-show",
+    "worker-list",
+    "gate-list",
+    "read",
+    "request-show",
+];
+
 /// `orchestration.<verb>`; a verb that is not built answers `unsupported`.
+/// A request carrying `retryRequest` is answered once: a repeat returns the
+/// stored answer and does nothing again.
 pub fn handle(
+    ctx: &Ctx<'_>,
+    req: &Request,
+    caller: &Caller,
+    gone: &dyn Fn() -> bool,
+) -> Result<Value, AppError> {
+    let verb = req
+        .method
+        .strip_prefix("orchestration.")
+        .unwrap_or_default();
+    let Some(id) = text_param(req, "retryRequest").filter(|_| !READ_ONLY.contains(&verb)) else {
+        return handle_verb(ctx, req, caller, gone);
+    };
+    if let Some(r) = ctx.orch.with_store(ctx.data, |s| s.receipt_get(&id))? {
+        return serde_json::from_str(&r.answer).map_err(|e| AppError::new("store", e.to_string()));
+    }
+    let answer = handle_verb(ctx, req, caller, gone)?;
+    let text = answer.to_string();
+    ctx.orch.with_store(ctx.data, |s| {
+        s.receipt_put(&id, &req.method, &text, ctx.now_ms)
+    })?;
+    Ok(answer)
+}
+
+fn handle_verb(
     ctx: &Ctx<'_>,
     req: &Request,
     caller: &Caller,
@@ -523,6 +563,43 @@ pub fn handle(
             })?;
             let run = ctx.orch.with_store(ctx.data, |s| s.run_use(tab, &id))?;
             to_value(&run)
+        }
+        "reset" => {
+            let scope = if flag(req, "all") {
+                xdev_orch::ResetScope::All
+            } else if flag(req, "tasks") {
+                xdev_orch::ResetScope::Tasks
+            } else if flag(req, "messages") {
+                xdev_orch::ResetScope::Messages
+            } else {
+                return Err(AppError::new(
+                    "bad_request",
+                    "reset needs --all, --tasks or --messages",
+                ));
+            };
+            let counts = ctx.orch.with_store(ctx.data, |s| {
+                let run = match scope {
+                    xdev_orch::ResetScope::All => None,
+                    _ => Some(
+                        s.run_resolve(acting.run.as_deref(), acting.tab.as_deref())?
+                            .id,
+                    ),
+                };
+                s.reset(scope, run.as_deref())
+            })?;
+            to_value(&counts)
+        }
+        "request-show" => {
+            let id = text_param(req, "id")
+                .ok_or_else(|| AppError::new("bad_request", "request-show needs a request id"))?;
+            let r = ctx
+                .orch
+                .with_store(ctx.data, |s| s.receipt_get(&id))?
+                .ok_or_else(|| AppError::new("not_found", format!("no request {id}")))?;
+            let answer: Value = serde_json::from_str(&r.answer).unwrap_or(Value::Null);
+            Ok(
+                json!({"id": r.request_id, "method": r.method, "answer": answer, "createdMs": r.created_ms}),
+            )
         }
         "run-current" => {
             let run = ctx.orch.with_store(ctx.data, |s| {
@@ -1211,7 +1288,6 @@ fn worker_start(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn an_answer_reaches_a_waiting_ask_and_a_late_one_is_ignored() {
@@ -1830,5 +1906,56 @@ line", "title": "A"}),
         let asked = events_named(&f, "orchestration://read-tab");
         assert_eq!(asked[0]["tab"], tab);
         assert_eq!(asked[0]["maxChars"], 50);
+    }
+
+    #[test]
+    fn a_retried_request_answers_once_and_request_show_remembers_it() {
+        let f = crate::cli_verbs::tests::fixture();
+        let call = |m: &str, p: Value| f.call(Some("p-lead"), &format!("orchestration.{m}"), p);
+        let first = call(
+            "run-create",
+            json!({"objective": "o", "retryRequest": "req-1"}),
+        )
+        .unwrap();
+        let again = call(
+            "run-create",
+            json!({"objective": "o", "retryRequest": "req-1"}),
+        )
+        .unwrap();
+        assert_eq!(first, again);
+        assert_eq!(
+            call("run-list", json!({}))
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        let shown = call("request-show", json!({"id": "req-1"})).unwrap();
+        assert_eq!(shown["method"], "orchestration.run-create");
+        assert_eq!(shown["answer"], first);
+        assert_eq!(
+            call("request-show", json!({"id": "nope"}))
+                .unwrap_err()
+                .code,
+            "not_found"
+        );
+    }
+
+    #[test]
+    fn reset_forgets_by_scope() {
+        let f = crate::cli_verbs::tests::fixture();
+        let call = |m: &str, p: Value| f.call(Some("p-lead"), &format!("orchestration.{m}"), p);
+        call("run-create", json!({"objective": "o"})).unwrap();
+        assert_eq!(call("reset", json!({})).unwrap_err().code, "bad_request");
+        let n = call("reset", json!({"all": true})).unwrap();
+        assert_eq!(n["runs"], 1);
+        assert!(
+            call("run-list", json!({}))
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
     }
 }
