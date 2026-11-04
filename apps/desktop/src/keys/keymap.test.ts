@@ -396,3 +396,16 @@ it("history chords are labelled for each platform", () => {
   expect(chordLabel("worktree.history.back", true)).toBe("⌥⌘←");
   expect(chordLabel("worktree.history.forward", true)).toBe("⌥⌘→");
 });
+
+it("a history key runs its handler, and passes on when there is nowhere to go", () => {
+  const back = vi.fn(() => true);
+  const forward = vi.fn(() => false);
+  const { press } = setup({ "worktree.history.back": back, "worktree.history.forward": forward });
+  const mod = { ctrlKey: true, altKey: true }; // Windows / Linux; setup stubs a non-Mac platform
+  const done = press({ ...mod, code: "ArrowLeft" });
+  expect(back).toHaveBeenCalledTimes(1);
+  expect(done.event.defaultPrevented).toBe(true);
+  const passed = press({ ...mod, code: "ArrowRight" });
+  expect(forward).toHaveBeenCalledTimes(1);
+  expect(passed.event.defaultPrevented).toBe(false);
+});
