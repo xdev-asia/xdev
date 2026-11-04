@@ -71,6 +71,39 @@ pub fn slug(name: &str) -> String {
     }
 }
 
+/// Most folders a sparse list holds.
+pub const SPARSE_MAX: usize = 50;
+
+/// The cone folders for a sparse checkout, normalized: backslashes as `/`,
+/// trimmed, no leading `./` or trailing `/`, duplicates dropped. `None` when
+/// one is absolute, has a `..` or `.` part, starts with `-`, holds a control
+/// char, or the list is past `SPARSE_MAX`.
+pub fn sparse_dirs(dirs: &[String]) -> Option<Vec<String>> {
+    let mut out: Vec<String> = Vec::new();
+    for raw in dirs {
+        let mut d = raw.trim().replace('\\', "/");
+        while let Some(rest) = d.strip_prefix("./") {
+            d = rest.to_owned();
+        }
+        let d = d.trim_end_matches('/');
+        if d.is_empty() {
+            continue;
+        }
+        let bad = d.starts_with('-')
+            || d.starts_with('/')
+            || d.chars().nth(1) == Some(':')
+            || d.chars().any(char::is_control)
+            || d.split('/').any(|p| matches!(p, "" | "." | ".."));
+        if bad {
+            return None;
+        }
+        if !out.iter().any(|o| o == d) {
+            out.push(d.to_owned());
+        }
+    }
+    (out.len() <= SPARSE_MAX).then_some(out)
+}
+
 /// The branch leaf for work that starts with `prompt`: its first 4 words
 /// through the rules of `slug`. Words with no ASCII letter or digit are
 /// dropped; `""` when no word is usable.
@@ -157,6 +190,27 @@ pub enum PrefixIssue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn dirs(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn sparse_dirs_normalizes_and_refuses() {
+        assert_eq!(
+            sparse_dirs(&dirs(&[" src/ ", "./docs", "a\\b", "src", ""])),
+            Some(dirs(&["src", "docs", "a/b"]))
+        );
+        assert_eq!(sparse_dirs(&[]), Some(vec![]));
+        for bad in [
+            "..", "a/../b", "/abs", "C:/x", "-rf", "a//b", "a/./b", "a\u{7}",
+        ] {
+            assert_eq!(sparse_dirs(&dirs(&[bad])), None, "{bad}");
+        }
+        let many: Vec<String> = (0..51).map(|n| format!("d{n}")).collect();
+        assert_eq!(sparse_dirs(&many), None);
+        assert!(sparse_dirs(&many[..50]).is_some());
+    }
 
     #[test]
     fn suffixed_counts_from_two_and_keeps_the_suffix_inside_the_cap() {

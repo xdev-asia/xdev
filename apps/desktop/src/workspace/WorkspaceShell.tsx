@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type CreateRequest, type PrSummary } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
@@ -40,7 +40,7 @@ import { ActivityPanel, type ActivityTab } from "@/activity/ActivityPanel";
 import { ActivityFeed } from "@/activity/feed";
 import { ChecksPanel } from "./ChecksPanel";
 import { IssuesPanel } from "@/issues/IssuesPanel";
-import { CreateWorktreeDialog, type AgentChoice, type CreateExtra } from "./CreateWorktreeDialog";
+import { CreateWorktreeDialog, type AgentChoice, type CreateExtra, type CreateTab } from "./CreateWorktreeDialog";
 import { DetailsDialog } from "./DetailsDialog";
 import { RenameBranchDialog } from "./RenameBranchDialog";
 import { PendingCreates, type CreateArgs } from "./pendingCreates";
@@ -56,6 +56,7 @@ import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { sendCheckFix, sendFix } from "./fixAgent";
 import { sendToAgentTab, sendToOpenedTab } from "./agentPrompt";
 import { issuePrompt, issueWorkItem, issueWorktreeName, uniqueWorktreeName } from "@/issues/issueStart";
+import { prWorkItem, prWorktreeName } from "./createSource";
 import { effectiveIssueCommand, issueTemplateVars, renderIssueCommand } from "@/issues/issueTemplate";
 import { sendTarget } from "./sendTarget";
 import { SetupCard, type SetupCardState } from "./SetupCard";
@@ -174,18 +175,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // A new `seq` asks the sessions panel for the search box, or to mark one session.
   const [sessionsAsk, setSessionsAsk] = useState<{ seq: number; focus: boolean; reveal: { key: string; seq: number } | null }>({ seq: 0, focus: false, reveal: null });
   const [creating, setCreating] = useState<Creating | null>(null);
+  // The tab the create dialog was last on, for the next opening of this shell.
+  const createTab = useRef<CreateTab>("name");
   // Creates run after the dialog has closed; what a finished one does is read from this render.
   const afterCreate = useRef<{ api: Api; created(wt: WorktreeView, args: CreateArgs): void; reload(): void; linked(shared: Linked[]): void }>({ api, created() {}, reload() {}, linked() {} });
   const [pending] = useState(
     () =>
       new PendingCreates({
-        create: (repoId, name, from) => afterCreate.current.api.worktreeCreate(repoId, name, from).then((made) => {
+        create: (repoId, name, from, request) => afterCreate.current.api.worktreeCreate(repoId, name, from, request).then((made) => {
           afterCreate.current.linked(made.shared);
           return made.worktree;
         }),
         // Cancel was the go-ahead; a fresh worktree is clean, so its branch goes too.
         remove: (path, force) => afterCreate.current.api.worktreeRemove(path, force, true).finally(() => afterCreate.current.reload()),
         onCreated: (wt, args) => afterCreate.current.created(wt, args),
+        discard: (repoId, branch) => afterCreate.current.api.prBranchDiscard(repoId, branch),
       }),
   );
   useSyncExternalStore(
@@ -1036,9 +1040,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
 
   // The dialog closes at once; the create runs as a row in the list until it finishes or fails.
-  function create(repoId: string, name: string, from: string | null, extra?: CreateExtra): void {
-    setCreating(null);
-    pending.start({ repoId, name, from, ...(extra ? { extra } : {}) });
+  function create(repoId: string, name: string, from: string | null, extra?: CreateExtra, request?: CreateRequest, keepOpen = false, discardBranch?: string): void {
+    if (!keepOpen) setCreating(null);
+    pending.start({ repoId, name, from, ...(extra ? { extra } : {}), ...(request ? { request } : {}), ...(discardBranch ? { discardBranch } : {}) });
   }
 
   // The issue becomes the worktree: named from it, linked as its work item, sent to the default agent.
@@ -1060,6 +1064,20 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         item: issueWorkItem(issue),
         prompt: template === null ? issuePrompt(full, t) : renderIssueCommand(template, issueTemplateVars(full, repo?.shortName ?? "", t)),
       });
+    } catch (e) {
+      setNotice(toApiError(e).code);
+    }
+  }
+
+  // The pull request becomes the worktree: its branch is put on a new worktree, linked as its work item, sent to the default agent.
+  async function startFromPr(repoId: string, pr: PrSummary): Promise<void> {
+    try {
+      const { branch, fetched } = await api.prBranch(repoId, pr.number);
+      const repo = repos?.find((r) => r.id === repoId);
+      const taken = new Set((repo?.worktrees ?? []).flatMap((w) => [w.name, w.branch ?? ""]));
+      const name = uniqueWorktreeName(prWorktreeName(pr), taken);
+      const view = await api.profiles().catch(() => null);
+      create(repoId, name, null, { title: pr.title, agent: view?.defaultAgent ?? null, setDefault: false, parent: null, item: prWorkItem(pr) }, { existing: branch, sparse: [] }, false, fetched ? branch : undefined);
     } catch (e) {
       setNotice(toApiError(e).code);
     }
@@ -1088,6 +1106,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (extra.title !== null) patch.title = extra.title;
     if (extra.parent !== null) patch.parent = extra.parent;
     if (extra.item !== null) patch.item = extra.item;
+    if (extra.note) patch.comment = extra.note;
     try {
       if (Object.keys(patch).length > 0) await api.worktreeDetails(path, patch);
       if (extra.setDefault && extra.agent !== null) {
@@ -1864,7 +1883,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           agents={creating.agents}
           defaultAgent={creating.defaultAgent}
           namePreview={api.worktreeNamePreview}
-          onCreate={(repoId, name, from, extra) => create(repoId, name, from, extra)}
+          branches={api.worktreeBranches}
+          api={api}
+          initialTab={createTab.current}
+          onTabChange={(tab) => (createTab.current = tab)}
+          onStartPr={(repoId, pr) => {
+            setCreating(null);
+            void startFromPr(repoId, pr);
+          }}
+          onCreate={(repoId, name, from, extra, request, more) => create(repoId, name, from, extra, request, more)}
           resolveIssue={(repoId, text) => api.issueResolve(repoId, text)}
           onStartIssue={(repoId, issue) => {
             setCreating(null);
@@ -2004,6 +2031,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       )}
       {editing && (
         <DetailsDialog
+          api={api}
+          repoId={repos?.find((r) => r.worktrees.some((w) => w.path === editing.worktree.path))?.id ?? ""}
           worktree={editing.worktree}
           siblings={repos?.find((r) => r.worktrees.some((w) => w.path === editing.worktree.path))?.worktrees ?? []}
           busy={editing.busy}

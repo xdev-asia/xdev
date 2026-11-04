@@ -100,6 +100,13 @@ import type {
   IssueDetail,
   IssueQuery,
   IssueState,
+  IssueDraft,
+  PrSummary,
+  PrBranch,
+  PrFilter,
+  PrQuery,
+  ProjectSummary,
+  CreateRequest,
   ShipView,
   RepoHooks,
   HookKind,
@@ -269,6 +276,13 @@ export type {
   IssueDetail,
   IssueQuery,
   IssueState,
+  IssueDraft,
+  PrSummary,
+  PrBranch,
+  PrFilter,
+  PrQuery,
+  ProjectSummary,
+  CreateRequest,
   ShipView,
   GitSettings,
   SourceControlGroupOrder,
@@ -420,6 +434,11 @@ export type ErrorCode =
   | "gh_failed"
   | "issue_not_found"
   | "issue_other_repo"
+  | "pr_not_found"
+  | "gh_scope"
+  | "bad_draft"
+  | "branch_in_use"
+  | "bad_sparse"
   | "draft_failed"
   | "unsupported_agent"
   | "bad_sound"
@@ -709,7 +728,9 @@ export interface Api {
   // base ref. A taken name is made as `name-2`, `-3`, … (the title keeps what was typed). Rejects
   // with `bad_name`, `branch_exists` (99 taken), `worktree_exists` or `bad_ref`, and with
   // `bad_branch_prefix` when Settings → Git holds a custom prefix no branch name can start with.
-  worktreeCreate(repoId: string, name: string, from: string | null): Promise<WorktreeCreated>;
+  // `request` reuses a local branch (`existing`; `branch_in_use`, `bad_ref`) and limits the checkout to
+  // cone folders (`sparse`; `bad_sparse`).
+  worktreeCreate(repoId: string, name: string, from: string | null, request?: CreateRequest): Promise<WorktreeCreated>;
   // What `worktreeCreate` would name the branch and folder for a typed name, without making
   // anything; `suffixed` when the name was taken and got `-2`, `-3`, …
   worktreeNamePreview(repoId: string, name: string): Promise<NamePreview>;
@@ -785,6 +806,21 @@ export interface Api {
   issueResolve(repoId: string, text: string): Promise<Issue | null>;
   // Opens the issue in the browser through `gh`.
   issueOpen(repoId: string, number: number): Promise<void>;
+  // Opens a new issue; rejects `bad_draft` for a blank or over-long title, or `gh_scope` when the
+  // login lacks a scope.
+  issueCreate(repoId: string, draft: IssueDraft): Promise<Issue>;
+  // Pull requests and Projects of the repo through `gh`. `prGet` rejects `pr_not_found`.
+  prsList(repoId: string, query: PrQuery): Promise<PrSummary[]>;
+  prGet(repoId: string, number: number): Promise<PrSummary>;
+  prOpen(repoId: string, number: number): Promise<void>;
+  // The local branch to start a pull request on, fetched when needed; `branch_in_use` when a
+  // worktree has it. A fork gives `pr-<n>`.
+  prBranch(repoId: string, number: number): Promise<PrBranch>;
+  // Deletes a branch `prBranch` fetched when the worktree on it was never made; a branch it did not
+  // fetch, or one a worktree has, is left alone.
+  prBranchDiscard(repoId: string, branch: string): Promise<void>;
+  projectsList(repoId: string): Promise<ProjectSummary[]>;
+  projectOpen(repoId: string, number: number): Promise<void>;
   // The log of the failed job behind a check's link (capped), for the Fix checks recipe; null when
   // `gh` cannot give it.
   worktreeCheckLog(path: string, link: string): Promise<string | null>;
@@ -1048,6 +1084,11 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "gh_failed",
   "issue_not_found",
   "issue_other_repo",
+  "pr_not_found",
+  "gh_scope",
+  "bad_draft",
+  "branch_in_use",
+  "bad_sparse",
   "draft_failed",
   "unsupported_agent",
   "bad_sound",
@@ -1240,7 +1281,7 @@ const tauriApi: Api = {
   vaultAdd: (path) => call("vault_add", { path }),
   vaultForget: (id) => call("vault_forget", { id }),
   vaultCreateDocs: (repoId, file, content) => call("vault_create_docs", { repoId, file, content }),
-  worktreeCreate: (repoId, name, from) => call("worktree_create", { repoId, name, from }),
+  worktreeCreate: (repoId, name, from, request) => call("worktree_create", { repoId, name, from, request: request ?? null }),
   worktreeNamePreview: (repoId, name) => call("worktree_name_preview", { repoId, name }),
   worktreePin: (path, pinned) => call("worktree_pin", { path, pinned }),
   worktreeRemove: (path, force, confirmed) => call("worktree_remove", { path, force, confirmed }),
@@ -1278,6 +1319,14 @@ const tauriApi: Api = {
   issueView: (repoId, number) => call("issue_view", { repoId, number }),
   issueResolve: (repoId, text) => call("issue_resolve", { repoId, text }),
   issueOpen: (repoId, number) => call("issue_open", { repoId, number }),
+  issueCreate: (repoId, draft) => call("issue_create", { repoId, draft }),
+  prsList: (repoId, query) => call("prs_list", { repoId, query }),
+  prGet: (repoId, number) => call("pr_get", { repoId, number }),
+  prOpen: (repoId, number) => call("pr_open", { repoId, number }),
+  prBranch: (repoId, number) => call("pr_branch", { repoId, number }),
+  prBranchDiscard: (repoId, branch) => call("pr_branch_discard", { repoId, branch }),
+  projectsList: (repoId) => call("projects_list", { repoId }),
+  projectOpen: (repoId, number) => call("project_open", { repoId, number }),
   worktreeCheckLog: (path, link) => call("worktree_check_log", { path, link }),
   worktreeDraftCommit: (path, files) => call("worktree_draft_commit", { path, files }),
   worktreeDraftPr: (path) => call("worktree_draft_pr", { path }),
