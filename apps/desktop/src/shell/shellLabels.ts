@@ -15,7 +15,6 @@ export const SHELL_LABEL_KEYS: Record<keyof ShellLabels, string> = {
   showAll: "shell.menu.showAll",
   quitEndAll: "shell.menu.quitEndAll",
   quit: "shell.menu.quit",
-  file: "shell.menu.file",
   edit: "shell.menu.edit",
   view: "shell.menu.view",
   window: "shell.menu.window",

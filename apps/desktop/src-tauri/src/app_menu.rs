@@ -124,7 +124,8 @@ pub fn menu_spec(l: &ShellLabels) -> Vec<Section> {
             vec![
                 Entry::Predefined(Predefined::About, Some(l.about.clone())),
                 Entry::Separator,
-                item(ID_SETTINGS, &l.settings, Some("CmdOrCtrl+,")),
+                // No native accelerator: the webview keymap owns `Mod+,` (`settings.open`), so a rebind holds.
+                item(ID_SETTINGS, &l.settings, None),
                 item(ID_UPDATES, &l.check_updates, None),
                 Entry::Separator,
                 system(Predefined::Services),
@@ -164,12 +165,15 @@ pub fn menu_spec(l: &ShellLabels) -> Vec<Section> {
                 item(ID_LEFT, &l.left_sidebar, None),
                 item(ID_RIGHT, &l.right_sidebar, None),
                 Entry::Separator,
-                system(Predefined::Fullscreen),
+                Entry::Predefined(Predefined::Fullscreen, Some(l.fullscreen.clone())),
             ],
         ),
         section(
             &l.window,
-            vec![system(Predefined::Minimize), system(Predefined::Maximize)],
+            vec![
+                Entry::Predefined(Predefined::Minimize, Some(l.minimize.clone())),
+                Entry::Predefined(Predefined::Maximize, Some(l.zoom.clone())),
+            ],
         ),
         section(
             &l.help,
@@ -325,7 +329,6 @@ mod tests {
                 _ => None,
             })
         };
-        assert_eq!(accel(ID_SETTINGS), Some(Some("CmdOrCtrl+,")));
         assert_eq!(accel(ID_QUIT), Some(Some("CmdOrCtrl+Q")));
         assert_eq!(accel(ID_DEVTOOLS), Some(Some("Alt+CmdOrCtrl+I")));
         assert_eq!(accel(ID_FORCE_RELOAD), Some(Some("CmdOrCtrl+Shift+R")));
@@ -334,11 +337,39 @@ mod tests {
     #[test]
     fn keys_the_webview_owns_are_not_bound_natively() {
         let l = ShellLabels::default();
-        for id in [ID_ZOOM_IN, ID_ZOOM_OUT, ID_ZOOM_RESET, ID_LEFT, ID_RIGHT] {
+        for id in [
+            ID_SETTINGS,
+            ID_ZOOM_IN,
+            ID_ZOOM_OUT,
+            ID_ZOOM_RESET,
+            ID_LEFT,
+            ID_RIGHT,
+        ] {
             let bound = flat(&menu_spec(&l)).into_iter().any(
                 |e| matches!(e, Entry::Item { id: found, accelerator: Some(_), .. } if found == id),
             );
             assert!(!bound, "{id}");
+        }
+    }
+
+    #[test]
+    fn window_and_view_items_take_the_translated_labels() {
+        let l = ShellLabels {
+            fullscreen: "F".into(),
+            minimize: "M".into(),
+            zoom: "Z".into(),
+            ..ShellLabels::default()
+        };
+        let entries = flat(&menu_spec(&l));
+        for (kind, text) in [
+            (Predefined::Fullscreen, "F"),
+            (Predefined::Minimize, "M"),
+            (Predefined::Maximize, "Z"),
+        ] {
+            assert!(
+                entries.contains(&Entry::Predefined(kind, Some(text.into()))),
+                "{kind:?}"
+            );
         }
     }
 
