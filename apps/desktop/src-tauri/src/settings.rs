@@ -1672,6 +1672,37 @@ mod tests {
     }
 
     #[test]
+    fn mac_option_as_alt_defaults_and_survives_bad_values() {
+        let old: TerminalSettings = serde_json::from_str(r#"{ "fontSize": 15 }"#).unwrap();
+        assert_eq!(old.mac_option_as_alt, MacOptionAsAlt::Auto);
+        for bad in [r#""meta""#, "3", "null"] {
+            let t: TerminalSettings = serde_json::from_str(&format!(
+                r#"{{ "fontSize": 15, "macOptionAsAlt": {bad}, "scrollback": 4000 }}"#
+            ))
+            .unwrap();
+            assert_eq!(t.mac_option_as_alt, MacOptionAsAlt::Auto, "{bad}");
+            assert_eq!(t.font_size, 15);
+            assert_eq!(t.scrollback, 4000);
+        }
+        for (value, text) in [
+            (MacOptionAsAlt::Auto, "auto"),
+            (MacOptionAsAlt::Both, "both"),
+            (MacOptionAsAlt::Left, "left"),
+            (MacOptionAsAlt::Right, "right"),
+            (MacOptionAsAlt::Off, "off"),
+        ] {
+            let t = TerminalSettings {
+                mac_option_as_alt: value,
+                ..TerminalSettings::default()
+            };
+            let json = serde_json::to_string(&t).unwrap();
+            assert!(json.contains(&format!(r#""macOptionAsAlt":"{text}""#)), "{json}");
+            let back: TerminalSettings = serde_json::from_str(&json).unwrap();
+            assert_eq!(back.mac_option_as_alt, value);
+        }
+    }
+
+    #[test]
     fn an_old_terminal_file_loads_every_new_field_at_its_default() {
         let t: TerminalSettings = serde_json::from_str(r#"{ "fontSize": 15 }"#).unwrap();
         let want = TerminalSettings {
