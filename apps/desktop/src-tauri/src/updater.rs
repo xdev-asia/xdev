@@ -165,13 +165,6 @@ fn needs_download(pending: Option<&str>, found: &str) -> bool {
     pending != Some(found)
 }
 
-fn update_error(e: tauri_plugin_updater::Error) -> CmdError {
-    CmdError {
-        code: "update",
-        detail: Some(e.to_string()),
-    }
-}
-
 /// Checks now and every [`RECHECK`] on its own thread, so a slow download
 /// never holds up the async runtime the commands share.
 pub fn start(app: AppHandle) {
@@ -270,21 +263,6 @@ pub fn install_pending(app: &AppHandle) {
 #[tauri::command]
 pub fn update_status(pending: State<'_, Pending>) -> Option<UpdateInfo> {
     pending.info()
-}
-
-/// Installs the pending update and relaunches. Resolves only when nothing was
-/// pending.
-#[tauri::command(async)]
-pub fn update_restart(app: AppHandle, pending: State<'_, Pending>) -> Result<(), CmdError> {
-    let Some((update, bytes)) = pending.take() else {
-        return Ok(());
-    };
-    if let Err(e) = update.install(&bytes) {
-        // Kept so a retry or quitting can still install it.
-        pending.put(update, bytes);
-        return Err(update_error(e));
-    }
-    app.restart()
 }
 
 /// A check the person asked for. `rc` also stores the release candidate

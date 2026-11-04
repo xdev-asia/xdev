@@ -588,7 +588,6 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     async quota() { return structuredClone(quotas); },
     async updateStatus() { return null; },
     async onUpdateReady() { return () => {}; },
-    async restartToUpdate() {},
     async appVersion() { return "0.0.0-dev"; },
     async notifyUpdate() {},
     async addAccount(name, provider, dir) {
