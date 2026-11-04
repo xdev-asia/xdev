@@ -18,6 +18,9 @@ pub const PREFIX: &str = "xdev-app";
 pub const ANSWER_WAIT: Duration = Duration::from_secs(30);
 /// Past a `terminal.wait`'s own timeout, how long the app has to answer it.
 pub const WAIT_MARGIN: Duration = Duration::from_secs(10);
+/// Past a `worker-start`'s readiness timeout, how long the app has to answer:
+/// more than its own slack for the UI plus the time a new worktree takes.
+pub const START_MARGIN: Duration = Duration::from_secs(30);
 
 /// An error the app answered with, or one met on the way there.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,8 +77,11 @@ pub fn answer_limit(method: &str, params: &Value) -> Duration {
         return Duration::from_secs(s).saturating_add(WAIT_MARGIN);
     }
     match (method, params["timeoutMs"].as_u64()) {
-        ("orchestration.check" | "orchestration.ask" | "orchestration.worker-start", Some(ms)) => {
+        ("orchestration.check" | "orchestration.ask", Some(ms)) => {
             Duration::from_millis(ms).saturating_add(WAIT_MARGIN)
+        }
+        ("orchestration.worker-start", Some(ms)) => {
+            Duration::from_millis(ms).saturating_add(START_MARGIN)
         }
         _ => ANSWER_WAIT,
     }
@@ -627,10 +633,14 @@ mod endpoint_tests {
         assert_eq!(wait, Duration::from_secs(60) + WAIT_MARGIN);
         assert_eq!(answer_limit("status", &json!({})), ANSWER_WAIT);
         assert_eq!(answer_limit("terminal.wait", &json!({})), ANSWER_WAIT);
-        for verb in ["check", "ask", "worker-start"] {
+        for (verb, margin) in [
+            ("check", WAIT_MARGIN),
+            ("ask", WAIT_MARGIN),
+            ("worker-start", START_MARGIN),
+        ] {
             let m = format!("orchestration.{verb}");
             let limit = answer_limit(&m, &json!({ "timeoutMs": 90_000 }));
-            assert_eq!(limit, Duration::from_secs(90) + WAIT_MARGIN, "{verb}");
+            assert_eq!(limit, Duration::from_secs(90) + margin, "{verb}");
             assert_eq!(answer_limit(&m, &json!({})), ANSWER_WAIT, "{verb}");
         }
     }
