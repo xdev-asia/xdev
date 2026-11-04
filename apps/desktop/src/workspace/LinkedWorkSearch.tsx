@@ -10,13 +10,15 @@ export const LINKED_DEBOUNCE_MS = 300;
 const LINKED_LIMIT = 10;
 const REASONS: readonly string[] = ["gh_missing", "gh_auth", "not_github"];
 
-export type LinkedRow = { id: string; title: string; meta: string; item: WorkItem };
+/** What a row came from, so a caller can start work from the issue or pull request itself. */
+export type LinkedSource = { kind: "issue"; issue: Issue } | { kind: "pr"; pr: PrSummary };
+export type LinkedRow = { id: string; title: string; meta: string; item: WorkItem; source: LinkedSource };
 
 /** One row per match: pull requests first, then issues; the id is the link so a pick maps back to it. */
 export function linkedRows(issues: Issue[], prs: PrSummary[]): LinkedRow[] {
   return [
-    ...prs.map((p) => ({ id: p.url, title: p.title, meta: `#${p.number} · ${p.state}`, item: { kind: "pr", url: p.url, title: p.title } as WorkItem })),
-    ...issues.map((i) => ({ id: i.url, title: i.title, meta: `#${i.number} · ${i.state}`, item: { kind: "issue", url: i.url, title: i.title } as WorkItem })),
+    ...prs.map((p) => ({ id: p.url, title: p.title, meta: `#${p.number} · ${p.state}`, item: { kind: "pr", url: p.url, title: p.title } as WorkItem, source: { kind: "pr", pr: p } as LinkedSource })),
+    ...issues.map((i) => ({ id: i.url, title: i.title, meta: `#${i.number} · ${i.state}`, item: { kind: "issue", url: i.url, title: i.title } as WorkItem, source: { kind: "issue", issue: i } as LinkedSource })),
   ];
 }
 
@@ -28,7 +30,7 @@ export function pastedItem(text: string): WorkItem | null {
 }
 
 /** Search the repo's issues and pull requests, or paste a link, and pick one as the linked work. */
-export function LinkedWorkSearch(props: { api: Api; repoId: string; onPick(item: WorkItem): void }): JSX.Element {
+export function LinkedWorkSearch(props: { api: Api; repoId: string; onPick(item: WorkItem, source: LinkedSource | null): void }): JSX.Element {
   const { api, repoId, onPick } = props;
   const { t } = useI18n();
   const [draft, setDraft] = useState("");
@@ -91,8 +93,9 @@ export function LinkedWorkSearch(props: { api: Api; repoId: string; onPick(item:
       items={items}
       status={status}
       onPick={(id) => {
-        const item = pasted && pasted.url === id ? pasted : rows.find((r) => r.id === id)?.item;
-        if (item) onPick(item);
+        if (pasted && pasted.url === id) return onPick(pasted, null);
+        const row = rows.find((r) => r.id === id);
+        if (row) onPick(row.item, row.source);
       }}
     />
   );

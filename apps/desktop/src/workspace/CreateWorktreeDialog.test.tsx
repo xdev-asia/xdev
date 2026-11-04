@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { translate } from "@/i18n";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
+import { createMockApi } from "@/mockApi";
 import { buildCreate, CreateWorktreeDialog, PreviewHint } from "./CreateWorktreeDialog";
 import { parseItem } from "./workItemInput";
 
@@ -98,4 +99,14 @@ it("offers the Branch tab only when branches can be read, and keeps a base field
   };
   expect(tabs()).toEqual(["name"]);
   expect(tabs(async () => [])).toEqual(["name", "branch"]);
+});
+
+it("offers the GitHub tab only with a search api and both start handlers", () => {
+  const repos = DEMO_WORKSPACE.repos;
+  const values = (extra: Record<string, unknown>) => {
+    const all = nodes(CreateWorktreeDialog({ repos, repoId: repos[0].id, onCreate: vi.fn(), onCancel: vi.fn(), ...extra } as never));
+    return all.find((n) => n.props.label === translate("en", "workspace.create.tab.label"))!.props.options.map((o: { value: string }) => o.value);
+  };
+  expect(values({})).toEqual(["name"]);
+  expect(values({ api: createMockApi({}), onStartIssue: vi.fn(), onStartPr: vi.fn() })).toEqual(["name", "github"]);
 });

@@ -1468,3 +1468,35 @@ it("reports its tabs to the app CLI and follows the endpoint's events", async ()
   await vi.waitFor(() => expect(sessions.tabs(OAK)).toHaveLength(before + 1));
   expect(sessions.tabs(OAK).at(-1)?.profileId).toBe("claude");
 });
+
+it("starting from a pull request puts its branch on a worktree, links it and opens the agent", async () => {
+  const api = createMockApi({});
+  await api.profilesDefaults("ask", "codex", null);
+  // The mock workspace does not know the branch the real prBranch fetches, so give it one it has.
+  vi.spyOn(api, "prBranch").mockResolvedValue("develop");
+  const create = vi.spyOn(api, "worktreeCreate");
+  const details = vi.spyOn(api, "worktreeDetails");
+  const view = await harness(api);
+  view.list().props.onCreate();
+  const pr = (await api.prsList("demo-xdev", { state: null, mine: false, needsReview: false, search: null, limit: null })).find((p) => p.number === 13)!;
+  view.of(CreateWorktreeDialog)[0].props.onStartPr("demo-xdev", pr);
+  expect(view.of(CreateWorktreeDialog)).toHaveLength(0);
+  await settle();
+  expect(create.mock.calls[0][3]).toEqual({ existing: "develop", sparse: [] });
+  expect(create.mock.calls[0][1]).toMatch(/^pr-13/);
+  await settle();
+  expect(details.mock.calls[0][1]).toEqual({ title: pr.title, item: { kind: "pr", url: pr.url, title: pr.title } });
+  const path = view.list().props.selected as string;
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  expect(sessions.tabs(path).map((t) => t.profileId)).toEqual(["codex"]);
+});
+
+it("remembers the tab the create dialog was left on", async () => {
+  const view = await harness(createMockApi({}));
+  view.list().props.onCreate();
+  expect(view.of(CreateWorktreeDialog)[0].props.initialTab).toBe("name");
+  view.of(CreateWorktreeDialog)[0].props.onTabChange("github");
+  view.of(CreateWorktreeDialog)[0].props.onCancel();
+  view.list().props.onCreate();
+  expect(view.of(CreateWorktreeDialog)[0].props.initialTab).toBe("github");
+});
