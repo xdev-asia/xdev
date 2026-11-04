@@ -39,6 +39,7 @@ import { RemoveRepoDialog } from "./RemoveRepoDialog";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { removeRepo } from "./removeRepo";
 import { VaultNav } from "./VaultNav";
+import type { AppId } from "@/shell/apps";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { sendToAgentTab } from "./agentPrompt";
 import { sendTarget } from "./sendTarget";
@@ -98,6 +99,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [docsMounted, setDocsMounted] = useState(false);
   // A request for the Agent kit to open a tab; a new `seq` is a new request.
   const [kitOpen, setKitOpen] = useState<{ tab: KitTab; seq: number } | null>(null);
+  // A request for the docs view to show one of its apps (the usage popover asks for Accounts).
+  const [appRequest, setAppRequest] = useState<{ app: AppId; seq: number } | null>(null);
   // The tab in front of each worktree, which is where a prompt from the Agent kit is typed.
   const [shownTab, setShownTab] = useState<Record<string, string | null>>({});
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -847,6 +850,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     show("docs");
   }
 
+  function openAccounts(): void {
+    setAppRequest((r) => ({ app: "accounts", seq: (r?.seq ?? 0) + 1 }));
+    show("docs");
+  }
+
   // The Kit shows a request once, then hands it back; a later mount of a host finds none waiting.
   function kitOpened(seq: number): void {
     setKitOpen((k) => (k && k.seq === seq ? null : k));
@@ -1248,7 +1256,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         </div>
 
         <div className="ws-docs" hidden={view !== "docs"}>
-          {docsMounted && <DocsApp key={docsKey} kit={{ worktree: current?.path ?? null, open: kitOpen, onOpened: kitOpened, onSendToAgent: sendToAgent, canSend: target(current?.path) !== null }} />}
+          {docsMounted && <DocsApp key={docsKey} appRequest={appRequest} kit={{ worktree: current?.path ?? null, open: kitOpen, onOpened: kitOpened, onSendToAgent: sendToAgent, canSend: target(current?.path) !== null }} />}
         </div>
 
         <div className="ws-settings" hidden={view !== "settings"}>
@@ -1275,6 +1283,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         waiting={waiting}
         version={pkg.version}
         onOpenUsage={openUsage}
+        onManageAccounts={openAccounts}
         hidden={view === "docs"}
       />
 
