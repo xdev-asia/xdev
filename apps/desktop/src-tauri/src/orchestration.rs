@@ -138,6 +138,8 @@ pub struct OrchHub {
 
 /// How long `check --wait` sleeps when the CLI sends no timeout.
 pub const WAIT_DEFAULT_MS: u64 = 120_000;
+/// How long a coordinator's `ask --wait` sleeps when the CLI sends no timeout.
+pub const ASK_WAIT_DEFAULT_MS: u64 = 600_000;
 /// The longest a wait may be asked to last.
 pub const WAIT_MAX_MS: u64 = 1_800_000;
 
@@ -574,6 +576,75 @@ pub fn handle(
             ctx.orch.notify_mail();
             to_value(&receipt)
         }
+        "gate-create" => {
+            let question = text_param(req, "question").unwrap_or_default();
+            let options = strings_param(req, "options");
+            let task = text_param(req, "task").unwrap_or_default();
+            let gate = ctx.orch.with_store(ctx.data, |s| {
+                let me = s.identity(acting.tab.as_deref(), acting.run.as_deref())?;
+                s.gate_create(
+                    &me.run_id,
+                    &task,
+                    &question,
+                    &options,
+                    &me.address,
+                    ctx.now_ms,
+                )
+            })?;
+            to_value(&gate)
+        }
+        "gate-resolve" => {
+            let id = text_param(req, "id")
+                .ok_or_else(|| AppError::new("bad_request", "gate-resolve needs a gate id"))?;
+            let resolution = text_param(req, "resolution")
+                .ok_or_else(|| AppError::new("bad_request", "gate-resolve needs --resolution"))?;
+            let gate = ctx
+                .orch
+                .with_store(ctx.data, |s| s.gate_resolve(&id, &resolution, ctx.now_ms))?;
+            ctx.orch.notify_mail();
+            to_value(&gate)
+        }
+        "gate-list" => {
+            let pending = flag(req, "pending");
+            let gates = ctx.orch.with_store(ctx.data, |s| {
+                let me = s.identity(acting.tab.as_deref(), acting.run.as_deref())?;
+                s.gate_list(&me.run_id, pending)
+            })?;
+            to_value(&gates)
+        }
+        "ask" => {
+            let answer = match text_param(req, "resume") {
+                Some(gate) => ctx.orch.with_store(ctx.data, |s| s.ask_resume(&gate))?,
+                None => {
+                    let question = text_param(req, "question").unwrap_or_default();
+                    let options = strings_param(req, "options");
+                    let (me, answer) = ctx.orch.with_store(ctx.data, |s| {
+                        let me = s.identity(acting.tab.as_deref(), acting.run.as_deref())?;
+                        let a = s.ask(&me, &question, &options, ctx.now_ms)?;
+                        Ok((me, a))
+                    })?;
+                    if me.dispatch.is_some() {
+                        ctx.orch.notify_mail();
+                        return to_value(&answer);
+                    }
+                    answer
+                }
+            };
+            if !answer.pending || !flag(req, "wait") {
+                return to_value(&answer);
+            }
+            let gate = answer.gate_id.clone();
+            let mut limit = wait_param(req);
+            if req.params.get("timeoutMs").is_none() {
+                limit = Duration::from_millis(ASK_WAIT_DEFAULT_MS);
+            }
+            ctx.orch
+                .wait_mail(&format!("gate:{gate}"), limit, gone, || {
+                    let a = ctx.orch.with_store(ctx.data, |s| s.ask_resume(&gate))?;
+                    Ok(!a.pending)
+                })?;
+            to_value(&ctx.orch.with_store(ctx.data, |s| s.ask_resume(&gate))?)
+        }
         other => Err(AppError::new(
             "unsupported",
             format!("orchestration {other} is not built yet"),
@@ -781,6 +852,69 @@ mod tests {
             assert!(!waiting.join().unwrap().unwrap());
         });
         assert!(!hub.has_waiter("run:r"));
+    }
+
+    #[test]
+    fn gates_ask_and_resolve_across_a_waiting_coordinator() {
+        let f = crate::cli_verbs::tests::fixture();
+        let call =
+            |tab: &str, m: &str, p: Value| f.call(Some(tab), &format!("orchestration.{m}"), p);
+        call("p-lead", "run-create", json!({"objective": "o"})).unwrap();
+
+        let g = call(
+            "p-lead",
+            "gate-create",
+            json!({"question": "ship?", "options": ["yes", "no"]}),
+        )
+        .unwrap();
+        assert_eq!(g["status"], "pending");
+        assert_eq!(g["options"], json!(["yes", "no"]));
+        let bad = call("p-lead", "gate-create", json!({"question": ""}));
+        assert_eq!(bad.unwrap_err().code, "bad_request");
+        let list = call("p-lead", "gate-list", json!({"pending": true})).unwrap();
+        assert_eq!(list.as_array().unwrap().len(), 1);
+
+        // Not waiting: pending at once, then resumable.
+        let a = call("p-lead", "ask", json!({"question": "go?"})).unwrap();
+        assert_eq!(a["pending"], true);
+        let timed = call(
+            "p-lead",
+            "ask",
+            json!({"resume": a["gateId"], "wait": true, "timeoutMs": 200}),
+        )
+        .unwrap();
+        assert_eq!(timed["pending"], true);
+
+        // Waiting: resolved from another thread while the ask sleeps.
+        std::thread::scope(|sc| {
+            sc.spawn(|| {
+                std::thread::sleep(Duration::from_millis(300));
+                call(
+                    "p-child",
+                    "gate-resolve",
+                    json!({"id": a["gateId"], "resolution": "go"}),
+                )
+                .unwrap();
+            });
+            let got = call(
+                "p-lead",
+                "ask",
+                json!({"resume": a["gateId"], "wait": true, "timeoutMs": 10_000}),
+            )
+            .unwrap();
+            assert_eq!(got["pending"], false);
+            assert_eq!(got["resolution"], "go");
+        });
+        let again = call(
+            "p-lead",
+            "gate-resolve",
+            json!({"id": a["gateId"], "resolution": "x"}),
+        );
+        assert_eq!(again.unwrap_err().code, "invalid_transition");
+        let missing = call("p-lead", "ask", json!({"resume": "gate_nope"}));
+        assert_eq!(missing.unwrap_err().code, "not_found");
+        let list = call("p-lead", "gate-list", json!({"pending": true})).unwrap();
+        assert_eq!(list.as_array().unwrap().len(), 1);
     }
 
     #[test]

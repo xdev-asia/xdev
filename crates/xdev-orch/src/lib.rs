@@ -3,6 +3,7 @@
 //! only connection and talks to the UI and the PTYs around these functions.
 
 pub mod error;
+pub mod gates;
 pub mod ids;
 pub mod mail;
 pub mod model;
@@ -13,6 +14,7 @@ pub mod store;
 pub mod tasks;
 
 pub use error::OrchError;
+pub use gates::AskAnswer;
 pub use mail::{CheckOpts, Identity, InboxRow, NewMessage, SendReceipt};
 pub use model::*;
 pub use runs::RunDetail;
