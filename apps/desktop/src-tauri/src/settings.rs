@@ -1,3 +1,4 @@
+use crate::applog;
 use std::fs;
 use std::io;
 use std::ops::RangeInclusive;
@@ -1642,7 +1643,10 @@ where
         .filter_map(|item| match serde_json::from_value(item) {
             Ok(item) => Some(item),
             Err(e) => {
-                eprintln!("settings: dropped a list entry that does not parse: {e}");
+                applog::warn(
+                    "settings",
+                    &format!("dropped a list entry that does not parse: {e}"),
+                );
                 None
             }
         })
@@ -1691,9 +1695,12 @@ fn migrate(value: &mut serde_json::Value, steps: &[fn(&mut serde_json::Value)]) 
 fn warn_newer(path: &Path, version: u32) {
     static WARNED: AtomicBool = AtomicBool::new(false);
     if !WARNED.swap(true, Ordering::Relaxed) {
-        eprintln!(
-            "settings: {} is version {version}, newer than this build's {VERSION};              keys this build does not know are dropped on the next save",
-            path.display()
+        applog::warn(
+            "settings",
+            &format!(
+                "{} is version {version}, newer than this build's {VERSION}; keys this build does not know are dropped on the next save",
+                path.display()
+            ),
         );
     }
 }

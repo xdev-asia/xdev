@@ -3,6 +3,7 @@
 //! registry holds `WorkspaceLock` from load to save, so two commands never
 //! write over each other.
 
+use crate::applog;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Read};
@@ -204,7 +205,7 @@ pub fn start_migrations(app: &AppHandle) {
         return;
     };
     if let Err(e) = migrate_last_vault(&data, &app.state::<WorkspaceLock>(), &store) {
-        eprintln!("last vault migration: {}", e.code);
+        applog::warn("last vault migration", e.code);
     }
 }
 
@@ -227,7 +228,7 @@ pub fn start_sweep(app: &AppHandle) {
             return;
         };
         if let Err(e) = sweep_staging(data, &lock, clock().0) {
-            eprintln!("staging sweep: {}", e.code);
+            applog::warn("staging sweep", e.code);
         }
     });
 }

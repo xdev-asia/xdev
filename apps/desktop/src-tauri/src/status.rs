@@ -1,6 +1,7 @@
 //! How agent status reaches the person outside the panes: its settings, OS
 //! notifications, the taskbar or dock badge and the person's own sound.
 
+use crate::applog;
 use std::collections::VecDeque;
 use std::fs;
 use std::io;
@@ -83,7 +84,7 @@ pub fn listen_clicks(app: &AppHandle) {
         }
     });
     if let Err(e) = registered {
-        eprintln!("notification clicks: {e}");
+        applog::warn("notification clicks", &e.to_string());
     }
 }
 
@@ -216,7 +217,7 @@ pub fn status_settings_put(
     if let Some(local) = state.local_dir.as_deref()
         && let Err(e) = xdev_agent::set_hooks_off(local, !stored.hooks)
     {
-        eprintln!("hooks marker: {e}");
+        applog::warn("hooks marker", &e.to_string());
     }
     Ok(stored)
 }
@@ -225,7 +226,7 @@ pub fn status_settings_put(
 /// Test button reports. Logged too.
 fn shown_or_error(result: Result<(), impl std::fmt::Display>) -> Result<(), CmdError> {
     result.map_err(|e| {
-        eprintln!("status notification: {e}");
+        applog::warn("status notification", &e.to_string());
         io_error(io::Error::other(e.to_string()))
     })
 }
@@ -268,7 +269,7 @@ pub fn status_badge(app: AppHandle, count: u32) {
     #[cfg(not(windows))]
     let result = window.set_badge_count((count > 0).then_some(i64::from(count)));
     if let Err(e) = result {
-        eprintln!("status badge: {e}");
+        applog::warn("status badge", &e.to_string());
     }
 }
 

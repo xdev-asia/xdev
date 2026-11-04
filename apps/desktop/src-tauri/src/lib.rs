@@ -3,6 +3,7 @@ mod agent_path;
 mod agent_sessions;
 mod ai_keys;
 mod app_menu;
+mod applog;
 mod atomic;
 mod automations;
 #[cfg(test)]
@@ -37,7 +38,6 @@ mod pty;
 mod ptyd;
 mod quick_commands;
 mod recipes;
-#[allow(dead_code)]
 mod redact;
 mod reveal;
 mod review;
@@ -73,6 +73,7 @@ pub fn run() {
     // Moved in `setup`: a second instance exits during plugin init and must not run it.
     let index_dirs = data_dir.clone().zip(local_dir.clone());
     let dev_flag = std::env::var("XDEV_DEV_DEEP_LINK").ok();
+    applog::init(local_dir.as_deref());
     let sync_local = local_dir.clone();
     let ptyd_local = local_dir.clone();
     let endpoint_local = local_dir.clone();
@@ -162,7 +163,7 @@ pub fn run() {
             if let (Some(store), Some(local)) = (settings_store::store(app.handle()), &sync_local)
                 && let Err(e) = status::sync_hooks_marker(&store, local)
             {
-                eprintln!("hooks marker: {e}");
+                applog::warn("hooks marker", &e.to_string());
             }
             status::listen_clicks(app.handle());
             orchestration::start_pump(app.handle().clone());
@@ -184,7 +185,7 @@ pub fn run() {
                     Ok(running) => {
                         app.manage(running);
                     }
-                    Err(e) => eprintln!("app endpoint: {e}"),
+                    Err(e) => applog::warn("app endpoint", &e.to_string()),
                 }
             }
             // Without it an edit on disk shows only after a restart.
@@ -193,7 +194,7 @@ pub fn run() {
                 Ok(watcher) => {
                     app.manage(watcher);
                 }
-                Err(e) => eprintln!("keybindings watcher: {e}"),
+                Err(e) => applog::warn("keybindings watcher", &e.to_string()),
             }
             // Without the watcher panes still run; they just show no status.
             if let Some(dir) = hooks_dir {
@@ -201,7 +202,7 @@ pub fn run() {
                     Ok(watcher) => {
                         app.manage(watcher);
                     }
-                    Err(e) => eprintln!("hook watcher: {e}"),
+                    Err(e) => applog::warn("hook watcher", &e.to_string()),
                 }
             }
             Ok(())

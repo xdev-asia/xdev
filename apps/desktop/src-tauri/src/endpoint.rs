@@ -3,6 +3,7 @@
 //! The first line of a connection is a hello with the token; then each
 //! line is a `Request` and gets one `Response` line, in order.
 
+use crate::applog;
 use std::fs;
 use std::io::{self, BufRead, BufReader, ErrorKind, Write};
 use std::path::{Path, PathBuf};
@@ -227,7 +228,7 @@ pub fn start(
                     thread::spawn(move || serve(stream, &token, &version, handler.as_ref()));
                 }
                 Err(e) => {
-                    eprintln!("app endpoint: {e}");
+                    applog::warn("app endpoint", &e.to_string());
                     thread::sleep(Duration::from_millis(200));
                 }
             }

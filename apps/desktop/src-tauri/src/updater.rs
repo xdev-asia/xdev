@@ -3,6 +3,7 @@
 //! package. Updates download in the background and install on restart or quit,
 //! so agents that are running are never cut off.
 
+use crate::applog;
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
@@ -173,7 +174,7 @@ pub fn start(app: AppHandle) {
             let phase = tauri::async_runtime::block_on(run_check(&app));
             // Offline or no release yet: try again next round, quietly.
             if let Some(UpdatePhase::Error { detail }) = &phase {
-                eprintln!("update check failed: {detail}");
+                applog::warn("update check failed", detail);
             }
             thread::sleep(RECHECK);
         }
@@ -255,7 +256,7 @@ pub fn install_pending(app: &AppHandle) {
     if let Some((update, bytes)) = app.state::<Pending>().take()
         && let Err(e) = update.install(bytes)
     {
-        eprintln!("update install on quit failed: {e}");
+        applog::warn("update install on quit failed", &e.to_string());
     }
 }
 
@@ -291,7 +292,7 @@ pub fn update_phase(phase: State<'_, Phase>) -> UpdatePhase {
 #[tauri::command]
 pub fn update_notify(app: AppHandle, title: String, body: String) {
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
-        eprintln!("notification failed: {e}");
+        applog::warn("notification failed", &e.to_string());
     }
 }
 
