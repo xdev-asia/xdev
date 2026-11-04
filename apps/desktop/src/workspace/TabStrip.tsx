@@ -12,6 +12,7 @@ import type { Tab, TabColor } from "./sessions";
 import { tabColorVar, tabMenuItems } from "./tabMenu";
 import type { TabStatus } from "./status";
 import { StatusGlyph } from "./StatusGlyph";
+import { cacheLeftMs, formatCacheLeft, useNow } from "./cacheTimer";
 
 /** One entry of a strip: a terminal tab, or the review tab or a file tab (`tab` is null). */
 export interface StripItem {
@@ -24,6 +25,20 @@ export interface StripItem {
 export interface MenuGroup {
   label: string;
   ids: PtyProfile[];
+}
+
+/** The prompt cache countdown of a tab, or a "cold" mark once it ran out. */
+function CacheBadge({ left }: { left: number }): JSX.Element {
+  const { t } = useI18n();
+  return left > 0 ? (
+    <span className="ws-tab-cache" title={t("usage.cacheTimer.title", { time: formatCacheLeft(left) })}>
+      {formatCacheLeft(left)}
+    </span>
+  ) : (
+    <span className="ws-tab-cache ws-tab-cache-cold" title={t("usage.cacheTimer.coldTitle")}>
+      {t("usage.cacheTimer.cold")}
+    </span>
+  );
 }
 
 /**
@@ -56,8 +71,12 @@ export function TabStrip(props: {
   onMenu: (open: boolean) => void;
   /** Drawn after the new-tab control (the Command button). */
   trailing?: ReactNode;
+  /** Prompt cache timers: tab id → when it settled, and the cache lifetime. Absent: none drawn. */
+  cache?: { timers: ReadonlyMap<string, number>; ttlMs: number };
 }): JSX.Element {
-  const { items, active, groups } = props;
+  const { items, active, groups, cache } = props;
+  // One clock for the strip, running only while a timer on it still counts down.
+  const stripNow = useNow(cache !== undefined && items.some((i) => i.tab && cache.timers.has(i.tab.id) && cacheLeftMs(cache.timers.get(i.tab.id)!, Date.now(), cache.ttlMs) > 0));
   const { t } = useI18n();
   const { view } = useProfiles();
   // The tab context menu: which tab, and where the pointer was.
@@ -204,6 +223,7 @@ export function TabStrip(props: {
                       )}
                       {/* Plain shells are not agents: no status mark. */}
                       {StatusGlyph({ status: tab.agent ? tab.status : null, label: statusLabel(tab.status) })}
+                      {cache && cache.timers.has(tab.id) && <CacheBadge left={cacheLeftMs(cache.timers.get(tab.id)!, stripNow, cache.ttlMs)} />}
                     </>
                   ) : (
                     <>
