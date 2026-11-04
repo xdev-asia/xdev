@@ -78,6 +78,9 @@ pub struct Settings {
     /// Settings → Agents; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub agents: AgentsSettings,
+    /// Settings → Stats & Usage; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub usage: UsageSettings,
 }
 
 /// What happens to the agent tabs that run under the old active account
@@ -101,6 +104,72 @@ pub enum SwitchRunning {
 #[serde(default, rename_all = "camelCase")]
 pub struct AgentsSettings {
     pub account_switch: SwitchRunning,
+}
+
+/// Prompt cache lifetime, 5 minutes.
+pub const CACHE_TTL_SHORT_MS: u32 = 300_000;
+/// Prompt cache lifetime, 1 hour.
+pub const CACHE_TTL_LONG_MS: u32 = 3_600_000;
+
+/// Whether the footer meters show what is used or what is left.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum UsageDisplay {
+    #[default]
+    Used,
+    Remaining,
+}
+
+/// One switch per provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct ProviderSwitches {
+    pub claude: bool,
+    pub codex: bool,
+}
+
+impl Default for ProviderSwitches {
+    fn default() -> Self {
+        Self {
+            claude: true,
+            codex: true,
+        }
+    }
+}
+
+/// Settings → Stats & Usage.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct UsageSettings {
+    pub display: UsageDisplay,
+    /// Which providers get a footer meter.
+    pub footer: ProviderSwitches,
+    /// Which providers' local session logs the Stats page may read. Off by
+    /// default.
+    pub scan: ProviderSwitches,
+    /// A countdown on Claude tabs to the end of the prompt cache.
+    pub cache_timer: bool,
+    /// `CACHE_TTL_SHORT_MS` or `CACHE_TTL_LONG_MS`; `put` turns any other
+    /// value into the short one.
+    pub cache_ttl_ms: u32,
+}
+
+impl Default for UsageSettings {
+    fn default() -> Self {
+        Self {
+            display: UsageDisplay::Used,
+            footer: ProviderSwitches::default(),
+            scan: ProviderSwitches {
+                claude: false,
+                codex: false,
+            },
+            cache_timer: false,
+            cache_ttl_ms: CACHE_TTL_SHORT_MS,
+        }
+    }
 }
 
 /// Which worktree rows the sidebar hides. All off: every row shows.
@@ -587,6 +656,7 @@ pub enum SettingsSection {
     Navigation,
     Diff,
     Agents,
+    Usage,
 }
 
 /// What a `settings://changed` event carries.
