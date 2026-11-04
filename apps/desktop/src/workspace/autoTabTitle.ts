@@ -5,20 +5,26 @@ import type { Sessions } from "./sessions";
 const NOT_READ_TRIES = 3;
 const MAX_WORDS = 6;
 const MAX_CHARS = 40;
+/** Control characters (line breaks stay) and bidi / zero-width marks never reach a tab title. */
+const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F​-‏‪-‮⁦-⁩﻿]/g;
+/** A long run of letters, digits, dash and underscore looks like a key or token. */
+const TOKEN_LIKE = /[A-Za-z0-9_-]{24,}/g;
 
 /**
  * A short tab title from a prompt: its first non-blank line with the white space folded, at most six
  * words and forty characters, an ellipsis when something was cut. Blank gives `null`.
  */
 export function tabTitleFromPrompt(prompt: string | null | undefined): string | null {
-  const line = (prompt ?? "").split(/\r?\n/).map((l) => l.replace(/\s+/g, " ").trim()).find((l) => l !== "");
+  const clean = (prompt ?? "").replace(CONTROL, "");
+  const line = clean.split(/\r?\n/).map((l) => l.replace(/\s+/g, " ").trim()).find((l) => l !== "");
   if (!line) return null;
-  const words = line.split(" ");
+  const words = line.split(" ").map((w) => w.replace(TOKEN_LIKE, "…"));
   let text = words.slice(0, MAX_WORDS).join(" ");
   let cut = words.length > MAX_WORDS;
-  if (text.length > MAX_CHARS) {
-    // The ellipsis counts in the forty.
-    text = text.slice(0, MAX_CHARS - 1).trimEnd();
+  const points = Array.from(text);
+  if (points.length > MAX_CHARS) {
+    // The ellipsis counts in the forty; the cut falls between code points, never inside a surrogate pair.
+    text = points.slice(0, MAX_CHARS - 1).join("").trimEnd();
     cut = true;
   }
   return cut ? `${text}…` : text;

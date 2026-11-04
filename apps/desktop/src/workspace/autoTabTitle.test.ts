@@ -14,10 +14,19 @@ it("tabTitleFromPrompt: first line, folded spaces, at most six words and forty c
   expect(long).not.toBeNull();
   expect(long!.length).toBeLessThanOrEqual(40);
   expect(long!.endsWith("…")).toBe(true);
-  expect(tabTitleFromPrompt("x".repeat(100))!.length).toBe(40);
+  expect(tabTitleFromPrompt("x".repeat(20) + " " + "y".repeat(20) + " " + "z".repeat(20))!.length).toBe(40);
   expect(tabTitleFromPrompt("")).toBeNull();
   expect(tabTitleFromPrompt(" \n \t ")).toBeNull();
   expect(tabTitleFromPrompt(null)).toBeNull();
+});
+
+it("tabTitleFromPrompt: cuts by code points, drops control and bidi marks, masks token-like words", () => {
+  const a = "a".repeat(19) + " ";
+  expect(tabTitleFromPrompt(a + "b".repeat(19) + "😀😀")).toBe(a + "b".repeat(19) + "…");
+  const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  expect(lone.test(tabTitleFromPrompt(a + "b".repeat(18) + "😀😀😀")!)).toBe(false);
+  expect(tabTitleFromPrompt("fix ‮txt.exe\u0007 now")).toBe("fix txt.exe now");
+  expect(tabTitleFromPrompt("use sk_live_abcdefghijklmnopqrstuvwxyz0123 here")).toBe("use … here");
 });
 
 function tab(over: Partial<Tab> = {}): Tab {
