@@ -1,0 +1,19 @@
+[package]
+name = "xdev-awake"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_Power",
+    "Win32_System_Threading",
+] }
+
+# The workspace forbids unsafe code; here it is denied instead, so the Windows
+# module can allow it for the power request calls.
+[lints.rust]
+unsafe_code = "deny"
