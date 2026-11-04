@@ -100,6 +100,39 @@ describe("openWorker", () => {
     }
   });
 
+  it("prepares setup before it asks the gate, so a worktree the backend made gets its setup", async () => {
+    const order: string[] = [];
+    const { h } = host({
+      prepareSetup: async (w) => void order.push(`prepare ${w}`),
+      gate: { defer: () => (order.push("defer"), false), state: () => null },
+    });
+    expect(await openWorker(createMockApi({}), h, OPEN)).toEqual({ kind: "ok" });
+    expect(order).toEqual(["prepare /w/a", "defer"]);
+  });
+
+  it("skip does not prepare setup", async () => {
+    const prepareSetup = vi.fn(async () => {});
+    const { h } = host({ prepareSetup });
+    await openWorker(createMockApi({}), h, { ...OPEN, setup: "skip" });
+    expect(prepareSetup).not.toHaveBeenCalled();
+  });
+
+  it("an agent that is unknown, off or not installed fails as terminal_create", async () => {
+    const api = createMockApi({});
+    vi.spyOn(api, "profiles").mockResolvedValue({
+      defaultAgent: "claude",
+      profiles: [
+        { profile: { id: "claude", enabled: false }, installed: true },
+        { profile: { id: "codex", enabled: true }, installed: false },
+      ],
+    } as never);
+    const { h, open } = host();
+    for (const profile of ["", "nope", "claude", "codex"]) {
+      expect(await openWorker(api, h, { ...OPEN, profile })).toEqual({ kind: "failed", stage: "terminal_create", error: `agent ${profile} is not available` });
+    }
+    expect(open).not.toHaveBeenCalled();
+  });
+
   it("skip bypasses the setup gate", async () => {
     const defer = vi.fn(() => true);
     const { h, open } = host({ gate: { defer, state: () => null } });
@@ -116,6 +149,12 @@ describe("readTab", () => {
     const { h } = host({ terminal: term });
     expect(readTab(h, { request: 1, tab: "t", maxChars: 1000 })).toBe("alpha\nbeta\ngamma");
     expect(readTab(h, { request: 1, tab: "t", maxChars: 6 })).toBe("\ngamma");
+  });
+  it("does not start the cut text with half a character", () => {
+    const { h } = host({ terminal: () => ({ lines: () => ["a\u{1F600}b"] }) });
+    // Cutting after "a" and the first half of the emoji would leave a lone half; it is dropped.
+    expect(readTab(h, { request: 1, tab: "t", maxChars: 2 })).toBe("b");
+    expect(readTab(h, { request: 1, tab: "t", maxChars: 3 })).toBe("\u{1F600}b");
   });
   it("an unknown tab and a zero budget give an empty text", () => {
     const { h } = host({ terminal: term });

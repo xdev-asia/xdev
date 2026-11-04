@@ -17,6 +17,8 @@ export interface OrchestrationHost {
   send(worktree: string, id: string, text: string, timeoutMs: number): Promise<Tab | null>;
   /** Makes sure the worktree's tabs are mounted (and listed), so a tab opened there gets its pty. */
   ensureMounted?(worktree: string): void;
+  /** Runs the repo's setup for a worktree that has none under way and was not set up yet (one the backend just made). */
+  prepareSetup?(worktree: string): Promise<void>;
   /** The xterm of a tab, when it is mounted. */
   terminal(id: string): Pick<TerminalHandle, "lines"> | null;
   /** An open failed; the shell shows a toast. */
@@ -35,12 +37,24 @@ export async function openWorker(api: Api, host: OrchestrationHost, open: Worker
     return { kind: "failed", stage, error };
   };
   host.ensureMounted?.(open.worktree);
+  // The agent must be on and installed, as for a default agent; a bad one fails here, not as a readiness timeout.
+  try {
+    const found = (await api.profiles()).profiles.find((p) => p.profile.id === open.profile);
+    if (!found?.profile.enabled || !found.installed) return fail("terminal_create", `agent ${open.profile} is not available`);
+  } catch (e) {
+    return fail("terminal_create", message(e));
+  }
   const make = (): Tab => host.sessions.open(open.worktree, open.profile, null, undefined, { id: open.tab, title: open.title, background: true });
   let tab: Tab;
   try {
     if (open.setup === "skip") {
       tab = make();
     } else {
+      try {
+        await host.prepareSetup?.(open.worktree);
+      } catch {
+        // No setup then; the agent starts as it would without one.
+      }
       let opened: Tab | undefined;
       let thrown: { error: unknown } | undefined;
       const held = await new Promise<"go" | "failed">((resolve) => {
@@ -62,7 +76,7 @@ export async function openWorker(api: Api, host: OrchestrationHost, open: Worker
           stop("go");
         };
         if (!host.gate.defer(open.worktree, launch)) return launch();
-        timer = setTimeout(() => stop("failed"), open.readyTimeoutMs);
+        timer = setTimeout(() => stop("failed"), Math.max(0, open.readyTimeoutMs - ((host.now ?? Date.now)() - started)));
       });
       if (held === "failed") return fail("setup_wait", host.gate.state(open.worktree)?.phase === "failed" ? "setup failed" : "setup did not finish in time");
       if (thrown) throw thrown.error;
@@ -86,7 +100,12 @@ export async function openWorker(api: Api, host: OrchestrationHost, open: Worker
 export function readTab(host: OrchestrationHost, e: ReadTab): string {
   const lines = host.terminal(e.tab)?.lines(READ_LINES) ?? [];
   const text = lines.join("\n");
-  return e.maxChars >= text.length ? text : e.maxChars === 0 ? "" : text.slice(text.length - e.maxChars);
+  if (e.maxChars >= text.length) return text;
+  if (e.maxChars === 0) return "";
+  const cut = text.slice(text.length - e.maxChars);
+  // A cut between the two halves of a surrogate pair leaves a lone low half first; drop it.
+  const first = cut.charCodeAt(0);
+  return first >= 0xdc00 && first <= 0xdfff ? cut.slice(1) : cut;
 }
 
 /** Follows `orchestration://` events until the returned stop is called. */
