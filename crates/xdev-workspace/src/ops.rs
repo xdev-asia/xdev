@@ -607,6 +607,32 @@ pub struct CreateOptions {
     /// Paths of the main checkout to link into the new worktree; the caller
     /// passes the list only when the person trusted it.
     pub shared: Vec<String>,
+    /// A name whose branch or folder is taken gets `-2`, `-3`, … instead of
+    /// an error; the desktop app sets it, the CLI chooses.
+    pub suffix: bool,
+}
+
+/// What a typed worktree name would become; see `name_preview`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct NamePreview {
+    pub branch: String,
+    /// The folder's name under the worktree root.
+    pub folder: String,
+    /// A suffix was added because the typed name is taken.
+    pub suffixed: bool,
+}
+
+/// What `create_worktree_with` would name the branch and folder for `name`,
+/// without making anything.
+pub fn name_preview(
+    _reg: &Registry,
+    _repo_id: &str,
+    _name: &str,
+    _opts: &CreateOptions,
+) -> Result<NamePreview, WorkspaceError> {
+    Err(WorkspaceError::NotFound("name_preview".to_owned()))
 }
 
 /// Fetches the base a new worktree of `repo_id` would start from (`from`,

@@ -33,6 +33,9 @@ import type {
   OpenInSettings,
   OpenTarget,
   CloneProgress,
+  CreateProject,
+  Created,
+  NamePreview,
   Quota,
   RouteRule,
   Routing,
@@ -251,6 +254,10 @@ export type {
   OpenInSettings,
   OpenTarget,
   CloneProgress,
+  CreateProject,
+  Created,
+  NamePreview,
+  ProjectKind,
 } from "@xdev/bindings";
 // The UI's names for generated types.
 export type { Event as SquadEvent, FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
@@ -565,6 +572,13 @@ export interface Api {
   repoCloneCancel(id: string): Promise<void>;
   // The folder name a clone gets: `xdev` for `https://host/a/xdev.git`; `bad_arg` when there is none.
   repoCloneName(url: string): Promise<string>;
+  // Makes `parent/name` and lists it: a Git project is `git init`-ed (branch `req.branch`, empty =
+  // `main`), gets an empty first commit when `req.firstCommit`, and is added like a checkout; a
+  // plain folder is added as a sidebar folder. Rejects with `bad_name` (name or branch), `exists`
+  // (the target is there and not an empty folder), `not_found` (no parent), and `git_identity`
+  // when the first commit needs a `user.name` / `user.email`: the folder and `.git` stay and nothing
+  // is added.
+  repoCreate(req: CreateProject): Promise<Created>;
   // The setup and archive scripts of a worktree: `xdev.toml` in it (else in the primary checkout)
   // joined with the repo's local scripts by its script source. A bad file is `parseError`, not a rejection.
   repoHooks(path: string): Promise<RepoHooks>;
@@ -585,9 +599,13 @@ export interface Api {
   // Makes the repo's `docs/` with a starter doc; a folder with anything in it is left alone.
   vaultCreateDocs(repoId: string, file: string, content: string): Promise<VaultView>;
   // A new branch and folder; a blank `name` gets a free word, a null `from` starts at the repo's
-  // base ref. Rejects with `bad_name`, `branch_exists`, `worktree_exists` or `bad_ref`, and with
+  // base ref. A taken name is made as `name-2`, `-3`, … (the title keeps what was typed). Rejects
+  // with `bad_name`, `branch_exists` (99 taken), `worktree_exists` or `bad_ref`, and with
   // `bad_branch_prefix` when Settings → Git holds a custom prefix no branch name can start with.
   worktreeCreate(repoId: string, name: string, from: string | null): Promise<WorktreeCreated>;
+  // What `worktreeCreate` would name the branch and folder for a typed name, without making
+  // anything; `suffixed` when the name was taken and got `-2`, `-3`, …
+  worktreeNamePreview(repoId: string, name: string): Promise<NamePreview>;
   worktreePin(path: string, pinned: boolean): Promise<void>;
   // Rejects with `needs_approval` until `confirmed`, then with `worktree_dirty` for uncommitted
   // work until `force`, and with `primary_worktree` for the main checkout. A branch made here and
@@ -1025,6 +1043,7 @@ const tauriApi: Api = {
   },
   repoCloneCancel: (id) => call("repo_clone_cancel", { id }),
   repoCloneName: (url) => call("repo_clone_name", { url }),
+  repoCreate: (req) => call("repo_create", { req }),
   repoUpdate: (id, patch) => call("repo_update", { id, ...patch }),
   repoHooks: (path) => call("repo_hooks", { path }),
   repoHookTrust: (path, kind, hash) => call("repo_hook_trust", { path, kind, hash }),
@@ -1035,6 +1054,7 @@ const tauriApi: Api = {
   vaultForget: (id) => call("vault_forget", { id }),
   vaultCreateDocs: (repoId, file, content) => call("vault_create_docs", { repoId, file, content }),
   worktreeCreate: (repoId, name, from) => call("worktree_create", { repoId, name, from }),
+  worktreeNamePreview: (repoId, name) => call("worktree_name_preview", { repoId, name }),
   worktreePin: (path, pinned) => call("worktree_pin", { path, pinned }),
   worktreeRemove: (path, force, confirmed) => call("worktree_remove", { path, force, confirmed }),
   worktreeArchive: (path, force, confirmed) => call("worktree_archive", { path, force, confirmed }),

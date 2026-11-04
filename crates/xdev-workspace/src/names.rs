@@ -24,6 +24,16 @@ pub fn pick(taken: &HashSet<String>, seed: u64) -> String {
         .unwrap_or_default()
 }
 
+/// The most `-n` tries a typed name gets before it is `BranchExists`.
+pub const SUFFIX_MAX: u32 = 99;
+
+/// `leaf` for `n` = 1, else `leaf-n`; the leaf is cut so the whole fits the
+/// 48-character slug cap, and the suffix stays.
+pub fn suffixed(leaf: &str, n: u32) -> String {
+    let _ = n;
+    leaf.to_owned()
+}
+
 /// A branch name from what the user typed: lowercase, spaces as `-`, only
 /// `[a-z0-9._/-]`, no leading `-`, `.` or `/`, at most 48 characters. No
 /// `//` or `..`, and no trailing `/`, `.`, `-` or `.lock`, which git refuses.

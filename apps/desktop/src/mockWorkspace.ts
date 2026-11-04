@@ -10,6 +10,8 @@ type WorkspaceApi = Pick<
   | "workspaceList"
   | "repoAdd"
   | "repoForget"
+  | "repoCreate"
+  | "worktreeNamePreview"
   | "repoUpdate"
   | "repoHooks"
   | "repoHookTrust"
@@ -682,6 +684,13 @@ export function createMockWorkspace(
           })
         : [];
       return { worktree: structuredClone(wt), shared };
+    },
+    // Filled in by the mock task of the plan.
+    async repoCreate() {
+      return reject("not_found", "repoCreate");
+    },
+    async worktreeNamePreview() {
+      return reject("not_found", "worktreeNamePreview");
     },
     async worktreePin(path, pinned) {
       const found = findWorktree(path);
