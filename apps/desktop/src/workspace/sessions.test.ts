@@ -60,6 +60,14 @@ describe("Sessions", () => {
     expect(live.tabs(A).map((t) => t.id)).toEqual(["worker-tab-1"]);
   });
 
+  it("refuses a tab id that is in use and keeps the live tab", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const first = live.open(A, "shell", null, undefined, { id: "w1" });
+    expect(() => live.open(A, "claude", null, undefined, { id: "w1" })).toThrow("tab id in use");
+    expect(live.tab("w1")).toBe(first);
+    expect(live.tabs(A)).toHaveLength(1);
+  });
+
   it("a background tab joins the pane without becoming its active tab", () => {
     const live = (sessions = new Sessions(createMockApi({})));
     const first = live.open(A, "shell");
