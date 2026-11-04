@@ -66,7 +66,7 @@ import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
 import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
 import { QuitDialog } from "./QuitDialog";
 import { AboutDialog } from "./AboutDialog";
-import { HelpButton, type HelpPick, runHelpPick } from "./HelpMenu";
+import { checkForUpdates, HelpButton, type HelpPick, runHelpPick } from "./HelpMenu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { runMenuAction } from "@/shell/menuActions";
 import { useShellLabels } from "@/shell/shellLabels";
@@ -727,7 +727,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     runMenuAction(action, {
       openSettings: () => openSettings(),
       openShortcuts: () => openSettings("keys"),
-      openUpdates: () => openSettings("general"),
+      openUpdates,
       confirmQuitEndAll: () => setConfirmEndAll(true),
       zoom: (delta) => void stepZoom(api, delta),
       toggleLeftSidebar: () => setSidebarOpen((o) => !o),
@@ -1322,8 +1322,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     void api.appVersion().then(setAbout, () => setAbout(""));
   }
 
+  /** Help, tray and native menu "Check for updates": shows the page, and starts the check (a check already running is joined). */
+  function openUpdates(): void {
+    checkForUpdates({ openSettings, api });
+  }
+
   function pickHelp(pick: HelpPick): void {
-    runHelpPick(pick, { openSettings: (page) => openSettings(page), openAbout, api });
+    runHelpPick(pick, { openSettings: (page) => openSettings(page), openUpdates, openAbout, api });
   }
 
   function openSettings(section?: string, arg?: string, target?: string): void {
