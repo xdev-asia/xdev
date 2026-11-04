@@ -473,7 +473,7 @@ pub enum CloneProgress {
     },
     /// Cloned and added to the workspace.
     Done {
-        repo: RepoView,
+        repo: Box<RepoView>,
     },
     Error {
         message: String,
@@ -636,7 +636,9 @@ fn clone_with(
     });
     match added {
         Ok(repo) => {
-            send(CloneProgress::Done { repo: repo.clone() });
+            send(CloneProgress::Done {
+                repo: Box::new(repo.clone()),
+            });
             Ok(repo)
         }
         Err(mut e) => {
@@ -2178,7 +2180,12 @@ mod tests {
         assert_eq!(repo.short_name, "origin");
         let reg = Registry::load(&fx.data).unwrap();
         assert!(reg.repos.iter().any(|r| r.id == repo.id));
-        assert_eq!(events.last(), Some(&CloneProgress::Done { repo }));
+        assert_eq!(
+            events.last(),
+            Some(&CloneProgress::Done {
+                repo: Box::new(repo)
+            })
+        );
         assert!(trashed.0.borrow().is_empty());
     }
 
