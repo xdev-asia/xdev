@@ -1495,6 +1495,7 @@ it("a sleeping tab shows a Wake overlay in place of its terminal, and Wake start
   // The overlay is an EmptyState; its action is the Wake button.
   const empty = view.find((n) => n.type === EmptyState)!;
   expect(empty.props.actions.props["data-field"]).toBe("wake");
+  expect(empty.props.hint).toBe(en("sleep.tab.hint.shell"));
   empty.props.actions.props.onClick();
   expect(live.tabs(A)[0].asleep).toBeUndefined();
   // A wake takes a fresh pty id in the same slot.

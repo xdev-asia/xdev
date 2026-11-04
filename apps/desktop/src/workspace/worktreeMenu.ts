@@ -23,6 +23,8 @@ export interface WorktreeMenuContext {
   onArchive?(): void;
   /** The worktree's tabs are all asleep: the menu offers Wake in place of Sleep. */
   asleep?: boolean;
+  /** False when the worktree has no awake tab, so Sleep would do nothing; the default is true. */
+  sleepable?: boolean;
   /** Puts every tab of the worktree to sleep; without it the item is left out. */
   onSleep?(): void;
   /** Wakes the worktree's tabs; without it the item is left out. */
@@ -89,7 +91,7 @@ export function worktreeMenuItems(ctx: WorktreeMenuContext): MenuItem[] {
   const sleep: MenuItem[] =
     ctx.asleep && ctx.onWake
       ? [{ id: "wake", labelKey: "sleep.wake", run: ctx.onWake }]
-      : !ctx.asleep && ctx.onSleep
+      : !ctx.asleep && ctx.sleepable !== false && ctx.onSleep
         ? [{ id: "sleep", labelKey: "sleep.menu", run: ctx.onSleep }]
         : [];
   return [
