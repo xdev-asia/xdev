@@ -1,0 +1,27 @@
+[package]
+name = "xdev-id"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+ts = ["dep:ts-rs"]
+# A scripted Transport for tests in other crates.
+test-util = []
+
+[dependencies]
+base64.workspace = true
+getrandom.workspace = true
+keyring.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+ts-rs = { workspace = true, optional = true }
+ureq.workspace = true
+url.workspace = true
+
+[lints]
+workspace = true

@@ -31,6 +31,7 @@ import { createMockThemes, type MockThemes } from "./mockThemes";
 import { createMockPower } from "./mockPower";
 import { createMockPty, type MockPtyd } from "./mockPty";
 import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
+import { createMockXdevId, type MockXdevId } from "./mockXdevId";
 import { createMockSettings, createSettingsHub } from "./mockSettings";
 import { createMockShell, type MockShell } from "./mockShell";
 import { createMockStatus, type MockStatus } from "./mockStatus";
@@ -358,7 +359,7 @@ function snippet(text: string, terms: string[]): string | null {
   return out.replace(/\s+/g, " ").trim();
 }
 
-export type MockApi = Api & MockPtyd & Omit<MockCli, keyof Api> & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & Pick<MockOpenIn, "__openInCalls"> & Pick<MockFiles, "__editFile" | "__fileReveals"> & Pick<MockThemes, "__paths"> & Pick<MockShell, "__menu" | "__quitMode" | "__attention" | "__opened" | "__labels" | "__windowCalls" | "__closeIntent"> & {
+export type MockApi = Api & MockPtyd & Omit<MockCli, keyof Api> & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & Pick<MockXdevId, "__xdevIdExpire" | "__xdevIdDeepLink" | "__xdevIdManages" | "__xdevIdReopens"> & Pick<MockOpenIn, "__openInCalls"> & Pick<MockFiles, "__editFile" | "__fileReveals"> & Pick<MockThemes, "__paths"> & Pick<MockShell, "__menu" | "__quitMode" | "__attention" | "__opened" | "__labels" | "__windowCalls" | "__closeIntent"> & {
   // Changes a file the way another program would (`null` deletes it); xDev did not write it.
   __editOutside(path: string, content: string | null): void;
   // Writes a file the way `propose_update` does over MCP; throws an ApiError like the real tool.
@@ -377,6 +378,8 @@ type MockOptions = {
   workspace?: MockWorkspaceSeed;
   // The text of `keybindings.json`; no file when left out.
   keybindings?: string | null;
+  // The xDev ID account the mock starts with.
+  xdevId?: "signedOut" | "signedIn";
   // A version the update check finds; nothing newer when left out.
   update?: string | null;
 };
@@ -586,6 +589,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...themes,
     agentsSettingsPut: power.agentsSettingsPut,
     ...createMockKeybindings(options.keybindings ?? null),
+    ...createMockXdevId(options.xdevId),
     ...createMockKit(async () => (await settingsApi.usageSettings()).scan),
     ...createMockOpenIn(settingsHub.emit, workspace.repoAdd),
     ...createMockAgentSessions(settingsApi),
