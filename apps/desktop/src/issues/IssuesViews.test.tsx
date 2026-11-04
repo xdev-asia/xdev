@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, type Api, type PrQuery } from "@/api";
 import { translate } from "@/i18n";
 import { IssuesPanel, SEARCH_DEBOUNCE_MS } from "./IssuesPanel";
+import { IssueDetailView } from "./IssueDetailView";
 import { NewIssueForm } from "./NewIssueForm";
 import { chipQuery, PrsList } from "./PrsList";
 import { ProjectsList } from "./ProjectsList";
@@ -97,6 +98,19 @@ it("lists pull requests and asks again for the other chips", async () => {
   expect(queries.at(-1)).toMatchObject({ needsReview: true, mine: false });
 });
 
+it("shows head and base on each pull request and refreshes the list", async () => {
+  const { api, queries } = prQueries(createMockApi({}));
+  const view = mount(() => PrsList({ api, repoId: "r1", searchDebounceMs: SEARCH_DEBOUNCE_MS }));
+  view.commit();
+  await flush();
+  const mono = view.nodes().filter((n) => n.props.className === "ws-mono").map((n) => [n.props.children].flat().join(""));
+  expect(mono).toContain("fix-footer → main");
+  const before = queries.length;
+  view.nodes().find((n) => n.props.children === en("issues.refresh"))!.props.onClick();
+  view.commit();
+  expect(queries.length).toBe(before + 1);
+});
+
 it("a pull request row opens through prOpen", async () => {
   const api = createMockApi({});
   const open = vi.spyOn(api, "prOpen");
@@ -127,7 +141,7 @@ it("lists projects with a closed badge and shows the scope line", async () => {
   const failing = mount(() => ProjectsList({ api: scoped, repoId: "r1" }));
   failing.commit();
   await flush();
-  expect(failing.html()).toContain(en("error.gh_scope"));
+  expect(failing.html()).toContain(en("issues.projects.reason.gh_scope"));
 });
 
 it("a blank title cannot be sent; a title creates the issue and hands it back", async () => {
@@ -148,4 +162,16 @@ it("a blank title cannot be sent; a title creates the issue and hands it back", 
   await flush();
   expect(create).toHaveBeenCalledWith("r1", { title: "Footer is cut", body: "" });
   expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ title: "Footer is cut" }));
+});
+
+it("after create the detail view shows the new issue number", async () => {
+  const api = createMockApi({});
+  const view = mount(() => IssuesPanel({ api, repoId: "r1" }));
+  view.commit();
+  view.nodes().find((n) => n.props.children === en("issues.new.open"))!.props.onClick();
+  const form = view.nodes().find((n) => n.type === NewIssueForm)!;
+  const created = await api.issueCreate("r1", { title: "Brand new", body: "" });
+  form.props.onCreated(created);
+  const detail = view.nodes().find((n) => n.type === IssueDetailView)!;
+  expect(detail.props.number).toBe(created.number);
 });

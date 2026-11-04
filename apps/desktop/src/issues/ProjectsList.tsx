@@ -28,7 +28,7 @@ export function ProjectsList(props: { api: Api; repoId: string }): JSX.Element {
     <div className="ws-issues">
       {error && (
         <p className="error-text" role="alert">
-          {ghReasonText(error, t)}
+          {error.code === "gh_scope" ? t("issues.projects.reason.gh_scope") : ghReasonText(error, t)}
         </p>
       )}
       {!error && projects === null && <p className="ws-empty">{t("issues.projects.loading")}</p>}
