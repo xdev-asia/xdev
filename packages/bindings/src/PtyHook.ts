@@ -5,4 +5,8 @@ import type { HookEvent } from "./HookEvent";
 /**
  * Payload of the `pty://hook` event.
  */
-export type PtyHook = { id: string, event: HookEvent, at: number, detail: HookDetail | null, };
+export type PtyHook = { id: string, event: HookEvent, at: number, detail: HookDetail | null, 
+/**
+ * The agent's own session id, when its hook sent one.
+ */
+session: string | null, };

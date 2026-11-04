@@ -1,6 +1,7 @@
-import type { Api, HookDetail, PtyInfo, PtyProfile } from "@/api";
+import type { Api, HookDetail, PtyInfo, PtyProfile, RestoreMode } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
 import { addTab, leaves, paneOf, pinFirst, removeTab, replaceTab, single, splitPane, type PaneDir, type PaneLayout } from "./paneTree";
+import { LAYOUT_VERSION, type LayoutSnapshot, type RestoreReport, type SessionFallback } from "./layoutSnapshot";
 import { DONE_QUIET_MS, INTERRUPT_MS, NO_CAPS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type Caps, type StatusEvent, type StatusState, type TabStatus } from "./status";
 
 /** The CLI behind a tab, for its hook caps and title rules; null for custom profiles and shells. */
@@ -41,6 +42,10 @@ export interface Tab {
   renamed: boolean;
   /** The agent session id this tab resumed; null for a new session. */
   resumeOf: string | null;
+  /** The agent's own session id, from its hooks (latest wins) or the resumed id; null until known. */
+  agentSession: string | null;
+  /** When the tab was opened or resumed, in ms. */
+  openedAt: number;
   /** Pinned tabs sort first and are skipped by Close Others and Close to the Right. */
   pinned: boolean;
   color: TabColor;
@@ -150,6 +155,21 @@ export class Sessions {
     this.layouts.set(worktree, layout ? addTab(layout, entry.tab.id) : single(entry.tab.id));
     this.emit();
     return entry.tab;
+  }
+
+  /** What `layout.json` keeps of every worktree's tabs and panes. Contract stub: Lane U fills it in. */
+  snapshot(): LayoutSnapshot {
+    return { version: LAYOUT_VERSION, savedAt: this.now(), worktrees: {} };
+  }
+
+  /**
+   * Opens the tabs of `s` again by `mode`, once per app run. Contract stub: Lane U fills it in.
+   */
+  async restore(s: LayoutSnapshot, mode: RestoreMode, fallback: SessionFallback): Promise<RestoreReport> {
+    void s;
+    void mode;
+    void fallback;
+    return { resumed: 0, fresh: 0, skipped: [] };
   }
 
   /** Every tab that resumed an agent session, in the order they opened. */
@@ -646,6 +666,8 @@ export class Sessions {
       title,
       renamed: false,
       resumeOf,
+      agentSession: resumeOf,
+      openedAt: this.now(),
       pinned: false,
       color: "none",
       client: new PtyClient(this.api, id, resumeOf ?? undefined),

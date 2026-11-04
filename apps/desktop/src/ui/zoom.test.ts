@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
+import type { UiSettings } from "@/api";
 import { clampZoom, getZoom, loadZoom, resetZoomForTests, stepZoom } from "./zoom";
 
 const style = { zoom: "" };
@@ -16,18 +17,30 @@ it("clamps and rounds to one decimal", () => {
 });
 
 it("steps, stores what the backend answers, and resets", async () => {
-  const put = vi.fn(async (s: { zoom: number }) => s);
-  await stepZoom({ uiSettingsPut: put }, 0.1);
+  let stored: UiSettings = { zoom: 1, restore: "agentsOnly" };
+  const api = {
+    uiSettingsGet: async () => stored,
+    uiSettingsPut: vi.fn(async (s: UiSettings) => (stored = s)),
+  };
+  await stepZoom(api, 0.1);
   expect(style.zoom).toBe("1.1");
-  expect(put).toHaveBeenLastCalledWith({ zoom: 1.1 });
-  await stepZoom({ uiSettingsPut: put }, 0);
+  // The restore mode goes back as stored.
+  expect(api.uiSettingsPut).toHaveBeenLastCalledWith({ zoom: 1.1, restore: "agentsOnly" });
+  await stepZoom(api, 0);
   expect(getZoom()).toBe(1);
-  for (let i = 0; i < 30; i++) await stepZoom({ uiSettingsPut: put }, 0.1);
+  for (let i = 0; i < 30; i++) await stepZoom(api, 0.1);
   expect(getZoom()).toBe(2);
 });
 
+it("applies a step but stores nothing when the read fails", async () => {
+  const put = vi.fn(async (s: UiSettings) => s);
+  await stepZoom({ uiSettingsGet: async () => { throw new Error("x"); }, uiSettingsPut: put }, 0.1);
+  expect(getZoom()).toBe(1.1);
+  expect(put).not.toHaveBeenCalled();
+});
+
 it("loads the stored zoom, and ignores a failed read", async () => {
-  await loadZoom({ uiSettingsGet: async () => ({ zoom: 1.3 }) });
+  await loadZoom({ uiSettingsGet: async () => ({ zoom: 1.3, restore: "all" }) });
   expect(style.zoom).toBe("1.3");
   await loadZoom({ uiSettingsGet: async () => { throw new Error("x"); } });
   expect(getZoom()).toBe(1.3);

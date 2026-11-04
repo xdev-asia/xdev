@@ -2,10 +2,9 @@
 //! read and replaced whole under `ReviewNotesLock`. A note never leaves the
 //! machine except through the agent tab the person picks.
 
-use std::fs::{self, File};
-use std::io::{self, Write};
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
@@ -13,6 +12,7 @@ use tauri::State;
 use xdev_workspace::{Registry, WorkspaceError, path_key};
 
 use crate::accounts::data_dir;
+use crate::atomic::write_atomic;
 use crate::commands::{AppState, CmdError};
 
 const DIR: &str = "review-notes";
@@ -169,27 +169,6 @@ fn validate(notes: &[ReviewNote]) -> Result<(), CmdError> {
     Ok(())
 }
 
-fn write_atomic(dir: &Path, name: &str, content: &str) -> io::Result<()> {
-    fs::create_dir_all(dir)?;
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let tmp = dir.join(format!(
-        ".{name}-{}-{}.tmp",
-        std::process::id(),
-        SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
-    let result = (|| {
-        let mut f = File::create_new(&tmp)?;
-        f.write_all(content.as_bytes())?;
-        f.sync_all()?;
-        drop(f);
-        fs::rename(&tmp, dir.join(name))
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&tmp);
-    }
-    result
-}
-
 fn get(data: &Path, lock: &ReviewNotesLock, path: &Path) -> Result<Vec<ReviewNote>, CmdError> {
     known(data, path)?;
     let _guard = lock.0.lock().unwrap_or_else(PoisonError::into_inner);
@@ -228,7 +207,7 @@ fn put(
         notes,
     };
     let text = serde_json::to_string_pretty(&stored).map_err(io_err)?;
-    write_atomic(&dir, &name, &text).map_err(io_err)?;
+    write_atomic(&file, text.as_bytes()).map_err(io_err)?;
     Ok(stored.notes)
 }
 
