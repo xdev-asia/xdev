@@ -187,3 +187,39 @@ it("status_hooks_is_the_last_section", async () => {
   const groups = p.all().filter((n) => n.type === "h4" && n.props.className === "settings-group").map((n) => n.props.children);
   expect(groups.at(-1)).toBe(en("settings.agents.statusHooks"));
 });
+
+it("account_switch_select_shows_the_stored_policy_and_saves_a_change", async () => {
+  const p = await page();
+  const field = () => p.all().find((n) => n.props["data-field"] === "accountSwitch")!;
+  expect(field().props.value).toBe("ask");
+  expect(nodes(field()).filter((n) => n.type === "option").map((n) => n.props.value)).toEqual(["ask", "restart", "keep"]);
+  expect(nodes(field()).filter((n) => n.type === "option").map((n) => n.props.children)).toEqual([en("settings.agents.accountSwitch.ask"), en("settings.agents.accountSwitch.restart"), en("settings.agents.accountSwitch.keep")]);
+  const put = vi.spyOn(p.api, "agentsSettingsPut");
+  field().props.onChange({ target: { value: "keep" } });
+  await tick();
+  expect(put).toHaveBeenCalledWith({ accountSwitch: "keep" });
+  expect(field().props.value).toBe("keep");
+  expect((await p.api.agentsSettings()).accountSwitch).toBe("keep");
+});
+it("account_switch_select_puts_nothing_for_the_value_it_already_has", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "agentsSettingsPut");
+  p.all().find((n) => n.props["data-field"] === "accountSwitch")!.props.onChange({ target: { value: "ask" } });
+  await tick();
+  expect(put).not.toHaveBeenCalled();
+});
+it("account_switch_failed_write_shows_the_error_and_keeps_the_old_value", async () => {
+  const p = await page();
+  vi.spyOn(p.api, "agentsSettingsPut").mockRejectedValue({ code: "io" });
+  p.all().find((n) => n.props["data-field"] === "accountSwitch")!.props.onChange({ target: { value: "restart" } });
+  await tick();
+  expect(p.all().find((n) => n.props["data-field"] === "accountSwitch")!.props.value).toBe("ask");
+  expect(p.all().some((n) => n.props.role === "alert")).toBe(true);
+});
+it("account_switch_strings_exist_in_both_languages", async () => {
+  const en_ = (await import("@/i18n/en.json")).default as Record<string, string>;
+  const vi_ = (await import("@/i18n/vi.json")).default as Record<string, string>;
+  const keys = Object.keys(en_).filter((k) => k.startsWith("settings.agents.accountSwitch"));
+  expect(keys.length).toBeGreaterThanOrEqual(8);
+  for (const k of keys) expect(vi_).toHaveProperty(k);
+});
