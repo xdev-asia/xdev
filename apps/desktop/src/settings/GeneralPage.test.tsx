@@ -10,6 +10,7 @@ import { SETTING_ENTRIES } from "./catalog";
 import type { SettingsFilter } from "./sections";
 import { SettingGroup, SettingRow } from "./SettingRow";
 
+const i18n = vi.hoisted(() => ({ locale: "en" as "en" | "vi", setLocale: vi.fn() }));
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
 vi.mock("react", async (original) => {
   const react = await original<typeof import("react")>();
@@ -25,7 +26,7 @@ vi.mock("react", async (original) => {
     useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
   };
 });
-vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: i18n.locale, setLocale: i18n.setLocale, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
 type Node = ReactElement<Record<string, any>>;
 function nodes(value: unknown): Node[] {
@@ -41,6 +42,8 @@ beforeEach(() => {
   hooks.cursor = 0;
   hooks.effects = [];
   hooks.active = false;
+  i18n.locale = "en";
+  i18n.setLocale.mockClear();
   resetZoomForTests();
 });
 
@@ -152,4 +155,15 @@ it("a search keeps only the matching controls and the groups that hold them", as
   expect(groups.map((g) => SettingGroup(g.props as Parameters<typeof SettingGroup>[0]) !== null)).toEqual([false, false, true]);
   const zoom = p.all().find((n) => n.type === SettingRow && n.props.id === "general.zoom")!;
   expect(SettingRow(zoom.props as Parameters<typeof SettingRow>[0])).toBeNull();
+});
+
+it("the language row shows the current language and changes it through setLocale", async () => {
+  i18n.locale = "vi";
+  const p = await page();
+  const select = p.by("data-field", "language");
+  expect(select.props.value).toBe("vi");
+  expect(nodes(select).filter((n) => n.type === "option").map((n) => n.props.value)).toEqual(["en", "vi"]);
+  select.props.onChange({ target: { value: "en" } });
+  expect(i18n.setLocale).toHaveBeenCalledWith("en");
+  expect(SETTING_ENTRIES.find((x) => x.id === "general.language")).toMatchObject({ section: "general", titleKey: "language.label" });
 });

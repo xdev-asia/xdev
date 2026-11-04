@@ -16,6 +16,11 @@ worktreeRoot: string, setupPolicy: SetupPolicy, scriptSource: ScriptSource,
  */
 localSetup: string, localArchive: string, 
 /**
+ * The repo's docs folder, relative to the primary checkout; `docs` by
+ * default.
+ */
+docsDir: string, 
+/**
  * The folder is gone or no longer a repo; the entry stays so a
  * reconnected drive finds it again.
  */

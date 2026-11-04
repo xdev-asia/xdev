@@ -13,6 +13,7 @@ use crate::hooks;
 use crate::kept::{KeptBranch, KeptReason, keep};
 use crate::registry::normalize;
 use crate::staging;
+use crate::vaults::{docs_dir_text, validate_docs_dir};
 use crate::{
     Linked, MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, WorkItem, WorkStatus,
     WorkspaceError, WorktreeMeta, link_shared, names, repo_id, unlink_shared,
@@ -34,6 +35,9 @@ pub struct RepoView {
     /// This machine's scripts; the shared ones come from `repo_hooks`.
     pub local_setup: String,
     pub local_archive: String,
+    /// The repo's docs folder, relative to the primary checkout; `docs` by
+    /// default.
+    pub docs_dir: String,
     /// The folder is gone or no longer a repo; the entry stays so a
     /// reconnected drive finds it again.
     pub missing: bool,
@@ -183,6 +187,8 @@ pub struct RepoPatch {
     pub script_source: Option<ScriptSource>,
     pub local_setup: Option<String>,
     pub local_archive: Option<String>,
+    /// A relative folder; `Some("")` goes back to the default `docs`.
+    pub docs_dir: Option<String>,
 }
 
 /// 1 to 40 characters: `[a-z0-9]` first, then `[a-z0-9._-]`. No `:` or `/`,
@@ -237,7 +243,24 @@ pub fn update_repo(
             return Err(WorkspaceError::BadPath(lossy(root)));
         }
     }
+    let docs_dir = patch
+        .docs_dir
+        .as_deref()
+        .map(validate_docs_dir)
+        .transpose()?;
+    if let Some(dir) = &docs_dir {
+        let target = old
+            .path
+            .join(dir.as_deref().unwrap_or(crate::vaults::DEFAULT_DOCS_DIR));
+        let key = path_key(&target);
+        if reg.vaults.iter().any(|v| path_key(&v.path) == key) {
+            return Err(WorkspaceError::VaultExists(lossy(&target)));
+        }
+    }
     let entry = &mut reg.repos[idx];
+    if let Some(dir) = docs_dir {
+        entry.docs_dir = dir;
+    }
     if let Some(name) = patch.short_name {
         entry.short_name = name;
     }
@@ -316,6 +339,7 @@ fn missing_view(entry: &RepoEntry) -> RepoView {
         script_source: entry.script_source,
         local_setup: entry.local_setup.clone(),
         local_archive: entry.local_archive.clone(),
+        docs_dir: docs_dir_text(entry),
         missing: true,
         worktrees: Vec::new(),
         found: Vec::new(),

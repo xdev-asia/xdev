@@ -33,7 +33,7 @@ type Node = ReactElement<Record<string, any>>;
 
 const oak: WorktreeView = { path: "/wt/oak", name: "oak", branch: "feat/oak", head: null, start: null, primary: false, pinned: false, detached: false, ...NO_DETAILS };
 const elm: WorktreeView = { ...oak, path: "/wt/elm", name: "elm", branch: "feat/elm" };
-const repos: RepoView[] = [{ id: "x", shortName: "xdev", path: "/r/x", baseRef: "origin/main", worktreeRoot: "/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", missing: false, worktrees: [oak, elm], found: [] }];
+const repos: RepoView[] = [{ id: "x", shortName: "xdev", path: "/r/x", baseRef: "origin/main", worktreeRoot: "/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", docsDir: "docs", missing: false, worktrees: [oak, elm], found: [] }];
 const tabOf = (id: string, worktree: string, profileId: string, agent: boolean): Tab => ({ id, worktree, profileId, account: null, permissions: "ask", agent, status: "idle" } as Tab);
 
 beforeEach(() => {

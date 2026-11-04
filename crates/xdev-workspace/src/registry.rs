@@ -32,6 +32,10 @@ pub struct RepoEntry {
     /// This machine's archive script, run before a worktree is removed.
     #[serde(default)]
     pub local_archive: String,
+    /// The folder of this repo's docs, relative to the primary checkout.
+    /// `None` means `docs`. Absent in older files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docs_dir: Option<String>,
 }
 
 /// Whether setup runs after a worktree is created.
@@ -294,6 +298,24 @@ mod tests {
         assert_eq!(repo.script_source, ScriptSource::Auto);
         assert_eq!(repo.local_setup, "");
         assert_eq!(repo.local_archive, "");
+    }
+
+    #[test]
+    fn docs_dir_is_absent_in_old_files_and_survives_a_save() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("workspace.json"),
+            r#"{"version":1,"repos":[{"id":"abc","short_name":"xdev","path":"/r","base_ref":"main","worktree_root":"/wt"}],"worktrees":[]}"#,
+        )
+        .unwrap();
+        let mut r = Registry::load(dir.path()).unwrap();
+        assert_eq!(r.repos[0].docs_dir, None);
+        r.save(dir.path()).unwrap();
+        let text = std::fs::read_to_string(dir.path().join("workspace.json")).unwrap();
+        assert!(!text.contains("docs_dir"));
+        r.repos[0].docs_dir = Some("handbook".into());
+        r.save(dir.path()).unwrap();
+        assert_eq!(Registry::load(dir.path()).unwrap(), r);
     }
 
     #[test]

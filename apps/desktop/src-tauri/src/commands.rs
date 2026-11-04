@@ -68,20 +68,28 @@ pub fn open_vault(
 ) -> Result<Vec<DocEntry>, CmdError> {
     let local_dir = crate::accounts::local_dir(&state)?;
     let emitter = app.clone();
-    let entries = state
-        .session
-        .open(local_dir, Path::new(&path), move |paths| {
-            // Fails only once the app is shutting down; nobody is listening.
-            let _ = emitter.emit(CHANGED_EVENT, Changed { paths });
-        })?;
-
-    // Losing this only costs the user one folder pick on the next launch,
-    // so it must not fail an open that worked.
+    let entries = open_vault_in(&state.session, local_dir, &path, move |paths| {
+        // Fails only once the app is shutting down; nobody is listening.
+        let _ = emitter.emit(CHANGED_EVENT, Changed { paths });
+    })?;
+    // DocsApp still boots from last_vault until U9; B4 removes this write.
     let _ = settings_store::write(&app, &[SettingsSection::Vault], |s| {
         s.last_vault = Some(path);
         s.vault_prompted = true;
     });
     Ok(entries)
+}
+
+/// Opens `path` as the one vault of the session. It writes no setting: the
+/// vault list in the registry says which vaults exist, and the UI keeps the
+/// source it showed last.
+fn open_vault_in(
+    session: &Shared,
+    local_dir: &Path,
+    path: &str,
+    on_changed: impl Fn(Vec<String>) + Send + 'static,
+) -> Result<Vec<DocEntry>, CmdError> {
+    Ok(session.open(local_dir, Path::new(path), on_changed)?)
 }
 
 #[tauri::command(async)]
@@ -552,6 +560,25 @@ mod tests {
 
     fn code_of(e: impl Into<CoreError>) -> &'static str {
         CmdError::from(e.into()).code
+    }
+
+    #[test]
+    fn open_vault_leaves_the_last_vault_setting_alone() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("a.md"), "# A").unwrap();
+        let store = settings_store::SettingsStore::new(data.path().join("settings.json"));
+        store
+            .update(|s| s.last_vault = Some("D:/elsewhere".into()))
+            .unwrap();
+        let before = store.read();
+
+        let session = Shared::default();
+        let path = root.path().to_string_lossy().into_owned();
+        let entries = open_vault_in(&session, data.path(), &path, |_| {}).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(store.read(), before);
+        assert_eq!(store.read().last_vault.as_deref(), Some("D:/elsewhere"));
     }
 
     #[test]

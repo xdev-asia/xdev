@@ -33,9 +33,54 @@ pub struct VaultView {
     pub exists: bool,
 }
 
+pub(crate) const DEFAULT_DOCS_DIR: &str = "docs";
+
+/// The repo's docs folder as a relative path, `docs` when none is set.
+pub(crate) fn docs_dir_text(entry: &RepoEntry) -> String {
+    entry
+        .docs_dir
+        .clone()
+        .unwrap_or_else(|| DEFAULT_DOCS_DIR.to_owned())
+}
+
 /// The folder a repo's own vault lives in.
 pub fn repo_docs_dir(entry: &RepoEntry) -> PathBuf {
-    entry.path.join("docs")
+    entry.path.join(docs_dir_text(entry))
+}
+
+/// Checks a docs folder typed by the person. Returns `None` for an empty
+/// string (back to the default), else the folder with `/` separators and no
+/// `.` parts. A `..` part, a root, a drive or a UNC prefix, a `:` anywhere
+/// (a drive, or a Windows stream name) and a first part named `.git` (any
+/// case) are refused, in either separator, whatever the host OS.
+pub fn validate_docs_dir(s: &str) -> Result<Option<String>, WorkspaceError> {
+    let text = s.trim();
+    if text.is_empty() {
+        return Ok(None);
+    }
+    let bad = || WorkspaceError::BadPath(text.to_owned());
+    if text.contains(':') {
+        return Err(bad());
+    }
+    let unified = text.replace('\\', "/");
+    let drive = unified.as_bytes();
+    if unified.starts_with('/')
+        || (drive.len() >= 2 && drive[0].is_ascii_alphabetic() && drive[1] == b':')
+    {
+        return Err(bad());
+    }
+    let mut parts = Vec::new();
+    for part in unified.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => return Err(bad()),
+            p => parts.push(p),
+        }
+    }
+    if parts.is_empty() || parts[0].eq_ignore_ascii_case(".git") {
+        return Err(bad());
+    }
+    Ok(Some(parts.join("/")))
 }
 
 fn lossy(path: &Path) -> String {
@@ -114,4 +159,26 @@ pub fn forget_vault(reg: &mut Registry, id: &str) -> Result<(), WorkspaceError> 
         .ok_or_else(|| WorkspaceError::VaultUnknown(id.to_owned()))?;
     reg.vaults.remove(idx);
     Ok(())
+}
+
+/// Adopts the folder the old single `last_vault` setting held as a shared
+/// vault. Nothing happens for `None`, an empty or relative path, a path already
+/// registered or a repo's docs folder. The folder need not exist: a vault on
+/// a drive that is away lists as not existing. Returns whether the registry
+/// changed, so running it again returns `false`.
+pub fn adopt_last_vault(reg: &mut Registry, last: Option<&Path>) -> bool {
+    let Some(path) = last.filter(|p| p.is_absolute()) else {
+        return false;
+    };
+    let key = path_key(path);
+    let known = reg.vaults.iter().any(|v| path_key(&v.path) == key)
+        || reg.repos.iter().any(|r| path_key(&repo_docs_dir(r)) == key);
+    if known {
+        return false;
+    }
+    reg.vaults.push(VaultEntry {
+        id: repo_id(path),
+        path: path.to_owned(),
+    });
+    true
 }

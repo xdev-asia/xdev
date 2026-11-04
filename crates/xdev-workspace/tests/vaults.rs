@@ -4,6 +4,7 @@ use std::path::Path;
 use tempfile::TempDir;
 use xdev_workspace::{
     Registry, RepoEntry, VaultKind, add_vault, forget_vault, list_vaults, repo_docs_dir, repo_id,
+    validate_docs_dir,
 };
 
 /// A registry with one repo whose checkout is `<tmp>/main`.
@@ -141,4 +142,138 @@ fn forget_refuses_repo_vault_id() {
     let err = forget_vault(&mut reg, &format!("repo:{}", entry.id)).unwrap_err();
     assert_eq!(err.code(), "vault_unknown");
     assert_eq!(reg.repos.len(), 1);
+}
+
+#[test]
+fn repo_docs_dir_defaults_to_docs_and_honours_docs_dir() {
+    let (_tmp, _reg, mut entry) = with_repo();
+    assert_eq!(repo_docs_dir(&entry), entry.path.join("docs"));
+    entry.docs_dir = Some("handbook/en".into());
+    assert_eq!(repo_docs_dir(&entry), entry.path.join("handbook/en"));
+}
+
+#[test]
+fn validate_docs_dir_accepts_relative_and_resets_on_empty() {
+    assert_eq!(validate_docs_dir("").unwrap(), None);
+    assert_eq!(validate_docs_dir("  ").unwrap(), None);
+    assert_eq!(validate_docs_dir("docs").unwrap(), Some("docs".into()));
+    assert_eq!(validate_docs_dir("a/b").unwrap(), Some("a/b".to_owned()));
+    // Either separator reads the same.
+    assert_eq!(validate_docs_dir(r"a\b").unwrap(), Some("a/b".to_owned()));
+    assert_eq!(validate_docs_dir("./a/").unwrap(), Some("a".into()));
+}
+
+#[test]
+fn validate_docs_dir_refuses_escapes_and_absolute_paths() {
+    for bad in [
+        "..",
+        "../x",
+        "a/../b",
+        r"a\..\b",
+        "/x",
+        r"\x",
+        r"C:\x",
+        "C:/x",
+        "c:x",
+        r"\\host\share",
+        ".",
+        "a/./..",
+        ".git",
+        ".GIT/hooks",
+        r".Git\x",
+        "a:b",
+        "docs:stream",
+    ] {
+        let err = validate_docs_dir(bad).unwrap_err();
+        assert_eq!(err.code(), "bad_path", "{bad:?}");
+    }
+}
+
+#[test]
+fn list_vaults_reports_the_custom_docs_path() {
+    let (_tmp, mut reg, mut entry) = with_repo();
+    entry.docs_dir = Some("handbook".into());
+    reg.repos[0] = entry.clone();
+    fs::create_dir(entry.path.join("handbook")).unwrap();
+    let views = list_vaults(&reg);
+    assert_eq!(views[0].path, entry.path.join("handbook").to_string_lossy());
+    assert!(views[0].exists);
+}
+
+#[test]
+fn add_refuses_a_custom_repo_docs_folder() {
+    let (_tmp, mut reg, mut entry) = with_repo();
+    entry.docs_dir = Some("handbook".into());
+    reg.repos[0] = entry.clone();
+    let custom = entry.path.join("handbook");
+    fs::create_dir(&custom).unwrap();
+    let err = add_vault(&mut reg, &custom).unwrap_err();
+    assert_eq!(err.code(), "vault_exists");
+}
+
+#[test]
+fn adopt_last_vault_adds_a_missing_path_as_shared() {
+    use xdev_workspace::adopt_last_vault;
+    let (tmp, mut reg, _) = with_repo();
+    let notes = tmp.path().join("notes");
+    fs::create_dir(&notes).unwrap();
+    assert!(adopt_last_vault(&mut reg, Some(&notes)));
+    assert_eq!(reg.vaults.len(), 1);
+    assert_eq!(reg.vaults[0].path, notes);
+    assert_eq!(reg.vaults[0].id, repo_id(&notes));
+    // A second run changes nothing.
+    assert!(!adopt_last_vault(&mut reg, Some(&notes)));
+    assert_eq!(reg.vaults.len(), 1);
+}
+
+#[test]
+fn validate_docs_dir_allows_a_git_name_below_the_first_part() {
+    assert_eq!(
+        validate_docs_dir("docs/.git-notes").unwrap(),
+        Some("docs/.git-notes".into())
+    );
+    assert_eq!(
+        validate_docs_dir(".github").unwrap(),
+        Some(".github".into())
+    );
+}
+
+#[test]
+fn adopt_last_vault_skips_a_relative_path() {
+    use xdev_workspace::adopt_last_vault;
+    let (_tmp, mut reg, _) = with_repo();
+    let before = reg.clone();
+    assert!(!adopt_last_vault(&mut reg, Some(Path::new("notes"))));
+    assert!(!adopt_last_vault(&mut reg, Some(Path::new("../notes"))));
+    assert_eq!(reg, before);
+}
+
+#[test]
+fn adopt_last_vault_does_nothing_for_none_duplicates_and_repo_docs() {
+    use xdev_workspace::adopt_last_vault;
+    let (tmp, mut reg, mut entry) = with_repo();
+    let before = reg.clone();
+    assert!(!adopt_last_vault(&mut reg, None));
+    assert!(!adopt_last_vault(&mut reg, Some(Path::new(""))));
+    // The default docs folder of a repo, then a custom one.
+    assert!(!adopt_last_vault(&mut reg, Some(&repo_docs_dir(&entry))));
+    entry.docs_dir = Some("handbook".into());
+    reg.repos[0] = entry.clone();
+    let before_custom = reg.clone();
+    assert!(!adopt_last_vault(&mut reg, Some(&repo_docs_dir(&entry))));
+    assert_eq!(reg, before_custom);
+    reg.repos[0].docs_dir = None;
+    assert_eq!(reg, before);
+
+    // Already registered, spelled another way on Windows.
+    let notes = tmp.path().join("notes");
+    fs::create_dir(&notes).unwrap();
+    add_vault(&mut reg, &notes).unwrap();
+    let held = reg.clone();
+    assert!(!adopt_last_vault(&mut reg, Some(&notes)));
+    if cfg!(windows) {
+        let upper = notes.to_string_lossy().to_uppercase();
+        assert!(!adopt_last_vault(&mut reg, Some(Path::new(&upper))));
+    }
+    assert_eq!(reg, held);
 }
