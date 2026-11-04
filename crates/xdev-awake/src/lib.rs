@@ -150,6 +150,27 @@ impl SleepBlock {
         }
     }
 
+    /// Whether a request is in force: a helper that has exited since `hold` is reaped and counts as not
+    /// held; a Windows request cannot die on its own.
+    pub fn is_held(&mut self) -> bool {
+        match &mut self.0 {
+            #[cfg(windows)]
+            Kind::Windows(_) => true,
+            Kind::Helper(helper) => match helper.child.as_mut().map(|c| c.try_wait()) {
+                Some(Ok(None)) => true,
+                Some(_) => {
+                    if let Some(mut child) = helper.child.take() {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                    }
+                    false
+                }
+                None => false,
+            },
+            Kind::None => false,
+        }
+    }
+
     /// Gives the request back; the helper is killed and reaped.
     pub fn release(&mut self) {
         match &mut self.0 {
