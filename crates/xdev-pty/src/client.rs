@@ -68,10 +68,17 @@ pub struct Attached {
     pub truncated: bool,
 }
 
+/// The service's folder under the app's local dir. A debug build has its own
+/// (`ptyd-dev`), so it never reads a release service's token or sessions, nor
+/// runs its binary copies, and the other way round.
+pub fn service_dir(local: &Path) -> PathBuf {
+    local.join(format!("ptyd{}", xdev_ipc::CHANNEL))
+}
+
 /// What `ensure` needs to find or start the service.
 #[derive(Debug, Clone)]
 pub struct StartOptions {
-    /// `<local dir>/ptyd`: token, socket, `sessions.json`, binary copies.
+    /// `service_dir(<local dir>)`: token, socket, `sessions.json`, binary copies.
     pub dir: PathBuf,
     /// The `xdev-ptyd` next to the app.
     pub binary: PathBuf,
@@ -662,4 +669,20 @@ fn reap(mut child: std::process::Child) {
 
 fn lock<T: ?Sized>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_debug_build_keeps_its_own_service_dir() {
+        let local = Path::new("local");
+        let want = if cfg!(debug_assertions) {
+            "ptyd-dev"
+        } else {
+            "ptyd"
+        };
+        assert_eq!(service_dir(local), local.join(want));
+    }
 }
