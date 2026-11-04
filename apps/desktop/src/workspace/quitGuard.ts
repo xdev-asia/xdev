@@ -53,10 +53,16 @@ export async function guardClose(
   notice: { title: string; body: string },
   ask: () => Promise<boolean>,
 ): Promise<boolean> {
-  const intent = await api.shellCloseRequested(notice.title, notice.body).catch(() => "close" as const);
-  if (intent === "hide") return false;
-  const go = await ask();
-  if (!go) await api.shellQuitCancelled().catch(() => {});
+  const request = await api.shellCloseRequested(notice.title, notice.body).catch(() => ({ intent: "close" as const, mode: null }));
+  if (request.intent === "hide") return false;
+  // "Quit and end terminals" was confirmed before the close began: asking again would ignore its answer.
+  if (request.mode === "end-all") return true;
+  let go = false;
+  try {
+    go = await ask();
+  } finally {
+    if (!go) await api.shellQuitCancelled().catch(() => {});
+  }
   return go;
 }
 
