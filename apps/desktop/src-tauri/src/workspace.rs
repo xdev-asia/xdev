@@ -176,7 +176,10 @@ fn remove_with(
         path: path.to_owned(),
     };
     allowed(data, &action, confirmed)?;
-    update(data, lock, |reg| remove_worktree(reg, path, force))
+    let now = clock().0;
+    update(data, lock, |reg| {
+        remove_worktree(reg, path, force, now).map(drop)
+    })
 }
 
 /// `Ok` when the policy gate lets `action` run; `confirmed` says the user

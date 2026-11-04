@@ -6,6 +6,7 @@ use std::path::{Component, Path, PathBuf};
 use serde::{Deserialize, Deserializer, Serialize};
 use xdev_git::{BaseRefresh, GitError, Repo, WorktreeEntry};
 
+use crate::kept::{KeptBranch, KeptReason, keep};
 use crate::registry::normalize;
 use crate::{
     MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, WorkItem, WorkStatus, WorkspaceError,
@@ -83,11 +84,11 @@ pub fn path_key(path: &Path) -> String {
     plain.trim_end_matches('/').to_owned()
 }
 
-fn lossy(path: &Path) -> String {
+pub(crate) fn lossy(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-fn find_repo(reg: &Registry, id: &str) -> Result<RepoEntry, WorkspaceError> {
+pub(crate) fn find_repo(reg: &Registry, id: &str) -> Result<RepoEntry, WorkspaceError> {
     reg.repos
         .iter()
         .find(|r| r.id == id)
@@ -259,6 +260,7 @@ pub fn forget_repo(reg: &mut Registry, id: &str) -> Result<(), WorkspaceError> {
     find_repo(reg, id)?;
     reg.repos.retain(|r| r.id != id);
     reg.worktrees.retain(|m| m.repo_id != id);
+    reg.kept.retain(|k| k.repo_id != id);
     Ok(())
 }
 
@@ -306,7 +308,11 @@ fn missing_view(entry: &RepoEntry) -> RepoView {
 }
 
 /// Where a worktree began: its fork point from the base, else its head.
-fn start_of(repo: &Repo, entry: &WorktreeEntry, base_ref: &str) -> Result<String, WorkspaceError> {
+pub(crate) fn start_of(
+    repo: &Repo,
+    entry: &WorktreeEntry,
+    base_ref: &str,
+) -> Result<String, WorkspaceError> {
     // The id first: a branch and a tag may share a name.
     let tip = entry.head.as_deref().or(entry.branch.as_deref());
     let found = match tip {
@@ -323,7 +329,7 @@ fn start_of(repo: &Repo, entry: &WorktreeEntry, base_ref: &str) -> Result<String
 /// The local branch name `base_ref` stands for: `main` for `main`,
 /// `refs/heads/main`, or `origin/main` when no local branch has that whole
 /// name. `None` when it names no branch, e.g. `HEAD`.
-fn default_short(repo: &Repo, base_ref: &str) -> Result<Option<String>, WorkspaceError> {
+pub(crate) fn default_short(repo: &Repo, base_ref: &str) -> Result<Option<String>, WorkspaceError> {
     if let Some(name) = base_ref.strip_prefix("refs/heads/") {
         return Ok(Some(name.to_owned()));
     }
@@ -339,7 +345,7 @@ fn default_short(repo: &Repo, base_ref: &str) -> Result<Option<String>, Workspac
     }
 }
 
-fn view_of(
+pub(crate) fn view_of(
     entry: &WorktreeEntry,
     short_name: &str,
     meta: Option<&WorktreeMeta>,
@@ -932,21 +938,31 @@ pub(crate) fn orphan_children(reg: &mut Registry, key: &str) {
     }
 }
 
-/// Removes a linked worktree. Without `force` it must have no changes,
-/// untracked files included. Its branch goes too when this app made it and,
-/// unless `force`, all its commits are in `base_ref`; the branch of an
-/// imported worktree is kept.
-pub fn remove_worktree(reg: &mut Registry, path: &Path, force: bool) -> Result<(), WorkspaceError> {
+/// A linked worktree about to lose its folder, after the shared checks.
+pub(crate) struct Leaving {
+    pub idx: usize,
+    pub meta: WorktreeMeta,
+    pub entry: RepoEntry,
+    pub repo: Repo,
+    pub key: String,
+    /// Its branch, unless git lists it detached or another worktree has
+    /// the same branch checked out.
+    pub branch: Option<String>,
+}
+
+/// Finds the linked worktree at `path` and, without `force`, refuses one
+/// with changes, untracked files included.
+pub(crate) fn leaving(reg: &Registry, path: &Path, force: bool) -> Result<Leaving, WorkspaceError> {
     let key = path_key(path);
     if reg.repos.iter().any(|r| path_key(&r.path) == key) {
         return Err(WorkspaceError::Primary(path.to_owned()));
     }
-    let meta_idx = reg
+    let idx = reg
         .worktrees
         .iter()
         .position(|m| path_key(&m.path) == key)
         .ok_or_else(|| WorkspaceError::WorktreeUnknown(path.to_owned()))?;
-    let meta = reg.worktrees[meta_idx].clone();
+    let meta = reg.worktrees[idx].clone();
     let entry = find_repo(reg, &meta.repo_id)?;
     let repo = Repo::discover(&entry.path)?;
 
@@ -958,26 +974,79 @@ pub fn remove_worktree(reg: &mut Registry, path: &Path, force: bool) -> Result<(
     let branch = listed
         .iter()
         .find(|e| path_key(&e.path) == key)
+        .filter(|e| !e.detached)
         .and_then(|e| e.branch.clone())
         .filter(|b| {
-            meta.made_here
-                && !listed
-                    .iter()
-                    .any(|e| path_key(&e.path) != key && e.branch.as_deref() == Some(b))
+            !listed
+                .iter()
+                .any(|e| path_key(&e.path) != key && e.branch.as_deref() == Some(b))
         });
-    // Without `force`, commits found nowhere else keep their branch.
-    let branch = match branch {
-        Some(b) if !force && !is_merged(&repo, &b, &entry.base_ref)? => None,
-        other => other,
-    };
+    Ok(Leaving {
+        idx,
+        meta,
+        entry,
+        repo,
+        key,
+        branch,
+    })
+}
 
-    repo.remove_worktree(&meta.path)?;
-    reg.worktrees.remove(meta_idx);
-    orphan_children(reg, &key);
-    if let Some(branch) = branch {
-        repo.delete_branch(&branch)?;
-    }
+/// Removes the folder through git and the record; children become
+/// top-level. Never touches the branch.
+pub(crate) fn drop_folder(reg: &mut Registry, l: &Leaving) -> Result<(), WorkspaceError> {
+    l.repo.remove_worktree(&l.meta.path)?;
+    reg.worktrees.remove(l.idx);
+    orphan_children(reg, &l.key);
     Ok(())
+}
+
+/// What `remove_worktree` and `archive_worktree` did with the branch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct Removed {
+    pub deleted_branch: Option<String>,
+    /// The branch left in git and added to the registry's kept list.
+    pub kept: Option<KeptBranch>,
+}
+
+/// Removes a linked worktree. Without `force` it must have no changes,
+/// untracked files included. Its branch goes too when this app made it and,
+/// unless `force`, all its commits are in `base_ref`. A branch it leaves
+/// (unmerged, or of an imported worktree) is listed in `kept` as `Deleted`.
+pub fn remove_worktree(
+    reg: &mut Registry,
+    path: &Path,
+    force: bool,
+    now_ms: i64,
+) -> Result<Removed, WorkspaceError> {
+    let l = leaving(reg, path, force)?;
+    // Without `force`, commits found nowhere else keep their branch.
+    let delete = match &l.branch {
+        Some(b) if l.meta.made_here => force || is_merged(&l.repo, b, &l.entry.base_ref)?,
+        _ => false,
+    };
+    drop_folder(reg, &l)?;
+    match l.branch.clone() {
+        Some(branch) if delete => {
+            l.repo.delete_branch(&branch)?;
+            Ok(Removed {
+                deleted_branch: Some(branch),
+                kept: None,
+            })
+        }
+        Some(branch) => {
+            let kept = keep(reg, &l.meta, branch, KeptReason::Deleted, now_ms);
+            Ok(Removed {
+                deleted_branch: None,
+                kept: Some(kept),
+            })
+        }
+        None => Ok(Removed {
+            deleted_branch: None,
+            kept: None,
+        }),
+    }
 }
 
 /// What a worktree changed against where it started, for its sidebar row.

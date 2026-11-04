@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::WorkspaceError;
+use crate::kept::KeptBranch;
 
 const FILE: &str = "workspace.json";
 const VERSION: u32 = 1;
@@ -143,6 +144,9 @@ pub struct Registry {
     /// Absent in files written before vaults existed.
     #[serde(default)]
     pub vaults: Vec<VaultEntry>,
+    /// Branches left in git when their worktree was archived or deleted.
+    #[serde(default)]
+    pub kept: Vec<KeptBranch>,
 }
 
 impl Registry {
