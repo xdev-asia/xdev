@@ -12,14 +12,14 @@ use xdev_agent::{AgentError, Cancel, Cli, Profiles, RunRequest, Runner};
 use xdev_ai::Provider;
 use xdev_git::{
     BaseRange, Check, GhExec, PrDraft, PrView, Repo, SystemGh, Upstream, pr_checks, pr_create,
-    pr_open_web, pr_view,
+    pr_open_web, pr_view, run_failed_log,
 };
 use xdev_policy::{Action, Gate, Verdict};
 use xdev_workspace::{Registry, WorkspaceError, path_key};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError, load_git_settings};
-use crate::recipes::render;
+use crate::recipes::{COMMIT_VARS, PR_VARS, render};
 use crate::settings::Recipe;
 use crate::tasks::{gate, provider_runner};
 use crate::workspace::{bad_arg, inside, parent_within, start_of};
@@ -400,6 +400,7 @@ fn draft_commit_with(
         ("stagedPatch", changes.as_str()),
         ("linkedIssue", ""),
     ];
+    debug_assert!(vars.iter().map(|(name, _)| *name).eq(COMMIT_VARS));
     ask(runner, repo, render(&recipe.template, &vars), &recipe.args)
 }
 
@@ -446,6 +447,7 @@ fn draft_pr_with(
         ("patch", patch.as_str()),
         ("linkedIssue", ""),
     ];
+    debug_assert!(vars.iter().map(|(name, _)| *name).eq(PR_VARS));
     let prompt = render(&recipe.template, &vars);
     let answer = ask(runner, repo, prompt, &recipe.args)?;
     let mut lines = answer.lines().skip_while(|l| l.trim().is_empty());
@@ -545,9 +547,7 @@ pub fn worktree_check_log(
     link: String,
 ) -> Result<Option<String>, CmdError> {
     locate(data_dir(&state)?, &path)?;
-    // The reader of `gh run view --log-failed` arrives with B5.
-    let _ = link;
-    Ok(None)
+    Ok(run_failed_log(&SystemGh, &path, &link)?)
 }
 
 #[tauri::command(async)]
