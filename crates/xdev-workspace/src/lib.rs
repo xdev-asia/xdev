@@ -6,6 +6,7 @@ mod names;
 mod ops;
 mod registry;
 mod repo_commands;
+mod search;
 mod vaults;
 
 use std::io;
@@ -34,6 +35,10 @@ pub use registry::{
 pub use repo_commands::{
     COMMAND_LABEL_MAX, COMMAND_PROMPT_MAX, COMMAND_TEXT_MAX, RepoAction, RepoCommand, RepoCommands,
     repo_commands, trust_commands,
+};
+pub use search::{
+    FileHits, FileList, HIT_MAX, LINE_CLIP, LIST_MAX, LineHit, PER_FILE_MAX, SearchEvent,
+    SearchQuery, list_files, search_text,
 };
 pub use vaults::{VaultKind, VaultView, add_vault, forget_vault, list_vaults, repo_docs_dir};
 

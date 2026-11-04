@@ -42,7 +42,9 @@ export type ActionId =
   // Saves the file of the focused file tab; the handler declines when another tab is in front.
   | "file.save"
   // Bound to nothing by default; the quick-commands plan registers the handler.
-  | "quickCommands.open";
+  | "quickCommands.open"
+  // Quick open: a file of the worktree on screen by name.
+  | "quickOpen.open";
 
 export interface Binding {
   action: ActionId;

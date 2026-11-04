@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createMockApi } from "./api";
+import { createMockApi, type SearchEvent, type SearchQuery } from "./api";
 import { createMockWorkspace } from "./mockWorkspace";
 
 const WT = "/demo/wt/xdev-oak";
@@ -80,5 +80,46 @@ describe("mock files", () => {
     await api.fileReveal(WT, "./src/App.tsx");
     expect(api.__fileReveals()).toEqual([{ worktree: WT, rel: "src/App.tsx" }]);
     expect((await api.editorSettingsPut({ autosave: true, autosaveMs: 5, fontSize: 99, wordWrap: true, tabSize: 2 })).autosaveMs).toBe(250);
+  });
+});
+
+describe("mock search", () => {
+  const query = (text: string, more: Partial<SearchQuery> = {}): SearchQuery => ({
+    text, caseSensitive: false, wholeWord: false, regex: false, include: [], exclude: [], ...more,
+  });
+
+  async function run(api: ReturnType<typeof createMockWorkspace>, q: SearchQuery, id = "s1"): Promise<SearchEvent[]> {
+    const events: SearchEvent[] = [];
+    await api.filesSearch(WT, q, id, (e) => events.push(e));
+    return events;
+  }
+
+  it("lists the worktree's files sorted and rejects an unknown worktree", async () => {
+    const api = createMockWorkspace();
+    const list = await api.filesList(WT);
+    expect(list.truncated).toBe(false);
+    expect(list.files).toContain("src/session.ts");
+    expect(list.files).toEqual([...list.files].sort());
+    await expect(api.filesList("/nowhere")).rejects.toMatchObject({ code: "worktree_unknown" });
+  });
+
+  it("sends one batch and one done with the matching lines", async () => {
+    const api = createMockWorkspace();
+    api.__editFile(WT, "src/a.ts", "const dir_under = 1;\r\nfn under() {}\n");
+    const events = await run(api, query("under", { wholeWord: true, include: ["src/**/*.ts"] }));
+    expect(events.map((e) => e.type)).toEqual(["batch", "done"]);
+    const batch = events[0] as Extract<SearchEvent, { type: "batch" }>;
+    expect(batch.files).toEqual([{ rel: "src/a.ts", hits: [{ line: 2, text: "fn under() {}", ranges: [[3, 8]] }], more: false }]);
+    expect(events[1]).toMatchObject({ type: "done", files: 1, hits: 1, truncated: false });
+  });
+
+  it("sends an error for a bad regex and nothing for a cancelled search", async () => {
+    const api = createMockWorkspace();
+    expect(await run(api, query("(", { regex: true }))).toEqual([{ type: "error", message: expect.any(String) }]);
+    const events: SearchEvent[] = [];
+    const pending = api.filesSearch(WT, query("export"), "s2", (e) => events.push(e));
+    await api.filesSearchCancel("s2");
+    await pending;
+    expect(events).toEqual([]);
   });
 });
