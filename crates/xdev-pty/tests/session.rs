@@ -151,14 +151,16 @@ fn ten_kb_paste_arrives_whole() {
 #[test]
 fn write_does_not_block_when_child_is_not_reading() {
     let run = if cfg!(windows) {
-        sh("ping -n 6 127.0.0.1 >nul")
+        sh("ping -n 21 127.0.0.1 >nul")
     } else {
-        sh("sleep 5")
+        sh("sleep 20")
     };
     let start = Instant::now();
     run.session.write(vec![b'x'; 1024 * 1024]);
-    // A blocking write would wait for the child to exit (5 s); 2 s leaves room for slow CI runners.
-    assert!(start.elapsed() < Duration::from_secs(2));
+    // The child reads nothing for 20 s: a write that blocked on it would take
+    // that long. Shared CI runners are slow, so the bound is generous.
+    assert!(start.elapsed() < Duration::from_secs(5));
+    run.session.kill();
 }
 
 #[test]

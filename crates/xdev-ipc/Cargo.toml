@@ -12,8 +12,20 @@ getrandom.workspace = true
 interprocess.workspace = true
 thiserror.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+widestring.workspace = true
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_IO",
+    "Win32_System_Threading",
+] }
+
 [dev-dependencies]
 tempfile.workspace = true
 
-[lints]
-workspace = true
+# The workspace forbids unsafe code; here it is denied instead, so the Windows
+# module can allow it for the Win32 calls the pipe API does not wrap.
+[lints.rust]
+unsafe_code = "deny"

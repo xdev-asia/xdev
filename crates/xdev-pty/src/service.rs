@@ -338,7 +338,8 @@ fn serve(shared: Arc<Shared>, stream: Stream) {
     let Ok(mut writer) = reader.try_clone() else {
         return;
     };
-    if reader.set_read_timeout(Some(HELLO_WAIT)).is_err() {
+    // A peer that says nothing is dropped, on every OS.
+    if reader.set_read_deadline(Some(HELLO_WAIT)).is_err() {
         return;
     }
     // A wrong token ends the connection before any other frame is read.
@@ -361,7 +362,9 @@ fn serve(shared: Arc<Shared>, stream: Stream) {
         );
         return;
     }
-    let _ = reader.set_read_timeout(None);
+    if reader.set_read_deadline(None).is_err() {
+        return;
+    }
     let (tx, rx) = mpsc::channel::<Frame>();
     let conn = Arc::new(Conn {
         id: shared.next_conn.fetch_add(1, Ordering::Relaxed),
