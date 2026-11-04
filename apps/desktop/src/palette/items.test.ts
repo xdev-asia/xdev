@@ -2,7 +2,8 @@ import { chordLabel } from "@/keys/keymap";
 import { expect, it, vi } from "vitest";
 import type { RepoView, WorktreeView } from "@/api";
 import { translate } from "@/i18n";
-import { SETTING_ENTRIES } from "@/settings/catalog";
+import { PLATFORM } from "@/platform";
+import { SETTING_ENTRIES, settingEntriesFor } from "@/settings/catalog";
 import { SECTIONS } from "@/settings/sections";
 import type { Tab } from "@/workspace/sessions";
 import { actionItems, settingItems, tabItems, validWorktreeName, worktreeItems } from "./items";
@@ -161,7 +162,7 @@ it("setting entries follow the section items, with the section as detail", () =>
   const items = settingItems(t, vi.fn());
   const sections = SECTIONS.length;
   expect(items.slice(0, sections).map((i) => i.id)).toEqual(SECTIONS.map((s) => `set:${s.id}`));
-  expect(items.length).toBe(sections + SETTING_ENTRIES.length);
+  expect(items.length).toBe(sections + settingEntriesFor(PLATFORM).length);
   const entry = SETTING_ENTRIES[0];
   const item = items[sections];
   expect(item).toMatchObject({ id: `set:${entry.id}`, kind: "setting", title: t(entry.titleKey), minQuery: 2 });
