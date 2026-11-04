@@ -116,7 +116,7 @@ export function createMockIssues(): IssuesApi {
     async prBranch(_repoId, number) {
       const found = PRS.find((p) => p.number === number);
       if (!found) return reject("pr_not_found");
-      return found.fork ? `pr-${number}` : found.head;
+      return { branch: found.fork ? `pr-${number}` : found.head, fetched: found.fork };
     },
     async prBranchDiscard() {},
     async projectsList() {

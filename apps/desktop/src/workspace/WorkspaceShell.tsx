@@ -1047,12 +1047,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The pull request becomes the worktree: its branch is put on a new worktree, linked as its work item, sent to the default agent.
   async function startFromPr(repoId: string, pr: PrSummary): Promise<void> {
     try {
-      const branch = await api.prBranch(repoId, pr.number);
+      const { branch, fetched } = await api.prBranch(repoId, pr.number);
       const repo = repos?.find((r) => r.id === repoId);
       const taken = new Set((repo?.worktrees ?? []).flatMap((w) => [w.name, w.branch ?? ""]));
       const name = uniqueWorktreeName(prWorktreeName(pr), taken);
       const view = await api.profiles().catch(() => null);
-      create(repoId, name, null, { title: pr.title, agent: view?.defaultAgent ?? null, setDefault: false, parent: null, item: prWorkItem(pr) }, { existing: branch, sparse: [] }, false, branch);
+      create(repoId, name, null, { title: pr.title, agent: view?.defaultAgent ?? null, setDefault: false, parent: null, item: prWorkItem(pr) }, { existing: branch, sparse: [] }, false, fetched ? branch : undefined);
     } catch (e) {
       setNotice(toApiError(e).code);
     }

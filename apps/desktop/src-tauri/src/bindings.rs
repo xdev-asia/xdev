@@ -134,6 +134,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_git::GhAccount::export_all(cfg)?;
     xdev_git::GhLogin::export_all(cfg)?;
     xdev_git::PrSummary::export_all(cfg)?;
+    crate::prs::PrBranch::export_all(cfg)?;
     xdev_git::PrFilter::export_all(cfg)?;
     xdev_git::PrQuery::export_all(cfg)?;
     xdev_git::IssueDraft::export_all(cfg)?;

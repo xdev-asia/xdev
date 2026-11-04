@@ -31,3 +31,6 @@ Gate: -r typecheck ok; -r test ui 155 + desktop 2156 ok; desktop build ok; cargo
 - Item 11 deviation: the branch cannot be deleted at failure, because `pr_branch` fetches it before the create job runs and Retry reuses it. `pr_branch_discard` deletes only a branch `prBranch` itself fetched (and not one a worktree holds); `PendingCreates` calls it when a failed job is dismissed or cancelled, or when a cancelled job then fails.
 - Item 12 accepted as is: Segmented instead of Tabs; Projects list without refresh.
 - Task 14 (correction to the note above): a separate commit in xdev-internal sets matrix rows W2, K1, X-4 to "Có" with evidence files (dd70fef, not pushed).
+
+## Last fix (lane p1-rest, Sonnet)
+- Item 1: `pr_branch` returns `{ branch, fetched }`. The fetch records the branch tip; `pr_branch_discard` deletes only while `refs/heads/<b>` still has that tip and no worktree holds it. `branch_with` reusing an existing branch drops its record. WorkspaceShell sets `discardBranch` only when `fetched`. Tests: commit-then-reuse, fetch-then-discard, moved tip, delete-and-recreate.

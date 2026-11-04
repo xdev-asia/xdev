@@ -103,6 +103,7 @@ export type { OpenTarget } from "./OpenTarget";
 export type { Origin } from "./Origin";
 export type { Permissions } from "./Permissions";
 export type { PlannedFile } from "./PlannedFile";
+export type { PrBranch } from "./PrBranch";
 export type { PrDraft } from "./PrDraft";
 export type { PrFilter } from "./PrFilter";
 export type { PrQuery } from "./PrQuery";

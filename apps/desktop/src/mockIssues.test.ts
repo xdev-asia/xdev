@@ -37,8 +37,8 @@ it("filters pull requests: open, mine, needs review, merged", async () => {
 });
 
 it("gives a pull request branch, pr-<n> for a fork, and rejects an unknown number", async () => {
-  expect(await api.prBranch("r", 10)).toBe("fix-footer");
-  expect(await api.prBranch("r", 13)).toBe("pr-13");
+  expect(await api.prBranch("r", 10)).toEqual({ branch: "fix-footer", fetched: false });
+  expect(await api.prBranch("r", 13)).toEqual({ branch: "pr-13", fetched: true });
   expect((await api.prGet("r", 13)).fork).toBe(true);
   await expect(api.prBranch("r", 99)).rejects.toMatchObject({ code: "pr_not_found" });
   await expect(api.prOpen("r", 99)).rejects.toMatchObject({ code: "pr_not_found" });
