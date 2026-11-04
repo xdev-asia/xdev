@@ -41,7 +41,7 @@ const PRESS: Record<string, Record<string, unknown>> = {
 };
 // The other default chords: a press built from the chord.
 const CODES: Record<string, string> = {
-  "=": "Equal", "-": "Minus", ",": "Comma", "[": "BracketLeft", "]": "BracketRight", Up: "ArrowUp", Down: "ArrowDown",
+  "=": "Equal", "-": "Minus", ",": "Comma", "[": "BracketLeft", "]": "BracketRight", Up: "ArrowUp", Down: "ArrowDown", Left: "ArrowLeft", Right: "ArrowRight",
 };
 function pressOf(chord: string): Record<string, unknown> {
   if (PRESS[chord]) return PRESS[chord];
@@ -379,4 +379,20 @@ it("a key the terminal always keeps (Ctrl+N) is not an app key there", () => {
   const { press } = setup({ "docs.new": vi.fn() });
   press({ ctrlKey: true, code: "KeyN" }, true);
   expect(getToasts()).toHaveLength(0);
+});
+
+it("history back and forward: Ctrl+Alt+Arrow off macOS, Cmd+Alt+Arrow on macOS", () => {
+  expect(actionOf(ev({ ctrlKey: true, altKey: true, code: "ArrowLeft" }), false)).toBe("worktree.history.back");
+  expect(actionOf(ev({ ctrlKey: true, altKey: true, code: "ArrowRight" }), false)).toBe("worktree.history.forward");
+  expect(actionOf(ev({ metaKey: true, altKey: true, code: "ArrowLeft" }), true)).toBe("worktree.history.back");
+  expect(actionOf(ev({ metaKey: true, altKey: true, code: "ArrowRight" }), true)).toBe("worktree.history.forward");
+  expect(actionOf(ev({ ctrlKey: true, altKey: true, code: "ArrowLeft" }), true)).toBeNull();
+});
+
+it("history chords are labelled for each platform", () => {
+  expect(chordLabel("worktree.history.back", false)).toBe("Ctrl+Alt+Left");
+  expect(chordLabel("worktree.history.forward", false)).toBe("Ctrl+Alt+Right");
+  // Modifier order is the normalizer's: Alt before Cmd.
+  expect(chordLabel("worktree.history.back", true)).toBe("⌥⌘←");
+  expect(chordLabel("worktree.history.forward", true)).toBe("⌥⌘→");
 });

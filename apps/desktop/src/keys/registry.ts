@@ -72,6 +72,8 @@ export const SHORTCUTS: ShortcutDef[] = [
   // Worktrees.
   def("worktree.prev", "worktrees", ["Mod+Shift+Up"]),
   def("worktree.next", "worktrees", ["Mod+Shift+Down"]),
+  def("worktree.history.back", "worktrees", ["Mod+Alt+Left"], TUI),
+  def("worktree.history.forward", "worktrees", ["Mod+Alt+Right"], TUI),
   ...DIGITS.map((n) => def(`worktree.select.${n}`, "worktrees", [`Mod+${n}`])),
   // Agents.
   def("agent.new", "agents", ["Ctrl+Alt+T"]),
