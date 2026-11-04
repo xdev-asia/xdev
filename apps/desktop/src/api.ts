@@ -78,12 +78,17 @@ import type {
   DirListing,
   EditorSettings,
   Eol,
+  FileHits,
+  FileList,
   FileText,
   GitSettings,
+  LineHit,
   Home,
   KitText,
   MemorySet,
   PromptEntry,
+  SearchEvent,
+  SearchQuery,
   SessionQuery,
   SessionRow,
   Agent,
@@ -100,6 +105,7 @@ export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
 export type { Agent, AgentSession, SessionQuery, SessionRow };
 export type { EditorSettings, Eol, FileText, WriteOutcome };
+export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FileKind } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
 
@@ -645,6 +651,17 @@ export interface Api {
   fileTrash(worktree: string, rel: string): Promise<void>;
   // Opens the OS file manager with the item selected where the OS allows it.
   fileReveal(worktree: string, rel: string): Promise<void>;
+  // Search. Same `worktree` rule as Files. Both walk the worktree with `.gitignore` applied,
+  // hidden files included, `.git` and links out of it skipped.
+  // Every file, relative with forward slashes, sorted; `truncated` past 50 000 files.
+  filesList(worktree: string): Promise<FileList>;
+  // Searches the text files (binary files and files over 2 MiB are skipped). `onEvent` gets
+  // `batch` events, then one `done`; a bad regex or glob sends one `error` instead. At most
+  // 5 000 lines in total and 200 per file (`more`). A new search with the same `id` cancels the
+  // old one, which sends nothing more. Resolves when the search ends or is cancelled.
+  filesSearch(worktree: string, query: SearchQuery, id: string, onEvent: (e: SearchEvent) => void): Promise<void>;
+  // Stops the search named `id`; nothing when it is not running.
+  filesSearchCancel(id: string): Promise<void>;
   // Settings → Editor; the put returns what was stored, with numbers clamped to their ranges.
   editorSettings(): Promise<EditorSettings>;
   editorSettingsPut(v: EditorSettings): Promise<EditorSettings>;
@@ -955,6 +972,13 @@ const tauriApi: Api = {
   fileRename: (worktree, from, to) => call("file_rename", { worktree, from, to }),
   fileTrash: (worktree, rel) => call("file_trash", { worktree, rel }),
   fileReveal: (worktree, rel) => call("file_reveal", { worktree, rel }),
+  filesList: (worktree) => call("files_list", { worktree }),
+  filesSearch(worktree, query, id, onEvent) {
+    const channel = new Channel<SearchEvent>();
+    channel.onmessage = onEvent;
+    return call("files_search", { worktree, query, id, onEvent: channel });
+  },
+  filesSearchCancel: (id) => call("files_search_cancel", { id }),
   editorSettings: () => call("editor_settings_get"),
   editorSettingsPut: (settings) => call("editor_settings_put", { settings }),
 };
