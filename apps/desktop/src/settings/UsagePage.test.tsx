@@ -87,6 +87,9 @@ it("shows the empty state when the range holds nothing", async () => {
     by_agent: [],
     sessions: 0,
     tracking_since: null,
+    cost: { nanos: 0, unpriced: false, priced: false },
+    cost_by_agent: [],
+    recent_sessions: [],
   });
   act(m.all(), "refresh")!.props.onClick();
   await m.settle();

@@ -4,6 +4,7 @@
 mod homes;
 mod logs;
 mod memory;
+mod pricing;
 mod sessions;
 mod skills;
 mod usage;
@@ -15,12 +16,13 @@ pub use logs::FileMark;
 pub use memory::{
     IssueKind, MemoryFile, MemoryIssue, MemoryKind, MemorySet, project_slug, scan_memory,
 };
+pub use pricing::{PRICES_AS_OF, Rates, cost_nanos, rates_for};
 pub use sessions::{AgentSession, SessionIndex};
 pub use skills::{Skill, SkillScope, scan_skills};
 pub use usage::{
     RefreshStats, SessionUsage, Tokens, UsageIndex, UsageQuery, UsageSummary, summarize,
 };
-pub use usage_report::{ReportQuery, UsageReport, report, under_any};
+pub use usage_report::{Cost, ReportQuery, UsageReport, report, under_any};
 pub use write::{
     Roots, copy_file, copy_skill_dir, new_skill, read_for_edit, remove_skill, restore_skill,
     write_checked,
