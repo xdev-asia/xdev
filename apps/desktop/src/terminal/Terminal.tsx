@@ -17,6 +17,8 @@ import { TerminalFind } from "./TerminalFind";
 import { createBell } from "./terminalBell";
 import { attachRenderer } from "./terminalRenderer";
 import { followAppTheme } from "./terminalColors";
+import { pushToast } from "@/workspace/toastStore";
+import { pasteClipboard, type PasteResult } from "./clipboardPaste";
 import { registerDropTarget } from "./fileDrop";
 import { trackInputModes } from "./inputModes";
 import { effectiveOptionAsAlt, getDetectedLayout, subscribeDetectedLayout } from "./optionAsAlt";
@@ -85,6 +87,15 @@ export function Terminal(props: {
   const handlers = useRef(props);
   handlers.current = props;
   const clientRef = useRef<PtyClient | null>(null);
+  const tRef = useRef(t);
+  tRef.current = t;
+  // A paste that saved nothing says why; the others are silent.
+  const reportPaste = (result: PasteResult) => {
+    if (result === "too_large") pushToast({ text: tRef.current("terminal.input.imageTooLarge") });
+    else if (result === "failed") pushToast({ text: tRef.current("terminal.input.imageSaveFailed") });
+  };
+  const reportPasteRef = useRef(reportPaste);
+  reportPasteRef.current = reportPaste;
   // Opens the find bar, or focuses it when open. A one-line selection becomes the query.
   const openFind = () => {
     const selected = xterm.current?.getSelection() ?? "";
@@ -95,7 +106,13 @@ export function Terminal(props: {
   openFindRef.current = openFind;
   // One handle per view; it reads the live xterm on each call.
   const handle = useRef(
-    createTerminalHandle({ term: () => xterm.current, client: () => clientRef.current, find: () => openFindRef.current() }),
+    createTerminalHandle({
+      term: () => xterm.current,
+      client: () => clientRef.current,
+      find: () => openFindRef.current(),
+      saveImage: () => handlers.current.api.clipboardImageSave(),
+      pasted: (result) => reportPasteRef.current(result),
+    }),
   );
   useImperativeHandle(props.handleRef, () => handle.current, []);
 
@@ -190,12 +207,7 @@ export function Terminal(props: {
           break;
         }
         case "terminal.paste":
-          void navigator.clipboard
-            ?.readText()
-            .then((text) => {
-              if (text) term.paste(text);
-            })
-            .catch(() => {});
+          void handle.current.paste();
           break;
         default:
           return false;
@@ -227,12 +239,13 @@ export function Terminal(props: {
     const onContextMenu = (e: MouseEvent) => {
       if (getTerminalSettings().rightClickPaste && !e.shiftKey) {
         e.preventDefault();
-        void navigator.clipboard
-          ?.readText()
-          .then((text) => {
-            if (text) void client.input(text).catch(() => {});
-          })
-          .catch(() => {});
+        // As before, the text goes straight to the pty; an image becomes its saved path.
+        void pasteClipboard({
+          readText: async () => (await navigator.clipboard?.readText()) ?? "",
+          saveImage: () => handlers.current.api.clipboardImageSave(),
+          pasteText: (text) => client.input(text),
+          writeRaw: (data) => client.input(data),
+        }).then((result) => reportPasteRef.current(result), () => {});
         return;
       }
       const menu = handlers.current.onMenu;
