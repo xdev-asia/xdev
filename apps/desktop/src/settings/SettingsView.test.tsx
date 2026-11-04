@@ -90,8 +90,8 @@ it("an unknown initial section falls back to the first", () => {
 
 it("lists notifications after usage and opens its page", () => {
   const v = view();
-  v.items()[5].props.onClick();
-  expect(v.items()[5].props["aria-current"]).toBe("page");
+  v.items()[6].props.onClick();
+  expect(v.items()[6].props["aria-current"]).toBe("page");
   expect(v.shown().type).toBe(NotificationsPage);
   expect(v.body().props["aria-label"]).toBe(en("settings.notifications.title"));
   hooks.values = [];
@@ -100,8 +100,8 @@ it("lists notifications after usage and opens its page", () => {
 
 it("lists terminal after notifications and opens its page", () => {
   const v = view();
-  v.items()[6].props.onClick();
-  expect(v.items()[6].props["aria-current"]).toBe("page");
+  v.items()[7].props.onClick();
+  expect(v.items()[7].props["aria-current"]).toBe("page");
   expect(v.shown().type).toBe(TerminalPage);
   expect(v.body().props["aria-label"]).toBe(en("settings.terminal.title"));
   hooks.values = [];
@@ -186,7 +186,7 @@ it("a palette target opens its section with the filter holding every id and the 
 it("hands a section the way to open another one", () => {
   const v = view();
   v.shown().props.openSection("openIn");
-  expect(v.items()[9].props["aria-current"]).toBe("page");
+  expect(v.items()[10].props["aria-current"]).toBe("page");
   expect(v.body().props["aria-label"]).toBe(en("openIn.title"));
   hooks.values = [];
   const w = view();
