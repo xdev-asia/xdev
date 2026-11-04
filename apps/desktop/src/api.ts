@@ -82,6 +82,8 @@ import type {
   FileList,
   FileText,
   GitSettings,
+  GitRecipes,
+  Recipe,
   LineHit,
   Home,
   KitText,
@@ -184,6 +186,8 @@ export type {
   PrView,
   ShipView,
   GitSettings,
+  GitRecipes,
+  Recipe,
   BranchPrefixMode,
   TerminalSettings,
   FontWeight,
@@ -564,6 +568,9 @@ export interface Api {
   worktreePrCreate(path: string, draft: PrDraft): Promise<PrView>;
   worktreePrChecks(path: string, number: number): Promise<Check[]>;
   worktreePrOpen(path: string, checks: boolean): Promise<void>;
+  // The log of the failed job behind a check's link (capped), for the Fix checks recipe; null when
+  // `gh` cannot give it.
+  worktreeCheckLog(path: string, link: string): Promise<string | null>;
   // Drafted texts; reject with `draft_failed`.
   worktreeDraftCommit(path: string, files: string[]): Promise<string>;
   worktreeDraftPr(path: string): Promise<PrDraft>;
@@ -941,6 +948,7 @@ const tauriApi: Api = {
   worktreePrCreate: (path, draft) => call("worktree_pr_create", { path, draft }),
   worktreePrChecks: (path, number) => call("worktree_pr_checks", { path, number }),
   worktreePrOpen: (path, checks) => call("worktree_pr_open", { path, checks }),
+  worktreeCheckLog: (path, link) => call("worktree_check_log", { path, link }),
   worktreeDraftCommit: (path, files) => call("worktree_draft_commit", { path, files }),
   worktreeDraftPr: (path) => call("worktree_draft_pr", { path }),
   worktreeListDir: (path, dir) => call("worktree_list_dir", { path, dir }),

@@ -466,6 +466,20 @@ pub fn worktree_pr_checks(
     Ok(pr_checks(&SystemGh, &path, number)?)
 }
 
+/// The log of the failed job behind a check's `link`, for the Fix checks
+/// recipe; `None` when it cannot be had.
+#[tauri::command(async)]
+pub fn worktree_check_log(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    link: String,
+) -> Result<Option<String>, CmdError> {
+    locate(data_dir(&state)?, &path)?;
+    // The reader of `gh run view --log-failed` arrives with B5.
+    let _ = link;
+    Ok(None)
+}
+
 #[tauri::command(async)]
 pub fn worktree_pr_open(
     state: State<'_, AppState>,
