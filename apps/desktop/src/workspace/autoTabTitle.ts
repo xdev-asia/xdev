@@ -7,8 +7,8 @@ const MAX_WORDS = 6;
 const MAX_CHARS = 40;
 /** Control characters (line breaks stay) and bidi / zero-width marks never reach a tab title. */
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F​-‏‪-‮⁦-⁩﻿]/g;
-/** A long run of letters, digits, dash and underscore looks like a key or token. */
-const TOKEN_LIKE = /[A-Za-z0-9_-]{24,}/g;
+/** A run of 32 or more letters, digits, dash and underscore with both a letter and a digit looks like a key, token or sha. */
+const TOKEN_LIKE = /(?=[A-Za-z0-9_-]*[A-Za-z])(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{32,}/g;
 
 /**
  * A short tab title from a prompt: its first non-blank line with the white space folded, at most six
