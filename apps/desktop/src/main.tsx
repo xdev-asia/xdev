@@ -22,6 +22,7 @@ import "./styles/terminal.css";
 import "./styles/workspace.css";
 import "./styles/review.css";
 import "./styles/settings.css";
+import "./styles/usageStats.css";
 import "./styles/quickCommands.css";
 import { startEditorSettingsSync } from "./files/editorSettings";
 import { startNavigationSettingsSync } from "./settings/navigationSettings";
