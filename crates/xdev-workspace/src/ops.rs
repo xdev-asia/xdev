@@ -248,6 +248,15 @@ pub fn update_repo(
         .as_deref()
         .map(validate_docs_dir)
         .transpose()?;
+    if let Some(dir) = &docs_dir {
+        let target = old
+            .path
+            .join(dir.as_deref().unwrap_or(crate::vaults::DEFAULT_DOCS_DIR));
+        let key = path_key(&target);
+        if reg.vaults.iter().any(|v| path_key(&v.path) == key) {
+            return Err(WorkspaceError::VaultExists(lossy(&target)));
+        }
+    }
     let entry = &mut reg.repos[idx];
     if let Some(dir) = docs_dir {
         entry.docs_dir = dir;
