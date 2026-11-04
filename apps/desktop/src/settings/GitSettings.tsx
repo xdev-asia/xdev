@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import { toApiError, type ApiError, type BranchPrefixMode, type GitSettings as Git } from "@/api";
 import { useI18n } from "@/i18n";
 import { previewPrefix } from "./branchPrefix";
+import { RecipesEditor } from "./recipes/RecipesEditor";
 import type { SettingsSectionProps } from "./sections";
 
 const MODES: BranchPrefixMode[] = ["git-username", "custom", "none"];
@@ -186,6 +187,7 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
           ))}
         </fieldset>
       )}
+      {git.sourceControlAi && <RecipesEditor api={api} recipes={git.recipes} onChange={(recipes) => change({ recipes })} />}
       {saveError && (
         <p className="error-text" role="alert">
           {t(`error.${saveError}`)}

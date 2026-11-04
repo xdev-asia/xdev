@@ -14,10 +14,10 @@ export const DEFAULT_GIT_SETTINGS: GitSettings = {
   prGenerateOnOpen: false,
   prOpenAfterCreate: false,
   recipes: {
-    commitMessage: DEFAULT_RECIPE,
-    pullRequest: DEFAULT_RECIPE,
-    fixCommitFailure: DEFAULT_RECIPE,
-    fixPushFailure: DEFAULT_RECIPE,
-    fixChecks: DEFAULT_RECIPE,
+    commitMessage: { ...DEFAULT_RECIPE, args: [] },
+    pullRequest: { ...DEFAULT_RECIPE, args: [] },
+    fixCommitFailure: { ...DEFAULT_RECIPE, args: [] },
+    fixPushFailure: { ...DEFAULT_RECIPE, args: [] },
+    fixChecks: { ...DEFAULT_RECIPE, args: [] },
   },
 };
