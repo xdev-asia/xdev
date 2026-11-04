@@ -63,6 +63,11 @@ type WorkspaceApi = Pick<
   | "worktreeBranches"
   | "worktreeStageState"
   | "worktreeDiscard"
+  | "worktreeRenameBranch"
+  | "worktreeSuggestBranch"
+  | "worktreeConflicts"
+  | "worktreeConflictContinue"
+  | "worktreeConflictAbort"
   | "reviewNotes"
   | "reviewNotesPut"
   | "gitSettings"
@@ -960,7 +965,7 @@ export function createMockWorkspace(
       if (!findWorktree(path)) return reject("worktree_unknown", path);
       return (changes.get(path) ?? []).map((c) => {
         const staged = stagedFiles.get(path)?.has(c.path) ?? false;
-        return { path: c.path, staged, unstaged: !staged, untracked: !staged && c.kind === "added" };
+        return { path: c.path, staged, unstaged: !staged, untracked: !staged && c.kind === "added", conflicted: false };
       });
     },
     async worktreeDiscard(path, files, stagedToo, confirmed) {
@@ -974,6 +979,22 @@ export function createMockWorkspace(
       for (const f of gone) set.delete(f);
       stagedFiles.set(path, set);
       changes.set(path, pending.filter((c) => !gone.includes(c.path)));
+    },
+    // Contract stubs; U1 gives them behaviour.
+    async worktreeRenameBranch(path) {
+      return reject("worktree_unknown", path);
+    },
+    async worktreeSuggestBranch(path) {
+      return reject("bad_name", path);
+    },
+    async worktreeConflicts() {
+      return null;
+    },
+    async worktreeConflictContinue() {
+      return reject("no_conflict");
+    },
+    async worktreeConflictAbort() {
+      return reject("no_conflict");
     },
     async worktreeBranches(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

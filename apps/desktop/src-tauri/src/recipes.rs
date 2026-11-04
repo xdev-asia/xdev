@@ -23,6 +23,16 @@ pub const PR_VARS: [&str; 9] = [
     "linkedIssue",
 ];
 
+/// What a branch name template can name.
+// Used by `worktree_suggest_branch` (B4).
+#[allow(dead_code)]
+pub const BRANCH_VARS: [&str; 3] = ["basePrompt", "firstPrompt", "assistantMessage"];
+
+/// What a conflict resolution template can name.
+// Used by the conflict commands' prompt vars in the UI mirror; the Rust side checks the list in a test (B5).
+#[allow(dead_code)]
+pub const CONFLICT_VARS: [&str; 5] = ["basePrompt", "branch", "operation", "files", "onto"];
+
 /// `template` with each `{name}` that `vars` lists replaced by its value.
 /// An unknown `{name}` stays as written; `{{` and `}}` are the braces
 /// themselves; a value is never expanded again. The TypeScript renderer

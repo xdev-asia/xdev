@@ -68,6 +68,8 @@ import type {
   ReviewData,
   ReviewNote,
   StageState,
+  ConflictOp,
+  ConflictState,
   WorktreeStat,
   WorktreeView,
   WorktreeCreated,
@@ -211,6 +213,8 @@ export type {
   ReviewFile,
   ReviewNote,
   StageState,
+  ConflictOp,
+  ConflictState,
   WorktreeSkip,
   WorktreeStat,
   WorktreeView,
@@ -393,7 +397,10 @@ export type ErrorCode =
   | "kept_unknown"
   | "group_unknown"
   | "folder_unknown"
-  | "folder_exists";
+  | "folder_exists"
+  | "branch_pushed"
+  | "no_conflict"
+  | "still_conflicted";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -737,6 +744,20 @@ export interface Api {
   worktreeBranches(path: string): Promise<ReviewBranch[]>;
   worktreeStageState(path: string): Promise<StageState[]>;
   worktreeDiscard(path: string, files: string[], stagedToo: boolean, confirmed: boolean): Promise<void>;
+  // Renames the worktree's branch to `<prefix>/<name>` (`-2`, `-3`, … when taken); the folder stays.
+  // Rejects with `branch_pushed` (it has an upstream), `detached`, `bad_name` or `branch_exists`.
+  worktreeRenameBranch(path: string, name: string): Promise<WorktreeView>;
+  // A name for the work of an agent session (the worktree's latest when null), from the Branch name
+  // recipe, or the first words of the prompt when the recipe's agent cannot answer; changes nothing.
+  // Rejects with `bad_name` when the session has no usable prompt.
+  worktreeSuggestBranch(path: string, session: string | null): Promise<string>;
+  // The merge, rebase, cherry-pick or revert in progress; null when there is none.
+  worktreeConflicts(path: string): Promise<ConflictState | null>;
+  // Finishes it; rejects with `still_conflicted` while a file is unmerged, `no_conflict` with nothing
+  // in progress.
+  worktreeConflictContinue(path: string): Promise<void>;
+  // Gives it up and drops the resolution work; gated like a discard (`confirmed`).
+  worktreeConflictAbort(path: string, confirmed: boolean): Promise<void>;
   // Review notes of one worktree. A put replaces them all and rejects with `bad_note` when any is invalid.
   reviewNotes(path: string): Promise<ReviewNote[]>;
   reviewNotesPut(path: string, notes: ReviewNote[]): Promise<ReviewNote[]>;
@@ -1166,6 +1187,11 @@ const tauriApi: Api = {
   worktreeBranches: (path) => call("worktree_branches", { path }),
   worktreeStageState: (path) => call("worktree_stage_state", { path }),
   worktreeDiscard: (path, files, stagedToo, confirmed) => call("worktree_discard", { path, files, stagedToo, confirmed }),
+  worktreeRenameBranch: (path, name) => call("worktree_rename_branch", { path, name }),
+  worktreeSuggestBranch: (path, session) => call("worktree_suggest_branch", { path, session }),
+  worktreeConflicts: (path) => call("worktree_conflicts", { path }),
+  worktreeConflictContinue: (path) => call("worktree_conflict_continue", { path }),
+  worktreeConflictAbort: (path, confirmed) => call("worktree_conflict_abort", { path, confirmed }),
   reviewNotes: (path) => call("review_notes_get", { path }),
   reviewNotesPut: (path, notes) => call("review_notes_put", { path, notes }),
   kitHomes: () => call("kit_homes"),

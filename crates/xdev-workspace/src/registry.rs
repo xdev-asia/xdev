@@ -87,6 +87,11 @@ pub struct WorktreeMeta {
     pub item: Option<WorkItem>,
     #[serde(default)]
     pub made_by: MadeBy,
+    /// The branch name was picked by the app (a blank name at creation) and
+    /// no rename has happened since; older files read `false`, so those
+    /// worktrees are never renamed on their own.
+    #[serde(default)]
+    pub auto_name: bool,
 }
 
 /// Where the work in a worktree stands, as the person sets it.

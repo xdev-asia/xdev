@@ -37,6 +37,12 @@ impl Repo {
         Ok((status == Some(0)).then(|| String::from_utf8_lossy(&out).trim().to_owned()))
     }
 
+    /// `git branch -m old new`. The branch may be checked out.
+    pub fn rename_branch(&self, _old: &str, _new: &str) -> Result<(), GitError> {
+        // Contract stub; B1 fills it in.
+        Err(GitError::NoRepo)
+    }
+
     /// `user.name` as this repo sees it (its own config, then the global
     /// one), trimmed; `None` when unset or blank.
     pub fn user_name(&self) -> Result<Option<String>, GitError> {

@@ -28,6 +28,8 @@ pub struct StageState {
     pub unstaged: bool,
     /// The path is not tracked at all (also counted in `unstaged`).
     pub untracked: bool,
+    /// The path is unmerged: both sides changed it and no one resolved it.
+    pub conflicted: bool,
 }
 
 impl Repo {
@@ -78,6 +80,7 @@ impl Repo {
                 staged: false,
                 unstaged: false,
                 untracked: false,
+                conflicted: false,
             });
             entry.untracked |= untracked;
             if staged {

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tauri::State;
-use xdev_git::{ChangeKind, Repo};
+use xdev_git::{ChangeKind, ConflictState, Repo};
 use xdev_policy::{Action, Verdict};
 use xdev_workspace::{Registry, WorkspaceError, path_key};
 
@@ -84,6 +84,8 @@ pub struct StageState {
     pub unstaged: bool,
     /// The file is not tracked at all.
     pub untracked: bool,
+    /// Unmerged: a merge, rebase, cherry-pick or revert stopped on it.
+    pub conflicted: bool,
 }
 
 /// A checkout the registry knows: its start commit (`None` for a primary
@@ -213,6 +215,7 @@ fn stage_state(data: &Path, path: &Path) -> Result<Vec<StageState>, CmdError> {
             staged: s.staged,
             unstaged: s.unstaged,
             untracked: s.untracked,
+            conflicted: s.conflicted,
         })
         .collect())
 }
@@ -316,6 +319,44 @@ pub fn worktree_stage_state(
     path: PathBuf,
 ) -> Result<Vec<StageState>, CmdError> {
     stage_state(data_dir(&state)?, &path)
+}
+
+/// Read-only: the merge, rebase, cherry-pick or revert in progress, if any.
+#[tauri::command(async)]
+pub fn worktree_conflicts(
+    _state: State<'_, AppState>,
+    _path: PathBuf,
+) -> Result<Option<ConflictState>, CmdError> {
+    // Contract stub; B5 fills it in.
+    Ok(None)
+}
+
+/// Finishes the operation in progress once no file is unmerged.
+#[tauri::command(async)]
+pub fn worktree_conflict_continue(
+    _state: State<'_, AppState>,
+    _path: PathBuf,
+) -> Result<(), CmdError> {
+    // Contract stub; B5 fills it in.
+    Err(CmdError {
+        code: "no_conflict",
+        detail: None,
+    })
+}
+
+/// Gives the operation up. A discard of the resolution work in progress, so
+/// gated and confirmed like `worktree_discard`.
+#[tauri::command(async)]
+pub fn worktree_conflict_abort(
+    _state: State<'_, AppState>,
+    _path: PathBuf,
+    _confirmed: bool,
+) -> Result<(), CmdError> {
+    // Contract stub; B5 fills it in.
+    Err(CmdError {
+        code: "no_conflict",
+        detail: None,
+    })
 }
 
 #[tauri::command(async)]

@@ -71,6 +71,14 @@ pub fn slug(name: &str) -> String {
     }
 }
 
+/// The branch leaf for work that starts with `prompt`: its first 4 words
+/// through the rules of `slug`. Words with no ASCII letter or digit are
+/// dropped; `""` when no word is usable.
+pub fn from_work(_prompt: &str) -> String {
+    // Contract stub; B2 fills it in.
+    String::new()
+}
+
 /// A branch prefix as stored or typed: trimmed, without a leading or
 /// trailing `/`, and with each `//` run cut to one `/`.
 pub fn normalize_prefix(prefix: &str) -> String {

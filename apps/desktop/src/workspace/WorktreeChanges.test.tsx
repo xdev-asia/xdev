@@ -511,9 +511,9 @@ it("keeps the agent actions when the git settings cannot be read", async () => {
 // ---- Source control groups ----
 
 const mixed = [
-  { path: "docs/old-notes.md", staged: true, unstaged: false, untracked: false },
-  { path: "src/session.ts", staged: true, unstaged: true, untracked: false },
-  { path: "src/status.ts", staged: false, unstaged: true, untracked: true },
+  { path: "docs/old-notes.md", staged: true, unstaged: false, untracked: false, conflicted: false },
+  { path: "src/session.ts", staged: true, unstaged: true, untracked: false, conflicted: false },
+  { path: "src/status.ts", staged: false, unstaged: true, untracked: true, conflicted: false },
 ];
 const group = (view: ReturnType<typeof changes>, name: string) => view.all().find((n) => n.props["data-group"] === name);
 const inGroup = (view: ReturnType<typeof changes>, name: string) =>
@@ -542,7 +542,7 @@ it("hides an empty group", async () => {
   // Nothing staged in the mock: only Changes.
   expect(group(view, "staged")).toBeUndefined();
   expect(inGroup(view, "changes")).toEqual(FILES);
-  vi.spyOn(api, "worktreeStageState").mockResolvedValue(FILES.map((path) => ({ path, staged: true, unstaged: false, untracked: false })));
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(FILES.map((path) => ({ path, staged: true, unstaged: false, untracked: false, conflicted: false })));
   window.dispatchEvent(new Event("focus"));
   await tick();
   expect(group(view, "changes")).toBeUndefined();
