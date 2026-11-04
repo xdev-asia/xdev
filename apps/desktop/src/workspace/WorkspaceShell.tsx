@@ -47,6 +47,7 @@ import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { sendCheckFix, sendFix } from "./fixAgent";
 import { sendToAgentTab, sendToOpenedTab } from "./agentPrompt";
 import { issuePrompt, issueWorkItem, issueWorktreeName, uniqueWorktreeName } from "@/issues/issueStart";
+import { effectiveIssueCommand, issueTemplateVars, renderIssueCommand } from "@/issues/issueTemplate";
 import { sendTarget } from "./sendTarget";
 import { SetupCard, type SetupCardState } from "./SetupCard";
 import { openDefaultTabs } from "./defaultTabs";
@@ -935,13 +936,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       const taken = new Set((repo?.worktrees ?? []).flatMap((w) => [w.name, w.branch ?? ""]));
       const name = uniqueWorktreeName(issueWorktreeName(issue), taken);
       const view = await api.profiles().catch(() => null);
+      // The repo's issue command, when it has one, in place of the built-in prompt.
+      const shared = repo ? await api.repoHooks(repo.path).catch(() => null) : null;
+      const template = effectiveIssueCommand(repo?.localIssueCommand ?? "", shared);
       create(repoId, name, null, {
         title: null,
         agent: view?.defaultAgent ?? null,
         setDefault: false,
         parent: null,
         item: issueWorkItem(issue),
-        prompt: issuePrompt(full, t),
+        prompt: template === null ? issuePrompt(full, t) : renderIssueCommand(template, issueTemplateVars(full, repo?.shortName ?? "", t)),
       });
     } catch (e) {
       setNotice(toApiError(e).code);

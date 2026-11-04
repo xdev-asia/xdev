@@ -780,3 +780,15 @@
   border-color: var(--signal);
   background: var(--bg-3);
 }
+
+.ws-issue-vars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ws-issue-var {
+  padding: 2px 8px;
+  font-family: var(--x-font-mono);
+  font-size: 11px;
+}

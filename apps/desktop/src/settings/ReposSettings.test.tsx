@@ -313,3 +313,66 @@ it("Refresh asks gh for the logins again; a failure is a note, not a blocker", a
   // The select still offers the default.
   expect(nodes(v.field("demo-xdev", "ghAccount")).filter((n) => n.type === "option")).toHaveLength(1);
 });
+
+// The issue command
+const SAMPLE_TITLE = en("settings.repos.issue.sample.title");
+
+it("the Issue command row follows the identity rows' page order and sends only the local text", async () => {
+  const v = await view();
+  const update = vi.spyOn(v.api, "repoUpdate");
+  const ids = nodes(v.form("demo-xdev")).filter((n) => typeof n.props.id === "string" && String(n.props.id).startsWith("repos.")).map((n) => n.props.id);
+  expect(ids).toContain("repos.issueCommand");
+  const area = v.field("demo-xdev", "localIssueCommand");
+  expect(area.type).toBe("textarea");
+  expect(area.props.className).toContain("ws-mono");
+  v.type("demo-xdev", "localIssueCommand", "Fix #{number}: {title}");
+  await v.submit("demo-xdev");
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { localIssueCommand: "Fix #{number}: {title}" });
+  expect((await v.api.workspaceList())[0].localIssueCommand).toBe("Fix #{number}: {title}");
+});
+
+it("a too large issue command is refused under its own field with its own words", async () => {
+  const v = await view();
+  v.type("demo-xdev", "localIssueCommand", "x".repeat(64 * 1024 + 1));
+  await v.submit("demo-xdev");
+  expect(v.error("demo-xdev", "localIssueCommand")?.props.children).toBe(en("settings.repos.issue.tooLarge"));
+});
+
+it("variable chips add {name} to the local text, and the preview fills the sample issue", async () => {
+  const v = await view();
+  const chips = nodes(v.form("demo-xdev")).filter((n) => n.props["data-issue-var"] !== undefined);
+  expect(chips.map((n) => n.props["data-issue-var"])).toEqual(["number", "title", "url", "body", "labels", "repo"]);
+  v.type("demo-xdev", "localIssueCommand", "Fix #");
+  // The chip is found again after the draw, as the page hands its handler the text typed so far.
+  nodes(v.form("demo-xdev")).find((n) => n.props["data-issue-var"] === "number")!.props.onClick();
+  expect(v.field("demo-xdev", "localIssueCommand").props.value).toBe("Fix #{number}");
+  v.type("demo-xdev", "localIssueCommand", "Fix #{number}: {title} {nope}");
+  const preview = nodes(v.form("demo-xdev")).find((n) => n.props["data-issue-preview"] !== undefined)!;
+  expect(preview.props.children).toBe(`Fix #123: ${SAMPLE_TITLE} {nope}`);
+});
+
+it("the shared issue command is read only, with its trust state and a Trust button", async () => {
+  const v = await view({ "/demo/xdev": { issueCommand: "Shared {title}" } });
+  const html = v.html();
+  expect(html).toContain("Shared {title}");
+  expect(html).toContain(en("settings.repos.issue.untrusted"));
+  // No editor for it.
+  expect(nodes(v.form("demo-xdev")).filter((n) => n.type === "textarea").map((n) => n.props.name)).not.toContain("sharedIssueCommand");
+  const trust = vi.spyOn(v.api, "repoHookTrust");
+  await v.trust("demo-xdev", "issueCommand");
+  const hooks = await v.api.repoHooks("/demo/xdev");
+  expect(trust).toHaveBeenCalledWith("/demo/xdev", "issueCommand", hooks.issueCommandHash);
+  expect(v.html()).toContain(en("settings.repos.issue.trusted"));
+  expect(nodes(v.form("demo-xdev")).some((n) => n.props["data-trust"] === "issueCommand")).toBe(false);
+});
+
+it("the preview shows the effective template: local, else trusted shared, else the built-in note", async () => {
+  const v = await view({ "/demo/xdev": { issueCommand: "Shared {number}" } });
+  const preview = () => nodes(v.form("demo-xdev")).find((n) => n.props["data-issue-preview"] !== undefined)!;
+  // Shared but not trusted: nothing of it runs.
+  expect(v.html()).toContain(en("settings.repos.issue.previewBuiltIn"));
+  await v.trust("demo-xdev", "issueCommand");
+  expect(preview().props.children).toBe("Shared 123");
+  v.type("demo-xdev", "localIssueCommand", "Local {number}");
+  expect(preview().props.children).toBe("Local 123");
+});

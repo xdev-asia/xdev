@@ -25,6 +25,7 @@ import { SettingsView } from "@/settings/SettingsView";
 import { resetStatusSettings } from "@/status/statusSettings";
 import { BellMenu } from "./BellMenu";
 import { Sessions } from "./sessions";
+import * as agentPrompt from "./agentPrompt";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { WorktreeChanges } from "./WorktreeChanges";
@@ -1333,6 +1334,52 @@ it("Start worktree on an issue makes a worktree named from it, links the issue a
   expect(sessions.tabs(path).map(t => t.profileId)).toEqual(["codex"]);
   expect(details).toHaveBeenCalledTimes(1);
   expect(details.mock.calls[0][1]).toEqual({ item: { kind: "issue", url: detail.issue.url, title: detail.issue.title } });
+});
+
+// What the agent is told when a worktree starts from issue 1 of the demo repo.
+async function startedPrompt(api: ReturnType<typeof createMockApi>): Promise<string | undefined> {
+  const send = vi.spyOn(agentPrompt, "sendToOpenedTab").mockResolvedValue(true as never);
+  send.mockClear();
+  // A fresh shell each time: the hook store of this file outlives one `harness`.
+  hooks.values = [];
+  hooks.cursor = 0;
+  hooks.effects = [];
+  await api.profilesDefaults("ask", "codex", null);
+  const view = await harness(api);
+  const detail = await api.issueView("demo-xdev", 1);
+  view.of(IssuesPanel)[0].props.onStart(detail);
+  await settle();
+  await settle();
+  return send.mock.calls.at(-1)?.[3];
+}
+
+it("Start worktree on an issue sends the built-in prompt when no issue command is set", async () => {
+  const prompt = await startedPrompt(createMockApi({}));
+  expect(prompt).toContain("Work on GitHub issue #1");
+});
+
+it("Start worktree on an issue renders this machine's issue command", async () => {
+  const api = createMockApi({});
+  await api.repoUpdate("demo-xdev", { localIssueCommand: "Fix #{number} {title} in {repo} [{labels}] {unknown}" });
+  const detail = await api.issueView("demo-xdev", 1);
+  const prompt = await startedPrompt(api);
+  expect(prompt).toBe(`Fix #1 ${detail.issue.title} in xdev [${detail.issue.labels.join(", ")}] {unknown}`);
+});
+
+it("Start worktree on an issue uses the shared issue command only once trusted, and local wins", async () => {
+  const files = { "/demo/xdev": { issueCommand: "Shared {title}" } };
+  const seeded = () => createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), repoFiles: files } as never });
+  // Not trusted yet: the built-in prompt.
+  expect(await startedPrompt(seeded())).toContain("Work on GitHub issue #1");
+  // Trusted: the shared text.
+  const trusted = seeded();
+  const hash = (await trusted.repoHooks("/demo/xdev")).issueCommandHash!;
+  await trusted.repoHookTrust("/demo/xdev", "issueCommand", hash);
+  const title = (await trusted.issueView("demo-xdev", 1)).issue.title;
+  expect(await startedPrompt(trusted)).toBe(`Shared ${title}`);
+  // A local text wins over the trusted shared one.
+  await trusted.repoUpdate("demo-xdev", { localIssueCommand: "Mine {number}" });
+  expect(await startedPrompt(trusted)).toBe("Mine 1");
 });
 
 it("a second Start worktree on the same issue takes the -2 name", async () => {
