@@ -118,7 +118,9 @@ pub fn start(app: AppHandle) {
                 if !has_db {
                     return None;
                 }
-                hub.with_store(data, |s| s.meta_get(SINCE_KEY)).ok().flatten()
+                hub.with_store(data, |s| s.meta_get(SINCE_KEY))
+                    .ok()
+                    .flatten()
             };
             let save = |v: Option<i64>| {
                 if has_db {
