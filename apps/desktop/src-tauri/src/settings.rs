@@ -485,6 +485,49 @@ pub enum BranchPrefixMode {
     None,
 }
 
+/// Longest recipe template kept, in characters; a longer one is cut on save.
+pub const RECIPE_TEMPLATE_MAX: usize = 16 * 1024;
+/// Most extra CLI args a recipe keeps.
+pub const RECIPE_ARGS_MAX: usize = 32;
+/// The template that keeps the built-in prompt as it is.
+pub const RECIPE_DEFAULT_TEMPLATE: &str = "{basePrompt}";
+
+/// One agent action's prompt: who runs it and the text it is given.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct Recipe {
+    /// A profile id from profiles.json; `None` is the default agent.
+    pub agent: Option<String>,
+    /// Extra CLI args for drafts; the fix actions run in a terminal tab and
+    /// do not use them.
+    pub args: Vec<String>,
+    /// Text with `{variables}`; `{basePrompt}` is xDev's built-in prompt.
+    pub template: String,
+}
+
+impl Default for Recipe {
+    fn default() -> Recipe {
+        Recipe {
+            agent: None,
+            args: Vec::new(),
+            template: RECIPE_DEFAULT_TEMPLATE.to_owned(),
+        }
+    }
+}
+
+/// The agent actions of Source Control, each with its own recipe.
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct GitRecipes {
+    pub commit_message: Recipe,
+    pub pull_request: Recipe,
+    pub fix_commit_failure: Recipe,
+    pub fix_push_failure: Recipe,
+    pub fix_checks: Recipe,
+}
+
 /// Settings → Git. Every field has a default, so a file from an older
 /// version, or one missing a field, still loads.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -510,6 +553,10 @@ pub struct GitSettings {
     pub pr_generate_on_open: bool,
     /// Open the pull request in the browser once it is created.
     pub pr_open_after_create: bool,
+    /// The prompts behind the agent actions. A part that does not parse
+    /// falls back to the defaults on its own.
+    #[serde(deserialize_with = "lenient")]
+    pub recipes: GitRecipes,
 }
 
 impl Default for GitSettings {
@@ -525,6 +572,7 @@ impl Default for GitSettings {
             pr_draft: false,
             pr_generate_on_open: false,
             pr_open_after_create: false,
+            recipes: GitRecipes::default(),
         }
     }
 }
@@ -663,6 +711,7 @@ mod tests {
                 pr_draft: true,
                 pr_generate_on_open: true,
                 pr_open_after_create: true,
+                recipes: GitRecipes::default(),
             },
             status: StatusSettings {
                 hooks: false,
