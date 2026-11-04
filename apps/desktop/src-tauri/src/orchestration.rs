@@ -140,6 +140,29 @@ pub struct OrchHub {
     kicked: Condvar,
     /// `worker_auto_close` as last stored; none until first read.
     auto_close: Mutex<Option<bool>>,
+    /// How long the verbs wait for the UI; tests make them short.
+    pub waits: Waits,
+}
+
+/// How long the verbs wait for the UI to answer.
+#[derive(Debug, Clone, Copy)]
+pub struct Waits {
+    /// `worker-stop`: for the tab to leave the board.
+    pub stop: Duration,
+    /// `worker-read`: for the terminal's text.
+    pub read: Duration,
+    /// `worker-start`: on top of the readiness wait, for `open-worker`.
+    pub open_slack: Duration,
+}
+
+impl Default for Waits {
+    fn default() -> Self {
+        Waits {
+            stop: Duration::from_secs(10),
+            read: Duration::from_secs(5),
+            open_slack: Duration::from_secs(10),
+        }
+    }
 }
 
 /// How long `check --wait` sleeps when the CLI sends no timeout.
@@ -951,7 +974,7 @@ fn handle_verb(
                     tab: tab.clone(),
                 })?,
             );
-            let went = wait_tab_gone(ctx, &tab, Duration::from_millis(STOP_WAIT_MS), gone);
+            let went = wait_tab_gone(ctx, &tab, ctx.orch.waits.stop, gone);
             let w = ctx
                 .orch
                 .with_store(ctx.data, |s| s.worker_stop_end(&id, went, ctx.now_ms))?;
@@ -1046,7 +1069,7 @@ fn handle_verb(
                             (ctx.emit)("orchestration://read-tab", p);
                         }
                     },
-                    Duration::from_millis(READ_WAIT_MS),
+                    ctx.orch.waits.read,
                 )
                 .ok_or_else(|| {
                     AppError::new("read_unavailable", "the terminal did not answer in time")
@@ -1059,11 +1082,6 @@ fn handle_verb(
         )),
     }
 }
-
-/// How long `worker-stop` waits for the tab to leave the board.
-const STOP_WAIT_MS: u64 = if cfg!(test) { 150 } else { 10_000 };
-/// How long `worker-read` waits for the terminal's text.
-const READ_WAIT_MS: u64 = if cfg!(test) { 100 } else { 5_000 };
 
 fn handle_param(req: &Request) -> Result<String, AppError> {
     text_param(req, "handle")
@@ -1128,8 +1146,6 @@ fn terminal_target(ctx: &Ctx<'_>, t: &str) -> Result<crate::cli_verbs::TabReport
     Ok(found)
 }
 
-/// How long the UI gets, on top of the readiness wait, to answer `open-worker`.
-const OPEN_SLACK_MS: u64 = if cfg!(test) { 50 } else { 10_000 };
 /// How long a worker's tab gets to show its agent when the CLI sends no timeout.
 const READY_DEFAULT_MS: u64 = 60_000;
 
@@ -1336,7 +1352,7 @@ fn worker_start(
                 ready_timeout_ms: ready_ms,
             };
             let payload = to_value(&open)?;
-            let wait = Duration::from_millis(ready_ms + OPEN_SLACK_MS);
+            let wait = Duration::from_millis(ready_ms) + ctx.orch.waits.open_slack;
             let answer = ctx.orch.opens.ask(
                 dispatch.id.clone(),
                 || (ctx.emit)("orchestration://open-worker", payload),
@@ -1746,6 +1762,7 @@ line", "title": "A"}),
         assert_eq!(ready[0]["id"], r["taskId"]);
 
         f.open_answer = None;
+        f.orch.waits.open_slack = Duration::from_millis(50);
         let u = call(
             &f,
             "worker-start",
@@ -2023,7 +2040,8 @@ line", "title": "A"}),
 
     #[test]
     fn stop_closes_the_tab_when_it_leaves_the_board_and_says_unknown_when_it_does_not() {
-        let (f, r, tab) = with_worker();
+        let (mut f, r, tab) = with_worker();
+        f.orch.waits.stop = Duration::from_millis(150);
         let handle = r["dispatchId"].clone();
         // The tab stays on the board: the stop cannot be confirmed.
         f.board.replace(
@@ -2051,7 +2069,8 @@ line", "title": "A"}),
 
     #[test]
     fn a_done_while_stopping_is_refused_and_leaves_no_message() {
-        let (f, r, tab) = with_worker();
+        let (mut f, r, tab) = with_worker();
+        f.orch.waits.stop = Duration::from_millis(150);
         let run = r["runId"].as_str().unwrap();
         f.board.replace(
             vec![crate::cli_verbs::tests::tab(&tab, &f.other, true, "idle")],
@@ -2101,7 +2120,8 @@ line", "title": "A"}),
 
     #[test]
     fn worker_read_asks_the_terminal_and_times_out_when_nobody_answers() {
-        let (f, r, tab) = with_worker();
+        let (mut f, r, tab) = with_worker();
+        f.orch.waits.read = Duration::from_millis(100);
         let e = f.call(
             Some("p-lead"),
             "orchestration.worker-read",
