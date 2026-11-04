@@ -1,15 +1,16 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { useProfiles, profileName } from "@/agents/profileStore";
-import type { QuickCommand, RepoView, SessionRow, WorktreeView } from "@/api";
+import type { QuickCommand, RepoView, SessionRow, Task, WorktreeView } from "@/api";
 import type { AgentSessionsStore } from "@/agentSessions/store";
 import { useI18n } from "@/i18n";
 import { getQuickCommands, selectCommands, subscribeQuickCommands } from "@/quickCommands/store";
 import { copyContext } from "@/terminal/terminalActions";
 import { terminalOf } from "@/terminal/terminalRegistry";
 import type { Sessions } from "@/workspace/sessions";
-import { actionItems, quickCommandItems, sessionItems, settingItems, tabItems, worktreeItems, type ActionName, type Attention, type PaletteItem } from "./items";
+import { actionItems, quickCommandItems, settingItems, tabItems, worktreeItems, type ActionName, type Attention, type PaletteItem } from "./items";
 import { JumpPalette } from "./JumpPalette";
+import { chatItems, taskItems } from "./moreItems";
 import { RecentStore } from "./recent";
 
 /** What the palette can make the shell do; the shell supplies each one. */
@@ -32,8 +33,10 @@ export interface PaletteActions {
   discardAllChanges?(): void;
   /** Opens the sessions panel with the search box focused. */
   openSessions?(): void;
-  /** Resumes a session of the current worktree in a new agent tab. */
+  /** Resumes a past chat, of any worktree, in a new agent tab of its worktree. */
   resumeSession?(row: SessionRow): void;
+  /** Opens Docs > Tasks on one task. */
+  openTask?(id: string): void;
   /** Runs a saved quick command in the current worktree. */
   runQuickCommand?(cmd: QuickCommand): void;
   /** Opens the new quick command dialog. */
@@ -50,12 +53,15 @@ export interface PaletteHostProps {
   shownTab: string | null;
   /** Optional: what an agent wants from the person, so those tabs rank first. */
   attention?: (tabId: string) => Attention | null;
-  /** Optional: the agent session list, for "Resume: ..." items. */
+  /** Optional: the agent session list, for the past chats. */
   history?: AgentSessionsStore | null;
+  /** Optional: the agent task list, read each time the palette opens. */
+  tasks?: () => Promise<Task[]>;
   actions: PaletteActions;
 }
 
 const NO_ROWS: SessionRow[] = [];
+const NO_TASKS: Task[] = [];
 const FALLBACK_AGENT = "claude";
 const FALLBACK_SHELL = "shell";
 
@@ -75,6 +81,27 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
   useEffect(() => {
     if (open) void history?.refresh();
   }, [open, history]);
+
+  // The task list is read as the palette opens; a failure (no Docs vault, say) leaves it empty.
+  const [taskRows, setTaskRows] = useState<Task[]>(NO_TASKS);
+  // The reader is kept in a ref: the shell passes a new arrow each render, and the list is read
+  // once per opening, not once per render.
+  const readTasks = props.tasks;
+  const readRef = useRef(readTasks);
+  readRef.current = readTasks;
+  const canReadTasks = !!readTasks;
+  useEffect(() => {
+    const read = readRef.current;
+    if (!open || !read) return;
+    let live = true;
+    read().then(
+      (found) => live && setTaskRows(found),
+      () => live && setTaskRows(NO_TASKS),
+    );
+    return () => {
+      live = false;
+    };
+  }, [open, canReadTasks]);
 
   const currentPath = current?.path ?? null;
   const quick = useSyncExternalStore(subscribeQuickCommands, getQuickCommands, getQuickCommands);
@@ -127,6 +154,11 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
     }
     const repoOfCurrent = list.find((r) => r.worktrees.some((w) => w.path === currentPath));
     const picked = selectCommands(quick, repoOfCurrent?.path ?? null);
+    // A chat that a live tab already shows is left out of the past chats.
+    const liveSessions = new Set(
+      list.flatMap((r) => r.worktrees).flatMap((w) => sessions?.tabs(w.path) ?? []).flatMap((tab) => [tab.agentSession, tab.resumeOf]).filter((id): id is string => !!id),
+    );
+    const isLive = (row: SessionRow) => liveSessions.has(row.session.id);
     const worktreeOf = (path: string) => list.flatMap((r) => r.worktrees).find((w) => w.path === path);
     items = [
       ...tabItems(list, (path) => sessions?.tabs(path) ?? [], {
@@ -150,7 +182,8 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       ...(current && actions.runQuickCommand && actions.newQuickCommand
         ? quickCommandItems([...picked.global, ...picked.project], repoOfCurrent?.shortName ?? "", t, { run: actions.runQuickCommand, create: actions.newQuickCommand })
         : []),
-      ...(actions.resumeSession ? sessionItems(rows, currentPath, t, actions.resumeSession) : []),
+      ...(actions.resumeSession ? chatItems(rows.filter((r) => !isLive(r)), list, t, actions.resumeSession) : []),
+      ...(readTasks && actions.openTask ? taskItems(taskRows, list, t, actions.openTask) : []),
     ];
   }
 
@@ -160,6 +193,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       items={items}
       current={{ worktree: currentPath, tab: shownTab }}
       recent={recent}
+      scopes={list.filter((r) => !r.missing).map((r) => ({ path: r.path, name: r.shortName }))}
       canCreate={usable}
       onCreate={(name) => actions.newWorktree(name)}
       onClose={props.onClose}

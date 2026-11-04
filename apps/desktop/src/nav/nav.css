@@ -1,0 +1,10 @@
+.nav-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.nav-btn:disabled {
+  color: var(--text-3);
+  cursor: default;
+}

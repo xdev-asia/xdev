@@ -14,6 +14,7 @@ mod links;
 mod open_in;
 mod profiles;
 mod pty;
+mod ptyd;
 mod quick_commands;
 mod recipes;
 mod reveal;
@@ -46,6 +47,7 @@ pub fn run() {
         xdev_core::move_indexes(data, local);
     }
     let sync_local = local_dir.clone();
+    let ptyd_local = local_dir.clone();
     let hooks_dir = local_dir
         .as_ref()
         .map(|local| local.join(xdev_agent::HOOKS_DIR));
@@ -54,7 +56,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .manage(updater::Pending::default())
-        .manage(pty::Ptys::default())
+        // Terminals wait until the start below has picked where they run.
+        .manage(pty::Ptys::pending())
         .manage(workspace::WorkspaceLock::default())
         .manage(workspace::Clones::default())
         .manage(review_notes::ReviewNotesLock::default())
@@ -68,6 +71,12 @@ pub fn run() {
             // Every settings read and write goes through this store.
             if let Some(file) = commands::settings_path(app.handle()) {
                 app.manage(settings_store::SettingsStore::new(file));
+            }
+            // Off the main thread: starting the service may take a moment.
+            {
+                let app = app.handle().clone();
+                let local = ptyd_local.clone();
+                std::thread::spawn(move || ptyd::start_host(&app, local.as_deref()));
             }
             // The `.off` marker follows the stored setting from the start,
             // not only once the setting is saved. Best effort.
@@ -194,6 +203,13 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_ack,
             pty::pty_kill,
+            pty::pty_attach,
+            pty::ptyd_status,
+            pty::ptyd_sessions,
+            pty::ptyd_end,
+            pty::ptyd_end_all,
+            pty::ptyd_restart,
+            pty::ptyd_quit_choice,
             status::status_settings_get,
             status::status_settings_put,
             status::status_notify,
@@ -306,7 +322,8 @@ pub fn run() {
         .expect("failed to start xDev")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
-                app.state::<pty::Ptys>().kill_all();
+                let on_quit = settings_store::read(app).terminal.on_quit;
+                app.state::<pty::Ptys>().quit(on_quit);
                 updater::install_pending(app);
             }
         });

@@ -1,11 +1,11 @@
 import { chordLabel } from "@/keys/keymap";
 import { expect, it, vi } from "vitest";
-import type { RepoView, SessionRow, WorktreeView } from "@/api";
+import type { RepoView, WorktreeView } from "@/api";
 import { translate } from "@/i18n";
 import { SETTING_ENTRIES } from "@/settings/catalog";
 import { SECTIONS } from "@/settings/sections";
 import type { Tab } from "@/workspace/sessions";
-import { actionItems, sessionItems, settingItems, tabItems, validWorktreeName, worktreeItems } from "./items";
+import { actionItems, settingItems, tabItems, validWorktreeName, worktreeItems } from "./items";
 
 const t = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 
@@ -125,27 +125,6 @@ it("Terminal shows among the setting items", () => {
   expect(onPick).toHaveBeenCalledWith("terminal");
 });
 
-function srow(key: string, worktree: string | null, last: number, title: string | null = key, resumable = true): SessionRow {
-  return { session: { key, id: key, agent: "claude", branch: "main", title, last } as unknown as SessionRow["session"], worktree, repo: null, resumable };
-}
-
-it("sessionItems lists the newest 5 resumable sessions of the worktree as Resume: items that call resume", () => {
-  const rows = [
-    ...Array.from({ length: 7 }, (_, i) => srow(`s${i}`, "/a", 100 + i)),
-    srow("other", "/b", 999),
-    srow("gone", "/a", 998, "gone", false),
-    srow("none", "/a", 500, null),
-  ];
-  const onResume = vi.fn();
-  const items = sessionItems(rows, "/a", t, onResume);
-  expect(items).toHaveLength(5);
-  expect(items[0]?.title).toBe("Resume: Untitled session");
-  expect(items.map((i) => i.id)).toEqual(["sess:none", "sess:s6", "sess:s5", "sess:s4", "sess:s3"]);
-  items[1]?.run();
-  expect(onResume).toHaveBeenCalledWith(rows[6]);
-  expect(sessionItems(rows, null, t, onResume)).toEqual([]);
-});
-
 it("the Resume agent session action is listed only when the shell supplies it", () => {
   expect(actionItems(t, {}).some((i) => i.id === "act:resumeSession")).toBe(false);
   const open = vi.fn();
@@ -196,4 +175,9 @@ it("running a setting entry opens its section with the entry as target", () => {
   const item = items.find((i) => i.id === "set:git.prefix")!;
   item.run();
   expect(onPick).toHaveBeenCalledWith("git", "git.prefix");
+});
+
+it("tab and worktree items carry the repo folder", () => {
+  expect(worktreeItems(repos, { dot: () => null, activity: () => null, detached: "d", onPick() {} })[0].repo).toBe(repos[0].path);
+  expect(tabItems(repos, () => [{ id: "t", worktree: "/wt/oak", profileId: "p", agent: false, status: "idle" } as unknown as Tab], { name: () => "n", onPick() {} })[0].repo).toBe(repos[0].path);
 });

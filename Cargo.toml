@@ -16,6 +16,7 @@ default-members = [
     "crates/xdev-policy",
     "crates/xdev-agent",
     "crates/xdev-pty",
+    "crates/xdev-ipc",
     "crates/xdev-workspace",
     "crates/xdev-cli",
 ]
@@ -33,6 +34,7 @@ xdev-ai = { path = "crates/xdev-ai" }
 xdev-core = { path = "crates/xdev-core" }
 xdev-export = { path = "crates/xdev-export" }
 xdev-git = { path = "crates/xdev-git" }
+xdev-ipc = { path = "crates/xdev-ipc" }
 xdev-kit = { path = "crates/xdev-kit" }
 xdev-mcp = { path = "crates/xdev-mcp" }
 xdev-policy = { path = "crates/xdev-policy" }
@@ -43,7 +45,11 @@ xdev-workspace = { path = "crates/xdev-workspace" }
 
 blake3 = "1.8.7"
 dirs = "7.0.0"
+# Token bytes from the OS; already in the build through uuid.
+getrandom = "0.4.3"
 ignore = "0.4.34"
+# Local sockets: a named pipe on Windows, a Unix socket elsewhere, behind one API.
+interprocess = "2.4.7"
 keyring = { version = "4.2.0", default-features = false, features = ["v1"] }
 # 0.7 is the newest stable line; it re-exports the `notify` it was built against.
 notify-debouncer-full = "0.7.0"
