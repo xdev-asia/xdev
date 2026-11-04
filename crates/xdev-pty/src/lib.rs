@@ -1,7 +1,9 @@
 //! Terminals for the desktop app: a shell or an agent CLI in a pseudo
 //! console, its output batched for the UI and paused when the UI falls
-//! behind.
+//! behind. `proto` is what the app and the `xdev-ptyd` service say to each
+//! other.
 
+pub mod proto;
 mod pump;
 mod session;
 

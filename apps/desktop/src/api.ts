@@ -20,9 +20,12 @@ import type {
   Profile,
   ProfilesView,
   Provider,
+  PtyAttached,
   PtyExit,
   PtyHook,
   PtyInfo,
+  PtydStatus,
+  SessionInfo,
   StatusSettings,
   SettingsChanged,
   TerminalSettings,
@@ -140,9 +143,14 @@ export type {
   ProfilesView,
   ShellView,
   Provider,
+  PtyAttached,
   PtyExit,
   PtyHook,
   PtyInfo,
+  PtydState,
+  PtydStatus,
+  SessionInfo,
+  OnQuit,
   StatusSettings,
   HookEvent,
   HookDetail,
@@ -290,6 +298,11 @@ export type ErrorCode =
   | "pty_unknown"
   | "pty_spawn"
   | "pty_resize"
+  | "pty_gone"
+  | "ptyd_unreachable"
+  | "ptyd_auth"
+  | "ptyd_version"
+  | "ptyd_start_failed"
   | "bad_arg"
   | "unknown_profile"
   | "registry_corrupt"
@@ -492,6 +505,18 @@ export interface Api {
   // An unknown id has already ended, so this never rejects.
   ptyKill(id: string): Promise<void>;
   onPtyExit(cb: (exit: PtyExit) => void): Promise<() => void>;
+  // Reattaches a tab to the terminal service's pty `id`: output from byte `fromSeq` on arrives on
+  // `onData`, then the live output. Rejects with `pty_gone` when the service does not hold it.
+  ptyAttach(id: string, fromSeq: number, onData: (bytes: Uint8Array) => void): Promise<PtyAttached>;
+  // Where terminals run: `off` (in the app), `running` (the service), `fallback`, `old-version`.
+  ptydStatus(): Promise<PtydStatus>;
+  // Every pty the service holds, attached or not.
+  ptydSessions(): Promise<SessionInfo[]>;
+  ptydEnd(id: string): Promise<void>;
+  ptydEndAll(): Promise<void>;
+  // Ends the service and every pty in it, then starts it again (Retry after a fallback).
+  ptydRestart(): Promise<void>;
+  onPtydStatus(cb: (s: PtydStatus) => void): Promise<() => void>;
   // A status line an agent's hook wrote for one terminal (`pty://hook`).
   onPtyHook(cb: (hook: PtyHook) => void): Promise<() => void>;
   // Status channels; `statusSettingsPut` clamps the volume to 0..100 and returns what was stored.
@@ -789,6 +814,11 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "pty_unknown",
   "pty_spawn",
   "pty_resize",
+  "pty_gone",
+  "ptyd_unreachable",
+  "ptyd_auth",
+  "ptyd_version",
+  "ptyd_start_failed",
   "bad_arg",
   "unknown_profile",
   "registry_corrupt",
@@ -951,6 +981,17 @@ const tauriApi: Api = {
   ptyAck: (id, n) => call("pty_ack", { id, n }),
   ptyKill: (id) => call("pty_kill", { id }),
   onPtyExit: (cb) => listen<PtyExit>("pty://exit", (e) => cb(e.payload)),
+  ptyAttach(id, fromSeq, onData) {
+    const out = new Channel<ArrayBuffer | number[]>();
+    out.onmessage = (msg) => onData(toBytes(msg));
+    return call("pty_attach", { id, fromSeq, out });
+  },
+  ptydStatus: () => call("ptyd_status"),
+  ptydSessions: () => call("ptyd_sessions"),
+  ptydEnd: (id) => call("ptyd_end", { id }),
+  ptydEndAll: () => call("ptyd_end_all"),
+  ptydRestart: () => call("ptyd_restart"),
+  onPtydStatus: (cb) => listen<PtydStatus>("ptyd://status", (e) => cb(e.payload)),
   onPtyHook: (cb) => listen<PtyHook>("pty://hook", (e) => cb(e.payload)),
   statusSettings: () => call("status_settings_get"),
   statusSettingsPut: (settings) => call("status_settings_put", { settings }),

@@ -2,7 +2,23 @@ import type { Api, ApiError, PtyExit, PtyProfile, SETUP_PROFILE as SetupProfile 
 import type { MockProfiles } from "./mockProfiles";
 import type { MockSetupRun } from "./mockWorkspace";
 
-type PtyApi = Pick<Api, "ptySpawn" | "ptyApprove" | "ptyWrite" | "ptyResize" | "ptyAck" | "ptyKill" | "onPtyExit">;
+type PtyApi = Pick<
+  Api,
+  | "ptySpawn"
+  | "ptyApprove"
+  | "ptyWrite"
+  | "ptyResize"
+  | "ptyAck"
+  | "ptyKill"
+  | "onPtyExit"
+  | "ptyAttach"
+  | "ptydStatus"
+  | "ptydSessions"
+  | "ptydEnd"
+  | "ptydEndAll"
+  | "ptydRestart"
+  | "onPtydStatus"
+>;
 
 const PROMPT = "$ ";
 // `SETUP_PROFILE`, not imported: api.ts builds the mock api when it loads.
@@ -136,6 +152,20 @@ export function createMockPty(
     async onPtyExit(cb) {
       exits.add(cb);
       return () => exits.delete(cb);
+    },
+    // The demo has no terminal service: terminals run in the app.
+    ptyAttach: () => reject("pty_gone"),
+    async ptydStatus() {
+      return { state: "off", serviceVersion: null, reason: null };
+    },
+    async ptydSessions() {
+      return [];
+    },
+    ptydEnd: () => reject("ptyd_unreachable"),
+    ptydEndAll: () => reject("ptyd_unreachable"),
+    ptydRestart: () => reject("ptyd_unreachable"),
+    async onPtydStatus() {
+      return () => {};
     },
   };
 }
