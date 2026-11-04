@@ -4,6 +4,7 @@ import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
 import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail } from "@/api";
+import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
@@ -128,7 +129,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const { askBeforeDeleteWorktree } = useNavigationSettings();
   const [repos, setRepos] = useState<RepoView[] | null>(null);
   const [items, setItems] = useState<SidebarItem[] | null>(null);
-  const [prefs, setPrefs] = useState<SidebarPrefs>({ hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false });
+  const [prefs, setPrefs] = useState<SidebarPrefs>(SIDEBAR_PREFS_DEFAULTS);
   // The group name dialog: `id` null makes a new group.
   // The multi-selection, the bulk delete or archive dialog, and the branch review.
   const [picked, setPicked] = useState<Selection>(clearPicked);

@@ -1,4 +1,4 @@
-import type { AgentsSettings, Api, UsageSettings, DiffSettings, EditorSettings, KeySettings, NavigationSettings, SettingsChanged, SettingsSection, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
+import type { AgentsSettings, Api, UsageSettings, DiffSettings, EditorSettings, KeySettings, NavigationSettings, SettingsChanged, SettingsSection, CardProps, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
 import { clampEditorSettings, EDITOR_DEFAULTS } from "./files/editorDefaults";
 import { KEY_SETTINGS_DEFAULTS } from "./keys/bindingsStore";
 import { DIFF_DEFAULTS, NAVIGATION_DEFAULTS } from "./settings/generalDefaults";
@@ -31,8 +31,30 @@ type SettingsApi = Pick<
   | "usageSettingsPut"
 >;
 
-/** `SidebarPrefs::default()` in Rust: every row shows. */
-export const SIDEBAR_PREFS_DEFAULTS: SidebarPrefs = { hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false };
+/** `CardProps::default()` in Rust: every card property shows. */
+export const CARD_PROPS_DEFAULTS: CardProps = {
+  branch: true,
+  time: true,
+  comment: true,
+  workStatus: true,
+  workItem: true,
+  agents: true,
+  diffStat: true,
+  pr: true,
+  projectChip: true,
+};
+
+/** `SidebarPrefs::default()` in Rust: every row shows, in the agent sections, as detailed cards. */
+export const SIDEBAR_PREFS_DEFAULTS: SidebarPrefs = {
+  hideDefault: false,
+  hideDetached: false,
+  hideAutomation: false,
+  hideCli: false,
+  groupBy: "activity",
+  sort: "manual",
+  compactCards: false,
+  card: CARD_PROPS_DEFAULTS,
+};
 
 export { KEY_SETTINGS_DEFAULTS };
 /** `UiSettings::default()` in Rust, and the range `ui_settings_put` clamps the zoom to. */

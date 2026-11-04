@@ -183,7 +183,91 @@ impl UsageSettings {
     }
 }
 
-/// Which worktree rows the sidebar hides. All off: every row shows.
+/// How the sidebar splits worktree rows into sections.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum SidebarGroupBy {
+    /// The agent sections: needs you, working, review, the rest.
+    #[default]
+    Activity,
+    None,
+    Status,
+    Pr,
+    Project,
+}
+
+/// An unknown value is the default, as for `TabOrder`.
+impl<'de> serde::Deserialize<'de> for SidebarGroupBy {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("none") => SidebarGroupBy::None,
+            Some("status") => SidebarGroupBy::Status,
+            Some("pr") => SidebarGroupBy::Pr,
+            Some("project") => SidebarGroupBy::Project,
+            _ => SidebarGroupBy::Activity,
+        })
+    }
+}
+
+/// How rows are ordered inside a sidebar section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum SidebarSort {
+    /// The order the person arranged.
+    #[default]
+    Manual,
+    /// The most recent output first.
+    Recent,
+}
+
+/// An unknown value is the default, as for `TabOrder`.
+impl<'de> serde::Deserialize<'de> for SidebarSort {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("recent") => SidebarSort::Recent,
+            _ => SidebarSort::Manual,
+        })
+    }
+}
+
+/// Which parts a detailed worktree card shows. All on by default.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct CardProps {
+    pub branch: bool,
+    pub time: bool,
+    pub comment: bool,
+    pub work_status: bool,
+    pub work_item: bool,
+    pub agents: bool,
+    pub diff_stat: bool,
+    pub pr: bool,
+    pub project_chip: bool,
+}
+
+impl Default for CardProps {
+    fn default() -> Self {
+        CardProps {
+            branch: true,
+            time: true,
+            comment: true,
+            work_status: true,
+            work_item: true,
+            agents: true,
+            diff_stat: true,
+            pr: true,
+            project_chip: true,
+        }
+    }
+}
+
+/// The sidebar's filters, grouping, sort and card layout. All filters off:
+/// every row shows.
 #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(default, rename_all = "camelCase")]
@@ -195,6 +279,11 @@ pub struct SidebarPrefs {
     pub hide_automation: bool,
     /// Worktrees made from the CLI.
     pub hide_cli: bool,
+    pub group_by: SidebarGroupBy,
+    pub sort: SidebarSort,
+    /// One-line cards instead of the detailed ones.
+    pub compact_cards: bool,
+    pub card: CardProps,
 }
 
 /// The order Ctrl+Tab walks the tabs of a worktree.
@@ -968,6 +1057,27 @@ impl GitRecipes {
     }
 }
 
+/// Which Source Control group is drawn first. Conflicts stay on top.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum SourceControlGroupOrder {
+    #[default]
+    ChangesFirst,
+    StagedFirst,
+}
+
+/// An unknown value is the default, as for `TabOrder`.
+impl<'de> serde::Deserialize<'de> for SourceControlGroupOrder {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("staged-first") => SourceControlGroupOrder::StagedFirst,
+            _ => SourceControlGroupOrder::ChangesFirst,
+        })
+    }
+}
+
 /// Settings → Git. Every field has a default, so a file from an older
 /// version, or one missing a field, still loads.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -996,6 +1106,8 @@ pub struct GitSettings {
     /// A worktree made with an automatic name gets a branch name from the
     /// first prompt its agent receives.
     pub auto_rename_branch: bool,
+    /// Which group Source Control draws first.
+    pub source_control_group_order: SourceControlGroupOrder,
     /// The prompts behind the agent actions. A part that does not parse
     /// falls back to the defaults on its own.
     #[serde(deserialize_with = "lenient")]
@@ -1016,6 +1128,7 @@ impl Default for GitSettings {
             pr_generate_on_open: false,
             pr_open_after_create: false,
             auto_rename_branch: true,
+            source_control_group_order: SourceControlGroupOrder::default(),
             recipes: GitRecipes::default(),
         }
     }
@@ -1209,6 +1322,7 @@ mod tests {
                 pr_generate_on_open: true,
                 pr_open_after_create: true,
                 auto_rename_branch: false,
+                source_control_group_order: SourceControlGroupOrder::StagedFirst,
                 recipes: GitRecipes::default(),
             },
             status: StatusSettings {
@@ -2059,6 +2173,69 @@ then sum up"
         let loaded = load(&path);
         assert_eq!(loaded.editor, EditorSettings::default());
         assert_eq!(loaded.ui.zoom, 1.5);
+    }
+
+    #[test]
+    fn sidebar_layout_has_its_defaults_and_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(&path, r#"{ "sidebar": { "hideCli": true } }"#).unwrap();
+        let sb = load(&path).sidebar;
+        assert!(sb.hide_cli);
+        assert_eq!(sb.group_by, SidebarGroupBy::Activity);
+        assert_eq!(sb.sort, SidebarSort::Manual);
+        assert!(!sb.compact_cards);
+        assert_eq!(sb.card, CardProps::default());
+        assert!(sb.card.branch && sb.card.project_chip);
+
+        let want = SidebarPrefs {
+            group_by: SidebarGroupBy::Project,
+            sort: SidebarSort::Recent,
+            compact_cards: true,
+            card: CardProps {
+                time: false,
+                pr: false,
+                ..CardProps::default()
+            },
+            ..SidebarPrefs::default()
+        };
+        let text = serde_json::to_string(&want).unwrap();
+        assert!(text.contains(r#""groupBy":"project""#));
+        let back: SidebarPrefs = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, want);
+    }
+
+    #[test]
+    fn an_unknown_sidebar_group_or_sort_is_the_default() {
+        let sb: SidebarPrefs =
+            serde_json::from_str(r#"{ "groupBy": "bogus", "sort": 3, "compactCards": true }"#)
+                .unwrap();
+        assert_eq!(sb.group_by, SidebarGroupBy::Activity);
+        assert_eq!(sb.sort, SidebarSort::Manual);
+        assert!(sb.compact_cards);
+    }
+
+    #[test]
+    fn source_control_group_order_defaults_and_round_trips() {
+        let git: GitSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            git.source_control_group_order,
+            SourceControlGroupOrder::ChangesFirst
+        );
+        let git: GitSettings =
+            serde_json::from_str(r#"{ "sourceControlGroupOrder": "staged-first" }"#).unwrap();
+        assert_eq!(
+            git.source_control_group_order,
+            SourceControlGroupOrder::StagedFirst
+        );
+        let text = serde_json::to_string(&git).unwrap();
+        assert!(text.contains(r#""sourceControlGroupOrder":"staged-first""#));
+        let bad: GitSettings =
+            serde_json::from_str(r#"{ "sourceControlGroupOrder": "x" }"#).unwrap();
+        assert_eq!(
+            bad.source_control_group_order,
+            SourceControlGroupOrder::ChangesFirst
+        );
     }
 
     #[test]

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMockApi, type SettingsSection, type SidebarItem } from "./api";
+import { SIDEBAR_PREFS_DEFAULTS } from "./mockSettings";
 import { createMockWorkspace } from "./mockWorkspace";
 
 const OAK = "/demo/wt/xdev-oak";
@@ -74,8 +75,8 @@ describe("mock worktree lifecycle", () => {
     const api = createMockApi({});
     const heard: SettingsSection[][] = [];
     api.onSettingsChanged((e) => heard.push(e.sections));
-    expect(await api.sidebarPrefsGet()).toEqual({ hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false });
-    const stored = await api.sidebarPrefsPut({ hideDefault: true, hideDetached: false, hideAutomation: true, hideCli: false });
+    expect(await api.sidebarPrefsGet()).toEqual(SIDEBAR_PREFS_DEFAULTS);
+    const stored = await api.sidebarPrefsPut({ ...SIDEBAR_PREFS_DEFAULTS, hideDefault: true, hideAutomation: true });
     expect(stored.hideAutomation).toBe(true);
     expect(await api.sidebarPrefsGet()).toEqual(stored);
     expect(heard).toEqual([["sidebar"]]);

@@ -1,9 +1,10 @@
 import { expect, it } from "vitest";
 import type { RepoView, SidebarItem, SidebarPrefs, WorkItem, WorktreeView } from "@/api";
+import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { NO_DETAILS } from "./worktreeDetails";
 import { flattenRepos, itemLabel, moveTarget, nestRows, pinnedEntries, topIds, visibleEntries, type WtEntry } from "./sidebarModel";
 
-const OFF: SidebarPrefs = { hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false };
+const OFF: SidebarPrefs = SIDEBAR_PREFS_DEFAULTS;
 
 function wt(name: string, extra: Partial<WorktreeView> = {}): WorktreeView {
   return { path: `/wt/${name}`, name, branch: name, head: null, start: null, primary: false, pinned: false, detached: false, ...NO_DETAILS, ...extra };
@@ -39,7 +40,7 @@ it("filters hide rows but never the selected one", () => {
   expect(def.hidden).toBe(1);
   // The selected row stays even when a filter would hide it.
   expect(visibleEntries(entries(r), { ...OFF, hideDefault: true }, "/wt/main").hidden).toBe(0);
-  const all = visibleEntries(entries(r), { hideDefault: true, hideDetached: true, hideAutomation: true, hideCli: true }, "/wt/det");
+  const all = visibleEntries(entries(r), { ...OFF, hideDefault: true, hideDetached: true, hideAutomation: true, hideCli: true }, "/wt/det");
   expect(all.entries.map((e) => e.wt.name)).toEqual(["det", "x"]);
   expect(all.hidden).toBe(3);
 });
