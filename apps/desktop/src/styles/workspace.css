@@ -2871,6 +2871,14 @@ button.ws-tree-row:focus-visible {
   font-size: 11px;
 }
 
+/* A worktree the app CLI made or changed: plain text, no colour of its own. */
+.ws-wt-cli {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
 .ws-work-item {
   cursor: pointer;
 }
