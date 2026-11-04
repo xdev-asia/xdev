@@ -61,6 +61,8 @@ import { decideSetup, hasPending, pendingLists, type PendingLists } from "./setu
 import { SetupGate } from "./setupGate";
 import { startCliReport } from "./cliReport";
 import { startCliEvents } from "./cliEvents";
+import { startOrchestrationEvents } from "./orchestrationEvents";
+import { terminalOf } from "@/terminal/terminalRegistry";
 import { TrustDialog } from "./TrustDialog";
 import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
 import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
@@ -610,12 +612,20 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     const reporter = startCliReport(api, sessions, () => live.selected);
     live.cliPoke = reporter.poke;
     const stopEvents = startCliEvents(api, { reload: () => live.reload(), openTab: (w, p, prompt) => live.cliOpen(w, p, prompt), t: (key, vars) => live.t(key, vars) });
+    // Worker tabs the backend asks for, closes and reads (orchestration).
+    const stopOrchestration = startOrchestrationEvents(api, {
+      sessions,
+      gate,
+      send: (worktree, id, text, timeoutMs) => sendToOpenedTab(sessions, worktree, id, text, { timeoutMs }),
+      terminal: terminalOf,
+    });
     return () => {
       reporter.stop();
       stopEvents();
+      stopOrchestration();
       live.cliPoke = () => {};
     };
-  }, [api, sessions]);
+  }, [api, sessions, gate]);
   const selectedPath = current?.path ?? null;
   useEffect(() => live.cliPoke(), [selectedPath]);
   useEffect(() => onOpenFile((req) => recentFiles.touch(req.worktree, req.rel)), []);

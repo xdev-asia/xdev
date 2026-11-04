@@ -18,3 +18,11 @@ Base 0755c35 (B0). Backend tasks (B1-B15) live on feat/orchestration; this lane 
 - `addTab(l, id, pane?, { activate })` and `Sessions.open(..., { id, title, background })`.
 - Deviation: a given `title` also sets `renamed: true` so the terminal's own (OSC) title does not replace `worker-<taskId>`.
 - `Sessions.open` never selected a worktree; background only keeps the pane's active tab. A worktree with no layout yet gets the tab as its only (active) tab.
+
+## Task 4: complete
+- `workspace/orchestrationEvents.ts` (+ test), wired in `WorkspaceShell.tsx` next to `startCliEvents` (same effect, same stop).
+- Host is injected (sessions, gate, send, terminal) so tests need no pty. `read-tab` uses `terminalOf(id)` (terminalRegistry); a tab whose Terminal is not mounted answers "" (to check on a real run: background tabs of the active worktree are mounted? not verified).
+- Setup stages (the plan names `setup_start`/`setup_wait` without defining them): held by `gate.defer` and not released within `readyTimeoutMs` (or the setup tab failed) -> `setup_wait`; the held launch is cancelled (never opens the tab later). `setup_start` is unused by the UI: the gate has no start step that can fail separately.
+- Readiness budget = `readyTimeoutMs` minus the time spent waiting for setup.
+- A failed open leaves the already opened tab in place for inspection.
+- Same dispatch id twice while in flight = one open, one answer.
