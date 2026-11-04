@@ -1045,7 +1045,7 @@ it("default tabs: they wait for the setup tab; a failed setup opens none and the
 it("setup after create: a stale hash reopens the prompt with the new text", async () => {
   const v = await created({ setup: "old" }, { setupPolicy: "run" });
   vi.spyOn(v.api, "repoHookTrust").mockRejectedValueOnce({ code: "hook_untrusted" });
-  vi.spyOn(v.api, "repoHooks").mockResolvedValueOnce({ setup: { text: "new", shared: true, hash: "n", trusted: false }, archive: null, waitForSetup: false, policy: "run", parseError: null, detected: null, shared: [], sharedTrusted: false, tabs: [], tabsTrusted: false, sharedHash: null, tabsHash: null, unknown: [], problems: [] });
+  vi.spyOn(v.api, "repoHooks").mockResolvedValueOnce({ setup: { text: "new", shared: true, hash: "n", trusted: false }, archive: null, waitForSetup: false, policy: "run", parseError: null, detected: null, shared: [], sharedTrusted: false, tabs: [], tabsTrusted: false, sharedHash: null, tabsHash: null, unknown: [], problems: [], issueCommand: null, issueCommandHash: null, issueCommandTrusted: false });
   v.trust().props.onTrust();
   await tick();
   expect(v.setupOpens()).toHaveLength(0);

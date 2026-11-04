@@ -142,6 +142,8 @@ export type MockRepoFile = {
   tabs?: DefaultTab[];
   unknown?: string[];
   problems?: string[];
+  // `issue_command`: the shared prompt template for a worktree started from an issue.
+  issueCommand?: string;
   // Shared paths that fail to link on create, with the error.
   linkErrors?: Record<string, string>;
 };
@@ -490,7 +492,15 @@ export function createMockWorkspace(
       tabsHash,
       unknown: [...(file?.unknown ?? [])],
       problems: [...(file?.problems ?? [])],
+      ...issueOf(repo, file),
     };
+  }
+
+  // `issue_command` of xdev.toml: blank is none, trusted by hash like the scripts.
+  function issueOf(repo: RepoView, file: MockRepoFile | undefined) {
+    const text = file?.issueCommand !== undefined && file.issueCommand.trim() !== "" ? file.issueCommand : null;
+    const hash = text === null ? null : mockHash(text);
+    return { issueCommand: text, issueCommandHash: hash, issueCommandTrusted: hash !== null && trusted.has(`${repo.id}:issueCommand:${hash}`) };
   }
 
   function hooksOf(path: string): { repo: RepoView; file: MockRepoFile | undefined; hooks: RepoHooks } | null {
@@ -643,8 +653,8 @@ export function createMockWorkspace(
     async repoHookTrust(path, kind, hash) {
       const found = hooksOf(path);
       if (!found) return reject("worktree_unknown", path);
-      if (kind === "shared" || kind === "tabs") {
-        const current = kind === "shared" ? found.hooks.sharedHash : found.hooks.tabsHash;
+      if (kind === "shared" || kind === "tabs" || kind === "issueCommand") {
+        const current = kind === "shared" ? found.hooks.sharedHash : kind === "tabs" ? found.hooks.tabsHash : found.hooks.issueCommandHash;
         if (current === null || current !== hash) return reject("hook_untrusted", kind);
         trusted.add(`${found.repo.id}:${kind}:${hash}`);
         return hooksOf(path)!.hooks;
