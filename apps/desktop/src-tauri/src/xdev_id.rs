@@ -8,8 +8,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use ::xdev_id::{
-    CallError, E_CODE, E_EXPIRED, E_KEYCHAIN, E_LINK, E_STATE, E_TIMEOUT, E_UNAVAILABLE, Keychain,
-    REFRESH_EVERY, Redeem, Session, TokenStore, Transport, UreqTransport, XdevIdState,
+    CallError, E_CODE, E_EXPIRED, E_KEYCHAIN, E_LINK, E_SERVER, E_STATE, E_TIMEOUT, E_UNAVAILABLE,
+    Keychain, REFRESH_EVERY, Redeem, Session, TokenStore, Transport, UreqTransport, XdevIdServer,
+    XdevIdState, check_origin, resolve_server,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -23,7 +24,7 @@ pub const CHANGED_EVENT: &str = "xdev-id://changed";
 const TICK: Duration = Duration::from_secs(30);
 
 /// Every `E_*` code, to turn a notice back into a `&'static str`.
-const CODES: [&str; 7] = [
+const CODES: [&str; 8] = [
     E_KEYCHAIN,
     E_UNAVAILABLE,
     E_LINK,
@@ -31,6 +32,7 @@ const CODES: [&str; 7] = [
     E_CODE,
     E_EXPIRED,
     E_TIMEOUT,
+    E_SERVER,
 ];
 
 type Notify<'a> = &'a dyn Fn(&XdevIdState);
@@ -40,26 +42,82 @@ fn fail(code: &'static str) -> CmdError {
 }
 
 pub struct XdevIdHub {
+    /// The one place the server origin lives: every request reads it with the token.
     session: Mutex<Session>,
     store: Arc<dyn TokenStore>,
     http: Arc<dyn Transport>,
-    base: String,
+    /// `XDEV_ID_URL`, which wins over the setting.
+    env: Option<String>,
+    /// What the Settings page shows.
+    server: Mutex<XdevIdServer>,
 }
 
 impl XdevIdHub {
-    pub fn new(store: Arc<dyn TokenStore>, http: Arc<dyn Transport>, base: String) -> XdevIdHub {
+    pub fn new(
+        store: Arc<dyn TokenStore>,
+        http: Arc<dyn Transport>,
+        env: Option<String>,
+    ) -> XdevIdHub {
+        let server = resolve_server(env.as_deref(), None);
         XdevIdHub {
-            session: Mutex::new(Session::new(base.clone())),
+            session: Mutex::new(Session::new(server.origin.clone())),
             store,
             http,
-            base,
+            env,
+            server: Mutex::new(server),
         }
     }
 
-    /// The app's hub: the OS keychain, the network, `XDEV_ID_URL` if it is safe.
+    /// The app's hub: the OS keychain, the network, `XDEV_ID_URL` if it is safe. The
+    /// `xdevId.server` setting is applied by `configure_server` once settings.json is known.
     pub fn production() -> XdevIdHub {
-        let base = ::xdev_id::base_url(std::env::var("XDEV_ID_URL").ok().as_deref());
-        XdevIdHub::new(Arc::new(Keychain), Arc::new(UreqTransport), base)
+        XdevIdHub::new(
+            Arc::new(Keychain),
+            Arc::new(UreqTransport),
+            std::env::var("XDEV_ID_URL").ok(),
+        )
+    }
+
+    pub fn base(&self) -> String {
+        self.lock().base().to_owned()
+    }
+
+    pub fn server(&self) -> XdevIdServer {
+        self.server
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// What `settings.json` may hold: empty (use the default) or a valid origin, normalised.
+    pub fn checked_setting(value: &str) -> Result<String, CmdError> {
+        let value = value.trim();
+        if value.is_empty() {
+            return Ok(String::new());
+        }
+        check_origin(value).ok_or_else(|| fail(E_SERVER))
+    }
+
+    /// Applies the `xdevId.server` setting under env > setting > default. When the server
+    /// in use changes: any attempt is cancelled, the old token is revoked at the OLD
+    /// server (best effort), the keychain is cleared, and only then does the new origin
+    /// take over, so a token never reaches a server that did not issue it.
+    pub fn configure_server(
+        &self,
+        setting: Option<&str>,
+        notify: Notify,
+    ) -> Result<XdevIdServer, CmdError> {
+        let next = resolve_server(self.env.as_deref(), setting);
+        let switched = self.lock().switch_server(&*self.store, next.origin.clone());
+        *self.server.lock().unwrap_or_else(PoisonError::into_inner) = next.clone();
+        if let Some(switched) = switched {
+            if let Some(token) = &switched.token {
+                ::xdev_id::sign_out(&*self.http, &switched.old_base, token);
+            }
+            notify(&self.state());
+            switched.cleared.map_err(fail)?;
+        }
+        Ok(next)
     }
 
     /// The lock is never held across HTTP or a keychain prompt-free wait longer than a call.
@@ -146,11 +204,13 @@ impl XdevIdHub {
     /// Exchange, profile, store. No lock is held during HTTP.
     fn complete(&self, redeem: Redeem, notify: Notify) -> XdevIdState {
         let http = &*self.http;
-        let outcome = match ::xdev_id::exchange(http, &self.base, &redeem.code, &redeem.verifier) {
-            Ok(reply) => match ::xdev_id::me(http, &self.base, &reply.token) {
+        // The server this attempt began at, even if the setting changes meanwhile.
+        let base = redeem.base.as_str();
+        let outcome = match ::xdev_id::exchange(http, base, &redeem.code, &redeem.verifier) {
+            Ok(reply) => match ::xdev_id::me(http, base, &reply.token) {
                 Ok(me) => Ok((reply, me)),
                 Err(e) => {
-                    ::xdev_id::sign_out(http, &self.base, &reply.token);
+                    ::xdev_id::sign_out(http, base, &reply.token);
                     Err(e)
                 }
             },
@@ -162,7 +222,7 @@ impl XdevIdHub {
         let applied = matches!(finished, Ok(true));
         if !applied && let Some(token) = &token {
             // Cancelled, replaced or unstorable: the new session must not linger.
-            ::xdev_id::sign_out(http, &self.base, token);
+            ::xdev_id::sign_out(http, base, token);
         }
         let state = self.state();
         notify(&state);
@@ -174,7 +234,7 @@ impl XdevIdHub {
 
     fn load_avatar(&self, image: Option<&str>, notify: Notify) {
         let Some(image) = image else { return };
-        let Some(data) = ::xdev_id::fetch_avatar(&*self.http, image, &self.base) else {
+        let Some(data) = ::xdev_id::fetch_avatar(&*self.http, image, &self.base()) else {
             return;
         };
         if self.lock().set_avatar(Some(data)) {
@@ -184,10 +244,15 @@ impl XdevIdHub {
 
     /// `/me`: renews the session on the service and refreshes the profile.
     pub fn refresh(&self, notify: Notify) -> XdevIdState {
-        let Some(token) = self.lock().token() else {
-            return self.state();
+        // The token and the origin it belongs to are read together.
+        let (token, base) = {
+            let session = self.lock();
+            match session.token() {
+                Some(token) => (token, session.base().to_owned()),
+                None => return session.state(),
+            }
         };
-        let result = ::xdev_id::me(&*self.http, &self.base, &token);
+        let result = ::xdev_id::me(&*self.http, &base, &token);
         let image = result.as_ref().ok().and_then(|m| m.image.clone());
         let unauthorized = matches!(result, Err(CallError::Unauthorized));
         let changed = self.lock().refreshed(&*self.store, &token, result);
@@ -215,9 +280,14 @@ impl XdevIdHub {
     }
 
     pub fn sign_out(&self, notify: Notify) -> Result<XdevIdState, CmdError> {
-        let (token, cleared) = self.lock().sign_out(&*self.store);
+        let (token, cleared, base) = {
+            let mut session = self.lock();
+            let base = session.base().to_owned();
+            let (token, cleared) = session.sign_out(&*self.store);
+            (token, cleared, base)
+        };
         if let Some(token) = &token {
-            ::xdev_id::sign_out(&*self.http, &self.base, token);
+            ::xdev_id::sign_out(&*self.http, &base, token);
         }
         let state = self.state();
         notify(&state);
@@ -235,7 +305,7 @@ impl XdevIdHub {
     }
 
     pub fn manage_url(&self) -> String {
-        format!("{}/", self.base)
+        format!("{}/", self.base())
     }
 }
 
@@ -406,7 +476,7 @@ mod tests {
     ) -> (XdevIdHub, Arc<MemoryStore>, Arc<FakeTransport>) {
         let store = Arc::new(MemoryStore::default());
         let http = Arc::new(FakeTransport::new(replies));
-        let hub = XdevIdHub::new(store.clone(), http.clone(), BASE.to_owned());
+        let hub = XdevIdHub::new(store.clone(), http.clone(), Some(BASE.to_owned()));
         (hub, store, http)
     }
 
@@ -569,7 +639,7 @@ mod tests {
 
         // Offline keeps the state.
         let http = Arc::new(FakeTransport::new(vec![Err(Offline)]));
-        let again = XdevIdHub::new(store.clone(), http, BASE.to_owned());
+        let again = XdevIdHub::new(store.clone(), http, Some(BASE.to_owned()));
         again.load(&silent).unwrap();
         assert!(matches!(
             again.refresh(&silent),
@@ -580,7 +650,7 @@ mod tests {
             401,
             r#"{"error":"unauthorized"}"#,
         ))]));
-        let again = XdevIdHub::new(store.clone(), http, BASE.to_owned());
+        let again = XdevIdHub::new(store.clone(), http, Some(BASE.to_owned()));
         again.load(&silent).unwrap();
         assert_eq!(
             again.refresh(&silent),
@@ -635,5 +705,130 @@ mod tests {
     fn the_manage_page_is_the_service_root() {
         let (hub, _, _) = hub(vec![]);
         assert_eq!(hub.manage_url(), "https://id.test/");
+    }
+
+    fn hub_at(
+        env: Option<&str>,
+        replies: Vec<Result<Response, Offline>>,
+    ) -> (XdevIdHub, Arc<MemoryStore>, Arc<FakeTransport>) {
+        let store = Arc::new(MemoryStore::default());
+        let http = Arc::new(FakeTransport::new(replies));
+        let hub = XdevIdHub::new(store.clone(), http.clone(), env.map(str::to_owned));
+        (hub, store, http)
+    }
+
+    fn sign_in(hub: &XdevIdHub) {
+        let now = Instant::now();
+        hub.begin(([1; 32], [2; 32]), "d", now, &silent).unwrap();
+        hub.paste(&link_for([2; 32]), now, &silent).unwrap();
+    }
+
+    #[test]
+    fn a_token_from_another_server_is_dropped_without_a_request() {
+        let (hub, store, http) = hub_at(Some("https://one.test"), ok_replies());
+        sign_in(&hub);
+        // Same keychain, now pointed at another server.
+        let http2 = Arc::new(FakeTransport::new(vec![]));
+        let other = XdevIdHub::new(
+            store.clone(),
+            http2.clone(),
+            Some("https://two.test".into()),
+        );
+        other.load(&silent).unwrap();
+        assert_eq!(other.state(), XdevIdState::SignedOut { notice: None });
+        assert!(store.raw().is_none());
+        other.refresh(&silent);
+        assert!(http2.requests().is_empty());
+        assert_eq!(http.requests().len(), 2);
+    }
+
+    #[test]
+    fn changing_the_server_signs_out_at_the_old_one() {
+        let (hub, store, http) = hub_at(Some("https://one.test"), ok_replies());
+        sign_in(&hub);
+        // The env is fixed, so the setting changes nothing: still signed in.
+        let same = hub
+            .configure_server(Some("https://two.test"), &silent)
+            .unwrap();
+        assert_eq!(same.origin, "https://one.test");
+        assert!(matches!(hub.state(), XdevIdState::SignedIn { .. }));
+        assert_eq!(http.requests().len(), 2);
+        assert!(store.raw().is_some());
+    }
+
+    #[test]
+    fn a_setting_change_revokes_at_the_old_origin_then_switches() {
+        let (hub, store, http) = hub_at(None, ok_replies());
+        assert_eq!(hub.base(), "https://id.xdev.asia");
+        // Sign in at a first on-prem server.
+        hub.configure_server(Some("https://one.test"), &silent)
+            .unwrap();
+        sign_in(&hub);
+        let sent = http.requests().len();
+        let seen = Mutex::new(Vec::new());
+        let notify = |s: &XdevIdState| seen.lock().unwrap().push(s.clone());
+        let server = hub
+            .configure_server(Some("https://two.test"), &notify)
+            .unwrap();
+        assert_eq!(server.origin, "https://two.test");
+        assert_eq!(hub.base(), "https://two.test");
+        assert_eq!(hub.state(), XdevIdState::SignedOut { notice: None });
+        assert!(store.raw().is_none());
+        let last = http.requests().pop().unwrap();
+        assert_eq!(http.requests().len(), sent + 1);
+        assert_eq!(last.url, "https://one.test/api/desktop/signout");
+        assert_eq!(last.bearer.unwrap().expose(), TOKEN);
+        assert!(matches!(
+            seen.lock().unwrap().last(),
+            Some(XdevIdState::SignedOut { .. })
+        ));
+        // The manage page follows the server.
+        assert_eq!(hub.manage_url(), "https://two.test/");
+    }
+
+    #[test]
+    fn an_unchanged_server_keeps_the_session() {
+        let (hub, _, http) = hub_at(None, ok_replies());
+        hub.configure_server(Some("https://one.test"), &silent)
+            .unwrap();
+        sign_in(&hub);
+        hub.configure_server(Some("https://one.test"), &silent)
+            .unwrap();
+        assert!(matches!(hub.state(), XdevIdState::SignedIn { .. }));
+        assert_eq!(http.requests().len(), 2);
+    }
+
+    #[test]
+    fn a_setting_change_cancels_a_running_attempt() {
+        let (hub, _, http) = hub_at(None, vec![]);
+        hub.begin(([1; 32], [2; 32]), "d", Instant::now(), &silent)
+            .unwrap();
+        hub.configure_server(Some("https://one.test"), &silent)
+            .unwrap();
+        assert_eq!(hub.state(), XdevIdState::SignedOut { notice: None });
+        assert!(!hub.deep_link(&link_for([2; 32]), Instant::now(), &silent));
+        assert!(http.requests().is_empty());
+    }
+
+    #[test]
+    fn the_setting_is_checked_before_it_is_saved() {
+        assert_eq!(XdevIdHub::checked_setting("  ").unwrap(), "");
+        assert_eq!(
+            XdevIdHub::checked_setting(" https://id.corp.test/ ").unwrap(),
+            "https://id.corp.test"
+        );
+        for bad in [
+            "http://id.corp.test",
+            "https://x/p",
+            "ftp://x",
+            "https://u@x",
+            "nope",
+        ] {
+            assert_eq!(
+                XdevIdHub::checked_setting(bad).unwrap_err().code,
+                E_SERVER,
+                "{bad}"
+            );
+        }
     }
 }
