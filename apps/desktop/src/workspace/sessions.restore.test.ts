@@ -196,6 +196,49 @@ describe("Sessions.restore: the terminal service", () => {
     await vi.waitFor(() => expect(got.map((g) => new TextDecoder().decode(g)).join("")).toBe("e while closed\r\n"));
   });
 
+  describe("sleeping tabs", () => {
+    const make = () => (sessions = new Sessions(createMockApi({})));
+    const asleep = (over: Partial<Extract<TabSnapshot, { kind: "terminal" }>> = {}) => claude({ asleep: true, agentSession: "abc", title: "Fix it", pinned: true, color: "c2", ...over });
+
+    for (const mode of ["none", "agentsOnly", "all"] as const) {
+      it(`comes back asleep under ${mode}, with no attach and no spawn`, async () => {
+        const api = createMockApi({});
+        const s = (sessions = new Sessions(api));
+        const spawn = vi.spyOn(api, "ptySpawn");
+        const attach = vi.spyOn(api, "ptyAttach");
+        const report = await s.restore(snap({ [A]: one({ t1: asleep({ ptyId: "stale", seq: 4 }) }) }), mode, never);
+        expect(spawn).not.toHaveBeenCalled();
+        expect(attach).not.toHaveBeenCalled();
+        expect(never).not.toHaveBeenCalled();
+        expect(s.tabs(A)).toHaveLength(1);
+        expect(s.tabs(A)[0]).toMatchObject({ asleep: true, agentSession: "abc", resumeOf: "abc", title: "Fix it", pinned: true, color: "c2", openedAt: 500 });
+        expect(s.tabs(A)[0].id).not.toBe("stale");
+        expect(report.opened).toEqual([s.tabs(A)[0].id]);
+        expect(s.asleep(A)).toBe(true);
+      });
+    }
+
+    it("under none the awake tabs of the same worktree still stay out", async () => {
+      const s = make();
+      await s.restore(snap({ [A]: one({ t1: claude({ agentSession: "x" }), t2: asleep() }) }), "none", never);
+      expect(s.tabs(A).map((t) => t.asleep)).toEqual([true]);
+      expect(leaves(s.layout(A)!).flatMap((n) => (n.kind === "leaf" ? n.tabs : []))).toEqual([s.tabs(A)[0].id]);
+    });
+
+    it("a sleeping shell comes back asleep and wakes as a new shell", async () => {
+      const s = make();
+      await s.restore(snap({ [A]: one({ t1: shell({ asleep: true }) }) }), "agentsOnly", never);
+      expect(s.tabs(A)[0]).toMatchObject({ asleep: true, profileId: "shell", resumeOf: null });
+    });
+
+    it("an agent that slept without a session wakes as a new one", async () => {
+      const s = make();
+      await s.restore(snap({ [A]: one({ t1: asleep({ agentSession: null }) }) }), "none", never);
+      expect(s.tabs(A)[0]).toMatchObject({ asleep: true, agentSession: null });
+      expect(s.wake(s.tabs(A)[0].id)).toMatchObject({ resumeOf: null });
+    });
+  });
+
   it("goes the resume way unchanged when the pty is gone", async () => {
     const api = running();
     const s = (sessions = new Sessions(api));
