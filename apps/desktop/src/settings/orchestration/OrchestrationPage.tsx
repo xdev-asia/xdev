@@ -27,6 +27,8 @@ export function OrchestrationPage(props: SettingsSectionProps): JSX.Element {
   const [copied, setCopied] = useState<"command" | "prompt" | null>(null);
   const [howTo, setHowTo] = useState<HowToId | null>(null);
   const saving = useRef(false);
+  // Changes made while a save runs; the latest of each field is saved next.
+  const queued = useRef<Partial<OrchestrationSettings> | null>(null);
   const installing = useRef(false);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -53,13 +55,13 @@ export function OrchestrationPage(props: SettingsSectionProps): JSX.Element {
     }
   }
 
-  async function install(): Promise<void> {
+  async function install(force = false): Promise<void> {
     if (installing.current) return;
     installing.current = true;
     setBusy(true);
     setSkillError(undefined);
     try {
-      setStatus(await api.orchestrationSkillInstall());
+      setStatus(await (force ? api.orchestrationSkillInstall(true) : api.orchestrationSkillInstall()));
     } catch (e) {
       setSkillError(toApiError(e).code);
     } finally {
@@ -70,16 +72,27 @@ export function OrchestrationPage(props: SettingsSectionProps): JSX.Element {
 
   // Each write returns what was stored (the depth is clamped there too); the page shows that.
   async function patch(change: Partial<OrchestrationSettings>): Promise<void> {
-    if (settings === null || saving.current) return;
+    if (settings === null) return;
+    if (saving.current) {
+      queued.current = { ...queued.current, ...change };
+      return;
+    }
     saving.current = true;
+    let base = settings;
+    let next: Partial<OrchestrationSettings> | null = change;
     try {
-      const stored = await api.orchestrationSettingsPut({ ...settings, ...change });
-      setSettings(stored);
-      setDepthText(String(stored.nestedWorkerMaxDepth));
-      setError(undefined);
-    } catch (e) {
-      setError(toApiError(e).code);
-      setDepthText(String(settings.nestedWorkerMaxDepth));
+      while (next) {
+        try {
+          base = await api.orchestrationSettingsPut({ ...base, ...next });
+          setSettings(base);
+          setError(undefined);
+        } catch (e) {
+          setError(toApiError(e).code);
+        }
+        setDepthText(String(base.nestedWorkerMaxDepth));
+        next = queued.current;
+        queued.current = null;
+      }
     } finally {
       saving.current = false;
     }
@@ -117,6 +130,7 @@ export function OrchestrationPage(props: SettingsSectionProps): JSX.Element {
           copied={copied === "command"}
           error={skillError}
           onInstall={() => void install()}
+          onReplace={() => void install(true)}
           onRecheck={() => void refresh()}
           onCopyCommand={() => {
             if (status === null) return;

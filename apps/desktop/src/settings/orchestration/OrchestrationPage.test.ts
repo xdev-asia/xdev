@@ -146,3 +146,42 @@ it("how-to: five tiles, a tile opens the dialog whose Copy prompt copies the pro
   act(inner, "copy-prompt")!.props.onClick();
   expect(onCopy).toHaveBeenCalledWith(prompt);
 });
+
+it("Replace edited copy installs with force; Install stays the only primary button", async () => {
+  const install = vi.fn(async (_force?: boolean) => ({ ...STATUS, installed: true, edited: false }));
+  const { m } = open({ orchestrationSkillStatus: async () => ({ ...STATUS, installed: true, edited: true }), orchestrationSkillInstall: install });
+  const all = await m.settle();
+  skillCard(all).props.onReplace();
+  expect(install).toHaveBeenCalledWith(true);
+  await new Promise((r) => setTimeout(r, 0));
+  expect(skillCard(m.all()).props.status.edited).toBe(false);
+});
+
+it("the skill card offers Replace edited copy only for an edited skill, as a secondary button", () => {
+  const base = { busy: false, copied: false, onInstall() {}, onRecheck() {}, onCopyCommand() {}, onReplace() {} };
+  const edited = nodes(SkillCard({ ...base, status: { ...STATUS, installed: true, edited: true } }));
+  const replace = act(edited, "replace")!;
+  expect(replace.props.variant).toBe("secondary");
+  expect(replace.props.children).toBe(en("settings.orchestration.skill.replace"));
+  expect(edited.filter((n) => n.props["data-act"] && n.props.variant === undefined).map((n) => n.props["data-act"])).toEqual(["install"]);
+  expect(act(nodes(SkillCard({ ...base, status: { ...STATUS, installed: true } })), "replace")).toBeUndefined();
+});
+
+it("a change made while a save runs is applied after it, on top of what was stored", async () => {
+  const releases: (() => void)[] = [];
+  const put = vi.fn((v: { nestedWorkerMaxDepth: number; workerAutoClose: boolean }) => new Promise<typeof v>((r) => releases.push(() => r(v))));
+  const { m } = open({ orchestrationSettingsPut: put as never });
+  let all = await m.settle();
+  act(all, "auto-close")!.props.onClick();
+  field(m.all(), "depth").props.onChange({ target: { value: "3" } });
+  field(m.all(), "depth").props.onBlur();
+  expect(put).toHaveBeenCalledTimes(1);
+  releases[0]!();
+  await new Promise((r) => setTimeout(r, 0));
+  expect(put).toHaveBeenCalledTimes(2);
+  expect(put.mock.calls[1]![0]).toEqual({ nestedWorkerMaxDepth: 3, workerAutoClose: false });
+  releases[1]!();
+  await new Promise((r) => setTimeout(r, 0));
+  all = m.all();
+  expect(field(all, "depth").props.value).toBe("3");
+});
