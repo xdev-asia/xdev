@@ -24,7 +24,7 @@ import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
 import { startAutoRename } from "./autoRename";
-import { currentCloseWindow, openRestoredFile, restoreLayout, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
+import { currentCloseWindow, openRestoredFile, restoreLayout, startLayoutSave, undoRestore } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
@@ -70,7 +70,7 @@ import { HelpButton, type HelpPick } from "./HelpMenu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { runMenuAction } from "@/shell/menuActions";
 import { useShellLabels } from "@/shell/shellLabels";
-import { askQuit, guardClose, type QuitAsk, type QuitChoice } from "./quitGuard";
+import { askQuit, guardClose, installCloseGuard, type QuitAsk, type QuitChoice } from "./quitGuard";
 import { getTerminalSettings } from "@/terminal/terminalSettings";
 import { createNotifier, type Notifier } from "./notifier";
 import { AgentSessionsStore } from "@/agentSessions/store";
@@ -336,7 +336,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const restoreStarted = useRef(false);
   const saver = useRef<ReturnType<typeof startLayoutSave> | null>(null);
   const flushOnClose = useRef(() => saver.current?.flush());
-  const stopCloseWatch = useRef<() => void>(() => {});
   useEffect(() => {
     if (!sessions || !repos || repos.length === 0 || restoreStarted.current) return;
     restoreStarted.current = true;
@@ -348,15 +347,32 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       if (!restoreStarted.current) return;
       saver.current = startLayoutSave(api, sessions);
       if (typeof window !== "undefined") window.addEventListener("beforeunload", flushOnClose.current);
-      void currentCloseWindow().then((win) => {
-        if (!saver.current) return;
-        stopCloseWatch.current();
-        stopCloseWatch.current = watchWindowClose(saver.current, win, () =>
+      if (!got || got.report.opened.length === 0) return;
+      const { resumed, fresh, opened } = got.report;
+      pushToast({
+        text: live.t("layout.restored", { resumed, fresh }),
+        actions: [{ label: live.t("layout.undo"), run: () => void undoRestore(sessions, opened) }],
+      });
+    });
+  }, [sessions, repos]);
+  // The close guard, set up once at mount: it looks the saver and the tabs up when a close fires, so it
+  // also works on the welcome screen, with no repos, and while the layout restore still runs.
+  const sessionsNow = useRef<Sessions | null>(null);
+  sessionsNow.current = sessions;
+  useEffect(() => {
+    let stopped = false;
+    let stop = () => {};
+    void currentCloseWindow().then((win) => {
+      if (stopped) return;
+      stop = installCloseGuard(
+        win,
+        () => saver.current,
+        () =>
           guardClose(api, { title: live.t("shell.tray.tooltip"), body: live.t("shell.tray.notice") }, () =>
             askQuit(
               api,
               () => getTerminalSettings().onQuit,
-              () => sessions.worktrees().flatMap((w) => sessions.tabs(w)),
+              () => sessionsNow.current?.worktrees().flatMap((w) => sessionsNow.current?.tabs(w) ?? []) ?? [],
               (ask) =>
                 new Promise<QuitChoice>((resolve) =>
                   setQuitting({
@@ -369,24 +385,19 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                 ),
             ),
           ),
-        );
-      });
-      if (!got || got.report.opened.length === 0) return;
-      const { resumed, fresh, opened } = got.report;
-      pushToast({
-        text: live.t("layout.restored", { resumed, fresh }),
-        actions: [{ label: live.t("layout.undo"), run: () => void undoRestore(sessions, opened) }],
-      });
+      );
     });
-  }, [sessions, repos]);
+    return () => {
+      stopped = true;
+      stop();
+    };
+  }, [api]);
   useEffect(() => {
     const close = flushOnClose.current;
     return () => {
       restoreStarted.current = false;
       saver.current?.stop();
       saver.current = null;
-      stopCloseWatch.current();
-      stopCloseWatch.current = () => {};
       if (typeof window !== "undefined") window.removeEventListener("beforeunload", close);
     };
   }, [sessions]);
