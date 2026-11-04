@@ -85,3 +85,26 @@ it("no quota yet renders no meters and no error", () => {
     expect(html).toContain("v0.3.0");
   }
 });
+
+it("with a toggle the meters are one button; aria-expanded follows the popover", () => {
+  const quota = [account("claude-2", [["five_hour", 10]])];
+  const closed = render(quota, { onToggleUsage: () => {}, usagePopover: "POPOVER" });
+  expect(closed).toMatch(/<button type="button" class="ws-meters ws-meters-btn"[^>]*data-action="usage"/);
+  expect(closed).toMatch(/data-action="usage"[^>]*aria-expanded="false"/);
+  expect(closed).not.toContain("POPOVER");
+  // The meter group is no longer a second tab stop.
+  expect(closed).not.toMatch(/class="ws-meters"[^>]*tabindex/);
+  const open = render(quota, { onToggleUsage: () => {}, usageOpen: true, usagePopover: "POPOVER" });
+  expect(open).toMatch(/data-action="usage"[^>]*aria-expanded="true"/);
+  expect(open).toContain("POPOVER");
+});
+
+it("the old token usage link stays next to the meter button", () => {
+  const html = render([account("a", [["five_hour", 1]])], { onToggleUsage: () => {}, onOpenUsage: () => {} });
+  expect(html).toContain('data-action="token-usage"');
+  expect(html).toContain('data-action="usage"');
+});
+
+it("no meters, no usage button", () => {
+  expect(render(null, { onToggleUsage: () => {} })).not.toContain('data-action="usage"');
+});

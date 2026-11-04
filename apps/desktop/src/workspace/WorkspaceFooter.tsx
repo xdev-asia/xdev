@@ -1,8 +1,10 @@
-import type { JSX } from "react";
-import type { Api, Quota } from "@/api";
+import { useEffect, useRef, useState } from "react";
+import type { JSX, ReactNode, Ref } from "react";
+import type { Accounts, Api, Quota } from "@/api";
 import { useI18n } from "@/i18n";
 import { useQuota } from "@/shell/useQuota";
 import { useUpdate, type Update } from "@/shell/useUpdate";
+import { UsagePopover } from "./UsagePopover";
 
 /** A meter above this share of its window shows in the warn colour. */
 export const WARN_PERCENT = 80;
@@ -82,6 +84,11 @@ export function WorkspaceFooter(props: {
   onRestartUpdate?: () => void;
   /** Opens the token usage in the Agent kit; the link shows only when this is given. */
   onOpenUsage?: () => void;
+  /** Makes the meters one button that toggles `usagePopover`; without it they are plain text. */
+  onToggleUsage?: () => void;
+  usageOpen?: boolean;
+  usagePopover?: ReactNode;
+  usageButtonRef?: Ref<HTMLButtonElement>;
   hidden?: boolean;
 }): JSX.Element {
   const { t } = useI18n();
@@ -89,14 +96,31 @@ export function WorkspaceFooter(props: {
   return (
     <footer className="ws-footer" hidden={props.hidden}>
       {props.branch && <span className="ws-mono ws-footer-branch">{`⎇ ${props.branch}`}</span>}
-      {meters.length > 0 && (
-        // One tab stop, so the footer is in the focus order and the meters are read out.
-        <span className="ws-meters" role="group" aria-label={t("workspace.footer.usage")} tabIndex={0}>
-          {meters.map((m) => (
-            <MeterItem key={m.label} meter={m} />
-          ))}
-        </span>
-      )}
+      {meters.length > 0 &&
+        (props.onToggleUsage ? (
+          <button
+            type="button"
+            className="ws-meters ws-meters-btn"
+            data-action="usage"
+            ref={props.usageButtonRef}
+            aria-label={t("usage.popover.open")}
+            aria-haspopup="dialog"
+            aria-expanded={props.usageOpen === true}
+            onClick={props.onToggleUsage}
+          >
+            {meters.map((m) => (
+              <MeterItem key={m.label} meter={m} />
+            ))}
+          </button>
+        ) : (
+          // One tab stop, so the footer is in the focus order and the meters are read out.
+          <span className="ws-meters" role="group" aria-label={t("workspace.footer.usage")} tabIndex={0}>
+            {meters.map((m) => (
+              <MeterItem key={m.label} meter={m} />
+            ))}
+          </span>
+        ))}
+      {props.usageOpen && props.usagePopover}
       {props.onOpenUsage && (
         <button type="button" className="ws-footer-link" data-action="token-usage" onClick={props.onOpenUsage}>
           {t("kit.usage.link")}
@@ -125,10 +149,69 @@ export function LiveWorkspaceFooter(props: {
   waiting: number;
   version: string;
   onOpenUsage?: () => void;
+  /** Opens the Accounts app. */
+  onManageAccounts?: () => void;
   hidden?: boolean;
 }): JSX.Element {
-  const { api, hidden, ...rest } = props;
-  const { quota } = useQuota(api, hidden === true);
+  const { api, hidden, onManageAccounts, ...rest } = props;
+  const { quota, loading, refresh } = useQuota(api, hidden === true);
   const update = useUpdate(api);
-  return <WorkspaceFooter {...rest} hidden={hidden} quota={quota} update={update.state} onRestartUpdate={update.restart} />;
+  const [open, setOpen] = useState(false);
+  const [accounts, setAccounts] = useState<Accounts | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(false);
+
+  // The accounts give the order and the provider; they are read each time the popover opens.
+  useEffect(() => {
+    if (!open) return;
+    let stale = false;
+    api.accounts().then(
+      (found) => !stale && setAccounts(found),
+      () => !stale && setAccounts(null),
+    );
+    return () => {
+      stale = true;
+    };
+  }, [api, open]);
+  // Closing hands the focus back to the meters button.
+  useEffect(() => {
+    if (wasOpen.current && !open) button.current?.focus();
+    wasOpen.current = open;
+  }, [open]);
+  // The footer going off screen closes the popover with it.
+  useEffect(() => {
+    if (hidden) setOpen(false);
+  }, [hidden]);
+
+  const close = () => setOpen(false);
+  const popover = (
+    <UsagePopover
+      quota={quota}
+      accounts={accounts}
+      loading={loading}
+      onRefresh={refresh}
+      onOpenDetails={() => {
+        close();
+        rest.onOpenUsage?.();
+      }}
+      onManageAccounts={() => {
+        close();
+        onManageAccounts?.();
+      }}
+      onClose={close}
+    />
+  );
+  return (
+    <WorkspaceFooter
+      {...rest}
+      hidden={hidden}
+      quota={quota}
+      update={update.state}
+      onRestartUpdate={update.restart}
+      onToggleUsage={() => setOpen((v) => !v)}
+      usageOpen={open}
+      usagePopover={popover}
+      usageButtonRef={button}
+    />
+  );
 }
