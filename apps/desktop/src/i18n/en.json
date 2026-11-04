@@ -2215,6 +2215,6 @@
   "orchestration.worker.stage.terminal_create": "the terminal did not start",
   "orchestration.worker.stage.setup_start": "the setup script did not start",
   "orchestration.worker.stage.agent_readiness": "the agent was not ready in time",
-  "orchestration.worker.stage.setup_wait": "the setup script failed",
+  "orchestration.worker.stage.setup_wait": "setup did not finish",
   "orchestration.worker.stage.dispatch_input": "the task could not be sent"
 }

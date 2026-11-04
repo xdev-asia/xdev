@@ -213,6 +213,11 @@ describe("startOrchestrationEvents", () => {
 });
 
 describe("openFailedToast", () => {
+  it("setup_wait is worded for a setup that failed and one that did not finish", () => {
+    expect(translate("en", "orchestration.worker.stage.setup_wait")).toBe("setup did not finish");
+    expect(translate("vi", "orchestration.worker.stage.setup_wait")).toBe("thiết lập chưa xong");
+  });
+
   it("names the worker and the stage, in both languages", () => {
     resetToastsForTests();
     const t = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);

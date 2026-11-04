@@ -2215,6 +2215,6 @@
   "orchestration.worker.stage.terminal_create": "terminal không khởi động",
   "orchestration.worker.stage.setup_start": "script thiết lập không khởi động",
   "orchestration.worker.stage.agent_readiness": "agent không sẵn sàng kịp lúc",
-  "orchestration.worker.stage.setup_wait": "script thiết lập bị lỗi",
+  "orchestration.worker.stage.setup_wait": "thiết lập chưa xong",
   "orchestration.worker.stage.dispatch_input": "không gửi được nhiệm vụ"
 }
