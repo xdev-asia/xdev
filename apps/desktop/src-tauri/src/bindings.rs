@@ -21,9 +21,9 @@ use crate::quick_commands::{FileCommands, QuickCommand};
 use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
-    AgentsSettings, DiffSettings, EditorSettings, GitSettings, KeySettings, NavigationSettings,
-    OpenInSettings, RestoreMode, SettingsChanged, SidebarPrefs, StatusSettings, TerminalSettings,
-    Theme, UiSettings, UsageSettings,
+    AgentsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings, KeySettings,
+    NavigationSettings, OpenInSettings, RestoreMode, SettingsChanged, SidebarLook, SidebarPrefs,
+    StatusBarItems, StatusSettings, TerminalSettings, Theme, UiSettings, UsageSettings,
 };
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
@@ -75,6 +75,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     UiSettings::export_all(cfg)?;
     RestoreMode::export_all(cfg)?;
     Theme::export_all(cfg)?;
+    EditorTheme::export_all(cfg)?;
+    SidebarLook::export_all(cfg)?;
+    StatusBarItems::export_all(cfg)?;
     OpenInSettings::export_all(cfg)?;
     OpenTarget::export_all(cfg)?;
     CloneProgress::export_all(cfg)?;
