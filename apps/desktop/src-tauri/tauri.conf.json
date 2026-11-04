@@ -32,7 +32,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "linux": {
+      "deb": {
+        "desktopTemplate": "linux/xdev.desktop.hbs"
+      }
+    }
   },
   "plugins": {
     "deep-link": {

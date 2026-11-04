@@ -442,4 +442,17 @@ mod tests {
         assert_eq!(img, "img-src 'self' data:");
         assert!(!img.contains("https:") && !img.contains('*'));
     }
+
+    #[test]
+    fn deb_template_passes_the_url() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(
+            conf["bundle"]["linux"]["deb"]["desktopTemplate"],
+            "linux/xdev.desktop.hbs"
+        );
+        let template = include_str!("../linux/xdev.desktop.hbs");
+        assert!(template.lines().any(|l| l == "Exec={{exec}} %u"));
+        assert!(template.lines().any(|l| l == "MimeType={{mime_type}}"));
+    }
 }
