@@ -21,6 +21,7 @@ import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { VaultNav } from "./VaultNav";
 import { PaletteHost } from "@/palette/PaletteHost";
+import { NavButtons } from "@/nav/NavButtons";
 import { SettingsView } from "@/settings/SettingsView";
 import { resetStatusSettings } from "@/status/statusSettings";
 import { BellMenu } from "./BellMenu";
@@ -1229,6 +1230,24 @@ it("Manage accounts in the usage popover shows the docs view on the Accounts app
   view.of(LiveWorkspaceFooter)[0].props.onManageAccounts();
   view.draw();
   expect(view.of(DocsApp)[0].props.appRequest).toEqual({ app: "accounts", seq: 2 });
+});
+
+it("picking a task in the palette shows the docs view on Tasks, focused on that task", async () => {
+  const view = await harness();
+  view.of(PaletteHost)[0].props.actions.openTask("t1");
+  view.draw();
+  expect(view.of(DocsApp)[0].props.appRequest).toEqual({ app: "tasks", task: "t1", seq: 1 });
+  expect(view.all().find(n => n.props.className === "ws-docs")!.props.hidden).toBe(false);
+  expect(view.of(PaletteHost)[0].props.tasks).toBeTypeOf("function");
+});
+
+it("the header has back and forward buttons, and the history keys have handlers that pass on at the ends", async () => {
+  const view = await harness();
+  const buttons = view.of(NavButtons)[0].props;
+  expect(buttons.canBack).toBe(false);
+  expect(buttons.canForward).toBe(false);
+  expect(keymap.handlers["worktree.history.back"]()).toBe(false);
+  expect(keymap.handlers["worktree.history.forward"]()).toBe(false);
 });
 
 it("Usage details in the usage popover asks the Kit for the usage tab", async () => {

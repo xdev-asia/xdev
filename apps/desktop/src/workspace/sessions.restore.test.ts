@@ -161,3 +161,68 @@ describe("Sessions.restore: worktrees that are not loaded", () => {
     expect(t.snapshot().worktrees).toEqual({});
   });
 });
+
+describe("Sessions.restore: the terminal service", () => {
+  let sessions: Sessions | null = null;
+  afterEach(() => {
+    sessions?.dispose();
+    sessions = null;
+  });
+  const running = () => {
+    const api = createMockApi({});
+    api.__ptydSet({ state: "running", serviceVersion: "0.4.0" });
+    return api;
+  };
+
+  it("attaches a tab whose pty is still live instead of spawning or resuming", async () => {
+    const api = running();
+    api.__ptydHold({ id: "live-1", output: "made while closed\r\n", info: { agent: true, profile: "claude", cli: "claude" } });
+    const s = (sessions = new Sessions(api));
+    const spawn = vi.spyOn(api, "ptySpawn");
+    const attach = vi.spyOn(api, "ptyAttach");
+    const resume = vi.spyOn(s, "resume");
+    const report = await s.restore(snap({ [A]: one({ t1: claude({ agentSession: "abc", title: "Fix it", pinned: true, ptyId: "live-1", seq: 3 }) }) }), "all", never);
+    expect(attach).toHaveBeenCalledWith("live-1", 3, expect.any(Function));
+    expect(resume).not.toHaveBeenCalled();
+    expect(never).not.toHaveBeenCalled();
+    expect(report).toMatchObject({ attached: 1, resumed: 0, fresh: 0, opened: ["live-1"] });
+    const [tab] = s.tabs(A);
+    expect(tab).toMatchObject({ id: "live-1", profileId: "claude", agent: true, agentSession: "abc", title: "Fix it", pinned: true, openedAt: 500 });
+    // Shown later, the view binds to the attached pty.
+    const got: Uint8Array[] = [];
+    await tab.client.start(A, "claude", 80, 24, (b) => got.push(b));
+    expect(spawn).not.toHaveBeenCalled();
+    // From byte 3 on: what the tab had drawn before the app closed is not sent again.
+    await vi.waitFor(() => expect(got.map((g) => new TextDecoder().decode(g)).join("")).toBe("e while closed\r\n"));
+  });
+
+  it("goes the resume way unchanged when the pty is gone", async () => {
+    const api = running();
+    const s = (sessions = new Sessions(api));
+    const resume = vi.spyOn(s, "resume");
+    const report = await s.restore(snap({ [A]: one({ t1: claude({ agentSession: "abc", ptyId: "gone-1", seq: 9 }) }) }), "all", never);
+    expect(resume).toHaveBeenCalledWith(A, "claude", null, "abc", null, "claude");
+    expect(report).toMatchObject({ resumed: 1, fresh: 0 });
+    expect(report.attached).toBeUndefined();
+    expect(s.tabs(A)).toHaveLength(1);
+    expect(s.tabs(A)[0].id).not.toBe("gone-1");
+  });
+
+  it("does not ask the service when it is off", async () => {
+    const api = createMockApi({});
+    const attach = vi.spyOn(api, "ptyAttach");
+    const s = (sessions = new Sessions(api));
+    const report = await s.restore(snap({ [A]: one({ t1: shell({ ptyId: "p", seq: 1 }) }) }), "all", never);
+    expect(attach).not.toHaveBeenCalled();
+    expect(report).toMatchObject({ fresh: 1 });
+  });
+
+  it("attaches a live shell in agentsOnly too, which would otherwise skip it", async () => {
+    const api = running();
+    api.__ptydHold({ id: "sh-1" });
+    const s = (sessions = new Sessions(api));
+    const report = await s.restore(snap({ [A]: one({ t1: shell({ ptyId: "sh-1" }), t2: shell() }) }), "agentsOnly", never);
+    expect(report.attached).toBe(1);
+    expect(s.tabs(A).map((t) => t.id)).toEqual(["sh-1"]);
+  });
+});

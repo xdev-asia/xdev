@@ -4,11 +4,13 @@ import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
 import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail } from "@/api";
-import { DocsApp } from "@/DocsApp";
+import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useI18n } from "@/i18n";
 import { PaletteHost } from "@/palette/PaletteHost";
+import { NavButtons } from "@/nav/NavButtons";
+import { useNavHistory } from "@/nav/useNavHistory";
 import { useKeymap, type ActionId } from "@/keys/keymap";
 import { setTerminalKeyHost, startDiagnosticToasts } from "@/keys/terminalKey";
 import { startAutosave } from "@/files/autosave";
@@ -54,6 +56,9 @@ import { failedLinks } from "./linkReport";
 import { decideSetup, hasPending, pendingLists, type PendingLists } from "./setupFlow";
 import { SetupGate } from "./setupGate";
 import { TrustDialog } from "./TrustDialog";
+import { QuitDialog } from "./QuitDialog";
+import { askQuit, type QuitAsk, type QuitChoice } from "./quitGuard";
+import { getTerminalSettings } from "@/terminal/terminalSettings";
 import { createNotifier, type Notifier } from "./notifier";
 import { AgentSessionsStore } from "@/agentSessions/store";
 import { confirmResume } from "@/agentSessions/resumeFlow";
@@ -130,7 +135,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // A request for the Agent kit to open a tab; a new `seq` is a new request.
   const [kitOpen, setKitOpen] = useState<{ tab: KitTab; seq: number } | null>(null);
   // A request for the docs view to show one of its apps (the usage popover asks for Accounts).
-  const [appRequest, setAppRequest] = useState<{ app: AppId; seq: number } | null>(null);
+  const [appRequest, setAppRequest] = useState<AppRequest | null>(null);
   // The tab in front of each worktree, which is where a prompt from the Agent kit is typed.
   const [shownTab, setShownTab] = useState<Record<string, string | null>>({});
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -176,6 +181,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // Setup: the card a worktree shows, the trust prompt, and the gate that holds agents while setup runs.
   const [cards, setCards] = useState<Record<string, SetupCardAt>>({});
   const [trusting, setTrusting] = useState<TrustAsk | null>(null);
+  // "On quit: Ask": the question shown while the window waits to close.
+  const [quitting, setQuitting] = useState<{ ask: QuitAsk; answer(choice: QuitChoice): void } | null>(null);
   const [gate] = useState(() => new SetupGate());
   // Which remove is current; a Cancel during the archive run bumps it so the late result is dropped.
   const removeRun = useRef(0);
@@ -311,7 +318,23 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       void currentCloseWindow().then((win) => {
         if (!saver.current) return;
         stopCloseWatch.current();
-        stopCloseWatch.current = watchWindowClose(saver.current, win);
+        stopCloseWatch.current = watchWindowClose(saver.current, win, () =>
+          askQuit(
+            api,
+            () => getTerminalSettings().onQuit,
+            () => sessions.worktrees().flatMap((w) => sessions.tabs(w)),
+            (ask) =>
+              new Promise<QuitChoice>((resolve) =>
+                setQuitting({
+                  ask,
+                  answer: (choice) => {
+                    setQuitting(null);
+                    resolve(choice);
+                  },
+                }),
+              ),
+          ),
+        );
       });
       if (!got || got.report.opened.length === 0) return;
       const { resumed, fresh, opened } = got.report;
@@ -556,6 +579,24 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     storeSelected(wt.path);
   }
 
+  // Back / forward through the worktrees visited; always ends in the workspace view.
+  const nav = useNavHistory({
+    current: current?.path ?? null,
+    tab: current ? (shownTab[current.path] ?? null) : null,
+    alive: (path) => all.some((w) => w.path === path),
+    go: (entry) => {
+      const wt = all.find((w) => w.path === entry.worktree);
+      if (!wt) return;
+      select(wt);
+      show("workspace");
+      if (entry.tab && sessions?.tabs(wt.path).some((x) => x.id === entry.tab)) {
+        const id = entry.tab;
+        setFront((f) => ({ worktree: wt.path, id, seq: (f?.seq ?? 0) + 1 }));
+      }
+      focusTerminal(wt.path);
+    },
+  });
+
   // Ctrl+Shift+Up / Down and Ctrl+1..9: walk the worktrees as the sidebar draws them.
   function worktreeKey(to: { step: 1 | -1 } | { nth: number }): boolean {
     const path = worktreeTarget(order, current?.path ?? null, to);
@@ -606,6 +647,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     "settings.open": () => openSettings(),
     "quickCommands.open": () => setQuickSeq((n) => n + 1),
     "settings.shortcuts": () => openSettings("keys"),
+    "worktree.history.back": () => nav.back(),
+    "worktree.history.forward": () => nav.forward(),
     "sidebar.left.toggle": () => setSidebarOpen((o) => !o),
     "sidebar.right.toggle": () => setRightOpen((o) => !o),
     "panel.explorer": () => panelKey("files"),
@@ -1172,6 +1215,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     show("docs");
   }
 
+  function openTask(id: string): void {
+    setAppRequest((r) => ({ app: "tasks", task: id, seq: (r?.seq ?? 0) + 1 }));
+    show("docs");
+  }
+
   function openAccounts(): void {
     setAppRequest((r) => ({ app: "accounts", seq: (r?.seq ?? 0) + 1 }));
     show("docs");
@@ -1239,6 +1287,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             <path d="M9 4v16" />
           </svg>
         </button>
+        <NavButtons canBack={nav.canBack} canForward={nav.canForward} onBack={nav.back} onForward={nav.forward} />
         <BrandMark className="ws-logo" size={18} />
         <span className="ws-brand">xDev</span>
         {/* The docs app shows its own folder, so the crumbs go with the workspace view. */}
@@ -1720,9 +1769,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         repos={repos}
         sessions={sessions}
         history={history}
+        tasks={() => api.tasks()}
         current={current}
         shownTab={current ? shownTab[current.path] ?? null : null}
         actions={{
+          openTask,
           selectWorktree: (wt) => {
             select(wt);
             show("workspace");
@@ -1782,6 +1833,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           }}
         />
       )}
+      {quitting && <QuitDialog ask={quitting.ask} onChoose={quitting.answer} />}
       <Toasts />
       {adding && (
         <AddProjectDialog

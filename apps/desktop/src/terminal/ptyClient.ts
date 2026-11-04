@@ -1,4 +1,4 @@
-import type { Api, PtyInfo, PtyProfile } from "@/api";
+import type { Api, PtyAttached, PtyInfo, PtyProfile } from "@/api";
 
 /** Output is acknowledged in steps this big; Rust pauses a terminal at 4 MB unacknowledged. */
 export const ACK_BYTES = 256 * 1024;
@@ -8,6 +8,14 @@ export function toBytes(msg: ArrayBuffer | Uint8Array | number[]): Uint8Array {
   if (msg instanceof Uint8Array) return msg;
   if (msg instanceof ArrayBuffer) return new Uint8Array(msg);
   return Uint8Array.from(msg);
+}
+
+type Write = (bytes: Uint8Array, rendered: () => void) => void;
+
+/** Lines the client writes itself, in the UI's language. */
+export interface PtyNotes {
+  /** Before the replay of an attach whose ring had dropped output. */
+  truncated?: string;
 }
 
 /** One terminal tab's pty: input, size and flow control, without any view. */
@@ -20,6 +28,15 @@ export class PtyClient {
   private live = false;
   /** Typed once the pty exists; a tab that is not on screen has none yet. */
   private queued: string[] = [];
+  // Output drawn so far, counted from the pty's first byte; an attach starts at its seq.
+  private drawn = 0;
+  // Set by `attach`: a later `start` binds the view to it instead of spawning.
+  private attached: { info: PtyInfo; truncated: boolean; noted: boolean } | null = null;
+  // Where output goes; until a view is there, it waits in `pending`.
+  private sink: Write | null = null;
+  private pending: Uint8Array[] = [];
+  // While an attach waits for its reply: output can come first, and the truncated line goes before it.
+  private holding = false;
 
   constructor(
     private readonly api: Api,
@@ -28,17 +45,86 @@ export class PtyClient {
     private readonly resume?: string,
   ) {}
 
+  /**
+   * Starts the pty, or, after `attach`, binds `write` to the attached one: what arrived meanwhile is
+   * written first, and the size is nudged so a full-screen program redraws.
+   */
   async start(
     cwd: string,
     profileId: PtyProfile,
     cols: number,
     rows: number,
-    write: (bytes: Uint8Array, rendered: () => void) => void,
+    write: Write,
     account: string | null = null,
+    notes: PtyNotes = {},
   ): Promise<PtyInfo> {
+    if (this.attached) return this.bind(cols, rows, write, notes);
     const run = this.spawn(cwd, profileId, cols, rows, write, account);
     this.started = run.catch(() => {});
     return run;
+  }
+
+  /**
+   * Takes over the terminal service's pty with this id, its output from byte `fromSeq` on. Without
+   * `write` the output waits for `start`. Rejects with `pty_gone` when the service does not hold it.
+   */
+  async attach(fromSeq: number, write?: Write, notes: PtyNotes = {}): Promise<PtyAttached> {
+    if (this.disposed) throw new Error("disposed");
+    if (write) this.sink = write;
+    this.holding = true;
+    const run = this.api.ptyAttach(this.id, fromSeq, (bytes) => this.deliver(bytes));
+    this.started = run.catch(() => {});
+    let got: PtyAttached;
+    try {
+      got = await run;
+    } catch (e) {
+      this.holding = false;
+      this.pending = [];
+      throw e;
+    }
+    this.holding = false;
+    this.drawn = got.seq;
+    this.live = true;
+    for (const text of this.queued.splice(0)) void this.input(text).catch(() => {});
+    this.attached = { info: got.info, truncated: got.truncated, noted: false };
+    this.note(notes);
+    this.flush();
+    return got;
+  }
+
+  /** Output bytes drawn so far, counted from the pty's first byte: where a later attach replays from. */
+  get seq(): number {
+    return this.drawn;
+  }
+
+  private bind(cols: number, rows: number, write: Write, notes: PtyNotes): PtyInfo {
+    const { info } = this.attached!;
+    this.sink = write;
+    this.note(notes);
+    this.flush();
+    this.size = [cols, rows];
+    void this.api
+      .ptyResize(this.id, Math.max(1, cols - 1), rows)
+      .then(() => this.api.ptyResize(this.id, cols, rows))
+      .catch(() => {});
+    return info;
+  }
+
+  /** The truncated line, once, before any replayed byte; it is not the pty's, so it is never acked. */
+  private note(notes: PtyNotes): void {
+    const a = this.attached;
+    if (!a || a.noted || !this.sink) return;
+    a.noted = true;
+    if (a.truncated && notes.truncated) this.sink(this.encoder.encode(`${notes.truncated}\r\n`), () => {});
+  }
+
+  private deliver(bytes: Uint8Array): void {
+    if (!this.sink || this.holding) this.pending.push(bytes);
+    else this.sink(bytes, () => this.rendered(bytes.length));
+  }
+
+  private flush(): void {
+    for (const bytes of this.pending.splice(0)) this.deliver(bytes);
   }
 
   private async spawn(
@@ -69,6 +155,7 @@ export class PtyClient {
   }
 
   private rendered(length: number): void {
+    this.drawn += length;
     this.unacked += length;
     while (this.unacked >= ACK_BYTES) {
       this.unacked -= ACK_BYTES;

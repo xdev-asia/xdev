@@ -14,6 +14,19 @@ describe("Sessions.snapshot", () => {
     sessions = null;
   });
 
+  it("keeps each terminal's pty id and the bytes it drew, for an attach after a restart", async () => {
+    const s = make();
+    const tab = s.open(A, "shell");
+    let drawn = 0;
+    await tab.client.start(A, "shell", 80, 24, (b, rendered) => {
+      drawn += b.length;
+      rendered();
+    });
+    const t1 = s.snapshot().worktrees[A].tabs.t1;
+    expect(t1).toMatchObject({ kind: "terminal", ptyId: tab.id, seq: drawn });
+    expect(drawn).toBeGreaterThan(0);
+  });
+
   it("is empty without tabs", () => {
     expect(make().snapshot()).toEqual({ version: 1, savedAt: 1000, worktrees: {} });
   });
