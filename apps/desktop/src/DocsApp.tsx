@@ -58,7 +58,7 @@ function folderName(path: string): string {
 }
 
 /** Docs & SDLC: the vault, its docs and the agents that work on them. */
-export type AppRequest = { app: AppId; seq: number };
+export type AppRequest = { app: AppId; seq: number; task?: string };
 
 export function DocsApp(props: { kit?: KitHost; appRequest?: AppRequest | null }) {
   const { t } = useI18n();
