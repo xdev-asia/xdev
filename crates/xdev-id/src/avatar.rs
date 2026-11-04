@@ -9,10 +9,17 @@ use url::Url;
 
 pub const AVATAR_MAX: usize = 256 * 1024;
 
-pub fn avatar_allowed(url: &str) -> bool {
+/// `server` is the origin of the xDev ID server in use: its own pictures are allowed too.
+pub fn avatar_allowed(url: &str, server: &str) -> bool {
     let Ok(url) = Url::parse(url) else {
         return false;
     };
+    if url.username().is_empty()
+        && url.password().is_none()
+        && url.origin().ascii_serialization() == server
+    {
+        return true;
+    }
     if url.scheme() != "https"
         || !url.username().is_empty()
         || url.password().is_some()
@@ -46,13 +53,15 @@ pub fn data_url(content_type: Option<&str>, body: &[u8]) -> Option<String> {
 mod tests {
     use super::*;
 
+    const DEFAULT: &str = "https://id.xdev.asia";
+
     #[test]
     fn allowed_hosts() {
         for ok in [
             "https://avatars.githubusercontent.com/u/1?v=4",
             "https://lh3.googleusercontent.com/a/abc=s96-c",
         ] {
-            assert!(avatar_allowed(ok), "{ok}");
+            assert!(avatar_allowed(ok, DEFAULT), "{ok}");
         }
         for bad in [
             "https://googleusercontent.com.evil.test/a",
@@ -66,8 +75,34 @@ mod tests {
             "not a url",
             "",
         ] {
-            assert!(!avatar_allowed(bad), "{bad}");
+            assert!(!avatar_allowed(bad, DEFAULT), "{bad}");
         }
+    }
+
+    #[test]
+    fn the_current_server_may_serve_avatars() {
+        let corp = "https://id.corp.test";
+        assert!(avatar_allowed("https://id.corp.test/img/1.png", corp));
+        assert!(avatar_allowed(
+            "https://id.corp.test:8443/a.png",
+            "https://id.corp.test:8443"
+        ));
+        assert!(avatar_allowed(
+            "http://localhost:8787/a.png",
+            "http://localhost:8787"
+        ));
+        // Another host, scheme, port or user info is not the server.
+        for bad in [
+            "https://other.corp.test/a.png",
+            "http://id.corp.test/a.png",
+            "https://id.corp.test:8443/a.png",
+            "https://u@id.corp.test/a.png",
+            "https://id.corp.test.evil.test/a.png",
+        ] {
+            assert!(!avatar_allowed(bad, corp), "{bad}");
+        }
+        // The default server's host is not trusted once another server is in use.
+        assert!(!avatar_allowed("https://id.xdev.asia/a.png", corp));
     }
 
     #[test]
