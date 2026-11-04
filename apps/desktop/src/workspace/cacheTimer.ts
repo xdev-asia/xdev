@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import type { Tab } from "./sessions";
 import type { TabStatus } from "./status";
 
-/** Milliseconds of prompt cache left: `ttlMs` after `settledAt`, never below 0. */
+/** Milliseconds of prompt cache left: `ttlMs` after `settledAt`, never below 0 and never above `ttlMs`. */
 export function cacheLeftMs(settledAt: number, now: number, ttlMs: number): number {
-  return Math.max(0, settledAt + ttlMs - now);
+  return Math.min(ttlMs, Math.max(0, settledAt + ttlMs - now));
 }
 
 /** `m:ss`; minutes may pass 59 for the one-hour lifetime. */

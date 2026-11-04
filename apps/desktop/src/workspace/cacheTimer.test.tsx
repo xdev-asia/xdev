@@ -24,6 +24,8 @@ it("cacheLeftMs counts down from the settle time and stops at 0", () => {
   expect(cacheLeftMs(1000, 1000 + 2 * MIN, 5 * MIN)).toBe(3 * MIN);
   expect(cacheLeftMs(1000, 1000 + 5 * MIN, 5 * MIN)).toBe(0);
   expect(cacheLeftMs(1000, 1000 + 99 * MIN, 5 * MIN)).toBe(0);
+  // A `now` from before the settle time never shows more than the whole lifetime.
+  expect(cacheLeftMs(1000, 1000 - 3 * MIN, 5 * MIN)).toBe(5 * MIN);
   expect(formatCacheLeft(5 * MIN)).toBe("5:00");
   expect(formatCacheLeft(4 * MIN + 59_001)).toBe("5:00");
   expect(formatCacheLeft(61_000)).toBe("1:01");
