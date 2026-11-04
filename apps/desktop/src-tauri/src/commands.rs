@@ -141,10 +141,11 @@ pub fn set_git_settings(
         .map(|s| s.git)
 }
 
-/// Settings → Terminal as stored; the defaults when nothing is.
+/// Settings → Terminal as stored, clamped so a hand-edited file never reaches xterm out of
+/// range; the defaults when nothing is stored.
 #[tauri::command(async)]
 pub fn terminal_settings_get(app: AppHandle) -> settings::TerminalSettings {
-    settings_store::read(&app).terminal
+    settings_store::read(&app).terminal.clamped()
 }
 
 /// Stores Settings → Terminal with every number clamped to its range, and
