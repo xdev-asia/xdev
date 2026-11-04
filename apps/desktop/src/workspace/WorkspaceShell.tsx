@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type MenuAction } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
@@ -65,6 +65,11 @@ import { TrustDialog } from "./TrustDialog";
 import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
 import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
 import { QuitDialog } from "./QuitDialog";
+import { AboutDialog } from "./AboutDialog";
+import { HelpButton, type HelpPick } from "./HelpMenu";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { runMenuAction } from "@/shell/menuActions";
+import { useShellLabels } from "@/shell/shellLabels";
 import { askQuit, guardClose, type QuitAsk, type QuitChoice } from "./quitGuard";
 import { getTerminalSettings } from "@/terminal/terminalSettings";
 import { createNotifier, type Notifier } from "./notifier";
@@ -191,6 +196,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [trusting, setTrusting] = useState<TrustAsk | null>(null);
   // "On quit: Ask": the question shown while the window waits to close.
   const [quitting, setQuitting] = useState<{ ask: QuitAsk; answer(choice: QuitChoice): void } | null>(null);
+  // The About dialog (its version, once known) and the "quit and end terminals" confirmation.
+  const [about, setAbout] = useState<string | null>(null);
+  const [confirmEndAll, setConfirmEndAll] = useState(false);
   const [gate] = useState(() => new SetupGate());
   // Which remove is current; a Cancel during the archive run bumps it so the late result is dropped.
   const removeRun = useRef(0);
@@ -701,6 +709,32 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setPanelTab(tab);
   }
   useEffect(() => startQuickCommands(api), [api]);
+  useShellLabels(api);
+  // Native menu and tray items; the latest handlers run through a ref so the listener binds once.
+  const menuRun = useRef<(action: MenuAction) => void>(() => {});
+  menuRun.current = (action) =>
+    runMenuAction(action, {
+      openSettings: () => openSettings(),
+      openShortcuts: () => openSettings("keys"),
+      openUpdates: () => openSettings("general"),
+      confirmQuitEndAll: () => setConfirmEndAll(true),
+      zoom: (delta) => void stepZoom(api, delta),
+      toggleLeftSidebar: () => setSidebarOpen((o) => !o),
+      toggleRightSidebar: () => setRightOpen((o) => !o),
+      openAbout: () => openAbout(),
+    });
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let gone = false;
+    void api.onMenuAction((action) => menuRun.current(action)).then((un) => {
+      if (gone) un();
+      else off = un;
+    });
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, [api]);
   useKeymap({
     "sessions.open": () => {
       show("workspace");
@@ -1273,6 +1307,17 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     }
   }
 
+  function openAbout(): void {
+    void api.appVersion().then(setAbout, () => setAbout(""));
+  }
+
+  function pickHelp(pick: HelpPick): void {
+    if (pick === "shortcuts") openSettings("keys");
+    else if (pick === "about") openAbout();
+    else if (pick === "restart") void api.shellQuit("restart");
+    else void api.helpOpen(pick);
+  }
+
   function openSettings(section?: string, arg?: string, target?: string): void {
     setSettingsAt((s) => ({ section, arg, target, seq: s.seq + 1 }));
     show("settings");
@@ -1412,6 +1457,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           </button>
           {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onClose={() => setBellOpen(false)} />}
         </div>
+        <HelpButton onPick={pickHelp} />
         <button
           type="button"
           className="ws-icon-btn ws-header-btn"
@@ -1936,6 +1982,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         />
       )}
       {quitting && <QuitDialog ask={quitting.ask} onChoose={quitting.answer} />}
+      {about !== null && <AboutDialog version={about} onLink={(link) => void api.helpOpen(link)} onClose={() => setAbout(null)} />}
+      <ConfirmDialog
+        open={confirmEndAll}
+        title={t("shell.quitEndAll.title")}
+        body={t("shell.quitEndAll.body")}
+        confirmLabel={t("shell.quitEndAll.confirm")}
+        onConfirm={() => {
+          setConfirmEndAll(false);
+          void api.shellQuit("end-all");
+        }}
+        onCancel={() => setConfirmEndAll(false)}
+      />
       <Toasts />
       {adding && (
         <AddProjectDialog
