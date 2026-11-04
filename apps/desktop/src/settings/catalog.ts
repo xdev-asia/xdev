@@ -1,3 +1,4 @@
+import type { Platform } from "@/platform";
 /** One searchable control (or list) of a Settings page. */
 export type SettingEntry = {
   id: string; // "terminal.fontSize"; unique; [a-zA-Z0-9.]+
@@ -5,6 +6,7 @@ export type SettingEntry = {
   titleKey: string; // i18n key the page already shows
   descriptionKey?: string;
   keywords: readonly string[]; // English and Vietnamese words, lower case
+  platforms?: readonly Platform[]; // shown only on these; absent: everywhere
 };
 
 const e = (id: string, titleKey: string, keywords: string[], descriptionKey?: string): SettingEntry => ({
@@ -77,6 +79,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("terminal.bell", "settings.terminal.bell.label", ["bell", "beep", "flash", "sound", "visual", "chuông", "chuong", "âm thanh", "am thanh"], "settings.terminal.bell.hint"),
   e("terminal.wordSeparators", "settings.terminal.words.label", ["word", "separator", "double click", "select", "từ", "tu", "phân tách", "phan tach", "bấm đúp", "bam dup"], "settings.terminal.words.hint"),
   e("terminal.scrollback", "settings.terminal.scrollback", ["buffer", "history", "lines", "lịch sử", "lich su"], "settings.terminal.scrollbackHint"),
+  { ...e("terminal.optionAsAlt", "settings.terminal.keyboard.optionAsAlt", ["option", "alt", "meta", "esc", "keyboard", "layout", "mac", "bàn phím", "ban phim", "phím", "phim"], "settings.terminal.keyboard.optionAsAltHint"), platforms: ["mac"] },
   e("terminal.copyOnSelect", "settings.terminal.copyOnSelect", ["clipboard", "copy", "select", "sao chép", "sao chep"]),
   e("terminal.rightClickPaste", "settings.terminal.rightClickPaste", ["clipboard", "paste", "mouse", "dán", "dan"]),
   e("terminal.osc52Clipboard", "settings.terminal.osc52Clipboard", ["clipboard", "osc52", "osc 52"], "settings.terminal.osc52ClipboardHint"),
@@ -167,4 +170,9 @@ export function searchSettings(
   });
   hits.sort((a, b) => b.score - a.score || a.at - b.at);
   return hits.map(({ entry, score }) => ({ entry, score }));
+}
+
+/** The entries a platform shows: those with no `platforms` list, or one that names it. */
+export function settingEntriesFor(platform: Platform): readonly SettingEntry[] {
+  return SETTING_ENTRIES.filter((x) => !x.platforms || x.platforms.includes(platform));
 }

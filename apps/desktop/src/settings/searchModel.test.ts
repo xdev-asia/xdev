@@ -1,15 +1,15 @@
 import { expect, it } from "vitest";
 import { translate } from "@/i18n";
-import { SETTING_ENTRIES } from "./catalog";
+import { settingEntriesFor } from "./catalog";
 import { runSearch } from "./searchModel";
 
 const t = (k: string) => translate("en", k);
 const title = (s: string) => t(`${s === "editor" ? "files.settings" : s === "openIn" ? "openIn" : s === "keys" ? "keys" : s === "qcmd" ? "qcmd" : `settings.${s}`}.title`);
 
 it("an empty query keeps every entry and every section", () => {
-  const r = runSearch("", t, title);
+  const r = runSearch("", t, title, "mac");
   expect(r.active).toBe(false);
-  expect(r.ids.size).toBe(SETTING_ENTRIES.length);
+  expect(r.ids.size).toBe(settingEntriesFor("mac").length);
   expect(r.best).toBeNull();
 });
 
@@ -37,4 +37,10 @@ it("a query with no hit is active with nothing found", () => {
 it("a section title matches all of its entries", () => {
   const r = runSearch("Vaults", t, title);
   expect([...r.counts.keys()]).toEqual(["vaults"]);
+});
+
+it("Option as Alt is found on mac and not elsewhere", () => {
+  expect(runSearch("option", t, title, "mac").ids.has("terminal.optionAsAlt")).toBe(true);
+  expect(runSearch("option", t, title, "win").ids.has("terminal.optionAsAlt")).toBe(false);
+  expect(runSearch("", t, title, "linux").ids.has("terminal.optionAsAlt")).toBe(false);
 });

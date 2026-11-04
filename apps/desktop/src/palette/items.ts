@@ -1,6 +1,7 @@
 import { chordLabel } from "@/keys/keymap";
 import type { QuickCommand, RepoView, WorktreeView } from "@/api";
-import { SETTING_ENTRIES } from "@/settings/catalog";
+import { settingEntriesFor } from "@/settings/catalog";
+import { PLATFORM } from "@/platform";
 import { SECTIONS } from "@/settings/sections";
 import type { Tab } from "@/workspace/sessions";
 import type { TabStatus } from "@/workspace/status";
@@ -105,7 +106,7 @@ export function settingItems(t: T, onPick: (section: string, target?: string) =>
     keywords: [s.id],
     run: () => onPick(s.id),
   }));
-  const entries: PaletteItem[] = SETTING_ENTRIES.map((e) => ({
+  const entries: PaletteItem[] = settingEntriesFor(PLATFORM).map((e) => ({
     id: `set:${e.id}`,
     kind: "setting" as const,
     title: t(e.titleKey),
