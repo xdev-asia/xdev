@@ -17,8 +17,44 @@ export function dueForSleep(
   return tabs
     .filter((tab) => {
       if (!tab.agent || tab.asleep || onScreen.has(tab.id) || !RESTING.has(tab.status)) return false;
+      // Without a session it would wake as a new conversation and the old one would be lost.
+      if (!(tab.agentSession ?? tab.resumeOf)) return false;
       const last = lastOutput(tab.id) || tab.openedAt;
       return now - last > idleMs;
     })
     .map((tab) => tab.id);
+}
+
+export interface AutoSleepLoop {
+  tickMs: number;
+  /** Read on every tick, so a settings change needs no subscription. */
+  settings: () => Promise<{ autoSleep: boolean; sleepAfterMin: number }>;
+  /** Read on every tick, so the loop never restarts when the worktrees or the selection change. */
+  tabs: () => readonly Tab[];
+  onScreen: () => ReadonlySet<string>;
+  lastOutput: (id: string) => number | null;
+  now: () => number;
+  sleep: (id: string) => Promise<unknown>;
+}
+
+/** Starts the auto-sleep timer; a tick does not overlap a running one. Returns the stop function. */
+export function startAutoSleep(loop: AutoSleepLoop): () => void {
+  let busy = false;
+  const timer = setInterval(() => {
+    if (busy) return;
+    busy = true;
+    void (async () => {
+      try {
+        const settings = await loop.settings();
+        if (!settings.autoSleep) return;
+        const due = dueForSleep(loop.tabs(), loop.lastOutput, loop.onScreen(), loop.now(), settings.sleepAfterMin * 60_000);
+        for (const id of due) await loop.sleep(id);
+      } catch {
+        // A failed read or sleep is tried again on the next tick.
+      } finally {
+        busy = false;
+      }
+    })();
+  }, loop.tickMs);
+  return () => clearInterval(timer);
 }

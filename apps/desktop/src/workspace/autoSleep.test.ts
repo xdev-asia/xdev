@@ -5,7 +5,7 @@ import type { Tab } from "./sessions";
 const MIN = 60_000;
 const NOW = 10_000_000;
 const tab = (id: string, over: Partial<Tab> = {}): Tab =>
-  ({ id, worktree: "/w", agent: true, status: "done", openedAt: 0, ...over }) as unknown as Tab;
+  ({ id, worktree: "/w", agent: true, status: "done", openedAt: 0, agentSession: "s-1", resumeOf: null, ...over }) as unknown as Tab;
 
 const due = (tabs: Tab[], last: Record<string, number | null>, onScreen: string[] = [], idle = 30 * MIN) =>
   dueForSleep(tabs, (id) => last[id] ?? null, new Set(onScreen), NOW, idle);
@@ -34,4 +34,10 @@ it("counts from when the tab opened if it never wrote output", () => {
 it("an idle limit of exactly the quiet time is not yet due", () => {
   expect(due([tab("a")], { a: NOW - 30 * MIN })).toEqual([]);
   expect(due([tab("a")], { a: NOW - 30 * MIN - 1 })).toEqual(["a"]);
+});
+
+it("skips an agent tab with no known session, so it would not wake as a new conversation", () => {
+  const old = NOW - 31 * MIN;
+  expect(due([tab("a", { agentSession: null })], { a: old })).toEqual([]);
+  expect(due([tab("a", { agentSession: null, resumeOf: "r-1" })], { a: old })).toEqual(["a"]);
 });
