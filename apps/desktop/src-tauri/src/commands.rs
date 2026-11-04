@@ -316,10 +316,13 @@ pub fn shell_settings_put(
     app: AppHandle,
     settings: settings::ShellSettings,
 ) -> Result<settings::ShellSettings, CmdError> {
-    settings_store::write(&app, &[SettingsSection::Shell], |s| {
+    let stored = settings_store::write(&app, &[SettingsSection::Shell], |s| {
         s.shell = settings.for_put(&s.shell)
     })
-    .map(|s| s.shell)
+    .map(|s| s.shell)?;
+    // The tray follows the setting at once.
+    crate::tray::sync(&app);
+    Ok(stored)
 }
 
 /// The global git `user.name` that the git-username prefix shows; a repo's
