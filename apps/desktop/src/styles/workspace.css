@@ -2209,6 +2209,38 @@ button.ws-tree-row:focus-visible {
   cursor: default;
 }
 
+.ws-policy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-1);
+}
+
+.ws-policy-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-policy-body {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.ws-policy-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ws-policy-hint {
+  color: var(--text-2);
+}
+
 .ws-ship-note {
   margin: 0;
   padding: 6px 8px;
