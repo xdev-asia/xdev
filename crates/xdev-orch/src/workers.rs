@@ -592,6 +592,12 @@ impl Store {
                     self.worker_close_asked(&w.dispatch_id, now_ms)?;
                     true
                 }
+                // Asked, but the tab is busy again: drop the ask and restart
+                // the countdown.
+                (Some(_), Some(status)) if status == "working" || status == "needs-you" => {
+                    self.worker_clear_close(&w.dispatch_id, now_ms)?;
+                    false
+                }
                 (Some(_), Some(_)) | (None, None) => continue,
                 (None, Some(status)) => {
                     let busy = status == "working" || status == "needs-you";
@@ -621,6 +627,16 @@ impl Store {
             });
         }
         Ok(out)
+    }
+
+    /// Drops a close ask and the countdown behind it.
+    fn worker_clear_close(&self, dispatch_id: &str, now_ms: i64) -> Result<(), OrchError> {
+        self.conn.execute(
+            "UPDATE workers SET close_asked_ms = NULL, closes_at_ms = NULL, updated_ms = ?2
+             WHERE dispatch_id = ?1",
+            params![dispatch_id, now_ms],
+        )?;
+        Ok(())
     }
 
     /// Records that the tab of a worker was asked to close at `now_ms`.
@@ -1131,6 +1147,34 @@ mod tests {
         assert!(!done[0].close);
         assert!(s.worker_get(&id).unwrap().released);
         assert!(s.worker_sweep(&on("idle"), 0, at * 9).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_tab_asked_to_close_that_turns_busy_is_not_asked_again() {
+        let (s, run, task) = world();
+        let id = ready_worker(&s, &run, &task);
+        s.worker_settle(&id, WorkerState::Succeeded, None, true, 1_000)
+            .unwrap();
+        let on = |st: &'static str| move |_: &str| Some(st.to_owned());
+        let due_at = 1_000 + CLOSE_AFTER_MS;
+        assert!(s.worker_sweep(&on("idle"), 0, due_at).unwrap()[0].close);
+        // The user works in the tab again: the ask is dropped.
+        s.worker_sweep(&on("working"), 0, due_at + 1).unwrap();
+        let w = s.worker_get(&id).unwrap();
+        assert_eq!((w.closes_at_ms, w.released), (None, false));
+        assert!(
+            s.worker_sweep(&on("working"), 0, due_at + 2 * CLOSE_RETRY_MS)
+                .unwrap()
+                .is_empty()
+        );
+        // Quiet again: a fresh countdown, no immediate close.
+        let quiet = due_at + 3 * CLOSE_RETRY_MS;
+        let r = s.worker_sweep(&on("idle"), 0, quiet).unwrap();
+        assert!(r.iter().all(|w| !w.close));
+        assert_eq!(
+            s.worker_get(&id).unwrap().closes_at_ms,
+            Some(quiet + CLOSE_AFTER_MS)
+        );
     }
 
     #[test]
