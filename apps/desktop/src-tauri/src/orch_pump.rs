@@ -14,9 +14,8 @@ use crate::orchestration::OrchHub;
 
 /// The least time between two pointers at the same mailbox.
 pub const POINTER_GAP_MS: i64 = 2_000;
-/// How long the pointer waits before it is typed, so a screen that just went
-/// idle has drawn its prompt.
-pub const WRITE_DELAY_MS: u64 = 500;
+/// How long after the pasted pointer the Enter that submits it is typed.
+pub const ENTER_DELAY_MS: u64 = 500;
 
 /// One line to type into `tab`, pointing at `address`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -166,9 +165,10 @@ impl Pump {
         }
     }
 
-    /// Types the pointers after `delay`, on a timer thread, into each tab that
-    /// `idle` still finds idle then. A skipped or failed write keeps the mail
-    /// and forgets the pointer, so a later pass points again.
+    /// On a timer thread, pastes each pointer (bracketed) into its tab if
+    /// `idle` still finds it idle, then types Enter `delay` later. A skipped
+    /// or failed write keeps the mail and forgets the pointer, so a later
+    /// pass points again.
     pub fn deliver(
         self: &Arc<Self>,
         plans: Vec<Pointer>,
@@ -181,15 +181,21 @@ impl Pump {
         }
         let pump = Arc::clone(self);
         Some(std::thread::spawn(move || {
-            std::thread::sleep(delay);
+            let mut pasted = Vec::new();
             for p in plans {
-                if !idle(&p.tab) {
+                let paste = format!("\x1b[200~{}\x1b[201~", p.text);
+                if idle(&p.tab) && write(&p.tab, paste.as_bytes()) {
+                    pasted.push(p);
+                } else {
                     pump.forget(&p);
-                    continue;
                 }
-                let mut bytes = p.text.clone().into_bytes();
-                bytes.push(b'\r');
-                if !write(&p.tab, &bytes) {
+            }
+            if pasted.is_empty() {
+                return;
+            }
+            std::thread::sleep(delay);
+            for p in pasted {
+                if !write(&p.tab, b"\r") {
                     pump.forget(&p);
                 }
             }
@@ -353,9 +359,9 @@ mod tests {
             .join()
             .unwrap();
         let seen = tries.lock().unwrap().clone();
-        assert_eq!(seen.len(), 1);
+        assert_eq!(seen.len(), 1, "no Enter after a paste that failed");
         assert_eq!(seen[0].0, "t1");
-        assert_eq!(seen[0].1.last(), Some(&b'\r'));
+        assert!(seen[0].1.ends_with(b"\x1b[201~"));
         // Forgotten, so the next pass (the gap does not apply) points again.
         assert_eq!(pump.plan(&wakes, &idle, &nobody, 1_001).len(), 1);
     }
@@ -509,6 +515,33 @@ mod tests {
             &|_: &str| String::new(),
             31
         ));
+    }
+
+    #[test]
+    fn the_pointer_is_pasted_and_entered_after_the_delay() {
+        let pump = Arc::new(Pump::default());
+        let wakes = [wake("dispatch:d1", "t1", 1, 3)];
+        let idle = [tab("t1", "idle", false)];
+        let plans = pump.plan(&wakes, &idle, &nobody, 1_000);
+        let text = plans[0].text.clone();
+        let writes = Arc::new(Mutex::new(Vec::<(Vec<u8>, std::time::Instant)>::new()));
+        let log = Arc::clone(&writes);
+        let write: Writer = Arc::new(move |_, bytes| {
+            log.lock()
+                .unwrap()
+                .push((bytes.to_vec(), std::time::Instant::now()));
+            true
+        });
+        let delay = Duration::from_millis(100);
+        pump.deliver(plans, delay, still_idle(), write)
+            .unwrap()
+            .join()
+            .unwrap();
+        let seen = writes.lock().unwrap().clone();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0].0, format!("\x1b[200~{text}\x1b[201~").into_bytes());
+        assert_eq!(seen[1].0, b"\r");
+        assert!(seen[1].1 - seen[0].1 >= delay);
     }
 
     #[test]

@@ -369,7 +369,7 @@ fn pump_once(app: &AppHandle) {
     });
     hub.pump.deliver(
         plans,
-        Duration::from_millis(crate::orch_pump::WRITE_DELAY_MS),
+        Duration::from_millis(crate::orch_pump::ENTER_DELAY_MS),
         idle,
         write,
     );
