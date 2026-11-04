@@ -1,8 +1,17 @@
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Quota } from "@/api";
 import { translate } from "@/i18n";
-import { meterOf, WorkspaceFooter } from "./WorkspaceFooter";
+import { createMockApi } from "@/mockApi";
+import { resetUsageSettingsForTests, setUsageSettings } from "@/settings/usageSettings";
+import { USAGE_DEFAULTS } from "@/settings/usageDefaults";
+import { LiveWorkspaceFooter, meterOf, WorkspaceFooter } from "./WorkspaceFooter";
+
+// The live footer reads the quota and the update state through hooks; fixed values stand in for them.
+const live = vi.hoisted(() => ({ quota: null as unknown }));
+vi.mock("@/shell/useQuota", () => ({ useQuota: () => ({ quota: live.quota, loading: false, refresh() {} }) }));
+vi.mock("@/shell/useUpdate", () => ({ useUpdate: () => ({ state: null, restart() {} }) }));
 
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
@@ -132,4 +141,25 @@ it("a meter past 100 % used shows 0 % left", () => {
   const html = render([account("over", [["five_hour", 130]])], { display: "remaining" });
   expect(html).toMatch(/role="meter"[^>]*aria-valuenow="0"/);
   expect(html).toContain("0%");
+});
+
+const renderLive = (hidden = false) =>
+  renderToStaticMarkup(createElement(LiveWorkspaceFooter, { api: createMockApi({}), branch: "main", running: 0, waiting: 0, version: "0.3.0", hidden }));
+
+beforeEach(() => {
+  resetUsageSettingsForTests();
+  live.quota = [account("claude-1", [["five_hour", 33]]), account("codex-1", [["five_hour", 7]])];
+});
+
+it("the live footer shows a meter for each account from the live quota", () => {
+  const html = renderLive();
+  expect(html.match(/role="meter"/g)).toHaveLength(2);
+  expect(html).toMatch(/role="meter"[^>]*aria-valuenow="33"/);
+  expect(html).toContain("v0.3.0");
+});
+
+it("the live footer shows remaining instead of used when the display setting says so", () => {
+  setUsageSettings({ ...USAGE_DEFAULTS, display: "remaining" });
+  const html = renderLive();
+  expect(html).toMatch(/role="meter"[^>]*aria-valuenow="67"/);
 });
