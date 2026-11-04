@@ -70,8 +70,11 @@ describe("Sessions.restore", () => {
 
   it("none does nothing, and a second restore does nothing", async () => {
     const s = make();
-    const s1 = snap({ [A]: one({ t1: shell() }) });
-    expect(await s.restore(s1, "none", never)).toEqual({ resumed: 0, fresh: 0, skipped: [], opened: [] });
+    const s1 = snap({ [A]: one({ t1: shell(), "file:a.ts": { kind: "file", rel: "a.ts" }, "review:": { kind: "review" } }) });
+    const openFile = vi.fn(async () => true);
+    expect(await s.restore(s1, "none", never, { openFile })).toEqual({ resumed: 0, fresh: 0, skipped: [], opened: [] });
+    expect(openFile).not.toHaveBeenCalled();
+    expect(s.layout(A)).toBeFalsy();
     expect(s.tabs(A)).toEqual([]);
     expect((await s.restore(s1, "all", never)).fresh).toBe(0);
     expect(s.tabs(A)).toEqual([]);
@@ -223,6 +226,13 @@ describe("Sessions.restore: the terminal service", () => {
       await s.restore(snap({ [A]: one({ t1: claude({ agentSession: "x" }), t2: asleep() }) }), "none", never);
       expect(s.tabs(A).map((t) => t.asleep)).toEqual([true]);
       expect(leaves(s.layout(A)!).flatMap((n) => (n.kind === "leaf" ? n.tabs : []))).toEqual([s.tabs(A)[0].id]);
+    });
+
+    it("under none the file tabs of a worktree with a sleeping tab come back too", async () => {
+      const s = make();
+      const openFile = vi.fn(async () => true);
+      await s.restore(snap({ [A]: one({ t2: asleep(), "file:a.ts": { kind: "file", rel: "a.ts" } }) }), "none", never, { openFile });
+      expect(openFile).toHaveBeenCalledWith(A, "a.ts");
     });
 
     it("a sleeping shell comes back asleep and wakes as a new shell", async () => {
