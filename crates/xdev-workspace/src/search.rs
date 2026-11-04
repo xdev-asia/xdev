@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use ignore::WalkBuilder;
-use ignore::overrides::Override;
+use ignore::overrides::{Override, OverrideBuilder};
+use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 
 use crate::WorkspaceError;
@@ -164,6 +165,51 @@ fn rel_of(root: &Path, path: &Path) -> Option<String> {
     Some(parts.join("/"))
 }
 
+/// Longest `SearchQuery::text`, in chars.
+const QUERY_MAX: usize = 1000;
+/// Compiled size a query regex may take; past it the query is refused.
+const REGEX_SIZE_MAX: usize = 1 << 20;
+
+/// A query ready to run: one regex for every mode and the glob filter.
+struct Compiled {
+    re: Regex,
+    filter: Override,
+}
+
+/// Builds the regex (plain text escaped, `\b…\b` for a whole word, case
+/// folded unless asked) and the include / exclude filter of `q`. The error
+/// is the message shown to the person.
+fn compile(root: &Path, q: &SearchQuery) -> Result<Compiled, String> {
+    let len = q.text.chars().count();
+    if len == 0 || len > QUERY_MAX {
+        return Err(format!(
+            "the search text must be 1 to {QUERY_MAX} characters"
+        ));
+    }
+    let mut pattern = if q.regex {
+        q.text.clone()
+    } else {
+        regex::escape(&q.text)
+    };
+    if q.whole_word {
+        pattern = format!(r"\b(?:{pattern})\b");
+    }
+    let re = RegexBuilder::new(&pattern)
+        .case_insensitive(!q.case_sensitive)
+        .size_limit(REGEX_SIZE_MAX)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut globs = OverrideBuilder::new(root);
+    for g in &q.include {
+        globs.add(g).map_err(|e| e.to_string())?;
+    }
+    for g in &q.exclude {
+        globs.add(&format!("!{g}")).map_err(|e| e.to_string())?;
+    }
+    let filter = globs.build().map_err(|e| e.to_string())?;
+    Ok(Compiled { re, filter })
+}
+
 /// Searches the text files of `worktree` for `q`, sending `Batch` events and
 /// then `Done` to `sink`. Stops early without `Done` once `cancel` is set.
 pub fn search_text(
@@ -172,7 +218,15 @@ pub fn search_text(
     cancel: &AtomicBool,
     sink: &mut dyn FnMut(SearchEvent),
 ) -> Result<(), WorkspaceError> {
-    let _ = (worktree, q, cancel);
+    let compiled = match compile(Path::new(worktree), q) {
+        Ok(c) => c,
+        Err(message) => {
+            sink(SearchEvent::Error { message });
+            return Ok(());
+        }
+    };
+    // The walk itself comes with the next step.
+    let _ = (cancel, &compiled.re, &compiled.filter);
     sink(SearchEvent::Done {
         files: 0,
         hits: 0,
@@ -277,5 +331,128 @@ mod tests {
         let files = list_files(root(&tmp)).unwrap().files;
         assert!(files.iter().all(|f| !f.contains("secret")), "{files:?}");
         assert!(!files.iter().any(|f| f.starts_with("out")), "{files:?}");
+    }
+
+    fn query(text: &str) -> SearchQuery {
+        SearchQuery {
+            text: text.into(),
+            case_sensitive: false,
+            whole_word: false,
+            regex: false,
+            include: vec![],
+            exclude: vec![],
+        }
+    }
+
+    fn matches(q: &SearchQuery, line: &str) -> bool {
+        compile(Path::new("."), q).unwrap().re.is_match(line)
+    }
+
+    #[test]
+    fn plain_text_matches_only_the_literal() {
+        let q = query("foo.bar");
+        assert!(matches(&q, "x foo.bar y"));
+        assert!(!matches(&q, "fooxbar"));
+        assert!(matches(&query("a(b"), "a(b"));
+    }
+
+    #[test]
+    fn regex_mode_uses_the_pattern() {
+        let q = SearchQuery {
+            regex: true,
+            ..query("fo+")
+        };
+        assert!(matches(&q, "foooo"));
+        assert!(!matches(&q, "f"));
+    }
+
+    #[test]
+    fn whole_word_skips_longer_words() {
+        let q = SearchQuery {
+            whole_word: true,
+            ..query("foo")
+        };
+        assert!(matches(&q, "a foo b"));
+        assert!(!matches(&q, "foobar"));
+        assert!(!matches(&q, "dir_foo"));
+        let alt = SearchQuery {
+            whole_word: true,
+            regex: true,
+            ..query("foo|bar")
+        };
+        assert!(!matches(&alt, "foox xbar"));
+    }
+
+    #[test]
+    fn case_is_ignored_unless_asked() {
+        assert!(matches(&query("foo"), "FOO"));
+        let q = SearchQuery {
+            case_sensitive: true,
+            ..query("foo")
+        };
+        assert!(!matches(&q, "FOO"));
+        assert!(matches(&q, "foo"));
+    }
+
+    fn errors_of(tmp: &TempDir, q: &SearchQuery) -> Vec<SearchEvent> {
+        let mut seen = Vec::new();
+        search_text(root(tmp), q, &AtomicBool::new(false), &mut |e| seen.push(e)).unwrap();
+        seen
+    }
+
+    fn is_one_error(seen: &[SearchEvent]) -> bool {
+        matches!(seen, [SearchEvent::Error { message }] if !message.is_empty())
+    }
+
+    #[test]
+    fn a_bad_regex_or_glob_or_text_sends_one_error() {
+        let tmp = tree();
+        let bad_re = SearchQuery {
+            regex: true,
+            ..query("(")
+        };
+        assert!(is_one_error(&errors_of(&tmp, &bad_re)));
+        let bad_glob = SearchQuery {
+            include: vec!["a[".into()],
+            ..query("x")
+        };
+        assert!(is_one_error(&errors_of(&tmp, &bad_glob)));
+        assert!(is_one_error(&errors_of(&tmp, &query(""))));
+        assert!(is_one_error(&errors_of(&tmp, &query(&"x".repeat(1001)))));
+        // A huge pattern hits the size limit instead of eating memory.
+        let huge = SearchQuery {
+            regex: true,
+            ..query(r"(\w{100}){100}")
+        };
+        assert!(is_one_error(&errors_of(&tmp, &huge)));
+    }
+
+    #[test]
+    fn include_and_exclude_globs_filter_the_walk() {
+        let tmp = tree();
+        put(tmp.path(), "vendor/x.rs", "");
+        put(tmp.path(), "lib.rs", "");
+        let files = |include: &[&str], exclude: &[&str]| -> Vec<String> {
+            let q = SearchQuery {
+                include: include.iter().map(|s| s.to_string()).collect(),
+                exclude: exclude.iter().map(|s| s.to_string()).collect(),
+                ..query("x")
+            };
+            let filter = compile(tmp.path(), &q).unwrap().filter;
+            walk(tmp.path(), Some(filter))
+                .unwrap()
+                .map(|(_, rel)| rel)
+                .collect()
+        };
+        assert_eq!(
+            files(&["src/**/*.rs"], &[]),
+            vec!["src/deep/mod.rs", "src/main.rs"]
+        );
+        assert_eq!(
+            files(&["*.rs"], &["vendor", "src/deep"]),
+            vec!["lib.rs", "src/main.rs"]
+        );
+        // An include glob does not bring back what .gitignore leaves out.
+        assert_eq!(files(&["*.log"], &[]), Vec::<String>::new());
     }
 }
