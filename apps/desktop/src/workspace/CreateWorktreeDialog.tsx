@@ -1,11 +1,12 @@
 import { Button, Disclosure, RadioGroup, Segmented, Switch } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type ApiError, type CreateRequest, type Issue, type NamePreview, type ReviewBranch, type RepoView, type WorkItem, type WorkItemKind } from "@/api";
+import { toApiError, type Api, type ApiError, type CreateRequest, type Issue, type NamePreview, type PrSummary, type ReviewBranch, type RepoView, type WorkItem, type WorkItemKind } from "@/api";
 import { isIssueRef } from "@/issues/issueStart";
 import { useI18n } from "@/i18n";
 import { expandShortcodes, hasEmoji, slugFromTitle } from "./emoji";
 import { localBranches, sparseDirs } from "./createSource";
+import { LinkedWorkSearch } from "./LinkedWorkSearch";
 import { schedulePreview } from "./namePreview";
 import { parseItem } from "./workItemInput";
 
@@ -16,6 +17,8 @@ export type CreateExtra = { title: string | null; agent: string | null; setDefau
 export const ISSUE_RESOLVE_DEBOUNCE_MS = 300;
 
 type Found = { repoId: string; text: string; issue: Issue | null; error?: ApiError["code"] };
+
+export type CreateTab = "name" | "github" | "branch";
 
 export type AgentChoice = { id: string; name: string };
 
@@ -81,6 +84,13 @@ export function CreateWorktreeDialog(props: {
   resolveIssue?(repoId: string, text: string): Promise<Issue | null>;
   /** Create with an issue in the name field: the shell starts the worktree from it instead of `onCreate`. */
   onStartIssue?(repoId: string, issue: Issue): void;
+  /** Searches issues and pull requests for the GitHub tab; without it there is no such tab. */
+  api?: Api;
+  /** A pull request picked on the GitHub tab: the shell starts the worktree from it. */
+  onStartPr?(repoId: string, pr: PrSummary): void;
+  /** The tab to open on, and told when it changes, so the next opening comes back to it. */
+  initialTab?: CreateTab;
+  onTabChange?(tab: CreateTab): void;
   /** The branches of a repo checkout, for the Branch tab. */
   branches?(repoPath: string): Promise<ReviewBranch[]>;
   onCancel(): void;
@@ -102,7 +112,7 @@ export function CreateWorktreeDialog(props: {
   const [note, setNote] = useState("");
   const [sparseText, setSparseText] = useState("");
   const [more, setMore] = useState(false);
-  const [tab, setTab] = useState<"name" | "branch">("name");
+  const [tab, setTab] = useState<CreateTab>(props.initialTab ?? "name");
   const [branchMode, setBranchMode] = useState<"new" | "existing">("new");
   const [branchList, setBranchList] = useState<{ repoId: string; list: ReviewBranch[] } | null>(null);
   const [existing, setExisting] = useState("");
@@ -175,7 +185,7 @@ export function CreateWorktreeDialog(props: {
       if (repo && issue) props.onStartIssue?.(repo.id, issue);
       return;
     }
-    if (badItem || badSparse || needsBranch) return;
+    if (tab === "github" || badItem || badSparse || needsBranch) return;
     const built = repo && buildCreate({ text: name.trim() === "" && pickedBranch !== "" ? pickedBranch.replace(/[\/]+/g, "-") : name, agent, defaultAgent, setDefault, parent: parentPath, itemUrl, itemKind, note });
     if (!repo || !built) return;
     const dirs = Array.isArray(sparse) ? sparse : [];
@@ -227,12 +237,29 @@ export function CreateWorktreeDialog(props: {
           <Segmented
             label={t("workspace.create.tab.label")}
             value={tab}
-            onChange={(v) => setTab(v as "name" | "branch")}
+            onChange={(v) => {
+              setTab(v as CreateTab);
+              props.onTabChange?.(v as CreateTab);
+            }}
             options={[
               { value: "name", label: t("workspace.create.tab.name") },
+              ...(props.api && props.onStartIssue && props.onStartPr ? [{ value: "github", label: t("workspace.create.tab.github") }] : []),
               ...(branches ? [{ value: "branch", label: t("workspace.create.tab.branch") }] : []),
             ]}
           />
+          {tab === "github" && props.api && repo && (
+            <div className="ws-field">
+              <LinkedWorkSearch
+                api={props.api}
+                repoId={repo.id}
+                onPick={(_item, source) => {
+                  if (source?.kind === "issue") props.onStartIssue?.(repo.id, source.issue);
+                  else if (source?.kind === "pr") props.onStartPr?.(repo.id, source.pr);
+                }}
+              />
+              <small>{t("workspace.create.searchHint")}</small>
+            </div>
+          )}
           {tab === "branch" && (
             <div className="ws-field">
               <RadioGroup
@@ -365,7 +392,7 @@ export function CreateWorktreeDialog(props: {
           <button type="button" className="btn-secondary" onClick={props.onCancel}>
             {t("dialog.cancel")}
           </button>
-          <Button type="submit" disabled={!repo || badItem || badSparse || needsBranch || (ref && !issue)}>
+          <Button type="submit" disabled={!repo || tab === "github" || badItem || badSparse || needsBranch || (ref && !issue)}>
             {t("workspace.create.confirm")}
           </Button>
         </div>

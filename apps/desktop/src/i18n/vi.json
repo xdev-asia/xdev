@@ -1986,6 +1986,8 @@
   "workspace.create.branchMode.existing": "Nhánh cục bộ có sẵn",
   "workspace.create.pickBranch": "Chọn một nhánh",
   "workspace.create.noBranches": "Mọi nhánh cục bộ đều đã có worktree.",
+  "workspace.create.tab.github": "GitHub",
+  "workspace.create.searchHint": "Chọn một issue hoặc pull request để tạo worktree từ đó.",
   "workspace.create.item": "Mục công việc",
   "workspace.create.itemKind": "Loại mục công việc",
   "workspace.create.itemPlaceholder": "Liên kết https://… của pull request hoặc issue",
