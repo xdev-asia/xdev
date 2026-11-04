@@ -10,6 +10,7 @@ import { MarkdownPreview } from "@/files/MarkdownPreview";
 import { isPreviewTab, previewTabId, previewTabRel } from "@/files/previewTabs";
 import { viewerOf } from "@/files/viewer";
 import { UnsavedDialog } from "@/files/UnsavedDialog";
+import { SurfaceBoundary } from "@/components/SurfaceBoundary";
 import { useI18n } from "@/i18n";
 import { useKeymap } from "@/keys/keymap";
 import { useNavigationSettings } from "@/settings/navigationSettings";
@@ -726,7 +727,7 @@ export function WorktreeTabs(props: {
                   }
                 />
               )}
-              {!tab.asleep && (everFront.has(tab.id) || !sessions.deferred(tab.id)) && <Terminal
+              {!tab.asleep && (everFront.has(tab.id) || !sessions.deferred(tab.id)) && <SurfaceBoundary id={`terminal.${tab.id}`} surface="Terminal" resetKey={attempts[tab.id] ?? 0}><Terminal
                 key={`${tab.id}:${attempts[tab.id] ?? 0}`}
                 api={api}
                 client={tab.client}
@@ -753,7 +754,7 @@ export function WorktreeTabs(props: {
                   registerTerminal(tab.id, handle);
                   return () => registerTerminal(tab.id, null);
                 }}
-              />}
+              /></SurfaceBoundary>}
             </div>
           );
         })}
@@ -774,7 +775,7 @@ export function WorktreeTabs(props: {
                 if (layout && pane && layout.focused !== pane) setLayout(focusPane(layout, pane));
               }}
             >
-              <FileView api={api} worktree={worktree} rel={file.rel} />
+              <SurfaceBoundary id="editor.file" surface="Editor" resetKey={file.rel}><FileView api={api} worktree={worktree} rel={file.rel} /></SurfaceBoundary>
             </div>
           );
         })}
@@ -801,7 +802,7 @@ export function WorktreeTabs(props: {
 
         {open && (
           <div className="ws-tab-pane" role="tabpanel" data-tab={REVIEW_TAB} hidden={reviewAt.hidden} style={reviewAt.style}>
-            <ReviewView api={api} worktree={worktree} sessions={sessions} reveal={open} />
+            <SurfaceBoundary id="review" surface="Review" resetKey={worktree}><ReviewView api={api} worktree={worktree} sessions={sessions} reveal={open} /></SurfaceBoundary>
           </div>
         )}
       </div>

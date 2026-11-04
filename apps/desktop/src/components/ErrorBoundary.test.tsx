@@ -26,6 +26,19 @@ describe("ErrorBoundary", () => {
     expect(html).toContain(en["app.crash.title"]);
     expect(html).toContain("boom");
     expect(html).toContain(en["app.crash.reload"]);
+    expect(html).toContain(en["app.crash.body"]);
+  });
+});
+
+describe("ErrorBoundary report", () => {
+  it("records the crash as app.root and tells the person to reload", async () => {
+    const { api } = await import("@/api");
+    const spy = vi.spyOn(api, "crashRecordRender").mockResolvedValue(null);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const b = new ErrorBoundary({ children: null });
+    b.componentDidCatch(new Error("root boom"), { componentStack: " at App" } as never);
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ boundary: "app.root", message: "root boom" }));
+    expect(en["app.crash.title"]).toBe("xDev hit a renderer error.");
   });
 });
 

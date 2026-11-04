@@ -65,6 +65,12 @@ kbd {
   font-size: 18px;
 }
 
+.app-crash-body {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--x-color-muted);
+}
+
 .app-crash-detail {
   max-width: 100%;
   margin: 0;

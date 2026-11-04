@@ -6,6 +6,7 @@ import { GeneralPage } from "./GeneralPage";
 import { translate } from "@/i18n";
 import { NotificationsPage } from "./notifications/NotificationsPage";
 import { TerminalPage } from "./TerminalPage";
+import { SurfaceBoundary } from "@/components/SurfaceBoundary";
 import { SECTIONS } from "./sections";
 import { SettingsView } from "./SettingsView";
 import { VaultsSettings } from "./VaultsSettings";
@@ -43,8 +44,9 @@ function view(initial?: string) {
   };
   const items = () => draw().filter((n) => n.props.className === "settings-nav-item");
   const body = () => draw().find((n) => n.props.className === "settings-body")!;
-  const shown = () => nodes(body().props.children)[0];
-  return { api, onChanged, draw, items, body, shown };
+  const boundary = () => nodes(body().props.children).find((n) => n.type === SurfaceBoundary)!;
+  const shown = () => nodes(body().props.children).find((n) => n.type !== SurfaceBoundary)!;
+  return { api, onChanged, draw, items, body, shown, boundary };
 }
 
 it("opens General first and switches to Vaults", () => {
@@ -123,7 +125,7 @@ function search(initial?: string, target?: string) {
   const box = () => draw().find((n) => n.type === SettingsSearch)!;
   const items = () => draw().filter((n) => n.props.className === "settings-nav-item");
   const body = () => draw().find((n) => n.props.className === "settings-body")!;
-  const page = () => nodes(body().props.children)[0];
+  const page = () => nodes(body().props.children).find((n) => n.type !== SurfaceBoundary)!;
   return { draw, box, items, body, page };
 }
 
@@ -202,4 +204,13 @@ it("opening another section clears the query so the section shows", () => {
   expect(v.box().props.value).toBe("");
   expect(v.items()).toHaveLength(SECTIONS.length);
   expect(v.body().props["aria-label"]).toBe(en("openIn.title"));
+});
+
+it("contains a page that throws in a boundary reset by the section, so the nav stays", () => {
+  const v = view();
+  expect(v.boundary().props).toMatchObject({ id: "page.settings", resetKey: "general", titleKey: "boundary.page.title" });
+  // The nav is a sibling of the body, outside the boundary.
+  expect(v.items()).toHaveLength(SECTIONS.length);
+  v.items()[9].props.onClick();
+  expect(v.boundary().props.resetKey).toBe("vaults");
 });

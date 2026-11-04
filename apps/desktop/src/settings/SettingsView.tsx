@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { JSX } from "react";
 import type { Api } from "@/api";
+import { SurfaceBoundary } from "@/components/SurfaceBoundary";
 import { useI18n } from "@/i18n";
 import { entriesFor } from "./catalog";
 import { PLATFORM } from "@/platform";
@@ -45,7 +46,9 @@ export function SettingsView(props: { api: Api; onChanged(): void; initial?: str
       </nav>
       {section ? (
         <section className="settings-body" aria-label={t(section.labelKey)}>
-          <section.Component key={section.id} api={props.api} onChanged={props.onChanged} arg={props.arg} filter={filter} openSection={openSection} openView={props.openView} />
+          <SurfaceBoundary id="page.settings" surface={`Settings: ${section.id}`} resetKey={section.id} titleKey="boundary.page.title">
+            <section.Component key={section.id} api={props.api} onChanged={props.onChanged} arg={props.arg} filter={filter} openSection={openSection} openView={props.openView} />
+          </SurfaceBoundary>
           {props.target && !found.active && <RevealSetting id={props.target} />}
         </section>
       ) : (

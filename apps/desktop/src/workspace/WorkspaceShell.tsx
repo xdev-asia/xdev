@@ -9,6 +9,7 @@ import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useI18n } from "@/i18n";
+import { SurfaceBoundary } from "@/components/SurfaceBoundary";
 import { PaletteHost } from "@/palette/PaletteHost";
 import { NavButtons } from "@/nav/NavButtons";
 import { useNavHistory } from "@/nav/useNavHistory";
@@ -1816,22 +1817,24 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           </div>
           {sessions && history && (
             <div className="ws-side-view" hidden={sideView !== "sessions"}>
-              <SessionsSidebar
-                store={history}
-                sessions={sessions}
-                current={current ? { path: current.path, repo: repos?.find((r) => r.worktrees.some((w) => w.path === current.path))?.path ?? null } : null}
-                visible={sideView === "sessions" && sidebarOpen}
-                focusSeq={sessionsAsk.focus ? sessionsAsk.seq : undefined}
-                reveal={sessionsAsk.reveal}
-                onOpened={(tab) => jumpTo(tab.id)}
-                onFocusTab={jumpTo}
-                onGoTo={(path) => {
-                  const wt = all.find((w) => w.path === path);
-                  if (!wt) return;
-                  select(wt);
-                  show("workspace");
-                }}
-              />
+              <SurfaceBoundary id="sidebar.sessions" surface="Sessions sidebar">
+                <SessionsSidebar
+                  store={history}
+                  sessions={sessions}
+                  current={current ? { path: current.path, repo: repos?.find((r) => r.worktrees.some((w) => w.path === current.path))?.path ?? null } : null}
+                  visible={sideView === "sessions" && sidebarOpen}
+                  focusSeq={sessionsAsk.focus ? sessionsAsk.seq : undefined}
+                  reveal={sessionsAsk.reveal}
+                  onOpened={(tab) => jumpTo(tab.id)}
+                  onFocusTab={jumpTo}
+                  onGoTo={(path) => {
+                    const wt = all.find((w) => w.path === path);
+                    if (!wt) return;
+                    select(wt);
+                    show("workspace");
+                  }}
+                />
+              </SurfaceBoundary>
             </div>
           )}
           {sessions && (
@@ -1860,81 +1863,83 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               onClear={() => setPicked(clearPicked())}
             />
           )}
-          <WorktreeList
-            onOrder={(paths) => setOrder((o) => (o.join(",") === paths.join(",") ? o : paths))}
-            picked={picked.paths}
-            onPick={(wt, mods) => setPicked((sel) => pickClick(sel, wt.path, selectable, mods))}
-            onSelectAll={() => setPicked(selectAll(selectable))}
-            onClearPicked={() => setPicked(clearPicked())}
-            onReviewBranches={(repoId) => setReview({ repoId, busy: false })}
-            items={items}
-            prefs={prefs}
-            onPrefs={changePrefs}
-            onReorder={(ids) => void sidebarCall(() => api.sidebarOrder(ids))}
-            onGroupMove={(member, group, index) => void sidebarCall(() => api.groupMove(member, group, index))}
-            onNewGroup={() => setGroupName({ id: null, name: "" })}
-            onRenameGroup={(g: RepoGroup) => setGroupName({ id: g.id, name: g.name })}
-            onRemoveGroup={(g: RepoGroup) => void sidebarCall(() => api.groupRemove(g.id))}
-            onAddFolder={() => void addFolder()}
-            onOpenFolder={(f) => void openFolder(f)}
-            onForgetFolder={(f) => void sidebarCall(() => api.folderForget(f.id))}
-            onRestore={(repoId, branch) => void sidebarCall(() => api.worktreeRestore(repoId, branch))}
-            onArchive={(wt) => void archive(wt)}
-            onEditDetails={(wt) => setEditing({ worktree: wt, busy: false })}
-            onSetParent={(wt) => setParentFor({ worktree: wt, candidates: parentCandidates(wt, repos?.find((r) => r.worktrees.some((w) => w.path === wt.path))?.worktrees ?? []) })}
-            onRemoveParent={(wt) => void setDetails(wt, { parent: null }, t("lineage.error"))}
-            onDeleteNested={(wt) => startRemove(wt, { nested: true })}
-            onMoveStatus={(wt, status) => {
-              if (status !== wt.status) void setDetails(wt, { status }, t("lineage.error"));
-            }}
-            onRenameBranch={(wt) => setRenaming(wt)}
-            onCopyLink={(url) => {
-              void copy(url);
-              pushToast({ text: t("workItem.copied") });
-            }}
-            selected={current?.path ?? null}
-            dots={dots}
-            stats={stats.all()}
-            ports={livePorts}
-            onOpenPort={(port) => void api.portsOpen(port.id).catch((e: unknown) => pushToast({ text: t(`error.${toApiError(e).code}`) }))}
-            onCopyPort={(port) => {
-              void copy(endpoint(port));
-              pushToast({ text: t("ports.copied", { address: endpoint(port) }) });
-            }}
-            onStopPort={stopPort}
-            activity={activity}
-            profiles={profiles}
-            prs={prMap}
-            now={Date.now()}
-            notice={notice}
-            onSelect={(wt) => {
-              setPicked(clearPicked());
-              select(wt);
-              show("workspace");
-            }}
-            onCreate={startCreate}
-            pending={pending.list()}
-            onCancelCreate={(id) => pending.cancel(id)}
-            onRetryCreate={(id) => pending.retry(id)}
-            onDismissCreate={(id) => pending.dismiss(id)}
-            onPin={(wt) => void pin(wt)}
-            onRemove={startRemove}
-            onAddRepo={addRepo}
-            onAdopt={(wt) => void adopt(wt)}
-            unread={unreadMap}
-            asleep={asleepMap}
-            sleepable={sleepableMap}
-            onSleep={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api), all.filter((c) => c.parent === wt.path).map((c) => c.path))}
-            onWake={(wt) => [wt.path, ...all.filter((c) => c.parent === wt.path).map((c) => c.path)].forEach((p) => sessions?.wakeWorktree(p))}
-            onMarkUnread={(wt) => sessions?.markUnread(wt.path)}
-            onMarkRead={(wt) => sessions?.markRead(wt.path)}
-            openInApps={openInApps}
-            onOpenIn={(path, target) => void openIn(path, target)}
-            onCopy={(text) => void copy(text)}
-            onNewTerminal={(wt) => void newTerminalIn(wt)}
-            onRepoSettings={(repo) => openSettings("repos", repo.id)}
-            onRemoveRepo={(repo) => setForgetting({ repo })}
-          />
+          <SurfaceBoundary id="sidebar.worktrees" surface="Workspace list" titleKey="boundary.worktrees.title">
+            <WorktreeList
+              onOrder={(paths) => setOrder((o) => (o.join(",") === paths.join(",") ? o : paths))}
+              picked={picked.paths}
+              onPick={(wt, mods) => setPicked((sel) => pickClick(sel, wt.path, selectable, mods))}
+              onSelectAll={() => setPicked(selectAll(selectable))}
+              onClearPicked={() => setPicked(clearPicked())}
+              onReviewBranches={(repoId) => setReview({ repoId, busy: false })}
+              items={items}
+              prefs={prefs}
+              onPrefs={changePrefs}
+              onReorder={(ids) => void sidebarCall(() => api.sidebarOrder(ids))}
+              onGroupMove={(member, group, index) => void sidebarCall(() => api.groupMove(member, group, index))}
+              onNewGroup={() => setGroupName({ id: null, name: "" })}
+              onRenameGroup={(g: RepoGroup) => setGroupName({ id: g.id, name: g.name })}
+              onRemoveGroup={(g: RepoGroup) => void sidebarCall(() => api.groupRemove(g.id))}
+              onAddFolder={() => void addFolder()}
+              onOpenFolder={(f) => void openFolder(f)}
+              onForgetFolder={(f) => void sidebarCall(() => api.folderForget(f.id))}
+              onRestore={(repoId, branch) => void sidebarCall(() => api.worktreeRestore(repoId, branch))}
+              onArchive={(wt) => void archive(wt)}
+              onEditDetails={(wt) => setEditing({ worktree: wt, busy: false })}
+              onSetParent={(wt) => setParentFor({ worktree: wt, candidates: parentCandidates(wt, repos?.find((r) => r.worktrees.some((w) => w.path === wt.path))?.worktrees ?? []) })}
+              onRemoveParent={(wt) => void setDetails(wt, { parent: null }, t("lineage.error"))}
+              onDeleteNested={(wt) => startRemove(wt, { nested: true })}
+              onMoveStatus={(wt, status) => {
+                if (status !== wt.status) void setDetails(wt, { status }, t("lineage.error"));
+              }}
+              onRenameBranch={(wt) => setRenaming(wt)}
+              onCopyLink={(url) => {
+                void copy(url);
+                pushToast({ text: t("workItem.copied") });
+              }}
+              selected={current?.path ?? null}
+              dots={dots}
+              stats={stats.all()}
+              ports={livePorts}
+              onOpenPort={(port) => void api.portsOpen(port.id).catch((e: unknown) => pushToast({ text: t(`error.${toApiError(e).code}`) }))}
+              onCopyPort={(port) => {
+                void copy(endpoint(port));
+                pushToast({ text: t("ports.copied", { address: endpoint(port) }) });
+              }}
+              onStopPort={stopPort}
+              activity={activity}
+              profiles={profiles}
+              prs={prMap}
+              now={Date.now()}
+              notice={notice}
+              onSelect={(wt) => {
+                setPicked(clearPicked());
+                select(wt);
+                show("workspace");
+              }}
+              onCreate={startCreate}
+              pending={pending.list()}
+              onCancelCreate={(id) => pending.cancel(id)}
+              onRetryCreate={(id) => pending.retry(id)}
+              onDismissCreate={(id) => pending.dismiss(id)}
+              onPin={(wt) => void pin(wt)}
+              onRemove={startRemove}
+              onAddRepo={addRepo}
+              onAdopt={(wt) => void adopt(wt)}
+              unread={unreadMap}
+              asleep={asleepMap}
+              sleepable={sleepableMap}
+              onSleep={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api), all.filter((c) => c.parent === wt.path).map((c) => c.path))}
+              onWake={(wt) => [wt.path, ...all.filter((c) => c.parent === wt.path).map((c) => c.path)].forEach((p) => sessions?.wakeWorktree(p))}
+              onMarkUnread={(wt) => sessions?.markUnread(wt.path)}
+              onMarkRead={(wt) => sessions?.markRead(wt.path)}
+              openInApps={openInApps}
+              onOpenIn={(path, target) => void openIn(path, target)}
+              onCopy={(text) => void copy(text)}
+              onNewTerminal={(wt) => void newTerminalIn(wt)}
+              onRepoSettings={(repo) => openSettings("repos", repo.id)}
+              onRemoveRepo={(repo) => setForgetting({ repo })}
+            />
+          </SurfaceBoundary>
           </div>
         </aside>
 
@@ -1942,30 +1947,31 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           <main className="ws-center" aria-label={t("workspace.center.label")}>
             {sessions &&
               mounted.map((path) => (
-                <WorktreeTabs
-                  key={path}
-                  api={api}
-                  sessions={sessions}
-                  worktree={path}
-                  branch={repos?.flatMap((r) => r.worktrees).find((w) => w.path === path)?.branch ?? null}
-                  visible={path === current?.path}
-                  onShown={(id) => setShownTab((s) => (s[path] === id ? s : { ...s, [path]: id }))}
-                  onPanes={(ids) => setPanes((s) => (s[path]?.join(" ") === ids.join(" ") ? s : { ...s, [path]: ids }))}
-                  reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq } : undefined}
-                  commit={commitAsk?.worktree === path ? { id: commitAsk.id, file: commitAsk.file, seq: commitAsk.seq } : undefined}
-                  front={front?.worktree === path ? { id: front.id, seq: front.seq } : undefined}
-                  focusSeq={termFocus?.worktree === path ? termFocus.seq : undefined}
-                  onShowHistory={showInHistory}
-                  gate={gate}
-                  repo={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.path ?? null}
-                  repoName={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.shortName ?? ""}
-                  quickSeq={path === current?.path ? quickSeq : undefined}
-                  onManageQuickCommands={() => openSettings("qcmd")}
-                  onLinkSettings={() => openSettings("terminal", undefined, "terminal.linkClick")}
-                  onManageAgents={() => openSettings("agents")}
-                  worktrees={all.map((w) => ({ path: w.path, label: worktreeName(all, w.path) }))}
-                  onJump={jumpTo}
-                />
+                <SurfaceBoundary key={path} id="workspace.tabs" surface="Workspace tabs" resetKey={path} titleKey="boundary.workspace.title">
+                  <WorktreeTabs
+                    api={api}
+                    sessions={sessions}
+                    worktree={path}
+                    branch={repos?.flatMap((r) => r.worktrees).find((w) => w.path === path)?.branch ?? null}
+                    visible={path === current?.path}
+                    onShown={(id) => setShownTab((s) => (s[path] === id ? s : { ...s, [path]: id }))}
+                    onPanes={(ids) => setPanes((s) => (s[path]?.join(" ") === ids.join(" ") ? s : { ...s, [path]: ids }))}
+                    reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq } : undefined}
+                    commit={commitAsk?.worktree === path ? { id: commitAsk.id, file: commitAsk.file, seq: commitAsk.seq } : undefined}
+                    front={front?.worktree === path ? { id: front.id, seq: front.seq } : undefined}
+                    focusSeq={termFocus?.worktree === path ? termFocus.seq : undefined}
+                    onShowHistory={showInHistory}
+                    gate={gate}
+                    repo={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.path ?? null}
+                    repoName={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.shortName ?? ""}
+                    quickSeq={path === current?.path ? quickSeq : undefined}
+                    onManageQuickCommands={() => openSettings("qcmd")}
+                    onLinkSettings={() => openSettings("terminal", undefined, "terminal.linkClick")}
+                    onManageAgents={() => openSettings("agents")}
+                    worktrees={all.map((w) => ({ path: w.path, label: worktreeName(all, w.path) }))}
+                    onJump={jumpTo}
+                  />
+                </SurfaceBoundary>
               ))}
             {current && cardFor(current.path) && (
               <SetupCard
@@ -2109,64 +2115,74 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             </div>
             {/* Both panels stay mounted, so the change list and the open folders survive a tab switch. */}
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "files"}>
-              {current ? (
-                <FileTree
-                  key={current.path}
-                  api={api}
-                  worktree={current.path}
-                  changes={markedChanges}
-                  queue={fsWatch.queue}
-                  watchHealth={fsWatch.health}
-                  onOpen={(file) => openFile(current.path, file)}
-                />
-              ) : (
-                <p className="ws-empty">{t("workspace.panel.empty")}</p>
-              )}
+              <SurfaceBoundary id="panel.files" surface="Right sidebar: files" resetKey={current?.path} titleKey="boundary.panel.title">
+                {current ? (
+                  <FileTree
+                    key={current.path}
+                    api={api}
+                    worktree={current.path}
+                    changes={markedChanges}
+                    queue={fsWatch.queue}
+                    watchHealth={fsWatch.health}
+                    onOpen={(file) => openFile(current.path, file)}
+                  />
+                ) : (
+                  <p className="ws-empty">{t("workspace.panel.empty")}</p>
+                )}
+              </SurfaceBoundary>
             </div>
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "search"}>
-              <SearchPanel
-                key={current?.path ?? ""}
-                api={api}
-                worktree={current?.path ?? null}
-                focusSeq={searchFocus}
-                onOpen={(rel, at) => current && requestOpenFile({ worktree: current.path, rel, line: at.line, column: at.column })}
-              />
+              <SurfaceBoundary id="panel.search" surface="Right sidebar: search" resetKey={current?.path} titleKey="boundary.panel.title">
+                <SearchPanel
+                  key={current?.path ?? ""}
+                  api={api}
+                  worktree={current?.path ?? null}
+                  focusSeq={searchFocus}
+                  onOpen={(rel, at) => current && requestOpenFile({ worktree: current.path, rel, line: at.line, column: at.column })}
+                />
+              </SurfaceBoundary>
             </div>
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "changes"}>
-              {current ? (
-                <WorktreeChanges
-                  key={current.path}
-                  api={api}
-                  worktree={current}
-                  sessions={sessions}
-                  prs={prs}
-                  onOpenFile={(file) => openFile(current.path, file)}
-                  onOpenCommit={(id, file) => openCommit(current.path, id, file)}
-                  onCount={(n) => setChangeCount({ worktree: current.path, count: n })}
-                  onChanges={(list) => setChangeList({ worktree: current.path, list })}
-                  onFixWithAgent={(output) => void fixWithAgent("fixCommitFailure", output)}
-                  onFixPush={(output, branch) => void fixWithAgent("fixPushFailure", output, branch)}
-                  onResolveConflicts={(vars) => void resolveConflicts(vars)}
-                  onOpenGitSettings={() => openSettings("git")}
-                  register={registerChanges}
-                />
-              ) : (
-                <p className="ws-empty">{t("workspace.panel.empty")}</p>
-              )}
+              <SurfaceBoundary id="panel.changes" surface="Right sidebar: changes" resetKey={current?.path} titleKey="boundary.panel.title">
+                {current ? (
+                  <WorktreeChanges
+                    key={current.path}
+                    api={api}
+                    worktree={current}
+                    sessions={sessions}
+                    prs={prs}
+                    onOpenFile={(file) => openFile(current.path, file)}
+                    onOpenCommit={(id, file) => openCommit(current.path, id, file)}
+                    onCount={(n) => setChangeCount({ worktree: current.path, count: n })}
+                    onChanges={(list) => setChangeList({ worktree: current.path, list })}
+                    onFixWithAgent={(output) => void fixWithAgent("fixCommitFailure", output)}
+                    onFixPush={(output, branch) => void fixWithAgent("fixPushFailure", output, branch)}
+                    onResolveConflicts={(vars) => void resolveConflicts(vars)}
+                    onOpenGitSettings={() => openSettings("git")}
+                    register={registerChanges}
+                  />
+                ) : (
+                  <p className="ws-empty">{t("workspace.panel.empty")}</p>
+                )}
+              </SurfaceBoundary>
             </div>
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "checks"}>
-              {current ? (
-                <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={panelTab === "checks"} onFix={(check) => fixCheck(check)} onFixAll={(checks) => fixChecks(checks)} />
-              ) : (
-                <p className="ws-empty">{t("workspace.panel.empty")}</p>
-              )}
+              <SurfaceBoundary id="panel.checks" surface="Right sidebar: checks" resetKey={current?.path} titleKey="boundary.panel.title">
+                {current ? (
+                  <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={panelTab === "checks"} onFix={(check) => fixCheck(check)} onFixAll={(checks) => fixChecks(checks)} />
+                ) : (
+                  <p className="ws-empty">{t("workspace.panel.empty")}</p>
+                )}
+              </SurfaceBoundary>
             </div>
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "issues"}>
-              {currentRepo && !currentRepo.missing ? (
-                <IssuesPanel key={currentRepo.id} api={api} repoId={currentRepo.id} onStart={(d) => void startFromIssue(currentRepo.id, d.issue, d)} />
-              ) : (
-                <p className="ws-empty">{t("workspace.panel.empty")}</p>
-              )}
+              <SurfaceBoundary id="panel.issues" surface="Right sidebar: issues" resetKey={currentRepo?.id} titleKey="boundary.panel.title">
+                {currentRepo && !currentRepo.missing ? (
+                  <IssuesPanel key={currentRepo.id} api={api} repoId={currentRepo.id} onStart={(d) => void startFromIssue(currentRepo.id, d.issue, d)} />
+                ) : (
+                  <p className="ws-empty">{t("workspace.panel.empty")}</p>
+                )}
+              </SurfaceBoundary>
             </div>
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "ports"}>
               <PortsPanel api={api} store={ports} active={current?.path ?? null} visible={rightOpen && panelTab === "ports" && view === "workspace"} />
@@ -2175,7 +2191,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         </div>
 
         <div className="ws-docs" hidden={view !== "docs"}>
-          {docsMounted && <DocsApp key={docsKey} appRequest={appRequest} kit={{ worktree: current?.path ?? null, open: kitOpen, onOpened: kitOpened, onSendToAgent: sendToAgent, canSend: target(current?.path) !== null }} />}
+          {docsMounted && <SurfaceBoundary id="page.docs" surface="Docs" resetKey={docsKey} titleKey="boundary.page.title"><DocsApp key={docsKey} appRequest={appRequest} kit={{ worktree: current?.path ?? null, open: kitOpen, onOpened: kitOpened, onSendToAgent: sendToAgent, canSend: target(current?.path) !== null }} /></SurfaceBoundary>}
         </div>
 
         <div className="ws-automations" hidden={view !== "automations"}>

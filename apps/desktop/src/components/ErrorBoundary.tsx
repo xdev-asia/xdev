@@ -1,4 +1,6 @@
 import { Component, type ErrorInfo, type JSX, type ReactNode } from "react";
+import { api } from "@/api";
+import { reportSurfaceCrash } from "@/crash/surfaceReport";
 import { useI18n } from "@/i18n";
 
 /** What the window shows when a view throws while rendering, instead of going blank. */
@@ -7,6 +9,7 @@ export function CrashView(props: { error: Error }): JSX.Element {
   return (
     <div className="app-crash" role="alert">
       <h1 className="app-crash-title">{t("app.crash.title")}</h1>
+      <p className="app-crash-body">{t("app.crash.body")}</p>
       <pre className="app-crash-detail">{props.error.message}</pre>
       <button type="button" className="btn-secondary" onClick={() => window.location.reload()}>
         {t("app.crash.reload")}
@@ -24,7 +27,17 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
   }
 
   componentDidCatch(error: unknown, info: ErrorInfo): void {
-    console.error(error, info.componentStack);
+    console.error("[app.root] render crash", error, info.componentStack);
+    const err = error instanceof Error ? error : new Error(String(error));
+    void reportSurfaceCrash(api, {
+      boundary: "app.root",
+      surface: "App root",
+      name: err.name,
+      message: err.message,
+      stack: err.stack ?? null,
+      componentStack: info.componentStack ?? null,
+      context: [],
+    });
   }
 
   render(): ReactNode {

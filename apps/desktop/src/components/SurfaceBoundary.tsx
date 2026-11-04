@@ -1,8 +1,8 @@
 import { Component, type ErrorInfo, type JSX, type ReactNode } from "react";
+import { Banner, Button } from "@xdev-asia/ui";
 import { api as appApi, type Api } from "@/api";
 import { reportSurfaceCrash } from "@/crash/surfaceReport";
 import { useI18n } from "@/i18n";
-import { WarnIcon } from "./FreshnessBanner";
 
 export type ResetKey = string | number | boolean | null | undefined;
 
@@ -25,18 +25,18 @@ type State = { error: Error | null; resetKey: ResetKey };
 function Fallback(props: { titleKey: string; bodyKey: string; onRetry(): void }): JSX.Element {
   const { t } = useI18n();
   return (
-    <div className="banner banner-warn" role="alert">
-      <WarnIcon />
-      <div className="banner-text">
-        <strong>{t(props.titleKey)}</strong>
-        <span>{t(props.bodyKey)}</span>
-      </div>
-      <div className="banner-actions">
-        <button type="button" className="btn-secondary" onClick={props.onRetry}>
-          {t("boundary.retry")}
-        </button>
-      </div>
-    </div>
+    <Banner
+      title={t(props.titleKey)}
+      action={
+        <div className="banner-actions">
+          <Button variant="secondary" type="button" onClick={props.onRetry}>
+            {t("boundary.retry")}
+          </Button>
+        </div>
+      }
+    >
+      {t(props.bodyKey)}
+    </Banner>
   );
 }
 
