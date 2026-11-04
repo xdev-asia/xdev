@@ -13,3 +13,8 @@ Base 0755c35 (B0). Backend tasks (B1-B15) live on feat/orchestration; this lane 
 - Edited skill state: Install stays non-force (plan: `orchestrationSkillInstall()`); no force button in v1.
 - Shared `.settings-item` unchanged; the page adds `flex-wrap` locally for 360px.
 - SettingsView.test indexes updated for the new section.
+
+## Task 3: complete
+- `addTab(l, id, pane?, { activate })` and `Sessions.open(..., { id, title, background })`.
+- Deviation: a given `title` also sets `renamed: true` so the terminal's own (OSC) title does not replace `worker-<taskId>`.
+- `Sessions.open` never selected a worktree; background only keeps the pane's active tab. A worktree with no layout yet gets the tab as its only (active) tab.
