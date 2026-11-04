@@ -214,7 +214,7 @@ export function Terminal(props: {
       client.start(props.cwd, props.profile, term.cols, term.rows, (bytes, rendered) => {
         handlers.current.onOutput?.(bytes.length);
         term.write(bytes, rendered);
-      }, props.account ?? null).then(
+      }, props.account ?? null, { truncated: t("ptyd.truncated") }).then(
         (info) => {
           if (!alive) return;
           handlers.current.onStarted(info);

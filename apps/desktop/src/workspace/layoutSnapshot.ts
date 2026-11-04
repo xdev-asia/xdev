@@ -57,6 +57,8 @@ export type TabSnapshot =
 export type SessionFallback = (worktree: string, cli: TabCli, since: number) => Promise<string | null>;
 
 export interface RestoreReport {
+  /** Tabs whose pty was still running in the terminal service; left out when none was. */
+  attached?: number;
   /** Agent tabs that came back as their own conversation. */
   resumed: number;
   /** Tabs that came back as a new process: shells, and agents with no session to resume. */
@@ -124,6 +126,8 @@ export function toSnapshot(layout: PaneLayout, tabOf: (id: string) => Tab | null
       agent: tab.agent,
       agentSession: tab.agentSession,
       openedAt: tab.openedAt,
+      ptyId: tab.id,
+      seq: tab.client.seq,
     };
   });
   return next ? { layout: next, tabs } : null;

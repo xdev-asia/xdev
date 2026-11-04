@@ -481,6 +481,7 @@
   "error.pty_spawn": "The terminal could not start.",
   "error.pty_resize": "The terminal could not be resized.",
   "error.pty_gone": "This terminal has ended.",
+  "ptyd.truncated": "— output truncated —",
   "error.ptyd_unreachable": "The terminal service does not answer.",
   "error.ptyd_auth": "The terminal service refused the connection.",
   "error.ptyd_version": "The terminal service is from another xDev version.",
