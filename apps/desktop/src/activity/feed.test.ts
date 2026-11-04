@@ -6,11 +6,12 @@ const tab = (id: string, over: Partial<Tab> = {}) => ({ id, worktree: "/w", prof
 
 it("lists entries newest first, with the tab, the change and the time", () => {
   const feed = new ActivityFeed();
-  feed.record(tab("a"), "idle", "working", 10);
+  feed.record(tab("a", { title: "Fix footer" }), "idle", "working", 10);
   feed.record(tab("b", { worktree: "/x" }), "working", "needs-you", 20);
   const [first, second] = feed.snapshot();
   expect(first).toMatchObject({ tabId: "b", worktree: "/x", from: "working", to: "needs-you", at: 20 });
-  expect(second).toMatchObject({ tabId: "a", worktree: "/w", from: "idle", to: "working", at: 10 });
+  expect(first!.title).toBeNull();
+  expect(second).toMatchObject({ title: "Fix footer", tabId: "a", worktree: "/w", from: "idle", to: "working", at: 10 });
   expect(first!.id).not.toBe(second!.id);
 });
 

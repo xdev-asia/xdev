@@ -91,10 +91,12 @@ it("empty states: no threads, no match, empty feed", () => {
 });
 
 it("the feed lists changes and a row jumps; Clear empties it", () => {
-  const entry: FeedEntry = { id: 1, tabId: "a", worktree: "/a", profileId: "claude", from: "working", to: "done", at: NOW - 1000 };
+  const entry: FeedEntry = { id: 1, tabId: "a", worktree: "/a", profileId: "claude", title: "Fix footer", from: "working", to: "done", at: NOW - 1000 };
   const { calls, tree } = view({ tab: "feed", feed: [entry] });
   const row = of(tree, ListRow)[0]!;
-  expect(row.props.title).toBe(en("activity.feed.change", { from: en("workspace.tabs.status.working"), to: en("workspace.tabs.status.done") }));
+  expect(row.props.meta).toBe("oak · " + en("ago.now"));
+  expect(row.props.title).toBe(en("activity.feed.change", {
+    tab: "Fix footer", from: en("workspace.tabs.status.working"), to: en("workspace.tabs.status.done") }));
   row.props.onClick();
   expect(calls.jump).toEqual(["a"]);
   tree.find((n) => n.props.className === "act-options")!.props.onClick();

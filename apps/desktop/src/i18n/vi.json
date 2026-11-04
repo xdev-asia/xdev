@@ -1596,7 +1596,7 @@
   "activity.option.groupByWorktree": "Nhóm theo worktree",
   "activity.clear": "Xóa nhật ký",
   "activity.untitled": "Luồng chưa đặt tên",
-  "activity.feed.change": "{from} sang {to}",
+  "activity.feed.change": "{tab} · {from} sang {to}",
   "activity.empty.threads": "Chưa có luồng agent nào",
   "activity.empty.match": "Không có luồng nào khớp",
   "activity.empty.feed": "Chưa có gì xảy ra",

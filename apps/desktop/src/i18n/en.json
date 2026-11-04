@@ -1596,7 +1596,7 @@
   "activity.option.groupByWorktree": "Group by worktree",
   "activity.clear": "Clear feed",
   "activity.untitled": "Untitled thread",
-  "activity.feed.change": "{from} to {to}",
+  "activity.feed.change": "{tab} · {from} to {to}",
   "activity.empty.threads": "No agent threads yet",
   "activity.empty.match": "No thread matches",
   "activity.empty.feed": "Nothing has happened yet",

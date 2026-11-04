@@ -80,7 +80,8 @@ function feedRows(feed: readonly FeedEntry[], names: ActivityViewProps["names"],
       key={e.id}
       as="li"
       leading={<AgentIcon profile={e.profileId} />}
-      title={t("activity.feed.change", { from: t(`workspace.tabs.status.${e.from}`), to: t(`workspace.tabs.status.${e.to}`) })}
+      title={t("activity.feed.change", {
+        tab: e.title ?? t("activity.untitled"), from: t(`workspace.tabs.status.${e.from}`), to: t(`workspace.tabs.status.${e.to}`) })}
       meta={`${names[e.worktree]?.name ?? e.worktree} · ${ago(e.at, now, t)}`}
       onClick={() => onJump(e.tabId)}
     />
