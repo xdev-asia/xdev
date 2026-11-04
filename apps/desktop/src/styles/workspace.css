@@ -3086,3 +3086,19 @@ button.ws-tree-row:focus-visible {
 .ws-issue[data-state="closed"] .ws-checks-title {
   color: var(--text-2);
 }
+
+.ws-branch-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-branch-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ws-branch-prefix {
+  color: var(--text-2);
+  white-space: nowrap;
+}

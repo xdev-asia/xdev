@@ -101,3 +101,17 @@ it("the project menu: Open in, Copy Path, Repo settings, then Remove from xDev",
   expect(run.openIn).toHaveBeenCalledWith({ type: "app", id: "app-1" });
   expect(find(items, "remove").danger).toBe(true);
 });
+
+it("offers Rename branch… after Details, for a worktree on a branch only", () => {
+  const rename = vi.fn();
+  const { items } = ctx({ onRenameBranch: rename });
+  const order = ids(items);
+  expect(order.indexOf("renameBranch")).toBe(order.indexOf("pin") + 1);
+  find(items, "renameBranch").run?.();
+  expect(rename).toHaveBeenCalledOnce();
+  expect(find(items, "renameBranch").labelKey).toBe("branchRename.menu");
+  // Disabled while detached (no branch to rename); left out for the primary checkout and without a handler.
+  expect(find(ctx({ onRenameBranch: rename, worktree: wt({ detached: true, branch: null }) }).items, "renameBranch").disabled).toBe(true);
+  expect(ids(ctx({ onRenameBranch: rename, worktree: wt({ primary: true }) }).items)).not.toContain("renameBranch");
+  expect(ids(ctx().items)).not.toContain("renameBranch");
+});
