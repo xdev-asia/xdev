@@ -15,3 +15,7 @@ Tasks B3+B4: complete, one commit. Deviation: the OS blockers live in a new crat
 
 ## Task U2: complete
 - `agents.keepAwake` (xdev-ui RadioGroup) and `agents.autoTabTitle` (xdev-ui Switch) rows in `AgentsPage.tsx`, one shared `saveAgents` that keeps the other fields; catalog entries with en and vi search words; i18n `settings.agents.keepAwake*` and `settings.agents.autoTabTitle*`.
+
+## Task U3: complete
+- `Sessions.setAutoTitle`, `Entry.autoTitle`, `Tab.autoTitled`, snapshot `autoTitled?` (written only when true; restored for attached and resumed tabs). Precedence: hand name > auto title > program title > resume title; `setTitle(null)` returns the auto title. An auto title for a tab named by hand is dropped, not kept behind the name.
+- Five test fixtures that build a `Tab` literal got `autoTitled: false`.

@@ -46,6 +46,8 @@ export interface Tab {
   title: string | null;
   /** Named by hand: later titles from the terminal leave the name alone. */
   renamed: boolean;
+  /** `title` is the one made from the first prompt (not by hand, not the program's). */
+  autoTitled: boolean;
   /** The agent session id this tab resumed; null for a new session. */
   resumeOf: string | null;
   /** The agent's own session id, from its hooks (latest wins) or the resumed id; null until known. */
@@ -75,6 +77,8 @@ interface Entry {
   caps: Caps;
   /** The program's last title (OSC 0/2), kept while the tab is named by hand. */
   programTitle: string | null;
+  /** A title made from the first prompt; shown unless the tab was named by hand. */
+  autoTitle: string | null;
 }
 
 // Only an exit ends a tab: `failed` can also be a turn that failed, with the pty still alive.
@@ -291,9 +295,11 @@ export class Sessions {
       agentSession: snap.agentSession,
       openedAt: snap.openedAt,
       renamed: snap.renamed === true,
+      autoTitled: snap.autoTitled === true && snap.renamed !== true,
       pinned: snap.pinned === true,
       color,
     };
+    if (snap.autoTitled === true && snap.title) entry.autoTitle = snap.title;
     this.entries.set(id, entry);
     const exited = this.attaching.get(id);
     this.attaching.delete(id);
@@ -332,7 +338,9 @@ export class Sessions {
     const entry = this.entries.get(tab.id)!;
     const color = TAB_COLORS.includes(snap.color) ? snap.color : "none";
     this.lazy.add(tab.id);
-    this.update(entry, { title: snap.title, renamed: snap.renamed === true, pinned: snap.pinned === true, color });
+    const auto = snap.autoTitled === true && snap.renamed !== true && !!snap.title;
+    if (snap.autoTitled === true && snap.title) entry.autoTitle = snap.title;
+    this.update(entry, { title: snap.title, renamed: snap.renamed === true, autoTitled: auto, pinned: snap.pinned === true, color });
     return entry.tab;
   }
 
@@ -587,8 +595,20 @@ export class Sessions {
     if (!entry) return;
     const next = title.trim().slice(0, TITLE_MAX) || null;
     entry.programTitle = next;
-    if (entry.tab.renamed || entry.tab.title === next) return;
+    if (entry.tab.renamed || entry.tab.autoTitled || entry.tab.title === next) return;
     this.update(entry, { title: next });
+  }
+
+  /** A short title made from the first prompt. It beats the program's title and loses to a name by hand. */
+  setAutoTitle(id: string, title: string): void {
+    const entry = this.entries.get(id);
+    const next = title.trim().slice(0, TITLE_MAX);
+    if (!entry || !next) return;
+    // A name by hand stays; the auto title is not kept behind it.
+    if (entry.tab.renamed) return;
+    entry.autoTitle = next;
+    if (entry.tab.autoTitled && entry.tab.title === next) return;
+    this.update(entry, { title: next, autoTitled: true });
   }
 
   /** Names a tab by hand; later titles from the terminal no longer change it. An alias of `setTitle`; blank is ignored. */
@@ -620,8 +640,10 @@ export class Sessions {
     const entry = this.entries.get(id);
     if (!entry) return;
     const next = title?.trim().slice(0, TITLE_MAX) || null;
-    const patch = next ? { title: next, renamed: true } : { title: entry.programTitle, renamed: false };
-    if (entry.tab.title === patch.title && entry.tab.renamed === patch.renamed) return;
+    const patch = next
+      ? { title: next, renamed: true, autoTitled: false }
+      : { title: entry.autoTitle ?? entry.programTitle, renamed: false, autoTitled: entry.autoTitle !== null };
+    if (entry.tab.title === patch.title && entry.tab.renamed === patch.renamed && entry.tab.autoTitled === patch.autoTitled) return;
     this.update(entry, patch);
   }
 
@@ -881,6 +903,7 @@ export class Sessions {
       unreadReason: null,
       title,
       renamed: false,
+      autoTitled: false,
       resumeOf,
       agentSession: resumeOf,
       openedAt: this.now(),
@@ -889,7 +912,7 @@ export class Sessions {
       client: new PtyClient(this.api, id, resumeOf ?? undefined),
     };
     // Caps stay off until the pty says whether it got hook flags.
-    return { tab, state: start(), caps: NO_CAPS, programTitle: null };
+    return { tab, state: start(), caps: NO_CAPS, programTitle: null, autoTitle: null };
   }
 
   private remove(entries: Entry[]): void {
