@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
 import { DocsApp } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
@@ -46,6 +46,7 @@ import { sendToAgentTab } from "./agentPrompt";
 import { sendTarget } from "./sendTarget";
 import { SetupCard, type SetupCardState } from "./SetupCard";
 import { openDefaultTabs } from "./defaultTabs";
+import { failedLinks } from "./linkReport";
 import { decideSetup, hasPending, pendingLists, type PendingLists } from "./setupFlow";
 import { SetupGate } from "./setupGate";
 import { TrustDialog } from "./TrustDialog";
@@ -146,11 +147,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [sessionsAsk, setSessionsAsk] = useState<{ seq: number; focus: boolean; reveal: { key: string; seq: number } | null }>({ seq: 0, focus: false, reveal: null });
   const [creating, setCreating] = useState<Creating | null>(null);
   // Creates run after the dialog has closed; what a finished one does is read from this render.
-  const afterCreate = useRef<{ api: Api; created(wt: WorktreeView, args: CreateArgs): void; reload(): void }>({ api, created() {}, reload() {} });
+  const afterCreate = useRef<{ api: Api; created(wt: WorktreeView, args: CreateArgs): void; reload(): void; linked(shared: Linked[]): void }>({ api, created() {}, reload() {}, linked() {} });
   const [pending] = useState(
     () =>
       new PendingCreates({
-        create: (repoId, name, from) => afterCreate.current.api.worktreeCreate(repoId, name, from).then((made) => made.worktree),
+        create: (repoId, name, from) => afterCreate.current.api.worktreeCreate(repoId, name, from).then((made) => {
+          afterCreate.current.linked(made.shared);
+          return made.worktree;
+        }),
         // Cancel was the go-ahead; a fresh worktree is clean, so its branch goes too.
         remove: (path, force) => afterCreate.current.api.worktreeRemove(path, force, true).finally(() => afterCreate.current.reload()),
         onCreated: (wt, args) => afterCreate.current.created(wt, args),
@@ -882,7 +886,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     await openDefaultAgent(wt.path, extra ? extra.agent : undefined);
     select(wt);
   }
-  afterCreate.current = { api, created: (wt, args) => void created(wt, args), reload: () => void load() };
+  afterCreate.current = { api, created: (wt, args) => void created(wt, args), reload: () => void load(), linked: reportLinks };
+
+  // Shared paths that did not link are said once, with the reason; the worktree is made all the same.
+  function reportLinks(shared: Linked[]): void {
+    const failed = failedLinks(shared);
+    if (failed.length > 0) pushToast({ text: t("repoFile.linkFailed", { paths: failed.join("\n") }), ttlMs: 0 });
+  }
 
   // The worktree is made; what the dialog added goes in one details call, and a new default agent is kept.
   async function applyCreateExtra(path: string, extra: CreateExtra): Promise<void> {

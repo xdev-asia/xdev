@@ -988,6 +988,7 @@
   "repoFile.tab.item": "{title}: {command}",
   "repoFile.trust.confirm": "Tin cậy",
   "repoFile.trust.note": "Tin cậy chỉ áp dụng cho đúng các danh sách này. Tệp đổi thì sẽ hỏi lại.",
+  "repoFile.linkFailed": "Không liên kết được vào worktree mới:\n{paths}",
   "setup.card.label": "Thiết lập worktree",
   "setup.card.detected": "Đã phát hiện lệnh thiết lập cho worktree này:",
   "setup.card.save": "Lưu làm thiết lập cục bộ",
