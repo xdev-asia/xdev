@@ -2,7 +2,7 @@ import { BADGE_DEBOUNCE_MS } from "./notifier";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SETUP_PROFILE, createMockApi, type WorktreeChange, type WorktreeView } from "@/api";
+import { SETUP_PROFILE, createMockApi, type WorkerOpen, type WorktreeChange, type WorktreeView } from "@/api";
 import { DocsApp } from "@/DocsApp";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { translate } from "@/i18n";
@@ -1481,6 +1481,36 @@ it("reports its tabs to the app CLI and follows the endpoint's events", async ()
   api.__cliOpenTab({ worktree: OAK, profile: "claude", prompt: null });
   await vi.waitFor(() => expect(sessions.tabs(OAK)).toHaveLength(before + 1));
   expect(sessions.tabs(OAK).at(-1)?.profileId).toBe("claude");
+});
+
+it("a worker tab asked for in a worktree not shown yet gets that worktree mounted", async () => {
+  const api = createMockApi({});
+  let ask: ((e: WorkerOpen) => void) | undefined;
+  vi.spyOn(api, "onOrchestrationOpenWorker").mockImplementation(async (cb) => ((ask = cb), () => {}));
+  const view = await harness(api);
+  attend(view);
+  const mounted = () => view.of(WorktreeTabs).map(n => n.props.worktree);
+  expect(mounted()).not.toContain("/demo/wt/xdev-elm");
+  ask!({ dispatch: "d1", tab: "tab-w1", title: "worker-task_1", worktree: "/demo/wt/xdev-elm", profile: "claude", prompt: "go", setup: "skip", readyTimeoutMs: 2_000 });
+  expect(mounted()).toContain("/demo/wt/xdev-elm");
+});
+
+it("a worker in a worktree the backend made runs the repo's setup once, before the agent", async () => {
+  const api = createMockApi({});
+  let ask: ((e: WorkerOpen) => void) | undefined;
+  vi.spyOn(api, "onOrchestrationOpenWorker").mockImplementation(async (cb) => ((ask = cb), () => {}));
+  const hooks = vi.spyOn(api, "repoHooks");
+  const view = await harness(api);
+  attend(view);
+  const open = (dispatch: string) => ask!({ dispatch, tab: `tab-${dispatch}`, title: "worker-task_1", worktree: "/demo/wt/xdev-elm", profile: "claude", prompt: "go", setup: "inherit", readyTimeoutMs: 2_000 });
+  open("d1");
+  await settle();
+  const reads = () => hooks.mock.calls.filter(c => c[0] === "/demo/wt/xdev-elm").length;
+  const once = reads();
+  expect(once).toBeGreaterThan(0);
+  open("d2");
+  await settle();
+  expect(reads()).toBe(once);
 });
 
 it("starting from a pull request puts its branch on a worktree, links it and opens the agent", async () => {
