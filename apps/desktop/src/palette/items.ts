@@ -1,5 +1,6 @@
 import { chordLabel } from "@/keys/keymap";
 import type { QuickCommand, RepoView, SessionRow, WorktreeView } from "@/api";
+import { SETTING_ENTRIES } from "@/settings/catalog";
 import { SECTIONS } from "@/settings/sections";
 import type { Tab } from "@/workspace/sessions";
 import type { TabStatus } from "@/workspace/status";
@@ -24,6 +25,8 @@ export interface PaletteItem {
   worktree?: string;
   /** Tabs: the position in open order, for stable ordering. */
   order?: number;
+  /** Left out until the trimmed query has at least this many characters. */
+  minQuery?: number;
   run(): void;
 }
 
@@ -85,8 +88,12 @@ export function tabItems(
   return out;
 }
 
-export function settingItems(t: T, onPick: (id: string) => void): PaletteItem[] {
-  return SECTIONS.map((s) => ({
+/** Settings entries show once the query has this many characters, to keep the empty palette short. */
+export const SETTING_ENTRY_MIN_QUERY = 2;
+
+export function settingItems(t: T, onPick: (section: string, target?: string) => void): PaletteItem[] {
+  const sectionTitle = (id: string) => t(SECTIONS.find((s) => s.id === id)?.labelKey ?? id);
+  const sections: PaletteItem[] = SECTIONS.map((s) => ({
     id: `set:${s.id}`,
     kind: "setting" as const,
     title: t(s.labelKey),
@@ -94,6 +101,16 @@ export function settingItems(t: T, onPick: (id: string) => void): PaletteItem[] 
     keywords: [s.id],
     run: () => onPick(s.id),
   }));
+  const entries: PaletteItem[] = SETTING_ENTRIES.map((e) => ({
+    id: `set:${e.id}`,
+    kind: "setting" as const,
+    title: t(e.titleKey),
+    detail: sectionTitle(e.section),
+    keywords: [...e.keywords],
+    minQuery: SETTING_ENTRY_MIN_QUERY,
+    run: () => onPick(e.section, e.id),
+  }));
+  return [...sections, ...entries];
 }
 
 export type ActionName =

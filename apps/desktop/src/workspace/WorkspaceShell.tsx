@@ -1258,6 +1258,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               api={api}
               initial={settingsAt.section}
               arg={settingsAt.arg}
+              target={settingsAt.target}
               onChanged={() => {
                 void load();
                 void loadStatusSettings(api);
@@ -1324,7 +1325,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             setFront((f) => ({ worktree, id, seq: (f?.seq ?? 0) + 1 }));
             focusTerminal(worktree);
           },
-          openSettings,
+          openSettings: (section, target) => openSettings(section, undefined, target),
           newWorktree: (name) => startCreate(undefined, name),
           addRepo,
           searchDocs: openSearch,

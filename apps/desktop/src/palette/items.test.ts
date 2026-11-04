@@ -2,6 +2,7 @@ import { chordLabel } from "@/keys/keymap";
 import { expect, it, vi } from "vitest";
 import type { RepoView, SessionRow, WorktreeView } from "@/api";
 import { translate } from "@/i18n";
+import { SETTING_ENTRIES } from "@/settings/catalog";
 import { SECTIONS } from "@/settings/sections";
 import type { Tab } from "@/workspace/sessions";
 import { actionItems, sessionItems, settingItems, tabItems, validWorktreeName, worktreeItems } from "./items";
@@ -62,7 +63,7 @@ it("agent and terminal keywords", () => {
 it("setting items follow SECTIONS", () => {
   const onPick = vi.fn();
   const items = settingItems(t, onPick);
-  expect(items.map((i) => i.id)).toEqual(SECTIONS.map((s) => `set:${s.id}`));
+  expect(items.filter((i) => !i.minQuery).map((i) => i.id)).toEqual(SECTIONS.map((s) => `set:${s.id}`));
   expect(items[0]).toMatchObject({ kind: "setting", title: t(SECTIONS[0].labelKey), detail: t("settings.title") });
   items[1].run();
   expect(onPick).toHaveBeenCalledWith(SECTIONS[1].id);
@@ -175,4 +176,24 @@ it("quick command items: only the current repo's and global ones, then New", () 
   expect(run).toHaveBeenCalledWith(qcs[1]);
   items[2].run();
   expect(create).toHaveBeenCalled();
+});
+
+it("setting entries follow the section items, with the section as detail", () => {
+  const items = settingItems(t, vi.fn());
+  const sections = SECTIONS.length;
+  expect(items.slice(0, sections).map((i) => i.id)).toEqual(SECTIONS.map((s) => `set:${s.id}`));
+  expect(items.length).toBe(sections + SETTING_ENTRIES.length);
+  const entry = SETTING_ENTRIES[0];
+  const item = items[sections];
+  expect(item).toMatchObject({ id: `set:${entry.id}`, kind: "setting", title: t(entry.titleKey), minQuery: 2 });
+  expect(item.detail).toBe(t(SECTIONS.find((s) => s.id === entry.section)!.labelKey));
+  expect(item.keywords).toEqual(expect.arrayContaining([...entry.keywords]));
+});
+
+it("running a setting entry opens its section with the entry as target", () => {
+  const onPick = vi.fn();
+  const items = settingItems(t, onPick);
+  const item = items.find((i) => i.id === "set:git.prefix")!;
+  item.run();
+  expect(onPick).toHaveBeenCalledWith("git", "git.prefix");
 });
