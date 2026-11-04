@@ -70,6 +70,8 @@ export interface DocsViewProps {
   onSection?(section: DocsSection): void;
   /** A task to show in Tasks; a new `seq` for the same id shows it again. */
   task?: { id: string; seq: number };
+  /** The selected project's primary path, where new tasks and squads go by default. */
+  defaultRepo?: string | null;
 }
 
 function folderName(path: string): string {
@@ -145,11 +147,13 @@ function Standalone(props: DocsViewProps): JSX.Element {
           key={f ? `${f.id}:${f.seq}` : ""}
           api={api}
           initial={f?.id}
+          defaultRepo={props.defaultRepo}
         />
       )}
       {section === "squads" && (
         <SquadsView
           api={api}
+          defaultRepo={props.defaultRepo}
           onOpenTask={(id) => {
             setTaskFocus((prev) => ({ id, seq: (prev?.seq ?? 0) + 1 }));
             props.onSection?.("tasks");

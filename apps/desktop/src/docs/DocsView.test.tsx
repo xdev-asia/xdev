@@ -236,3 +236,13 @@ it("a squad link focuses its task, and the task prop overrides it", async () => 
   expect(v.of(TasksView)[0].props.initial).toBe("t2");
   expect(asked).toEqual(["tasks"]);
 });
+
+it.each([["shared source", shared, "/notes"], ["no source", null, "/p/main"]] as const)("passes the project's repo on to Tasks and Squads with a %s", async (_name, source, _x) => {
+  for (const section of ["tasks", "squads"] as const) {
+    const v = await view({ section, source, defaultRepo: "/p/main" });
+    const type = section === "tasks" ? TasksView : SquadsView;
+    expect(v.of(type)[0].props.defaultRepo).toBe("/p/main");
+  }
+  const none = await view({ section: "tasks", source, defaultRepo: null });
+  expect(none.of(TasksView)[0].props.defaultRepo).toBeNull();
+});
