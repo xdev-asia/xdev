@@ -846,3 +846,28 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* Under 600px the section list sits on top as a wrapping row and the page uses the full width. */
+@media (max-width: 600px) {
+  .settings {
+    flex-direction: column;
+  }
+
+  .settings-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: auto;
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .settings-nav-title {
+    width: 100%;
+    margin: 0;
+  }
+
+  .settings-body {
+    padding: 16px 12px;
+  }
+}

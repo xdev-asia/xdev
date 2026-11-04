@@ -122,6 +122,25 @@
   flex: 1;
   justify-content: center;
   min-width: 0;
+  overflow: hidden;
+  container-type: inline-size;
+}
+
+/* Every header item keeps its size; only the search box in the middle gives way. */
+.ws-header > * {
+  flex-shrink: 0;
+}
+
+.ws-header > .ws-header-center,
+.ws-header > .ws-crumb {
+  flex-shrink: 1;
+}
+
+/* Too narrow for the shortcut: the hint goes before it can run into the items beside it. */
+@container (max-width: 260px) {
+  .ws-search-hint {
+    display: none;
+  }
 }
 
 .ws-search {
@@ -130,6 +149,7 @@
   gap: 8px;
   box-sizing: border-box;
   width: 420px;
+  min-width: 0;
   max-width: 100%;
   height: 26px;
   padding: 0 10px;
@@ -1308,6 +1328,36 @@
   font-weight: 700;
   line-height: 15px;
   text-align: center;
+}
+
+/* Under 600px the header keeps the menu, search, bell, help, settings and language; the sidebar
+   floats over the page instead of taking 296px from it. */
+@media (max-width: 600px) {
+  .ws-brand,
+  .ws-logo,
+  .ws-crumb,
+  .ws-crumb-sep {
+    display: none;
+  }
+
+  .ws-header {
+    gap: 6px;
+    padding: 0 8px;
+  }
+
+  .ws-body {
+    position: relative;
+  }
+
+  .ws-sidebar {
+    position: absolute;
+    z-index: 20;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(var(--w-side), 88%);
+    box-shadow: 0 0 0 1px var(--line);
+  }
 }
 
 /* Below 1076px (sidebar 296 + panel 300 + center 480) the panel folds to its icon rail, so the
