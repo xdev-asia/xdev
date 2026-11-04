@@ -23,6 +23,7 @@ export function PrsList(props: { api: Api; repoId: string; searchDebounceMs: num
   const [search, setSearch] = useState("");
   const [prs, setPrs] = useState<PrSummary[] | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     if (draft === search) return;
@@ -41,7 +42,7 @@ export function PrsList(props: { api: Api; repoId: string; searchDebounceMs: num
     return () => {
       current = false;
     };
-  }, [api, repoId, chip, search]);
+  }, [api, repoId, chip, search, tick]);
 
   const open = (pr: PrSummary): void => {
     if (onOpen) return onOpen(pr);
@@ -56,6 +57,9 @@ export function PrsList(props: { api: Api; repoId: string; searchDebounceMs: num
             {t(`issues.prs.chip.${c}`)}
           </FilterChip>
         ))}
+        <button type="button" className="ws-checks-btn" onClick={() => setTick(tick + 1)}>
+          {t("issues.refresh")}
+        </button>
       </div>
       <input
         type="search"
@@ -84,6 +88,7 @@ export function PrsList(props: { api: Api; repoId: string; searchDebounceMs: num
                   </span>
                   <span className="ws-issue-meta">
                     <span className="ws-tag">{t(`issues.prs.state.${pr.state}`)}</span>
+                    <span className="ws-mono">{`${pr.head} → ${pr.base}`}</span>
                     {pr.author && <span className="ws-issue-who">{pr.author}</span>}
                     <span>{ago(Date.parse(pr.updatedAt), now, t)}</span>
                   </span>
