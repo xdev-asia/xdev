@@ -445,4 +445,61 @@ describe("mock repo hooks", () => {
     await expect(api.repoCreate(req("notes"))).rejects.toMatchObject({ code: "exists" });
     await expect(api.repoCreate(req("x", { parent: "relative" }))).rejects.toMatchObject({ code: "not_found" });
   });
+
+  describe("branch rename and conflicts", () => {
+    const CONFLICTED = { ...DEMO_WORKSPACE, conflicts: { [FIRST]: { op: "rebase" as const, files: ["src/session.ts"], onto: "main", step: [3, 7] as [number, number] } } };
+
+    it("marks only a blank-named worktree as auto-named, and renames it under its prefix", async () => {
+      const api = createMockWorkspace({ ...DEMO_WORKSPACE, git: { branchPrefix: "custom", branchPrefixCustom: "me" } });
+      const [repo] = await api.workspaceList();
+      const { worktree: auto } = await api.worktreeCreate(repo.id, "", null);
+      expect(auto.autoName).toBe(true);
+      expect((await api.worktreeCreate(repo.id, "typed", null)).worktree.autoName).toBe(false);
+      const view = await api.worktreeRenameBranch(auto.path, "Fix the footer");
+      expect(view).toMatchObject({ branch: "me/fix-the-footer", title: "fix the footer", autoName: false, path: auto.path });
+      // A taken name takes the next suffix.
+      const { worktree: other } = await api.worktreeCreate(repo.id, "", null);
+      expect((await api.worktreeRenameBranch(other.path, "fix the footer")).branch).toBe("me/fix-the-footer-2");
+    });
+
+    it("refuses a rename with the Rust codes", async () => {
+      const api = createMockWorkspace({ ...DEMO_WORKSPACE, remotes: { [FIRST]: { ahead: 0, behind: 0 } } });
+      await expect(api.worktreeRenameBranch(FIRST, "x")).rejects.toMatchObject({ code: "branch_pushed" });
+      await expect(api.worktreeRenameBranch("/nope", "x")).rejects.toMatchObject({ code: "worktree_unknown" });
+      await expect(api.worktreeRenameBranch("/demo/xdev", "x")).rejects.toMatchObject({ code: "primary_worktree" });
+      const plain = createMockWorkspace();
+      await expect(plain.worktreeRenameBranch(FIRST, "...")).rejects.toMatchObject({ code: "bad_name" });
+    });
+
+    it("suggests from the first prompt seeded for the worktree, bad_name without one", async () => {
+      const api = createMockWorkspace({ ...DEMO_WORKSPACE, prompts: { [FIRST]: "fix the footer usage meter rounding", "s-2": "add login page" } });
+      expect(await api.worktreeSuggestBranch(FIRST, null)).toBe("fix-the-footer-usage");
+      expect(await api.worktreeSuggestBranch(FIRST, "s-2")).toBe("add-login-page");
+      await expect(api.worktreeSuggestBranch("/demo/wt/xdev-other", null)).rejects.toMatchObject({ code: "bad_name" });
+    });
+
+    it("shows the conflict state, marks its files in the stage state and clears on continue", async () => {
+      const api = createMockWorkspace(CONFLICTED);
+      expect(await api.worktreeConflicts(FIRST)).toMatchObject({ op: "rebase", files: ["src/session.ts"], step: [3, 7] });
+      expect(await api.worktreeConflicts("/demo/xdev")).toBeNull();
+      const conflicted = (await api.worktreeStageState(FIRST)).filter((s) => s.conflicted).map((s) => s.path);
+      expect(conflicted).toEqual(["src/session.ts"]);
+      await expect(api.worktreeConflictContinue(FIRST)).rejects.toMatchObject({ code: "still_conflicted" });
+      await api.worktreeStage(FIRST, ["src/session.ts"], true);
+      expect((await api.worktreeConflicts(FIRST))!.files).toEqual([]);
+      expect((await api.worktreeStageState(FIRST)).some((s) => s.conflicted)).toBe(false);
+      await api.worktreeConflictContinue(FIRST);
+      expect(await api.worktreeConflicts(FIRST)).toBeNull();
+      await expect(api.worktreeConflictContinue(FIRST)).rejects.toMatchObject({ code: "no_conflict" });
+    });
+
+    it("asks before an abort, and clears the state when confirmed", async () => {
+      const api = createMockWorkspace(CONFLICTED);
+      await expect(api.worktreeConflictAbort(FIRST, false)).rejects.toMatchObject({ code: "needs_approval" });
+      expect(await api.worktreeConflicts(FIRST)).not.toBeNull();
+      await api.worktreeConflictAbort(FIRST, true);
+      expect(await api.worktreeConflicts(FIRST)).toBeNull();
+      await expect(api.worktreeConflictAbort(FIRST, true)).rejects.toMatchObject({ code: "no_conflict" });
+    });
+  });
 });

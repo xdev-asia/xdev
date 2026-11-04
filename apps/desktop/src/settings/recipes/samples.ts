@@ -15,4 +15,9 @@ export const RECIPE_SAMPLES: Readonly<Record<string, string>> = {
   workflow: "CI",
   link: "https://github.com/owner/repo/actions/runs/123",
   log: "build\tTest\terror: expected 1, got 2",
+  firstPrompt: "fix the footer usage meter rounding",
+  assistantMessage: "",
+  operation: "Rebase 3 of 7",
+  files: "src/login.ts\nsrc/session.ts",
+  onto: "main",
 };

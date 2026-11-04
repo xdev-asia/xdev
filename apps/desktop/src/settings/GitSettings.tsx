@@ -166,6 +166,32 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
         />
       </div>
       </SettingRow>
+      <SettingRow id="git.autoRename" filter={filter}>
+      <div className="settings-item settings-git-row">
+        <div className="settings-git-text">
+          <strong id="settings-git-autorename">{t("settings.git.autoRename.title")}</strong>
+          <small className="settings-hint">{t("settings.git.autoRename.hint")}</small>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          className="agent-switch"
+          aria-checked={git.autoRenameBranch}
+          aria-labelledby="settings-git-autorename"
+          onClick={() => change({ autoRenameBranch: !git.autoRenameBranch })}
+        />
+      </div>
+      <details className="settings-advanced" data-advanced="branch-name">
+        <summary>{t("settings.git.autoRename.advanced")}</summary>
+        <RecipesEditor
+          api={api}
+          recipes={git.recipes}
+          onChange={(recipes) => change({ recipes })}
+          ids={["branchName"]}
+          heading={false}
+        />
+      </details>
+      </SettingRow>
       {(settingShown(filter, "git.ai") || settingShown(filter, "git.pr")) && (
         <h4 className="settings-group" id="settings-git-ai-title">
           {t("settings.git.ai.title")}
