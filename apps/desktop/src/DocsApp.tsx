@@ -168,7 +168,7 @@ export function DocsApp(props: { kit?: KitHost; appRequest?: AppRequest | null }
   );
 }
 
-function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: AppRequest | null; onChangeFolder(): Promise<void> }) {
+export function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: AppRequest | null; onChangeFolder(): Promise<void> }) {
   const { t } = useI18n();
   const doc = useDoc(api);
   const review = useChanges(api, doc.flush);
@@ -371,7 +371,10 @@ function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: AppRequest
   // A request from the shell (the usage popover) shows the app it names.
   const appSeq = props.appRequest?.seq;
   useEffect(() => {
-    if (props.appRequest) openApp(props.appRequest.app);
+    if (!props.appRequest) return;
+    // A task in the request is the `onOpenTask` path: focus it, then show Tasks.
+    if (props.appRequest.task) setTaskFocus(props.appRequest.task);
+    openApp(props.appRequest.app);
     // Only a new request runs this; `openApp` just sets state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appSeq]);
