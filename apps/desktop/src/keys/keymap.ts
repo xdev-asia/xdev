@@ -32,7 +32,7 @@ export type ActionId =
   | "palette.jump"
   | "search.open"
   | "sidebar.left.toggle" | "sidebar.right.toggle"
-  | "panel.explorer" | "panel.search" | "panel.sourceControl"
+  | "panel.explorer" | "panel.search" | "panel.sourceControl" | "panel.issues"
   | "terminal.clear" | "terminal.copy" | "terminal.paste" | "terminal.selectAll" | "terminal.find"
   | "zoom.in" | "zoom.out" | "zoom.reset"
   | "tab.reopenClosed"

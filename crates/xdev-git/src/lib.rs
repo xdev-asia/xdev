@@ -18,8 +18,10 @@ use std::path::{Path, PathBuf};
 
 pub use clone::{CloneEvent, check_clone_url, clone_name, clone_repo, parse_progress};
 pub use gh::{
-    Check, CheckBucket, GhExec, GhOutput, PrDraft, PrState, PrView, SystemGh, pr_checks, pr_create,
-    pr_open_web, pr_view,
+    Check, CheckBucket, GhExec, GhOutput, ISSUE_BODY_MAX, ISSUE_LIMIT_MAX, Issue, IssueComment,
+    IssueDetail, IssueQuery, IssueState, PrDraft, PrState, PrView, SystemGh, issue_list,
+    issue_open_web, issue_view, parse_issue_ref, pr_checks, pr_create, pr_open_web, pr_view,
+    repo_name,
 };
 pub use history::Commit;
 pub use remote::{BaseRange, BaseRefresh, Upstream};
@@ -55,6 +57,10 @@ pub enum GitError {
     NotGithub,
     #[error("gh failed: {0}")]
     Gh(String),
+    #[error("no such issue")]
+    IssueNotFound,
+    #[error("the issue belongs to another repo: {0}")]
+    IssueOtherRepo(String),
     #[error("a commit hook failed: {output}")]
     Hook { output: String },
     #[error("timeout")]
@@ -88,6 +94,8 @@ impl GitError {
             GitError::GhAuth => "gh_auth",
             GitError::NotGithub => "not_github",
             GitError::Gh(_) => "gh_failed",
+            GitError::IssueNotFound => "issue_not_found",
+            GitError::IssueOtherRepo(_) => "issue_other_repo",
             GitError::Hook { .. } => "hook_failed",
             GitError::BadUrl(_) => "bad_arg",
             GitError::Cancelled => "cancelled",

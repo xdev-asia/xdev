@@ -91,6 +91,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("panel.explorer", "panels", ["Mod+Shift+E"]),
   def("panel.search", "panels", ["Mod+Shift+F"]),
   def("panel.sourceControl", "panels", ["Mod+Shift+G"]),
+  def("panel.issues", "panels", []),
   // Docs: only in the docs view.
   def("docs.search", "docs", ["Mod+K"], DOCS),
   def("docs.new", "docs", ["Mod+N"], DOCS),
