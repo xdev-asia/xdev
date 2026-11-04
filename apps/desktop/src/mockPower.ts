@@ -1,6 +1,6 @@
 import type { Api, AwakeView, KeepAwake } from "./api";
 
-type PowerApi = Pick<Api, "keepAwake" | "keepAwakeSet" | "keepAwakeAgents" | "onKeepAwakeChanged">;
+type PowerApi = Pick<Api, "keepAwake" | "keepAwakeSet" | "keepAwakeAgents" | "onKeepAwakeChanged" | "agentsSettingsPut">;
 
 /** The part of the settings mock the power mock stores its mode in. */
 type Store = Pick<Api, "agentsSettings" | "agentsSettingsPut">;
@@ -29,6 +29,14 @@ export function createMockPower(store: Store): PowerApi {
       const before = await view();
       await store.agentsSettingsPut({ ...(await store.agentsSettings()), keepAwake: mode });
       return emit(before);
+    },
+    // Saving the agents settings with another keep-awake mode reports it, like Rust `apply_mode`. The
+    // mock API puts this over the plain settings put.
+    async agentsSettingsPut(next) {
+      const before = await view();
+      const saved = await store.agentsSettingsPut(next);
+      await emit(before);
+      return saved;
     },
     async keepAwakeAgents(next) {
       const before = await view();

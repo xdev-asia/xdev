@@ -546,6 +546,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
 
   const settingsHub = createSettingsHub();
   const settingsApi = createMockSettings(settingsHub);
+  const power = createMockPower(settingsApi);
   const workspace = createMockWorkspace(options.workspace, settingsHub.emit);
   const api: MockApi = {
     ...createMockTasks({
@@ -565,10 +566,11 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       (provider) => active.find((a) => a.provider === provider)?.name ?? null,
     ),
     ...createMockStatus(settingsHub.emit),
-    ...createMockPower(settingsApi),
+    ...power,
     ...workspace,
     ...createMockIssues(),
     ...settingsApi,
+    agentsSettingsPut: power.agentsSettingsPut,
     ...createMockKeybindings(options.keybindings ?? null),
     ...createMockKit(async () => (await settingsApi.usageSettings()).scan),
     ...createMockOpenIn(settingsHub.emit, workspace.repoAdd),
