@@ -8,7 +8,7 @@ import { TERMINAL_SCHEMES } from "./terminalThemes";
 import { resetTerminalSettingsForTests, setTerminalSettings, TERMINAL_DEFAULTS } from "./terminalSettings";
 
 // The first ref is the xterm host; the rest keep their initial value.
-const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[] }));
+const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[], searchOpts: undefined as unknown }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: (initial: unknown) => [initial, () => {}],
@@ -91,7 +91,7 @@ vi.mock("@xterm/xterm", () => ({
   },
 }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() { hooks.fits++; } } }));
-vi.mock("@xterm/addon-search", () => ({ SearchAddon: class { findNext() {} findPrevious() {} } }));
+vi.mock("@xterm/addon-search", () => ({ SearchAddon: class { constructor(opts?: unknown) { hooks.searchOpts = opts; } findNext() {} findPrevious() {} } }));
 vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: class {} }));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 // The renderer has its own tests; here only what the pane asks of it.
@@ -485,4 +485,18 @@ it("mouseenter focuses the xterm only when focus follows mouse is on", () => {
   expect(hooks.focused).toBe(before + 1);
   cleanup();
   expect(hooks.listeners.mouseenter).toBeUndefined();
+});
+
+it("builds the xterm with the proposed API on and the search addon with a highlight limit", () => {
+  const { effect } = mount({ api: createMockApi({}), id: "s-1" });
+  effect();
+  expect(hooks.options.allowProposedApi).toBe(true);
+  expect(hooks.searchOpts).toEqual({ highlightLimit: 1000 });
+});
+
+it("Ctrl+F opens the find bar through the key handler", () => {
+  const { effect } = mount({ api: createMockApi({}), id: "s-2" });
+  effect();
+  const e = { type: "keydown", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, key: "f", code: "KeyF", preventDefault: vi.fn() } as unknown as KeyboardEvent;
+  expect(hooks.keyHandler?.(e)).toBe(false);
 });
