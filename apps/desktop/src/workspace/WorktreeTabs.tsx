@@ -54,6 +54,11 @@ const FALLBACK_SHELL: PtyProfile = "shell";
 // Only an exit ends a tab; a turn that failed (status failed) still has its pty.
 const ended = (tab: Tab) => tab.exitCode !== undefined;
 
+// An agent that is busy or waiting for the person; nothing tells whether a plain shell has a child process.
+const running = (tab: Tab) => tab.agent && !ended(tab) && (tab.status === "working" || tab.status === "needs-you");
+
+type CloseReason = "running" | "pinned";
+
 // The review tab's id; terminal tabs use their pty id, which never has a colon.
 const REVIEW_TAB = "review:";
 
@@ -105,8 +110,8 @@ export function WorktreeTabs(props: {
   const [walk] = useState(() => ({ current: null as { list: string[]; at: number; timer: ReturnType<typeof setTimeout> } | null }));
   // The pane whose `+` menu is open.
   const [menuPane, setMenuPane] = useState<string | null>(null);
-  // Tabs a key asked to close while an agent runs in one of them; null when nothing waits.
-  const [closing, setClosing] = useState<string[] | null>(null);
+  // A close that waits for a yes: what it asks about, and what to do on confirm; null when nothing waits.
+  const [closing, setClosing] = useState<{ reason: CloseReason; run: () => void } | null>(null);
   // The tab whose title dialog is open, and the terminal menu (tab, pointer, that terminal's handle).
   const [titling, setTitling] = useState<string | null>(null);
   const [termMenu, setTermMenu] = useState<{ id: string; at: { x: number; y: number }; handle: TerminalHandle } | null>(null);
@@ -285,11 +290,21 @@ export function WorktreeTabs(props: {
     for (const id of targets) closeTab(id);
   }
 
-  // A key closes at once, unless an agent still runs in one of the tabs.
-  function requestClose(targets: string[]): boolean {
+  // What closing `targets` has to ask about, with the navigation settings applied; null when nothing.
+  function closeReason(targets: string[]): CloseReason | null {
+    const found = targets.flatMap((id) => byId.get(id) ?? []);
+    if (navigation.confirmCloseRunning && found.some(running)) return "running";
+    if (navigation.confirmClosePinned && found.some((tab) => tab.pinned)) return "pinned";
+    return null;
+  }
+
+  // Closes at once, unless a tab is pinned or runs an agent and its setting asks first. `run` is what a
+  // yes does; Close Others and Close to the Right pass their own, since Sessions leaves pinned tabs out.
+  function requestClose(targets: string[], run: () => void = () => closeNow(targets)): boolean {
     if (targets.length === 0) return false;
-    if (targets.some((id) => byId.get(id)?.agent && !ended(byId.get(id)!))) setClosing(targets);
-    else closeNow(targets);
+    const reason = closeReason(targets);
+    if (reason) setClosing({ reason, run });
+    else run();
     return true;
   }
 
@@ -458,9 +473,15 @@ export function WorktreeTabs(props: {
         menuOpen={menuPane === leaf.id}
         onMenu={(isOpen) => setMenuPane(isOpen ? leaf.id : null)}
         onSelect={(id) => layout && setLayout(selectTab(layout, id))}
-        onClose={closeTab}
-        onCloseOthers={(id) => sessions.closeOthers(id)}
-        onCloseToRight={(id) => sessions.closeToRight(id)}
+        onClose={(id) => void requestClose([id])}
+        onCloseOthers={(id) => {
+          const rest = leaf.tabs.filter((t) => t !== id && !byId.get(t)?.pinned);
+          requestClose(rest, () => sessions.closeOthers(id));
+        }}
+        onCloseToRight={(id) => {
+          const rest = leaf.tabs.slice(leaf.tabs.indexOf(id) + 1).filter((t) => !byId.get(t)?.pinned);
+          requestClose(rest, () => sessions.closeToRight(id));
+        }}
         onLaunch={(profile) => launchGated(profile, leaf.id)}
         onSplit={(dir) => defaultShell !== null && splitWith(leaf.id, dir, defaultShell)}
         onMoveToSplit={(id, dir) => (id === REVIEW_TAB || isFileTab(id) ? splitTab(leaf.id, id, dir) : sessions.moveToSplit(id, dir))}
@@ -643,8 +664,9 @@ export function WorktreeTabs(props: {
       )}
       {closing && (
         <CloseTabsDialog
+          reason={closing.reason}
           onConfirm={() => {
-            closeNow(closing);
+            closing.run();
             setClosing(null);
           }}
           onCancel={() => setClosing(null)}
