@@ -73,6 +73,9 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("editor.fontSize", "files.settings.fontSize", ["font", "cỡ chữ", "co chu", "phông", "phong"]),
   e("editor.tabSize", "files.settings.tabSize", ["tab", "indent", "thụt lề", "thut le"], "files.settings.tabSizeHint"),
   // Repositories (the same fields on every repo card)
+  e("repos.color", "settings.repos.identity.color", ["colour", "color", "badge", "tag", "hex", "màu", "mau", "nhãn", "nhan"], "settings.repos.identity.color.hint"),
+  e("repos.icon", "settings.repos.identity.icon", ["icon", "emoji", "letter", "badge", "biểu tượng", "bieu tuong"]),
+  e("repos.ghAccount", "settings.repos.gh", ["github", "gh", "login", "account", "pr", "issue", "tài khoản", "tai khoan", "đăng nhập", "dang nhap"], "settings.repos.gh.hint"),
   e("repos.shortName", "settings.repos.shortName", ["name", "repo", "tên", "ten"], "settings.repos.shortNameNote"),
   e("repos.baseRef", "settings.repos.baseRef", ["base", "branch", "main", "nhánh", "nhanh"], "settings.repos.baseRefHint"),
   e("repos.worktreeRoot", "settings.repos.worktreeRoot", ["folder", "directory", "path", "thư mục", "thu muc"], "settings.repos.worktreeRootHint"),
