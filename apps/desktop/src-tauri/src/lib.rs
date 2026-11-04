@@ -61,6 +61,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(updater::Pending::default())
         .manage(updater::Phase::default())
+        .manage(shell::ShellState::default())
         // Terminals wait until the start below has picked where they run.
         .manage(pty::Ptys::pending())
         .manage(workspace::WorkspaceLock::default())
@@ -141,6 +142,9 @@ pub fn run() {
             updater::update_status,
             updater::update_restart,
             updater::update_notify,
+            shell::shell_close_requested,
+            shell::shell_quit,
+            shell::shell_quit_cancelled,
             updater::update_check,
             updater::update_phase,
             commands::open_vault,
@@ -363,7 +367,8 @@ pub fn run() {
         .expect("failed to start xDev")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
-                let on_quit = settings_store::read(app).terminal.on_quit;
+                let mode = shell::quit_mode(app);
+                let on_quit = shell::on_quit_for(mode, settings_store::read(app).terminal.on_quit);
                 app.state::<pty::Ptys>().quit(on_quit);
                 if let Some(running) = app.try_state::<endpoint::Running>() {
                     running.stop();
@@ -371,6 +376,10 @@ pub fn run() {
                 // Every `terminal wait` ends with `app_stopped`.
                 app.state::<cli_verbs::CliHub>().board.stop();
                 updater::install_pending(app);
+                if mode == Some(shell::QuitMode::Restart) {
+                    // Never returns: the process starts again from the installed build.
+                    tauri::process::restart(&app.env());
+                }
             }
         });
 }
