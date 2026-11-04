@@ -380,7 +380,8 @@ impl Ctx<'_> {
         Ok(Registry::load(self.data).map_err(CmdError::from)?)
     }
 
-    /// The caller's worktree, from the folder its PTY started in.
+    /// The caller's worktree, from the folder its PTY started in. The PTY id
+    /// is the client's claim, not checked (see `Caller`, risk R1).
     fn caller_worktree(&self, caller: &Caller) -> Result<Option<PathBuf>, AppError> {
         let Some(cwd) = caller.pty.as_deref().and_then(|p| (self.cwd_of)(p)) else {
             return Ok(None);

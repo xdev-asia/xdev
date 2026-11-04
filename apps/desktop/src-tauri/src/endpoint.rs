@@ -38,6 +38,17 @@ pub struct Request {
 
 /// Who says it is calling: the PTY the CLI runs in (`XDEV_PTY_ID`). A
 /// label for scope and audit, not an identity.
+///
+/// Known risk (R1, by design): the id is the client's word. Any process of
+/// this user that holds the token can name another tab's PTY, and so act
+/// with that tab's scope: `Own` writes on that worktree, `Family` writes on
+/// its children, with no person asked. The token keeps out other users and
+/// the network, not the user's own processes, which can already change
+/// those worktrees on disk. No peer-pid check is made: a pid seen on a pipe
+/// or socket does not say which PTY a process runs in (a CLI is a child, a
+/// grandchild or a detached process of the shell), and checking the process
+/// tree would race pid reuse. A caller that must be trusted asks: `Other`
+/// and `External` writes go through the person.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 pub struct Caller {
     pub pty: Option<String>,
