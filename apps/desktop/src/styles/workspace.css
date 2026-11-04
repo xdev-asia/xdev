@@ -3101,7 +3101,7 @@ button.ws-tree-row:focus-visible {
 }
 
 .ws-usage-active {
-  color: var(--ok);
+  color: var(--x-color-ok);
   font-weight: 600;
 }
 
@@ -3123,6 +3123,6 @@ button.ws-tree-row:focus-visible {
 }
 
 .ws-switch-working {
-  color: var(--warn);
+  color: var(--x-color-warn);
   font-size: 0.9em;
 }
