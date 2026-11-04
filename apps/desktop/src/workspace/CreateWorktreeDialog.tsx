@@ -1,13 +1,19 @@
 import { Button } from "@xdev/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import type { RepoView, WorkItem, WorkItemKind } from "@/api";
+import { toApiError, type ApiError, type Issue, type RepoView, type WorkItem, type WorkItemKind } from "@/api";
+import { isIssueRef } from "@/issues/issueStart";
 import { useI18n } from "@/i18n";
 import { expandShortcodes, hasEmoji, slugFromTitle } from "./emoji";
 import { parseItem } from "./workItemInput";
 
 /** What the dialog adds to the name and base: the title, the agent, the parent and the work item. */
 export type CreateExtra = { title: string | null; agent: string | null; setDefault: boolean; parent: string | null; item: WorkItem | null; /** Typed into the agent that opens, once it has started. */ prompt?: string };
+
+/** How long the name field rests before `#123` or an issue URL is looked up. */
+export const ISSUE_RESOLVE_DEBOUNCE_MS = 300;
+
+type Found = { repoId: string; text: string; issue: Issue | null; error?: ApiError["code"] };
 
 export type AgentChoice = { id: string; name: string };
 
@@ -52,6 +58,10 @@ export function CreateWorktreeDialog(props: {
   /** A name to start with, such as one typed into the jump palette. */
   name?: string;
   onCreate(repoId: string, name: string, from: string | null, extra: CreateExtra): void;
+  /** Reads the issue a `#123` or issue URL in the name field points to. */
+  resolveIssue?(repoId: string, text: string): Promise<Issue | null>;
+  /** Create with an issue in the name field: the shell starts the worktree from it instead of `onCreate`. */
+  onStartIssue?(repoId: string, issue: Issue): void;
   onCancel(): void;
 }): JSX.Element {
   const { t } = useI18n();
@@ -68,6 +78,7 @@ export function CreateWorktreeDialog(props: {
   const [parent, setParent] = useState("");
   const [itemUrl, setItemUrl] = useState("");
   const [itemKind, setItemKind] = useState<WorkItemKind>("pr");
+  const [found, setFound] = useState<Found | null>(null);
 
   useEffect(() => {
     const d = dialog.current;
@@ -81,7 +92,29 @@ export function CreateWorktreeDialog(props: {
   const parents = (repo?.worktrees ?? []).filter((w) => !w.primary && w.parent === null);
   const parentPath = parents.some((w) => w.path === parent) ? parent : "";
   const badItem = parseItem(itemUrl, itemKind) === "bad";
+  const ref = props.resolveIssue !== undefined && props.onStartIssue !== undefined && isIssueRef(name);
+  const refText = name.trim();
+  const refRepo = repo?.id ?? "";
+  const resolved = found && found.repoId === refRepo && found.text === refText ? found : null;
+  const issue = ref ? (resolved?.issue ?? null) : null;
   const offerDefault = agent !== "" && agent !== defaultAgent;
+
+  // `#123` or an issue URL is looked up once typing rests; a result for older text is ignored.
+  useEffect(() => {
+    if (!ref || !props.resolveIssue || refRepo === "") return;
+    let stale = false;
+    const resolve = props.resolveIssue;
+    const timer = setTimeout(() => {
+      resolve(refRepo, refText).then(
+        (issue) => !stale && setFound({ repoId: refRepo, text: refText, issue, ...(issue ? {} : { error: "issue_not_found" as const }) }),
+        (e: unknown) => !stale && setFound({ repoId: refRepo, text: refText, issue: null, error: toApiError(e).code }),
+      );
+    }, ISSUE_RESOLVE_DEBOUNCE_MS);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [ref, refRepo, refText]);
 
   return (
     <dialog
@@ -96,6 +129,10 @@ export function CreateWorktreeDialog(props: {
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (ref) {
+            if (repo && issue) props.onStartIssue?.(repo.id, issue);
+            return;
+          }
           const built = repo && buildCreate({ text: name, agent, defaultAgent, setDefault, parent: parentPath, itemUrl, itemKind });
           if (repo && built) props.onCreate(repo.id, built.name, from.trim() || null, built.extra);
         }}
@@ -127,6 +164,11 @@ export function CreateWorktreeDialog(props: {
               onChange={(e) => setName(expandShortcodes(e.target.value))}
             />
             <small id="ws-create-hint">{t("workspace.create.nameHint")}</small>
+            {ref && (
+              <small className={resolved?.error ? "error-text" : undefined} role={resolved?.error ? "alert" : "status"}>
+                {issue ? t("workspace.create.issueFound", { number: issue.number, title: issue.title }) : resolved?.error ? t(`error.${resolved.error}`) : t("workspace.create.issueLooking")}
+              </small>
+            )}
           </label>
           <label className="ws-field">
             <span>{t("workspace.create.from")}</span>
@@ -190,7 +232,7 @@ export function CreateWorktreeDialog(props: {
           <button type="button" className="btn-secondary" onClick={props.onCancel}>
             {t("dialog.cancel")}
           </button>
-          <Button type="submit" disabled={!repo || badItem}>
+          <Button type="submit" disabled={!repo || badItem || (ref && !issue)}>
             {t("workspace.create.confirm")}
           </Button>
         </div>
