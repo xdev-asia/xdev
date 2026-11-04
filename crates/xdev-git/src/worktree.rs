@@ -172,6 +172,10 @@ impl Repo {
     /// Limits a worktree made with `--no-checkout` to cone folders `dirs`,
     /// then writes those files. Git keeps the pattern list in the worktree's
     /// own config, so the main checkout stays full.
+    ///
+    /// Needs a git with `sparse-checkout set --cone -- <folders>` run inside a
+    /// linked worktree. Written and tested against git 2.56.0; older versions
+    /// have not been tried, so the exact minimum is not recorded here.
     pub fn sparse_set(&self, dirs: &[String]) -> Result<(), GitError> {
         let mut args = vec!["sparse-checkout", "set", "--cone", "--"];
         args.extend(dirs.iter().map(String::as_str));

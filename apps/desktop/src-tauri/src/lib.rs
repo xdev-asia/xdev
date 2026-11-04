@@ -330,6 +330,7 @@ pub fn run() {
             prs::pr_get,
             prs::pr_open,
             prs::pr_branch,
+            prs::pr_branch_discard,
             prs::projects_list,
             prs::project_open,
             ship::worktree_draft_commit,

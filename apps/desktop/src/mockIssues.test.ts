@@ -44,6 +44,10 @@ it("gives a pull request branch, pr-<n> for a fork, and rejects an unknown numbe
   await expect(api.prOpen("r", 99)).rejects.toMatchObject({ code: "pr_not_found" });
 });
 
+it("discarding a fetched pull request branch resolves", async () => {
+  await expect(api.prBranchDiscard("r", "pr-13")).resolves.toBeUndefined();
+});
+
 it("opening an unknown project fails as gh does", async () => {
   await expect(api.projectOpen("r", 999)).rejects.toMatchObject({ code: "gh_failed" });
 });

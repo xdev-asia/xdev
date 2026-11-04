@@ -785,6 +785,9 @@ export interface Api {
   // The local branch to start a pull request on, fetched when needed; `branch_in_use` when a
   // worktree has it. A fork gives `pr-<n>`.
   prBranch(repoId: string, number: number): Promise<string>;
+  // Deletes a branch `prBranch` fetched when the worktree on it was never made; a branch it did not
+  // fetch, or one a worktree has, is left alone.
+  prBranchDiscard(repoId: string, branch: string): Promise<void>;
   projectsList(repoId: string): Promise<ProjectSummary[]>;
   projectOpen(repoId: string, number: number): Promise<void>;
   // The log of the failed job behind a check's link (capped), for the Fix checks recipe; null when
@@ -1273,6 +1276,7 @@ const tauriApi: Api = {
   prGet: (repoId, number) => call("pr_get", { repoId, number }),
   prOpen: (repoId, number) => call("pr_open", { repoId, number }),
   prBranch: (repoId, number) => call("pr_branch", { repoId, number }),
+  prBranchDiscard: (repoId, branch) => call("pr_branch_discard", { repoId, branch }),
   projectsList: (repoId) => call("projects_list", { repoId }),
   projectOpen: (repoId, number) => call("project_open", { repoId, number }),
   worktreeCheckLog: (path, link) => call("worktree_check_log", { path, link }),

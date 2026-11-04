@@ -2,7 +2,7 @@ import { toApiError, type ApiError, type CreateRequest, type WorktreeView } from
 import type { CreateExtra } from "./CreateWorktreeDialog";
 
 /** What a create was asked with; Retry asks again with the same. */
-export type CreateArgs = { repoId: string; name: string; from: string | null; extra?: CreateExtra; request?: CreateRequest };
+export type CreateArgs = { repoId: string; name: string; from: string | null; extra?: CreateExtra; request?: CreateRequest; /** A branch fetched only for this create; taken back when the create is given up. */ discardBranch?: string };
 
 /** A create still running, or one that failed and waits for Retry or Dismiss. */
 export type PendingCreate = {
@@ -22,6 +22,8 @@ export interface PendingCreatesDeps {
   remove(path: string, force: boolean): Promise<unknown>;
   /** A create that was not cancelled finished. */
   onCreated(view: WorktreeView, args: CreateArgs): void;
+  /** Takes back a branch fetched for a create that was given up. */
+  discard?(repoId: string, branch: string): Promise<unknown>;
 }
 
 type Job = { id: string; args: CreateArgs; state: PendingCreate["state"]; error?: ApiError; cancelled: boolean; attempt: number };
@@ -53,6 +55,8 @@ export class PendingCreates {
     if (!job) return;
     job.cancelled = true;
     this.jobs.delete(id);
+    // A failed job is given up now; a running one is taken back if it fails (see `run`).
+    if (job.state === "failed") this.discard(job);
     this.emit();
   }
 
@@ -103,12 +107,18 @@ export class PendingCreates {
         this.deps.onCreated(view, { ...job.args });
       },
       (e: unknown) => {
-        if (job.cancelled || job.attempt !== attempt) return;
+        if (job.cancelled) return this.discard(job);
+        if (job.attempt !== attempt) return;
         job.state = "failed";
         job.error = toApiError(e);
         this.emit();
       },
     );
+  }
+
+  private discard(job: Job): void {
+    const branch = job.args.discardBranch;
+    if (branch !== undefined) this.deps.discard?.(job.args.repoId, branch).catch(() => undefined);
   }
 
   private emit(): void {
