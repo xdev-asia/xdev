@@ -93,6 +93,7 @@ import type {
   IssueState,
   IssueDraft,
   PrSummary,
+  PrBranch,
   PrFilter,
   PrQuery,
   ProjectSummary,
@@ -262,6 +263,7 @@ export type {
   IssueState,
   IssueDraft,
   PrSummary,
+  PrBranch,
   PrFilter,
   PrQuery,
   ProjectSummary,
@@ -784,7 +786,7 @@ export interface Api {
   prOpen(repoId: string, number: number): Promise<void>;
   // The local branch to start a pull request on, fetched when needed; `branch_in_use` when a
   // worktree has it. A fork gives `pr-<n>`.
-  prBranch(repoId: string, number: number): Promise<string>;
+  prBranch(repoId: string, number: number): Promise<PrBranch>;
   // Deletes a branch `prBranch` fetched when the worktree on it was never made; a branch it did not
   // fetch, or one a worktree has, is left alone.
   prBranchDiscard(repoId: string, branch: string): Promise<void>;

@@ -1,10 +1,11 @@
 //! Pull requests and Projects of a registered repo, read through `gh` in its
 //! main checkout, and the local branch a pull request is started on.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
+use serde::Serialize;
 use tauri::State;
 use xdev_git::{
     GhExec, PrQuery, PrSummary, ProjectSummary, Repo, SystemGh, pr_get as gh_pr_get, pr_list,
@@ -76,28 +77,53 @@ fn project_open_with(
     Ok(gh_project_open(gh, &cwd, &owner, number)?)
 }
 
-/// `(repo id, branch)` of the branches `branch_with` made by fetching; only these may be
-/// discarded again, so a branch the user already had is never deleted.
-fn made() -> &'static Mutex<HashSet<(String, String)>> {
-    static MADE: OnceLock<Mutex<HashSet<(String, String)>>> = OnceLock::new();
+/// `(repo id, branch)` of the branches `branch_with` made by fetching, with the tip they had
+/// then. Only a branch still at that tip may be discarded, so neither a branch the user had nor
+/// one the user committed on or re-created is ever deleted.
+fn made() -> &'static Mutex<HashMap<(String, String), String>> {
+    static MADE: OnceLock<Mutex<HashMap<(String, String), String>>> = OnceLock::new();
     MADE.get_or_init(Mutex::default)
 }
 
-fn made_insert(repo_id: &str, branch: &str) {
-    made()
-        .lock()
-        .unwrap()
-        .insert((repo_id.to_owned(), branch.to_owned()));
+fn made_key(repo_id: &str, branch: &str) -> (String, String) {
+    (repo_id.to_owned(), branch.to_owned())
 }
 
-/// Deletes `branch` when `branch_with` made it and no worktree has it; says whether it did.
-/// A branch this flow did not make, or one a worktree now uses, is left alone.
+/// Records `branch` as fetched, with the commit it points at now.
+fn made_insert(repo: &Repo, repo_id: &str, branch: &str) -> Result<(), CmdError> {
+    if let Some(tip) = repo.resolve_ref(&format!("refs/heads/{branch}"))? {
+        made()
+            .lock()
+            .unwrap()
+            .insert(made_key(repo_id, branch), tip);
+    }
+    Ok(())
+}
+
+/// The branch `pr_branch` chose, and whether it was fetched for this call (so the caller may
+/// take it back) or already existed.
+#[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct PrBranch {
+    pub branch: String,
+    pub fetched: bool,
+}
+
+/// Deletes `branch` when `branch_with` made it, it still has the fetched tip and no worktree
+/// has it; says whether it did. Anything else is left alone.
 fn discard_with(data: &Path, repo_id: &str, branch: &str) -> Result<bool, CmdError> {
-    let key = (repo_id.to_owned(), branch.to_owned());
-    if !made().lock().unwrap().remove(&key) {
+    let Some(tip) = made().lock().unwrap().remove(&made_key(repo_id, branch)) else {
+        return Ok(false);
+    };
+    let repo = Repo::discover(&main_path(data, repo_id)?)?;
+    if repo
+        .resolve_ref(&format!("refs/heads/{branch}"))?
+        .as_deref()
+        != Some(tip.as_str())
+    {
         return Ok(false);
     }
-    let repo = Repo::discover(&main_path(data, repo_id)?)?;
     if repo
         .list_worktrees()?
         .iter()
@@ -121,7 +147,7 @@ fn branch_with(
     data: &Path,
     repo_id: &str,
     number: u64,
-) -> Result<String, CmdError> {
+) -> Result<PrBranch, CmdError> {
     let cwd = main_path(data, repo_id)?;
     let pr = gh_pr_get(gh, &cwd, number)?;
     let repo = Repo::discover(&cwd)?;
@@ -135,11 +161,20 @@ fn branch_with(
         if in_use(&pr.head)? {
             return Err(xdev_workspace::WorkspaceError::BranchInUse(pr.head).into());
         }
-        if !repo.branch_exists(&pr.head)? {
-            repo.fetch_pull(number, &pr.head)?;
-            made_insert(repo_id, &pr.head);
+        if repo.branch_exists(&pr.head)? {
+            // The user's branch now: a record of an earlier fetch no longer covers it.
+            made().lock().unwrap().remove(&made_key(repo_id, &pr.head));
+            return Ok(PrBranch {
+                branch: pr.head,
+                fetched: false,
+            });
         }
-        return Ok(pr.head);
+        repo.fetch_pull(number, &pr.head)?;
+        made_insert(&repo, repo_id, &pr.head)?;
+        return Ok(PrBranch {
+            branch: pr.head,
+            fetched: true,
+        });
     }
     for n in 1..=99u32 {
         let branch = if n == 1 {
@@ -149,8 +184,11 @@ fn branch_with(
         };
         if !repo.branch_exists(&branch)? {
             repo.fetch_pull(number, &branch)?;
-            made_insert(repo_id, &branch);
-            return Ok(branch);
+            made_insert(&repo, repo_id, &branch)?;
+            return Ok(PrBranch {
+                branch,
+                fetched: true,
+            });
         }
     }
     Err(xdev_workspace::WorkspaceError::BranchExists(format!("pr-{number}")).into())
@@ -199,7 +237,7 @@ pub fn pr_branch(
     state: State<'_, AppState>,
     repo_id: String,
     number: u64,
-) -> Result<String, CmdError> {
+) -> Result<PrBranch, CmdError> {
     let data = data_dir(&state)?;
     let account = account_of(data, &repo_id)?;
     run_gh(&SystemGh, account, |gh| {
@@ -375,8 +413,9 @@ mod tests {
     fn pr_branch_fetches_the_head_into_a_free_branch() {
         let (_tmp, data, main) = fixture("r-b1");
         let fake = Fake::new(vec![(0, &pr(7, "feat/x", false), "")]);
-        let branch = branch_with(&fake, &data, "r-b1", 7).unwrap();
-        assert_eq!(branch, "feat/x");
+        let got = branch_with(&fake, &data, "r-b1", 7).unwrap();
+        assert_eq!(got.branch, "feat/x");
+        assert!(got.fetched);
         assert_eq!(
             git(&main, &["log", "-1", "--format=%s", "feat/x"]).trim(),
             "pr work"
@@ -388,7 +427,9 @@ mod tests {
         let (_tmp, data, main) = fixture("r-b2");
         git(&main, &["branch", "feat/x"]);
         let fake = Fake::new(vec![(0, &pr(7, "feat/x", false), "")]);
-        assert_eq!(branch_with(&fake, &data, "r-b2", 7).unwrap(), "feat/x");
+        let got = branch_with(&fake, &data, "r-b2", 7).unwrap();
+        assert_eq!(got.branch, "feat/x");
+        assert!(!got.fetched);
         // The branch was not moved to the PR's commit.
         assert_eq!(
             git(&main, &["log", "-1", "--format=%s", "feat/x"]).trim(),
@@ -412,8 +453,11 @@ mod tests {
             (0, &pr(7, "main", true), ""),
             (0, &pr(7, "main", true), ""),
         ]);
-        assert_eq!(branch_with(&fake, &data, "r-b4", 7).unwrap(), "pr-7");
-        assert_eq!(branch_with(&fake, &data, "r-b4", 7).unwrap(), "pr-7-2");
+        assert_eq!(branch_with(&fake, &data, "r-b4", 7).unwrap().branch, "pr-7");
+        assert_eq!(
+            branch_with(&fake, &data, "r-b4", 7).unwrap().branch,
+            "pr-7-2"
+        );
         assert_eq!(
             git(&main, &["log", "-1", "--format=%s", "pr-7-2"]).trim(),
             "pr work"
@@ -426,7 +470,10 @@ mod tests {
         let exists = |b: &str| !git(&main, &["branch", "--list", b]).trim().is_empty();
         // Fetched by the flow: discarded.
         let fake = Fake::new(vec![(0, &pr(7, "feat/x", false), "")]);
-        assert_eq!(branch_with(&fake, &data, "r-d1", 7).unwrap(), "feat/x");
+        assert_eq!(
+            branch_with(&fake, &data, "r-d1", 7).unwrap().branch,
+            "feat/x"
+        );
         assert!(exists("feat/x"));
         assert!(discard_with(&data, "r-d1", "feat/x").unwrap());
         assert!(!exists("feat/x"));
@@ -435,7 +482,10 @@ mod tests {
         // A branch the user had before is reused, not made, so it stays.
         git(&main, &["branch", "mine"]);
         let fake = Fake::new(vec![(0, &pr(7, "mine", false), "")]);
-        assert_eq!(branch_with(&fake, &data, "r-d1", 7).unwrap(), "mine");
+        assert_eq!(
+            branch_with(&fake, &data, "r-d1", 7).unwrap().branch,
+            "mine"
+        );
         assert!(!discard_with(&data, "r-d1", "mine").unwrap());
         assert!(exists("mine"));
         // A branch the flow never saw stays too.
@@ -448,7 +498,7 @@ mod tests {
     fn discard_keeps_a_branch_a_worktree_took() {
         let (tmp, data, main) = fixture("r-d2");
         let fake = Fake::new(vec![(0, &pr(7, "main", true), "")]);
-        let branch = branch_with(&fake, &data, "r-d2", 7).unwrap();
+        let branch = branch_with(&fake, &data, "r-d2", 7).unwrap().branch;
         assert_eq!(branch, "pr-7");
         let wt = tmp.path().join("wt-pr7");
         git(
@@ -457,6 +507,49 @@ mod tests {
         );
         assert!(!discard_with(&data, "r-d2", "pr-7").unwrap());
         assert!(!git(&main, &["branch", "--list", "pr-7"]).trim().is_empty());
+    }
+
+    #[test]
+    fn discard_keeps_a_branch_the_user_committed_on_and_reused() {
+        let (tmp, data, main) = fixture("r-d3");
+        let exists = |b: &str| !git(&main, &["branch", "--list", b]).trim().is_empty();
+        let script = || Fake::new(vec![(0, &pr(7, "feat/x", false), "")]);
+        assert!(branch_with(&script(), &data, "r-d3", 7).unwrap().fetched);
+        // Work on the branch in a worktree, which is then removed; the branch stays.
+        let wt = tmp.path().join("wt-x");
+        git(
+            &main,
+            &["worktree", "add", "-q", wt.to_str().unwrap(), "feat/x"],
+        );
+        git(&wt, &["commit", "-q", "--allow-empty", "-m", "mine"]);
+        git(
+            &main,
+            &["worktree", "remove", "--force", wt.to_str().unwrap()],
+        );
+        // The same pull request again reuses the branch and no longer owns it.
+        let again = branch_with(&script(), &data, "r-d3", 7).unwrap();
+        assert!(!again.fetched);
+        assert!(!discard_with(&data, "r-d3", "feat/x").unwrap());
+        assert!(exists("feat/x"));
+    }
+
+    #[test]
+    fn discard_keeps_a_branch_whose_tip_moved_or_was_recreated() {
+        let (_tmp, data, main) = fixture("r-d4");
+        let exists = |b: &str| !git(&main, &["branch", "--list", b]).trim().is_empty();
+        let script = || Fake::new(vec![(0, &pr(7, "feat/x", false), "")]);
+        // The tip moved after the fetch: kept.
+        branch_with(&script(), &data, "r-d4", 7).unwrap();
+        git(&main, &["branch", "-f", "feat/x", "HEAD"]);
+        assert!(!discard_with(&data, "r-d4", "feat/x").unwrap());
+        assert!(exists("feat/x"));
+        git(&main, &["branch", "-D", "feat/x"]);
+        // The user deletes it and makes a same-name branch elsewhere: kept.
+        branch_with(&script(), &data, "r-d4", 7).unwrap();
+        git(&main, &["branch", "-D", "feat/x"]);
+        git(&main, &["branch", "feat/x"]);
+        assert!(!discard_with(&data, "r-d4", "feat/x").unwrap());
+        assert!(exists("feat/x"));
     }
 
     #[test]
