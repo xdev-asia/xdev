@@ -562,7 +562,52 @@ impl TerminalSettings {
         self.ring_mb = self
             .ring_mb
             .clamp(*Self::RING_MB.start(), *Self::RING_MB.end());
+        if !valid_theme_id(&self.theme) {
+            self.theme = THEME_APP.into();
+        }
+        self.word_separators = clean_word_separators(&self.word_separators);
+        let default = Self::default();
+        self.scroll_sensitivity =
+            clamp_or(self.scroll_sensitivity, Self::SCROLL, default.scroll_sensitivity);
+        self.fast_scroll_sensitivity = clamp_or(
+            self.fast_scroll_sensitivity,
+            Self::FAST_SCROLL,
+            default.fast_scroll_sensitivity,
+        );
+        self.minimum_contrast =
+            clamp_or(self.minimum_contrast, Self::CONTRAST, default.minimum_contrast);
         self
+    }
+}
+
+/// `[a-z0-9-]{1,40}`: what a scheme id may be.
+fn valid_theme_id(id: &str) -> bool {
+    (1..=40).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// Control chars dropped, at most `WORD_SEPARATORS_MAX` chars; empty reads as the default.
+fn clean_word_separators(raw: &str) -> String {
+    let kept: String = raw
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(WORD_SEPARATORS_MAX)
+        .collect();
+    if kept.is_empty() {
+        DEFAULT_WORD_SEPARATORS.into()
+    } else {
+        kept
+    }
+}
+
+/// `n` inside `range`; the default when it is not a finite number.
+fn clamp_or(n: f32, range: RangeInclusive<f32>, default: f32) -> f32 {
+    if n.is_finite() {
+        n.clamp(*range.start(), *range.end())
+    } else {
+        default
     }
 }
 
@@ -1631,6 +1676,80 @@ then sum up"
             ..TerminalSettings::default()
         };
         assert_eq!(fine.clone().clamped(), fine);
+    }
+
+    #[test]
+    fn terminal_theme_and_word_separators_are_normalised() {
+        let with = |theme: &str, words: &str| {
+            TerminalSettings {
+                theme: theme.into(),
+                word_separators: words.into(),
+                ..TerminalSettings::default()
+            }
+            .clamped()
+        };
+        for bad in ["Dracula", "../x", "", "a b", &"a".repeat(41)] {
+            assert_eq!(with(bad, " ").theme, THEME_APP, "{bad:?}");
+        }
+        for ok in ["tokyo-night", "app", "a", &"a".repeat(40)] {
+            assert_eq!(with(ok, " ").theme, ok);
+        }
+        // Control chars dropped, the rest kept in order.
+        assert_eq!(with("app", " a\u{7}/\n\t").word_separators, " a/");
+        // Cut to 64 chars (not bytes).
+        assert_eq!(with("app", &"é".repeat(100)).word_separators.chars().count(), 64);
+        assert_eq!(
+            with("app", &"-".repeat(64)).word_separators,
+            "-".repeat(64)
+        );
+        // Empty, or only control chars: the default.
+        for empty in ["", "\u{1}\n"] {
+            assert_eq!(with("app", empty).word_separators, DEFAULT_WORD_SEPARATORS);
+        }
+    }
+
+    #[test]
+    fn terminal_new_numbers_clamp_and_nan_reads_as_the_default() {
+        let with = |scroll, fast, contrast| {
+            TerminalSettings {
+                scroll_sensitivity: scroll,
+                fast_scroll_sensitivity: fast,
+                minimum_contrast: contrast,
+                ..TerminalSettings::default()
+            }
+            .clamped()
+        };
+        let hi = with(99.0, 99.0, 99.0);
+        assert_eq!(
+            (hi.scroll_sensitivity, hi.fast_scroll_sensitivity, hi.minimum_contrast),
+            (3.0, 10.0, 21.0)
+        );
+        let lo = with(0.0, 0.0, 0.0);
+        assert_eq!(
+            (lo.scroll_sensitivity, lo.fast_scroll_sensitivity, lo.minimum_contrast),
+            (0.5, 1.0, 1.0)
+        );
+        let nan = with(f32::NAN, f32::NAN, f32::NAN);
+        assert_eq!(
+            (nan.scroll_sensitivity, nan.fast_scroll_sensitivity, nan.minimum_contrast),
+            (1.15, 5.0, 1.0)
+        );
+        let inf = with(f32::INFINITY, f32::NEG_INFINITY, f32::INFINITY);
+        assert_eq!(
+            (inf.scroll_sensitivity, inf.fast_scroll_sensitivity, inf.minimum_contrast),
+            (1.15, 5.0, 1.0)
+        );
+        // In range: untouched.
+        let fine = TerminalSettings {
+            theme: "nord".into(),
+            word_separators: " /.".into(),
+            scroll_sensitivity: 2.0,
+            fast_scroll_sensitivity: 7.5,
+            minimum_contrast: 4.5,
+            ..TerminalSettings::default()
+        };
+        assert_eq!(fine.clone().clamped(), fine);
+        assert_eq!(TerminalSettings::default().clamped(), TerminalSettings::default());
     }
 
     #[test]
