@@ -14,10 +14,11 @@ export const STATUS_BAR_ITEMS = ["branch", "tokenUsage", "agents", "version"] as
 const LOOK_IDS = ["appearance.theme", "appearance.font", "appearance.sidebar"];
 const EDITOR_IDS = ["appearance.editorTheme"];
 const STATUS_IDS = STATUS_BAR_ITEMS.map((k) => `appearance.statusBar.${k}`);
+const LINK_IDS = ["appearance.terminalLink", "appearance.usageLink"];
 
 /** Settings → Appearance: theme, interface font, sidebar look, editor colours and the status bar. */
 export function AppearancePage(props: SettingsSectionProps): JSX.Element {
-  const { api, filter } = props;
+  const { api, filter, openSection } = props;
   const { t } = useI18n();
   const [ui, setUi] = useState<UiSettings | null>(null);
   const [font, setFont] = useState("");
@@ -78,6 +79,7 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
               {ui && (
                 <ThemeSwitch
                   value={ui.theme}
+                  disabled={busy}
                   onChange={(next) => void patch({ theme: next })}
                   labels={{
                     group: t("settings.appearance.theme"),
@@ -124,6 +126,7 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
                 <Segmented
                   label={t("settings.appearance.sidebar")}
                   value={ui.sidebar}
+                  disabled={busy}
                   options={SIDEBAR_LOOKS.map((v) => ({ value: v, label: t(`settings.appearance.sidebar.${v}`) }))}
                   onChange={(next) => void patch({ sidebar: next as SidebarLook })}
                 />
@@ -193,6 +196,26 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
           </ul>
         )}
       </SettingGroup>
+
+      {openSection && (
+        <SettingGroup ids={LINK_IDS} filter={filter}>
+          <h4 className="settings-group">{t("settings.appearance.related")}</h4>
+          <SettingRow id="appearance.terminalLink" filter={filter}>
+            <div className="settings-actions settings-actions-start">
+              <button type="button" className="btn-secondary" data-act="open-terminal" onClick={() => openSection("terminal")}>
+                {t("settings.appearance.terminalLink")}
+              </button>
+            </div>
+          </SettingRow>
+          <SettingRow id="appearance.usageLink" filter={filter}>
+            <div className="settings-actions settings-actions-start">
+              <button type="button" className="btn-secondary" data-act="open-usage" onClick={() => openSection("usage")}>
+                {t("settings.appearance.usageLink")}
+              </button>
+            </div>
+          </SettingRow>
+        </SettingGroup>
+      )}
     </div>
   );
 }

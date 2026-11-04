@@ -60,12 +60,12 @@ beforeEach(() => {
   resetEditorThemeForTests();
 });
 
-async function page(filter?: SettingsFilter) {
+async function page(filter?: SettingsFilter, openSection?: (id: string) => void) {
   const api = createMockApi({});
   const draw = () => {
     hooks.cursor = 0;
     hooks.active = true;
-    try { return AppearancePage({ api, onChanged: vi.fn(), filter }); } finally { hooks.active = false; }
+    try { return AppearancePage({ api, onChanged: vi.fn(), filter, openSection }); } finally { hooks.active = false; }
   };
   draw();
   hooks.effects.splice(0).forEach((e) => e());
@@ -175,4 +175,30 @@ it("a search keeps only the rows that hit", async () => {
 it("every catalog entry of the section has a control on the page", () => {
   const ids = SETTING_ENTRIES.filter((e) => e.section === "appearance").map((e) => e.id);
   expect(ids).toEqual(expect.arrayContaining(["appearance.theme", "appearance.font", "appearance.sidebar", "appearance.editorTheme", "appearance.statusBar.branch"]));
+});
+
+it("keeps every control off while a save is under way", async () => {
+  const p = await page();
+  const release: (() => void)[] = [];
+  const get = p.api.uiSettingsGet.bind(p.api);
+  vi.spyOn(p.api, "uiSettingsGet").mockImplementation(() => new Promise((r) => release.push(() => r(get()))) as ReturnType<typeof get>);
+  p.of(ThemeSwitch).props.onChange("light");
+  await tick();
+  expect(p.of(ThemeSwitch).props.disabled).toBe(true);
+  expect(p.of(Segmented).props.disabled).toBe(true);
+  expect(p.of(FontField).props.disabled).toBe(true);
+  release.splice(0).forEach((f) => f());
+  await tick();
+  expect(p.of(ThemeSwitch).props.disabled).toBe(false);
+  expect(p.of(Segmented).props.disabled).toBe(false);
+});
+
+it("the link rows open the Terminal and Usage sections, and only when the page can switch", async () => {
+  const open = vi.fn();
+  const p = await page(undefined, open);
+  const act = (name: string) => p.all().find((n) => n.props["data-act"] === name)!;
+  act("open-terminal").props.onClick();
+  act("open-usage").props.onClick();
+  expect(open.mock.calls).toEqual([["terminal"], ["usage"]]);
+  expect((await page()).all().some((n) => n.props["data-act"] === "open-terminal")).toBe(false);
 });
