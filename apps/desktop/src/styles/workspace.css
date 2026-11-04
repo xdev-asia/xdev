@@ -2604,3 +2604,195 @@ button.ws-tree-row:focus-visible {
   color: var(--x-color-ink);
   font: inherit;
 }
+
+/* The usage popover over the footer. */
+
+.ws-usage-pop {
+  position: absolute;
+  bottom: calc(var(--h-footer) + 4px);
+  left: 12px;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 420px;
+  max-width: calc(100vw - 24px);
+  max-height: 70vh;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-1) 16%, transparent);
+  color: var(--text-1);
+  white-space: normal;
+  outline: none;
+}
+
+.ws-usage-head,
+.ws-usage-foot,
+.ws-usage-line,
+.ws-usage-window-row,
+.ws-usage-modes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-usage-title {
+  font-weight: 600;
+}
+
+.ws-usage-asof,
+.ws-usage-provider,
+.ws-usage-state,
+.ws-usage-window,
+.ws-usage-reset,
+.ws-usage-empty {
+  color: var(--text-3);
+}
+
+.ws-usage-empty {
+  margin: 0;
+}
+
+.ws-usage-modes {
+  gap: 2px;
+}
+
+.ws-usage-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ws-usage-btn:hover:not(:disabled),
+.ws-usage-btn:focus-visible {
+  background: var(--bg-3);
+}
+
+.ws-usage-btn[aria-pressed="true"] {
+  background: var(--bg-3);
+  color: var(--signal);
+}
+
+.ws-usage-btn:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+.ws-usage-spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--line);
+  border-top-color: var(--signal);
+  border-radius: 50%;
+  animation: ws-usage-spin 0.8s linear infinite;
+}
+
+@keyframes ws-usage-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ws-usage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.ws-usage-account {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ws-usage-name {
+  font-weight: 600;
+}
+
+.ws-usage-state {
+  margin-left: auto;
+}
+
+.ws-usage-window-row {
+  padding-left: 8px;
+}
+
+.ws-usage-window {
+  min-width: 56px;
+}
+
+.ws-usage-bar {
+  display: block;
+  flex: 1;
+  min-width: 60px;
+  height: 6px;
+  border-radius: var(--radius-s);
+  background: var(--bg-3);
+  overflow: hidden;
+}
+
+.ws-usage-fill {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+
+.ws-usage-bar[data-state="reserve"] .ws-usage-fill {
+  background: var(--warn);
+}
+
+.ws-usage-bar[data-state="full"] .ws-usage-fill {
+  background: var(--danger);
+}
+
+.ws-usage-bar[data-state="unknown"] .ws-usage-fill {
+  background: var(--text-3);
+}
+
+.ws-usage-pct {
+  min-width: 4ch;
+  text-align: right;
+}
+
+.ws-usage-signin {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--warn);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ws-usage-foot {
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+/* The meters group is one button that opens the popover. */
+
+.ws-meters-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ws-meters-btn:hover,
+.ws-meters-btn[aria-expanded="true"] {
+  color: var(--text-1);
+}
