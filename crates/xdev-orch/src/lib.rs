@@ -4,6 +4,7 @@
 
 pub mod error;
 pub mod gates;
+pub mod guide;
 pub mod ids;
 pub mod mail;
 pub mod model;
@@ -23,7 +24,10 @@ pub use model::*;
 pub use preamble::{PreambleInput, SPEC_BUDGET, build as build_preamble};
 pub use receipts::{RECEIPT_ROWS, RECEIPT_TTL_MS, Receipt, ResetCounts, ResetScope};
 pub use runs::RunDetail;
-pub use skills::{SKILL_NAME, SkillAgent, SkillStatus, SkillTarget};
+pub use skills::{
+    Action, How, INSTALL_COMMAND, InstallOpts, InstallReport, SKILL_NAME, SkillAgent, SkillEnv,
+    SkillStatus, SkillTarget, TargetOutcome,
+};
 pub use store::Store;
 pub use tasks::{BRIEF_CHARS, NewTask, TaskFilter, brief};
 pub use workers::{BREAKER_LIMIT, CLOSE_AFTER_MS, StartPlan, StartResult, Swept, WorkerView};

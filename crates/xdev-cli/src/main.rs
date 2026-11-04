@@ -6,6 +6,7 @@ mod app;
 mod context;
 mod mcp;
 mod orch;
+mod skills;
 mod squad;
 mod task;
 
@@ -118,6 +119,11 @@ enum Command {
         #[command(subcommand)]
         command: app::TerminalCommand,
     },
+    /// The orchestration guide and skill: `get`, `install`.
+    Skills {
+        #[command(subcommand)]
+        command: skills::SkillsCommand,
+    },
     /// Coordinate agents in other tabs: runs, tasks, workers and mail.
     #[command(alias = "orch")]
     Orchestration(orch::OrchArgs),
@@ -200,6 +206,7 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         Command::Agent { command } => return agent::run(command, &local_dir),
         Command::Task { command } => return task::run(command, &data_dir, &local_dir),
         Command::Squad { command } => return squad::run(command, &data_dir, &local_dir),
+        Command::Skills { command } => return skills::run(command, &data_dir),
         // Handled in `main` before any folder is touched.
         Command::AgentHook { .. }
         | Command::Status(_)

@@ -6184,6 +6184,7 @@ dependencies = [
  "xdev-ai",
  "xdev-core",
  "xdev-ipc",
+ "xdev-kit",
  "xdev-mcp",
  "xdev-orch",
  "xdev-policy",

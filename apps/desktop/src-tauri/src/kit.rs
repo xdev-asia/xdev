@@ -131,6 +131,10 @@ impl Ctx {
         })
     }
 
+    pub(crate) fn user_home(&self) -> &Path {
+        &self.user_home
+    }
+
     pub(crate) fn homes(&self) -> Vec<Home> {
         xdev_kit::homes(&self.data, &self.user_home, &self.env)
     }
