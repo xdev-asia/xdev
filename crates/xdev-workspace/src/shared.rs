@@ -7,6 +7,8 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use crate::WorkspaceError;
+
 /// What linking one shared path did.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -106,6 +108,46 @@ fn link_one(main: &Path, worktree: &Path, path: &str) -> Result<(), String> {
         }
     }
     link(&from, &to, meta.is_dir()).map_err(|e| e.to_string())
+}
+
+/// Removes the links of `shared` from `worktree`, so removing the folder
+/// cannot reach what they point at. Only a link is removed (a symlink on
+/// Unix, a junction or symlink on Windows) and never followed: a real folder
+/// or file at the path stays, and so does a path below a link. A hard link
+/// on Windows is a plain file; deleting it with the folder only drops that
+/// name, so it is left to git. Every path is tried; the first failure is
+/// returned.
+pub fn unlink_shared(worktree: &Path, shared: &[String]) -> Result<(), WorkspaceError> {
+    let mut first = None;
+    for path in shared {
+        if let Err(e) = unlink_one(worktree, path) {
+            first.get_or_insert(e);
+        }
+    }
+    first.map_or(Ok(()), |e| Err(e.into()))
+}
+
+fn unlink_one(worktree: &Path, path: &str) -> io::Result<()> {
+    let mut at = worktree.to_owned();
+    let mut segments = path.split('/').peekable();
+    while let Some(segment) = segments.next() {
+        at.push(segment);
+        let meta = match fs::symlink_metadata(&at) {
+            Ok(meta) => meta,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        if segments.peek().is_some() {
+            // A link on the way: what is below it is not this worktree's.
+            if is_link(&meta) || !meta.is_dir() {
+                return Ok(());
+            }
+        } else if is_link(&meta) {
+            // A symlink goes with `remove_file`, a junction with `remove_dir`.
+            return fs::remove_file(&at).or_else(|_| fs::remove_dir(&at));
+        }
+    }
+    Ok(())
 }
 
 /// A symlink, or on Windows any reparse point (a junction too).
@@ -273,5 +315,49 @@ mod tests {
         assert!(!out[0].ok);
         assert!(out[0].error.as_deref().unwrap().contains("link"));
         assert!(fs::read_dir(&elsewhere).unwrap().next().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unlink_removes_the_link_and_keeps_the_target() {
+        let (_tmp, main, wt) = pair();
+        fs::create_dir_all(main.join("node_modules")).unwrap();
+        fs::write(main.join("node_modules/x"), "1").unwrap();
+        fs::write(main.join(".env.local"), "K").unwrap();
+        link_shared(&main, &wt, &list(["node_modules", ".env.local"].as_slice()));
+        unlink_shared(
+            &wt,
+            &list(["node_modules", ".env.local", "gone"].as_slice()),
+        )
+        .unwrap();
+        assert!(fs::symlink_metadata(wt.join("node_modules")).is_err());
+        assert!(fs::symlink_metadata(wt.join(".env.local")).is_err());
+        assert_eq!(
+            fs::read_to_string(main.join("node_modules/x")).unwrap(),
+            "1"
+        );
+        assert_eq!(fs::read_to_string(main.join(".env.local")).unwrap(), "K");
+    }
+
+    #[test]
+    fn unlink_leaves_a_real_folder_and_file_alone() {
+        let (_tmp, _main, wt) = pair();
+        fs::create_dir_all(wt.join("node_modules")).unwrap();
+        fs::write(wt.join("node_modules/x"), "1").unwrap();
+        fs::write(wt.join(".env.local"), "K").unwrap();
+        unlink_shared(&wt, &list(["node_modules", ".env.local"].as_slice())).unwrap();
+        assert!(wt.join("node_modules/x").is_file());
+        assert!(wt.join(".env.local").is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unlink_does_not_reach_through_a_linked_parent() {
+        let (_tmp, main, wt) = pair();
+        fs::create_dir_all(main.join("a")).unwrap();
+        std::os::unix::fs::symlink(main.join("a"), wt.join("a")).unwrap();
+        std::os::unix::fs::symlink(wt.join("nowhere"), main.join("a/b")).unwrap();
+        unlink_shared(&wt, &list(["a/b"].as_slice())).unwrap();
+        assert!(fs::symlink_metadata(main.join("a/b")).is_ok());
     }
 }
