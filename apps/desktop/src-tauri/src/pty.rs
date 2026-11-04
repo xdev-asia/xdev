@@ -828,6 +828,7 @@ fn info_of(id: &str, session: &SessionInfo) -> PtyInfo {
             profile: "shell".to_owned(),
             permissions: Permissions::Ask.as_str().to_owned(),
             account: None,
+            account_source: None,
             hooks: false,
             hook_events: Vec::new(),
             cli: None,

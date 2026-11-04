@@ -4,7 +4,7 @@ use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use xdev_ai::{AiError, Provider, Registry, codex_home};
 
 use crate::codex_home::{codex_hook_events, prepare_codex_home};
@@ -16,7 +16,7 @@ use crate::version::{CliVersion, cli_version};
 
 /// Where a launch's account came from: the tab's own pick, the profile's
 /// account or the provider's active account.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum AccountSource {
