@@ -110,6 +110,17 @@ it("hides the prefix field for none and stores the switch and the compare base",
   expect(await v.api.gitSettings()).toEqual({ ...DEFAULT_GIT_SETTINGS, branchPrefix: "none", branchPrefixCustom: "team", refreshLocalBaseOnCreate: true, compareAgainstUpstream: true });
 });
 
+it("defaults the pull policy to fast-forward only and stores a change", async () => {
+  const v = await view();
+  const policy = (p: string) => v.all().find((n) => n.type === "button" && n.props["data-pull-policy"] === p)!;
+  expect(policy("ff-only").props["aria-pressed"]).toBe(true);
+  expect(policy("rebase").props["aria-pressed"]).toBe(false);
+  policy("rebase").props.onClick();
+  await tick();
+  expect(policy("rebase").props["aria-pressed"]).toBe(true);
+  expect((await v.api.gitSettings()).pullPolicy).toBe("rebase");
+});
+
 it("shows the agent actions on by default with the pull request defaults off, and stores each", async () => {
   const v = await view();
   expect(v.html()).toContain(en("settings.git.ai.title"));
