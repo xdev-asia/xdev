@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { TrustDialog } from "./TrustDialog";
 

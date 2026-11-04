@@ -1,4 +1,4 @@
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { useProfiles } from "@/agents/profileStore";
