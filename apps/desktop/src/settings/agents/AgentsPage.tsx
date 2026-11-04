@@ -9,12 +9,15 @@ import {
   type SwitchRunning,
   type ProfilesView,
   type ProfileView,
+  type SessionSearchStatus,
   type StatusSettings,
 } from "@/api";
 import { useProfiles } from "@/agents/profileStore";
 import { patchStatusSettings, setStatusSettings } from "@/status/statusSettings";
+import { Button, Disclosure, Switch } from "@xdev-asia/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
+import { pushToast } from "@/workspace/toastStore";
 import { SettingGroup, SettingRow } from "@/settings/SettingRow";
 import type { SettingsSectionProps } from "@/settings/sections";
 import { freeId } from "./agentForm";
@@ -40,19 +43,25 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
   const [statusBusy, setStatusBusy] = useState(false);
   // What a switch of the active account does to agent tabs that are running.
   const [switchPolicy, setSwitchPolicy] = useState<AgentsSettings | null>(null);
+  // What the conversation index holds; read again whenever the consent or the index may have moved.
+  const [searchStatus, setSearchStatus] = useState<SessionSearchStatus | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   useEffect(() => {
     api.profiles().then(setView, (e) => setError(toApiError(e).code));
     api.accounts().then((a) => setAccounts(a.accounts), () => setAccounts([]));
     api.statusSettings().then(setStatus, (e) => setError(toApiError(e).code));
     api.agentsSettings().then(setSwitchPolicy, (e) => setError(toApiError(e).code));
+    api.sessionSearchStatus().then(setSearchStatus, () => setSearchStatus(null));
   }, [api]);
 
   // Another window or a file edit can change the policy; follow it.
   useEffect(
     () =>
       api.onSettingsChanged(({ sections }) => {
-        if (sections.includes("agents")) api.agentsSettings().then(setSwitchPolicy, () => {});
+        if (!sections.includes("agents")) return;
+        api.agentsSettings().then(setSwitchPolicy, () => {});
+        api.sessionSearchStatus().then(setSearchStatus, () => {});
       }),
     [api],
   );
@@ -64,6 +73,28 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
       setSwitchPolicy(await api.agentsSettingsPut({ ...switchPolicy, accountSwitch: next }));
     } catch (e) {
       setError(toApiError(e).code);
+    }
+  }
+
+  async function toggleSearch(on: boolean): Promise<void> {
+    if (!switchPolicy) return;
+    setError(undefined);
+    try {
+      setSwitchPolicy(await api.agentsSettingsPut({ ...switchPolicy, sessionSearch: on }));
+      setSearchStatus(await api.sessionSearchStatus());
+    } catch (e) {
+      setError(toApiError(e).code);
+    }
+  }
+
+  async function clearSearch(): Promise<void> {
+    setConfirmClear(false);
+    try {
+      setSwitchPolicy(await api.sessionSearchClear());
+      setSearchStatus(await api.sessionSearchStatus());
+      pushToast({ id: "session-search-clear", text: t("sessionSearch.cleared") });
+    } catch (e) {
+      pushToast({ id: "session-search-clear", text: t(`error.${toApiError(e).code}`) });
     }
   }
 
@@ -292,6 +323,37 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
       <p className="settings-empty">{t(`settings.agents.accountSwitch.${switchPolicy?.accountSwitch ?? "ask"}Hint`)}</p>
       </SettingRow>
 
+      <SettingRow id="agents.sessionSearch" filter={filter}>
+      <h4 className="settings-group">{t("settings.agents.sessionSearch")}</h4>
+      <ul className="settings-list" data-section="session-search">
+        <li className="settings-item">
+          <div className="settings-item-text">
+            <strong>{t("settings.agents.sessionSearch.label")}</strong>
+            <span className="settings-path">{t("settings.agents.sessionSearch.hint")}</span>
+          </div>
+          <Switch
+            checked={switchPolicy?.sessionSearch ?? false}
+            aria-label={t("settings.agents.sessionSearch.label")}
+            disabled={!switchPolicy}
+            data-field="sessionSearch"
+            onChange={(e) => void toggleSearch(e.target.checked)}
+          />
+        </li>
+      </ul>
+      {switchPolicy?.sessionSearch && searchStatus && (
+        <p className="settings-empty" data-field="sessionSearchStatus">
+          {searchStatus.indexing
+            ? t("sessionSearch.indexing")
+            : t("sessionSearch.status", { sessions: searchStatus.sessions, messages: searchStatus.messages })}
+        </p>
+      )}
+      <Disclosure title={t("sessionSearch.advanced")} defaultExpanded={false}>
+        <Button variant="secondary" data-field="sessionSearchClear" onClick={() => setConfirmClear(true)}>
+          {t("sessionSearch.clear")}
+        </Button>
+      </Disclosure>
+      </SettingRow>
+
       <SettingRow id="agents.statusHooks" filter={filter}>
       <h4 className="settings-group">{t("settings.agents.statusHooks")}</h4>
       <ul className="settings-list" data-section="status-hooks">
@@ -325,6 +387,15 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
           void defaults("skip", current.defaultAgent, current.defaultShell);
         }}
         onCancel={() => setConfirmSkip(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmClear}
+        title={t("sessionSearch.clear.title")}
+        body={t("sessionSearch.clear.body")}
+        confirmLabel={t("sessionSearch.clear.confirm")}
+        onConfirm={() => void clearSearch()}
+        onCancel={() => setConfirmClear(false)}
       />
     </div>
   );
