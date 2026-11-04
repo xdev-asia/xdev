@@ -310,3 +310,49 @@ fn discard_always_asks_until_confirmed() {
     assert_eq!(log.len(), 2);
     assert_eq!(log[1].action, action);
 }
+
+#[test]
+fn cli_worktree_writes_pass_for_own_and_family_and_ask_otherwise() {
+    let policy = Policy::default();
+    let action = |op: &str, scope: &str| Action::CliWorktree {
+        op: op.into(),
+        worktree: "/w".into(),
+        scope: scope.into(),
+    };
+    assert_eq!(policy.check(&action("set", "own")), Verdict::Allow);
+    assert_eq!(policy.check(&action("create", "own")), Verdict::Allow);
+    assert_eq!(policy.check(&action("create", "family")), Verdict::Allow);
+    assert_eq!(policy.check(&action("set", "family")), Verdict::Allow);
+    assert!(matches!(
+        policy.check(&action("rm", "family")),
+        Verdict::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.check(&action("set", "other")),
+        Verdict::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.check(&action("create", "external")),
+        Verdict::Ask { .. }
+    ));
+}
+
+#[test]
+fn a_refusal_is_audited_as_deny() {
+    let dir = tempfile::tempdir().unwrap();
+    let gate = Audited::new(Policy::default(), dir.path());
+    let action = Action::CliWorktree {
+        op: "set".into(),
+        worktree: "/w".into(),
+        scope: "other".into(),
+    };
+    assert!(matches!(gate.refused(&action, "no"), Verdict::Deny { .. }));
+    let log = read_audit(dir.path()).unwrap();
+    assert_eq!(log.len(), 1);
+    assert_eq!(
+        log[0].verdict,
+        Verdict::Deny {
+            reason: "no".into()
+        }
+    );
+}

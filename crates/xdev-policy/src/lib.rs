@@ -190,9 +190,19 @@ impl Gate for Policy {
             Action::Discard { .. } => Verdict::Ask {
                 reason: "discarding changes always asks".to_owned(),
             },
-            Action::CliWorktree { op, scope, .. } => Verdict::Ask {
-                reason: format!("cli worktree {op} from scope {scope} asks"),
-            },
+            // The caller's own worktree, and a create or set in its family
+            // (the endpoint sends `family` only for writes downwards), pass;
+            // anything else is the person's call.
+            Action::CliWorktree { op, scope, .. } => {
+                let family = scope == "family" && (op == "create" || op == "set");
+                if scope == "own" || family {
+                    Verdict::Allow
+                } else {
+                    Verdict::Ask {
+                        reason: format!("cli worktree {op} from scope {scope} asks"),
+                    }
+                }
+            }
             Action::LaunchAgent {
                 profile,
                 program,
@@ -296,6 +306,17 @@ impl<G: Gate> Audited<G> {
             Verdict::Ask { .. } if confirmed => self.logged(action, Verdict::Allow),
             verdict => self.logged(action, verdict),
         }
+    }
+
+    /// Records that a person refused, or never answered, an action that
+    /// asked; nothing is saved as a standing refusal.
+    pub fn refused(&self, action: &Action, reason: &str) -> Verdict {
+        self.logged(
+            action,
+            Verdict::Deny {
+                reason: reason.to_owned(),
+            },
+        )
     }
 
     fn logged(&self, action: &Action, verdict: Verdict) -> Verdict {
