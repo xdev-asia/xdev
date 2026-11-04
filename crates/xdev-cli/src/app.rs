@@ -6,6 +6,7 @@ use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use clap::{Args, Subcommand};
 use serde::Deserialize;
@@ -15,6 +16,10 @@ use xdev_ipc::IpcError;
 /// Must match the app's `APP_PROTOCOL` and `PREFIX`.
 pub const APP_PROTOCOL: u32 = 1;
 pub const PREFIX: &str = "xdev-app";
+/// How long the CLI waits for an answer to the hello or a quick verb.
+pub const ANSWER_WAIT: Duration = Duration::from_secs(30);
+/// Past a `terminal.wait`'s own timeout, how long the app has to answer it.
+pub const WAIT_MARGIN: Duration = Duration::from_secs(10);
 
 /// An error the app answered with, or one met on the way there.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +69,19 @@ fn not_running() -> AppError {
         "app_not_running",
         "xDev is not running; start xDev and try again",
     )
+}
+
+fn app_stopped() -> AppError {
+    AppError::new("app_stopped", "xDev quit before it answered")
+}
+
+/// How long a verb's answer may take: a wait its own timeout plus a margin,
+/// anything else `ANSWER_WAIT`.
+pub fn answer_limit(method: &str, params: &Value) -> Duration {
+    match (method, params["timeoutS"].as_u64()) {
+        ("terminal.wait", Some(s)) => Duration::from_secs(s).saturating_add(WAIT_MARGIN),
+        _ => ANSWER_WAIT,
+    }
 }
 
 fn io_error(e: impl std::fmt::Display) -> AppError {
@@ -126,7 +144,7 @@ impl Client {
         });
         client.send(&hello)?;
         let back = client
-            .recv()?
+            .recv(ANSWER_WAIT)?
             .ok_or_else(|| AppError::new("denied", "the app refused the connection"))?;
         if back["ok"] != true {
             return Err(error_of(&back));
@@ -141,23 +159,50 @@ impl Client {
         self.writer.flush().map_err(io_error)
     }
 
-    fn recv(&mut self) -> Result<Option<Value>, AppError> {
+    /// The next line, or `None` when the app closed the connection. No line
+    /// within `limit` is `timeout`; a connection torn down is `app_stopped`.
+    fn recv(&mut self, limit: Duration) -> Result<Option<Value>, AppError> {
+        // On the stream the reader reads: a clone has no deadline of its own.
+        self.reader
+            .get_mut()
+            .set_read_deadline(Some(limit))
+            .map_err(io_error)?;
         let mut line = String::new();
-        if self.reader.read_line(&mut line).map_err(io_error)? == 0 {
-            return Ok(None);
+        match self.reader.read_line(&mut line) {
+            Ok(0) => return Ok(None),
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::TimedOut => {
+                return Err(AppError::new("timeout", "xDev did not answer in time"));
+            }
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::BrokenPipe
+                        | io::ErrorKind::ConnectionReset
+                        | io::ErrorKind::ConnectionAborted
+                        | io::ErrorKind::UnexpectedEof
+                ) =>
+            {
+                return Err(app_stopped());
+            }
+            Err(e) => return Err(io_error(e)),
         }
         serde_json::from_str(&line).map(Some).map_err(io_error)
     }
 
     /// One request; the app's error comes back as `Err`. A connection that
-    /// ends before the answer means the app went away: `app_stopped`.
-    pub fn call(&mut self, method: &str, params: Value) -> Result<Value, AppError> {
+    /// ends before the answer means the app went away: `app_stopped`. An
+    /// answer not in by `limit` is `timeout`.
+    pub fn call(
+        &mut self,
+        method: &str,
+        params: Value,
+        limit: Duration,
+    ) -> Result<Value, AppError> {
         let id = self.next;
         self.next += 1;
         self.send(&json!({ "id": id, "method": method, "params": params }))?;
-        let back = self
-            .recv()?
-            .ok_or_else(|| AppError::new("app_stopped", "xDev quit before it answered"))?;
+        let back = self.recv(limit)?.ok_or_else(app_stopped)?;
         if back["ok"] == true {
             Ok(back["result"].clone())
         } else {
@@ -408,7 +453,8 @@ pub fn run(cmd: &AppCommand, dir: &Path, prefix: &str) -> u8 {
     let pty = std::env::var("XDEV_PTY_ID").ok().filter(|p| !p.is_empty());
     let result = request(cmd, &mut io::stdin()).and_then(|(method, params, json)| {
         let mut client = Client::connect(dir, prefix, pty.as_deref())?;
-        let result = client.call(method, params)?;
+        let limit = answer_limit(method, &params);
+        let result = client.call(method, params, limit)?;
         Ok((method, result, json))
     });
     match result {
@@ -543,6 +589,12 @@ mod endpoint_tests {
                     if back.get("drop").is_some() {
                         break;
                     }
+                    if back.get("hang").is_some() {
+                        // Holds the connection open and never answers.
+                        loop {
+                            thread::park();
+                        }
+                    }
                     writeln!(w, "{back}").unwrap();
                 }
             }
@@ -560,14 +612,40 @@ mod endpoint_tests {
             _ => json!({ "drop": true }),
         });
         let mut c = Client::connect(dir.path(), &prefix, Some("p1")).unwrap();
-        assert_eq!(c.call("status", json!({})).unwrap()["version"], "9");
+        assert_eq!(
+            c.call("status", json!({}), ANSWER_WAIT).unwrap()["version"],
+            "9"
+        );
         let e = c
-            .call("terminal.wait", json!({ "for": "done" }))
+            .call("terminal.wait", json!({ "for": "done" }), ANSWER_WAIT)
             .unwrap_err();
         assert_eq!((e.code.as_str(), e.exit_code()), ("timeout", 4));
         // The app closing mid-call is `app_stopped`.
-        let e = c.call("other", json!({})).unwrap_err();
+        let e = c.call("other", json!({}), ANSWER_WAIT).unwrap_err();
         assert_eq!((e.code.as_str(), e.exit_code()), ("app_stopped", 6));
+    }
+
+    #[test]
+    fn an_answer_not_in_by_the_deadline_is_timeout() {
+        let (dir, prefix) = fake_app(|method, _| match method {
+            "status" => json!({ "ok": true, "result": {} }),
+            _ => json!({ "hang": true }),
+        });
+        let mut c = Client::connect(dir.path(), &prefix, None).unwrap();
+        let t = std::time::Instant::now();
+        let e = c
+            .call("terminal.wait", json!({}), Duration::from_millis(300))
+            .unwrap_err();
+        assert_eq!((e.code.as_str(), e.exit_code()), ("timeout", 4));
+        assert!(t.elapsed() < Duration::from_secs(5), "{:?}", t.elapsed());
+    }
+
+    #[test]
+    fn a_wait_may_take_its_timeout_plus_a_margin() {
+        let wait = answer_limit("terminal.wait", &json!({ "timeoutS": 60 }));
+        assert_eq!(wait, Duration::from_secs(60) + WAIT_MARGIN);
+        assert_eq!(answer_limit("status", &json!({})), ANSWER_WAIT);
+        assert_eq!(answer_limit("terminal.wait", &json!({})), ANSWER_WAIT);
     }
 
     #[test]
