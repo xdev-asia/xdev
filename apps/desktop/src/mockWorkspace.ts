@@ -878,7 +878,8 @@ export function createMockWorkspace(
       const wasDetached = findWorktree(path)?.wt.detached ?? true;
       const { repo, wt } = await leave(path, force, confirmed);
       if (wasDetached || wt.branch === null) return { deletedBranch: null, kept: null };
-      if (force || wt.madeBy === "app") return { deletedBranch: wt.branch, kept: null };
+      // As in Rust, only a branch made here goes; the mock counts it as merged, so `deleteUnmerged` changes nothing for it.
+      if (wt.madeBy === "app") return { deletedBranch: wt.branch, kept: null };
       return { deletedBranch: null, kept: keep(repo, wt, "deleted") };
     },
     async worktreeArchive(path, force, confirmed) {
