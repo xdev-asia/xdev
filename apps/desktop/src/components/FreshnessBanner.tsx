@@ -1,4 +1,4 @@
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import type { JSX } from "react";
 import type { Freshness } from "@/api";
 import { parseFrontmatter } from "@/doc/frontmatter";

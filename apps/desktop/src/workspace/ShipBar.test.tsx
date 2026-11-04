@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import { createMockApi, type Api, type GitSettings, type PrView } from "@/api";
 import { DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE } from "@/mockWorkspace";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
