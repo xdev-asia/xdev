@@ -7,7 +7,7 @@ import { chatItems, RECENT_CHATS, taskItems } from "./moreItems";
 const t = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 
 const wt = (path: string, name: string): WorktreeView => ({ path, name, branch: name, head: null, start: null, primary: false, pinned: false, detached: false, ...NO_DETAILS });
-const repos: RepoView[] = [{ id: "x", shortName: "xdev", path: "/r/x", baseRef: "origin/main", worktreeRoot: "/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", missing: false, worktrees: [wt("/wt/oak", "oak"), wt("/wt/elm", "elm")], found: [] }];
+const repos: RepoView[] = [{ id: "x", shortName: "xdev", path: "/r/x", baseRef: "origin/main", worktreeRoot: "/wt", setupPolicy: "ask", scriptSource: "auto", localSetup: "", localArchive: "", docsDir: "docs", color: null, icon: null, ghAccount: null, localIssueCommand: "", missing: false, worktrees: [wt("/wt/oak", "oak"), wt("/wt/elm", "elm")], found: [] }];
 
 function srow(key: string, worktree: string | null, last: number, title: string | null = key, resumable = true): SessionRow {
   return { session: { key, id: key, agent: "claude", branch: "main", title, last } as unknown as SessionRow["session"], worktree, repo: null, resumable };

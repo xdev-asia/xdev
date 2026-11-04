@@ -26,7 +26,9 @@ import { SettingsView } from "@/settings/SettingsView";
 import { resetStatusSettings } from "@/status/statusSettings";
 import { BellMenu } from "./BellMenu";
 import { Sessions } from "./sessions";
+import * as agentPrompt from "./agentPrompt";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
+import { AccountSwitchDialog } from "./AccountSwitchDialog";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeList } from "./WorktreeList";
@@ -69,6 +71,9 @@ vi.mock("@/keys/keymap", async (original) => ({
 }));
 const termKey = vi.hoisted(() => ({ host: null as null | { t: (k: string) => string; openShortcuts: (a: string) => void } }));
 vi.mock("@/keys/terminalKey", async (original) => ({ ...await original<typeof import("@/keys/terminalKey")>(), setTerminalKeyHost: (h: typeof termKey.host) => { termKey.host = h; } }));
+// The switch watcher is outside what the shell tests drive; what it asks is fed in by hand.
+const flow = vi.hoisted(() => ({ ask: null as null | ((p: unknown) => void) }));
+vi.mock("./accountSwitchFlow", async (original) => ({ ...await original<typeof import("./accountSwitchFlow")>(), watchAccountSwitch: (o: { ask(p: unknown): void }) => { flow.ask = o.ask; return { stop() {} }; } }));
 // xterm needs a real canvas; the terminals are tested on their own.
 vi.mock("@/terminal/Terminal", () => ({ Terminal: () => null }));
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
@@ -1046,7 +1051,7 @@ it("default tabs: they wait for the setup tab; a failed setup opens none and the
 it("setup after create: a stale hash reopens the prompt with the new text", async () => {
   const v = await created({ setup: "old" }, { setupPolicy: "run" });
   vi.spyOn(v.api, "repoHookTrust").mockRejectedValueOnce({ code: "hook_untrusted" });
-  vi.spyOn(v.api, "repoHooks").mockResolvedValueOnce({ setup: { text: "new", shared: true, hash: "n", trusted: false }, archive: null, waitForSetup: false, policy: "run", parseError: null, detected: null, shared: [], sharedTrusted: false, tabs: [], tabsTrusted: false, sharedHash: null, tabsHash: null, unknown: [], problems: [] });
+  vi.spyOn(v.api, "repoHooks").mockResolvedValueOnce({ setup: { text: "new", shared: true, hash: "n", trusted: false }, archive: null, waitForSetup: false, policy: "run", parseError: null, detected: null, shared: [], sharedTrusted: false, tabs: [], tabsTrusted: false, sharedHash: null, tabsHash: null, unknown: [], problems: [], issueCommand: null, issueCommandHash: null, issueCommandTrusted: false });
   v.trust().props.onTrust();
   await tick();
   expect(v.setupOpens()).toHaveLength(0);
@@ -1250,11 +1255,47 @@ it("the header has back and forward buttons, and the history keys have handlers 
   expect(keymap.handlers["worktree.history.forward"]()).toBe(false);
 });
 
-it("Usage details in the usage popover asks the Kit for the usage tab", async () => {
+it("Usage details in the usage popover opens the Stats & Usage settings section", async () => {
   const view = await harness();
   view.of(LiveWorkspaceFooter)[0].props.onOpenUsage();
   view.draw();
-  expect(view.of(DocsApp)[0].props.kit.open).toMatchObject({ tab: "usage" });
+  expect(view.of(SettingsView)[0].props.initial).toBe("usage");
+});
+
+// Account switches: the dialog, its queue and a failed Use.
+const pending = (to: string) => ({ provider: "claude", from: "claude-2", to, tabIds: [] as string[] });
+it("a second account switch while the dialog is open waits its turn", async () => {
+  const view = await harness();
+  // The effects of a later draw, with the sessions store in place: run them until the watcher is started.
+  flow.ask = null;
+  hooks.effects = [];
+  view.draw();
+  for (const effect of hooks.effects) {
+    if (flow.ask) break;
+    try { effect(); } catch { /* an effect that needs a browser */ }
+  }
+  expect(flow.ask).not.toBeNull();
+  flow.ask!(pending("claude-3"));
+  flow.ask!(pending("claude-4"));
+  view.draw();
+  expect(view.of(AccountSwitchDialog)).toHaveLength(1);
+  expect(view.of(AccountSwitchDialog)[0].props.to).toBe("claude-3");
+  // Answering the first shows the second, then the dialog goes.
+  view.of(AccountSwitchDialog)[0].props.onKeep(false);
+  view.draw();
+  expect(view.of(AccountSwitchDialog)[0].props.to).toBe("claude-4");
+  view.of(AccountSwitchDialog)[0].props.onKeep(false);
+  view.draw();
+  expect(view.of(AccountSwitchDialog)).toHaveLength(0);
+});
+
+it("a failed Use in the usage popover says so in a toast", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "accountActivate").mockRejectedValueOnce({ code: "not_found" });
+  const view = await harness(api);
+  view.of(LiveWorkspaceFooter)[0].props.onUseAccount("claude", "claude-3");
+  await tick();
+  expect(getToasts().some((x) => x.text === en("accounts.switch.failed", { code: "not_found" }))).toBe(true);
 });
 
 // Ctrl+Shift+Backspace, selection and branch review.
@@ -1354,6 +1395,52 @@ it("Start worktree on an issue makes a worktree named from it, links the issue a
   expect(details.mock.calls[0][1]).toEqual({ item: { kind: "issue", url: detail.issue.url, title: detail.issue.title } });
 });
 
+// What the agent is told when a worktree starts from issue 1 of the demo repo.
+async function startedPrompt(api: ReturnType<typeof createMockApi>): Promise<string | undefined> {
+  const send = vi.spyOn(agentPrompt, "sendToOpenedTab").mockResolvedValue(true as never);
+  send.mockClear();
+  // A fresh shell each time: the hook store of this file outlives one `harness`.
+  hooks.values = [];
+  hooks.cursor = 0;
+  hooks.effects = [];
+  await api.profilesDefaults("ask", "codex", null);
+  const view = await harness(api);
+  const detail = await api.issueView("demo-xdev", 1);
+  view.of(IssuesPanel)[0].props.onStart(detail);
+  await settle();
+  await settle();
+  return send.mock.calls.at(-1)?.[3];
+}
+
+it("Start worktree on an issue sends the built-in prompt when no issue command is set", async () => {
+  const prompt = await startedPrompt(createMockApi({}));
+  expect(prompt).toContain("Work on GitHub issue #1");
+});
+
+it("Start worktree on an issue renders this machine's issue command", async () => {
+  const api = createMockApi({});
+  await api.repoUpdate("demo-xdev", { localIssueCommand: "Fix #{number} {title} in {repo} [{labels}] {unknown}" });
+  const detail = await api.issueView("demo-xdev", 1);
+  const prompt = await startedPrompt(api);
+  expect(prompt).toBe(`Fix #1 ${detail.issue.title} in xdev [${detail.issue.labels.join(", ")}] {unknown}`);
+});
+
+it("Start worktree on an issue uses the shared issue command only once trusted, and local wins", async () => {
+  const files = { "/demo/xdev": { issueCommand: "Shared {title}" } };
+  const seeded = () => createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), repoFiles: files } as never });
+  // Not trusted yet: the built-in prompt.
+  expect(await startedPrompt(seeded())).toContain("Work on GitHub issue #1");
+  // Trusted: the shared text.
+  const trusted = seeded();
+  const hash = (await trusted.repoHooks("/demo/xdev")).issueCommandHash!;
+  await trusted.repoHookTrust("/demo/xdev", "issueCommand", hash);
+  const title = (await trusted.issueView("demo-xdev", 1)).issue.title;
+  expect(await startedPrompt(trusted)).toBe(`Shared ${title}`);
+  // A local text wins over the trusted shared one.
+  await trusted.repoUpdate("demo-xdev", { localIssueCommand: "Mine {number}" });
+  expect(await startedPrompt(trusted)).toBe("Mine 1");
+});
+
 it("a second Start worktree on the same issue takes the -2 name", async () => {
   const api = createMockApi({});
   const view = await harness(api);
@@ -1363,4 +1450,21 @@ it("a second Start worktree on the same issue takes the -2 name", async () => {
   view.of(IssuesPanel)[0].props.onStart(detail);
   await settle();
   expect(view.list().props.selected).toBe("/demo/wt/xdev-1-footer-meter-overflows-2");
+});
+
+it("reports its tabs to the app CLI and follows the endpoint's events", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  const { sessions, tab } = attend(view);
+  await vi.waitFor(() => expect(api.__cliReports().at(-1)?.tabs.map((t) => t.id)).toContain(tab.id));
+  // A registry change from the CLI loads the sidebar again.
+  const list = vi.spyOn(api, "workspaceSidebar");
+  api.__cliWorkspaceChanged();
+  await settle();
+  expect(list).toHaveBeenCalledTimes(1);
+  // `--agent` opens the profile in that worktree, not in front.
+  const before = sessions.tabs(OAK).length;
+  api.__cliOpenTab({ worktree: OAK, profile: "claude", prompt: null });
+  await vi.waitFor(() => expect(sessions.tabs(OAK)).toHaveLength(before + 1));
+  expect(sessions.tabs(OAK).at(-1)?.profileId).toBe("claude");
 });

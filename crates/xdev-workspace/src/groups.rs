@@ -38,6 +38,8 @@ pub struct FolderEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "camelCase")]
+// One item per sidebar entry, built once per list call: the size gap costs nothing.
+#[allow(clippy::large_enum_variant)]
 pub enum SidebarItem {
     /// A repo with its kept branches (archived or left by a delete).
     Repo {

@@ -177,6 +177,8 @@ pub struct Ptys {
     host_set: Condvar,
     /// The UI's answer to "On quit: Ask"; none until it answers.
     quit_choice: Mutex<Option<bool>>,
+    /// The folder each PTY started in, so the app CLI knows its caller's worktree.
+    cwds: Mutex<HashMap<String, PathBuf>>,
 }
 
 impl Default for Ptys {
@@ -215,6 +217,7 @@ impl Ptys {
             host: Mutex::new(None),
             host_set: Condvar::new(),
             quit_choice: Mutex::new(None),
+            cwds: Mutex::default(),
         }
     }
 
@@ -289,6 +292,15 @@ impl Ptys {
         self.host_set.notify_all();
     }
 
+    fn cwds(&self) -> MutexGuard<'_, HashMap<String, PathBuf>> {
+        self.cwds.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The folder the PTY `id` started in; none for an unknown id.
+    pub(crate) fn cwd_of(&self, id: &str) -> Option<PathBuf> {
+        self.cwds().get(id).cloned()
+    }
+
     fn passes(&self) -> MutexGuard<'_, HashSet<String>> {
         self.passes.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -328,13 +340,18 @@ impl Ptys {
     }
 
     /// Lets go of `id`: its PTY, for the caller to end, or else the claim of
-    /// a spawn or attach still under way, which then ends what it gets.
+    /// a spawn or attach still under way, which then ends what it gets. The
+    /// one place an id's folder is forgotten.
     fn take(&self, id: &str) -> Option<Box<dyn PtyHandle>> {
-        let mut map = self.map();
-        let handle = map.remove(id);
-        if handle.is_none() && self.claims().remove(id).is_some() {
-            self.claim_ended.notify_all();
-        }
+        let handle = {
+            let mut map = self.map();
+            let handle = map.remove(id);
+            if handle.is_none() && self.claims().remove(id).is_some() {
+                self.claim_ended.notify_all();
+            }
+            handle
+        };
+        self.cwds().remove(id);
         handle
     }
 
@@ -546,6 +563,7 @@ pub(crate) fn spawn_launch(
         "profile": info.profile,
         "info": info,
     });
+    ptys.cwds().insert(id.clone(), cwd.clone());
     let spec = SpawnSpec {
         program,
         args,
@@ -558,9 +576,13 @@ pub(crate) fn spawn_launch(
         on_output: Box::new(on_output),
         on_exit: Box::new(on_exit),
     };
-    let handle = ptys.host().spawn(&id, spec, meta, sink)?;
+    let handle = ptys.host().spawn(&id, spec, meta, sink).inspect_err(|_| {
+        ptys.cwds().remove(&id);
+    })?;
     info.pid = handle.pid();
-    claim.fill(handle)?;
+    claim.fill(handle).inspect_err(|_| {
+        ptys.cwds().remove(&id);
+    })?;
     Ok(info)
 }
 
@@ -685,7 +707,7 @@ pub(crate) fn hook_command(
         HookKind::Setup => (hooks.setup, "setup"),
         HookKind::Archive => (hooks.archive, "archive"),
         // Lists, not scripts: nothing to run.
-        HookKind::Shared | HookKind::Tabs => return Ok(None),
+        HookKind::Shared | HookKind::Tabs | HookKind::IssueCommand => return Ok(None),
     };
     let Some(script) = script else {
         return Ok(None);
@@ -859,8 +881,12 @@ pub fn pty_ack(ptys: State<'_, Ptys>, id: String, n: usize) -> Result<(), CmdErr
 // Off the main thread: ending a process tree waits on taskkill and the console.
 #[tauri::command(async)]
 pub fn pty_kill(ptys: State<'_, Ptys>, id: String) {
+    pty_kill_in(&ptys, &id);
+}
+
+fn pty_kill_in(ptys: &Ptys, id: &str) {
     // An unknown id has already ended. A service PTY ends only on `kill`.
-    let handle = ptys.take(&id);
+    let handle = ptys.take(id);
     if let Some(handle) = handle {
         handle.kill();
     }
@@ -895,7 +921,12 @@ pub fn pty_attach(
     };
     let claim = ptys.claim(&id)?;
     let (handle, attached) = host.attach(&id, from_seq, sink)?;
-    claim.fill(handle)?;
+    if let Some(cwd) = session.meta["worktree"].as_str() {
+        ptys.cwds().insert(id.clone(), PathBuf::from(cwd));
+    }
+    claim.fill(handle).inspect_err(|_| {
+        ptys.cwds().remove(&id);
+    })?;
     Ok(PtyAttached {
         info: info_of(&id, &session),
         seq: attached.seq,
@@ -1476,7 +1507,12 @@ mod tests {
             let ptys = self.ptys.get().unwrap().upgrade().unwrap();
             let free = ptys.sessions.try_lock().is_ok();
             self.map_free.store(free, Ordering::SeqCst);
+            assert!(ptys.cwd_of(id).is_some());
             assert!(ptys.take(id).is_none());
+            assert!(ptys.cwd_of(id).is_none());
+            // As an attach would, record the folder after the id was let go:
+            // the failed fill must forget it again.
+            ptys.cwds().insert(id.to_owned(), PathBuf::from("late"));
             Ok(Box::new(Held {
                 killed: self.killed.clone(),
                 outlives: true,
@@ -1501,12 +1537,29 @@ mod tests {
         assert!(host.map_free.load(Ordering::SeqCst));
         assert!(host.killed.load(Ordering::SeqCst));
         assert!(ptys.map().is_empty());
+        assert!(ptys.cwd_of("c").is_none());
         // The id is free again.
         ptys.set_host(
             Arc::new(FakeHost::default()),
             ptyd::status(PtydState::Running, None, None),
         );
         start(&ptys, data.path(), "c", launch).0.unwrap();
+    }
+
+    #[test]
+    fn kill_forgets_the_pty_folder() {
+        let data = tempfile::tempdir().unwrap();
+        let ptys = Ptys::default();
+        ptys.set_host(
+            Arc::new(FakeHost::default()),
+            ptyd::status(PtydState::Running, None, None),
+        );
+        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
+        start(&ptys, data.path(), "k", launch).0.unwrap();
+        assert!(ptys.cwd_of("k").is_some());
+        pty_kill_in(&ptys, "k");
+        assert!(ptys.cwd_of("k").is_none());
+        assert!(ptys.map().is_empty());
     }
 
     #[test]
@@ -1725,6 +1778,19 @@ b",
         assert!(!result.unwrap().agent);
         assert!(!data.path().join("audit.jsonl").exists());
         ptys.kill_all();
+    }
+
+    #[test]
+    fn a_pty_remembers_its_cwd_until_killed() {
+        let data = tempfile::tempdir().unwrap();
+        let ptys = Ptys::default();
+        let launch = launch_for(data.path(), "shell", None, None, None).unwrap();
+        let (result, _) = start(&ptys, data.path(), "c", launch);
+        result.unwrap();
+        assert_eq!(ptys.cwd_of("c"), Some(std::env::temp_dir()));
+        assert_eq!(ptys.cwd_of("other"), None);
+        pty_kill_in(&ptys, "c");
+        assert_eq!(ptys.cwd_of("c"), None);
     }
 
     #[test]

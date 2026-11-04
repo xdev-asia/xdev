@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import { ProblemNote } from "@/components/ChangesPanel";
 import { createMockApi, type Api, type WorktreeChange, type WorktreeView } from "@/api";
 import { DiffView } from "@/components/DiffView";
@@ -19,6 +19,7 @@ import { WorktreeTabs } from "./WorktreeTabs";
 import { PaneView } from "./PaneView";
 import { TabStrip } from "./TabStrip";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
+import { DEMO_WORKSPACE } from "@/mockWorkspace";
 
 // Hooks are stubbed only while a component under test is called; each harness keeps its own.
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -511,9 +512,9 @@ it("keeps the agent actions when the git settings cannot be read", async () => {
 // ---- Source control groups ----
 
 const mixed = [
-  { path: "docs/old-notes.md", staged: true, unstaged: false, untracked: false },
-  { path: "src/session.ts", staged: true, unstaged: true, untracked: false },
-  { path: "src/status.ts", staged: false, unstaged: true, untracked: true },
+  { path: "docs/old-notes.md", staged: true, unstaged: false, untracked: false, conflicted: false },
+  { path: "src/session.ts", staged: true, unstaged: true, untracked: false, conflicted: false },
+  { path: "src/status.ts", staged: false, unstaged: true, untracked: true, conflicted: false },
 ];
 const group = (view: ReturnType<typeof changes>, name: string) => view.all().find((n) => n.props["data-group"] === name);
 const inGroup = (view: ReturnType<typeof changes>, name: string) =>
@@ -542,7 +543,7 @@ it("hides an empty group", async () => {
   // Nothing staged in the mock: only Changes.
   expect(group(view, "staged")).toBeUndefined();
   expect(inGroup(view, "changes")).toEqual(FILES);
-  vi.spyOn(api, "worktreeStageState").mockResolvedValue(FILES.map((path) => ({ path, staged: true, unstaged: false, untracked: false })));
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(FILES.map((path) => ({ path, staged: true, unstaged: false, untracked: false, conflicted: false })));
   window.dispatchEvent(new Event("focus"));
   await tick();
   expect(group(view, "changes")).toBeUndefined();
@@ -902,4 +903,123 @@ it("hands the palette its Stage all and Discard all handlers", async () => {
   // Leaving takes them back.
   view.cleanups.forEach((c) => typeof c === "function" && c());
   expect(register).toHaveBeenLastCalledWith(null);
+});
+
+// ---- Conflicts ----
+
+const REBASE = { op: "rebase" as const, files: ["src/session.ts"], onto: "main", step: [3, 7] as [number, number] };
+const conflicted = (state = REBASE) => createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), conflicts: { [OAK]: state } } });
+const sections = (view: ReturnType<typeof changes>) => view.all().filter((n) => n.type === "section").map((n) => n.props["data-group"]);
+const bar = (view: ReturnType<typeof changes>) => view.find((n) => n.props["data-conflict-bar"] !== undefined);
+const barButton = (view: ReturnType<typeof changes>, label: string) => nodes(bar(view)).find((n) => n.type === "button" && n.props.children === label)!;
+const abortDialog = (view: ReturnType<typeof changes>) => view.find((n) => n.type === ConfirmDialog && n.props.confirmLabel === en("conflicts.abort.confirm"))!;
+
+it("shows no Conflicts group and no bar when nothing is in progress", async () => {
+  const view = changes(createMockApi({}));
+  await tick();
+  expect(bar(view)).toBeUndefined();
+  expect(sections(view)).not.toContain("conflicts");
+});
+
+it("puts a Conflicts (N) group first, takes its files out of Changes, and words the operation", async () => {
+  const view = changes(conflicted());
+  await tick();
+  expect(sections(view)[0]).toBe("conflicts");
+  expect(renderToStaticMarkup(group(view, "conflicts") as ReactElement)).toContain(en("conflicts.group", { count: 1 }));
+  expect(nodes(group(view, "conflicts")).filter((n) => n.type === "li")).toHaveLength(1);
+  const changed = nodes(group(view, "changes")).filter((n) => n.type === "li").map((li) => nodes(li).find((n) => n.props.title)!.props.title);
+  expect(changed).not.toContain("src/session.ts");
+  expect(renderToStaticMarkup(bar(view) as ReactElement)).toContain(en("conflicts.op.rebase", { step: 3, total: 7, onto: "main" }));
+});
+
+it("opens a conflicted file in the file tab like any row", async () => {
+  const view = changes(conflicted());
+  await tick();
+  nodes(group(view, "conflicts")).find((n) => n.type === "button" && n.props.title === "src/session.ts")!.props.onClick();
+  await tick();
+  expect(view.onOpenFile).toHaveBeenCalledWith("src/session.ts");
+});
+
+it("has Continue off while a file is conflicted, and on once Stage marks it resolved", async () => {
+  const api = conflicted();
+  const view = changes(api, undefined, { onResolveConflicts: vi.fn() });
+  await tick();
+  expect(barButton(view, en("conflicts.continue")).props.disabled).toBe(true);
+  expect(barButton(view, en("conflicts.resolve")).props.disabled).toBeFalsy();
+  nodes(group(view, "conflicts")).find((n) => n.type === "button" && n.props["aria-label"] === en("conflicts.stage", { path: "src/session.ts" }))!.props.onClick();
+  await tick();
+  // No unmerged file is left, so the group is gone and Continue is on; the file is staged.
+  expect(sections(view)).not.toContain("conflicts");
+  expect(sections(view)).toContain("staged");
+  expect(barButton(view, en("conflicts.continue")).props.disabled).toBe(false);
+});
+
+it("Continue finishes the operation and the bar goes", async () => {
+  const api = conflicted({ ...REBASE, files: [] });
+  const onShipChanged = vi.fn();
+  const cont = vi.spyOn(api, "worktreeConflictContinue");
+  const view = changes(api, undefined, { onShipChanged });
+  await tick();
+  barButton(view, en("conflicts.continue")).props.onClick();
+  await tick();
+  expect(cont).toHaveBeenCalledWith(OAK);
+  expect(bar(view)).toBeUndefined();
+  expect(onShipChanged).toHaveBeenCalled();
+});
+
+it("shows why Continue was refused", async () => {
+  const api = conflicted({ ...REBASE, files: [] });
+  vi.spyOn(api, "worktreeConflictContinue").mockRejectedValue({ code: "still_conflicted" });
+  const view = changes(api);
+  await tick();
+  barButton(view, en("conflicts.continue")).props.onClick();
+  await tick();
+  expect(view.find((n) => n.type === ProblemNote)!.props.problem.code).toBe("still_conflicted");
+});
+
+it("asks before Abort, lists the files, and calls nothing on cancel", async () => {
+  const api = conflicted();
+  const abort = vi.spyOn(api, "worktreeConflictAbort");
+  const view = changes(api);
+  await tick();
+  expect(abortDialog(view).props.open).toBe(false);
+  barButton(view, en("conflicts.abort")).props.onClick();
+  expect(abortDialog(view).props.open).toBe(true);
+  expect(renderToStaticMarkup(abortDialog(view).props.children)).toContain("src/session.ts");
+  abortDialog(view).props.onCancel();
+  await tick();
+  expect(abortDialog(view).props.open).toBe(false);
+  expect(abort).not.toHaveBeenCalled();
+});
+
+it("Abort confirmed goes through with the person's yes and the bar goes", async () => {
+  const api = conflicted();
+  const abort = vi.spyOn(api, "worktreeConflictAbort");
+  const view = changes(api);
+  await tick();
+  barButton(view, en("conflicts.abort")).props.onClick();
+  abortDialog(view).props.onConfirm();
+  await tick();
+  expect(abort).toHaveBeenCalledWith(OAK, true);
+  expect(bar(view)).toBeUndefined();
+  expect(abortDialog(view).props.open).toBe(false);
+});
+
+it("Resolve with agent hands the agent the operation, branch and files; hidden without a handler or with the agent actions off", async () => {
+  const onResolveConflicts = vi.fn();
+  const view = changes(conflicted(), undefined, { onResolveConflicts });
+  await tick();
+  barButton(view, en("conflicts.resolve")).props.onClick();
+  expect(onResolveConflicts).toHaveBeenCalledWith({ branch: "oak", operation: "rebase (step 3 of 7)", files: "src/session.ts", onto: "main" });
+
+  const none = changes(conflicted());
+  await tick();
+  expect(nodes(bar(none)).some((n) => n.props.children === en("conflicts.resolve"))).toBe(false);
+
+  // Settings → Git turns the agent actions off.
+  const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), git: { sourceControlAi: false }, conflicts: { [OAK]: REBASE } } });
+  const off = changes(api, undefined, { onResolveConflicts });
+  await tick();
+  expect(nodes(bar(off)).some((n) => n.props.children === en("conflicts.resolve"))).toBe(false);
+  expect(nodes(bar(off)).some((n) => n.props.children === en("conflicts.abort"))).toBe(true);
 });

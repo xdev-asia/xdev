@@ -30,12 +30,74 @@ pub struct GhOutput {
     pub stderr: String,
 }
 
+/// A login `gh` holds, as one repo is bound to it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct GhAccount {
+    pub host: String,
+    pub user: String,
+}
+
+/// One login `gh auth status` lists.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct GhLogin {
+    pub host: String,
+    pub user: String,
+    /// The login `gh` uses when none is asked for.
+    pub active: bool,
+}
+
 pub trait GhExec {
     fn run(&self, cwd: &Path, args: &[&str], stdin: Option<&str>) -> Result<GhOutput, GitError>;
 }
 
 /// Runs `gh` from `PATH`.
 pub struct SystemGh;
+
+/// A `gh` runner that can set variables for one call's process only.
+pub trait GhEnv {
+    fn run_env(
+        &self,
+        cwd: &Path,
+        args: &[&str],
+        stdin: Option<&str>,
+        env: &[(&str, &str)],
+    ) -> Result<GhOutput, GitError>;
+}
+
+/// Runs every call as one login `gh` holds: before each call it asks
+/// `gh auth token --hostname <host> --user <user>` and runs the call with
+/// that token in the call's own environment. The token is kept nowhere, and a
+/// login `gh` no longer has fails with `gh_account_missing`, never falls back
+/// to the default login.
+pub struct TokenGh<'a, E: GhEnv = SystemGh> {
+    pub inner: &'a E,
+    pub account: GhAccount,
+}
+
+impl<E: GhEnv> GhExec for TokenGh<'_, E> {
+    fn run(&self, cwd: &Path, args: &[&str], stdin: Option<&str>) -> Result<GhOutput, GitError> {
+        let GhAccount { host, user } = &self.account;
+        let asked = self.inner.run_env(
+            cwd,
+            &["auth", "token", "--hostname", host, "--user", user],
+            None,
+            &[],
+        )?;
+        let token = asked.stdout.trim();
+        if asked.status != Some(0) || token.is_empty() {
+            return Err(GitError::GhAccountMissing);
+        }
+        // `GH_TOKEN` is read for github.com only; other hosts have their own pair.
+        let env: Vec<(&str, &str)> = if host == "github.com" {
+            vec![("GH_TOKEN", token)]
+        } else {
+            vec![("GH_ENTERPRISE_TOKEN", token), ("GH_HOST", host)]
+        };
+        self.inner.run_env(cwd, args, stdin, &env)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -272,6 +334,58 @@ pub fn run_failed_log(gh: &dyn GhExec, cwd: &Path, link: &str) -> Result<Option<
         start += 1;
     }
     Ok(Some(format!("[cut]\n{}", &log[start..])))
+}
+
+/// Every login `gh auth status` lists, in its order. A login whose token
+/// failed is left out: no call could run as it. Empty when `gh` is signed in
+/// nowhere, or when its text is not one this parser knows; only a missing
+/// `gh` (or a timeout) is an error.
+pub fn gh_logins(gh: &dyn GhExec) -> Result<Vec<GhLogin>, GitError> {
+    let out = gh.run(Path::new("."), &["auth", "status"], None)?;
+    // Newer gh writes the report to stdout, older ones to stderr.
+    let text = format!("{}\n{}", out.stdout, out.stderr);
+    let mut logins: Vec<GhLogin> = Vec::new();
+    let mut marked = false;
+    // Whether the last account line was a usable login.
+    let mut last_ok = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(rest) = line
+            .strip_prefix('\u{2713}')
+            .map(str::trim_start)
+            .and_then(|l| l.strip_prefix("Logged in to "))
+        {
+            // `<host> account <user> (<store>)`, or `<host> as <user> (<store>)` before gh 2.40.
+            let mut words = rest.split_whitespace();
+            let (Some(host), Some(sep), Some(user)) = (words.next(), words.next(), words.next())
+            else {
+                last_ok = false;
+                continue;
+            };
+            last_ok = matches!(sep, "account" | "as");
+            if last_ok {
+                logins.push(GhLogin {
+                    host: host.to_owned(),
+                    user: user.to_owned(),
+                    active: false,
+                });
+            }
+        } else if line.contains("Failed to log in to ") {
+            last_ok = false;
+        } else if let Some(value) = line.strip_prefix("- Active account:") {
+            marked = true;
+            if last_ok && let Some(login) = logins.last_mut() {
+                login.active = value.trim() == "true";
+            }
+        }
+    }
+    if !marked {
+        // No marker: one login per host, and that one is the active one.
+        for login in &mut logins {
+            login.active = true;
+        }
+    }
+    Ok(logins)
 }
 
 pub fn pr_open_web(gh: &dyn GhExec, cwd: &Path, checks: bool) -> Result<(), GitError> {
@@ -518,6 +632,18 @@ fn spawn_error(e: io::Error) -> GitError {
 
 impl GhExec for SystemGh {
     fn run(&self, cwd: &Path, args: &[&str], stdin: Option<&str>) -> Result<GhOutput, GitError> {
+        self.run_env(cwd, args, stdin, &[])
+    }
+}
+
+impl GhEnv for SystemGh {
+    fn run_env(
+        &self,
+        cwd: &Path,
+        args: &[&str],
+        stdin: Option<&str>,
+        env: &[(&str, &str)],
+    ) -> Result<GhOutput, GitError> {
         // A missing folder would otherwise read as "gh is not installed".
         if !cwd.is_dir() {
             return Err(GitError::Io(io::Error::new(
@@ -531,6 +657,7 @@ impl GhExec for SystemGh {
             .env("GH_PROMPT_DISABLED", "1")
             .env("GH_NO_UPDATE_NOTIFIER", "1")
             .env("NO_COLOR", "1")
+            .envs(env.iter().copied())
             .stdin(if stdin.is_some() {
                 Stdio::piped()
             } else {
@@ -1019,5 +1146,264 @@ mod tests {
             run_failed_log(&fake, cwd(), link),
             Err(GitError::GhAuth)
         ));
+    }
+
+    // Recorded from `gh auth status`; the exact text differs between gh versions.
+    const STATUS_ONE: &str = "github.com
+  \u{2713} Logged in to github.com account octocat (keyring)
+  - Active account: true
+  - Git operations protocol: https
+  - Token: gho_************************************
+  - Token scopes: 'gist', 'read:org', 'repo'
+";
+    const STATUS_TWO: &str = "github.com
+  \u{2713} Logged in to github.com account work-me (keyring)
+  - Active account: true
+  - Git operations protocol: https
+  - Token: gho_************************************
+
+  \u{2713} Logged in to github.com account me (keyring)
+  - Active account: false
+  - Git operations protocol: ssh
+  - Token: gho_************************************
+
+git.corp.example
+  \u{2713} Logged in to git.corp.example account corp-me (keyring)
+  - Active account: true
+";
+    // Before gh 2.40: one login per host, no active marker, on stderr.
+    const STATUS_OLD: &str = "github.com
+  \u{2713} Logged in to github.com as octocat (oauth_token)
+  \u{2713} Git operations for github.com configured to use https protocol.
+  \u{2713} Token: *******************
+";
+    const STATUS_BROKEN: &str = "github.com
+  X Failed to log in to github.com account stale (keyring)
+  - Active account: true
+  - The token in keyring is invalid.
+
+  \u{2713} Logged in to github.com account fine (keyring)
+  - Active account: false
+";
+
+    fn login(host: &str, user: &str, active: bool) -> GhLogin {
+        GhLogin {
+            host: host.into(),
+            user: user.into(),
+            active,
+        }
+    }
+
+    #[test]
+    fn gh_logins_reads_one_host_one_user() {
+        let fake = Fake::new(vec![out(0, STATUS_ONE, "")]);
+        assert_eq!(
+            gh_logins(&fake).unwrap(),
+            vec![login("github.com", "octocat", true)]
+        );
+        assert_eq!(fake.calls.borrow()[0].0, ["auth", "status"]);
+    }
+
+    #[test]
+    fn gh_logins_reads_every_host_and_user_with_the_active_marker() {
+        let fake = Fake::new(vec![out(0, STATUS_TWO, "")]);
+        assert_eq!(
+            gh_logins(&fake).unwrap(),
+            vec![
+                login("github.com", "work-me", true),
+                login("github.com", "me", false),
+                login("git.corp.example", "corp-me", true),
+            ]
+        );
+    }
+
+    #[test]
+    fn gh_logins_reads_the_old_format_from_stderr() {
+        let fake = Fake::new(vec![out(0, "", STATUS_OLD)]);
+        assert_eq!(
+            gh_logins(&fake).unwrap(),
+            vec![login("github.com", "octocat", true)]
+        );
+    }
+
+    #[test]
+    fn gh_logins_skips_a_login_whose_token_failed() {
+        let fake = Fake::new(vec![out(1, STATUS_BROKEN, "")]);
+        assert_eq!(
+            gh_logins(&fake).unwrap(),
+            vec![login("github.com", "fine", false)]
+        );
+    }
+
+    #[test]
+    fn gh_logins_is_empty_when_not_logged_in_or_unreadable() {
+        let fake = Fake::new(vec![
+            out(
+                1,
+                "",
+                "You are not logged into any GitHub hosts. To log in, run: gh auth login\n",
+            ),
+            out(0, "something new and unexpected\n", ""),
+        ]);
+        assert_eq!(gh_logins(&fake).unwrap(), vec![]);
+        assert_eq!(gh_logins(&fake).unwrap(), vec![]);
+    }
+
+    #[test]
+    fn gh_logins_passes_on_a_missing_gh() {
+        struct Gone;
+        impl GhExec for Gone {
+            fn run(&self, _: &Path, _: &[&str], _: Option<&str>) -> Result<GhOutput, GitError> {
+                Err(GitError::GhMissing)
+            }
+        }
+        assert!(matches!(gh_logins(&Gone), Err(GitError::GhMissing)));
+    }
+
+    type EnvCall = (Vec<String>, Vec<(String, String)>);
+
+    // A fake that also records the environment each call was given.
+    struct EnvFake {
+        calls: RefCell<Vec<EnvCall>>,
+        script: RefCell<VecDeque<GhOutput>>,
+    }
+
+    impl EnvFake {
+        fn new(script: Vec<GhOutput>) -> EnvFake {
+            EnvFake {
+                calls: RefCell::new(Vec::new()),
+                script: RefCell::new(script.into()),
+            }
+        }
+    }
+
+    impl GhEnv for EnvFake {
+        fn run_env(
+            &self,
+            _: &Path,
+            args: &[&str],
+            _: Option<&str>,
+            env: &[(&str, &str)],
+        ) -> Result<GhOutput, GitError> {
+            self.calls.borrow_mut().push((
+                args.iter().map(|s| s.to_string()).collect(),
+                env.iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            ));
+            Ok(self.script.borrow_mut().pop_front().expect("scripted"))
+        }
+    }
+
+    fn account(host: &str, user: &str) -> GhAccount {
+        GhAccount {
+            host: host.into(),
+            user: user.into(),
+        }
+    }
+
+    #[test]
+    fn token_gh_asks_for_the_token_then_runs_with_it() {
+        let inner = EnvFake::new(vec![out(0, "gho_secret\n", ""), out(0, "[]", "")]);
+        let gh = TokenGh {
+            inner: &inner,
+            account: account("github.com", "u"),
+        };
+        assert_eq!(pr_checks(&gh, cwd(), 7).unwrap(), vec![]);
+        let calls = inner.calls.borrow();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(
+            calls[0].0,
+            ["auth", "token", "--hostname", "github.com", "--user", "u"]
+        );
+        assert!(calls[0].1.is_empty(), "the token is asked for without one");
+        assert_eq!(calls[1].0[..2], ["pr", "checks"]);
+        assert_eq!(
+            calls[1].1,
+            [("GH_TOKEN".to_owned(), "gho_secret".to_owned())]
+        );
+    }
+
+    #[test]
+    fn token_gh_asks_for_a_token_on_every_call() {
+        let inner = EnvFake::new(vec![
+            out(0, "t1\n", ""),
+            out(0, "[]", ""),
+            out(0, "t2\n", ""),
+            out(0, "[]", ""),
+        ]);
+        let gh = TokenGh {
+            inner: &inner,
+            account: account("github.com", "u"),
+        };
+        pr_checks(&gh, cwd(), 1).unwrap();
+        pr_checks(&gh, cwd(), 1).unwrap();
+        let calls = inner.calls.borrow();
+        assert_eq!(calls[1].1[0].1, "t1");
+        assert_eq!(calls[3].1[0].1, "t2");
+    }
+
+    #[test]
+    fn token_gh_uses_the_enterprise_variables_off_github_com() {
+        let inner = EnvFake::new(vec![out(0, "tok\n", ""), out(0, "[]", "")]);
+        let gh = TokenGh {
+            inner: &inner,
+            account: account("git.corp.example", "u"),
+        };
+        pr_checks(&gh, cwd(), 1).unwrap();
+        assert_eq!(
+            inner.calls.borrow()[1].1,
+            [
+                ("GH_ENTERPRISE_TOKEN".to_owned(), "tok".to_owned()),
+                ("GH_HOST".to_owned(), "git.corp.example".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn token_gh_refuses_when_the_login_is_gone() {
+        for token_out in [
+            out(1, "", "no oauth token found for github.com account u"),
+            out(0, "  \n", ""),
+        ] {
+            let inner = EnvFake::new(vec![token_out]);
+            let gh = TokenGh {
+                inner: &inner,
+                account: account("github.com", "u"),
+            };
+            let err = pr_checks(&gh, cwd(), 1).unwrap_err();
+            assert_eq!(err.code(), "gh_account_missing");
+            // The call itself never ran, with this or another login.
+            assert_eq!(inner.calls.borrow().len(), 1);
+        }
+    }
+
+    #[test]
+    fn token_gh_passes_on_a_missing_gh_and_never_prints_the_token() {
+        struct Gone;
+        impl GhEnv for Gone {
+            fn run_env(
+                &self,
+                _: &Path,
+                _: &[&str],
+                _: Option<&str>,
+                _: &[(&str, &str)],
+            ) -> Result<GhOutput, GitError> {
+                Err(GitError::GhMissing)
+            }
+        }
+        let gh = TokenGh {
+            inner: &Gone,
+            account: account("github.com", "u"),
+        };
+        assert!(matches!(pr_checks(&gh, cwd(), 1), Err(GitError::GhMissing)));
+        // A failed call's error carries gh's stderr, not the token.
+        let inner = EnvFake::new(vec![out(0, "gho_secret\n", ""), out(1, "", "boom")]);
+        let gh = TokenGh {
+            inner: &inner,
+            account: account("github.com", "u"),
+        };
+        let err = pr_checks(&gh, cwd(), 1).unwrap_err();
+        assert!(!format!("{err} {err:?}").contains("gho_secret"));
     }
 }

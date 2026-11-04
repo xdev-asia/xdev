@@ -17,6 +17,7 @@ mod vaults;
 use std::io;
 use std::path::PathBuf;
 
+pub use xdev_git::GhAccount;
 use xdev_git::GitError;
 
 pub use create::{CreateProject, Created, PROJECT_NAME_MAX, ProjectKind, create_project};
@@ -30,23 +31,24 @@ pub use groups::{
 };
 pub use hooks::{
     DefaultTab, FILE_NAME, HookKind, HookRun, HookScript, RepoHooks, SHARED_MAX, TABS_MAX,
-    TRUST_FILE, detect_setup, hook_env, hooks_for, shared_to_link, trust, trust_hook,
+    TRUST_FILE, detect_setup, effective_issue_command, hook_env, hooks_for, issue_command_for,
+    shared_to_link, trust, trust_hook,
 };
 pub use kept::{
     ARCHIVE_DAYS, KeptBranch, KeptReason, KeptView, archive_worktree, kept_delete, kept_keep,
     kept_list, restore_worktree,
 };
-pub use names::{PrefixIssue, SUFFIX_MAX, normalize_prefix, prefix_issue, suffixed};
+pub use names::{PrefixIssue, SUFFIX_MAX, from_work, normalize_prefix, prefix_issue, suffixed};
 pub use ops::{
     BranchPrefix, COMMENT_MAX, CreateOptions, DetailsPatch, DirEntry, DirListing, ITEM_URL_MAX,
     NamePreview, Removed, RepoPatch, RepoView, TITLE_MAX, WorktreeStat, WorktreeView, add_repo,
     adopt_worktree, create_worktree, create_worktree_linked, create_worktree_with, forget_repo,
-    list, list_dir, name_preview, path_key, refresh_base, remove_worktree, set_details, set_pinned,
-    stat, update_repo, valid_short_name,
+    list, list_dir, name_preview, path_key, refresh_base, remove_worktree, rename_branch,
+    set_details, set_pinned, stat, update_repo, valid_short_name,
 };
 pub use registry::{
-    MadeBy, Registry, RepoEntry, ScriptSource, SetupPolicy, VaultEntry, WorkItem, WorkItemKind,
-    WorkStatus, WorktreeMeta, repo_id,
+    ISSUE_COMMAND_MAX, MadeBy, REPO_COLORS, Registry, RepoEntry, RepoIcon, ScriptSource,
+    SetupPolicy, VaultEntry, WorkItem, WorkItemKind, WorkStatus, WorktreeMeta, repo_id,
 };
 pub use repo_commands::{
     COMMAND_LABEL_MAX, COMMAND_PROMPT_MAX, COMMAND_TEXT_MAX, RepoAction, RepoCommand, RepoCommands,
@@ -58,7 +60,10 @@ pub use search::{
 };
 pub use shared::{Linked, SharedError, link_shared, unlink_shared, validate as validate_shared};
 pub use staging::{STAGING, staging_dir, sweep, sweep_with};
-pub use vaults::{VaultKind, VaultView, add_vault, forget_vault, list_vaults, repo_docs_dir};
+pub use vaults::{
+    VaultKind, VaultView, add_vault, adopt_last_vault, forget_vault, list_vaults, repo_docs_dir,
+    validate_docs_dir,
+};
 
 /// The UI translates `code()`, never the message.
 #[derive(Debug, thiserror::Error)]
@@ -134,6 +139,18 @@ pub enum WorkspaceError {
     /// Already listed as a folder, a repo or a worktree.
     #[error("folder already listed: {0}")]
     FolderExists(String),
+    /// The branch has an upstream; renaming it would break the pull request.
+    #[error("the branch has an upstream: {0}")]
+    BranchPushed(String),
+    /// Not a colour name and not `#rgb` / `#rrggbb`.
+    #[error("not a usable colour: {0}")]
+    BadColor(String),
+    /// Not one emoji.
+    #[error("not a usable icon: {0}")]
+    BadIcon(String),
+    /// A text over its size cap.
+    #[error("too large: {0}")]
+    TooLarge(String),
 }
 
 impl WorkspaceError {
@@ -170,6 +187,10 @@ impl WorkspaceError {
             WorkspaceError::GroupUnknown(_) => "group_unknown",
             WorkspaceError::FolderUnknown(_) => "folder_unknown",
             WorkspaceError::FolderExists(_) => "folder_exists",
+            WorkspaceError::BranchPushed(_) => "branch_pushed",
+            WorkspaceError::BadColor(_) => "bad_color",
+            WorkspaceError::BadIcon(_) => "bad_icon",
+            WorkspaceError::TooLarge(_) => "too_large",
         }
     }
 }

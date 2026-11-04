@@ -33,6 +33,15 @@
   --x-color-warn-soft: var(--warn-bg);
   --x-color-ok: var(--ok);
   --x-color-danger: var(--danger);
+  /* Project colours (RepoBadge): eight names over the palette, so light and dark follow it. */
+  --x-color-tag-slate: var(--text-2);
+  --x-color-tag-red: var(--danger);
+  --x-color-tag-orange: var(--orange);
+  --x-color-tag-yellow: var(--warn);
+  --x-color-tag-green: var(--ok);
+  --x-color-tag-teal: color-mix(in srgb, var(--ok) 50%, var(--signal));
+  --x-color-tag-violet: var(--violet);
+  --x-color-tag-pink: color-mix(in srgb, var(--danger) 50%, var(--violet));
 }
 
 .ws-shell :focus-visible {
@@ -1013,6 +1022,19 @@
   font-size: 10px;
   font-weight: 600;
   line-height: 16px;
+}
+
+.ws-tab-cache {
+  flex: none;
+  font-family: var(--x-font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--x-color-muted);
+}
+
+.ws-tab-cache-cold {
+  font-family: inherit;
+  text-transform: uppercase;
 }
 
 .ws-tab-skip-dot {
@@ -2871,6 +2893,14 @@ button.ws-tree-row:focus-visible {
   font-size: 11px;
 }
 
+/* A worktree the app CLI made or changed: plain text, no colour of its own. */
+.ws-wt-cli {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
 .ws-work-item {
   cursor: pointer;
 }
@@ -3085,4 +3115,166 @@ button.ws-tree-row:focus-visible {
 
 .ws-issue[data-state="closed"] .ws-checks-title {
   color: var(--text-2);
+}
+
+.ws-branch-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-branch-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ws-branch-prefix {
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* The operation in progress: a plain bar, no coloured stripe. */
+.ws-conflict-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.ws-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ws-conflict-actions [data-danger] {
+  color: var(--danger);
+}
+
+.ws-conflict-files {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  max-height: 160px;
+  overflow: auto;
+  color: var(--text-2);
+}
+
+/* Project badge: the colour and icon of a project. A preset reads a token; a custom hex is set inline. */
+
+.ws-badge {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: var(--radius-s);
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+
+.ws-badge-sm {
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+}
+
+.ws-badge-md {
+  width: 22px;
+  height: 22px;
+  font-size: 13px;
+}
+
+/* The fill is bright in dark and deep in light, so the page background is the readable ink. */
+.ws-badge[class*="ws-badge-tag-"] {
+  color: var(--bg-0);
+}
+
+.ws-badge[data-ink="dark"] {
+  color: var(--badge-ink-dark);
+}
+
+.ws-badge[data-ink="light"] {
+  color: var(--badge-ink-light);
+}
+
+.ws-badge-tag-slate {
+  background: var(--x-color-tag-slate);
+}
+
+.ws-badge-tag-red {
+  background: var(--x-color-tag-red);
+}
+
+.ws-badge-tag-orange {
+  background: var(--x-color-tag-orange);
+}
+
+.ws-badge-tag-yellow {
+  background: var(--x-color-tag-yellow);
+}
+
+.ws-badge-tag-green {
+  background: var(--x-color-tag-green);
+}
+
+.ws-badge-tag-teal {
+  background: var(--x-color-tag-teal);
+}
+
+.ws-badge-tag-violet {
+  background: var(--x-color-tag-violet);
+}
+
+.ws-badge-tag-pink {
+  background: var(--x-color-tag-pink);
+}
+
+/* The project chip: badge and short name on a row, and the Pinned group's heading mark. */
+.ws-tag-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ws-group-pinned .ws-group-head .ws-pin {
+  flex-shrink: 0;
+  color: var(--text-2);
+}
+
+.ws-repo .ws-badge {
+  margin-right: 6px;
+}
+
+.ws-usage-active {
+  color: var(--x-color-ok);
+  font-weight: 600;
+}
+
+.ws-usage-use {
+  margin-left: auto;
+}
+
+.ws-switch-list {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.ws-switch-working {
+  color: var(--x-color-warn);
+  font-size: 0.9em;
 }

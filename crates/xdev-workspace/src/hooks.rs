@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use crate::ops::strip_prefix;
 use crate::registry::write_atomic;
 use crate::shared::validate;
-use crate::{Registry, RepoEntry, ScriptSource, SetupPolicy, WorkspaceError, path_key};
+use crate::{
+    ISSUE_COMMAND_MAX, Registry, RepoEntry, ScriptSource, SetupPolicy, WorkspaceError, path_key,
+};
 
 /// The shared repo file, at the worktree root.
 pub const FILE_NAME: &str = "xdev.toml";
@@ -54,6 +56,13 @@ pub struct RepoHooks {
     pub unknown: Vec<String>,
     /// Entries left out by validation, each with the reason.
     pub problems: Vec<String>,
+    /// `issue_command`: the shared prompt template for a worktree started
+    /// from an issue; `None` when absent or blank.
+    pub issue_command: Option<String>,
+    /// Blake3 hex of `issue_command`.
+    pub issue_command_hash: Option<String>,
+    /// There is a shared command and the person trusted this hash.
+    pub issue_command_trusted: bool,
 }
 
 /// One `[[tabs]]` entry.
@@ -90,6 +99,9 @@ pub enum HookKind {
     Shared,
     /// The `[[tabs]]` list; trusted like a script.
     Tabs,
+    /// The `issue_command` prompt template; trusted like a script.
+    #[serde(rename = "issueCommand")]
+    IssueCommand,
 }
 
 /// What a headless hook run did.
@@ -116,6 +128,8 @@ pub(crate) struct SharedFile {
     pub wait_for_setup: bool,
     /// `[worktree] shared`, validated, without repeats.
     pub shared: Vec<String>,
+    /// `issue_command`, when not blank.
+    pub issue_command: Option<String>,
     /// `[[tabs]]`, valid entries only.
     pub tabs: Vec<DefaultTab>,
     /// One line per `shared` or `tabs` entry left out.
@@ -202,6 +216,18 @@ pub(crate) fn read_file(path: &Path) -> Result<Option<SharedFile>, String> {
             }
             // Read by `repo_commands`.
             "commands" => {}
+            "issue_command" => {
+                let toml::Value::String(text) = value else {
+                    return Err("issue_command must be a string".into());
+                };
+                if text.len() > ISSUE_COMMAND_MAX {
+                    return Err(format!(
+                        "issue_command is over {} KiB",
+                        ISSUE_COMMAND_MAX / 1024
+                    ));
+                }
+                out.issue_command = Some(text).filter(|t| !blank(t));
+            }
             "worktree" => {
                 let toml::Value::Table(worktree) = value else {
                     return Err("[worktree] must be a table".into());
@@ -449,6 +475,7 @@ pub fn hooks_for(
     } else {
         None
     };
+    let issue_command_hash = file.issue_command.as_deref().map(hash_of);
     let shared_hash = list_hash(&file.shared);
     let tabs_hash = list_hash(&file.tabs);
     let trusted = |kind: TrustKind, hash: &Option<String>| {
@@ -464,6 +491,9 @@ pub fn hooks_for(
         detected,
         shared_trusted: trusted(TrustKind::Shared, &shared_hash),
         tabs_trusted: trusted(TrustKind::Tabs, &tabs_hash),
+        issue_command_trusted: trusted(TrustKind::IssueCommand, &issue_command_hash),
+        issue_command: file.issue_command,
+        issue_command_hash,
         shared: file.shared,
         tabs: file.tabs,
         shared_hash,
@@ -491,6 +521,7 @@ pub(crate) enum TrustKind {
     Commands,
     Shared,
     Tabs,
+    IssueCommand,
 }
 
 impl From<HookKind> for TrustKind {
@@ -500,6 +531,7 @@ impl From<HookKind> for TrustKind {
             HookKind::Archive => TrustKind::Archive,
             HookKind::Shared => TrustKind::Shared,
             HookKind::Tabs => TrustKind::Tabs,
+            HookKind::IssueCommand => TrustKind::IssueCommand,
         }
     }
 }
@@ -581,11 +613,12 @@ pub fn trust_hook(
     let script = match kind {
         HookKind::Setup => &hooks.setup,
         HookKind::Archive => &hooks.archive,
-        HookKind::Shared | HookKind::Tabs => &None,
+        HookKind::Shared | HookKind::Tabs | HookKind::IssueCommand => &None,
     };
     let current = match kind {
         HookKind::Shared => hooks.shared_hash.as_deref(),
         HookKind::Tabs => hooks.tabs_hash.as_deref(),
+        HookKind::IssueCommand => hooks.issue_command_hash.as_deref(),
         HookKind::Setup | HookKind::Archive => script
             .as_ref()
             .filter(|s| s.shared)
@@ -604,7 +637,40 @@ pub(crate) fn kind_name(kind: HookKind) -> &'static str {
         HookKind::Archive => "archive",
         HookKind::Shared => "shared",
         HookKind::Tabs => "tabs",
+        HookKind::IssueCommand => "issue command",
     }
+}
+
+/// The prompt template a worktree started from an issue uses: this machine's
+/// text when it is not blank, else the shared `issue_command` when the person
+/// trusted exactly it, else none.
+pub fn effective_issue_command(local: &str, hooks: &RepoHooks) -> Option<String> {
+    if !blank(local) {
+        return Some(local.to_owned());
+    }
+    hooks
+        .issue_command
+        .clone()
+        .filter(|_| hooks.issue_command_trusted)
+}
+
+/// `effective_issue_command` for a repo: its local text, else the shared
+/// command in the primary checkout's `xdev.toml`.
+pub fn issue_command_for(
+    reg: &Registry,
+    data: &Path,
+    repo_id: &str,
+) -> Result<Option<String>, WorkspaceError> {
+    let repo = reg
+        .repos
+        .iter()
+        .find(|r| r.id == repo_id)
+        .ok_or_else(|| WorkspaceError::RepoUnknown(repo_id.to_owned()))?;
+    if !blank(&repo.local_issue_command) {
+        return Ok(Some(repo.local_issue_command.clone()));
+    }
+    let hooks = hooks_for(reg, data, &repo.path)?;
+    Ok(effective_issue_command("", &hooks))
 }
 
 /// `XDEV_ROOT_PATH`, `XDEV_WORKTREE_PATH` and `XDEV_WORKSPACE_NAME` for a
@@ -1198,5 +1264,134 @@ run = \"make test\"
 
         let err = hook_env(&f.reg, &f.data).unwrap_err();
         assert_eq!(err.code(), "worktree_unknown");
+    }
+
+    #[test]
+    fn issue_command_is_read_from_xdev_toml() {
+        let f = fixture();
+        f.write(&f.worktree, FILE);
+        let hooks = f.hooks();
+        assert_eq!(hooks.issue_command, None);
+        assert_eq!(hooks.issue_command_hash, None);
+        assert!(!hooks.issue_command_trusted);
+
+        f.write(
+            &f.worktree,
+            "issue_command = \"Fix #{number}: {title}\\n\\n{body}\"\n",
+        );
+        let hooks = f.hooks();
+        assert_eq!(
+            hooks.issue_command.as_deref(),
+            Some("Fix #{number}: {title}\n\n{body}")
+        );
+        assert_eq!(hooks.issue_command_hash.unwrap().len(), 64);
+        assert!(hooks.parse_error.is_none() && hooks.unknown.is_empty());
+
+        // A blank command is no command.
+        f.write(&f.worktree, "issue_command = \"  \\n\"\n");
+        let hooks = f.hooks();
+        assert_eq!(
+            (hooks.issue_command, hooks.issue_command_hash),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn issue_command_must_be_a_string_within_the_cap() {
+        let f = fixture();
+        f.write(&f.worktree, "issue_command = 5\n");
+        assert!(f.hooks().parse_error.unwrap().contains("issue_command"));
+        let big = "x".repeat(crate::ISSUE_COMMAND_MAX + 1);
+        f.write(&f.worktree, &format!("issue_command = \"{big}\"\n"));
+        let hooks = f.hooks();
+        assert!(hooks.parse_error.unwrap().contains("issue_command"));
+        assert_eq!(hooks.issue_command, None);
+        let fits = "x".repeat(crate::ISSUE_COMMAND_MAX);
+        f.write(&f.worktree, &format!("issue_command = \"{fits}\"\n"));
+        assert!(f.hooks().parse_error.is_none());
+    }
+
+    #[test]
+    fn issue_command_trust_follows_the_content() {
+        let f = fixture();
+        f.write(&f.worktree, "issue_command = \"Fix {title}\"\n");
+        let hooks = f.hooks();
+        assert!(!hooks.issue_command_trusted);
+        let hash = hooks.issue_command_hash.unwrap();
+        let after = f.trust(HookKind::IssueCommand, &hash).unwrap();
+        assert!(after.issue_command_trusted);
+        // Trust is per kind: the scripts are not touched.
+        assert!(!after.shared_trusted && !after.tabs_trusted);
+        assert_eq!(f.store().entries.len(), 1);
+
+        f.write(&f.worktree, "issue_command = \"Fix {title} and push\"\n");
+        assert!(!f.hooks().issue_command_trusted);
+
+        // A stale hash, or no command at all, cannot be trusted.
+        assert_eq!(
+            f.trust(HookKind::IssueCommand, &hash).unwrap_err().code(),
+            "hook_untrusted"
+        );
+        f.write(&f.worktree, FILE);
+        assert_eq!(
+            f.trust(HookKind::IssueCommand, "").unwrap_err().code(),
+            "hook_untrusted"
+        );
+    }
+
+    #[test]
+    fn local_issue_command_wins_over_a_trusted_shared_one() {
+        let mut f = fixture();
+        f.write(&f.worktree, "issue_command = \"shared {title}\"\n");
+        let hash = f.hooks().issue_command_hash.unwrap();
+        // Untrusted shared text is not used.
+        assert_eq!(effective_issue_command("", &f.hooks()), None);
+        let trusted = f.trust(HookKind::IssueCommand, &hash).unwrap();
+        assert_eq!(
+            effective_issue_command("", &trusted).as_deref(),
+            Some("shared {title}")
+        );
+        assert_eq!(
+            effective_issue_command("local {title}", &trusted).as_deref(),
+            Some("local {title}")
+        );
+        // Blank local text does not win; local text needs no trust.
+        assert_eq!(
+            effective_issue_command("  \n", &trusted).as_deref(),
+            Some("shared {title}")
+        );
+        f.repo().local_issue_command = "mine".into();
+        f.write(&f.worktree, FILE);
+        let hooks = f.hooks();
+        assert_eq!(
+            issue_command_for(&f.reg, &f.data, &f.reg.repos[0].id)
+                .unwrap()
+                .as_deref(),
+            Some("mine")
+        );
+        assert_eq!(effective_issue_command("", &hooks), None);
+
+        // The repo-level lookup reads the primary checkout's file.
+        f.repo().local_issue_command.clear();
+        f.write(&f.primary, "issue_command = \"from main\"\n");
+        let id = f.reg.repos[0].id.clone();
+        assert_eq!(issue_command_for(&f.reg, &f.data, &id).unwrap(), None);
+        let hash = hooks_for(&f.reg, &f.data, &f.primary)
+            .unwrap()
+            .issue_command_hash
+            .unwrap();
+        trust_hook(
+            &f.reg,
+            &f.data,
+            &f.primary,
+            HookKind::IssueCommand,
+            &hash,
+            1,
+        )
+        .unwrap();
+        assert_eq!(
+            issue_command_for(&f.reg, &f.data, &id).unwrap().as_deref(),
+            Some("from main")
+        );
     }
 }

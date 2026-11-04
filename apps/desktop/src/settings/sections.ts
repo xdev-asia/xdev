@@ -10,6 +10,7 @@ import { QuickCommandsPage } from "./quickCommands/QuickCommandsPage";
 import { ReposSettings } from "./ReposSettings";
 import { ShortcutsPage } from "./shortcuts/ShortcutsPage";
 import { TerminalPage } from "./TerminalPage";
+import { UsagePage } from "./UsagePage";
 import { VaultsSettings } from "./VaultsSettings";
 
 export interface SettingsSectionProps {
@@ -43,6 +44,7 @@ export interface SettingsSection {
 export const SECTIONS: SettingsSection[] = [
   { id: "general", labelKey: "settings.general.title", Component: GeneralPage },
   { id: "agents", labelKey: "settings.agents.title", Component: AgentsPage },
+  { id: "usage", labelKey: "settings.usage.title", Component: UsagePage },
   { id: "notifications", labelKey: "settings.notifications.title", Component: NotificationsPage },
   { id: "terminal", labelKey: "settings.terminal.title", Component: TerminalPage },
   { id: "editor", labelKey: "files.settings.title", Component: EditorPage },

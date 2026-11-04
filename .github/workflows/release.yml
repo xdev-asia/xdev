@@ -11,8 +11,6 @@ on:
 
 permissions:
   contents: read
-  # The build jobs install @xdev-asia/ui from GitHub Packages.
-  packages: read
 
 # A queued run in the same group replaces the pending one, so a manual test
 # build must not share a group with pushes or it drops a release.
@@ -91,6 +89,8 @@ jobs:
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
 
       # The ARM images do not all ship rustup.
       - name: Install rustup if missing
@@ -129,14 +129,11 @@ jobs:
       # it resolve to the version pinned in package.json#packageManager.
       - run: corepack enable
 
-      # pnpm reads registry credentials only from user-level config.
-      - name: Install dependencies
-        run: |
-          echo '//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}' > "$NPM_CONFIG_USERCONFIG"
-          corepack pnpm install --frozen-lockfile
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/.npmrc
+      - name: Check submodule
+        shell: bash
+        run: test -f packages/xdev-ui/package.json || { echo "run: git submodule update --init --recursive"; exit 1; }
+
+      - run: corepack pnpm install --frozen-lockfile
 
       - run: cargo build --release -p xdev-cli --locked --target ${{ matrix.target }}
 

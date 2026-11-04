@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import { createMockApi, type VaultView } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { translate } from "@/i18n";

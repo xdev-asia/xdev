@@ -2,8 +2,10 @@ import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
 import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
-import type { Api, ApiError, Check, Commit, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, Check, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
+import { fromWork } from "@/workspace/branchName";
+import { REPO_COLORS, isHexColor } from "@/workspace/repoIdentity";
 
 type WorkspaceApi = Pick<
   Api,
@@ -13,6 +15,7 @@ type WorkspaceApi = Pick<
   | "repoCreate"
   | "worktreeNamePreview"
   | "repoUpdate"
+  | "ghLogins"
   | "repoHooks"
   | "repoHookTrust"
   | "repoFileCommands"
@@ -63,6 +66,11 @@ type WorkspaceApi = Pick<
   | "worktreeBranches"
   | "worktreeStageState"
   | "worktreeDiscard"
+  | "worktreeRenameBranch"
+  | "worktreeSuggestBranch"
+  | "worktreeConflicts"
+  | "worktreeConflictContinue"
+  | "worktreeConflictAbort"
   | "reviewNotes"
   | "reviewNotesPut"
   | "gitSettings"
@@ -98,10 +106,27 @@ export type MockWorkspaceSeed = {
   folders?: FolderEntry[];
   groups?: RepoGroup[];
   order?: string[];
+  // Worktrees stopped in the middle of a merge, rebase, cherry-pick or revert, by path. The files are
+  // the unmerged ones and should be among the worktree's pending changes.
+  conflicts?: Record<string, ConflictState>;
+  // The first prompt of an agent session, by session id; a worktree path stands for its latest.
+  prompts?: Record<string, string>;
 };
 
 // `ARCHIVE_DAYS` in Rust: archived entries show under Archived this long.
 const ARCHIVE_MS = 7 * 86_400_000;
+// `REPO_COLORS`, `ISSUE_COMMAND_MAX` and the icon rule in Rust.
+const ISSUE_COMMAND_MAX = 64 * 1024;
+function oneEmoji(text: string): boolean {
+  if (new TextEncoder().encode(text).length > 16) return false;
+  const parts = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)];
+  return parts.length === 1 && /\p{Extended_Pictographic}|\p{Regional_Indicator}|^[0-9#*]\uFE0F?\u20E3$/u.test(text);
+}
+// What `gh auth status` lists in the demo: two logins on one host.
+const ghLogins: GhLogin[] = [
+  { host: "github.com", user: "work-me", active: true },
+  { host: "github.com", user: "me", active: false },
+];
 // `TITLE_MAX` and `COMMENT_MAX` in Rust.
 const TITLE_MAX = 120;
 const COMMENT_MAX = 2000;
@@ -127,6 +152,8 @@ export type MockRepoFile = {
   tabs?: DefaultTab[];
   unknown?: string[];
   problems?: string[];
+  // `issue_command`: the shared prompt template for a worktree started from an issue.
+  issueCommand?: string;
   // Shared paths that fail to link on create, with the error.
   linkErrors?: Record<string, string>;
 };
@@ -155,6 +182,11 @@ export const DEMO_WORKSPACE: MockWorkspaceSeed = {
       scriptSource: "auto",
       localSetup: "",
       localArchive: "",
+      docsDir: "docs",
+      color: "teal",
+      icon: { kind: "emoji", value: "🚀" },
+      ghAccount: null,
+      localIssueCommand: "",
       missing: false,
       worktrees: [
         worktree("/demo/xdev", "xdev", "main", true),
@@ -241,6 +273,16 @@ function demoStat(pending: WorktreeChange[]): WorktreeStat {
 
 // R3: 1-40 characters, `[a-z0-9]` first, then `[a-z0-9._-]`.
 const SHORT_NAME = /^[a-z0-9][a-z0-9._-]{0,39}$/;
+
+// The docs folder as the backend keeps it: "/" separators, no "." parts, "" for the default.
+// `null` for a root, a drive or a ".." part.
+function docsDirOf(raw: string): string | null {
+  const text = raw.trim().replace(/\\/g, "/");
+  if (text.startsWith("/") || /^[A-Za-z]:/.test(text)) return null;
+  const parts = text.split("/").filter((p) => p !== "" && p !== ".");
+  if (parts.includes("..") || (text !== "" && parts.length === 0)) return null;
+  return parts.join("/");
+}
 
 function trimPath(path: string): string {
   return path.trim().replace(/[\\/]+$/, "");
@@ -352,7 +394,7 @@ export function createMockWorkspace(
   }
 
   function repoVault(repo: RepoView): VaultView {
-    return { id: `repo:${repo.id}`, kind: "repo", path: `${repo.path}/docs`, name: repo.shortName, repoId: repo.id, exists: docs.has(repo.id) };
+    return { id: `repo:${repo.id}`, kind: "repo", path: `${repo.path}/${repo.docsDir}`, name: repo.shortName, repoId: repo.id, exists: docs.has(repo.id) };
   }
 
   function sharedVault(path: string): VaultView {
@@ -370,6 +412,7 @@ export function createMockWorkspace(
   const hooks = new Map<string, string>(Object.entries(seed.hookFailure ?? {}));
   const remotes = new Map<string, Remote>();
   const stagedFiles = new Map<string, Set<string>>();
+  const conflicts = new Map<string, ConflictState>(Object.entries(structuredClone(seed.conflicts ?? {})));
   const notes = new Map<string, ReviewNote[]>();
 
   function remoteOf(path: string): Remote {
@@ -471,7 +514,15 @@ export function createMockWorkspace(
       tabsHash,
       unknown: [...(file?.unknown ?? [])],
       problems: [...(file?.problems ?? [])],
+      ...issueOf(repo, file),
     };
+  }
+
+  // `issue_command` of xdev.toml: blank is none, trusted by hash like the scripts.
+  function issueOf(repo: RepoView, file: MockRepoFile | undefined) {
+    const text = file?.issueCommand !== undefined && file.issueCommand.trim() !== "" ? file.issueCommand : null;
+    const hash = text === null ? null : mockHash(text);
+    return { issueCommand: text, issueCommandHash: hash, issueCommandTrusted: hash !== null && trusted.has(`${repo.id}:issueCommand:${hash}`) };
   }
 
   function hooksOf(path: string): { repo: RepoView; file: MockRepoFile | undefined; hooks: RepoHooks } | null {
@@ -545,6 +596,11 @@ export function createMockWorkspace(
       scriptSource: "auto",
       localSetup: "",
       localArchive: "",
+      docsDir: "docs",
+      color: null,
+      icon: null,
+      ghAccount: null,
+      localIssueCommand: "",
       missing: false,
       worktrees: [worktree(root, shortName, "main", true)],
       found: [],
@@ -584,6 +640,8 @@ export function createMockWorkspace(
       const repo = repos.find((r) => r.id === id);
       if (!repo) return reject("repo_unknown", id);
       const { shortName, baseRef, worktreeRoot } = patch;
+      const docsDir = patch.docsDir === undefined ? undefined : docsDirOf(patch.docsDir);
+      if (docsDir === null) return reject("bad_path", patch.docsDir ?? "");
       if (shortName !== undefined) {
         if (!SHORT_NAME.test(shortName)) return reject("bad_name", shortName);
         if (repos.some((r) => r.id !== id && r.shortName === shortName)) return reject("short_name_taken", shortName);
@@ -592,14 +650,26 @@ export function createMockWorkspace(
       if (worktreeRoot !== undefined && (!isAbsolute(worktreeRoot) || within(trimPath(worktreeRoot), repo.path))) {
         return reject("bad_path", worktreeRoot);
       }
+      const { color, icon, localIssueCommand } = patch;
+      if (typeof color === "string" && !(REPO_COLORS as readonly string[]).includes(color) && !isHexColor(color)) return reject("bad_color", color);
+      if (icon?.kind === "emoji" && !oneEmoji(icon.value)) return reject("bad_icon", icon.value);
+      if (localIssueCommand !== undefined && new TextEncoder().encode(localIssueCommand).length > ISSUE_COMMAND_MAX) return reject("too_large", "issue command");
       if (shortName !== undefined) repo.shortName = shortName;
       if (baseRef !== undefined) repo.baseRef = baseRef;
       if (worktreeRoot !== undefined) repo.worktreeRoot = trimPath(worktreeRoot);
+      if (docsDir !== undefined) repo.docsDir = docsDir === "" ? "docs" : docsDir;
       if (patch.setupPolicy !== undefined) repo.setupPolicy = patch.setupPolicy;
       if (patch.scriptSource !== undefined) repo.scriptSource = patch.scriptSource;
       if (patch.localSetup !== undefined) repo.localSetup = patch.localSetup;
       if (patch.localArchive !== undefined) repo.localArchive = patch.localArchive;
+      if (color !== undefined) repo.color = color;
+      if (icon !== undefined) repo.icon = icon;
+      if (patch.ghAccount !== undefined) repo.ghAccount = patch.ghAccount;
+      if (localIssueCommand !== undefined) repo.localIssueCommand = localIssueCommand;
       return structuredClone(repo);
+    },
+    async ghLogins() {
+      return structuredClone(ghLogins);
     },
     async repoHooks(path) {
       const found = hooksOf(path);
@@ -609,8 +679,8 @@ export function createMockWorkspace(
     async repoHookTrust(path, kind, hash) {
       const found = hooksOf(path);
       if (!found) return reject("worktree_unknown", path);
-      if (kind === "shared" || kind === "tabs") {
-        const current = kind === "shared" ? found.hooks.sharedHash : found.hooks.tabsHash;
+      if (kind === "shared" || kind === "tabs" || kind === "issueCommand") {
+        const current = kind === "shared" ? found.hooks.sharedHash : kind === "tabs" ? found.hooks.tabsHash : found.hooks.issueCommandHash;
         if (current === null || current !== hash) return reject("hook_untrusted", kind);
         trusted.add(`${found.repo.id}:${kind}:${hash}`);
         return hooksOf(path)!.hooks;
@@ -717,6 +787,7 @@ export function createMockWorkspace(
       const { branch, folder } = named;
       const parent = repo.path.replace(/[\/][^\/]*$/, "");
       const wt = worktree(`${parent}/wt/${repo.shortName}-${folder}`, folder, branch, false);
+      wt.autoName = typed === "";
       if (typed !== "" && (named.suffixed || /\p{Extended_Pictographic}/u.test(typed))) wt.title = [...typed].slice(0, TITLE_MAX).join("");
       repo.worktrees.push(wt);
       // As `shared_to_link`: the primary checkout's list, and only when it is trusted.
@@ -955,12 +1026,15 @@ export function createMockWorkspace(
         else set.delete(f);
       }
       stagedFiles.set(path, set);
+      // Staging an unmerged file is what marks it resolved.
+      const open = conflicts.get(path);
+      if (open && staged) open.files = open.files.filter((f) => !files.includes(f));
     },
     async worktreeStageState(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);
       return (changes.get(path) ?? []).map((c) => {
         const staged = stagedFiles.get(path)?.has(c.path) ?? false;
-        return { path: c.path, staged, unstaged: !staged, untracked: !staged && c.kind === "added" };
+        return { path: c.path, staged, unstaged: !staged, untracked: !staged && c.kind === "added", conflicted: conflicts.get(path)?.files.includes(c.path) ?? false };
       });
     },
     async worktreeDiscard(path, files, stagedToo, confirmed) {
@@ -974,6 +1048,53 @@ export function createMockWorkspace(
       for (const f of gone) set.delete(f);
       stagedFiles.set(path, set);
       changes.set(path, pending.filter((c) => !gone.includes(c.path)));
+    },
+    // As `rename_branch`: the prefix stays, a taken leaf takes `-2`, the folder never moves.
+    async worktreeRenameBranch(path, name) {
+      const found = findWorktree(path);
+      if (!found) return reject("worktree_unknown", path);
+      const { repo, wt } = found;
+      if (wt.primary) return reject("primary_worktree", path);
+      if (wt.branch === null) return reject("detached", path);
+      if (remoteOf(path).tracked) return reject("branch_pushed", wt.branch);
+      const cut = wt.branch.lastIndexOf("/");
+      const prefix = cut < 0 ? "" : wt.branch.slice(0, cut + 1);
+      const leaf = slug(name);
+      if (leaf === "" || leaf.includes("..") || leaf.endsWith("/") || leaf.endsWith(".lock")) return reject("bad_name", name);
+      let chosen: string | null = null;
+      for (let n = 1; n <= 99 && chosen === null; n++) {
+        const candidate = suffixedLeaf(leaf, n);
+        const taken = [...repo.worktrees, ...repo.found].some((w) => w !== wt && w.branch === `${prefix}${candidate}`);
+        if (!taken) chosen = candidate;
+      }
+      if (chosen === null) return reject("branch_exists", `${prefix}${leaf}`);
+      wt.branch = `${prefix}${chosen}`;
+      wt.autoName = false;
+      if (wt.title === null) wt.title = chosen.replace(/[-_/]/g, " ").slice(0, TITLE_MAX);
+      return structuredClone(wt);
+    },
+    async worktreeSuggestBranch(path, session) {
+      const prompt = seed.prompts?.[session ?? path] ?? seed.prompts?.[path];
+      const name = fromWork(prompt ?? "");
+      return name === "" ? reject("bad_name", path) : name;
+    },
+    async worktreeConflicts(path) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      return structuredClone(conflicts.get(path) ?? null);
+    },
+    async worktreeConflictContinue(path) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const state = conflicts.get(path);
+      if (!state) return reject("no_conflict", path);
+      if (state.files.length > 0) return reject("still_conflicted", path);
+      conflicts.delete(path);
+    },
+    async worktreeConflictAbort(path, confirmed) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const state = conflicts.get(path);
+      if (!state) return reject("no_conflict", path);
+      if (!confirmed) return reject("needs_approval", `abort ${state.op}`);
+      conflicts.delete(path);
     },
     async worktreeBranches(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

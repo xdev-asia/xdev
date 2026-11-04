@@ -4,4 +4,13 @@ import type { Recipe } from "./Recipe";
 /**
  * The agent actions of Source Control, each with its own recipe.
  */
-export type GitRecipes = { commitMessage: Recipe, pullRequest: Recipe, fixCommitFailure: Recipe, fixPushFailure: Recipe, fixChecks: Recipe, };
+export type GitRecipes = { commitMessage: Recipe, pullRequest: Recipe, fixCommitFailure: Recipe, fixPushFailure: Recipe, fixChecks: Recipe, 
+/**
+ * Names a branch from the first prompt of its agent.
+ */
+branchName: Recipe, 
+/**
+ * Asks an agent to resolve the conflicts of a merge, rebase, cherry-pick
+ * or revert in progress.
+ */
+resolveConflicts: Recipe, };

@@ -1,4 +1,3 @@
-import { tokensCss } from "@xdev/ui";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { api } from "./api";
@@ -8,6 +7,7 @@ import { I18nProvider } from "./i18n";
 import { startBindingsSync } from "./keys/bindingsStore";
 import { loadStatusSettings } from "./status/statusSettings";
 import { loadTerminalSettings, startSettingsSync } from "./terminal/terminalSettings";
+import "@xdev-asia/ui/styles.css";
 import "./styles/base.css";
 import "./styles/welcome.css";
 import "./styles/shell.css";
@@ -22,14 +22,12 @@ import "./styles/terminal.css";
 import "./styles/workspace.css";
 import "./styles/review.css";
 import "./styles/settings.css";
+import "./styles/usageStats.css";
 import "./styles/quickCommands.css";
 import { startEditorSettingsSync } from "./files/editorSettings";
 import { startNavigationSettingsSync } from "./settings/navigationSettings";
+import { startUsageSync } from "./settings/usageSettings";
 import "./styles/agentSessions.css";
-
-const style = document.createElement("style");
-style.textContent = tokensCss();
-document.head.prepend(style);
 
 // Shared copies load before the first pane; `settings://changed` keeps them current after that.
 void loadStatusSettings(api);
@@ -37,6 +35,7 @@ void loadTerminalSettings(api);
 startSettingsSync(api);
 startEditorSettingsSync(api);
 startNavigationSettingsSync(api);
+startUsageSync(api);
 // The shortcuts: keybindings.json over the defaults, and the terminal key policy.
 startBindingsSync(api);
 

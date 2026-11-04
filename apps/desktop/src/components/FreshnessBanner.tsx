@@ -1,4 +1,4 @@
-import { Button } from "@xdev/ui";
+import { Button, Icon } from "@xdev-asia/ui";
 import type { JSX } from "react";
 import type { Freshness } from "@/api";
 import { parseFrontmatter } from "@/doc/frontmatter";
@@ -31,21 +31,7 @@ export function verifiedInDraft(draft: string, head: string): boolean {
 }
 
 export function WarnIcon(): JSX.Element {
-  return (
-    <svg
-      className="banner-icon"
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 9v4M12 17h.01" />
-      <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
-    </svg>
-  );
+  return <Icon name="alert" className="banner-icon" />;
 }
 
 export function FreshnessBanner(props: {
@@ -94,9 +80,7 @@ export function FreshnessBanner(props: {
         )}
         {pending && (
           <span className="freshness-pending">
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="m5 12 5 5L20 7" />
-            </svg>
+            <Icon name="check" style={{ strokeWidth: 2 }} />
             {t("freshness.pending")}
           </span>
         )}

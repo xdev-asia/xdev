@@ -1,4 +1,4 @@
-import { Button } from "@xdev/ui";
+import { Button } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, JSX } from "react";
 import { toApiError, type Api, type Created, type ProjectKind, type RepoView } from "@/api";

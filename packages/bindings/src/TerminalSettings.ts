@@ -2,6 +2,8 @@
 import type { CursorStyle } from "./CursorStyle";
 import type { FontWeight } from "./FontWeight";
 import type { OnQuit } from "./OnQuit";
+import type { TerminalBell } from "./TerminalBell";
+import type { TerminalGpu } from "./TerminalGpu";
 
 /**
  * How every terminal pane looks and behaves. Values outside the ranges
@@ -43,4 +45,24 @@ onQuit: OnQuit,
 /**
  * The service's output ring per PTY, in MB, 1..=16.
  */
-ringMb: number, };
+ringMb: number, 
+/**
+ * "app" or a built-in scheme id; `[a-z0-9-]{1,40}`, anything else is "app".
+ */
+theme: string, gpu: TerminalGpu, bell: TerminalBell, 
+/**
+ * Control chars dropped, at most 64 chars; empty reads as `DEFAULT_WORD_SEPARATORS`.
+ */
+wordSeparators: string, 
+/**
+ * 0.5..=3.0.
+ */
+scrollSensitivity: number, 
+/**
+ * 1.0..=10.0; xterm applies it with Alt held.
+ */
+fastScrollSensitivity: number, 
+/**
+ * 1.0..=21.0; 1 is off.
+ */
+minimumContrast: number, focusFollowsMouse: boolean, };
