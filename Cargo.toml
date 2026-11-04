@@ -77,6 +77,9 @@ ts-rs = "12.0.1"
 ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 # A file's link count and identity on Windows, without unsafe code here.
 winapi-util = "0.1.11"
+# Win32 calls the named pipe API does not wrap (xdev-ipc); already in the build
+# through interprocess.
+windows-sys = "0.61.2"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
