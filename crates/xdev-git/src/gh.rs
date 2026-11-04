@@ -218,7 +218,9 @@ impl From<RawCheck> for Check {
 
 /// The one reading of a failed `gh` run.
 fn classify(out: &GhOutput) -> GitError {
-    if out.stderr.contains("gh auth login") {
+    if out.stderr.contains("missing required scopes") {
+        GitError::GhScope(out.stderr.trim().to_owned())
+    } else if out.stderr.contains("gh auth login") {
         GitError::GhAuth
     } else if out.stderr.contains("none of the git remotes") {
         GitError::NotGithub
@@ -769,6 +771,143 @@ pub fn pr_open_number(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<(), Gi
     Ok(())
 }
 
+/// What `issue_create` sends.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct IssueDraft {
+    pub title: String,
+    pub body: String,
+}
+
+/// A GitHub Project of an owner.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSummary {
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
+    pub number: u64,
+    pub title: String,
+    pub url: String,
+    pub closed: bool,
+    /// `items.totalCount`.
+    pub items: u32,
+}
+
+const TITLE_MAX: usize = 256;
+
+/// Creates the issue (body on stdin) and reads it back from the URL `gh` prints.
+pub fn issue_create(gh: &dyn GhExec, cwd: &Path, draft: &IssueDraft) -> Result<Issue, GitError> {
+    let title = draft.title.trim();
+    if title.is_empty()
+        || title.chars().count() > TITLE_MAX
+        || draft.body.chars().count() > ISSUE_BODY_MAX
+    {
+        return Err(GitError::BadDraft);
+    }
+    let out = ok(gh.run(
+        cwd,
+        &["issue", "create", "--title", title, "--body-file", "-"],
+        Some(&draft.body),
+    )?)?;
+    let number = out
+        .stdout
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find_map(|l| parse_issue_ref(l).map(|(_, n)| n))
+        .ok_or_else(|| GitError::Gh("gh printed no issue URL".into()))?;
+    let n = number.to_string();
+    let out = ok(gh.run(cwd, &["issue", "view", &n, "--json", ISSUE_FIELDS], None)?)?;
+    let raw: RawIssue = serde_json::from_str(&out.stdout).map_err(parse_error)?;
+    Ok(raw.into())
+}
+
+fn owner_ok(owner: &str) -> Result<(), GitError> {
+    if owner.is_empty() || owner.starts_with('-') || owner.contains('/') {
+        return Err(GitError::Gh(format!("bad owner: {owner}")));
+    }
+    Ok(())
+}
+
+/// The GitHub Projects of `owner`, open and closed.
+pub fn project_list(
+    gh: &dyn GhExec,
+    cwd: &Path,
+    owner: &str,
+) -> Result<Vec<ProjectSummary>, GitError> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Items {
+        #[serde(default)]
+        total_count: u32,
+    }
+    #[derive(Deserialize)]
+    struct Raw {
+        number: u64,
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        url: String,
+        #[serde(default)]
+        closed: bool,
+        items: Option<Items>,
+    }
+    #[derive(Deserialize)]
+    struct Wrap {
+        #[serde(default)]
+        projects: Vec<Raw>,
+    }
+    owner_ok(owner)?;
+    let out = ok(gh.run(
+        cwd,
+        &[
+            "project", "list", "--owner", owner, "--closed", "--format", "json", "--limit", "100",
+        ],
+        None,
+    )?)?;
+    let wrap: Wrap = serde_json::from_str(&out.stdout).map_err(parse_error)?;
+    Ok(wrap
+        .projects
+        .into_iter()
+        .map(|p| ProjectSummary {
+            number: p.number,
+            title: p.title,
+            url: p.url,
+            closed: p.closed,
+            items: p.items.map_or(0, |i| i.total_count),
+        })
+        .collect())
+}
+
+/// Opens a project of `owner` in the browser through `gh`.
+pub fn project_open(gh: &dyn GhExec, cwd: &Path, owner: &str, number: u64) -> Result<(), GitError> {
+    owner_ok(owner)?;
+    let n = number.to_string();
+    ok(gh.run(
+        cwd,
+        &["project", "view", &n, "--owner", owner, "--web"],
+        None,
+    )?)?;
+    Ok(())
+}
+
+/// "https://github.com/<owner>/<repo>/pull/12" gives (`owner/repo`, 12).
+pub fn parse_pr_ref(text: &str) -> Option<(Option<String>, u64)> {
+    let rest = text.trim().strip_prefix("https://github.com/")?;
+    let parts: Vec<&str> = rest.trim_end_matches('/').split('/').collect();
+    match parts.as_slice() {
+        [owner, repo, "pull", n] if !owner.is_empty() && !repo.is_empty() => {
+            let digits = !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit());
+            n.parse::<u64>()
+                .ok()
+                .filter(|n| digits && *n > 0)
+                .map(|n| (Some(format!("{owner}/{repo}")), n))
+        }
+        _ => None,
+    }
+}
+
 fn spawn_error(e: io::Error) -> GitError {
     match e.kind() {
         io::ErrorKind::NotFound => GitError::GhMissing,
@@ -1182,6 +1321,101 @@ mod tests {
         let fake = Fake::new(vec![out(0, "", "")]);
         pr_open_number(&fake, cwd(), 7).unwrap();
         assert_eq!(args_of(&fake), ["pr", "view", "7", "--web"]);
+    }
+
+    #[test]
+    fn issue_create_sends_body_on_stdin_and_reads_back() {
+        let view = r#"{"number":42,"url":"https://github.com/o/r/issues/42","state":"OPEN","title":"New","labels":[],"assignees":[],"author":{"login":"me"},"updatedAt":"2026-11-04T00:00:00Z"}"#;
+        let fake = Fake::new(vec![
+            out(0, "https://github.com/o/r/issues/42\n", ""),
+            out(0, view, ""),
+        ]);
+        let draft = IssueDraft {
+            title: "  New ".into(),
+            body: "line\nTwo".into(),
+        };
+        let issue = issue_create(&fake, cwd(), &draft).unwrap();
+        assert_eq!(issue.number, 42);
+        let calls = fake.calls.borrow();
+        assert_eq!(
+            calls[0].0,
+            ["issue", "create", "--title", "New", "--body-file", "-"]
+        );
+        assert_eq!(calls[0].1.as_deref(), Some("line\nTwo"));
+        assert_eq!(calls[1].0, ["issue", "view", "42", "--json", ISSUE_FIELDS]);
+    }
+
+    #[test]
+    fn issue_create_refuses_bad_drafts() {
+        let fake = Fake::new(vec![]);
+        for title in ["", "   ", &"x".repeat(257)] {
+            let d = IssueDraft {
+                title: title.to_owned(),
+                body: String::new(),
+            };
+            let err = issue_create(&fake, cwd(), &d).unwrap_err();
+            assert_eq!(err.code(), "bad_draft");
+        }
+        assert!(fake.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn project_list_parses_items_and_passes_owner() {
+        let json = r#"{"projects":[{"number":1,"title":"Roadmap","url":"https://github.com/orgs/acme/projects/1","closed":false,"items":{"totalCount":12}},{"number":2,"title":"Old","url":"https://github.com/orgs/acme/projects/2","closed":true,"items":{"totalCount":0}}],"totalCount":2}"#;
+        let fake = Fake::new(vec![out(0, json, "")]);
+        let list = project_list(&fake, cwd(), "acme").unwrap();
+        assert_eq!(
+            args_of(&fake),
+            [
+                "project", "list", "--owner", "acme", "--closed", "--format", "json", "--limit",
+                "100"
+            ]
+        );
+        assert_eq!(list.len(), 2);
+        assert_eq!(
+            (list[0].number, list[0].items, list[0].closed),
+            (1, 12, false)
+        );
+        assert!(list[1].closed);
+    }
+
+    #[test]
+    fn project_list_maps_a_missing_scope() {
+        let fake = Fake::new(vec![out(
+            1,
+            "",
+            "error: your authentication token is missing required scopes [read:project]",
+        )]);
+        let err = project_list(&fake, cwd(), "acme").unwrap_err();
+        assert_eq!(err.code(), "gh_scope");
+    }
+
+    #[test]
+    fn project_open_runs_view_web_and_refuses_odd_owners() {
+        let fake = Fake::new(vec![out(0, "", "")]);
+        project_open(&fake, cwd(), "acme", 3).unwrap();
+        assert_eq!(
+            args_of(&fake),
+            ["project", "view", "3", "--owner", "acme", "--web"]
+        );
+        assert!(project_open(&fake, cwd(), "--x", 3).is_err());
+    }
+
+    #[test]
+    fn parse_pr_ref_reads_pull_urls_only() {
+        let url = Some((Some("o/r".to_owned()), 12));
+        assert_eq!(parse_pr_ref("https://github.com/o/r/pull/12"), url);
+        assert_eq!(parse_pr_ref(" https://github.com/o/r/pull/12/ "), url);
+        for text in [
+            "#12",
+            "12",
+            "https://github.com/o/r/issues/12",
+            "https://github.com/o/r/pull/0",
+            "https://github.com/o/r/pull/12/files",
+            "https://example.com/o/r/pull/12",
+        ] {
+            assert_eq!(parse_pr_ref(text), None, "{text}");
+        }
     }
 
     #[test]
