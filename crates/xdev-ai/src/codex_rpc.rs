@@ -1,8 +1,6 @@
 //! A short-lived JSON-RPC session with the user's own `codex app-server`,
 //! to read the account's live rate limits.
 
-#![allow(dead_code)]
-
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc;
@@ -46,6 +44,8 @@ impl Default for ProbeTimeouts {
 }
 
 #[derive(Debug)]
+/// The payloads are for `Debug` and the tests; callers branch on the variant.
+#[allow(dead_code)]
 pub(crate) enum ProbeError {
     /// The binary is not there.
     NoCodex,
@@ -326,7 +326,7 @@ fn strip_ansi(text: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn keys(w: &[QuotaWindow]) -> Vec<(&str, Option<f64>)> {
@@ -442,6 +442,8 @@ mod tests {
     // ---- a fake `codex app-server`: this test binary, speaking the protocol ----
 
     const MODE: &str = "XDEV_FAKE_CODEX_MODE";
+    /// Where the `slow` mode appends `s` (start) and `r` (reply) lines.
+    pub(crate) const LOG: &str = "XDEV_FAKE_CODEX_LOG";
     const PID_FILE: &str = "XDEV_FAKE_CODEX_PID_FILE";
 
     /// Does nothing in a normal run. `fake()` starts the test binary on this
@@ -468,6 +470,16 @@ mod tests {
             "hang" => sleep_forever(),
             _ => {}
         }
+        let note = |what: &str| {
+            if let Some(f) = std::env::var_os(LOG) {
+                let mut f = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(f)
+                    .unwrap();
+                f.write_all(what.as_bytes()).unwrap();
+            }
+        };
         let mut seen: Vec<String> = Vec::new();
         for line in std::io::stdin().lock().lines() {
             let Ok(msg) = serde_json::from_str::<Value>(&line.unwrap()) else {
@@ -487,7 +499,13 @@ mod tests {
                 println!("{m}");
             };
             match method.as_str() {
-                "initialize" => reply(json!({ "result": {} })),
+                "initialize" => {
+                    if mode == "slow" {
+                        note("s\n");
+                        thread::sleep(Duration::from_millis(500));
+                    }
+                    reply(json!({ "result": {} }));
+                }
                 "account/rateLimits/read" => match mode.as_str() {
                     "rpc-auth" => reply(
                         json!({ "error": { "code": -32600, "message": "Please sign in again" } }),
@@ -502,6 +520,7 @@ mod tests {
                         );
                     }
                     _ => {
+                        note("r\n");
                         reply(json!({ "result": { "rateLimits": {
                             "primary": { "usedPercent": 42.5, "windowDurationMins": 300, "resetsAt": 1000 },
                             "secondary": { "usedPercent": 7, "windowDurationMins": 10080, "resetsAt": 2000 },
@@ -517,7 +536,7 @@ mod tests {
         }
     }
 
-    fn fake(mode: &str) -> Command {
+    pub(crate) fn fake(mode: &str) -> Command {
         let mut cmd = Command::new(std::env::current_exe().unwrap());
         cmd.args([
             "--exact",
@@ -529,7 +548,7 @@ mod tests {
         cmd
     }
 
-    fn quick() -> ProbeTimeouts {
+    pub(crate) fn quick() -> ProbeTimeouts {
         ProbeTimeouts {
             init: Duration::from_secs(10),
             rpc: Duration::from_secs(10),
