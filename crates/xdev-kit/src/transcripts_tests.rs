@@ -180,3 +180,23 @@ fn a_long_message_is_cut_at_the_cap() {
     let got = texts(&scan(&[h], &mut marks));
     assert_eq!(got[0].1.chars().count(), TEXT_CHARS_MAX);
 }
+
+#[test]
+fn each_file_ends_with_a_done_event_carrying_its_mark() {
+    let log = lines(&[
+        r#"{"type":"user","timestamp":"2026-11-04T10:00:00Z","message":{"content":"first"}}"#,
+    ]);
+    let (_dir, h, file) = claude_home(&log);
+    let mut marks = BTreeMap::new();
+    let events = scan(&[h], &mut marks);
+    let key = fs::canonicalize(&file)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    assert!(matches!(events[0], TranscriptEvent::Text(_)));
+    let Some(TranscriptEvent::Done { file, mark }) = events.last() else {
+        panic!("no done event: {events:?}");
+    };
+    assert_eq!(file, &key);
+    assert_eq!(Some(mark), marks.get(&key));
+}

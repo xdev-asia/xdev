@@ -47,6 +47,12 @@ pub enum TranscriptEvent {
         file: String,
     },
     Text(TranscriptText),
+    /// Every event of the file has been sent; `mark` is where the read stopped.
+    /// A caller that stores texts in batches may cut after this event.
+    Done {
+        file: String,
+        mark: FileMark,
+    },
 }
 
 type Found = Vec<(TextRole, String, i64)>;
@@ -159,16 +165,18 @@ fn scan_file(
             at,
         }));
     }
-    marks.insert(
-        file_key.to_string(),
-        FileMark {
-            len,
-            mtime_ns: mtime,
-            offset,
-            session: session_key,
-            recent_ids: Vec::new(),
-        },
-    );
+    let mark = FileMark {
+        len,
+        mtime_ns: mtime,
+        offset,
+        session: session_key,
+        recent_ids: Vec::new(),
+    };
+    marks.insert(file_key.to_string(), mark.clone());
+    sink(TranscriptEvent::Done {
+        file: file_key.to_string(),
+        mark,
+    });
 }
 
 fn cap(text: &str) -> Option<String> {
