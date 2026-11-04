@@ -21,3 +21,16 @@ describe("surface boundaries", () => {
     });
   }
 });
+
+describe("startup banner", () => {
+  it("sits at the top of ws-stage, before the body", () => {
+    const text = read("workspace/WorkspaceShell.tsx");
+    const stage = text.indexOf('className="ws-stage"');
+    const banner = text.indexOf("<StartupBanner");
+    const body = text.indexOf('className="ws-stage-body"');
+    expect(stage).toBeGreaterThan(-1);
+    expect(banner).toBeGreaterThan(stage);
+    expect(body).toBeGreaterThan(banner);
+    expect(text.match(/<StartupBanner/g)).toHaveLength(1);
+  });
+});

@@ -1946,250 +1946,255 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         </aside>
 
         <div className="ws-stage" hidden={view !== "workspace"}>
-          <main className="ws-center" aria-label={t("workspace.center.label")}>
-            {sessions &&
-              mounted.map((path) => (
-                <SurfaceBoundary key={path} id="workspace.tabs" surface="Workspace tabs" resetKey={path} titleKey="boundary.workspace.title">
-                  <WorktreeTabs
+          <div className="startup-banner-host">
+            <StartupBanner api={api} />
+          </div>
+          <div className="ws-stage-body">
+            <main className="ws-center" aria-label={t("workspace.center.label")}>
+              {sessions &&
+                mounted.map((path) => (
+                  <SurfaceBoundary key={path} id="workspace.tabs" surface="Workspace tabs" resetKey={path} titleKey="boundary.workspace.title">
+                    <WorktreeTabs
+                      api={api}
+                      sessions={sessions}
+                      worktree={path}
+                      branch={repos?.flatMap((r) => r.worktrees).find((w) => w.path === path)?.branch ?? null}
+                      visible={path === current?.path}
+                      onShown={(id) => setShownTab((s) => (s[path] === id ? s : { ...s, [path]: id }))}
+                      onPanes={(ids) => setPanes((s) => (s[path]?.join(" ") === ids.join(" ") ? s : { ...s, [path]: ids }))}
+                      reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq } : undefined}
+                      commit={commitAsk?.worktree === path ? { id: commitAsk.id, file: commitAsk.file, seq: commitAsk.seq } : undefined}
+                      front={front?.worktree === path ? { id: front.id, seq: front.seq } : undefined}
+                      focusSeq={termFocus?.worktree === path ? termFocus.seq : undefined}
+                      onShowHistory={showInHistory}
+                      gate={gate}
+                      repo={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.path ?? null}
+                      repoName={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.shortName ?? ""}
+                      quickSeq={path === current?.path ? quickSeq : undefined}
+                      onManageQuickCommands={() => openSettings("qcmd")}
+                      onLinkSettings={() => openSettings("terminal", undefined, "terminal.linkClick")}
+                      onManageAgents={() => openSettings("agents")}
+                      worktrees={all.map((w) => ({ path: w.path, label: worktreeName(all, w.path) }))}
+                      onJump={jumpTo}
+                    />
+                  </SurfaceBoundary>
+                ))}
+              {current && cardFor(current.path) && (
+                <SetupCard
+                  state={cardFor(current.path)!}
+                  onSave={() => {
+                    const card = cards[current.path];
+                    if (card?.kind !== "detected") return;
+                    void api.repoUpdate(card.repoId, { localSetup: card.command }).then(() => dropCard(current.path), () => {});
+                  }}
+                  onConfigure={() => {
+                    dropCard(current.path);
+                    openSettings("repos");
+                  }}
+                  onDismiss={() => {
+                    dropCard(current.path);
+                    void openTabsFor(current.path);
+                  }}
+                  onRun={() => void runSetup(current.path, cards[current.path]?.repoId ?? "")}
+                  onSkip={() => {
+                    dropCard(current.path);
+                    void openTabsFor(current.path);
+                  }}
+                  onAlways={() => {
+                    const repoId = cards[current.path]?.repoId;
+                    if (!repoId) return;
+                    void api.repoUpdate(repoId, { setupPolicy: "run" }).then(() => runSetup(current.path, repoId), () => {});
+                  }}
+                  onStartNow={() => gate.startNow(current.path)}
+                  onOpenTabs={() => gate.openTabs(current.path)}
+                  onOpenSetup={() => {
+                    const id = gate.setupTab(current.path);
+                    if (id) setFront((f) => ({ worktree: current.path, id, seq: (f?.seq ?? 0) + 1 }));
+                  }}
+                />
+              )}
+              {!current && repos && (
+                <div className="ws-center-empty">
+                  <p>{t("workspace.center.none")}</p>
+                </div>
+              )}
+              {fixNote && (
+                <p className="error-text ws-notice" role="alert">
+                  {t("ship.fix.noTab")}
+                </p>
+              )}
+            </main>
+            <aside className="ws-panel" hidden={!rightOpen} aria-label={t("workspace.panel.label")}>
+              <div className="ws-panel-tabs" role="tablist" aria-label={t("workspace.panel.label")}>
+                <button
+                  type="button"
+                  role="tab"
+                  className="ws-panel-tab"
+                  aria-selected={panelTab === "files"}
+                  aria-label={t("workspace.panel.files")}
+                  title={t("workspace.panel.files")}
+                  onClick={() => setPanelTab("files")}
+                >
+                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className="ws-panel-tab"
+                  aria-selected={panelTab === "search"}
+                  aria-label={t("search.files.tab")}
+                  title={t("search.files.tab")}
+                  onClick={() => {
+                    setPanelTab("search");
+                    setSearchFocus((n) => n + 1);
+                  }}
+                >
+                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="11" cy="11" r="6.5" />
+                    <path d="m16 16 4.5 4.5" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className="ws-panel-tab"
+                  aria-selected={panelTab === "changes"}
+                  aria-label={count > 0 ? t("workspace.panel.changesCount", { count }) : t("workspace.panel.changes")}
+                  title={t("workspace.panel.changes")}
+                  onClick={() => setPanelTab("changes")}
+                >
+                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6 3v12M18 9a3 3 0 1 0 0-.01M6 21a3 3 0 1 0 0-.01M18 12c0 4-6 3-9 6" />
+                  </svg>
+                  {count > 0 && (
+                    <span className="ws-panel-badge" aria-hidden="true">
+                      {count}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className="ws-panel-tab"
+                  aria-selected={panelTab === "checks"}
+                  aria-label={failing > 0 ? t("checks.tabFailing", { count: failing }) : t("checks.tab")}
+                  title={t("checks.tab")}
+                  onClick={() => setPanelTab("checks")}
+                >
+                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="m8.5 12.5 2.5 2.5 4.5-5" />
+                  </svg>
+                  {failing > 0 && (
+                    <span className="ws-panel-badge" data-tone="danger" aria-hidden="true">
+                      {failing}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className="ws-panel-tab"
+                  aria-selected={panelTab === "issues"}
+                  aria-label={t("issues.tab")}
+                  title={t("issues.tab")}
+                  onClick={() => setPanelTab("issues")}
+                >
+                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="9" />
+                    <circle cx="12" cy="12" r="1.5" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className="ws-panel-tab"
+                  aria-selected={panelTab === "ports"}
+                  aria-label={t("ports.tab")}
+                  title={t("ports.tab")}
+                  onClick={() => setPanelTab("ports")}
+                >
+                  <Icon name="plug" size={16} />
+                </button>
+              </div>
+              {/* Both panels stay mounted, so the change list and the open folders survive a tab switch. */}
+              <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "files"}>
+                <SurfaceBoundary id="panel.files" surface="Right sidebar: files" resetKey={current?.path} titleKey="boundary.panel.title">
+                  {current ? (
+                    <FileTree
+                      key={current.path}
+                      api={api}
+                      worktree={current.path}
+                      changes={markedChanges}
+                      queue={fsWatch.queue}
+                      watchHealth={fsWatch.health}
+                      onOpen={(file) => openFile(current.path, file)}
+                    />
+                  ) : (
+                    <p className="ws-empty">{t("workspace.panel.empty")}</p>
+                  )}
+                </SurfaceBoundary>
+              </div>
+              <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "search"}>
+                <SurfaceBoundary id="panel.search" surface="Right sidebar: search" resetKey={current?.path} titleKey="boundary.panel.title">
+                  <SearchPanel
+                    key={current?.path ?? ""}
                     api={api}
-                    sessions={sessions}
-                    worktree={path}
-                    branch={repos?.flatMap((r) => r.worktrees).find((w) => w.path === path)?.branch ?? null}
-                    visible={path === current?.path}
-                    onShown={(id) => setShownTab((s) => (s[path] === id ? s : { ...s, [path]: id }))}
-                    onPanes={(ids) => setPanes((s) => (s[path]?.join(" ") === ids.join(" ") ? s : { ...s, [path]: ids }))}
-                    reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq } : undefined}
-                    commit={commitAsk?.worktree === path ? { id: commitAsk.id, file: commitAsk.file, seq: commitAsk.seq } : undefined}
-                    front={front?.worktree === path ? { id: front.id, seq: front.seq } : undefined}
-                    focusSeq={termFocus?.worktree === path ? termFocus.seq : undefined}
-                    onShowHistory={showInHistory}
-                    gate={gate}
-                    repo={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.path ?? null}
-                    repoName={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.shortName ?? ""}
-                    quickSeq={path === current?.path ? quickSeq : undefined}
-                    onManageQuickCommands={() => openSettings("qcmd")}
-                    onLinkSettings={() => openSettings("terminal", undefined, "terminal.linkClick")}
-                    onManageAgents={() => openSettings("agents")}
-                    worktrees={all.map((w) => ({ path: w.path, label: worktreeName(all, w.path) }))}
-                    onJump={jumpTo}
+                    worktree={current?.path ?? null}
+                    focusSeq={searchFocus}
+                    onOpen={(rel, at) => current && requestOpenFile({ worktree: current.path, rel, line: at.line, column: at.column })}
                   />
                 </SurfaceBoundary>
-              ))}
-            {current && cardFor(current.path) && (
-              <SetupCard
-                state={cardFor(current.path)!}
-                onSave={() => {
-                  const card = cards[current.path];
-                  if (card?.kind !== "detected") return;
-                  void api.repoUpdate(card.repoId, { localSetup: card.command }).then(() => dropCard(current.path), () => {});
-                }}
-                onConfigure={() => {
-                  dropCard(current.path);
-                  openSettings("repos");
-                }}
-                onDismiss={() => {
-                  dropCard(current.path);
-                  void openTabsFor(current.path);
-                }}
-                onRun={() => void runSetup(current.path, cards[current.path]?.repoId ?? "")}
-                onSkip={() => {
-                  dropCard(current.path);
-                  void openTabsFor(current.path);
-                }}
-                onAlways={() => {
-                  const repoId = cards[current.path]?.repoId;
-                  if (!repoId) return;
-                  void api.repoUpdate(repoId, { setupPolicy: "run" }).then(() => runSetup(current.path, repoId), () => {});
-                }}
-                onStartNow={() => gate.startNow(current.path)}
-                onOpenTabs={() => gate.openTabs(current.path)}
-                onOpenSetup={() => {
-                  const id = gate.setupTab(current.path);
-                  if (id) setFront((f) => ({ worktree: current.path, id, seq: (f?.seq ?? 0) + 1 }));
-                }}
-              />
-            )}
-            {!current && repos && (
-              <div className="ws-center-empty">
-                <p>{t("workspace.center.none")}</p>
               </div>
-            )}
-            {fixNote && (
-              <p className="error-text ws-notice" role="alert">
-                {t("ship.fix.noTab")}
-              </p>
-            )}
-          </main>
-          <aside className="ws-panel" hidden={!rightOpen} aria-label={t("workspace.panel.label")}>
-            <div className="ws-panel-tabs" role="tablist" aria-label={t("workspace.panel.label")}>
-              <button
-                type="button"
-                role="tab"
-                className="ws-panel-tab"
-                aria-selected={panelTab === "files"}
-                aria-label={t("workspace.panel.files")}
-                title={t("workspace.panel.files")}
-                onClick={() => setPanelTab("files")}
-              >
-                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                className="ws-panel-tab"
-                aria-selected={panelTab === "search"}
-                aria-label={t("search.files.tab")}
-                title={t("search.files.tab")}
-                onClick={() => {
-                  setPanelTab("search");
-                  setSearchFocus((n) => n + 1);
-                }}
-              >
-                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="11" cy="11" r="6.5" />
-                  <path d="m16 16 4.5 4.5" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                className="ws-panel-tab"
-                aria-selected={panelTab === "changes"}
-                aria-label={count > 0 ? t("workspace.panel.changesCount", { count }) : t("workspace.panel.changes")}
-                title={t("workspace.panel.changes")}
-                onClick={() => setPanelTab("changes")}
-              >
-                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M6 3v12M18 9a3 3 0 1 0 0-.01M6 21a3 3 0 1 0 0-.01M18 12c0 4-6 3-9 6" />
-                </svg>
-                {count > 0 && (
-                  <span className="ws-panel-badge" aria-hidden="true">
-                    {count}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                className="ws-panel-tab"
-                aria-selected={panelTab === "checks"}
-                aria-label={failing > 0 ? t("checks.tabFailing", { count: failing }) : t("checks.tab")}
-                title={t("checks.tab")}
-                onClick={() => setPanelTab("checks")}
-              >
-                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="9" />
-                  <path d="m8.5 12.5 2.5 2.5 4.5-5" />
-                </svg>
-                {failing > 0 && (
-                  <span className="ws-panel-badge" data-tone="danger" aria-hidden="true">
-                    {failing}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                className="ws-panel-tab"
-                aria-selected={panelTab === "issues"}
-                aria-label={t("issues.tab")}
-                title={t("issues.tab")}
-                onClick={() => setPanelTab("issues")}
-              >
-                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="9" />
-                  <circle cx="12" cy="12" r="1.5" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                className="ws-panel-tab"
-                aria-selected={panelTab === "ports"}
-                aria-label={t("ports.tab")}
-                title={t("ports.tab")}
-                onClick={() => setPanelTab("ports")}
-              >
-                <Icon name="plug" size={16} />
-              </button>
-            </div>
-            {/* Both panels stay mounted, so the change list and the open folders survive a tab switch. */}
-            <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "files"}>
-              <SurfaceBoundary id="panel.files" surface="Right sidebar: files" resetKey={current?.path} titleKey="boundary.panel.title">
-                {current ? (
-                  <FileTree
-                    key={current.path}
-                    api={api}
-                    worktree={current.path}
-                    changes={markedChanges}
-                    queue={fsWatch.queue}
-                    watchHealth={fsWatch.health}
-                    onOpen={(file) => openFile(current.path, file)}
-                  />
-                ) : (
-                  <p className="ws-empty">{t("workspace.panel.empty")}</p>
-                )}
-              </SurfaceBoundary>
-            </div>
-            <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "search"}>
-              <SurfaceBoundary id="panel.search" surface="Right sidebar: search" resetKey={current?.path} titleKey="boundary.panel.title">
-                <SearchPanel
-                  key={current?.path ?? ""}
-                  api={api}
-                  worktree={current?.path ?? null}
-                  focusSeq={searchFocus}
-                  onOpen={(rel, at) => current && requestOpenFile({ worktree: current.path, rel, line: at.line, column: at.column })}
-                />
-              </SurfaceBoundary>
-            </div>
-            <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "changes"}>
-              <SurfaceBoundary id="panel.changes" surface="Right sidebar: changes" resetKey={current?.path} titleKey="boundary.panel.title">
-                {current ? (
-                  <WorktreeChanges
-                    key={current.path}
-                    api={api}
-                    worktree={current}
-                    sessions={sessions}
-                    prs={prs}
-                    onOpenFile={(file) => openFile(current.path, file)}
-                    onOpenCommit={(id, file) => openCommit(current.path, id, file)}
-                    onCount={(n) => setChangeCount({ worktree: current.path, count: n })}
-                    onChanges={(list) => setChangeList({ worktree: current.path, list })}
-                    onFixWithAgent={(output) => void fixWithAgent("fixCommitFailure", output)}
-                    onFixPush={(output, branch) => void fixWithAgent("fixPushFailure", output, branch)}
-                    onResolveConflicts={(vars) => void resolveConflicts(vars)}
-                    onOpenGitSettings={() => openSettings("git")}
-                    register={registerChanges}
-                  />
-                ) : (
-                  <p className="ws-empty">{t("workspace.panel.empty")}</p>
-                )}
-              </SurfaceBoundary>
-            </div>
-            <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "checks"}>
-              <SurfaceBoundary id="panel.checks" surface="Right sidebar: checks" resetKey={current?.path} titleKey="boundary.panel.title">
-                {current ? (
-                  <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={panelTab === "checks"} onFix={(check) => fixCheck(check)} onFixAll={(checks) => fixChecks(checks)} />
-                ) : (
-                  <p className="ws-empty">{t("workspace.panel.empty")}</p>
-                )}
-              </SurfaceBoundary>
-            </div>
-            <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "issues"}>
-              <SurfaceBoundary id="panel.issues" surface="Right sidebar: issues" resetKey={currentRepo?.id} titleKey="boundary.panel.title">
-                {currentRepo && !currentRepo.missing ? (
-                  <IssuesPanel key={currentRepo.id} api={api} repoId={currentRepo.id} onStart={(d) => void startFromIssue(currentRepo.id, d.issue, d)} />
-                ) : (
-                  <p className="ws-empty">{t("workspace.panel.empty")}</p>
-                )}
-              </SurfaceBoundary>
-            </div>
-            <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "ports"}>
-              <PortsPanel api={api} store={ports} active={current?.path ?? null} visible={rightOpen && panelTab === "ports" && view === "workspace"} />
-            </div>
-          </aside>
+              <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "changes"}>
+                <SurfaceBoundary id="panel.changes" surface="Right sidebar: changes" resetKey={current?.path} titleKey="boundary.panel.title">
+                  {current ? (
+                    <WorktreeChanges
+                      key={current.path}
+                      api={api}
+                      worktree={current}
+                      sessions={sessions}
+                      prs={prs}
+                      onOpenFile={(file) => openFile(current.path, file)}
+                      onOpenCommit={(id, file) => openCommit(current.path, id, file)}
+                      onCount={(n) => setChangeCount({ worktree: current.path, count: n })}
+                      onChanges={(list) => setChangeList({ worktree: current.path, list })}
+                      onFixWithAgent={(output) => void fixWithAgent("fixCommitFailure", output)}
+                      onFixPush={(output, branch) => void fixWithAgent("fixPushFailure", output, branch)}
+                      onResolveConflicts={(vars) => void resolveConflicts(vars)}
+                      onOpenGitSettings={() => openSettings("git")}
+                      register={registerChanges}
+                    />
+                  ) : (
+                    <p className="ws-empty">{t("workspace.panel.empty")}</p>
+                  )}
+                </SurfaceBoundary>
+              </div>
+              <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "checks"}>
+                <SurfaceBoundary id="panel.checks" surface="Right sidebar: checks" resetKey={current?.path} titleKey="boundary.panel.title">
+                  {current ? (
+                    <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={panelTab === "checks"} onFix={(check) => fixCheck(check)} onFixAll={(checks) => fixChecks(checks)} />
+                  ) : (
+                    <p className="ws-empty">{t("workspace.panel.empty")}</p>
+                  )}
+                </SurfaceBoundary>
+              </div>
+              <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "issues"}>
+                <SurfaceBoundary id="panel.issues" surface="Right sidebar: issues" resetKey={currentRepo?.id} titleKey="boundary.panel.title">
+                  {currentRepo && !currentRepo.missing ? (
+                    <IssuesPanel key={currentRepo.id} api={api} repoId={currentRepo.id} onStart={(d) => void startFromIssue(currentRepo.id, d.issue, d)} />
+                  ) : (
+                    <p className="ws-empty">{t("workspace.panel.empty")}</p>
+                  )}
+                </SurfaceBoundary>
+              </div>
+              <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "ports"}>
+                <PortsPanel api={api} store={ports} active={current?.path ?? null} visible={rightOpen && panelTab === "ports" && view === "workspace"} />
+              </div>
+            </aside>
+          </div>
         </div>
 
         <div className="ws-docs" hidden={view !== "docs"}>
@@ -2381,9 +2386,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         onCancel={() => setConfirmEndAll(false)}
       />
       <CrashHost api={api} />
-      <div className="startup-banner-host">
-        <StartupBanner api={api} />
-      </div>
       <Toasts />
       {adding && (
         <AddProjectDialog
