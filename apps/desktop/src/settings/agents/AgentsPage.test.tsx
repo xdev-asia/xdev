@@ -325,6 +325,26 @@ it("session_search_status_is_read_again_while_it_indexes", async () => {
   }
 });
 
+it("session_search_status_is_read_again_while_the_first_build_has_not_finished", async () => {
+  vi.useFakeTimers();
+  try {
+    const p = await page();
+    await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+    const read = vi.spyOn(p.api, "sessionSearchStatus").mockResolvedValue({ enabled: true, sessions: 0, messages: 0, updatedAt: null, indexing: false });
+    p.all().find((n) => n.props["data-field"] === "sessionSearch")!.props.onChange({ target: { checked: true } });
+    await tick();
+    hooks.effects.length = 0;
+    p.all();
+    hooks.effects.splice(0).forEach((e) => e());
+    await tick();
+    const before = read.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(read.mock.calls.length).toBeGreaterThan(before);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("turning_the_search_off_clears_the_index_instead_of_only_saving_the_flag", async () => {
   const p = await page();
   await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });

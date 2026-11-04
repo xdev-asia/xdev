@@ -79,8 +79,8 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
     [api],
   );
 
-  // A build can take a while; the status line follows it until it is done.
-  const indexing = switchPolicy?.sessionSearch === true && searchStatus?.indexing === true;
+  // A build can take a while; the status line follows it until it is done, and until the first one has landed.
+  const indexing = switchPolicy?.sessionSearch === true && searchStatus !== null && (searchStatus.indexing || (searchStatus.enabled && searchStatus.updatedAt === null));
   useEffect(() => {
     if (!indexing) return;
     const timer = setInterval(() => api.sessionSearchStatus().then(setSearchStatus, () => {}), SEARCH_POLL_MS);
