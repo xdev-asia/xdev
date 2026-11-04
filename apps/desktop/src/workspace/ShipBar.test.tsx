@@ -69,11 +69,11 @@ function mount(render: () => unknown) {
 }
 
 
-function bar(api: Api, extra: { checked?: number; git?: GitSettings; onFixPush?: (output: string, branch: string) => void } = {}) {
+function bar(api: Api, extra: { checked?: number; git?: GitSettings; onFixPush?: (output: string, branch: string) => void; hasMessage?: boolean; onCommitFirst?: () => Promise<boolean> } = {}) {
   const prs = new PrStore(api);
   const onCommit = vi.fn();
   const onChanged = vi.fn();
-  const view = mount(() => ShipBar({ api, worktree: OAK, checked: extra.checked ?? 0, prs, onCommit, onChanged, git: extra.git, onFixPush: extra.onFixPush }));
+  const view = mount(() => ShipBar({ api, worktree: OAK, checked: extra.checked ?? 0, prs, onCommit, onChanged, git: extra.git, onFixPush: extra.onFixPush, hasMessage: extra.hasMessage, onCommitFirst: extra.onCommitFirst }));
   const main = () => view.find((n) => n.type === Button)!;
   const more = () => view.find((n) => n.props["aria-haspopup"] === "menu")!;
   const item = (label: string) => view.find((n) => n.props.role === "menuitem" && n.props.children === label)!;
@@ -188,7 +188,7 @@ it("pull and sync from the menu", async () => {
   expect(pull).toHaveBeenCalledWith(OAK);
   expect(view.html()).toContain(en("ship.upstream.state", { ahead: 0, behind: 0 }));
   view.openMenu();
-  view.item(en("ship.more.sync")).props.onClick();
+  view.item(en("ship.update.sync", { behind: 0, ahead: 0 })).props.onClick();
   await tick();
   expect(sync).toHaveBeenCalledWith(OAK);
   view.openMenu();
@@ -339,4 +339,173 @@ it("hands the pull request defaults from Settings → Git to Create PR", async (
   expect(off).toMatchObject({ ai: false, generateOnOpen: false, openAfterCreate: false });
   // Not given: the defaults.
   expect(await open()).toMatchObject({ initial: { draft: false }, ai: true, generateOnOpen: false, openAfterCreate: false });
+});
+
+const updating = (over: Record<string, unknown> = {}) => createMockApi({}, { workspace: { ...DEMO_WORKSPACE, remotes: { [OAK]: { ahead: 0, behind: 2 } }, ...over } });
+
+it("Fast-forward calls the API and shows the new state", async () => {
+  const api = updating();
+  const ff = vi.spyOn(api, "worktreeFastForward");
+  const view = bar(api);
+  await tick();
+  view.openMenu();
+  view.item(en("ship.update.fastForward", { count: 2 })).props.onClick();
+  await tick();
+  expect(ff).toHaveBeenCalledWith(OAK);
+  expect(view.html()).toContain(en("ship.upstream.state", { ahead: 0, behind: 0 }));
+});
+
+it("Rebase from the base calls the API; a conflict stop shows its line", async () => {
+  const api = updating();
+  const rebase = vi.spyOn(api, "worktreeRebaseFromBase").mockRejectedValue({ code: "update_conflicts" });
+  const view = bar(api);
+  await tick();
+  view.openMenu();
+  view.item(en("ship.update.rebase", { ref: "main" })).props.onClick();
+  await tick();
+  expect(rebase).toHaveBeenCalledWith(OAK);
+  expect(view.html()).toContain(en("ship.update.conflicts.rebase"));
+});
+
+it("names the operation in each update error line", async () => {
+  const cases: [string, "worktreeFastForward" | "worktreeRebaseFromBase", string, string][] = [
+    ["update_dirty", "worktreeRebaseFromBase", "ship.update.dirty.rebase", "ship.update.rebase"],
+    ["update_dirty", "worktreeFastForward", "ship.update.dirty.fastForward", "ship.update.fastForward"],
+    ["update_untracked", "worktreeRebaseFromBase", "ship.update.untracked.rebase", "ship.update.rebase"],
+    ["update_untracked", "worktreeFastForward", "ship.update.untracked.fastForward", "ship.update.fastForward"],
+    ["update_conflicted", "worktreeRebaseFromBase", "ship.update.conflicted.rebase", "ship.update.rebase"],
+  ];
+  for (const [code, method, line, label] of cases) {
+    hooks.values = []; hooks.effects = [];
+    const api = updating();
+    vi.spyOn(api, method).mockRejectedValue({ code });
+    const view = bar(api);
+    await tick();
+    view.openMenu();
+    view.item(en(label, { ref: "main", count: 2 })).props.onClick();
+    await tick();
+    expect(view.html(), `${code} ${method}`).toContain(en(line));
+  }
+  // A git failure carries git's words.
+  hooks.values = []; hooks.effects = [];
+  const api = updating();
+  vi.spyOn(api, "worktreeRebaseFromBase").mockRejectedValue({ code: "git", detail: "boom" });
+  const view = bar(api);
+  await tick();
+  view.openMenu();
+  view.item(en("ship.update.rebase", { ref: "main" })).props.onClick();
+  await tick();
+  expect(view.html()).toContain(en("ship.update.failed.rebase", { detail: "boom" }));
+});
+
+it("Commit & push commits, then pushes, in that order", async () => {
+  const api = seeded();
+  const order: string[] = [];
+  const push = vi.spyOn(api, "worktreePush").mockImplementation(async (p) => { order.push("push"); return api.worktreeShip(p); });
+  const onCommitFirst = vi.fn(async () => { order.push("commit"); return true; });
+  const view = bar(api, { checked: 1, hasMessage: true, onCommitFirst });
+  await tick();
+  view.openMenu();
+  view.item(en("ship.combo.push")).props.onClick();
+  await tick();
+  expect(order).toEqual(["commit", "push"]);
+  expect(push).toHaveBeenCalledWith(OAK);
+});
+
+it("a commit that fails or is not made sends nothing", async () => {
+  const api = seeded();
+  const push = vi.spyOn(api, "worktreePush");
+  const sync = vi.spyOn(api, "worktreeSync");
+  const view = bar(api, { checked: 1, hasMessage: true, onCommitFirst: async () => false });
+  await tick();
+  view.openMenu();
+  view.item(en("ship.combo.push")).props.onClick();
+  await tick();
+  view.openMenu();
+  view.item(en("ship.combo.sync")).props.onClick();
+  await tick();
+  expect(push).not.toHaveBeenCalled();
+  expect(sync).not.toHaveBeenCalled();
+});
+
+it("a push that fails after the commit keeps it and offers Fix with agent", async () => {
+  const api = seeded();
+  vi.spyOn(api, "worktreePush").mockRejectedValue({ code: "push_rejected", detail: "no" });
+  const onCommitFirst = vi.fn(async () => true);
+  const view = bar(api, { checked: 1, hasMessage: true, onCommitFirst, onFixPush: vi.fn() });
+  await tick();
+  view.openMenu();
+  view.item(en("ship.combo.push")).props.onClick();
+  await tick();
+  expect(onCommitFirst).toHaveBeenCalledTimes(1);
+  expect(view.html()).toContain(en("error.push_rejected"));
+  expect(view.find((n) => n.props["data-fix"] === "push")).toBeDefined();
+});
+
+it("Commit & sync commits, then syncs", async () => {
+  const api = updating();
+  const sync = vi.spyOn(api, "worktreeSync");
+  const view = bar(api, { checked: 1, hasMessage: true, onCommitFirst: async () => true });
+  await tick();
+  view.openMenu();
+  view.item(en("ship.combo.sync")).props.onClick();
+  await tick();
+  expect(sync).toHaveBeenCalledWith(OAK);
+});
+
+it("Commit & force push commits, asks, then sends the lease", async () => {
+  const api = updating({ remotes: { [OAK]: { ahead: 1, behind: 1 } }, rewritten: { [OAK]: true } });
+  const force = vi.spyOn(api, "worktreeForcePush");
+  const onCommitFirst = vi.fn(async () => true);
+  const view = bar(api, { checked: 1, hasMessage: true, onCommitFirst });
+  await tick();
+  view.openMenu();
+  // Commit & sync is off for a rewrite.
+  expect(view.item(en("ship.combo.sync")).props.disabled).toBe(true);
+  view.item(en("ship.combo.forcePush")).props.onClick();
+  await tick();
+  expect(onCommitFirst).toHaveBeenCalledTimes(1);
+  const dialog = view.find((n) => n.type === ConfirmDialog)!;
+  expect(dialog.props.open).toBe(true);
+  expect(force).not.toHaveBeenCalled();
+  dialog.props.onConfirm();
+  await tick();
+  expect(force).toHaveBeenCalledWith(OAK, "b".repeat(40), true);
+});
+
+it("needs_force from Sync opens the force confirm instead of an error", async () => {
+  const api = updating({ remotes: { [OAK]: { ahead: 1, behind: 1 } }, rewritten: { [OAK]: true } });
+  const view = bar(api);
+  await tick();
+  view.openMenu();
+  view.item(en("ship.update.sync", { behind: 1, ahead: 1 })).props.onClick();
+  await tick();
+  expect(view.find((n) => n.type === ConfirmDialog)!.props.open).toBe(true);
+  expect(view.html()).not.toContain(en("error.needs_force"));
+});
+
+it("Push before pull request pushes, then opens the dialog", async () => {
+  const api = seeded();
+  await api.worktreeCommit(OAK, ["src/session.ts"], "feat: one");
+  const push = vi.spyOn(api, "worktreePush");
+  const view = bar(api);
+  await tick();
+  view.openMenu();
+  view.item(en("ship.combo.pushThenPr")).props.onClick();
+  await tick();
+  expect(push).toHaveBeenCalledWith(OAK);
+  expect(view.find((n) => n.type === CreatePrDialog)).toBeDefined();
+});
+
+it("Push before pull request opens no dialog when the push fails", async () => {
+  const api = seeded();
+  await api.worktreeCommit(OAK, ["src/session.ts"], "feat: one");
+  vi.spyOn(api, "worktreePush").mockRejectedValue({ code: "push_rejected" });
+  const view = bar(api);
+  await tick();
+  view.openMenu();
+  view.item(en("ship.combo.pushThenPr")).props.onClick();
+  await tick();
+  expect(view.find((n) => n.type === CreatePrDialog)).toBeUndefined();
+  expect(view.html()).toContain(en("error.push_rejected"));
 });

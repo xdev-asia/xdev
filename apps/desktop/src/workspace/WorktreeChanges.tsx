@@ -330,7 +330,7 @@ export function WorktreeChanges(props: {
     }
   }
 
-  async function commit(confirmed = false): Promise<void> {
+  async function commit(confirmed = false): Promise<boolean> {
     setBusy(true);
     setProblem(null);
     setAskPushed(false);
@@ -338,6 +338,7 @@ export function WorktreeChanges(props: {
       const files = checked.map((c) => c.path);
       const sha = amend ? await api.worktreeAmend(path, files, message, confirmed) : await api.worktreeCommit(path, files, message);
       // Null: none of the files had changes any more, so the message waits for the next try.
+      const made = Boolean(sha);
       if (sha) {
         setMessage("");
         setAmend(false);
@@ -345,10 +346,12 @@ export function WorktreeChanges(props: {
         setShipKey((k) => k + 1);
       }
       await load();
+      return made;
     } catch (e) {
       const error = toApiError(e);
       if (amend && error.code === "amend_pushed") setAskPushed(true);
       else setProblem(error);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -473,6 +476,8 @@ export function WorktreeChanges(props: {
           git={git}
           onCommit={() => (message.trim() === "" ? field.current?.focus() : blocked ? undefined : void commit())}
           onChanged={() => props.onShipChanged?.()}
+          hasMessage={message.trim() !== ""}
+          onCommitFirst={() => (blocked ? Promise.resolve(false) : commit())}
           onFixPush={props.onFixPush}
           onOpenGitSettings={props.onOpenGitSettings}
         />
