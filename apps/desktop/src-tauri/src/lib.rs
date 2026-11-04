@@ -352,6 +352,8 @@ pub fn run() {
                 if let Some(running) = app.try_state::<endpoint::Running>() {
                     running.stop();
                 }
+                // Every `terminal wait` ends with `app_stopped`.
+                app.state::<cli_verbs::CliHub>().board.stop();
                 updater::install_pending(app);
             }
         });
