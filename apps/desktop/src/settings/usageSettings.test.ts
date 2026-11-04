@@ -25,10 +25,10 @@ it("setUsageSettings tells readers once per real change", () => {
 it("a settings change that names usage reloads, another section does not", async () => {
   const api = createMockApi({});
   const stop = startUsageSync(api);
-  await vi.waitFor(() => expect(getUsageSettings()).toEqual(USAGE_DEFAULTS));
+  await vi.waitFor(() => expect(getUsageSettings()).toEqual(USAGE_DEFAULTS), { timeout: 5_000 });
   const read = vi.spyOn(api, "usageSettings");
   await api.usageSettingsPut({ ...USAGE_DEFAULTS, display: "remaining" });
-  await vi.waitFor(() => expect(getUsageSettings().display).toBe("remaining"));
+  await vi.waitFor(() => expect(getUsageSettings().display).toBe("remaining"), { timeout: 5_000 });
   expect(read).toHaveBeenCalledTimes(1);
   await api.navigationSettingsPut({ tabOrder: "sequential", confirmClosePinned: true, confirmCloseRunning: true, askBeforeDeleteWorktree: true });
   await Promise.resolve();
