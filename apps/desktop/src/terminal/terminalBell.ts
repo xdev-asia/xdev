@@ -6,7 +6,6 @@ export interface AudioLike {
   readonly currentTime: number;
   readonly destination: unknown;
   resume(): Promise<void>;
-  close?(): Promise<void>;
   createOscillator(): {
     type: string;
     frequency: { value: number };
@@ -32,36 +31,47 @@ const browserAudio = (): AudioLike | null => {
   }
 };
 
+// One audio context for every pane: a webview caps how many it allows, and each costs a thread.
+// Made on the first need while the bell is `sound`, and kept for the app's life (a pane closing
+// does not close it: other panes share it).
+let shared: AudioLike | null = null;
+let sharedTried = false;
+
+function sharedAudio(make: () => AudioLike | null): AudioLike | null {
+  if (!sharedTried) {
+    sharedTried = true;
+    shared = make();
+  }
+  return shared;
+}
+
+/** Tests only: forget the shared audio context so the next one is made afresh. */
+export function resetBellAudioForTest(): void {
+  shared = null;
+  sharedTried = false;
+}
+
 /**
  * What a pane does on BEL: `visual` flashes `.terminal-bell` for 150 ms, `sound` plays a 100 ms sine
- * tone, `none` nothing. At most one cue per 250 ms. The audio context is made on first use and
- * resumed on the pane's first keydown, since a webview keeps audio suspended until a gesture.
+ * tone, `none` nothing. At most one cue per 250 ms per pane. The one shared audio context is made
+ * only while the bell is `sound`: on a pane's keydown (a webview keeps audio suspended until a
+ * gesture, so that keydown also resumes it) or on the first tone.
  */
 export function createBell(
   pane: HTMLElement,
-  opts: { now?: () => number; audio?: () => AudioLike | null } = {},
+  opts: { now?: () => number; audio?: () => AudioLike | null; mode?: () => TerminalBell } = {},
 ): { ring(mode: TerminalBell): void; dispose(): void } {
   const now = opts.now ?? (() => performance.now());
   const makeAudio = opts.audio ?? browserAudio;
-  let ctx: AudioLike | null = null;
-  let tried = false;
+  const mode = opts.mode ?? (() => "visual" as TerminalBell);
   let last = -Infinity;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
 
-  const context = (): AudioLike | null => {
-    if (!tried) {
-      tried = true;
-      ctx = makeAudio();
-    }
-    return ctx;
-  };
-
-  let resumed = false;
   const onKeydown = () => {
-    if (resumed) return;
-    resumed = true;
-    void context()?.resume().catch(() => {});
+    if (mode() !== "sound") return;
+    const audio = sharedAudio(makeAudio);
+    if (audio?.state === "suspended") void audio.resume().catch(() => {});
   };
   pane.addEventListener("keydown", onKeydown, true);
 
@@ -72,7 +82,7 @@ export function createBell(
   };
 
   const beep = () => {
-    const audio = context();
+    const audio = sharedAudio(makeAudio);
     if (!audio) return;
     try {
       if (audio.state === "suspended") void audio.resume().catch(() => {});
@@ -104,7 +114,6 @@ export function createBell(
       clearTimeout(timer);
       pane.classList.remove("terminal-bell");
       pane.removeEventListener("keydown", onKeydown, true);
-      void ctx?.close?.().catch(() => {});
     },
   };
 }
