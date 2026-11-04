@@ -41,6 +41,20 @@ export async function sendToAgentTab(
   return tab;
 }
 
+/** Types `text` into the tab `id` of `worktree` once it has started; null at the timeout or when it ends. */
+export async function sendToOpenedTab(
+  sessions: Sessions,
+  worktree: string,
+  id: string,
+  text: string,
+  wait: { timeoutMs: number } = { timeoutMs: AGENT_START_MS },
+): Promise<Tab | null> {
+  const tab = await ready(sessions, worktree, id, wait.timeoutMs);
+  if (!tab) return null;
+  await tab.client.input(pastePrompt(text));
+  return tab;
+}
+
 /** Where a prompt goes: a running agent tab, or a new tab of a profile. */
 export type SendChoice = { tab: string } | { profile: PtyProfile };
 

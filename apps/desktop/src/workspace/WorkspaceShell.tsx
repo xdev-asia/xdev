@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type OpenInApp, type OpenTarget, type HookDetail, type HookKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type OpenInApp, type OpenTarget, type HookDetail, type HookKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail } from "@/api";
 import { DocsApp } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
@@ -44,7 +44,8 @@ import { removeRepo } from "./removeRepo";
 import { VaultNav } from "./VaultNav";
 import type { AppId } from "@/shell/apps";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
-import { sendToAgentTab } from "./agentPrompt";
+import { sendToAgentTab, sendToOpenedTab } from "./agentPrompt";
+import { issuePrompt, issueWorkItem, issueWorktreeName, uniqueWorktreeName } from "@/issues/issueStart";
 import { sendTarget } from "./sendTarget";
 import { SetupCard, type SetupCardState } from "./SetupCard";
 import { decideSetup } from "./setupFlow";
@@ -891,13 +892,34 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     pending.start({ repoId, name, from, ...(extra ? { extra } : {}) });
   }
 
+  // The issue becomes the worktree: named from it, linked as its work item, sent to the default agent.
+  async function startFromIssue(repoId: string, issue: Issue, detail?: IssueDetail): Promise<void> {
+    try {
+      const full = detail ?? (await api.issueView(repoId, issue.number).catch(() => ({ issue, body: "", comments: [] })));
+      const repo = repos?.find((r) => r.id === repoId);
+      const taken = new Set((repo?.worktrees ?? []).flatMap((w) => [w.name, w.branch ?? ""]));
+      const name = uniqueWorktreeName(issueWorktreeName(issue), taken);
+      const view = await api.profiles().catch(() => null);
+      create(repoId, name, null, {
+        title: null,
+        agent: view?.defaultAgent ?? null,
+        setDefault: false,
+        parent: null,
+        item: issueWorkItem(issue),
+        prompt: issuePrompt(full, t),
+      });
+    } catch (e) {
+      setNotice(toApiError(e).code);
+    }
+  }
+
   async function created(wt: WorktreeView, args: CreateArgs): Promise<void> {
     const extra = args.extra;
     if (extra) await applyCreateExtra(wt.path, extra);
     await load();
     await setupAfterCreate(wt.path, args.repoId);
     // Dialog: the agent it picked, or none. No dialog: the default agent.
-    await openDefaultAgent(wt.path, extra ? extra.agent : undefined);
+    await openDefaultAgent(wt.path, extra ? extra.agent : undefined, extra?.prompt);
     select(wt);
   }
   afterCreate.current = { api, created: (wt, args) => void created(wt, args), reload: () => void load() };
@@ -934,7 +956,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
 
   // A new worktree starts with the agent picked for it, or the default one when none was asked for; it must be on and installed.
-  async function openDefaultAgent(path: string, pick?: string | null): Promise<void> {
+  async function openDefaultAgent(path: string, pick?: string | null, prompt?: string): Promise<void> {
     if (!sessions || pick === null) return;
     try {
       const view = await api.profiles();
@@ -942,7 +964,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       if (found?.profile.enabled && found.installed) {
         const id = found.profile.id;
         // With the repo set to wait, the agent starts when the setup tab has exited.
-        if (!gate.defer(path, () => void sessions.open(path, id))) sessions.open(path, id);
+        const launch = (): void => {
+          const tab = sessions.open(path, id);
+          if (prompt) void sendToOpenedTab(sessions, path, tab.id, prompt);
+        };
+        if (!gate.defer(path, launch)) launch();
       }
     } catch {
       // The worktree is made; it just opens empty.
@@ -1549,7 +1575,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             </div>
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "issues"}>
               {currentRepo && !currentRepo.missing ? (
-                <IssuesPanel key={currentRepo.id} api={api} repoId={currentRepo.id} />
+                <IssuesPanel key={currentRepo.id} api={api} repoId={currentRepo.id} onStart={(d) => void startFromIssue(currentRepo.id, d.issue, d)} />
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
               )}

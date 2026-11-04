@@ -7,7 +7,7 @@ import { expandShortcodes, hasEmoji, slugFromTitle } from "./emoji";
 import { parseItem } from "./workItemInput";
 
 /** What the dialog adds to the name and base: the title, the agent, the parent and the work item. */
-export type CreateExtra = { title: string | null; agent: string | null; setDefault: boolean; parent: string | null; item: WorkItem | null };
+export type CreateExtra = { title: string | null; agent: string | null; setDefault: boolean; parent: string | null; item: WorkItem | null; /** Typed into the agent that opens, once it has started. */ prompt?: string };
 
 export type AgentChoice = { id: string; name: string };
 
