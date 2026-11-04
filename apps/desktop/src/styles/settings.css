@@ -661,9 +661,6 @@
   }
 }
 
-  font-weight: 400;
-}
-
 .ws-field textarea.ws-mono {
   font-family: var(--x-font-mono);
 }
