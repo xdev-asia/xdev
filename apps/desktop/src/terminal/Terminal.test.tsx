@@ -598,8 +598,10 @@ it("Ctrl+F opens the find bar through the key handler", () => {
 const typed = (init: Record<string, unknown>) => key({ key: "", keyCode: 0, isComposing: false, ...init });
 const bytes = (text: string) => new TextEncoder().encode(text);
 
-async function startedWithInput(id = "k-1") {
+async function startedWithInput(id = "k-1", agent = false) {
   const api = createMockApi({});
+  const spawn = api.ptySpawn.bind(api);
+  api.ptySpawn = async (...a) => ({ ...(await spawn(...a)), agent });
   const input = vi.spyOn(api, "ptyWrite");
   const onInput = vi.fn();
   const { effect } = mount({ api, id, onInput });
@@ -608,8 +610,15 @@ async function startedWithInput(id = "k-1") {
   return { handler: hooks.keyHandler!, input, onInput };
 }
 
-it("Shift+Enter writes ESC CR to the pty and nothing reaches xterm", async () => {
-  const { handler, input, onInput } = await startedWithInput();
+it("Shift+Enter in a plain shell is left to xterm", async () => {
+  const { handler, input } = await startedWithInput("k-0");
+  expect(handler(typed({ key: "Enter", code: "Enter", shiftKey: true }))).toBe(true);
+  await tick();
+  expect(input).not.toHaveBeenCalled();
+});
+
+it("Shift+Enter in an agent pane writes ESC CR to the pty and nothing reaches xterm", async () => {
+  const { handler, input, onInput } = await startedWithInput("k-1", true);
   const e = typed({ key: "Enter", code: "Enter", shiftKey: true });
   expect(handler(e)).toBe(false);
   await tick();

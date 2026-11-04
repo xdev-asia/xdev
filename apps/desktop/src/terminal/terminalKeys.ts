@@ -13,7 +13,10 @@ export type KeyContext = {
   optionSide: 0 | 1 | 2 | 3;
   kittyFlags: number;
   modifyOtherKeys: number;
-  fullScreenNonAgent: boolean;
+  /** The program is on the alternate screen (vim, less, tmux, a TUI). */
+  alternateScreen: boolean;
+  /** The pane runs an agent CLI rather than a plain shell or tool. */
+  agent: boolean;
 };
 
 export type KeyAction = { type: "send"; data: string } | { type: "scroll"; to: "top" | "bottom" };
@@ -64,7 +67,9 @@ export function createOptionSideTracker(): {
 }
 
 /** What Option does to a key the shortcut table does not cover (macOS, Option held, no Cmd / Ctrl). */
-function optionKey(e: KeyLike, ctx: KeyContext): KeyAction | null {
+function optionKey(e: KeyLike, ctx: KeyContext, feel: boolean): KeyAction | null {
+  // `off` and `both` leave Option to the system (`off`) or to xterm (`both`).
+  if (ctx.optionAsAlt === "off" || ctx.optionAsAlt === "both") return null;
   const owns =
     !e.shiftKey &&
     ((ctx.optionAsAlt === "left" && (ctx.optionSide & 1) !== 0) ||
@@ -73,13 +78,12 @@ function optionKey(e: KeyLike, ctx: KeyContext): KeyAction | null {
     const base = owns ? baseCharForCode(e.code) : undefined;
     return base === undefined ? null : send(ESC + base);
   }
-  if (ctx.optionAsAlt === "both") return null;
   if (owns) {
     const base = baseCharForCode(e.code);
     if (base !== undefined) return send(ESC + base);
   }
-  // `off`, and the side that is not Meta: word moves still work, everything else composes.
-  if (!e.shiftKey) {
+  // The side that is not Meta: word moves still work, everything else composes.
+  if (feel && !e.shiftKey) {
     if (e.code === "KeyB") return send(`${ESC}b`);
     if (e.code === "KeyF") return send(`${ESC}f`);
     if (e.code === "KeyD") return send(`${ESC}d`);
@@ -90,12 +94,20 @@ function optionKey(e: KeyLike, ctx: KeyContext): KeyAction | null {
 /**
  * Bytes (or a scroll) for a keydown xterm 6.0.0 would not encode the way agent TUIs and shells
  * expect; null leaves the key to xterm. App shortcuts are checked before this.
+ *
+ * A plain shell keeps xterm's encoding unless the program turned on kitty flags or
+ * modifyOtherKeys; the macOS line editing keys and word moves apply on macOS, and agent panes get
+ * them everywhere. Nothing is rewritten on the alternate screen of a program that is not an agent.
  */
 export function resolveTerminalKey(e: KeyLike, ctx: KeyContext): KeyAction | null {
   if (e.isComposing || e.keyCode === 229) return null;
-  const { platform, kittyFlags: kitty, modifyOtherKeys: mok } = ctx;
+  const { platform, kittyFlags: kitty, modifyOtherKeys: mok, agent } = ctx;
   const mac = platform === "mac";
   const win = platform === "win";
+  // Rewrites that are not an opt-in of the program: macOS and agent panes only, never in a full-screen tool.
+  const feel = (agent || mac) && (agent || !ctx.alternateScreen);
+  // With Option as Alt off, Option is left to the system on macOS: no Option rule applies.
+  const altOk = !(mac && ctx.optionAsAlt === "off");
   const { metaKey: meta, ctrlKey: ctrl, altKey: alt, shiftKey: shift } = e;
   const only = (m: "meta" | "ctrl" | "alt" | "shift") =>
     meta === (m === "meta") && ctrl === (m === "ctrl") && alt === (m === "alt") && shift === (m === "shift");
@@ -103,33 +115,38 @@ export function resolveTerminalKey(e: KeyLike, ctx: KeyContext): KeyAction | nul
 
   switch (e.key) {
     case "Enter":
-      if (only("shift")) return send(kitty > 0 ? `${ESC}[13;2u` : mok > 0 ? `${ESC}[27;2;13~` : `${ESC}\r`);
+      if (only("shift")) {
+        if (kitty > 0) return send(`${ESC}[13;2u`);
+        if (mok > 0) return send(`${ESC}[27;2;13~`);
+        // Only an agent CLI reads ESC CR as a new line; in a shell ESC leaves vi mode and CR runs the line.
+        return agent ? send(`${ESC}\r`) : null;
+      }
       if (only("alt") && kitty === 0) return mok > 0 ? send(`${ESC}[27;3;13~`) : null;
-      if (only("ctrl")) return send(win && kitty === 0 ? "\r" : `${ESC}[13;5u`);
+      if (only("ctrl")) return kitty > 0 ? send(`${ESC}[13;5u`) : mok > 0 ? send(`${ESC}[27;5;13~`) : null;
       return null;
     case "Backspace":
-      if (only("ctrl")) return send("\x17");
-      if (only("meta") && mac) return send("\x15");
-      if (only("alt")) return kitty > 0 ? null : send(`${ESC}\x7f`);
+      if (only("ctrl")) return feel && !win ? send("\x17") : null;
+      if (only("meta") && mac) return feel ? send("\x15") : null;
+      if (only("alt")) return kitty > 0 || !feel || !altOk ? null : send(`${ESC}\x7f`);
       return null;
     case "Delete":
-      if (only("meta") && mac) return send("\x0b");
-      if (only("alt") && mac && !numpad && !ctx.fullScreenNonAgent) return kitty > 0 ? null : send(`${ESC}d`);
+      if (only("meta") && mac) return feel ? send("\x0b") : null;
+      if (only("alt") && mac && !numpad && feel && altOk) return kitty > 0 ? null : send(`${ESC}d`);
       break;
     case "ArrowLeft":
     case "ArrowRight": {
       const left = e.key === "ArrowLeft";
-      if (only("meta") && mac) return send(left ? "\x01" : "\x05");
-      if (only("alt") && !numpad) return kitty > 0 || win ? null : send(left ? `${ESC}b` : `${ESC}f`);
-      if (only("ctrl") && !mac) return win ? null : send(left ? `${ESC}b` : `${ESC}f`);
+      if (only("meta") && mac) return feel ? send(left ? "\x01" : "\x05") : null;
+      if (only("alt") && !numpad) return kitty > 0 || win || !feel || !altOk ? null : send(left ? `${ESC}b` : `${ESC}f`);
+      if (only("ctrl") && !mac) return win || kitty > 0 || !feel ? null : send(left ? `${ESC}b` : `${ESC}f`);
       return null;
     }
     case "ArrowUp":
     case "ArrowDown":
-      if (only("meta") && mac) return { type: "scroll", to: e.key === "ArrowUp" ? "top" : "bottom" };
+      if (only("meta") && mac && feel) return { type: "scroll", to: e.key === "ArrowUp" ? "top" : "bottom" };
       return null;
   }
 
-  if (mac && alt && !ctrl && !meta) return optionKey(e, ctx);
+  if (mac && alt && !ctrl && !meta) return optionKey(e, ctx, feel);
   return null;
 }
