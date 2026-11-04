@@ -3,7 +3,7 @@ import type { RepoHooks } from "@/api";
 import { decideSetup } from "./setupFlow";
 
 const script = (trusted: boolean) => ({ text: "pnpm i", shared: true, hash: "h", trusted });
-const hooks = (over: Partial<RepoHooks>): RepoHooks => ({ setup: script(true), archive: null, waitForSetup: false, policy: "run", parseError: null, detected: null, ...over });
+const hooks = (over: Partial<RepoHooks>): RepoHooks => ({ setup: script(true), archive: null, waitForSetup: false, policy: "run", parseError: null, detected: null, shared: [], sharedTrusted: false, tabs: [], tabsTrusted: false, sharedHash: null, tabsHash: null, unknown: [], problems: [], ...over });
 
 it("no setup: offers the detected command, else nothing", () => {
   expect(decideSetup(hooks({ setup: null, detected: "pnpm install" }))).toEqual({ step: "detected", command: "pnpm install" });

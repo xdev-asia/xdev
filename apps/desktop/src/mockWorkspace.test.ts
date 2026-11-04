@@ -24,7 +24,7 @@ describe("mock workspace", () => {
   it("creates a worktree with a slug branch", async () => {
     const api = createMockWorkspace();
     const [repo] = await api.workspaceList();
-    const wt = await api.worktreeCreate(repo.id, "Fix login", null);
+    const { worktree: wt } = await api.worktreeCreate(repo.id, "Fix login", null);
     expect(wt).toMatchObject({ branch: "fix-login", name: "fix-login", primary: false, pinned: false });
     expect(wt.path).toBe("/demo/wt/xdev-fix-login");
     expect((await api.workspaceList())[0].worktrees.map((w) => w.branch)).toContain("fix-login");
@@ -40,16 +40,17 @@ describe("mock workspace", () => {
     expect(await api.gitUserName()).toBe("duy");
     expect((await api.gitSettings()).branchPrefix).toBe("git-username");
     const byUser = await api.worktreeCreate(repo.id, "one", null);
-    expect(byUser).toMatchObject({ branch: "duy/one", path: "/demo/wt/xdev-one" });
+    expect(byUser.worktree).toMatchObject({ branch: "duy/one", path: "/demo/wt/xdev-one" });
+    expect(byUser.shared).toEqual([]);
 
     const saved = await api.setGitSettings({ ...DEFAULT_GIT_SETTINGS, branchPrefix: "custom", branchPrefixCustom: " /team//ui/ ", refreshLocalBaseOnCreate: true, prDraft: true });
     expect(saved).toEqual({ ...DEFAULT_GIT_SETTINGS, branchPrefix: "custom", branchPrefixCustom: "team/ui", refreshLocalBaseOnCreate: true, prDraft: true });
-    expect((await api.worktreeCreate(repo.id, "two", null)).branch).toBe("team/ui/two");
+    expect((await api.worktreeCreate(repo.id, "two", null)).worktree.branch).toBe("team/ui/two");
 
     await api.setGitSettings({ ...saved, branchPrefixCustom: "a b" });
     await expect(api.worktreeCreate(repo.id, "three", null)).rejects.toMatchObject({ code: "bad_branch_prefix" });
     await api.setGitSettings({ ...saved, branchPrefix: "none", branchPrefixCustom: "a b" });
-    expect((await api.worktreeCreate(repo.id, "three", null)).branch).toBe("three");
+    expect((await api.worktreeCreate(repo.id, "three", null)).worktree.branch).toBe("three");
   });
 
   it("gives a blank name a free word", async () => {
@@ -57,7 +58,7 @@ describe("mock workspace", () => {
     const [repo] = await api.workspaceList();
     const first = await api.worktreeCreate(repo.id, "  ", null);
     const second = await api.worktreeCreate(repo.id, "", null);
-    expect(first.branch).not.toBe(second.branch);
+    expect(first.worktree.branch).not.toBe(second.worktree.branch);
   });
 
   it("remove asks, then refuses dirty, then removes with force", async () => {

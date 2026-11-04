@@ -27,7 +27,7 @@ use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
 use crate::tasks::{FileDiff, TasksContext};
 use crate::updater::UpdateInfo;
-use crate::workspace::{CloneProgress, WorktreeChange, WorktreeFileDiff};
+use crate::workspace::{CloneProgress, WorktreeChange, WorktreeCreated, WorktreeFileDiff};
 
 /// Each type's dependencies are written with it, so only the roots are here.
 fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
@@ -87,6 +87,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_workspace::Removed::export_all(cfg)?;
     xdev_workspace::SidebarItem::export_all(cfg)?;
     WorktreeChange::export_all(cfg)?;
+    WorktreeCreated::export_all(cfg)?;
+    xdev_workspace::Linked::export_all(cfg)?;
+    xdev_workspace::DefaultTab::export_all(cfg)?;
     WorktreeFileDiff::export_all(cfg)?;
     ReviewData::export_all(cfg)?;
     ReviewBranch::export_all(cfg)?;

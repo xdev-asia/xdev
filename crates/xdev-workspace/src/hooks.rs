@@ -17,6 +17,11 @@ pub const FILE_NAME: &str = "xdev.toml";
 /// The trust store, in the data folder.
 pub const TRUST_FILE: &str = "hook-trust.json";
 
+/// The most `[worktree] shared` paths read; later ones go to `problems`.
+pub const SHARED_MAX: usize = 100;
+/// The most `[[tabs]]` read; later ones go to `problems`.
+pub const TABS_MAX: usize = 256;
+
 /// What a worktree's setup and archive come to, after `ScriptSource`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -31,6 +36,34 @@ pub struct RepoHooks {
     pub parse_error: Option<String>,
     /// A setup command guessed from the files, offered when there is no setup.
     pub detected: Option<String>,
+    /// `[worktree] shared`: repo-relative paths linked from the main checkout
+    /// into a new worktree, validated and spelled with `/`.
+    pub shared: Vec<String>,
+    /// There are shared paths and the person trusted this `shared_hash`.
+    pub shared_trusted: bool,
+    /// `[[tabs]]`: terminal tabs opened in a new worktree.
+    pub tabs: Vec<DefaultTab>,
+    /// There are tabs and the person trusted this `tabs_hash`.
+    pub tabs_trusted: bool,
+    /// Blake3 hex of the shared list; `None` when it is empty.
+    pub shared_hash: Option<String>,
+    /// Blake3 hex of the tabs; `None` when there are none.
+    pub tabs_hash: Option<String>,
+    /// Keys of `xdev.toml` this version does not read, as dotted names.
+    pub unknown: Vec<String>,
+    /// Entries left out by validation, each with the reason.
+    pub problems: Vec<String>,
+}
+
+/// One `[[tabs]]` entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultTab {
+    pub title: String,
+    /// `#rgb` or `#rrggbb`.
+    pub color: Option<String>,
+    pub command: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -52,6 +85,10 @@ pub struct HookScript {
 pub enum HookKind {
     Setup,
     Archive,
+    /// The `[worktree] shared` list; trusted like a script.
+    Shared,
+    /// The `[[tabs]]` list; trusted like a script.
+    Tabs,
 }
 
 /// What a headless hook run did.
@@ -158,6 +195,8 @@ pub(crate) fn read_file(path: &Path) -> Result<Option<SharedFile>, String> {
             }
             // Read by `repo_commands`.
             "commands" => {}
+            // Read next to the scripts, below.
+            "worktree" | "tabs" => {}
             _ => out.unknown.push(key),
         }
     }
@@ -271,6 +310,14 @@ pub fn hooks_for(
         policy: repo.setup_policy,
         parse_error,
         detected,
+        shared: Vec::new(),
+        shared_trusted: false,
+        tabs: Vec::new(),
+        tabs_trusted: false,
+        shared_hash: None,
+        tabs_hash: None,
+        unknown: file.unknown,
+        problems: Vec::new(),
     })
 }
 
@@ -290,6 +337,8 @@ pub(crate) enum TrustKind {
     Setup,
     Archive,
     Commands,
+    Shared,
+    Tabs,
 }
 
 impl From<HookKind> for TrustKind {
@@ -297,6 +346,8 @@ impl From<HookKind> for TrustKind {
         match kind {
             HookKind::Setup => TrustKind::Setup,
             HookKind::Archive => TrustKind::Archive,
+            HookKind::Shared => TrustKind::Shared,
+            HookKind::Tabs => TrustKind::Tabs,
         }
     }
 }
@@ -378,6 +429,9 @@ pub fn trust_hook(
     let script = match kind {
         HookKind::Setup => &hooks.setup,
         HookKind::Archive => &hooks.archive,
+        HookKind::Shared | HookKind::Tabs => {
+            return Err(WorkspaceError::HookUntrusted(kind_name(kind).to_owned()));
+        }
     };
     let current = script
         .as_ref()
@@ -394,6 +448,8 @@ pub(crate) fn kind_name(kind: HookKind) -> &'static str {
     match kind {
         HookKind::Setup => "setup",
         HookKind::Archive => "archive",
+        HookKind::Shared => "shared",
+        HookKind::Tabs => "tabs",
     }
 }
 

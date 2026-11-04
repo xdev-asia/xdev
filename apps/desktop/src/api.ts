@@ -60,6 +60,9 @@ import type {
   StageState,
   WorktreeStat,
   WorktreeView,
+  WorktreeCreated,
+  Linked,
+  DefaultTab,
   DetailsPatch,
   FolderEntry,
   Removed,
@@ -107,6 +110,8 @@ import { toBytes } from "./terminal/ptyClient";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 
 export { createMockApi };
+/** The kinds of `HookKind` that are scripts; the others are lists. */
+export type ScriptKind = Extract<HookKind, "setup" | "archive">;
 export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
 export type { Agent, AgentSession, SessionQuery, SessionRow };
@@ -213,6 +218,9 @@ export type {
   HookKind,
   HookScript,
   RepoHooks,
+  DefaultTab,
+  Linked,
+  WorktreeCreated,
   HookRun,
   KeySettings,
   TerminalKeyPolicy,
@@ -560,7 +568,7 @@ export interface Api {
   // A new branch and folder; a blank `name` gets a free word, a null `from` starts at the repo's
   // base ref. Rejects with `bad_name`, `branch_exists`, `worktree_exists` or `bad_ref`, and with
   // `bad_branch_prefix` when Settings → Git holds a custom prefix no branch name can start with.
-  worktreeCreate(repoId: string, name: string, from: string | null): Promise<WorktreeView>;
+  worktreeCreate(repoId: string, name: string, from: string | null): Promise<WorktreeCreated>;
   worktreePin(path: string, pinned: boolean): Promise<void>;
   // Rejects with `needs_approval` until `confirmed`, then with `worktree_dirty` for uncommitted
   // work until `force`, and with `primary_worktree` for the main checkout. A branch made here and

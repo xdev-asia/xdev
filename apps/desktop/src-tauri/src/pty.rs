@@ -399,6 +399,8 @@ pub(crate) fn hook_command(
     let (script, name) = match kind {
         HookKind::Setup => (hooks.setup, "setup"),
         HookKind::Archive => (hooks.archive, "archive"),
+        // Lists, not scripts: nothing to run.
+        HookKind::Shared | HookKind::Tabs => return Ok(None),
     };
     let Some(script) = script else {
         return Ok(None);

@@ -449,6 +449,14 @@ export function createMockWorkspace(
         policy: repo.setupPolicy,
         parseError: file?.parseError ?? null,
         detected: setup === null ? (file?.detected ?? null) : null,
+        shared: [],
+        sharedTrusted: false,
+        tabs: [],
+        tabsTrusted: false,
+        sharedHash: null,
+        tabsHash: null,
+        unknown: [],
+        problems: [],
       },
     };
   }
@@ -538,6 +546,7 @@ export function createMockWorkspace(
     async repoHookTrust(path, kind, hash) {
       const found = hooksOf(path);
       if (!found) return reject("worktree_unknown", path);
+      if (kind !== "setup" && kind !== "archive") return reject("hook_untrusted", kind);
       const script = kind === "setup" ? found.hooks.setup : found.hooks.archive;
       if (!script || !script.shared || script.hash !== hash) return reject("hook_untrusted", kind);
       trusted.add(`${found.repo.id}:${kind}:${hash}`);
@@ -640,7 +649,7 @@ export function createMockWorkspace(
       const parent = repo.path.replace(/[\/][^\/]*$/, "");
       const wt = worktree(`${parent}/wt/${repo.shortName}-${folder}`, folder, branch, false);
       repo.worktrees.push(wt);
-      return structuredClone(wt);
+      return { worktree: structuredClone(wt), shared: [] };
     },
     async worktreePin(path, pinned) {
       const found = findWorktree(path);
