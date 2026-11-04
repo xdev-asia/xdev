@@ -1,15 +1,13 @@
 //! `xdev status | worktree | terminal`: one request to the running app over
-//! its endpoint (`<local_dir>/app`). Without the app they fail with
+//! its endpoint (`xdev_ipc::app_dir(<local_dir>)`). Without the app they fail with
 //! `app_not_running` (exit 3); the other subcommands never need it.
 
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use clap::{Args, Subcommand};
-use serde::Deserialize;
 use serde_json::{Value, json};
 use xdev_ipc::IpcError;
 
@@ -51,12 +49,6 @@ impl AppError {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct EndpointFile {
-    pid: u32,
-}
-
 /// One connection to the running app, past its hello.
 pub struct Client {
     writer: xdev_ipc::Stream,
@@ -88,37 +80,15 @@ fn io_error(e: impl std::fmt::Display) -> AppError {
     AppError::new("io", e.to_string())
 }
 
-/// Whether a process with this id is alive, without unsafe code.
-fn pid_alive(pid: u32) -> bool {
-    if cfg!(windows) {
-        Command::new("tasklist")
-            .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
-            .stderr(Stdio::null())
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).contains(&format!("\"{pid}\"")))
-            .unwrap_or(true)
-    } else {
-        Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .stderr(Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(true)
-    }
-}
-
 impl Client {
-    /// Reads `endpoint.json` and the token in `dir`, connects and says hello.
-    /// A missing or stale file (its pid is gone) is `app_not_running`.
+    /// Reads the token in `dir`, connects and says hello. No `endpoint.json`,
+    /// or one an app left behind (nothing listens on the endpoint), is
+    /// `app_not_running`.
     pub fn connect(dir: &Path, prefix: &str, pty: Option<&str>) -> Result<Client, AppError> {
-        let file = match fs::read(dir.join("endpoint.json")) {
-            Ok(bytes) => bytes,
+        match fs::metadata(dir.join("endpoint.json")) {
+            Ok(_) => {}
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(not_running()),
             Err(e) => return Err(io_error(e)),
-        };
-        let info: EndpointFile = serde_json::from_slice(&file).map_err(|_| not_running())?;
-        if !pid_alive(info.pid) {
-            return Err(not_running());
         }
         let token = match xdev_ipc::read_token(dir) {
             Ok(token) => token,
@@ -532,12 +502,13 @@ mod tests {
             .err()
             .unwrap();
         assert_eq!(err.code, "app_not_running");
-        // A pid far past any real one.
+        // Left behind by an app that is gone: token and file, no listener.
         fs::write(
             dir.path().join("endpoint.json"),
             r#"{"name":"x","pid":4000000000,"version":"1","startedMs":1}"#,
         )
         .unwrap();
+        xdev_ipc::new_token(dir.path()).unwrap();
         let err = Client::connect(dir.path(), "xdev-app-none", None)
             .err()
             .unwrap();
