@@ -1,6 +1,6 @@
 {
   "app.name": "xDev",
-  "app.tagline": "Tri thức dự án lưu ngay trên máy, dùng được cho cả người lẫn AI agent.",
+  "app.tagline": "IDE cho AI agent, chạy ngay trên máy: nhiều agent làm song song, mỗi agent một worktree.",
   "app.crash.title": "Cửa sổ này gặp lỗi.",
   "app.crash.reload": "Tải lại",
   "vault.change": "Đổi thư mục",
