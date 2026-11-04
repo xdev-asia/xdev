@@ -976,6 +976,9 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "group_unknown",
   "folder_unknown",
   "folder_exists",
+  "branch_pushed",
+  "no_conflict",
+  "still_conflicted",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.

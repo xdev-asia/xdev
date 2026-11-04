@@ -1396,6 +1396,8 @@
   "settings.git.recipes.fixPushFailure": "Sửa push lỗi",
   "settings.git.recipes.resolveConflicts": "Giải quyết xung đột",
   "settings.git.recipes.branchName": "Tên nhánh",
+  "branchRename.toast": "Đã đổi tên nhánh thành {branch}",
+  "branchRename.undo": "Hoàn tác",
   "settings.git.autoRename.title": "Đặt tên nhánh từ prompt đầu tiên",
   "settings.git.autoRename.hint": "Worktree tạo với tên tự động sẽ có tên nhánh lấy từ prompt đầu tiên mà agent nhận, một lần, và không bao giờ sau khi nhánh đã được đẩy lên.",
   "settings.git.autoRename.advanced": "Nâng cao: công thức tên nhánh",

@@ -1397,6 +1397,8 @@
   "settings.git.recipes.fixChecks": "Fix checks",
   "settings.git.recipes.resolveConflicts": "Resolve conflicts",
   "settings.git.recipes.branchName": "Branch name",
+  "branchRename.toast": "Branch renamed to {branch}",
+  "branchRename.undo": "Undo",
   "settings.git.autoRename.title": "Name the branch from the first prompt",
   "settings.git.autoRename.hint": "A worktree made with an automatic name gets a branch name from the first prompt its agent receives, once, and never after the branch is pushed.",
   "settings.git.autoRename.advanced": "Advanced: the branch name recipe",

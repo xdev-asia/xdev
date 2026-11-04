@@ -20,6 +20,7 @@ import { recentFiles } from "@/search/recentFiles";
 import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
+import { startAutoRename } from "./autoRename";
 import { currentCloseWindow, openRestoredFile, restoreLayout, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
@@ -295,6 +296,22 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => {
     api.sidebarPrefsGet().then(setPrefs, () => {});
   }, [api]);
+
+  // A worktree made with an automatic name gets its branch named from the first prompt of its agent.
+  // The watcher reads what each render knows through this ref.
+  const renameLive = useRef<{ worktrees: WorktreeView[]; t: typeof t; reload(): void }>({ worktrees: [], t, reload() {} });
+  renameLive.current = { worktrees: (repos ?? []).flatMap((r) => r.worktrees), t, reload: () => void load() };
+  useEffect(() => {
+    if (!sessions) return;
+    return startAutoRename({
+      api,
+      sessions,
+      worktrees: () => renameLive.current.worktrees,
+      t: (key, vars) => renameLive.current.t(key, vars),
+      reload: () => renameLive.current.reload(),
+      toast: pushToast,
+    });
+  }, [api, sessions]);
 
   // Layout restore: once per run, after the registry is known and before the saver starts (a saver that
   // ran first would replace the stored layout with an empty one). Nothing runs without a worktree.
