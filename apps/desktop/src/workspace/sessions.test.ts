@@ -527,6 +527,20 @@ describe("Sessions", () => {
     expect(live.tabs(A)[1].title).toBeNull();
   });
 
+  it("an auto title survives a restart", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "claude");
+    live.setAutoTitle(tab.id, "Fix the parser");
+    const again = live.restart(tab.id)!;
+    expect(live.tabs(A)[0]).toMatchObject({ id: again.id, title: "Fix the parser", autoTitled: true, renamed: false });
+    // A later program title does not take it over, and the auto title still comes back after a hand name.
+    live.noteTitle(again.id, "program says");
+    expect(live.tabs(A)[0].title).toBe("Fix the parser");
+    live.rename(again.id, "Mine");
+    live.setTitle(again.id, null);
+    expect(live.tabs(A)[0]).toMatchObject({ title: "Fix the parser", autoTitled: true });
+  });
+
   it("an auto title beats the program title and loses to a name by hand", () => {
     const live = (sessions = new Sessions(createMockApi({})));
     const tab = live.open(A, "claude");
