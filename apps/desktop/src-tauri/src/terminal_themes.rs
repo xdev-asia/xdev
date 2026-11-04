@@ -339,8 +339,7 @@ pub fn themes_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("themes")
 }
 
-/// Moves a file to the OS trash. A parameter of `import` and `remove`, so a
-/// test passes its own.
+/// Moves a file to the OS trash. A parameter of `remove`, so a test passes its own.
 pub type Trash<'a> = &'a dyn Fn(&Path) -> io::Result<()>;
 
 fn io_error(e: io::Error) -> CmdError {
@@ -381,7 +380,10 @@ fn file_of(dir: &Path, stem: &str) -> PathBuf {
 
 /// The file's bytes, refusing one over `THEME_FILE_MAX` before reading it.
 fn read_capped(path: &Path) -> Result<Vec<u8>, CmdError> {
-    let file = fs::File::open(path).map_err(io_error)?;
+    let file = fs::File::open(path).map_err(|e| match e.kind() {
+        io::ErrorKind::NotFound => not_found(),
+        _ => io_error(e),
+    })?;
     if file.metadata().map_err(io_error)?.len() > THEME_FILE_MAX {
         return Err(ThemeError::too_large().into());
     }
@@ -460,26 +462,29 @@ fn stored_bytes(scheme: &CustomScheme) -> Vec<u8> {
 }
 
 /// Saves the scheme in the file at `source`. A name already stored is
-/// refused, replaces the old file (which goes to `trash`), or gets a numbered
-/// stem, as `on_taken` says.
-pub fn import(
-    dir: &Path,
-    source: &Path,
-    on_taken: OnNameTaken,
-    trash: Trash,
-) -> Result<CustomScheme, CmdError> {
+/// refused (the error names the stored scheme), replaced in place (written
+/// whole beside the old file, then renamed over it), or gets a numbered stem,
+/// as `on_taken` says.
+pub fn import(dir: &Path, source: &Path, on_taken: OnNameTaken) -> Result<CustomScheme, CmdError> {
     let (mut scheme, _) = parse(&read_capped(source)?)?;
     let base = scheme.id.trim_start_matches("custom-").to_string();
     let mut stem = base.clone();
     if file_of(dir, &stem).exists() {
         match on_taken {
             OnNameTaken::Fail => {
+                // Name the scheme in the way, as the person knows it; the stem when it cannot be read.
+                let existing = read_capped(&file_of(dir, &stem))
+                    .ok()
+                    .and_then(|bytes| parse(&bytes).ok())
+                    .map_or_else(|| stem.clone(), |(s, _)| s.name);
                 return Err(CmdError {
                     code: "theme_name_taken",
-                    detail: None,
+                    detail: Some(existing),
                 });
             }
-            OnNameTaken::Replace => trash(&file_of(dir, &stem)).map_err(io_error)?,
+            // The new file lands first, over the old one, in a single rename: a failed write
+            // leaves the old scheme as it was.
+            OnNameTaken::Replace => {}
             OnNameTaken::KeepBoth => {
                 stem = (2u32..)
                     .map(|n| numbered(&base, n))
@@ -489,7 +494,8 @@ pub fn import(
         }
     }
     scheme.id = format!("custom-{stem}");
-    write_atomic(&file_of(dir, &stem), &stored_bytes(&scheme)).map_err(io_error)?;
+    let target = file_of(dir, &stem);
+    write_atomic(&target, &stored_bytes(&scheme)).map_err(io_error)?;
     Ok(scheme)
 }
 
@@ -541,7 +547,7 @@ pub fn terminal_theme_import(
     path: String,
     on_taken: OnNameTaken,
 ) -> Result<CustomScheme, CmdError> {
-    let scheme = import(&dir_of(&state)?, Path::new(&path), on_taken, &trash_file)?;
+    let scheme = import(&dir_of(&state)?, Path::new(&path), on_taken)?;
     changed(&app);
     Ok(scheme)
 }
@@ -740,7 +746,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = themes_dir(tmp.path());
         let src = put(tmp.path(), "in.json", &file());
-        let scheme = import(&dir, &src, OnNameTaken::Fail, &fake_trash).unwrap();
+        let scheme = import(&dir, &src, OnNameTaken::Fail).unwrap();
         assert_eq!(scheme.id, "custom-graphite-dark");
         assert!(dir.join("graphite-dark.json").is_file());
         assert_eq!(list(&dir), vec![scheme]);
@@ -751,8 +757,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = themes_dir(tmp.path());
         let src = put(tmp.path(), "in.json", &file());
-        import(&dir, &src, OnNameTaken::Fail, &fake_trash).unwrap();
-        let err = import(&dir, &src, OnNameTaken::Fail, &fake_trash).unwrap_err();
+        import(&dir, &src, OnNameTaken::Fail).unwrap();
+        let err = import(&dir, &src, OnNameTaken::Fail).unwrap_err();
         assert_eq!(err.code, "theme_name_taken");
         assert_eq!(list(&dir).len(), 1);
         assert!(preview(&dir, &src).unwrap().name_taken);
@@ -763,38 +769,70 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = themes_dir(tmp.path());
         let src = put(tmp.path(), "in.json", &file());
-        import(&dir, &src, OnNameTaken::Fail, &fake_trash).unwrap();
-        let second = import(&dir, &src, OnNameTaken::KeepBoth, &fake_trash).unwrap();
-        let third = import(&dir, &src, OnNameTaken::KeepBoth, &fake_trash).unwrap();
+        import(&dir, &src, OnNameTaken::Fail).unwrap();
+        let second = import(&dir, &src, OnNameTaken::KeepBoth).unwrap();
+        let third = import(&dir, &src, OnNameTaken::KeepBoth).unwrap();
         assert_eq!(second.id, "custom-graphite-dark-2");
         assert_eq!(third.id, "custom-graphite-dark-3");
         assert_eq!(list(&dir).len(), 3);
         // A long name still gives an id the terminal setting accepts.
         let long = put(tmp.path(), "long.json", &named(&"a".repeat(60)));
-        import(&dir, &long, OnNameTaken::Fail, &fake_trash).unwrap();
-        let again = import(&dir, &long, OnNameTaken::KeepBoth, &fake_trash).unwrap();
+        import(&dir, &long, OnNameTaken::Fail).unwrap();
+        let again = import(&dir, &long, OnNameTaken::KeepBoth).unwrap();
         assert!(again.id.len() <= 40 && again.id.ends_with("-2"));
     }
 
     #[test]
-    fn replace_sends_the_old_file_to_the_trash_and_writes_the_new() {
+    fn replace_writes_the_new_file_over_the_old_one() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = themes_dir(tmp.path());
         let src = put(tmp.path(), "in.json", &file());
-        import(&dir, &src, OnNameTaken::Fail, &fake_trash).unwrap();
+        import(&dir, &src, OnNameTaken::Fail).unwrap();
         let mut changed = file();
         changed["red"] = json!("#010203");
         let src2 = put(tmp.path(), "in2.json", &changed);
-        let trashed = std::cell::RefCell::new(Vec::new());
-        let trash = |p: &Path| {
-            trashed.borrow_mut().push(p.to_path_buf());
-            fs::remove_file(p)
-        };
-        let scheme = import(&dir, &src2, OnNameTaken::Replace, &trash).unwrap();
-        assert_eq!(trashed.borrow().len(), 1);
+        let scheme = import(&dir, &src2, OnNameTaken::Replace).unwrap();
         assert_eq!(scheme.colors.red, "#010203");
         assert_eq!(list(&dir)[0].colors.red, "#010203");
         assert_eq!(list(&dir).len(), 1);
+    }
+
+    #[test]
+    fn replace_leaves_no_temp_file_and_no_gap() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = themes_dir(tmp.path());
+        let src = put(tmp.path(), "in.json", &file());
+        import(&dir, &src, OnNameTaken::Fail).unwrap();
+        let before = fs::read(dir.join("graphite-dark.json")).unwrap();
+        let mut changed = file();
+        changed["red"] = json!("#010203");
+        let src2 = put(tmp.path(), "in2.json", &changed);
+        import(&dir, &src2, OnNameTaken::Replace).unwrap();
+        assert_ne!(fs::read(dir.join("graphite-dark.json")).unwrap(), before);
+        assert_eq!(
+            fs::read_dir(&dir).unwrap().count(),
+            1,
+            "no temp file is left behind"
+        );
+    }
+
+    #[test]
+    fn a_name_clash_names_the_stored_scheme_not_its_slug() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = themes_dir(tmp.path());
+        let src = put(tmp.path(), "in.json", &named("Paper Light!"));
+        import(&dir, &src, OnNameTaken::Fail).unwrap();
+        let err = import(&dir, &src, OnNameTaken::Fail).unwrap_err();
+        assert_eq!(err.code, "theme_name_taken");
+        assert_eq!(err.detail.as_deref(), Some("Paper Light!"));
+    }
+
+    #[test]
+    fn previewing_a_missing_file_is_not_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let err = preview(&themes_dir(tmp.path()), &tmp.path().join("gone.json")).unwrap_err();
+        assert_eq!(err.code, "not_found");
+        assert_eq!(err.detail, None);
     }
 
     #[test]
@@ -802,7 +840,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = themes_dir(tmp.path());
         let src = put(tmp.path(), "in.json", &file());
-        let scheme = import(&dir, &src, OnNameTaken::Fail, &fake_trash).unwrap();
+        let scheme = import(&dir, &src, OnNameTaken::Fail).unwrap();
         for bad in ["custom-nope", "graphite-dark", "custom-../x", "custom-"] {
             assert_eq!(
                 remove(&dir, bad, &fake_trash).unwrap_err().code,
