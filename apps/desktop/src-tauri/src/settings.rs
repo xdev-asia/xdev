@@ -577,7 +577,23 @@ pub struct UiSettings {
     pub restore: RestoreMode,
     /// Light, dark, or follow the system. A file from before it loads `System`.
     pub theme: Theme,
+    /// Settings → Appearance → UI font. Empty is the `--font-body` token.
+    /// Trimmed, control characters dropped, at most `UI_FONT_MAX` chars.
+    #[serde(deserialize_with = "lenient")]
+    pub ui_font: String,
+    /// Token set the editor and diff view use while the app paints light.
+    pub editor_theme_light: EditorTheme,
+    /// Token set the editor and diff view use while the app paints dark.
+    pub editor_theme_dark: EditorTheme,
+    /// Left sidebar background.
+    pub sidebar: SidebarLook,
+    /// Which of xDev's own footer items show.
+    #[serde(deserialize_with = "lenient")]
+    pub status_bar: StatusBarItems,
 }
+
+/// The longest `UiSettings::ui_font`, in characters.
+pub const UI_FONT_MAX: usize = 120;
 
 impl Default for UiSettings {
     fn default() -> Self {
@@ -585,6 +601,78 @@ impl Default for UiSettings {
             zoom: 1.0,
             restore: RestoreMode::All,
             theme: Theme::System,
+            ui_font: String::new(),
+            editor_theme_light: EditorTheme::App,
+            editor_theme_dark: EditorTheme::App,
+            sidebar: SidebarLook::Default,
+            status_bar: StatusBarItems::default(),
+        }
+    }
+}
+
+/// Settings → Appearance → Editor theme. A value this build does not know
+/// reads as `App`, so it does not reset the zoom beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum EditorTheme {
+    /// Follow the app theme.
+    #[default]
+    App,
+    Light,
+    Dark,
+}
+
+impl<'de> serde::Deserialize<'de> for EditorTheme {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("light") => EditorTheme::Light,
+            Some("dark") => EditorTheme::Dark,
+            _ => EditorTheme::App,
+        })
+    }
+}
+
+/// Settings → Appearance → Left sidebar. A value this build does not know
+/// reads as `Default`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum SidebarLook {
+    #[default]
+    Default,
+    Tinted,
+}
+
+impl<'de> serde::Deserialize<'de> for SidebarLook {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("tinted") => SidebarLook::Tinted,
+            _ => SidebarLook::Default,
+        })
+    }
+}
+
+/// Settings → Appearance → Status bar: one switch per footer item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct StatusBarItems {
+    pub branch: bool,
+    pub token_usage: bool,
+    pub agents: bool,
+    pub version: bool,
+}
+
+impl Default for StatusBarItems {
+    fn default() -> Self {
+        StatusBarItems {
+            branch: true,
+            token_usage: true,
+            agents: true,
+            version: true,
         }
     }
 }
@@ -649,8 +737,16 @@ impl UiSettings {
         } else {
             1.0
         };
+        self.ui_font = clean_ui_font(&self.ui_font);
         self
     }
+}
+
+/// Control characters dropped, trimmed, cut to `UI_FONT_MAX` characters.
+fn clean_ui_font(raw: &str) -> String {
+    let kept: String = raw.chars().filter(|c| !c.is_control()).collect();
+    let cut: String = kept.trim().chars().take(UI_FONT_MAX).collect();
+    cut.trim().to_string()
 }
 
 /// How every terminal pane looks and behaves. Values outside the ranges
@@ -1895,6 +1991,84 @@ then sum up"
         assert_eq!(loaded.keys.terminal_policy, TerminalKeyPolicy::AppFirst);
         assert!(!loaded.keys.terminal_hints);
         assert_eq!(loaded.ui, UiSettings::default());
+    }
+
+    #[test]
+    fn appearance_defaults_and_an_old_file() {
+        let ui = UiSettings::default();
+        assert_eq!(ui.ui_font, "");
+        assert_eq!(ui.editor_theme_light, EditorTheme::App);
+        assert_eq!(ui.editor_theme_dark, EditorTheme::App);
+        assert_eq!(ui.sidebar, SidebarLook::Default);
+        assert_eq!(ui.status_bar, StatusBarItems::default());
+        assert!(ui.status_bar.branch && ui.status_bar.token_usage);
+        assert!(ui.status_bar.agents && ui.status_bar.version);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(&path, r#"{"ui":{"zoom":1.5,"theme":"dark"}}"#).unwrap();
+        let ui = load(&path).ui;
+        assert_eq!(ui.zoom, 1.5);
+        assert_eq!(ui.theme, Theme::Dark);
+        assert_eq!(ui.sidebar, SidebarLook::Default);
+        assert_eq!(ui.status_bar, StatusBarItems::default());
+    }
+
+    #[test]
+    fn unknown_appearance_values_fall_back_without_resetting_zoom() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(
+            &path,
+            r#"{"ui":{"zoom":1.5,"uiFont":7,"editorThemeLight":"sepia","editorThemeDark":"dark","sidebar":"glass","statusBar":{"branch":"no"}}}"#,
+        )
+        .unwrap();
+        let ui = load(&path).ui;
+        assert_eq!(ui.zoom, 1.5);
+        assert_eq!(ui.ui_font, "");
+        assert_eq!(ui.editor_theme_light, EditorTheme::App);
+        assert_eq!(ui.editor_theme_dark, EditorTheme::Dark);
+        assert_eq!(ui.sidebar, SidebarLook::Default);
+        assert_eq!(ui.status_bar, StatusBarItems::default());
+
+        fs::write(&path, r#"{"ui":{"statusBar":{"agents":false}}}"#).unwrap();
+        let bar = load(&path).ui.status_bar;
+        assert!(!bar.agents && bar.branch && bar.token_usage && bar.version);
+    }
+
+    #[test]
+    fn ui_font_is_trimmed_capped_and_free_of_control_characters() {
+        let font = |raw: &str| {
+            UiSettings {
+                ui_font: raw.to_string(),
+                ..UiSettings::default()
+            }
+            .clamped()
+            .ui_font
+        };
+        assert_eq!(font("  Inter  "), "Inter");
+        assert_eq!(font("In\u{0}ter\n"), "Inter");
+        assert_eq!(font(&"a".repeat(300)).chars().count(), UI_FONT_MAX);
+        assert_eq!(font("   "), "");
+    }
+
+    #[test]
+    fn appearance_round_trips() {
+        let ui = UiSettings {
+            ui_font: "Inter".into(),
+            editor_theme_light: EditorTheme::Dark,
+            editor_theme_dark: EditorTheme::Light,
+            sidebar: SidebarLook::Tinted,
+            status_bar: StatusBarItems {
+                version: false,
+                ..StatusBarItems::default()
+            },
+            ..UiSettings::default()
+        };
+        let json = serde_json::to_string(&ui).unwrap();
+        assert!(json.contains("\"editorThemeLight\":\"dark\""));
+        assert!(json.contains("\"tokenUsage\":true"));
+        assert_eq!(serde_json::from_str::<UiSettings>(&json).unwrap(), ui);
     }
 
     #[test]

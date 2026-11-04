@@ -11,6 +11,8 @@ import { TerminalBehaviourSection } from "./terminal/TerminalBehaviourSection";
 import { ANSI_KEYS, TerminalLookSection } from "./terminal/TerminalLookSection";
 import { DEFAULT_WORD_SEPARATORS } from "./terminalDefaults";
 import { TERMINAL_SCHEMES } from "@/terminal/terminalThemes";
+import { getCustomSchemes, resetCustomSchemesForTests, setCustomSchemes } from "@/terminal/customSchemes";
+import { ImportSchemeDialog } from "./terminal/ImportSchemeDialog";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
 vi.mock("react", async (original) => {
@@ -25,6 +27,7 @@ vi.mock("react", async (original) => {
     ...react,
     useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
     useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
+    useSyncExternalStore: (sub: any, get: any, server?: any) => (hooks.active ? get() : react.useSyncExternalStore(sub, get, server)),
   };
 });
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
@@ -49,6 +52,7 @@ beforeEach(() => {
   hooks.effects = [];
   hooks.active = false;
   resetTerminalSettingsForTests();
+  resetCustomSchemesForTests();
 });
 
 async function page(stored: Partial<typeof TERMINAL_DEFAULTS> = {}, filter?: Parameters<typeof TerminalPage>[0]["filter"]) {
@@ -331,4 +335,69 @@ it("search shows only the matching row (webgl, chuông)", async () => {
   };
   expect(await rows("webgl")).toEqual(["terminal.gpu"]);
   expect(await rows("chuông")).toEqual(["terminal.bell"]);
+});
+
+const mine = { id: "custom-mine", name: "Mine", mode: "dark" as const, colors: TERMINAL_SCHEMES[0]!.colors };
+
+it("lists imported schemes under Imported, selects one, and shows its swatches", async () => {
+  setCustomSchemes([mine]);
+  const p = await page({ theme: "custom-mine" });
+  const group = nodes(p.field("theme")).find((n) => n.type === "optgroup")!;
+  expect(group.props.label).toBe(en("settings.terminal.theme.imported"));
+  expect(nodes(group).filter((n) => n.type === "option").map((n) => n.props.value)).toEqual(["custom-mine"]);
+  expect(p.field("theme").props.value).toBe("custom-mine");
+  expect(p.all().filter((n) => n.props["data-swatch"])).toHaveLength(16);
+});
+
+it("has no Imported group while nothing is imported", async () => {
+  const p = await page();
+  expect(nodes(p.field("theme")).some((n) => n.type === "optgroup")).toBe(false);
+});
+
+it("Remove trashes the scheme and the list reloads", async () => {
+  const p = await page();
+  const imported = await p.api.terminalThemeImport((await p.api.pickFile(["json"]))!, "fail");
+  setCustomSchemes([imported]);
+  const remove = vi.spyOn(p.api, "terminalThemeRemove");
+  const btn = p.all().find((n) => n.props["data-remove"] === imported.id)!;
+  btn.props.onClick();
+  await tick();
+  expect(remove).toHaveBeenCalledWith(imported.id);
+  expect(getCustomSchemes()).toEqual([]);
+});
+
+it("Import theme picks a file, previews it, and the dialog imports on the answer", async () => {
+  const p = await page();
+  const pick = vi.spyOn(p.api, "pickFile");
+  const imp = vi.spyOn(p.api, "terminalThemeImport");
+  expect(p.all().find((n) => n.type === ImportSchemeDialog)!.props.open).toBe(false);
+  p.field("import").props.onClick();
+  await tick();
+  expect(pick).toHaveBeenCalledWith(["json"]);
+  const dlg = () => p.all().find((n) => n.type === ImportSchemeDialog)!;
+  expect(dlg().props.open).toBe(true);
+  expect(dlg().props.preview.scheme.name).toBeTruthy();
+  dlg().props.onImport("fail");
+  await tick();
+  expect(imp).toHaveBeenCalledWith(expect.any(String), "fail");
+  expect(dlg().props.open).toBe(false);
+  expect(getCustomSchemes()).toHaveLength(1);
+});
+
+it("a cancelled file dialog opens nothing, and a bad file shows its error", async () => {
+  const p = await page();
+  vi.spyOn(p.api, "pickFile").mockResolvedValueOnce(null);
+  p.field("import").props.onClick();
+  await tick();
+  expect(p.all().find((n) => n.type === ImportSchemeDialog)!.props.open).toBe(false);
+  vi.spyOn(p.api, "pickFile").mockResolvedValueOnce("/demo/themes/broken.json");
+  p.field("import").props.onClick();
+  await tick();
+  const dlg = p.all().find((n) => n.type === ImportSchemeDialog)!;
+  expect(dlg.props.open).toBe(true);
+  expect(dlg.props.preview).toBeNull();
+  expect(dlg.props.error).toEqual({ code: "theme_invalid", detail: "foreground" });
+  dlg.props.onCancel();
+  await tick();
+  expect(p.all().find((n) => n.type === ImportSchemeDialog)!.props.open).toBe(false);
 });

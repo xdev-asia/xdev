@@ -225,6 +225,7 @@ mod tests {
                     zoom: 9.0,
                     restore: settings::RestoreMode::AgentsOnly,
                     theme: settings::Theme::Light,
+                    ..settings::UiSettings::default()
                 }
                 .clamped()
             })

@@ -6,6 +6,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { I18nProvider } from "./i18n";
 import { startBindingsSync } from "./keys/bindingsStore";
 import { loadStatusSettings } from "./status/statusSettings";
+import { startCustomSchemesSync } from "./terminal/customSchemes";
 import { loadTerminalSettings, startSettingsSync } from "./terminal/terminalSettings";
 import "@xdev-asia/ui/styles.css";
 import "./styles/base.css";
@@ -36,6 +37,7 @@ startThemeSync(api);
 // Shared copies load before the first pane; `settings://changed` keeps them current after that.
 void loadStatusSettings(api);
 void loadTerminalSettings(api);
+startCustomSchemesSync(api);
 startSettingsSync(api);
 startEditorSettingsSync(api);
 startNavigationSettingsSync(api);

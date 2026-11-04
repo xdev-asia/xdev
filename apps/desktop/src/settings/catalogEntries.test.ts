@@ -35,3 +35,11 @@ describe("the auto rename entry", () => {
     expect(entry.keywords).toEqual(expect.arrayContaining(["rename", "branch", "đổi tên"]));
   });
 });
+
+describe("the appearance links and the usage credentials", () => {
+  it("each has an entry in its own section", () => {
+    for (const [id, section] of [["appearance.terminalLink", "appearance"], ["appearance.usageLink", "appearance"], ["terminal.themeImport", "terminal"], ["usage.credentials", "usage"]] as const) {
+      expect(SETTING_ENTRIES.find((x) => x.id === id)?.section, id).toBe(section);
+    }
+  });
+});

@@ -163,3 +163,28 @@ it("the live footer shows remaining instead of used when the display setting say
   const html = renderLive();
   expect(html).toMatch(/role="meter"[^>]*aria-valuenow="67"/);
 });
+
+it("hides each item when its switch is off, and keeps the rest", () => {
+  const all = { branch: true, tokenUsage: true, agents: true, version: true };
+  const full = render(null, { branch: "feat/x", running: 1, waiting: 1, onOpenUsage() {}, items: all });
+  expect(full).toContain("⎇ feat/x");
+  expect(full).toContain('data-action="token-usage"');
+  expect(full).toContain("ws-running");
+  expect(full).toContain("v0.3.0");
+
+  const off = (k: keyof typeof all) => render(null, { branch: "feat/x", running: 1, waiting: 1, onOpenUsage() {}, items: { ...all, [k]: false } });
+  expect(off("branch")).not.toContain("⎇");
+  expect(off("branch")).toContain("v0.3.0");
+  expect(off("tokenUsage")).not.toContain('data-action="token-usage"');
+  expect(off("agents")).not.toContain("ws-running");
+  expect(off("agents")).not.toContain("ws-waiting");
+  expect(off("version")).not.toContain("v0.3.0");
+  expect(off("version")).toContain("ws-running");
+});
+
+it("shows the update notice even with every item off", () => {
+  const none = { branch: false, tokenUsage: false, agents: false, version: false };
+  const html = render(null, { items: none, update: { status: "ready", version: "9.9.9", notes: null } as never });
+  expect(html).toContain("ws-update");
+  expect(html).not.toContain("⎇");
+});

@@ -13,13 +13,13 @@ it("an empty query keeps every entry and every section", () => {
   expect(r.best).toBeNull();
 });
 
-it("font finds the terminal and editor rows only", () => {
+it("font finds the appearance, terminal and editor rows only", () => {
   const r = runSearch("font", t, title);
   expect(r.active).toBe(true);
   expect(r.ids.has("terminal.fontSize")).toBe(true);
   expect(r.ids.has("editor.fontSize")).toBe(true);
   expect(r.ids.has("git.prefix")).toBe(false);
-  expect([...r.counts.keys()].sort()).toEqual(["editor", "terminal"]);
+  expect([...r.counts.keys()].sort()).toEqual(["appearance", "editor", "terminal"]);
   expect(r.counts.get("terminal")).toBeGreaterThan(1);
 });
 
