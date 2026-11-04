@@ -34,6 +34,24 @@ describe("mock workspace", () => {
     await expect(api.worktreeCreate("nope", "x", null)).rejects.toMatchObject({ code: "repo_unknown" });
   });
 
+  it("trusts shared paths and tabs by hash and links only a trusted list on create", async () => {
+    const seed = { ...DEMO_WORKSPACE, repoFiles: { "/demo/xdev": { shared: ["node_modules", ".env.local"], tabs: [{ title: "dev", color: "#4a9", command: "pnpm dev" }], unknown: ["worktree.foo"], problems: ["tabs[1]: needs a command"], linkErrors: { ".env.local": "missing in the main checkout" } } } };
+    const api = createMockWorkspace(seed);
+    const [repo] = await api.workspaceList();
+    const primary = repo.worktrees[0].path;
+    const hooks = await api.repoHooks(primary);
+    expect(hooks).toMatchObject({ shared: ["node_modules", ".env.local"], sharedTrusted: false, tabsTrusted: false, unknown: ["worktree.foo"], problems: ["tabs[1]: needs a command"] });
+    expect((await api.worktreeCreate(repo.id, "a", null)).shared).toEqual([]);
+
+    await expect(api.repoHookTrust(primary, "shared", "stale")).rejects.toMatchObject({ code: "hook_untrusted" });
+    expect((await api.repoHookTrust(primary, "shared", hooks.sharedHash!)).sharedTrusted).toBe(true);
+    expect((await api.repoHookTrust(primary, "tabs", hooks.tabsHash!)).tabsTrusted).toBe(true);
+    expect((await api.worktreeCreate(repo.id, "b", null)).shared).toEqual([
+      { path: "node_modules", ok: true, error: null },
+      { path: ".env.local", ok: false, error: "missing in the main checkout" },
+    ]);
+  });
+
   it("names branches with the git settings prefix and stores the settings normalized", async () => {
     const api = createMockWorkspace({ ...DEMO_WORKSPACE, gitUserName: "duy" });
     const [repo] = await api.workspaceList();
