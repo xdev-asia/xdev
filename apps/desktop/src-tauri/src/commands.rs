@@ -185,7 +185,7 @@ pub fn key_settings_put(
     settings_store::write(&app, &[SettingsSection::Keys], |s| s.keys = settings).map(|s| s.keys)
 }
 
-/// The window's view settings (zoom); the defaults when nothing is stored.
+/// The window's view settings (zoom, restore, theme); the defaults when nothing is stored.
 #[tauri::command(async)]
 pub fn ui_settings_get(app: AppHandle) -> settings::UiSettings {
     settings_store::read(&app).ui

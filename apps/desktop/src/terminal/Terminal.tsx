@@ -15,6 +15,7 @@ import { decodeOsc52Write, xtermOptions } from "./terminalOptions";
 import { TerminalFind } from "./TerminalFind";
 import { createBell } from "./terminalBell";
 import { attachRenderer } from "./terminalRenderer";
+import { followAppTheme } from "./terminalColors";
 
 /** What a menu, the palette or a shortcut can do to one terminal. Acts on the xterm; nothing goes to the pty unless said. */
 export interface TerminalHandle {
@@ -230,6 +231,13 @@ export function Terminal(props: {
       if (typeof document !== "undefined") void document.fonts?.ready.then(() => alive && fitVisible());
     });
 
+    // The app theme switching between light and dark: read the variables again for this pane.
+    const offTheme = followAppTheme(el, (token) => {
+      const next = xtermOptions(getTerminalSettings(), mono, token);
+      term.options.theme = next.theme;
+      paint(next.theme.background);
+    });
+
     const owned = !props.client;
     const client = props.client ?? new PtyClient(props.api, props.id);
     clientRef.current = client;
@@ -266,6 +274,7 @@ export function Terminal(props: {
     return () => {
       alive = false;
       offSettings();
+      offTheme();
       renderer.dispose();
       bell.dispose();
       el.removeEventListener("contextmenu", onContextMenu, true);

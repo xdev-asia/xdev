@@ -183,6 +183,7 @@ export type { TerminalGpu } from "./TerminalGpu";
 export type { TerminalKeyPolicy } from "./TerminalKeyPolicy";
 export type { TerminalSettings } from "./TerminalSettings";
 export type { TestResult } from "./TestResult";
+export type { Theme } from "./Theme";
 export type { Tokens } from "./Tokens";
 export type { UiSettings } from "./UiSettings";
 export type { UpdateInfo } from "./UpdateInfo";

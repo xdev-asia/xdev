@@ -27,6 +27,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("general.nav.confirmCloseRunning", "settings.general.confirmCloseRunning", ["close", "running", "agent", "process", "confirm", "đóng", "dong", "đang chạy", "dang chay", "xác nhận", "xac nhan"], "settings.general.confirmCloseRunningHint"),
   e("general.nav.askBeforeDeleteWorktree", "settings.general.askBeforeDeleteWorktree", ["delete", "remove", "worktree", "ask", "confirm", "xoá", "xoa", "xóa", "hỏi", "hoi"]),
   e("general.language", "language.label", ["language", "locale", "english", "vietnamese", "ngôn ngữ", "ngon ngu", "tiếng việt", "tieng viet"]),
+  e("general.theme", "settings.general.theme", ["theme", "appearance", "dark", "light", "system", "mode", "giao diện", "giao dien", "tối", "toi", "sáng", "sang", "chế độ", "che do"], "settings.general.themeHint"),
   e("general.zoom", "settings.general.zoom", ["zoom", "scale", "size", "thu phóng", "thu phong", "phóng to", "phong to"]),
   e("general.restore", "layout.setting", ["restore", "layout", "session", "reopen", "khôi phục", "khoi phuc", "bố cục", "bo cuc"], "layout.setting.hint"),
   e("general.openIn", "settings.general.openIn", ["open in", "apps", "ide", "mở bằng", "mo bang", "ứng dụng", "ung dung"]),

@@ -23,7 +23,7 @@ use crate::review_notes::ReviewNote;
 use crate::settings::{
     AgentsSettings, DiffSettings, EditorSettings, GitSettings, KeySettings, NavigationSettings,
     OpenInSettings, RestoreMode, SettingsChanged, SidebarPrefs, StatusSettings, TerminalSettings,
-    UiSettings, UsageSettings,
+    Theme, UiSettings, UsageSettings,
 };
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
@@ -74,6 +74,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     KeySettings::export_all(cfg)?;
     UiSettings::export_all(cfg)?;
     RestoreMode::export_all(cfg)?;
+    Theme::export_all(cfg)?;
     OpenInSettings::export_all(cfg)?;
     OpenTarget::export_all(cfg)?;
     CloneProgress::export_all(cfg)?;

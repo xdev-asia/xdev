@@ -218,12 +218,13 @@ mod tests {
         };
         let stored = store.update(|s| s.keys = keys.clone()).unwrap();
         assert_eq!(stored.keys, keys);
-        // What ui_settings_put stores: the zoom clamped, the restore mode as is.
+        // What ui_settings_put stores: the zoom clamped, the restore mode and theme as is.
         let ui = store
             .update(|s| {
                 s.ui = settings::UiSettings {
                     zoom: 9.0,
                     restore: settings::RestoreMode::AgentsOnly,
+                    theme: settings::Theme::Light,
                 }
                 .clamped()
             })
@@ -231,6 +232,7 @@ mod tests {
             .ui;
         assert_eq!(ui.zoom, 2.0);
         assert_eq!(ui.restore, settings::RestoreMode::AgentsOnly);
+        assert_eq!(ui.theme, settings::Theme::Light);
         let loaded = store.read();
         assert_eq!(loaded.keys, keys);
         assert_eq!(loaded.ui.zoom, 2.0);

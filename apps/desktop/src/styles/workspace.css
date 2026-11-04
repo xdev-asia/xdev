@@ -2954,7 +2954,7 @@ button.ws-tree-row:focus-visible {
   flex-wrap: wrap;
   gap: 6px;
   padding: 6px 8px;
-  border-bottom: 1px solid var(--border, color-mix(in srgb, currentColor 15%, transparent));
+  border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
