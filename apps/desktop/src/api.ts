@@ -68,6 +68,11 @@ import type {
   Check,
   PrDraft,
   PrView,
+  Issue,
+  IssueComment,
+  IssueDetail,
+  IssueQuery,
+  IssueState,
   ShipView,
   RepoHooks,
   HookKind,
@@ -200,6 +205,11 @@ export type {
   Check,
   PrDraft,
   PrView,
+  Issue,
+  IssueComment,
+  IssueDetail,
+  IssueQuery,
+  IssueState,
   ShipView,
   GitSettings,
   BranchPrefixMode,
@@ -328,6 +338,8 @@ export type ErrorCode =
   | "gh_auth"
   | "not_github"
   | "gh_failed"
+  | "issue_not_found"
+  | "issue_other_repo"
   | "draft_failed"
   | "bad_sound"
   | "hook_untrusted"
@@ -622,6 +634,12 @@ export interface Api {
   worktreePrCreate(path: string, draft: PrDraft): Promise<PrView>;
   worktreePrChecks(path: string, number: number): Promise<Check[]>;
   worktreePrOpen(path: string, checks: boolean): Promise<void>;
+  // GitHub issues of a repo through `gh`, read in its main checkout. Reject with the `gh_*` codes,
+  // `not_github`, `issue_not_found`, or `issue_other_repo` (resolve only).
+  issuesList(repoId: string, query: IssueQuery): Promise<Issue[]>;
+  issueView(repoId: string, number: number): Promise<IssueDetail>;
+  // `#12`, `12` or an issue URL of this repo; null when the text names no issue.
+  issueResolve(repoId: string, text: string): Promise<Issue | null>;
   // Drafted texts; reject with `draft_failed`.
   worktreeDraftCommit(path: string, files: string[]): Promise<string>;
   worktreeDraftPr(path: string): Promise<PrDraft>;
@@ -827,6 +845,8 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "gh_auth",
   "not_github",
   "gh_failed",
+  "issue_not_found",
+  "issue_other_repo",
   "draft_failed",
   "bad_sound",
   "hook_untrusted",
@@ -1020,6 +1040,9 @@ const tauriApi: Api = {
   worktreePrCreate: (path, draft) => call("worktree_pr_create", { path, draft }),
   worktreePrChecks: (path, number) => call("worktree_pr_checks", { path, number }),
   worktreePrOpen: (path, checks) => call("worktree_pr_open", { path, checks }),
+  issuesList: (repoId, query) => call("issues_list", { repoId, query }),
+  issueView: (repoId, number) => call("issue_view", { repoId, number }),
+  issueResolve: (repoId, text) => call("issue_resolve", { repoId, text }),
   worktreeDraftCommit: (path, files) => call("worktree_draft_commit", { path, files }),
   worktreeDraftPr: (path) => call("worktree_draft_pr", { path }),
   worktreeListDir: (path, dir) => call("worktree_list_dir", { path, dir }),

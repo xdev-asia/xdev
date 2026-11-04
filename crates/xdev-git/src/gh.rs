@@ -16,6 +16,11 @@ use crate::GitError;
 const TIMEOUT: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(20);
 const PR_FIELDS: &str = "number,url,state,isDraft,title,baseRefName,headRefName";
+const ISSUE_FIELDS: &str = "number,url,state,title,labels,assignees,author,updatedAt";
+/// Most issues one list call returns.
+pub const ISSUE_LIMIT_MAX: u32 = 200;
+/// Chars kept of an issue body or a comment; the rest is cut.
+pub const ISSUE_BODY_MAX: usize = 64 * 1024;
 
 pub struct GhOutput {
     pub status: Option<i32>,
@@ -236,6 +241,75 @@ pub fn pr_open_web(gh: &dyn GhExec, cwd: &Path, checks: bool) -> Result<(), GitE
     let sub = if checks { "checks" } else { "view" };
     ok(gh.run(cwd, &["pr", sub, "--web"], None)?)?;
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum IssueState {
+    Open,
+    Closed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct Issue {
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
+    pub number: u64,
+    pub url: String,
+    pub state: IssueState,
+    pub title: String,
+    pub labels: Vec<String>,
+    pub assignees: Vec<String>,
+    pub author: Option<String>,
+    /// RFC 3339 as `gh` prints it.
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct IssueComment {
+    pub author: Option<String>,
+    pub body: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct IssueDetail {
+    pub issue: Issue,
+    pub body: String,
+    pub comments: Vec<IssueComment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct IssueQuery {
+    /// `None` reads as open.
+    pub state: Option<IssueState>,
+    pub assignee_me: bool,
+    /// Passed as `--search`; at most 256 chars.
+    pub search: Option<String>,
+    /// Default 100, capped at `ISSUE_LIMIT_MAX`.
+    pub limit: Option<u32>,
+}
+
+pub fn issue_list(_gh: &dyn GhExec, _cwd: &Path, _q: &IssueQuery) -> Result<Vec<Issue>, GitError> {
+    todo!("B2")
+}
+
+pub fn issue_view(_gh: &dyn GhExec, _cwd: &Path, _number: u64) -> Result<IssueDetail, GitError> {
+    todo!("B3")
+}
+
+/// "#123", "123", or "https://github.com/<owner>/<repo>/issues/123" gives
+/// (`owner/repo` or `None`, 123).
+pub fn parse_issue_ref(_text: &str) -> Option<(Option<String>, u64)> {
+    todo!("B1")
 }
 
 fn spawn_error(e: io::Error) -> GitError {
