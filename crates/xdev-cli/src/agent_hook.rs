@@ -5,7 +5,8 @@
 //!
 //! The CLI's hook JSON arrives on stdin (claude, codex hooks) or as the last
 //! argument (codex `notify`). Only a few fields are kept, as the line's
-//! `detail`: never the prompt (`prompt`, notify's `input-messages`).
+//! `detail` and `session`: never the prompt (`prompt`, notify's
+//! `input-messages`).
 
 use std::io::{IsTerminal, Read};
 use std::path::Path;
@@ -74,7 +75,7 @@ fn write(event: Event, rest: &[String]) -> Result<(), String> {
             message: Some(message),
             ..HookDetail::default()
         });
-        return append(&local, &id, event, detail);
+        return append(&local, &id, event, detail, None);
     }
     let notify = rest.last().and_then(|arg| json_object(arg.as_bytes()));
     let input = match &notify {
@@ -98,15 +99,26 @@ fn write(event: Event, rest: &[String]) -> Result<(), String> {
         }
         (None, None) => None,
     };
-    append(&local, &id, event, detail)
+    let session = match (&notify, &input) {
+        (Some(payload), _) => notify_session(payload),
+        (None, Some(input)) => text(input, "session_id"),
+        (None, None) => None,
+    };
+    append(&local, &id, event, detail, session.as_deref())
 }
 
-fn append(local: &Path, id: &str, event: Event, detail: Option<HookDetail>) -> Result<(), String> {
+fn append(
+    local: &Path,
+    id: &str,
+    event: Event,
+    detail: Option<HookDetail>,
+    session: Option<&str>,
+) -> Result<(), String> {
     let at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
         .unwrap_or(0);
-    append_hook_detail(local, id, event.into(), at, detail)
+    append_hook_detail(local, id, event.into(), at, detail, session)
         .map(|_| ())
         .map_err(|e| e.to_string())
 }
@@ -181,6 +193,13 @@ fn notify_detail(payload: &serde_json::Map<String, Value>) -> HookDetail {
         message: text(payload, "last-assistant-message"),
         ..HookDetail::default()
     }
+}
+
+/// Codex `notify`: its session id, `session_id` or else `thread-id`.
+/// [Unverified] that `thread-id` is the id `codex resume` takes; a wrong one
+/// only makes the UI fall back to the newest session in the worktree.
+fn notify_session(payload: &serde_json::Map<String, Value>) -> Option<String> {
+    text(payload, "session_id").or_else(|| text(payload, "thread-id"))
 }
 
 /// Where the turn id of the pane's last codex prompt (`turn`) or `Stop`

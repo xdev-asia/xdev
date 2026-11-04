@@ -1,9 +1,10 @@
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::ops::RangeInclusive;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::atomic::write_atomic;
 use crate::quick_commands::QuickCommand;
 
 /// The shape `save` writes. Bump it with a step in `MIGRATIONS` when a key
@@ -258,11 +259,42 @@ impl Default for KeySettings {
 pub struct UiSettings {
     /// The root font scale, 0.5..=2.0; 1.0 is 100 %.
     pub zoom: f32,
+    /// Which tabs come back on start. A file from before it loads `All`.
+    pub restore: RestoreMode,
 }
 
 impl Default for UiSettings {
     fn default() -> Self {
-        UiSettings { zoom: 1.0 }
+        UiSettings {
+            zoom: 1.0,
+            restore: RestoreMode::All,
+        }
+    }
+}
+
+/// Settings → Terminal → On start, reopen tabs. A value this build does not
+/// know reads as `All`, so it does not reset the zoom beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum RestoreMode {
+    /// Agent tabs resume their conversation; shell tabs start fresh.
+    #[default]
+    All,
+    /// Only agent tabs come back.
+    AgentsOnly,
+    /// Nothing comes back.
+    None,
+}
+
+impl<'de> serde::Deserialize<'de> for RestoreMode {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("agentsOnly") => RestoreMode::AgentsOnly,
+            Some("none") => RestoreMode::None,
+            _ => RestoreMode::All,
+        })
     }
 }
 
@@ -598,33 +630,15 @@ fn warn_newer(path: &Path, version: u32) {
     }
 }
 
-/// Writes `settings.json.tmp` beside the file, then renames it over, so a
-/// crash or a full disk leaves the old file or the new one, never half of
-/// one.
-/// Always as `VERSION`.
+/// Replaces the file whole through a temp file beside it
+/// ([`write_atomic`]). Always as `VERSION`.
 pub fn save(path: &Path, settings: &Settings) -> io::Result<()> {
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
     let current = Settings {
         version: VERSION,
         ..settings.clone()
     };
     let json = serde_json::to_vec_pretty(&current).map_err(io::Error::other)?;
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".tmp");
-    let tmp = PathBuf::from(tmp);
-    // Flushed before the rename, so the name never points at bytes still
-    // in the cache.
-    let write = || -> io::Result<()> {
-        let mut file = fs::File::create(&tmp)?;
-        file.write_all(&json)?;
-        file.sync_all()?;
-        fs::rename(&tmp, path)
-    };
-    write().inspect_err(|_| {
-        let _ = fs::remove_file(&tmp);
-    })
+    write_atomic(path, &json)
 }
 
 #[cfg(test)]
@@ -827,28 +841,23 @@ mod tests {
     fn save_replaces_the_file_through_a_temp_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(FILE_NAME);
-        let tmp = dir.path().join(format!("{FILE_NAME}.tmp"));
         let old = Settings {
             last_vault: Some("D:/old".into()),
             ..Settings::default()
         };
         save(&path, &old).unwrap();
-        assert!(!tmp.exists());
-
-        // A write that cannot finish leaves the old file whole: a folder
-        // squatting on the temp name makes it fail on every platform.
-        fs::create_dir(&tmp).unwrap();
         let new = Settings {
             last_vault: Some("D:/new".into()),
             ..Settings::default()
         };
-        assert!(save(&path, &new).is_err());
-        assert_eq!(load(&path).last_vault.as_deref(), Some("D:/old"));
-
-        fs::remove_dir(&tmp).unwrap();
         save(&path, &new).unwrap();
         assert_eq!(load(&path).last_vault.as_deref(), Some("D:/new"));
-        assert!(!tmp.exists());
+        // No temp file is left beside it.
+        let names: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, [FILE_NAME]);
     }
 
     #[test]
@@ -1093,12 +1102,71 @@ then sum up"
 
     #[test]
     fn zoom_clamps_to_its_range() {
-        let at = |zoom: f32| UiSettings { zoom }.clamped().zoom;
+        let at = |zoom: f32| {
+            UiSettings {
+                zoom,
+                ..UiSettings::default()
+            }
+            .clamped()
+            .zoom
+        };
         assert_eq!(at(0.1), 0.5);
         assert_eq!(at(3.0), 2.0);
         assert_eq!(at(1.25), 1.25);
         assert_eq!(at(f32::NAN), 1.0);
         assert_eq!(at(f32::INFINITY), 1.0);
+    }
+
+    #[test]
+    fn a_file_without_restore_loads_all() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(
+            &path,
+            format!(r#"{{"version":{VERSION},"ui":{{"zoom":1.5}}}}"#),
+        )
+        .unwrap();
+        let ui = load(&path).ui;
+        assert_eq!(ui.zoom, 1.5);
+        assert_eq!(ui.restore, RestoreMode::All);
+    }
+
+    #[test]
+    fn each_restore_mode_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        for (mode, text) in [
+            (RestoreMode::All, "all"),
+            (RestoreMode::AgentsOnly, "agentsOnly"),
+            (RestoreMode::None, "none"),
+        ] {
+            let settings = Settings {
+                ui: UiSettings {
+                    zoom: 1.25,
+                    restore: mode,
+                },
+                ..Settings::default()
+            };
+            save(&path, &settings).unwrap();
+            let json: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            assert_eq!(json["ui"]["restore"], text);
+            assert_eq!(load(&path).ui, settings.ui);
+        }
+    }
+
+    #[test]
+    fn an_unknown_restore_mode_reads_all_and_keeps_the_zoom() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        for restore in [r#""sometimes""#, "3", "null"] {
+            let text =
+                format!(r#"{{"version":{VERSION},"ui":{{"zoom":1.5,"restore":{restore}}}}}"#);
+            fs::write(&path, text).unwrap();
+            let ui = load(&path).ui;
+            assert_eq!(ui.zoom, 1.5, "{restore}");
+            assert_eq!(ui.restore, RestoreMode::All, "{restore}");
+        }
     }
 
     #[test]

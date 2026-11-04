@@ -92,6 +92,7 @@ import type {
   WriteOutcome,
 } from "@xdev/bindings";
 import type { Target } from "./doc/frontmatter";
+import type { LayoutSnapshot } from "./workspace/layoutSnapshot";
 import { toBytes } from "./terminal/ptyClient";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 
@@ -101,6 +102,7 @@ export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill
 export type { Agent, AgentSession, SessionQuery, SessionRow };
 export type { EditorSettings, Eol, FileText, WriteOutcome };
 export type { FileKind } from "@xdev/bindings";
+export type { RestoreMode } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
 
 // The IPC types come from Rust; see packages/bindings/README.md.
@@ -648,6 +650,14 @@ export interface Api {
   // Settings → Editor; the put returns what was stored, with numbers clamped to their ranges.
   editorSettings(): Promise<EditorSettings>;
   editorSettingsPut(v: EditorSettings): Promise<EditorSettings>;
+
+  // Layout
+  // The tabs and splits saved for the next start (`<data_dir>/layout.json`); null when none is saved
+  // or the file does not parse (it is kept as `layout.json.bad`).
+  layoutLoad(): Promise<LayoutSnapshot | null>;
+  // Replaces the saved layout. Rejects with `bad_arg` when `version` is not `LAYOUT_VERSION` and
+  // `too_large` past 1 MiB.
+  layoutSave(snapshot: LayoutSnapshot): Promise<void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -957,6 +967,8 @@ const tauriApi: Api = {
   fileReveal: (worktree, rel) => call("file_reveal", { worktree, rel }),
   editorSettings: () => call("editor_settings_get"),
   editorSettingsPut: (settings) => call("editor_settings_put", { settings }),
+  layoutLoad: () => call("layout_load"),
+  layoutSave: (snapshot) => call("layout_save", { snapshot }),
 };
 
 function browserApi(): Api {

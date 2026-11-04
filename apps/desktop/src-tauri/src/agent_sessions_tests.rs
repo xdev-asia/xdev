@@ -231,6 +231,43 @@ fn sort_by_last_or_first_and_cut_to_the_limit() {
     assert_eq!(f.ids(&q), ["a1", "b2"]);
 }
 
+/// What the layout restore fallback asks (plan B3): one worktree, one agent,
+/// newest start first, five rows; it then takes the newest resumable row that
+/// started at or after the tab was opened.
+#[test]
+fn the_restore_fallback_gets_a_worktrees_sessions_by_start_time() {
+    let mut f = fixture();
+    let oak = f.root.join("repo-oak");
+    f.all
+        .push(session("e5", Agent::Claude, &oak, "Older", 25, 70));
+    f.all.push(session(
+        "f6",
+        Agent::Claude,
+        &oak.join("src"),
+        "Newer",
+        35,
+        45,
+    ));
+    let q = SessionQuery {
+        scope: SessionScope::Worktree {
+            path: path_of(&oak),
+        },
+        agent: Some(Agent::Claude),
+        sort: SessionSort::FirstDesc,
+        limit: 5,
+        ..query(SessionScope::All)
+    };
+    let rows: Vec<(String, i64, bool)> = f
+        .rows(&q)
+        .into_iter()
+        .map(|r| (r.session.id, r.session.first, r.resumable))
+        .collect();
+    assert_eq!(
+        rows,
+        [("f6".to_string(), 35, true), ("e5".to_string(), 25, true)]
+    );
+}
+
 #[test]
 fn a_gone_folder_or_an_env_home_is_not_resumable() {
     let mut f = fixture();

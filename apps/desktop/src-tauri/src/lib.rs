@@ -1,5 +1,6 @@
 mod accounts;
 mod agent_sessions;
+mod atomic;
 #[cfg(test)]
 mod bindings;
 mod commands;
@@ -7,6 +8,7 @@ mod files;
 mod hooks;
 mod keybindings;
 mod kit;
+mod layout;
 mod links;
 mod open_in;
 mod profiles;
@@ -110,6 +112,8 @@ pub fn run() {
             commands::key_settings_put,
             commands::ui_settings_get,
             commands::ui_settings_put,
+            layout::layout_load,
+            layout::layout_save,
             open_in::open_in_settings,
             open_in::open_in_settings_put,
             open_in::open_in,
