@@ -463,6 +463,11 @@ export class Sessions {
     return latest > 0 ? latest : null;
   }
 
+  /** When the tab last produced output (not an echo of typing); 0 when it never did, null for an unknown id. */
+  lastOutput(id: string): number | null {
+    return this.entries.get(id)?.state.lastOutput ?? null;
+  }
+
   /** The distinct profiles of a worktree's tabs, in tab order. */
   profilesOf(worktree: string): PtyProfile[] {
     return [...new Set(this.tabs(worktree).map((t) => t.profileId))];
