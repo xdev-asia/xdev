@@ -5,10 +5,10 @@ use std::process::Command;
 use tempfile::TempDir;
 use xdev_git::{BaseRefresh, Repo};
 use xdev_workspace::{
-    BranchPrefix, CreateOptions, Registry, RepoPatch, ScriptSource, SetupPolicy, WorkspaceError,
-    WorktreeStat, add_repo, adopt_worktree, archive_worktree, create_worktree,
+    BranchPrefix, CreateOptions, Registry, RepoPatch, STAGING, ScriptSource, SetupPolicy, Trash,
+    WorkspaceError, WorktreeStat, add_repo, adopt_worktree, archive_worktree, create_worktree,
     create_worktree_linked, create_worktree_with, forget_repo, list, name_preview, path_key,
-    refresh_base, remove_worktree, set_pinned, stat, update_repo, valid_short_name,
+    refresh_base, remove_worktree, set_pinned, stat, sweep_with, update_repo, valid_short_name,
 };
 
 /// Runs setup commands; never used for the code under test.
@@ -1224,4 +1224,93 @@ fn preview_shows_the_name_a_create_would_get_and_makes_nothing() {
     assert_eq!(err.code(), "bad_name");
     let err = name_preview(&reg, &id, "feat one", &CreateOptions::default()).unwrap_err();
     assert_eq!(err.code(), "branch_exists");
+}
+
+fn staging_root(reg: &mut Registry) -> PathBuf {
+    Path::new(&list(reg).unwrap()[0].worktree_root).join(STAGING)
+}
+
+#[test]
+fn a_made_worktree_leaves_no_staging_entry_and_git_lists_the_final_path() {
+    let (mut reg, id, main) = registered();
+    let view = make(&mut reg, &id, "final", &suffixing());
+    assert!(!staging_root(&mut reg).exists());
+    assert!(Path::new(&view.path).join("a.txt").exists());
+    let listed = git(main.path(), &["worktree", "list", "--porcelain"]);
+    assert!(
+        listed.contains(&format!("worktree {}", view.path)),
+        "{listed}"
+    );
+    assert!(!listed.contains(STAGING));
+}
+
+#[test]
+fn the_staging_folder_is_never_found_or_imported() {
+    let (mut reg, id, main) = registered();
+    let stage = staging_root(&mut reg).join("123-abc");
+    git(
+        main.path(),
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "half",
+            stage.to_str().unwrap(),
+        ],
+    );
+    let view = &list(&mut reg).unwrap()[0];
+    assert!(view.found.is_empty());
+    assert_eq!(view.worktrees.len(), 1);
+    // A repo added while a create is staging does not import it either.
+    let mut fresh = Registry::default();
+    let added = add_repo(&mut fresh, main.path(), 0).unwrap();
+    assert_eq!(added.worktrees.len(), 1);
+    assert!(fresh.worktrees.is_empty());
+    assert!(!id.is_empty());
+}
+
+/// Deletes for real: the test has no trash.
+struct Remove;
+
+impl Trash for Remove {
+    fn trash(&self, path: &Path) -> std::io::Result<()> {
+        fs::remove_dir_all(path)
+    }
+}
+
+#[test]
+fn sweep_takes_stale_staging_worktrees_and_keeps_fresh_ones() {
+    let (mut reg, _id, main) = registered();
+    let stage = staging_root(&mut reg).join("123-abc");
+    git(
+        main.path(),
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "half",
+            stage.to_str().unwrap(),
+        ],
+    );
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    // Fresh: kept.
+    assert!(sweep_with(&reg, now, &Remove).is_empty());
+    assert!(stage.exists());
+    // Two hours on: swept, its record and its empty branch with it.
+    let swept = sweep_with(&reg, now + 2 * 60 * 60 * 1000, &Remove);
+    assert_eq!(swept, vec![stage.clone()]);
+    assert!(!stage.exists());
+    assert!(!staging_root(&mut reg).exists());
+    let listed = git(main.path(), &["worktree", "list", "--porcelain"]);
+    assert!(!listed.contains(STAGING));
+    assert!(
+        git(main.path(), &["branch", "--list", "half"])
+            .trim()
+            .is_empty()
+    );
 }

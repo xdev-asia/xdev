@@ -57,7 +57,7 @@ pub use search::{
     SearchQuery, list_files, search_text,
 };
 pub use shared::{Linked, SharedError, link_shared, unlink_shared, validate as validate_shared};
-pub use staging::{STAGING, staging_dir, sweep};
+pub use staging::{STAGING, staging_dir, sweep, sweep_with};
 pub use vaults::{VaultKind, VaultView, add_vault, forget_vault, list_vaults, repo_docs_dir};
 
 /// The UI translates `code()`, never the message.
