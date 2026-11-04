@@ -20,12 +20,13 @@ use xdev_ai::process::{kill_tree, own_group};
 use xdev_git::{ChangeKind, GitError, Repo};
 use xdev_policy::{Action, Verdict};
 use xdev_workspace::{
-    CreateOptions, DetailsPatch, FolderEntry, HookKind, HookRun, Linked, Registry, Removed,
-    RepoHooks, RepoPatch, RepoView, ScriptSource, SetupPolicy, SidebarItem, VaultView,
-    WorkspaceError, WorktreeStat, WorktreeView, add_repo, add_vault, adopt_worktree,
-    archive_worktree, create_worktree_linked, forget_repo, forget_vault, hooks_for, kept_delete,
-    list, list_vaults, path_key, refresh_base, remove_worktree, repo_docs_dir, restore_worktree,
-    set_details, set_order, set_pinned, shared_to_link, sidebar, stat, trust_hook, update_repo,
+    CreateOptions, CreateProject, Created, DetailsPatch, FolderEntry, HookKind, HookRun, Linked,
+    NamePreview, Registry, Removed, RepoHooks, RepoPatch, RepoView, ScriptSource, SetupPolicy,
+    SidebarItem, VaultView, WorkspaceError, WorktreeStat, WorktreeView, add_repo, add_vault,
+    adopt_worktree, archive_worktree, create_project, create_worktree_linked, forget_repo,
+    forget_vault, hooks_for, kept_delete, list, list_vaults, name_preview, path_key, refresh_base,
+    remove_worktree, repo_docs_dir, restore_worktree, set_details, set_order, set_pinned,
+    shared_to_link, sidebar, stat, trust_hook, update_repo,
 };
 
 use crate::accounts::data_dir;
@@ -449,6 +450,20 @@ pub fn repo_clone(
         });
     }
     result.map(drop)
+}
+
+/// Makes a new project under `req.parent` and lists it. A Git project is
+/// added like a checkout, a plain folder as a sidebar folder.
+#[tauri::command(async)]
+pub fn repo_create(
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    req: CreateProject,
+) -> Result<Created, CmdError> {
+    let (now_ms, _) = clock();
+    update(data_dir(&state)?, &lock, |reg| {
+        create_project(reg, &req, now_ms)
+    })
 }
 
 /// Stops the clone named `id`; nothing when it is not running.
@@ -903,6 +918,23 @@ fn create_with(
             create_worktree_linked(reg, repo_id, name, from, now_ms, seed, &opts)?;
         Ok(WorktreeCreated { worktree, shared })
     })
+}
+
+/// What a typed name would become, for the create dialog; makes nothing.
+#[tauri::command(async)]
+pub fn worktree_name_preview(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    lock: State<'_, WorkspaceLock>,
+    repo_id: String,
+    name: String,
+) -> Result<NamePreview, CmdError> {
+    let git = load_git_settings(&app);
+    let reg = {
+        let _guard = lock_guard(&lock);
+        Registry::load(data_dir(&state)?)?
+    };
+    Ok(name_preview(&reg, &repo_id, &name, &git.create_options())?)
 }
 
 #[tauri::command(async)]

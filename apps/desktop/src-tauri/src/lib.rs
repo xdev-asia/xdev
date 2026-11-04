@@ -208,6 +208,8 @@ pub fn run() {
             workspace::repo_clone,
             workspace::repo_clone_cancel,
             workspace::repo_clone_name,
+            workspace::repo_create,
+            workspace::worktree_name_preview,
             workspace::repo_update,
             workspace::repo_hooks,
             workspace::repo_hook_trust,
