@@ -1,0 +1,122 @@
+/* First-run wizard and setup guide. Tokens only; the card fits 360px. */
+
+.onb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 16px;
+  background: var(--bg-0);
+  color: var(--text-1);
+}
+
+.onb-over {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: auto;
+  background: var(--bg-0);
+}
+
+.onb-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 520px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--bg-1);
+}
+
+.onb-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.onb-title {
+  margin: 0;
+  font-size: 18px;
+}
+
+.onb-count,
+.onb-hint,
+.onb-check-state {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.onb-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.onb-steps li[data-state="current"] {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.onb-steps li[data-state="done"] {
+  color: var(--text-1);
+}
+
+.onb-body {
+  min-height: 140px;
+}
+
+.onb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.onb-spacer {
+  flex: 1;
+}
+
+.onb-entry {
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.onb-entry-count {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.onb-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.onb-checklist li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* The sidebar footer gets a row of its own for the setup guide. */
+.ws-sidebar-foot {
+  flex-wrap: wrap;
+}
+
+.ws-sidebar-foot .onb-entry {
+  flex-basis: 100%;
+}
