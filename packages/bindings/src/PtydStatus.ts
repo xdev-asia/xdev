@@ -8,4 +8,8 @@ export type PtydStatus = { state: PtydState, serviceVersion: string | null,
 /**
  * The error code of a fallback.
  */
-reason: string | null, };
+reason: string | null, 
+/**
+ * What the service can do (`ring`, `snapshot`, `clear`); empty without one.
+ */
+features: Array<string>, };
