@@ -23,26 +23,24 @@ interface Spec {
   modes: Mode[];
   /** The first prompt is typed after the agent starts. */
   after: boolean;
-  /** The flag a permission recipe starts with, so an arg that holds one makes the profile custom. */
-  heads: string[];
   docs: string;
 }
 
 // Mirrors the table in `crates/xdev-agent/src/catalog.rs`, in `Cli::ALL` order.
 const SPECS: Record<Cli, Spec> = {
-  claude: { name: "Claude Code", efforts: ["low", "medium", "high", "xhigh", "max"], modes: ["ask", "accept-edits", "auto", "skip"], after: false, heads: ["--permission-mode", "--dangerously-skip-permissions"], docs: "https://code.claude.com/docs" },
-  codex: { name: "Codex", efforts: ["low", "medium", "high"], modes: ["ask", "accept-edits", "auto", "skip"], after: false, heads: ["--sandbox", "--ask-for-approval", "--approve-for-me", "--dangerously-bypass-approvals-and-sandbox"], docs: "https://github.com/openai/codex" },
-  gemini: { name: "Gemini CLI", efforts: [], modes: ["ask", "accept-edits", "skip"], after: false, heads: ["--approval-mode"], docs: "https://github.com/google-gemini/gemini-cli" },
-  cursor: { name: "Cursor", efforts: [], modes: ["ask", "skip"], after: false, heads: ["--yolo"], docs: "https://cursor.com/cli" },
-  copilot: { name: "GitHub Copilot", efforts: [], modes: ["ask", "skip"], after: false, heads: ["--yolo"], docs: "https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli" },
-  opencode: { name: "OpenCode", efforts: [], modes: ["ask"], after: false, heads: [], docs: "https://opencode.ai/docs/cli/" },
-  amp: { name: "Amp", efforts: [], modes: ["ask", "skip"], after: true, heads: ["--dangerously-allow-all"], docs: "https://ampcode.com/manual#install" },
-  droid: { name: "Droid", efforts: [], modes: ["ask", "skip"], after: false, heads: ["--auto"], docs: "https://docs.factory.ai/cli/getting-started/quickstart" },
-  "qwen-code": { name: "Qwen Code", efforts: [], modes: ["ask", "skip"], after: true, heads: ["--approval-mode"], docs: "https://github.com/QwenLM/qwen-code" },
-  kimi: { name: "Kimi", efforts: [], modes: ["ask", "skip"], after: true, heads: ["--yolo"], docs: "https://www.kimi.com/code/docs/en/kimi-code-cli/getting-started.html" },
-  devin: { name: "Devin", efforts: [], modes: ["ask", "skip"], after: false, heads: ["--permission-mode", "--respect-workspace-trust"], docs: "https://devin.ai/cli" },
-  aider: { name: "Aider", efforts: [], modes: ["ask", "skip"], after: true, heads: ["--yes-always"], docs: "https://aider.chat/docs/" },
-  goose: { name: "Goose", efforts: [], modes: ["ask", "skip"], after: true, heads: [], docs: "https://goose-docs.ai/docs/quickstart/" },
+  claude: { name: "Claude Code", efforts: ["low", "medium", "high", "xhigh", "max"], modes: ["ask", "accept-edits", "auto", "skip"], after: false, docs: "https://code.claude.com/docs" },
+  codex: { name: "Codex", efforts: ["low", "medium", "high"], modes: ["ask", "accept-edits", "auto", "skip"], after: false, docs: "https://github.com/openai/codex" },
+  gemini: { name: "Gemini CLI", efforts: [], modes: ["ask", "accept-edits", "skip"], after: false, docs: "https://github.com/google-gemini/gemini-cli" },
+  cursor: { name: "Cursor", efforts: [], modes: ["ask", "skip"], after: false, docs: "https://cursor.com/cli" },
+  copilot: { name: "GitHub Copilot", efforts: [], modes: ["ask", "skip"], after: false, docs: "https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli" },
+  opencode: { name: "OpenCode", efforts: [], modes: ["ask"], after: false, docs: "https://opencode.ai/docs/cli/" },
+  amp: { name: "Amp", efforts: [], modes: ["ask", "skip"], after: true, docs: "https://ampcode.com/manual#install" },
+  droid: { name: "Droid", efforts: [], modes: ["ask", "skip"], after: false, docs: "https://docs.factory.ai/cli/getting-started/quickstart" },
+  "qwen-code": { name: "Qwen Code", efforts: [], modes: ["ask", "skip"], after: true, docs: "https://github.com/QwenLM/qwen-code" },
+  kimi: { name: "Kimi", efforts: [], modes: ["ask", "skip"], after: true, docs: "https://www.kimi.com/code/docs/en/kimi-code-cli/getting-started.html" },
+  devin: { name: "Devin", efforts: [], modes: ["ask", "skip"], after: false, docs: "https://devin.ai/cli" },
+  aider: { name: "Aider", efforts: [], modes: ["ask", "skip"], after: true, docs: "https://aider.chat/docs/" },
+  goose: { name: "Goose", efforts: [], modes: ["ask", "skip"], after: true, docs: "https://goose-docs.ai/docs/quickstart/" },
 };
 const CLIS = Object.keys(SPECS) as Cli[];
 const isCli = (id: string): id is Cli => id in SPECS;
@@ -69,6 +67,11 @@ const FLAGS: Record<Cli, Partial<Record<Mode, string[]>>> = {
   aider: { skip: ["--yes-always"] },
   goose: { skip: ["GOOSE_MODE=auto"] },
 };
+
+/** The flag each mode's recipe starts with; an arg that holds one makes the profile custom. */
+function heads(cli: Cli): string[] {
+  return Object.values(FLAGS[cli]).flatMap((f) => (f[0]?.startsWith("-") ? [f[0]] : []));
+}
 
 function builtin(id: Cli): Profile {
   return {
@@ -142,7 +145,7 @@ export function createMockProfiles(): MockProfiles {
     permissions: effective(profile),
     followsApprovals: follows(profile),
     efforts: profile.cli ? SPECS[profile.cli].efforts : [],
-    customArgs: profile.cli !== null && profile.args.some((a) => SPECS[profile.cli!].heads.some((h) => a === h || a.startsWith(`${h}=`))),
+    customArgs: profile.cli !== null && profile.args.some((a) => heads(profile.cli!).some((h) => a === h || a.startsWith(`${h}=`))),
     modes: profile.cli ? SPECS[profile.cli].modes : [],
     modeFlags: profile.cli ? SPECS[profile.cli].modes.map((mode) => ({ mode, flags: FLAGS[profile.cli!][mode] ?? [] })) : [],
     docs: profile.cli !== null,

@@ -12,6 +12,19 @@ describe("mock profiles", () => {
     for (const id of ["auto", "blank"]) await expect(api.profilePut(custom(id))).rejects.toMatchObject({ code: "invalid_profile" });
   });
 
+  it("custom args count only the first flag of a mode, like has_permission_args", async () => {
+    const api = createMockApi({});
+    const customArgs = async (id: string, args: string[]) => {
+      const p = (await api.profiles()).profiles.find((v) => v.profile.id === id)!.profile;
+      return (await api.profilePut({ ...p, args })).profiles.find((v) => v.profile.id === id)!.customArgs;
+    };
+    expect(await customArgs("codex", ["--sandbox", "read-only"])).toBe(true);
+    expect(await customArgs("codex", ["--ask-for-approval", "never"])).toBe(false);
+    expect(await customArgs("devin", ["--permission-mode=bypass"])).toBe(true);
+    expect(await customArgs("devin", ["--respect-workspace-trust", "false"])).toBe(false);
+    expect(await customArgs("goose", ["GOOSE_MODE=auto"])).toBe(false);
+  });
+
   it("mock_profile_put_round_trips", async () => {
     const api = createMockApi({});
     const first = await api.profiles();
