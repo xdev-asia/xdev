@@ -1,13 +1,16 @@
 import { Banner, Icon } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
-import type { JSX } from "react";
+import type { JSX, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { toApiError, type Api, type DirListing, type FsEvent, type WorktreeChange } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { NameDialog } from "@/files/NameDialog";
 import { fileName, fileTabs } from "@/files/fileTabs";
 import { openFile } from "@/files/openFile";
 import { dirsToReload, drain, type WatchQueue } from "@/files/treeRefresh";
-import { copyAbsolute, copyRelative, createEntry, deleteEntry, parentOf, renameEntry, type TreeIo } from "@/files/treeActions";
+import { copyAbsolute, copyRelative, createEntry, deleteEntry, findInFolder, parentOf, renameEntry, treeMenuItems, type TreeIo } from "@/files/treeActions";
+import { matchFiles } from "@/files/treeFilter";
+import { NAV_KEYS, navigate, type NavKey, type NavRow } from "@/files/treeNav";
+import { loadReveal, revealOpen, saveReveal } from "@/files/treeReveal";
 import { useI18n } from "@/i18n";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import { pushToast } from "./toastStore";
@@ -60,22 +63,6 @@ export function treeRows(folders: Record<string, Folder>, open: string[], change
   return rows;
 }
 
-/**
- * The rows of the folders already loaded whose names match `query`, with the folders above a match
- * kept so it stays reachable. An empty query keeps every row.
- */
-export function filterRows(rows: Row[], query: string): Row[] {
-  const q = query.trim().toLowerCase();
-  if (q === "") return rows;
-  const hits = rows.filter((r) => r.type !== "note" && r.name.toLowerCase().includes(q));
-  const keep = new Set<string>();
-  for (const r of hits) {
-    keep.add(r.path);
-    for (let i = r.path.indexOf("/"); i >= 0; i = r.path.indexOf("/", i + 1)) keep.add(r.path.slice(0, i));
-  }
-  return rows.filter((r) => r.type !== "note" && keep.has(r.path));
-}
-
 // What a menu or dialog is about: a row, or the tree's empty space (the worktree root).
 type Target = { rel: string; dir: boolean };
 type Ask = { kind: "newFile" | "newFolder" | "rename"; dir: string; rel?: string } | { kind: "delete"; rel: string };
@@ -89,18 +76,27 @@ export function FileTree(props: {
   worktree: string;
   changes: WorktreeChange[];
   onOpen: (file: string) => void;
-  /** Opens the search in files; the link is off until something handles it. */
+  /** Shows the search panel; the link is off until something handles it. */
   onSearch?: () => void;
+  /** The file in front in the editor tabs, relative to the worktree; the tree follows it when asked to. */
+  activeFile?: string | null;
   /** The disk events of the shown worktree; each batch is applied once. Held while a name dialog is open. */
   queue?: WatchQueue | null;
   /** How watching the disk goes; `limit` shows why live updates stopped. */
   watchHealth?: WatchHealth;
 }): JSX.Element {
-  const { api, worktree, changes, onOpen, onSearch, queue = null } = props;
+  const { api, worktree, changes, onOpen, onSearch, activeFile = null, queue = null } = props;
   const { t } = useI18n();
   const [folders, setFolders] = useState<Record<string, Folder>>({});
   const [open, setOpen] = useState<string[]>([]);
   const [filter, setFilter] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  // Every file of the worktree, read when the filter opens; null until it arrives.
+  const [listed, setListed] = useState<string[] | null>(null);
+  const [follow, setFollow] = useState(loadReveal);
+  // The row the arrow keys are on, and the options menu of the header.
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [options, setOptions] = useState<{ x: number; y: number } | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [menu, setMenu] = useState<{ x: number; y: number; target: Target | null } | null>(null);
   const [ask, setAsk] = useState<Ask | null>(null);
@@ -110,6 +106,10 @@ export function FileTree(props: {
   const asked = useRef(new Set<string>());
   const openNow = useRef(open);
   openNow.current = open;
+  const treeEl = useRef<HTMLDivElement | null>(null);
+  // Set when a key moved the cursor, so the row takes the focus; and the file to scroll to once its row exists.
+  const focusCursor = useRef(false);
+  const scrollTo = useRef<string | null>(null);
 
   function read(dir: string): void {
     if (asked.current.has(dir)) return;
@@ -156,6 +156,48 @@ export function FileTree(props: {
     }
   }, [queue, naming]);
 
+  // The name filter searches every file, not only the folders opened so far.
+  useEffect(() => {
+    if (!filterOpen) return;
+    let stale = false;
+    api.filesList(worktree).then(
+      (list) => !stale && setListed(list.files),
+      () => !stale && setListed([]),
+    );
+    return () => {
+      stale = true;
+    };
+  }, [api, worktree, changes, refresh, filterOpen]);
+
+  // The file in front opens the folders above it and scrolls into view.
+  useEffect(() => {
+    if (!follow || !activeFile) return;
+    const next = revealOpen(openNow.current, activeFile);
+    if (next !== openNow.current) {
+      setOpen(next);
+      for (const dir of next) if (!folders[dir]) read(dir);
+    }
+    scrollTo.current = activeFile;
+  }, [activeFile, follow, worktree]);
+
+  // Runs after every draw: the row to scroll to or to focus is looked up when it is there.
+  useEffect(() => {
+    const el = treeEl.current;
+    if (!el) return;
+    const rowOf = (path: string) => Array.from(el.querySelectorAll<HTMLElement>("[data-path]")).find((r) => r.dataset.path === path);
+    if (scrollTo.current) {
+      const row = rowOf(scrollTo.current);
+      if (row) {
+        row.scrollIntoView?.({ block: "nearest" });
+        scrollTo.current = null;
+      }
+    }
+    if (focusCursor.current && cursor !== null) {
+      focusCursor.current = false;
+      rowOf(cursor)?.focus();
+    }
+  });
+
   function toggle(dir: string): void {
     const closing = open.includes(dir);
     setOpen(closing ? open.filter((d) => d !== dir) : [...open, dir]);
@@ -185,32 +227,19 @@ export function FileTree(props: {
     }
   }
 
-  function menuItems(target: Target | null): MenuItem[] {
-    const dirOf = target === null ? "" : target.dir ? target.rel : parentOf(target.rel);
-    const items: MenuItem[] = [];
-    if (target && !target.dir) items.push({ id: "open", labelKey: "files.menu.open", run: () => openFile({ worktree, rel: target.rel }) });
-    if (target) {
-      items.push(
-        { id: "copyPath", labelKey: "files.menu.copyPath", run: () => void copyAbsolute(io(), target.rel) },
-        { id: "copyRel", labelKey: "files.menu.copyRelativePath", run: () => void copyRelative(target.rel) },
-        { id: "sep1", labelKey: "", kind: "separator" },
-      );
-    }
-    items.push(
-      { id: "newFile", labelKey: "files.menu.newFile", run: () => setAsk({ kind: "newFile", dir: dirOf }) },
-      { id: "newFolder", labelKey: "files.menu.newFolder", run: () => setAsk({ kind: "newFolder", dir: dirOf }) },
-    );
-    if (target) {
-      items.push(
-        { id: "rename", labelKey: "files.menu.rename", run: () => setAsk({ kind: "rename", dir: parentOf(target.rel), rel: target.rel }) },
-        { id: "delete", labelKey: "files.menu.delete", danger: true, run: () => setAsk({ kind: "delete", rel: target.rel }) },
-        { id: "sep2", labelKey: "", kind: "separator" },
-        { id: "reveal", labelKey: "files.menu.reveal", run: () => void api.fileReveal(worktree, target.rel).catch(() => undefined) },
-      );
-      if (!target.dir) items.push({ id: "openOnHost", labelKey: "files.menu.openOnHost", run: () => void openOnHost(target.rel) });
-    }
-    return items;
-  }
+  const menuItems = (target: Target | null): MenuItem[] =>
+    treeMenuItems(target, {
+      open: (rel) => openFile({ worktree, rel }),
+      copyPath: (rel) => void copyAbsolute(io(), rel),
+      copyRel: (rel) => void copyRelative(rel),
+      findIn: (dir) => {
+        findInFolder(dir);
+        onSearch?.();
+      },
+      ask: setAsk,
+      reveal: (rel) => void api.fileReveal(worktree, rel).catch(() => undefined),
+      openOnHost: (rel) => void openOnHost(rel),
+    });
 
   const onMenu = (e: MouseEvent, target: Target | null) => {
     e.preventDefault();
@@ -218,32 +247,129 @@ export function FileTree(props: {
     setMenu({ x: e.clientX, y: e.clientY, target });
   };
 
-  const rows = filterRows(treeRows(folders, open, changes), filter);
+  const all = treeRows(folders, open, changes);
+  const found = filterOpen && filter.trim() !== "" ? matchFiles(listed ?? [], filter) : null;
+  const rows = found ? [] : all;
+  // The rows the keys walk: the matches while filtering, else every folder and file shown.
+  const navRows: NavRow[] = found
+    ? found.hits.map((h) => ({ path: h.rel, dir: false, open: false, depth: 0 }))
+    : all.flatMap((r) => (r.type === "note" ? [] : [{ path: r.path, dir: r.type === "dir", open: r.type === "dir" && r.open, depth: r.depth }]));
+  const here = navRows.some((r) => r.path === cursor) ? cursor : null;
+  const tabbable = here ?? navRows[0]?.path ?? null;
   const kinds = new Map(changes.map((c) => [c.path, c.kind]));
+
+  const closeFilter = () => {
+    setFilter("");
+    setFilterOpen(false);
+  };
+
+  function onKeyDown(e: ReactKeyboardEvent): void {
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.altKey && e.code === "KeyC") {
+      if (here === null) return;
+      e.preventDefault();
+      void (e.shiftKey ? copyRelative(here) : copyAbsolute(io(), here));
+      return;
+    }
+    // Cmd+Backspace is Delete on a Mac keyboard that has no Delete key.
+    if (e.key === "Delete" || (e.metaKey && e.key === "Backspace")) {
+      if (here === null) return;
+      e.preventDefault();
+      setAsk({ kind: "delete", rel: here });
+      return;
+    }
+    if (mod || e.altKey || e.shiftKey || !NAV_KEYS.includes(e.key)) return;
+    // The key is the tree's: a focused row would otherwise also click on Enter.
+    e.preventDefault();
+    const go = navigate(navRows, here, e.key as NavKey);
+    if (!go) return;
+    if (go.kind === "select") {
+      focusCursor.current = true;
+      setCursor(go.path);
+    } else if (go.kind === "open") openFile({ worktree, rel: go.path });
+    else if (go.kind === "toggle" || (go.kind === "expand") === !open.includes(go.path)) toggle(go.path);
+  }
+
+  const cell = (path: string) => ({
+    "data-path": path,
+    "aria-selected": here === path,
+    "data-active": activeFile === path || undefined,
+    tabIndex: tabbable === path ? 0 : -1,
+    onFocus: () => setCursor(path),
+  });
   return (
     <div className="ws-tree-wrap">
       <div className="ws-tree-tools">
-        <input
-          className="ws-tree-filter"
-          type="search"
-          data-field="filter"
-          placeholder={t("files.tree.filter")}
-          aria-label={t("files.tree.filter")}
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        />
+        <button type="button" className="ws-tree-tool" data-action="filter" aria-pressed={filterOpen} title={t("files.tree.filterToggle")} aria-label={t("files.tree.filterToggle")} onClick={() => (filterOpen ? closeFilter() : setFilterOpen(true))}>
+          <Icon name="magnifier" size={13} />
+        </button>
         <button type="button" className="ws-tree-tool" data-action="refresh" title={t("files.tree.refresh")} aria-label={t("files.tree.refresh")} onClick={() => setRefresh((n) => n + 1)}>
           ↻
         </button>
         <button type="button" className="ws-tree-tool" data-action="collapse" title={t("files.tree.collapseAll")} aria-label={t("files.tree.collapseAll")} onClick={() => setOpen([])}>
           ⊟
         </button>
+        <button
+          type="button"
+          className="ws-tree-tool"
+          data-action="options"
+          title={t("files.tree.options")}
+          aria-label={t("files.tree.options")}
+          aria-haspopup="menu"
+          onClick={(e) => {
+            const box = e.currentTarget.getBoundingClientRect();
+            setOptions({ x: box.left, y: box.bottom });
+          }}
+        >
+          <Icon name="more" size={13} />
+        </button>
         <button type="button" className="ws-tree-tool" data-action="search" disabled={!onSearch} onClick={onSearch}>
           {t("files.tree.searchInFiles")}
         </button>
       </div>
+      {filterOpen && (
+        <div className="ws-tree-tools">
+          <input
+            className="ws-tree-filter"
+            type="search"
+            data-field="filter"
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus
+            placeholder={t("files.tree.filterPlaceholder")}
+            aria-label={t("files.tree.filterPlaceholder")}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape") return;
+              e.preventDefault();
+              closeFilter();
+            }}
+          />
+        </div>
+      )}
       {props.watchHealth === "limit" && <Banner title={t("files.watch.limit.title")}>{t("files.watch.limit.body")}</Banner>}
-    <div className="ws-tree ws-mono" role="tree" aria-label={t("workspace.files.tree")} onContextMenu={(e) => onMenu(e as unknown as MouseEvent, null)}>
+    <div ref={treeEl} className="ws-tree ws-mono" role="tree" aria-label={t("workspace.files.tree")} onKeyDown={onKeyDown} onContextMenu={(e) => onMenu(e as unknown as MouseEvent, null)}>
+      {found && found.hits.length === 0 && listed !== null && <div className="ws-tree-note">{t("files.tree.filterEmpty")}</div>}
+      {found?.hits.map((hit) => (
+        <button
+          key={hit.rel}
+          type="button"
+          role="treeitem"
+          className="ws-tree-row"
+          aria-level={1}
+          title={hit.rel}
+          style={{ paddingLeft: "var(--tree-pad)" }}
+          {...cell(hit.rel)}
+          onClick={() => (kinds.has(hit.rel) ? onOpen(hit.rel) : openFile({ worktree, rel: hit.rel }))}
+          onDoubleClick={() => openFile({ worktree, rel: hit.rel })}
+          onContextMenu={(e) => onMenu(e as unknown as MouseEvent, { rel: hit.rel, dir: false })}
+        >
+          <Icon name="file" className="ws-tree-icon" size={13} />
+          <span className="ws-tree-name">{hit.name}</span>
+          {hit.dir !== "" && <span className="ws-tree-dir">{hit.dir}</span>}
+        </button>
+      ))}
+      {found && found.more && <div className="ws-tree-note">{t("files.tree.filterMore", { n: found.hits.length })}</div>}
       {rows.map((row) => {
         const indent = { paddingLeft: `calc(var(--tree-indent) * ${row.depth} + var(--tree-pad))` };
         if (row.type === "note") {
@@ -264,6 +390,7 @@ export function FileTree(props: {
               aria-expanded={row.open}
               title={row.path}
               style={indent}
+              {...cell(row.path)}
               onClick={() => toggle(row.path)}
               onContextMenu={(e) => onMenu(e as unknown as MouseEvent, { rel: row.path, dir: true })}
             >
@@ -296,6 +423,7 @@ export function FileTree(props: {
             aria-level={row.depth + 1}
             title={row.path}
             style={indent}
+            {...cell(row.path)}
             onClick={() => (changed ? onOpen(row.path) : openFile({ worktree, rel: row.path }))}
             onDoubleClick={() => openFile({ worktree, rel: row.path })}
             onContextMenu={(e) => onMenu(e as unknown as MouseEvent, { rel: row.path, dir: false })}
@@ -305,6 +433,23 @@ export function FileTree(props: {
         );
       })}
     </div>
+      {options && (
+        <ContextMenu
+          at={options}
+          items={[
+            {
+              id: "revealActive",
+              labelKey: "files.tree.revealActive",
+              checked: follow,
+              run: () => {
+                saveReveal(!follow);
+                setFollow(!follow);
+              },
+            },
+          ]}
+          onClose={() => setOptions(null)}
+        />
+      )}
       {menu && <ContextMenu at={menu} items={menuItems(menu.target)} onClose={() => setMenu(null)} />}
       {ask && ask.kind !== "delete" && (
         <NameDialog
