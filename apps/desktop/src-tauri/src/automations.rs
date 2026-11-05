@@ -320,6 +320,10 @@ impl AutomationService {
             .find(|a| a.id == id)
             .cloned()
             .ok_or_else(|| cmd_error("not_found", None))?;
+        // Runs of one automation do not overlap.
+        if store.runs(id).iter().any(|r| !r.status.is_final()) {
+            return Err(cmd_error("bad_arg", Some("previousRunActive".into())));
+        }
         let run = store.create_run(&a, now, RunTrigger::Manual, now, new_id());
         save(&store)?;
         Ok(run)
@@ -360,7 +364,16 @@ impl AutomationService {
                     touched = true;
                 }
             }
-            let steps = xdev_automations::tick::plan(store.list(), now, DEFAULT_TICK_MS, ready);
+            // Open runs left after the watchdog: their automations wait for them to end.
+            let busy: Vec<String> = store
+                .list()
+                .iter()
+                .filter(|a| store.runs(&a.id).iter().any(|r| !r.status.is_final()))
+                .map(|a| a.id.clone())
+                .collect();
+            let busy: Vec<&str> = busy.iter().map(String::as_str).collect();
+            let steps =
+                xdev_automations::tick::plan(store.list(), now, DEFAULT_TICK_MS, ready, &busy);
             touched |= !steps.is_empty();
             for step in steps {
                 self.carry_out(&mut store, step, now);
@@ -1371,8 +1384,15 @@ mod tests {
             r.tick_due(&env);
             let first = env.sent()[0].run_id.clone();
             r.service.dispatch_result(DispatchResult::Dispatched {
-                run_id: first,
+                run_id: first.clone(),
                 tab_id: "tab-1".into(),
+            });
+            // The first run ends, so the next one may start.
+            r.service.run_finish(RunFinish {
+                run_id: first,
+                completed: true,
+                output: None,
+                truncated: false,
             });
             r.at(T0 + 61 * MIN);
             r.service.tick(&env);
@@ -1404,6 +1424,43 @@ mod tests {
         r.service.tick(&env);
         assert_eq!(env.sent().len(), 1);
         assert_eq!(r.runs(&a.id)[0].status, RunStatus::Dispatching);
+    }
+
+    #[test]
+    fn a_scheduled_run_waits_for_the_previous_one_to_end() {
+        let r = rig();
+        r.ready();
+        let env = Fake::new(&r.clock);
+        let a = r.service.create(input()).unwrap();
+        r.tick_due(&env);
+        assert_eq!(env.sent().len(), 1);
+        r.service.dispatch_result(DispatchResult::Dispatched {
+            run_id: env.sent()[0].run_id.clone(),
+            tab_id: "tab-1".into(),
+        });
+        // The 10:00 run is still open at 11:01: the 11:00 run is skipped, not started beside it.
+        r.at(T0 + 61 * MIN);
+        r.service.tick(&env);
+        assert_eq!(env.sent().len(), 1);
+        let runs = r.runs(&a.id);
+        assert_eq!(runs.len(), 2);
+        let skipped = runs
+            .iter()
+            .find(|x| x.scheduled_for == T0 + 60 * MIN)
+            .unwrap();
+        assert_eq!(skipped.status, RunStatus::SkippedUnavailable);
+        assert_eq!(skipped.error_code, Some(FailureCode::PreviousRunActive));
+        assert_eq!(r.service.list().automations[0].next_run_at, T0 + 120 * MIN);
+    }
+
+    #[test]
+    fn run_now_is_refused_while_a_run_is_open() {
+        let r = rig();
+        let a = r.service.create(input()).unwrap();
+        r.service.run_now(&a.id).unwrap();
+        // Still pending: a second manual run would start beside it.
+        assert_eq!(r.service.run_now(&a.id).unwrap_err().code, "bad_arg");
+        assert_eq!(r.runs(&a.id).len(), 1);
     }
 
     #[test]
@@ -1746,7 +1803,12 @@ mod tests {
         let r = rig();
         let a = r.service.create(input()).unwrap();
         let b = r.service.create(input()).unwrap();
-        r.service.run_now(&a.id).unwrap();
+        let first = r.service.run_now(&a.id).unwrap();
+        r.service.dispatch_result(DispatchResult::Failed {
+            run_id: first.id,
+            code: FailureCode::AgentNeverStarted,
+            detail: None,
+        });
         let second = r.service.run_now(&a.id).unwrap();
         let view = r.service.list();
         assert_eq!(view.automations.len(), 2);

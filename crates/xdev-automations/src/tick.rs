@@ -31,12 +31,14 @@ pub enum TickStep {
 
 /// What to do about each enabled automation that is due at `now`: one step per automation, for the
 /// latest occurrence only (older missed ones are not replayed). The caller carries the steps out and
-/// then advances `next_run_at`.
+/// then advances `next_run_at`. An automation in `active` (it has a run that is not final yet) is
+/// refused with `previousRunActive`, so runs of one automation never overlap.
 pub fn plan(
     automations: &[Automation],
     now: i64,
     tick_ms: i64,
     can_dispatch: bool,
+    active: &[&str],
 ) -> Vec<TickStep> {
     automations
         .iter()
@@ -53,6 +55,12 @@ pub fn plan(
                     let allowed = i64::from(a.missed_run_grace_minutes) * 60_000 + 2 * tick_ms;
                     if now - scheduled_for > allowed {
                         TickStep::Missed { id, scheduled_for }
+                    } else if active.contains(&a.id.as_str()) {
+                        TickStep::Refuse {
+                            id,
+                            scheduled_for,
+                            code: FailureCode::PreviousRunActive,
+                        }
                     } else if can_dispatch {
                         TickStep::Dispatch { id, scheduled_for }
                     } else {

@@ -83,6 +83,7 @@ pub enum FailureCode {
     PrecheckTimedOut,
     PrecheckFailed,
     PrecheckExit,
+    PreviousRunActive,
 }
 
 impl FailureCode {
@@ -113,6 +114,10 @@ impl FailureCode {
             Self::PrecheckTimedOut => format!("Precheck timed out after {}s.", p("seconds")),
             Self::PrecheckFailed => format!("Precheck failed: {}", p("error")),
             Self::PrecheckExit => format!("Precheck exited with code {}.", p("code")),
+            Self::PreviousRunActive => {
+                "The previous run of this automation had not finished, so this run was skipped."
+                    .into()
+            }
         }
     }
 }

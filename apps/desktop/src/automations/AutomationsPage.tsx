@@ -126,6 +126,7 @@ export function AutomationsPage(props: {
       }
       reload();
     } catch (e) {
+      if (action === "run" && toApiError(e).detail === "previousRunActive") return pushToast({ text: t("automations.toast.runActive") });
       pushToast({ text: t(action === "run" ? "automations.toast.runFailed" : "automations.toast.changeFailed", { code: toApiError(e).code }) });
     }
   }

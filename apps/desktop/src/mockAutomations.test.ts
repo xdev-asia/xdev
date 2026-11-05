@@ -40,6 +40,9 @@ describe("mock automations", () => {
     const run = await api.automationRunNow(a.id);
     expect(run).toMatchObject({ automationId: a.id, runNumber: 1, trigger: "manual", status: "dispatching" });
     expect(run.title).toBe("Audit run 1");
+    // A second run waits for the first to end.
+    await expect(api.automationRunNow(a.id)).rejects.toMatchObject({ code: "bad_arg", detail: "previousRunActive" });
+    await api.automationRunFinish({ runId: run.id, completed: true, output: null, truncated: false });
     expect((await api.automationRunNow(a.id)).runNumber).toBe(2);
     expect((await api.automationRuns(a.id)).map((r) => r.runNumber)).toEqual([2, 1]);
     expect((await api.automationsList()).lastRuns.map((r) => r.runNumber)).toEqual([2]);

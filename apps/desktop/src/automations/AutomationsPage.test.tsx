@@ -123,6 +123,16 @@ it("Run now starts a run and says it is queued", async () => {
   expect((await api.automationRuns(id))).toHaveLength(1);
 });
 
+it("Run now says so when the previous run has not finished", async () => {
+  const { api, m } = await open(async (a) => void (await a.automationCreate(input())));
+  const id = (await api.automationsList()).automations[0].id;
+  await api.automationRunNow(id);
+  find(m.all(), AutomationList)!.props.onAction(id, "run");
+  await tick();
+  expect(toast()).toEqual(["The previous run has not finished yet."]);
+  expect((await api.automationRuns(id))).toHaveLength(1);
+});
+
 it("pauses and resumes", async () => {
   const { api, m } = await open(async (a) => void (await a.automationCreate(input())));
   const id = (await api.automationsList()).automations[0].id;

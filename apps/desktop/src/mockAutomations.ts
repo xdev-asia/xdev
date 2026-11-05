@@ -208,6 +208,9 @@ export function createMockAutomations(options: { now?: () => number } = {}): Moc
     async automationRunNow(id) {
       const a = automations.find((x) => x.id === id);
       if (!a) return reject("not_found");
+      // Runs of one automation do not overlap, as in the backend.
+      const open = new Set(["pending", "dispatching", "dispatched"]);
+      if (runs.some((r) => r.automationId === id && open.has(r.status))) return reject("bad_arg", "previousRunActive");
       const run = newRun(a);
       a.lastRunAt = run.createdAt;
       changed(id);

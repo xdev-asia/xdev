@@ -3,4 +3,4 @@
 /**
  * Why a run did not complete. The UI translates by code; `english` is the stored fallback.
  */
-export type FailureCode = "noDispatchHost" | "unevaluableSchedule" | "missedGraceWindow" | "targetUnavailable" | "repoUnavailable" | "worktreeCreateFailed" | "automationChanged" | "needsApproval" | "agentNeverStarted" | "agentNoCompletion" | "agentInterrupted" | "watchTimedOut" | "precheckTimedOut" | "precheckFailed" | "precheckExit";
+export type FailureCode = "noDispatchHost" | "unevaluableSchedule" | "missedGraceWindow" | "targetUnavailable" | "repoUnavailable" | "worktreeCreateFailed" | "automationChanged" | "needsApproval" | "agentNeverStarted" | "agentNoCompletion" | "agentInterrupted" | "watchTimedOut" | "precheckTimedOut" | "precheckFailed" | "precheckExit" | "previousRunActive";

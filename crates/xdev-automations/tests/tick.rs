@@ -38,7 +38,7 @@ fn a_disabled_or_not_yet_due_automation_is_left_alone() {
     let mut off = auto("off", HOURLY, T0 - MIN, 720);
     off.enabled = false;
     let later = auto("later", HOURLY, T0 + MIN, 720);
-    assert!(plan(&[off, later], T0, TICK, true).is_empty());
+    assert!(plan(&[off, later], T0, TICK, true, &[]).is_empty());
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn a_due_automation_within_grace_dispatches_its_latest_occurrence() {
     // The 10:00 occurrence, 3 minutes ago at 10:03.
     let now = T0 + 3 * MIN;
     assert_eq!(
-        plan(&[a], now, TICK, true),
+        plan(&[a], now, TICK, true, &[]),
         vec![TickStep::Dispatch {
             id: "a".into(),
             scheduled_for: T0
@@ -60,14 +60,14 @@ fn the_jitter_allowance_is_two_ticks_past_the_grace() {
     let a = auto("a", HOURLY, T0, 0);
     let on_edge = T0 + 2 * TICK;
     assert_eq!(
-        plan(std::slice::from_ref(&a), on_edge, TICK, true),
+        plan(std::slice::from_ref(&a), on_edge, TICK, true, &[]),
         vec![TickStep::Dispatch {
             id: "a".into(),
             scheduled_for: T0
         }]
     );
     assert_eq!(
-        plan(&[a], on_edge + 1, TICK, true),
+        plan(&[a], on_edge + 1, TICK, true, &[]),
         vec![TickStep::Missed {
             id: "a".into(),
             scheduled_for: T0
@@ -79,7 +79,8 @@ fn the_jitter_allowance_is_two_ticks_past_the_grace() {
             std::slice::from_ref(&with_grace),
             T0 + 30 * MIN + 2 * TICK,
             TICK,
-            true
+            true,
+            &[]
         ),
         vec![TickStep::Dispatch {
             id: "g".into(),
@@ -87,7 +88,7 @@ fn the_jitter_allowance_is_two_ticks_past_the_grace() {
         }]
     );
     assert_eq!(
-        plan(&[with_grace], T0 + 30 * MIN + 2 * TICK + 1, TICK, true),
+        plan(&[with_grace], T0 + 30 * MIN + 2 * TICK + 1, TICK, true, &[]),
         vec![TickStep::Missed {
             id: "g".into(),
             scheduled_for: T0
@@ -96,10 +97,30 @@ fn the_jitter_allowance_is_two_ticks_past_the_grace() {
 }
 
 #[test]
+fn an_automation_with_an_open_run_is_refused_not_dispatched() {
+    let a = auto("a", HOURLY, T0, 720);
+    let b = auto("b", HOURLY, T0, 720);
+    assert_eq!(
+        plan(&[a, b], T0 + MIN, TICK, true, &["a"]),
+        vec![
+            TickStep::Refuse {
+                id: "a".into(),
+                scheduled_for: T0,
+                code: FailureCode::PreviousRunActive,
+            },
+            TickStep::Dispatch {
+                id: "b".into(),
+                scheduled_for: T0
+            },
+        ]
+    );
+}
+
+#[test]
 fn without_a_window_the_run_is_refused() {
     let a = auto("a", HOURLY, T0, 720);
     assert_eq!(
-        plan(&[a], T0 + MIN, TICK, false),
+        plan(&[a], T0 + MIN, TICK, false, &[]),
         vec![TickStep::Refuse {
             id: "a".into(),
             scheduled_for: T0,
@@ -112,7 +133,7 @@ fn without_a_window_the_run_is_refused() {
 fn a_malformed_rule_is_reported_and_does_not_block_the_others() {
     let bad = auto("bad", "FREQ=MONTHLY", T0, 720);
     let good = auto("good", HOURLY, T0, 720);
-    let steps = plan(&[bad, good], T0 + MIN, TICK, true);
+    let steps = plan(&[bad, good], T0 + MIN, TICK, true, &[]);
     assert!(matches!(&steps[0], TickStep::Unevaluable { id, .. } if id == "bad"));
     assert_eq!(
         steps[1],
@@ -130,7 +151,7 @@ fn a_laptop_asleep_for_days_misses_once_and_does_not_replay() {
     let a_due = 1_793_786_400_000; // 2026-11-04T10:00Z, the first occurrence it slept through
     let mut a = auto("a", daily, a_due, 30);
     let now = 1_793_872_800_000 + 3 * 86_400_000 + 2 * 3_600_000; // 2026-11-08T12:00Z
-    let steps = plan(std::slice::from_ref(&a), now, TICK, true);
+    let steps = plan(std::slice::from_ref(&a), now, TICK, true, &[]);
     assert_eq!(steps.len(), 1);
     // The newest occurrence only: 2026-11-08T09:00Z.
     assert_eq!(
@@ -142,7 +163,7 @@ fn a_laptop_asleep_for_days_misses_once_and_does_not_replay() {
     );
     // Once the service has advanced next_run_at past now, nothing is left to do.
     a.next_run_at = 1_794_214_800_000; // 2026-11-09T09:00Z
-    assert!(plan(&[a], now, TICK, true).is_empty());
+    assert!(plan(&[a], now, TICK, true, &[]).is_empty());
 }
 
 #[test]
@@ -150,7 +171,7 @@ fn a_due_rule_with_no_occurrence_yet_just_advances() {
     let mut a = auto("a", HOURLY, T0 - MIN, 720);
     a.dtstart = T0 + 3_600_000;
     assert_eq!(
-        plan(&[a], T0, TICK, true),
+        plan(&[a], T0, TICK, true, &[]),
         vec![TickStep::Advance { id: "a".into() }]
     );
 }
