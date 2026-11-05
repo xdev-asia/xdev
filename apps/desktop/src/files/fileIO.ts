@@ -40,6 +40,29 @@ export async function reloadWithUndo(io: FileIo, worktree: string, rel: string):
   return done;
 }
 
+/**
+ * Keeps the edits over what is on disk. The hash found there becomes the base, so the next save is
+ * on purpose. A file that cannot be read keeps its base: the next save meets the conflict again.
+ */
+export async function keepMineFile({ api, store }: FileIo, worktree: string, rel: string): Promise<void> {
+  const entry = store.get(worktree, rel);
+  if (!entry) return;
+  if (entry.conflict) return store.keepMine(worktree, rel, entry.conflict);
+  try {
+    store.keepMine(worktree, rel, (await api.fileRead(worktree, rel)).hash ?? undefined);
+  } catch {
+    store.keepMine(worktree, rel);
+  }
+}
+
+/** Writes the edits over the newer disk version: the hash found there is the one replaced. */
+export async function overwriteFile(io: FileIo, worktree: string, rel: string): Promise<SaveResult> {
+  const entry = io.store.get(worktree, rel);
+  if (!entry) return "skipped";
+  if (entry.conflict === null) await keepMineFile(io, worktree, rel);
+  return saveFile(io, worktree, rel, io.store.get(worktree, rel)?.conflict !== null);
+}
+
 /** What the file helpers need: the backend, the store and the translator for error toasts. */
 export interface FileIo {
   api: Api;
@@ -59,7 +82,8 @@ export async function saveFile({ api, store, t }: FileIo, worktree: string, rel:
   if (!entry || entry.status !== "ready" || entry.kind !== "text" || entry.saving) return "skipped";
   if (entry.conflict && !overwrite) return "skipped";
   const text = entry.text;
-  const expected = overwrite ? entry.conflict : entry.hash;
+  // A conflict hash of "" means the file is gone: overwriting creates it (no hash to match).
+  const expected = overwrite ? entry.conflict || null : entry.hash;
   store.setSaving(worktree, rel, true);
   try {
     const out = await api.fileWrite(worktree, rel, text, entry.eol, expected);

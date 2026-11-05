@@ -2646,6 +2646,7 @@ button.ws-tree-row:focus-visible {
 
 .file-conflict {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--x-space-3);
   padding: var(--x-space-2) var(--x-space-4);
@@ -2656,6 +2657,19 @@ button.ws-tree-row:focus-visible {
 
 .file-conflict > span {
   flex: 1;
+  min-width: 12rem;
+}
+
+.dialog.file-compare {
+  width: 100%;
+  max-width: min(960px, 100%);
+}
+
+.file-compare-diff {
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-sm);
 }
 
 .file-note {

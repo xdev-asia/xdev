@@ -2,9 +2,9 @@ import { useEffect } from "react";
 import type { JSX } from "react";
 import type { Api } from "@/api";
 import { useI18n } from "@/i18n";
-import { Button } from "@xdev-asia/ui";
 import { CodeEditor } from "./CodeEditor";
 import { useEditorSettings } from "./editorSettings";
+import { ExternalChange, needsChoice } from "./ExternalChangeBanner";
 import { loadFile, saveFile } from "./fileIO";
 import { fileTabs, useFileEntry } from "./fileTabs";
 
@@ -50,15 +50,7 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
   } else {
     body = (
       <>
-        {entry.conflict !== null && (
-          <div className="file-conflict" role="alert">
-            <span>{t("files.conflict.body")}</span>
-            <button type="button" className="btn-secondary" onClick={() => void loadFile(io, worktree, rel)}>
-              {t("files.conflict.reload")}
-            </button>
-            <Button type="button" onClick={() => void saveFile(io, worktree, rel, true)}>{t("files.conflict.overwrite")}</Button>
-          </div>
-        )}
+        {needsChoice(entry) && <ExternalChange api={api} entry={entry} io={io} />}
         <CodeEditor
           rel={rel}
           value={entry.text}
