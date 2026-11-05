@@ -223,6 +223,9 @@ fn hook_keeps_only_whitelisted_fields() {
     assert_eq!(l[0]["session"], "s1");
     assert_eq!(l[1]["detail"]["toolName"], "Bash");
     assert_eq!(l[1]["detail"]["toolInput"], "src/main.rs");
+    // A needs-input keeps the kind of question it stopped on, never the tool input.
+    assert_eq!(l[1]["detail"]["question"]["kind"], "permission");
+    assert_eq!(l[1]["detail"]["question"]["options"], serde_json::json!([]));
     assert_eq!(l[2]["detail"]["message"], "All tests pass.");
     assert_eq!(l[3]["detail"]["error"], "model_not_found");
     assert!(l[3]["detail"]["message"].is_null());
@@ -235,7 +238,16 @@ fn hook_keeps_only_whitelisted_fields() {
                 .all(|k| ["v", "event", "at", "detail", "session"].contains(&k.as_str()))
         );
         if let Some(d) = line.get("detail") {
-            let mut keys: Vec<&String> = d.as_object().unwrap().keys().collect();
+            // Only a needs-input line may carry a question.
+            if line["event"] != "needs-input" {
+                assert!(d.get("question").is_none(), "{line}");
+            }
+            let mut keys: Vec<&String> = d
+                .as_object()
+                .unwrap()
+                .keys()
+                .filter(|k| *k != "question")
+                .collect();
             keys.sort();
             assert_eq!(
                 keys,
