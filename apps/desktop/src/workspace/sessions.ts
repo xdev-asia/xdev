@@ -9,6 +9,9 @@ import { LAYOUT_VERSION, fromSnapshot, toSnapshot, type LayoutSnapshot, restored
 import { DONE_QUIET_MS, INTERRUPT_MS, NO_CAPS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type Caps, type StatusEvent, type StatusState, type TabStatus } from "./status";
 
 /** The CLI behind a tab, for its hook caps and title rules; null for custom profiles and shells. */
+/** Longest program message kept on a tab. */
+const PROGRAM_MESSAGE_MAX = 192;
+
 export type TabCli = "claude" | "codex" | null;
 
 /**
@@ -42,6 +45,10 @@ export interface Tab {
   unreadAt: number | null;
   /** Why it is unread; null while it is not. */
   unreadReason: Attention | null;
+  /** Progress 0-100 a program reported (OSC 9;4 or 7501); null when none. It ends with working or needs-you. */
+  progress?: number | null;
+  /** The message a program sent with a 7501 report (192 chars at most); not shown yet. */
+  programMessage?: string | null;
   /** The terminal's own title (OSC 0/2), or the hand-given name when `renamed`. */
   title: string | null;
   /** Named by hand: later titles from the terminal leave the name alone. */
@@ -702,6 +709,23 @@ export class Sessions {
     this.apply(id, { kind: "title", status, at: this.now() });
   }
 
+  /** A status a program reported itself (OSC 7501), with its progress and message when it sent them. */
+  noteProgramStatus(id: string, status: TabStatus, progress?: number, msg?: string): void {
+    if (!this.entries.has(id)) return;
+    this.apply(id, { kind: "program", status, at: this.now() });
+    const entry = this.entries.get(id);
+    if (!entry) return;
+    if (msg !== undefined) this.update(entry, { programMessage: msg.slice(0, PROGRAM_MESSAGE_MAX) });
+    if (progress !== undefined) this.noteProgress(id, progress);
+  }
+
+  /** Progress from the program (OSC 9;4 or 7501): a number sets it, null clears it, "keep" leaves it. */
+  noteProgress(id: string, p: number | null | "keep"): void {
+    const entry = this.entries.get(id);
+    if (!entry || p === "keep" || (entry.tab.progress ?? null) === p) return;
+    this.update(entry, { progress: p });
+  }
+
   /** The terminal's title (OSC 0/2) names the tab, unless it was named by hand. */
   noteTitle(id: string, title: string): void {
     const entry = this.entries.get(id);
@@ -922,7 +946,9 @@ export class Sessions {
     if (statusChanged) {
       // Any change ends a done that was still settling.
       this.clear(this.announce, id);
-      this.update(entry, { status: next.status, ...exit });
+      // Progress ends with the work.
+      const progress = next.status === "working" || next.status === "needs-you" ? {} : { progress: null };
+      this.update(entry, { status: next.status, ...exit, ...progress });
       if (entry.tab.agent) for (const l of [...this.statusListeners]) l(entry.tab, before.status, next.status, this.now());
     }
     // Only agents ask for the person; a closing tab's exit is expected.
