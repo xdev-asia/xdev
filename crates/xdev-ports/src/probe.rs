@@ -47,14 +47,14 @@ pub trait Probe: Send + Sync {
 pub struct OsProbe;
 
 impl Probe for OsProbe {
-    fn listeners(&self, _timeout: Duration) -> Result<Vec<Listener>, ScanError> {
-        Err(ScanError::Unsupported)
+    fn listeners(&self, timeout: Duration) -> Result<Vec<Listener>, ScanError> {
+        crate::os::listeners(timeout)
     }
     fn processes(&self) -> Result<Vec<Proc>, ScanError> {
-        Err(ScanError::Unsupported)
+        crate::os::processes()
     }
-    fn terminate(&self, _pid: u32) -> Result<(), ScanError> {
-        Err(ScanError::Unsupported)
+    fn terminate(&self, pid: u32) -> Result<(), ScanError> {
+        crate::os::terminate(pid)
     }
 }
 
