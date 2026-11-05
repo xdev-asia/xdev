@@ -24,7 +24,7 @@ import { recentFiles } from "@/search/recentFiles";
 import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
-import { livePortsByWorktree } from "./livePorts";
+import { livePortsByWorktree, stopFromCard } from "./livePorts";
 import type { LivePort } from "./livePorts";
 import { endpoint } from "./PortsChip";
 import { startAutoRename } from "./autoRename";
@@ -503,13 +503,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }, [ports]);
   const livePorts = cardPorts ? livePortsByWorktree(ports.state().scan) : {};
   async function stopPort(_wt: WorktreeView, port: LivePort): Promise<void> {
-    try {
-      // The card's chip asked once; a port no xDev terminal started is refused here and stopped from the panel.
-      await ports.stop(port.id, { confirmed: true, outsideTerminal: false });
-      pushToast({ text: t("ports.stopped", { port: port.port }) });
-    } catch (e) {
-      pushToast({ text: t(`error.${toApiError(e).code}`) });
-    }
+    await stopFromCard(ports, port, (key, vars) => pushToast({ text: t(key, vars) }));
   }
   const dots: Record<string, TabStatus | null> = Object.fromEntries(paths.map((p) => [p, sessions?.dot(p) ?? null]));
   const activity: Record<string, number | null> = Object.fromEntries(paths.map((p) => [p, sessions?.lastActivity(p) ?? null]));
