@@ -2515,5 +2515,14 @@
   "files.openDefault": "Open in default app",
   "files.openDefault.failed": "Could not open the file in the default app",
   "files.media.failed": "This file cannot be played here.",
-  "files.media.tooLarge.body": "Audio and video over 64 MB do not open here."
+  "files.media.tooLarge.body": "Audio and video over 64 MB do not open here.",
+  "files.preview.mode": "Markdown view",
+  "files.preview.source": "Source",
+  "files.preview.preview": "Preview",
+  "files.preview.frontmatter": "Front matter",
+  "files.preview.callout.note": "Note",
+  "files.preview.callout.tip": "Tip",
+  "files.preview.callout.important": "Important",
+  "files.preview.callout.warning": "Warning",
+  "files.preview.callout.caution": "Caution"
 }

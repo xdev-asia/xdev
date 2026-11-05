@@ -96,3 +96,29 @@
 .preview-body .tok-className { color: var(--x-color-accent); }
 .preview-body .tok-propertyName,
 .preview-body .tok-variableName2 { color: var(--x-color-ink); }
+
+.md-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.md-pane-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+  padding: var(--x-space-2) var(--x-space-3);
+  border-bottom: 1px solid var(--x-color-line);
+}
+.md-pane-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+}
+.md-preview { padding: var(--x-space-4); }
+.md-preview .md-img { max-width: 100%; }
