@@ -1,5 +1,6 @@
 //! The agent kit's commands: the agent homes, their skills and memory files,
-//! checked writes, the token usage index and the prompt history. Every path
+//! checked writes, the token usage index, the prompt history, and the
+//! composer's drafts and prompt templates. Every path
 //! the UI sends is checked by `xdev_kit::Roots`; a worktree the UI names must
 //! also be one the workspace registry knows, or the call is `outside`.
 
@@ -11,8 +12,8 @@ use std::sync::{Mutex, PoisonError};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use xdev_kit::{
-    Agent, Home, KitError, MemorySet, RefreshStats, ReportQuery, Roots, Skill, UsageIndex,
-    UsageQuery, UsageReport, UsageSummary,
+    Agent, Drafts, Home, KitError, MemorySet, PromptTemplate, RefreshStats, ReportQuery, Roots,
+    Skill, Templates, UsageIndex, UsageQuery, UsageReport, UsageSummary,
 };
 use xdev_workspace::{Registry, path_key};
 
@@ -32,6 +33,10 @@ const HISTORY_MAX: usize = 1000;
 /// loaded from the file on every call and not kept in memory: it can hold
 /// every session of every home, and the file is the one source of truth.
 static USAGE_LOCK: Mutex<()> = Mutex::new(());
+/// One read-modify-write of the drafts file at a time.
+static DRAFTS_LOCK: Mutex<()> = Mutex::new(());
+/// One read-modify-write of the templates file at a time.
+static TEMPLATES_LOCK: Mutex<()> = Mutex::new(());
 
 impl From<KitError> for CmdError {
     fn from(e: KitError) -> CmdError {
@@ -42,6 +47,7 @@ impl From<KitError> for CmdError {
             KitError::Parse(ref m) => match m.as_str() {
                 "bad skill name" => "bad_name",
                 "not UTF-8 text" => "not_utf8",
+                "draft too large" | "template too large" | "too many templates" => "too_large",
                 _ => "kit_bad_input",
             },
         };
@@ -389,6 +395,65 @@ impl Ctx {
     }
 }
 
+impl Ctx {
+    fn draft_get(&self, tab_id: &str) -> Option<String> {
+        let _guard = DRAFTS_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        Drafts::load(&self.data).get(tab_id).map(str::to_owned)
+    }
+
+    fn draft_put(&self, tab_id: &str, text: &str, at: i64) -> Result<(), CmdError> {
+        let _guard = DRAFTS_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut drafts = Drafts::load(&self.data);
+        drafts.put(tab_id, text, at)?;
+        drafts.save(&self.data)?;
+        Ok(())
+    }
+
+    fn draft_clear(&self, tab_id: &str) -> Result<bool, CmdError> {
+        let _guard = DRAFTS_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut drafts = Drafts::load(&self.data);
+        let had = drafts.clear(tab_id);
+        if had {
+            drafts.save(&self.data)?;
+        }
+        Ok(had)
+    }
+
+    fn templates_list(&self) -> Vec<PromptTemplate> {
+        let _guard = TEMPLATES_LOCK
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        Templates::load(&self.data).list()
+    }
+
+    fn templates_put(&self, template: PromptTemplate) -> Result<Vec<PromptTemplate>, CmdError> {
+        let _guard = TEMPLATES_LOCK
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let mut all = Templates::load(&self.data);
+        all.put(template)?;
+        all.save(&self.data)?;
+        Ok(all.list())
+    }
+
+    fn templates_delete(&self, id: &str) -> Result<Vec<PromptTemplate>, CmdError> {
+        let _guard = TEMPLATES_LOCK
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let mut all = Templates::load(&self.data);
+        if all.delete(id) {
+            all.save(&self.data)?;
+        }
+        Ok(all.list())
+    }
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+}
+
 /// The last `HISTORY_TAIL_BYTES` of a file as text. When the file was cut,
 /// the first line is dropped, as it may be a part of one.
 fn read_tail(path: &Path) -> Option<String> {
@@ -581,6 +646,57 @@ pub fn kit_prompt_history(
     Ok(Ctx::of(&state)?.prompt_history(limit))
 }
 
+/// The composer's unsent text of the tab `tab_id`; `None` when it has none.
+#[tauri::command(async)]
+pub fn composer_draft_get(
+    state: State<'_, AppState>,
+    tab_id: String,
+) -> Result<Option<String>, CmdError> {
+    Ok(Ctx::of(&state)?.draft_get(&tab_id))
+}
+
+/// Keeps the composer's text of `tab_id` (64 KB at most, `too_large` past
+/// it); an empty text clears it.
+#[tauri::command(async)]
+pub fn composer_draft_put(
+    state: State<'_, AppState>,
+    tab_id: String,
+    text: String,
+) -> Result<(), CmdError> {
+    Ctx::of(&state)?.draft_put(&tab_id, &text, now_ms())
+}
+
+/// Forgets the draft of `tab_id`; true when there was one.
+#[tauri::command(async)]
+pub fn composer_draft_clear(state: State<'_, AppState>, tab_id: String) -> Result<bool, CmdError> {
+    Ctx::of(&state)?.draft_clear(&tab_id)
+}
+
+/// Every prompt template, by name.
+#[tauri::command(async)]
+pub fn prompt_templates_list(state: State<'_, AppState>) -> Result<Vec<PromptTemplate>, CmdError> {
+    Ok(Ctx::of(&state)?.templates_list())
+}
+
+/// Adds a template or replaces the one with its id; the list after. A new
+/// one past 200 is `too_large`, as for presets.
+#[tauri::command(async)]
+pub fn prompt_templates_put(
+    state: State<'_, AppState>,
+    template: PromptTemplate,
+) -> Result<Vec<PromptTemplate>, CmdError> {
+    Ctx::of(&state)?.templates_put(template)
+}
+
+/// Removes the template `id`; the list after.
+#[tauri::command(async)]
+pub fn prompt_templates_delete(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<PromptTemplate>, CmdError> {
+    Ctx::of(&state)?.templates_delete(&id)
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -705,6 +821,54 @@ mod tests {
         let binary = f.user_home.join(".claude").join("blob.md");
         fs::write(&binary, [0xff, 0xfe, 0x00]).unwrap();
         assert_eq!(f.ctx.read(&s(&binary), None).unwrap_err().code, "not_utf8");
+    }
+
+    #[test]
+    fn composer_drafts_put_get_clear_through_the_data_dir() {
+        let f = fixture();
+        assert_eq!(f.ctx.draft_get("tab-1"), None);
+        f.ctx.draft_put("tab-1", "fix the bug", 1).unwrap();
+        assert_eq!(f.ctx.draft_get("tab-1").as_deref(), Some("fix the bug"));
+        assert_eq!(f.ctx.draft_get("tab-2"), None);
+        assert!(f.ctx.draft_clear("tab-1").unwrap());
+        assert!(!f.ctx.draft_clear("tab-1").unwrap());
+        assert_eq!(f.ctx.draft_get("tab-1"), None);
+    }
+
+    #[test]
+    fn a_draft_over_64_kb_is_too_large() {
+        let f = fixture();
+        let big = "a".repeat(xdev_kit::DRAFT_MAX_BYTES + 1);
+        assert_eq!(f.ctx.draft_put("t", &big, 1).unwrap_err().code, "too_large");
+        assert_eq!(
+            f.ctx.draft_put("", "x", 1).unwrap_err().code,
+            "kit_bad_input"
+        );
+    }
+
+    #[test]
+    fn prompt_templates_put_list_delete_and_the_count_bound() {
+        let f = fixture();
+        assert!(f.ctx.templates_list().is_empty());
+        let one = |id: &str| PromptTemplate {
+            id: id.to_owned(),
+            name: format!("n {id}"),
+            body: "b".to_owned(),
+            mode: xdev_kit::TemplateMode::Insert,
+        };
+        let after = f.ctx.templates_put(one("a")).unwrap();
+        assert_eq!(after.len(), 1);
+        assert_eq!(f.ctx.templates_list(), after);
+        for i in 1..xdev_kit::TEMPLATES_MAX {
+            f.ctx.templates_put(one(&format!("t{i}"))).unwrap();
+        }
+        assert_eq!(
+            f.ctx.templates_put(one("over")).unwrap_err().code,
+            "too_large"
+        );
+        let left = f.ctx.templates_delete("a").unwrap();
+        assert_eq!(left.len(), xdev_kit::TEMPLATES_MAX - 1);
+        assert!(left.iter().all(|t| t.id != "a"));
     }
 
     #[test]

@@ -35,3 +35,16 @@ it("shows a Sleep button with its hint that calls onSleep", () => {
 it("disables Sleep when no selected worktree can sleep", () => {
   expect(bar({ canSleep: false }).sleep.props.disabled).toBe(true);
 });
+
+it("shows Send prompt only when the bar can open the composer, and it calls onSendPrompt", () => {
+  const find = (props: Partial<Parameters<typeof BulkBar>[0]>) =>
+    walk(BulkBar({ count: 2, allPinned: false, canSleep: true, onArchive() {}, onDelete() {}, onPin() {}, onSleep() {}, onStatus() {}, onClear() {}, ...props })).find(
+      (n) => n.type === "button" && n.props.children === en("bulk.bar.sendPrompt"),
+    );
+  expect(find({})).toBeUndefined();
+  const onSendPrompt = vi.fn();
+  const button = find({ onSendPrompt })!;
+  expect(button.props.type).toBe("button");
+  (button.props.onClick as () => void)();
+  expect(onSendPrompt).toHaveBeenCalledTimes(1);
+});

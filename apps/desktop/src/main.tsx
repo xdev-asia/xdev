@@ -41,6 +41,7 @@ import { startUsageSync } from "./settings/usageSettings";
 import { applyCachedTheme, startThemeSync } from "./ui/theme";
 import "./styles/agentSessions.css";
 import "./styles/automations.css";
+import "./styles/composer.css";
 
 // Before the first render, so the window opens in the theme it closed in.
 applyCachedTheme();

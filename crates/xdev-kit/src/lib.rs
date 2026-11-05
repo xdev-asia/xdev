@@ -1,6 +1,7 @@
 //! Agent kit: reads the agent homes, their skills and memory files, and the
 //! CLI session logs on this machine. Writes only through `write`.
 
+mod drafts;
 mod homes;
 mod logs;
 mod memory;
@@ -8,11 +9,13 @@ mod pricing;
 mod records;
 mod sessions;
 mod skills;
+mod templates;
 mod transcripts;
 mod usage;
 mod usage_report;
 mod write;
 
+pub use drafts::{DRAFT_MAX_BYTES, DRAFTS_MAX, Drafts};
 pub use homes::{Agent, Home, HomeSource, KitError, approx_tokens, homes};
 pub use logs::FileMark;
 pub use memory::{
@@ -24,6 +27,7 @@ pub use skills::{
     AGENT_SKILL_ROOTS, Skill, SkillScope, mark_duplicates, scan_agent_roots, scan_skill_root,
     scan_skills,
 };
+pub use templates::{PromptTemplate, TEMPLATES_MAX, TemplateMode, Templates};
 pub use transcripts::{
     TailTurn, TextRole, TranscriptEvent, TranscriptText, scan_transcripts, tail_turns,
 };

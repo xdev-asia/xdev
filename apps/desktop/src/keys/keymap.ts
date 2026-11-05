@@ -59,7 +59,9 @@ export type ActionId =
   // The quick-commands plan registers the handler.
   | "quickCommands.open"
   // Quick open: a file of the worktree on screen by name.
-  | "quickOpen.open";
+  | "quickOpen.open"
+  // Opens the prompt composer on the focused terminal tab; the composer host registers the handler.
+  | "composer.open";
 
 export interface Binding {
   action: ActionId;

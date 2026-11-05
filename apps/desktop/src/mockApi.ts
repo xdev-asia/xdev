@@ -40,6 +40,7 @@ import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
 import { createMockXdevId, type MockXdevId } from "./mockXdevId";
 import { createMockPorts } from "./mockPorts";
 import { createMockSsh, type MockSsh } from "./mockSsh";
+import { createMockComposer } from "./mockComposer";
 import { createMockSettings, createSettingsHub } from "./mockSettings";
 import { createMockShell, type MockShell } from "./mockShell";
 import { createMockStatus, type MockStatus } from "./mockStatus";
@@ -626,6 +627,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       },
       settingsHub.emit,
     ),
+    ...createMockComposer(),
     async clipboardImageSave() {
       if (mockClipboardImage === null || typeof mockClipboardImage === "string") return mockClipboardImage;
       throw mockClipboardImage;
