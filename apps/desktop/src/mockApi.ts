@@ -395,6 +395,8 @@ type MockOptions = {
   update?: string | null;
   // Providers that start with an API key saved.
   aiKeys?: AiKeyProvider[];
+  // Two automations with a week of runs, some with token usage and some without.
+  automationsDemo?: boolean;
 };
 
 export function createMockApi(seed: Record<string, string>, options: MockOptions = {}): MockApi {
@@ -616,7 +618,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockLayout(),
     ...createMockCrash(),
     ...createMockCli(),
-    ...createMockAutomations(),
+    ...createMockAutomations({ demo: options.automationsDemo }),
     ...createMockQuickCommands(
       {
         agentProfiles: async () => (await profiles.profiles()).profiles.map((p) => p.profile.id),
