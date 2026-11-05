@@ -348,7 +348,7 @@ it("create closes the dialog at once; a failure stays as a row with Retry and Di
   expect(dialog().props.repoId).toBe("demo-xdev");
   const markup = renderToStaticMarkup(dialog());
   expect(markup).toContain('placeholder="auto"');
-  expect(markup).toContain('placeholder="main"');
+  expect(markup).toContain("main (default)");
 
   dialog().props.onCreate("demo-xdev", "...", null);
   expect(view.of(CreateWorktreeDialog)).toHaveLength(0);

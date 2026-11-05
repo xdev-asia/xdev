@@ -1315,7 +1315,6 @@
   "workspace.create.namePlaceholder": "tự đặt",
   "createWorktree.preview.willBe": "Sẽ được tạo thành {folder} trên nhánh {branch}",
   "workspace.create.nameHint": "Cũng là tên nhánh. Để trống thì xDev tự đặt tên.",
-  "workspace.create.from": "Từ",
   "workspace.create.base.label": "Tạo nhánh từ",
   "workspace.create.base.default": "Mặc định của dự án",
   "workspace.create.base.defaultNamed": "{branch} (mặc định)",

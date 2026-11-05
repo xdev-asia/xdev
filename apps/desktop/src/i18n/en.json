@@ -1315,7 +1315,6 @@
   "workspace.create.namePlaceholder": "auto",
   "createWorktree.preview.willBe": "Will be created as {folder} on branch {branch}",
   "workspace.create.nameHint": "Also the branch name. Leave it empty and xDev picks one.",
-  "workspace.create.from": "From",
   "workspace.create.base.label": "Branch from",
   "workspace.create.base.default": "Project default",
   "workspace.create.base.defaultNamed": "{branch} (default)",
