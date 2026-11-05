@@ -30,8 +30,8 @@ pub use gh::{
 };
 pub use gh_review::{
     COMMENT_BODY_MAX, COMMENTS_PER_SOURCE, MergeBlock, MergeMethod, PrComment, PrCommentDraft,
-    PrCommentKind, PrComments, PrMergeInfo, PrReaction, Reaction, RerunReport, pr_comment_post,
-    pr_comments, pr_reaction, pr_thread_resolve,
+    PrCommentKind, PrComments, PrMergeInfo, PrReaction, Reaction, RerunReport, pr_checks_rerun,
+    pr_comment_post, pr_comments, pr_merge, pr_merge_info, pr_reaction, pr_thread_resolve,
 };
 pub use history::Commit;
 pub use remote::{BaseRange, BaseRefresh, Upstream};

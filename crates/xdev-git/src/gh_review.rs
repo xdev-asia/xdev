@@ -7,7 +7,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::GitError;
-use crate::gh::{GhExec, ok, parse_error, repo_name};
+use crate::gh::{CheckBucket, GhExec, classify, ok, parse_error, pr_checks, repo_name, run_id};
 
 /// Chars kept of a comment body, in and out.
 pub const COMMENT_BODY_MAX: usize = 64 * 1024;
@@ -641,6 +641,214 @@ pub fn pr_reaction(
     Ok(())
 }
 
+/// Reruns the Actions runs behind the checks of PR `number`: the failed or
+/// cancelled ones with `failed_only` (and `gh run rerun --failed`), else every
+/// run. A run behind several checks is rerun once; checks without an Actions
+/// run are counted as skipped.
+pub fn pr_checks_rerun(
+    gh: &dyn GhExec,
+    cwd: &Path,
+    number: u64,
+    failed_only: bool,
+) -> Result<RerunReport, GitError> {
+    let checks = pr_checks(gh, cwd, number)?;
+    let mut ids: Vec<String> = Vec::new();
+    let mut skipped = 0;
+    for check in &checks {
+        let wanted =
+            !failed_only || matches!(check.bucket, CheckBucket::Fail | CheckBucket::Cancel);
+        if !wanted {
+            continue;
+        }
+        match check.link.as_deref().and_then(run_id) {
+            Some(id) if ids.iter().any(|seen| seen == id) => {}
+            Some(id) => ids.push(id.to_owned()),
+            None => skipped += 1,
+        }
+    }
+    if ids.is_empty() {
+        return Err(GitError::NothingToRerun);
+    }
+    let mut started = 0;
+    for id in &ids {
+        let mut args = vec!["run", "rerun", id.as_str()];
+        if failed_only {
+            args.push("--failed");
+        }
+        if let Err(e) = gh.run(cwd, &args, None).and_then(ok) {
+            return Err(match (started, e) {
+                (k, GitError::Gh(msg)) if k > 0 => {
+                    GitError::Gh(format!("{msg} ({k} reruns already started)"))
+                }
+                (_, e) => e,
+            });
+        }
+        started += 1;
+    }
+    Ok(RerunReport { started, skipped })
+}
+
+/// Whether a pull request can be merged from here, and with which methods.
+pub fn pr_merge_info(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<PrMergeInfo, GitError> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Pr {
+        #[serde(default)]
+        state: String,
+        #[serde(default)]
+        is_draft: bool,
+        #[serde(default)]
+        merge_state_status: String,
+        #[serde(default)]
+        review_decision: Option<String>,
+        #[serde(default)]
+        status_check_rollup: Vec<Rollup>,
+    }
+    #[derive(Deserialize)]
+    struct Rollup {
+        #[serde(default)]
+        conclusion: Option<String>,
+        #[serde(default)]
+        state: Option<String>,
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Repo {
+        #[serde(default)]
+        viewer_default_merge_method: String,
+        #[serde(default)]
+        squash_merge_allowed: bool,
+        #[serde(default)]
+        merge_commit_allowed: bool,
+        #[serde(default)]
+        rebase_merge_allowed: bool,
+    }
+    let pr_out = ok(gh.run(
+        cwd,
+        &[
+            "pr",
+            "view",
+            &number.to_string(),
+            "--json",
+            "state,isDraft,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup",
+        ],
+        None,
+    )?)?;
+    let pr: Pr = serde_json::from_str(&pr_out.stdout).map_err(parse_error)?;
+    let repo_out = ok(gh.run(
+        cwd,
+        &[
+            "repo",
+            "view",
+            "--json",
+            "viewerDefaultMergeMethod,squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed",
+        ],
+        None,
+    )?)?;
+    let repo: Repo = serde_json::from_str(&repo_out.stdout).map_err(parse_error)?;
+
+    let review = pr.review_decision.as_deref().unwrap_or("");
+    let block = match (pr.state.as_str(), pr.merge_state_status.as_str()) {
+        ("MERGED", _) => Some(MergeBlock::Merged),
+        ("CLOSED", _) => Some(MergeBlock::Closed),
+        _ if pr.is_draft => Some(MergeBlock::Draft),
+        _ if review == "REVIEW_REQUIRED" => Some(MergeBlock::ReviewRequired),
+        _ if review == "CHANGES_REQUESTED" => Some(MergeBlock::ChangesRequested),
+        (_, "DIRTY") => Some(MergeBlock::Conflicts),
+        (_, "UNKNOWN") => Some(MergeBlock::Unknown),
+        (_, "BEHIND") => Some(MergeBlock::Behind),
+        (_, "BLOCKED") => Some(MergeBlock::Blocked),
+        _ => None,
+    };
+    let checks_failed = pr.status_check_rollup.iter().any(|r| {
+        [r.conclusion.as_deref(), r.state.as_deref()]
+            .into_iter()
+            .flatten()
+            .any(|v| matches!(v, "FAILURE" | "ERROR" | "TIMED_OUT" | "STARTUP_FAILURE"))
+    });
+    let methods: Vec<MergeMethod> = [
+        (repo.squash_merge_allowed, MergeMethod::Squash),
+        (repo.merge_commit_allowed, MergeMethod::Merge),
+        (repo.rebase_merge_allowed, MergeMethod::Rebase),
+    ]
+    .into_iter()
+    .filter_map(|(allowed, m)| allowed.then_some(m))
+    .collect();
+    let preferred = match repo.viewer_default_merge_method.as_str() {
+        "MERGE" => MergeMethod::Merge,
+        "REBASE" => MergeMethod::Rebase,
+        _ => MergeMethod::Squash,
+    };
+    let default_method = if methods.contains(&preferred) {
+        preferred
+    } else {
+        methods.first().copied().unwrap_or(MergeMethod::Squash)
+    };
+    Ok(PrMergeInfo {
+        block,
+        checks_failed,
+        methods,
+        default_method,
+    })
+}
+
+/// The block a refused merge names, from `gh`'s message.
+fn merge_refusal(text: &str) -> Option<MergeBlock> {
+    let t = text.to_lowercase();
+    let has = |needles: &[&str]| needles.iter().any(|n| t.contains(n));
+    if has(&["already merged"]) {
+        Some(MergeBlock::Merged)
+    } else if has(&["is closed", "already closed"]) {
+        Some(MergeBlock::Closed)
+    } else if has(&["draft"]) {
+        Some(MergeBlock::Draft)
+    } else if has(&["merge queue"]) {
+        Some(MergeBlock::MergeQueue)
+    } else if has(&["changes requested", "requested changes"]) {
+        Some(MergeBlock::ChangesRequested)
+    } else if has(&["review is required", "approving review", "required review"]) {
+        Some(MergeBlock::ReviewRequired)
+    } else if has(&["conflict"]) {
+        Some(MergeBlock::Conflicts)
+    } else if has(&["behind", "out-of-date", "out of date"]) {
+        Some(MergeBlock::Behind)
+    } else if has(&[
+        "policy prohibits",
+        "status check",
+        "protected branch",
+        "not mergeable",
+    ]) {
+        Some(MergeBlock::Blocked)
+    } else {
+        None
+    }
+}
+
+/// Merges PR `number` with `method`. The branch is left alone (no
+/// `--delete-branch`). A refusal is mapped to `MergeBlocked`.
+pub fn pr_merge(
+    gh: &dyn GhExec,
+    cwd: &Path,
+    number: u64,
+    method: MergeMethod,
+) -> Result<(), GitError> {
+    let flag = match method {
+        MergeMethod::Squash => "--squash",
+        MergeMethod::Merge => "--merge",
+        MergeMethod::Rebase => "--rebase",
+    };
+    let out = gh.run(cwd, &["pr", "merge", &number.to_string(), flag], None)?;
+    if out.status == Some(0) {
+        return Ok(());
+    }
+    match classify(&out) {
+        GitError::Gh(text) => {
+            Err(merge_refusal(&text).map_or(GitError::Gh(text), GitError::MergeBlocked))
+        }
+        other => Err(other),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
@@ -1018,5 +1226,274 @@ mod tests {
         )
         .unwrap();
         assert_eq!(d.reply_to, Some(5));
+    }
+
+    fn checks_json(rows: &[(&str, &str, &str)]) -> String {
+        let items: Vec<String> = rows
+            .iter()
+            .map(|(name, bucket, link)| {
+                format!(
+                    r#"{{"name":"{name}","state":"X","bucket":"{bucket}","link":"{link}","workflow":"CI"}}"#
+                )
+            })
+            .collect();
+        format!("[{}]", items.join(","))
+    }
+
+    const RUN1: &str = "https://github.com/acme/app/actions/runs/111/job/1";
+    const RUN1B: &str = "https://github.com/acme/app/actions/runs/111/job/2";
+    const RUN2: &str = "https://github.com/acme/app/actions/runs/222/job/3";
+    const RUN3: &str = "https://github.com/acme/app/actions/runs/333/job/4";
+    const EXT: &str = "https://ci.example/9";
+
+    #[test]
+    fn rerun_starts_each_failed_run_once_with_failed_flag() {
+        let json = checks_json(&[
+            ("a", "fail", RUN1),
+            ("b", "cancel", RUN1B),
+            ("c", "fail", RUN2),
+            ("d", "pass", RUN3),
+        ]);
+        let fake = Fake::new(vec![out(0, &json, ""), out(0, "", ""), out(0, "", "")]);
+        let got = pr_checks_rerun(&fake, cwd(), 7, true).unwrap();
+        assert_eq!(
+            got,
+            RerunReport {
+                started: 2,
+                skipped: 0
+            }
+        );
+        let calls = fake.calls.borrow();
+        assert_eq!(calls[1].0, ["run", "rerun", "111", "--failed"]);
+        assert_eq!(calls[2].0, ["run", "rerun", "222", "--failed"]);
+    }
+
+    #[test]
+    fn rerun_all_omits_the_failed_flag_and_covers_every_bucket() {
+        let json = checks_json(&[("a", "pass", RUN1), ("b", "fail", RUN2)]);
+        let fake = Fake::new(vec![out(0, &json, ""), out(0, "", ""), out(0, "", "")]);
+        let got = pr_checks_rerun(&fake, cwd(), 7, false).unwrap();
+        assert_eq!(got.started, 2);
+        let calls = fake.calls.borrow();
+        assert_eq!(calls[1].0, ["run", "rerun", "111"]);
+        assert_eq!(calls[2].0, ["run", "rerun", "222"]);
+    }
+
+    #[test]
+    fn rerun_counts_checks_without_an_actions_run_as_skipped() {
+        let json = checks_json(&[("a", "fail", RUN1), ("ci/ext", "fail", EXT)]);
+        let fake = Fake::new(vec![out(0, &json, ""), out(0, "", "")]);
+        let got = pr_checks_rerun(&fake, cwd(), 7, true).unwrap();
+        assert_eq!(
+            got,
+            RerunReport {
+                started: 1,
+                skipped: 1
+            }
+        );
+    }
+
+    #[test]
+    fn rerun_with_nothing_to_rerun_is_an_error() {
+        let json = checks_json(&[("a", "pass", RUN1), ("ci/ext", "fail", EXT)]);
+        let fake = Fake::new(vec![out(0, &json, "")]);
+        assert!(matches!(
+            pr_checks_rerun(&fake, cwd(), 7, true),
+            Err(GitError::NothingToRerun)
+        ));
+        assert_eq!(fake.calls.borrow().len(), 1);
+    }
+
+    #[test]
+    fn rerun_failure_after_a_start_reports_how_many_started() {
+        let json = checks_json(&[("a", "fail", RUN1), ("c", "fail", RUN2)]);
+        let fake = Fake::new(vec![out(0, &json, ""), out(0, "", ""), out(1, "", "boom")]);
+        match pr_checks_rerun(&fake, cwd(), 7, true) {
+            Err(GitError::Gh(m)) => assert_eq!(m, "boom (1 reruns already started)"),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn rerun_failure_on_the_first_run_keeps_the_plain_message() {
+        let json = checks_json(&[("a", "fail", RUN1)]);
+        let fake = Fake::new(vec![out(0, &json, ""), out(1, "", "boom")]);
+        match pr_checks_rerun(&fake, cwd(), 7, true) {
+            Err(GitError::Gh(m)) => assert_eq!(m, "boom"),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn pr_json(
+        state: &str,
+        draft: bool,
+        merge_state: &str,
+        review: Option<&str>,
+        rollup: &str,
+    ) -> String {
+        let review = review.map_or("null".to_owned(), |r| format!("\"{r}\""));
+        format!(
+            r#"{{"state":"{state}","isDraft":{draft},"mergeable":"MERGEABLE","mergeStateStatus":"{merge_state}","reviewDecision":{review},"statusCheckRollup":{rollup}}}"#
+        )
+    }
+
+    fn repo_json(default: &str, squash: bool, merge: bool, rebase: bool) -> String {
+        format!(
+            r#"{{"viewerDefaultMergeMethod":"{default}","squashMergeAllowed":{squash},"mergeCommitAllowed":{merge},"rebaseMergeAllowed":{rebase}}}"#
+        )
+    }
+
+    fn info(pr: &str, repo: &str) -> PrMergeInfo {
+        let fake = Fake::new(vec![out(0, pr, ""), out(0, repo, "")]);
+        pr_merge_info(&fake, cwd(), 7).unwrap()
+    }
+
+    #[test]
+    fn merge_info_blocks_in_order() {
+        let r = repo_json("SQUASH", true, true, true);
+        let block =
+            |state, draft, ms, review| info(&pr_json(state, draft, ms, review, "[]"), &r).block;
+        assert_eq!(
+            block("MERGED", true, "DIRTY", Some("CHANGES_REQUESTED")),
+            Some(MergeBlock::Merged)
+        );
+        assert_eq!(
+            block("CLOSED", true, "CLEAN", None),
+            Some(MergeBlock::Closed)
+        );
+        assert_eq!(
+            block("OPEN", true, "DIRTY", Some("REVIEW_REQUIRED")),
+            Some(MergeBlock::Draft)
+        );
+        assert_eq!(
+            block("OPEN", false, "DIRTY", Some("REVIEW_REQUIRED")),
+            Some(MergeBlock::ReviewRequired)
+        );
+        assert_eq!(
+            block("OPEN", false, "DIRTY", Some("CHANGES_REQUESTED")),
+            Some(MergeBlock::ChangesRequested)
+        );
+        assert_eq!(
+            block("OPEN", false, "DIRTY", Some("APPROVED")),
+            Some(MergeBlock::Conflicts)
+        );
+        assert_eq!(
+            block("OPEN", false, "UNKNOWN", None),
+            Some(MergeBlock::Unknown)
+        );
+        assert_eq!(
+            block("OPEN", false, "BEHIND", None),
+            Some(MergeBlock::Behind)
+        );
+        assert_eq!(
+            block("OPEN", false, "BLOCKED", Some("APPROVED")),
+            Some(MergeBlock::Blocked)
+        );
+        assert_eq!(block("OPEN", false, "CLEAN", Some("APPROVED")), None);
+        assert_eq!(block("OPEN", false, "UNSTABLE", None), None);
+        assert_eq!(block("OPEN", false, "HAS_HOOKS", None), None);
+    }
+
+    #[test]
+    fn merge_info_reads_failed_checks_from_conclusion_or_state() {
+        let r = repo_json("SQUASH", true, false, false);
+        let pr = |rollup: &str| pr_json("OPEN", false, "CLEAN", None, rollup);
+        assert!(!info(&pr(r#"[{"conclusion":"SUCCESS"},{"state":"SUCCESS"}]"#), &r).checks_failed);
+        assert!(info(&pr(r#"[{"conclusion":"FAILURE"}]"#), &r).checks_failed);
+        assert!(info(&pr(r#"[{"state":"ERROR"}]"#), &r).checks_failed);
+        assert!(!info(&pr("[]"), &r).checks_failed);
+    }
+
+    #[test]
+    fn merge_info_lists_allowed_methods_and_falls_back_on_the_default() {
+        let pr = pr_json("OPEN", false, "CLEAN", None, "[]");
+        let got = info(&pr, &repo_json("REBASE", true, true, true));
+        assert_eq!(
+            got.methods,
+            [MergeMethod::Squash, MergeMethod::Merge, MergeMethod::Rebase]
+        );
+        assert_eq!(got.default_method, MergeMethod::Rebase);
+        let got = info(&pr, &repo_json("SQUASH", false, true, true));
+        assert_eq!(got.methods, [MergeMethod::Merge, MergeMethod::Rebase]);
+        assert_eq!(got.default_method, MergeMethod::Merge);
+        let got = info(&pr, &repo_json("", false, false, false));
+        assert!(got.methods.is_empty());
+        assert_eq!(got.default_method, MergeMethod::Squash);
+    }
+
+    #[test]
+    fn merge_info_asks_gh_for_the_documented_fields() {
+        let fake = Fake::new(vec![
+            out(0, &pr_json("OPEN", false, "CLEAN", None, "[]"), ""),
+            out(0, &repo_json("SQUASH", true, true, true), ""),
+        ]);
+        pr_merge_info(&fake, cwd(), 7).unwrap();
+        let calls = fake.calls.borrow();
+        assert_eq!(
+            calls[0].0,
+            [
+                "pr",
+                "view",
+                "7",
+                "--json",
+                "state,isDraft,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup"
+            ]
+        );
+        assert_eq!(&calls[1].0[..2], ["repo", "view"]);
+    }
+
+    #[test]
+    fn merge_uses_the_method_flag_and_never_deletes_the_branch() {
+        for (method, flag) in [
+            (MergeMethod::Squash, "--squash"),
+            (MergeMethod::Merge, "--merge"),
+            (MergeMethod::Rebase, "--rebase"),
+        ] {
+            let fake = Fake::new(vec![out(0, "", "")]);
+            pr_merge(&fake, cwd(), 7, method).unwrap();
+            assert_eq!(fake.calls.borrow()[0].0, ["pr", "merge", "7", flag]);
+        }
+    }
+
+    #[test]
+    fn merge_refusals_map_to_blocks() {
+        let cases = [
+            ("Pull request is a draft", MergeBlock::Draft),
+            (
+                "Pull request is not mergeable: merge conflict",
+                MergeBlock::Conflicts,
+            ),
+            (
+                "the base branch policy prohibits the merge",
+                MergeBlock::Blocked,
+            ),
+            (
+                "At least 1 approving review is required",
+                MergeBlock::ReviewRequired,
+            ),
+            ("Head branch is out of date", MergeBlock::Behind),
+            ("Pull request #7 was already merged", MergeBlock::Merged),
+        ];
+        for (stderr, want) in cases {
+            let fake = Fake::new(vec![out(1, "", stderr)]);
+            match pr_merge(&fake, cwd(), 7, MergeMethod::Squash) {
+                Err(GitError::MergeBlocked(b)) => assert_eq!(b, want, "{stderr}"),
+                other => panic!("{stderr}: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn merge_failures_without_a_known_reason_stay_gh_errors() {
+        let fake = Fake::new(vec![out(1, "", "network down")]);
+        assert!(matches!(
+            pr_merge(&fake, cwd(), 7, MergeMethod::Squash),
+            Err(GitError::Gh(m)) if m == "network down"
+        ));
+        let fake = Fake::new(vec![out(1, "", "run gh auth login")]);
+        assert!(matches!(
+            pr_merge(&fake, cwd(), 7, MergeMethod::Squash),
+            Err(GitError::GhAuth)
+        ));
     }
 }
