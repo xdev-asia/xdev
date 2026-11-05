@@ -48,7 +48,7 @@ use crate::squads::{SquadItem, SquadView};
 use crate::startup::StartupReport;
 use crate::tasks::{FileDiff, TasksContext};
 use crate::terminal_themes::{CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview};
-use crate::updater::{UpdateInfo, UpdatePhase};
+use crate::updater::{ReleaseList, UpdateDeferral, UpdateInfo, UpdatePhase};
 use crate::workspace::{
     CloneProgress, CreateRequest, WorktreeChange, WorktreeCreated, WorktreeFileDiff,
 };
@@ -116,6 +116,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     MenuEvent::export_all(cfg)?;
     ShellLabels::export_all(cfg)?;
     UpdatePhase::export_all(cfg)?;
+    UpdateDeferral::export_all(cfg)?;
+    ReleaseList::export_all(cfg)?;
     KeySettings::export_all(cfg)?;
     UiSettings::export_all(cfg)?;
     RestoreMode::export_all(cfg)?;

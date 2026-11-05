@@ -108,6 +108,7 @@ pub fn run() {
         .manage(updater::Pending::default())
         .manage(xdev_id::XdevIdHub::production())
         .manage(updater::Phase::default())
+        .manage(updater::Deferred::default())
         .manage(shell::ShellState::default())
         // Terminals wait until the start below has picked where they run.
         .manage(pty::Ptys::pending())
@@ -296,6 +297,9 @@ pub fn run() {
             shell::window_devtools_toggle,
             updater::update_check,
             updater::update_phase,
+            updater::update_deferred,
+            updater::update_releases,
+            updater::update_install_tag,
             commands::open_vault,
             commands::last_vault,
             commands::git_settings,
