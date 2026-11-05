@@ -142,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn install_text_has_one_line_per_target() {
+    fn install_text_has_one_line_per_target_and_skill() {
         let dir = tempfile::tempdir().unwrap();
         let env = SkillEnv {
             user_home: dir.path().join("home"),
@@ -152,7 +152,7 @@ mod tests {
         };
         let r = skills::install(&env, InstallOpts::default(), &skills::system_link).unwrap();
         let text = plain(&r);
-        assert_eq!(text.lines().count(), 1);
+        assert_eq!(text.lines().count(), guide::BUNDLED.len());
         assert!(text.starts_with("created\twritten\tcodex\t"));
     }
 }

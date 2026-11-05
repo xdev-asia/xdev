@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::error::OrchError;
-use crate::guide::SKILL_MD;
+use crate::guide::{BUNDLED, Bundled, SKILL_MD};
 
-/// The skill's folder name under every skills root.
+/// The orchestration skill's folder name under every skills root.
 pub const SKILL_NAME: &str = "xdev-orchestration";
 
 /// The file of the skill.
@@ -95,6 +95,8 @@ pub enum How {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TargetOutcome {
+    /// The skill's folder name.
+    pub skill: String,
     pub agent: String,
     pub dir: String,
     pub action: Action,
@@ -147,23 +149,19 @@ fn io_err(e: io::Error) -> OrchError {
     OrchError::new("store", e.to_string())
 }
 
-/// Every place the skill goes: the canonical copy first, then a link per
-/// Claude home, then Gemini when `~/.gemini` exists. Codex reads the canonical
-/// root.
-pub fn targets(env: &SkillEnv) -> Vec<SkillTarget> {
+/// Every place the skill `skill` goes: the canonical copy first, then a link
+/// per Claude home, then Gemini when `~/.gemini` exists. Codex reads the
+/// canonical root.
+pub fn targets(env: &SkillEnv, skill: &str) -> Vec<SkillTarget> {
     let mut out = vec![SkillTarget {
         agent: "codex".to_owned(),
-        dir: env
-            .user_home
-            .join(".agents")
-            .join("skills")
-            .join(SKILL_NAME),
+        dir: env.user_home.join(".agents").join("skills").join(skill),
         link: false,
     }];
     for home in &env.claude_homes {
         out.push(SkillTarget {
             agent: "claude".to_owned(),
-            dir: home.join("skills").join(SKILL_NAME),
+            dir: home.join("skills").join(skill),
             link: true,
         });
     }
@@ -171,7 +169,7 @@ pub fn targets(env: &SkillEnv) -> Vec<SkillTarget> {
     if gemini.is_dir() {
         out.push(SkillTarget {
             agent: "gemini".to_owned(),
-            dir: gemini.join("skills").join(SKILL_NAME),
+            dir: gemini.join("skills").join(skill),
             link: true,
         });
     }
@@ -191,11 +189,11 @@ fn save_manifest(env: &SkillEnv, m: &Manifest) -> Result<(), OrchError> {
     fs::write(env.data_dir.join(MANIFEST), text).map_err(io_err)
 }
 
-fn inspect(dir: &Path, written: &[String]) -> State {
+fn inspect(dir: &Path, written: &[String], stub: &str) -> State {
     match fs::read(dir.join(SKILL_FILE)) {
         Ok(bytes) => {
             let h = hash(&bytes);
-            if h == hash(SKILL_MD.as_bytes()) {
+            if h == hash(stub.as_bytes()) {
                 State::Current
             } else if written.contains(&h) {
                 State::Outdated
@@ -243,9 +241,9 @@ fn clear(dir: &Path) -> io::Result<()> {
     }
 }
 
-fn write_copy(dir: &Path) -> io::Result<()> {
+fn write_copy(dir: &Path, stub: &str) -> io::Result<()> {
     fs::create_dir_all(dir)?;
-    fs::write(dir.join(SKILL_FILE), SKILL_MD)
+    fs::write(dir.join(SKILL_FILE), stub)
 }
 
 fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
@@ -301,26 +299,24 @@ fn backup_dir(env: &SkillEnv) -> PathBuf {
         .join(env.now_ms.to_string())
 }
 
-/// Installs (or, with `only_outdated`, refreshes) the skill. Edited copies
+/// Installs (or, with `only_outdated`, refreshes) one skill. Edited copies
 /// are kept unless `force`, which moves them to
 /// `~/.agents/.xdev-skill-backups/<ms>/` first.
-pub fn install(
+pub fn install_one(
     env: &SkillEnv,
+    b: &Bundled,
     opts: InstallOpts,
     link: Linker<'_>,
 ) -> Result<InstallReport, OrchError> {
     let mut m = manifest(env);
-    let canonical = env
-        .user_home
-        .join(".agents")
-        .join("skills")
-        .join(SKILL_NAME);
+    let canonical = env.user_home.join(".agents").join("skills").join(b.skill);
     let mut report = InstallReport::default();
     let mut canonical_kept = false;
 
-    for t in targets(env) {
-        let state = inspect(&t.dir, &m.written);
+    for t in targets(env, b.skill) {
+        let state = inspect(&t.dir, &m.written, b.stub);
         let outcome = |action, how| TargetOutcome {
+            skill: b.skill.to_owned(),
             agent: t.agent.clone(),
             dir: t.dir.display().to_string(),
             action,
@@ -361,7 +357,7 @@ pub fn install(
             let backup = backup_dir(env);
             let leads = leads_to(&t.dir, &canonical);
             if !leads && t.dir.exists() {
-                let to = backup.join(format!("{}-{}", t.agent, report.targets.len()));
+                let to = backup.join(format!("{}-{}-{}", b.skill, t.agent, report.targets.len()));
                 copy_tree(&t.dir, &to).map_err(io_err)?;
                 report.backup = Some(backup.display().to_string());
             }
@@ -376,18 +372,18 @@ pub fn install(
             } else {
                 // Links refused: a plain copy keeps the agent working.
                 let _ = clear(&t.dir);
-                write_copy(&t.dir).map_err(io_err)?;
+                write_copy(&t.dir, b.stub).map_err(io_err)?;
                 How::Copy
             }
         } else {
-            write_copy(&t.dir).map_err(io_err)?;
+            write_copy(&t.dir, b.stub).map_err(io_err)?;
             How::Written
         };
         report.targets.push(outcome(action, how));
     }
 
     if !opts.dry_run {
-        let h = hash(SKILL_MD.as_bytes());
+        let h = hash(b.stub.as_bytes());
         if !m.written.contains(&h) {
             m.written.push(h);
         }
@@ -396,15 +392,31 @@ pub fn install(
     Ok(report)
 }
 
+/// Installs every bundled skill, in `BUNDLED` order; the reports are
+/// concatenated.
+pub fn install(
+    env: &SkillEnv,
+    opts: InstallOpts,
+    link: Linker<'_>,
+) -> Result<InstallReport, OrchError> {
+    let mut all = InstallReport::default();
+    for b in &BUNDLED {
+        let r = install_one(env, b, opts, link)?;
+        all.targets.extend(r.targets);
+        all.backup = all.backup.or(r.backup);
+    }
+    Ok(all)
+}
+
 /// What Settings shows: installed, edited, and which agents see the skill.
 pub fn status(env: &SkillEnv) -> Result<SkillStatus, OrchError> {
     let m = manifest(env);
-    let all = targets(env);
+    let all = targets(env, SKILL_NAME);
     let canonical = all[0].dir.clone();
     let has = |dir: &Path| dir.join(SKILL_FILE).is_file();
     let edited = all
         .iter()
-        .any(|t| has(&t.dir) && inspect(&t.dir, &m.written) == State::Edited);
+        .any(|t| has(&t.dir) && inspect(&t.dir, &m.written, SKILL_MD) == State::Edited);
     let claude: Vec<&SkillTarget> = all.iter().filter(|t| t.agent == "claude").collect();
     let gemini = all.iter().find(|t| t.agent == "gemini");
     let agent =
@@ -447,20 +459,27 @@ pub fn status(env: &SkillEnv) -> Result<SkillStatus, OrchError> {
     })
 }
 
-/// App start: rewrites copies that are older than the bundled skill and that
-/// nobody edited. Does nothing until the skill has been installed once.
+/// App start: for each bundled skill that has been installed once, rewrites
+/// the copies that are older than the bundled one and that nobody edited.
 pub fn auto_update(env: &SkillEnv, link: Linker<'_>) -> Result<InstallReport, OrchError> {
-    if !targets(env)[0].dir.join(SKILL_FILE).is_file() {
-        return Ok(InstallReport::default());
+    let mut all = InstallReport::default();
+    for b in &BUNDLED {
+        if !targets(env, b.skill)[0].dir.join(SKILL_FILE).is_file() {
+            continue;
+        }
+        let r = install_one(
+            env,
+            b,
+            InstallOpts {
+                only_outdated: true,
+                ..InstallOpts::default()
+            },
+            link,
+        )?;
+        all.targets.extend(r.targets);
+        all.backup = all.backup.or(r.backup);
     }
-    install(
-        env,
-        InstallOpts {
-            only_outdated: true,
-            ..InstallOpts::default()
-        },
-        link,
-    )
+    Ok(all)
 }
 
 #[cfg(test)]
@@ -520,6 +539,14 @@ mod tests {
         Home { _dir: dir, env }
     }
 
+    fn orch() -> &'static Bundled {
+        crate::guide::find("orchestration").unwrap()
+    }
+
+    fn cli() -> &'static Bundled {
+        crate::guide::find("cli").unwrap()
+    }
+
     fn copy_linker(_: &Path, _: &Path) -> io::Result<()> {
         Err(io::Error::other("refused"))
     }
@@ -539,12 +566,12 @@ mod tests {
     #[test]
     fn a_fresh_install_writes_the_canonical_copy_and_reaches_every_agent() {
         let h = home(2, true);
-        let r = install(&h.env, InstallOpts::default(), &copy_linker).unwrap();
+        let r = install_one(&h.env, orch(), InstallOpts::default(), &copy_linker).unwrap();
         // Codex + two Claude homes + Gemini.
         assert_eq!(r.targets.len(), 4);
         assert!(r.targets.iter().all(|t| t.action == Action::Created));
         assert_eq!(read(&canonical(&h)), SKILL_MD);
-        for t in targets(&h.env) {
+        for t in targets(&h.env, SKILL_NAME) {
             assert_eq!(read(&t.dir), SKILL_MD, "{}", t.dir.display());
         }
         let s = status(&h.env).unwrap();
@@ -561,8 +588,8 @@ mod tests {
     #[test]
     fn installing_again_changes_nothing() {
         let h = home(1, true);
-        install(&h.env, InstallOpts::default(), &copy_linker).unwrap();
-        let r = install(&h.env, InstallOpts::default(), &copy_linker).unwrap();
+        install_one(&h.env, orch(), InstallOpts::default(), &copy_linker).unwrap();
+        let r = install_one(&h.env, orch(), InstallOpts::default(), &copy_linker).unwrap();
         assert!(r.targets.iter().all(|t| t.action == Action::Unchanged));
         assert_eq!(r.backup, None);
     }
@@ -570,8 +597,9 @@ mod tests {
     #[test]
     fn a_dry_run_reports_and_writes_nothing() {
         let h = home(1, false);
-        let r = install(
+        let r = install_one(
             &h.env,
+            orch(),
             InstallOpts {
                 dry_run: true,
                 ..InstallOpts::default()
@@ -587,18 +615,19 @@ mod tests {
     #[test]
     fn an_edited_copy_is_kept_and_force_replaces_it_after_a_backup() {
         let h = home(1, false);
-        install(&h.env, InstallOpts::default(), &copy_linker).unwrap();
-        let claude = targets(&h.env)[1].dir.clone();
+        install_one(&h.env, orch(), InstallOpts::default(), &copy_linker).unwrap();
+        let claude = targets(&h.env, SKILL_NAME)[1].dir.clone();
         fs::write(claude.join(SKILL_FILE), "my own notes").unwrap();
         assert!(status(&h.env).unwrap().edited);
 
-        let r = install(&h.env, InstallOpts::default(), &copy_linker).unwrap();
+        let r = install_one(&h.env, orch(), InstallOpts::default(), &copy_linker).unwrap();
         let t = r.targets.iter().find(|t| t.agent == "claude").unwrap();
         assert_eq!(t.action, Action::Kept);
         assert_eq!(read(&claude), "my own notes");
 
-        let r = install(
+        let r = install_one(
             &h.env,
+            orch(),
             InstallOpts {
                 force: true,
                 ..InstallOpts::default()
@@ -624,31 +653,34 @@ mod tests {
         let c = canonical(&h);
         fs::create_dir_all(&c).unwrap();
         fs::write(c.join(SKILL_FILE), "somebody else's skill").unwrap();
-        let r = install(&h.env, InstallOpts::default(), &copy_linker).unwrap();
+        let r = install_one(&h.env, orch(), InstallOpts::default(), &copy_linker).unwrap();
         assert_eq!(r.targets[0].action, Action::Kept);
         assert_eq!(r.targets[1].action, Action::Skipped);
         assert_eq!(read(&c), "somebody else's skill");
-        assert!(!targets(&h.env)[1].dir.exists());
+        assert!(!targets(&h.env, SKILL_NAME)[1].dir.exists());
     }
 
     #[test]
     fn links_are_used_when_the_system_allows_them() {
         let h = home(1, false);
-        let r = install(&h.env, InstallOpts::default(), &links).unwrap();
+        let r = install_one(&h.env, orch(), InstallOpts::default(), &links).unwrap();
         let t = r.targets.iter().find(|t| t.agent == "claude").unwrap();
         // Windows without Developer Mode may refuse both kinds of link; a
         // copy is then the right answer.
         assert!(matches!(t.how, How::Link | How::Copy));
         if t.how == How::Link {
-            assert!(leads_to(&targets(&h.env)[1].dir, &canonical(&h)));
+            assert!(leads_to(
+                &targets(&h.env, SKILL_NAME)[1].dir,
+                &canonical(&h)
+            ));
         }
-        assert_eq!(read(&targets(&h.env)[1].dir), SKILL_MD);
+        assert_eq!(read(&targets(&h.env, SKILL_NAME)[1].dir), SKILL_MD);
     }
 
     #[test]
     fn refused_links_fall_back_to_a_copy() {
         let h = home(1, true);
-        let r = install(&h.env, InstallOpts::default(), &copy_linker).unwrap();
+        let r = install_one(&h.env, orch(), InstallOpts::default(), &copy_linker).unwrap();
         for t in r.targets.iter().filter(|t| t.agent != "codex") {
             assert_eq!(t.how, How::Copy);
         }
@@ -659,7 +691,7 @@ mod tests {
         let h = home(1, false);
         // What an older xDev wrote, recorded in the manifest.
         let old = "old skill text";
-        for t in targets(&h.env) {
+        for t in targets(&h.env, SKILL_NAME) {
             fs::create_dir_all(&t.dir).unwrap();
             fs::write(t.dir.join(SKILL_FILE), old).unwrap();
         }
@@ -674,7 +706,7 @@ mod tests {
         assert!(r.targets.iter().all(|t| t.action == Action::Updated));
         assert_eq!(read(&canonical(&h)), SKILL_MD);
         // And an edited one is left alone.
-        let claude = targets(&h.env)[1].dir.clone();
+        let claude = targets(&h.env, SKILL_NAME)[1].dir.clone();
         fs::write(claude.join(SKILL_FILE), "mine").unwrap();
         let r = auto_update(&h.env, &copy_linker).unwrap();
         assert!(r.targets.iter().all(|t| t.action == Action::Unchanged));
@@ -695,9 +727,9 @@ mod tests {
         let s = status(&h.env).unwrap();
         assert!(!s.installed);
         assert!(s.agents.iter().all(|a| !a.ready));
-        install(&h.env, InstallOpts::default(), &copy_linker).unwrap();
+        install_one(&h.env, orch(), InstallOpts::default(), &copy_linker).unwrap();
         // One Claude home loses it: Claude is no longer ready as a whole.
-        fs::remove_dir_all(targets(&h.env)[1].dir.clone()).unwrap();
+        fs::remove_dir_all(targets(&h.env, SKILL_NAME)[1].dir.clone()).unwrap();
         let s = status(&h.env).unwrap();
         let claude = s.agents.iter().find(|a| a.id == "claude").unwrap();
         assert!(claude.detected && !claude.ready);
@@ -707,5 +739,72 @@ mod tests {
         let none = home(0, false);
         let s = status(&none.env).unwrap();
         assert!(s.agents.iter().all(|a| !a.detected));
+    }
+
+    #[test]
+    fn a_fresh_install_writes_every_bundled_skill() {
+        let h = home(1, false);
+        let r = install(&h.env, InstallOpts::default(), &copy_linker).unwrap();
+        // Codex + one Claude home, per skill.
+        assert_eq!(r.targets.len(), 2 * BUNDLED.len());
+        for b in &BUNDLED {
+            let n = r.targets.iter().filter(|t| t.skill == b.skill).count();
+            assert_eq!(n, 2, "{}", b.skill);
+            for t in targets(&h.env, b.skill) {
+                assert_eq!(read(&t.dir), b.stub, "{}", t.dir.display());
+            }
+        }
+        assert!(r.targets.iter().all(|t| t.action == Action::Created));
+    }
+
+    #[test]
+    fn install_one_touches_only_its_skill() {
+        let h = home(1, false);
+        let r = install_one(&h.env, cli(), InstallOpts::default(), &copy_linker).unwrap();
+        assert!(r.targets.iter().all(|t| t.skill == "xdev-cli"));
+        assert!(
+            targets(&h.env, "xdev-cli")[0]
+                .dir
+                .join(SKILL_FILE)
+                .is_file()
+        );
+        assert!(!canonical(&h).exists());
+    }
+
+    #[test]
+    fn an_edited_cli_copy_is_kept_and_orchestration_is_still_updated() {
+        let h = home(1, false);
+        install(&h.env, InstallOpts::default(), &copy_linker).unwrap();
+        // Orchestration goes stale; the cli copy is edited.
+        let old = "old skill text";
+        save_manifest(
+            &h.env,
+            &Manifest {
+                written: vec![
+                    hash(old.as_bytes()),
+                    hash(SKILL_MD.as_bytes()),
+                    hash(cli().stub.as_bytes()),
+                ],
+            },
+        )
+        .unwrap();
+        for t in targets(&h.env, SKILL_NAME) {
+            fs::write(t.dir.join(SKILL_FILE), old).unwrap();
+        }
+        let cli_claude = targets(&h.env, "xdev-cli")[1].dir.clone();
+        fs::write(cli_claude.join(SKILL_FILE), "mine").unwrap();
+        let r = auto_update(&h.env, &copy_linker).unwrap();
+        let of = |skill: &str, agent: &str| {
+            r.targets
+                .iter()
+                .find(|t| t.skill == skill && t.agent == agent)
+                .unwrap()
+                .action
+        };
+        assert_eq!(of(SKILL_NAME, "codex"), Action::Updated);
+        assert_eq!(of(SKILL_NAME, "claude"), Action::Updated);
+        assert_eq!(of("xdev-cli", "claude"), Action::Unchanged);
+        assert_eq!(read(&cli_claude), "mine");
+        assert_eq!(read(&canonical(&h)), SKILL_MD);
     }
 }
