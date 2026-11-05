@@ -760,14 +760,14 @@ mod tests {
 }
 
 #[cfg(test)]
-mod endpoint_tests {
+pub(crate) mod endpoint_tests {
     use std::thread;
 
     use super::*;
 
     /// A fake app on a temp dir: checks the hello, then answers each request
     /// with `answer(method, params)`.
-    fn fake_app(answer: fn(&str, &Value) -> Value) -> (tempfile::TempDir, String) {
+    pub(crate) fn fake_app(answer: fn(&str, &Value) -> Value) -> (tempfile::TempDir, String) {
         let dir = tempfile::tempdir().unwrap();
         // Windows pipe names are machine-wide: one per test.
         let prefix = format!(

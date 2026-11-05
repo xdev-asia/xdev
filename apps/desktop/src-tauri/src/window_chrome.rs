@@ -6,6 +6,7 @@ use crate::applog;
 use crate::settings::TitlebarMode;
 
 /// Title the native frame shows; the custom one hides it.
+#[cfg(target_os = "macos")]
 const NATIVE_TITLE: &str = "xDev";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

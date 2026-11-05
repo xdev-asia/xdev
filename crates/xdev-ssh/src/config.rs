@@ -1,6 +1,6 @@
 //! A reader for the Host blocks of an OpenSSH client config.
 
-use crate::{HostSource, SshHost, valid_alias};
+use crate::{HostSource, LocalForward, SshHost, TIMEOUT_MAX, TIMEOUT_MIN, valid_alias};
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct ParsedConfig {
@@ -21,6 +21,10 @@ struct Block {
     user: Option<String>,
     port: Option<u16>,
     identity_file: Option<String>,
+    proxy_jump: Option<Option<String>>,
+    forward_agent: Option<bool>,
+    local_forwards: Vec<LocalForward>,
+    connect_timeout: Option<Option<u16>>,
 }
 
 /// The `key` and `value` of one line: `Key value` or `Key=value`, keys case
@@ -44,6 +48,46 @@ fn first_word(value: &str) -> String {
         return rest.split('"').next().unwrap_or("").to_owned();
     }
     value.split_whitespace().next().unwrap_or("").to_owned()
+}
+
+/// A port in `1..=65535`.
+fn port_of(text: &str) -> Option<u16> {
+    text.parse::<u16>().ok().filter(|p| *p != 0)
+}
+
+/// `host:port` or `[v6]:port`.
+fn host_port(text: &str) -> Option<(String, u16)> {
+    if let Some(rest) = text.strip_prefix('[') {
+        let (host, tail) = rest.split_once(']')?;
+        return Some((host.to_owned(), port_of(tail.strip_prefix(':')?)?));
+    }
+    let (host, port) = text.rsplit_once(':')?;
+    if host.is_empty() || host.contains(':') {
+        return None;
+    }
+    Some((host.to_owned(), port_of(port)?))
+}
+
+/// The value of a `LocalForward` line: `[bind:]port host:hostport` (or the
+/// host and port as two words). The bind address is dropped, so the port
+/// listens on loopback; a Unix socket on either side is not a TCP forward.
+fn local_forward(value: &str) -> Option<LocalForward> {
+    let parts = words(value);
+    let (listen, target) = match parts.as_slice() {
+        [listen, target] => (listen.clone(), target.clone()),
+        [listen, host, port] => (listen.clone(), format!("{host}:{port}")),
+        _ => return None,
+    };
+    if listen.contains('/') || target.contains('/') {
+        return None;
+    }
+    let local = listen.rsplit(':').next()?;
+    let (remote_host, remote_port) = host_port(&target)?;
+    Some(LocalForward {
+        local_port: port_of(local)?,
+        remote_host,
+        remote_port,
+    })
 }
 
 /// Every word of a `Host` line, quotes removed.
@@ -117,6 +161,32 @@ pub fn parse_config(text: &str) -> ParsedConfig {
                     "identityfile" => {
                         block.identity_file.get_or_insert(word);
                     }
+                    "proxyjump" => {
+                        block.proxy_jump.get_or_insert_with(|| {
+                            (!word.eq_ignore_ascii_case("none")).then_some(word)
+                        });
+                    }
+                    "forwardagent" => {
+                        let off =
+                            word.eq_ignore_ascii_case("no") || word.eq_ignore_ascii_case("false");
+                        block.forward_agent.get_or_insert(!off);
+                    }
+                    // Every LocalForward line adds one.
+                    "localforward" => {
+                        if let Some(f) = local_forward(&value)
+                            && !block.local_forwards.contains(&f)
+                        {
+                            block.local_forwards.push(f);
+                        }
+                    }
+                    "connecttimeout" => {
+                        block.connect_timeout.get_or_insert_with(|| {
+                            word.parse::<u32>()
+                                .ok()
+                                .filter(|t| *t != 0)
+                                .map(|t| t.clamp(TIMEOUT_MIN.into(), TIMEOUT_MAX.into()) as u16)
+                        });
+                    }
                     _ => {}
                 }
             }
@@ -129,13 +199,17 @@ pub fn parse_config(text: &str) -> ParsedConfig {
                 continue;
             }
             out.hosts.push(SshHost {
-                id: String::new(),
                 host_name: block.host_name.clone().unwrap_or_else(|| alias.clone()),
                 alias,
                 user: block.user.clone(),
                 port: block.port,
                 identity_file: block.identity_file.clone(),
+                proxy_jump: block.proxy_jump.clone().flatten(),
+                forward_agent: block.forward_agent.unwrap_or(false),
+                local_forwards: block.local_forwards.clone(),
+                connect_timeout_secs: block.connect_timeout.flatten(),
                 source: HostSource::SshConfig,
+                ..SshHost::default()
             });
         }
     }
@@ -255,6 +329,101 @@ Host bare
         let parsed = parse_config("Host a\n User one\n User two\nHost a\n User three\n");
         assert_eq!(parsed.hosts.len(), 1);
         assert_eq!(parsed.hosts[0].user.as_deref(), Some("one"));
+    }
+
+    #[test]
+    fn proxy_jump_first_value_and_none() {
+        let parsed = parse_config(
+            "Host a
+ ProxyJump me@bastion:2200,jump2
+ ProxyJump other
+Host b
+ ProxyJump none
+Host c
+",
+        );
+        assert_eq!(
+            parsed.hosts[0].proxy_jump.as_deref(),
+            Some("me@bastion:2200,jump2")
+        );
+        assert_eq!(parsed.hosts[1].proxy_jump, None);
+        assert_eq!(parsed.hosts[2].proxy_jump, None);
+    }
+
+    #[test]
+    fn forward_agent_yes_and_no() {
+        let parsed = parse_config(FIXTURE);
+        assert!(parsed.hosts[0].forward_agent);
+        let db = parsed.hosts.iter().find(|h| h.alias == "db").unwrap();
+        assert!(!db.forward_agent);
+        let parsed = parse_config(
+            "Host a
+ ForwardAgent no
+ ForwardAgent yes
+Host b
+ forwardagent=True
+",
+        );
+        assert!(!parsed.hosts[0].forward_agent);
+        assert!(parsed.hosts[1].forward_agent);
+    }
+
+    #[test]
+    fn local_forwards_are_all_kept() {
+        let parsed = parse_config(
+            "Host a
+             LocalForward 5432 db.internal:5432
+             LocalForward 127.0.0.1:8080 [::1]:80
+             LocalForward 9000 web 9001
+             LocalForward /tmp/sock remote:22
+             LocalForward 0 x:1
+             LocalForward 1234
+             LocalForward 5432 db.internal:5432
+",
+        );
+        let lf = &parsed.hosts[0].local_forwards;
+        assert_eq!(
+            lf,
+            &[
+                LocalForward {
+                    local_port: 5432,
+                    remote_host: "db.internal".into(),
+                    remote_port: 5432
+                },
+                LocalForward {
+                    local_port: 8080,
+                    remote_host: "::1".into(),
+                    remote_port: 80
+                },
+                LocalForward {
+                    local_port: 9000,
+                    remote_host: "web".into(),
+                    remote_port: 9001
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn connect_timeout_is_clamped() {
+        let parsed = parse_config(
+            "Host a
+ ConnectTimeout 15
+ ConnectTimeout 3
+Host b
+ ConnectTimeout 600
+Host c
+ ConnectTimeout 0
+Host d
+ ConnectTimeout x
+",
+        );
+        let t: Vec<_> = parsed
+            .hosts
+            .iter()
+            .map(|h| h.connect_timeout_secs)
+            .collect();
+        assert_eq!(t, [Some(15), Some(TIMEOUT_MAX), None, None]);
     }
 
     #[test]

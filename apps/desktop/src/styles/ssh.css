@@ -44,3 +44,52 @@
   flex-direction: column;
   gap: 10px;
 }
+
+/* The "Advanced" group of the host form: its head is part of the form, not a sticky list head. */
+.ssh-form-advanced .ws-group-bar {
+  position: static;
+  background: transparent;
+}
+
+.ssh-form-advanced .ws-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 6px;
+}
+
+/* A host's connection state or test result, on its own line under the address. */
+.ssh-row-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The footer SSH segment: a status dot and the count of live connections. */
+.ws-ssh {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A long host list scrolls inside the footer menu instead of running off screen. */
+.ws-ssh-menu .x-menu {
+  max-height: min(360px, 60vh);
+  overflow-y: auto;
+}
+
+/* The sign-in dialog of a kept connection: ssh's own prompt above the answer. */
+.ssh-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ssh-auth-prompt {
+  margin: 0;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}

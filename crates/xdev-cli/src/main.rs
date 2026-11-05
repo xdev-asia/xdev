@@ -3,6 +3,7 @@ mod agent;
 mod agent_hook;
 mod ai;
 mod app;
+mod askpass;
 mod automations;
 mod context;
 mod file;
@@ -153,6 +154,10 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         rest: Vec<String>,
     },
+    /// Run by `ssh` as `SSH_ASKPASS` for a connection xDev keeps: asks the
+    /// app and prints the answer.
+    #[command(name = "ssh-askpass", hide = true)]
+    SshAskpass { prompt: String },
 }
 
 /// What a command that ran to the end reports through the exit code.
@@ -172,8 +177,18 @@ fn main() -> ExitCode {
             eprintln!("xdev agent-hook: {}", e.kind());
             return ExitCode::SUCCESS;
         }
-        Err(e) => e.exit(),
+        // `ssh` runs its `SSH_ASKPASS` with the prompt as the only argument.
+        Err(e) => match askpass::implicit_prompt(
+            &std::env::args_os().collect::<Vec<_>>(),
+            std::env::var_os(askpass::TOKEN_ENV).as_deref(),
+        ) {
+            Some(prompt) => return ExitCode::from(askpass::run(&prompt)),
+            None => e.exit(),
+        },
     };
+    if let Command::SshAskpass { prompt } = &cli.command {
+        return ExitCode::from(askpass::run(prompt));
+    }
     if let Command::AgentHook { event, rest } = cli.command {
         agent_hook::run(event, &rest);
         return ExitCode::SUCCESS;
@@ -228,6 +243,7 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         Command::Skills { command } => return skills::run(command, &data_dir),
         // Handled in `main` before any folder is touched.
         Command::AgentHook { .. }
+        | Command::SshAskpass { .. }
         | Command::Status(_)
         | Command::Orchestration(_)
         | Command::Worktree { .. }

@@ -55,7 +55,8 @@ pub use runner::{
     parse_claude_json, parse_codex_jsonl,
 };
 pub use shells::{
-    ShellEntry, ShellKind, default_shell_id, list_shells, parse_wsl_list, ssh_shell, wsl_distros,
+    ShellEntry, ShellKind, default_shell_id, list_shells, parse_wsl_list, ssh_shell, system_ssh,
+    wsl_distros,
 };
 pub use squad::{
     Escalation, Event, Role, Seat, SeatState, SeatStatus, Squad, SquadRun, SquadStore, Step,
