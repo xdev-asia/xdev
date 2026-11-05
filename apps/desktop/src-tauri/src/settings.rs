@@ -3116,6 +3116,51 @@ then sum up"
     }
 
     #[test]
+    fn automations_settings_default_and_stay_lenient() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let want = AutomationsSettings::default();
+        assert!(want.show_button);
+        assert!(!want.skip_delete_confirm);
+        for text in [
+            "{}",
+            r#"{ "automations": {} }"#,
+            r#"{ "automations": 3 }"#,
+            r#"{ "automations": { "showButton": "yes" } }"#,
+        ] {
+            fs::write(&path, text).unwrap();
+            assert_eq!(load(&path).automations, want, "{text}");
+        }
+        // A broken section keeps the other sections.
+        fs::write(
+            &path,
+            r#"{ "automations": [1], "agents": { "accountSwitch": "keep" } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.automations, want);
+        assert_eq!(loaded.agents.account_switch, SwitchRunning::Keep);
+        // A half-written section keeps the field it has.
+        fs::write(&path, r#"{ "automations": { "skipDeleteConfirm": true } }"#).unwrap();
+        let loaded = load(&path).automations;
+        assert!(loaded.show_button && loaded.skip_delete_confirm);
+    }
+
+    #[test]
+    fn automations_settings_round_trip_in_camel_case() {
+        let on = AutomationsSettings {
+            show_button: false,
+            skip_delete_confirm: true,
+        };
+        let text = serde_json::to_string(&on).unwrap();
+        assert_eq!(text, r#"{"showButton":false,"skipDeleteConfirm":true}"#);
+        assert_eq!(
+            serde_json::from_str::<AutomationsSettings>(&text).unwrap(),
+            on
+        );
+    }
+
+    #[test]
     fn usage_settings_round_trip_and_normalise_the_cache_ttl() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(FILE_NAME);

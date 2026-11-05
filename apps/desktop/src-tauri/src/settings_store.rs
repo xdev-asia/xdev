@@ -186,6 +186,30 @@ mod tests {
     }
 
     #[test]
+    fn an_automations_put_names_its_section() {
+        assert_eq!(
+            serde_json::to_string(&changed(&[SettingsSection::Automations])).unwrap(),
+            r#"{"sections":["automations"]}"#
+        );
+    }
+
+    #[test]
+    fn automations_settings_are_stored_beside_the_rest() {
+        let (_dir, store) = store();
+        store
+            .update(|s| s.last_vault = Some("D:/docs".into()))
+            .unwrap();
+        let put = settings::AutomationsSettings {
+            show_button: false,
+            skip_delete_confirm: true,
+        };
+        let stored = store.update(|s| s.automations = put.clone()).unwrap();
+        assert_eq!(stored.automations, put);
+        assert_eq!(store.read().automations, put);
+        assert_eq!(store.read().last_vault.as_deref(), Some("D:/docs"));
+    }
+
+    #[test]
     fn navigation_and_diff_are_stored_beside_the_rest() {
         let (_dir, store) = store();
         store
