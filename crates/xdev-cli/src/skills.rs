@@ -62,6 +62,11 @@ pub enum SkillsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Skills the agents on this machine load.
+    Installed {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// The text `get` prints, or the name of what was not found.
@@ -194,6 +199,22 @@ pub fn run(command: SkillsCommand, data_dir: &Path) -> Result<Outcome, &'static 
                 Ok(Outcome::Exit(5))
             }
         },
+        SkillsCommand::Installed { json } => {
+            let env = env_of(data_dir)?;
+            let process_env = |k: &str| std::env::var(k).ok();
+            let homes = xdev_kit::homes(data_dir, &env.user_home, &process_env);
+            let worktree = std::env::current_dir()
+                .ok()
+                .and_then(|d| xdev_core::Repo::discover(&d).ok().map(|r| r.root()));
+            let found = installed(&env, &homes, worktree.as_deref());
+            let text = if json {
+                serde_json::to_string(&found).map_err(|_| "io")? + "\n"
+            } else {
+                installed_text(&found)
+            };
+            let _ = std::io::stdout().write_all(text.as_bytes());
+            Ok(Outcome::Ok)
+        }
         SkillsCommand::Install {
             skills,
             force,
@@ -207,6 +228,43 @@ pub fn run(command: SkillsCommand, data_dir: &Path) -> Result<Outcome, &'static 
             json,
         } => change(data_dir, &skills, force, dry_run, json, true),
     }
+}
+
+/// Every skill the agents load: the agent homes, the plugin cache, the shared
+/// `~/.agents/skills` and the worktree's `.claude/skills`.
+pub fn installed(
+    env: &SkillEnv,
+    homes: &[xdev_kit::Home],
+    worktree: Option<&Path>,
+) -> Vec<xdev_kit::Skill> {
+    let mut all = xdev_kit::scan_skills(homes, worktree);
+    all.extend(xdev_kit::scan_skill_root(
+        &env.user_home.join(".agents").join("skills"),
+        "agents",
+    ));
+    xdev_kit::mark_duplicates(&mut all);
+    all
+}
+
+/// One line per skill: `name<TAB>scope<TAB>home<TAB>dir`. A project skill has
+/// no home: `-`.
+fn installed_text(found: &[xdev_kit::Skill]) -> String {
+    found
+        .iter()
+        .map(|s| {
+            let scope = match &s.scope {
+                xdev_kit::SkillScope::User => "user",
+                xdev_kit::SkillScope::Project => "project",
+                xdev_kit::SkillScope::Plugin { .. } => "plugin",
+            };
+            format!(
+                "{}\t{scope}\t{}\t{}\n",
+                s.name,
+                s.home_id.as_deref().unwrap_or("-"),
+                s.dir.display()
+            )
+        })
+        .collect()
 }
 
 /// The bundled skills named, or every one when none is; `Err` names the
@@ -355,5 +413,18 @@ mod tests {
             v["references"],
             serde_json::json!(["worktrees", "terminals", "exit-codes"])
         );
+    }
+
+    #[test]
+    fn installed_text_has_four_columns() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("skills");
+        std::fs::create_dir_all(root.join("x")).unwrap();
+        std::fs::write(root.join("x/SKILL.md"), "---\nname: x\n---\n").unwrap();
+        let found = xdev_kit::scan_skill_root(&root, "agents");
+        let text = installed_text(&found);
+        let cols: Vec<&str> = text.trim_end().split('\t').collect();
+        assert_eq!(&cols[..3], ["x", "user", "agents"]);
+        assert_eq!(cols.len(), 4);
     }
 }

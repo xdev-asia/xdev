@@ -158,3 +158,63 @@ fn update_dry_run_writes_nothing() {
     assert!(dir.path().join("home/.agents/.xdev-skill-backups").is_dir());
     assert!(!skill_file(dir.path(), "xdev-orchestration").exists());
 }
+
+fn write(path: &Path, text: &str) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, text).unwrap();
+}
+
+#[test]
+fn installed_lists_home_shared_and_project_skills() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let skill = |name: &str| format!("---\nname: {name}\n---\nbody of {name}");
+    write(
+        &root.join("home/.claude/skills/mine/SKILL.md"),
+        &skill("mine"),
+    );
+    write(
+        &root.join("home/.agents/skills/shared/SKILL.md"),
+        &skill("shared"),
+    );
+    // The worktree is the folder the command runs in.
+    write(&root.join(".claude/skills/proj/SKILL.md"), &skill("proj"));
+    let git = Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(root)
+        .output()
+        .expect("run git");
+    assert!(git.status.success());
+    let out = skills(root, &["installed"]);
+    assert!(out.status.success(), "{out:?}");
+    let rows: Vec<Vec<String>> = text(&out.stdout)
+        .lines()
+        .map(|l| l.split('\t').map(str::to_owned).collect())
+        .collect();
+    let find = |name: &str| {
+        rows.iter()
+            .find(|r| r[0] == name)
+            .unwrap_or_else(|| panic!("{name}"))
+    };
+    assert!(rows.iter().all(|r| r.len() == 4));
+    assert_eq!(find("mine")[1..3], ["user", "own-claude"]);
+    assert_eq!(find("shared")[1..3], ["user", "agents"]);
+    assert_eq!(find("proj")[1..3], ["project", "-"]);
+}
+
+#[test]
+fn installed_json_has_no_skill_contents() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        &dir.path().join("home/.agents/skills/s/SKILL.md"),
+        "---\nname: s\n---\nSECRET BODY",
+    );
+    let out = skills(dir.path(), &["installed", "--json"]);
+    assert!(out.status.success());
+    let raw = text(&out.stdout);
+    assert!(!raw.contains("SECRET BODY"));
+    let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let first = &v[0];
+    assert_eq!(first["name"], "s");
+    assert!(first.get("content").is_none());
+}

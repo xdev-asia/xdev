@@ -36,6 +36,20 @@ xdev terminal wait --tab <id> --for idle --timeout 600
 
 `--for` is `idle`, `done`, `needs-you` or `exit`. Timeout is in seconds, at most 86400. It prints the state and the time. Do not poll `terminal list` in a loop; wait.
 
+## Skills
+
+```sh
+xdev skills list
+xdev skills get <topic> --full
+xdev skills installed
+xdev skills update
+```
+
+- `skills list`: the guides built into this binary.
+- `skills get <topic>`: one guide. `--full` adds every reference; `--json` wraps it.
+- `skills installed`: skills the agents on this machine load.
+- `skills update`: refreshes installed copies of the bundled skills; it never adds one.
+
 ## Never
 
 - Poll: no `sleep` loops around a verb.

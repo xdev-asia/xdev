@@ -119,7 +119,7 @@ enum Command {
         #[command(subcommand)]
         command: app::TerminalCommand,
     },
-    /// The orchestration guide and skill: `get`, `install`.
+    /// Bundled guides and skills: `list`, `get`, `install`, `update`, `installed`.
     Skills {
         #[command(subcommand)]
         command: skills::SkillsCommand,
