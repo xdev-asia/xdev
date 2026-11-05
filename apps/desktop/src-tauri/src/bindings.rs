@@ -47,6 +47,7 @@ use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
 use crate::startup::StartupReport;
 use crate::tasks::{FileDiff, TasksContext};
+use crate::term_config_import::{TermConfigDetected, TermConfigPreview};
 use crate::terminal_themes::{CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview};
 use crate::updater::{ReleaseList, UpdateDeferral, UpdateInfo, UpdatePhase};
 use crate::workspace::{
@@ -124,6 +125,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     Theme::export_all(cfg)?;
     CustomScheme::export_all(cfg)?;
     SchemePreview::export_all(cfg)?;
+    TermConfigDetected::export_all(cfg)?;
+    TermConfigPreview::export_all(cfg)?;
     OnNameTaken::export_all(cfg)?;
     SchemeMode::export_all(cfg)?;
     SchemeColors::export_all(cfg)?;
