@@ -24,7 +24,7 @@ const ALL: Record<ActionId, true> = {
   "panel.explorer": true, "panel.search": true, "panel.sourceControl": true, "panel.issues": true, "panel.ports": true,
   "terminal.clear": true, "terminal.copy": true, "terminal.paste": true, "terminal.selectAll": true, "terminal.find": true,
   "zoom.in": true, "zoom.out": true, "zoom.reset": true,
-  "tab.reopenClosed": true, "tab.nextSameKind": true, "tab.prevSameKind": true, "file.closeAll": true,
+  "tab.reopenClosed": true, "tab.nextSameKind": true, "tab.prevSameKind": true, "file.closeAll": true, "tab.closeAll": true,
   "settings.open": true, "settings.shortcuts": true,
   "docs.search": true, "docs.new": true, "docs.save": true, "file.save": true, "file.markdownPreview": true,
   "quickCommands.open": true, "quickOpen.open": true,
@@ -91,29 +91,47 @@ it("the panes-tabs-keys defaults are unchanged on every platform", () => {
     for (const [id, chord] of OLD) {
       const old = p === "mac" && !KEPT_CTRL.has(id) ? chord.replace("Ctrl", "Mod") : chord;
       const d = SHORTCUTS.find((s) => s.id === id)!;
-      expect(defaultsFor(d, p).map((c) => normalizeChord(c, p)), `${id} ${p}`).toEqual([normalizeChord(old, p)]);
+      // tab.next / tab.prev have since gained extra chords; the first one is still the old key.
+      expect(defaultsFor(d, p).map((c) => normalizeChord(c, p))[0], `${id} ${p}`).toBe(normalizeChord(old, p));
     }
   }
 });
 
 it("DEFAULT_BINDINGS holds the old list, normalized, for the panes-tabs-keys actions", () => {
   for (const [id, chord] of OLD) {
-    expect(DEFAULT_BINDINGS.filter((b) => b.action === id).map((b) => b.chord), id).toEqual([normalizeChord(chord, "win")]);
+    expect(DEFAULT_BINDINGS.filter((b) => b.action === id).map((b) => b.chord)[0], id).toBe(normalizeChord(chord, "win"));
   }
 });
 
-it("file-tab commands: Mod+Shift+T reopens, the rest have no default key", () => {
+it("file-tab commands: Mod+Shift+T reopens, Close all editors has no default key", () => {
   expect(defaultsFor(shortcutDef("tab.reopenClosed")!, "linux")).toEqual(["Mod+Shift+T"]);
-  for (const id of ["file.closeAll", "tab.nextSameKind", "tab.prevSameKind"] as const) {
-    const d = shortcutDef(id)!;
-    expect(defaultsFor(d, "linux")).toEqual([]);
-    expect(defaultsFor(d, "mac")).toEqual([]);
-    expect(d.scope).toBe("global");
+  const d = shortcutDef("file.closeAll")!;
+  expect(defaultsFor(d, "linux")).toEqual([]);
+  expect(defaultsFor(d, "mac")).toEqual([]);
+  expect(d.scope).toBe("global");
+});
+
+const on = (id: ActionId, p: Platform) => defaultsFor(shortcutDef(id)!, p).map((c) => normalizeChord(c, p));
+
+it("tab keys: close all, cycle by kind, next and previous across every tab", () => {
+  expect(on("tab.closeAll", "win")).toEqual(["Ctrl+Alt+W"]);
+  expect(on("tab.closeAll", "mac")).toEqual(["Alt+Cmd+W"]);
+  expect(on("tab.nextSameKind", "linux")).toEqual(["Ctrl+Alt+]"]);
+  expect(on("tab.prevSameKind", "mac")).toEqual(["Alt+Cmd+["]);
+  expect(on("tab.next", "win")).toEqual(["Ctrl+Tab", "Ctrl+Shift+]", "Ctrl+PageDown"]);
+  expect(on("tab.prev", "mac")).toEqual(["Ctrl+Shift+Tab", "Shift+Cmd+[", "Ctrl+PageUp"]);
+  // Ctrl stays Ctrl on every platform for the page keys.
+  expect(on("tab.next", "mac")).toContain("Ctrl+PageDown");
+});
+
+it("Mod+W stays with Close tab; Close pane has no second claim on it", () => {
+  for (const p of PLATFORMS) {
+    expect(on("tab.close", p)).toEqual([normalizeChord("Mod+W", p)]);
+    expect(on("pane.close", p)).toEqual([]);
   }
 });
 
 it("the KB-3 keys and the macOS terminal copy and paste", () => {
-  const on = (id: ActionId, p: Platform) => defaultsFor(SHORTCUTS.find((s) => s.id === id)!, p).map((c) => normalizeChord(c, p));
   expect(on("sidebar.left.toggle", "win")).toEqual(["Ctrl+B"]);
   expect(on("zoom.in", "win")).toEqual(["Ctrl+=", "Ctrl+NumpadAdd"]);
   expect(on("zoom.reset", "mac")).toEqual(["Cmd+0"]);
@@ -125,5 +143,5 @@ it("the KB-3 keys and the macOS terminal copy and paste", () => {
   expect(on("panel.ports", "win")).toEqual([]);
   expect(on("terminal.clear", "win")).toEqual(["Ctrl+K"]);
   expect(on("settings.open", "win")).toEqual(["Ctrl+,"]);
-  expect(on("quickCommands.open", "win")).toEqual([]);
+  expect(on("quickCommands.open", "win")).toEqual(["Ctrl+Shift+;"]);
 });

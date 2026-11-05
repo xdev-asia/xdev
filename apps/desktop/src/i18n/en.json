@@ -3620,5 +3620,7 @@
   "tip.cliSkill.copied": "Copied",
   "tip.cliSkill.later": "Maybe later",
   "tip.cliSkill.done": "Done",
-  "tip.cliSkill.label": "Tip: xDev skill"
+  "tip.cliSkill.label": "Tip: xDev skill",
+  "keys.action.tab.closeAll": "Close all tabs",
+  "workspace.tabs.switcher": "Recent tabs"
 }

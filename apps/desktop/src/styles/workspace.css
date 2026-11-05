@@ -4087,3 +4087,30 @@ button.ws-tree-row[data-active="true"] {
 .ws-dropzone {
   pointer-events: none;
 }
+
+/* The recent-tab switcher under Ctrl+Tab. */
+.ws-recent {
+  position: fixed;
+  top: 20%;
+  left: 50%;
+  z-index: 30;
+  width: min(420px, calc(100vw - 16px));
+  max-height: 60vh;
+  overflow-y: auto;
+  transform: translateX(-50%);
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-1) 16%, transparent);
+}
+
+.ws-recent[hidden] {
+  display: none;
+}
+
+.ws-recent-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

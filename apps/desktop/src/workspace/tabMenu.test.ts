@@ -25,6 +25,7 @@ function setup(over: Partial<TabMenuContext> = {}, tabs: Tab[] = [tab("a"), tab(
     close: () => void calls.push("close"),
     closeOthers: () => void calls.push("others"),
     closeToRight: () => void calls.push("right"),
+    closeAll: () => void calls.push("all"),
     ...over,
   };
   const items = tabMenuItems(ctx);
@@ -38,7 +39,7 @@ it("lists the items in SCR-14 order", () => {
     "splitRight", "splitDown", "moveToSplit", "-",
     "pin", "copyTabId", "-",
     "changeTitle", "color", "-",
-    "close", "closeOthers", "closeToRight",
+    "close", "closeOthers", "closeToRight", "closeAll",
   ]);
   expect(ids(setup().find("moveToSplit").children!)).toEqual(["moveRight", "moveDown"]);
 });
@@ -140,7 +141,6 @@ it("a file tab menu has the file items and none of the terminal ones", () => {
     expect(ids(fileSetup().items)).not.toContain(id);
   }
   expect(terminal).not.toContain("copyPath");
-  expect(terminal).not.toContain("closeAll");
 });
 
 it("a Markdown file offers Open preview first; other files do not", () => {

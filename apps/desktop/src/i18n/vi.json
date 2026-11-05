@@ -3620,5 +3620,7 @@
   "tip.cliSkill.copied": "Đã sao chép",
   "tip.cliSkill.later": "Để sau",
   "tip.cliSkill.done": "Xong",
-  "tip.cliSkill.label": "Mẹo: skill xDev"
+  "tip.cliSkill.label": "Mẹo: skill xDev",
+  "keys.action.tab.closeAll": "Đóng tất cả tab",
+  "workspace.tabs.switcher": "Tab gần đây"
 }

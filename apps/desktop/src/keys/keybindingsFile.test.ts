@@ -49,12 +49,12 @@ describe("parseKeybindings", () => {
       "version": 1, /* block */
       "keybindings": {
         "tab.new": ["ctrl+alt+n",], // trailing
-        "tab.close": "Ctrl+Alt+W", "my.url": "http://x//y, /* not a comment */",
+        "tab.close": "Ctrl+Alt+Y", "my.url": "http://x//y, /* not a comment */",
       },
     }`;
     const { overrides, diagnostics } = parseKeybindings(text, "win");
     expect(diagnostics.map((d) => [d.kind, d.action])).toEqual([["unknownAction", "my.url"]]);
-    expect(overrides.get("tab.close")).toEqual(["Ctrl+Alt+W"]);
+    expect(overrides.get("tab.close")).toEqual(["Ctrl+Alt+Y"]);
     expect(overrides.get("tab.new")).toEqual(["Ctrl+Alt+N"]);
   });
 
@@ -65,8 +65,8 @@ describe("parseKeybindings", () => {
   });
 
   it("lets the platform section win", () => {
-    const text = file({ version: 1, keybindings: { "tab.new": ["Ctrl+Alt+N"] }, mac: { "tab.new": ["Cmd+Alt+N"] }, win: { "tab.new": ["Ctrl+Alt+W"] } });
-    expect(parseKeybindings(text, "win").overrides.get("tab.new")).toEqual(["Ctrl+Alt+W"]);
+    const text = file({ version: 1, keybindings: { "tab.new": ["Ctrl+Alt+N"] }, mac: { "tab.new": ["Cmd+Alt+N"] }, win: { "tab.new": ["Ctrl+Alt+Y"] } });
+    expect(parseKeybindings(text, "win").overrides.get("tab.new")).toEqual(["Ctrl+Alt+Y"]);
     expect(parseKeybindings(text, "mac").overrides.get("tab.new")).toEqual(["Alt+Cmd+N"]);
     expect(parseKeybindings(text, "linux").overrides.get("tab.new")).toEqual(["Ctrl+Alt+N"]);
   });
@@ -87,11 +87,11 @@ describe("parseKeybindings", () => {
 
   it("a bad chord is dropped; when none is left the defaults stay", () => {
     const { overrides, diagnostics } = parseKeybindings(
-      file({ version: 1, keybindings: { "tab.new": ["Ctrl+Banana"], "tab.close": ["Ctrl+Banana", "Ctrl+Alt+W"] } }),
+      file({ version: 1, keybindings: { "tab.new": ["Ctrl+Banana"], "tab.close": ["Ctrl+Banana", "Ctrl+Alt+Y"] } }),
       "win",
     );
     expect(overrides.has("tab.new")).toBe(false);
-    expect(overrides.get("tab.close")).toEqual(["Ctrl+Alt+W"]);
+    expect(overrides.get("tab.close")).toEqual(["Ctrl+Alt+Y"]);
     expect(diagnostics.map((d) => [d.kind, d.action, d.chord])).toEqual([
       ["badChord", "tab.new", "Ctrl+Banana"],
       ["badChord", "tab.close", "Ctrl+Banana"],
@@ -115,11 +115,11 @@ describe("parseKeybindings", () => {
 
   it("two overrides on one chord: the later one in the file is dropped", () => {
     const { overrides, diagnostics } = parseKeybindings(
-      file({ version: 1, keybindings: { "tab.new": ["Ctrl+Alt+N"], "tab.close": ["Ctrl+Alt+N", "Ctrl+Alt+W"], "zoom.in": ["Ctrl+Alt+N"] } }),
+      file({ version: 1, keybindings: { "tab.new": ["Ctrl+Alt+N"], "tab.close": ["Ctrl+Alt+N", "Ctrl+Alt+Y"], "zoom.in": ["Ctrl+Alt+N"] } }),
       "win",
     );
     expect(overrides.get("tab.new")).toEqual(["Ctrl+Alt+N"]);
-    expect(overrides.get("tab.close")).toEqual(["Ctrl+Alt+W"]);
+    expect(overrides.get("tab.close")).toEqual(["Ctrl+Alt+Y"]);
     expect(overrides.has("zoom.in")).toBe(false);
     expect(diagnostics.map((d) => [d.kind, d.action, d.with])).toEqual([
       ["conflict", "tab.close", ["tab.new"]],
@@ -165,13 +165,13 @@ describe("serializeKeybindings", () => {
   });
 
   it("writes into this platform's section when the action lives there", () => {
-    const keep = file({ version: 1, keybindings: { "tab.new": ["Ctrl+Alt+N"] }, win: { "tab.new": ["Ctrl+Alt+W"] } });
+    const keep = file({ version: 1, keybindings: { "tab.new": ["Ctrl+Alt+N"] }, win: { "tab.new": ["Ctrl+Alt+Y"] } });
     const out = JSON.parse(serializeKeybindings(new Map<ActionId, string[]>([["tab.new", ["Ctrl+Alt+Q"]]]), keep, "win"));
     expect(out).toEqual({ version: 1, keybindings: { "tab.new": ["Ctrl+Alt+N"] }, win: { "tab.new": ["Ctrl+Alt+Q"] } });
   });
 
   it("a reset in this platform's section writes the defaults when the shared one has the action", () => {
-    const keep = file({ version: 1, keybindings: { "tab.new": ["Ctrl+Alt+N"] }, win: { "tab.new": ["Ctrl+Alt+W"], "tab.close": ["Ctrl+Alt+Q"] } });
+    const keep = file({ version: 1, keybindings: { "tab.new": ["Ctrl+Alt+N"] }, win: { "tab.new": ["Ctrl+Alt+Y"], "tab.close": ["Ctrl+Alt+Q"] } });
     const out = JSON.parse(serializeKeybindings(new Map(), keep, "win"));
     expect(out).toEqual({ version: 1, keybindings: { "tab.new": ["Ctrl+Alt+N"] }, win: { "tab.new": ["Ctrl+T"] } });
     expect(parseKeybindings(JSON.stringify(out), "win").overrides.get("tab.new")).toEqual(["Ctrl+T"]);
