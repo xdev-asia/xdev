@@ -50,6 +50,9 @@ export function presetOf(rule: string): ScheduleDraft {
   const custom: ScheduleDraft = { ...DEFAULT_DRAFT, preset: "custom", cron: rule };
   const text = rule.trim().replace(/^RRULE:/i, "");
   if (!text.includes("=")) return custom;
+  // Only the parts a preset writes; anything else (INTERVAL…) stays custom so it is not dropped.
+  const keys = text.split(";").filter(Boolean).map((p) => p.split("=")[0].toUpperCase());
+  if (keys.some((k) => !["FREQ", "BYDAY", "BYHOUR", "BYMINUTE"].includes(k))) return custom;
   const part = (key: string) => new RegExp(`(?:^|;)${key}=([^;]*)`, "i").exec(text)?.[1];
   const freq = part("FREQ")?.toUpperCase();
   const whole = (v: string | undefined, fallback: number, max: number) => (v !== undefined && /^\d+$/.test(v) && Number(v) <= max ? Number(v) : fallback);

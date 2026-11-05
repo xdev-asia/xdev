@@ -41,6 +41,8 @@ describe("presetOf", () => {
     expect(presetOf("0 9 1 * 1")).toEqual({ ...DEFAULT_DRAFT, preset: "custom", cron: "0 9 1 * 1" });
     expect(presetOf("FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=9")).toMatchObject({ preset: "custom" });
     expect(presetOf("FREQ=YEARLY")).toMatchObject({ preset: "custom" });
+    // A part the presets do not write (INTERVAL) is not dropped by opening it as a preset.
+    expect(presetOf("FREQ=HOURLY;INTERVAL=2")).toMatchObject({ preset: "custom", cron: "FREQ=HOURLY;INTERVAL=2" });
   });
 
   it("defaults a rule without a time to 9:00", () => {
