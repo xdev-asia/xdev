@@ -10,7 +10,7 @@ export type CliAsk = { request: number,
  */
 caller: string | null, 
 /**
- * `worktree.create` or `worktree.set`.
+ * `worktree.create`, `worktree.set` or `terminal.send`.
  */
 verb: string, 
 /**
