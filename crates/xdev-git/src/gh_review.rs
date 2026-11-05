@@ -108,7 +108,8 @@ pub struct PrComment {
 pub struct PrComments {
     /// Oldest first.
     pub comments: Vec<PrComment>,
-    /// A source hit `COMMENTS_PER_SOURCE`, so more may exist.
+    /// A source (or the replies of a thread) holds more than one page, so older
+    /// items were left out.
     pub truncated: bool,
 }
 
@@ -200,14 +201,14 @@ fragment R on Reactable { reactionGroups { content viewerHasReacted reactors { t
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      reviewThreads(first: 100) { nodes {
+      reviewThreads(last: 100) { pageInfo { hasPreviousPage } nodes {
         id isResolved line originalLine startLine originalStartLine path diffSide
-        comments(first: 100) { nodes {
+        comments(first: 100) { pageInfo { hasNextPage } nodes {
           id databaseId body createdAt url diffHunk
           author { login __typename } replyTo { databaseId } ...R } } } }
-      comments(first: 100) { nodes {
+      comments(last: 100) { pageInfo { hasPreviousPage } nodes {
         id databaseId body createdAt url author { login __typename } ...R } }
-      reviews(first: 100) { nodes {
+      reviews(last: 100) { pageInfo { hasPreviousPage } nodes {
         id databaseId body submittedAt url author { login __typename } ...R } }
     }
   }
@@ -215,9 +216,30 @@ query($owner: String!, $name: String!, $number: Int!) {
 "#;
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PageInfo {
+    #[serde(default)]
+    has_previous_page: bool,
+    #[serde(default)]
+    has_next_page: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Nodes<T> {
     #[serde(default = "Vec::new")]
     nodes: Vec<T>,
+    page_info: Option<PageInfo>,
+}
+
+impl<T> Nodes<T> {
+    /// Older (or later) items exist than the page holds. Without page info a full page counts.
+    fn more(&self) -> bool {
+        match &self.page_info {
+            Some(p) => p.has_previous_page || p.has_next_page,
+            None => self.nodes.len() >= COMMENTS_PER_SOURCE,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -369,7 +391,8 @@ fn base(raw: RawComment, kind: PrCommentKind) -> Option<PrComment> {
     })
 }
 
-/// Every comment of the PR, oldest first, from one GraphQL call. A partial
+/// The newest `COMMENTS_PER_SOURCE` of each source, oldest first, from one
+/// GraphQL call (`last: 100`, so a busy PR keeps its latest comments). A partial
 /// answer (`errors` next to `data`) keeps what came back.
 pub fn pr_comments(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<PrComments, GitError> {
     let repo = repo_name(gh, cwd)?;
@@ -402,9 +425,10 @@ pub fn pr_comments(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<PrComment
         ok(out)?;
         return Err(GitError::PrNotFound);
     };
-    let truncated = pull.review_threads.nodes.len() >= COMMENTS_PER_SOURCE
-        || pull.comments.nodes.len() >= COMMENTS_PER_SOURCE
-        || pull.reviews.nodes.len() >= COMMENTS_PER_SOURCE;
+    let truncated = pull.review_threads.more()
+        || pull.comments.more()
+        || pull.reviews.more()
+        || pull.review_threads.nodes.iter().any(|t| t.comments.more());
     let mut comments = Vec::new();
     for thread in pull.review_threads.nodes {
         let outdated = thread.line.is_none();
@@ -991,6 +1015,61 @@ mod tests {
         let got = read(&json).unwrap();
         assert!(got.truncated);
         assert_eq!(got.comments.len(), COMMENTS_PER_SOURCE);
+    }
+
+    fn page_json(page: &str, comments_page: &str) -> String {
+        let node = |id: u32| {
+            format!(
+                r#"{{"id":"I{id}","databaseId":{id},"body":"b{id}","createdAt":"2026-11-02T08:{:02}:{:02}Z","url":"u","author":null,"reactionGroups":[]}}"#,
+                id / 60,
+                id % 60
+            )
+        };
+        // The newest 100 of 150 conversation comments: 51 to 150.
+        let many = (51..=150).map(node).collect::<Vec<_>>().join(",");
+        let thread = format!(
+            r#"{{"id":"T","isResolved":false,"line":1,"path":"a.rs","comments":{{"pageInfo":{{"hasNextPage":{comments_page}}},"nodes":[{}]}}}}"#,
+            node(1)
+        );
+        format!(
+            r#"{{"data":{{"repository":{{"pullRequest":{{"reviewThreads":{{"pageInfo":{{"hasPreviousPage":false}},"nodes":[{thread}]}},"comments":{{"pageInfo":{{"hasPreviousPage":{page}}},"nodes":[{many}]}},"reviews":{{"pageInfo":{{"hasPreviousPage":false}},"nodes":[]}}}}}}}}}}"#
+        )
+    }
+
+    #[test]
+    fn pr_comments_asks_for_the_newest_of_each_source() {
+        let fake = Fake::new(vec![out(0, REPO, ""), out(0, &page_json("false", "false"), "")]);
+        pr_comments(&fake, cwd(), 7).unwrap();
+        let query = fake.calls.borrow()[1].0[3].clone();
+        for source in ["reviewThreads", "comments", "reviews"] {
+            assert!(
+                query.contains(&format!("{source}(last: 100)")),
+                "{source} must read the newest 100"
+            );
+        }
+        assert!(query.contains("hasPreviousPage") && query.contains("hasNextPage"));
+    }
+
+    #[test]
+    fn pr_comments_keeps_the_newest_page_and_flags_the_older_ones() {
+        let got = read(&page_json("true", "false")).unwrap();
+        assert!(got.truncated);
+        let conversation: Vec<u64> = got
+            .comments
+            .iter()
+            .filter(|c| c.kind == PrCommentKind::Conversation)
+            .map(|c| c.id)
+            .collect();
+        assert_eq!(conversation.len(), 100);
+        assert_eq!(conversation.first(), Some(&51));
+        assert_eq!(conversation.last(), Some(&150));
+        // A full page that says nothing is behind it is complete.
+        assert!(!read(&page_json("false", "false")).unwrap().truncated);
+    }
+
+    #[test]
+    fn pr_comments_flags_a_thread_with_more_replies_than_one_page() {
+        assert!(read(&page_json("false", "true")).unwrap().truncated);
     }
 
     #[test]
