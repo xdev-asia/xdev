@@ -151,6 +151,16 @@
   color: var(--text-1);
 }
 
+.rv-list-item[aria-current="true"] {
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+.rv-filter {
+  flex-shrink: 0;
+  margin: var(--space-2);
+}
+
 .rv-list-path {
   flex: 1;
   min-width: 0;
