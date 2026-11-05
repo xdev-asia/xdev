@@ -50,6 +50,9 @@ export class PrCommentStore {
   /** Posts a comment, a reply or an inline comment, then reads again. Rejects when the post fails. */
   async post(path: string, number: number, draft: PrCommentDraft): Promise<void> {
     await this.api.worktreePrCommentPost(path, number, draft);
+    // A read that started before the post may not show it: drop that read and start a fresh one.
+    this.generation.set(path, (this.generation.get(path) ?? 0) + 1);
+    this.running.delete(path);
     await this.load(path, number);
   }
 
