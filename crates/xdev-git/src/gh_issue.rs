@@ -6,7 +6,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::GitError;
-use crate::gh::{GhExec, ISSUE_BODY_MAX, IssueState, ok, repo_name};
+use crate::gh::{GhExec, ISSUE_BODY_MAX, IssueState, ok, parse_error, repo_name};
 use crate::gh_review::{COMMENT_BODY_MAX, post_json};
 
 /// Most events one timeline read returns.
@@ -226,14 +226,38 @@ pub fn issue_comment(gh: &dyn GhExec, cwd: &Path, number: u64, body: &str) -> Re
     )
 }
 
-/// The repo's labels.
-pub fn issue_labels(_gh: &dyn GhExec, _cwd: &Path) -> Result<Vec<IssueLabel>, GitError> {
-    Err(not_built())
+/// The repo's labels, at most 200.
+pub fn issue_labels(gh: &dyn GhExec, cwd: &Path) -> Result<Vec<IssueLabel>, GitError> {
+    let out = ok(gh.run(
+        cwd,
+        &["label", "list", "--json", "name,color", "--limit", "200"],
+        None,
+    )?)?;
+    serde_json::from_str(&out.stdout).map_err(parse_error)
 }
 
-/// Logins an issue of the repo can be assigned to.
-pub fn issue_assignable(_gh: &dyn GhExec, _cwd: &Path) -> Result<Vec<String>, GitError> {
-    Err(not_built())
+/// Logins an issue of the repo can be assigned to. `--jq` prints one login
+/// per line however many pages there are.
+pub fn issue_assignable(gh: &dyn GhExec, cwd: &Path) -> Result<Vec<String>, GitError> {
+    let repo = repo_name(gh, cwd)?;
+    let out = ok(gh.run(
+        cwd,
+        &[
+            "api",
+            &format!("repos/{repo}/assignees"),
+            "--paginate",
+            "--jq",
+            ".[].login",
+        ],
+        None,
+    )?)?;
+    Ok(out
+        .stdout
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect())
 }
 
 /// The issue's events, oldest first, known kinds only.
@@ -519,5 +543,64 @@ bye é" })
         ));
         assert!(fake.calls.borrow().is_empty());
         issue_comment(&fake, cwd(), 7, &"x".repeat(COMMENT_BODY_MAX)).unwrap();
+    }
+
+    #[test]
+    fn issue_labels_parses_names_and_colours() {
+        let fake = Fake::new(vec![out(
+            0,
+            r#"[{"name":"bug","color":"d73a4a","description":"x"},{"name":"ui","color":"a2eeef"}]"#,
+            "",
+        )]);
+        let labels = issue_labels(&fake, cwd()).unwrap();
+        assert_eq!(
+            labels,
+            [
+                IssueLabel {
+                    name: "bug".into(),
+                    color: "d73a4a".into()
+                },
+                IssueLabel {
+                    name: "ui".into(),
+                    color: "a2eeef".into()
+                }
+            ]
+        );
+        assert_eq!(
+            args(&fake.calls.borrow()[0]),
+            ["label", "list", "--json", "name,color", "--limit", "200"]
+        );
+        let bad = Fake::new(vec![out(0, "nope", "")]);
+        assert!(issue_labels(&bad, cwd()).is_err());
+    }
+
+    #[test]
+    fn issue_assignable_reads_ndjson_pages() {
+        let fake = Fake::new(vec![
+            out(0, r#"{"nameWithOwner":"o/r"}"#, ""),
+            out(
+                0,
+                "octo
+mona
+
+hubot
+",
+                "",
+            ),
+        ]);
+        assert_eq!(
+            issue_assignable(&fake, cwd()).unwrap(),
+            ["octo", "mona", "hubot"]
+        );
+        assert_eq!(
+            args(&fake.calls.borrow()[1]),
+            [
+                "api",
+                "repos/o/r/assignees",
+                "--paginate",
+                "--jq",
+                ".[].login"
+            ]
+        );
     }
 }
