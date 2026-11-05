@@ -57,6 +57,7 @@ import { TabStrip, type MenuGroup, type StripItem } from "./TabStrip";
 import { AgentPicker } from "./AgentPicker";
 import { cycleTab, mruOrder, nthTab } from "./tabNav";
 import { TabTitleDialog } from "./TabTitleDialog";
+import { toTabStatus } from "@/terminal/programStatus";
 import { titleStatus } from "./titles";
 import { PtydBanner } from "@/terminal/PtydBanner";
 import { WorkerStrip } from "./WorkerStrip";
@@ -742,6 +743,11 @@ export function WorktreeTabs(props: {
                 onOutput={(bytes) => sessions.noteOutput(tab.id, bytes)}
                 onInput={(text) => sessions.noteInput(tab.id, text)}
                 onBell={() => sessions.noteBell(tab.id)}
+                onProgramStatus={(r) => {
+                  const status = toTabStatus(r.state, r.kind);
+                  if (status) sessions.noteProgramStatus(tab.id, status, r.progress, r.msg);
+                }}
+                onProgress={(p) => sessions.noteProgress(tab.id, p)}
                 onTitle={(title) => {
                   sessions.noteTitle(tab.id, title);
                   const status = titleStatus(tab.cli, title);
