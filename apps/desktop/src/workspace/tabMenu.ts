@@ -17,6 +17,8 @@ export interface TabMenuContext {
   close(): void;
   closeOthers(): void;
   closeToRight(): void;
+  /** Closes every unpinned terminal and file tab of the worktree. */
+  closeAll(): void;
 }
 
 const SEP = (id: string): MenuItem => ({ id, labelKey: "", kind: "separator" });
@@ -61,7 +63,21 @@ export function tabMenuItems(ctx: TabMenuContext): MenuItem[] {
     { id: "close", labelKey: "tabMenu.close", run: ctx.close },
     { id: "closeOthers", labelKey: "tabMenu.closeOthers", disabled: !others, run: ctx.closeOthers },
     { id: "closeToRight", labelKey: "tabMenu.closeToRight", disabled: !right, run: ctx.closeToRight },
+    { id: "closeAll", labelKey: "tabMenu.closeAll", disabled: !ctx.tabs.some((t) => !t.pinned), run: ctx.closeAll },
   ];
+}
+
+/** One tab of the worktree as Close all sees it. */
+export interface CloseAllTab {
+  id: string;
+  /** Only terminal (and agent) and file tabs close; the review, commit and preview tabs stay. */
+  kind: "terminal" | "file" | "other";
+  pinned: boolean;
+}
+
+/** The tabs Close all takes: every terminal, agent and file tab that is not pinned. */
+export function closeAllTargets(tabs: readonly CloseAllTab[]): string[] {
+  return tabs.filter((t) => t.kind !== "other" && !t.pinned).map((t) => t.id);
 }
 
 /** The colour token of a tab colour (`c3` -> `--x-tab-color-3`); null for "none". */

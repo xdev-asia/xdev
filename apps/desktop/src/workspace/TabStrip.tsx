@@ -112,6 +112,8 @@ export function TabStrip(props: {
   onClose: (id: string) => void;
   onCloseOthers: (id: string) => void;
   onCloseToRight: (id: string) => void;
+  /** The terminal tab menu's Close all: every unpinned terminal and file tab of the worktree. */
+  onCloseAll?: () => void;
   onLaunch: (profile: PtyProfile) => void;
   /** Opens the agent picker of this pane; absent, the menu has no "Agent…" item. */
   onAgentPicker?: () => void;
@@ -276,6 +278,7 @@ export function TabStrip(props: {
       close: () => props.onClose(item.id),
       closeOthers: () => props.onCloseOthers(item.id),
       closeToRight: () => props.onCloseToRight(item.id),
+      closeAll: () => props.onCloseAll?.(),
       }),
       ...history,
     ];

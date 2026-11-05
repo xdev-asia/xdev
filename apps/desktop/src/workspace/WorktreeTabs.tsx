@@ -1,4 +1,4 @@
-import { Button, EmptyState, IconButton } from "@xdev-asia/ui";
+import { Button, EmptyState, FileIcon, Icon, IconButton } from "@xdev-asia/ui";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
@@ -56,9 +56,12 @@ import { CommitView, type CommitAsk } from "./CommitView";
 import { cliOf, ownAccount, type Sessions, type Tab, type TabCli } from "./sessions";
 import type { SetupGate } from "./setupGate";
 import { TabStrip, type MenuGroup, type StripItem, type TabDrag } from "./TabStrip";
+import { AgentIcon } from "./AgentIcon";
 import { AgentPicker } from "./AgentPicker";
 import { cycleTab, mruOrder, nthTab } from "./tabNav";
-import { cycleSameKind, fileCloseTargets, type FileCloseKind, type FileTabInfo } from "./tabMenu";
+import { chosenTab, startSwitch, stepSwitch, type Switch } from "./recentTabs";
+import { RecentTabSwitcher, type SwitcherItem } from "./RecentTabSwitcher";
+import { closeAllTargets, cycleSameKind, fileCloseTargets, type FileCloseKind, type FileTabInfo } from "./tabMenu";
 import { openFile } from "@/files/openFile";
 import { absolutePath, relativePath } from "@/search/resultCopy";
 import { TabTitleDialog } from "./TabTitleDialog";
@@ -91,8 +94,6 @@ type Leaf = Extract<PaneNode, { kind: "leaf" }>;
 /** A file to show in the review tab; a new `seq` asks for it again. */
 export type Reveal = { file: string; seq: number };
 
-// Ctrl+Tab keeps walking the same list until the focus has rested this long (R4).
-export const MRU_SETTLE_MS = 600;
 /** How long the side preview waits after the last keystroke before it renders the live text. */
 export const PREVIEW_DEBOUNCE_MS = 200;
 
@@ -142,8 +143,10 @@ export function WorktreeTabs(props: {
   const { api, sessions, worktree, visible, reveal } = props;
   const { t } = useI18n();
   const navigation = useNavigationSettings();
-  // A Ctrl+Tab walk in progress: the frozen MRU list and where in it the focus is.
-  const [walk] = useState(() => ({ current: null as { list: string[]; at: number; timer: ReturnType<typeof setTimeout> } | null }));
+  // A Ctrl+Tab walk in progress (the switcher is open): the frozen MRU list and the highlight in it. The holder
+  // is read between renders; the state draws it.
+  const [walking] = useState(() => ({ current: null as Switch | null }));
+  const [switcher, setSwitcher] = useState<Switch | null>(null);
   // The pane whose `+` menu is open.
   const [menuPane, setMenuPane] = useState<string | null>(null);
   const [drag, setDrag] = useState<TabDrag | null>(null);
@@ -228,12 +231,17 @@ export function WorktreeTabs(props: {
   const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB && id !== COMMIT_TAB && !isFileTab(id) && !isPreviewTab(id)).join(" ");
   const { onShown, onPanes, front } = props;
   useEffect(() => onShown?.(shown), [shown]);
-  // The focus order for MRU; a walk records only where it ends, not the tabs it passed (R4).
-  const [shownNow] = useState(() => ({ current: shown }));
-  shownNow.current = shown;
+  // The focus order for MRU; a walk records only where it ends, not the tabs it passed.
   useEffect(() => {
-    if (shown && !walk.current) sessions.noteFocused(worktree, shown);
+    if (shown && !walking.current) sessions.noteFocused(worktree, shown);
   }, [shown, sessions, worktree]);
+  // A worktree that goes off screen drops its open switcher: nobody is left to see Ctrl released.
+  useEffect(() => {
+    if (!visible && walking.current) {
+      walking.current = null;
+      setSwitcher(null);
+    }
+  }, [visible]);
   useEffect(() => onPanes?.(paneKey ? paneKey.split(" ") : []), [paneKey]);
 
   // The shell asks for a tab to come to the front, and a reveal for the review tab to.
@@ -376,6 +384,23 @@ export function WorktreeTabs(props: {
     return true;
   }
 
+  // Close all: every terminal, agent and file tab of the worktree that is not pinned. Unsaved files ask in the
+  // Save / Don't save dialog; a running agent asks as a single close does.
+  function closeAllTabs(): boolean {
+    const kindOf = (id: string): "terminal" | "file" | "other" =>
+      isFileTab(id) ? "file" : isPreviewTab(id) || id === REVIEW_TAB || id === COMMIT_TAB ? "other" : "terminal";
+    const pinnedOf = (id: string) => {
+      const rel = fileTabRel(id);
+      return rel !== null ? !!fileTabs.get(worktree, rel)?.pinned : !!byId.get(id)?.pinned;
+    };
+    const targets = closeAllTargets(panes.flatMap((n) => n.tabs).map((id) => ({ id, kind: kindOf(id), pinned: pinnedOf(id) })));
+    if (targets.length === 0) return false;
+    const rels = targets.flatMap((id) => fileTabRel(id) ?? []);
+    if (rels.length > 0) closeFiles(rels);
+    requestClose(targets.filter((id) => fileTabRel(id) === null));
+    return true;
+  }
+
   function closeTab(id: string): void {
     const rel = fileTabRel(id);
     if (rel !== null) return closeFiles([rel]);
@@ -451,29 +476,53 @@ export function WorktreeTabs(props: {
     return true;
   }
 
-  function stepTab(step: 1 | -1): boolean {
-    const strip = focusedLeaf?.tabs ?? [];
-    if (navigation.tabOrder !== "mru") {
-      const to = cycleTab(strip, shown, step);
-      if (to === null || to === shown) return false;
-      go(to);
-      return true;
-    }
-    // MRU: the list is taken when the walk starts and kept until the focus settles.
-    const held = walk.current;
-    const list = held?.list ?? mruOrder(strip, sessions.recentTabs(worktree));
-    const from = held ? held.at : shown === null ? -1 : list.indexOf(shown);
-    const to = cycleTab(list, from < 0 ? null : list[from], step);
+  // Ctrl+Tab in MRU order opens the switcher over every tab of the worktree; Tab goes on down the list.
+  function stepSwitcher(step: 1 | -1): boolean {
+    const held = walking.current;
+    const next =
+      held ?
+        stepSwitch(held, step)
+      : startSwitch(
+          mruOrder(panes.flatMap((n) => n.tabs), sessions.recentTabs(worktree)),
+          shown,
+          step,
+        );
+    if (next === null) return false;
+    walking.current = next;
+    setSwitcher(next);
+    return true;
+  }
+
+  // Ctrl released: the highlighted tab comes to the front (and is recorded as the newest); Esc leaves things as they were.
+  function endSwitch(activate: boolean): void {
+    const held = walking.current;
+    if (!held) return;
+    walking.current = null;
+    setSwitcher(null);
+    const to = chosenTab(held);
+    if (activate && panes.some((n) => n.tabs.includes(to))) go(to);
+  }
+
+  function switcherItems(list: readonly string[]): SwitcherItem[] {
+    return list.map((id): SwitcherItem => {
+      if (id === REVIEW_TAB) return { id, title: t("review.tab"), icon: <Icon name="diff" /> };
+      if (id === COMMIT_TAB) return { id, title: t("commitView.tab", { id: (commitOpen?.id ?? "").slice(0, 7) }), icon: <Icon name="diff" /> };
+      const previewRel = previewTabRel(id);
+      if (previewRel !== null) return { id, title: t("files.preview.tab", { name: fileName(previewRel) }), icon: <Icon name="eye" />, path: previewRel };
+      const rel = fileTabRel(id);
+      if (rel !== null) return { id, title: fileName(rel), icon: <FileIcon name={fileName(rel)} />, path: rel };
+      const tab = byId.get(id);
+      return tab
+        ? { id, title: tab.title ?? profileName(view, tab.profileId, t), icon: <AgentIcon profile={tab.profileId} size={16} /> }
+        : { id, title: id, icon: <Icon name="terminal" /> };
+    });
+  }
+
+  // `e` tells the chord: Ctrl+Tab (in MRU order) opens the switcher, any other chord of next / previous tab walks the strip.
+  function stepTab(step: 1 | -1, e?: KeyboardEvent): boolean {
+    if (navigation.tabOrder === "mru" && e?.ctrlKey && e.code === "Tab") return stepSwitcher(step);
+    const to = cycleTab(focusedLeaf?.tabs ?? [], shown, step);
     if (to === null || to === shown) return false;
-    clearTimeout(held?.timer);
-    walk.current = {
-      list,
-      at: list.indexOf(to),
-      timer: setTimeout(() => {
-        walk.current = null;
-        if (shownNow.current) sessions.noteFocused(worktree, shownNow.current);
-      }, MRU_SETTLE_MS),
-    };
     go(to);
     return true;
   }
@@ -532,10 +581,11 @@ export function WorktreeTabs(props: {
       "tab.reopenClosed": () => reopenClosed(),
       "tab.nextSameKind": () => stepSameKind(1),
       "tab.prevSameKind": () => stepSameKind(-1),
+      "tab.closeAll": () => closeAllTabs(),
       "file.closeAll": () => closeAllFiles(),
       "tab.close": () => requestClose(shown ? [shown] : []),
-      "tab.next": () => stepTab(1),
-      "tab.prev": () => stepTab(-1),
+      "tab.next": (e) => stepTab(1, e),
+      "tab.prev": (e) => stepTab(-1, e),
       ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`tab.select.${n}`, () => pickTab(n)])),
       "pane.splitRight": () => splitKey("right"),
       "pane.splitDown": () => splitKey("down"),
@@ -678,6 +728,7 @@ export function WorktreeTabs(props: {
           const rest = leaf.tabs.slice(leaf.tabs.indexOf(id) + 1).filter((t) => !byId.get(t)?.pinned);
           requestClose(rest, () => sessions.closeToRight(id));
         }}
+        onCloseAll={closeAllTabs}
         onLaunch={(profile) => launchGated(profile, leaf.id)}
         onAgentPicker={() => {
           setMenuPane(null);
@@ -907,6 +958,15 @@ export function WorktreeTabs(props: {
         </div>
       )}
       {dialog}
+      {visible && switcher && (
+        <RecentTabSwitcher
+          items={switcherItems(switcher.list)}
+          at={switcher.at}
+          steps={switcher.steps}
+          onCommit={() => endSwitch(true)}
+          onCancel={() => endSwitch(false)}
+        />
+      )}
       {termMenu && byId.get(termMenu.id) && (
         <ContextMenu at={termMenu.at} items={termMenuItems(byId.get(termMenu.id)!, termMenu.handle)} onClose={() => setTermMenu(null)} />
       )}

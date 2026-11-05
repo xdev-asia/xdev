@@ -19,6 +19,7 @@ import { CommitView } from "./CommitView";
 import { Sessions } from "./sessions";
 import { addTab, leaves, paneOf, removeTab, resize, selectTab, single, splitPane, toggleExpand, type PaneLayout, type PaneNode } from "./paneTree";
 import { PaneView } from "./PaneView";
+import { RecentTabSwitcher } from "./RecentTabSwitcher";
 import { TabStrip } from "./TabStrip";
 import { TabTitleDialog } from "./TabTitleDialog";
 import { PREVIEW_DEBOUNCE_MS, WorktreeTabs } from "./WorktreeTabs";
@@ -505,7 +506,7 @@ it("a tab context menu offers the SCR-14 items at the pointer", () => {
   expect(menuOf(view)!.props.at).toEqual({ x: 10, y: 20 });
   const items = menuOf(view)!.props.items as MenuNode[];
   expect(items.map((i) => (i.kind === "separator" ? "-" : i.id))).toEqual([
-    "splitRight", "splitDown", "moveToSplit", "-", "pin", "copyTabId", "-", "changeTitle", "color", "-", "close", "closeOthers", "closeToRight",
+    "splitRight", "splitDown", "moveToSplit", "-", "pin", "copyTabId", "-", "changeTitle", "color", "-", "close", "closeOthers", "closeToRight", "closeAll",
   ]);
 });
 
@@ -1045,7 +1046,10 @@ it("ctrl_w_on_the_review_tab_closes_it", () => {
   expect(view.find((n) => n.props["data-tab"] === "review:")).toBeUndefined();
 });
 
+const SEQUENTIAL = () => setNavigationSettings({ ...NAVIGATION_DEFAULTS, tabOrder: "sequential" });
+
 it("ctrl_tab_cycles_and_alt_n_picks_a_tab", () => {
+  SEQUENTIAL();
   const api = createMockApi({});
   const live = (sessions = new Sessions(api));
   const [a, b, c] = ["shell", "shell", "shell"].map((p) => live.open(A, p as "shell").id);
@@ -1065,32 +1069,6 @@ it("ctrl_tab_cycles_and_alt_n_picks_a_tab", () => {
   expect(selected(view)).toEqual([c]);
 });
 
-it("ctrl_tab_in_mru_mode_goes_to_the_tab_used_before_and_keeps_walking_one_list", () => {
-  vi.useFakeTimers();
-  const api = createMockApi({});
-  const live = (sessions = new Sessions(api));
-  const [a, b, c] = ["shell", "shell", "shell"].map((p) => live.open(A, p as "shell").id);
-  // Focus order: c now, b before it, a before that.
-  for (const id of [a, b, c]) live.noteFocused(A, id);
-  const view = harness(api, live);
-  expect(selected(view)).toEqual([c]);
-  press(view, CTRL_TAB);
-  expect(selected(view)).toEqual([b]);
-  // Held: the list is the one the walk started with, although the focus moved.
-  press(view, CTRL_TAB);
-  expect(selected(view)).toEqual([a]);
-  press(view, { ...CTRL_TAB, shiftKey: true });
-  expect(selected(view)).toEqual([b]);
-  // The walk passed through a without recording it; once the focus settles only b is the newest.
-  expect(live.recentTabs(A)).toEqual([c, b, a]);
-  view.draw();
-  vi.advanceTimersByTime(600);
-  expect(live.recentTabs(A)[0]).toBe(b);
-  // A new walk starts from the new order: b, c, a.
-  press(view, CTRL_TAB);
-  expect(selected(view)).toEqual([c]);
-});
-
 it("ctrl_tab_in_strip_mode_follows_the_strip_order", () => {
   vi.useFakeTimers();
   setNavigationSettings({ ...NAVIGATION_DEFAULTS, tabOrder: "sequential" });
@@ -1101,10 +1079,240 @@ it("ctrl_tab_in_strip_mode_follows_the_strip_order", () => {
   const view = harness(api, live);
   expect(selected(view)).toEqual([c]);
   // MRU would go to b; the strip wraps to a.
-  press(view, CTRL_TAB);
+  const first = press(view, CTRL_TAB);
+  expect(first.preventDefault).toHaveBeenCalled();
   expect(selected(view)).toEqual([a]);
   press(view, CTRL_TAB);
   expect(selected(view)).toEqual([b]);
+  // No popup in this mode.
+  expect(switcherOf(view)).toBeUndefined();
+});
+
+const switcherOf = (view: ReturnType<typeof harness>) => view.find((n) => n.type === RecentTabSwitcher);
+const switcherProps = (view: ReturnType<typeof harness>) => switcherOf(view)!.props as { items: { id: string; title: string; path?: string }[]; at: number; steps: number; onCommit(): void; onCancel(): void };
+
+describe("recent-tab switcher", () => {
+  // Focus order: c now, b before it, a before that.
+  const three = () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    const [a, b, c] = ["shell", "shell", "shell"].map((p) => live.open(A, p as "shell").id);
+    for (const id of [a, b, c]) live.noteFocused(A, id);
+    return { api, live, a, b, c, view: harness(api, live) };
+  };
+  const settle = (view: ReturnType<typeof harness>) => keys(view).cleanup();
+
+  it("ctrl_tab_opens_the_list_most_recent_first_with_the_previous_tab_highlighted", () => {
+    const { view, a, b, c } = three();
+    expect(switcherOf(view)).toBeUndefined();
+    const e = press(view, CTRL_TAB);
+    expect(e.preventDefault).toHaveBeenCalled();
+    expect(switcherProps(view).items.map((i) => i.id)).toEqual([c, b, a]);
+    expect(switcherProps(view).at).toBe(1);
+    // Nothing switches until Ctrl is let go.
+    expect(selected(view)).toEqual([c]);
+  });
+
+  it("each further tab moves the highlight and wraps; shift goes back", () => {
+    const { view } = three();
+    press(view, CTRL_TAB);
+    press(view, CTRL_TAB);
+    expect(switcherProps(view).at).toBe(2);
+    press(view, CTRL_TAB);
+    expect(switcherProps(view).at).toBe(0);
+    press(view, { ...CTRL_TAB, shiftKey: true });
+    expect(switcherProps(view).at).toBe(2);
+    press(view, { ...CTRL_TAB, shiftKey: true });
+    expect(switcherProps(view).at).toBe(1);
+    expect(switcherProps(view).steps).toBe(5);
+  });
+
+  it("ctrl_shift_tab_opens_on_the_least_recent_tab", () => {
+    const { view } = three();
+    press(view, { ...CTRL_TAB, shiftKey: true });
+    expect(switcherProps(view).at).toBe(2);
+  });
+
+  it("releasing_ctrl_activates_the_highlighted_tab_and_records_it_as_the_newest", () => {
+    const { view, live, a, b, c } = three();
+    press(view, CTRL_TAB);
+    press(view, CTRL_TAB);
+    // The tabs passed through are not recorded.
+    settle(view);
+    expect(live.recentTabs(A)).toEqual([c, b, a]);
+    switcherProps(view).onCommit();
+    expect(selected(view)).toEqual([a]);
+    expect(switcherOf(view)).toBeUndefined();
+    settle(view);
+    expect(live.recentTabs(A)).toEqual([a, c, b]);
+    // The next walk starts from the new order: a now, c before it.
+    press(view, CTRL_TAB);
+    expect(switcherProps(view).items.map((i) => i.id)).toEqual([a, c, b]);
+    expect(switcherProps(view).items[switcherProps(view).at].id).toBe(c);
+  });
+
+  it("a quick tap switches to the previous tab as soon as Ctrl is released", () => {
+    const { view, b } = three();
+    press(view, CTRL_TAB);
+    switcherProps(view).onCommit();
+    expect(selected(view)).toEqual([b]);
+  });
+
+  it("escape_cancels_and_leaves_the_front_tab_and_the_order_alone", () => {
+    const { view, live, a, b, c } = three();
+    press(view, CTRL_TAB);
+    press(view, CTRL_TAB);
+    switcherProps(view).onCancel();
+    expect(switcherOf(view)).toBeUndefined();
+    expect(selected(view)).toEqual([c]);
+    settle(view);
+    expect(live.recentTabs(A)).toEqual([c, b, a]);
+  });
+
+  it("a tab closed while the list is open is not activated", () => {
+    const { view, live, a } = three();
+    press(view, CTRL_TAB);
+    press(view, CTRL_TAB);
+    live.close(a);
+    const before = selected(view);
+    switcherProps(view).onCommit();
+    expect(selected(view)).toEqual(before);
+  });
+
+  it("the list holds file tabs with their path, and the closed tabs drop out of the order", () => {
+    fileTabs.reset();
+    const { view, live, b, c } = three();
+    readyFile(A, "src/deep/x.ts");
+    press(view, CTRL_TAB);
+    const items = switcherProps(view).items;
+    expect(items.find((i) => i.path)).toMatchObject({ title: "x.ts", path: "src/deep/x.ts" });
+    live.close(b);
+    switcherProps(view).onCancel();
+    press(view, CTRL_TAB);
+    expect(switcherProps(view).items.map((i) => i.id)).not.toContain(b);
+    expect(switcherProps(view).items.map((i) => i.id)).toContain(c);
+    fileTabs.reset();
+  });
+
+  it("an off screen worktree has no switcher", () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    live.open(A, "shell");
+    live.open(A, "shell");
+    const view = harness(api, live, A, false);
+    expect(switcherOf(view)).toBeUndefined();
+  });
+});
+
+describe("tab keys", () => {
+  beforeEach(() => fileTabs.reset());
+  afterEach(() => fileTabs.reset());
+  const three = () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    const [a, b, c] = ["shell", "shell", "shell"].map((p) => live.open(A, p as "shell").id);
+    return { api, live, a, b, c, view: harness(api, live) };
+  };
+  const PAGE_DOWN = { key: "PageDown", code: "PageDown", ctrlKey: true };
+  const PAGE_UP = { key: "PageUp", code: "PageUp", ctrlKey: true };
+
+  it("ctrl_page_down_and_up_walk_the_strip_even_in_mru_mode, with no popup", () => {
+    const { view, a, b, c } = three();
+    expect(selected(view)).toEqual([c]);
+    press(view, PAGE_DOWN);
+    expect(selected(view)).toEqual([a]);
+    press(view, PAGE_UP);
+    expect(selected(view)).toEqual([c]);
+    press(view, PAGE_UP);
+    expect(selected(view)).toEqual([b]);
+    expect(switcherOf(view)).toBeUndefined();
+  });
+
+  it("mod_shift_brackets_walk_every_tab", () => {
+    const { view, a, c } = three();
+    press(view, { key: "]", code: "BracketRight", ctrlKey: true, shiftKey: true });
+    expect(selected(view)).toEqual([a]);
+    press(view, { key: "[", code: "BracketLeft", ctrlKey: true, shiftKey: true });
+    expect(selected(view)).toEqual([c]);
+  });
+
+  it("mod_alt_brackets_walk_the_tabs_of_the_same_kind", () => {
+    const { view, a, b, c } = three();
+    // Front tab is a terminal: the file tab is skipped.
+    press(view, { key: "]", code: "BracketRight", ctrlKey: true, altKey: true });
+    expect(selected(view)).toEqual([a]);
+    press(view, { key: "[", code: "BracketLeft", ctrlKey: true, altKey: true });
+    expect(selected(view)).toEqual([c]);
+    press(view, { key: "[", code: "BracketLeft", ctrlKey: true, altKey: true });
+    expect(selected(view)).toEqual([b]);
+  });
+});
+
+describe("close all", () => {
+  beforeEach(() => fileTabs.reset());
+  afterEach(() => fileTabs.reset());
+  const CLOSE_ALL = { key: "w", code: "KeyW", ctrlKey: true, altKey: true };
+
+  it("ctrl_alt_w_closes_terminals_and_saved_files_but_keeps_pinned_ones", () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    const keep = live.open(A, "shell");
+    live.setPinned(keep.id, true);
+    live.open(A, "shell");
+    live.open(A, "claude");
+    readyFile(A, "a.ts");
+    readyFile(A, "b.ts");
+    fileTabs.setPinned(A, "b.ts", true);
+    const view = harness(api, live);
+    const e = press(view, CLOSE_ALL);
+    expect(e.preventDefault).toHaveBeenCalled();
+    expect(live.tabs(A).map((t) => t.id)).toEqual([keep.id]);
+    expect(fileTabs.get(A, "a.ts")).toBeNull();
+    expect(fileTabs.get(A, "b.ts")).not.toBeNull();
+  });
+
+  it("unsaved files ask in the Save / Don't save dialog; terminals close at once", () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    live.open(A, "shell");
+    readyFile(A, "a.ts");
+    fileTabs.edit(A, "a.ts", "changed");
+    const view = harness(api, live);
+    press(view, CLOSE_ALL);
+    expect(live.tabs(A)).toEqual([]);
+    expect(fileTabs.get(A, "a.ts")).not.toBeNull();
+    expect(view.find((n) => n.type === UnsavedDialog)).toBeDefined();
+  });
+
+  it("an agent at work asks as a single close does", () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    const agent = live.open(A, "claude");
+    live.noteTitleStatus(agent.id, "working");
+    const view = harness(api, live);
+    press(view, CLOSE_ALL);
+    expect(view.find((n) => n.type === CloseTabsDialog)!.props.reason).toBe("running");
+    expect(live.tabs(A)).toHaveLength(1);
+  });
+
+  it("with only pinned tabs the key goes on", () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    live.setPinned(live.open(A, "shell").id, true);
+    const view = harness(api, live);
+    expect(press(view, CLOSE_ALL).preventDefault).not.toHaveBeenCalled();
+    expect(live.tabs(A)).toHaveLength(1);
+  });
+
+  it("the terminal tab menu's Close all closes the same tabs", () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    live.open(A, "shell");
+    live.open(A, "shell");
+    const view = harness(api, live);
+    view.find((n) => n.type === TabStrip)!.props.onCloseAll();
+    expect(live.tabs(A)).toEqual([]);
+  });
 });
 
 // ---- Close confirmations (Settings → General → Navigation) ----
@@ -1219,6 +1427,7 @@ const handlers = (view: ReturnType<typeof harness>) => {
 };
 
 it("tab keys stay inside the focused pane", () => {
+  SEQUENTIAL();
   const api = createMockApi({});
   const live = (sessions = new Sessions(api));
   const { one, two, three } = threePanes(live);
