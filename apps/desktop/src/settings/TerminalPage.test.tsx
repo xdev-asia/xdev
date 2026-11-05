@@ -288,6 +288,24 @@ it("bell radios put once with only the bell; the hint points to Notifications", 
   expect(JSON.stringify(p.all().map((n) => n.props.children))).toContain(en("settings.terminal.bell.hint"));
 });
 
+const linkRadio = (p: Awaited<ReturnType<typeof page>>, attr: "data-link-click" | "data-url-middle-click", m: string) => p.all().find((n) => n.props[attr] === m)!;
+
+it("link radios put once with only their own field; the defaults are actions and open", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  expect(linkRadio(p, "data-link-click", "actions").props.checked).toBe(true);
+  expect(linkRadio(p, "data-url-middle-click", "open").props.checked).toBe(true);
+  linkRadio(p, "data-link-click", "none").props.onChange();
+  await tick();
+  expect(put).toHaveBeenCalledTimes(1);
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, linkClick: "none" });
+  linkRadio(p, "data-url-middle-click", "actions").props.onChange();
+  await tick();
+  expect(put).toHaveBeenCalledTimes(2);
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, linkClick: "none", urlMiddleClick: "actions" });
+  expect(JSON.stringify(p.all().map((n) => n.props.children))).toContain(en("settings.terminal.links.hint"));
+});
+
 it("word separators: committed on blur, Reset shown only when not default and puts the default", async () => {
   const p = await page();
   const put = vi.spyOn(p.api, "terminalSettingsPut");
@@ -331,4 +349,6 @@ it("search shows only the matching row (webgl, chuông)", async () => {
   };
   expect(await rows("webgl")).toEqual(["terminal.gpu"]);
   expect(await rows("chuông")).toEqual(["terminal.bell"]);
+  expect(await rows("liên kết")).toEqual(["terminal.linkClick", "terminal.urlMiddleClick"]);
+  expect(await rows("middle")).toEqual(["terminal.urlMiddleClick"]);
 });

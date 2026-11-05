@@ -74,6 +74,8 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("terminal.scrollSensitivity", "settings.terminal.interaction.scroll", ["scroll", "speed", "wheel", "cuộn", "cuon", "tốc độ", "toc do"]),
   e("terminal.fastScrollSensitivity", "settings.terminal.interaction.fastScroll", ["scroll", "fast", "alt", "speed", "cuộn", "cuon", "nhanh"]),
   e("terminal.focusFollowsMouse", "settings.terminal.interaction.focusFollowsMouse", ["focus", "mouse", "hover", "pointer", "tiêu điểm", "tieu diem", "chuột", "chuot"], "settings.terminal.interaction.focusFollowsMouseHint"),
+  e("terminal.linkClick", "settings.terminal.links.click", ["link", "url", "path", "click", "open", "actions", "liên kết", "lien ket", "nhấp", "nhap"], "settings.terminal.links.hint"),
+  e("terminal.urlMiddleClick", "settings.terminal.links.middleClick", ["link", "url", "middle", "click", "open", "liên kết", "lien ket", "chuột giữa", "chuot giua", "nhấp", "nhap"]),
   e("terminal.bell", "settings.terminal.bell.label", ["bell", "beep", "flash", "sound", "visual", "chuông", "chuong", "âm thanh", "am thanh"], "settings.terminal.bell.hint"),
   e("terminal.wordSeparators", "settings.terminal.words.label", ["word", "separator", "double click", "select", "từ", "tu", "phân tách", "phan tach", "bấm đúp", "bam dup"], "settings.terminal.words.hint"),
   e("terminal.scrollback", "settings.terminal.scrollback", ["buffer", "history", "lines", "lịch sử", "lich su"], "settings.terminal.scrollbackHint"),

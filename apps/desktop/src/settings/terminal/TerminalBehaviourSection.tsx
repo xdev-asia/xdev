@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { JSX } from "react";
-import type { TerminalBell } from "@/api";
+import type { TerminalBell, TerminalLinkClick } from "@/api";
 import { useI18n } from "@/i18n";
 import { DEFAULT_WORD_SEPARATORS } from "@/settings/terminalDefaults";
 import { TERMINAL_LIMITS } from "@/terminal/terminalSettings";
@@ -8,12 +8,14 @@ import { SettingGroup, SettingRow, settingShown } from "../SettingRow";
 import { parseNumber, type TerminalSectionProps } from "./sectionProps";
 
 export const BELL_MODES: TerminalBell[] = ["none", "visual", "sound"];
+export const LINK_CLICK_MODES: TerminalLinkClick[] = ["actions", "open", "none"];
+const LINK_IDS = ["terminal.linkClick", "terminal.urlMiddleClick"];
 const INTERACTION_IDS = ["terminal.scrollSensitivity", "terminal.fastScrollSensitivity", "terminal.focusFollowsMouse"];
 const BELL_IDS = ["terminal.bell"];
 const WORD_IDS = ["terminal.wordSeparators"];
 type SpeedField = "scrollSensitivity" | "fastScrollSensitivity";
 
-/** Settings → Terminal → Interaction, Bell and Word separators. */
+/** Settings → Terminal → Interaction, Links, Bell and Word separators. */
 export function TerminalBehaviourSection(props: TerminalSectionProps): JSX.Element {
   const { current, busy, patch, filter } = props;
   const { t } = useI18n();
@@ -93,6 +95,57 @@ export function TerminalBehaviourSection(props: TerminalSectionProps): JSX.Eleme
             </li>
           )}
         </ul>
+      </SettingGroup>
+
+      <SettingGroup ids={LINK_IDS} filter={filter}>
+        <h4 className="settings-group">{t("settings.terminal.links.group")}</h4>
+        <SettingRow id="terminal.linkClick" filter={filter}>
+          <div className="ws-fields">
+            <div className="ws-field" role="radiogroup" aria-label={t("settings.terminal.links.click")}>
+              <span>{t("settings.terminal.links.click")}</span>
+              <div className="term-radios">
+                {LINK_CLICK_MODES.map((m) => (
+                  <label key={m} className="term-radio">
+                    <input
+                      type="radio"
+                      name="terminal-link-click"
+                      value={m}
+                      checked={current.linkClick === m}
+                      disabled={busy}
+                      data-link-click={m}
+                      onChange={() => void patch({ linkClick: m })}
+                    />
+                    {t(`settings.terminal.links.${m}`)}
+                  </label>
+                ))}
+              </div>
+              <small className="settings-hint">{t("settings.terminal.links.hint")}</small>
+            </div>
+          </div>
+        </SettingRow>
+        <SettingRow id="terminal.urlMiddleClick" filter={filter}>
+          <div className="ws-fields">
+            <div className="ws-field" role="radiogroup" aria-label={t("settings.terminal.links.middleClick")}>
+              <span>{t("settings.terminal.links.middleClick")}</span>
+              <div className="term-radios">
+                {LINK_CLICK_MODES.map((m) => (
+                  <label key={m} className="term-radio">
+                    <input
+                      type="radio"
+                      name="terminal-url-middle-click"
+                      value={m}
+                      checked={current.urlMiddleClick === m}
+                      disabled={busy}
+                      data-url-middle-click={m}
+                      onChange={() => void patch({ urlMiddleClick: m })}
+                    />
+                    {t(`settings.terminal.links.${m}`)}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        </SettingRow>
       </SettingGroup>
 
       <SettingGroup ids={BELL_IDS} filter={filter}>

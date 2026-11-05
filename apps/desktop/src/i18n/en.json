@@ -2183,5 +2183,12 @@
   "termLink.copyLinkFailed": "Failed to copy link",
   "termLink.settings": "Terminal link settings",
   "termLink.openFailed": "Could not open {path}",
-  "termLink.denied": "Not opened: this file can run as a program"
+  "termLink.denied": "Not opened: this file can run as a program",
+  "settings.terminal.links.group": "Links",
+  "settings.terminal.links.click": "When you click a link",
+  "settings.terminal.links.middleClick": "When you middle-click a URL",
+  "settings.terminal.links.actions": "Show actions",
+  "settings.terminal.links.open": "Open",
+  "settings.terminal.links.none": "Do nothing",
+  "settings.terminal.links.hint": "Ctrl+click (⌘+click on macOS) always opens."
 }
