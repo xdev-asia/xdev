@@ -116,7 +116,7 @@ pub struct XdevIdSettings {
 pub const NESTED_DEPTH_MAX: u32 = 9;
 
 /// Settings → Orchestration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(default, rename_all = "camelCase")]
 pub struct OrchestrationSettings {
@@ -125,13 +125,38 @@ pub struct OrchestrationSettings {
     pub nested_worker_max_depth: u32,
     /// Close a worker's tab 2 minutes after it finishes.
     pub worker_auto_close: bool,
+    /// Replace a worker that fails before it finishes.
+    pub failover_enabled: bool,
+    /// Try the same agent on another account of its provider first.
+    pub failover_backup_account: bool,
+    /// Agent profiles to try next, in order.
+    pub failover_backup_agents: Vec<String>,
+    /// Failovers one dispatch may make.
+    pub failover_max: u32,
+    /// Restart a stuck worker once, then fail it over.
+    pub autopilot_restart: bool,
+    /// Minutes a busy worker may go without output before it counts as stuck.
+    pub stuck_minutes: u32,
 }
+
+/// The most failovers one dispatch may make.
+pub const FAILOVER_MAX: u32 = 5;
+/// The most backup agents the list keeps.
+pub const BACKUP_AGENTS_MAX: usize = 8;
+/// The longest a busy worker may go quiet before it counts as stuck.
+pub const STUCK_MINUTES_MAX: u32 = 120;
 
 impl Default for OrchestrationSettings {
     fn default() -> Self {
         Self {
             nested_worker_max_depth: 1,
             worker_auto_close: true,
+            failover_enabled: false,
+            failover_backup_account: true,
+            failover_backup_agents: Vec::new(),
+            failover_max: xdev_orch::failover::DEFAULT_MAX_FAILOVERS,
+            autopilot_restart: false,
+            stuck_minutes: 10,
         }
     }
 }
@@ -213,9 +238,20 @@ impl Default for ShellSettings {
 }
 
 impl OrchestrationSettings {
-    /// What `orchestration_settings_put` stores: the depth clamped to 1..=9.
+    /// What `orchestration_settings_put` stores: the depth clamped to 1..=9,
+    /// the failover count to 0..=5, the stuck time to 1..=120 minutes, and
+    /// the backup agents trimmed, without blanks or repeats, at most 8.
     pub fn normalized(mut self) -> Self {
         self.nested_worker_max_depth = self.nested_worker_max_depth.clamp(1, NESTED_DEPTH_MAX);
+        self.failover_max = self.failover_max.min(FAILOVER_MAX);
+        self.stuck_minutes = self.stuck_minutes.clamp(1, STUCK_MINUTES_MAX);
+        let mut agents: Vec<String> = Vec::new();
+        for a in self.failover_backup_agents.iter().map(|a| a.trim()) {
+            if !a.is_empty() && !agents.iter().any(|b| b == a) && agents.len() < BACKUP_AGENTS_MAX {
+                agents.push(a.to_owned());
+            }
+        }
+        self.failover_backup_agents = agents;
         self
     }
 }
@@ -3885,11 +3921,51 @@ then sum up"
     }
 
     #[test]
+    fn failover_settings_are_off_by_default_and_normalized() {
+        let d = OrchestrationSettings::default();
+        assert!(!d.failover_enabled);
+        assert!(d.failover_backup_account);
+        assert!(d.failover_backup_agents.is_empty());
+        assert_eq!(d.failover_max, 2);
+        assert!(!d.autopilot_restart);
+        assert_eq!(d.stuck_minutes, 10);
+        let n = OrchestrationSettings {
+            failover_max: 99,
+            stuck_minutes: 0,
+            failover_backup_agents: [
+                " codex", "", "codex", "claude", "a", "b", "c", "d", "e", "f", "g",
+            ]
+            .map(str::to_owned)
+            .to_vec(),
+            ..d.clone()
+        }
+        .normalized();
+        assert_eq!(n.failover_max, 5);
+        assert_eq!(n.stuck_minutes, 1);
+        assert_eq!(
+            n.failover_backup_agents,
+            ["codex", "claude", "a", "b", "c", "d", "e", "f"]
+        );
+        let n = OrchestrationSettings {
+            stuck_minutes: 500,
+            ..d
+        }
+        .normalized();
+        assert_eq!(n.stuck_minutes, 120);
+        // Settings from before failover read as the defaults.
+        let old: OrchestrationSettings =
+            serde_json::from_str(r#"{ "nestedWorkerMaxDepth": 2, "workerAutoClose": false }"#)
+                .unwrap();
+        assert!(!old.failover_enabled);
+        assert_eq!(old.failover_max, 2);
+    }
+
+    #[test]
     fn orchestration_depth_is_clamped_to_one_through_nine() {
         let depth = |n: u32| {
             OrchestrationSettings {
                 nested_worker_max_depth: n,
-                worker_auto_close: true,
+                ..OrchestrationSettings::default()
             }
             .normalized()
             .nested_worker_max_depth

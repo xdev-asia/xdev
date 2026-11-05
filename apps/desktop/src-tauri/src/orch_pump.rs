@@ -254,6 +254,9 @@ mod tests {
             status: status.to_owned(),
             last_output_ms: 0,
             exited,
+            cli: None,
+            account: None,
+            exit_code: None,
         }
     }
 

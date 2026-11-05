@@ -308,6 +308,10 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     crate::ssh_connect::SshAuthPrompt::export_all(cfg)?;
     xdev_ai::Routing::export_all(cfg)?;
     xdev_ai::QuotaAlert::export_all(cfg)?;
+    crate::orch_sweep::WorkerFailover::export_all(cfg)?;
+    crate::orch_sweep::FailedOver::export_all(cfg)?;
+    xdev_orch::FailReason::export_all(cfg)?;
+    xdev_orch::FailoverKind::export_all(cfg)?;
     Ok(())
 }
 

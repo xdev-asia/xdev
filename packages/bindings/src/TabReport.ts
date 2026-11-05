@@ -15,4 +15,16 @@ status: string,
 /**
  * Epoch ms of the last output; 0 when there was none.
  */
-lastOutputMs: number, exited: boolean, };
+lastOutputMs: number, exited: boolean, 
+/**
+ * The CLI the agent runs (`claude`, `codex`); none for a shell.
+ */
+cli?: string, 
+/**
+ * The account the agent runs on, once known.
+ */
+account?: string, 
+/**
+ * An exited tab's exit code; none when it ended without one.
+ */
+exitCode?: number, };

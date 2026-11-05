@@ -112,6 +112,29 @@ pub(crate) fn routed(registry: &Registry, provider: Provider) -> Option<String> 
     registry.route(provider, &hub.quotas, hub.last_used(provider), None)
 }
 
+/// Another account of `provider` for an agent that failed on `current`, by
+/// the provider's routing; none when no other one is signed in.
+pub(crate) fn backup(registry: &Registry, provider: Provider, current: &str) -> Option<String> {
+    let hub = hub();
+    registry.route(
+        provider,
+        &hub.quotas,
+        hub.last_used(provider),
+        Some(current),
+    )
+}
+
+/// How much of account `name`'s tightest quota window is used, in percent,
+/// by the latest reading.
+pub(crate) fn used(name: &str) -> Option<f64> {
+    hub().quotas.iter().find(|q| q.name == name).and_then(|q| {
+        q.windows
+            .iter()
+            .filter_map(|w| w.utilization)
+            .max_by(f64::total_cmp)
+    })
+}
+
 /// Records that a routed agent of `provider` started on `name`, for round
 /// robin.
 pub(crate) fn started(provider: Provider, name: &str) {

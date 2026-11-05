@@ -12,4 +12,28 @@ nestedWorkerMaxDepth: number,
 /**
  * Close a worker's tab 2 minutes after it finishes.
  */
-workerAutoClose: boolean, };
+workerAutoClose: boolean, 
+/**
+ * Replace a worker that fails before it finishes.
+ */
+failoverEnabled: boolean, 
+/**
+ * Try the same agent on another account of its provider first.
+ */
+failoverBackupAccount: boolean, 
+/**
+ * Agent profiles to try next, in order.
+ */
+failoverBackupAgents: Array<string>, 
+/**
+ * Failovers one dispatch may make.
+ */
+failoverMax: number, 
+/**
+ * Restart a stuck worker once, then fail it over.
+ */
+autopilotRestart: boolean, 
+/**
+ * Minutes a busy worker may go without output before it counts as stuck.
+ */
+stuckMinutes: number, };
