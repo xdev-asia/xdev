@@ -61,7 +61,7 @@ import { AgentPicker } from "./AgentPicker";
 import { cycleTab, mruOrder, nthTab } from "./tabNav";
 import { chosenTab, startSwitch, stepSwitch, type Switch } from "./recentTabs";
 import { RecentTabSwitcher, type SwitcherItem } from "./RecentTabSwitcher";
-import { closeAllTargets, cycleSameKind, fileCloseTargets, type FileCloseKind, type FileTabInfo } from "./tabMenu";
+import { closeAllTargets, cycleSameKind, fileCloseTargets, type FileCloseKind, type FileTabInfo, type MoveDir, moveEdge } from "./tabMenu";
 import { openFile } from "@/files/openFile";
 import { absolutePath, relativePath } from "@/search/resultCopy";
 import { TabTitleDialog } from "./TabTitleDialog";
@@ -308,11 +308,18 @@ export function WorktreeTabs(props: {
   }
 
   // Moves a tab of `pane` into a new pane beside it. The only tab of a pane has nothing to leave.
-  function splitTab(pane: string, id: string, dir: PaneDir): void {
+  function splitTab(pane: string, id: string, dir: MoveDir): void {
     const leaf = panes.find((n) => n.id === pane);
     if (!layout || !leaf || leaf.tabs.length < 2) return;
     const without = removeTab(layout, id);
-    if (without) setLayout(splitPane(without, pane, dir, id));
+    if (without) setLayout(splitPane(without, pane, dir === "left" || dir === "right" ? "right" : "down", id, dir === "left" || dir === "up"));
+  }
+
+  // The tab menu's Move to Split: a terminal goes through the sessions store, the other tabs through the tree.
+  function moveTab(pane: string, id: string, dir: MoveDir): void {
+    if (id === REVIEW_TAB || isFileTab(id) || isPreviewTab(id)) return splitTab(pane, id, dir);
+    if (dir === "right" || dir === "down") return sessions.moveToSplit(id, dir);
+    sessions.dropToSplit(worktree, id, pane, moveEdge(dir));
   }
 
   // The file tab whose Save / Don't Save / Cancel dialog is open.
@@ -751,7 +758,7 @@ export function WorktreeTabs(props: {
           ) : null
         }
         onSplit={(dir) => defaultShell !== null && splitWith(leaf.id, dir, defaultShell)}
-        onMoveToSplit={(id, dir) => (id === REVIEW_TAB || isFileTab(id) || isPreviewTab(id) ? splitTab(leaf.id, id, dir) : sessions.moveToSplit(id, dir))}
+        onMoveToSplit={(id, dir) => moveTab(leaf.id, id, dir)}
         onReorder={(id, before) => sessions.reorderTab(id, before)}
         onDragTab={setDrag}
         onDropZone={(id, pane, zone) => sessions.dropToSplit(worktree, id, pane, zone)}

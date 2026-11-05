@@ -3678,5 +3678,15 @@
   "usage.popover.emptyHint": "Kết nối tài khoản Claude hoặc Codex để xem hạn mức tại đây.",
   "usage.popover.connect": "Kết nối tài khoản",
   "accounts.status.needsReauth": "Cần đăng nhập lại",
-  "accounts.signInAgain": "Đăng nhập lại"
+  "accounts.signInAgain": "Đăng nhập lại",
+  "tabMenu.moveLeft": "Trái",
+  "tabMenu.moveUp": "Lên",
+  "termMenu.equalize": "Cân bằng các ô",
+  "termMenu.expand": "Phóng to ô",
+  "termMenu.clearTitle": "Xóa tiêu đề ô",
+  "termMenu.copySessionId": "Sao chép ID phiên",
+  "filters.sleepingOnly": "Chỉ mục đang ngủ",
+  "keys.action.pane.clearTitle": "Xóa tiêu đề ô",
+  "keys.action.sidebar.sleepingOnly.toggle": "Chỉ hiện worktree đang ngủ",
+  "panes.move": "Kéo để di chuyển ô này"
 }

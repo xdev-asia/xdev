@@ -1,6 +1,20 @@
 import type { MenuItem } from "@/ui/ContextMenu";
 import { TAB_COLORS, type Tab, type TabColor } from "./sessions";
 
+/** The four sides a tab can move to: a new pane opens on that side of its own. */
+export type MoveDir = "left" | "right" | "up" | "down";
+
+/** The edge of a pane a move in `dir` drops on (the drop zones' names). */
+export function moveEdge(dir: MoveDir): "left" | "right" | "top" | "bottom" {
+  return dir === "up" ? "top" : dir === "down" ? "bottom" : dir;
+}
+
+/** The Move to Split children, in menu order. */
+function moveItems(move: (dir: MoveDir) => void): MenuItem[] {
+  const item = (dir: MoveDir, key: string): MenuItem => ({ id: key, labelKey: `tabMenu.${key}`, run: () => move(dir) });
+  return [item("left", "moveLeft"), item("right", "moveRight"), item("up", "moveUp"), item("down", "moveDown")];
+}
+
 /** What the tab menu acts on. */
 export interface TabMenuContext {
   tab: Tab;
@@ -8,7 +22,7 @@ export interface TabMenuContext {
   tabs: Tab[];
   canMoveToSplit: boolean;
   split(dir: "right" | "down"): void;
-  moveToSplit(dir: "right" | "down"): void;
+  moveToSplit(dir: MoveDir): void;
   setPinned(pinned: boolean): void;
   copyTabId(): void;
   /** Opens the tab title dialog. */
@@ -36,10 +50,7 @@ export function tabMenuItems(ctx: TabMenuContext): MenuItem[] {
       id: "moveToSplit",
       labelKey: "tabMenu.moveToSplit",
       disabled: !ctx.canMoveToSplit,
-      children: [
-        { id: "moveRight", labelKey: "tabMenu.moveRight", run: () => ctx.moveToSplit("right") },
-        { id: "moveDown", labelKey: "tabMenu.moveDown", run: () => ctx.moveToSplit("down") },
-      ],
+      children: moveItems(ctx.moveToSplit),
     },
     SEP("sep1"),
     ctx.tab.pinned
@@ -101,7 +112,7 @@ export interface FileTabMenuContext {
   canMoveToSplit: boolean;
   /** Set for a Markdown file that can open as a preview; absent for any other file. */
   openPreview?: () => void;
-  moveToSplit(dir: "right" | "down"): void;
+  moveToSplit(dir: MoveDir): void;
   setPinned(pinned: boolean): void;
   copyPath(): void;
   copyRelativePath(): void;
@@ -142,10 +153,7 @@ export function fileTabMenuItems(ctx: FileTabMenuContext): MenuItem[] {
       id: "moveToSplit",
       labelKey: "tabMenu.moveToSplit",
       disabled: !ctx.canMoveToSplit,
-      children: [
-        { id: "moveRight", labelKey: "tabMenu.moveRight", run: () => ctx.moveToSplit("right") },
-        { id: "moveDown", labelKey: "tabMenu.moveDown", run: () => ctx.moveToSplit("down") },
-      ],
+      children: moveItems(ctx.moveToSplit),
     },
     SEP("sep1"),
     pinned

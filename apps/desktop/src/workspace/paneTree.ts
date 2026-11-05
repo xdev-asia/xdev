@@ -181,6 +181,28 @@ export function splitPane(l: PaneLayout, pane: string, dir: PaneDir, tabId: stri
   return { root, focused: newId, expanded: null };
 }
 
+export type PaneEdge = "left" | "right" | "top" | "bottom";
+
+/**
+ * Moves the whole pane `source` (with its tabs) next to the pane `target`, on `edge` of it, and focuses it.
+ * The split the source leaves is collapsed. Same reference when nothing can move: either id is not a
+ * pane, or the source is dropped on itself.
+ */
+export function movePane(l: PaneLayout, source: string, target: string, edge: PaneEdge): PaneLayout {
+  if (source === target) return l;
+  const moving = findLeaf(l, source);
+  if (!moving || !findLeaf(l, target)) return l;
+  const rest = mapNode(l.root, source, () => null);
+  if (!rest) return l;
+  const splitId = freshId(l, "s");
+  const before = edge === "left" || edge === "top";
+  const dir: PaneDir = edge === "left" || edge === "right" ? "right" : "down";
+  const root = mapNode(rest, target, (n) =>
+    normalize({ kind: "split", id: splitId, dir, children: before ? [moving, n] : [n, moving], sizes: [0.5, 0.5] }),
+  )!;
+  return { root, focused: source, expanded: null };
+}
+
 export function closePane(l: PaneLayout, pane: string): PaneLayout | null {
   if (!findLeaf(l, pane)) return l;
   return withTree(l, mapNode(l.root, pane, () => null));

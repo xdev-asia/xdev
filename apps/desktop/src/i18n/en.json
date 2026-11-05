@@ -3678,5 +3678,15 @@
   "usage.popover.emptyHint": "Connect a Claude or Codex account to see its limits here.",
   "usage.popover.connect": "Connect an account",
   "accounts.status.needsReauth": "Needs re-auth",
-  "accounts.signInAgain": "Sign in again"
+  "accounts.signInAgain": "Sign in again",
+  "tabMenu.moveLeft": "Left",
+  "tabMenu.moveUp": "Up",
+  "termMenu.equalize": "Equalize panes",
+  "termMenu.expand": "Expand pane",
+  "termMenu.clearTitle": "Clear pane title",
+  "termMenu.copySessionId": "Copy session ID",
+  "filters.sleepingOnly": "Sleeping only",
+  "keys.action.pane.clearTitle": "Clear pane title",
+  "keys.action.sidebar.sleepingOnly.toggle": "Show sleeping worktrees only",
+  "panes.move": "Drag to move this pane"
 }
