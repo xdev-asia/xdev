@@ -392,7 +392,7 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
           {refreshing ? t("settings.agents.catalog.refreshing") : t("settings.agents.catalog.refresh")}
         </button>
       </div>
-      {detected === 0 && <Banner title={t("settings.agents.catalog.none")} />}
+      {!current.profiles.some((p) => p.installed) && <Banner title={t("settings.agents.catalog.none")} />}
       <h5 className="settings-subgroup">{t("settings.agents.catalog.installed")}</h5>
       <p className="settings-empty">{t("settings.agents.catalog.detected", { count: detected })}</p>
       <ul className="settings-list" data-section="installed">

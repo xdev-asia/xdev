@@ -503,6 +503,14 @@ it("nothing_installed_shows_the_empty_banner_with_the_blank_terminal_hint", asyn
   expect(rowsIn(p, "installed")).toEqual([]);
 });
 
+it("an_installed_custom_profile_hides_the_empty_banner", async () => {
+  const p = await page(async (api) => {
+    api.__installed = [];
+    await api.profilePut({ id: "mine", name: "Mine", cli: null, program: "mine", args: [], env: [], model: null, effort: null, permissions: null, account: null, startup: [], enabled: true });
+  });
+  expect(p.all().some((n) => n.type === Banner)).toBe(false);
+});
+
 it("an_installed_agent_hides_the_empty_banner", async () => {
   const p = await page();
   expect(p.all().some((n) => n.type === Banner)).toBe(false);
