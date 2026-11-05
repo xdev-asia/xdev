@@ -1,5 +1,6 @@
 import type { Api, ApiError, PtyAttached, PtyInfo, PtyProfile } from "@/api";
 import { pastePrompt, whenQuiet } from "@/workspace/agentPrompt";
+import { noteBytes, takePrime } from "./restorePrime";
 
 /** Output is acknowledged in steps this big; Rust pauses a terminal at 4 MB unacknowledged. */
 export const ACK_BYTES = 256 * 1024;
@@ -170,9 +171,23 @@ export class PtyClient {
     this.prompt = undefined;
     // Output can come before the spawn resolves, so the watch starts with it.
     const watch = prompt !== undefined ? whenQuiet() : null;
+    // What the old terminal saved goes first, once; it is not the pty's output, so it is never acked.
+    let primed = false;
+    const prime = () => {
+      if (primed) return;
+      primed = true;
+      const got = takePrime(this.id);
+      if (!got) return;
+      if (got.bytes) {
+        write(got.bytes, () => {});
+        if (got.bytes[got.bytes.length - 1] !== 10) write(this.encoder.encode("\r\n"), () => {});
+      }
+      write(noteBytes(got.note), () => {});
+    };
     let info: PtyInfo;
     try {
       info = await this.api.ptySpawn(this.id, cwd, profileId, account, cols, rows, (bytes) => {
+        prime();
         watch?.output();
         // Acked once the terminal has drawn it, so a slow view pauses the pty.
         write(bytes, () => this.rendered(bytes.length));
@@ -185,6 +200,7 @@ export class PtyClient {
       for (const cb of [...this.errorListeners]) cb(this.spawnError);
       throw e;
     }
+    prime();
     this.spawnError = null;
     this.size = [cols, rows];
     this.live = true;

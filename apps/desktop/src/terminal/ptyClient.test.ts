@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
 import { AGENT_START_MS, pastePrompt } from "@/workspace/agentPrompt";
 import { PtyClient, toBytes } from "./ptyClient";
+import { setPrime, takePrime } from "./restorePrime";
 
 const text = (chunks: Uint8Array[]) => new TextDecoder().decode(Uint8Array.from(chunks.flatMap((c) => [...c])));
 
@@ -54,6 +55,26 @@ describe("PtyClient", () => {
       ["t2", 262144],
       ["t2", 262144],
     ]);
+    client.dispose();
+  });
+
+  it("prime written before output and not acked", async () => {
+    const api = createMockApi({});
+    const ack = vi.spyOn(api, "ptyAck");
+    setPrime("t-prime", { bytes: new TextEncoder().encode("old"), note: "restored" });
+    const client = new PtyClient(api, "t-prime");
+    const got: Uint8Array[] = [];
+    await client.start("/demo", "shell", 80, 24, (b, rendered) => {
+      got.push(b);
+      rendered();
+    });
+    await client.input("hi");
+    const shown = text(got);
+    expect(shown.startsWith("old\r\n\x1b[0m\x1b[2mrestored\x1b[0m\r\n")).toBe(true);
+    expect(shown).toContain("hi");
+    // Only the pty's own bytes count toward flow control; the prime adds none, and it is taken once.
+    expect(ack).not.toHaveBeenCalled();
+    expect(takePrime("t-prime")).toBeNull();
     client.dispose();
   });
 
