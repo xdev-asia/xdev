@@ -3,4 +3,4 @@
 /**
  * An agent CLI xDev knows. The table in `catalog` says the rest.
  */
-export type Cli = "claude" | "codex" | "gemini" | "cursor" | "copilot" | "opencode" | "amp" | "droid" | "qwen-code" | "kimi" | "devin" | "aider" | "goose";
+export type Cli = "claude" | "codex" | "gemini" | "cursor" | "copilot" | "opencode" | "amp" | "droid" | "qwen-code" | "kimi" | "devin" | "aider" | "goose" | "grok" | "kiro" | "kilo" | "cline" | "antigravity" | "pi" | "command-code";

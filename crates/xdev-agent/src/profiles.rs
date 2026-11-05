@@ -36,11 +36,18 @@ pub enum Cli {
     Devin,
     Aider,
     Goose,
+    Grok,
+    Kiro,
+    Kilo,
+    Cline,
+    Antigravity,
+    Pi,
+    CommandCode,
 }
 
 impl Cli {
     /// The built-in profiles, in menu order.
-    pub const ALL: [Cli; 13] = [
+    pub const ALL: [Cli; 20] = [
         Cli::Claude,
         Cli::Codex,
         Cli::Gemini,
@@ -54,6 +61,13 @@ impl Cli {
         Cli::Devin,
         Cli::Aider,
         Cli::Goose,
+        Cli::Grok,
+        Cli::Kiro,
+        Cli::Kilo,
+        Cli::Cline,
+        Cli::Antigravity,
+        Cli::Pi,
+        Cli::CommandCode,
     ];
 
     /// The id of the CLI's built-in profile.
@@ -72,6 +86,13 @@ impl Cli {
             Cli::Devin => "devin",
             Cli::Aider => "aider",
             Cli::Goose => "goose",
+            Cli::Grok => "grok",
+            Cli::Kiro => "kiro",
+            Cli::Kilo => "kilo",
+            Cli::Cline => "cline",
+            Cli::Antigravity => "antigravity",
+            Cli::Pi => "pi",
+            Cli::CommandCode => "command-code",
         }
     }
 
@@ -652,7 +673,7 @@ mod tests {
         tempfile::tempdir().unwrap()
     }
 
-    const CLI_IDS: [&str; 13] = [
+    const CLI_IDS: [&str; 20] = [
         "claude",
         "codex",
         "gemini",
@@ -666,6 +687,13 @@ mod tests {
         "devin",
         "aider",
         "goose",
+        "grok",
+        "kiro",
+        "kilo",
+        "cline",
+        "antigravity",
+        "pi",
+        "command-code",
     ];
 
     fn ids(p: &Profiles) -> Vec<&str> {
@@ -771,7 +799,7 @@ mod tests {
         )
         .unwrap();
         let p = Profiles::load(d.path()).unwrap();
-        assert_eq!(ids(&p)[13], "mine");
+        assert_eq!(ids(&p)[20], "mine");
         // The file's own entry wins over the fresh built-in.
         assert!(!p.get("claude").unwrap().enabled);
         assert_eq!(p.get("claude").unwrap().cli, Some(Cli::Claude));
