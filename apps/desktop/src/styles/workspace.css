@@ -3984,3 +3984,80 @@ button.ws-tree-row:focus-visible {
   to { outline: 1px solid transparent; outline-offset: -1px; }
 }
 @media (prefers-reduced-motion: reduce) { .ws-tab-pane[data-flash] { animation: none; } }
+
+/* Tab state mark (library spinner / question icon) and the hover card. */
+.ws-tab-ind {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+}
+
+.ws-tab-ind[data-status="needs-you"] {
+  color: var(--warn);
+}
+
+.ws-tab-card {
+  position: fixed;
+  max-width: min(320px, calc(100vw - 16px));
+  transform: none;
+  white-space: normal;
+}
+
+.ws-tab-card-title {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.ws-tab-card-rows {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 8px;
+  margin: 4px 0 0;
+}
+
+.ws-tab-card-rows dt {
+  color: var(--text-2);
+}
+
+.ws-tab-card-rows dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Drag to reorder: a 2px edge shows where the tab lands. */
+.ws-tab[data-dragging="true"] {
+  opacity: 0.5;
+}
+
+.ws-tab[data-drop="before"] {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.ws-tab[data-drop="after"] {
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+
+/* Drop zones over a pane while a tab is dragged: tint plus 1px border, never a stripe. */
+.ws-dropzones {
+  position: absolute;
+  inset: var(--ws-strip-h) 0 0;
+  z-index: 20;
+}
+
+.ws-dropzone {
+  position: absolute;
+  background: transparent;
+}
+
+.ws-dropzone[data-zone="left"] { inset: 0 auto 0 0; width: 25%; }
+.ws-dropzone[data-zone="right"] { inset: 0 0 0 auto; width: 25%; }
+.ws-dropzone[data-zone="top"] { inset: 0 25% auto; height: 25%; }
+.ws-dropzone[data-zone="bottom"] { inset: auto 25% 0; height: 25%; }
+
+.ws-dropzone[data-over="true"] {
+  border: 1px solid var(--accent);
+  background: var(--bg-3);
+  opacity: 0.8;
+}

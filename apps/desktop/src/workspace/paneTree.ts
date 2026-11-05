@@ -169,13 +169,14 @@ export function selectTab(l: PaneLayout, tabId: string): PaneLayout {
 
 // ---- panes ---------------------------------------------------------------------------------
 
-export function splitPane(l: PaneLayout, pane: string, dir: PaneDir, tabId: string): PaneLayout {
+/** `before` puts the new pane first (left of / above `pane`) instead of after it. */
+export function splitPane(l: PaneLayout, pane: string, dir: PaneDir, tabId: string, before = false): PaneLayout {
   if (!findLeaf(l, pane) || paneOf(l, tabId) || tabId.startsWith(REVIEW_PREFIX) || tabId.startsWith(COMMIT_PREFIX)) return l;
   const newId = freshId(l, "p");
   const splitId = freshId(l, "s");
   const fresh: Leaf = { kind: "leaf", id: newId, tabs: [tabId], active: tabId };
   const root = mapNode(l.root, pane, (n) =>
-    normalize({ kind: "split", id: splitId, dir, children: [n, fresh], sizes: [0.5, 0.5] }),
+    normalize({ kind: "split", id: splitId, dir, children: before ? [fresh, n] : [n, fresh], sizes: [0.5, 0.5] }),
   )!;
   return { root, focused: newId, expanded: null };
 }
@@ -258,6 +259,15 @@ export function pinFirst(l: PaneLayout, pane: string, pinned: (tabId: string) =>
   if (!leaf) return l;
   const tabs = [...leaf.tabs.filter(pinned), ...leaf.tabs.filter((t) => !pinned(t))];
   if (tabs.every((t, i) => t === leaf.tabs[i])) return l;
+  const root = mapNode(l.root, pane, (n) => (n.kind === "leaf" ? { ...n, tabs } : n))!;
+  return { ...l, root };
+}
+
+/** Replaces the tab order of `pane` (same set of ids). Same reference when the order holds. */
+export function setPaneTabs(l: PaneLayout, pane: string, tabs: string[]): PaneLayout {
+  const leaf = findLeaf(l, pane);
+  if (!leaf || tabs.length !== leaf.tabs.length || tabs.every((t, i) => t === leaf.tabs[i])) return l;
+  if (!tabs.every((t) => leaf.tabs.includes(t))) return l;
   const root = mapNode(l.root, pane, (n) => (n.kind === "leaf" ? { ...n, tabs } : n))!;
   return { ...l, root };
 }

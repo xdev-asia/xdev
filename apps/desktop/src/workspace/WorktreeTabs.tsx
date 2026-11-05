@@ -142,6 +142,7 @@ export function WorktreeTabs(props: {
   const [walk] = useState(() => ({ current: null as { list: string[]; at: number; timer: ReturnType<typeof setTimeout> } | null }));
   // The pane whose `+` menu is open.
   const [menuPane, setMenuPane] = useState<string | null>(null);
+  const [draggingTab, setDraggingTab] = useState<string | null>(null);
   // The pane whose agent picker is open.
   const [pickerPane, setPickerPane] = useState<string | null>(null);
   // A close that waits for a yes: what it asks about, and what to do on confirm; null when nothing waits.
@@ -631,6 +632,8 @@ export function WorktreeTabs(props: {
         }
         onSplit={(dir) => defaultShell !== null && splitWith(leaf.id, dir, defaultShell)}
         onMoveToSplit={(id, dir) => (id === REVIEW_TAB || isFileTab(id) || isPreviewTab(id) ? splitTab(leaf.id, id, dir) : sessions.moveToSplit(id, dir))}
+        onReorder={(id, before) => sessions.reorderTab(id, before)}
+        onDragTab={setDraggingTab}
         onPin={(id, pinned) => sessions.setPinned(id, pinned)}
         onCopyTabId={(id) => void copyText(id)}
         onChangeTitle={(id) => setTitling(id)}
@@ -687,6 +690,11 @@ export function WorktreeTabs(props: {
             onFocus={(pane) => layout.focused !== pane && setLayout(focusPane(layout, pane))}
             onResize={(split, sizes) => setLayout(resize(layout, split, sizes))}
             onEqualize={() => setLayout(equalize(layout))}
+            draggingTab={draggingTab}
+            onTabDrop={(pane, zone, tab) => {
+              setDraggingTab(null);
+              sessions.dropToSplit(worktree, tab, pane, zone);
+            }}
           />
         )}
         {tabs.map((tab) => {

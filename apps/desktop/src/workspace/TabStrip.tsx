@@ -11,7 +11,8 @@ import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import type { Tab, TabColor } from "./sessions";
 import { tabColorVar, tabMenuItems } from "./tabMenu";
 import type { TabStatus } from "./status";
-import { StatusGlyph } from "./StatusGlyph";
+import { TabIndicator } from "./TabIndicator";
+import { CardPortal, HOVER_DELAY_MS, TabHoverCard, useTabHover } from "./TabHoverCard";
 import { cacheLeftMs, formatCacheLeft, useNow } from "./cacheTimer";
 
 /** One entry of a strip: a terminal tab, or the review tab or a file tab (`tab` is null). */
@@ -31,6 +32,30 @@ export interface MenuGroup {
   ids: PtyProfile[];
   /** The group ends with the "Agent…" item that opens the picker. */
   picker?: boolean;
+}
+
+/**
+ * Middle-click handlers of a tab: they close it through `close`, the same path as the close button
+ * (so its confirm dialogs run). Pinned tabs have no close button and ignore the middle button too.
+ * Mouse-down on the middle button is cancelled so the webview does not start autoscroll.
+ */
+export function middleClick(id: string, pinned: boolean, close: (id: string) => void) {
+  return {
+    onMouseDown: (e: { button: number; preventDefault(): void }) => {
+      if (e.button === 1) e.preventDefault();
+    },
+    onAuxClick: (e: { button: number; preventDefault(): void }) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      if (!pinned) close(id);
+    },
+  };
+}
+
+/** The tab a dragged tab lands before: `id` itself, or the next one when dropped on its right half. */
+export function dropBefore(ids: readonly string[], id: string, after: boolean): string | null {
+  if (!after) return id;
+  return ids[ids.indexOf(id) + 1] ?? null;
 }
 
 /** The prompt cache countdown of a tab, or a "cold" mark once it ran out. */
@@ -69,6 +94,10 @@ export function TabStrip(props: {
   onSplit: (dir: PaneDir) => void;
   /** Moves a tab of this pane into a new pane beside it. */
   onMoveToSplit: (id: string, dir: PaneDir) => void;
+  /** A tab of this pane was dropped before `before` (null: at the end) of the strip. */
+  onReorder?: (id: string, before: string | null) => void;
+  /** A tab drag started (its id) or ended (null); the pane area shows drop zones meanwhile. */
+  onDragTab?: (id: string | null) => void;
   onPin: (id: string, pinned: boolean) => void;
   onCopyTabId: (id: string) => void;
   /** Opens the title dialog for a tab. */
@@ -92,6 +121,10 @@ export function TabStrip(props: {
   // The tab context menu: which tab, and where the pointer was.
   const [context, setContext] = useState<{ id: string; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropMark, setDropMark] = useState<{ id: string; after: boolean } | null>(null);
+  const hover = useTabHover();
+  const cardId = `ws-tab-card-${props.pane}`;
 
   const name = (tab: Tab) => profileName(view, tab.profileId, t);
   // What the strip shows: the terminal's own title once it set one, else the profile.
@@ -126,6 +159,7 @@ export function TabStrip(props: {
     </button>
   );
 
+  const hoverTab = hover.open ? (items.find((i) => i.id === hover.open!.id)?.tab ?? null) : null;
   const picked = context ? items.find((i) => i.id === context.id) : null;
   const canSplitTab = items.length > 1;
   const strip = items.flatMap((i) => (i.tab ? [i.tab] : []));
@@ -189,6 +223,37 @@ export function TabStrip(props: {
               data-pinned={tab?.pinned || undefined}
               data-color={tab && tab.color !== "none" ? tab.color : undefined}
               style={tab && tab.color !== "none" ? ({ "--ws-tab-color": `var(${tabColorVar(tab.color)!})` } as CSSProperties) : undefined}
+              data-dragging={dragId === item.id || undefined}
+              data-drop={dropMark?.id === item.id ? (dropMark.after ? "after" : "before") : undefined}
+              draggable={renaming !== item.id && !!props.onReorder}
+              onDragStart={(e) => {
+                e.dataTransfer.setData("application/x-xdev-tab", item.id);
+                e.dataTransfer.effectAllowed = "move";
+                hover.hide();
+                setDragId(item.id);
+                props.onDragTab?.(item.id);
+              }}
+              onDragEnd={() => {
+                setDragId(null);
+                setDropMark(null);
+                props.onDragTab?.(null);
+              }}
+              onDragOver={(e) => {
+                if (!dragId || dragId === item.id) return;
+                e.preventDefault();
+                const r = e.currentTarget.getBoundingClientRect();
+                setDropMark({ id: item.id, after: e.clientX > r.left + r.width / 2 });
+              }}
+              onDrop={(e) => {
+                if (!dragId) return;
+                e.preventDefault();
+                const r = e.currentTarget.getBoundingClientRect();
+                props.onReorder?.(dragId, dropBefore(items.map((i) => i.id), item.id, e.clientX > r.left + r.width / 2));
+                setDragId(null);
+                setDropMark(null);
+                props.onDragTab?.(null);
+              }}
+              {...middleClick(item.id, !!tab?.pinned, props.onClose)}
               onContextMenu={(e) => {
                 e.preventDefault();
                 props.onMenu(false);
@@ -222,6 +287,11 @@ export function TabStrip(props: {
                       : undefined
                   }
                   title={tab?.title ?? item.file?.rel ?? item.preview?.rel ?? (item.commit ? t("commitView.tab", { id: item.commit.id.slice(0, 7) }) : undefined)}
+                  aria-describedby={tab && hover.open?.id === item.id ? cardId : undefined}
+                  onMouseEnter={tab ? (e) => hover.show(item.id, e.currentTarget, HOVER_DELAY_MS) : undefined}
+                  onMouseLeave={tab ? hover.hide : undefined}
+                  onFocus={tab ? (e) => hover.show(item.id, e.currentTarget, 0) : undefined}
+                  onBlur={tab ? hover.hide : undefined}
                   onClick={() => props.onSelect(item.id)}
                   onDoubleClick={() => tab && setRenaming(item.id)}
                 >
@@ -243,7 +313,7 @@ export function TabStrip(props: {
                         </span>
                       )}
                       {/* Plain shells are not agents: no status mark. */}
-                      {StatusGlyph({ status: tab.agent ? tab.status : null, label: statusLabel(tab.status) })}
+                      {TabIndicator({ status: tab.agent ? tab.status : null, label: statusLabel(tab.status) })}
                       {cache && cache.timers.has(tab.id) && <CacheBadge left={cacheLeftMs(cache.timers.get(tab.id)!, stripNow, cache.ttlMs)} />}
                     </>
                   ) : (
@@ -325,6 +395,16 @@ export function TabStrip(props: {
         )}
       </div>
       {props.trailing}
+      {hoverTab && hover.open && (
+        <CardPortal>
+          <TabHoverCard
+            id={cardId}
+            at={hover.open}
+            labels={{ agent: t("workspace.tabs.card.agent"), status: t("workspace.tabs.card.status"), cwd: t("workspace.tabs.card.cwd") }}
+            data={{ title: shownName(hoverTab), agent: name(hoverTab), status: statusLabel(hoverTab.status), cwd: hoverTab.worktree }}
+          />
+        </CardPortal>
+      )}
     </div>
   );
 }
