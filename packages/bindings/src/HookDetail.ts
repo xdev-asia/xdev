@@ -4,4 +4,9 @@
  * The few hook stdin fields xDev keeps. Never the prompt text. Each string
  * is at most [`DETAIL_MAX`] chars.
  */
-export type HookDetail = { toolName: string | null, message: string | null, isInterrupt: boolean, error: string | null, };
+export type HookDetail = { toolName: string | null, message: string | null, isInterrupt: boolean, error: string | null, 
+/**
+ * A short preview of what the tool works on (a command's first line, or
+ * a path, pattern or url). Never the whole tool input.
+ */
+toolInput: string | null, };

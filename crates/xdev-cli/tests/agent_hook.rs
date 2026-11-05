@@ -175,7 +175,7 @@ fn hook_keeps_only_whitelisted_fields() {
         &serde_json::json!({
             "hook_event_name": "PermissionRequest",
             "tool_name": "Bash",
-            "tool_input": { "command": secret },
+            "tool_input": { "content": secret, "file_path": "src/main.rs" },
             "permission_suggestions": [secret],
             "cwd": "/work",
         }),
@@ -222,6 +222,7 @@ fn hook_keeps_only_whitelisted_fields() {
     assert!(l[0].get("detail").is_none(), "{}", l[0]);
     assert_eq!(l[0]["session"], "s1");
     assert_eq!(l[1]["detail"]["toolName"], "Bash");
+    assert_eq!(l[1]["detail"]["toolInput"], "src/main.rs");
     assert_eq!(l[2]["detail"]["message"], "All tests pass.");
     assert_eq!(l[3]["detail"]["error"], "model_not_found");
     assert!(l[3]["detail"]["message"].is_null());
@@ -236,9 +237,41 @@ fn hook_keeps_only_whitelisted_fields() {
         if let Some(d) = line.get("detail") {
             let mut keys: Vec<&String> = d.as_object().unwrap().keys().collect();
             keys.sort();
-            assert_eq!(keys, ["error", "isInterrupt", "message", "toolName"]);
+            assert_eq!(
+                keys,
+                ["error", "isInterrupt", "message", "toolInput", "toolName"]
+            );
         }
     }
+}
+
+#[test]
+fn hook_previews_the_tool_input() {
+    let tmp = tempfile::tempdir().unwrap();
+    let local = tmp.path();
+    for input in [
+        serde_json::json!({ "command": "cargo test\nrm -rf /", "file_path": "a.rs" }),
+        serde_json::json!({ "path": "b.rs", "pattern": "p" }),
+        serde_json::json!({ "pattern": "fn main", "url": "u" }),
+        serde_json::json!({ "url": "https://example.com" }),
+        serde_json::json!({ "content": "SECRET-BODY" }),
+    ]
+    .iter()
+    {
+        json_hook(
+            local,
+            "resume",
+            &serde_json::json!({ "tool_name": "T", "tool_input": input }),
+        );
+    }
+    let l = lines(local);
+    let got: Vec<&serde_json::Value> = l.iter().map(|x| &x["detail"]["toolInput"]).collect();
+    assert_eq!(got[0], "cargo test");
+    assert_eq!(got[1], "b.rs");
+    assert_eq!(got[2], "fn main");
+    assert_eq!(got[3], "https://example.com");
+    assert!(got[4].is_null());
+    assert!(!hook_text(local).contains("SECRET-BODY"));
 }
 
 #[test]
