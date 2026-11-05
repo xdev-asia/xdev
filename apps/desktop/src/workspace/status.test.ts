@@ -304,4 +304,19 @@ describe("tab status", () => {
     expect(step(s, { kind: "tick", at: 1000 + STALE_MS }).status).toBe("working");
     expect(step(s, { kind: "tick", at: 5000 + STALE_MS }).status).toBe("idle");
   });
+
+  it("a program status sets its status like a title", () => {
+    for (const status of ["working", "needs-you", "done", "failed"] as const) {
+      expect(step(idle(), { kind: "program", status, at: 1 }).status).toBe(status);
+    }
+  });
+
+  it("a program status is ignored on a hooked pane, and idle does not override waiting", () => {
+    let s = step(start(capsFor(CLAUDE)), { kind: "hook", event: "prompt", at: 1 });
+    s = step(s, { kind: "program", status: "done", at: 2 });
+    expect(s.status).toBe("working");
+    let w = step(idle(), { kind: "program", status: "needs-you", at: 1 });
+    w = step(w, { kind: "program", status: "idle", at: 2 });
+    expect(w.status).toBe("needs-you");
+  });
 });
