@@ -7,6 +7,7 @@ import { CodeEditor } from "./CodeEditor";
 import { useEditorSettings } from "./editorSettings";
 import { loadFile, saveFile } from "./fileIO";
 import { fileTabs, useFileEntry } from "./fileTabs";
+import { viewerOf } from "./viewer";
 
 /** One open file: reads it when it first shows, then edits it, or says why it cannot. */
 export function FileView(props: { api: Api; worktree: string; rel: string }): JSX.Element {
@@ -16,9 +17,11 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
   const settings = useEditorSettings();
   const status = entry?.status;
   const io = { api, store: fileTabs, t };
+  // Images and media are read as bytes by their own view, so the text read is skipped for them.
+  const direct = viewerOf(rel) !== "text" && viewerOf(rel) !== "markdown";
   useEffect(() => {
-    if (status === "loading") void loadFile({ api, store: fileTabs, t }, worktree, rel);
-  }, [api, worktree, rel, status, t]);
+    if (!direct && status === "loading") void loadFile({ api, store: fileTabs, t }, worktree, rel);
+  }, [api, worktree, rel, status, t, direct]);
 
   const reveal = (
     <button type="button" className="btn-secondary" onClick={() => void api.fileReveal(worktree, rel).catch(() => undefined)}>
@@ -26,8 +29,16 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
     </button>
   );
 
+  const viewer = direct ? viewerOf(rel) : entry?.status === "ready" ? viewerOf(rel, entry.kind) : "text";
   let body: JSX.Element;
-  if (!entry || entry.status === "loading") {
+  if (viewer === "image" || viewer === "media") {
+    body = (
+      <div className="file-note">
+        <p className="ws-empty">{t("files.binary")}</p>
+        {reveal}
+      </div>
+    );
+  } else if (!entry || entry.status === "loading") {
     body = <p className="ws-empty">{t("files.loading")}</p>;
   } else if (entry.status === "error") {
     body = <p className="ws-empty">{entry.error === "too_large" ? t("files.tooLarge") : t(`error.${entry.error}`)}</p>;

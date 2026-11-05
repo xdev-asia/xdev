@@ -32,10 +32,10 @@ const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve();
 const en = (key: string) => translate("en", key);
 const W = "C:/wt/a";
 
-const draw = (api: ReturnType<typeof createMockApi>) => {
+const draw = (api: ReturnType<typeof createMockApi>, rel = "a.ts") => {
   hooks.active = true;
   hooks.effects = [];
-  try { return nodes(FileView({ api, worktree: W, rel: "a.ts" })); } finally { hooks.active = false; }
+  try { return nodes(FileView({ api, worktree: W, rel })); } finally { hooks.active = false; }
 };
 const ready = (over: Partial<Parameters<typeof fileTabs.loaded>[2]> = {}) => {
   fileTabs.open(W, "a.ts");
@@ -145,4 +145,25 @@ it("accepting a side edits the buffer and marks the tab dirty, without writing",
   expect(write).not.toHaveBeenCalled();
   // The conflict is settled: the next draw has no bar.
   expect(bars(draw(api).find((n) => n.type === CodeEditor)!)).toBe(0);
+});
+
+it("does not read an image or media file as text", () => {
+  for (const rel of ["pic.png", "clip.mp4", "song.mp3"]) {
+    const api = createMockApi({});
+    const read = vi.spyOn(api, "fileRead");
+    fileTabs.open(W, rel);
+    const all = draw(api, rel);
+    expect(all.find((n) => n.type === CodeEditor)).toBeUndefined();
+    hooks.effects.forEach((e) => e());
+    expect(read).not.toHaveBeenCalled();
+  }
+});
+
+it("reads an svg as text first, then routes it by what the read found", () => {
+  const api = createMockApi({});
+  const read = vi.spyOn(api, "fileRead");
+  fileTabs.open(W, "logo.svg");
+  draw(api, "logo.svg");
+  hooks.effects.forEach((e) => e());
+  expect(read).toHaveBeenCalledWith(W, "logo.svg");
 });
