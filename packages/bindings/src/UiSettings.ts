@@ -39,6 +39,25 @@ editorThemeDark: EditorTheme,
  */
 sidebar: SidebarLook, 
 /**
+ * Accent or neutral token the tinted sidebar is washed with, one of
+ * `SIDEBAR_TINTS`; empty keeps the `side-tint` token. An unknown name is
+ * stored empty.
+ */
+sidebarTint: string, 
+/**
+ * How strong that wash is, 0.04..=0.30.
+ */
+sidebarTintOpacity: number, 
+/**
+ * Turns off transitions, animations and backdrop blur in the window.
+ */
+reduceEffects: boolean, 
+/**
+ * Activity bar apps that are hidden, by id. Unknown ids and repeats are
+ * dropped when stored, and at least one app stays visible.
+ */
+hiddenApps: Array<string>, 
+/**
  * Which of xDev's own footer items show.
  */
 statusBar: StatusBarItems, };
