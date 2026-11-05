@@ -30,6 +30,7 @@ import { createMockCli, type MockCli } from "./mockCli";
 import { createMockOpenIn, type MockOpenIn } from "./mockOpenIn";
 import { createMockTermLinks, type MockTermLinks } from "./mockTermLinks";
 import { createMockProfiles, type MockProfiles } from "./mockProfiles";
+import { createMockTermConfig } from "./mockTermConfig";
 import { createMockThemes, type MockThemes } from "./mockThemes";
 import { createMockAppStats } from "./mockAppStats";
 import { createMockPower } from "./mockPower";
@@ -602,6 +603,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockIssues(),
     ...settingsApi,
     ...themes,
+    ...createMockTermConfig(settingsHub.emit),
     agentsSettingsPut: power.agentsSettingsPut,
     ...createMockKeybindings(options.keybindings ?? null),
     ...createMockXdevId(options.xdevId),

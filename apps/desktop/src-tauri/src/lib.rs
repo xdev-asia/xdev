@@ -49,6 +49,7 @@ mod redact;
 mod reveal;
 mod review;
 mod review_notes;
+mod scheme_formats;
 mod session;
 mod settings;
 mod settings_store;
@@ -58,6 +59,7 @@ mod squads;
 mod startup;
 mod status;
 mod tasks;
+mod term_config_import;
 mod term_tail;
 mod terminal_themes;
 mod tray;
@@ -374,6 +376,9 @@ pub fn run() {
             commands::export_plan,
             commands::export_write,
             accounts::accounts_list,
+            term_config_import::term_config_detect,
+            term_config_import::term_config_read,
+            term_config_import::term_config_save_scheme,
             terminal_themes::terminal_themes_list,
             terminal_themes::terminal_theme_preview,
             terminal_themes::terminal_theme_import,
