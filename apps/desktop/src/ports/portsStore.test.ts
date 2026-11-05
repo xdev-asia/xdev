@@ -117,6 +117,63 @@ it("a failed stop still scans again after 500 ms", async () => {
   store.dispose();
 });
 
+it("a stop that ends after dispose starts no timer and no scan", async () => {
+  const { api, store, scanSpy } = setup();
+  let done: (s: PortScan) => void = () => undefined;
+  vi.spyOn(api, "portsStop").mockReturnValue(new Promise((r) => { done = r; }));
+  const stopping = store.stop("localhost:1:1", { confirmed: true, outsideTerminal: false });
+  store.dispose();
+  done(scan(2));
+  await stopping;
+  expect(vi.getTimerCount()).toBe(0);
+  await vi.advanceTimersByTimeAsync(5_000);
+  expect(scanSpy).not.toHaveBeenCalled();
+});
+
+it("a scan that started before a stop finished does not replace the list the stop returned", async () => {
+  const { api, store, scanSpy } = setup();
+  const pending: ((s: PortScan) => void)[] = [];
+  scanSpy.mockImplementation(() => new Promise((r) => { pending.push(r); }));
+  vi.spyOn(api, "portsStop").mockResolvedValue(scan(2));
+  const before = store.refresh();
+  await store.stop("localhost:1:1", { confirmed: true, outsideTerminal: false });
+  const after = store.state().scan;
+  expect(after?.scannedAt).toBe(2);
+  pending[0]!(scan(1));
+  await before;
+  expect(store.state().scan).toBe(after);
+  expect(store.state().loading).toBe(false);
+  // The scan after the stop runs on its own, not on the stale one, and its result counts.
+  await vi.advanceTimersByTimeAsync(500);
+  expect(scanSpy).toHaveBeenCalledTimes(2);
+  pending[1]!(scan(3));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(store.state().scan?.scannedAt).toBe(3);
+  store.dispose();
+});
+
+it("a scan still running when the stop ends is not shared with the scan after it", async () => {
+  const { api, store, scanSpy } = setup();
+  const pending: ((s: PortScan) => void)[] = [];
+  scanSpy.mockImplementation(() => new Promise((r) => { pending.push(r); }));
+  let done: (s: PortScan) => void = () => undefined;
+  vi.spyOn(api, "portsStop").mockReturnValue(new Promise((r) => { done = r; }));
+  const stopping = store.stop("localhost:1:1", { confirmed: true, outsideTerminal: false });
+  const during = store.refresh();
+  done(scan(2));
+  await stopping;
+  const fresh = store.refresh();
+  expect(fresh).not.toBe(during);
+  expect(scanSpy).toHaveBeenCalledTimes(2);
+  pending[1]!(scan(3));
+  await fresh;
+  pending[0]!(scan(1));
+  await during;
+  expect(store.state().scan?.scannedAt).toBe(3);
+  expect(store.state().loading).toBe(false);
+  store.dispose();
+});
+
 it("new worktrees force a scan while visible", async () => {
   const { store, scanSpy } = setup();
   store.setVisible(true);
