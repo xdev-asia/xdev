@@ -1004,6 +1004,10 @@ export interface Api {
   fileTrash(worktree: string, rel: string): Promise<void>;
   // Opens the OS file manager with the item selected where the OS allows it.
   fileReveal(worktree: string, rel: string): Promise<void>;
+  // The raw bytes of an image, audio or video file within its size cap; rejects with `too_large`, `bad_name`, `not_found`.
+  fileBytes(worktree: string, rel: string): Promise<Uint8Array>;
+  // Opens an image, audio or video file in the OS default app; rejects with `bad_name` for any other file.
+  fileOpenDefault(worktree: string, rel: string): Promise<void>;
   // Search. Same `worktree` rule as Files. Both walk the worktree with `.gitignore` applied,
   // hidden files included, `.git` and links out of it skipped.
   // Every file, relative with forward slashes, sorted; `truncated` past 50 000 files.
@@ -1499,6 +1503,8 @@ const tauriApi: Api = {
   fileRename: (worktree, from, to) => call("file_rename", { worktree, from, to }),
   fileTrash: (worktree, rel) => call("file_trash", { worktree, rel }),
   fileReveal: (worktree, rel) => call("file_reveal", { worktree, rel }),
+  fileBytes: async (worktree, rel) => new Uint8Array(await call<ArrayBuffer | number[]>("file_bytes", { worktree, rel })),
+  fileOpenDefault: (worktree, rel) => call("file_open_default", { worktree, rel }),
   filesList: (worktree) => call("files_list", { worktree }),
   filesSearch(worktree, query, id, onEvent) {
     const channel = new Channel<SearchEvent>();

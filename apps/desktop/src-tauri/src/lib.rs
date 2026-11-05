@@ -379,6 +379,8 @@ pub fn run() {
             files::file_rename,
             files::file_trash,
             files::file_reveal,
+            files::file_bytes,
+            files::file_open_default,
             files::files_list,
             files::files_search,
             files::files_search_cancel,
