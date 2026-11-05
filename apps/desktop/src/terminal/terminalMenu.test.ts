@@ -2,9 +2,9 @@ import { expect, it } from "vitest";
 import type { MenuItem } from "@/ui/ContextMenu";
 import type { Tab } from "@/workspace/sessions";
 import type { TerminalHandle } from "./Terminal";
-import { terminalMenuItems, type TerminalMenuContext } from "./terminalMenu";
+import { showsClearTitle, showsCopySessionId, showsPaneLayout, terminalMenuItems, type TerminalMenuContext } from "./terminalMenu";
 
-function setup(over: { selection?: boolean; paneId?: string | null; agent?: boolean; fork?: boolean; handOff?: boolean; session?: string | null } = {}) {
+function setup(over: { selection?: boolean; paneId?: string | null; agent?: boolean; fork?: boolean; handOff?: boolean; session?: string | null; renamed?: boolean; extras?: boolean; expanded?: boolean } = {}) {
   const calls: string[] = [];
   const handle: TerminalHandle = {
     copy: async () => { calls.push("copy"); return true; },
@@ -19,7 +19,7 @@ function setup(over: { selection?: boolean; paneId?: string | null; agent?: bool
   };
   const ctx: TerminalMenuContext = {
     handle,
-    tab: { id: "t1", agent: over.agent ?? false, agentSession: over.session === undefined ? null : over.session } as Tab,
+    tab: { id: "t1", agent: over.agent ?? false, agentSession: over.session === undefined ? null : over.session, renamed: over.renamed ?? false } as Tab,
     paneId: over.paneId === undefined ? "p1" : over.paneId,
     split: (dir) => void calls.push(`split:${dir}`),
     setTitle: () => void calls.push("setTitle"),
@@ -27,6 +27,15 @@ function setup(over: { selection?: boolean; paneId?: string | null; agent?: bool
     copyContext: () => void calls.push("copyContext"),
     copyTerminalId: () => void calls.push("copyTerminalId"),
     copyPaneId: () => void calls.push("copyPaneId"),
+    ...(over.extras
+      ? {
+          equalize: () => void calls.push("equalize"),
+          expand: () => void calls.push("expand"),
+          expanded: over.expanded ?? false,
+          clearTitle: () => void calls.push("clearTitle"),
+          copySessionId: () => void calls.push("copySessionId"),
+        }
+      : {}),
     ...(over.fork ? { forkSession: () => void calls.push("forkSession") } : {}),
     ...(over.handOff ? { handOff: () => void calls.push("handOff") } : {}),
   };
@@ -129,4 +138,44 @@ it("puts the Quick Commands submenu before Copy Context, and leaves it out witho
   const withSub = ids(withExtras(sub));
   expect(withSub.slice(withSub.indexOf("quickCommands"), withSub.indexOf("quickCommands") + 2)).toEqual(["quickCommands", "copyContext"]);
   expect(ids(withExtras())).not.toContain("quickCommands");
+});
+
+it("Equalize and Expand sit after Split Down; Expand is checked while the pane is expanded", () => {
+  const ids = setup({ extras: true }).items.map((i) => i.id);
+  expect(ids.slice(ids.indexOf("splitDown"), ids.indexOf("splitDown") + 3)).toEqual(["splitDown", "equalize", "expand"]);
+  expect(setup({ extras: true }).find("expand").checked).toBe(false);
+  expect(setup({ extras: true, expanded: true }).find("expand").checked).toBe(true);
+  const { calls, find } = setup({ extras: true });
+  find("equalize").run!();
+  find("expand").run!();
+  expect(calls).toEqual(["equalize", "expand"]);
+  expect(setup().items.some((i) => i.id === "equalize" || i.id === "expand")).toBe(false);
+});
+
+it("Clear pane title shows only for a title set by hand", () => {
+  expect(setup({ extras: true }).items.some((i) => i.id === "clearTitle")).toBe(false);
+  const named = setup({ extras: true, renamed: true });
+  const ids = named.items.map((i) => i.id);
+  expect(ids.indexOf("clearTitle")).toBe(ids.indexOf("setTitle") + 1);
+  named.find("clearTitle").run!();
+  expect(named.calls).toEqual(["clearTitle"]);
+  expect(setup({ renamed: true }).items.some((i) => i.id === "clearTitle")).toBe(false);
+  expect(showsClearTitle({ renamed: true })).toBe(true);
+  expect(showsClearTitle({ renamed: false })).toBe(false);
+});
+
+it("Copy session ID shows only for a tab with an agent session", () => {
+  expect(setup({ extras: true }).items.some((i) => i.id === "copySessionId")).toBe(false);
+  const agent = setup({ extras: true, agent: true, session: "abc" });
+  const ids = agent.items.map((i) => i.id);
+  expect(ids.indexOf("copySessionId")).toBe(ids.indexOf("copyPaneId") + 1);
+  agent.find("copySessionId").run!();
+  expect(agent.calls).toEqual(["copySessionId"]);
+  expect(showsCopySessionId({ agentSession: "abc" })).toBe(true);
+  expect(showsCopySessionId({ agentSession: null })).toBe(false);
+});
+
+it("Equalize and Expand need more than one pane", () => {
+  expect(showsPaneLayout(1)).toBe(false);
+  expect(showsPaneLayout(2)).toBe(true);
 });

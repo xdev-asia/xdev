@@ -4,7 +4,7 @@ import viText from "@/i18n/vi.json";
 import type { MenuItem } from "@/ui/ContextMenu";
 import type { Tab } from "./sessions";
 import {
-  cycleSameKind, fileCloseTargets, fileTabMenuItems, tabMenuItems,
+  cycleSameKind, moveEdge, fileCloseTargets, fileTabMenuItems, tabMenuItems,
   type FileTabInfo, type FileTabMenuContext, type TabMenuContext,
 } from "./tabMenu";
 
@@ -41,7 +41,7 @@ it("lists the items in SCR-14 order", () => {
     "changeTitle", "color", "-",
     "close", "closeOthers", "closeToRight", "closeAll",
   ]);
-  expect(ids(setup().find("moveToSplit").children!)).toEqual(["moveRight", "moveDown"]);
+  expect(ids(setup().find("moveToSplit").children!)).toEqual(["moveLeft", "moveRight", "moveUp", "moveDown"]);
 });
 
 it("the pin item toggles its label and its call", () => {
@@ -76,8 +76,8 @@ it("each item calls its context method", () => {
   const { calls, find } = setup();
   find("splitRight").run!();
   find("splitDown").run!();
-  find("moveToSplit").children![0].run!();
   find("moveToSplit").children![1].run!();
+  find("moveToSplit").children![3].run!();
   find("copyTabId").run!();
   find("changeTitle").run!();
   find("close").run!();
@@ -165,7 +165,7 @@ it("the file pin item toggles with the tab's mark", () => {
 it("each file item calls its context method", () => {
   const { calls, find } = fileSetup();
   for (const id of ["copyPath", "copyRelativePath", "close", "closeOthers", "closeToRight", "closeSaved", "closeAll"]) find(id).run!();
-  find("moveToSplit").children![1].run!();
+  find("moveToSplit").children![3].run!();
   expect(calls).toEqual(["path", "rel", "close", "others", "right", "saved", "all", "move:down"]);
 });
 
@@ -222,4 +222,23 @@ it("cycling has nowhere to go for a lone tab of its kind or an unknown tab", () 
   expect(cycleSameKind(all, "zz", 1, kind)).toBeNull();
   expect(cycleSameKind(all, null, 1, kind)).toBeNull();
   expect(cycleSameKind([], "t1", 1, kind)).toBeNull();
+});
+
+it("Move to Split offers all four sides and each runs its direction", () => {
+  const { calls, find } = setup();
+  const kids = find("moveToSplit").children!;
+  expect(kids.map((k) => k.labelKey)).toEqual(["tabMenu.moveLeft", "tabMenu.moveRight", "tabMenu.moveUp", "tabMenu.moveDown"]);
+  kids.forEach((k) => k.run!());
+  expect(calls).toEqual(["move:left", "move:right", "move:up", "move:down"]);
+});
+
+it("moveEdge names the pane edge a move drops on", () => {
+  expect(["left", "right", "up", "down"].map((d) => moveEdge(d as "left"))).toEqual(["left", "right", "top", "bottom"]);
+});
+
+it("the new move labels have English and Vietnamese text", () => {
+  for (const key of ["tabMenu.moveLeft", "tabMenu.moveUp"]) {
+    expect((en as Record<string, string>)[key], key).toBeTruthy();
+    expect((viText as Record<string, string>)[key], key).toBeTruthy();
+  }
 });

@@ -5,12 +5,22 @@ import { useI18n } from "@/i18n";
 
 const KEYS = ["hideDefault", "hideDetached", "hideAutomation", "hideCli"] as const;
 
-/** The filter button of the sidebar header: four switches, and "N hidden" that clears them. */
-export function SidebarFilters(props: { prefs: SidebarPrefs; hidden: number; onPrefs(prefs: SidebarPrefs): void }): JSX.Element {
+/**
+ * The filter button of the sidebar header: four switches saved as preferences and Sleeping only (kept by
+ * the list, not saved), and "N hidden" that clears them.
+ */
+export function SidebarFilters(props: {
+  prefs: SidebarPrefs;
+  hidden: number;
+  onPrefs(prefs: SidebarPrefs): void;
+  sleepingOnly?: boolean;
+  onSleepingOnly?(on: boolean): void;
+}): JSX.Element {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const { prefs } = props;
-  const on = KEYS.some((k) => prefs[k]);
+  const sleepingOnly = props.sleepingOnly === true;
+  const on = KEYS.some((k) => prefs[k]) || sleepingOnly;
   return (
     <div className="ws-filters">
       {on && (
@@ -18,7 +28,10 @@ export function SidebarFilters(props: { prefs: SidebarPrefs; hidden: number; onP
           type="button"
           className="ws-filters-hidden"
           title={t("filters.clear")}
-          onClick={() => props.onPrefs({ ...props.prefs, hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false })}
+          onClick={() => {
+            props.onSleepingOnly?.(false);
+            props.onPrefs({ ...props.prefs, hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false });
+          }}
         >
           {t("filters.hidden", { count: props.hidden })}
         </button>
@@ -45,6 +58,12 @@ export function SidebarFilters(props: { prefs: SidebarPrefs; hidden: number; onP
               <span>{t(`filters.${key}`)}</span>
             </label>
           ))}
+          {props.onSleepingOnly && (
+            <label className="ws-filters-row">
+              <input type="checkbox" checked={sleepingOnly} onChange={(e) => props.onSleepingOnly?.(e.target.checked)} />
+              <span>{t("filters.sleepingOnly")}</span>
+            </label>
+          )}
         </div>
       )}
     </div>

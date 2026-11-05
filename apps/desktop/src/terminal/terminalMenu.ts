@@ -25,7 +25,26 @@ export interface TerminalMenuContext {
   forkSession?(): void;
   /** Opens the hand off dialog: the same work given to another agent. Absent hides the item. */
   handOff?(): void;
+  /** Sets every split of the worktree to equal sizes. Absent hides Equalize. */
+  equalize?(): void;
+  /** Toggles this pane to fill the area. Absent hides Expand. */
+  expand?(): void;
+  /** Whether this pane is the expanded one now (Expand shows checked). */
+  expanded?: boolean;
+  /** Gives the tab back the program's title. Absent hides Clear pane title. */
+  clearTitle?(): void;
+  /** Copies the tab's agent session id. Absent hides Copy session ID. */
+  copySessionId?(): void;
 }
+
+/** Whether Clear pane title shows: only a title set by hand can be cleared. */
+export const showsClearTitle = (tab: Pick<Tab, "renamed">): boolean => tab.renamed;
+
+/** Whether Copy session ID shows: only a tab whose agent has reported a session. */
+export const showsCopySessionId = (tab: Pick<Tab, "agentSession">): boolean => !!tab.agentSession;
+
+/** Whether Equalize and Expand show: they need more than one pane to mean anything. */
+export const showsPaneLayout = (paneCount: number): boolean => paneCount > 1;
 
 const SEP = (id: string): MenuItem => ({ id, labelKey: "", kind: "separator" });
 
@@ -51,10 +70,14 @@ export function terminalMenuItems(ctx: TerminalMenuContext): MenuItem[] {
     SEP("sep2"),
     { id: "splitRight", labelKey: "termMenu.splitRight", chord: chord("pane.splitRight"), run: () => ctx.split("right") },
     { id: "splitDown", labelKey: "termMenu.splitDown", chord: chord("pane.splitDown"), run: () => ctx.split("down") },
+    ...(ctx.equalize ? [{ id: "equalize", labelKey: "termMenu.equalize", chord: chord("pane.equalize"), run: ctx.equalize }] : []),
+    ...(ctx.expand ? [{ id: "expand", labelKey: "termMenu.expand", chord: chord("pane.expand"), checked: !!ctx.expanded, run: ctx.expand }] : []),
     SEP("sep3"),
     { id: "setTitle", labelKey: "termMenu.setTitle", run: ctx.setTitle },
+    ...(ctx.clearTitle && showsClearTitle(ctx.tab) ? [{ id: "clearTitle", labelKey: "termMenu.clearTitle", chord: chord("pane.clearTitle"), run: ctx.clearTitle }] : []),
     { id: "copyTerminalId", labelKey: "termMenu.copyTerminalId", run: ctx.copyTerminalId },
     ...(ctx.paneId ? [{ id: "copyPaneId", labelKey: "termMenu.copyPaneId", run: ctx.copyPaneId }] : []),
+    ...(ctx.copySessionId && showsCopySessionId(ctx.tab) ? [{ id: "copySessionId", labelKey: "termMenu.copySessionId", run: ctx.copySessionId }] : []),
     SEP("sep4"),
     { id: "clear", labelKey: "termMenu.clearScreen", chord: chord("terminal.clear"), run: () => handle.clear() },
     { id: "reset", labelKey: "termMenu.resetTerminal", run: () => handle.reset() },

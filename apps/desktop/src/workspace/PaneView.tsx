@@ -4,6 +4,7 @@ import { useI18n } from "@/i18n";
 import { useTerminalSettings } from "@/terminal/terminalSettings";
 import type { PaneLayout, PaneNode } from "./paneTree";
 import type { DropZone } from "./sessions";
+import { pastThreshold, zoneFor } from "./tabDrag";
 
 export const DROP_ZONES: readonly DropZone[] = ["left", "right", "top", "bottom"];
 
@@ -64,6 +65,22 @@ export function dragSizes(sizes: number[], i: number, delta: number): number[] {
   return next;
 }
 
+/** The pane edge under the point while a pane is dragged: the pane and the zone of it, or null. */
+export function paneDropAt(x: number, y: number): { pane: string; zone: DropZone } | null {
+  const zones = document.elementFromPoint(x, y)?.closest("[data-dropzones]");
+  const zone = zones ? zoneFor(zones.getBoundingClientRect(), x, y) : null;
+  return zones && zone ? { pane: zones.getAttribute("data-dropzones")!, zone } : null;
+}
+
+/** A pane being dragged by its grip: from where the press began, and the zone under the pointer. */
+interface PaneMove {
+  source: string;
+  pointerId: number;
+  from: { x: number; y: number };
+  started: boolean;
+  over: { pane: string; zone: DropZone } | null;
+}
+
 interface Drag {
   split: string;
   index: number;
@@ -83,12 +100,15 @@ export function PaneView(props: {
   onFocus: (pane: string) => void;
   onResize: (split: string, sizes: number[]) => void;
   onEqualize: () => void;
+  /** A pane was dropped on an edge of another pane; absent, panes have no grip. */
+  onMovePane?: (source: string, target: string, zone: DropZone) => void;
   /** The tab drag in progress; while set, every pane shows edge drop zones and the one under the pointer is lit. */
   tabDrag?: { id: string; over: { pane: string; zone: DropZone } | null } | null;
 }): JSX.Element {
-  const { layout, strip, onFocus, onResize, onEqualize, tabDrag } = props;
+  const { layout, strip, onFocus, onResize, onEqualize, onMovePane } = props;
   const { t } = useI18n();
   const [drag, setDrag] = useState<Drag | null>(null);
+  const [move, setMove] = useState<PaneMove | null>(null);
   const { dimInactivePanes, paneDividerPx } = useTerminalSettings();
 
   // The divider thickness is read by the pane outline and by the terminals, which sit outside this tree.
@@ -102,6 +122,45 @@ export function PaneView(props: {
     };
   }, [paneDividerPx]);
 
+  // Escape cancels a pane drag.
+  useEffect(() => {
+    if (!move) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMove(null);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [move === null]);
+
+  // A tab drag and a pane drag light the same zones.
+  const tabDrag = props.tabDrag ?? (move?.started ? { id: move.source, over: move.over } : null);
+  const canMove = !!onMovePane && !layout.expanded && leavesOf(layout.root) > 1;
+
+  const grip = (n: Leaf): JSX.Element => (
+    <div
+      className="ws-pane-grip"
+      role="button"
+      aria-label={t("panes.move")}
+      title={t("panes.move")}
+      data-dragging={move?.started && move.source === n.id ? "true" : undefined}
+      onPointerDown={(e: PointerEvent<HTMLDivElement>) => {
+        if (e.button !== 0) return;
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        setMove({ source: n.id, pointerId: e.pointerId, from: { x: e.clientX, y: e.clientY }, started: false, over: null });
+      }}
+      onPointerMove={(e: PointerEvent<HTMLDivElement>) => {
+        if (!move || move.source !== n.id || e.pointerId !== move.pointerId) return;
+        if (!move.started && !pastThreshold(move.from, e.clientX, e.clientY)) return;
+        setMove({ ...move, started: true, over: paneDropAt(e.clientX, e.clientY) });
+      }}
+      onPointerUp={(e: PointerEvent<HTMLDivElement>) => {
+        if (!move || move.source !== n.id || e.pointerId !== move.pointerId) return;
+        const over = move.started ? paneDropAt(e.clientX, e.clientY) : null;
+        setMove(null);
+        if (over) onMovePane?.(move.source, over.pane, over.zone);
+      }}
+      onPointerCancel={() => setMove(null)}
+    />
+  );
+
   const leaf = (n: Leaf, basis: number | null): JSX.Element => (
     <div
       key={n.id}
@@ -112,7 +171,14 @@ export function PaneView(props: {
       style={basis === null ? undefined : { flexBasis: `${basis * 100}%` }}
       onPointerDown={() => onFocus(n.id)}
     >
-      {strip(n)}
+      {canMove ? (
+        <div className="ws-pane-head">
+          {grip(n)}
+          {strip(n)}
+        </div>
+      ) : (
+        strip(n)
+      )}
       {tabDrag && (
         <div className="ws-dropzones" data-dropzones={n.id} aria-hidden="true">
           {DROP_ZONES.map((zone) => (
@@ -170,6 +236,10 @@ export function PaneView(props: {
       {expanded ? leaf(expanded, null) : node(layout.root, null)}
     </div>
   );
+}
+
+function leavesOf(n: PaneNode): number {
+  return n.kind === "leaf" ? 1 : n.children.reduce((sum, c) => sum + leavesOf(c), 0);
 }
 
 function findLeaf(n: PaneNode, id: string): Leaf | null {

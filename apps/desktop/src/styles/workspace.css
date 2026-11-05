@@ -1242,8 +1242,40 @@
   outline-color: var(--x-color-focus, var(--x-color-signal));
 }
 
-.ws-pane > .ws-tabstrip {
+.ws-pane > .ws-tabstrip,
+.ws-pane > .ws-pane-head {
   pointer-events: auto;
+}
+
+/* The header of a pane that can be dragged: a grip, then the tab strip. */
+.ws-pane-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.ws-pane-head > .ws-tabstrip {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-pane-grip {
+  flex-shrink: 0;
+  width: var(--x-space-3);
+  border-right: 1px solid var(--line);
+  background: var(--bg-1);
+  cursor: grab;
+  touch-action: none;
+}
+
+.ws-pane-grip:hover,
+.ws-pane-grip[data-dragging="true"] {
+  background: var(--bg-3);
+}
+
+.ws-pane-grip[data-dragging="true"] {
+  cursor: grabbing;
 }
 
 .ws-handle {
@@ -4075,6 +4107,8 @@ button.ws-tree-row[data-active="true"] {
 
 /* Drop zones over a pane while a tab is dragged: tint plus 1px border, never a stripe. */
 .ws-dropzones {
+  /* The pane tree lets clicks through to the terminals; the zones must be found under the pointer. */
+  pointer-events: auto;
   position: absolute;
   inset: var(--ws-strip-h) 0 0;
   z-index: 20;

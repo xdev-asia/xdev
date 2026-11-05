@@ -107,3 +107,24 @@ it("pinnedEntries lists pinned worktrees in sidebar order, repo by repo, groups 
   expect(pinnedEntries([asRepo(c), asRepo({ ...repo("m", []), missing: true })])).toEqual([]);
   expect(pinnedEntries([])).toEqual([]);
 });
+
+it("Sleeping only keeps the worktrees that are asleep and counts the rest as hidden", () => {
+  const r = repo("a", [wt("a1"), wt("a2"), wt("a3")]);
+  const asleep = { "/wt/a2": true, "/wt/a3": false };
+  const on = visibleEntries(entries(r), OFF, null, { only: true, asleep });
+  expect(on.entries.map((e) => e.wt.name)).toEqual(["a2"]);
+  expect(on.hidden).toBe(2);
+  const off = visibleEntries(entries(r), OFF, null, { only: false, asleep });
+  expect(off.entries).toHaveLength(3);
+  expect(off.hidden).toBe(0);
+  expect(visibleEntries(entries(r), OFF, null).hidden).toBe(0);
+});
+
+it("Sleeping only never hides the selected worktree and combines with the other filters", () => {
+  const r = repo("a", [wt("main", { defaultBranch: true }), wt("a2"), wt("a3")]);
+  const asleep = { "/wt/main": true, "/wt/a2": true };
+  expect(visibleEntries(entries(r), OFF, "/wt/a3", { only: true, asleep }).entries.map((e) => e.wt.name)).toEqual(["main", "a2", "a3"]);
+  const both = visibleEntries(entries(r), { ...OFF, hideDefault: true }, null, { only: true, asleep });
+  expect(both.entries.map((e) => e.wt.name)).toEqual(["a2"]);
+  expect(both.hidden).toBe(2);
+});

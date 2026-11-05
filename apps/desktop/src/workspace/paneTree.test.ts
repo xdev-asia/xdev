@@ -5,6 +5,7 @@ import {
   equalize,
   focusPane,
   leaves,
+  movePane,
   neighbour,
   paneOf,
   removeTab,
@@ -231,5 +232,79 @@ describe("the commit tab", () => {
   it("never seeds a pane", () => {
     const l = single("a");
     expect(splitPane(l, "p1", "right", "commit:")).toBe(l);
+  });
+});
+
+describe("movePane", () => {
+  const pane = (l: PaneLayout, tab: string) => paneOf(l, tab)!;
+  /** The tree as text: `a|b` is a row, `a/b` a column, groups in parentheses. */
+  const shape = (n: PaneNode): string =>
+    n.kind === "leaf" ? n.tabs.join("+") : `(${n.children.map(shape).join(n.dir === "right" ? "|" : "/")})`;
+
+  it("drops on each edge of the target", () => {
+    const base = splitPane(single("a"), "p1", "right", "b"); // a | b
+    const a = pane(base, "a");
+    const b = pane(base, "b");
+    expect(shape(movePane(base, b, a, "left").root)).toBe("(b|a)");
+    expect(shape(movePane(base, b, a, "right").root)).toBe("(a|b)");
+    expect(shape(movePane(base, b, a, "top").root)).toBe("(b/a)");
+    expect(shape(movePane(base, b, a, "bottom").root)).toBe("(a/b)");
+  });
+
+  it("focuses the moved pane, keeps its id and tabs, and clears the expansion", () => {
+    const l = toggleExpand(three(), pane(three(), "a"));
+    const moved = movePane(l, pane(l, "c"), pane(l, "a"), "right");
+    expect(moved.focused).toBe(pane(l, "c"));
+    expect(moved.expanded).toBeNull();
+    expect(paneOf(moved, "c")).toBe(pane(l, "c"));
+  });
+
+  it("dropping a pane on itself is a no-op", () => {
+    const l = three();
+    for (const edge of ["left", "right", "top", "bottom"] as const) expect(movePane(l, pane(l, "a"), pane(l, "a"), edge)).toBe(l);
+  });
+
+  it("does nothing for the only pane or an unknown pane", () => {
+    const one = single("a");
+    expect(movePane(one, "p1", "p1", "left")).toBe(one);
+    expect(movePane(one, "p1", "nope", "left")).toBe(one);
+    const l = three();
+    expect(movePane(l, "nope", pane(l, "a"), "left")).toBe(l);
+    expect(movePane(l, pane(l, "a"), "nope", "left")).toBe(l);
+  });
+
+  it("collapses the split the source leaves", () => {
+    const l = three(); // a | (b / c)
+    const moved = movePane(l, pane(l, "c"), pane(l, "a"), "bottom");
+    expect(shape(moved.root)).toBe("((a/c)|b)");
+    expect(leaves(moved)).toHaveLength(3);
+  });
+
+  it("moves between nested splits", () => {
+    let l = three(); // a | (b / c)
+    l = splitPane(l, pane(l, "c"), "right", "d"); // a | (b / (c | d))
+    const moved = movePane(l, pane(l, "a"), pane(l, "d"), "top");
+    expect(shape(moved.root)).toBe("(b/(c|(a/d)))");
+    expect(ids(moved).sort()).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("merges into a split of the same direction and keeps sizes summing to one", () => {
+    const l = three(); // a | (b / c)
+    const moved = movePane(l, pane(l, "a"), pane(l, "b"), "top"); // (a/b/c)
+    expect(shape(moved.root)).toBe("(a/b/c)");
+    const root = moved.root;
+    expect(root.kind === "split" && root.sizes.reduce((x, y) => x + y, 0)).toBeCloseTo(1);
+  });
+
+  it("never reuses a split or pane id", () => {
+    const l = three();
+    const moved = movePane(l, pane(l, "b"), pane(l, "a"), "left");
+    const all: string[] = [];
+    const walk = (n: PaneNode): void => {
+      all.push(n.id);
+      if (n.kind === "split") n.children.forEach(walk);
+    };
+    walk(moved.root);
+    expect(new Set(all).size).toBe(all.length);
   });
 });

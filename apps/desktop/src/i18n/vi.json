@@ -3696,5 +3696,15 @@
   "settings.appearance.apps": "Ứng dụng trên thanh hoạt động",
   "settings.appearance.app.show": "Hiện {app}",
   "settings.appearance.appsHint": "Ứng dụng bị ẩn sẽ rời khỏi thanh hoạt động. Luôn còn ít nhất một ứng dụng.",
-  "settings.appearance.statusBar.keepAwake": "Hiện giữ máy thức"
+  "settings.appearance.statusBar.keepAwake": "Hiện giữ máy thức",
+  "tabMenu.moveLeft": "Trái",
+  "tabMenu.moveUp": "Lên",
+  "termMenu.equalize": "Cân bằng các ô",
+  "termMenu.expand": "Phóng to ô",
+  "termMenu.clearTitle": "Xóa tiêu đề ô",
+  "termMenu.copySessionId": "Sao chép ID phiên",
+  "filters.sleepingOnly": "Chỉ mục đang ngủ",
+  "keys.action.pane.clearTitle": "Xóa tiêu đề ô",
+  "keys.action.sidebar.sleepingOnly.toggle": "Chỉ hiện worktree đang ngủ",
+  "panes.move": "Kéo để di chuyển ô này"
 }

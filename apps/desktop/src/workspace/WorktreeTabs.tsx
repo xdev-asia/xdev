@@ -28,7 +28,7 @@ import { handoffPrompt, sourceFirstPrompt } from "@/agentSessions/handoff";
 import { HandOffDialog, type HandOffChoice } from "@/agentSessions/HandOffDialog";
 import { sendToOpenedTab } from "./agentPrompt";
 import { pushToast } from "./toastStore";
-import { terminalMenuItems } from "@/terminal/terminalMenu";
+import { showsPaneLayout, terminalMenuItems } from "@/terminal/terminalMenu";
 import { registerTerminal } from "@/terminal/terminalRegistry";
 import { useApprovedStart } from "@/terminal/useApprovedStart";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
@@ -38,6 +38,7 @@ import {
   focusPane,
   leaves,
   pinFirst,
+  movePane as moveLeaf,
   neighbour,
   paneOf,
   removeTab,
@@ -61,7 +62,7 @@ import { AgentPicker } from "./AgentPicker";
 import { cycleTab, mruOrder, nthTab } from "./tabNav";
 import { chosenTab, startSwitch, stepSwitch, type Switch } from "./recentTabs";
 import { RecentTabSwitcher, type SwitcherItem } from "./RecentTabSwitcher";
-import { closeAllTargets, cycleSameKind, fileCloseTargets, type FileCloseKind, type FileTabInfo } from "./tabMenu";
+import { closeAllTargets, cycleSameKind, fileCloseTargets, type FileCloseKind, type FileTabInfo, type MoveDir, moveEdge } from "./tabMenu";
 import { openFile } from "@/files/openFile";
 import { absolutePath, relativePath } from "@/search/resultCopy";
 import { TabTitleDialog } from "./TabTitleDialog";
@@ -308,11 +309,18 @@ export function WorktreeTabs(props: {
   }
 
   // Moves a tab of `pane` into a new pane beside it. The only tab of a pane has nothing to leave.
-  function splitTab(pane: string, id: string, dir: PaneDir): void {
+  function splitTab(pane: string, id: string, dir: MoveDir): void {
     const leaf = panes.find((n) => n.id === pane);
     if (!layout || !leaf || leaf.tabs.length < 2) return;
     const without = removeTab(layout, id);
-    if (without) setLayout(splitPane(without, pane, dir, id));
+    if (without) setLayout(splitPane(without, pane, dir === "left" || dir === "right" ? "right" : "down", id, dir === "left" || dir === "up"));
+  }
+
+  // The tab menu's Move to Split: a terminal goes through the sessions store, the other tabs through the tree.
+  function moveTab(pane: string, id: string, dir: MoveDir): void {
+    if (id === REVIEW_TAB || isFileTab(id) || isPreviewTab(id)) return splitTab(pane, id, dir);
+    if (dir === "right" || dir === "down") return sessions.moveToSplit(id, dir);
+    sessions.dropToSplit(worktree, id, pane, moveEdge(dir));
   }
 
   // The file tab whose Save / Don't Save / Cancel dialog is open.
@@ -593,6 +601,12 @@ export function WorktreeTabs(props: {
       "pane.prev": () => movePane(-1),
       "pane.expand": () => reshape((l) => toggleExpand(l, l.focused)),
       "pane.equalize": () => reshape(equalize),
+      "pane.clearTitle": () => {
+        const front = shown ? byId.get(shown) : undefined;
+        if (!front?.renamed) return false;
+        sessions.setTitle(front.id, null);
+        return true;
+      },
       "pane.close": () => requestClose(focusedLeaf?.tabs ?? []),
       // Only a file tab takes the save key; anywhere else it goes on to its other owners.
       "file.markdownPreview": () => (shown ? openPreview(fileTabRel(shown) ?? "") : false),
@@ -677,6 +691,14 @@ export function WorktreeTabs(props: {
         }),
       forkSession: forkable(tab) ? () => forkSession(tab) : undefined,
       handOff: forkable(tab) && props.worktrees ? () => setHandingOff({ id: tab.id, lines: handle.lines(CONTEXT_LINES) }) : undefined,
+      equalize: layout && showsPaneLayout(panes.length) ? () => setLayout(equalize(layout)) : undefined,
+      expand: layout && showsPaneLayout(panes.length) ? () => setLayout(toggleExpand(layout, pane ?? layout.focused)) : undefined,
+      expanded: !!pane && layout?.expanded === pane,
+      clearTitle: () => sessions.setTitle(tab.id, null),
+      copySessionId: () => {
+        const id = tab.agentSession;
+        if (id) void copyText(id).then((ok) => pushToast({ text: t(ok ? "termMenu.copied" : "termMenu.copyFailed") }));
+      },
       copyTerminalId: () => void copyText(tab.id),
       copyPaneId: () => pane && void copyText(pane),
       quickCommands: quickCommandsSubmenu(
@@ -751,7 +773,7 @@ export function WorktreeTabs(props: {
           ) : null
         }
         onSplit={(dir) => defaultShell !== null && splitWith(leaf.id, dir, defaultShell)}
-        onMoveToSplit={(id, dir) => (id === REVIEW_TAB || isFileTab(id) || isPreviewTab(id) ? splitTab(leaf.id, id, dir) : sessions.moveToSplit(id, dir))}
+        onMoveToSplit={(id, dir) => moveTab(leaf.id, id, dir)}
         onReorder={(id, before) => sessions.reorderTab(id, before)}
         onDragTab={setDrag}
         onDropZone={(id, pane, zone) => sessions.dropToSplit(worktree, id, pane, zone)}
@@ -818,6 +840,7 @@ export function WorktreeTabs(props: {
             onFocus={(pane) => layout.focused !== pane && setLayout(focusPane(layout, pane))}
             onResize={(split, sizes) => setLayout(resize(layout, split, sizes))}
             onEqualize={() => setLayout(equalize(layout))}
+            onMovePane={(source, target, zone) => setLayout(moveLeaf(layout, source, target, zone))}
             tabDrag={drag}
           />
         )}

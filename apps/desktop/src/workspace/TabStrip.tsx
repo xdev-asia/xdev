@@ -9,7 +9,7 @@ import { AgentIcon } from "./AgentIcon";
 import type { PaneDir } from "./paneTree";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import type { Tab, TabColor } from "./sessions";
-import { fileTabMenuItems, tabColorVar, tabMenuItems, type FileCloseKind } from "./tabMenu";
+import { fileTabMenuItems, tabColorVar, tabMenuItems, type FileCloseKind, type MoveDir } from "./tabMenu";
 import type { TabStatus } from "./status";
 import type { DropZone } from "./sessions";
 import { beforeOf, insertAt, pastThreshold, zoneFor } from "./tabDrag";
@@ -122,7 +122,7 @@ export function TabStrip(props: {
   /** Splits this pane, opening the default shell in the new one. */
   onSplit: (dir: PaneDir) => void;
   /** Moves a tab of this pane into a new pane beside it. */
-  onMoveToSplit: (id: string, dir: PaneDir) => void;
+  onMoveToSplit: (id: string, dir: MoveDir) => void;
   /** A tab of this pane was dropped before `before` (null: at the end) of the strip. */
   onReorder?: (id: string, before: string | null) => void;
   /** A tab drag started (its id) or ended (null); the pane area shows drop zones meanwhile. */

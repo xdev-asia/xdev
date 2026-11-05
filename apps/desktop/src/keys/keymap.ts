@@ -25,6 +25,8 @@ export type ActionId =
   | "pane.expand"
   | "pane.equalize"
   | "pane.close"
+  // Bound to nothing by default: gives the focused tab back the program's title.
+  | "pane.clearTitle"
   | "worktree.next"
   | "worktree.prev"
   | "worktree.history.back" | "worktree.history.forward"
@@ -33,6 +35,8 @@ export type ActionId =
   | "palette.jump"
   | "search.open"
   | "sidebar.left.toggle" | "sidebar.right.toggle"
+  // Bound to nothing by default: the sidebar lists only sleeping worktrees.
+  | "sidebar.sleepingOnly.toggle"
   | "panel.explorer" | "panel.search" | "panel.sourceControl" | "panel.issues" | "panel.ports"
   | "terminal.clear" | "terminal.copy" | "terminal.paste" | "terminal.selectAll" | "terminal.find"
   | "zoom.in" | "zoom.out" | "zoom.reset"
