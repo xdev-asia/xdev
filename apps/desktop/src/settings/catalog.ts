@@ -176,6 +176,8 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("diagnostics.export", "diagnostics.export.title", ["diagnostics", "export", "bundle", "chẩn đoán", "chan doan", "xuất", "xuat"]),
   e("diagnostics.logs", "diagnostics.logs.title", ["diagnostics", "log", "logs", "nhật ký", "nhat ky"]),
   e("diagnostics.crash", "diagnostics.crash.title", ["diagnostics", "crash", "report", "sự cố", "su co", "chẩn đoán", "chan doan"]),
+  // Experimental
+  e("experimental.autoSleep", "settings.agents.autoSleep.label", ["experimental", "beta", "lab", "sleep", "auto", "thử nghiệm", "thu nghiem"], "settings.agents.autoSleep.hint"),
 ];
 
 /** The longest query searched, in bytes after trim; longer input is cut. */

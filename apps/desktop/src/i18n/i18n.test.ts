@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi as vitest } from "vitest";
 import { ERROR_CODES } from "@/api";
 import en from "./en.json";
 import vi from "./vi.json";
-import { detectLocale, translate } from "./index";
+import { detectLocale, resolveLocale, storedPreference, translate } from "./index";
 
 describe("i18n", () => {
+  afterEach(() => vitest.unstubAllGlobals());
+
   it("en and vi have identical keys", () => {
     expect(Object.keys(vi).sort()).toEqual(Object.keys(en).sort());
   });
@@ -27,6 +29,28 @@ describe("i18n", () => {
     expect(detectLocale("en-US")).toBe("en");
     expect(detectLocale("fr-FR")).toBe("en");
     expect(detectLocale(undefined)).toBe("en");
+  });
+
+  it("system resolves from navigator.language; a fixed choice wins", () => {
+    expect(resolveLocale("system", "vi-VN")).toBe("vi");
+    expect(resolveLocale("system", "en-GB")).toBe("en");
+    expect(resolveLocale("system", undefined)).toBe("en");
+    expect(resolveLocale("en", "vi-VN")).toBe("en");
+    expect(resolveLocale("vi", "en-US")).toBe("vi");
+  });
+
+  it("an unset or unknown stored locale is system", () => {
+    const store = new Map<string, string>();
+    vitest.stubGlobal("localStorage", { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) });
+    localStorage.removeItem("xdev-locale");
+    expect(storedPreference()).toBe("system");
+    localStorage.setItem("xdev-locale", "system");
+    expect(storedPreference()).toBe("system");
+    localStorage.setItem("xdev-locale", "vi");
+    expect(storedPreference()).toBe("vi");
+    localStorage.setItem("xdev-locale", "xx");
+    expect(storedPreference()).toBe("system");
+    localStorage.removeItem("xdev-locale");
   });
 
   it("translate fills vars", () => {

@@ -45,6 +45,7 @@ import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
 import { getNavigationSettings, setNavigationSettings, useNavigationSettings } from "@/settings/navigationSettings";
 import { SettingsView } from "@/settings/SettingsView";
+import { settingsIntent } from "@/settings/settingsIntent";
 import { playStatusSound } from "@/status/sound";
 import { usePresence } from "@/status/presence";
 import { getStatusSettings, loadStatusSettings, useStatusSettings } from "@/status/statusSettings";
@@ -946,7 +947,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const menuRun = useRef<(action: MenuAction) => void>(() => {});
   menuRun.current = (action) =>
     runMenuAction(action, {
-      openSettings: () => openSettings(),
+      openSettings: () => openSettings(undefined, undefined, undefined, true),
       openShortcuts: () => openSettings("keys"),
       openUpdates,
       confirmQuitEndAll: () => setConfirmEndAll(true),
@@ -980,7 +981,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       }
       setQuickOpen(true);
     },
-    "settings.open": () => openSettings(),
+    "settings.open": () => openSettings(undefined, undefined, undefined, true),
     "quickCommands.open": () => setQuickSeq((n) => n + 1),
     "settings.shortcuts": () => openSettings("keys"),
     "worktree.history.back": () => nav.back(),
@@ -1610,8 +1611,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     runHelpPick(pick, { openSettings: (page) => openSettings(page), openUpdates, openAbout, api });
   }
 
-  function openSettings(section?: string, arg?: string, target?: string): void {
-    setSettingsAt((s) => ({ section, arg, target, seq: s.seq + 1 }));
+  // `toggle`: asking for the place Settings already shows closes it instead.
+  function openSettings(section?: string, arg?: string, target?: string, toggle = false): void {
+    const next = settingsIntent(settingsAt, view === "settings", { section, arg, target }, toggle);
+    if (next.close) {
+      show("workspace");
+      return;
+    }
+    setSettingsAt(next.at);
     show("settings");
   }
 

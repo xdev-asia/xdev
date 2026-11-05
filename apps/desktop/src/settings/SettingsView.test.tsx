@@ -51,33 +51,34 @@ function view(initial?: string) {
 
 it("opens General first and switches to Vaults", () => {
   const v = view();
-  expect(SECTIONS.map((s) => s.id)).toEqual(["general", "appearance", "account", "agents", "orchestration", "automations", "usage", "notifications", "terminal", "editor", "repos", "openIn", "git", "vaults", "keys", "qcmd", "diagnostics"]);
+  expect(SECTIONS.map((s) => s.id)).toEqual(["general", "repos", "git", "terminal", "editor", "openIn", "agents", "orchestration", "automations", "usage", "appearance", "notifications", "keys", "qcmd", "account", "vaults", "diagnostics", "experimental"]);
   expect(v.items().map((n) => n.props.children)).toEqual([
     en("settings.general.title"),
-    en("settings.appearance.title"),
-    en("account.title"),
+    en("settings.repos.title"),
+    en("settings.git.title"),
+    en("settings.terminal.title"),
+    en("files.settings.title"),
+    en("openIn.title"),
     en("settings.agents.title"),
     en("settings.orchestration.title"),
     en("settings.automations.title"),
     en("settings.usage.title"),
+    en("settings.appearance.title"),
     en("settings.notifications.title"),
-    en("settings.terminal.title"),
-    en("files.settings.title"),
-    en("settings.repos.title"),
-    en("openIn.title"),
-    en("settings.git.title"),
-    en("settings.vaults.title"),
     en("keys.title"),
     en("qcmd.title"),
+    en("account.title"),
+    en("settings.vaults.title"),
     en("settings.diagnostics.title"),
+    en("settings.experimental.title"),
   ]);
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", ...Array(16).fill(undefined)]);
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", ...Array(17).fill(undefined)]);
   expect(v.shown().type).toBe(GeneralPage);
   expect(v.shown().props.api).toBe(v.api);
   expect(v.shown().props.onChanged).toBe(v.onChanged);
 
-  v.items()[13].props.onClick();
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual([...Array(13).fill(undefined), "page", undefined, undefined, undefined]);
+  v.items()[15].props.onClick();
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual([...Array(15).fill(undefined), "page", undefined, undefined]);
   expect(v.shown().type).toBe(VaultsSettings);
   expect(v.body().props["aria-label"]).toBe(en("settings.vaults.title"));
 });
@@ -92,20 +93,20 @@ it("an unknown initial section falls back to the first", () => {
   expect(view("nope").shown().type).toBe(GeneralPage);
 });
 
-it("lists notifications after usage and opens its page", () => {
+it("lists notifications under Interface and opens its page", () => {
   const v = view();
-  v.items()[7].props.onClick();
-  expect(v.items()[7].props["aria-current"]).toBe("page");
+  v.items()[11].props.onClick();
+  expect(v.items()[11].props["aria-current"]).toBe("page");
   expect(v.shown().type).toBe(NotificationsPage);
   expect(v.body().props["aria-label"]).toBe(en("settings.notifications.title"));
   hooks.values = [];
   expect(view("notifications").shown().type).toBe(NotificationsPage);
 });
 
-it("lists terminal after notifications and opens its page", () => {
+it("lists terminal under Workspace and opens its page", () => {
   const v = view();
-  v.items()[8].props.onClick();
-  expect(v.items()[8].props["aria-current"]).toBe("page");
+  v.items()[3].props.onClick();
+  expect(v.items()[3].props["aria-current"]).toBe("page");
   expect(v.shown().type).toBe(TerminalPage);
   expect(v.body().props["aria-label"]).toBe(en("settings.terminal.title"));
   hooks.values = [];
@@ -144,7 +145,7 @@ it("a query keeps only the sections with hits, with their hit count", () => {
   const v = search();
   v.box().props.onChange("font");
   const items = v.items();
-  expect(items.map((n) => n.props.children[0])).toEqual([en("settings.appearance.title"), en("settings.terminal.title"), en("files.settings.title")]);
+  expect(items.map((n) => n.props.children[0])).toEqual([en("settings.terminal.title"), en("files.settings.title"), en("settings.appearance.title")]);
   expect(items.every((n) => typeof n.props.children[1] === "object")).toBe(true);
 });
 
@@ -190,7 +191,7 @@ it("a palette target opens its section with the filter holding every id and the 
 it("hands a section the way to open another one", () => {
   const v = view();
   v.shown().props.openSection("openIn");
-  expect(v.items()[11].props["aria-current"]).toBe("page");
+  expect(v.items()[5].props["aria-current"]).toBe("page");
   expect(v.body().props["aria-label"]).toBe(en("openIn.title"));
   hooks.values = [];
   const w = view();
@@ -212,6 +213,37 @@ it("contains a page that throws in a boundary reset by the section, so the nav s
   expect(v.boundary().props).toMatchObject({ id: "page.settings", resetKey: "general", titleKey: "boundary.page.title" });
   // The nav is a sibling of the body, outside the boundary.
   expect(v.items()).toHaveLength(SECTIONS.length);
-  v.items()[13].props.onClick();
+  v.items()[15].props.onClick();
   expect(v.boundary().props.resetKey).toBe("vaults");
+});
+
+// --- groups ---
+
+import { GROUPS } from "./sections";
+
+it("every section is in exactly one known group, and each group has a section", () => {
+  const ids = GROUPS.map((g) => g.id);
+  for (const s of SECTIONS) expect(ids.filter((i) => i === s.group), s.id).toHaveLength(1);
+  for (const g of GROUPS) expect(SECTIONS.some((s) => s.group === g.id), g.id).toBe(true);
+});
+
+it("renders the groups in order, each heading above its sections", () => {
+  const v = view();
+  const all = v.draw();
+  const groups = all.filter((n) => n.props.className === "settings-nav-group");
+  expect(groups.map((g) => g.props["aria-label"])).toEqual(GROUPS.map((g) => en(g.labelKey)));
+  const headings = all.filter((n) => n.props.className === "settings-nav-heading");
+  expect(headings.map((h) => h.props.children)).toEqual(GROUPS.map((g) => en(g.labelKey)));
+  groups.forEach((g, i) => {
+    const labels = nodes(g.props.children).filter((n) => n.props.className === "settings-nav-item").map((n) => n.props.children);
+    expect(labels).toEqual(SECTIONS.filter((s) => s.group === GROUPS[i].id).map((s) => en(s.labelKey)));
+  });
+});
+
+it("a search hides the group with no hit", () => {
+  const w = search();
+  w.box().props.onChange("font");
+  const groups = w.draw().filter((n) => n.props.className === "settings-nav-group");
+  expect(groups.length).toBeLessThan(GROUPS.length);
+  expect(groups.length).toBeGreaterThan(0);
 });

@@ -6,6 +6,7 @@ import { AppearancePage } from "./AppearancePage";
 import { AutomationsSettingsPage } from "./AutomationsSettingsPage";
 import { DiagnosticsPage } from "./DiagnosticsPage";
 import { EditorPage } from "./EditorPage";
+import { ExperimentalPage } from "./ExperimentalPage";
 import { GeneralPage } from "./GeneralPage";
 import { GitSettings } from "./GitSettings";
 import { OpenInPage } from "./OpenInPage";
@@ -41,29 +42,43 @@ export interface SettingsFilter {
   target?: string;
 }
 
+export type SettingsGroupId = "workspace" | "agents" | "interface" | "integrations" | "advanced";
+
+/** The headings of the Settings list, in order. */
+export const GROUPS: { id: SettingsGroupId; labelKey: string }[] = [
+  { id: "workspace", labelKey: "settings.group.workspace" },
+  { id: "agents", labelKey: "settings.group.agents" },
+  { id: "interface", labelKey: "settings.group.interface" },
+  { id: "integrations", labelKey: "settings.group.integrations" },
+  { id: "advanced", labelKey: "settings.group.advanced" },
+];
+
 export interface SettingsSection {
   id: string;
   labelKey: string;
+  group: SettingsGroupId;
   Component: (p: SettingsSectionProps) => JSX.Element;
 }
 
-// The left list of the Settings view, in order; another section is one more entry.
+// The left list of the Settings view: the groups in GROUPS order, each section under its group in
+// this order; another section is one more entry.
 export const SECTIONS: SettingsSection[] = [
-  { id: "general", labelKey: "settings.general.title", Component: GeneralPage },
-  { id: "appearance", labelKey: "settings.appearance.title", Component: AppearancePage },
-  { id: "account", labelKey: "account.title", Component: AccountPage },
-  { id: "agents", labelKey: "settings.agents.title", Component: AgentsPage },
-  { id: "orchestration", labelKey: "settings.orchestration.title", Component: OrchestrationPage },
-  { id: "automations", labelKey: "settings.automations.title", Component: AutomationsSettingsPage },
-  { id: "usage", labelKey: "settings.usage.title", Component: UsagePage },
-  { id: "notifications", labelKey: "settings.notifications.title", Component: NotificationsPage },
-  { id: "terminal", labelKey: "settings.terminal.title", Component: TerminalPage },
-  { id: "editor", labelKey: "files.settings.title", Component: EditorPage },
-  { id: "repos", labelKey: "settings.repos.title", Component: ReposSettings },
-  { id: "openIn", labelKey: "openIn.title", Component: OpenInPage },
-  { id: "git", labelKey: "settings.git.title", Component: GitSettings },
-  { id: "vaults", labelKey: "settings.vaults.title", Component: VaultsSettings },
-  { id: "keys", labelKey: "keys.title", Component: ShortcutsPage },
-  { id: "qcmd", labelKey: "qcmd.title", Component: QuickCommandsPage },
-  { id: "diagnostics", labelKey: "settings.diagnostics.title", Component: DiagnosticsPage },
+  { id: "general", group: "workspace", labelKey: "settings.general.title", Component: GeneralPage },
+  { id: "repos", group: "workspace", labelKey: "settings.repos.title", Component: ReposSettings },
+  { id: "git", group: "workspace", labelKey: "settings.git.title", Component: GitSettings },
+  { id: "terminal", group: "workspace", labelKey: "settings.terminal.title", Component: TerminalPage },
+  { id: "editor", group: "workspace", labelKey: "files.settings.title", Component: EditorPage },
+  { id: "openIn", group: "workspace", labelKey: "openIn.title", Component: OpenInPage },
+  { id: "agents", group: "agents", labelKey: "settings.agents.title", Component: AgentsPage },
+  { id: "orchestration", group: "agents", labelKey: "settings.orchestration.title", Component: OrchestrationPage },
+  { id: "automations", group: "agents", labelKey: "settings.automations.title", Component: AutomationsSettingsPage },
+  { id: "usage", group: "agents", labelKey: "settings.usage.title", Component: UsagePage },
+  { id: "appearance", group: "interface", labelKey: "settings.appearance.title", Component: AppearancePage },
+  { id: "notifications", group: "interface", labelKey: "settings.notifications.title", Component: NotificationsPage },
+  { id: "keys", group: "interface", labelKey: "keys.title", Component: ShortcutsPage },
+  { id: "qcmd", group: "interface", labelKey: "qcmd.title", Component: QuickCommandsPage },
+  { id: "account", group: "integrations", labelKey: "account.title", Component: AccountPage },
+  { id: "vaults", group: "integrations", labelKey: "settings.vaults.title", Component: VaultsSettings },
+  { id: "diagnostics", group: "advanced", labelKey: "settings.diagnostics.title", Component: DiagnosticsPage },
+  { id: "experimental", group: "advanced", labelKey: "settings.experimental.title", Component: ExperimentalPage },
 ];

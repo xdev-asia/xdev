@@ -3476,5 +3476,15 @@
   "activity.selection.clear": "Bỏ chọn",
   "activity.cleared": "Đã xoá nguồn tin",
   "activity.undo": "Hoàn tác",
-  "attention.unread": "Chưa đọc"
+  "attention.unread": "Chưa đọc",
+  "language.system": "Theo hệ thống",
+  "settings.group.workspace": "Không gian làm việc",
+  "settings.group.agents": "Agent",
+  "settings.group.interface": "Giao diện",
+  "settings.group.integrations": "Tích hợp",
+  "settings.group.advanced": "Nâng cao",
+  "settings.experimental.title": "Thử nghiệm",
+  "settings.experimental.intro": "Các tính năng còn đang thử nghiệm. Chúng có thể thay đổi hoặc bị gỡ bỏ.",
+  "settings.experimental.autoSleep.open": "Mở trong Agent",
+  "settings.experimental.empty": "Hiện chưa có tính năng thử nghiệm nào."
 }

@@ -3476,5 +3476,15 @@
   "activity.selection.clear": "Clear selection",
   "activity.cleared": "Feed cleared",
   "activity.undo": "Undo",
-  "attention.unread": "Unread"
+  "attention.unread": "Unread",
+  "language.system": "System",
+  "settings.group.workspace": "Workspace",
+  "settings.group.agents": "Agents",
+  "settings.group.interface": "Interface",
+  "settings.group.integrations": "Integrations",
+  "settings.group.advanced": "Advanced",
+  "settings.experimental.title": "Experimental",
+  "settings.experimental.intro": "Features that are still being tested. They may change or be removed.",
+  "settings.experimental.autoSleep.open": "Open in Agents",
+  "settings.experimental.empty": "There are no experimental features right now."
 }

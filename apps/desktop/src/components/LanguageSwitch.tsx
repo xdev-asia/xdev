@@ -1,20 +1,20 @@
 import type { JSX } from "react";
-import { useI18n, type Locale } from "@/i18n";
+import { useI18n, type LocalePreference } from "@/i18n";
 
-const LOCALES: Locale[] = ["en", "vi"];
+const LOCALES: LocalePreference[] = ["system", "en", "vi"];
 
 export function LanguageSwitch(): JSX.Element {
-  const { locale, setLocale, t } = useI18n();
+  const { locale, preference, setLocale, t } = useI18n();
   return (
     <select
       className="lang-select"
       aria-label={t("language.label")}
       title={t("language.label")}
-      value={locale}
-      onChange={(e) => setLocale(e.target.value as Locale)}
+      value={preference ?? locale}
+      onChange={(e) => setLocale(e.target.value as LocalePreference)}
     >
       {LOCALES.map((l) => (
-        <option key={l} value={l} lang={l}>
+        <option key={l} value={l} lang={l === "system" ? undefined : l}>
           {t(`language.${l}`)}
         </option>
       ))}

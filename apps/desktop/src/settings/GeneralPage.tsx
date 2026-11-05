@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type ApiError, type DiffSettings, type NavigationSettings, type ShellSettings } from "@/api";
-import { useI18n, type Locale } from "@/i18n";
+import { useI18n, type LocalePreference } from "@/i18n";
 import { PLATFORM } from "@/platform";
 import { clampZoom, getZoom, stepZoom, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from "@/ui/zoom";
 import { setNavigationSettings } from "./navigationSettings";
@@ -17,7 +17,7 @@ export const DIFF_SWITCHES = ["ignoreWhitespace", "collapseUnchanged", "wordWrap
 // 50 % … 200 % in steps of `ZOOM_STEP`.
 // Catalog ids of the page, per group; a switch adds its key (`general.nav.confirmClosePinned`).
 const NAVIGATION_IDS = ["general.tabOrder", ...NAVIGATION_SWITCHES.map((k) => `general.nav.${k}`)];
-const LOCALES: Locale[] = ["en", "vi"];
+const LOCALES: LocalePreference[] = ["system", "en", "vi"];
 const WORKSPACE_IDS = ["general.language", "general.zoom", "general.restore", "general.openIn"];
 const UPDATE_IDS = ["general.updates", "general.updateChannel"];
 const DIFF_IDS = ["general.diffView", ...DIFF_SWITCHES.map((k) => `general.diff.${k}`)];
@@ -26,7 +26,7 @@ export const ZOOM_LEVELS: number[] = Array.from({ length: Math.round((ZOOM_MAX -
 /** Settings → General: navigation, workspace and diff preferences of the whole app. */
 export function GeneralPage(props: SettingsSectionProps): JSX.Element {
   const { api, openSection, filter } = props;
-  const { t, locale, setLocale } = useI18n();
+  const { t, locale, preference, setLocale } = useI18n();
   const [navigation, setNavigation] = useState<NavigationSettings | null>(null);
   const [diff, setDiff] = useState<DiffSettings | null>(null);
   const [zoom, setZoom] = useState(() => getZoom());
@@ -140,9 +140,9 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
       <div className="ws-fields">
         <label className="ws-field">
           <span>{t("language.label")}</span>
-          <select value={locale} data-field="language" onChange={(e) => setLocale(e.target.value as Locale)}>
+          <select value={preference ?? locale} data-field="language" onChange={(e) => setLocale(e.target.value as LocalePreference)}>
             {LOCALES.map((l) => (
-              <option key={l} value={l} lang={l}>
+              <option key={l} value={l} lang={l === "system" ? undefined : l}>
                 {t(`language.${l}`)}
               </option>
             ))}
