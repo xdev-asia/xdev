@@ -45,9 +45,9 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
       />
     );
   } else if (viewer === "image") {
-    body = <ImageView api={api} worktree={worktree} rel={rel} />;
+    body = <ImageView key={entry?.version ?? 0} api={api} worktree={worktree} rel={rel} />;
   } else if (viewer === "media") {
-    body = <MediaView api={api} worktree={worktree} rel={rel} />;
+    body = <MediaView key={entry?.version ?? 0} api={api} worktree={worktree} rel={rel} />;
   } else if (!entry || entry.status === "loading") {
     body = <p className="ws-empty">{t("files.loading")}</p>;
   } else if (entry.status === "error") {

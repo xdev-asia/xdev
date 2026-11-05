@@ -9,6 +9,8 @@ import { conflictChange, conflictDecorations } from "./conflictDecorations";
 import { parseConflicts } from "./conflictMarkers";
 import { ExternalChange } from "./ExternalChangeBanner";
 import { FileView } from "./FileView";
+import { ImageView } from "./ImageView";
+import { MediaView } from "./MediaView";
 import { LoadError } from "./LoadError";
 import { fileTabs, isDirty } from "./fileTabs";
 
@@ -209,4 +211,14 @@ it("a read refused as too large keeps the too large note", () => {
   const all = draw(createMockApi({}));
   expect(all.find((n) => n.type === LoadError)).toBeUndefined();
   expect(all.some((n) => n.props.children === en("files.tooLarge"))).toBe(true);
+});
+
+it("an image or media view is drawn anew when its file changed on disk", () => {
+  for (const [rel, View] of [["pic.png", ImageView], ["clip.mp4", MediaView]] as const) {
+    fileTabs.open(W, rel);
+    const keyOf = () => draw(createMockApi({}), rel).find((n) => n.type === View)!.key;
+    const before = keyOf();
+    fileTabs.revise(W, rel);
+    expect(keyOf()).not.toBe(before);
+  }
 });

@@ -1,6 +1,7 @@
 import { toApiError, type FsEvent } from "@/api";
 import type { FileIo } from "./fileIO";
 import { isDirty } from "./fileTabs";
+import { viewerOf } from "./viewer";
 
 /** The clock `reconcile` uses; tests pass their own. */
 export interface Timers {
@@ -24,6 +25,9 @@ const settles = new Map<string, Pending>();
 const waits = new Map<string, () => void>();
 
 const keyOf = (worktree: string, rel: string) => `${worktree}\0${rel}`;
+
+/** Images and media: their view reads the bytes itself, so there is no text to compare. */
+const readsItself = (rel: string) => viewerOf(rel) === "image" || viewerOf(rel) === "media";
 
 function cancel(map: Map<string, Pending>, k: string): void {
   const p = map.get(k);
@@ -86,6 +90,11 @@ function afterSave(io: FileIo, worktree: string, rel: string, timers: Timers): v
  */
 async function check(io: FileIo, worktree: string, rel: string, timers: Timers): Promise<void> {
   const { api, store } = io;
+  if (readsItself(rel)) {
+    // The view reads the bytes again; a mark the file came back from is cleared.
+    if (store.get(worktree, rel)) store.revise(worktree, rel);
+    return;
+  }
   const usable = () => {
     const e = store.get(worktree, rel);
     return e && e.status === "ready" && e.kind === "text" ? e : null;
@@ -119,7 +128,11 @@ export function reconcile(io: FileIo, worktree: string, batch: FsEvent[], timers
   const { store } = io;
   if (batch.some((e) => e.kind === "overflow")) {
     // Events were lost: every open file is read again.
-    for (const e of store.list(worktree)) scheduleRead(io, worktree, e.rel, timers);
+    for (const e of store.list(worktree)) {
+      // Reading an image or media file again would reset its zoom or playback for nothing.
+      if (readsItself(e.rel) && e.external === null) continue;
+      scheduleRead(io, worktree, e.rel, timers);
+    }
     return;
   }
   const basename = (rel: string) => rel.slice(rel.lastIndexOf("/") + 1);

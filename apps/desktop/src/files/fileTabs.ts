@@ -55,6 +55,8 @@ export interface FileEntry {
   external: ExternalState | null;
   saving: boolean;
   goto?: Goto;
+  /** Bumped when the file changed on disk; image and media views are drawn anew on a new one. */
+  version?: number;
 }
 
 export type ExternalState = "changed" | "deleted" | "renamed";
@@ -160,6 +162,12 @@ export class FileTabs {
   markExternal(worktree: string, rel: string, state: ExternalState | null): void {
     const old = this.get(worktree, rel);
     if (old && old.external !== state) this.put({ ...old, external: state });
+  }
+
+  /** The file changed on disk and its view reads it itself (an image, media): clears the mark, bumps `version`. */
+  revise(worktree: string, rel: string): void {
+    const old = this.get(worktree, rel);
+    if (old) this.put({ ...old, external: null, version: (old.version ?? 0) + 1 });
   }
 
   /**

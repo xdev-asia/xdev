@@ -208,3 +208,31 @@ it("reloadWithUndo of a clean file pushes no toast", async () => {
   expect(store.get(W, "a.ts")!.text).toBe("disk");
   expect(getToasts()).toHaveLength(before);
 });
+
+it("a create of an image marked deleted clears the mark and reloads the view", async () => {
+  const { store, clock, read, feed } = setup({});
+  store.open(W, "img/logo.png");
+  feed(ev("delete", "img/logo.png", null));
+  await clock.advance(DELETE_SETTLE_MS);
+  expect(store.get(W, "img/logo.png")!.external).toBe("deleted");
+  const before = store.get(W, "img/logo.png")!.version ?? 0;
+  feed(ev("create", "img/logo.png"));
+  await clock.advance(RELOAD_DEBOUNCE_MS);
+  expect(store.get(W, "img/logo.png")).toMatchObject({ external: null, version: before + 1 });
+  // Bytes are read by the view, never as text here.
+  expect(read).not.toHaveBeenCalled();
+});
+
+it("an update of an open image or media file reloads its view; an overflow leaves an unmarked one alone", async () => {
+  const { store, clock, feed } = setup({});
+  store.open(W, "a.png");
+  store.open(W, "clip.mp4");
+  feed(ev("update", "a.png"), ev("update", "clip.mp4"));
+  await clock.advance(RELOAD_DEBOUNCE_MS);
+  expect(store.get(W, "a.png")!.version).toBe(1);
+  expect(store.get(W, "clip.mp4")!.version).toBe(1);
+  // An overflow (focus, a restart) would reset zoom and replay media for nothing.
+  feed(ev("overflow", "", null));
+  await clock.advance(RELOAD_DEBOUNCE_MS);
+  expect(store.get(W, "a.png")!.version).toBe(1);
+});
