@@ -8,9 +8,11 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use crate::logs::{for_each_line, is_blank, line_time, log_files, mtime_ns, parse_line, start_at};
+use crate::logs::{
+    LINE_BUF_MAX, LineRead, for_each_record, log_files, mtime_ns, parse_ts, start_at,
+};
+use crate::records::{ClaudeLine, CodexLine, CodexPayload, Content, Obj, Str};
 use crate::{Agent, FileMark, Home, KitError, RefreshStats};
 
 const VERSION: u32 = 1;
@@ -93,6 +95,19 @@ impl SessionIndex {
     /// touched since the last call is not opened; a log that is gone takes
     /// its session with it.
     pub fn refresh(&mut self, homes: &[Home]) -> RefreshStats {
+        self.refresh_since(homes, None, &mut |_| {})
+    }
+
+    /// `refresh`, where a log not yet in the index and last written before
+    /// `since_ms` is not opened: its lines can only be older. It gets no mark,
+    /// so a wider window reads it later. `after_file` is called after each log
+    /// that was read, for progress.
+    pub fn refresh_since(
+        &mut self,
+        homes: &[Home],
+        since_ms: Option<i64>,
+        after_file: &mut dyn FnMut(&Self),
+    ) -> RefreshStats {
         let mut stats = RefreshStats::default();
         if self.version != VERSION {
             *self = Self::default();
@@ -107,7 +122,9 @@ impl SessionIndex {
                 if !present.insert(file_key.clone()) {
                     continue;
                 }
-                self.refresh_file(home, &file, &file_key, &mut stats);
+                if self.refresh_file(home, &file, &file_key, since_ms, &mut stats) {
+                    after_file(self);
+                }
             }
         }
         let gone: Vec<String> = self
@@ -124,19 +141,30 @@ impl SessionIndex {
         stats
     }
 
-    fn refresh_file(&mut self, home: &Home, path: &Path, file_key: &str, stats: &mut RefreshStats) {
+    /// Whether the log was opened.
+    fn refresh_file(
+        &mut self,
+        home: &Home,
+        path: &Path,
+        file_key: &str,
+        since_ms: Option<i64>,
+        stats: &mut RefreshStats,
+    ) -> bool {
         let Ok(meta) = fs::metadata(path) else {
-            return;
+            return false;
         };
         let len = meta.len();
         let mtime_ns = mtime_ns(&meta);
+        if !self.files.contains_key(file_key) && is_older(mtime_ns, since_ms) {
+            return false;
+        }
         let mut start = 0;
         let mut last_reply = None;
         let mut existing = None;
         let old_key = self.files.get(file_key).map(|m| m.session.clone());
         if let Some(mark) = self.files.get(file_key) {
             let Some(from) = start_at(mark, len, mtime_ns) else {
-                return;
+                return false;
             };
             if from > 0
                 && let Some(session) = self.sessions.get(&mark.session)
@@ -157,8 +185,8 @@ impl SessionIndex {
             Agent::Claude => read_claude(path, start, &mut session, &mut read),
             Agent::Codex => read_codex(path, start, existed, &mut session, &mut read),
         };
-        let Ok(offset) = result else {
-            return;
+        let Ok(LineRead { offset, .. }) = result else {
+            return false;
         };
         stats.files_read += 1;
         stats.bad_lines += read.bad;
@@ -184,6 +212,7 @@ impl SessionIndex {
                 recent_ids: read.last_reply.into_iter().collect(),
             },
         );
+        true
     }
 
     /// Drops the sessions whose `last` is before `older_than_ms`. Their file
@@ -200,6 +229,11 @@ impl SessionIndex {
         out.sort_by(|a, b| b.last.cmp(&a.last).then_with(|| a.key.cmp(&b.key)));
         out
     }
+}
+
+/// Whether a log last written at `mtime_ns` is before `since_ms`.
+pub(crate) fn is_older(mtime_ns: i128, since_ms: Option<i64>) -> bool {
+    since_ms.is_some_and(|since| mtime_ns < i128::from(since) * 1_000_000)
 }
 
 /// What one read of a log carries besides the session.
@@ -246,8 +280,8 @@ pub(crate) fn uuid_tail(stem: &str) -> Option<&str> {
     ok.then_some(tail)
 }
 
-fn note_time(session: &mut AgentSession, v: &Value) {
-    if let Some(ms) = line_time(v) {
+fn note_time(session: &mut AgentSession, timestamp: &Str) {
+    if let Some(ms) = timestamp.raw().and_then(parse_ts) {
         if session.first == 0 || ms < session.first {
             session.first = ms;
         }
@@ -255,14 +289,6 @@ fn note_time(session: &mut AgentSession, v: &Value) {
             session.last = ms;
         }
     }
-}
-
-pub(crate) fn str_at<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
-    v.get(key).and_then(Value::as_str).filter(|s| !s.is_empty())
-}
-
-pub(crate) fn type_of(v: &Value) -> Option<&str> {
-    v.get("type").and_then(Value::as_str)
 }
 
 /// Text the CLI puts around or in place of a prompt: `<tag>…`, an interrupt
@@ -282,6 +308,9 @@ fn title_of(text: &str) -> Option<String> {
             out.push(' ');
         }
         out.push_str(word);
+        if out.len() > TITLE_CHARS * 4 {
+            break;
+        }
     }
     let out: String = out.chars().take(TITLE_CHARS).collect();
     let out = out.trim_end();
@@ -289,26 +318,21 @@ fn title_of(text: &str) -> Option<String> {
 }
 
 /// A typed prompt's text; `Some("")` when it holds only images.
-pub(crate) fn claude_prompt(content: &Value) -> Option<&str> {
+pub(crate) fn claude_prompt(content: &Content) -> Option<&str> {
     match content {
-        Value::String(s) => (!is_wrapper(s)).then_some(s.as_str()),
-        Value::Array(items) => {
-            if items.iter().any(|i| type_of(i) == Some("tool_result")) {
+        Content::Text(s) => s.raw().filter(|s| !is_wrapper(s)),
+        Content::Items(_) => {
+            let items = || content.items().iter().filter_map(Obj::get);
+            if items().any(|i| i.kind.is("tool_result")) {
                 return None;
             }
-            let text = items
-                .iter()
-                .filter(|i| type_of(i) == Some("text"))
-                .filter_map(|i| i.get("text").and_then(Value::as_str))
+            let text = items()
+                .filter(|i| i.kind.is("text"))
+                .filter_map(|i| i.text.raw())
                 .find(|t| !is_wrapper(t));
-            text.or_else(|| {
-                items
-                    .iter()
-                    .any(|i| type_of(i) == Some("image"))
-                    .then_some("")
-            })
+            text.or_else(|| items().any(|i| i.kind.is("image")).then_some(""))
         }
-        _ => None,
+        Content::None => None,
     }
 }
 
@@ -319,49 +343,45 @@ fn add_prompt(session: &mut AgentSession, text: &str) {
     }
 }
 
-pub(crate) fn flag(v: &Value, key: &str) -> bool {
-    v.get(key).and_then(Value::as_bool) == Some(true)
-}
-
 /// Claude Code: `<home>/projects/*/<session id>.jsonl`.
 fn read_claude(
     path: &Path,
     start: u64,
     session: &mut AgentSession,
     read: &mut Read,
-) -> io::Result<u64> {
-    for_each_line(path, start, |_, line| {
-        let Some(v) = parse_line(line) else {
-            if !is_blank(line) {
-                read.bad += 1;
-            }
+) -> io::Result<LineRead> {
+    for_each_record::<Obj<ClaudeLine>>(path, start, LINE_BUF_MAX, |line| {
+        let Some(line) = line else {
+            read.bad += 1;
             return;
         };
+        let v = line.0.unwrap_or_default();
         read.touched = true;
-        note_time(session, &v);
+        note_time(session, &v.timestamp);
         if session.cwd.is_none() {
-            session.cwd = str_at(&v, "cwd").map(str::to_string);
+            session.cwd = v.cwd.get().map(str::to_string);
         }
-        if let Some(branch) = str_at(&v, "gitBranch") {
+        if let Some(branch) = v.git_branch.get() {
             session.branch = Some(branch.to_string());
         }
-        if flag(&v, "isSidechain") || flag(&v, "isMeta") {
+        if v.is_sidechain.0 || v.is_meta.0 {
             return;
         }
-        let Some(message) = v.get("message") else {
+        let Some(message) = v.message else {
             return;
         };
-        match type_of(&v) {
+        let message = message.0.unwrap_or_default();
+        match v.kind.raw() {
             Some("user") => {
-                if let Some(text) = message.get("content").and_then(claude_prompt) {
+                if let Some(text) = claude_prompt(&message.content) {
                     add_prompt(session, text);
                 }
             }
             Some("assistant") => {
-                if let Some(model) = str_at(message, "model").filter(|m| !m.starts_with('<')) {
+                if let Some(model) = message.model.get().filter(|m| !m.starts_with('<')) {
                     session.model = Some(model.to_string());
                 }
-                let id = str_at(message, "id");
+                let id = message.id.get();
                 if id.is_none() || id != read.last_reply.as_deref() {
                     session.messages = session.messages.saturating_add(1);
                     read.last_reply = id.map(str::to_string);
@@ -373,12 +393,12 @@ fn read_claude(
 }
 
 /// The text of a Codex message, wrappers left out.
-pub(crate) fn codex_text(payload: &Value) -> Option<&str> {
+pub(crate) fn codex_text(payload: &CodexPayload) -> Option<&str> {
     payload
-        .get("content")
-        .and_then(Value::as_array)?
+        .content
+        .items()
         .iter()
-        .filter_map(|i| i.get("text").and_then(Value::as_str))
+        .filter_map(|i| i.get()?.text.raw())
         .find(|t| !is_wrapper(t))
 }
 
@@ -390,54 +410,50 @@ fn read_codex(
     resumed: bool,
     session: &mut AgentSession,
     read: &mut Read,
-) -> io::Result<u64> {
-    for_each_line(path, start, |_, line| {
-        let Some(v) = parse_line(line) else {
-            if !is_blank(line) {
-                read.bad += 1;
-            }
+) -> io::Result<LineRead> {
+    for_each_record::<Obj<CodexLine>>(path, start, LINE_BUF_MAX, |line| {
+        let Some(line) = line else {
+            read.bad += 1;
             return;
         };
+        let v = line.0.unwrap_or_default();
         read.touched = true;
-        note_time(session, &v);
-        let Some(payload) = v.get("payload") else {
+        note_time(session, &v.timestamp);
+        let Some(payload) = v.payload else {
             return;
         };
-        match type_of(&v) {
+        let payload = payload.0.unwrap_or_default();
+        match v.kind.raw() {
             Some("session_meta") => {
-                if let Some(id) = str_at(payload, "id").filter(|_| !resumed) {
+                if let Some(id) = payload.id.get().filter(|_| !resumed) {
                     session.id = id.to_string();
                 }
-                if let Some(cwd) = str_at(payload, "cwd") {
+                if let Some(cwd) = payload.cwd.get() {
                     session.cwd = Some(cwd.to_string());
                 }
-                if let Some(branch) = payload.get("git").and_then(|g| str_at(g, "branch")) {
+                if let Some(branch) = payload.git.get().and_then(|g| g.branch.get()) {
                     session.branch = Some(branch.to_string());
                 }
             }
             Some("turn_context") => {
                 if session.cwd.is_none() {
-                    session.cwd = str_at(payload, "cwd").map(str::to_string);
+                    session.cwd = payload.cwd.get().map(str::to_string);
                 }
-                if let Some(model) = str_at(payload, "model") {
+                if let Some(model) = payload.model.get() {
                     session.model = Some(model.to_string());
                 }
             }
-            Some("response_item") if type_of(payload) == Some("message") => {
-                match payload.get("role").and_then(Value::as_str) {
-                    Some("user") => {
-                        if let Some(text) = codex_text(payload) {
-                            add_prompt(session, text);
-                        }
+            Some("response_item") if payload.kind.is("message") => match payload.role.raw() {
+                Some("user") => {
+                    if let Some(text) = codex_text(&payload) {
+                        add_prompt(session, text);
                     }
-                    Some("assistant") => session.messages = session.messages.saturating_add(1),
-                    _ => {}
                 }
-            }
-            Some("event_msg")
-                if type_of(payload) == Some("user_message") && session.title.is_none() =>
-            {
-                session.title = str_at(payload, "message").and_then(title_of);
+                Some("assistant") => session.messages = session.messages.saturating_add(1),
+                _ => {}
+            },
+            Some("event_msg") if payload.kind.is("user_message") && session.title.is_none() => {
+                session.title = payload.message.get().and_then(title_of);
             }
             _ => {}
         }

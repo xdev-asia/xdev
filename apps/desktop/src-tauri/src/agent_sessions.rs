@@ -364,7 +364,7 @@ fn refresh_text_in(
     let before = marks.clone();
     let mut pending = Pending::default();
     let mut failed: Option<CmdError> = None;
-    scan_transcripts(homes, &mut marks, &mut |event| {
+    scan_transcripts(homes, &mut marks, None, &mut |event| {
         if failed.is_some() {
             return;
         }

@@ -3,16 +3,21 @@
 //! that knows where each CLI keeps its logs.
 
 use std::fs;
-use std::io::{self, BufRead, BufReader, Seek, SeekFrom};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{Agent, Home};
 
 const MAX_CODEX_DEPTH: usize = 6;
+
+/// The longest line read into memory whole. A longer one (a tool result or
+/// an image of many MB) is parsed as it streams past.
+pub(crate) const LINE_BUF_MAX: usize = 1 << 20;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileMark {
@@ -131,6 +136,170 @@ pub(crate) fn for_each_line(
     }
 }
 
+/// What one `for_each_record` call did.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct LineRead {
+    /// Just after the last complete line.
+    pub offset: u64,
+    /// Lines longer than the buffer cap, parsed as they streamed.
+    pub long_lines: usize,
+    /// The largest capacity the line buffer reached.
+    pub buf_peak: usize,
+}
+
+/// Calls `f` with each complete, non-blank line from `start` read as `T`
+/// (`None` when it does not parse). A last line without `\n` is left for
+/// the next call. At most `buf_max` bytes of a line are held: a longer line
+/// is parsed from the file as it is read, so only the fields `T` keeps cost
+/// memory.
+pub(crate) fn for_each_record<T: DeserializeOwned>(
+    path: &Path,
+    start: u64,
+    buf_max: usize,
+    mut f: impl FnMut(Option<T>),
+) -> io::Result<LineRead> {
+    let mut file = fs::File::open(path)?;
+    file.seek(SeekFrom::Start(start))?;
+    let mut reader = BufReader::with_capacity(64 * 1024, file);
+    let mut done = LineRead {
+        offset: start,
+        ..LineRead::default()
+    };
+    let mut buf: Vec<u8> = Vec::new();
+    loop {
+        buf.clear();
+        let mut complete = false;
+        let mut long = false;
+        loop {
+            let avail = reader.fill_buf()?;
+            if avail.is_empty() {
+                break;
+            }
+            let (take, newline) = match avail.iter().position(|b| *b == b'\n') {
+                Some(i) => (i + 1, true),
+                None => (avail.len(), false),
+            };
+            let room = buf_max - buf.len();
+            if take > room {
+                grow(&mut buf, room, buf_max);
+                buf.extend_from_slice(&avail[..room]);
+                reader.consume(room);
+                long = true;
+                break;
+            }
+            grow(&mut buf, take, buf_max);
+            buf.extend_from_slice(&avail[..take]);
+            reader.consume(take);
+            if newline {
+                complete = true;
+                break;
+            }
+        }
+        done.buf_peak = done.buf_peak.max(buf.capacity());
+        if long {
+            let mut src = LineSrc {
+                head: &buf,
+                at: 0,
+                reader: &mut reader,
+                len: 0,
+                ended: false,
+                blank: true,
+            };
+            // The parser asks one byte at a time; a small buffer, which cannot
+            // read past the line's end, keeps those calls cheap.
+            let mut bytes = io::BufReader::with_capacity(LONG_LINE_CHUNK, &mut src);
+            let parsed = {
+                let mut de = serde_json::Deserializer::from_reader(&mut bytes);
+                T::deserialize(&mut de).and_then(|t| de.end().map(|()| t))
+            };
+            // What the parser left of the line, an error's rest included.
+            io::copy(&mut bytes, &mut io::sink())?;
+            drop(bytes);
+            if !src.ended {
+                return Ok(done);
+            }
+            done.offset += src.len;
+            done.long_lines += 1;
+            if !src.blank {
+                f(parsed.ok());
+            }
+            continue;
+        }
+        if !complete {
+            return Ok(done);
+        }
+        done.offset += buf.len() as u64;
+        let mut line = &buf[..buf.len() - 1];
+        if line.last() == Some(&b'\r') {
+            line = &line[..line.len() - 1];
+        }
+        if !is_blank(line) {
+            f(serde_json::from_slice::<T>(line).ok());
+        }
+    }
+}
+
+/// Room for `more` bytes in `buf`, its capacity never past `max`.
+fn grow(buf: &mut Vec<u8>, more: usize, max: usize) {
+    let need = buf.len() + more;
+    if need > buf.capacity() {
+        let want = need.max(buf.capacity() * 2).max(256).min(max);
+        buf.reserve_exact(want - buf.len());
+    }
+}
+
+/// One line as a reader: the bytes already buffered, then the file up to and
+/// with the next `\n`.
+/// The chunk a long line is parsed through.
+const LONG_LINE_CHUNK: usize = 8 << 10;
+
+struct LineSrc<'a, R> {
+    head: &'a [u8],
+    at: usize,
+    reader: &'a mut R,
+    /// Bytes given, `\n` included.
+    len: u64,
+    /// The `\n` was reached.
+    ended: bool,
+    blank: bool,
+}
+
+impl<R: BufRead> Read for LineSrc<'_, R> {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        if out.is_empty() || self.ended {
+            return Ok(0);
+        }
+        let n = if self.at < self.head.len() {
+            let n = out.len().min(self.head.len() - self.at);
+            out[..n].copy_from_slice(&self.head[self.at..self.at + n]);
+            self.at += n;
+            n
+        } else {
+            let avail = self.reader.fill_buf()?;
+            if avail.is_empty() {
+                return Ok(0);
+            }
+            let end = avail
+                .iter()
+                .position(|b| *b == b'\n')
+                .map_or(avail.len(), |i| i + 1);
+            let n = out.len().min(end);
+            out[..n].copy_from_slice(&avail[..n]);
+            self.reader.consume(n);
+            n
+        };
+        let got = &out[..n];
+        if got.last() == Some(&b'\n') {
+            self.ended = true;
+        }
+        if self.blank && !is_blank(got) {
+            self.blank = false;
+        }
+        self.len += n as u64;
+        Ok(n)
+    }
+}
+
 pub(crate) fn parse_line(line: &[u8]) -> Option<Value> {
     if line.iter().all(u8::is_ascii_whitespace) {
         return None;
@@ -219,4 +388,89 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let doy = (153 * mp + 2) / 5 + d - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     era * 146_097 + doe - 719_468
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use serde::Deserialize;
+
+    use super::*;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Rec {
+        #[serde(default)]
+        n: u32,
+        #[serde(default)]
+        t: String,
+    }
+
+    fn read(content: &[u8], buf_max: usize) -> (Vec<Option<Rec>>, LineRead) {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a.jsonl");
+        fs::write(&file, content).unwrap();
+        let mut got = Vec::new();
+        let done = for_each_record::<Rec>(&file, 0, buf_max, |r| got.push(r)).unwrap();
+        (got, done)
+    }
+
+    #[test]
+    fn a_line_past_the_cap_streams_and_the_buffer_stays_capped() {
+        let big = "x".repeat(200_000);
+        let content = format!(
+            "{{\"n\":1}}\n{{\"n\":2,\"skip\":\"{big}\",\"t\":\"kept\"}}\r\n  \n{{\"n\":3}}\n"
+        );
+        let (got, done) = read(content.as_bytes(), 1024);
+        assert_eq!(
+            got,
+            vec![
+                Some(Rec {
+                    n: 1,
+                    t: String::new()
+                }),
+                Some(Rec {
+                    n: 2,
+                    t: "kept".into()
+                }),
+                Some(Rec {
+                    n: 3,
+                    t: String::new()
+                }),
+            ]
+        );
+        assert_eq!(done.long_lines, 1);
+        assert!(done.buf_peak <= 1024, "buffer grew to {}", done.buf_peak);
+        assert_eq!(done.offset, content.len() as u64);
+    }
+
+    #[test]
+    fn a_long_line_that_does_not_parse_is_bad_and_the_next_is_read() {
+        let content = format!("{{\"n\":{}\n{{\"n\":4}}\n", "9".repeat(5000));
+        let (got, done) = read(content.as_bytes(), 512);
+        assert_eq!(
+            got,
+            vec![
+                None,
+                Some(Rec {
+                    n: 4,
+                    t: String::new()
+                })
+            ]
+        );
+        assert_eq!(done.offset, content.len() as u64);
+    }
+
+    #[test]
+    fn an_unfinished_last_line_is_left_long_or_short() {
+        let short = "{\"n\":1}\n{\"n\":2}";
+        let (got, done) = read(short.as_bytes(), 512);
+        assert_eq!(got.len(), 1);
+        assert_eq!(done.offset, 8);
+        let long = format!("{{\"n\":1}}\n{{\"t\":\"{}\"}}", "y".repeat(4000));
+        let (got, done) = read(long.as_bytes(), 512);
+        assert_eq!(got.len(), 1);
+        assert_eq!(done.offset, 8);
+        assert_eq!(done.long_lines, 0);
+    }
 }

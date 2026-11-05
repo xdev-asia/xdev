@@ -5,6 +5,7 @@ mod homes;
 mod logs;
 mod memory;
 mod pricing;
+mod records;
 mod sessions;
 mod skills;
 mod transcripts;
