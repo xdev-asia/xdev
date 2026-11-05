@@ -72,4 +72,18 @@ showIssuesTab: boolean,
  * The prompts behind the agent actions. A part that does not parse
  * falls back to the defaults on its own.
  */
-recipes: GitRecipes, };
+recipes: GitRecipes, 
+/**
+ * Where new worktrees go for a repo whose own folder is the default; an
+ * absolute path, or empty for `<repo parent>/wt`.
+ */
+worktreeDir: string, 
+/**
+ * The worktree folders last used, newest first, at most
+ * `WORKTREE_DIR_HISTORY_MAX`.
+ */
+worktreeDirHistory: Array<string>, 
+/**
+ * The tip that the local base is behind its upstream was turned off.
+ */
+localBaseRefreshTipDismissed: boolean, };

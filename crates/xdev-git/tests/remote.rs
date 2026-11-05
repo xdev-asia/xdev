@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Command;
 
 use tempfile::TempDir;
-use xdev_git::{BaseRefresh, GitError, LineCount, Repo, Upstream};
+use xdev_git::{BaseDrift, BaseRefresh, GitError, LineCount, Repo, Upstream};
 
 /// Runs setup commands; never used for the code under test.
 fn git(dir: &Path, args: &[&str]) -> String {
@@ -518,4 +518,48 @@ fn branch_vs_base_splits_tests_and_generated() {
     let range = fx.repo.branch_vs_base("main", 10).unwrap();
     assert_eq!(range.generated.added, 6);
     assert_eq!(range.tests.added, 1);
+}
+
+#[test]
+fn drift_reads_the_last_fetch_only() {
+    let fx = Fixture::new();
+    let drift = |base: &str| fx.repo.local_base_drift(base).unwrap();
+    let even = BaseDrift {
+        local: "main".into(),
+        upstream: "origin/main".into(),
+        ahead: 0,
+        behind: 0,
+    };
+    assert_eq!(drift("origin/main"), Some(even.clone()));
+    // The remote moved but nothing was fetched yet.
+    move_remote_main(&fx, "m.txt");
+    assert_eq!(drift("origin/main"), Some(even));
+    git(fx.work.path(), &["fetch", "-q", "origin"]);
+    assert_eq!(drift("origin/main").map(|d| d.behind), Some(1));
+    assert_eq!(
+        fx.repo.refresh_local_base("origin/main").unwrap(),
+        BaseRefresh::Updated
+    );
+    assert_eq!(drift("origin/main").map(|d| d.behind), Some(0));
+}
+
+#[test]
+fn drift_follows_a_local_base_upstream_and_skips_the_rest() {
+    let fx = Fixture::new();
+    let w = fx.work.path();
+    git(w, &["branch", "--set-upstream-to=origin/main", "main"]);
+    git(w, &["switch", "-q", "main"]);
+    commit_file(w, "mine.txt", "mine\n");
+    git(w, &["switch", "-q", "feat"]);
+    move_remote_main(&fx, "m.txt");
+    git(w, &["fetch", "-q", "origin"]);
+    let d = fx.repo.local_base_drift("main").unwrap().unwrap();
+    assert_eq!(
+        (d.upstream.as_str(), d.ahead, d.behind),
+        ("origin/main", 1, 1)
+    );
+    // No upstream, no remote branch, no such base.
+    assert_eq!(fx.repo.local_base_drift("feat").unwrap(), None);
+    assert_eq!(fx.repo.local_base_drift("origin/nope").unwrap(), None);
+    assert_eq!(fx.repo.local_base_drift("nope").unwrap(), None);
 }

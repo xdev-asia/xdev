@@ -11,4 +11,9 @@ folder: string,
 /**
  * A suffix was added because the typed name is taken.
  */
-suffixed: boolean, };
+suffixed: boolean, 
+/**
+ * A remote-tracking branch of the same name, `origin/<branch>`, as of
+ * the last fetch; absent when there is none.
+ */
+remote?: string, };

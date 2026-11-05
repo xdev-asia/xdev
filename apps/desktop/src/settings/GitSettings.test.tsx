@@ -247,3 +247,48 @@ it("shows the Issues defaults: all issues and the tab shown, and stores each cha
   expect(stored.issuesDefaultView).toBe("review");
   expect(stored.showIssuesTab).toBe(false);
 });
+
+it("shows the base-behind tip on by default and stores it turned off", async () => {
+  const v = await view();
+  const tip = () => v.all().find((n) => n.props.role === "switch" && n.props["aria-labelledby"] === "settings-git-base-tip")!;
+  expect(tip().props["aria-checked"]).toBe(true);
+  tip().props.onClick();
+  await tick();
+  expect(tip().props["aria-checked"]).toBe(false);
+  expect((await v.api.gitSettings()).localBaseRefreshTipDismissed).toBe(true);
+});
+
+it("saves a typed worktree folder on Enter, refuses a relative one, and picks from history and the folder picker", async () => {
+  const v = await view({ git: { worktreeDirHistory: ["/old"] } });
+  const dir = () => v.all().find((n) => n.type === "input" && n.props.name === "worktreeDir")!;
+  const recent = () => v.all().find((n) => n.props["data-field"] === "worktreeDirHistory");
+  expect(dir().props.value).toBe("");
+  expect(recent()!.props.options.map((o: { value: string }) => o.value)).toEqual(["", "/old"]);
+
+  dir().props.onChange({ target: { value: "trees" } });
+  dir().props.onKeyDown({ key: "Enter" });
+  await tick();
+  expect(dir().props["aria-invalid"]).toBe(true);
+  expect(v.html()).toContain(en("settings.git.worktreeDirBad"));
+  expect((await v.api.gitSettings()).worktreeDir).toBe("");
+
+  dir().props.onChange({ target: { value: " /trees " } });
+  dir().props.onKeyDown({ key: "Enter" });
+  await tick();
+  expect(dir().props.value).toBe("/trees");
+  expect(await v.api.gitSettings()).toMatchObject({ worktreeDir: "/trees", worktreeDirHistory: ["/trees", "/old"] });
+
+  recent()!.props.onChange({ target: { value: "/old" } });
+  await tick();
+  expect(await v.api.gitSettings()).toMatchObject({ worktreeDir: "/old", worktreeDirHistory: ["/old", "/trees"] });
+
+  vi.spyOn(v.api, "pickFolder").mockResolvedValue("/picked");
+  v.all().find((n) => n.props["data-worktree-dir-choose"])!.props.onClick();
+  await tick();
+  expect(await v.api.gitSettings()).toMatchObject({ worktreeDir: "/picked", worktreeDirHistory: ["/picked", "/old", "/trees"] });
+
+  dir().props.onChange({ target: { value: "" } });
+  dir().props.onBlur();
+  await tick();
+  expect(await v.api.gitSettings()).toMatchObject({ worktreeDir: "", worktreeDirHistory: ["/picked", "/old", "/trees"] });
+});

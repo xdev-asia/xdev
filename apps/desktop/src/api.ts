@@ -7,6 +7,7 @@ import type {
   AccountSource,
   ActiveAccount,
   AgentsSettings,
+  SparsePreset,
   OrchestrationSettings,
   SkillStatus,
   WorkerLifetime,
@@ -485,6 +486,8 @@ export type {
   Created,
   NamePreview,
   ProjectKind,
+  SparsePreset,
+  BaseDrift,
 } from "@xdev/bindings";
 // The UI's names for generated types.
 export type { Event as SquadEvent, FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
@@ -699,6 +702,9 @@ export type RepoPatch = {
   icon?: RepoIcon | null;
   ghAccount?: GhAccount | null;
   localIssueCommand?: string;
+  // The whole list; `[]` clears it. A blank or long name is `bad_name`, an empty or unusable folder
+  // list `bad_sparse`, more than 20 presets `too_large`. A later preset replaces one of the same name.
+  sparsePresets?: SparsePreset[];
 };
 
 // The `ptySpawn` profile id that runs the worktree's setup script in the default shell. Rejects

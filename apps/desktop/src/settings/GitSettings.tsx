@@ -9,6 +9,7 @@ import { SettingRow, settingShown } from "./SettingRow";
 import { RecipesEditor } from "./recipes/RecipesEditor";
 import { BOT_OVERRIDE_MAX, overrideKey, withOverride } from "@/workspace/prComments";
 import type { SettingsSectionProps } from "./sections";
+import { pushDirHistory, worktreeDirOf } from "./worktreeDir";
 
 const MODES: BranchPrefixMode[] = ["git-username", "custom", "none"];
 // The pull request defaults, in the reference app's order.
@@ -30,6 +31,8 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
   const [saveError, setSaveError] = useState<ApiError["code"]>();
   const [botDraft, setBotDraft] = useState("");
   const [botCapped, setBotCapped] = useState(false);
+  // The worktree folder as typed; null shows the stored one. Saved on blur, Enter or a pick.
+  const [dirDraft, setDirDraft] = useState<string | null>(null);
   // Saves run one after another, so a slow early one cannot land after a later one. `latest`
   // is what the next change builds on, ahead of the re-render.
   const [queue] = useState(() => ({ tail: Promise.resolve(), latest: null as Git | null }));
@@ -89,6 +92,21 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
     change({ prBotAuthorOverrides: withOverride(list, login, true) });
   }
 
+  function saveDir(text: string): void {
+    const dir = worktreeDirOf(text);
+    const latest = queue.latest;
+    if (dir === "bad" || !latest) return;
+    setDirDraft(null);
+    if (dir !== latest.worktreeDir) change({ worktreeDir: dir, worktreeDirHistory: pushDirHistory(latest.worktreeDirHistory, dir) });
+  }
+
+  async function chooseDir(): Promise<void> {
+    const path = await api.pickFolder().catch(() => null);
+    if (path) saveDir(path);
+  }
+
+  const dirText = dirDraft ?? git.worktreeDir;
+  const dirBad = worktreeDirOf(dirText) === "bad";
   const mode = git.branchPrefix;
   const byUser = mode === "git-username";
   const preview = previewPrefix({ branchPrefix: mode, branchPrefixCustom: custom }, userName);
@@ -222,6 +240,64 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
           onClick={() => change({ refreshLocalBaseOnCreate: !git.refreshLocalBaseOnCreate })}
         />
       </div>
+      </SettingRow>
+      <SettingRow id="git.baseTip" filter={filter}>
+      <div className="settings-item settings-git-row">
+        <div className="settings-git-text">
+          <strong id="settings-git-base-tip">{t("settings.git.baseTip")}</strong>
+          <small className="settings-hint">{t("settings.git.baseTipHint")}</small>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          className="agent-switch"
+          aria-checked={!git.localBaseRefreshTipDismissed}
+          aria-labelledby="settings-git-base-tip"
+          onClick={() => change({ localBaseRefreshTipDismissed: !git.localBaseRefreshTipDismissed })}
+        />
+      </div>
+      </SettingRow>
+      <SettingRow id="git.worktreeDir" filter={filter}>
+        <div className="ws-field" role="group" aria-labelledby="settings-git-worktree-dir">
+          <span id="settings-git-worktree-dir">{t("settings.git.worktreeDir")}</span>
+          <div className="settings-row">
+            <input
+              type="text"
+              name="worktreeDir"
+              className="ws-mono"
+              aria-label={t("settings.git.worktreeDir")}
+              value={dirText}
+              spellCheck={false}
+              aria-invalid={dirBad || undefined}
+              aria-describedby={dirBad ? "settings-git-worktree-dir-error" : "settings-git-worktree-dir-hint"}
+              onChange={(e) => setDirDraft(e.target.value)}
+              onBlur={() => saveDir(dirText)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveDir(dirText);
+              }}
+            />
+            <button type="button" className="btn-secondary" data-worktree-dir-choose onClick={() => void chooseDir()}>
+              {t("settings.git.worktreeDirChoose")}
+            </button>
+          </div>
+          {git.worktreeDirHistory.length > 0 && (
+            <Select
+              data-field="worktreeDirHistory"
+              aria-label={t("settings.git.worktreeDirRecent")}
+              value=""
+              options={[{ value: "", label: t("settings.git.worktreeDirRecent") }, ...git.worktreeDirHistory.map((d) => ({ value: d, label: d }))]}
+              onChange={(e) => e.target.value !== "" && saveDir(e.target.value)}
+            />
+          )}
+          {dirBad && (
+            <small id="settings-git-worktree-dir-error" className="error-text settings-error" role="alert">
+              {t("settings.git.worktreeDirBad")}
+            </small>
+          )}
+          <small id="settings-git-worktree-dir-hint" className="settings-hint">
+            {t("settings.git.worktreeDirHint")}
+          </small>
+        </div>
       </SettingRow>
       <SettingRow id="git.issuesView" filter={filter}>
         <label className="ws-field">

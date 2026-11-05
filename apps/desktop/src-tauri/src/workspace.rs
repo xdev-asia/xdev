@@ -18,16 +18,16 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use xdev_ai::process::{kill_tree, own_group};
-use xdev_git::{ChangeKind, GitError, Repo};
+use xdev_git::{BaseDrift, ChangeKind, GitError, Repo};
 use xdev_policy::{Action, Verdict};
 use xdev_workspace::{
     CreateOptions, CreateProject, Created, DetailsPatch, FolderEntry, HookKind, HookRun, Linked,
     MadeBy, NamePreview, Registry, Removed, RepoHooks, RepoPatch, RepoView, SidebarItem, VaultView,
     WorkspaceError, WorktreeStat, WorktreeView, add_repo, add_vault, adopt_worktree,
-    archive_worktree, create_project, create_worktree_linked, forget_repo, forget_vault, hooks_for,
-    kept_delete, list, list_vaults, name_preview, path_key, refresh_base, remove_worktree,
-    repo_docs_dir, restore_worktree, set_details, set_order, set_pinned, shared_to_link, sidebar,
-    stat, trust_hook, update_repo,
+    archive_worktree, base_drift, create_project, create_worktree_linked, forget_repo,
+    forget_vault, hooks_for, kept_delete, list, list_vaults, name_preview, path_key, refresh_base,
+    remove_worktree, repo_docs_dir, restore_worktree, set_details, set_order, set_pinned,
+    shared_to_link, sidebar, stat, trust_hook, update_repo,
 };
 
 use crate::accounts::data_dir;
@@ -92,6 +92,11 @@ pub struct CreateRequest {
 pub struct WorktreeCreated {
     pub worktree: WorktreeView,
     pub shared: Vec<Linked>,
+    /// The local base was behind its upstream, as of the last fetch, and
+    /// Settings → Git asks for the tip; absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub base_behind: Option<BaseDrift>,
 }
 
 /// Why a file's two sides are not sent. Named apart in TypeScript from the
@@ -963,7 +968,8 @@ fn create_with(
     from: Option<&str>,
     request: CreateRequest,
 ) -> Result<WorktreeCreated, CmdError> {
-    if git.refresh_local_base_on_create && request.existing.is_none() {
+    let mut base_behind = None;
+    if request.existing.is_none() {
         // The fetch can take long, so the lock is held only to read the
         // registry. A refresh that fails leaves the base as it was, and the
         // worktree starts from that.
@@ -971,7 +977,16 @@ fn create_with(
             let _guard = lock_guard(lock);
             Registry::load(data)?
         };
-        let _ = refresh_base(&reg, repo_id, from);
+        if git.refresh_local_base_on_create {
+            let _ = refresh_base(&reg, repo_id, from);
+        } else if !git.local_base_refresh_tip_dismissed {
+            // Only what the last fetch left is read; a base git cannot
+            // compare gets no tip.
+            base_behind = base_drift(&reg, repo_id, from)
+                .ok()
+                .flatten()
+                .filter(|d| git.shows_base_tip(d.behind));
+        }
     }
     let (now_ms, seed) = clock();
     update(data, lock, |reg| {
@@ -984,7 +999,11 @@ fn create_with(
         };
         let (worktree, shared) =
             create_worktree_linked(reg, repo_id, name, from, now_ms, seed, &opts)?;
-        Ok(WorktreeCreated { worktree, shared })
+        Ok(WorktreeCreated {
+            worktree,
+            shared,
+            base_behind,
+        })
     })
 }
 
@@ -1879,6 +1898,173 @@ mod tests {
         assert!(taken.suffixed);
         assert!(taken.branch.ends_with("-2"));
         assert_eq!(Registry::load(&fx.data).unwrap(), reg);
+    }
+
+    /// Gives the fixture's repo an `origin` (never fetched) whose
+    /// remote-tracking `branch` is one commit past the local base; returns
+    /// the base's name. Nothing touches the network.
+    fn remote_ahead(fx: &Fixture, branch: &str) -> String {
+        let base = git(&fx.main, &["symbolic-ref", "--short", "HEAD"])
+            .trim()
+            .to_owned();
+        let url = fx.data.join("no-origin");
+        git(
+            &fx.main,
+            &["remote", "add", "origin", url.to_str().unwrap()],
+        );
+        let tip = git(
+            &fx.main,
+            &["commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "up"],
+        );
+        let tracking = format!("refs/remotes/origin/{branch}");
+        git(&fx.main, &["update-ref", &tracking, tip.trim()]);
+        base
+    }
+
+    #[test]
+    fn name_preview_names_a_remote_branch_of_the_same_name() {
+        use crate::settings::BranchPrefixMode;
+        let fx = fixture();
+        remote_ahead(&fx, "taken");
+        let id = Registry::load(&fx.data).unwrap().repos[0].id.clone();
+        let reg = Registry::load(&fx.data).unwrap();
+        let opts = GitSettings {
+            branch_prefix: BranchPrefixMode::None,
+            ..GitSettings::default()
+        }
+        .create_options();
+        let taken = name_preview(&reg, &id, "taken", &opts).unwrap();
+        assert_eq!(taken.remote.as_deref(), Some("origin/taken"));
+        assert!(!taken.suffixed);
+        let free = name_preview(&reg, &id, "free", &opts).unwrap();
+        assert_eq!(free.remote, None);
+        let json = serde_json::to_value(&free).unwrap();
+        assert!(json.get("remote").is_none());
+    }
+
+    #[test]
+    fn create_with_reports_a_base_behind_its_upstream_unless_turned_off() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let base = remote_ahead(&fx, "behind-base");
+        let upstream = format!("origin/{base}");
+        git(
+            &fx.main,
+            &[
+                "update-ref",
+                &format!("refs/remotes/{upstream}"),
+                "refs/remotes/origin/behind-base",
+            ],
+        );
+        git(
+            &fx.main,
+            &["branch", &format!("--set-upstream-to={upstream}"), &base],
+        );
+        let id = Registry::load(&fx.data).unwrap().repos[0].id.clone();
+        let create = |git: &GitSettings, name: &str, request: CreateRequest| {
+            create_with(&fx.data, &lock, git, &id, name, None, request).unwrap()
+        };
+        let made = create(&GitSettings::default(), "tip", CreateRequest::default());
+        let drift = made.base_behind.expect("the base is behind");
+        assert_eq!((drift.local.as_str(), drift.behind), (base.as_str(), 1));
+        assert_eq!(drift.upstream, upstream);
+        let dismissed = GitSettings {
+            local_base_refresh_tip_dismissed: true,
+            ..GitSettings::default()
+        };
+        assert!(
+            create(&dismissed, "quiet", CreateRequest::default())
+                .base_behind
+                .is_none()
+        );
+        git(&fx.main, &["branch", "spare"]);
+        let existing = CreateRequest {
+            existing: Some("spare".into()),
+            sparse: vec![],
+        };
+        assert!(
+            create(&GitSettings::default(), "", existing)
+                .base_behind
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn create_with_uses_the_global_folder_unless_the_repo_has_its_own() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let id = Registry::load(&fx.data).unwrap().repos[0].id.clone();
+        let global = fx.data.join("trees");
+        let git = GitSettings {
+            worktree_dir: global.to_string_lossy().into_owned(),
+            ..GitSettings::default()
+        }
+        .normalized();
+        let made = create_with(
+            &fx.data,
+            &lock,
+            &git,
+            &id,
+            "far",
+            None,
+            CreateRequest::default(),
+        )
+        .unwrap();
+        assert!(Path::new(&made.worktree.path).starts_with(&global));
+        assert!(Path::new(&made.worktree.path).is_dir());
+
+        let own = fx.data.join("mine");
+        let mut reg = Registry::load(&fx.data).unwrap();
+        let patch = RepoPatch {
+            worktree_root: Some(own.clone()),
+            ..RepoPatch::default()
+        };
+        update_repo(&mut reg, &id, patch).unwrap();
+        reg.save(&fx.data).unwrap();
+        let made = create_with(
+            &fx.data,
+            &lock,
+            &git,
+            &id,
+            "near",
+            None,
+            CreateRequest::default(),
+        )
+        .unwrap();
+        assert!(Path::new(&made.worktree.path).starts_with(&own));
+    }
+
+    #[test]
+    fn sparse_presets_round_trip_through_the_repo_settings() {
+        let fx = fixture();
+        let mut reg = Registry::load(&fx.data).unwrap();
+        let id = reg.repos[0].id.clone();
+        let preset = |name: &str, dir: &str| xdev_workspace::SparsePreset {
+            name: name.into(),
+            dirs: vec![dir.into()],
+        };
+        let patch = RepoPatch {
+            sparse_presets: Some(vec![preset("web", "apps/web/"), preset("web", "docs")]),
+            ..RepoPatch::default()
+        };
+        let view = update_repo(&mut reg, &id, patch).unwrap();
+        assert_eq!(view.sparse_presets, vec![preset("web", "docs")]);
+        let bad = RepoPatch {
+            sparse_presets: Some(vec![preset(" ", "docs")]),
+            ..RepoPatch::default()
+        };
+        assert_eq!(
+            update_repo(&mut reg, &id, bad).unwrap_err().code(),
+            "bad_name"
+        );
+        assert_eq!(reg.repos[0].sparse_presets, vec![preset("web", "docs")]);
+        let cleared = RepoPatch {
+            sparse_presets: Some(vec![]),
+            ..RepoPatch::default()
+        };
+        let view = update_repo(&mut reg, &id, cleared).unwrap();
+        let json = serde_json::to_value(&view).unwrap();
+        assert!(json.get("sparsePresets").is_none());
     }
 
     #[test]

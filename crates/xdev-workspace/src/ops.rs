@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Deserializer, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
-use xdev_git::{BaseRefresh, GhAccount, GitError, Repo, WorktreeEntry};
+use xdev_git::{BaseDrift, BaseRefresh, GhAccount, GitError, Repo, WorktreeEntry};
 
 use crate::hooks;
 use crate::kept::{KeptBranch, KeptReason, keep};
@@ -16,9 +16,9 @@ use crate::registry::normalize;
 use crate::staging;
 use crate::vaults::{docs_dir_text, validate_docs_dir};
 use crate::{
-    ISSUE_COMMAND_MAX, Linked, MadeBy, REPO_COLORS, Registry, RepoEntry, RepoIcon, ScriptSource,
-    SetupPolicy, WorkItem, WorkStatus, WorkspaceError, WorktreeMeta, link_shared, names, repo_id,
-    unlink_shared,
+    ISSUE_COMMAND_MAX, Linked, MadeBy, REPO_COLORS, Registry, RepoEntry, RepoIcon,
+    SPARSE_PRESET_NAME_MAX, SPARSE_PRESETS_MAX, ScriptSource, SetupPolicy, SparsePreset, WorkItem,
+    WorkStatus, WorkspaceError, WorktreeMeta, link_shared, names, repo_id, unlink_shared,
 };
 
 /// A repo as the sidebar shows it.
@@ -45,6 +45,10 @@ pub struct RepoView {
     /// The repo's docs folder, relative to the primary checkout; `docs` by
     /// default.
     pub docs_dir: String,
+    /// Named folder lists for a sparse worktree; absent when there are none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<SparsePreset>>"))]
+    pub sparse_presets: Vec<SparsePreset>,
     /// The folder is gone or no longer a repo; the entry stays so a
     /// reconnected drive finds it again.
     pub missing: bool,
@@ -172,7 +176,7 @@ pub fn add_repo(reg: &mut Registry, dir: &Path, now_ms: i64) -> Result<RepoView,
         .find(|name| reg.repos.iter().all(|r| &r.short_name != name))
         .unwrap_or(base);
     let base_ref = repo.default_branch()?.unwrap_or_else(|| "HEAD".to_owned());
-    let worktree_root = root.parent().unwrap_or(&root).join("wt");
+    let worktree_root = default_worktree_root(&root);
     reg.repos.push(RepoEntry {
         id,
         short_name,
@@ -222,6 +226,9 @@ pub struct RepoPatch {
     pub gh_account: Option<Option<GhAccount>>,
     #[serde(default)]
     pub local_issue_command: Option<String>,
+    /// The whole list; `Some(vec![])` clears it.
+    #[serde(default)]
+    pub sparse_presets: Option<Vec<SparsePreset>>,
 }
 
 /// 1 to 40 characters: `[a-z0-9]` first, then `[a-z0-9._-]`. No `:` or `/`,
@@ -310,13 +317,16 @@ pub fn update_repo(
     {
         return Err(WorkspaceError::TooLarge("issue command".to_owned()));
     }
-    if let Some(root) = &patch.worktree_root {
-        let key = path_key(root);
-        let primary = path_key(&old.path);
-        if !root.is_absolute() || key == primary || key.starts_with(&format!("{primary}/")) {
-            return Err(WorkspaceError::BadPath(lossy(root)));
-        }
+    if let Some(root) = &patch.worktree_root
+        && (!root.is_absolute() || within(root, &old.path))
+    {
+        return Err(WorkspaceError::BadPath(lossy(root)));
     }
+    let sparse_presets = patch
+        .sparse_presets
+        .as_deref()
+        .map(clean_sparse_presets)
+        .transpose()?;
     let docs_dir = patch
         .docs_dir
         .as_deref()
@@ -368,6 +378,9 @@ pub fn update_repo(
     if let Some(text) = patch.local_issue_command {
         entry.local_issue_command = text;
     }
+    if let Some(presets) = sparse_presets {
+        entry.sparse_presets = presets;
+    }
     let worktrees = reg.worktrees.clone();
     let view = sync_repo(reg, idx, 0, false);
     if view.is_err() {
@@ -375,6 +388,35 @@ pub fn update_repo(
         reg.worktrees = worktrees;
     }
     view
+}
+
+/// Sparse presets as a repo keeps them: names trimmed, folders normalized as
+/// `names::sparse_dirs` does, a later preset replacing an earlier one of the
+/// same name. A blank or overlong name, an empty or unusable folder list, or
+/// more than `SPARSE_PRESETS_MAX` presets is refused.
+pub fn clean_sparse_presets(presets: &[SparsePreset]) -> Result<Vec<SparsePreset>, WorkspaceError> {
+    let mut out: Vec<SparsePreset> = Vec::new();
+    for preset in presets {
+        let name = preset.name.trim();
+        if name.is_empty()
+            || name.chars().count() > SPARSE_PRESET_NAME_MAX
+            || name.chars().any(char::is_control)
+        {
+            return Err(WorkspaceError::BadName(preset.name.clone()));
+        }
+        let dirs = names::sparse_dirs(&preset.dirs)
+            .filter(|d| !d.is_empty())
+            .ok_or_else(|| WorkspaceError::BadSparse(preset.dirs.join(", ")))?;
+        out.retain(|p| p.name != name);
+        out.push(SparsePreset {
+            name: name.to_owned(),
+            dirs,
+        });
+    }
+    if out.len() > SPARSE_PRESETS_MAX {
+        return Err(WorkspaceError::TooLarge("sparse presets".to_owned()));
+    }
+    Ok(out)
 }
 
 /// Drops the repo and what the registry knows about its worktrees. Nothing
@@ -430,6 +472,7 @@ fn missing_view(entry: &RepoEntry) -> RepoView {
         icon: entry.icon.clone(),
         gh_account: entry.gh_account.clone(),
         local_issue_command: entry.local_issue_command.clone(),
+        sparse_presets: entry.sparse_presets.clone(),
         missing: true,
         worktrees: Vec::new(),
         found: Vec::new(),
@@ -724,6 +767,57 @@ fn shown_title(typed: &str, suffixed: bool) -> Option<String> {
     (suffixed || emoji).then(|| typed.chars().take(TITLE_MAX).collect())
 }
 
+/// `<parent of the primary checkout>/wt`: where worktrees go when nothing
+/// else is set.
+fn default_worktree_root(primary: &Path) -> PathBuf {
+    primary.parent().unwrap_or(primary).join("wt")
+}
+
+/// `path` is `root` or a folder inside it.
+fn within(path: &Path, root: &Path) -> bool {
+    let key = path_key(path);
+    let root = path_key(root);
+    key == root || key.starts_with(&format!("{root}/"))
+}
+
+/// The folder new worktrees of the repo at `primary` go under. A root the
+/// person set for the repo (`repo_root` other than the default) wins; then
+/// `global`, when it is absolute and outside the primary checkout; then the
+/// default `<parent>/wt`.
+pub fn worktree_root_for(primary: &Path, repo_root: &Path, global: Option<&Path>) -> PathBuf {
+    let default = default_worktree_root(primary);
+    if path_key(repo_root) != path_key(&default) {
+        return repo_root.to_path_buf();
+    }
+    match global {
+        Some(dir) if dir.is_absolute() && !within(dir, primary) => dir.to_path_buf(),
+        _ => default,
+    }
+}
+
+/// The repo entry with the worktree root `opts` resolves to.
+fn rooted(mut entry: RepoEntry, opts: &CreateOptions) -> RepoEntry {
+    entry.worktree_root = worktree_root_for(
+        &entry.path,
+        &entry.worktree_root,
+        opts.worktree_dir.as_deref(),
+    );
+    entry
+}
+
+/// The remote-tracking branch for `branch` on one of `remotes`, from `refs`
+/// (short names such as `origin/main`); the first remote listed wins.
+/// Nothing is fetched: `refs` is what the last fetch left.
+pub fn remote_branch_named(branch: &str, remotes: &[String], refs: &[String]) -> Option<String> {
+    if branch.is_empty() {
+        return None;
+    }
+    remotes
+        .iter()
+        .map(|r| format!("{r}/{branch}"))
+        .find(|full| refs.iter().any(|r| r == full))
+}
+
 fn worktree_folder(entry: &RepoEntry, slug: &str) -> PathBuf {
     entry
         .worktree_root
@@ -758,6 +852,9 @@ pub struct CreateOptions {
     pub existing: Option<String>,
     /// Cone folders; empty = full checkout.
     pub sparse: Vec<String>,
+    /// Where worktrees go for a repo whose own root is the default; see
+    /// `worktree_root_for`.
+    pub worktree_dir: Option<PathBuf>,
 }
 
 /// What a typed worktree name would become; see `name_preview`.
@@ -770,6 +867,11 @@ pub struct NamePreview {
     pub folder: String,
     /// A suffix was added because the typed name is taken.
     pub suffixed: bool,
+    /// A remote-tracking branch of the same name, `origin/<branch>`, as of
+    /// the last fetch; absent when there is none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub remote: Option<String>,
 }
 
 /// The branch and folder `name` (not blank) gets: the first of `leaf`,
@@ -827,7 +929,7 @@ pub fn name_preview(
     name: &str,
     opts: &CreateOptions,
 ) -> Result<NamePreview, WorkspaceError> {
-    let entry = find_repo(reg, repo_id)?;
+    let entry = rooted(find_repo(reg, repo_id)?, opts);
     let repo = Repo::discover(&entry.path)?;
     let name = name.trim();
     if name.is_empty() {
@@ -835,10 +937,18 @@ pub fn name_preview(
             branch: String::new(),
             folder: String::new(),
             suffixed: false,
+            remote: None,
         });
     }
     let prefix = branch_prefix(&repo, &opts.prefix)?;
     let named = name_typed(&repo, &entry, prefix.as_deref(), name, opts.suffix)?;
+    let refs: Vec<String> = repo
+        .branches(usize::MAX)?
+        .into_iter()
+        .filter(|b| b.remote)
+        .map(|b| b.name)
+        .collect();
+    let remote = remote_branch_named(&named.branch, &repo.remote_names()?, &refs);
     Ok(NamePreview {
         branch: named.branch,
         folder: named
@@ -847,6 +957,7 @@ pub fn name_preview(
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default(),
         suffixed: named.suffixed,
+        remote,
     })
 }
 
@@ -866,6 +977,23 @@ pub fn refresh_base(
         .filter(|s| !s.is_empty())
         .unwrap_or(&entry.base_ref);
     Ok(repo.refresh_local_base(base)?)
+}
+
+/// How far the local copy of the base a new worktree of `repo_id` would
+/// start from (`from`, else the repo's base ref) is from its remote-tracking
+/// ref, as last fetched; see `Repo::local_base_drift`. Nothing is fetched.
+pub fn base_drift(
+    reg: &Registry,
+    repo_id: &str,
+    from: Option<&str>,
+) -> Result<Option<BaseDrift>, WorkspaceError> {
+    let entry = find_repo(reg, repo_id)?;
+    let repo = Repo::discover(&entry.path)?;
+    let base = from
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&entry.base_ref);
+    Ok(repo.local_base_drift(base)?)
 }
 
 /// The prefix to put in front of new branch names, normalized; `None` for
@@ -984,7 +1112,7 @@ pub fn create_worktree_linked(
     seed: u64,
     opts: &CreateOptions,
 ) -> Result<(WorktreeView, Vec<Linked>), WorkspaceError> {
-    let entry = find_repo(reg, repo_id)?;
+    let entry = rooted(find_repo(reg, repo_id)?, opts);
     let repo = Repo::discover(&entry.path)?;
     let sparse = names::sparse_dirs(&opts.sparse)
         .ok_or_else(|| WorkspaceError::BadSparse(opts.sparse.join(", ")))?;
@@ -2116,5 +2244,90 @@ mod tests {
         assert_eq!(repo.list_worktrees().unwrap().len(), 1);
         assert!(!entry.worktree_root.join(staging::STAGING).exists());
         assert!(folder.join("x").exists());
+    }
+
+    fn preset(name: &str, dirs: &[&str]) -> SparsePreset {
+        SparsePreset {
+            name: name.into(),
+            dirs: dirs.iter().map(|d| (*d).to_owned()).collect(),
+        }
+    }
+
+    #[test]
+    fn sparse_presets_are_trimmed_normalized_and_deduped_by_name() {
+        let got = clean_sparse_presets(&[
+            preset(" web ", &["./apps/web/", "apps/web"]),
+            preset("docs", &["docs"]),
+            preset("web", &["crates"]),
+        ])
+        .unwrap();
+        assert_eq!(
+            got,
+            vec![preset("docs", &["docs"]), preset("web", &["crates"])]
+        );
+        assert_eq!(clean_sparse_presets(&[]).unwrap(), vec![]);
+    }
+
+    #[test]
+    fn sparse_presets_refuse_bad_names_folders_and_too_many() {
+        let code = |p: &[SparsePreset]| clean_sparse_presets(p).unwrap_err().code();
+        assert_eq!(code(&[preset("  ", &["a"])]), "bad_name");
+        let long = "x".repeat(SPARSE_PRESET_NAME_MAX + 1);
+        assert_eq!(code(&[preset(&long, &["a"])]), "bad_name");
+        assert_eq!(code(&[preset("a", &[])]), "bad_sparse");
+        assert_eq!(code(&[preset("a", &["../up"])]), "bad_sparse");
+        let many: Vec<SparsePreset> = (0..=SPARSE_PRESETS_MAX)
+            .map(|n| preset(&format!("p{n}"), &["a"]))
+            .collect();
+        assert_eq!(code(&many), "too_large");
+        assert!(clean_sparse_presets(&many[..SPARSE_PRESETS_MAX]).is_ok());
+        let name = "x".repeat(SPARSE_PRESET_NAME_MAX);
+        assert!(clean_sparse_presets(&[preset(&name, &["a"])]).is_ok());
+    }
+
+    #[test]
+    fn worktree_root_prefers_the_repo_then_the_global_folder() {
+        let primary = Path::new("/code/app");
+        let default = Path::new("/code/wt");
+        let global = Path::new("/elsewhere/trees");
+        assert_eq!(worktree_root_for(primary, default, None), default);
+        assert_eq!(worktree_root_for(primary, default, Some(global)), global);
+        let own = Path::new("/mine/wt");
+        assert_eq!(worktree_root_for(primary, own, Some(global)), own);
+        // A relative folder or one inside the checkout is not used.
+        assert_eq!(
+            worktree_root_for(primary, default, Some(Path::new("trees"))),
+            default
+        );
+        assert_eq!(
+            worktree_root_for(primary, default, Some(Path::new("/code/app/wt"))),
+            default
+        );
+        assert_eq!(
+            worktree_root_for(primary, Path::new("/code/wt/"), Some(global)),
+            global
+        );
+    }
+
+    #[test]
+    fn remote_branch_named_matches_a_whole_remote_ref() {
+        let remotes = vec!["origin".to_owned(), "up".to_owned()];
+        let refs: Vec<String> = ["origin/main", "up/feat/x", "origin/feat/xy", "upstream/y"]
+            .iter()
+            .map(|r| (*r).to_owned())
+            .collect();
+        assert_eq!(
+            remote_branch_named("main", &remotes, &refs).as_deref(),
+            Some("origin/main")
+        );
+        assert_eq!(
+            remote_branch_named("feat/x", &remotes, &refs).as_deref(),
+            Some("up/feat/x")
+        );
+        assert_eq!(remote_branch_named("feat", &remotes, &refs), None);
+        // `upstream` is no remote here, so `upstream/y` is not `up` + `stream/y`.
+        assert_eq!(remote_branch_named("stream/y", &remotes, &refs), None);
+        assert_eq!(remote_branch_named("y", &remotes, &refs), None);
+        assert_eq!(remote_branch_named("", &remotes, &refs), None);
     }
 }

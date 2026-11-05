@@ -1,7 +1,7 @@
 import { Button, Disclosure, RadioGroup, Segmented, Switch } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type CreateRequest, type Issue, type MrSummary, type NamePreview, type PrSummary, type ReviewBranch, type RepoView, type WorkItem, type WorkItemKind } from "@/api";
+import { toApiError, type Api, type ApiError, type CreateRequest, type Issue, type MrSummary, type NamePreview, type PrSummary, type ReviewBranch, type RepoView, type SparsePreset, type WorkItem, type WorkItemKind } from "@/api";
 import { isIssueRef } from "@/issues/issueStart";
 import { useI18n } from "@/i18n";
 import { expandShortcodes, hasEmoji, slugFromTitle } from "./emoji";
@@ -9,6 +9,7 @@ import { MrsList, useGitlab } from "@/issues/MrsList";
 import { localBranches, shownTab, sourceTabs, sparseDirs, type SourceTab } from "./createSource";
 import { LinkedWorkSearch } from "./LinkedWorkSearch";
 import { schedulePreview } from "./namePreview";
+import { addPreset, presetText } from "./sparsePresets";
 import { BaseRefField } from "./BaseRefField";
 import { parseItem } from "./workItemInput";
 
@@ -115,6 +116,10 @@ export function CreateWorktreeDialog(props: {
   const [itemKind, setItemKind] = useState<WorkItemKind>("pr");
   const [note, setNote] = useState("");
   const [sparseText, setSparseText] = useState("");
+  // Presets saved from here, by repo, until the shell reloads its repos.
+  const [savedPresets, setSavedPresets] = useState<Record<string, SparsePreset[]>>({});
+  const [presetName, setPresetName] = useState("");
+  const [presetNote, setPresetNote] = useState<"saved" | "bad" | null>(null);
   const [more, setMore] = useState(false);
   const [wantedTab, setTab] = useState<CreateTab>(props.initialTab ?? "name");
   const [branchMode, setBranchMode] = useState<"new" | "existing">("new");
@@ -174,6 +179,7 @@ export function CreateWorktreeDialog(props: {
   const needsBranch = listing && pickedBranch === "";
   const sparse = sparseDirs(sparseText);
   const badSparse = sparse === "bad";
+  const presets = (repo && savedPresets[repo.id]) ?? repo?.sparsePresets ?? [];
   const ref = props.resolveIssue !== undefined && props.onStartIssue !== undefined && isIssueRef(name);
   const refText = name.trim();
   const refRepo = repo?.id ?? "";
@@ -197,6 +203,21 @@ export function CreateWorktreeDialog(props: {
       clearTimeout(timer);
     };
   }, [ref, refRepo, refText]);
+
+  function savePreset(): void {
+    const { api } = props;
+    if (!api || !repo || !Array.isArray(sparse)) return;
+    const next = addPreset(presets, presetName, sparse);
+    if (next === "bad") return setPresetNote("bad");
+    api.repoUpdate(repo.id, { sparsePresets: next }).then(
+      (view) => {
+        setSavedPresets((all) => ({ ...all, [repo.id]: view.sparsePresets ?? [] }));
+        setPresetName("");
+        setPresetNote("saved");
+      },
+      () => setPresetNote("bad"),
+    );
+  }
 
   function submit(): void {
     if (ref) {
@@ -327,6 +348,11 @@ export function CreateWorktreeDialog(props: {
               </small>
             )}
             <PreviewHint preview={preview} />
+            {preview?.remote && pickedBranch === "" && mode !== "existing" && (
+              <small role="status" data-remote-branch>
+                {t("createWorktree.preview.remote", { remote: preview.remote })}
+              </small>
+            )}
           </label>
           {pickedBranch === "" && mode !== "existing" && (
             <div className="ws-field">
@@ -388,6 +414,26 @@ export function CreateWorktreeDialog(props: {
                 <span>{t("workspace.create.note")}</span>
                 <textarea value={note} rows={2} placeholder={t("workspace.create.notePlaceholder")} onChange={(e) => setNote(e.target.value)} />
               </label>
+              {presets.length > 0 && (
+                <label className="ws-field">
+                  <span>{t("workspace.create.sparsePreset")}</span>
+                  <select
+                    data-sparse-preset
+                    value=""
+                    onChange={(e) => {
+                      const picked = presets.find((p) => p.name === e.target.value);
+                      if (picked) setSparseText(presetText(picked));
+                    }}
+                  >
+                    <option value="">{t("workspace.create.sparsePresetNone")}</option>
+                    {presets.map((p) => (
+                      <option key={p.name} value={p.name}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="ws-field">
                 <span>{t("workspace.create.sparse")}</span>
                 <textarea
@@ -401,6 +447,37 @@ export function CreateWorktreeDialog(props: {
                 />
                 <small id="ws-create-sparse-hint">{Array.isArray(sparse) && sparse.length > 0 ? t("workspace.create.sparseHint") : t("workspace.create.sparseFull")}</small>
               </label>
+              {props.api && Array.isArray(sparse) && sparse.length > 0 && (
+                <div className="ws-field">
+                  <div className="ws-item-row">
+                    <input
+                      type="text"
+                      aria-label={t("workspace.create.sparsePresetName")}
+                      placeholder={t("workspace.create.sparsePresetName")}
+                      value={presetName}
+                      spellCheck={false}
+                      onChange={(e) => {
+                        setPresetName(e.target.value);
+                        setPresetNote(null);
+                      }}
+                      onKeyDown={(e) => {
+                        // Enter saves the preset; it does not create the worktree.
+                        if (e.key !== "Enter" || e.ctrlKey || e.metaKey) return;
+                        e.preventDefault();
+                        if (presetName.trim() !== "") savePreset();
+                      }}
+                    />
+                    <button type="button" className="btn-secondary" data-sparse-save disabled={presetName.trim() === ""} onClick={savePreset}>
+                      {t("workspace.create.sparseSave")}
+                    </button>
+                  </div>
+                  {presetNote && (
+                    <small className={presetNote === "bad" ? "error-text" : undefined} role={presetNote === "bad" ? "alert" : "status"}>
+                      {t(presetNote === "bad" ? "workspace.create.sparseSaveBad" : "workspace.create.sparseSaved")}
+                    </small>
+                  )}
+                </div>
+              )}
             </div>
           </Disclosure>
         </div>

@@ -50,7 +50,23 @@ pub struct RepoEntry {
     /// This machine's issue prompt template.
     #[serde(default)]
     pub local_issue_command: String,
+    /// Named folder lists a sparse worktree can start from.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sparse_presets: Vec<SparsePreset>,
 }
+
+/// A named list of folders a sparse worktree is limited to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SparsePreset {
+    pub name: String,
+    pub dirs: Vec<String>,
+}
+
+/// Most sparse presets a repo keeps.
+pub const SPARSE_PRESETS_MAX: usize = 20;
+/// Longest sparse preset name, in characters.
+pub const SPARSE_PRESET_NAME_MAX: usize = 60;
 
 /// The colour names a repo badge has a design token for.
 pub const REPO_COLORS: [&str; 8] = [
@@ -356,6 +372,27 @@ mod tests {
         let text = std::fs::read_to_string(dir.path().join("workspace.json")).unwrap();
         assert!(!text.contains("docs_dir"));
         r.repos[0].docs_dir = Some("handbook".into());
+        r.save(dir.path()).unwrap();
+        assert_eq!(Registry::load(dir.path()).unwrap(), r);
+    }
+
+    #[test]
+    fn sparse_presets_are_absent_in_old_files_and_survive_a_save() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("workspace.json"),
+            r#"{"version":1,"repos":[{"id":"abc","short_name":"xdev","path":"/r","base_ref":"main","worktree_root":"/wt"}],"worktrees":[]}"#,
+        )
+        .unwrap();
+        let mut r = Registry::load(dir.path()).unwrap();
+        assert!(r.repos[0].sparse_presets.is_empty());
+        r.save(dir.path()).unwrap();
+        let text = std::fs::read_to_string(dir.path().join("workspace.json")).unwrap();
+        assert!(!text.contains("sparse_presets"));
+        r.repos[0].sparse_presets = vec![SparsePreset {
+            name: "web".into(),
+            dirs: vec!["apps/web".into()],
+        }];
         r.save(dir.path()).unwrap();
         assert_eq!(Registry::load(dir.path()).unwrap(), r);
     }
