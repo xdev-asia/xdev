@@ -64,9 +64,11 @@ export function createMockPromptQueue(): MockPromptQueue {
   let seq = 0;
   const dues = new Set<(e: PromptQueueDue) => void>();
   const changes = new Set<(e: PromptQueueChanged) => void>();
-  const on = <T>(set: Set<T>, cb: T) => {
-    set.add(cb);
-    return () => void set.delete(cb);
+  // Each listener is its own handle, as with real events: the same callback twice is two listeners.
+  const on = <E>(set: Set<(e: E) => void>, cb: (e: E) => void) => {
+    const handle = (e: E) => cb(e);
+    set.add(handle);
+    return () => void set.delete(handle);
   };
   const changed = () => {
     for (const cb of changes) cb({} as PromptQueueChanged);
