@@ -49,7 +49,7 @@ impl Default for ProbeTimeouts {
 pub(crate) enum ProbeError {
     /// The binary is not there.
     NoCodex,
-    /// An RPC error, or stderr matched an auth phrase.
+    /// An RPC error message or stderr matched an auth phrase.
     Auth(String),
     Timeout,
     /// Closed before the answer.
@@ -137,11 +137,13 @@ fn await_response(
                         .get("message")
                         .and_then(Value::as_str)
                         .unwrap_or("rpc error");
-                    // A method the server does not know is not a sign-in problem.
-                    return Err(if e.get("code").and_then(Value::as_i64) == Some(-32601) {
-                        ProbeError::Rpc(text.to_owned())
-                    } else {
+                    // Only a message with a sign-in phrase is a sign-in
+                    // problem; any other error (an unknown method, an
+                    // internal fault) lets the caller read the session log.
+                    return Err(if is_auth_error(text) {
                         ProbeError::Auth(text.to_owned())
+                    } else {
+                        ProbeError::Rpc(text.to_owned())
                     });
                 }
                 return Ok(msg.get("result").cloned().unwrap_or(Value::Null));
@@ -510,6 +512,9 @@ pub(crate) mod tests {
                     "rpc-auth" => reply(
                         json!({ "error": { "code": -32600, "message": "Please sign in again" } }),
                     ),
+                    "rpc-other" => reply(
+                        json!({ "error": { "code": -32603, "message": "internal error" } }),
+                    ),
                     "rpc-missing" => {
                         reply(json!({ "error": { "code": -32601, "message": "method not found" } }))
                     }
@@ -566,9 +571,15 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn an_rpc_error_means_sign_in_again() {
+    fn an_rpc_auth_error_means_sign_in_again() {
         let e = read_rate_limits(fake("rpc-auth"), quick(), 0).unwrap_err();
         assert!(matches!(e, ProbeError::Auth(_)), "{e:?}");
+    }
+
+    #[test]
+    fn an_rpc_error_without_auth_text_is_not_an_auth_error() {
+        let e = read_rate_limits(fake("rpc-other"), quick(), 0).unwrap_err();
+        assert!(matches!(e, ProbeError::Rpc(_)), "{e:?}");
     }
 
     #[test]

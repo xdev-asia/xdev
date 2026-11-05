@@ -210,8 +210,9 @@ mod tests {
     fn another_failure_falls_back_to_the_session_log() {
         let tmp = tempfile::tempdir().unwrap();
         with_log(tmp.path());
-        let fails: [fn() -> ProbeError; 3] = [
+        let fails: [fn() -> ProbeError; 4] = [
             || ProbeError::Timeout,
+            || ProbeError::Rpc("internal error".into()),
             || ProbeError::NoCodex,
             || ProbeError::Exited(Some(1)),
         ];
