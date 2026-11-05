@@ -355,7 +355,10 @@ fn place_prompt(
             .extension()
             .and_then(OsStr::to_str)
             .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
-    let flag_like = spec(cli).prompt == PromptMode::Argv && prompt.starts_with('-');
+    // After `--` a leading dash is text; as a bare argument or a flag's
+    // value a parser may read it as a flag.
+    let flag_like = matches!(spec(cli).prompt, PromptMode::Argv | PromptMode::Flag(_))
+        && prompt.starts_with('-');
     let requoted = windows && (wrapped || prompt.contains('"'));
     if line.is_empty() || shim || flag_like || requoted {
         return typed();
@@ -621,6 +624,14 @@ mod tests {
         let l = run_prompt(&p, "claude", "/bin/claude", "--help me");
         assert!(l.args.is_empty());
         assert_eq!(l.prompt_after.as_deref(), Some("--help me"));
+        // Also as a flag's value; after `--` it is text.
+        for id in ["gemini", "copilot", "opencode"] {
+            let l = run_prompt(&p, id, &format!("/bin/{id}"), "--yolo");
+            assert!(l.prompt_argv.is_empty(), "{id}");
+            assert_eq!(l.prompt_after.as_deref(), Some("--yolo"), "{id}");
+        }
+        let l = run_prompt(&p, "devin", "/bin/devin", "--yolo");
+        assert_eq!(l.prompt_argv, ["--", "--yolo"]);
         // A blank prompt is no prompt.
         let l = run_prompt(&p, "claude", "/bin/claude", "  ");
         assert!(l.prompt_argv.is_empty() && l.prompt_after.is_none());
