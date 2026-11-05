@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { JSX } from "react";
 import { createPortal } from "react-dom";
+import type { Api } from "@/api";
 
 export interface TabCardData {
   title: string;
@@ -10,8 +11,8 @@ export interface TabCardData {
 }
 
 /** The card text: title, agent, status and working directory of a tab. `t` translates the row labels. */
-export function TabHoverCard(props: { id: string; data: TabCardData; at: { x: number; y: number }; labels: { agent: string; status: string; cwd: string } }): JSX.Element {
-  const { id, data, at, labels } = props;
+export function TabHoverCard(props: { id: string; data: TabCardData; at: { x: number; y: number }; labels: { agent: string; status: string; cwd: string }; output?: string[] }): JSX.Element {
+  const { id, data, at, labels, output } = props;
   const width = typeof window === "undefined" ? 320 : window.innerWidth;
   const left = Math.max(8, Math.min(at.x, width - 8 - Math.min(320, width - 16)));
   return (
@@ -25,11 +26,59 @@ export function TabHoverCard(props: { id: string; data: TabCardData; at: { x: nu
         <dt>{labels.cwd}</dt>
         <dd className="ws-mono">{data.cwd}</dd>
       </dl>
+      {output && output.length > 0 && (
+        <div className="ws-tab-card-out" data-tab-output>
+          {output.map((line, i) => (
+            <div key={i}>{line}</div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
 export const HOVER_DELAY_MS = 600;
+
+/** Lines of recent output the card shows, and how often it reads while open. */
+export const CARD_OUTPUT_LINES = 8;
+export const CARD_OUTPUT_REFRESH_MS = 2500;
+
+/** The last `max` non-blank-edged lines of `text`; plain text, so nothing here can be markup. */
+export function tailLines(text: string, max: number = CARD_OUTPUT_LINES): string[] {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
+  while (lines.length > 0 && lines[0].trim() === "") lines.shift();
+  return lines.slice(-max).map((l) => l.trimEnd());
+}
+
+/** The recent output of tab `id`, read when `id` is set (the card is open) and every 2.5 s while it stays. */
+export function useTabOutput(api: Pick<Api, "termTailRead"> | undefined, id: string | null): string[] {
+  const [lines, setLines] = useState<string[]>([]);
+  useEffect(() => {
+    setLines([]);
+    if (!api || id === null) return;
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const read = () => {
+      api.termTailRead(id, CARD_OUTPUT_LINES * 4).then(
+        (text) => {
+          if (live) setLines(tailLines(text));
+        },
+        () => {
+          if (live) setLines([]);
+        },
+      ).finally(() => {
+        if (live) timer = setTimeout(read, CARD_OUTPUT_REFRESH_MS);
+      });
+    };
+    read();
+    return () => {
+      live = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [api, id]);
+  return lines;
+}
 
 /**
  * Which tab shows its card and where. Hover waits `HOVER_DELAY_MS`; keyboard focus shows it at once;

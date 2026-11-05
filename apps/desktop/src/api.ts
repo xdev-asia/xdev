@@ -23,6 +23,8 @@ import type {
   WorkerChanged,
   AwakeView,
   AppStatsView,
+  ResourceRow,
+  ResourceSnapshot,
   PortScan,
   HostSource,
   LocalForward,
@@ -332,6 +334,7 @@ export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
 export type { Agent, AgentSession, Cost, SessionQuery, SessionRow, SessionSearchStatus, SessionTurn, SkippedLogs };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
+export type { ResourceRow, ResourceSnapshot };
 export type { AccountSource, ActiveAccount, AgentsSettings, AppStatsView, AwakeView, KeepAwake, SwitchRunning };
 export type { PortEvidence, PortKind, PortProtocol, PortScan, WorkspacePort } from "@xdev/bindings";
 export type { HostSource, LocalForward, SshAuthPrompt, SshConnState, SshConnectionView, SshHost, SshPromptKind, SshSyncReport, SshTestOutcome };
@@ -1532,6 +1535,14 @@ export interface Api {
   appStats(): Promise<AppStatsView>;
   // A tab entered (true) or left (false) the working status.
   appStatsBusy(tabId: string, working: boolean): Promise<void>;
+  // The last `limitLines` lines a tab printed, ANSI stripped; empty for an unknown tab or one without output.
+  termTailRead(tabId: string, limitLines: number): Promise<string>;
+  // Opens a native save dialog (in Rust) and writes the text as a `.txt` file; resolves with the path, or null
+  // when cancelled. Rejects `too_large` over 4 MB.
+  transcriptSave(defaultName: string, text: string): Promise<string | null>;
+  // CPU and memory per running tab (its terminal process and everything below it) and of the app, biggest
+  // memory first; null when the process table cannot be read.
+  resourcesSnapshot(): Promise<ResourceSnapshot | null>;
   // Ports: one scan of the local listeners for these worktrees (`force` skips the back-off wait), stopping
   // the process behind a port id, opening its URL in the OS browser, and a terminal printing a new URL.
   portsScan(worktrees: string[], force: boolean): Promise<PortScan>;
@@ -2349,6 +2360,9 @@ const tauriApi: Api = {
   onKeepAwakeChanged: (cb) => listen<AwakeView>("keep-awake://changed", (e) => cb(e.payload)),
   appStats: () => call("app_stats_get"),
   appStatsBusy: (tabId, working) => call("app_stats_busy", { tabId, working }),
+  termTailRead: (tabId, limitLines) => call("term_tail_read", { id: tabId, limitLines }),
+  transcriptSave: (defaultName, text) => call("transcript_save", { defaultName, text }),
+  resourcesSnapshot: () => call("resources_snapshot"),
   portsScan: (worktrees, force) => call("ports_scan", { worktrees, force }),
   portsStop: (worktrees, id, consent) => call("ports_stop", { worktrees, id, confirmed: consent.confirmed, outsideTerminal: consent.outsideTerminal }),
   portsOpen: (id) => call("ports_open", { id }),

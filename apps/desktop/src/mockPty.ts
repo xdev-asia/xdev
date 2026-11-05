@@ -22,6 +22,9 @@ type PtyApi = Pick<
   | "ptydClearScrollback"
   | "ptydQuitChoice"
   | "onPtydStatus"
+  | "termTailRead"
+  | "resourcesSnapshot"
+  | "transcriptSave"
 >;
 
 /** A pty the demo's terminal service holds, as a test seeds it. */
@@ -63,6 +66,9 @@ function reject(code: ApiError["code"], detail?: string): Promise<never> {
 }
 
 const encode = (text: string) => new TextEncoder().encode(text);
+const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
+// eslint-disable-next-line no-control-regex
+const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007|\r/g;
 
 /**
  * An echo terminal: what is typed comes back, Enter starts a new prompt. Agents need approval
@@ -79,6 +85,12 @@ export function createMockPty(
 ): PtyApi & MockPtyd {
   // Like Rust, an exited terminal keeps its slot until `ptyKill`.
   const ptys = new Map<string, { onData: (bytes: Uint8Array) => void; line: string; exited: boolean }>();
+  // What each terminal printed, ANSI stripped, for `termTailRead`.
+  const tails = new Map<string, string>();
+  const tap = (id: string, onData: (bytes: Uint8Array) => void) => (bytes: Uint8Array) => {
+    tails.set(id, (tails.get(id) ?? "") + decode(bytes).replace(ANSI, ""));
+    onData(bytes);
+  };
   const approved = new Set<PtyProfile>();
   const approvedOnce = new Set<PtyProfile>();
   const exits = new Set<(exit: PtyExit) => void>();
@@ -123,6 +135,7 @@ export function createMockPty(
   return {
     async ptySpawn(id, cwd, profileId, account, _cols, _rows, onData, resume, fork, prompt, extraArgs, overrides) {
       if (prompt !== undefined) prompts[id] = prompt;
+      onData = tap(id, onData);
       if (profileId === SETUP_PROFILE) {
         if (ptys.has(id)) return reject("pty_exists");
         const run = await setupRun(cwd);
@@ -241,6 +254,7 @@ export function createMockPty(
       if (!ptys.has(id)) return reject("pty_unknown");
     },
     async ptyKill(id) {
+      tails.delete(id);
       const pty = ptys.get(id);
       ptys.delete(id);
       // Like Rust, killing a live terminal reports its exit.
@@ -253,7 +267,26 @@ export function createMockPty(
       exits.add(cb);
       return () => exits.delete(cb);
     },
+    // Fake but stable numbers: memory and CPU come from the pty id, so the order does not change between reads.
+    async resourcesSnapshot() {
+      const rows = [...ptys.entries()]
+        .filter(([, p]) => !p.exited)
+        .map(([id], i) => {
+          const h = [...id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 9973, 7);
+          return { tabId: id, pid: 4000 + i, cpu: (h % 400) / 10, memoryBytes: (64 + (h % 900)) * 1024 * 1024, processes: 1 + (h % 4) };
+        })
+        .sort((a, b) => b.memoryBytes - a.memoryBytes);
+      return { app: { pid: 1, cpu: 1.5, memoryBytes: 220 * 1024 * 1024, processes: 1 }, tabs: rows };
+    },
+    async transcriptSave() {
+      return null;
+    },
+    async termTailRead(id, limitLines) {
+      const lines = (tails.get(id) ?? "").split("\n");
+      return lines.slice(-Math.max(1, limitLines)).join("\n");
+    },
     async ptyAttach(id, fromSeq, onData) {
+      onData = tap(id, onData);
       const pty = held.get(id);
       if (!serviceUp() || !pty) return reject("pty_gone");
       if (ptys.has(id)) return reject("pty_exists");
