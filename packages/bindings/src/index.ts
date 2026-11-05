@@ -256,6 +256,7 @@ export type { TasksContext } from "./TasksContext";
 export type { TerminalBell } from "./TerminalBell";
 export type { TerminalGpu } from "./TerminalGpu";
 export type { TerminalKeyPolicy } from "./TerminalKeyPolicy";
+export type { TerminalLinkClick } from "./TerminalLinkClick";
 export type { TerminalSettings } from "./TerminalSettings";
 export type { TestResult } from "./TestResult";
 export type { Theme } from "./Theme";

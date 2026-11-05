@@ -366,6 +366,7 @@ export type {
   TerminalGpu,
   TerminalBell,
   MacOptionAsAlt,
+  TerminalLinkClick,
   SettingsSection,
   SettingsChanged,
   SetupPolicy,
@@ -1124,10 +1125,18 @@ export interface Api {
   fileTrash(worktree: string, rel: string): Promise<void>;
   // Opens the OS file manager with the item selected where the OS allows it.
   fileReveal(worktree: string, rel: string): Promise<void>;
+  // Terminal links. Each candidate's worktree-relative path when it is an existing file inside
+  // `worktree`; null otherwise. At most 64 per call (`bad_arg`). A relative path is read against
+  // `cwd` (the shell's folder, when known and inside the worktree) first, then the worktree root.
+  fileLinksResolve(worktree: string, paths: string[], cwd?: string): Promise<(string | null)[]>;
   // The raw bytes of an image, audio or video file within its size cap; rejects with `too_large`, `bad_name`, `not_found`.
   fileBytes(worktree: string, rel: string): Promise<Uint8Array>;
-  // Opens an image, audio or video file in the OS default app; rejects with `bad_name` for any other file.
+  // Opens the file with the OS default app; `denied` for a type outside the allowlist (media and txt md pdf png jpg jpeg gif webp svg html htm csv json log).
   fileOpenDefault(worktree: string, rel: string): Promise<void>;
+  // http(s) only; `bad_arg` otherwise.
+  openUrl(url: string): Promise<void>;
+  // Hosted URL of the file at `line` (to `endLine`); `no_web_remote` when there is none.
+  fileRemoteUrl(worktree: string, rel: string, line: number, endLine: number | null): Promise<string>;
   // Search. Same `worktree` rule as Files. Both walk the worktree with `.gitignore` applied,
   // hidden files included, `.git` and links out of it skipped.
   // Every file, relative with forward slashes, sorted; `truncated` past 50 000 files.
@@ -1692,6 +1701,9 @@ const tauriApi: Api = {
   fileRename: (worktree, from, to) => call("file_rename", { worktree, from, to }),
   fileTrash: (worktree, rel) => call("file_trash", { worktree, rel }),
   fileReveal: (worktree, rel) => call("file_reveal", { worktree, rel }),
+  fileLinksResolve: (worktree, paths, cwd) => call("file_links_resolve", { worktree, paths, ...(cwd !== undefined ? { cwd } : {}) }),
+  openUrl: (url) => call("open_url", { url }),
+  fileRemoteUrl: (worktree, rel, line, endLine) => call("file_remote_url", { worktree, rel, line, endLine }),
   fileBytes: async (worktree, rel) => new Uint8Array(await call<ArrayBuffer | number[]>("file_bytes", { worktree, rel })),
   fileOpenDefault: (worktree, rel) => call("file_open_default", { worktree, rel }),
   filesList: (worktree) => call("files_list", { worktree }),

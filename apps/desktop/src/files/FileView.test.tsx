@@ -8,17 +8,25 @@ import { EditorView } from "@codemirror/view";
 import { conflictChange, conflictDecorations } from "./conflictDecorations";
 import { parseConflicts } from "./conflictMarkers";
 import { ExternalChange } from "./ExternalChangeBanner";
+import { ContextMenu } from "@/ui/ContextMenu";
 import { FileView } from "./FileView";
 import { ImageView } from "./ImageView";
 import { MediaView } from "./MediaView";
 import { LoadError } from "./LoadError";
 import { fileTabs, isDirty } from "./fileTabs";
 
-const hooks = vi.hoisted(() => ({ active: false, effects: [] as (() => void)[] }));
+const hooks = vi.hoisted(() => ({ active: false, effects: [] as (() => void)[], slots: [] as unknown[], cursor: 0 }));
 vi.mock("react", async (original) => {
   const react = await original<typeof import("react")>();
   return {
     ...react,
+    // State by call order, kept between draws, so a menu opened by a handler shows on the next draw.
+    useState: (initial: unknown) => {
+      if (!hooks.active) return react.useState(initial);
+      const at = hooks.cursor++;
+      if (!(at in hooks.slots)) hooks.slots[at] = initial;
+      return [hooks.slots[at], (next: unknown) => void (hooks.slots[at] = next)];
+    },
     useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
     useSyncExternalStore: (subscribe: any, get: any, server?: any) => (hooks.active ? get() : react.useSyncExternalStore(subscribe, get, server)),
   };
@@ -39,6 +47,7 @@ const W = "C:/wt/a";
 const draw = (api: ReturnType<typeof createMockApi>, rel = "a.ts") => {
   hooks.active = true;
   hooks.effects = [];
+  hooks.cursor = 0;
   try { return nodes(FileView({ api, worktree: W, rel })); } finally { hooks.active = false; }
 };
 const ready = (over: Partial<Parameters<typeof fileTabs.loaded>[2]> = {}) => {
@@ -46,7 +55,7 @@ const ready = (over: Partial<Parameters<typeof fileTabs.loaded>[2]> = {}) => {
   fileTabs.loaded(W, "a.ts", { text: "one", kind: "text", hash: "h1", eol: "lf", size: 3, ...over } as never);
 };
 
-beforeEach(() => fileTabs.reset());
+beforeEach(() => { fileTabs.reset(); hooks.slots = []; });
 afterEach(() => fileTabs.reset());
 
 it("shows the editor for a text file and writes edits into the store", () => {
@@ -144,6 +153,19 @@ it("accepting a side edits the buffer and marks the tab dirty, without writing",
   expect(write).not.toHaveBeenCalled();
   // The conflict is settled: the next draw has no bar.
   expect(bars(draw(api).find((n) => n.type === CodeEditor)!)).toBe(0);
+});
+
+it("a right click on the gutter opens a menu with the three copy rows, and closing clears it", () => {
+  ready();
+  const api = createMockApi({});
+  expect(draw(api).some((n) => n.type === ContextMenu)).toBe(false);
+  draw(api).find((n) => n.type === CodeEditor)!.props.onGutterMenu({ x: 5, y: 6 }, 7, null);
+  const menu = draw(api).find((n) => n.type === ContextMenu)!;
+  expect(menu.props.at).toEqual({ x: 5, y: 6 });
+  expect(menu.props.label).toBe(en("editor.gutter.label"));
+  expect(menu.props.items.map((i: { id: string }) => i.id)).toEqual(["copyPath", "copyRelPath", "copyRemote"]);
+  menu.props.onClose();
+  expect(draw(api).some((n) => n.type === ContextMenu)).toBe(false);
 });
 
 it("does not read an image or media file as text", () => {

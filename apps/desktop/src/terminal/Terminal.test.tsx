@@ -11,7 +11,7 @@ import { resetCustomSchemesForTests, setCustomSchemes } from "./customSchemes";
 import { resetTerminalSettingsForTests, setTerminalSettings, TERMINAL_DEFAULTS } from "./terminalSettings";
 
 // The first ref is the xterm host; the rest keep their initial value.
-const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[], searchOpts: undefined as unknown, platform: "win" as string, csi: {} as Record<string, (p: unknown[]) => boolean>, bufType: "normal", bracketedMode: true }));
+const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[], searchOpts: undefined as unknown, platform: "win" as string, csi: {} as Record<string, (p: unknown[]) => boolean>, bufType: "normal", bracketedMode: true, providers: [] as unknown[], linkHandler: null as null | { activate(e: unknown, text: string, range: unknown): void; allowNonHttpProtocols?: boolean }, webLinks: null as null | { handler: (e: unknown, uri: string) => void; options: { hover?: unknown; leave?: unknown } | undefined } }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: (initial: unknown) => [initial, () => {}],
@@ -74,6 +74,11 @@ vi.mock("@xterm/xterm", () => ({
     options: Record<string, unknown>;
     constructor(opts: Record<string, unknown>) {
       this.options = hooks.options = { ...opts };
+      hooks.linkHandler = (opts.linkHandler as typeof hooks.linkHandler) ?? null;
+    }
+    registerLinkProvider(provider: unknown) {
+      hooks.providers.push(provider);
+      return { dispose() {} };
     }
     parser = {
       registerOscHandler(id: number, cb: (d: string) => boolean) {
@@ -94,6 +99,8 @@ vi.mock("@xterm/xterm", () => ({
     };
     buffer = {
       active: {
+        length: 0,
+        getLine: () => undefined,
         get type() {
           return hooks.bufType;
         },
@@ -129,7 +136,13 @@ vi.mock("@xterm/xterm", () => ({
 }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() { hooks.fits++; } } }));
 vi.mock("@xterm/addon-search", () => ({ SearchAddon: class { constructor(opts?: unknown) { hooks.searchOpts = opts; } findNext() {} findPrevious() {} } }));
-vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: class {} }));
+vi.mock("@xterm/addon-web-links", () => ({
+  WebLinksAddon: class {
+    constructor(handler: (e: unknown, uri: string) => void, options?: { hover?: unknown; leave?: unknown }) {
+      hooks.webLinks = { handler, options };
+    }
+  },
+}));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 // The renderer has its own tests; here only what the pane asks of it.
 vi.mock("./terminalRenderer", () => ({
@@ -186,6 +199,9 @@ beforeEach(() => {
   hooks.listeners = {};
   hooks.pasted = [];
   hooks.renderer = [];
+  hooks.providers = [];
+  hooks.linkHandler = null;
+  hooks.webLinks = null;
   resetTerminalSettingsForTests();
   vi.stubGlobal("getComputedStyle", () => ({ getPropertyValue: () => "" }));
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
@@ -592,6 +608,60 @@ it("Ctrl+F opens the find bar through the key handler", () => {
   effect();
   const e = { type: "keydown", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, key: "f", code: "KeyF", preventDefault: vi.fn() } as unknown as KeyboardEvent;
   expect(hooks.keyHandler?.(e)).toBe(false);
+});
+
+const mod = { button: 0, ctrlKey: true, metaKey: false, shiftKey: false, altKey: false, clientX: 3, clientY: 4 };
+
+it("a URL opens through the api, never through window.open", async () => {
+  const api = createMockApi({});
+  const open = vi.fn();
+  vi.stubGlobal("window", { open });
+  const { effect } = mount({ api });
+  (effect() as () => void)();
+  expect(hooks.webLinks).not.toBeNull();
+  hooks.webLinks!.handler({ ...mod }, "https://x.dev/a");
+  hooks.webLinks!.handler({ ...mod, ctrlKey: false }, "https://x.dev/plain");
+  await tick();
+  // With no menu host a plain click opens as well.
+  expect(api.__openedUrls()).toEqual(["https://x.dev/a", "https://x.dev/plain"]);
+  expect(open).not.toHaveBeenCalled();
+  expect(hooks.webLinks!.options).toMatchObject({ hover: expect.any(Function), leave: expect.any(Function) });
+});
+
+it("a plain click on a URL asks for the menu when the pane has a menu host", async () => {
+  const api = createMockApi({});
+  const onLinkMenu = vi.fn();
+  const { effect } = mount({ api, onLinkMenu });
+  (effect() as () => void)();
+  hooks.webLinks!.handler({ ...mod, ctrlKey: false }, "https://x.dev/a");
+  expect(onLinkMenu).toHaveBeenCalledTimes(1);
+  expect(onLinkMenu.mock.calls[0]![0]).toEqual({ x: 3, y: 4 });
+  expect(onLinkMenu.mock.calls[0]![2]).toBe("https://x.dev/a");
+  expect(api.__openedUrls()).toEqual([]);
+});
+
+it("registers a file link provider and an OSC 8 handler that route through the api", async () => {
+  const api = createMockApi({});
+  const { effect } = mount({ api, worktree: "/demo/wt/xdev-oak" });
+  (effect() as () => void)();
+  expect(hooks.providers).toHaveLength(1);
+  expect(hooks.linkHandler?.allowNonHttpProtocols).toBe(true);
+  hooks.linkHandler!.activate({ ...mod }, "https://x.dev/osc", { start: { x: 1, y: 1 }, end: { x: 2, y: 1 } });
+  await tick();
+  expect(api.__openedUrls()).toEqual(["https://x.dev/osc"]);
+  // Not a web or file target: nothing opens.
+  hooks.linkHandler!.activate({ ...mod }, "mailto:a@b.c", { start: { x: 1, y: 1 }, end: { x: 2, y: 1 } });
+  await tick();
+  expect(api.__openedUrls()).toHaveLength(1);
+});
+
+it("has no file links without a worktree", () => {
+  const api = createMockApi({});
+  const { effect } = mount({ api });
+  (effect() as () => void)();
+  let out: unknown = "pending";
+  (hooks.providers[0] as { provideLinks(y: number, cb: (l: unknown) => void): void }).provideLinks(1, (l) => (out = l));
+  expect(out).toBeUndefined();
 });
 
 // ---- Keys the terminal encodes itself (multi-line input, word moves, Option as Alt) ----

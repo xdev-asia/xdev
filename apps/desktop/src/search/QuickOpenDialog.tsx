@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
 import type { Api } from "@/api";
+import { isAbsolutePath, relUnder } from "@/files/linkPath";
 import { useI18n } from "@/i18n";
 import { Highlight } from "@/palette/Highlight";
 import type { Range } from "@/palette/match";
@@ -30,7 +31,7 @@ export interface QuickOpenProps {
   worktree: string | null;
   recent: RecentFiles;
   /** `side` is Ctrl+Enter: open in a new pane to the right. */
-  onOpen(rel: string, opts: { line?: number; side: boolean }): void;
+  onOpen(rel: string, opts: { line?: number; column?: number; side: boolean }): void;
   onClose(): void;
   now?: () => number;
 }
@@ -89,18 +90,23 @@ export function QuickOpenDialog(props: QuickOpenProps): JSX.Element {
   }, [open]);
 
   const ready = listed && listed.worktree === worktree ? listed : null;
-  const { query: text, line } = splitLine(query);
-  const rows = useMemo(
-    () => (ready && worktree ? rankFiles(ready.files, text, recent.list(worktree)) : []),
-    [ready, text, worktree, recent, open],
-  );
+  const { query: typed, line, column } = splitLine(query);
+  // An absolute path inside the worktree is ranked as its relative path, that file first; outside, it matches nothing.
+  const inside = worktree && isAbsolutePath(typed.trim()) ? relUnder(worktree, typed.trim()) : null;
+  const text = inside ?? typed;
+  const rows = useMemo(() => {
+    if (!ready || !worktree) return [];
+    const ranked = rankFiles(ready.files, text, recent.list(worktree));
+    const exact = inside === null ? -1 : ranked.findIndex((r) => r.rel === inside);
+    return exact > 0 ? [ranked[exact]!, ...ranked.slice(0, exact), ...ranked.slice(exact + 1)] : ranked;
+  }, [ready, text, inside, worktree, recent, open]);
   const at = Math.min(selected, Math.max(0, rows.length - 1));
   const recentSet = worktree && text.trim() === "" ? new Set(recent.list(worktree)) : null;
 
   function run(rel: string | undefined, side: boolean) {
     if (!rel) return;
     onClose();
-    onOpen(rel, { line, side });
+    onOpen(rel, { line, column, side });
   }
 
   function onKeyDown(e: KeyboardEvent) {

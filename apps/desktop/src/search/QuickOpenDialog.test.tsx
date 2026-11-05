@@ -90,6 +90,29 @@ it("a :n suffix opens at that line, Ctrl+Enter opens to the side", async () => {
   expect(d.onOpen).toHaveBeenCalledWith("src/App.tsx", { line: 12, side: true });
 });
 
+it("a path:line:col and an absolute path inside the worktree open that file at the place", async () => {
+  const d = dialog(createMockApi({}));
+  await tick();
+  d.type(`${WT}/src/App.tsx:3:2`);
+  expect(d.names()[0]).toBe("App.tsx");
+  d.key({ key: "Enter" });
+  expect(d.onOpen).toHaveBeenCalledWith("src/App.tsx", { line: 3, column: 2, side: false });
+  const e = dialog(createMockApi({}));
+  await tick();
+  e.type("src/App.tsx:5:1");
+  e.key({ key: "Enter", ctrlKey: true });
+  expect(e.onOpen).toHaveBeenCalledWith("src/App.tsx", { line: 5, column: 1, side: true });
+});
+
+it("an absolute path outside the worktree matches nothing", async () => {
+  const d = dialog(createMockApi({}));
+  await tick();
+  d.type("/elsewhere/src/App.tsx:3");
+  expect(d.names()).toEqual([]);
+  d.key({ key: "Enter" });
+  expect(d.onOpen).not.toHaveBeenCalled();
+});
+
 it("arrows move the selection and Escape closes through onCancel", async () => {
   const d = dialog(createMockApi({}));
   await tick();

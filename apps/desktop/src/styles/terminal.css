@@ -18,6 +18,10 @@
 @media (prefers-reduced-motion: reduce) { .terminal-bell { animation: none; } }
 .terminal-drop { box-shadow: inset 0 0 0 1px var(--x-color-accent); }
 .terminal-host { position: absolute; inset: var(--x-space-2); }
+/* The hover tip of a link: the x-tooltip look, anchored to the pane's bottom left. */
+.x-tooltip.term-link-tip { left: var(--x-space-2); bottom: var(--x-space-2); max-width: calc(100% - 2 * var(--x-space-2)); transform: none; pointer-events: none; overflow-wrap: anywhere; font-family: var(--x-font-mono); }
+/* The target a link menu names, in full on two lines at most. */
+.x-menu-group.term-link-dest { font-family: var(--x-font-mono); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; max-width: min(21rem, calc(100vw - 1rem)); }
 .terminal-find { position: absolute; top: var(--x-space-2); right: var(--x-space-4); z-index: 5; display: flex; align-items: center; gap: var(--x-space-1); max-width: calc(100% - var(--x-space-6)); padding: var(--x-space-1) var(--x-space-2); color: var(--x-color-ink); background: var(--x-color-panel); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-md); }
 .terminal-find-input { flex: 1; min-width: 80px; width: 180px; padding: var(--x-space-1) var(--x-space-2); font: inherit; color: var(--x-color-ink); background: var(--x-color-surface); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-md); }
 .terminal-find-input[aria-invalid="true"] { border-color: var(--x-color-danger); }

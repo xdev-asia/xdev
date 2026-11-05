@@ -44,6 +44,19 @@ it("splitLine reads a :n suffix", () => {
   expect(splitLine("App.tsx")).toEqual({ query: "App.tsx" });
 });
 
+it("splitLine reads :line:col and leaves a drive alone", () => {
+  expect(splitLine("a.ts:3:7")).toEqual({ query: "a.ts", line: 3, column: 7 });
+  expect(splitLine("  a.ts:3:7 ")).toEqual({ query: "a.ts", line: 3, column: 7 });
+  expect(splitLine("C:")).toEqual({ query: "C:" });
+  expect(splitLine("C:\\x")).toEqual({ query: "C:\\x" });
+  expect(splitLine("C:\\x:4")).toEqual({ query: "C:\\x", line: 4 });
+  expect(splitLine("E:/wt/a.ts:4:9")).toEqual({ query: "E:/wt/a.ts", line: 4, column: 9 });
+  expect(splitLine("a:0")).toEqual({ query: "a:0" });
+  expect(splitLine("a:3:0")).toEqual({ query: "a:3:0" });
+  expect(splitLine("a:9007199254740993")).toEqual({ query: "a:9007199254740993" });
+  expect(splitLine("a:3:9007199254740993")).toEqual({ query: "a:3:9007199254740993" });
+});
+
 it("recent files are per worktree, newest first, capped and persisted", () => {
   const store = memory();
   const r = new RecentFiles(store);

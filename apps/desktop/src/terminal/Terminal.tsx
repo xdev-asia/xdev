@@ -6,9 +6,13 @@ import "@xterm/xterm/css/xterm.css";
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { JSX, Ref } from "react";
 import { toApiError, type Api, type ApiError, type PtyInfo, type PtyProfile } from "@/api";
+import { openFile } from "@/files/openFile";
 import { useI18n } from "@/i18n";
 import { appOwnsKey } from "@/keys/keymap";
-import { PLATFORM } from "@/platform";
+import { IS_MAC, PLATFORM } from "@/platform";
+import { copyText } from "@/ui/clipboard";
+import type { MenuItem } from "@/ui/ContextMenu";
+import { pushToast } from "@/workspace/toastStore";
 import { PtyClient } from "./ptyClient";
 import { createTerminalHandle } from "./terminalActions";
 import { getCustomSchemes, subscribeCustomSchemes } from "./customSchemes";
@@ -18,7 +22,7 @@ import { TerminalFind } from "./TerminalFind";
 import { createBell } from "./terminalBell";
 import { attachRenderer } from "./terminalRenderer";
 import { followAppTheme } from "./terminalColors";
-import { pushToast } from "@/workspace/toastStore";
+import { createFileLinkProvider, createLinkResolver, createOscLinkHandler, cwdFromOsc7, urlLinkOptions, type TermLinksEnv } from "./termLinks";
 import { pasteClipboard, type PasteResult } from "./clipboardPaste";
 import { registerDropTarget } from "./fileDrop";
 import { trackInputModes } from "./inputModes";
@@ -76,8 +80,16 @@ export function Terminal(props: {
    * Without it the right click is left to the webview, as before.
    */
   onMenu?: (at: { x: number; y: number }, handle: TerminalHandle) => void;
+  /** The worktree file links resolve in; without it a file path is plain text (a URL still links). */
+  worktree?: string;
+  /** A plain click on a link asks for its action menu; without it the click opens the link. */
+  onLinkMenu?: (at: { x: number; y: number }, items: MenuItem[], title: string) => void;
+  /** The menu's "Terminal link settings" row. */
+  onLinkSettings?: () => void;
 }): JSX.Element {
   const { t } = useI18n();
+  // The hover tip of a link, drawn at the pane's bottom left.
+  const [tip, setTip] = useState<string | null>(null);
   const host = useRef<HTMLDivElement>(null);
   const search = useRef<SearchAddon | null>(null);
   const xterm = useRef<XTerm | null>(null);
@@ -93,6 +105,7 @@ export function Terminal(props: {
   const shellKind = useRef<ShellKind>("unknown");
   // An agent CLI runs in the pane; until the pty reports it, a non-shell profile is taken as one.
   const isAgent = useRef(props.profile !== "shell");
+  // Link and paste toasts read the live translator.
   const tRef = useRef(t);
   tRef.current = t;
   // A paste that saved nothing says why; the others are silent.
@@ -137,8 +150,42 @@ export function Terminal(props: {
     const color = (name: string) => css.getPropertyValue(name).trim() || undefined;
     const mono = color("--x-font-mono");
     const initial = xtermOptions(getTerminalSettings(), mono, color, getCustomSchemes());
+    // File paths, URLs and OSC 8 links; the hover tip is a state of the pane.
+    // The shell's folder, from its OSC 7 reports; relative paths in output are read against it.
+    let shellCwd: string | undefined;
+    const links: TermLinksEnv = {
+      worktree: () => handlers.current.worktree,
+      buffer: () => xterm.current!.buffer.active,
+      cwd: () => shellCwd,
+      resolve: createLinkResolver((worktree, paths, cwd) => handlers.current.api.fileLinksResolve(worktree, paths, cwd)),
+      settings: () => {
+        const { linkClick, urlMiddleClick } = getTerminalSettings();
+        return { linkClick, urlMiddleClick };
+      },
+      mac: IS_MAC,
+      deps: {
+        api: {
+          fileOpenDefault: (worktree, rel) => handlers.current.api.fileOpenDefault(worktree, rel),
+          fileReveal: (worktree, rel) => handlers.current.api.fileReveal(worktree, rel),
+          openUrl: (url) => handlers.current.api.openUrl(url),
+        },
+        openFile,
+        copyText,
+        toast: (text) => void pushToast({ text }),
+        t: (key, vars) => tRef.current(key, vars),
+        mac: IS_MAC,
+        onSettings: () => handlers.current.onLinkSettings?.(),
+        focusTerminal: () => xterm.current?.focus(),
+      },
+      showMenu: (at, menu) => {
+        const show = handlers.current.onLinkMenu;
+        show?.(at, menu.items, menu.title);
+        return show !== undefined;
+      },
+      tip: setTip,
+    };
     // Proposed API: search decorations (and with them the match count) need it.
-    const term = new XTerm({ ...initial, allowProposedApi: true });
+    const term = new XTerm({ ...initial, allowProposedApi: true, linkHandler: createOscLinkHandler(links) });
     // The pane and the padding around the host take the theme's background (the app theme: the CSS one).
     const pane = el.parentElement;
     const paint = (background: string | undefined) => {
@@ -152,8 +199,10 @@ export function Terminal(props: {
     xterm.current = term;
     term.loadAddon(fit);
     term.loadAddon(finder);
-    // No opener plugin in the app: the webview hands the link to the system browser.
-    term.loadAddon(new WebLinksAddon((_event, uri) => window.open(uri, "_blank", "noopener")));
+    // No opener plugin in the app: a click goes to a command that starts the system browser.
+    const urls = urlLinkOptions(links);
+    term.loadAddon(new WebLinksAddon(urls.handler, { hover: urls.hover, leave: urls.leave }));
+    term.registerLinkProvider(createFileLinkProvider(links));
     term.open(el);
     // WebGL or DOM, as Settings says; after `open`, which the addon needs.
     const renderer = attachRenderer(term, getTerminalSettings().gpu);
@@ -239,6 +288,10 @@ export function Terminal(props: {
     term.onSelectionChange(() => {
       const text = term.getSelection();
       if (text && getTerminalSettings().copyOnSelect) void navigator.clipboard?.writeText(text).catch(() => {});
+    });
+    term.parser.registerOscHandler(7, (data) => {
+      shellCwd = cwdFromOsc7(data) ?? shellCwd;
+      return true;
     });
     // A program may write the clipboard (OSC 52) when the setting allows it; a read request is always refused.
     term.parser.registerOscHandler(52, (data) => {
@@ -381,6 +434,7 @@ export function Terminal(props: {
       el.removeEventListener("contextmenu", onContextMenu, true);
       el.removeEventListener("mouseenter", onMouseEnter);
       observer.disconnect();
+      setTip(null);
       if (owned) void client.dispose();
       search.current = null;
       xterm.current = null;
@@ -404,6 +458,11 @@ export function Terminal(props: {
         />
       )}
       <div ref={host} className="terminal-host" />
+      {tip !== null && (
+        <div className="x-tooltip term-link-tip" role="tooltip" data-open="">
+          {tip}
+        </div>
+      )}
     </div>
   );
 }

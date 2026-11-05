@@ -36,3 +36,12 @@ it("opens the submenu of the active parent, with swatch and radio state", () => 
   expect(out).toContain("background:var(--x-tab-color-1)");
   expect(out).toContain('aria-haspopup="menu"');
 });
+
+it("draws a title above the rows that is not an item", () => {
+  const out = renderToStaticMarkup(<MenuPanel items={items} path={[0]} t={t} title="src/a.ts:3" />);
+  expect(out.startsWith('<div class="x-menu-group term-link-dest" role="presentation" title="src/a.ts:3">src/a.ts:3</div>')).toBe(true);
+  expect(out.match(/role="menuitem"/g)).toHaveLength(4);
+  expect(out.match(/data-path=/g)).toHaveLength(4);
+  // A submenu does not repeat it.
+  expect(renderToStaticMarkup(<MenuPanel items={items} path={[4, 0]} t={t} title="x" />).match(/term-link-dest/g)).toHaveLength(1);
+});
