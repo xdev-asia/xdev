@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { Checkbox } from "@xdev-asia/ui";
 import type { Api, Automation } from "@/api";
@@ -39,6 +39,8 @@ export function DeleteAutomationDialog(props: {
   const { t } = useI18n();
   const [dontAsk, setDontAsk] = useState(false);
   const a = props.automation;
+  // Each opening starts unticked: a box left ticked from an earlier delete would skip the next ones too.
+  useEffect(() => setDontAsk(false), [a]);
   return (
     <ConfirmDialog
       open={a !== null}

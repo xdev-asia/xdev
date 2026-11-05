@@ -59,6 +59,20 @@ it("confirms with the state of Don't ask again", () => {
   expect(textOf(m.all().find((n) => n.type === ConfirmDialog)!)).toBeDefined();
 });
 
+it("starts each opening with Don't ask again cleared", async () => {
+  let automation: Automation | null = { name: "A", workspaceMode: "existing" } as Automation;
+  const m = mount(DeleteAutomationDialog, () => ({ automation, onConfirm: vi.fn(), onCancel: vi.fn() }));
+  const box = () => m.all().find((n) => n.type === Checkbox)!;
+  await m.settle();
+  box().props.onChange({ target: { checked: true } });
+  expect(box().props.checked).toBe(true);
+  automation = null;
+  await m.settle();
+  automation = { name: "B", workspaceMode: "existing" } as Automation;
+  await m.settle();
+  expect(box().props.checked).toBe(false);
+});
+
 it("deletes without touching the preference when Don't ask again is off", async () => {
   const { api, a } = await made();
   await deleteAutomation(api, a, { dontAsk: false, openSettings: vi.fn(), t });
