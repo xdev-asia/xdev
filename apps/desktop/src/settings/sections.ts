@@ -3,6 +3,7 @@ import type { Api } from "@/api";
 import { AccountPage } from "./account/AccountPage";
 import { AgentsPage } from "./agents/AgentsPage";
 import { AppearancePage } from "./AppearancePage";
+import { AutomationsSettingsPage } from "./AutomationsSettingsPage";
 import { EditorPage } from "./EditorPage";
 import { GeneralPage } from "./GeneralPage";
 import { GitSettings } from "./GitSettings";
@@ -27,6 +28,8 @@ export interface SettingsSectionProps {
   filter?: SettingsFilter;
   // Switches the Settings view to another section (General links to Open In Apps).
   openSection?(id: string): void;
+  // Switches the window to another view (Automations opens the Automations view).
+  openView?(view: string): void;
 }
 
 export interface SettingsFilter {
@@ -50,6 +53,7 @@ export const SECTIONS: SettingsSection[] = [
   { id: "account", labelKey: "account.title", Component: AccountPage },
   { id: "agents", labelKey: "settings.agents.title", Component: AgentsPage },
   { id: "orchestration", labelKey: "settings.orchestration.title", Component: OrchestrationPage },
+  { id: "automations", labelKey: "settings.automations.title", Component: AutomationsSettingsPage },
   { id: "usage", labelKey: "settings.usage.title", Component: UsagePage },
   { id: "notifications", labelKey: "settings.notifications.title", Component: NotificationsPage },
   { id: "terminal", labelKey: "settings.terminal.title", Component: TerminalPage },

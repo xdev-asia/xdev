@@ -59,6 +59,10 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("appearance.statusBar.version", "settings.appearance.statusBar.version", ["status bar", "footer", "version", "thanh trạng thái", "thanh trang thai", "phiên bản", "phien ban"]),
   e("appearance.terminalLink", "settings.appearance.terminalLink", ["terminal", "colours", "colors", "scheme", "schemes", "import", "màu", "mau", "bảng màu", "bang mau"]),
   e("appearance.usageLink", "settings.appearance.usageLink", ["usage", "credentials", "quota", "sign in", "mức dùng", "muc dung", "đăng nhập", "dang nhap"]),
+  // Automations
+  e("automations.showButton", "settings.automations.showButton", ["automations", "sidebar", "button", "show", "hide", "tự động hóa", "tu dong hoa", "thanh bên", "thanh ben", "ẩn", "an"], "settings.automations.showButton.hint"),
+  e("automations.confirmDelete", "settings.automations.confirmDelete", ["automations", "delete", "confirm", "ask", "xóa", "xoa", "xác nhận", "xac nhan", "tự động hóa", "tu dong hoa"], "settings.automations.confirmDelete.hint"),
+  e("automations.open", "settings.automations.how.title", ["automations", "how", "works", "schedule", "open", "tự động hóa", "tu dong hoa", "lịch", "lich", "mở", "mo"]),
   // Agents
   e("agents.approvals", "settings.agents.approvals", ["permission", "ask", "skip", "yolo", "phê duyệt", "phe duyet", "quyền", "quyen"]),
   e("agents.defaultAgent", "settings.agents.defaultAgent", ["default", "agent", "mặc định", "mac dinh"]),

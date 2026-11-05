@@ -9,7 +9,7 @@ import { RevealSetting, SettingsSearch } from "./SettingsSearch";
 import { runSearch } from "./searchModel";
 
 /** Settings: the search and the list of sections on the left, the chosen one on the right. */
-export function SettingsView(props: { api: Api; onChanged(): void; initial?: string; arg?: string; target?: string }): JSX.Element {
+export function SettingsView(props: { api: Api; onChanged(): void; initial?: string; arg?: string; target?: string; openView?(view: string): void }): JSX.Element {
   const { t } = useI18n();
   const [active, setActive] = useState(() => (SECTIONS.some((s) => s.id === props.initial) ? props.initial! : SECTIONS[0].id));
   const [query, setQuery] = useState("");
@@ -45,7 +45,7 @@ export function SettingsView(props: { api: Api; onChanged(): void; initial?: str
       </nav>
       {section ? (
         <section className="settings-body" aria-label={t(section.labelKey)}>
-          <section.Component key={section.id} api={props.api} onChanged={props.onChanged} arg={props.arg} filter={filter} openSection={openSection} />
+          <section.Component key={section.id} api={props.api} onChanged={props.onChanged} arg={props.arg} filter={filter} openSection={openSection} openView={props.openView} />
           {props.target && !found.active && <RevealSetting id={props.target} />}
         </section>
       ) : (
