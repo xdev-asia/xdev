@@ -3,6 +3,11 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
+  ConfigExported,
+  EnvPreviewRow,
+  RepoEnvVar,
+  ImportApplied,
+  ImportPreview,
   Accounts,
   AccountSource,
   ActiveAccount,
@@ -316,6 +321,8 @@ export type { AccountSource, ActiveAccount, AgentsSettings, AppStatsView, AwakeV
 export type { PortEvidence, PortKind, PortProtocol, PortScan, WorkspacePort } from "@xdev/bindings";
 export type { HostSource, LocalForward, SshAuthPrompt, SshConnState, SshConnectionView, SshHost, SshPromptKind, SshSyncReport, SshTestOutcome };
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
+export type { ConfigExported, EnvPreviewRow, ImportApplied, ImportPreview, RepoEnvVar } from "@xdev/bindings";
+export type { SectionPreview, ConfigChange } from "@xdev/bindings";
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FsChanged, FsEvent, FsEventKind } from "@xdev/bindings";
 export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase, UpdateDeferral, ReleaseBuild, ReleaseList };
@@ -721,7 +728,12 @@ export type ErrorCode =
   | "bad_icon"
   | "gh_account_missing"
   | "crash_store"
-  | "diag_write";
+  | "diag_write"
+  | "bad_env"
+  | "config_shape"
+  | "config_version"
+  | "config_sections"
+  | "config_too_large";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -744,6 +756,9 @@ export type RepoPatch = {
   // The whole list; `[]` clears it. A blank or long name is `bad_name`, an empty or unusable folder
   // list `bad_sparse`, more than 20 presets `too_large`. A later preset replaces one of the same name.
   sparsePresets?: SparsePreset[];
+  // The whole Environment list; `[]` clears it. A key that is not `[A-Za-z_][A-Za-z0-9_]*` or starts with
+  // `XDEV_` is `bad_env`. A secret row's value is not sent here: see `repoEnvSecretSet`.
+  env?: RepoEnvVar[];
 };
 
 // The `ptySpawn` profile id that runs the worktree's setup script in the default shell. Rejects
@@ -1562,6 +1577,23 @@ export interface Api {
   diagnosticsRevealExport(path: string): Promise<void>;
   // Opens the folder of the app log.
   diagnosticsRevealLogs(): Promise<void>;
+  // Settings → Advanced, Export settings. Opens a native save dialog (in Rust), writes the chosen sections
+  // as `{ xdev: 1, exported, sections }` without secrets and returns where it went; null when cancelled.
+  // Rejects `config_sections` when none of `sections` can be exported.
+  configExport(sections: string[]): Promise<ConfigExported | null>;
+  // Reads the file at `path` and says, section by section, what importing it would change. Changes nothing.
+  // Rejects `config_shape`, `config_version` (detail: the version found) or `config_too_large`.
+  configImportPreview(path: string): Promise<ImportPreview>;
+  // Applies the chosen sections of that file through the settings write path and returns the ones applied.
+  configImportApply(path: string, sections: string[]): Promise<ImportApplied>;
+  // Per-project environment. The keys of the repo's secret rows that have a value in the keychain; never a value.
+  repoEnvSecrets(repoId: string): Promise<string[]>;
+  // Keeps a secret row's value in the keychain. Save the row with `repoUpdate` first (`bad_env` otherwise).
+  repoEnvSecretSet(repoId: string, key: string, value: string): Promise<void>;
+  // Forgets the stored value of a key.
+  repoEnvSecretClear(repoId: string, key: string): Promise<void>;
+  // The effective project env, secrets masked; `overrides` marks a name the process env also has.
+  repoEnvPreview(repoId: string): Promise<EnvPreviewRow[]>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -1747,6 +1779,11 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "gh_account_missing",
   "crash_store",
   "diag_write",
+  "bad_env",
+  "config_shape",
+  "config_version",
+  "config_sections",
+  "config_too_large",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -2215,6 +2252,13 @@ const tauriApi: Api = {
   diagnosticsExport: (defaultName) => call("diagnostics_export", { defaultName }),
   diagnosticsRevealExport: (path) => call("diagnostics_reveal_export", { path }),
   diagnosticsRevealLogs: () => call("diagnostics_reveal_logs"),
+  configExport: (sections) => call("config_export", { sections }),
+  configImportPreview: (path) => call("config_import_preview", { path }),
+  configImportApply: (path, sections) => call("config_import_apply", { path, sections }),
+  repoEnvSecrets: (repoId) => call("repo_env_secrets", { repoId }),
+  repoEnvSecretSet: (repoId, key, value) => call("repo_env_secret_set", { repoId, key, value }),
+  repoEnvSecretClear: (repoId, key) => call("repo_env_secret_clear", { repoId, key }),
+  repoEnvPreview: (repoId) => call("repo_env_preview", { repoId }),
 };
 
 const DEMO_CRASH: CrashReport = {

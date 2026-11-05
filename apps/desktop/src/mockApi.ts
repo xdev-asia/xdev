@@ -36,6 +36,8 @@ import { createMockAppStats } from "./mockAppStats";
 import { createMockPower } from "./mockPower";
 import { createMockPty, type MockPtyd } from "./mockPty";
 import { createMockCrash, type MockCrash } from "./mockCrash";
+import { createMockConfigEnv, DEMO_IMPORT_PATH } from "./mockConfigEnv";
+import { CONFIG_EXTENSIONS } from "./settings/configIo";
 import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
 import { createMockXdevId, type MockXdevId } from "./mockXdevId";
 import { createMockPorts } from "./mockPorts";
@@ -580,6 +582,20 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
   const themes = createMockThemes(undefined, settingsHub.emit);
   const power = createMockPower(settingsApi);
   const workspace = createMockWorkspace(options.workspace, settingsHub.emit);
+  const configEnv = createMockConfigEnv({
+    sections: async () => ({
+      network: { ...(await settingsApi.networkSettings()) },
+      terminal: { ...(await settingsApi.terminalSettings()) },
+      editor: { ...(await settingsApi.editorSettings()) },
+    }),
+    applySection: async (name, value) => {
+      if (name === "network") await settingsApi.networkSettingsPut({ ...(await settingsApi.networkSettings()), ...value });
+    },
+    repoEnv: async (id) => {
+      const repo = (await workspace.workspaceList()).find((r) => r.id === id);
+      return repo ? (repo.env ?? []) : null;
+    },
+  });
   const api: MockApi = {
     ...createMockTasks({
       defaultRepo: repo ? DEMO_ROOT : null,
@@ -617,6 +633,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockAgentSessions(settingsApi),
     ...createMockLayout(),
     ...createMockCrash(),
+    ...configEnv,
     ...createMockCli(),
     ...createMockAutomations({ demo: options.automationsDemo }),
     ...createMockQuickCommands(
@@ -701,7 +718,9 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     async models() {
       return { claude: ["fable", "opus", "sonnet"], codex: ["gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-luna"] };
     },
-    async pickFile() {
+    async pickFile(extensions) {
+      // Only the settings import asks for exactly these.
+      if (extensions.join() === CONFIG_EXTENSIONS.join()) return DEMO_IMPORT_PATH;
       return themes.__paths()[0] ?? null;
     },
     async pickFolder() {
