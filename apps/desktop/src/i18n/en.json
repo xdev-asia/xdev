@@ -2171,5 +2171,17 @@
   "termLink.hint.click": "Ctrl+click",
   "termLink.hint.altClick": "Shift+Ctrl+click",
   "termLink.hint.clickMac": "⌘+click",
-  "termLink.hint.altClickMac": "⇧⌘+click"
+  "termLink.hint.altClickMac": "⇧⌘+click",
+  "termLink.open": "Open file",
+  "termLink.openDefault": "Open with default app",
+  "termLink.openUrl": "Open in browser",
+  "termLink.copyPath": "Copy file path",
+  "termLink.copyLink": "Copy link",
+  "termLink.copiedPath": "Copied file path",
+  "termLink.copiedLink": "Copied link",
+  "termLink.copyPathFailed": "Failed to copy file path",
+  "termLink.copyLinkFailed": "Failed to copy link",
+  "termLink.settings": "Terminal link settings",
+  "termLink.openFailed": "Could not open {path}",
+  "termLink.denied": "Not opened: this file can run as a program"
 }

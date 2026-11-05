@@ -2171,5 +2171,17 @@
   "termLink.hint.click": "Ctrl+nhấp",
   "termLink.hint.altClick": "Shift+Ctrl+nhấp",
   "termLink.hint.clickMac": "⌘+nhấp",
-  "termLink.hint.altClickMac": "⇧⌘+nhấp"
+  "termLink.hint.altClickMac": "⇧⌘+nhấp",
+  "termLink.open": "Mở tệp",
+  "termLink.openDefault": "Mở bằng ứng dụng mặc định",
+  "termLink.openUrl": "Mở trong trình duyệt",
+  "termLink.copyPath": "Sao chép đường dẫn tệp",
+  "termLink.copyLink": "Sao chép liên kết",
+  "termLink.copiedPath": "Đã sao chép đường dẫn tệp",
+  "termLink.copiedLink": "Đã sao chép liên kết",
+  "termLink.copyPathFailed": "Không sao chép được đường dẫn tệp",
+  "termLink.copyLinkFailed": "Không sao chép được liên kết",
+  "termLink.settings": "Cài đặt liên kết terminal",
+  "termLink.openFailed": "Không mở được {path}",
+  "termLink.denied": "Chưa mở: tệp này có thể chạy như một chương trình"
 }

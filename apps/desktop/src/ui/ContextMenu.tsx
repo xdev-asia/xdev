@@ -32,10 +32,17 @@ export function MenuPanel(p: {
   t: T;
   onHover?(path: number[]): void;
   onPick?(item: MenuItem, path: number[]): void;
+  /** A line above the top level's rows: not focusable, not an item. */
+  title?: string;
 }): JSX.Element {
   const prefix = p.prefix ?? [];
   return (
     <>
+      {p.title !== undefined && prefix.length === 0 && (
+        <div className="x-menu-group term-link-dest" role="presentation" title={p.title}>
+          {p.title}
+        </div>
+      )}
       {p.items.map((item, i) => {
         if (item.kind === "separator") return <div key={item.id} role="separator" className="x-menu-sep" />;
         const at = [...prefix, i];
@@ -71,7 +78,7 @@ export function MenuPanel(p: {
             </button>
             {open && item.children && (
               <div role="menu" className="x-menu x-menu-sub">
-                <MenuPanel {...p} items={item.children} prefix={at} />
+                <MenuPanel {...p} title={undefined} items={item.children} prefix={at} />
               </div>
             )}
           </div>
@@ -86,7 +93,7 @@ export function MenuPanel(p: {
  * scroll; arrows, Home / End, Enter, type-ahead, Left / Right for submenus. Focus goes back to the
  * element that had it when the menu opened, unless an item moved it somewhere else (a dialog).
  */
-export function ContextMenu(p: { at: { x: number; y: number }; items: MenuItem[]; onClose(): void }): JSX.Element | null {
+export function ContextMenu(p: { at: { x: number; y: number }; items: MenuItem[]; title?: string; label?: string; onClose(): void }): JSX.Element | null {
   const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<MenuState>(() => initialMenu(p.items));
@@ -144,13 +151,14 @@ export function ContextMenu(p: { at: { x: number; y: number }; items: MenuItem[]
     <div
       ref={root}
       role="menu"
+      aria-label={p.label}
       className="x-menu x-menu-root"
       data-flip={flip || undefined}
       style={{ left: pos.x, top: pos.y }}
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <MenuPanel items={p.items} path={state.path} t={t} onHover={(path) => setState({ path })} onPick={pick} />
+      <MenuPanel items={p.items} title={p.title} path={state.path} t={t} onHover={(path) => setState({ path })} onPick={pick} />
     </div>,
     document.body,
   );
