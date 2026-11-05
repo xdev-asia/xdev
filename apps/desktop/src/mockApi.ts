@@ -23,6 +23,7 @@ import { estimateTokens, type ExportDoc, planExport } from "./mockExport";
 import { createMockAgentSessions } from "./mockAgentSessions";
 import { createMockPaneChrome, type MockPaneChrome } from "./notes/mockNotes";
 import { createMockQuickCommands } from "./mockQuickCommands";
+import { createMockTerminalSets } from "./mockTerminalSets";
 import { createMockIssues } from "./mockIssues";
 import { createMockKit, type MockKit } from "./mockKit";
 import { createMockLayout } from "./mockLayout";
@@ -662,6 +663,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ),
     ...createMockComposer(),
     ...createMockPromptQueue(),
+    ...createMockTerminalSets(async () => (await profiles.profiles()).profiles.map((p) => p.profile.id), settingsHub.emit),
     async clipboardImageSave() {
       if (mockClipboardImage === null || typeof mockClipboardImage === "string") return mockClipboardImage;
       throw mockClipboardImage;

@@ -6,9 +6,19 @@ import { useI18n } from "@/i18n";
 import { buildOverrides, CUSTOM_MODEL, EMPTY_FORM, type OptionsForm } from "./launchOptions";
 import { PromptComposer, type Need, type SkillItem } from "./PromptComposer";
 import { verdictMessage } from "./verdictCopy";
+import type { SequenceStep, StartupPreset } from "@/api";
+import { clampCopies, COPIES_MAX, COPIES_MIN } from "@/terminalSets/batch";
+import { StepsEditor, stepsValid } from "@/terminalSets/StepsEditor";
 
 /** What the dialog hands back: this launch's overrides (null for none) and a first prompt (null for none). */
-export type LaunchChoice = { overrides: LaunchOverrides | null; prompt: string | null };
+export type LaunchChoice = {
+  overrides: LaunchOverrides | null;
+  prompt: string | null;
+  /** How many tabs to open, 1 to 8. */
+  copies: number;
+  /** Commands each tab types after it starts, in order. */
+  startup: SequenceStep[];
+};
 
 /**
  * The setup of one launch of an agent: model, effort, extra arguments and a first prompt. Nothing is
@@ -18,6 +28,8 @@ export function LaunchOptionsDialog(props: {
   api: Api;
   profile: ProfileView;
   worktree: string;
+  /** Saved startup presets to start from; none when left out. */
+  presets?: readonly StartupPreset[];
   onLaunch(choice: LaunchChoice): void;
   onCancel(): void;
 }): JSX.Element {
@@ -25,6 +37,10 @@ export function LaunchOptionsDialog(props: {
   const { t } = useI18n();
   const [form, setForm] = useState<OptionsForm>(EMPTY_FORM);
   const [prompt, setPrompt] = useState("");
+  const [copies, setCopies] = useState("1");
+  const [startup, setStartup] = useState<SequenceStep[]>([]);
+  const [note, setNote] = useState("");
+  const count = clampCopies(copies);
   const [skills, setSkills] = useState<SkillItem[] | null>(null);
   const [files, setFiles] = useState<string[] | null>(null);
   const [checking, setChecking] = useState(false);
@@ -81,10 +97,12 @@ export function LaunchOptionsDialog(props: {
       modal
       body="plain"
       title={t("agentLaunch.title", { agent: name })}
-      confirmLabel={t("agentLaunch.launch")}
+      confirmLabel={count > 1 ? t("agentLaunch.launchCopies", { count }) : t("agentLaunch.launch")}
       cancelLabel={t("dialog.cancel")}
-      confirmDisabled={badArgs}
-      onConfirm={() => props.onLaunch({ overrides: buildOverrides(form, hasEffort).overrides, prompt: prompt.trim() === "" ? null : prompt })}
+      confirmDisabled={badArgs || !stepsValid(startup)}
+      onConfirm={() =>
+        props.onLaunch({ overrides: buildOverrides(form, hasEffort).overrides, prompt: prompt.trim() === "" ? null : prompt, copies: count, startup })
+      }
       onCancel={props.onCancel}
     >
       <div className="ws-fields agent-launch-fields">
@@ -123,6 +141,21 @@ export function LaunchOptionsDialog(props: {
           files={files}
           onNeed={(need) => setWanted((w) => (w.includes(need) ? w : [...w, need]))}
         />
+        <Field
+          label={t("agentLaunch.copies")}
+          hint={t("agentLaunch.copies.hint")}
+          type="number"
+          inputMode="numeric"
+          min={COPIES_MIN}
+          max={COPIES_MAX}
+          value={copies}
+          onChange={(e) => setCopies(e.target.value)}
+          onBlur={() => setCopies(String(count))}
+        />
+        <StepsEditor api={api} steps={startup} presets={props.presets ?? []} onChange={setStartup} onNote={setNote} />
+        <span role="status" aria-live="polite" className="ts-hint">
+          {note}
+        </span>
         <div className="agent-launch-check">
           <Button variant="secondary" type="button" disabled={checking} onClick={() => void check()}>
             {checking ? t("agentLaunch.checking") : t("agentLaunch.check")}

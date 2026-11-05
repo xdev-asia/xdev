@@ -9,6 +9,7 @@ use crate::atomic::write_atomic;
 use xdev_git::PullPolicy;
 
 use crate::quick_commands::QuickCommand;
+use crate::terminal_sets::{StartupPreset, TerminalSet};
 
 /// The shape `save` writes. Bump it with a step in `MIGRATIONS` when a key
 /// is renamed or removed; a new field with a default needs neither.
@@ -63,6 +64,13 @@ pub struct Settings {
         deserialize_with = "lenient_items"
     )]
     pub quick_commands_recent: Vec<String>,
+    /// Saved terminal sets, in the order they were made; a bad entry is
+    /// dropped on its own.
+    #[serde(default, rename = "terminalSets", deserialize_with = "lenient_items")]
+    pub terminal_sets: Vec<TerminalSet>,
+    /// Saved startup sequences; lenient the same way.
+    #[serde(default, rename = "startupPresets", deserialize_with = "lenient_items")]
+    pub startup_presets: Vec<StartupPreset>,
     /// Settings → Open In Apps: the programs a worktree can be opened in.
     #[serde(default, deserialize_with = "lenient")]
     pub open_in: OpenInSettings,
@@ -1597,6 +1605,8 @@ pub enum SettingsSection {
     Shell,
     Automations,
     Network,
+    /// `terminalSets` and `startupPresets`.
+    TerminalSets,
 }
 
 /// What a `settings://changed` event carries.

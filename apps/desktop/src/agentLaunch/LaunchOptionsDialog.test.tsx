@@ -64,7 +64,7 @@ beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.active = false; })
 it("launches with nothing changed as no overrides and no prompt", async () => {
   const d = await open("claude");
   d.dialog().props.onConfirm();
-  expect(d.onLaunch).toHaveBeenCalledWith({ overrides: null, prompt: null });
+  expect(d.onLaunch).toHaveBeenCalledWith({ overrides: null, prompt: null, copies: 1, startup: [] });
 });
 
 it("offers the agent's known models, the profile default first and a custom entry last", async () => {
@@ -89,6 +89,8 @@ it("hands back the chosen model, effort, split arguments and the prompt", async 
   expect(d.onLaunch).toHaveBeenCalledWith({
     overrides: { model: "opus", effort: "high", extraArgs: ["--add-dir", "my dir"] },
     prompt: "fix it @src/a.ts",
+    copies: 1,
+    startup: [],
   });
 });
 
@@ -97,7 +99,7 @@ it("a typed model replaces the list's", async () => {
   d.selects()[0]!.props.onChange({ target: { value: "__custom" } });
   d.field("agentLaunch.model.customLabel").props.onChange({ target: { value: "my-model" } });
   d.dialog().props.onConfirm();
-  expect(d.onLaunch).toHaveBeenCalledWith({ overrides: { model: "my-model", effort: null, extraArgs: [] }, prompt: null });
+  expect(d.onLaunch).toHaveBeenCalledWith({ overrides: { model: "my-model", effort: null, extraArgs: [] }, prompt: null, copies: 1, startup: [] });
 });
 
 it("an open quote shows the error and keeps Launch off", async () => {
@@ -129,4 +131,14 @@ it("Cancel leaves without launching", async () => {
   d.dialog().props.onCancel();
   expect(d.onCancel).toHaveBeenCalled();
   expect(d.onLaunch).not.toHaveBeenCalled();
+});
+
+it("hands back the number of copies, kept between 1 and 8", async () => {
+  const d = await open("aider");
+  d.field("agentLaunch.copies").props.onChange({ target: { value: "3" } });
+  d.dialog().props.onConfirm();
+  expect(d.onLaunch).toHaveBeenLastCalledWith(expect.objectContaining({ copies: 3 }));
+  d.field("agentLaunch.copies").props.onChange({ target: { value: "99" } });
+  d.dialog().props.onConfirm();
+  expect(d.onLaunch).toHaveBeenLastCalledWith(expect.objectContaining({ copies: 8 }));
 });

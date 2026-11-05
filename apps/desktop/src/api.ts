@@ -202,6 +202,13 @@ import type {
   ScriptSource,
   QuickCommand,
   FileCommands,
+  TerminalSet,
+  SetEntry,
+  SetTarget,
+  SetWorktree,
+  SequenceStep,
+  StepWait,
+  StartupPreset,
   CliAsk,
   CliOpenFile,
   CliOpenTab,
@@ -558,6 +565,13 @@ export type {
   QuickAction,
   FileCommand,
   FileCommands,
+  TerminalSet,
+  SetEntry,
+  SetTarget,
+  SetWorktree,
+  SequenceStep,
+  StepWait,
+  StartupPreset,
   OpenInApp,
   OpenInSettings,
   OpenTarget,
@@ -805,6 +819,7 @@ export type RepoPatch = {
 export const SETUP_PROFILE = "xdev:setup";
 
 export { QUICK_COMMAND_LIMITS } from "./quickCommands/limits";
+export { TERMINAL_SET_LIMITS } from "./terminalSets/limits";
 
 export interface Api {
   // The downloaded update waiting for a restart, if any; Rust checks and downloads on its own.
@@ -1428,6 +1443,18 @@ export interface Api {
   quickCommandUsed(id: string): Promise<void>;
   // Recently run ids, newest first, at most `QUICK_COMMAND_LIMITS.recent`.
   quickCommandsRecent(): Promise<string[]>;
+
+  // Terminal sets and startup presets (settings.json `terminalSets`, `startupPresets`). Every change
+  // fires `settings://changed` with `terminalSets`. Upserts reject with `bad_arg` and the field in
+  // `detail`: `name`, `entries`, `profile`, `command`, `wait`, `steps`, `worktree` or `list` (at
+  // `TERMINAL_SET_LIMITS.list`). An empty `id` gets a new one at the end; a known id is replaced in place.
+  terminalSetsList(): Promise<TerminalSet[]>;
+  terminalSetUpsert(item: TerminalSet): Promise<TerminalSet>;
+  // An unknown id is a no-op.
+  terminalSetDelete(id: string): Promise<void>;
+  startupPresetsList(): Promise<StartupPreset[]>;
+  startupPresetUpsert(item: StartupPreset): Promise<StartupPreset>;
+  startupPresetDelete(id: string): Promise<void>;
   // Files. `worktree` is a repo or worktree the workspace knows (any other rejects with
   // `worktree_unknown`); `rel` is relative to it with forward slashes. `..`, an absolute path, a
   // link or `.git` rejects with `bad_path`.
@@ -2266,6 +2293,12 @@ const tauriApi: Api = {
   repoFileCommandsTrust: (worktree, hash) => call("repo_file_commands_trust", { worktree, hash }),
   quickCommandUsed: (id) => call("quick_command_used", { id }),
   quickCommandsRecent: () => call("quick_commands_recent"),
+  terminalSetsList: () => call("terminal_sets_list"),
+  terminalSetUpsert: (item) => call("terminal_set_upsert", { item }),
+  terminalSetDelete: (id) => call("terminal_set_delete", { id }),
+  startupPresetsList: () => call("startup_presets_list"),
+  startupPresetUpsert: (item) => call("startup_preset_upsert", { item }),
+  startupPresetDelete: (id) => call("startup_preset_delete", { id }),
   fileRead: (worktree, rel) => call("file_read", { worktree, rel }),
   fileWrite: (worktree, rel, text, eol, expected) => call("file_write", { worktree, rel, text, eol, expected }),
   fileCreate: (worktree, rel, dir) => call("file_create", { worktree, rel, dir }),

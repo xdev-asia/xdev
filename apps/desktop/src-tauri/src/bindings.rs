@@ -311,6 +311,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_workspace::VaultView::export_all(cfg)?;
     xdev_workspace::VaultKind::export_all(cfg)?;
     QuickCommand::export_all(cfg)?;
+    crate::terminal_sets::TerminalSet::export_all(cfg)?;
+    crate::terminal_sets::StartupPreset::export_all(cfg)?;
     FileCommands::export_all(cfg)?;
     TabReport::export_all(cfg)?;
     CliOpenTab::export_all(cfg)?;
