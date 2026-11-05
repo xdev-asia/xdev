@@ -138,6 +138,7 @@ import type {
   TabReport,
   XdevIdState,
   XdevIdServer,
+  FsChanged,
 } from "@xdev/bindings";
 import type {
   AgentSession,
@@ -190,6 +191,7 @@ export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, W
 export type { AccountSource, ActiveAccount, AgentsSettings, AwakeView, KeepAwake, SwitchRunning };
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
+export type { FsChanged, FsEvent, FsEventKind } from "@xdev/bindings";
 export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase };
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { CliAsk, CliOpenTab, TabReport };
@@ -1015,6 +1017,14 @@ export interface Api {
   filesSearch(worktree: string, query: SearchQuery, id: string, onEvent: (e: SearchEvent) => void): Promise<void>;
   // Stops the search named `id`; nothing when it is not running.
   filesSearchCancel(id: string): Promise<void>;
+  // Watches the worktree's files: `onEvent` gets one batch (worktree-relative `/` paths) after
+  // the first change and at most every 100 ms. Ignores `.git`, `node_modules`, `dist`, `build`,
+  // `.next`, `.cache`, `target`, `.venv` and `__pycache__` at any depth. `overflow` means
+  // "re-read everything" (too many events, or the watcher failed and stopped). Subscribers of
+  // one worktree share one watcher; the same `id` again replaces its subscription.
+  filesWatch(worktree: string, id: string, onEvent: (e: FsChanged) => void): Promise<void>;
+  // Ends the subscription `id`; nothing when it is not there.
+  filesUnwatch(id: string): Promise<void>;
   // Settings → Editor; the put returns what was stored, with numbers clamped to their ranges.
   editorSettings(): Promise<EditorSettings>;
   editorSettingsPut(v: EditorSettings): Promise<EditorSettings>;
@@ -1506,6 +1516,12 @@ const tauriApi: Api = {
     return call("files_search", { worktree, query, id, onEvent: channel });
   },
   filesSearchCancel: (id) => call("files_search_cancel", { id }),
+  filesWatch(worktree, id, onEvent) {
+    const channel = new Channel<FsChanged>();
+    channel.onmessage = onEvent;
+    return call("files_watch", { worktree, id, onEvent: channel });
+  },
+  filesUnwatch: (id) => call("files_unwatch", { id }),
   editorSettings: () => call("editor_settings_get"),
   editorSettingsPut: (settings) => call("editor_settings_put", { settings }),
   navigationSettings: () => call("navigation_settings_get"),

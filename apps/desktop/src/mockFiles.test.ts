@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createMockApi, type SearchEvent, type SearchQuery } from "./api";
+import { createMockApi, type FsChanged, type SearchEvent, type SearchQuery } from "./api";
 import { createMockWorkspace } from "./mockWorkspace";
 
 const WT = "/demo/wt/xdev-oak";
@@ -121,5 +121,47 @@ describe("mock search", () => {
     await api.filesSearchCancel("s2");
     await pending;
     expect(events).toEqual([]);
+  });
+  it("tells a watcher what changed, and stops when it unwatches", async () => {
+    const api = createMockWorkspace();
+    const got: FsChanged[] = [];
+    await api.filesWatch(WT, "w1", (e) => got.push(e));
+    expect(api.__watchers()).toEqual([{ worktree: WT, id: "w1" }]);
+    api.__editFile(WT, "README.md", "changed\n");
+    api.__editFile(WT, "fresh.txt", "new\n");
+    api.__editFile(WT, "README.md", null);
+    expect(got.map((b) => b.events)).toEqual([
+      [{ kind: "update", rel: "README.md", dir: false }],
+      [{ kind: "create", rel: "fresh.txt", dir: false }],
+      [{ kind: "delete", rel: "README.md", dir: null }],
+    ]);
+    expect(got[0].worktree).toBe(WT);
+    api.__overflow(WT);
+    expect(got[3].events).toEqual([{ kind: "overflow", rel: "", dir: null }]);
+    await api.filesUnwatch("w1");
+    api.__editFile(WT, "fresh.txt", "again\n");
+    expect(got).toHaveLength(4);
+    expect(api.__watchers()).toEqual([]);
+  });
+
+  it("emits for its own writes, creates, renames and trashes, and refuses an unknown worktree", async () => {
+    const api = createMockWorkspace();
+    const got: FsChanged["events"][] = [];
+    await api.filesWatch(WT, "w", (e) => got.push(e.events));
+    const file = await api.fileRead(WT, "README.md");
+    await api.fileWrite(WT, "README.md", "x\n", "lf", file.hash);
+    await api.fileCreate(WT, "notes", true);
+    await api.fileRename(WT, "README.md", "notes/README.md");
+    await api.fileTrash(WT, "notes/README.md");
+    expect(got).toEqual([
+      [{ kind: "update", rel: "README.md", dir: false }],
+      [{ kind: "create", rel: "notes", dir: true }],
+      [
+        { kind: "delete", rel: "README.md", dir: null },
+        { kind: "create", rel: "notes/README.md", dir: false },
+      ],
+      [{ kind: "delete", rel: "notes/README.md", dir: null }],
+    ]);
+    await expect(api.filesWatch("/nope", "x", () => {})).rejects.toMatchObject({ code: "worktree_unknown" });
   });
 });
