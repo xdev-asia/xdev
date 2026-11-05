@@ -44,7 +44,13 @@ export function createMockPorts(root: string): PortsApi {
     async portsScan() {
       return scan();
     },
-    async portsStop(_worktrees, id) {
+    async portsStop(_worktrees, id, consent) {
+      const target = ports.find((p) => p.id === id);
+      if (!consent.confirmed) throw Object.assign(new Error("port_stop_unconfirmed"), { code: "port_stop_unconfirmed" });
+      if (!target) throw Object.assign(new Error("port_gone"), { code: "port_gone" });
+      if (target.evidence !== "terminal" && !consent.outsideTerminal) {
+        throw Object.assign(new Error("port_not_started_by_app"), { code: "port_not_started_by_app" });
+      }
       ports = ports.filter((p) => p.id !== id);
       return scan();
     },

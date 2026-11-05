@@ -99,7 +99,7 @@ it("stopping a port shows the new list and scans again after 500 ms", async () =
   await store.refresh();
   const first = store.state().scan?.ports[0];
   expect(first).toBeDefined();
-  await store.stop(first!.id);
+  await store.stop(first!.id, { confirmed: true, outsideTerminal: false });
   expect(store.state().scan?.ports.some((p) => p.id === first!.id)).toBe(false);
   expect(scanSpy).toHaveBeenCalledTimes(1);
   await vi.advanceTimersByTimeAsync(500);

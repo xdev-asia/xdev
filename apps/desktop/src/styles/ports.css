@@ -60,5 +60,17 @@
 .pt-actions {
   display: inline-flex;
   flex: none;
+  align-items: center;
   gap: 2px;
+}
+
+/* The confirming stop, the same small secondary button as the card chip's. */
+.pt-actions .pt-stop {
+  height: 24px;
+  max-width: 180px;
+  padding: 0 8px;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

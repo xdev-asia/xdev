@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_opener::OpenerExt;
 use xdev_ports::urls::AdvertisedUrls;
-use xdev_ports::{OsProbe, PortScan, Probe, PtyRoot, Scanner, StopError};
+use xdev_ports::{OsProbe, PortScan, Probe, PtyRoot, Scanner, StopConsent, StopError};
 
 use crate::commands::CmdError;
 use crate::pty::Ptys;
@@ -107,10 +107,11 @@ fn stop_in<P: Probe>(
     roots: &[PtyRoot],
     worktrees: &[PathBuf],
     id: &str,
+    consent: StopConsent,
     protected: &[u32],
 ) -> Result<PortScan, CmdError> {
     scanner
-        .stop(id, roots, worktrees, urls, protected)
+        .stop(id, consent, roots, worktrees, urls, protected)
         .map_err(stop_error)
 }
 
@@ -153,13 +154,22 @@ pub fn ports_scan(
 }
 
 /// Stops the process behind the port `id`, then returns a fresh scan.
+/// Refuses unless `confirmed`; a port no xDev terminal started (matched by
+/// folder or command only) also needs `outside_terminal`, the second
+/// confirmation.
 #[tauri::command(async)]
 pub fn ports_stop(
     ports: State<'_, Ports>,
     ptys: State<'_, Ptys>,
     worktrees: Vec<String>,
     id: String,
+    confirmed: bool,
+    outside_terminal: bool,
 ) -> Result<PortScan, CmdError> {
+    let consent = StopConsent {
+        confirmed,
+        outside_terminal,
+    };
     // The app itself and the terminal service are never stopped from here.
     let mut protected = vec![std::process::id()];
     protected.extend(ptys.service_pid());
@@ -169,6 +179,7 @@ pub fn ports_stop(
         &ptys.roots(),
         &paths(worktrees),
         &id,
+        consent,
         &protected,
     )
 }
@@ -259,18 +270,48 @@ mod tests {
         assert_eq!(other.unwrap_err().code, "port_gone");
     }
 
+    const TWICE: StopConsent = StopConsent {
+        confirmed: true,
+        outside_terminal: true,
+    };
+
     #[test]
     fn stop_maps_each_refusal_to_its_code() {
         let (scanner, urls, wts) = fixture();
-        let code = |id: &str, protected: &[u32]| {
-            stop_in(&scanner, &urls, &[], &wts, id, protected)
+        let code = |id: &str, consent: StopConsent, protected: &[u32]| {
+            stop_in(&scanner, &urls, &[], &wts, id, consent, protected)
                 .unwrap_err()
                 .code
         };
-        assert_eq!(code("localhost:1:1", &[]), "port_gone");
-        assert_eq!(code("127.0.0.1:22:8", &[]), "port_not_owned");
-        assert_eq!(code("127.0.0.1:5173:7", &[7]), "port_own_process");
-        assert!(stop_in(&scanner, &urls, &[], &wts, "127.0.0.1:5173:7", &[]).is_ok());
+        let id = "127.0.0.1:5173:7";
+        assert_eq!(
+            code(id, StopConsent::default(), &[]),
+            "port_stop_unconfirmed"
+        );
+        let once = StopConsent {
+            confirmed: true,
+            outside_terminal: false,
+        };
+        // Pid 7 only works in the worktree's folder: no xDev terminal started it.
+        assert_eq!(code(id, once, &[]), "port_not_started_by_app");
+        assert_eq!(code("localhost:1:1", TWICE, &[]), "port_gone");
+        assert_eq!(code("127.0.0.1:22:8", TWICE, &[]), "port_not_owned");
+        assert_eq!(code(id, TWICE, &[7]), "port_own_process");
+        assert!(stop_in(&scanner, &urls, &[], &wts, id, TWICE, &[]).is_ok());
+    }
+
+    #[test]
+    fn one_confirmation_stops_a_listener_under_an_xdev_terminal() {
+        let (scanner, urls, wts) = fixture();
+        let roots = [PtyRoot {
+            pid: 7,
+            worktree: PathBuf::from("/w/a"),
+        }];
+        let once = StopConsent {
+            confirmed: true,
+            outside_terminal: false,
+        };
+        assert!(stop_in(&scanner, &urls, &roots, &wts, "127.0.0.1:5173:7", once, &[]).is_ok());
     }
 
     #[test]

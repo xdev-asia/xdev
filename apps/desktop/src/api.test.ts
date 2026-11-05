@@ -843,11 +843,11 @@ it("sends the port calls to Tauri with the worktrees and the id", async () => {
     const { api } = await import("./api");
     const { invoke } = await import("@tauri-apps/api/core");
     await api.portsScan(["/w/a"], true);
-    await api.portsStop(["/w/a"], "localhost:5173:42");
+    await api.portsStop(["/w/a"], "localhost:5173:42", { confirmed: true, outsideTerminal: false });
     await api.portsOpen("localhost:5173:42");
     expect(vi.mocked(invoke).mock.calls).toEqual([
       ["ports_scan", { worktrees: ["/w/a"], force: true }],
-      ["ports_stop", { worktrees: ["/w/a"], id: "localhost:5173:42" }],
+      ["ports_stop", { worktrees: ["/w/a"], id: "localhost:5173:42", confirmed: true, outsideTerminal: false }],
       ["ports_open", { id: "localhost:5173:42" }],
     ]);
   } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }

@@ -496,7 +496,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const livePorts = cardPorts ? livePortsByWorktree(ports.state().scan) : {};
   async function stopPort(_wt: WorktreeView, port: LivePort): Promise<void> {
     try {
-      await ports.stop(port.id);
+      // The card's chip asked once; a port no xDev terminal started is refused here and stopped from the panel.
+      await ports.stop(port.id, { confirmed: true, outsideTerminal: false });
       pushToast({ text: t("ports.stopped", { port: port.port }) });
     } catch (e) {
       pushToast({ text: t(`error.${toApiError(e).code}`) });
