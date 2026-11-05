@@ -315,7 +315,7 @@ fn days_in_month_max(month: u32) -> u32 {
 }
 
 /// Whether some calendar date can match (leap years count): `0 0 31 2 *` has none.
-fn has_date(c: &ParsedCron) -> bool {
+pub(crate) fn has_date(c: &ParsedCron) -> bool {
     if c.minute == 0 || c.hour == 0 || c.month == 0 || c.dom == 0 && c.dow == 0 {
         return false;
     }
