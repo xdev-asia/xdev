@@ -142,7 +142,6 @@ impl Default for Tail {
 }
 
 /// What one read of a tail gives.
-#[allow(dead_code)] // read by the CLI's terminal verbs as they land
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TailRead {
@@ -184,14 +183,12 @@ impl Tail {
     }
 
     /// The offset after the last char.
-    #[allow(dead_code)] // read by the CLI's terminal verbs as they land
     pub fn end(&self) -> u64 {
         self.start + self.len as u64
     }
 
     /// The text after `cursor` (all of it without one), at most the last
     /// `limit_lines` lines of it.
-    #[allow(dead_code)] // read by the CLI's terminal verbs as they land
     pub fn read(&self, cursor: Option<u64>, limit_lines: usize) -> TailRead {
         let end = self.end();
         let from = cursor.unwrap_or(self.start);
@@ -241,7 +238,6 @@ impl TermTails {
     }
 
     /// `None` when the PTY printed nothing yet or is gone.
-    #[allow(dead_code)] // read by the CLI's terminal verbs as they land
     pub fn read(&self, id: &str, cursor: Option<u64>, limit_lines: usize) -> Option<TailRead> {
         self.lock().get(id).map(|t| t.read(cursor, limit_lines))
     }

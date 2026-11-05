@@ -5,6 +5,7 @@ mod atomic;
 #[cfg(test)]
 mod bindings;
 mod cli_path;
+mod cli_terminal;
 mod cli_verbs;
 mod clipboard;
 mod commands;

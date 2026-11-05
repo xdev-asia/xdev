@@ -25,6 +25,7 @@ use crate::orchestration::{self, OrchHub};
 use crate::pty::Ptys;
 use crate::settings::OrchestrationSettings;
 use crate::settings_store;
+use crate::term_tail::TermTails;
 use crate::workspace::{WorkspaceLock, clock, update};
 
 /// One terminal tab as the UI sees it; the UI owns the state machine.
@@ -47,7 +48,7 @@ pub struct TabReport {
 
 impl TabReport {
     /// What `terminal list` shows: the status, or `exited`.
-    fn state(&self) -> &str {
+    pub(crate) fn state(&self) -> &str {
         if self.exited { "exited" } else { &self.status }
     }
 }
@@ -223,7 +224,6 @@ impl TabBoard {
     }
 
     /// The tab `tab` names, by id or a unique prefix of one.
-    #[allow(dead_code)] // used by the terminal verbs as they land
     pub fn resolve(&self, tab: &str) -> Result<TabReport, AppError> {
         find_tab(&self.lock().tabs, tab).cloned()
     }
@@ -325,6 +325,8 @@ pub struct Ctx<'a> {
     pub data: &'a Path,
     pub lock: &'a WorkspaceLock,
     pub board: &'a TabBoard,
+    /// What each PTY printed, escape-stripped.
+    pub tails: &'a TermTails,
     /// The folder a PTY started in.
     pub cwd_of: &'a dyn Fn(&str) -> Option<PathBuf>,
     pub emit: &'a dyn Fn(&str, Value),
@@ -374,7 +376,7 @@ struct Row<'a> {
     agents: Vec<String>,
 }
 
-fn params<T: for<'de> Deserialize<'de>>(req: &Request) -> Result<T, AppError> {
+pub(crate) fn params<T: for<'de> Deserialize<'de>>(req: &Request) -> Result<T, AppError> {
     let value = if req.params.is_null() {
         json!({})
     } else {
@@ -923,6 +925,7 @@ pub fn dispatch(
         "worktree.set" => worktree_set(ctx, req, caller),
         "worktree.create" => worktree_create(ctx, req, caller),
         "terminal.wait" => terminal_wait(ctx, req, gone),
+        "terminal.show" => crate::cli_terminal::terminal_show(ctx, req),
         m if m.starts_with("orchestration.") => orchestration::handle(ctx, req, caller, gone),
         other => Err(bad_request(format!("unknown method {other}"))),
     }
@@ -946,6 +949,7 @@ impl Handler for AppVerbs {
         let lock = app.state::<WorkspaceLock>();
         let hub = app.state::<CliHub>();
         let ptys = app.state::<Ptys>();
+        let tails = app.state::<TermTails>();
         let cwd_of = |id: &str| ptys.cwd_of(id);
         let write_pty = |id: &str, bytes: &[u8]| ptys.with(id, |s| s.write(bytes.to_vec())).is_ok();
         let orch = app.state::<OrchHub>();
@@ -958,6 +962,7 @@ impl Handler for AppVerbs {
             data,
             lock: &lock,
             board: &hub.board,
+            tails: &tails,
             cwd_of: &cwd_of,
             emit: &emit,
             approvals: &hub.approvals,
@@ -1005,6 +1010,7 @@ pub(crate) mod tests {
         pub other: PathBuf,
         pub lock: WorkspaceLock,
         pub board: TabBoard,
+        pub tails: TermTails,
         pub events: Mutex<Vec<(String, Value)>>,
         pub approvals: Approvals,
         pub orch: OrchHub,
@@ -1068,6 +1074,7 @@ pub(crate) mod tests {
             other,
             lock: WorkspaceLock::default(),
             board: TabBoard::default(),
+            tails: TermTails::default(),
             events: Mutex::default(),
             approvals: Approvals::default(),
             orch: OrchHub::default(),
@@ -1119,6 +1126,7 @@ pub(crate) mod tests {
                 data: &self.data,
                 lock: &self.lock,
                 board: &self.board,
+                tails: &self.tails,
                 cwd_of: &cwd_of,
                 emit: &emit,
                 approvals: &self.approvals,
