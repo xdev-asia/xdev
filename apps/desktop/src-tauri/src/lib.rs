@@ -1,5 +1,6 @@
 mod accounts;
 mod agent_path;
+mod agent_session_log;
 mod agent_sessions;
 mod ai_keys;
 mod app_menu;
@@ -585,6 +586,12 @@ pub fn run() {
             agent_sessions::agent_sessions,
             agent_sessions::session_search_status,
             agent_sessions::session_search_clear,
+            agent_session_log::agent_session_tail,
+            agent_session_log::agent_session_log_path,
+            agent_session_log::agent_session_open_log,
+            agent_session_log::agent_session_reveal_log,
+            agent_session_log::agent_session_delete,
+            agent_session_log::agent_sessions_skipped,
             quick_commands::quick_commands_list,
             quick_commands::quick_command_upsert,
             quick_commands::quick_command_delete,

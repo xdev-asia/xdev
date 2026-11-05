@@ -335,6 +335,21 @@ fn snapshot<'a>(kept: &'a mut Option<(PathBuf, SessionIndex)>, data: &Path) -> &
     index
 }
 
+/// A copy of the kept index of `data`, loaded when none is kept.
+pub(crate) fn index_copy(data: &Path) -> SessionIndex {
+    let mut guard = INDEX.lock().unwrap_or_else(PoisonError::into_inner);
+    snapshot(&mut guard, data).clone()
+}
+
+/// Reads the logs again (after a log was removed) and saves the index; the
+/// text index drops what the removed log held.
+pub(crate) fn refresh_all(app: &tauri::AppHandle, ctx: &Ctx) -> Result<(), CmdError> {
+    let cutoff = history_cutoff(now_ms(), HISTORY_DAYS);
+    let search = search_path(&ctx.data);
+    let consent = || crate::settings_store::read(app).agents.session_search;
+    refresh_once(&ctx.data, || ctx.homes(), cutoff, Some(&search), &consent)
+}
+
 /// Whether a refresh is reading the logs now.
 fn refreshing() -> bool {
     REFRESH
