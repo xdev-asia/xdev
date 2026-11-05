@@ -1,6 +1,8 @@
 import { Badge, Button, Card, StatusDot } from "@xdev-asia/ui";
+import { useState } from "react";
 import type { JSX } from "react";
 import type { SkillStatus } from "@/api";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
 import { coverageLine, skillState } from "./howTo";
 
@@ -15,6 +17,8 @@ export function SkillCard(props: {
   onInstall(): void;
   /** Installs over an edited copy (the old one is backed up). */
   onReplace?(): void;
+  /** Removes the copies xDev wrote. Shown only when something is installed. */
+  onUninstall?(): void;
   onRecheck(): void;
   onCopyCommand(): void;
 }): JSX.Element {
@@ -35,6 +39,7 @@ export function SkillCard(props: {
             {t("settings.orchestration.skill.replace")}
           </Button>
         )}
+        {state !== "notInstalled" && props.onUninstall && <UninstallControl busy={props.busy} onUninstall={props.onUninstall} />}
         <Button type="button" variant="secondary" data-act="recheck" disabled={props.busy} onClick={props.onRecheck}>
           {t("settings.orchestration.skill.recheck")}
         </Button>
@@ -63,5 +68,29 @@ export function SkillCard(props: {
         {line.hint ? `${t(line.key, line.vars)} ${t("settings.orchestration.coverage.hint")}` : t(line.key, line.vars)}
       </p>
     </Card>
+  );
+}
+
+/** Uninstall, a secondary button that asks before it acts. */
+export function UninstallControl(props: { busy: boolean; onUninstall(): void }): JSX.Element {
+  const { t } = useI18n();
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <>
+      <Button type="button" variant="secondary" data-act="uninstall" disabled={props.busy} onClick={() => setConfirming(true)}>
+        {t("settings.orchestration.skill.uninstall")}
+      </Button>
+      <ConfirmDialog
+        open={confirming}
+        title={t("settings.orchestration.skill.uninstallTitle")}
+        body={t("settings.orchestration.skill.uninstallBody")}
+        confirmLabel={t("settings.orchestration.skill.uninstall")}
+        onConfirm={() => {
+          setConfirming(false);
+          props.onUninstall();
+        }}
+        onCancel={() => setConfirming(false)}
+      />
+    </>
   );
 }

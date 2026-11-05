@@ -48,4 +48,5 @@ it("plays the orchestration events and records what the UI answers", async () =>
   expect(await api.orchestrationWorkerKeepOpen("t1", true)).toMatchObject({ kept: true });
   expect((await api.orchestrationSkillInstall(true)).installed).toBe(true);
   expect(api.__orchInstalls()).toEqual([true]);
+  expect((await api.orchestrationSkillUninstall()).installed).toBe(false);
 });

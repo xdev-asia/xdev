@@ -3968,5 +3968,15 @@
   "agentLaunch.verdict.ok": "{agent} {version} is installed.",
   "workspace.tabs.launchOptions": "Launch with options",
   "workspace.agentPicker.launchOptions": "Launch with options",
-  "cli.ask.automation": "change an automation that runs in"
+  "cli.ask.automation": "change an automation that runs in",
+  "settings.orchestration.skill.uninstall": "Uninstall",
+  "settings.orchestration.skill.uninstallTitle": "Uninstall the skill?",
+  "settings.orchestration.skill.uninstallBody": "Removes the copies and links xDev wrote. Folders you edited or added stay.",
+  "kit.skills.col.agent": "Agent",
+  "kit.agent.claude": "Claude",
+  "kit.agent.codex": "Codex",
+  "kit.agent.agents": "Shared",
+  "kit.agent.gemini": "Gemini",
+  "kit.agent.cursor": "Cursor",
+  "kit.agent.factory": "Factory"
 }

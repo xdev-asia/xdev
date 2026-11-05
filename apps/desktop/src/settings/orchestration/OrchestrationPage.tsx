@@ -70,6 +70,21 @@ export function OrchestrationPage(props: SettingsSectionProps): JSX.Element {
     }
   }
 
+  async function uninstall(): Promise<void> {
+    if (installing.current) return;
+    installing.current = true;
+    setBusy(true);
+    setSkillError(undefined);
+    try {
+      setStatus(await api.orchestrationSkillUninstall());
+    } catch (e) {
+      setSkillError(toApiError(e).code);
+    } finally {
+      installing.current = false;
+      setBusy(false);
+    }
+  }
+
   // Each write returns what was stored (the depth is clamped there too); the page shows that.
   async function patch(change: Partial<OrchestrationSettings>): Promise<void> {
     if (settings === null) return;
@@ -131,6 +146,7 @@ export function OrchestrationPage(props: SettingsSectionProps): JSX.Element {
           error={skillError}
           onInstall={() => void install()}
           onReplace={() => void install(true)}
+          onUninstall={() => void uninstall()}
           onRecheck={() => void refresh()}
           onCopyCommand={() => {
             if (status === null) return;

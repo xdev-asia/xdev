@@ -58,3 +58,18 @@ pub fn auto_update(app: AppHandle) {
         }
     });
 }
+
+/// Removes the copies and links xDev wrote; `force` also removes edited
+/// copies, after a backup.
+pub fn uninstall(app: &AppHandle, force: bool) -> Result<SkillStatus, CmdError> {
+    let env = env(app)?;
+    skills::uninstall(
+        &env,
+        InstallOpts {
+            force,
+            ..InstallOpts::default()
+        },
+    )
+    .map_err(failed)?;
+    skills::status(&env).map_err(failed)
+}

@@ -350,6 +350,7 @@ pub fn run() {
             orchestration::orchestration_settings_put,
             orchestration::orchestration_skill_status,
             orchestration::orchestration_skill_install,
+            orchestration::orchestration_skill_uninstall,
             orchestration::orchestration_worker_lifetime,
             orchestration::orchestration_worker_keep_open,
             orchestration::orchestration_worker_opened,

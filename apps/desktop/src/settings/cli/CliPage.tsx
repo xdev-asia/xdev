@@ -61,6 +61,18 @@ export function CliPage(props: SettingsSectionProps): JSX.Element {
     }
   }
 
+  async function uninstallSkill(): Promise<void> {
+    setSkillBusy(true);
+    setSkillError(undefined);
+    try {
+      setSkill(await api.orchestrationSkillUninstall());
+    } catch (e) {
+      setSkillError(toApiError(e).code);
+    } finally {
+      setSkillBusy(false);
+    }
+  }
+
   async function run(action: () => Promise<CliStatus>): Promise<void> {
     setBusy(true);
     setError(undefined);
@@ -139,6 +151,7 @@ export function CliPage(props: SettingsSectionProps): JSX.Element {
           error={skillError}
           onInstall={() => void installSkill(false)}
           onReplace={() => void installSkill(true)}
+          onUninstall={() => void uninstallSkill()}
           onRecheck={() => void refreshSkill()}
           onCopyCommand={() => {
             if (skill === null) return;

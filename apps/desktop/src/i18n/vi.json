@@ -3968,5 +3968,15 @@
   "agentLaunch.verdict.ok": "{agent} {version} đã được cài.",
   "workspace.tabs.launchOptions": "Chạy với tùy chọn",
   "workspace.agentPicker.launchOptions": "Chạy với tùy chọn",
-  "cli.ask.automation": "đổi một automation chạy trong"
+  "cli.ask.automation": "đổi một automation chạy trong",
+  "settings.orchestration.skill.uninstall": "Gỡ cài đặt",
+  "settings.orchestration.skill.uninstallTitle": "Gỡ cài đặt skill?",
+  "settings.orchestration.skill.uninstallBody": "Xóa các bản sao và liên kết do xDev tạo. Thư mục bạn đã sửa hoặc thêm vẫn được giữ.",
+  "kit.skills.col.agent": "Agent",
+  "kit.agent.claude": "Claude",
+  "kit.agent.codex": "Codex",
+  "kit.agent.agents": "Dùng chung",
+  "kit.agent.gemini": "Gemini",
+  "kit.agent.cursor": "Cursor",
+  "kit.agent.factory": "Factory"
 }

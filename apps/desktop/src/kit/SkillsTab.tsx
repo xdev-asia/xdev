@@ -5,7 +5,7 @@ import type { Api, Home, Skill } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
 import { KitError, kitErr, type KitErr } from "./KitError";
-import { displayPath, homeLabel, oneLine, scopeKey, scopeLabel, skillTargets, type SkillTarget } from "./kitUi";
+import { agentLabel, displayPath, homeLabel, oneLine, scopeKey, scopeLabel, skillTargets, type SkillTarget } from "./kitUi";
 
 const DESCRIPTION_MAX = 90;
 const TOAST_MS = 10_000;
@@ -27,6 +27,7 @@ export function SkillTable(props: {
           <th scope="col">{t("kit.skills.col.description")}</th>
           <th scope="col">{t("kit.skills.col.scope")}</th>
           <th scope="col">{t("kit.skills.col.home")}</th>
+          <th scope="col">{t("kit.skills.col.agent")}</th>
           <th scope="col" className="kit-num">{t("kit.skills.col.tokens")}</th>
           <th scope="col"><span className="kit-sr">{t("kit.skills.col.actions")}</span></th>
         </tr>
@@ -41,6 +42,7 @@ export function SkillTable(props: {
             <td className="kit-cut" title={skill.description}>{oneLine(skill.description, DESCRIPTION_MAX)}</td>
             <td><span className="kit-chip" data-scope={scopeKey(skill)}>{scopeLabel(skill, t)}</span></td>
             <td>{homeLabel(props.homes, skill.home_id, t)}</td>
+            <td><span className="kit-chip" data-agent={skill.agent}>{agentLabel(skill.agent, t)}</span></td>
             <td className="kit-num">{t("kit.tokens", { count: skill.tokens })}</td>
             <td className="kit-actions">
               <button type="button" className="kit-link" data-action="open" onClick={() => props.onOpen(skill)}>{t("kit.skills.open")}</button>

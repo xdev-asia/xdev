@@ -7,6 +7,11 @@ export type Skill = { name: string, description: string, scope: SkillScope,
  */
 home_id: string | null, 
 /**
+ * The agent that loads it: `claude`, `codex`, `gemini`, `cursor`,
+ * `factory`, or `agents` for the shared `~/.agents/skills`.
+ */
+agent: string, 
+/**
  * The skill's folder; `SKILL.md` is inside it.
  */
 dir: string, 

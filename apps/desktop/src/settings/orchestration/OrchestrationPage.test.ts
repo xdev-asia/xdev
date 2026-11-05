@@ -4,7 +4,7 @@ import { translate } from "@/i18n";
 import { mount, nodes, textOf, type Node } from "@/kit/testHooks";
 import { OrchestrationPage } from "./OrchestrationPage";
 import { HowToCards, HowToDialog } from "./HowToCards";
-import { SkillCard } from "./SkillCard";
+import { SkillCard, UninstallControl } from "./SkillCard";
 
 vi.mock("react", async (original) => (await import("@/kit/testHooks")).patchReact(await original<typeof import("react")>()));
 vi.mock("@/i18n", async (original) => ({
@@ -58,6 +58,22 @@ it("Install calls the api once, refreshes the status, and is busy meanwhile", as
   all = m.all();
   expect(skillCard(all).props.busy).toBe(false);
   expect(skillCard(all).props.status.installed).toBe(true);
+});
+
+it("Uninstall calls the api and shows the new status; the card offers it only once installed", async () => {
+  const uninstall = vi.fn(async () => structuredClone(STATUS));
+  const { m } = open({ orchestrationSkillStatus: async () => ({ ...STATUS, installed: true }), orchestrationSkillUninstall: uninstall });
+  const all = await m.settle();
+  skillCard(all).props.onUninstall();
+  await new Promise((r) => setTimeout(r, 0));
+  expect(uninstall).toHaveBeenCalledTimes(1);
+  expect(skillCard(m.all()).props.status.installed).toBe(false);
+  const card = (installed: boolean) => nodes(SkillCard({ status: { ...STATUS, installed }, busy: false, copied: false, onInstall() {}, onUninstall() {}, onRecheck() {}, onCopyCommand() {} }));
+  expect(card(true).some((n) => n.type === UninstallControl)).toBe(true);
+  expect(card(false).some((n) => n.type === UninstallControl)).toBe(false);
+  // The control is a secondary button.
+  const button = mount(UninstallControl, () => ({ busy: false, onUninstall() {} })).all().find((n) => n.props["data-act"] === "uninstall");
+  expect(button?.props.variant).toBe("secondary");
 });
 
 it("an install error shows inline and keeps the old status", async () => {

@@ -20,6 +20,12 @@ export function homeLabel(homes: Home[], id: string | null, t: Translate): strin
   return t("kit.home.account", { agent: home.agent, account: home.source.account });
 }
 
+/** The name of the agent that loads a skill; an id this version does not know is shown as it is. */
+export function agentLabel(agent: string, t: Translate): string {
+  const known = ["claude", "codex", "agents", "gemini", "cursor", "factory"];
+  return known.includes(agent) ? t(`kit.agent.${agent}`) : agent;
+}
+
 /** The separator a path uses, so a joined path looks like its neighbours. */
 export function sepOf(path: string): string {
   return path.includes("\\") && !path.includes("/") ? "\\" : "/";
