@@ -1,6 +1,5 @@
 //! The real machine: listener tables, the process list and the stop signal.
 
-use std::io::Read;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -13,8 +12,12 @@ use crate::{Listener, Proc, ScanError};
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Runs `cmd` and returns its standard output, or `Timeout` once `limit` has
-/// passed (the child is killed then).
+/// passed (the child is killed then). Linux reads `/proc` instead, so only
+/// Windows, macOS and the tests call it.
+#[cfg(any(windows, target_os = "macos", test))]
 pub(crate) fn run_with_timeout(cmd: &mut Command, limit: Duration) -> Result<String, ScanError> {
+    use std::io::Read;
+
     #[cfg(windows)]
     std::os::windows::process::CommandExt::creation_flags(cmd, CREATE_NO_WINDOW);
     let mut child = cmd
