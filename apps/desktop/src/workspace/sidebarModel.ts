@@ -1,4 +1,5 @@
 import type { KeptView, RepoView, SidebarItem, SidebarPrefs, WorkItem, WorktreeView } from "@/api";
+import { isWorktreeVisible } from "./worktreeVisibility";
 
 /** A worktree with the repo it belongs to; `path` keys the grouping. */
 export interface WtEntry {
@@ -88,17 +89,39 @@ export interface SleepingFilter {
 }
 
 /**
+ * The repo ids a project filter keeps, or null when it keeps every project: the filter is empty, or
+ * names no repo in `known` (an id of a repo that is gone is ignored, so it never empties the list).
+ */
+export function activeProjects(filter: readonly string[], known: Iterable<string>): Set<string> | null {
+  const have = new Set(known);
+  const kept = new Set(filter.filter((id) => have.has(id)));
+  return kept.size === 0 ? null : kept;
+}
+
+/** The entries of the projects in the filter; all of them when it is empty or names no listed repo. */
+export function filterByProject<T extends { repo: { id: string } }>(entries: T[], filter: readonly string[], known?: Iterable<string>): T[] {
+  const kept = activeProjects(filter, known ?? entries.map((e) => e.repo.id));
+  return kept ? entries.filter((e) => kept.has(e.repo.id)) : entries;
+}
+
+/**
  * The entries the filters leave, and how many they hid. The selected worktree is never hidden.
- * `sleeping` (not a stored preference) keeps only the worktrees that are asleep.
+ * `sleeping` (not a stored preference) keeps only the worktrees that are asleep. A worktree the person
+ * hid from the sidebar is left out and not counted: the hidden count is for the filters.
  */
 export function visibleEntries(
   entries: WtEntry[],
   prefs: SidebarPrefs,
   selected: string | null,
   sleeping?: SleepingFilter,
+  repoIds?: Iterable<string>,
 ): { entries: WtEntry[]; hidden: number } {
-  const shown = entries.filter((e) => e.path === selected || (!hidesBy(e.wt, prefs) && (!sleeping?.only || sleeping.asleep[e.path] === true)));
-  return { entries: shown, hidden: entries.length - shown.length };
+  const listed = entries.filter((e) => e.path === selected || isWorktreeVisible(e.wt, false, prefs));
+  const projects = activeProjects(prefs.projectFilter, repoIds ?? entries.map((e) => e.repo.id));
+  const shown = listed.filter(
+    (e) => e.path === selected || ((!projects || projects.has(e.repo.id)) && !hidesBy(e.wt, prefs) && (!sleeping?.only || sleeping.asleep[e.path] === true)),
+  );
+  return { entries: shown, hidden: listed.length - shown.length };
 }
 
 /**
