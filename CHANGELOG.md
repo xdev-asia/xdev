@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.7.0](https://github.com/xdev-asia/xdev/compare/v0.6.0...v0.7.0) (2026-11-05)
+
+
+### Features
+
+* **files:** audio and video viewer ([e574386](https://github.com/xdev-asia/xdev/commit/e57438628647924610d186012daa62a7c74e612b))
+* **files:** image viewer with zoom, fit and copy as PNG ([c9f6d1e](https://github.com/xdev-asia/xdev/commit/c9f6d1e81c11f7ad6463492b1b36d33796405f06))
+* **markdown:** GFM, callouts, math, slugs and code highlight ([1dda84c](https://github.com/xdev-asia/xdev/commit/1dda84c241c7128ec09a67604ee1880d9bdd3149))
+* **markdown:** mermaid diagrams with error state and expand ([3a7d61e](https://github.com/xdev-asia/xdev/commit/3a7d61e6f3b74417977f725e98307e0c080266e2))
+* **markdown:** preview tab, side preview and Mod+Shift+V ([6ce293b](https://github.com/xdev-asia/xdev/commit/6ce293be1e22b25f0bd209a8864ade4c6d90aaf8))
+* **markdown:** source and preview toggle for markdown files ([815760d](https://github.com/xdev-asia/xdev/commit/815760dd7505cf0d512188341fb98f103aa8bd15))
+* **markdown:** table of contents ([b5e4c31](https://github.com/xdev-asia/xdev/commit/b5e4c3126f218f110e95cb1bd1c867ef3a8364b5))
+
+
+### Bug Fixes
+
+* **ai:** drain a Codex probe before any signal ([d0b8dce](https://github.com/xdev-asia/xdev/commit/d0b8dce96c2608c0ce7ffec59065436cc82b0603))
+* **ai:** keep a failed Codex probe for the reuse window ([7acd316](https://github.com/xdev-asia/xdev/commit/7acd316669e6cdaed9d10303c746e861fd2c77b8))
+* **ai:** map only sign-in RPC errors to expired ([cd8ec46](https://github.com/xdev-asia/xdev/commit/cd8ec46a72bf20d56efe3d13f92e4e7829f2cb23))
+* **ai:** read a Codex probe's stderr to its end after stdout closes ([f2beaca](https://github.com/xdev-asia/xdev/commit/f2beacad171108de66a696f1a98c69099dc1bc06))
+* **bindings:** sort LivePort in the generated index after the merge ([0f8a917](https://github.com/xdev-asia/xdev/commit/0f8a91781c4d5833746676d4f62c74e1d2c0a789))
+* **desktop:** a leading / image path starts at the worktree root ([f636298](https://github.com/xdev-asia/xdev/commit/f63629855cbf05b41176cb1a2b221e68a5d50284))
+* **desktop:** copied image canvas is capped at 32 megapixels ([c34151d](https://github.com/xdev-asia/xdev/commit/c34151d715466b8cd01696b951be29ca79308bfb))
+* **desktop:** count cache writes in the cache reuse rate ([98ee669](https://github.com/xdev-asia/xdev/commit/98ee6693d81edd7847097405658ca78c85930f9a))
+* **desktop:** drop the opener plugin the merge brought back ([2a362d7](https://github.com/xdev-asia/xdev/commit/2a362d7999e9c2696236307b66cc1cfbf2e5821c))
+* **desktop:** image zoom limits are relative to the fit scale ([a19f5ed](https://github.com/xdev-asia/xdev/commit/a19f5ed3f8fe643f2417add05ee3dbe42135f23e))
+* **desktop:** keep one primary button on the Changes surface ([5f1733f](https://github.com/xdev-asia/xdev/commit/5f1733f5d99072874658adaebee5954796bab9a3))
+* **desktop:** links in the expanded diagram do not navigate ([15154dd](https://github.com/xdev-asia/xdev/commit/15154dd721c50c7cfe60d45a1047152611984d7b))
+* **desktop:** markdown preview keeps its images when the html is unchanged ([950fb02](https://github.com/xdev-asia/xdev/commit/950fb02b12403e749e41e9dd39005e955583e770))
+* **desktop:** read six weeks for the heatmap and share card ([9f9a0b7](https://github.com/xdev-asia/xdev/commit/9f9a0b74d733a29ecca3144eb0a95d43d0b17ddb))
+* **desktop:** register the opener plugin once ([a38bc0e](https://github.com/xdev-asia/xdev/commit/a38bc0e2f58635a44f84ea18f2ca7e0a1554eac2))
+* **desktop:** the expanded image follows the parent's current URL ([2e6629b](https://github.com/xdev-asia/xdev/commit/2e6629bf90989394531c174b4f948072d26f51a8))
+* **kit:** price each model's tokens within a session ([7921dee](https://github.com/xdev-asia/xdev/commit/7921deef99256df53138d88548b6ac5ace64cc37))
+* **ports:** a confirm ignores the extra clicks of a double or triple click ([bc5ea2d](https://github.com/xdev-asia/xdev/commit/bc5ea2d450b65164f98d1983b411b25160aad7bc))
+* **ports:** a listener that is the terminal itself needs a second confirm ([cc939f4](https://github.com/xdev-asia/xdev/commit/cc939f4117c96f7c4c1ea3855fe9f5ddd41af1a3))
+* **ports:** a stop waits only on listeners of the stopped tree ([6c28f7f](https://github.com/xdev-asia/xdev/commit/6c28f7fa115605b34eef2dd60a98cc9bca62682d))
+* **ports:** confirm a stop and stop only what an xDev terminal started ([d56454b](https://github.com/xdev-asia/xdev/commit/d56454bc54f1e0685e76ddb8b57155992da778ba))
+* **ports:** follow a parent link only when the parent started first ([0c7ae02](https://github.com/xdev-asia/xdev/commit/0c7ae02d5112d24205640d1aecacbe24fdfcd3b1))
+* **ports:** kill only the tree read before TERM, and only unchanged pids ([f9ba4a6](https://github.com/xdev-asia/xdev/commit/f9ba4a6d882859f87389b8da481b0c0a90609c72))
+* **ports:** no timer after dispose, no stale scan over a stop, one signal per test child ([be4d6b2](https://github.com/xdev-asia/xdev/commit/be4d6b23895809aa077bc56678c412175d51881a))
+* **ports:** read the lsof wildcard as 0.0.0.0 and show the connect host on the card ([62bd6c6](https://github.com/xdev-asia/xdev/commit/62bd6c6119b65747282299bf9e33d20dde818bfa))
+* **ports:** refuse a stop on a stale list and recheck the pid ([45f506b](https://github.com/xdev-asia/xdev/commit/45f506ba64075a6a8224e839779cce80e7b21890))
+* **ports:** scan again after every stop from a card, also a failed one ([c389cc4](https://github.com/xdev-asia/xdev/commit/c389cc4c57f22259dd9a53842ec9f85594496782))
+* **ports:** stop the whole tree and report stopped only once the port closes ([1693491](https://github.com/xdev-asia/xdev/commit/1693491092e757410f5f1149765cece0dbec8302))
+
+
+### Performance Improvements
+
+* **desktop:** cheaper markdown side preview ([5ceb0fc](https://github.com/xdev-asia/xdev/commit/5ceb0fcb38901b64e844e3c1bce5232eb58a35ca))
+* **ports:** read the OS only when a terminal runs, poll 5 s shown and 30 s hidden ([7c9a57b](https://github.com/xdev-asia/xdev/commit/7c9a57baf1df2acc3e5c2a967cc6ddefd5fc90dd))
+
 ## [0.6.0](https://github.com/xdev-asia/xdev/compare/v0.5.0...v0.6.0) (2026-11-05)
 
 
