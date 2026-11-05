@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import type { Tab } from "@/workspace/sessions";
+import type { ActivityOptions } from "./options";
 import { activityThreads, hasAgentThreads, type ThreadSource } from "./threads";
 
 const names = { "/a": { name: "oak", branch: "feat/oak" }, "/b": { name: "elm", branch: null } };
@@ -8,7 +9,7 @@ const src = (id: string, over: Partial<Tab>, lastOutput: number | null): ThreadS
   lastOutput,
 });
 const ids = (groups: ReturnType<typeof activityThreads>) => groups.flatMap((g) => g.threads.map((t) => t.tab.id));
-const off = { showIdle: false, groupByWorktree: false };
+const off: ActivityOptions = { showIdle: false, groupBy: "none", filter: "all", compact: false };
 
 it("lists agent tabs only, newest output first", () => {
   const tabs = [src("old", {}, 1), src("shell", { agent: false }, 9), src("new", {}, 5), src("none", {}, null)];
@@ -36,7 +37,7 @@ it("ungrouped is one group; grouped keeps the output order by worktree", () => {
   const flat = activityThreads(tabs, names, "", off);
   expect(flat).toHaveLength(1);
   expect(flat[0]).toMatchObject({ worktree: null, name: null });
-  const grouped = activityThreads(tabs, names, "", { ...off, groupByWorktree: true });
+  const grouped = activityThreads(tabs, names, "", { ...off, groupBy: "worktree" });
   expect(grouped.map((g) => [g.worktree, g.name, g.threads.map((t) => t.tab.id)])).toEqual([
     ["/a", "oak", ["a1", "a2"]],
     ["/b", "elm", ["b1"]],

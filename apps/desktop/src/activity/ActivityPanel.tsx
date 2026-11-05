@@ -40,8 +40,8 @@ export function optionItems(options: ActivityOptions, onOptions: (o: ActivityOpt
     {
       id: "groupByWorktree",
       labelKey: "activity.option.groupByWorktree",
-      checked: options.groupByWorktree,
-      run: () => onOptions({ ...options, groupByWorktree: !options.groupByWorktree }),
+      checked: options.groupBy === "worktree",
+      run: () => onOptions({ ...options, groupBy: options.groupBy === "worktree" ? "none" : "worktree" }),
     },
   ];
 }

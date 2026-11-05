@@ -38,7 +38,7 @@ const resting = (tab: Tab): boolean => tab.status === "idle" || tab.status === "
 /**
  * The agent threads to list: agent tabs only, idle and ended ones only with `showIdle`, filtered by
  * `query` (every word found in the title, worktree name, branch or profile, any case), newest output
- * first. With `groupByWorktree` the groups keep that order, by their newest thread.
+ * first. With `groupBy: "worktree"` the groups keep that order, by their newest thread.
  */
 export function activityThreads(
   tabs: readonly ThreadSource[],
@@ -58,7 +58,7 @@ export function activityThreads(
   // Array.sort is stable, so equal times keep the order the tabs came in.
   threads.sort((a, b) => (b.lastOutput ?? 0) - (a.lastOutput ?? 0));
   if (threads.length === 0) return [];
-  if (!options.groupByWorktree) return [{ worktree: null, name: null, threads }];
+  if (options.groupBy !== "worktree") return [{ worktree: null, name: null, threads }];
   const groups = new Map<string, ThreadGroup>();
   for (const thread of threads) {
     let group = groups.get(thread.worktree);

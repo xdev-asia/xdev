@@ -5,6 +5,7 @@ import { translate } from "@/i18n";
 import type { Tab } from "@/workspace/sessions";
 import { ActivityView, optionItems, type ActivityViewProps } from "./ActivityPanel";
 import type { FeedEntry } from "./feed";
+import type { ActivityOptions } from "./options";
 import { activityThreads } from "./threads";
 
 vi.mock("@/i18n", async (original) => ({
@@ -23,7 +24,7 @@ const en = (k: string, v?: Record<string, string | number>) => translate("en", k
 const NOW = 10_000_000;
 const names = { "/a": { name: "oak", branch: "feat/oak" } };
 const tab = (id: string, over: Partial<Tab> = {}) => ({ id, worktree: "/a", profileId: "claude", agent: true, status: "working", title: `T ${id}`, ...over }) as Tab;
-const off = { showIdle: false, groupByWorktree: false };
+const off: ActivityOptions = { showIdle: false, groupBy: "none", filter: "all", compact: false };
 
 function view(over: Partial<ActivityViewProps> = {}) {
   const calls = { tab: [] as string[], query: [] as string[], options: [] as unknown[], menu: [] as unknown[], jump: [] as string[], clear: 0 };
@@ -70,16 +71,16 @@ it("the options button asks for the menu; its items toggle with a check", () => 
   button.props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 4, bottom: 9 }) } });
   expect(calls.menu).toEqual([{ x: 4, y: 9 }]);
   const picked: unknown[] = [];
-  const items = optionItems({ showIdle: true, groupByWorktree: false }, (o) => void picked.push(o));
+  const items = optionItems({ ...off, showIdle: true }, (o) => void picked.push(o));
   expect(items.map((i) => [i.id, i.checked])).toEqual([["showIdle", true], ["groupByWorktree", false]]);
   items[0]!.run!();
   items[1]!.run!();
-  expect(picked).toEqual([{ showIdle: false, groupByWorktree: false }, { showIdle: true, groupByWorktree: true }]);
+  expect(picked).toEqual([{ ...off, showIdle: false }, { ...off, showIdle: true, groupBy: "worktree" }]);
 });
 
 it("grouped threads get a heading per worktree", () => {
   const sources = [{ tab: tab("a"), lastOutput: 5 }];
-  const { tree } = view({ groups: activityThreads(sources, names, "", { ...off, groupByWorktree: true }) });
+  const { tree } = view({ groups: activityThreads(sources, names, "", { ...off, groupBy: "worktree" }) });
   expect(tree.find((n) => n.props.className === "act-group")!.props.children).toBe("oak");
 });
 
