@@ -49,3 +49,73 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* Batch launch and terminal sets: steps editor, set list and editor. Tokens only. */
+.ts-steps,
+.ts-entry {
+  min-width: 0;
+  margin: 0;
+  padding: var(--x-space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+}
+
+.ts-step-list,
+.ts-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ts-step,
+.ts-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-1);
+  min-width: 0;
+}
+
+.ts-step-wait,
+.ts-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--x-space-2);
+  min-width: 0;
+}
+
+.ts-item-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ts-hint,
+.ts-error {
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.ts-h {
+  margin: 0;
+  font-size: 13px;
+}
+
+.ts-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+  padding: var(--x-space-1) var(--x-space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--bg-2);
+  font-size: 12px;
+}

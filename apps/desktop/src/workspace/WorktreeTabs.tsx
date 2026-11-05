@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
 import { sshProfiles, useSshAliases } from "./sshHosts";
-import { type Api, type ApiError, type PtyProfile } from "@/api";
+import { type Api, type ApiError, type PtyProfile, type TerminalSet } from "@/api";
 import { FileView } from "@/files/FileView";
 import { fileName, fileTabId, fileTabRel, fileTabs, isDirty, isFileTab, useOpenFiles } from "@/files/fileTabs";
 import { saveFile } from "@/files/fileIO";
@@ -73,6 +73,12 @@ import { toTabStatus } from "@/terminal/programStatus";
 import { titleStatus } from "./titles";
 import { PtydBanner } from "@/terminal/PtydBanner";
 import { WorkerStrip } from "./WorkerStrip";
+import { TerminalSetsDialog } from "@/terminalSets/TerminalSetsDialog";
+import { useTerminalSets } from "@/terminalSets/useTerminalSets";
+import { useBatchLaunch } from "@/terminalSets/useBatchLaunch";
+import { openCopy, openEntry, type OpenContext } from "@/terminalSets/launch";
+import { captureEntries } from "@/terminalSets/sets";
+import { startupOf } from "@/terminalSets/startupMemory";
 
 // Offered while the profile view has not loaded: the built-in agents and the default shell.
 const FALLBACK_AGENTS: readonly PtyProfile[] = ["claude", "codex"];
@@ -175,6 +181,10 @@ export function WorktreeTabs(props: {
   // The launch options dialog: the agent and the pane it opens in; the picker's options mode leads to it.
   const [options, setOptions] = useState<{ profile: PtyProfile; pane: string } | null>(null);
   const [pickerOptions, setPickerOptions] = useState(false);
+  // Terminal sets: the dialog, the saved sets and presets, and the progress of a batch open.
+  const [setsOpen, setSetsOpen] = useState(false);
+  const saved = useTerminalSets(api);
+  const batch = useBatchLaunch(sessions);
   // The one review tab; a reveal opens it (or points it at another file).
   const [review, setReview] = useState<Reveal | null>(null);
   const [revealed, setRevealed] = useState(0);
@@ -304,17 +314,31 @@ export function WorktreeTabs(props: {
     return sessions.open(worktree, profile, null, cliFor(profile));
   }
 
-  // A new agent tab with this launch's overrides and first prompt, in `pane`.
+  // What opening copies or a set needs: the sessions, this worktree and the others by name.
+  const openContext = (): OpenContext => ({ sessions, worktree, worktrees: props.worktrees ?? [], defaultShell });
+
+  // `choice.copies` new agent tabs with this launch's overrides, first prompt and startup sequence, in `pane`.
   function launchWith(profile: PtyProfile, pane: string, choice: LaunchChoice): void {
     setMenuPane(null);
     setPickerPane(null);
     setError(null);
     const at = sessions.layout(worktree);
     if (at && at.focused !== pane) setLayout(focusPane(at, pane));
-    sessions.open(worktree, profile, null, cliFor(profile), {
-      ...(choice.prompt === null ? {} : { prompt: choice.prompt }),
-      ...(choice.overrides === null ? {} : { overrides: choice.overrides }),
-    });
+    const ctx = openContext();
+    const copy = { profile, worktree, prompt: choice.prompt, overrides: choice.overrides, startup: choice.startup };
+    if (choice.copies === 1) {
+      openCopy(ctx, copy, cliFor(profile), 0);
+      return;
+    }
+    void batch.run(choice.copies, (i) => openCopy(ctx, copy, cliFor(profile), i));
+  }
+
+  // Opens every entry of a saved set, staggered.
+  function openSavedSet(set: TerminalSet): void {
+    setSetsOpen(false);
+    setError(null);
+    const ctx = openContext();
+    void batch.run(set.entries.length, (i) => openEntry(ctx, set.entries[i], i));
   }
 
   // An agent launch waits for the setup tab when the gate says so; a shell never does.
@@ -811,6 +835,7 @@ export function WorktreeTabs(props: {
                 setPickerOptions(false);
               }}
               onManage={() => props.onManageAgents?.()}
+              onSets={() => setSetsOpen(true)}
               onView={updateProfiles}
             />
           ) : null
@@ -1021,11 +1046,29 @@ export function WorktreeTabs(props: {
         </div>
       )}
       {dialog}
+      {batch.ui}
+      {setsOpen && (
+        <TerminalSetsDialog
+          api={api}
+          sets={saved.sets}
+          presets={saved.presets}
+          agents={(view?.profiles ?? []).filter((p) => p.profile.enabled && p.installed).map((p) => ({ id: p.profile.id, label: p.profile.name }))}
+          worktrees={(props.worktrees ?? []).map((w) => w.label)}
+          running={tabs.filter((tb) => tb.exitCode === undefined).map((tb) => ({ id: tb.id, title: tb.title ?? profileName(view, tb.profileId, t) }))}
+          startupOf={startupOf}
+          capture={() =>
+            captureEntries(tabs, worktree, (path) => props.worktrees?.find((w) => w.path === path)?.label ?? null, startupOf)
+          }
+          onOpen={openSavedSet}
+          onClose={() => setSetsOpen(false)}
+        />
+      )}
       {options && view && view.profiles.some((p) => p.profile.id === options.profile) && (
         <LaunchOptionsDialog
           api={api}
           profile={view.profiles.find((p) => p.profile.id === options.profile)!}
           worktree={worktree}
+          presets={saved.presets}
           onCancel={() => setOptions(null)}
           onLaunch={(choice) => {
             const { profile, pane } = options;

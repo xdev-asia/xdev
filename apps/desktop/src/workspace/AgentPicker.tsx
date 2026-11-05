@@ -44,6 +44,8 @@ export function AgentPicker(props: {
   onClose(): void;
   /** Opens Settings → Agents. */
   onManage(): void;
+  /** Opens the terminal sets dialog; the button is left out when this is. */
+  onSets?(): void;
   /** The profile view after a default was set. */
   onView(next: ProfilesView): void;
 }): JSX.Element {
@@ -99,6 +101,18 @@ export function AgentPicker(props: {
         >
           {t("workspace.agentPicker.manage")}
         </Button>
+        {props.onSets && (
+          <Button
+            variant="secondary"
+            type="button"
+            onClick={() => {
+              props.onClose();
+              props.onSets?.();
+            }}
+          >
+            {t("workspace.agentPicker.sets")}
+          </Button>
+        )}
       </div>
       {menu && (
         <ContextMenu
