@@ -2583,6 +2583,16 @@ button.ws-tree-row:focus-visible {
 }
 
 /* The dot of a file tab with unsaved edits, before its close button. */
+.ws-tab-gone .ws-tab-name {
+  text-decoration: line-through;
+}
+
+.ws-tab-gone-label {
+  flex: none;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
 .ws-tab-dirty {
   flex: none;
   width: 7px;

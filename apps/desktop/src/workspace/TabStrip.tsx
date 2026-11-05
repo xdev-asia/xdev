@@ -19,7 +19,7 @@ export interface StripItem {
   id: string;
   tab: Tab | null;
   /** Set for a file tab: its path in the worktree and whether it has unsaved edits. */
-  file?: { rel: string; dirty: boolean };
+  file?: { rel: string; dirty: boolean; gone?: "deleted" | "renamed" };
 }
 
 export interface MenuGroup {
@@ -163,7 +163,7 @@ export function TabStrip(props: {
           return (
             <div
               key={item.id}
-              className="ws-tab"
+              className={item.file?.gone ? "ws-tab ws-tab-gone" : "ws-tab"}
               data-selected={selected}
               data-pinned={tab?.pinned || undefined}
               data-color={tab && tab.color !== "none" ? tab.color : undefined}
@@ -227,10 +227,19 @@ export function TabStrip(props: {
                     </>
                   ) : (
                     <>
-                      <span className="ws-tab-icon ws-mono" aria-hidden="true">
-                        ±
-                      </span>
-                      <span>{t("review.tab")}</span>
+                      {item.file ? (
+                        <>
+                          <span className="ws-tab-name">{fileName(item.file.rel)}</span>
+                          {item.file.gone && <span className="ws-tab-gone-label">{t(`files.tab.${item.file.gone}`)}</span>}
+                        </>
+                      ) : (
+                        <>
+                          <span className="ws-tab-icon ws-mono" aria-hidden="true">
+                            ±
+                          </span>
+                          <span>{t("review.tab")}</span>
+                        </>
+                      )}
                     </>
                   )}
                 </button>

@@ -1399,7 +1399,24 @@ describe("file tabs", () => {
     expect(view.html()).not.toContain("ws-tab-dirty");
     fileTabs.edit(A, "src/a.ts", "two");
     expect(view.html()).toContain("ws-tab-dirty");
+    expect(view.html()).not.toContain("ws-tab-gone");
     expect(view.html()).toContain(en("files.dirty"));
+  });
+
+  it("marks the tab of a deleted or renamed file, and clears the mark when it is back", () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    readyFile(A, "src/a.ts");
+    const view = harness(api, live);
+    fileTabs.markExternal(A, "src/a.ts", "deleted");
+    expect(stripItems(view)[0]!.file).toMatchObject({ gone: "deleted" });
+    expect(view.html()).toContain(en("files.tab.deleted"));
+    fileTabs.markExternal(A, "src/a.ts", "renamed");
+    expect(stripItems(view)[0]!.file).toMatchObject({ gone: "renamed" });
+    fileTabs.markExternal(A, "src/a.ts", "changed");
+    expect(stripItems(view)[0]!.file).not.toHaveProperty("gone");
+    fileTabs.markExternal(A, "src/a.ts", null);
+    expect(view.html()).not.toContain("ws-tab-gone");
   });
 
   it("keeps a file to its own worktree", () => {
