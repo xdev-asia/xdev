@@ -100,6 +100,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("docs.save", "docs", ["Mod+S"], DOCS),
   // Editor: a file tab in front; the tabs view declines the key otherwise.
   def("file.save", "editor", ["Mod+S"]),
+  def("file.markdownPreview", "editor", ["Mod+Shift+V"]),
   // App.
   def("palette.jump", "app", ["Mod+J"]),
   def("quickOpen.open", "app", ["Mod+P"]),
