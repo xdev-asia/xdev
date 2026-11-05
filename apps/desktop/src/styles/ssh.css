@@ -57,3 +57,12 @@
   gap: 10px;
   padding-top: 6px;
 }
+
+/* A host's connection state or test result, on its own line under the address. */
+.ssh-row-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

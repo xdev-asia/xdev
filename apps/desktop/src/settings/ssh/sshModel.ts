@@ -1,4 +1,4 @@
-import type { LocalForward, SshHost, SshSyncReport } from "@/api";
+import type { LocalForward, SshConnState, SshHost, SshSyncReport, SshTestOutcome } from "@/api";
 
 /** The fields of the add/edit form; numbers and lists stay text until they are checked. */
 export interface HostForm {
@@ -190,3 +190,48 @@ export function syncLine(r: SshSyncReport): { key: string; vars: Record<string, 
   if (r.missing) return { key: "ssh.sync.missing", vars: {} };
   return { key: "ssh.sync.done", vars: { added: r.added, updated: r.updated, unchanged: r.unchanged, skipped: r.skipped } };
 }
+
+export type Tone = "ok" | "warn" | "danger" | "neutral";
+export type Line = { key: string; vars?: Record<string, string>; tone: Tone };
+
+/** The wording and tone of a connection test result. */
+export function testLine(outcome: SshTestOutcome): Line {
+  switch (outcome.kind) {
+    case "ok":
+      return { key: "ssh.test.ok", tone: "ok" };
+    case "authRequired":
+      return { key: "ssh.test.authRequired", tone: "warn" };
+    case "hostKeyUnknown":
+      return { key: "ssh.test.hostKeyUnknown", tone: "warn" };
+    case "unreachable":
+      return { key: "ssh.test.unreachable", tone: "danger" };
+    case "failed":
+      return { key: "ssh.test.failed", vars: { message: outcome.message }, tone: "danger" };
+  }
+}
+
+const REASONS: Record<string, string> = {
+  auth_required: "ssh.conn.reason.authRequired",
+  host_key_unknown: "ssh.conn.reason.hostKeyUnknown",
+  unreachable: "ssh.conn.reason.unreachable",
+  exited: "ssh.conn.reason.exited",
+};
+
+/** The wording and tone of a kept connection's state; a failure names its reason. */
+export function connLine(state: SshConnState): Line {
+  switch (state.kind) {
+    case "disconnected":
+      return { key: "ssh.conn.disconnected", tone: "neutral" };
+    case "connecting":
+      return { key: "ssh.conn.connecting", tone: "warn" };
+    case "connected":
+      return { key: "ssh.conn.connected", tone: "ok" };
+    case "failed": {
+      const known = REASONS[state.reason];
+      return known ? { key: known, tone: "danger" } : { key: "ssh.conn.reason.other", vars: { message: state.reason }, tone: "danger" };
+    }
+  }
+}
+
+/** Whether the connection is up or on its way: it can be disconnected, not connected again. */
+export const isLive = (state: SshConnState | undefined): boolean => state?.kind === "connecting" || state?.kind === "connected";

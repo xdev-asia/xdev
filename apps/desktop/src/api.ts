@@ -23,6 +23,11 @@ import type {
   LocalForward,
   SshHost,
   SshSyncReport,
+  SshAuthPrompt,
+  SshConnState,
+  SshConnectionView,
+  SshPromptKind,
+  SshTestOutcome,
   KeepAwake,
   SwitchRunning,
   Approvals,
@@ -298,7 +303,7 @@ export type { Agent, AgentSession, Cost, SessionQuery, SessionRow, SessionSearch
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, AppStatsView, AwakeView, KeepAwake, SwitchRunning };
 export type { PortEvidence, PortKind, PortProtocol, PortScan, WorkspacePort } from "@xdev/bindings";
-export type { HostSource, LocalForward, SshHost, SshSyncReport };
+export type { HostSource, LocalForward, SshAuthPrompt, SshConnState, SshConnectionView, SshHost, SshPromptKind, SshSyncReport, SshTestOutcome };
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FsChanged, FsEvent, FsEventKind } from "@xdev/bindings";
@@ -1431,6 +1436,21 @@ export interface Api {
   sshHostsRemoveMany(ids: string[]): Promise<number>;
   // Re-reads ~/.ssh/config: adds new aliases and updates the synced ones; manual hosts are never touched.
   sshConfigSync(): Promise<SshSyncReport>;
+  // One batch-mode ssh to the host (no prompts), killed after its connect timeout + 2 s. Rejects with
+  // `not_found` for an unknown id.
+  sshHostTest(id: string): Promise<SshTestOutcome>;
+  // Kept connections: a background `ssh -N` per host that holds its local forwards. Connect is a no-op
+  // while one is connecting or connected; the state then moves by `onSshState`.
+  sshConnect(id: string): Promise<SshConnectionView>;
+  sshDisconnect(id: string): Promise<void>;
+  sshConnectionsList(): Promise<SshConnectionView[]>;
+  onSshState(cb: (view: SshConnectionView) => void): Promise<() => void>;
+  // A connection's ssh asks for a password, passphrase or confirmation. Answer with `sshAuthReply`
+  // (null cancels); `onSshAuthClosed` fires when the prompt ends either way.
+  onSshAuthPrompt(cb: (prompt: SshAuthPrompt) => void): Promise<() => void>;
+  onSshAuthClosed(cb: (requestId: string) => void): Promise<() => void>;
+  // Rejects with `not_found` when the prompt has already ended.
+  sshAuthReply(requestId: string, answer: string | null): Promise<void>;
   usageSettings(): Promise<UsageSettings>;
   usageSettingsPut(v: UsageSettings): Promise<UsageSettings>;
   // Settings → Automations; the put returns what was stored.
@@ -2114,6 +2134,14 @@ const tauriApi: Api = {
   sshHostRemove: (id) => call("ssh_host_remove", { id }),
   sshHostsRemoveMany: (ids) => call("ssh_hosts_remove_many", { ids }),
   sshConfigSync: () => call("ssh_config_sync"),
+  sshHostTest: (id) => call("ssh_host_test", { id }),
+  sshConnect: (id) => call("ssh_connect", { id }),
+  sshDisconnect: (id) => call("ssh_disconnect", { id }),
+  sshConnectionsList: () => call("ssh_connections_list"),
+  onSshState: (cb) => listen<SshConnectionView>("ssh://state", (e) => cb(e.payload)),
+  onSshAuthPrompt: (cb) => listen<SshAuthPrompt>("ssh://auth-prompt", (e) => cb(e.payload)),
+  onSshAuthClosed: (cb) => listen<{ requestId: string }>("ssh://auth-closed", (e) => cb(e.payload.requestId)),
+  sshAuthReply: (requestId, answer) => call("ssh_auth_reply", { requestId, answer }),
   onPortsAdvertised: (cb) => listen<{ worktree: string }>("ports://advertised", (e) => cb(e.payload.worktree)),
   automationsSettings: () => call("automations_settings_get"),
   automationsSettingsPut: (settings) => call("automations_settings_put", { settings }),
