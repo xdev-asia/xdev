@@ -1,9 +1,10 @@
-import { Button } from "@xdev-asia/ui";
+import { Badge, Button } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type ApiError, type OpenInApp } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
+import { isPresetAdded, OPEN_IN_PRESETS, presetEntry } from "./openInPresets";
 import { SettingRow } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
@@ -218,6 +219,39 @@ export function OpenInPage(props: SettingsSectionProps): JSX.Element {
         {apps.length >= MAX_APPS && <span className="settings-hint">{t("openIn.limit", { count: MAX_APPS })}</span>}
       </div>
       </SettingRow>
+      <section className="openin-presets" aria-label={t("openIn.presets")}>
+        <h4>{t("openIn.presets")}</h4>
+        <p className="settings-hint">{t("openIn.presets.hint")}</p>
+        <ul className="openin-list">
+          {OPEN_IN_PRESETS.map((preset) => {
+            const added = isPresetAdded(apps, preset);
+            return (
+              <li key={preset.command} className="settings-card openin-row" data-preset={preset.command}>
+                <div className="settings-item-text">
+                  <strong>{preset.label}</strong>
+                  <span className="settings-path ws-mono">{preset.command}</span>
+                </div>
+                <div className="settings-actions">
+                  {added ? (
+                    <Badge status="unchanged">{t("openIn.preset.added")}</Badge>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      data-act="add-preset"
+                      aria-label={t("openIn.preset.addName", { name: preset.label })}
+                      disabled={apps.length >= MAX_APPS}
+                      onClick={() => void save([...apps, presetEntry(apps, preset)])}
+                    >
+                      {t("openIn.preset.add")}
+                    </button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
       {deleting && (
         <ConfirmDialog
           open

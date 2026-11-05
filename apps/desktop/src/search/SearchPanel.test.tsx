@@ -4,6 +4,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, type Api, type FileHits, type SearchEvent } from "@/api";
 import { translate } from "@/i18n";
 import { SearchPanel, SEARCH_DEBOUNCE_MS } from "./SearchPanel";
+import { requestSearch, resetSearchPrefill } from "./searchPrefill";
+
+const copied = vi.hoisted(() => [] as string[]);
+vi.mock("@/ui/clipboard", () => ({ copyText: async (text: string) => { copied.push(text); return true; } }));
 
 type Cleanup = void | (() => void);
 const hooks = vi.hoisted(() => ({
@@ -104,7 +108,7 @@ function panel(over: { focusSeq?: number; worktree?: string | null } = {}) {
   };
 }
 
-beforeEach(() => { vi.useFakeTimers(); hooks.pending = []; });
+beforeEach(() => { vi.useFakeTimers(); hooks.pending = []; copied.length = 0; resetSearchPrefill(); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 it("typing sends one search after the debounce", () => {
@@ -185,4 +189,44 @@ it("without a worktree it never searches", () => {
   p.type("foo");
   vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS * 2);
   expect(p.searches).toHaveLength(0);
+});
+
+it("a search request fills the query and glob, opens the glob row and focuses the input", () => {
+  const p = panel();
+  const focus = vi.fn();
+  p.input().props.ref.current = { focus, select: vi.fn() };
+  requestSearch({ query: "TODO", include: "src/**" });
+  const inputs = p.all().filter((n) => n.props.className === "sr-input");
+  expect(inputs[0].props.value).toBe("TODO");
+  expect(inputs[1].props.value).toBe("src/**");
+  expect(focus).toHaveBeenCalled();
+});
+
+it("a request made before the panel mounts is taken on mount", () => {
+  requestSearch({ query: "early" });
+  const p = panel();
+  expect(p.input().props.value).toBe("early");
+});
+
+async function menuFor(p: ReturnType<typeof panel>, cls: string) {
+  p.type("foo");
+  vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+  p.searches[0].onEvent({ type: "batch", files: [file("src\\a.ts", [hit(7, "foo", [[0, 3]])])] });
+  p.all().find((n) => n.props.className === cls)!.props.onContextMenu({ preventDefault() {}, clientX: 5, clientY: 6 });
+  return p.all().find((n) => Array.isArray(n.props.items) && n.props.at)!.props.items as { id: string; run?: () => void }[];
+}
+
+it("a file row copies the absolute and the relative path", async () => {
+  const items = await menuFor(panel(), "sr-file-head");
+  expect(items.map((i) => i.id)).toEqual(["path", "rel"]);
+  items[0].run!();
+  items[1].run!();
+  expect(copied).toEqual([`${WT}/src/a.ts`, "src/a.ts"]);
+});
+
+it("a match row copies path#L<line> first, then the file paths", async () => {
+  const items = await menuFor(panel(), "sr-line");
+  expect(items.map((i) => i.id)).toEqual(["line", "sep", "path", "rel"]);
+  items[0].run!();
+  expect(copied).toEqual(["src/a.ts#L7"]);
 });
