@@ -1,6 +1,7 @@
-import { expect, it } from "vitest";
-import type { PortScan, WorkspacePort } from "@/api";
-import { livePortsByWorktree } from "./livePorts";
+import { afterEach, expect, it, vi } from "vitest";
+import { createMockApi, type PortScan, type WorkspacePort } from "@/api";
+import { PortsStore } from "@/ports/portsStore";
+import { livePortsByWorktree, stopFromCard, type LivePort } from "./livePorts";
 
 const port = (over: Partial<WorkspacePort>): WorkspacePort => ({
   id: "localhost:1:2", bindHost: "127.0.0.1", connectHost: "localhost", port: 1, pid: 2, processName: "node", protocol: "http",
@@ -30,4 +31,40 @@ it("groups the workspace ports that have a process by worktree", () => {
 
 it("is empty without a scan", () => {
   expect(livePortsByWorktree(null)).toEqual({});
+});
+
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+function cardStop(result: "ok" | "fail") {
+  vi.useFakeTimers();
+  const api = createMockApi({});
+  const scanSpy = vi.spyOn(api, "portsScan").mockResolvedValue(scan([]));
+  const stopSpy = vi.spyOn(api, "portsStop");
+  if (result === "ok") stopSpy.mockResolvedValue(scan([]));
+  else stopSpy.mockRejectedValue(Object.assign(new Error("x"), { code: "port_not_started_by_app" }));
+  const store = new PortsStore(api);
+  store.setWorktrees(["/w/a"]);
+  const said: string[] = [];
+  const live = { id: "localhost:5173:7", port: 5173 } as LivePort;
+  const run = stopFromCard(store, live, (key) => said.push(key));
+  return { run, scanSpy, stopSpy, said, store };
+}
+
+it("a stop from a card asks the backend once, says so and scans again", async () => {
+  const { run, scanSpy, stopSpy, said, store } = cardStop("ok");
+  await run;
+  expect(stopSpy).toHaveBeenCalledWith(["/w/a"], "localhost:5173:7", { confirmed: true, outsideTerminal: false });
+  expect(said).toEqual(["ports.stopped"]);
+  await vi.advanceTimersByTimeAsync(500);
+  expect(scanSpy).toHaveBeenCalledTimes(1);
+  store.dispose();
+});
+
+it("a failed stop from a card shows the error and still scans again", async () => {
+  const { run, scanSpy, said, store } = cardStop("fail");
+  await run;
+  expect(said).toEqual(["error.port_not_started_by_app"]);
+  await vi.advanceTimersByTimeAsync(500);
+  expect(scanSpy).toHaveBeenCalledTimes(1);
+  store.dispose();
 });

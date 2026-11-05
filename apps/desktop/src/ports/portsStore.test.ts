@@ -107,6 +107,16 @@ it("stopping a port shows the new list and scans again after 500 ms", async () =
   store.dispose();
 });
 
+it("a failed stop still scans again after 500 ms", async () => {
+  const { api, store, scanSpy } = setup();
+  vi.spyOn(api, "portsStop").mockRejectedValue(Object.assign(new Error("x"), { code: "port_changed" }));
+  await expect(store.stop("localhost:1:1", { confirmed: true, outsideTerminal: false })).rejects.toMatchObject({ code: "port_changed" });
+  expect(scanSpy).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(500);
+  expect(scanSpy).toHaveBeenCalledTimes(1);
+  store.dispose();
+});
+
 it("new worktrees force a scan while visible", async () => {
   const { store, scanSpy } = setup();
   store.setVisible(true);

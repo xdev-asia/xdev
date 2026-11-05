@@ -120,13 +120,19 @@ export class PortsStore {
     return this.running;
   }
 
-  /** Stops the process behind port `id`, then scans again half a second later. */
+  /**
+   * Stops the process behind port `id`, then scans again half a second later, also when the stop
+   * failed: a refused or half-done stop leaves the list it acted on out of date.
+   */
   async stop(id: string, consent: PortStopConsent): Promise<void> {
-    const scan = await this.api.portsStop(this.worktrees, id, consent);
-    this.failures = 0;
-    this.current = { scan, error: null, loading: false };
-    this.bump();
-    this.later(AFTER_STOP_MS, () => this.refresh());
+    try {
+      const scan = await this.api.portsStop(this.worktrees, id, consent);
+      this.failures = 0;
+      this.current = { scan, error: null, loading: false };
+      this.bump();
+    } finally {
+      this.later(AFTER_STOP_MS, () => this.refresh());
+    }
   }
 
   dispose(): void {
