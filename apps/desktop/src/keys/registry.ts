@@ -73,6 +73,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("pane.expand", "panes", ["Mod+Shift+Enter"]),
   def("pane.equalize", "panes", ["Mod+Shift+="]),
   def("pane.close", "panes", [], TUI),
+  def("pane.clearTitle", "panes", []),
   // Worktrees.
   def("worktree.prev", "worktrees", ["Mod+Shift+Up"]),
   def("worktree.next", "worktrees", ["Mod+Shift+Down"]),
@@ -90,6 +91,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   // View. Zoom in has no Ctrl+Shift+= by default: Panes › Equalize has held it since panes-tabs-keys.
   def("sidebar.left.toggle", "view", ["Mod+B"]),
   def("sidebar.right.toggle", "view", ["Mod+L"]),
+  def("sidebar.sleepingOnly.toggle", "view", []),
   def("zoom.in", "view", ["Mod+=", "Mod+NumpadAdd"]),
   def("zoom.out", "view", ["Mod+-", "Mod+NumpadSubtract"]),
   def("zoom.reset", "view", ["Mod+0"]),

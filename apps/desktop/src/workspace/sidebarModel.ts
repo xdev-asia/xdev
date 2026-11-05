@@ -81,9 +81,23 @@ const hidesBy = (wt: WorktreeView, prefs: SidebarPrefs): boolean =>
   (prefs.hideAutomation && wt.madeBy === "automation") ||
   (prefs.hideCli && wt.madeBy === "cli");
 
-/** The entries the filters leave, and how many they hid. The selected worktree is never hidden. */
-export function visibleEntries(entries: WtEntry[], prefs: SidebarPrefs, selected: string | null): { entries: WtEntry[]; hidden: number } {
-  const shown = entries.filter((e) => e.path === selected || !hidesBy(e.wt, prefs));
+/** The Sleeping only filter: on, and the worktrees whose tabs are all asleep (path → asleep). */
+export interface SleepingFilter {
+  only: boolean;
+  asleep: Readonly<Record<string, boolean | undefined>>;
+}
+
+/**
+ * The entries the filters leave, and how many they hid. The selected worktree is never hidden.
+ * `sleeping` (not a stored preference) keeps only the worktrees that are asleep.
+ */
+export function visibleEntries(
+  entries: WtEntry[],
+  prefs: SidebarPrefs,
+  selected: string | null,
+  sleeping?: SleepingFilter,
+): { entries: WtEntry[]; hidden: number } {
+  const shown = entries.filter((e) => e.path === selected || (!hidesBy(e.wt, prefs) && (!sleeping?.only || sleeping.asleep[e.path] === true)));
   return { entries: shown, hidden: entries.length - shown.length };
 }
 

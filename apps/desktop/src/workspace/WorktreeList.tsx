@@ -18,6 +18,7 @@ import { childrenOf, parentCandidates, parentOf } from "./lineage";
 import { folderMenuItems, groupMenuItems, projectMenuItems, worktreeMenuItems } from "./worktreeMenu";
 import { dropMove, flattenRepos, moveTarget, nestRows, pinnedEntries, visibleEntries, type Move, type NestRow, type WtEntry } from "./sidebarModel";
 import { RepoBadge } from "./RepoBadge";
+import { useKeymap } from "@/keys/keymap";
 import { SidebarFilters } from "./SidebarFilters";
 import { SidebarOptions } from "./SidebarOptions";
 import { WorkItemChip } from "./WorkItemChip";
@@ -170,6 +171,9 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const [stopAsk, setStopAsk] = useState<{ pid: number; since: number } | null>(null);
   const prefs = props.prefs ?? SIDEBAR_PREFS_DEFAULTS;
   const tree = props.items;
+  // The Sleeping only filter lasts for the session; it is not one of the saved sidebar preferences.
+  const [sleepingOnly, setSleepingOnly] = useState(false);
+  useKeymap({ "sidebar.sleepingOnly.toggle": () => setSleepingOnly((on) => !on) });
   // The repos whose "Found outside xDev" group is open; all start closed.
   const [foundOpen, setFoundOpen] = useState<string[]>([]);
   // The activity times the recent order was taken from, and how often the window has regained focus.
@@ -356,7 +360,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const sortRows = <T extends { path: string }>(list: readonly T[]): T[] => sortEntries(list, prefs.sort, snapshot.activity, (path) => props.dots[path]);
   // The repo is named on a row only when more than one repo is listed.
   const many = repoList.length > 1;
-  const shown = visibleEntries(entries, prefs, props.selected);
+  const shown = visibleEntries(entries, prefs, props.selected, { only: sleepingOnly, asleep: props.asleep ?? {} });
   // Pinned worktrees get their own group first and are left out of the status sections.
   const shownPaths = new Set(shown.entries.map((e) => e.path));
   const pinnedRows = nestRows(sortRows(pinnedEntries(tree ?? []).filter((e) => shownPaths.has(e.path))), new Set(folded));
@@ -765,7 +769,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     >
       <div className="ws-section-head">
         <h2>{t("workspace.heading")}</h2>
-        {props.onPrefs && <SidebarFilters prefs={prefs} hidden={shown.hidden} onPrefs={props.onPrefs} />}
+        {props.onPrefs && <SidebarFilters prefs={prefs} hidden={shown.hidden} onPrefs={props.onPrefs} sleepingOnly={sleepingOnly} onSleepingOnly={setSleepingOnly} />}
         {props.onPrefs && <SidebarOptions prefs={prefs} onPrefs={props.onPrefs} />}
         {props.onOpenBoard && (
           <button type="button" className="ws-icon-btn" aria-label={t("kanban.open")} title={t("kanban.open")} onClick={() => props.onOpenBoard?.()}>

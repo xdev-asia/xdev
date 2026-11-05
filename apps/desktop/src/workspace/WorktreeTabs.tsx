@@ -28,7 +28,7 @@ import { handoffPrompt, sourceFirstPrompt } from "@/agentSessions/handoff";
 import { HandOffDialog, type HandOffChoice } from "@/agentSessions/HandOffDialog";
 import { sendToOpenedTab } from "./agentPrompt";
 import { pushToast } from "./toastStore";
-import { terminalMenuItems } from "@/terminal/terminalMenu";
+import { showsPaneLayout, terminalMenuItems } from "@/terminal/terminalMenu";
 import { registerTerminal } from "@/terminal/terminalRegistry";
 import { useApprovedStart } from "@/terminal/useApprovedStart";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
@@ -600,6 +600,12 @@ export function WorktreeTabs(props: {
       "pane.prev": () => movePane(-1),
       "pane.expand": () => reshape((l) => toggleExpand(l, l.focused)),
       "pane.equalize": () => reshape(equalize),
+      "pane.clearTitle": () => {
+        const front = shown ? byId.get(shown) : undefined;
+        if (!front?.renamed) return false;
+        sessions.setTitle(front.id, null);
+        return true;
+      },
       "pane.close": () => requestClose(focusedLeaf?.tabs ?? []),
       // Only a file tab takes the save key; anywhere else it goes on to its other owners.
       "file.markdownPreview": () => (shown ? openPreview(fileTabRel(shown) ?? "") : false),
@@ -684,6 +690,14 @@ export function WorktreeTabs(props: {
         }),
       forkSession: forkable(tab) ? () => forkSession(tab) : undefined,
       handOff: forkable(tab) && props.worktrees ? () => setHandingOff({ id: tab.id, lines: handle.lines(CONTEXT_LINES) }) : undefined,
+      equalize: layout && showsPaneLayout(panes.length) ? () => setLayout(equalize(layout)) : undefined,
+      expand: layout && showsPaneLayout(panes.length) ? () => setLayout(toggleExpand(layout, pane ?? layout.focused)) : undefined,
+      expanded: !!pane && layout?.expanded === pane,
+      clearTitle: () => sessions.setTitle(tab.id, null),
+      copySessionId: () => {
+        const id = tab.agentSession;
+        if (id) void copyText(id).then((ok) => pushToast({ text: t(ok ? "termMenu.copied" : "termMenu.copyFailed") }));
+      },
       copyTerminalId: () => void copyText(tab.id),
       copyPaneId: () => pane && void copyText(pane),
       quickCommands: quickCommandsSubmenu(
