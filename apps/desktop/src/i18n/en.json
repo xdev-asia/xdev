@@ -2164,5 +2164,12 @@
   "editor.conflict.bar": "Conflict {n} of {total}",
   "editor.conflict.current": "Accept current",
   "editor.conflict.incoming": "Accept incoming",
-  "editor.conflict.both": "Accept both"
+  "editor.conflict.both": "Accept both",
+  "termLink.hint.file": "{path} ({actions}{open} to open, or {alt} for default app)",
+  "termLink.hint.url": "{url} ({actions}{open} to open)",
+  "termLink.hint.actions": "Click for actions, ",
+  "termLink.hint.click": "Ctrl+click",
+  "termLink.hint.altClick": "Shift+Ctrl+click",
+  "termLink.hint.clickMac": "⌘+click",
+  "termLink.hint.altClickMac": "⇧⌘+click"
 }
