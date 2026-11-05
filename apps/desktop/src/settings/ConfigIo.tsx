@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import { Button } from "@xdev-asia/ui";
 import { toApiError, type Api, type ApiError, type ImportPreview } from "@/api";
 import { useI18n } from "@/i18n";
-import { CONFIG_EXTENSIONS, CONFIG_SECTIONS, applicable, defaultChosen, fileName, nothingToImport, toggle } from "./configIo";
+import { CONFIG_EXTENSIONS, CONFIG_SECTIONS, applicable, defaultChosen, fileName, nothingToImport, toggle } from "./configSections";
 
 /** Settings → Advanced: export chosen sections to a JSON file without secrets, and import one with a preview. */
 export function ConfigIo({ api, onApplied }: { api: Api; onApplied?: () => void }): JSX.Element {

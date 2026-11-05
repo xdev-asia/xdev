@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { envChanged, isBlank, keyProblem, rowsFrom, rowsValid, secretPlan, toPatch, type EnvRow } from "./repoEnv";
+import { envChanged, isBlank, keyProblem, rowsFrom, rowsValid, secretPlan, toPatch, type EnvRow } from "./envRows";
 
 const row = (id: number, key: string, value = "", secret = false, stored = false): EnvRow => ({ id, key, value, secret, stored });
 

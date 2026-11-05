@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type ApiError, type EnvPreviewRow, type RepoView } from "@/api";
 import { useI18n } from "@/i18n";
-import { envChanged, isBlank, keyProblem, rowsFrom, rowsValid, secretPlan, toPatch, type EnvRow } from "./repoEnv";
+import { envChanged, isBlank, keyProblem, rowsFrom, rowsValid, secretPlan, toPatch, type EnvRow } from "./envRows";
 
 type Props = {
   api: Api;

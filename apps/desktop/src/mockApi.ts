@@ -38,7 +38,7 @@ import { createMockPty, type MockPtyd } from "./mockPty";
 import { createMockAccountRouting, type MockAccountRouting } from "./mockAccountRouting";
 import { createMockCrash, type MockCrash } from "./mockCrash";
 import { createMockConfigEnv, DEMO_IMPORT_PATH } from "./mockConfigEnv";
-import { CONFIG_EXTENSIONS } from "./settings/configIo";
+import { CONFIG_EXTENSIONS } from "./settings/configSections";
 import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
 import { createMockXdevId, type MockXdevId } from "./mockXdevId";
 import { createMockMcp } from "./mockMcp";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ImportPreview } from "@/api";
-import { applicable, defaultChosen, fileName, nothingToImport, toggle } from "./configIo";
+import { applicable, defaultChosen, fileName, nothingToImport, toggle } from "./configSections";
 
 const section = (name: string, changes: number, invalid = false) => ({
   section: name,
