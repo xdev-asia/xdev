@@ -94,7 +94,7 @@ it("offers the default agent first, and only Claude and Codex for a draft", asyn
   const v = await mount();
   const options = (id: string) => nodes(v.field(id, "select", "agent")).filter((n) => n.type === "option").map((n) => n.props.value);
   expect(options("commitMessage")).toEqual(["", "claude", "codex"]);
-  expect(options("fixChecks")).toEqual(["", ...["claude", "codex", "gemini", "cursor", "copilot", "opencode", "amp", "droid", "qwen-code", "kimi", "devin", "aider", "goose"]]);
+  expect(options("fixChecks")).toEqual(["", ...["claude", "codex", "gemini", "cursor", "copilot", "opencode", "amp", "droid", "qwen-code", "kimi", "devin", "aider", "goose", "grok", "kiro", "kilo", "cline", "antigravity", "pi", "command-code"]]);
   expect(nodes(v.field("pullRequest", "select", "agent"))[1]!.props.children).toBe(en("settings.git.recipes.defaultAgent"));
 });
 

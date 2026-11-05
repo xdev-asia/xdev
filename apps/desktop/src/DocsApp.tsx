@@ -45,7 +45,7 @@ import { setUpVault } from "./shell/setUpVault";
 import { useQuota } from "./shell/useQuota";
 import { useUpdate } from "./shell/useUpdate";
 import { BrandMark } from "@/components/BrandMark";
-import { useHiddenApps, useVisibleApp } from "@/ui/hiddenApps";
+import { useAppOrder, useHiddenApps, useVisibleApp } from "@/ui/hiddenApps";
 
 const SEARCH_DEBOUNCE_MS = 150;
 const SEARCH_LIMIT = 50;
@@ -175,7 +175,8 @@ export function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: App
   const review = useChanges(api, doc.flush);
   const [app, setApp] = useState<AppId>("docs");
   const hiddenApps = useHiddenApps();
-  useVisibleApp(app, hiddenApps, setApp);
+  const appOrder = useAppOrder();
+  useVisibleApp(app, hiddenApps, setApp, appOrder);
   // Set once the Agent kit has been shown; from then on it stays mounted.
   const kitSeen = useRef(false);
   if (app === "kit") kitSeen.current = true;
@@ -495,7 +496,7 @@ export function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: App
           <LanguageSwitch />
         </div>
       </header>
-      <ActivityBar active={app} changeCount={changeCount ?? null} onSelect={openApp} hidden={hiddenApps} />
+      <ActivityBar active={app} changeCount={changeCount ?? null} onSelect={openApp} hidden={hiddenApps} order={appOrder} />
       <aside className="sidebar" hidden={!panelOpen}>
         {searchOpen ? (
           <SearchPanel

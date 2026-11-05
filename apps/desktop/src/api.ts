@@ -226,6 +226,7 @@ import type {
   XdevIdState,
   XdevIdServer,
   FsChanged,
+  PathEntry,
 } from "@xdev/bindings";
 import type {
   Automation,
@@ -338,7 +339,7 @@ export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, Usag
 export type { ConfigExported, EnvPreviewRow, ImportApplied, ImportPreview, RepoEnvVar } from "@xdev/bindings";
 export type { SectionPreview, ConfigChange } from "@xdev/bindings";
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
-export type { FsChanged, FsEvent, FsEventKind } from "@xdev/bindings";
+export type { FsChanged, FsEvent, FsEventKind, PathEntry } from "@xdev/bindings";
 export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase, UpdateDeferral, ReleaseBuild, ReleaseList };
 export type { AiKeyStatus } from "@xdev/bindings";
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
@@ -1516,6 +1517,8 @@ export interface Api {
   // Settings → Agents; the put returns what was stored.
   agentsSettings(): Promise<AgentsSettings>;
   agentsSettingsPut(v: AgentsSettings): Promise<AgentsSettings>;
+  // The PATH new terminals and agents get, in order: the owner's entries over the system ones.
+  pathEffective(): Promise<PathEntry[]>;
   // Settings → Orchestration; the put returns what was stored, with the depth clamped to 1..9.
   orchestrationSettings(): Promise<OrchestrationSettings>;
   orchestrationSettingsPut(v: OrchestrationSettings): Promise<OrchestrationSettings>;
@@ -2337,6 +2340,7 @@ const tauriApi: Api = {
   diffSettingsPut: (settings) => call("diff_settings_put", { settings }),
   agentsSettings: () => call("agents_settings_get"),
   agentsSettingsPut: (settings) => call("agents_settings_put", { settings }),
+  pathEffective: () => call("path_effective"),
   orchestrationSettings: () => call("orchestration_settings_get"),
   orchestrationSettingsPut: (settings) => call("orchestration_settings_put", { settings }),
   keepAwake: () => call("keep_awake_get"),

@@ -43,6 +43,13 @@ const SPECS: Record<Cli, Spec> = {
   devin: { name: "Devin", efforts: [], models: [], modes: ["ask", "skip"], after: false, docs: "https://devin.ai/cli" },
   aider: { name: "Aider", efforts: [], models: [], modes: ["ask", "skip"], after: true, docs: "https://aider.chat/docs/" },
   goose: { name: "Goose", efforts: [], models: [], modes: ["ask", "skip"], after: true, docs: "https://goose-docs.ai/docs/quickstart/" },
+  grok: { name: "Grok CLI", efforts: [], models: [], modes: ["ask"], after: true, docs: "https://github.com/superagent-ai/grok-cli" },
+  kiro: { name: "Kiro CLI", efforts: [], models: [], modes: ["ask"], after: true, docs: "https://kiro.dev/cli/" },
+  kilo: { name: "Kilo Code CLI", efforts: [], models: [], modes: ["ask"], after: true, docs: "https://kilo.ai/docs/cli" },
+  cline: { name: "Cline CLI", efforts: [], models: [], modes: ["ask"], after: true, docs: "https://docs.cline.bot/cline-cli/overview" },
+  antigravity: { name: "Antigravity", efforts: [], models: [], modes: ["ask"], after: true, docs: "https://antigravity.google/" },
+  pi: { name: "Pi", efforts: [], models: [], modes: ["ask"], after: true, docs: "https://github.com/badlogic/pi-mono" },
+  "command-code": { name: "Command Code", efforts: [], models: [], modes: ["ask"], after: true, docs: "https://commandcode.ai/docs" },
 };
 const CLIS = Object.keys(SPECS) as Cli[];
 const isCli = (id: string): id is Cli => id in SPECS;
@@ -68,6 +75,13 @@ const FLAGS: Record<Cli, Partial<Record<Mode, string[]>>> = {
   devin: { skip: ["--permission-mode", "bypass", "--respect-workspace-trust", "false"] },
   aider: { skip: ["--yes-always"] },
   goose: { skip: ["GOOSE_MODE=auto"] },
+  grok: {},
+  kiro: {},
+  kilo: {},
+  cline: {},
+  antigravity: {},
+  pi: {},
+  "command-code": {},
 };
 
 /** The flag each mode's recipe starts with; an arg that holds one makes the profile custom. */

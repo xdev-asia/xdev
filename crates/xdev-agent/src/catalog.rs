@@ -72,7 +72,7 @@ const fn row(
 }
 
 /// One row per `Cli`, in `Cli::ALL` order.
-static SPECS: [AgentSpec; 13] = [
+static SPECS: [AgentSpec; 20] = [
     AgentSpec {
         skip: &["--dangerously-skip-permissions"],
         auto: &["--permission-mode", "auto"],
@@ -222,10 +222,59 @@ static SPECS: [AgentSpec; 13] = [
             "https://goose-docs.ai/docs/quickstart/",
         )
     },
+    row(
+        Cli::Grok,
+        "Grok CLI",
+        &["grok"],
+        PromptMode::AfterStart,
+        "https://github.com/superagent-ai/grok-cli",
+    ),
+    row(
+        Cli::Kiro,
+        "Kiro CLI",
+        &["kiro-cli"],
+        PromptMode::AfterStart,
+        "https://kiro.dev/cli/",
+    ),
+    row(
+        Cli::Kilo,
+        "Kilo Code CLI",
+        &["kilocode", "kilo"],
+        PromptMode::AfterStart,
+        "https://kilo.ai/docs/cli",
+    ),
+    row(
+        Cli::Cline,
+        "Cline CLI",
+        &["cline"],
+        PromptMode::AfterStart,
+        "https://docs.cline.bot/cline-cli/overview",
+    ),
+    row(
+        Cli::Antigravity,
+        "Antigravity",
+        &["antigravity"],
+        PromptMode::AfterStart,
+        "https://antigravity.google/",
+    ),
+    row(
+        Cli::Pi,
+        "Pi",
+        &["pi"],
+        PromptMode::AfterStart,
+        "https://github.com/badlogic/pi-mono",
+    ),
+    row(
+        Cli::CommandCode,
+        "Command Code",
+        &["commandcode"],
+        PromptMode::AfterStart,
+        "https://commandcode.ai/docs",
+    ),
 ];
 
 /// The order `auto` tries the agents in.
-pub const AUTO_ORDER: [Cli; 13] = [
+pub const AUTO_ORDER: [Cli; 20] = [
     Cli::Claude,
     Cli::Codex,
     Cli::Copilot,
@@ -239,6 +288,13 @@ pub const AUTO_ORDER: [Cli; 13] = [
     Cli::Kimi,
     Cli::QwenCode,
     Cli::Devin,
+    Cli::Grok,
+    Cli::Kiro,
+    Cli::Kilo,
+    Cli::Cline,
+    Cli::Antigravity,
+    Cli::Pi,
+    Cli::CommandCode,
 ];
 
 /// The model names of `cli` for the launch options; may be empty.
@@ -340,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn thirteen_specs_in_cli_order() {
+    fn twenty_specs_in_cli_order() {
         assert_eq!(SPECS.len(), Cli::ALL.len());
         for (cli, spec) in Cli::ALL.iter().zip(SPECS.iter()) {
             assert_eq!(*cli, spec.cli);
@@ -361,7 +417,14 @@ mod tests {
                 "kimi",
                 "devin",
                 "aider",
-                "goose"
+                "goose",
+                "grok",
+                "kiro",
+                "kilo",
+                "cline",
+                "antigravity",
+                "pi",
+                "command-code"
             ]
         );
     }
@@ -436,5 +499,43 @@ mod tests {
         assert_eq!(modes(Cli::Opencode), [Permissions::Ask]);
         assert_eq!(modes(Cli::Goose), [Permissions::Ask, Permissions::Skip]);
         assert!(!modes(Cli::Gemini).contains(&Permissions::Auto));
+    }
+
+    #[test]
+    fn new_clis_have_rows_with_no_guessed_flags() {
+        let new = [
+            (Cli::Grok, "grok", "Grok CLI", "grok"),
+            (Cli::Kiro, "kiro", "Kiro CLI", "kiro-cli"),
+            (Cli::Kilo, "kilo", "Kilo Code CLI", "kilocode"),
+            (Cli::Cline, "cline", "Cline CLI", "cline"),
+            (
+                Cli::Antigravity,
+                "antigravity",
+                "Antigravity",
+                "antigravity",
+            ),
+            (Cli::Pi, "pi", "Pi", "pi"),
+            (
+                Cli::CommandCode,
+                "command-code",
+                "Command Code",
+                "commandcode",
+            ),
+        ];
+        for (cli, id, title, command) in new {
+            assert_eq!(cli.as_str(), id);
+            assert_eq!(Cli::of_id(id), Some(cli));
+            let s = spec(cli);
+            assert_eq!(s.title, title);
+            assert_eq!(s.commands[0], command);
+            assert_eq!(s.prompt, PromptMode::AfterStart);
+            assert_eq!(modes(cli), [Permissions::Ask]);
+            assert!(models(cli).is_empty());
+            assert!(s.trust.is_none());
+            assert!(prompt_args(cli, "hi").is_empty());
+            assert!(AUTO_ORDER.contains(&cli));
+        }
+        assert_eq!(Cli::ALL[12], Cli::Goose, "existing order is kept");
+        assert_eq!(Cli::of_id("nope"), None);
     }
 }

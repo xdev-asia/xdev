@@ -200,6 +200,8 @@ export type { OpenTarget } from "./OpenTarget";
 export type { OrchestrationSettings } from "./OrchestrationSettings";
 export type { Origin } from "./Origin";
 export type { OutputSnapshot } from "./OutputSnapshot";
+export type { PathEntry } from "./PathEntry";
+export type { PathSource } from "./PathSource";
 export type { Permissions } from "./Permissions";
 export type { PlannedFile } from "./PlannedFile";
 export type { PortEvidence } from "./PortEvidence";

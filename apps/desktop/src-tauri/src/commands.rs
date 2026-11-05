@@ -303,6 +303,17 @@ pub fn agents_settings_put(
     crate::power::put_agents(&app, settings.clamped())
 }
 
+/// The PATH new terminals and agents get, in order: the owner's entries from
+/// Settings → Agents over the system PATH, each flagged when its folder is
+/// missing.
+#[tauri::command(async)]
+pub fn path_effective(app: AppHandle) -> Vec<crate::agent_path::PathEntry> {
+    let agents = settings_store::read(&app).agents;
+    let system =
+        xdev_agent::path_override().unwrap_or_else(|| std::env::var_os("PATH").unwrap_or_default());
+    crate::agent_path::effective(&system, &agents.path_prepend, &agents.path_append)
+}
+
 /// Settings → Automations as stored; the defaults when nothing is.
 #[tauri::command(async)]
 pub fn automations_settings_get(app: AppHandle) -> settings::AutomationsSettings {

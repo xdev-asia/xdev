@@ -1,6 +1,7 @@
 /** The order `auto` tries the built-in agents in; mirrors `AUTO_ORDER` in `crates/xdev-agent`. */
 export const AUTO_ORDER = [
   "claude", "codex", "copilot", "opencode", "gemini", "aider", "goose", "amp", "cursor", "droid", "kimi", "qwen-code", "devin",
+  "grok", "kiro", "kilo", "cline", "antigravity", "pi", "command-code",
 ] as const;
 
 /** The picker id of the blank terminal (the default shell). */

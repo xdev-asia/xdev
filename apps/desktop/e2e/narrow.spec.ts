@@ -62,3 +62,21 @@ test("at 360px the pane chips fold behind one button and the page does not scrol
   await expect(page.getByRole("button", { name: "Sticky note", exact: true })).toBeVisible();
   expect(await fitsWidth(page)).toBe(true);
 });
+
+test("workspace parts and the PATH editor fit at 360px", async ({ page, openApp }) => {
+  await openApp();
+  await page.getByRole("button", { name: "Settings" }).click();
+  const sidebar = page.getByRole("button", { name: "Show or hide the sidebar" });
+  if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();
+  const nav = page.getByRole("navigation", { name: "Settings sections" });
+  await nav.getByRole("button", { name: "Appearance", exact: true }).click();
+  const parts = page.getByRole("region", { name: "Appearance", exact: true }).getByRole("list", { name: "Workspace parts" });
+  await parts.scrollIntoViewIfNeeded();
+  await expect(parts.getByRole("button", { name: "Move Agent kit up" })).toBeVisible();
+  expect(await fitsWidth(page)).toBe(true);
+  await nav.getByRole("button", { name: "Agents", exact: true }).click();
+  const path = page.getByRole("region", { name: "Agents", exact: true }).getByRole("list", { name: "PATH" });
+  await path.scrollIntoViewIfNeeded();
+  await expect(path.getByText("/opt/missing/bin")).toBeVisible();
+  expect(await fitsWidth(page)).toBe(true);
+});

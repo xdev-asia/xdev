@@ -445,11 +445,11 @@ const dataField = (p: Awaited<ReturnType<typeof page>>, name: string) => p.all()
 it("catalog_splits_installed_from_available_with_counts", async () => {
   const p = await page();
   expect(rowsIn(p, "installed")).toEqual(["claude", "codex", "aider"]);
-  expect(rowsIn(p, "available")).toHaveLength(10);
+  expect(rowsIn(p, "available")).toHaveLength(17);
   expect(rowsIn(p, "available")).toContain("devin");
   const texts = p.all().map((n) => n.props.children).filter((c) => typeof c === "string");
   expect(texts).toContain(en("settings.agents.catalog.detected", { count: 3 }));
-  expect(texts).toContain(en("settings.agents.catalog.count", { count: 10 }));
+  expect(texts).toContain(en("settings.agents.catalog.count", { count: 17 }));
 });
 
 it("refresh_calls_agents_refresh_and_follows_the_new_detection", async () => {

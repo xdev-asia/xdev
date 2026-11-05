@@ -3,12 +3,13 @@ import type { JSX } from "react";
 import { FontField, Segmented, Select, Switch, ThemeSwitch, UI_FONT_SUGGESTIONS } from "@xdev-asia/ui";
 import { toApiError, type ApiError, type EditorTheme, type SidebarLook, type StatusBarItems, type TitlebarMode, type UiSettings } from "@/api";
 import { useI18n } from "@/i18n";
-import { APPS } from "@/shell/apps";
+import { APPS, orderedApps, type AppId } from "@/shell/apps";
 import { clampTintOpacity, SIDEBAR_TINTS, TINT_OPACITY } from "@/ui/sidebarTint";
 import { applyAppearance } from "@/ui/theme";
 import type { AppIconId } from "@/ui/appIcon";
 import { AppIconPicker } from "./AppIconPicker";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
+import { focusPart, moveApp, WorkspaceParts, type PartControl } from "./workspaceParts";
 import type { SettingsSectionProps } from "./sections";
 
 export const EDITOR_THEMES: EditorTheme[] = ["app", "light", "dark"];
@@ -30,6 +31,7 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
   const [font, setFont] = useState("");
   const [opacity, setOpacity] = useState<number>(TINT_OPACITY.default);
   const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
   const [error, setError] = useState<ApiError["code"]>();
 
   useEffect(() => {
@@ -73,7 +75,21 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
     if (ui && opacity !== clampTintOpacity(ui.sidebarTintOpacity)) void patch({ sidebarTintOpacity: opacity });
   };
   const hidden = ui?.hiddenApps ?? [];
-  const toggleApp = (id: string) => void patch({ hiddenApps: hidden.includes(id) ? hidden.filter((h) => h !== id) : [...hidden, id] });
+  const order = orderedApps(ui?.appOrder ?? []);
+  const toggleApp = (id: AppId) => {
+    setNote("");
+    void patch({ hiddenApps: hidden.includes(id) ? hidden.filter((h) => h !== id) : [...hidden, id] });
+  };
+  const moveApp_ = (id: AppId, delta: -1 | 1, control: PartControl) => {
+    const next = moveApp(order, id, delta);
+    if (next === order) return;
+    setNote(t("settings.parts.moved", { app: t(`apps.${id}`), place: next.indexOf(id) + 1, total: next.length }));
+    void patch({ appOrder: [...next] }).then(() => setTimeout(() => focusPart(id, control), 0));
+  };
+  const resetParts = () => {
+    setNote(t("settings.parts.resetDone"));
+    void patch({ appOrder: [], hiddenApps: [] });
+  };
 
   const editorOptions = EDITOR_THEMES.map((v) => ({ value: v, label: t(`settings.appearance.editor.${v}`) }));
 
@@ -268,34 +284,20 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
       </SettingGroup>
 
       <SettingGroup ids={APP_IDS} filter={filter}>
-        <h4 className="settings-group">{t("settings.appearance.apps")}</h4>
+        <h4 className="settings-group">{t("settings.parts.title")}</h4>
         {ui && (
-          <ul className="settings-list">
-            {APPS.map((id) => {
-              const shown = !hidden.includes(id);
-              const lastShown = shown && APPS.filter((a) => !hidden.includes(a)).length <= 1;
-              return (
-                settingShown(filter, `appearance.app.${id}`) && (
-                  <li className="settings-item" data-switch={`app-${id}`} data-setting-id={`appearance.app.${id}`} key={id}>
-                    <div className="settings-item-text">
-                      <strong>{t(`apps.${id}`)}</strong>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      className="agent-switch"
-                      aria-checked={shown}
-                      aria-label={t("settings.appearance.app.show", { app: t(`apps.${id}`) })}
-                      disabled={busy || lastShown}
-                      onClick={() => toggleApp(id)}
-                    />
-                  </li>
-                )
-              );
-            })}
-          </ul>
+          WorkspaceParts({
+            order,
+            hidden,
+            busy,
+            filter,
+            t,
+            note,
+            onToggle: toggleApp,
+            onMove: moveApp_,
+            onReset: resetParts,
+          })
         )}
-        <small className="settings-hint">{t("settings.appearance.appsHint")}</small>
       </SettingGroup>
 
       <SettingGroup ids={EDITOR_IDS} filter={filter}>

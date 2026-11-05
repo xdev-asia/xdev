@@ -312,6 +312,13 @@ pub struct AgentsSettings {
     /// Trust the folder in the agent's own store before an agent starts
     /// (fresh launches only).
     pub workspace_trust: bool,
+    /// Directories put in front of the PATH of new terminals and agents. Valid
+    /// entries only (see `agent_path::validate_entry`), each once.
+    #[serde(deserialize_with = "lenient_items")]
+    pub path_prepend: Vec<String>,
+    /// Directories put after the PATH of new terminals and agents.
+    #[serde(deserialize_with = "lenient_items")]
+    pub path_append: Vec<String>,
 }
 
 /// Settings → Agents → Keep computer awake.
@@ -343,13 +350,18 @@ impl Default for AgentsSettings {
             sleep_after_min: SLEEP_AFTER_MIN_DEFAULT,
             session_search: false,
             workspace_trust: true,
+            path_prepend: Vec::new(),
+            path_append: Vec::new(),
         }
     }
 }
 
 impl AgentsSettings {
-    /// Holds `sleep_after_min` inside `SLEEP_AFTER_MIN_RANGE`.
+    /// Holds `sleep_after_min` inside `SLEEP_AFTER_MIN_RANGE` and keeps only
+    /// the valid PATH entries, each once.
     pub fn clamped(mut self) -> Self {
+        self.path_prepend = crate::agent_path::clean_entries(&self.path_prepend);
+        self.path_append = crate::agent_path::clean_entries(&self.path_append);
         self.sleep_after_min = self
             .sleep_after_min
             .clamp(*SLEEP_AFTER_MIN_RANGE.start(), *SLEEP_AFTER_MIN_RANGE.end());
@@ -1013,6 +1025,10 @@ pub struct UiSettings {
     /// dropped when stored, and at least one app stays visible.
     #[serde(deserialize_with = "lenient_items")]
     pub hidden_apps: Vec<String>,
+    /// The order of the activity bar apps, by id. Empty is the default order;
+    /// a stored order holds every app once (see `clean_app_order`).
+    #[serde(deserialize_with = "lenient_items")]
+    pub app_order: Vec<String>,
     /// Which of xDev's own footer items show.
     #[serde(deserialize_with = "lenient")]
     pub status_bar: StatusBarItems,
@@ -1045,6 +1061,7 @@ impl Default for UiSettings {
             sidebar_tint_opacity: SIDEBAR_TINT_OPACITY_DEFAULT,
             reduce_effects: false,
             hidden_apps: Vec::new(),
+            app_order: Vec::new(),
             status_bar: StatusBarItems::default(),
             titlebar: TitlebarMode::Native,
             show_titlebar_name: true,
@@ -1257,6 +1274,7 @@ impl UiSettings {
             SIDEBAR_TINT_OPACITY_DEFAULT
         };
         self.hidden_apps = clean_hidden_apps(&self.hidden_apps);
+        self.app_order = clean_app_order(&self.app_order);
         self.app_icon = known_app_icon(&self.app_icon).to_string();
         self
     }
@@ -1273,6 +1291,27 @@ fn clean_hidden_apps(raw: &[String]) -> Vec<String> {
         Vec::new()
     } else {
         kept
+    }
+}
+
+/// The listed known app ids once each, then the apps it left out in `APP_IDS`
+/// order; the default order reads as none.
+fn clean_app_order(raw: &[String]) -> Vec<String> {
+    let mut order: Vec<String> = Vec::new();
+    for id in raw {
+        if APP_IDS.contains(&id.as_str()) && !order.contains(id) {
+            order.push(id.clone());
+        }
+    }
+    for id in APP_IDS {
+        if !order.iter().any(|o| o == id) {
+            order.push((*id).to_string());
+        }
+    }
+    if order.iter().map(String::as_str).eq(APP_IDS) {
+        Vec::new()
+    } else {
+        order
     }
 }
 
@@ -3225,6 +3264,32 @@ then sum up"
     }
 
     #[test]
+    fn app_order_keeps_known_ids_once_and_fills_the_rest() {
+        let order =
+            |ids: &[&str]| clean_app_order(&ids.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert!(order(&[]).is_empty());
+        assert!(order(&APP_IDS).is_empty());
+        assert_eq!(
+            order(&["terminal", "nope", "docs", "terminal"]),
+            [
+                "terminal", "docs", "changes", "tasks", "squads", "agents", "kit", "accounts"
+            ]
+        );
+    }
+
+    #[test]
+    fn agent_path_entries_are_cleaned_when_stored() {
+        let saved = AgentsSettings {
+            path_prepend: vec![" /a ".into(), "".into(), "/a".into()],
+            path_append: vec!["x y".into(), "/b".into()],
+            ..AgentsSettings::default()
+        }
+        .clamped();
+        assert_eq!(saved.path_prepend, ["/a"]);
+        assert_eq!(saved.path_append, ["/b"]);
+    }
+
+    #[test]
     fn hidden_apps_keep_known_ids_once_and_never_hide_everything() {
         let hidden = |ids: &[&str]| {
             UiSettings {
@@ -3814,7 +3879,9 @@ then sum up"
                     "autoSleep": false,
                     "sleepAfterMin": 30,
                     "sessionSearch": false,
-                    "workspaceTrust": true
+                    "workspaceTrust": true,
+                    "pathPrepend": [],
+                    "pathAppend": []
                 })
             );
             fs::write(
