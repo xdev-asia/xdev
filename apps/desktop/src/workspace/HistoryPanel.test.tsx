@@ -75,7 +75,7 @@ function panel(api: Api, extra: { reloadKey?: number; visible?: boolean } = {}) 
   const all = () => nodes(draw());
   const html = () => renderToStaticMarkup(draw() as ReactElement);
   const row = (id: string) => all().find((n) => n.type === "button" && typeof n.props["aria-label"] === "string" && n.props["aria-label"].includes(id))!;
-  const refresh = () => all().find((n) => n.type === IconButton)!;
+  const refresh = () => all().find((n) => n.type === IconButton && n.props.icon === "restore")!;
   return { draw, run, all, html, row, refresh, onOpenCommit };
 }
 

@@ -226,9 +226,7 @@ export function HistoryPanel(props: {
         actions={
           <>
             <Tooltip content={t("gitHistory.help")}>
-              <button type="button" className="ws-icon-btn" aria-label={t("gitHistory.helpLabel")}>
-                ?
-              </button>
+              <IconButton icon="help" label={t("gitHistory.helpLabel")} />
             </Tooltip>
             <IconButton
               icon="restore"
