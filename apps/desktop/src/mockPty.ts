@@ -74,6 +74,8 @@ export function createMockPty(
   setupRun: (cwd: string) => Promise<MockSetupRun> = () => reject("hook_none", "setup"),
   // The provider's active account, which a built-in agent with no account of its own runs as.
   activeAccount: (provider: Provider) => string | null = () => null,
+  // The provider's routing, which a fresh agent start with no account of its own goes by.
+  routing: { route(provider: Provider): string | null; started(provider: Provider, name: string): void } | null = null,
 ): PtyApi & MockPtyd {
   // Like Rust, an exited terminal keeps its slot until `ptyKill`.
   const ptys = new Map<string, { onData: (bytes: Uint8Array) => void; line: string; exited: boolean }>();
@@ -178,6 +180,10 @@ export function createMockPty(
             : active
               ? [active, "active"]
               : [null, null];
+      // Like Rust `routed_start`: a fresh start that would take the default goes by the provider's routing.
+      const routed = provider && routing && agent && resume === undefined && (accountSource === null || accountSource === "active") ? routing.route(provider) : null;
+      const [startAs, startSource]: [string | null, AccountSource | null] = routed !== null && routed !== runAs ? [routed, "routed"] : [runAs, accountSource];
+      if (provider && routing && startAs !== null) routing.started(provider, startAs);
       ptys.set(id, { onData, line: "", exited: false });
       onData(encode(`xDev demo terminal (${profileId})\r\n${PROMPT}`));
       return {
@@ -187,8 +193,8 @@ export function createMockPty(
         agent,
         profile: profileId,
         permissions,
-        account: runAs,
-        accountSource,
+        account: startAs,
+        accountSource: startSource,
         // Built-in agents get hook flags while Status hooks is on: claude past the version gate, codex on its private home.
         hooks: profileId === "claude" || profileId === "codex",
         cli: profileId === "claude" || profileId === "codex" ? profileId : null,

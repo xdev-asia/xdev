@@ -301,6 +301,7 @@ import type { Target } from "./doc/frontmatter";
 import type { LayoutSnapshot } from "./workspace/layoutSnapshot";
 import { toBytes } from "./terminal/ptyClient";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
+import type { AccountRouting, QuotaAlert } from "@xdev/bindings";
 
 export { createMockApi };
 /** The kinds of `HookKind` that are scripts; the others are lists. */
@@ -330,6 +331,7 @@ export type { Theme, EditorTheme, SidebarLook, StatusBarItems, TitlebarMode } fr
 export type { CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview } from "@xdev/bindings";
 export type { ConfigKind, TermConfigDetected, TermConfigPreview } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
+export type { AccountRouting, QuotaAlert, RoutePolicy } from "@xdev/bindings";
 
 // The IPC types come from Rust; see packages/bindings/README.md.
 export type {
@@ -721,7 +723,8 @@ export type ErrorCode =
   | "bad_icon"
   | "gh_account_missing"
   | "crash_store"
-  | "diag_write";
+  | "diag_write"
+  | "bad_routing";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -1562,6 +1565,16 @@ export interface Api {
   diagnosticsRevealExport(path: string): Promise<void>;
   // Opens the folder of the app log.
   diagnosticsRevealLogs(): Promise<void>;
+  // How each provider's new agents pick their account, Claude then Codex.
+  accountsRouting(): Promise<AccountRouting[]>;
+  // Stores one provider's routing; rejects with `bad_routing` (a pool or priority name that is not
+  // one of its accounts, a percent outside 1..=100, more than 4 thresholds).
+  accountRoutingSet(routing: AccountRouting): Promise<void>;
+  // Makes the account the provider's routing picks, other than `avoid` (null: the active one), the
+  // default for new tabs. Resolves with its name, or null when there is no other account to use.
+  accountUseNext(provider: Provider, avoid: string | null): Promise<string | null>;
+  // `accounts://quota-alert`: an account crossed one of its provider's thresholds, once per window.
+  onQuotaAlert(cb: (alert: QuotaAlert) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -1747,6 +1760,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "gh_account_missing",
   "crash_store",
   "diag_write",
+  "bad_routing",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -2215,6 +2229,10 @@ const tauriApi: Api = {
   diagnosticsExport: (defaultName) => call("diagnostics_export", { defaultName }),
   diagnosticsRevealExport: (path) => call("diagnostics_reveal_export", { path }),
   diagnosticsRevealLogs: () => call("diagnostics_reveal_logs"),
+  accountsRouting: () => call("accounts_routing"),
+  accountRoutingSet: (routing) => call("account_routing_set", { routing }),
+  accountUseNext: (provider, avoid) => call("account_use_next", { provider, avoid }),
+  onQuotaAlert: (cb) => listen<QuotaAlert>("accounts://quota-alert", (e) => cb(e.payload)),
 };
 
 const DEMO_CRASH: CrashReport = {
