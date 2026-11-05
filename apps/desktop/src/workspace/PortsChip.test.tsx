@@ -9,9 +9,9 @@ vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n
 // The popover is called as a function to read its handlers, so its refs and effects are stubs.
 vi.mock("react", async (original) => ({ ...await original<typeof import("react")>(), useRef: () => ({ current: null }), useEffect: () => {} }));
 
-const node: LivePort = { id: "n", port: 5173, address: "127.0.0.1", pid: 4242, process: "node" };
-const bare: LivePort = { id: "b", port: 8080, address: "0.0.0.0", pid: 77, process: null };
-const six: LivePort = { id: "s", port: 3000, address: "::1", pid: 78, process: "python" };
+const node: LivePort = { id: "n", port: 5173, address: "127.0.0.1", endpoint: "127.0.0.1:5173", pid: 4242, process: "node" };
+const bare: LivePort = { id: "b", port: 8080, address: "localhost", endpoint: "localhost:8080", pid: 77, process: null };
+const six: LivePort = { id: "s", port: 3000, address: "::1", endpoint: "[::1]:3000", pid: 78, process: "python" };
 
 function walk(el: unknown, out: ReactElement<Record<string, any>>[] = []): ReactElement<Record<string, any>>[] {
   if (Array.isArray(el)) el.forEach((e) => walk(e, out));
@@ -43,7 +43,7 @@ it("the popover title counts the ports and each row shows port, process or PID, 
   expect(html).toContain("Live ports (2)");
   expect(html).toContain("5173");
   expect(html).toContain("node - 127.0.0.1");
-  expect(html).toContain("PID 77 - 0.0.0.0");
+  expect(html).toContain("PID 77 - localhost");
   expect(html).toContain("Open in browser");
   expect(html).toContain("Copy 127.0.0.1:5173");
   expect(html).toContain("Stop process");

@@ -11,13 +11,20 @@ const scan = (ports: WorkspacePort[]): PortScan => ({ platform: "linux", scanned
 it("groups the workspace ports that have a process by worktree", () => {
   const out = livePortsByWorktree(scan([
     port({ id: "a", port: 5173 }),
-    port({ id: "b", port: 8080, worktree: "/w/b", processName: null, bindHost: "0.0.0.0" }),
+    port({ id: "b", port: 8080, worktree: "/w/b", processName: null, bindHost: "0.0.0.0", connectHost: "localhost" }),
+    port({ id: "e", port: 3000, worktree: "/w/b", bindHost: "::1", connectHost: "::1" }),
+    port({ id: "f", port: 4000, worktree: "/w/b", bindHost: "*", connectHost: "localhost", advertised: true, url: "https://localhost:4000/app" }),
     port({ id: "c", kind: "container", worktree: null }),
     port({ id: "d", pid: null }),
   ]));
   expect(out).toEqual({
-    "/w/a": [{ id: "a", port: 5173, address: "127.0.0.1", pid: 2, process: "node" }],
-    "/w/b": [{ id: "b", port: 8080, address: "0.0.0.0", pid: 2, process: null }],
+    "/w/a": [{ id: "a", port: 5173, address: "localhost", endpoint: "localhost:5173", pid: 2, process: "node" }],
+    "/w/b": [
+      // A wildcard bind is shown and copied as the host to connect to, as the Ports panel does.
+      { id: "b", port: 8080, address: "localhost", endpoint: "localhost:8080", pid: 2, process: null },
+      { id: "e", port: 3000, address: "::1", endpoint: "[::1]:3000", pid: 2, process: "node" },
+      { id: "f", port: 4000, address: "localhost", endpoint: "https://localhost:4000", pid: 2, process: "node" },
+    ],
   });
 });
 
