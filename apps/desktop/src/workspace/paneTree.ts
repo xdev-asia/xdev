@@ -19,8 +19,9 @@ type Leaf = Extract<PaneNode, { kind: "leaf" }>;
 type Split = Extract<PaneNode, { kind: "split" }>;
 
 const MIN_SIZE = 0.1;
-/** The review tab lives in a pane's strip but is never the seed of a new pane. */
+/** The review and commit tabs live in a pane's strip but are never the seed of a new pane. */
 const REVIEW_PREFIX = "review:";
+const COMMIT_PREFIX = "commit:";
 
 export function single(tabId: string): PaneLayout {
   const id = "p1";
@@ -166,7 +167,7 @@ export function selectTab(l: PaneLayout, tabId: string): PaneLayout {
 // ---- panes ---------------------------------------------------------------------------------
 
 export function splitPane(l: PaneLayout, pane: string, dir: PaneDir, tabId: string): PaneLayout {
-  if (!findLeaf(l, pane) || paneOf(l, tabId) || tabId.startsWith(REVIEW_PREFIX)) return l;
+  if (!findLeaf(l, pane) || paneOf(l, tabId) || tabId.startsWith(REVIEW_PREFIX) || tabId.startsWith(COMMIT_PREFIX)) return l;
   const newId = freshId(l, "p");
   const splitId = freshId(l, "s");
   const fresh: Leaf = { kind: "leaf", id: newId, tabs: [tabId], active: tabId };
