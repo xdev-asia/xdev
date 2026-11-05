@@ -209,24 +209,30 @@ pub fn feed_output(app: &AppHandle, pty: &str, worktree: &Path, bytes: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use xdev_ports::{Listener, Proc, ScanError};
 
-    struct Fake;
+    /// Pid 7 listens on 5173 until it is stopped; pid 8 on 22 throughout.
+    #[derive(Default)]
+    struct Fake {
+        stopped: AtomicBool,
+    }
 
     impl Probe for Fake {
         fn listeners(&self, _t: Duration) -> Result<Vec<Listener>, ScanError> {
-            Ok(vec![
-                Listener {
+            let mut out = vec![Listener {
+                bind_host: "127.0.0.1".into(),
+                port: 22,
+                pid: Some(8),
+            }];
+            if !self.stopped.load(Ordering::SeqCst) {
+                out.push(Listener {
                     bind_host: "127.0.0.1".into(),
                     port: 5173,
                     pid: Some(7),
-                },
-                Listener {
-                    bind_host: "127.0.0.1".into(),
-                    port: 22,
-                    pid: Some(8),
-                },
-            ])
+                });
+            }
+            Ok(out)
         }
         fn processes(&self) -> Result<Vec<Proc>, ScanError> {
             Ok(vec![Proc {
@@ -238,14 +244,20 @@ mod tests {
                 start: None,
             }])
         }
-        fn terminate(&self, _pid: u32) -> Result<(), ScanError> {
+        fn terminate(&self, pid: u32) -> Result<(), ScanError> {
+            if pid == 7 {
+                self.stopped.store(true, Ordering::SeqCst);
+            }
             Ok(())
+        }
+        fn kill(&self, pid: u32) -> Result<(), ScanError> {
+            self.terminate(pid)
         }
     }
 
     fn fixture() -> (Scanner<Fake>, Mutex<AdvertisedUrls>, Vec<PathBuf>) {
         (
-            Scanner::new(Fake, Instant::now),
+            Scanner::new(Fake::default(), Instant::now),
             Mutex::default(),
             vec![PathBuf::from("/w/a")],
         )
