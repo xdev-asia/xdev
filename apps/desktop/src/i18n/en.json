@@ -1864,6 +1864,8 @@
   "files.menu.rename": "Rename…",
   "files.menu.delete": "Delete",
   "files.menu.reveal": "Reveal in file manager",
+  "files.menu.openOnHost": "Open file in browser",
+  "files.openOnHostFailed": "Failed to open file in browser",
   "files.tree.filter": "Filter loaded files",
   "files.tree.searchInFiles": "Search in files",
   "files.tree.refresh": "Refresh",
