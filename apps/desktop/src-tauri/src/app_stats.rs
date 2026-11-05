@@ -17,6 +17,8 @@ pub const MAX_COUNTED_PRS: usize = 2000;
 /// One busy span counts at most 12 h.
 pub const BUSY_SPAN_CAP_MS: u64 = 43_200_000;
 pub const TAB_ID_MAX: usize = 128;
+/// Most tabs with a running span at once.
+const MAX_LIVE: usize = 1000;
 
 /// What the page reads.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -81,11 +83,14 @@ impl Stats {
         crate::atomic::write_atomic(path, &bytes)
     }
 
-    pub(crate) fn view(&self, _mono_now: u64) -> AppStatsView {
+    pub(crate) fn view(&self, mono_now: u64) -> AppStatsView {
+        let running = self.live.values().fold(0u64, |sum, start| {
+            sum.saturating_add(span(*start, mono_now))
+        });
         AppStatsView {
             agents_started: self.saved.agents_started,
             prs_created: self.saved.prs_created,
-            agent_busy_ms: self.saved.agent_busy_ms,
+            agent_busy_ms: self.saved.agent_busy_ms.saturating_add(running),
             since_ms: self.saved.since_ms,
         }
     }
@@ -115,19 +120,63 @@ impl Stats {
         true
     }
 
-    pub(crate) fn busy(
-        &mut self,
-        _tab: &str,
-        _working: bool,
-        _mono_now: u64,
-        _wall_now: i64,
-    ) -> bool {
-        false
+    /// A tab entered or left the working status. True only when a span closed, so the caller saves.
+    pub(crate) fn busy(&mut self, tab: &str, working: bool, mono_now: u64, wall_now: i64) -> bool {
+        if working {
+            if self.live.contains_key(tab) {
+                return false;
+            }
+            let mut changed = false;
+            if self.live.len() >= MAX_LIVE {
+                changed = self.close_oldest(mono_now);
+            }
+            self.live.insert(tab.to_string(), mono_now);
+            self.stamp(wall_now);
+            return changed;
+        }
+        match self.live.remove(tab) {
+            Some(start) => {
+                self.add_span(start, mono_now);
+                true
+            }
+            None => false,
+        }
     }
 
-    pub(crate) fn close_all(&mut self, _mono_now: u64) -> bool {
-        false
+    pub(crate) fn close_all(&mut self, mono_now: u64) -> bool {
+        let spans: Vec<u64> = self.live.drain().map(|(_, start)| start).collect();
+        for start in &spans {
+            self.add_span(*start, mono_now);
+        }
+        !spans.is_empty()
     }
+
+    fn close_oldest(&mut self, mono_now: u64) -> bool {
+        let oldest = self
+            .live
+            .iter()
+            .min_by_key(|(_, start)| **start)
+            .map(|(k, _)| k.clone());
+        match oldest.and_then(|k| self.live.remove(&k)) {
+            Some(start) => {
+                self.add_span(start, mono_now);
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn add_span(&mut self, start: u64, mono_now: u64) {
+        self.saved.agent_busy_ms = self
+            .saved
+            .agent_busy_ms
+            .saturating_add(span(start, mono_now));
+    }
+}
+
+/// Elapsed ms of one span, at most `BUSY_SPAN_CAP_MS`.
+fn span(start: u64, mono_now: u64) -> u64 {
+    mono_now.saturating_sub(start).min(BUSY_SPAN_CAP_MS)
 }
 
 /// App state: loaded on first use with the data dir.
@@ -260,5 +309,69 @@ mod tests {
         assert!(s.pr_seen("u", 1));
         assert_eq!(s.view(0).agents_started, u64::MAX);
         assert_eq!(s.view(0).prs_created, u64::MAX);
+    }
+
+    #[test]
+    fn busy_span_adds_elapsed() {
+        let mut s = Stats::default();
+        assert!(!s.busy("t", true, 1_000, 7));
+        assert!(s.busy("t", false, 61_000, 8));
+        assert_eq!(s.view(61_000).agent_busy_ms, 60_000);
+        assert_eq!(s.view(0).since_ms, Some(7));
+    }
+
+    #[test]
+    fn stop_without_start_counts_nothing() {
+        let mut s = Stats::default();
+        assert!(!s.busy("t", false, 5_000, 1));
+        assert_eq!(s.view(5_000).agent_busy_ms, 0);
+    }
+
+    #[test]
+    fn second_start_keeps_first_start() {
+        let mut s = Stats::default();
+        s.busy("t", true, 1_000, 1);
+        s.busy("t", true, 9_000, 2);
+        assert!(s.busy("t", false, 11_000, 3));
+        assert_eq!(s.view(11_000).agent_busy_ms, 10_000);
+    }
+
+    #[test]
+    fn span_is_capped_at_12h() {
+        let mut s = Stats::default();
+        s.busy("t", true, 0, 1);
+        assert!(s.busy("t", false, BUSY_SPAN_CAP_MS * 3, 2));
+        assert_eq!(s.view(0).agent_busy_ms, BUSY_SPAN_CAP_MS);
+    }
+
+    #[test]
+    fn close_all_ends_every_live_span() {
+        let mut s = Stats::default();
+        s.busy("a", true, 0, 1);
+        s.busy("b", true, 1_000, 1);
+        assert!(s.close_all(4_000));
+        assert_eq!(s.view(4_000).agent_busy_ms, 4_000 + 3_000);
+        assert!(!s.close_all(5_000));
+    }
+
+    #[test]
+    fn view_includes_running_spans() {
+        let mut s = Stats::default();
+        s.busy("t", true, 0, 1);
+        assert_eq!(s.view(5_000).agent_busy_ms, 5_000);
+        assert_eq!(s.saved.agent_busy_ms, 0);
+    }
+
+    #[test]
+    fn live_map_over_1000_closes_oldest() {
+        let mut s = Stats::default();
+        for i in 0..1000u64 {
+            s.busy(&format!("t{i}"), true, i, 1);
+        }
+        assert_eq!(s.live.len(), 1000);
+        s.busy("extra", true, 5_000, 1);
+        assert_eq!(s.live.len(), 1000);
+        assert!(!s.live.contains_key("t0"));
+        assert_eq!(s.saved.agent_busy_ms, 5_000);
     }
 }
