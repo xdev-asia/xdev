@@ -114,6 +114,8 @@ export interface WorktreeListProps {
   sleepable?: Record<string, boolean>;
   /** Puts a worktree's tabs to sleep; without it the menu has no such item. */
   onSleep?(worktree: WorktreeView): void;
+  /** Puts a worktree and its nested worktrees to sleep; without it the menu has no such item. */
+  onSleepNested?(worktree: WorktreeView): void;
   /** Wakes a sleeping worktree's tabs. */
   onWake?(worktree: WorktreeView): void;
   /** The Open In apps, in order; the Open in menu lists them above File Manager. */
@@ -708,6 +710,8 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         asleep: props.asleep?.[wt.path] === true,
         sleepable: props.sleepable?.[wt.path] !== false,
         onSleep: props.onSleep && (() => props.onSleep?.(wt)),
+        onSleepNested: props.onSleepNested && (() => props.onSleepNested?.(wt)),
+        nestedSleepable: [wt, ...childrenOf(wt, entries.find((e) => e.path === menu.key)!.repo.worktrees)].some((w) => props.sleepable?.[w.path] !== false),
         onWake: props.onWake && (() => props.onWake?.(wt)),
       });
     } else if (menu.kind === "folder") {
