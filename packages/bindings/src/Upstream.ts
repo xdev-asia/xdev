@@ -12,4 +12,10 @@ branch: string,
  * The commit the remote-tracking ref points at; `None` when that ref
  * is gone (never fetched, or the remote branch was deleted).
  */
-id: string | null, ahead: number, behind: number, };
+id: string | null, ahead: number, behind: number, 
+/**
+ * Ahead and behind, and every commit only on the remote has a patch-equal copy in `HEAD`
+ * (`git rev-list --cherry-pick --right-only --no-merges HEAD...@{u}` is empty): the
+ * remote holds older copies of local commits, as after an amend.
+ */
+rewritten: boolean, };

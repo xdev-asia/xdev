@@ -109,6 +109,7 @@ import { BulkBar } from "./BulkBar";
 import { BulkRemoveDialog } from "./BulkRemoveDialog";
 import { ReviewBranchesDialog } from "./ReviewBranchesDialog";
 import { isDeleteKey, typingIn } from "./deleteKey";
+import type { CommitAsk } from "./CommitView";
 import { IS_MAC, PLATFORM } from "@/platform";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { startFileDrop, type DropEvent } from "@/terminal/fileDrop";
@@ -247,6 +248,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [visited, setVisited] = useState<string[]>([]);
   // The file a diff tab should show, for the worktree that asked.
   const [reveal, setReveal] = useState<(Reveal & { worktree: string }) | null>(null);
+  // The commit the commit tab shows, and the worktree it belongs to.
+  const [commitAsk, setCommitAsk] = useState<(CommitAsk & { worktree: string }) | null>(null);
   // How many files the Changes panel last listed, for the worktree it listed them for.
   const [changeCount, setChangeCount] = useState<{ worktree: string; count: number } | null>(null);
   // The files the Changes panel last listed; the Files tree marks them.
@@ -793,6 +796,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   function openFile(worktree: string, file: string): void {
     setReveal((r) => ({ worktree, file, seq: (r?.seq ?? 0) + 1 }));
+  }
+
+  function openCommit(worktree: string, id: string, file: string | null): void {
+    setCommitAsk((c) => ({ worktree, id, file, seq: (c?.seq ?? 0) + 1 }));
   }
 
   function select(wt: WorktreeView): void {
@@ -1866,6 +1873,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   onShown={(id) => setShownTab((s) => (s[path] === id ? s : { ...s, [path]: id }))}
                   onPanes={(ids) => setPanes((s) => (s[path]?.join(" ") === ids.join(" ") ? s : { ...s, [path]: ids }))}
                   reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq } : undefined}
+                  commit={commitAsk?.worktree === path ? { id: commitAsk.id, file: commitAsk.file, seq: commitAsk.seq } : undefined}
                   front={front?.worktree === path ? { id: front.id, seq: front.seq } : undefined}
                   focusSeq={termFocus?.worktree === path ? termFocus.seq : undefined}
                   onShowHistory={showInHistory}
@@ -2050,6 +2058,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   sessions={sessions}
                   prs={prs}
                   onOpenFile={(file) => openFile(current.path, file)}
+                  onOpenCommit={(id, file) => openCommit(current.path, id, file)}
                   onCount={(n) => setChangeCount({ worktree: current.path, count: n })}
                   onChanges={(list) => setChangeList({ worktree: current.path, list })}
                   onFixWithAgent={(output) => void fixWithAgent("fixCommitFailure", output)}

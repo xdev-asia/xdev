@@ -167,6 +167,7 @@ fn push_sets_upstream() {
             id: Some(id),
             ahead: 0,
             behind: 0,
+            rewritten: false,
         })
     );
     assert!(fx.repo.head_on_upstream().unwrap());

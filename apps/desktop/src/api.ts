@@ -128,6 +128,15 @@ import type {
   ProjectSummary,
   CreateRequest,
   ShipView,
+  RepoLog,
+  LogCommit,
+  CommitRef,
+  RefKind,
+  LogRef,
+  CommitFiles,
+  CommitFile,
+  CommitFileStatus,
+  PullPolicy,
   RepoHooks,
   HookKind,
   HookRun,
@@ -315,6 +324,15 @@ export type {
   ProjectSummary,
   CreateRequest,
   ShipView,
+  RepoLog,
+  LogCommit,
+  CommitRef,
+  RefKind,
+  LogRef,
+  CommitFiles,
+  CommitFile,
+  CommitFileStatus,
+  PullPolicy,
   GitSettings,
   SourceControlGroupOrder,
   GitRecipes,
@@ -478,6 +496,14 @@ export type ErrorCode =
   | "no_upstream"
   | "push_rejected"
   | "pull_diverged"
+  | "update_dirty"
+  | "update_untracked"
+  | "update_conflicted"
+  | "update_conflicts"
+  | "base_not_remote"
+  | "pull_policy"
+  | "no_web_remote"
+  | "needs_force"
   | "force_base"
   | "nothing_to_amend"
   | "amend_pushed"
@@ -884,7 +910,23 @@ export interface Api {
   // with `no_upstream` or `pull_diverged`; a commit or amend with `hook_failed` (detail is the hook output).
   worktreeShip(path: string): Promise<ShipView>;
   worktreePush(path: string): Promise<ShipView>;
+  // Also rejects with `pull_policy` (git cannot reconcile; see Settings → Git) and `update_conflicts`
+  // (the pull stopped with conflicts and is left in progress). `worktreeSync` also rejects with `needs_force`.
   worktreePull(path: string): Promise<ShipView>;
+  // Fast-forwards to the upstream. Rejects with `no_upstream`, `detached`, `pull_diverged`, `update_dirty`
+  // and `update_untracked` (detail "fast-forward").
+  worktreeFastForward(path: string): Promise<ShipView>;
+  // Rebases onto the base. Rejects with `base_not_remote`, `update_dirty`, `update_untracked`
+  // (detail "rebase"), `update_conflicted` and `update_conflicts` (the rebase is left in progress).
+  worktreeRebaseFromBase(path: string): Promise<ShipView>;
+  // The commit graph of `HEAD`; `limit` is clamped to 1..200.
+  worktreeLog(path: string, limit: number, skip: number): Promise<RepoLog>;
+  // Rejects with `bad_arg` for a bad id and `git` when it does not resolve.
+  worktreeCommitFiles(path: string, id: string): Promise<CommitFiles>;
+  worktreeCommitFile(path: string, id: string, file: string): Promise<WorktreeFileDiff>;
+  // Reject with `no_web_remote` or `open_failed`. The URL is built in Rust.
+  worktreeOpenCommit(path: string, id: string): Promise<void>;
+  worktreeOpenFileOnHost(path: string, file: string, line: number | null, endLine: number | null): Promise<void>;
   worktreeSync(path: string): Promise<ShipView>;
   worktreeFetch(path: string): Promise<ShipView>;
   // `expected` is the remote commit the caller saw; without `confirmed` this rejects with `needs_approval`.
@@ -1226,6 +1268,14 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "no_upstream",
   "push_rejected",
   "pull_diverged",
+  "update_dirty",
+  "update_untracked",
+  "update_conflicted",
+  "update_conflicts",
+  "base_not_remote",
+  "pull_policy",
+  "no_web_remote",
+  "needs_force",
   "force_base",
   "nothing_to_amend",
   "amend_pushed",
@@ -1487,6 +1537,13 @@ const tauriApi: Api = {
   worktreeShip: (path) => call("worktree_ship", { path }),
   worktreePush: (path) => call("worktree_push", { path }),
   worktreePull: (path) => call("worktree_pull", { path }),
+  worktreeFastForward: (path) => call("worktree_fast_forward", { path }),
+  worktreeRebaseFromBase: (path) => call("worktree_rebase_from_base", { path }),
+  worktreeLog: (path, limit, skip) => call("worktree_log", { path, limit, skip }),
+  worktreeCommitFiles: (path, id) => call("worktree_commit_files", { path, id }),
+  worktreeCommitFile: (path, id, file) => call("worktree_commit_file", { path, id, file }),
+  worktreeOpenCommit: (path, id) => call("worktree_open_commit", { path, id }),
+  worktreeOpenFileOnHost: (path, file, line, endLine) => call("worktree_open_file_on_host", { path, file, line, endLine }),
   worktreeSync: (path) => call("worktree_sync", { path }),
   worktreeFetch: (path) => call("worktree_fetch", { path }),
   worktreeForcePush: (path, expected, confirmed) => call("worktree_force_push", { path, expected, confirmed }),
