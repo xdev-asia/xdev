@@ -132,6 +132,13 @@ import type {
   IssueQuery,
   IssueState,
   IssueDraft,
+  IssueEdit,
+  IssueEditReport,
+  IssueCloseReason,
+  IssueLabel,
+  IssueEvent,
+  IssueEventKind,
+  IssuesPreset,
   PrSummary,
   PrBranch,
   PrFilter,
@@ -379,6 +386,13 @@ export type {
   IssueQuery,
   IssueState,
   IssueDraft,
+  IssueEdit,
+  IssueEditReport,
+  IssueCloseReason,
+  IssueLabel,
+  IssueEvent,
+  IssueEventKind,
+  IssuesPreset,
   PrSummary,
   PrBranch,
   PrFilter,
@@ -1056,6 +1070,18 @@ export interface Api {
   // Opens a new issue; rejects `bad_draft` for a blank or over-long title, or `gh_scope` when the
   // login lacks a scope.
   issueCreate(repoId: string, draft: IssueDraft): Promise<Issue>;
+  // Changes an issue's state, labels, assignees, title or body; only what is set is sent, an empty
+  // edit runs nothing. Every part is tried: `failed` names the parts that did not apply ("state",
+  // "body", "fields") and `error` is the first error's text. Rejects `bad_draft` for a blank or
+  // over-long title, an over-long body, or a label or login starting with `-`.
+  issueEdit(repoId: string, number: number, edit: IssueEdit): Promise<IssueEditReport>;
+  // Posts a comment. Rejects `empty_comment` or `comment_too_large`.
+  issueComment(repoId: string, number: number, body: string): Promise<void>;
+  // The repo's labels and the logins an issue can be assigned to.
+  issueLabels(repoId: string): Promise<IssueLabel[]>;
+  issueAssignable(repoId: string): Promise<string[]>;
+  // Events of the known kinds, oldest first, at most 200.
+  issueTimeline(repoId: string, number: number): Promise<IssueEvent[]>;
   // Pull requests and Projects of the repo through `gh`. `prGet` rejects `pr_not_found`.
   prsList(repoId: string, query: PrQuery): Promise<PrSummary[]>;
   prGet(repoId: string, number: number): Promise<PrSummary>;
@@ -1740,6 +1766,11 @@ const tauriApi: Api = {
   issueResolve: (repoId, text) => call("issue_resolve", { repoId, text }),
   issueOpen: (repoId, number) => call("issue_open", { repoId, number }),
   issueCreate: (repoId, draft) => call("issue_create", { repoId, draft }),
+  issueEdit: (repoId, number, edit) => call("issue_edit", { repoId, number, edit }),
+  issueComment: (repoId, number, body) => call("issue_comment", { repoId, number, body }),
+  issueLabels: (repoId) => call("issue_labels", { repoId }),
+  issueAssignable: (repoId) => call("issue_assignable", { repoId }),
+  issueTimeline: (repoId, number) => call("issue_timeline", { repoId, number }),
   prsList: (repoId, query) => call("prs_list", { repoId, query }),
   prGet: (repoId, number) => call("pr_get", { repoId, number }),
   prOpen: (repoId, number) => call("pr_open", { repoId, number }),
