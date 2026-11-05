@@ -332,6 +332,28 @@ export type { ConfigKind, TermConfigDetected, TermConfigPreview } from "@xdev/bi
 export type { SessionScope, SessionSort } from "@xdev/bindings";
 import type { PromptTemplate } from "@xdev/bindings";
 export type { PromptTemplate, TemplateMode } from "@xdev/bindings";
+import type {
+  PromptQueueChanged,
+  PromptQueueDue,
+  PromptQueueFacts,
+  PromptQueueItem,
+  PromptQueueNew,
+  PromptQueueReport,
+  PromptQueueWhenInput,
+} from "@xdev/bindings";
+export type {
+  PromptQueueChanged,
+  PromptQueueDue,
+  PromptQueueFacts,
+  PromptQueueItem,
+  PromptQueueNew,
+  PromptQueueQuotaFact,
+  PromptQueueReport,
+  PromptQueueStatus,
+  PromptQueueTabFact,
+  PromptQueueWhen,
+  PromptQueueWhenInput,
+} from "@xdev/bindings";
 
 // The IPC types come from Rust; see packages/bindings/README.md.
 export type {
@@ -1576,6 +1598,26 @@ export interface Api {
   promptTemplatesPut(template: PromptTemplate): Promise<PromptTemplate[]>;
   // Removes a template and returns the list.
   promptTemplatesDelete(id: string): Promise<PromptTemplate[]>;
+  // Every queued prompt of every tab, in the order they go.
+  promptQueueList(): Promise<PromptQueueItem[]>;
+  // Queues a prompt at the end of its tab's queue. Rejects with `too_large` past 50 per tab or 16 KB.
+  promptQueueAdd(item: PromptQueueNew): Promise<PromptQueueItem>;
+  // Changes the text and the time of an item that is not being sent.
+  promptQueueUpdate(id: string, text: string, when: PromptQueueWhenInput): Promise<PromptQueueItem>;
+  // Removes an item that is not being sent; also Skip for one that failed.
+  promptQueueDelete(id: string): Promise<void>;
+  // Moves an item one place up (below 0) or down in its tab's queue.
+  promptQueueReorder(id: string, delta: number): Promise<void>;
+  // Makes an item due now; also Retry for one that failed.
+  promptQueueSendNow(id: string): Promise<PromptQueueItem>;
+  // How a send of a due item ended.
+  promptQueueReport(id: string, report: PromptQueueReport): Promise<void>;
+  // The live tabs, whether each agent is idle, and the 5-hour quota windows; send on change and every 30 s.
+  promptQueueFacts(facts: PromptQueueFacts): Promise<void>;
+  // `prompt-queue://due`: items to send now (already marked as being sent).
+  onPromptQueueDue(cb: (e: PromptQueueDue) => void): Promise<() => void>;
+  // `prompt-queue://changed`: the queue changed; read it again.
+  onPromptQueueChanged(cb: (e: PromptQueueChanged) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2235,6 +2277,16 @@ const tauriApi: Api = {
   promptTemplatesList: () => call("prompt_templates_list"),
   promptTemplatesPut: (template) => call("prompt_templates_put", { template }),
   promptTemplatesDelete: (id) => call("prompt_templates_delete", { id }),
+  promptQueueList: () => call("prompt_queue_list"),
+  promptQueueAdd: (item) => call("prompt_queue_add", { item }),
+  promptQueueUpdate: (id, text, when) => call("prompt_queue_update", { id, text, when }),
+  promptQueueDelete: (id) => call("prompt_queue_delete", { id }),
+  promptQueueReorder: (id, delta) => call("prompt_queue_reorder", { id, delta }),
+  promptQueueSendNow: (id) => call("prompt_queue_send_now", { id }),
+  promptQueueReport: (id, report) => call("prompt_queue_report", { id, report }),
+  promptQueueFacts: (facts) => call("prompt_queue_facts", { facts }),
+  onPromptQueueDue: (cb) => listen<PromptQueueDue>("prompt-queue://due", (e) => cb(e.payload)),
+  onPromptQueueChanged: (cb) => listen<PromptQueueChanged>("prompt-queue://changed", (e) => cb(e.payload)),
 };
 
 const DEMO_CRASH: CrashReport = {
