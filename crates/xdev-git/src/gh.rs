@@ -24,6 +24,7 @@ pub const ISSUE_LIMIT_MAX: u32 = 200;
 /// Chars kept of an issue body or a comment; the rest is cut.
 pub const ISSUE_BODY_MAX: usize = 64 * 1024;
 
+#[derive(Debug)]
 pub struct GhOutput {
     pub status: Option<i32>,
     pub stdout: String,
@@ -908,13 +909,6 @@ pub fn parse_pr_ref(text: &str) -> Option<(Option<String>, u64)> {
     }
 }
 
-fn spawn_error(e: io::Error) -> GitError {
-    match e.kind() {
-        io::ErrorKind::NotFound => GitError::GhMissing,
-        _ => GitError::Io(e),
-    }
-}
-
 impl GhExec for SystemGh {
     fn run(&self, cwd: &Path, args: &[&str], stdin: Option<&str>) -> Result<GhOutput, GitError> {
         self.run_env(cwd, args, stdin, &[])
@@ -929,66 +923,84 @@ impl GhEnv for SystemGh {
         stdin: Option<&str>,
         env: &[(&str, &str)],
     ) -> Result<GhOutput, GitError> {
-        // A missing folder would otherwise read as "gh is not installed".
-        if !cwd.is_dir() {
-            return Err(GitError::Io(io::Error::new(
-                io::ErrorKind::NotFound,
-                cwd.display().to_string(),
-            )));
-        }
-        let mut cmd = Command::new("gh");
-        cmd.current_dir(cwd)
-            .args(args)
-            .env("GH_PROMPT_DISABLED", "1")
-            .env("GH_NO_UPDATE_NOTIFIER", "1")
-            .env("NO_COLOR", "1")
-            .envs(env.iter().copied())
-            .stdin(if stdin.is_some() {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
-        }
-        let mut child = cmd.spawn().map_err(spawn_error)?;
-
-        // Drained on threads so a full pipe cannot block `gh`.
-        let stdout = read_on_thread(child.stdout.take());
-        let stderr = read_on_thread(child.stderr.take());
-        if let (Some(mut pipe), Some(input)) = (child.stdin.take(), stdin) {
-            let input = input.as_bytes().to_vec();
-            thread::spawn(move || {
-                let _ = pipe.write_all(&input);
-            });
-        }
-
-        let deadline = Instant::now() + TIMEOUT;
-        let status = loop {
-            if let Some(status) = child.try_wait()? {
-                break status;
-            }
-            if Instant::now() >= deadline {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(GitError::Timeout);
-            }
-            thread::sleep(POLL);
-        };
-        let left = || deadline.saturating_duration_since(Instant::now());
-        let stdout = stdout.recv_timeout(left()).map_err(|_| GitError::Timeout)?;
-        let stderr = stderr.recv_timeout(left()).map_err(|_| GitError::Timeout)?;
-        Ok(GhOutput {
-            status: status.code(),
-            stdout: String::from_utf8_lossy(&stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&stderr).into_owned(),
-        })
+        let mut vars = vec![
+            ("GH_PROMPT_DISABLED", "1"),
+            ("GH_NO_UPDATE_NOTIFIER", "1"),
+            ("NO_COLOR", "1"),
+        ];
+        vars.extend_from_slice(env);
+        run_program("gh", cwd, args, stdin, &vars, || GitError::GhMissing)
     }
+}
+
+/// Runs `program` in `cwd` with a timeout, its pipes drained on threads so a full pipe cannot
+/// block it. `missing` is the error for a program that is not on `PATH`.
+pub(crate) fn run_program(
+    program: &str,
+    cwd: &Path,
+    args: &[&str],
+    stdin: Option<&str>,
+    env: &[(&str, &str)],
+    missing: fn() -> GitError,
+) -> Result<GhOutput, GitError> {
+    // A missing folder would otherwise read as "not installed".
+    if !cwd.is_dir() {
+        return Err(GitError::Io(io::Error::new(
+            io::ErrorKind::NotFound,
+            cwd.display().to_string(),
+        )));
+    }
+    let mut cmd = Command::new(program);
+    cmd.current_dir(cwd)
+        .args(args)
+        .envs(env.iter().copied())
+        .stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let mut child = cmd.spawn().map_err(|e| match e.kind() {
+        io::ErrorKind::NotFound => missing(),
+        _ => GitError::Io(e),
+    })?;
+
+    let stdout = read_on_thread(child.stdout.take());
+    let stderr = read_on_thread(child.stderr.take());
+    if let (Some(mut pipe), Some(input)) = (child.stdin.take(), stdin) {
+        let input = input.as_bytes().to_vec();
+        thread::spawn(move || {
+            let _ = pipe.write_all(&input);
+        });
+    }
+
+    let deadline = Instant::now() + TIMEOUT;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(GitError::Timeout);
+        }
+        thread::sleep(POLL);
+    };
+    let left = || deadline.saturating_duration_since(Instant::now());
+    let stdout = stdout.recv_timeout(left()).map_err(|_| GitError::Timeout)?;
+    let stderr = stderr.recv_timeout(left()).map_err(|_| GitError::Timeout)?;
+    Ok(GhOutput {
+        status: status.code(),
+        stdout: String::from_utf8_lossy(&stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&stderr).into_owned(),
+    })
 }
 
 fn read_on_thread(pipe: Option<impl Read + Send + 'static>) -> Receiver<Vec<u8>> {
@@ -1162,9 +1174,21 @@ mod tests {
 
     #[test]
     fn gh_missing_program() {
-        let err = spawn_error(io::Error::from(io::ErrorKind::NotFound));
+        let err = run_program(
+            "xdev-no-such-program",
+            Path::new("."),
+            &[],
+            None,
+            &[],
+            || GitError::GhMissing,
+        )
+        .unwrap_err();
         assert_eq!(err.code(), "gh_missing");
-        assert_eq!(spawn_error(io::Error::other("x")).code(), "io");
+        let gone = run_program("gh", Path::new("/no/such/dir"), &[], None, &[], || {
+            GitError::GhMissing
+        })
+        .unwrap_err();
+        assert_eq!(gone.code(), "io");
     }
 
     #[test]

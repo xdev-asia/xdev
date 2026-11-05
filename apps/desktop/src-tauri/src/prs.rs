@@ -157,6 +157,30 @@ fn branch_with(
 ) -> Result<PrBranch, CmdError> {
     let cwd = main_path(data, repo_id)?;
     let pr = gh_pr_get(gh, &cwd, number)?;
+    branch_for(
+        data,
+        repo_id,
+        &pr.head,
+        pr.fork,
+        "pr",
+        number,
+        &|repo, branch| repo.fetch_pull(number, branch),
+    )
+}
+
+/// The branch rules of `branch_with` for any change request: `head` is its source branch, `fork`
+/// says it lives in another repo, `prefix` names a fork's branch (`<prefix>-<n>`) and `fetch`
+/// puts the request's head into a local branch.
+pub(crate) fn branch_for(
+    data: &Path,
+    repo_id: &str,
+    head: &str,
+    fork: bool,
+    prefix: &str,
+    number: u64,
+    fetch: &dyn Fn(&Repo, &str) -> Result<(), xdev_git::GitError>,
+) -> Result<PrBranch, CmdError> {
+    let cwd = main_path(data, repo_id)?;
     let repo = Repo::discover(&cwd)?;
     let in_use = |branch: &str| -> Result<bool, CmdError> {
         Ok(repo
@@ -164,33 +188,33 @@ fn branch_with(
             .iter()
             .any(|w| w.branch.as_deref() == Some(branch)))
     };
-    if !pr.fork {
-        if in_use(&pr.head)? {
-            return Err(xdev_workspace::WorkspaceError::BranchInUse(pr.head).into());
+    if !fork {
+        if in_use(head)? {
+            return Err(xdev_workspace::WorkspaceError::BranchInUse(head.to_owned()).into());
         }
-        if repo.branch_exists(&pr.head)? {
+        if repo.branch_exists(head)? {
             // The user's branch now: a record of an earlier fetch no longer covers it.
-            made().lock().unwrap().remove(&made_key(repo_id, &pr.head));
+            made().lock().unwrap().remove(&made_key(repo_id, head));
             return Ok(PrBranch {
-                branch: pr.head,
+                branch: head.to_owned(),
                 fetched: false,
             });
         }
-        repo.fetch_pull(number, &pr.head)?;
-        made_insert(&repo, repo_id, &pr.head)?;
+        fetch(&repo, head)?;
+        made_insert(&repo, repo_id, head)?;
         return Ok(PrBranch {
-            branch: pr.head,
+            branch: head.to_owned(),
             fetched: true,
         });
     }
     for n in 1..=99u32 {
         let branch = if n == 1 {
-            format!("pr-{number}")
+            format!("{prefix}-{number}")
         } else {
-            format!("pr-{number}-{n}")
+            format!("{prefix}-{number}-{n}")
         };
         if !repo.branch_exists(&branch)? {
-            repo.fetch_pull(number, &branch)?;
+            fetch(&repo, &branch)?;
             made_insert(&repo, repo_id, &branch)?;
             return Ok(PrBranch {
                 branch,
@@ -200,7 +224,7 @@ fn branch_with(
         // Taken, so the user's now: a record of an earlier fetch no longer covers it.
         made().lock().unwrap().remove(&made_key(repo_id, &branch));
     }
-    Err(xdev_workspace::WorkspaceError::BranchExists(format!("pr-{number}")).into())
+    Err(xdev_workspace::WorkspaceError::BranchExists(format!("{prefix}-{number}")).into())
 }
 
 #[tauri::command(async)]

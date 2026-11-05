@@ -11,6 +11,7 @@ mod fork;
 mod gh;
 mod gh_issue;
 mod gh_review;
+mod gitlab;
 mod history;
 mod host_url;
 mod log;
@@ -47,6 +48,9 @@ pub use gh_review::{
     PrCommentKind, PrComments, PrMergeInfo, PrReaction, Reaction, RerunReport, pr_checks_rerun,
     pr_comment_post, pr_comments, pr_head_oid, pr_merge, pr_merge_info, pr_reaction,
     pr_thread_resolve,
+};
+pub use gitlab::{
+    GlabExec, MrState, MrSummary, SystemGlab, glab_mr_list, glab_mr_view, is_gitlab_remote,
 };
 pub use history::Commit;
 pub use host_url::{HostKind, HostRepo, commit_url, file_url, parse_host_remote};
@@ -96,6 +100,16 @@ pub enum GitError {
     BadDraft,
     #[error("no such pull request")]
     PrNotFound,
+    #[error("glab not found")]
+    GlabMissing,
+    #[error("glab is not logged in")]
+    GlabAuth,
+    #[error("the repo has no GitLab remote")]
+    NotGitlab,
+    #[error("glab failed: {0}")]
+    Glab(String),
+    #[error("no such merge request")]
+    MrNotFound,
     #[error("the issue belongs to another repo: {0}")]
     IssueOtherRepo(String),
     #[error("a commit hook failed: {output}")]
@@ -183,6 +197,11 @@ impl GitError {
             GitError::GhScope(_) => "gh_scope",
             GitError::BadDraft => "bad_draft",
             GitError::PrNotFound => "pr_not_found",
+            GitError::GlabMissing => "glab_missing",
+            GitError::GlabAuth => "glab_auth",
+            GitError::NotGitlab => "not_gitlab",
+            GitError::Glab(_) => "glab_failed",
+            GitError::MrNotFound => "mr_not_found",
             GitError::IssueOtherRepo(_) => "issue_other_repo",
             GitError::Hook { .. } => "hook_failed",
             GitError::BadUrl(_) => "bad_arg",

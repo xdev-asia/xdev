@@ -157,6 +157,8 @@ export type { Message } from "./Message";
 export type { MessageType } from "./MessageType";
 export type { ModeFlags } from "./ModeFlags";
 export type { Models } from "./Models";
+export type { MrState } from "./MrState";
+export type { MrSummary } from "./MrSummary";
 export type { NamePreview } from "./NamePreview";
 export type { NavigationSettings } from "./NavigationSettings";
 export type { NotificationPermission } from "./NotificationPermission";

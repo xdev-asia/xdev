@@ -20,6 +20,7 @@ mod endpoint;
 mod file_head;
 mod file_watch;
 mod files;
+mod gitlab;
 mod history;
 mod hooks;
 mod issues;
@@ -556,6 +557,10 @@ pub fn run() {
             prs::pr_open,
             prs::pr_branch,
             prs::pr_branch_discard,
+            gitlab::gitlab_detect,
+            gitlab::gitlab_mr_list,
+            gitlab::gitlab_mr_view,
+            gitlab::gitlab_mr_branch,
             prs::projects_list,
             prs::project_open,
             ship::worktree_draft_commit,
