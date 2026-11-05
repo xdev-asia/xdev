@@ -162,11 +162,11 @@ export function AutomationsPage(props: {
           <button type="button" className="ws-icon-btn" data-act="refresh" aria-label={t("automations.refresh")} title={t("automations.refresh")} onClick={reload}>
             <Icon name="restore" size={14} />
           </button>
-          <Button variant="secondary" data-act="templates" icon="plus" aria-pressed={picking} onClick={() => setPicking(!picking)}>
-            {t("automations.fromTemplate")}
-          </Button>
           <Button variant="primary" data-act="new" icon="plus" onClick={() => setEditing({ automation: null, template: null })}>
             {t("automations.new")}
+          </Button>
+          <Button variant="secondary" data-act="templates" icon="plus" aria-pressed={picking} onClick={() => setPicking(!picking)}>
+            {t("automations.fromTemplate")}
           </Button>
         </>
       }

@@ -62,8 +62,9 @@ it("has the toolbar: search, filters, refresh, the secondary template button and
   const all = m.all();
   expect(all.find((n) => n.props.placeholder === "Search...")).toBeDefined();
   expect(act(all, "refresh")).toBeDefined();
-  const buttons = all.filter((n) => n.props["data-act"] === "new" || n.props["data-act"] === "templates");
-  expect(buttons.map((b) => [b.props["data-act"], b.props.variant])).toEqual([["templates", "secondary"], ["new", "primary"]]);
+  // Refresh, New automation, then Start from a template.
+  const buttons = all.filter((n) => ["refresh", "new", "templates"].includes(n.props["data-act"]));
+  expect(buttons.map((b) => [b.props["data-act"], b.props.variant])).toEqual([["refresh", undefined], ["new", "primary"], ["templates", "secondary"]]);
   expect(all.filter((n) => n.props.variant === "primary")).toHaveLength(1);
 });
 
