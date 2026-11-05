@@ -11,6 +11,7 @@ import { ago } from "@/workspace/ago";
 import { useStatusSettings } from "@/status/statusSettings";
 import type { Sessions, Tab } from "@/workspace/sessions";
 import type { ActivityFeed, FeedEntry } from "./feed";
+import { clear as clearSelection, range, toggle, type Selection } from "./selection";
 import { loadActivityOptions, saveActivityOptions, type ActivityFilter, type ActivityGroupBy, type ActivityOptions } from "./options";
 import { activityThreads, hasAgentThreads, type ThreadGroup, type WorktreeName } from "./threads";
 
@@ -29,12 +30,16 @@ export interface ActivityViewProps {
   now: number;
   /** Where the options menu is open (screen point), or null. */
   menuAt: { x: number; y: number } | null;
+  /** The tabs picked in the list, and the one a Shift+click ranges from. */
+  selected: Selection;
+  anchor: string | null;
   /** Where a row's menu is open (screen point) and for which tab, or null. */
   rowMenu: { x: number; y: number; tabId: string } | null;
   onTab(tab: ActivityTab): void;
   onQuery(query: string): void;
   onOptions(options: ActivityOptions): void;
   onMenu(at: { x: number; y: number } | null): void;
+  onSelection(selected: Selection, anchor: string | null): void;
   onRowMenu(menu: { x: number; y: number; tabId: string } | null): void;
   onJump(tabId: string): void;
   onCloseTab(tabId: string): void;
@@ -90,6 +95,15 @@ function threadRows(groups: ThreadGroup[], now: number, t: T, props: ActivityVie
         <li
           key={th.tab.id}
           className="act-item"
+          onClickCapture={(e) => {
+            // Ctrl or Cmd adds the row to the selection, Shift picks a range; a plain click still jumps.
+            if (!e.shiftKey && !e.ctrlKey && !e.metaKey) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const ids = groups.flatMap((g) => g.threads.map((x) => x.tab.id));
+            if (e.shiftKey) props.onSelection(range(ids, props.anchor, th.tab.id), props.anchor ?? th.tab.id);
+            else props.onSelection(toggle(props.selected, th.tab.id), th.tab.id);
+          }}
           onContextMenu={(e) => {
             e.preventDefault();
             props.onRowMenu({ x: e.clientX, y: e.clientY, tabId: th.tab.id });
@@ -97,6 +111,7 @@ function threadRows(groups: ThreadGroup[], now: number, t: T, props: ActivityVie
         >
           <ListRow
             as="div"
+            selected={props.selected.has(th.tab.id)}
             leading={
               <>
                 <AgentIcon profile={th.tab.profileId} />
@@ -145,6 +160,7 @@ export function ActivityView(props: ActivityViewProps): JSX.Element {
   const { tab, query, options } = props;
   const items = optionItems(options, props.onOptions);
   const visible = props.groups.flatMap((g) => g.threads);
+  const picked = visible.filter((th) => props.selected.has(th.tab.id)).map((th) => th.tab.id);
   const rowTab = props.rowMenu ? visible.find((th) => th.tab.id === props.rowMenu?.tabId)?.tab : undefined;
   const anyUnread = visible.some((th) => th.tab.unread);
   const list =
@@ -154,7 +170,13 @@ export function ActivityView(props: ActivityViewProps): JSX.Element {
   const emptyKey =
     tab === "feed" ? "activity.empty.feed" : !props.anyThreads ? "activity.empty.threads" : "activity.empty.match";
   return (
-    <section className="act-panel" aria-label={t("agentSessions.tab.activity")}>
+    <section
+      className="act-panel"
+      aria-label={t("agentSessions.tab.activity")}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && picked.length > 0) props.onSelection(clearSelection(), null);
+      }}
+    >
       <div className="act-controls">
         <Segmented
           label={t("agentSessions.tab.activity")}
@@ -211,6 +233,20 @@ export function ActivityView(props: ActivityViewProps): JSX.Element {
           </Button>
         )}
       </div>
+      {tab === "threads" && picked.length > 0 && (
+        <div className="act-bulk" role="toolbar" aria-label={t("activity.selected", { count: picked.length })}>
+          <span className="act-bulk-count">{t("activity.selected", { count: picked.length })}</span>
+          <Button variant="secondary" type="button" onClick={() => props.onMarkRead(picked)}>
+            {t("attention.markRead")}
+          </Button>
+          <Button variant="secondary" type="button" onClick={() => props.onMarkUnread(picked)}>
+            {t("attention.markUnread")}
+          </Button>
+          <Button variant="secondary" type="button" onClick={() => props.onSelection(clearSelection(), null)}>
+            {t("activity.selection.clear")}
+          </Button>
+        </div>
+      )}
       {list.length === 0 ? (
         <EmptyState title={t(emptyKey)} />
       ) : (
@@ -245,6 +281,7 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
   const [query, setQuery] = useState("");
   const [options, setOptions] = useState<ActivityOptions>(loadActivityOptions);
   const statusSettings = useStatusSettings();
+  const [selection, setSelection] = useState<{ selected: Selection; anchor: string | null }>({ selected: clearSelection(), anchor: null });
   const [rowMenu, setRowMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
   const [closing, setClosing] = useState<{ id: string; reason: "running" | "pinned" } | null>(null);
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
@@ -289,6 +326,9 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
       names={props.names}
       now={Date.now()}
       menuAt={menuAt}
+      selected={selection.selected}
+      anchor={selection.anchor}
+      onSelection={(selected, anchor) => setSelection({ selected, anchor })}
       rowMenu={rowMenu}
       onRowMenu={setRowMenu}
       onCloseTab={askClose}

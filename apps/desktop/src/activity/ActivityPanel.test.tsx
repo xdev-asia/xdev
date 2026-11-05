@@ -28,12 +28,12 @@ const tab = (id: string, over: Partial<Tab> = {}) => ({ id, worktree: "/a", prof
 const off: ActivityOptions = { showIdle: false, groupBy: "none", filter: "all", compact: false };
 
 function view(over: Partial<ActivityViewProps> = {}) {
-  const calls = { rowMenu: [] as unknown[], close: [] as string[], read: [] as string[][], unread: [] as string[][], tab: [] as string[], query: [] as string[], options: [] as unknown[], menu: [] as unknown[], jump: [] as string[], clear: 0 };
+  const calls = { selection: [] as { ids: string[]; anchor: string | null }[], rowMenu: [] as unknown[], close: [] as string[], read: [] as string[][], unread: [] as string[][], tab: [] as string[], query: [] as string[], options: [] as unknown[], menu: [] as unknown[], jump: [] as string[], clear: 0 };
   const sources = [{ tab: tab("a"), lastOutput: NOW - 1000 }, { tab: tab("b"), lastOutput: NOW - 60_000 }];
   const props: ActivityViewProps = {
-    tab: "threads", query: "", options: off, groups: activityThreads(sources, names, "", off), anyThreads: true, feed: [], names, now: NOW, menuAt: null, rowMenu: null,
+    tab: "threads", query: "", options: off, groups: activityThreads(sources, names, "", off), anyThreads: true, feed: [], names, now: NOW, menuAt: null, rowMenu: null, selected: new Set<string>(), anchor: null,
     onTab: (v) => void calls.tab.push(v), onQuery: (v) => void calls.query.push(v), onOptions: (v) => void calls.options.push(v),
-    onMenu: (v) => void calls.menu.push(v), onJump: (v) => void calls.jump.push(v), onClearFeed: () => void calls.clear++, onRowMenu: (v) => void calls.rowMenu.push(v), onCloseTab: (v) => void calls.close.push(v), onMarkRead: (v) => void calls.read.push(v), onMarkUnread: (v) => void calls.unread.push(v), ...over,
+    onMenu: (v) => void calls.menu.push(v), onJump: (v) => void calls.jump.push(v), onClearFeed: () => void calls.clear++, onSelection: (sel, anchor) => void calls.selection.push({ ids: [...sel], anchor }), onRowMenu: (v) => void calls.rowMenu.push(v), onCloseTab: (v) => void calls.close.push(v), onMarkRead: (v) => void calls.read.push(v), onMarkUnread: (v) => void calls.unread.push(v), ...over,
   };
   return { calls, tree: nodes(ActivityView(props)) };
 }
@@ -179,4 +179,47 @@ it("a right click asks for the row menu, which opens for that tab and closes it"
   expect(menu.props.items.map((i: { id: string }) => i.id)).toEqual(["jump", "markUnread", "sep", "close"]);
   menu.props.items[3].run();
   expect(open.calls.close).toEqual(["a"]);
+});
+
+const click = (mods: Record<string, unknown>) => ({ shiftKey: false, ctrlKey: false, metaKey: false, preventDefault() {}, stopPropagation() {}, ...mods });
+const three = () => ["a", "b", "c"].map((id, i) => ({ tab: tab(id), lastOutput: 9 - i }));
+
+it("Ctrl or Cmd click toggles a row into the selection; a plain click is left to jump", () => {
+  const groups = activityThreads(three(), names, "", off);
+  const { calls, tree } = view({ groups, selected: new Set(["a"]), anchor: "a" });
+  const items = tree.filter((n) => n.props.className === "act-item");
+  items[1]!.props.onClickCapture(click({ ctrlKey: true }));
+  items[0]!.props.onClickCapture(click({ metaKey: true }));
+  let stopped = 0;
+  items[2]!.props.onClickCapture(click({ stopPropagation: () => void stopped++ }));
+  expect(stopped).toBe(0);
+  expect(calls.selection).toEqual([{ ids: ["a", "b"], anchor: "b" }, { ids: [], anchor: "a" }]);
+});
+
+it("Shift click picks a range from the anchor", () => {
+  const groups = activityThreads(three(), names, "", off);
+  const { calls, tree } = view({ groups, anchor: "a" });
+  tree.filter((n) => n.props.className === "act-item")[2]!.props.onClickCapture(click({ shiftKey: true }));
+  expect(calls.selection).toEqual([{ ids: ["a", "b", "c"], anchor: "a" }]);
+  const none = view({ groups });
+  none.tree.filter((n) => n.props.className === "act-item")[1]!.props.onClickCapture(click({ shiftKey: true }));
+  expect(none.calls.selection).toEqual([{ ids: ["b"], anchor: "b" }]);
+});
+
+it("the bulk bar counts the selection and acts on it; Escape clears it", () => {
+  const groups = activityThreads(three(), names, "", off);
+  const { calls, tree } = view({ groups, selected: new Set(["a", "c", "gone"]) });
+  const bar = tree.find((n) => n.props.className === "act-bulk")!;
+  expect(nodes(bar.props.children).find((n) => n.props.className === "act-bulk-count")!.props.children).toBe(en("activity.selected", { count: 2 }));
+  const buttons = of(nodes(bar.props.children), Button);
+  expect(buttons.map((b) => b.props.children)).toEqual([en("attention.markRead"), en("attention.markUnread"), en("activity.selection.clear")]);
+  buttons[0]!.props.onClick();
+  buttons[1]!.props.onClick();
+  buttons[2]!.props.onClick();
+  expect(calls.read).toEqual([["a", "c"]]);
+  expect(calls.unread).toEqual([["a", "c"]]);
+  expect(calls.selection).toEqual([{ ids: [], anchor: null }]);
+  tree.find((n) => n.props.className === "act-panel")!.props.onKeyDown({ key: "Escape" });
+  expect(calls.selection).toHaveLength(2);
+  expect(view({ groups }).tree.some((n) => n.props.className === "act-bulk")).toBe(false);
 });

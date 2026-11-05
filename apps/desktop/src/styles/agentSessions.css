@@ -295,3 +295,19 @@
 .act-toggle:focus-visible {
   background: var(--bg-3);
 }
+
+.act-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+}
+
+.act-bulk-count {
+  flex-basis: 100%;
+  color: var(--text-2);
+  font-size: 11px;
+}
