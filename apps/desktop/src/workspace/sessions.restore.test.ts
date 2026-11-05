@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
 import { LAYOUT_VERSION, restoredAccount, type LayoutSnapshot, type TabSnapshot } from "./layoutSnapshot";
 import { leaves } from "./paneTree";
+import { translate } from "@/i18n";
+import { takePrime } from "@/terminal/restorePrime";
 import { Sessions } from "./sessions";
 
 const A = "/demo/wt/xdev-oak";
@@ -259,6 +261,25 @@ describe("Sessions.restore: the terminal service", () => {
     expect(report.attached).toBeUndefined();
     expect(s.tabs(A)).toHaveLength(1);
     expect(s.tabs(A)[0].id).not.toBe("gone-1");
+  });
+
+  it("pty_gone primes snapshot and restored note", async () => {
+    const api = running();
+    api.__snapshotSet("gone-2", new TextEncoder().encode("old output\n"));
+    const s = (sessions = new Sessions(api));
+    await s.restore(snap({ [A]: one({ t1: shell({ ptyId: "gone-2", seq: 9 }) }) }), "all", never);
+    const id = s.tabs(A)[0].id;
+    const prime = takePrime(id);
+    expect(new TextDecoder().decode(prime!.bytes!)).toBe("old output\n");
+    expect(prime!.note).toBe(translate("en", "ptyd.restored"));
+    // The old copy is handed over, not kept.
+    expect(await api.ptySnapshot("gone-2")).toBeNull();
+  });
+
+  it("no snapshot gives fresh note", async () => {
+    const s = (sessions = new Sessions(running()));
+    await s.restore(snap({ [A]: one({ t1: shell({ ptyId: "gone-3", seq: 9 }) }) }), "all", never, { note: (key) => `[${key}]` });
+    expect(takePrime(s.tabs(A)[0].id)).toEqual({ bytes: null, note: "[ptyd.fresh]" });
   });
 
   it("does not ask the service when it is off", async () => {

@@ -88,6 +88,8 @@ export interface RestoreOptions {
    */
   carry?: (worktree: string) => boolean;
   openFile?: (worktree: string, rel: string) => Promise<boolean>;
+  /** The line a terminal shows above its saved output (or instead of it); left out, English. */
+  note?: (key: "ptyd.restored" | "ptyd.fresh") => string;
 }
 
 export type { RestoreMode };

@@ -1,6 +1,6 @@
 import type { Api, RestoreMode } from "@/api";
 import type { FileTabs } from "@/files/fileTabs";
-import { LAYOUT_VERSION, type RestoreReport, type SessionFallback } from "./layoutSnapshot";
+import { LAYOUT_VERSION, type RestoreOptions, type RestoreReport, type SessionFallback } from "./layoutSnapshot";
 import type { Sessions } from "./sessions";
 
 /** How long after the last change the layout is written. */
@@ -117,11 +117,12 @@ export async function restoreLayout(
   known: (worktree: string) => boolean,
   openFile: (worktree: string, rel: string) => Promise<boolean>,
   carry?: (worktree: string) => boolean,
+  note?: RestoreOptions["note"],
 ): Promise<LayoutRestore | null> {
   try {
     const [snapshot, ui] = await Promise.all([api.layoutLoad(), api.uiSettingsGet()]);
     if (!snapshot || snapshot.version !== LAYOUT_VERSION || ui.restore === "none") return null;
-    const report = await sessions.restore(snapshot, ui.restore, sessionFallback(api), { known, openFile, carry });
+    const report = await sessions.restore(snapshot, ui.restore, sessionFallback(api), { known, openFile, carry, note });
     return { mode: ui.restore, report };
   } catch {
     return null;

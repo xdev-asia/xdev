@@ -401,7 +401,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     const known = new Set(repos.flatMap((r) => r.worktrees.map((w) => w.path)));
     // A missing repo lists no worktrees though they may still exist: then the unknown ones stay saved.
     const incomplete = repos.some((r) => r.missing);
-    void restoreLayout(api, sessions, (w) => known.has(w), openRestoredFile(api, fileTabs), () => incomplete).then((got) => {
+    void restoreLayout(api, sessions, (w) => known.has(w), openRestoredFile(api, fileTabs), () => incomplete, (key) => t(key)).then((got) => {
       // The store was replaced (dev double mount) while the restore ran: this run is over.
       if (!restoreStarted.current) return;
       saver.current = startLayoutSave(api, sessions);
