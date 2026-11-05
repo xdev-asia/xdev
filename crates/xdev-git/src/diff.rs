@@ -16,6 +16,25 @@ impl Repo {
         Ok(text(run::run(&self.workdir, &args, None)?))
     }
 
+    /// `git diff <base> -- <path>` with 3 lines of context: what `path` changes
+    /// between the commit `base` and the worktree. `base` must be a commit id.
+    pub fn diff_file_since(&self, base: &str, path: &str) -> Result<String, GitError> {
+        if !crate::history::is_commit_id(base) {
+            return Err(GitError::BadId(base.to_owned()));
+        }
+        let args = [
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-renames",
+            "--unified=3",
+            base,
+            "--",
+            path,
+        ];
+        Ok(text(run::run(&self.root(), &args, None)?))
+    }
+
     /// Subjects of the commits in `base..HEAD`, newest first, one per line.
     pub fn range_subjects(&self, base: &str) -> Result<String, GitError> {
         let mb = self.range_start(base)?;

@@ -40,6 +40,7 @@ use crate::prompt_queue::{PromptQueueChanged, PromptQueueDue};
 use crate::pty::{PtyAttached, PtyExit, PtyInfo, PtydStatus};
 use crate::quick_commands::{FileCommands, QuickCommand};
 use crate::review::{ReviewBranch, ReviewData, StageState};
+use crate::review_ai::{ReviewAiHunk, ReviewAiPlan, ReviewFinding};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
     AgentsSettings, AutomationsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings,
@@ -217,6 +218,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_workspace::DefaultTab::export_all(cfg)?;
     WorktreeFileDiff::export_all(cfg)?;
     ReviewData::export_all(cfg)?;
+    ReviewAiPlan::export_all(cfg)?;
+    ReviewAiHunk::export_all(cfg)?;
+    ReviewFinding::export_all(cfg)?;
     ReviewBranch::export_all(cfg)?;
     StageState::export_all(cfg)?;
     xdev_git::ConflictState::export_all(cfg)?;

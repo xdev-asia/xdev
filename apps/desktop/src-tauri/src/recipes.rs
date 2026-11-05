@@ -26,6 +26,9 @@ pub const PR_VARS: [&str; 9] = [
 /// What a branch name template can name.
 pub const BRANCH_VARS: [&str; 3] = ["basePrompt", "firstPrompt", "assistantMessage"];
 
+/// What an AI review template of one hunk can name.
+pub const REVIEW_VARS: [&str; 3] = ["basePrompt", "file", "hunk"];
+
 /// What a conflict resolution template can name.
 // The prompt is built in the UI (`RECIPE_VARS.resolveConflicts`); this is the shared list.
 #[allow(dead_code)]
@@ -92,6 +95,7 @@ mod tests {
             ("branchName", BRANCH_VARS.as_slice()),
             ("resolveConflicts", CONFLICT_VARS.as_slice()),
             ("commitMessage", COMMIT_VARS.as_slice()),
+            ("reviewHunk", REVIEW_VARS.as_slice()),
         ] {
             let quoted: Vec<String> = vars.iter().map(|v| format!("\"{v}\"")).collect();
             let line = format!("{id}: [{}]", quoted.join(", "));

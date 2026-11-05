@@ -14,7 +14,8 @@ export type RecipeId =
   | "fixChecks"
   | "addressComments"
   | "branchName"
-  | "resolveConflicts";
+  | "resolveConflicts"
+  | "reviewHunk";
 // The recipes in the order the editor lists them.
 export const RECIPE_IDS: readonly RecipeId[] = [
   "commitMessage",
@@ -24,6 +25,7 @@ export const RECIPE_IDS: readonly RecipeId[] = [
   "fixChecks",
   "addressComments",
   "resolveConflicts",
+  "reviewHunk",
 ];
 export type FixRecipeId = "fixCommitFailure" | "fixPushFailure" | "fixChecks" | "addressComments" | "resolveConflicts";
 
@@ -47,6 +49,7 @@ export const RECIPE_VARS: Record<RecipeId, readonly string[]> = {
   addressComments: ["basePrompt", "branch", "prNumber", "prUrl", "comments"],
   resolveConflicts: ["basePrompt", "branch", "operation", "files", "onto"],
   branchName: ["basePrompt", "firstPrompt", "assistantMessage"],
+  reviewHunk: ["basePrompt", "file", "hunk"],
 };
 
 // The first lines of each fix action's built-in prompt; what the action found follows them.

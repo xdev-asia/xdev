@@ -20,4 +20,6 @@ export const RECIPE_SAMPLES: Readonly<Record<string, string>> = {
   operation: "Rebase 3 of 7",
   files: "src/login.ts\nsrc/session.ts",
   onto: "main",
+  file: "src/login.ts",
+  hunk: "@@ -1 +1,2 @@\n    1  export const a = 1;\n    2 +export const login = () => {};",
 };

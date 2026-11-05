@@ -28,6 +28,7 @@ export const DEFAULT_GIT_SETTINGS: GitSettings = {
     branchName: { ...DEFAULT_RECIPE, args: [] },
     resolveConflicts: { ...DEFAULT_RECIPE, args: [] },
     addressComments: { ...DEFAULT_RECIPE, args: [] },
+    reviewHunk: { ...DEFAULT_RECIPE, args: [] },
   },
   worktreeDir: "",
   worktreeDirHistory: [],

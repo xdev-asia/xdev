@@ -2,6 +2,7 @@ import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
 import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { pushDirHistory } from "./settings/worktreeDir";
+import { mockImageBytes, mockReviewFindings, mockReviewPlan } from "./mockReviewAi";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
 import type { Api, ApiError, NestedRepo, Check, MergeBlock, PrComment, PrMergeInfo, Reaction, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, PullPolicy, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SparsePreset, SidebarItem, VaultView, PrDraft, PrView, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
@@ -49,6 +50,9 @@ type WorkspaceApi = Pick<
   | "worktreeChanges"
   | "worktreeFileDiff"
   | "worktreeFileHead"
+  | "worktreeFileHeadBytes"
+  | "worktreeReviewAiPlan"
+  | "worktreeReviewAiHunk"
   | "worktreeCommit"
   | "worktreeStat"
   | "worktreeShip"
@@ -282,7 +286,8 @@ const LIST_CAP = 2000;
 // What the worktree holds on disk: the base files, plus added files, minus deleted ones.
 function demoFiles(pending: WorktreeChange[]): string[] {
   const gone = new Set(pending.filter((c) => c.kind === "deleted").map((c) => c.path));
-  const added = pending.filter((c) => c.kind === "added").map((c) => c.path);
+  // A change that is not a deletion is on disk, whether or not the base files had it.
+  const added = pending.filter((c) => c.kind !== "deleted").map((c) => c.path);
   return [...new Set([...DEMO_FILES, ...added])].filter((f) => !gone.has(f));
 }
 
@@ -434,7 +439,7 @@ function demoDiff(file: string, kind: WorktreeChange["kind"]): WorktreeFileDiff 
 export function createMockWorkspace(
   seed: MockWorkspaceSeed = DEMO_WORKSPACE,
   emit: SettingsEmit = () => {},
-): WorkspaceApi & Omit<MockFiles, "tree"> & { __setupRun(cwd: string): Promise<MockSetupRun>; __nested(root: string, repos: NestedRepo[]): void } {
+): WorkspaceApi & Omit<MockFiles, "tree"> & { __setupRun(cwd: string): Promise<MockSetupRun>; __nested(root: string, repos: NestedRepo[]): void; __addChange(path: string, change: WorktreeChange): void } {
   const repos: RepoView[] = structuredClone(seed.repos);
   const changes = new Map<string, WorktreeChange[]>(Object.entries(structuredClone(seed.changes)));
   let commits = 0;
@@ -1160,6 +1165,26 @@ export function createMockWorkspace(
       if (change) return demoDiff(file, change.kind);
       const text = `// ${file}\nexport const value = 1;\n`;
       return { old: text, new: text, skip: null };
+    },
+    async worktreeFileHeadBytes(path, file, base) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (base !== null && !/^[0-9a-f]{4,64}$/i.test(base)) return reject("bad_arg", base);
+      const change = changes.get(path)?.find((c) => c.path === file);
+      if (change?.kind === "added") return reject("not_found", file);
+      return mockImageBytes();
+    },
+    async worktreeReviewAiPlan(path, base) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (!/^[0-9a-f]{4,64}$/i.test(base)) return reject("bad_ref", base);
+      return mockReviewPlan(changes.get(path) ?? []);
+    },
+    async worktreeReviewAiHunk(path, hunk) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      return mockReviewFindings(hunk);
+    },
+    // For tests: a pending change the demo seed does not have, e.g. a changed image.
+    __addChange(path: string, change: WorktreeChange) {
+      changes.set(path, [...(changes.get(path) ?? []).filter((c) => c.path !== change.path), change]);
     },
     async worktreeCommit(path, files, message) {
       const found = findWorktree(path);

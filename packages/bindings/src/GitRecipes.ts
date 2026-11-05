@@ -17,4 +17,8 @@ resolveConflicts: Recipe,
 /**
  * Asks an agent to address the review comments queued from a pull request.
  */
-addressComments: Recipe, };
+addressComments: Recipe, 
+/**
+ * Asks an agent to review one changed hunk of the diff review screen.
+ */
+reviewHunk: Recipe, };

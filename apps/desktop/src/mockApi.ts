@@ -384,7 +384,7 @@ export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSs
   __editOutside(path: string, content: string | null): void;
   // Writes a file the way `propose_update` does over MCP; throws an ApiError like the real tool.
   __propose(path: string, content: string, note: string | null): void;
-} & Pick<MockAccountRouting, "__quotaAlert">;
+} & Pick<MockAccountRouting, "__quotaAlert"> & Pick<ReturnType<typeof createMockWorkspace>, "__addChange">;
 
 type MockOptions = {
   repo?: boolean;
