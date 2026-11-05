@@ -161,3 +161,39 @@
 .md-toc-empty { margin: 0; color: var(--x-color-muted); }
 .md-preview { padding: var(--x-space-4); }
 .md-preview .md-img { max-width: 100%; }
+
+/* Find bar and code copy in the Markdown preview. */
+.md-preview { position: relative; outline: none; }
+.md-find {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-1);
+  margin-bottom: var(--x-space-2);
+  padding: var(--x-space-1) var(--x-space-2);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-sm);
+  background: var(--x-color-surface);
+}
+.md-find-input { flex: 1 1 8rem; min-width: 0; }
+.md-find-count { color: var(--x-color-muted); white-space: nowrap; }
+.md-find-mark { background: var(--x-color-warn-soft); color: var(--x-color-ink); }
+.md-find-mark.md-find-current { background: var(--x-color-signal-soft); outline: 1px solid var(--x-color-signal); }
+::highlight(md-find) { background-color: var(--x-color-warn-soft); color: var(--x-color-ink); }
+::highlight(md-find-current) { background-color: var(--x-color-signal-soft); color: var(--x-color-ink); }
+.preview-body .md-code { position: relative; }
+.preview-body .md-code .md-code-copy {
+  position: sticky;
+  float: right;
+  top: 0;
+  margin: calc(var(--x-space-2) * -1) calc(var(--x-space-2) * -1) 0 var(--x-space-2);
+  opacity: 0;
+  background: var(--x-color-surface);
+}
+.preview-body .md-code:hover .md-code-copy,
+.preview-body .md-code .md-code-copy:focus-visible,
+.preview-body .md-code .md-code-copy[data-copied] { opacity: 1; }
+@media (hover: none) { .preview-body .md-code .md-code-copy { opacity: 1; } }
