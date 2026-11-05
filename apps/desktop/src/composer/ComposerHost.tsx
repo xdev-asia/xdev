@@ -7,6 +7,8 @@ import { useI18n } from "@/i18n";
 import { useKeymap } from "@/keys/keymap";
 import type { Sessions, Tab } from "@/workspace/sessions";
 import { Composer, type ComposerTab } from "./Composer";
+import { quotaFacts } from "./queue";
+import { useQueue } from "./useQueue";
 import { verifiedSend, type SendResult } from "./verify";
 
 /** A request to open the composer over several worktrees' tabs (the bulk bar); a new `seq` is a new one. */
@@ -47,6 +49,7 @@ export function ComposerHost(props: {
   const { t } = useI18n();
   const snapshot = () => (sessions ? versionOf(sessions) : "");
   useSyncExternalStore((cb) => (sessions ? sessions.subscribe(cb) : NO_SESSIONS()), snapshot, snapshot);
+  const queue = useQueue(api, sessions, (id, text) => (sessions ? sendToTab(sessions, id, text) : Promise.resolve("failed")));
   const [open, setOpen] = useState<{ many: string[] | null; seq: number } | null>(null);
   // The tab the composer stays on while the front tab is not a terminal.
   const bound = useRef<string | null>(null);
@@ -57,6 +60,7 @@ export function ComposerHost(props: {
           id: tab.id,
           worktree: tab.worktree,
           agent: tab.agent,
+          account: tab.account,
           label: `${tab.title ?? profileName(null, tab.profileId, t)} · ${props.names[tab.worktree] ?? tab.worktree.split(/[\\/]/).filter(Boolean).pop() ?? tab.worktree}`,
         })),
       )
@@ -102,6 +106,7 @@ export function ComposerHost(props: {
           tabs={tabs}
           initialMany={open.many}
           send={(id, text) => sendToTab(sessions, id, text)}
+          queue={{ items: queue.items, quotas: quotaFacts(queue.quotas) }}
           onClose={() => setOpen(null)}
         />
       )}

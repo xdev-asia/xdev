@@ -1,17 +1,21 @@
 import { Button, Checkbox, IconButton, ListRow, SplitHandle, StatusDot, Tag, Textarea, type StatusTone } from "@xdev-asia/ui";
 import { useEffect, useId, useRef, useState } from "react";
 import type { ChangeEvent, JSX, KeyboardEvent, SyntheticEvent } from "react";
-import type { Api, PromptTemplate } from "@/api";
+import { toApiError, type Api, type PromptQueueItem, PromptQueueQuotaFact, PromptQueueWhenInput, PromptTemplate } from "@/api";
 import { completionKey, tokenAtCursor, type Token } from "@/agentLaunch/completion";
 import type { SkillItem } from "@/agentLaunch/PromptComposer";
 import { useI18n } from "@/i18n";
 import { applyMention, finalPrompt, mentionsFor, type Mention } from "./mentions";
+import { QueuePanel } from "./QueuePanel";
+import { ScheduleForm } from "./ScheduleForm";
 import { TemplatesManager } from "./TemplatesManager";
 import { useDraft } from "./useDraft";
 import { retryTargets, type SendResult } from "./verify";
 
 /** One open terminal tab the composer can send to. */
-export type ComposerTab = { id: string; label: string; worktree: string; agent: boolean };
+export type ComposerTab = { id: string; label: string; worktree: string; agent: boolean; account?: string | null };
+/** What the prompt queue holds, and the quota windows an item can wait for. */
+export type ComposerQueue = { items: readonly PromptQueueItem[]; quotas: readonly PromptQueueQuotaFact[] };
 type RowState = SendResult | "sending";
 
 export const MIN_WIDTH = 300;
@@ -45,6 +49,8 @@ export function Composer(props: {
   /** Tabs ticked when it opens (Send prompt from the bulk bar); null sends to the target only. */
   initialMany: readonly string[] | null;
   send(tabId: string, text: string): Promise<SendResult>;
+  /** The prompt queue; without it the composer only sends now. */
+  queue?: ComposerQueue;
   onClose(): void;
 }): JSX.Element {
   const { api, target, tabs } = props;
@@ -56,7 +62,7 @@ export function Composer(props: {
   const place = useRef<number | null>(null);
   const asked = useRef(new Set<"skills" | "files">());
   const draft = useDraft(api, target.id);
-  const [view, setView] = useState<"compose" | "templates">("compose");
+  const [view, setView] = useState<"compose" | "templates" | "schedule" | "queue">("compose");
   const [width, setWidth] = useState(() => Math.min(DEFAULT_WIDTH, windowWidth() - EDGE));
   const [boxHeight, setBoxHeight] = useState(DEFAULT_BOX);
   const [maxWidth, setMaxWidth] = useState(() => windowWidth() - EDGE);
@@ -71,6 +77,8 @@ export function Composer(props: {
   const [picked, setPicked] = useState<Set<string>>(() => new Set(props.initialMany ?? [target.id]));
   const [results, setResults] = useState<Record<string, RowState>>({});
   const [sentText, setSentText] = useState<string | null>(null);
+  const [queued, setQueued] = useState("");
+  const [queueing, setQueueing] = useState(false);
   const sending = Object.values(results).includes("sending");
 
   // The panel stays inside the window: a narrower window narrows it.
@@ -105,6 +113,16 @@ export function Composer(props: {
       live = false;
     };
   }, [api]);
+
+  // Back from the queue or the schedule, focus returns to the prompt.
+  const firstView = useRef(true);
+  useEffect(() => {
+    if (firstView.current) {
+      firstView.current = false;
+      return;
+    }
+    if (view === "compose") box.current?.querySelector("textarea")?.focus();
+  }, [view]);
 
   // After an insert the cursor goes behind it, once the new value is drawn.
   useEffect(() => {
@@ -175,14 +193,34 @@ export function Composer(props: {
     }
   }
 
+  const tabItems = (props.queue?.items ?? []).filter((i) => i.tabId === target.id);
   const targets = many ? tabs.filter((x) => picked.has(x.id)).map((x) => x.id) : [target.id];
   const prompt = finalPrompt(text, append);
   const canSend = !sending && prompt !== "" && targets.length > 0;
+  const canSchedule = canSend && props.queue !== undefined && !queueing;
 
   function send() {
     if (!canSend) return;
     setResults({});
+    setQueued("");
     void sendTo(targets, prompt);
+  }
+
+  async function schedule(when: PromptQueueWhenInput) {
+    if (!props.queue || !canSchedule) return;
+    setQueueing(true);
+    try {
+      for (const id of targets) await api.promptQueueAdd({ tabId: id, text: prompt, when });
+      await draft.clear();
+      setAppend([]);
+      setQueued(t("composer.queue.added", { count: targets.length }));
+      setView("compose");
+    } catch (err) {
+      setQueued(t(toApiError(err).code === "too_large" ? "composer.queue.tooLarge" : "composer.queue.failed"));
+      setView("compose");
+    } finally {
+      setQueueing(false);
+    }
   }
 
   const failed = retryTargets(Object.fromEntries(Object.entries(results).filter((e): e is [string, SendResult] => e[1] !== "sending")));
@@ -288,13 +326,26 @@ export function Composer(props: {
       />
       <header className="composer-head">
         <h2 id={titleId} className="composer-title">
-          {view === "templates" ? t("composer.templates.title") : t("composer.title", { tab: target.label })}
+          {view === "templates" ? t("composer.templates.title") : view === "schedule" ? t("composer.schedule.title") : view === "queue" ? t("composer.queue.title") : t("composer.title", { tab: target.label })}
         </h2>
         {view === "compose" && <IconButton icon="list" label={t("composer.templates.open")} onClick={() => setView("templates")} />}
         <IconButton icon="close" label={t("composer.close")} onClick={props.onClose} />
       </header>
       {view === "templates" ? (
         <TemplatesManager api={api} templates={templates} onChange={setTemplates} onBack={() => setView("compose")} />
+      ) : view === "schedule" && props.queue ? (
+        <div className="composer-templates">
+          <ScheduleForm
+            account={target.account ?? null}
+            quotas={props.queue.quotas}
+            confirmLabel={t("composer.schedule.confirm", { count: targets.length })}
+            disabled={queueing}
+            onCancel={() => setView("compose")}
+            onSubmit={(when) => void schedule(when)}
+          />
+        </div>
+      ) : view === "queue" && props.queue ? (
+        <QueuePanel api={api} items={tabItems} account={target.account ?? null} quotas={props.queue.quotas} onBack={() => setView("compose")} />
       ) : (
         <div className="composer-body">
           <SplitHandle
@@ -389,12 +440,22 @@ export function Composer(props: {
                 {t("composer.retry", { count: failed.length })}
               </Button>
             )}
+            {props.queue && (
+              <Button type="button" variant="secondary" icon="list" onClick={() => setView("queue")} data-testid="composer-queue-open">
+                {tabItems.length > 0 ? t("composer.queue.open.count", { count: tabItems.length }) : t("composer.queue.open")}
+              </Button>
+            )}
+            {props.queue && (
+              <Button type="button" variant="secondary" icon="clock" disabled={!canSchedule} onClick={() => setView("schedule")} data-testid="composer-schedule-open">
+                {t("composer.schedule.open")}
+              </Button>
+            )}
             <Button type="button" icon="send" disabled={!canSend} onClick={send}>
               {many ? t("composer.sendMany", { count: targets.length }) : t("composer.send")}
             </Button>
           </div>
           <p className="composer-status" role="status" data-testid="composer-status">
-            {status}
+            {status || queued}
           </p>
         </div>
       )}

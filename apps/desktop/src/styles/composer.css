@@ -154,3 +154,44 @@
   color: var(--text-2);
   overflow-wrap: anywhere;
 }
+
+/* Prompt queue: the schedule form and the list of queued prompts. */
+.composer-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  min-width: 0;
+}
+
+.composer-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.composer-queue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+}
+
+.composer-queue-item {
+  min-width: 0;
+  padding: var(--x-space-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}
+
+.composer-queue-item[data-status="unconfirmed"],
+.composer-queue-item[data-status="failed"] {
+  border-color: var(--warn);
+}
+
+.composer-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-1);
+  padding-top: var(--x-space-1);
+}
