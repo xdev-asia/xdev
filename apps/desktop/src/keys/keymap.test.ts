@@ -323,6 +323,17 @@ it("appOwnsKey under terminal first leaves the keys a TUI uses to the program", 
   expect(appOwnsKey(ev({ ctrlKey: true, code: "KeyF" }), false)).toBeNull();
 });
 
+it("Ctrl+Shift+V is paste in a terminal and the Markdown preview in the editor", () => {
+  for (const policy of ["app-first", "terminal-first"] as const) {
+    setKeySettings({ terminalPolicy: policy, terminalHints: true });
+    expect(appOwnsKey(ev({ ctrlKey: true, shiftKey: true, code: "KeyV" }), false)).toBe("terminal.paste");
+  }
+  const preview = vi.fn();
+  const paste = vi.fn();
+  setup({ "file.markdownPreview": preview, "terminal.paste": paste }).press({ ctrlKey: true, shiftKey: true, code: "KeyV" });
+  expect([preview.mock.calls.length, paste.mock.calls.length]).toEqual([1, 0]);
+});
+
 it("the keys a terminal always keeps are the R5 list, and a binding on one works only outside", () => {
   expect([...TERMINAL_KEEPS].sort()).toEqual(["Ctrl+A", "Ctrl+C", "Ctrl+D", "Ctrl+E", "Ctrl+N", "Ctrl+P", "Ctrl+R", "Ctrl+U", "Ctrl+Z"]);
   setKeybindingsText(file({ "palette.jump": ["Ctrl+D"] }));
