@@ -421,6 +421,12 @@ pub fn orchestration_skill_install(app: AppHandle, force: bool) -> Result<SkillS
     crate::orch_skill::install(&app, force)
 }
 
+/// Removes the skill xDev wrote; `force` also removes edited copies after a backup.
+#[tauri::command(async)]
+pub fn orchestration_skill_uninstall(app: AppHandle, force: bool) -> Result<SkillStatus, CmdError> {
+    crate::orch_skill::uninstall(&app, force)
+}
+
 /// The strip's data for the worker in `tab`; none when the tab is no worker's.
 #[tauri::command(async)]
 pub fn orchestration_worker_lifetime(

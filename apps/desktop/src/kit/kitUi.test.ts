@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { below, displayPath } from "./kitUi";
+import { translate } from "@/i18n";
+import { agentLabel, below, displayPath } from "./kitUi";
 
 describe("displayPath", () => {
   it("drops the verbatim prefix from a drive path", () => {
@@ -21,5 +22,17 @@ describe("below", () => {
   it("matches a verbatim path under a plain root", () => {
     expect(below("C:\\work\\repo", "\\\\?\\C:\\work\\repo\\CLAUDE.md")).toBe("CLAUDE.md");
     expect(below("\\\\?\\C:\\work\\repo", "C:\\work\\repo\\a\\b.md")).toBe("a/b.md");
+  });
+});
+
+describe("agentLabel", () => {
+  const t = (key: string) => translate("en", key);
+  it("names the agents a skill folder belongs to", () => {
+    expect(agentLabel("cursor", t)).toBe("Cursor");
+    expect(agentLabel("agents", t)).toBe("Shared");
+  });
+
+  it("shows an unknown agent as it is", () => {
+    expect(agentLabel("future", t)).toBe("future");
   });
 });

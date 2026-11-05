@@ -149,6 +149,7 @@ export function createMockKit(scan: () => Promise<ProviderSwitches> = async () =
         description: s.description,
         scope: "user" as const,
         home_id: s.homeId,
+        agent: HOMES.find((h) => h.id === s.homeId)?.agent ?? "claude",
         dir,
         bytes,
         tokens: tokensOf(bytes),

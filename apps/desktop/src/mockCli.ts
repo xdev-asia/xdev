@@ -6,6 +6,7 @@ type CliApi = Pick<
   | "cliStatus" | "cliInstall" | "cliRemove" | "cliRepair" | "cliReveal"
   | "orchestrationSkillStatus"
   | "orchestrationSkillInstall"
+  | "orchestrationSkillUninstall"
   | "orchestrationWorkerLifetime"
   | "orchestrationWorkerKeepOpen"
   | "orchestrationWorkerOpened"
@@ -114,6 +115,10 @@ export function createMockCli(): MockCli {
     async orchestrationSkillInstall(force = false) {
       installs.push(force);
       skill = { ...skill, installed: true, edited: false };
+      return structuredClone(skill);
+    },
+    async orchestrationSkillUninstall() {
+      skill = { ...skill, installed: false, edited: false };
       return structuredClone(skill);
     },
     async orchestrationWorkerLifetime(tab) {

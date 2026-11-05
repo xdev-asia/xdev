@@ -3903,5 +3903,15 @@
   "settings.appearance.titlebar.custom": "Custom",
   "settings.appearance.titlebarHint": "Native keeps the system window frame; Custom draws xDev's own. Applied at once, no restart needed.",
   "settings.appearance.titlebarName": "Show app name in title bar",
-  "settings.appearance.titlebarNameHint": "Only applies to the custom title bar."
+  "settings.appearance.titlebarNameHint": "Only applies to the custom title bar.",
+  "settings.orchestration.skill.uninstall": "Uninstall",
+  "settings.orchestration.skill.uninstallTitle": "Uninstall the skill?",
+  "settings.orchestration.skill.uninstallBody": "Removes the copies and links xDev wrote. Folders you edited or added stay.",
+  "kit.skills.col.agent": "Agent",
+  "kit.agent.claude": "Claude",
+  "kit.agent.codex": "Codex",
+  "kit.agent.agents": "Shared",
+  "kit.agent.gemini": "Gemini",
+  "kit.agent.cursor": "Cursor",
+  "kit.agent.factory": "Factory"
 }

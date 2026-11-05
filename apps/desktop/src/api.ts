@@ -1443,6 +1443,7 @@ export interface Api {
   // Orchestration. The skill card, the strip over a worker's terminal, and the answers the UI owes the backend.
   orchestrationSkillStatus(): Promise<SkillStatus>;
   orchestrationSkillInstall(force?: boolean): Promise<SkillStatus>;
+  orchestrationSkillUninstall(force?: boolean): Promise<SkillStatus>;
   orchestrationWorkerLifetime(tab: string): Promise<WorkerLifetime | null>;
   orchestrationWorkerKeepOpen(tab: string, keep: boolean): Promise<WorkerLifetime>;
   orchestrationWorkerOpened(dispatch: string, outcome: WorkerOpenOutcome): Promise<void>;
@@ -2119,6 +2120,7 @@ const tauriApi: Api = {
   onCliAsk: (cb) => listen<CliAsk>("cli://ask", (e) => cb(e.payload)),
   orchestrationSkillStatus: () => call("orchestration_skill_status"),
   orchestrationSkillInstall: (force = false) => call("orchestration_skill_install", { force }),
+  orchestrationSkillUninstall: (force = false) => call("orchestration_skill_uninstall", { force }),
   orchestrationWorkerLifetime: (tab) => call("orchestration_worker_lifetime", { tab }),
   orchestrationWorkerKeepOpen: (tab, keep) => call("orchestration_worker_keep_open", { tab, keep }),
   orchestrationWorkerOpened: (dispatch, outcome) => call("orchestration_worker_opened", { dispatch, outcome }),
