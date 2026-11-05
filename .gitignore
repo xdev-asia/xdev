@@ -20,3 +20,7 @@ apps/desktop/src-tauri/binaries/
 
 # Local agent worktrees and settings.
 .claude/
+
+# Playwright output
+apps/desktop/test-results/
+apps/desktop/playwright-report/

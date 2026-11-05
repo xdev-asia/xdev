@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
+import { configDefaults } from "vitest/config";
 import { defaultClientConditions, defaultServerConditions, defineConfig } from "vite";
 
 export default defineConfig({
@@ -15,7 +16,11 @@ export default defineConfig({
   },
   ssr: { resolve: { conditions: ["xdev-source", ...defaultServerConditions] } },
   // The library source lives outside node_modules; inlining lets vi.mock("react") reach it.
-  test: { server: { deps: { inline: ["@xdev-asia/ui"] } } },
+  // The browser specs in e2e/ belong to Playwright, not vitest.
+  test: {
+    exclude: [...configDefaults.exclude, "e2e/**"],
+    server: { deps: { inline: ["@xdev-asia/ui"] } },
+  },
   // Tauri expects a fixed port and prints its own output.
   clearScreen: false,
   server: { port: 1420, strictPort: true },
