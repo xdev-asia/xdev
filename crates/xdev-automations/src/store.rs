@@ -23,6 +23,9 @@ pub enum StoreError {
     NotFound,
     #[error("invalid schedule")]
     InvalidSchedule,
+    /// Not an IANA zone name this build knows (a stored one falls back to the system zone).
+    #[error("unknown time zone")]
+    UnknownTimezone,
     #[error("extra arguments: {0:?}")]
     ExtraArgs(ExtraArgsError),
     #[error("{0}")]
@@ -81,6 +84,9 @@ fn clean(mut i: AutomationInput, now: i64) -> Result<AutomationInput, StoreError
     }
     if i.extra_agent_args.is_some() && i.reuse_session {
         return Err(StoreError::ExtraArgs(ExtraArgsError::RequireFreshSession));
+    }
+    if jiff::tz::TimeZone::get(&i.timezone).is_err() {
+        return Err(StoreError::UnknownTimezone);
     }
     if !schedule::is_valid_new(&i.rrule, &i.timezone, now) {
         return Err(StoreError::InvalidSchedule);

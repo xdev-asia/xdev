@@ -97,6 +97,7 @@ fn from_store(e: StoreError) -> CmdError {
     match e {
         StoreError::NotFound => cmd_error("not_found", None),
         StoreError::InvalidSchedule => cmd_error("invalid_schedule", None),
+        StoreError::UnknownTimezone => cmd_error("bad_arg", Some("timezone".into())),
         StoreError::ExtraArgs(e) => cmd_error("extra_args", serde_json::to_string(&e).ok()),
         StoreError::Io(e) => cmd_error("io", e.to_string()),
         StoreError::Json(e) => cmd_error("io", e.to_string()),

@@ -438,6 +438,22 @@ fn the_file_reloads_equal() {
 }
 
 #[test]
+fn an_unknown_time_zone_is_refused_on_create_and_update() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = Store::open(dir.path()).unwrap();
+    let bad = || AutomationInput {
+        timezone: "Mars/Olympus_Mons".into(),
+        ..input()
+    };
+    let r = s.create(bad(), T0, "x".into());
+    assert!(matches!(r, Err(StoreError::UnknownTimezone)));
+    let a = s.create(input(), T0, "a".into()).unwrap();
+    let r = s.update(&a.id, bad(), T0);
+    assert!(matches!(r, Err(StoreError::UnknownTimezone)));
+    assert_eq!(s.list()[0].timezone, input().timezone);
+}
+
+#[test]
 fn a_corrupt_file_is_kept_aside_and_the_store_starts_empty() {
     let dir = tempfile::tempdir().unwrap();
     let kept = || {
