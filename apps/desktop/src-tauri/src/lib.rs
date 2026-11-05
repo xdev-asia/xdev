@@ -683,6 +683,15 @@ pub fn run() {
             diag_bundle::diagnostics_export,
             diag_bundle::diagnostics_reveal_logs,
             diag_bundle::diagnostics_reveal_export,
+            orchestration::orchestration_mission,
+            orchestration::orchestration_mission_settings_put,
+            orchestration::orchestration_link_put,
+            orchestration::orchestration_link_grant,
+            orchestration::orchestration_link_retarget,
+            orchestration::orchestration_link_remove,
+            orchestration::orchestration_nudge,
+            orchestration::orchestration_handoff,
+            orchestration::orchestration_tab_stop,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
