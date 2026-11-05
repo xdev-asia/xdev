@@ -4,6 +4,9 @@ import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
 import { EDITOR_DEFAULTS } from "@/files/editorDefaults";
 import { getEditorSettings, resetEditorSettingsForTests, startEditorSettingsSync } from "@/files/editorSettings";
+import { FontField } from "@xdev-asia/ui";
+import { resetTerminalSettingsForTests, setTerminalSettings } from "@/terminal/terminalSettings";
+import { TERMINAL_DEFAULTS } from "./terminalDefaults";
 import { EditorPage } from "./EditorPage";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
@@ -38,6 +41,7 @@ beforeEach(() => {
   hooks.effects = [];
   hooks.active = false;
   resetEditorSettingsForTests();
+  resetTerminalSettingsForTests();
 });
 
 async function page() {
@@ -53,7 +57,8 @@ async function page() {
   const all = () => nodes(draw());
   const field = (name: string) => all().find((n) => n.props["data-field"] === name)!;
   const sw = (name: string) => nodes(all().find((n) => n.props["data-switch"] === name)).find((n) => n.props.role === "switch")!;
-  return { api, all, field, sw };
+  const font = () => all().find((n) => n.type === FontField)!;
+  return { api, all, field, sw, font };
 }
 
 it("shows the stored values", async () => {
@@ -94,4 +99,36 @@ it("a settings change reaches the shared copy the editors read", async () => {
   await tick();
   expect(getEditorSettings().wordWrap).toBe(true);
   stop();
+});
+
+it("renders the font family field with the terminal font as placeholder", async () => {
+  let p = await page();
+  expect(p.font().props.value).toBe("");
+  expect(p.font().props.placeholder).toBe("var(--x-font-mono)");
+  expect(p.font().props.labels).toEqual({ reset: "Use terminal font" });
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, fontFamily: " Menlo " });
+  p = await page();
+  expect(p.font().props.placeholder).toBe("Menlo");
+});
+
+it("saves a trimmed font family", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "editorSettingsPut");
+  p.font().props.onChange("  Fira Code ");
+  expect(put).not.toHaveBeenCalled();
+  p.font().props.onKeyDown({ key: "Enter" });
+  await tick();
+  expect(put).toHaveBeenCalledWith({ ...EDITOR_DEFAULTS, fontFamily: "Fira Code" });
+  expect(getEditorSettings().fontFamily).toBe("Fira Code");
+});
+
+it("clearing the font goes back to the terminal font at once", async () => {
+  const p = await page();
+  p.font().props.onChange("Fira Code");
+  p.font().props.onBlur();
+  await tick();
+  const put = vi.spyOn(p.api, "editorSettingsPut");
+  p.font().props.onChange("");
+  await tick();
+  expect(put).toHaveBeenCalledWith({ ...EDITOR_DEFAULTS, fontFamily: "" });
 });

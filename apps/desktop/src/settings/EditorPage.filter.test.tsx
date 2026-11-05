@@ -12,7 +12,7 @@ vi.mock("@/i18n", async (original) => ({
 }));
 
 const html = (filter?: SettingsFilter) => renderToStaticMarkup(createElement(EditorPage, { api: createMockApi({}), onChanged() {}, filter }));
-const all = ["editor.autosave", "editor.wordWrap", "editor.autosaveMs", "editor.fontSize", "editor.tabSize"];
+const all = ["editor.autosave", "editor.wordWrap", "editor.autosaveMs", "editor.fontSize", "editor.fontFamily", "editor.tabSize"];
 const ids = (out: string) => [...out.matchAll(/data-setting-id="([^"]+)"/g)].map((m) => m[1]);
 
 it("renders every control when no search is set", () => {
