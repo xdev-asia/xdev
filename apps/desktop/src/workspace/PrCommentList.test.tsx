@@ -123,6 +123,40 @@ it("marks a reaction as pressed and shows its count", async () => {
   expect(html).toContain('x-reaction-count">2<');
 });
 
+async function renderBusy(call: "resolve" | "react") {
+  const base = createMockApi({}, { workspace: { ...DEMO_WORKSPACE, prs: { [PATH]: { number: 7, url: "u", state: "open", title: "t", base: "main", head: "oak" } }, prComments: { [PATH]: LIST } } });
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => (release = r));
+  const api = { ...base, worktreePrThreadResolve: () => gate, worktreePrReaction: () => gate };
+  const store = new PrCommentStore(api);
+  await store.load(PATH, 7);
+  const draw = () => renderToStaticMarkup(<PrComments store={store} worktree={PATH} number={7} overrides={[]} initialView="timeline" now={NOW} onMarkBot={() => {}} />);
+  const first = LIST[0];
+  const pending = call === "resolve" ? store.resolve(PATH, "T1", true) : store.react(PATH, first.nodeId, "HEART", false);
+  return { draw, pending, release, store, first };
+}
+
+const resolveButton = (html: string, thread: string) => html.match(new RegExp(`<button[^>]*data-resolve="${thread}"[^>]*>`))?.[0] ?? "";
+
+it("disables the resolve control of a thread until its call settles", async () => {
+  const { draw, pending, release, store } = await renderBusy("resolve");
+  expect(resolveButton(draw(), "T1")).toContain("disabled");
+  expect(resolveButton(draw(), "T2")).not.toContain("disabled");
+  expect(await store.resolve(PATH, "T1", false)).toBe(false); // a second click while it runs does nothing
+  release();
+  await pending;
+  expect(resolveButton(draw(), "T1")).not.toContain("disabled");
+});
+
+it("disables the reactions of a comment until its call settles", async () => {
+  const { draw, pending, release } = await renderBusy("react");
+  const buttons = (html: string) => (html.match(/<button[^>]*aria-label="Heart"[^>]*>/g) ?? []);
+  expect(buttons(draw()).some((b) => b.includes("disabled"))).toBe(true);
+  release();
+  await pending;
+  expect(buttons(draw()).every((b) => !b.includes("disabled"))).toBe(true);
+});
+
 it("sends on Ctrl+Enter and Cmd+Enter, never during IME composition", () => {
   expect(isSendKey({ key: "Enter", ctrlKey: true, metaKey: false })).toBe(true);
   expect(isSendKey({ key: "Enter", ctrlKey: false, metaKey: true })).toBe(true);

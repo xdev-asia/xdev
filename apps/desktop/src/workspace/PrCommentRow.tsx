@@ -29,7 +29,10 @@ export function PrCommentRow(props: {
   overrides: readonly string[];
   /** Set on the first comment of a review thread: the row offers Resolve or Unresolve. */
   canResolve: boolean;
-  disabled?: boolean;
+  /** The resolve call for this thread is out. */
+  resolving?: boolean;
+  /** A reaction call for this comment is out. */
+  reacting?: boolean;
   onResolve: (threadId: string, resolved: boolean) => void;
   onReact: (nodeId: string, content: Reaction, on: boolean) => void;
   onMarkBot: (login: string, mark: boolean) => void;
@@ -37,7 +40,7 @@ export function PrCommentRow(props: {
   /** Under the body: the reply box or the reply button. */
   footer?: JSX.Element | null;
 }): JSX.Element {
-  const { comment: c, now, overrides, canResolve, disabled = false } = props;
+  const { comment: c, now, overrides, canResolve, resolving = false, reacting = false } = props;
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -80,7 +83,7 @@ export function PrCommentRow(props: {
               <IconButton
                 icon={c.resolved ? "undo" : "check-circle"}
                 label={c.resolved ? t("prc.unresolve") : t("prc.resolve")}
-                disabled={disabled}
+                disabled={resolving}
                 data-resolve={c.threadId}
                 onClick={() => props.onResolve(c.threadId as string, !c.resolved)}
               />
@@ -111,7 +114,7 @@ export function PrCommentRow(props: {
             <ReactionBar
               label={t("prc.react.group")}
               items={reactions}
-              disabled={disabled}
+              disabled={reacting}
               onToggle={(key) => {
                 const r = c.reactions.find((x) => x.content === key);
                 props.onReact(c.nodeId, key as Reaction, !(r?.mine ?? false));

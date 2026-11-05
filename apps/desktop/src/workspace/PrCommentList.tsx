@@ -91,6 +91,8 @@ export function PrComments(props: {
         now={now}
         overrides={overrides}
         canResolve={root && c.kind === "thread"}
+        resolving={c.threadId !== null && store.resolving(worktree, c.threadId)}
+        reacting={store.reacting(worktree, c.nodeId)}
         onResolve={(id, resolved) => void store.resolve(worktree, id, resolved)}
         onReact={(id, content, on) => void store.react(worktree, id, content, on)}
         onMarkBot={props.onMarkBot}

@@ -18,6 +18,8 @@ export class PrCommentStore {
   private entries = new Map<string, CommentEntry>();
   private running = new Map<string, { number: number; promise: Promise<void> }>();
   private generation = new Map<string, number>();
+  /** Calls that have not settled, as `resolve:<path>:<threadId>` or `react:<path>:<nodeId>`. */
+  private busy = new Set<string>();
   private listeners = new Set<() => void>();
   private version = 0;
 
@@ -32,6 +34,16 @@ export class PrCommentStore {
     return () => {
       this.listeners.delete(fn);
     };
+  }
+
+  /** True while that thread's resolve call is out. */
+  resolving(path: string, threadId: string): boolean {
+    return this.busy.has(`resolve:${path}:${threadId}`);
+  }
+
+  /** True while a reaction call on that comment is out. */
+  reacting(path: string, nodeId: string): boolean {
+    return this.busy.has(`react:${path}:${nodeId}`);
   }
 
   snapshot = (): number => this.version;
@@ -59,30 +71,38 @@ export class PrCommentStore {
   /** Resolves or reopens a thread at once. Returns false, with the error kept, when it failed. */
   async resolve(path: string, threadId: string, resolved: boolean): Promise<boolean> {
     const before = this.entries.get(path);
-    if (!before) return false;
+    const key = `resolve:${path}:${threadId}`;
+    if (!before || this.busy.has(key)) return false;
     this.write(path, { ...before, comments: before.comments.map((c) => (c.threadId === threadId ? { ...c, resolved } : c)), error: undefined });
+    this.hold(key);
     try {
       await this.api.worktreePrThreadResolve(path, threadId, resolved);
       return true;
     } catch (e) {
       this.rollback(path, (c) => (c.threadId === threadId ? before.comments.find((b) => b.id === c.id) ?? c : c), toApiError(e));
       return false;
+    } finally {
+      this.release(key);
     }
   }
 
   /** Adds or removes the signed-in person's reaction at once. Returns false when it failed. */
   async react(path: string, nodeId: string, content: Reaction, on: boolean): Promise<boolean> {
     const before = this.entries.get(path);
-    if (!before) return false;
+    const key = `react:${path}:${nodeId}`;
+    if (!before || this.busy.has(key)) return false;
     const old = before.comments.find((c) => c.nodeId === nodeId);
     if (!old) return false;
     this.write(path, { ...before, comments: before.comments.map((c) => (c.nodeId === nodeId ? { ...c, reactions: toggled(c, content, on) } : c)), error: undefined });
+    this.hold(key);
     try {
       await this.api.worktreePrReaction(path, nodeId, content, on);
       return true;
     } catch (e) {
       this.rollback(path, (c) => (c.nodeId === nodeId ? { ...c, reactions: old.reactions } : c), toApiError(e));
       return false;
+    } finally {
+      this.release(key);
     }
   }
 
@@ -112,6 +132,16 @@ export class PrCommentStore {
     const now = this.entries.get(path);
     if (!now) return;
     this.write(path, { ...now, comments: now.comments.map(undo), error });
+  }
+
+  private hold(key: string): void {
+    this.busy.add(key);
+    this.bump();
+  }
+
+  private release(key: string): void {
+    this.busy.delete(key);
+    this.bump();
   }
 
   private bump(): void {
