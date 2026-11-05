@@ -1,0 +1,3 @@
+{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[]},"comments":{"nodes":[
+ {"id":"I1","databaseId":201,"body":"Still here","createdAt":"2026-11-02T08:00:00Z","url":"https://x/i1","author":{"login":"sam","__typename":"User"},"reactionGroups":[]}]},"reviews":{"nodes":[]}}}},
+"errors":[{"message":"Could not resolve to a User","path":["repository","pullRequest","x"]}]}
