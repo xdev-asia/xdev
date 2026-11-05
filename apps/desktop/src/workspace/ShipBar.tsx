@@ -1,4 +1,4 @@
-import { Button } from "@xdev-asia/ui";
+import { Button, DiffStat, Popover } from "@xdev-asia/ui";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type ApiError, type GitSettings, type PrView, type ShipView } from "@/api";
@@ -9,6 +9,7 @@ import { CreatePrDialog } from "./CreatePrDialog";
 import type { PrStore } from "./prs";
 import { PULL_POLICY_CODES, PullPolicyNotice } from "./PullPolicyNotice";
 import { shipAction } from "./ship";
+import { breakdownRows, countsAria } from "./shipBreakdown";
 import { shipMenu, type MenuId, type Text } from "./shipMenu";
 
 const SHORT = 7;
@@ -80,6 +81,8 @@ export function ShipBar(props: {
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState(false);
   const [listed, setListed] = useState(false);
+  // The Code breakdown popover on the line counts.
+  const [breakdown, setBreakdown] = useState(false);
   const [force, setForce] = useState<Force | null>(null);
   const [creating, setCreating] = useState(false);
   // The error on show came from a push, the one action a recipe can fix.
@@ -231,9 +234,35 @@ export function ShipBar(props: {
               {t("ship.branchRow", { branch: ship.branch, base })}
             </span>
             {range && (
-              <span className="ws-ship-counts ws-mono">
-                {t("ship.counts", { added: range.added, removed: range.removed })}
-              </span>
+              <Popover
+                open={breakdown}
+                onClose={() => setBreakdown(false)}
+                label={t("ship.breakdown.title")}
+                className="ws-ship-breakdown"
+                placement="bottom-end"
+                trigger={(pop) => (
+                  <button type="button" className="ws-ship-counts ws-ship-counts-button ws-mono" {...pop} aria-label={countsAria(range, t)} onClick={() => setBreakdown((v) => !v)}>
+                    {t("ship.counts", { added: range.added, removed: range.removed })}
+                  </button>
+                )}
+              >
+                <div className="ws-ship-breakdown-head">
+                  <span className="ws-ship-breakdown-title">{t("ship.breakdown.title")}</span>
+                  <span className="ws-ship-breakdown-sub">{t("ship.breakdown.subtitle")}</span>
+                </div>
+                <ul className="ws-ship-breakdown-rows">
+                  {breakdownRows(range).map((row) => (
+                    <li key={row.id} className="ws-ship-breakdown-row">
+                      <span>{t(row.label)}</span>
+                      <DiffStat
+                        added={row.added}
+                        removed={row.removed}
+                        labels={{ diffStat: (added, removed) => t("ship.breakdown.row", { label: t(row.label), added, removed }) }}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </Popover>
             )}
             {range && ship.rangeBase !== ship.base && (
               <span className="ws-ship-counts ws-mono" data-range-base={ship.rangeBase}>

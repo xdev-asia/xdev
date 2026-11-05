@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Button } from "@xdev-asia/ui";
+import { Button, DiffStat, Popover } from "@xdev-asia/ui";
 import { createMockApi, type Api, type GitSettings, type PrView } from "@/api";
 import { DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE } from "@/mockWorkspace";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -540,4 +540,31 @@ it("shows no notice for other errors", async () => {
   await tick();
   expect(view.find((n) => n.type === PullPolicyNotice)).toBeUndefined();
   expect(view.find((n) => n.props.className === "error-text")).toBeDefined();
+});
+
+it("wraps the counts in a Code breakdown popover with Source, Tests and the aria split", async () => {
+  const api = seeded();
+  await api.worktreeCommit(OAK, ["src/session.ts"], "feat: one");
+  await api.worktreeCommit(OAK, ["src/status.ts"], "feat: two");
+  const view = bar(api);
+  await tick();
+  const pop = () => view.find((n) => n.type === Popover)!;
+  expect(pop().props.open).toBe(false);
+  expect(pop().props.label).toBe(en("ship.breakdown.title"));
+  // The trigger is the counts, with the test part in its label.
+  const trigger = renderToStaticMarkup(pop().props.trigger({ "aria-expanded": false, "aria-controls": "p", "aria-haspopup": "dialog" }));
+  expect(trigger).toContain(en("ship.counts", { added: 6, removed: 0 }));
+  expect(trigger).toContain(`aria-label="${en("ship.breakdown.aria", { added: 6, removed: 0 })}${en("ship.breakdown.ariaTests", { added: 6, removed: 0 })}"`);
+  expect(trigger).toContain('aria-haspopup="dialog"');
+  nodes(pop().props.trigger({ "aria-expanded": false, "aria-controls": "p", "aria-haspopup": "dialog" })).find((n) => n.type === "button")!.props.onClick();
+  expect(pop().props.open).toBe(true);
+  const panel = renderToStaticMarkup(<>{pop().props.children}</>);
+  expect(panel).toContain(en("ship.breakdown.title"));
+  expect(panel).toContain(en("ship.breakdown.subtitle"));
+  expect(panel).toContain(en("ship.breakdown.source"));
+  expect(panel).toContain(en("ship.breakdown.tests"));
+  expect(panel).not.toContain(en("ship.breakdown.generated"));
+  expect(nodes(pop().props.children).filter((n) => n.type === DiffStat)).toHaveLength(2);
+  pop().props.onClose();
+  expect(pop().props.open).toBe(false);
 });
