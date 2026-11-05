@@ -22,6 +22,7 @@ mod cli_verbs;
 mod clipboard;
 mod commands;
 mod config_io;
+mod conversation;
 mod crash;
 mod diag_bundle;
 mod endpoint;
@@ -740,6 +741,7 @@ pub fn run() {
             orchestration::orchestration_nudge,
             orchestration::orchestration_handoff,
             orchestration::orchestration_tab_stop,
+            conversation::agent_conversation,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")

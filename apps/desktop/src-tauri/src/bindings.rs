@@ -334,6 +334,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     crate::orchestration::MissionView::export_all(cfg)?;
     xdev_orch::Grant::export_all(cfg)?;
     xdev_orch::Worker::export_all(cfg)?;
+    crate::conversation::Conversation::export_all(cfg)?;
     Ok(())
 }
 
