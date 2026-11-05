@@ -448,7 +448,7 @@ fn a_log_over_the_size_limit_is_skipped_and_listed() {
         .into_owned();
     let mut index = SessionIndex::default();
     index.refresh_limited(std::slice::from_ref(&h), None, 10, &mut |_| {});
-    assert_eq!(index.skipped, [key.clone()]);
+    assert_eq!(index.skipped, std::slice::from_ref(&key));
     assert!(index.sessions.is_empty());
     // With room for it the log is read and nothing is skipped.
     index.refresh_limited(&[h], None, 1 << 20, &mut |_| {});
