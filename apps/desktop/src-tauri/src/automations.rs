@@ -697,8 +697,147 @@ impl AutomationService {
     }
 }
 
-/// Starts the tick thread.
-pub fn start(_app: &AppHandle) {}
+/// The tick thread's two switches: `kick` asks for a pass now, `stop` ends the thread.
+#[derive(Default)]
+pub struct TickControl {
+    kick: AtomicBool,
+    stop: AtomicBool,
+}
+
+/// The real environment of a tick: the app's profiles, repos, shells and events.
+struct AppEnv {
+    app: AppHandle,
+}
+
+impl AppEnv {
+    fn data(&self) -> Result<PathBuf, CmdError> {
+        use tauri::Manager;
+        self.app
+            .state::<crate::commands::AppState>()
+            .data_dir
+            .clone()
+            .ok_or(CmdError {
+                code: "bad_arg",
+                detail: Some("no data folder".into()),
+            })
+    }
+}
+
+impl DispatchEnv for AppEnv {
+    fn now(&self) -> i64 {
+        crate::workspace::clock().0
+    }
+
+    fn precheck_line(&self, cwd: &Path, command: &str) -> Result<ShellLine, CmdError> {
+        let line = crate::pty::shell_line(&self.data()?, cwd, command)?;
+        Ok(ShellLine {
+            program: line.program,
+            args: line.args,
+            env: line.env,
+        })
+    }
+
+    fn repo_path(&self, repo_id: &str) -> Option<PathBuf> {
+        let reg = xdev_workspace::Registry::load(&self.data().ok()?).ok()?;
+        reg.repos
+            .iter()
+            .find(|r| r.id == repo_id)
+            .map(|r| r.path.clone())
+    }
+
+    fn worktree_exists(&self, path: &str) -> bool {
+        Path::new(path).is_dir()
+    }
+
+    fn create_worktree(
+        &self,
+        repo_id: &str,
+        name: &str,
+        from: Option<&str>,
+    ) -> Result<(String, String), CmdError> {
+        let view = crate::workspace::create_for_automation(&self.app, repo_id, name, from)?;
+        Ok((view.path, view.name))
+    }
+
+    fn profile_cli(&self, profile: &str) -> Option<Option<xdev_agent::Cli>> {
+        let profiles = xdev_agent::Profiles::load(&self.data().ok()?).ok()?;
+        profiles.get(profile).filter(|p| p.enabled).map(|p| p.cli)
+    }
+
+    fn emit_dispatch(&self, d: &AutomationDispatch) {
+        use tauri::Emitter;
+        let _ = self.app.emit(DISPATCH_EVENT, d);
+    }
+
+    fn emit_changed(&self, c: &AutomationsChanged) {
+        use tauri::Emitter;
+        let _ = self.app.emit(CHANGED_EVENT, c);
+    }
+}
+
+fn control(app: &AppHandle) -> Option<tauri::State<'_, TickControl>> {
+    use tauri::Manager;
+    app.try_state::<TickControl>()
+}
+
+/// Asks the tick thread for a pass now (after a save, or when the UI is ready).
+fn kick(app: &AppHandle) {
+    if let Some(c) = control(app) {
+        c.kick.store(true, Ordering::Release);
+    }
+}
+
+fn announce(app: &AppHandle, automation_id: Option<String>) {
+    use tauri::Emitter;
+    let _ = app.emit(CHANGED_EVENT, AutomationsChanged { automation_id });
+    kick(app);
+}
+
+/// Starts the tick thread: a pass every `DEFAULT_TICK_MS` and one whenever it is kicked. It looks at
+/// the clock in 1 s slices, so `stop` ends it within a second (or when the pass in hand ends).
+pub fn start(app: &AppHandle) {
+    use tauri::Manager;
+    app.manage(TickControl::default());
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let env = AppEnv { app: app.clone() };
+        let mut waited_ms = 0_i64;
+        loop {
+            let Some(c) = control(&app) else { return };
+            if c.stop.load(Ordering::Acquire) {
+                return;
+            }
+            let kicked = c.kick.swap(false, Ordering::AcqRel);
+            if kicked || waited_ms >= DEFAULT_TICK_MS {
+                waited_ms = 0;
+                if let Some(service) = app.try_state::<AutomationService>() {
+                    // A panic in one pass must not end the schedule for good.
+                    let pass = std::panic::AssertUnwindSafe(|| service.tick(&env));
+                    if std::panic::catch_unwind(pass).is_err() {
+                        eprintln!("automations: a tick panicked");
+                    }
+                }
+            }
+            std::thread::sleep(Duration::from_secs(1));
+            waited_ms += 1_000;
+        }
+    });
+}
+
+/// Ends the tick thread at quit.
+pub fn stop(app: &AppHandle) {
+    if let Some(c) = control(app) {
+        c.stop.store(true, Ordering::Release);
+    }
+}
+
+/// The window is gone: nothing can open a tab until the UI says it is ready again.
+pub fn window_gone(app: &AppHandle) {
+    use tauri::Manager;
+    if let Some(service) = app.try_state::<AutomationService>() {
+        service.set_ready(false);
+    }
+}
 
 fn service(app: &AppHandle) -> Result<tauri::State<'_, AutomationService>, CmdError> {
     use tauri::Manager;
@@ -706,6 +845,25 @@ fn service(app: &AppHandle) -> Result<tauri::State<'_, AutomationService>, CmdEr
         code: "bad_arg",
         detail: Some("no data folder".into()),
     })
+}
+
+/// The extras of `input` checked against its agent's CLI, so the editor hears of a bad list at
+/// save time. An agent that is not (or no longer) listed is left to the dispatch.
+fn check_extras(app: &AppHandle, input: &AutomationInput) -> Result<(), CmdError> {
+    let Some(text) = input
+        .extra_agent_args
+        .as_deref()
+        .filter(|t| !t.trim().is_empty())
+    else {
+        return Ok(());
+    };
+    let env = AppEnv { app: app.clone() };
+    let Some(cli) = env.profile_cli(&input.agent) else {
+        return Ok(());
+    };
+    parse_extra_args(cli, text)
+        .map(|_| ())
+        .map_err(|e| cmd_error("extra_args", serde_json::to_string(&e).ok()))
 }
 
 #[tauri::command(async)]
@@ -723,7 +881,10 @@ pub fn automation_runs(
 
 #[tauri::command(async)]
 pub fn automation_create(app: AppHandle, input: AutomationInput) -> Result<Automation, CmdError> {
-    service(&app)?.create(input)
+    check_extras(&app, &input)?;
+    let made = service(&app)?.create(input)?;
+    announce(&app, Some(made.id.clone()));
+    Ok(made)
 }
 
 #[tauri::command(async)]
@@ -732,7 +893,10 @@ pub fn automation_update(
     id: String,
     input: AutomationInput,
 ) -> Result<Automation, CmdError> {
-    service(&app)?.update(&id, input)
+    check_extras(&app, &input)?;
+    let made = service(&app)?.update(&id, input)?;
+    announce(&app, Some(made.id.clone()));
+    Ok(made)
 }
 
 #[tauri::command(async)]
@@ -741,17 +905,23 @@ pub fn automation_set_enabled(
     id: String,
     enabled: bool,
 ) -> Result<Automation, CmdError> {
-    service(&app)?.set_enabled(&id, enabled)
+    let made = service(&app)?.set_enabled(&id, enabled)?;
+    announce(&app, Some(made.id.clone()));
+    Ok(made)
 }
 
 #[tauri::command(async)]
 pub fn automation_delete(app: AppHandle, id: String) -> Result<(), CmdError> {
-    service(&app)?.delete(&id)
+    service(&app)?.delete(&id)?;
+    announce(&app, Some(id));
+    Ok(())
 }
 
 #[tauri::command(async)]
 pub fn automation_run_now(app: AppHandle, id: String) -> Result<AutomationRun, CmdError> {
-    service(&app)?.run_now(&id)
+    let run = service(&app)?.run_now(&id)?;
+    announce(&app, Some(run.automation_id.clone()));
+    Ok(run)
 }
 
 #[tauri::command(async)]
@@ -790,18 +960,23 @@ pub fn automation_next_runs(
 #[tauri::command(async)]
 pub fn automation_ui_ready(app: AppHandle) -> Result<(), CmdError> {
     service(&app)?.set_ready(true);
+    kick(&app);
     Ok(())
 }
 
 #[tauri::command(async)]
 pub fn automation_dispatch_result(app: AppHandle, result: DispatchResult) -> Result<(), CmdError> {
-    service(&app)?.dispatch_result(result);
+    if let Some(id) = service(&app)?.dispatch_result(result) {
+        announce(&app, Some(id));
+    }
     Ok(())
 }
 
 #[tauri::command(async)]
 pub fn automation_run_finish(app: AppHandle, finish: RunFinish) -> Result<(), CmdError> {
-    service(&app)?.run_finish(finish);
+    if let Some(id) = service(&app)?.run_finish(finish) {
+        announce(&app, Some(id));
+    }
     Ok(())
 }
 

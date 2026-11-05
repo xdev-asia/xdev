@@ -21,7 +21,7 @@ use xdev_git::{ChangeKind, GitError, Repo};
 use xdev_policy::{Action, Verdict};
 use xdev_workspace::{
     CreateOptions, CreateProject, Created, DetailsPatch, FolderEntry, HookKind, HookRun, Linked,
-    NamePreview, Registry, Removed, RepoHooks, RepoPatch, RepoView, SidebarItem, VaultView,
+    MadeBy, NamePreview, Registry, Removed, RepoHooks, RepoPatch, RepoView, SidebarItem, VaultView,
     WorkspaceError, WorktreeStat, WorktreeView, add_repo, add_vault, adopt_worktree,
     archive_worktree, create_project, create_worktree_linked, forget_repo, forget_vault, hooks_for,
     kept_delete, list, list_vaults, name_preview, path_key, refresh_base, remove_worktree,
@@ -987,6 +987,55 @@ fn create_with(
     })
 }
 
+/// A new worktree for an automation run, marked `MadeBy::Automation` so the
+/// sidebar hides it. Same as `worktree_create` otherwise; announces the change.
+pub(crate) fn create_for_automation(
+    app: &AppHandle,
+    repo_id: &str,
+    name: &str,
+    from: Option<&str>,
+) -> Result<WorktreeView, CmdError> {
+    use tauri::Emitter;
+    let git = load_git_settings(app);
+    let state = app.state::<AppState>();
+    let view = create_for_automation_with(
+        data_dir(&state)?,
+        &app.state::<WorkspaceLock>(),
+        &git,
+        repo_id,
+        name,
+        from,
+    )?;
+    let _ = app.emit("workspace://changed", ());
+    Ok(view)
+}
+
+fn create_for_automation_with(
+    data: &Path,
+    lock: &WorkspaceLock,
+    git: &GitSettings,
+    repo_id: &str,
+    name: &str,
+    from: Option<&str>,
+) -> Result<WorktreeView, CmdError> {
+    if git.refresh_local_base_on_create {
+        let reg = {
+            let _guard = lock_guard(lock);
+            Registry::load(data)?
+        };
+        let _ = refresh_base(&reg, repo_id, from);
+    }
+    let (now_ms, seed) = clock();
+    update(data, lock, |reg| {
+        let opts = CreateOptions {
+            made_by: MadeBy::Automation,
+            shared: shared_to_link(reg, data, repo_id),
+            ..git.create_options()
+        };
+        create_worktree_linked(reg, repo_id, name, from, now_ms, seed, &opts).map(|(view, _)| view)
+    })
+}
+
 /// What a typed name would become, for the create dialog; makes nothing.
 #[tauri::command(async)]
 pub fn worktree_name_preview(
@@ -1795,6 +1844,25 @@ mod tests {
         assert_ne!(first.worktree.branch, second.worktree.branch);
         assert!(second.worktree.branch.as_deref().unwrap().ends_with("-2"));
         assert_eq!(second.worktree.title.as_deref(), Some("feat one"));
+    }
+
+    #[test]
+    fn create_for_automation_marks_the_worktree_as_made_by_an_automation() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let git = GitSettings::default();
+        let id = Registry::load(&fx.data).unwrap().repos[0].id.clone();
+        let view = create_for_automation_with(
+            &fx.data,
+            &lock,
+            &git,
+            &id,
+            "auto-audit-20261105T1000",
+            None,
+        )
+        .unwrap();
+        assert_eq!(view.made_by, MadeBy::Automation);
+        assert!(Path::new(&view.path).exists());
     }
 
     #[test]

@@ -116,6 +116,9 @@ pub fn run() {
             {
                 shell::window_focused(window.app_handle());
             }
+            if let tauri::WindowEvent::Destroyed = event {
+                automations::window_gone(window.app_handle());
+            }
         })
         .setup(move |app| {
             if let Some((data, local)) = &index_dirs {
@@ -530,6 +533,7 @@ pub fn run() {
                 tray::remove(app);
                 let mode = shell::quit_mode(app);
                 let on_quit = shell::on_quit_for(mode, settings_store::read(app).terminal.on_quit);
+                automations::stop(app);
                 app.state::<pty::Ptys>().quit(on_quit);
                 app.state::<power::Awake>().release();
                 if let Some(running) = app.try_state::<endpoint::Running>() {

@@ -657,6 +657,27 @@ fn apply_trust(plan: TrustPlan) {
     }
 }
 
+/// Appends an automation's extra agent arguments. The list is joined and
+/// checked again against the allowlist for the launch's CLI (`--model`,
+/// `--effort`, `--add-dir` for Claude; `-m` and a reasoning-effort `-c` for
+/// Codex), so nothing the UI sent is trusted. A shell or a custom program
+/// takes none.
+pub(crate) fn add_extra_args(launch: &mut Launch, args: &[String]) -> Result<(), CmdError> {
+    if args.is_empty() {
+        return Ok(());
+    }
+    if !launch.agent {
+        return Err(crate::workspace::bad_arg("extra_args"));
+    }
+    let parsed =
+        xdev_automations::parse_extra_args(launch.cli, &args.join(" ")).map_err(|e| CmdError {
+            code: "extra_args",
+            detail: serde_json::to_string(&e).ok(),
+        })?;
+    launch.args.extend(parsed);
+    Ok(())
+}
+
 /// Gates an agent, then starts `launch` in `cwd` (no folder trust).
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
@@ -911,6 +932,27 @@ pub(crate) fn hook_command(
     if !script.trusted {
         return Err(WorkspaceError::HookUntrusted(name.to_owned()).into());
     }
+    let mut env: Vec<(String, OsString)> = hook_env(&reg, cwd)?
+        .into_iter()
+        .map(|(k, v)| (k, OsString::from(v)))
+        .collect();
+    let line = shell_line(data_dir, cwd, &script.text)?;
+    env.extend(line.env);
+    Ok(Some(HookCommand {
+        program: line.program,
+        args: line.args,
+        env,
+    }))
+}
+
+/// `script` as a command in the default shell, run in `cwd`. It passes the
+/// gate as a command the person confirmed by typing it (a hook they trusted,
+/// an automation's precheck). Shared by `hook_command` and automations.
+pub(crate) fn shell_line(
+    data_dir: &Path,
+    cwd: &Path,
+    script: &str,
+) -> Result<HookCommand, CmdError> {
     let profiles = Profiles::load(data_dir).map_err(LaunchError::from)?;
     // `wsl.exe` is asked only when the default shell is a distro.
     let wsl = profiles
@@ -927,11 +969,8 @@ pub(crate) fn hook_command(
             code: "not_found",
             detail: Some("shell".to_owned()),
         })?;
-    let (program, args) = setup_command(shell, &script.text);
-    let mut env: Vec<(String, OsString)> = hook_env(&reg, cwd)?
-        .into_iter()
-        .map(|(k, v)| (k, OsString::from(v)))
-        .collect();
+    let (program, args) = setup_command(shell, script);
+    let mut env: Vec<(String, OsString)> = Vec::new();
     if shell.kind == ShellKind::Wsl {
         // Carries the variables into the distro, the paths translated.
         let ours = "XDEV_ROOT_PATH/p:XDEV_WORKTREE_PATH/p:XDEV_WORKSPACE_NAME";
@@ -957,9 +996,9 @@ pub(crate) fn hook_command(
     if shell.kind == ShellKind::Cmd
         && let Some(last) = args.last_mut()
     {
-        *last = cmd_file(data_dir, &script.text)?.display().to_string();
+        *last = cmd_file(data_dir, script)?.display().to_string();
     }
-    Ok(Some(HookCommand { program, args, env }))
+    Ok(HookCommand { program, args, env })
 }
 
 /// The launch that runs the setup script of the worktree at `cwd` in a
@@ -1006,12 +1045,11 @@ pub fn pty_spawn(
     resume: Option<String>,
     fork: Option<bool>,
     prompt: Option<String>,
-    // An automation's extra agent arguments; applied in a later step (`add_extra_args`).
+    // An automation's extra agent arguments; checked again by `add_extra_args`.
     extra_args: Option<Vec<String>>,
 ) -> Result<PtyInfo, CmdError> {
-    let _ = &extra_args;
     let data = data_dir(&state)?;
-    let launch = if profile_id == SETUP_PROFILE {
+    let mut launch = if profile_id == SETUP_PROFILE {
         setup_launch(data, &cwd)?
     } else {
         let hooks = hooks_now(&app);
@@ -1025,6 +1063,7 @@ pub fn pty_spawn(
             prompt.as_deref(),
         )?
     };
+    add_extra_args(&mut launch, extra_args.as_deref().unwrap_or_default())?;
     let exit_id = id.clone();
     let feed_id = id.clone();
     let feed_cwd = cwd.clone();
@@ -2039,6 +2078,91 @@ b",
                 .code,
             "bad_arg"
         );
+    }
+
+    #[test]
+    fn extra_args_are_appended_for_claude_and_codex() {
+        let mut l = with_extra_args(["--model", "m"]);
+        let before = l.args.clone();
+        add_extra_args(&mut l, &["--effort".into(), "high".into()]).unwrap();
+        assert_eq!(l.args[..before.len()], before[..]);
+        assert_eq!(tail(&l, 2), ["--effort", "high"]);
+
+        // After a resume's subcommand slot, at the end like Claude's.
+        let mut c = codex();
+        add_resume(&mut c, "0199a-b").unwrap();
+        let before = c.args.clone();
+        add_extra_args(&mut c, &["-c".into(), "model_reasoning_effort=high".into()]).unwrap();
+        assert_eq!(c.args[..2], ["resume", "0199a-b"]);
+        assert_eq!(c.args[..before.len()], before[..]);
+        assert_eq!(tail(&c, 2), ["-c", "model_reasoning_effort=high"]);
+
+        let mut none = agent();
+        add_extra_args(&mut none, &[]).unwrap();
+        assert_eq!(none.args, agent().args);
+    }
+
+    #[test]
+    fn extra_args_refuse_a_shell_a_custom_program_and_a_bad_list() {
+        let data = tempfile::tempdir().unwrap();
+        let mut shell = launch_for(data.path(), "shell", None, None, None).unwrap();
+        let err = add_extra_args(&mut shell, &["--model".into(), "x".into()]).unwrap_err();
+        assert_eq!(err.code, "bad_arg");
+        let mut custom = Launch {
+            cli: None,
+            ..agent()
+        };
+        assert_eq!(
+            add_extra_args(&mut custom, &["--model".into(), "x".into()])
+                .unwrap_err()
+                .code,
+            "extra_args"
+        );
+        let bad: [&[&str]; 5] = [
+            &["--"],
+            &["--dangerously-skip-permissions"],
+            &["--model", "a;b"],
+            &["--model", "a", "--model", "b"],
+            &["--add-dir", "$HOME"],
+        ];
+        for list in bad {
+            let mut l = agent();
+            let list: Vec<String> = list.iter().map(|a| (*a).to_owned()).collect();
+            let err = add_extra_args(&mut l, &list).unwrap_err();
+            assert_eq!(err.code, "extra_args", "{list:?}");
+            assert_eq!(l.args, agent().args, "{list:?} left the args alone");
+        }
+        let mut codex = codex();
+        let err = add_extra_args(&mut codex, &["--add-dir".into(), "x".into()]).unwrap_err();
+        assert_eq!(err.code, "extra_args");
+    }
+
+    #[test]
+    fn the_gate_sees_the_extra_args() {
+        let mut l = agent();
+        add_extra_args(&mut l, &["--model".into(), "opus".into()]).unwrap();
+        let Action::LaunchAgent { args, .. } = launch_action(&l) else {
+            panic!("an agent launch");
+        };
+        assert_eq!(args[args.len() - 2..], ["--model", "opus"]);
+    }
+
+    #[test]
+    fn a_trusted_hook_is_its_shell_line_with_the_hook_env() {
+        let f = setup_fixture("echo hi");
+        let hook = hook_command(&f.data, &f.repo, HookKind::Setup)
+            .unwrap()
+            .unwrap();
+        let line = shell_line(&f.data, &f.repo, "echo hi").unwrap();
+        assert_eq!(hook.program, line.program);
+        assert_eq!(hook.args, line.args);
+        assert_eq!(hook.args.last().map(String::as_str), Some("echo hi"));
+        let env: HashMap<_, _> = hook.env.iter().cloned().collect();
+        assert_eq!(
+            env["XDEV_ROOT_PATH"],
+            OsString::from(f.repo.display().to_string())
+        );
+        assert_eq!(env["XDEV_WORKSPACE_NAME"], OsString::from("xdev"));
     }
 
     #[test]
