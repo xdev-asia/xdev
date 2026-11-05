@@ -81,10 +81,12 @@ describe("fileLinkMenu", () => {
     expect(toasts).toEqual(["Failed to copy file path"]);
   });
 
-  it("a denied default-app open toasts the refusal, any other failure names the file", async () => {
-    const denied = deps({ api: { fileOpenDefault: () => reject("denied"), fileReveal: async () => {}, openUrl: async () => {} } });
+  it("a denied default-app open reveals the file and says so, any other failure names the file", async () => {
+    const revealed: string[] = [];
+    const denied = deps({ api: { fileOpenDefault: () => reject("denied"), fileReveal: async (_w: string, rel: string) => void revealed.push(rel), openUrl: async () => {} } });
     await openDefaultLink(target, denied.d);
-    expect(denied.toasts).toEqual(["Not opened: this file can run as a program"]);
+    expect(revealed).toEqual(["src/a.ts"]);
+    expect(denied.toasts).toEqual(["This type is not opened with the default app. Shown in the file manager instead"]);
     const broken = deps({ api: { fileOpenDefault: () => reject("io"), fileReveal: () => reject("not_found"), openUrl: () => reject("io") } });
     await openDefaultLink(target, broken.d);
     await run("reveal", fileLinkMenu(target, broken.d).items);

@@ -2504,7 +2504,7 @@
   "termLink.copyLinkFailed": "Failed to copy link",
   "termLink.settings": "Terminal link settings",
   "termLink.openFailed": "Could not open {path}",
-  "termLink.denied": "Not opened: this file can run as a program",
+  "termLink.denied": "This type is not opened with the default app. Shown in the file manager instead",
   "settings.terminal.links.group": "Links",
   "settings.terminal.links.click": "When you click a link",
   "settings.terminal.links.middleClick": "When you middle-click a URL",

@@ -37,7 +37,7 @@ export interface LinkMenu {
 const SEP = (id: string): MenuItem => ({ id, labelKey: "", kind: "separator" });
 
 function failed(deps: LinkDeps, e: unknown, what: string): void {
-  deps.toast(toApiError(e).code === "denied" ? deps.t("termLink.denied") : deps.t("termLink.openFailed", { path: what }));
+  deps.toast(deps.t("termLink.openFailed", { path: what }));
 }
 
 /** Opens the file in the editor at its line and column. */
@@ -45,9 +45,13 @@ export function openFileLink(target: FileTarget, deps: LinkDeps): void {
   deps.openFile({ worktree: target.worktree, rel: target.rel, ...(target.line !== undefined ? { line: target.line } : {}), ...(target.column !== undefined ? { column: target.column } : {}) });
 }
 
-/** Opens the file with the OS default app; a file that can run as a program is refused with a toast. */
+/** Opens the file with the OS default app. A type outside the backend's allowlist is revealed in the file manager instead, with a toast. */
 export function openDefaultLink(target: FileTarget, deps: LinkDeps): Promise<void> {
-  return deps.api.fileOpenDefault(target.worktree, target.rel).catch((e: unknown) => failed(deps, e, target.rel));
+  return deps.api.fileOpenDefault(target.worktree, target.rel).catch((e: unknown) => {
+    if (toApiError(e).code !== "denied") return failed(deps, e, target.rel);
+    deps.toast(deps.t("termLink.denied"));
+    return deps.api.fileReveal(target.worktree, target.rel).catch((err: unknown) => failed(deps, err, target.rel));
+  });
 }
 
 /** Opens an http(s) URL in the system browser. */

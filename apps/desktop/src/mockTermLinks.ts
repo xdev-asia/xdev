@@ -12,8 +12,8 @@ export type MockTermLinks = TermLinksApi & {
 /** `links_open.rs` limits. */
 export const LINK_LIMITS = { paths: 64, path: 4096, url: 2048 } as const;
 
-// Windows extensions that can run as a program; compared case-insensitively.
-const RUNNABLE = /\.(exe|com|bat|cmd|ps1|vbs|vbe|js|jse|wsf|wsh|msi|msc|scr|lnk|pif|cpl|hta|reg)$/i;
+// `links_open.rs`: media types plus a few documents; only the last extension counts.
+const OPENABLE = /[^/\\.]\.(txt|md|pdf|png|jpe?g|gif|webp|svg|html?|csv|json|log|bmp|ico|avif|mp3|wav|og[ga]|m4a|flac|mp4|webm|ogv|mov)$/i;
 
 function reject(code: ApiError["code"], detail?: string): Promise<never> {
   const err: ApiError = detail === undefined ? { code } : { code, detail };
@@ -74,7 +74,7 @@ export function createMockTermLinks(filesList: Api["filesList"]): MockTermLinks 
       const clean = relOf(worktree, rel);
       if (clean === null || /^[A-Za-z]:|^\//.test(rel)) return reject("bad_path", rel);
       if (!files.has(clean)) return reject("not_found", rel);
-      if (RUNNABLE.test(clean)) return reject("denied", rel);
+      if (!OPENABLE.test(clean)) return reject("denied", rel);
       opens.push({ worktree, rel: clean });
     },
     async openUrl(url) {

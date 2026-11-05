@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 
 use tauri::State;
 use xdev_git::{GitError, Repo, hosted_file_url};
-use xdev_workspace::{entry_path, link_rel};
+use xdev_workspace::{entry_path, link_rel, media_kind};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError};
@@ -111,37 +111,26 @@ fn resolve_in(
     Ok(paths.iter().map(|p| link_rel(&root, p, home)).collect())
 }
 
-/// Extensions Windows runs as a program or a script (compared without case).
-const WINDOWS_RUNNABLE: &[&str] = &[
-    "exe", "com", "bat", "cmd", "ps1", "vbs", "vbe", "js", "jse", "wsf", "wsh", "msi", "msc",
-    "scr", "lnk", "pif", "cpl", "hta", "reg",
+/// Document extensions a terminal link may open with the default app, besides what
+/// `media_kind` shows in the app (images, audio, video). Compared without case.
+const DOCUMENT_EXTENSIONS: &[&str] = &[
+    "txt", "md", "pdf", "png", "jpg", "jpeg", "gif", "webp", "svg", "html", "htm", "csv", "json",
+    "log",
 ];
-/// Extensions macOS runs or launches when opened.
-const MAC_RUNNABLE: &[&str] = &["app", "command", "tool"];
 
-fn extension_in(path: &Path, list: &[&str]) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| list.iter().any(|x| x.eq_ignore_ascii_case(e)))
-}
-
-/// A file that can run as a program: opening it with the default app could start it.
-#[cfg_attr(not(unix), allow(unused_variables))]
-fn can_run(path: &Path, meta: &std::fs::Metadata) -> bool {
-    if cfg!(windows) && extension_in(path, WINDOWS_RUNNABLE) {
+/// An allowlist, not a denylist: only the last extension counts, so `a.pdf.exe` is refused, and
+/// a name with no extension is refused.
+fn default_open_allowed(rel: &str) -> bool {
+    if media_kind(rel).is_some() {
         return true;
     }
-    if cfg!(target_os = "macos") && extension_in(path, MAC_RUNNABLE) {
-        return true;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if meta.permissions().mode() & 0o111 != 0 {
-            return true;
-        }
-    }
-    false
+    let name = rel.rsplit(['/', '\\']).next().unwrap_or(rel);
+    name.rsplit_once('.').is_some_and(|(stem, ext)| {
+        !stem.is_empty()
+            && DOCUMENT_EXTENSIONS
+                .iter()
+                .any(|x| x.eq_ignore_ascii_case(ext))
+    })
 }
 
 fn open_default_in(
@@ -153,14 +142,13 @@ fn open_default_in(
     known_checkout(data, worktree)?;
     let path = entry_path(&worktree.to_string_lossy(), rel)?;
     let meta = std::fs::symlink_metadata(&path).map_err(|e| io_error(&e))?;
-    // A `.app` folder is a program, so it is refused rather than reported as a folder.
-    if !meta.is_file() && !(cfg!(target_os = "macos") && extension_in(&path, MAC_RUNNABLE)) {
+    if !meta.is_file() {
         return Err(CmdError {
             code: "bad_path",
             detail: Some(rel.to_owned()),
         });
     }
-    if can_run(&path, &meta) {
+    if !default_open_allowed(rel) {
         return Err(CmdError {
             code: "denied",
             detail: Some(rel.to_owned()),
@@ -245,8 +233,9 @@ pub fn file_links_resolve(
     resolve_in(data_dir(&state)?, &worktree, &paths, home().as_deref())
 }
 
-/// Opens `rel` with the OS default app. `not_found`, `bad_path`, `denied` (a file that can run as
-/// a program), `io`.
+/// Opens `rel` with the OS default app. Only images, audio, video and a small set of documents
+/// (txt md pdf png jpg jpeg gif webp svg html htm csv json log) open; any other file is `denied`.
+/// `not_found`, `bad_path`, `denied`, `io`.
 #[tauri::command(async)]
 pub fn file_open_default(
     state: State<'_, AppState>,
@@ -520,8 +509,8 @@ mod tests {
             Ok(Launch::File(fx.repo.join("notes.txt")))
         );
         assert_eq!(
-            file_launch_of(&fx, "./src/a.ts"),
-            Ok(Launch::File(fx.repo.join("src").join("a.ts")))
+            file_launch_of(&fx, "./notes.txt"),
+            Ok(Launch::File(fx.repo.join("notes.txt")))
         );
     }
 
@@ -538,55 +527,65 @@ mod tests {
     }
 
     #[test]
-    fn windows_runnable_extensions_compare_without_case() {
+    fn default_open_allows_documents_and_media_without_case() {
         for name in [
-            "a.exe", "a.EXE", "a.Cmd", "x.ps1", "x.JS", "x.lnk", "x.reg", "x.hta",
+            "a.txt", "a.MD", "a.Pdf", "a.png", "a.JPG", "a.jpeg", "a.gif", "a.webp", "a.svg",
+            "a.html", "a.htm", "a.csv", "a.json", "a.LOG", "a.mp3", "a.mp4", "a.bmp",
         ] {
-            assert!(extension_in(Path::new(name), WINDOWS_RUNNABLE), "{name}");
-        }
-        for name in [
-            "a.txt",
-            "a.exe.txt",
-            "exe",
-            "a.json",
-            "a.jsx",
-            "a.ts",
-            "a.md",
-        ] {
-            assert!(!extension_in(Path::new(name), WINDOWS_RUNNABLE), "{name}");
-        }
-        for name in ["A.APP", "x.command", "x.Tool"] {
-            assert!(extension_in(Path::new(name), MAC_RUNNABLE), "{name}");
+            assert!(default_open_allowed(name), "{name}");
         }
     }
 
-    #[cfg(windows)]
     #[test]
-    fn default_open_refuses_a_runnable_extension_on_windows() {
+    fn default_open_denies_anything_else() {
+        for name in [
+            "a.exe",
+            "a.sh",
+            "a.rs",
+            "a.ts",
+            "a.url",
+            "a.terminal",
+            "a.jar",
+            "a.app",
+            "a.py",
+            "Makefile",
+            "noext",
+            ".txt",
+            "a.",
+            "a.txt.exe",
+            "a.pdf.exe",
+            "a.EXE.PDF.sh",
+        ] {
+            assert!(!default_open_allowed(name), "{name}");
+        }
+        // A dot in a folder name is not an extension.
+        assert!(!default_open_allowed("v1.2/run"));
+        assert!(!default_open_allowed("docs.txt/run"));
+    }
+
+    #[test]
+    fn default_open_refuses_a_denied_file_before_launching() {
         let fx = fixture();
-        for name in ["a.EXE", "b.Cmd", "c.ps1"] {
+        for name in ["run.sh", "setup.EXE", "README", "a.pdf.exe", "x.url"] {
             fs::write(fx.repo.join(name), "x").unwrap();
             assert_eq!(file_launch_of(&fx, name), Err("denied"), "{name}");
         }
+        fs::write(fx.repo.join("Doc.PDF"), "x").unwrap();
+        assert_eq!(
+            file_launch_of(&fx, "Doc.PDF"),
+            Ok(Launch::File(fx.repo.join("Doc.PDF")))
+        );
     }
 
     #[cfg(unix)]
     #[test]
-    fn default_open_refuses_a_file_with_an_exec_bit() {
+    fn default_open_ignores_the_exec_bit_of_an_allowed_type() {
         use std::os::unix::fs::PermissionsExt;
         let fx = fixture();
-        let script = fx.repo.join("run.sh");
-        fs::write(&script, "#!/bin/sh\n").unwrap();
-        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
-        assert_eq!(file_launch_of(&fx, "run.sh"), Err("denied"));
-        // Only the owner's bit set still counts.
-        fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
-        assert_eq!(file_launch_of(&fx, "run.sh"), Err("denied"));
-        fs::set_permissions(&script, fs::Permissions::from_mode(0o644)).unwrap();
-        assert_eq!(
-            file_launch_of(&fx, "run.sh"),
-            Ok(Launch::File(fx.repo.join("run.sh")))
-        );
+        let doc = fx.repo.join("a.pdf");
+        fs::write(&doc, "x").unwrap();
+        fs::set_permissions(&doc, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(file_launch_of(&fx, "a.pdf"), Ok(Launch::File(doc)));
     }
 
     #[cfg(unix)]

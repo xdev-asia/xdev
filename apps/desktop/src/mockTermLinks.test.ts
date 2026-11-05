@@ -29,15 +29,21 @@ describe("mock terminal links", () => {
     await expect(api.fileLinksResolve("/nowhere", ["a.ts"])).rejects.toMatchObject({ code: "worktree_unknown" });
   });
 
-  it("records default-app opens and refuses a runnable file", async () => {
+  it("records default-app opens and refuses a type outside the allowlist", async () => {
     const api = createMockApi({});
     await api.fileOpenDefault(WT, "README.md");
     expect(api.__defaultOpens()).toEqual([{ worktree: WT, rel: "README.md" }]);
     await api.fileCreate(WT, "run.CMD", false);
     await expect(api.fileOpenDefault(WT, "run.CMD")).rejects.toMatchObject({ code: "denied" });
+    for (const name of ["a.pdf.exe", "noext", "run.sh"]) {
+      await api.fileCreate(WT, name, false);
+      await expect(api.fileOpenDefault(WT, name)).rejects.toMatchObject({ code: "denied" });
+    }
+    await api.fileCreate(WT, "Doc.PDF", false);
+    await api.fileOpenDefault(WT, "Doc.PDF");
     await expect(api.fileOpenDefault(WT, "missing.md")).rejects.toMatchObject({ code: "not_found" });
     await expect(api.fileOpenDefault(WT, "../x.md")).rejects.toMatchObject({ code: "bad_path" });
-    expect(api.__defaultOpens()).toHaveLength(1);
+    expect(api.__defaultOpens()).toHaveLength(2);
   });
 
   it("opens http and https only", async () => {

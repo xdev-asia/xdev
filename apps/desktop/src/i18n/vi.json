@@ -2504,7 +2504,7 @@
   "termLink.copyLinkFailed": "Không sao chép được liên kết",
   "termLink.settings": "Cài đặt liên kết terminal",
   "termLink.openFailed": "Không mở được {path}",
-  "termLink.denied": "Chưa mở: tệp này có thể chạy như một chương trình",
+  "termLink.denied": "Loại tệp này không mở bằng ứng dụng mặc định. Đã hiện trong trình quản lý tệp",
   "settings.terminal.links.group": "Liên kết",
   "settings.terminal.links.click": "Khi nhấp vào liên kết",
   "settings.terminal.links.middleClick": "Khi nhấp chuột giữa vào URL",

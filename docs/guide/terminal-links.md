@@ -13,7 +13,7 @@ A path such as `src/a.ts:12:5` becomes a link when it names an existing file ins
 | Shift+Ctrl+click (⇧⌘+click on macOS) | Opens the file with the default app. |
 | Alt held | Selects text as usual. |
 
-The action menu offers Open file, Open with default app, Reveal in file manager, Copy file path and Terminal link settings. A file that can run as a program (for example `.exe`, `.bat`, or a file with an execute bit) is never opened with the default app.
+The action menu offers Open file, Open with default app, Reveal in file manager, Copy file path and Terminal link settings. Open with default app works only for images, audio and video, and for these document types: `txt`, `md`, `pdf`, `png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `html`, `htm`, `csv`, `json` and `log`. Only the last extension counts, so `a.pdf.exe` is not opened, and neither is a file with no extension. Any other file is shown in the file manager instead.
 
 ## URLs and OSC 8 hyperlinks
 

@@ -1080,7 +1080,7 @@ export interface Api {
   fileLinksResolve(worktree: string, paths: string[]): Promise<(string | null)[]>;
   // The raw bytes of an image, audio or video file within its size cap; rejects with `too_large`, `bad_name`, `not_found`.
   fileBytes(worktree: string, rel: string): Promise<Uint8Array>;
-  // Opens the file with the OS default app; `denied` for a file that can run as a program.
+  // Opens the file with the OS default app; `denied` for a type outside the allowlist (media and txt md pdf png jpg jpeg gif webp svg html htm csv json log).
   fileOpenDefault(worktree: string, rel: string): Promise<void>;
   // http(s) only; `bad_arg` otherwise.
   openUrl(url: string): Promise<void>;
