@@ -7,6 +7,7 @@ import { RestoreSetting } from "./RestoreSetting";
 import { runSearch } from "./searchModel";
 import { SettingGroup, SettingRow } from "./SettingRow";
 import { CLIPBOARD_SWITCHES, TerminalPage } from "./TerminalPage";
+import { TerminalAppearanceSection } from "./terminal/TerminalAppearanceSection";
 import { TerminalBehaviourSection } from "./terminal/TerminalBehaviourSection";
 import { ANSI_KEYS, TerminalLookSection } from "./terminal/TerminalLookSection";
 import { DEFAULT_WORD_SEPARATORS } from "./terminalDefaults";
@@ -38,7 +39,7 @@ function nodes(value: unknown): Node[] {
   if (!value || typeof value !== "object" || !("props" in value)) return [];
   const node = value as Node;
   // The two section files and the search wrappers are components; draw them where the page puts them.
-  if (node.type === TerminalLookSection || node.type === TerminalBehaviourSection || node.type === SettingRow || node.type === SettingGroup) {
+  if (node.type === TerminalLookSection || node.type === TerminalAppearanceSection || node.type === TerminalBehaviourSection || node.type === SettingRow || node.type === SettingGroup) {
     return nodes((node.type as (p: unknown) => unknown)(node.props));
   }
   return [node, ...nodes(node.props.children)];
@@ -451,4 +452,19 @@ it("a cancelled file dialog opens nothing, and a bad file shows its error", asyn
   dlg.props.onCancel();
   await tick();
   expect(p.all().find((n) => n.type === ImportSchemeDialog)!.props.open).toBe(false);
+});
+
+it("the appearance switches and numbers put only their own field", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  p.sw("dimInactivePanes").props.onClick();
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, dimInactivePanes: true });
+  p.sw("themeFollowApp").props.onClick();
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, dimInactivePanes: true, themeFollowApp: true });
+  p.field("paddingPx").props.onChange({ target: { value: "12" } });
+  p.field("paddingPx").props.onKeyDown({ key: "Enter" });
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, dimInactivePanes: true, themeFollowApp: true, paddingPx: 12 });
 });

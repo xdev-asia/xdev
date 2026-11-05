@@ -29,6 +29,14 @@ export const TERMINAL_DEFAULTS: TerminalSettings = {
   linkClick: "actions",
   urlMiddleClick: "open",
   macOptionAsAlt: "auto",
+  themeLight: "one-light",
+  themeFollowApp: false,
+  dimInactivePanes: false,
+  paneDividerPx: 1,
+  fontWeightBold: "bold",
+  scrollOnInput: true,
+  paddingPx: 8,
+  backgroundOpacity: 1,
 };
 
 // The double-click word separators when none are set (`DEFAULT_WORD_SEPARATORS` in Rust).
@@ -43,6 +51,9 @@ export const TERMINAL_LIMITS = {
   scrollSensitivity: { min: 0.5, max: 3 },
   fastScrollSensitivity: { min: 1, max: 10 },
   minimumContrast: { min: 1, max: 21 },
+  paneDividerPx: { min: 1, max: 4 },
+  paddingPx: { min: 0, max: 24 },
+  backgroundOpacity: { min: 0.5, max: 1 },
 } as const;
 
 const clamp = (n: number, { min, max }: { min: number; max: number }) => Math.max(min, Math.min(max, n));
@@ -74,5 +85,9 @@ export function clampTerminalSettings(s: TerminalSettings): TerminalSettings {
       TERMINAL_DEFAULTS.fastScrollSensitivity,
     ),
     minimumContrast: clampOr(s.minimumContrast, TERMINAL_LIMITS.minimumContrast, TERMINAL_DEFAULTS.minimumContrast),
+    themeLight: THEME_ID.test(s.themeLight) ? s.themeLight : TERMINAL_DEFAULTS.themeLight,
+    paneDividerPx: clamp(Math.round(s.paneDividerPx), TERMINAL_LIMITS.paneDividerPx),
+    paddingPx: clamp(Math.round(s.paddingPx), TERMINAL_LIMITS.paddingPx),
+    backgroundOpacity: clampOr(s.backgroundOpacity, TERMINAL_LIMITS.backgroundOpacity, TERMINAL_DEFAULTS.backgroundOpacity),
   };
 }

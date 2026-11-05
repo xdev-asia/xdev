@@ -17,12 +17,12 @@ import { PtyClient } from "./ptyClient";
 import { createTerminalHandle } from "./terminalActions";
 import { getCustomSchemes, subscribeCustomSchemes } from "./customSchemes";
 import { getTerminalSettings, subscribeTerminalSettings } from "./terminalSettings";
-import { decodeOsc52Write, xtermOptions } from "./terminalOptions";
+import { decodeOsc52Write, themeIdFor, xtermOptions } from "./terminalOptions";
 import { TerminalFind } from "./TerminalFind";
 import { installStatusOsc, type ProgramReport } from "./statusOsc";
 import { createBell } from "./terminalBell";
 import { attachRenderer } from "./terminalRenderer";
-import { followAppTheme } from "./terminalColors";
+import { appIsLight, followAppTheme } from "./terminalColors";
 import { createFileLinkProvider, createLinkResolver, createOscLinkHandler, cwdFromOsc7, urlLinkOptions, type TermLinksEnv } from "./termLinks";
 import { pasteClipboard, type PasteResult } from "./clipboardPaste";
 import { registerDropTarget } from "./fileDrop";
@@ -154,7 +154,12 @@ export function Terminal(props: {
     const css = getComputedStyle(el);
     const color = (name: string) => css.getPropertyValue(name).trim() || undefined;
     const mono = color("--x-font-mono");
-    const initial = xtermOptions(getTerminalSettings(), mono, color, getCustomSchemes());
+    const initial = xtermOptions(getTerminalSettings(), mono, color, getCustomSchemes(), appIsLight());
+    // The padding around the terminal: the host sits this far inside the pane.
+    const applyInset = () => {
+      el.style.inset = `${getTerminalSettings().paddingPx}px`;
+    };
+    applyInset();
     // File paths, URLs and OSC 8 links; the hover tip is a state of the pane.
     // The shell's folder, from its OSC 7 reports; relative paths in output are read against it.
     let shellCwd: string | undefined;
@@ -194,7 +199,10 @@ export function Terminal(props: {
     // The pane and the padding around the host take the theme's background (the app theme: the CSS one).
     const pane = el.parentElement;
     const paint = (background: string | undefined) => {
-      if (pane) pane.style.background = background && getTerminalSettings().theme !== "app" ? background : "";
+      const s = getTerminalSettings();
+      // Below full opacity the theme background carries the alpha, so the pane must not add its own.
+      const own = s.backgroundOpacity >= 1 && background && themeIdFor(s, appIsLight()) !== "app";
+      if (pane) pane.style.background = own ? background : "";
     };
     paint(initial.theme.background);
     const bell = createBell(pane ?? el, { mode: () => getTerminalSettings().bell });
@@ -353,7 +361,7 @@ export function Terminal(props: {
     el.addEventListener("mouseenter", onMouseEnter);
     // A change in Settings applies to this pane at once, with no restart.
     const applySettings = () => {
-      const next = xtermOptions(getTerminalSettings(), mono, color, getCustomSchemes());
+      const next = xtermOptions(getTerminalSettings(), mono, color, getCustomSchemes(), appIsLight());
       term.options.fontFamily = next.fontFamily;
       term.options.fontSize = next.fontSize;
       term.options.fontWeight = next.fontWeight;
@@ -367,6 +375,10 @@ export function Terminal(props: {
       term.options.scrollSensitivity = next.scrollSensitivity;
       term.options.fastScrollSensitivity = next.fastScrollSensitivity;
       term.options.minimumContrastRatio = next.minimumContrastRatio;
+      term.options.fontWeightBold = next.fontWeightBold;
+      term.options.scrollOnUserInput = next.scrollOnUserInput;
+      term.options.allowTransparency = next.allowTransparency;
+      applyInset();
       applyOptionMeta();
       renderer.set(getTerminalSettings().gpu);
       fitVisible();
@@ -382,8 +394,8 @@ export function Terminal(props: {
     };
 
     // The app theme switching between light and dark: read the variables again for this pane.
-    const offTheme = followAppTheme(el, (token) => {
-      const next = xtermOptions(getTerminalSettings(), mono, token, getCustomSchemes());
+    const offTheme = followAppTheme(el, (token, light) => {
+      const next = xtermOptions(getTerminalSettings(), mono, token, getCustomSchemes(), light);
       term.options.theme = next.theme;
       paint(next.theme.background);
     });

@@ -22,6 +22,7 @@ vi.mock("react", async (original) => ({
       current:
         at === 0
           ? {
+              style: {} as Record<string, string>,
               clientWidth: 0,
               clientHeight: 0,
               classList: { add() {}, remove() {} },

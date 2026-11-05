@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CSSProperties, JSX, PointerEvent, ReactNode } from "react";
 import { useI18n } from "@/i18n";
+import { useTerminalSettings } from "@/terminal/terminalSettings";
 import type { PaneLayout, PaneNode } from "./paneTree";
 import type { DropZone } from "./sessions";
 
@@ -88,6 +89,18 @@ export function PaneView(props: {
   const { layout, strip, onFocus, onResize, onEqualize, tabDrag } = props;
   const { t } = useI18n();
   const [drag, setDrag] = useState<Drag | null>(null);
+  const { dimInactivePanes, paneDividerPx } = useTerminalSettings();
+
+  // The divider thickness is read by the pane outline and by the terminals, which sit outside this tree.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--ws-pane-line", `${paneDividerPx}px`);
+    root.style.setProperty("--ws-pane-inset", `${Math.max(paneDividerPx - 1, 0)}px`);
+    return () => {
+      root.style.removeProperty("--ws-pane-line");
+      root.style.removeProperty("--ws-pane-inset");
+    };
+  }, [paneDividerPx]);
 
   const leaf = (n: Leaf, basis: number | null): JSX.Element => (
     <div
@@ -95,6 +108,7 @@ export function PaneView(props: {
       className="ws-pane"
       data-pane={n.id}
       data-focused={n.id === layout.focused}
+      data-dim={(dimInactivePanes && n.id !== layout.focused) || undefined}
       style={basis === null ? undefined : { flexBasis: `${basis * 100}%` }}
       onPointerDown={() => onFocus(n.id)}
     >

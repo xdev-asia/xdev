@@ -5,6 +5,7 @@ import { useI18n } from "@/i18n";
 import { setTerminalSettings, TERMINAL_DEFAULTS, TERMINAL_LIMITS } from "@/terminal/terminalSettings";
 import { RunningTerminals } from "./RunningTerminals";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
+import { TerminalAppearanceSection } from "./terminal/TerminalAppearanceSection";
 import { TerminalBehaviourSection } from "./terminal/TerminalBehaviourSection";
 import { TerminalKeyboardSection } from "./terminal/TerminalKeyboardSection";
 import { TerminalLookSection } from "./terminal/TerminalLookSection";
@@ -232,6 +233,7 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
       </SettingGroup>
 
       <TerminalLookSection api={api} current={current} busy={busy} patch={patch} filter={filter} />
+      <TerminalAppearanceSection current={current} busy={busy} patch={patch} filter={filter} />
       <TerminalBehaviourSection current={current} busy={busy} patch={patch} filter={filter} />
       <TerminalKeyboardSection current={current} busy={busy} patch={patch} filter={filter} />
 

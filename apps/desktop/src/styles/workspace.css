@@ -1217,8 +1217,19 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  outline: 1px solid var(--line);
-  outline-offset: -1px;
+  outline: var(--ws-pane-line, 1px) solid var(--line);
+  outline-offset: calc(-1 * var(--ws-pane-line, 1px));
+}
+
+/* A pane without focus is drawn under a veil of the terminal colour; clicks pass through it. */
+.ws-pane[data-dim]::after {
+  position: absolute;
+  z-index: 1;
+  inset: var(--ws-strip-h) 0 0;
+  background: var(--term);
+  content: "";
+  opacity: 0.4;
+  pointer-events: none;
 }
 
 .ws-split > .ws-pane,
@@ -1272,6 +1283,11 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+
+  /* A divider thicker than 1px leaves a gap around the body, where the pane outline shows. */
+  box-sizing: border-box;
+  border: var(--ws-pane-inset, 0px) solid transparent;
+  background-clip: content-box;
 }
 
 .ws-tab-exit {
