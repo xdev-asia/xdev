@@ -44,9 +44,11 @@ describe("linkAction", () => {
     }
   });
 
-  it("Shift alone is left to the terminal", () => {
-    expect(act("file", click({ shiftKey: true }), "open", "open")).toBe("none");
-    expect(act("url", click({ shiftKey: true }), "actions", "open")).toBe("none");
+  it("Shift without Mod is a plain click, so a link works while a program tracks the mouse", () => {
+    expect(act("file", click({ shiftKey: true }), "open", "open")).toBe("open");
+    expect(act("url", click({ shiftKey: true }), "actions", "open")).toBe("menu");
+    expect(act("file", click({ shiftKey: true }), "none", "open")).toBe("none");
+    expect(act("file", click({ shiftKey: true }), "actions", "open", true)).toBe("menu");
   });
 
   it("middle click acts on a URL only, as urlMiddleClick says", () => {

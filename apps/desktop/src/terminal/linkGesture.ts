@@ -12,8 +12,9 @@ const FROM_SETTING: Record<TerminalLinkClick, LinkAction> = { actions: "menu", o
 
 /**
  * The action for a mouse gesture on a link. `Mod` is Ctrl, and ⌘ on macOS (where Ctrl+click is a
- * right click, so Ctrl alone is no gesture there). Alt is xterm's own selection mode. Shift alone
- * is left to xterm: it is how a program that tracks the mouse lets a link be clicked.
+ * right click, so Ctrl alone is no gesture there). Alt is xterm's own selection mode. Shift
+ * without Mod is a plain click: when a program tracks the mouse (vim, htop), Shift is how the
+ * click reaches xterm, and it then acts as the setting says.
  */
 export function linkAction(kind: LinkKind, e: LinkGesture, settings: LinkSettings, mac: boolean): LinkAction {
   if (e.altKey) return "none";
@@ -22,7 +23,6 @@ export function linkAction(kind: LinkKind, e: LinkGesture, settings: LinkSetting
   if (e.button === 1) return kind === "url" ? FROM_SETTING[settings.urlMiddleClick] : "none";
   if (e.button !== 0) return "none";
   if (mod) return e.shiftKey && kind === "file" ? "openDefault" : "open";
-  if (e.shiftKey) return "none";
   return FROM_SETTING[settings.linkClick];
 }
 

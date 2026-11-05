@@ -19,7 +19,7 @@ The action menu offers Open file, Open with default app, Reveal in file manager,
 
 An `http` or `https` URL opens in the system browser. A middle click on a URL follows its own setting. Hyperlinks written with the OSC 8 escape sequence follow the same rules: `http(s)` opens in the browser, `file://` and plain paths open in the editor, other schemes do nothing.
 
-When a program tracks the mouse (vim, htop), hold Shift to click a link.
+When a program tracks the mouse (vim, htop), hold Shift to click a link. Shift on its own is a plain click, so it does what the click setting says.
 
 ## Settings
 
