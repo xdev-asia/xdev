@@ -58,6 +58,7 @@ flowchart TB
 | Crate | What it does |
 |---|---|
 | `xdev-workspace` | The list of repos and the worktrees made from them. |
+| `xdev-automations` | Scheduled agent runs: the model, cron and RRULE schedules in the automation's time zone, the JSON store, the tick decision, the extra-args allowlist and the precheck runner. The app starts the runs in terminal tabs. |
 | `xdev-pty` | Terminals: a shell or an agent CLI in a pseudo console. Holds the `xdev-ptyd` service (`service.rs`), the app's client for it (`client.rs`) and the output pump (`pump.rs`). Output goes to a ring first, is batched for the UI and paused when the UI falls behind. |
 | `xdev-ipc` | A per-user local endpoint between xDev's own processes: a Unix socket on macOS and Linux, a named pipe on Windows, with a token file that proves the peer is the same user. |
 | `xdev-agent` | Agent tasks: a goal worked on in its own worktree, with evidence kept and nothing merged until a person approves. Squads: one agent per seat on one task. |
