@@ -2172,7 +2172,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         </div>
 
         <div className="ws-automations" hidden={view !== "automations"}>
-          {view === "automations" && <AutomationsPage api={api} repos={repos} />}
+          {view === "automations" && (
+            <AutomationsPage
+              api={api}
+              repos={repos}
+              openSettings={(section) => openSettings(section)}
+              onOpenWorkspace={(path) => {
+                const wt = all.find((w) => w.path === path);
+                if (wt) select(wt);
+                show("workspace");
+              }}
+            />
+          )}
         </div>
 
         <div className="ws-settings" hidden={view !== "settings"}>

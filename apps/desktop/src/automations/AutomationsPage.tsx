@@ -4,12 +4,17 @@ import { Button, EmptyState, Icon, SearchInput, Toolbar, type MenuEntry } from "
 import { type Api, type Automation, type AutomationRun, type AutomationsView, type ProfilesView, type RepoView, toApiError } from "@/api";
 import { useI18n } from "@/i18n";
 import { pushToast } from "@/workspace/toastStore";
+import { useAutomationsSettings } from "@/settings/automationsSettings";
 import { AutomationDetail } from "./AutomationDetail";
+import { AutomationEditorDialog } from "./AutomationEditorDialog";
 import { AutomationList, type RowAction } from "./AutomationList";
+import { AutomationRunDetails } from "./AutomationRunDetails";
+import { DeleteAutomationDialog, deleteAutomation } from "./DeleteAutomationDialog";
 import { MenuButton } from "./MenuButton";
 import { TemplateEmptyState } from "./TemplateEmptyState";
 import { NO_QUERY, nextSort, visibleRows, type LastRunFilter, type ListQuery, type SortKey } from "./listModel";
 import { label as scheduleLabel } from "./schedule";
+import type { AutomationTemplate } from "./templates";
 
 const LAST_RUN: readonly LastRunFilter[] = ["all", "succeeded", "failed", "never"];
 
@@ -19,6 +24,10 @@ export function AutomationsPage(props: {
   repos: readonly RepoView[] | null;
   /** The clock; the list's ages are drawn against it. */
   now?: () => number;
+  /** Opens a Settings section (the delete toast points at Automations). */
+  openSettings?(section: string): void;
+  /** Shows a worktree in the workspace view. */
+  onOpenWorkspace?(path: string): void;
 }): JSX.Element {
   const i18n = useI18n();
   const { t } = i18n;
@@ -30,6 +39,11 @@ export function AutomationsPage(props: {
   const [runs, setRuns] = useState<AutomationRun[]>([]);
   const [schedules, setSchedules] = useState<Record<string, string>>({});
   const [tick, setTick] = useState(0);
+  const [editing, setEditing] = useState<{ automation: Automation | null; template: AutomationTemplate | null } | null>(null);
+  const [deleting, setDeleting] = useState<Automation | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [openRunId, setOpenRunId] = useState<string | null>(null);
+  const settings = useAutomationsSettings();
   const now = (props.now ?? Date.now)();
 
   const reload = () => setTick((n) => n + 1);
@@ -89,7 +103,19 @@ export function AutomationsPage(props: {
   const worktreeExists = (path: string) => props.repos?.some((r) => r.worktrees.some((w) => w.path === path)) ?? false;
   const agents = profiles?.profiles.filter((p) => p.profile.enabled) ?? [];
 
+  async function remove(a: Automation, dontAsk: boolean): Promise<void> {
+    try {
+      await deleteAutomation(api, a, { dontAsk, openSettings: (section) => props.openSettings?.(section), t });
+      if (selected === a.id) setSelected(null);
+      reload();
+    } catch (e) {
+      pushToast({ text: t("automations.toast.changeFailed", { code: toApiError(e).code }) });
+    }
+  }
+
   async function act(a: Automation, action: RowAction): Promise<void> {
+    if (action === "edit") return setEditing({ automation: a, template: null });
+    if (action === "delete") return settings.skipDeleteConfirm ? void remove(a, false) : setDeleting(a);
     try {
       if (action === "run") {
         await api.automationRunNow(a.id);
@@ -135,10 +161,10 @@ export function AutomationsPage(props: {
           <button type="button" className="ws-icon-btn" data-act="refresh" aria-label={t("automations.refresh")} title={t("automations.refresh")} onClick={reload}>
             <Icon name="restore" size={14} />
           </button>
-          <Button variant="secondary" data-act="templates" icon="plus">
+          <Button variant="secondary" data-act="templates" icon="plus" aria-pressed={picking} onClick={() => setPicking(!picking)}>
             {t("automations.fromTemplate")}
           </Button>
-          <Button variant="primary" data-act="new" icon="plus">
+          <Button variant="primary" data-act="new" icon="plus" onClick={() => setEditing({ automation: null, template: null })}>
             {t("automations.new")}
           </Button>
         </>
@@ -148,7 +174,16 @@ export function AutomationsPage(props: {
 
   let body: JSX.Element;
   if (data === null) body = <p className="au-empty" role="status" />;
-  else if (automations.length === 0) body = <TemplateEmptyState onPick={() => {}} />;
+  else if (automations.length === 0 || picking) {
+    body = (
+      <TemplateEmptyState
+        onPick={(template) => {
+          setPicking(false);
+          setEditing({ automation: null, template });
+        }}
+      />
+    );
+  }
   else if (view.rows.length === 0) body = <EmptyState title={t(view.filtersOn ? "automations.list.empty.filters" : "automations.list.empty.search")} />;
   else {
     body = (
@@ -157,7 +192,10 @@ export function AutomationsPage(props: {
         sort={query.sort}
         onSort={(key: SortKey) => setQuery({ ...query, sort: nextSort(query.sort, key) })}
         selected={selected}
-        onSelect={setSelected}
+        onSelect={(id) => {
+          setPicking(false);
+          setSelected(id);
+        }}
         onAction={(id, action) => {
           const a = automations.find((x) => x.id === id);
           if (a) void act(a, action);
@@ -165,6 +203,60 @@ export function AutomationsPage(props: {
         schedules={schedules}
         now={now}
       />
+    );
+  }
+
+  const openRun = openRunId === null ? null : (runs.find((r) => r.id === openRunId) ?? null);
+  const dialogs = (
+    <>
+      {editing && (
+        <AutomationEditorDialog
+          api={api}
+          repos={props.repos ?? []}
+          agents={profiles?.profiles.map((p) => ({ id: p.profile.id, name: p.profile.name, enabled: p.profile.enabled, installed: p.installed })) ?? []}
+          defaultAgent={profiles?.defaultAgent ?? "claude"}
+          defaultRepo={current?.repoId ?? props.repos?.find((r) => !r.missing)?.id ?? ""}
+          automation={editing.automation}
+          template={editing.template}
+          onSaved={(saved) => {
+            setEditing(null);
+            setSelected(saved.id);
+            reload();
+          }}
+          onCancel={() => setEditing(null)}
+        />
+      )}
+      <DeleteAutomationDialog
+        automation={deleting}
+        onConfirm={(dontAsk) => {
+          const a = deleting;
+          setDeleting(null);
+          if (a) void remove(a, dontAsk);
+        }}
+        onCancel={() => setDeleting(null)}
+      />
+    </>
+  );
+
+  if (openRun) {
+    return (
+      <section className="au-page" aria-label={t("automations.page.label")}>
+        <AutomationRunDetails
+          run={openRun}
+          automation={automations.find((a) => a.id === openRun.automationId) ?? null}
+          exists={worktreeExists}
+          now={now}
+          onBack={() => setOpenRunId(null)}
+          onRerun={() => {
+            const a = automations.find((x) => x.id === openRun.automationId);
+            if (!a) return;
+            setOpenRunId(null);
+            void act(a, "run");
+          }}
+          onOpenWorkspace={(path) => props.onOpenWorkspace?.(path)}
+        />
+        {dialogs}
+      </section>
     );
   }
 
@@ -186,12 +278,13 @@ export function AutomationsPage(props: {
             agentName={agentName(current.agent)}
             runs={runs}
             exists={worktreeExists}
-            onOpenRun={() => {}}
+            onOpenRun={(run) => setOpenRunId(run.id)}
           />
         ) : (
           automations.length > 0 && <p className="au-empty au-detail-empty">{t("automations.detail.empty")}</p>
         )}
       </div>
+      {dialogs}
     </section>
   );
 }
