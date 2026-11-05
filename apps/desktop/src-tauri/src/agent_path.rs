@@ -133,9 +133,17 @@ fn registry_path(timeout: Duration) -> Option<OsString> {
     };
     let user = read(r"HKCU\Environment");
     let machine = read(r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment");
-    let joined = [user, machine]
+    join_registry(machine, user)
+}
+
+/// The machine `Path` then the user one, the order Windows gives a new
+/// process; `None` when both are missing or empty.
+#[cfg(any(windows, test))]
+fn join_registry(machine: Option<String>, user: Option<String>) -> Option<OsString> {
+    let joined = [machine, user]
         .into_iter()
         .flatten()
+        .filter(|p| !p.is_empty())
         .collect::<Vec<_>>()
         .join(";");
     (!joined.is_empty()).then(|| OsString::from(joined))
@@ -197,6 +205,17 @@ mod tests {
         );
         assert_eq!(reg_path_parse("    TEMP    REG_SZ    x", &var), None);
         assert_eq!(reg_path_parse("", &var), None);
+    }
+
+    #[test]
+    fn the_machine_path_comes_before_the_user_path() {
+        let got = join_registry(Some(r"C:\Windows".into()), Some(r"C:\Users\u\bin".into()));
+        assert_eq!(got, Some(OsString::from(r"C:\Windows;C:\Users\u\bin")));
+        assert_eq!(
+            join_registry(None, Some("u".into())),
+            Some(OsString::from("u"))
+        );
+        assert_eq!(join_registry(Some(String::new()), None), None);
     }
 
     #[test]
