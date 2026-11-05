@@ -126,6 +126,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("terminal.service", "settings.terminal.service.label", ["service", "daemon", "background", "keep running", "quit", "dịch vụ", "dich vu", "chạy nền", "chay nen"], "settings.terminal.service.hint"),
   e("terminal.onQuit", "settings.terminal.service.onQuit", ["quit", "close", "exit", "end", "ask", "thoát", "thoat", "đóng", "dong"]),
   e("terminal.ringMb", "settings.terminal.service.ringMb", ["ring", "buffer", "output", "memory", "bộ nhớ", "bo nho"], "settings.terminal.service.ringMbHint"),
+  e("terminal.saveScrollback", "settings.terminal.saveScrollback", ["save", "output", "scrollback", "history", "restore", "lưu", "luu", "nội dung", "noi dung"], "settings.terminal.saveScrollbackHint"),
   e("terminal.running", "settings.terminal.service.running", ["running", "service", "end", "restart", "đang chạy", "dang chay", "khởi động lại", "khoi dong lai"]),
   e("terminal.reset", "settings.terminal.reset", ["defaults", "reset", "đặt lại", "dat lai"]),
   // Editor

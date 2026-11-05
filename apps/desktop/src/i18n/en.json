@@ -950,6 +950,8 @@
   "settings.terminal.service.onQuit.ask": "Ask",
   "settings.terminal.service.ringMb": "Output kept per terminal (MB)",
   "settings.terminal.service.ringMbHint": "What a tab shows of the output made while xDev was closed. Takes effect when the service next starts.",
+  "settings.terminal.saveScrollback": "Save terminal output",
+  "settings.terminal.saveScrollbackHint": "Keeps up to 512 KB per terminal on this device, so a terminal can show it after a restart.",
   "settings.terminal.service.running": "Running terminals",
   "settings.terminal.service.off": "The terminal service is not running; terminals run in xDev.",
   "settings.terminal.service.none": "No terminals are running in the service.",

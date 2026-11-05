@@ -185,6 +185,15 @@ it("the service rows: a switch, the On quit choice and the ring size, each one p
   expect(put).toHaveBeenCalledTimes(3);
 });
 
+it("save output switch saves", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  expect(p.sw("saveScrollback").props["aria-checked"]).toBe(true);
+  p.sw("saveScrollback").props.onClick();
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, saveScrollback: false });
+});
+
 it("the service switch says it takes effect at the next start", async () => {
   const p = await page();
   const text = JSON.stringify(nodes(p.all().find((n) => n.props["data-switch"] === "service")).map((n) => n.props.children));

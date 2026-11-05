@@ -950,6 +950,8 @@
   "settings.terminal.service.onQuit.ask": "Hỏi",
   "settings.terminal.service.ringMb": "Output giữ lại mỗi terminal (MB)",
   "settings.terminal.service.ringMbHint": "Phần output tạo ra khi xDev đóng mà tab sẽ hiện lại. Có hiệu lực từ lần dịch vụ khởi động sau.",
+  "settings.terminal.saveScrollback": "Lưu nội dung terminal",
+  "settings.terminal.saveScrollbackHint": "Giữ tối đa 512 KB mỗi terminal trên máy này để hiện lại sau khi khởi động lại.",
   "settings.terminal.service.running": "Terminal đang chạy",
   "settings.terminal.service.off": "Dịch vụ terminal không chạy; terminal chạy trong xDev.",
   "settings.terminal.service.none": "Không có terminal nào chạy trong dịch vụ.",

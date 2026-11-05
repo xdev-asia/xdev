@@ -49,6 +49,11 @@ onQuit: OnQuit,
  */
 ringMb: number, 
 /**
+ * The service keeps the last 512 KB of each terminal's output on this
+ * device, so a terminal can show it after a restart; read at start.
+ */
+saveScrollback: boolean, 
+/**
  * "app" or a built-in scheme id; `[a-z0-9-]{1,40}`, anything else is "app".
  */
 theme: string, gpu: TerminalGpu, bell: TerminalBell, 

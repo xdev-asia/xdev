@@ -256,11 +256,17 @@ pub(crate) fn start_host(app: &AppHandle, local_dir: Option<&Path>) {
             code: "ptyd_start_failed".into(),
             detail: Some(format!("no {BINARY} next to the app")),
         })?;
+        if !terminal.save_scrollback {
+            // Off also deletes what is saved, even when a running service
+            // started before the switch was turned off.
+            let _ = xdev_pty::snapshot::clear_all(&service_dir(local));
+        }
         ensure(&StartOptions {
             dir: service_dir(local),
             binary,
             app_version: version.clone(),
             ring_mb: terminal.ring_mb,
+            snapshots: terminal.save_scrollback,
             ..StartOptions::default()
         })
     });
