@@ -40,7 +40,7 @@ pub struct Settings {
     #[serde(default, deserialize_with = "lenient")]
     pub git: GitSettings,
     /// Settings → Notifications; lenient the same way.
-    #[serde(default, deserialize_with = "lenient")]
+    #[serde(default, deserialize_with = "lenient_status")]
     pub status: StatusSettings,
     /// Settings → Terminal; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
@@ -1315,12 +1315,43 @@ pub struct StatusSettings {
     // The person's own sound, copied under the data folder; `None` is the
     // built-in beep.
     pub sound_file: Option<String>,
+    // Which sound plays: one of the built-in ones, or the own file.
+    pub sound_name: SoundName,
     // 0–100.
     pub volume: u8,
     // The header bell's count and list.
     pub bell: bool,
     // The taskbar or dock badge.
     pub badge: bool,
+}
+
+/// The status sound. All but `File` are made in the webview, with no files.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum SoundName {
+    #[default]
+    TwoTone,
+    Chime,
+    Ding,
+    Blip,
+    Pop,
+    Knock,
+    /// The person's own file (`sound_file`).
+    File,
+}
+
+/// The status section. A file from before `soundName` existed reads as the
+/// own file when one is set, else as the two-tone beep; a value that does
+/// not parse reads as the section's defaults.
+fn lenient_status<'de, D: serde::Deserializer<'de>>(de: D) -> Result<StatusSettings, D::Error> {
+    let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+    let named = value.get("soundName").is_some();
+    let mut status: StatusSettings = serde_json::from_value(value).unwrap_or_default();
+    if !named && status.sound_file.is_some() {
+        status.sound_name = SoundName::File;
+    }
+    Ok(status)
 }
 
 impl Default for StatusSettings {
@@ -1336,6 +1367,7 @@ impl Default for StatusSettings {
             os: true,
             sound: true,
             sound_file: None,
+            sound_name: SoundName::TwoTone,
             volume: 60,
             bell: true,
             badge: true,
@@ -1776,6 +1808,19 @@ mod tests {
     use crate::quick_commands::{QuickAction, QuickScope};
 
     #[test]
+    fn sound_name_defaults_from_sound_file() {
+        let read = |json: &str| -> Settings { serde_json::from_str(json).unwrap() };
+        let old_plain = read(r#"{"status":{"volume":10}}"#);
+        assert_eq!(old_plain.status.sound_name, SoundName::TwoTone);
+        let old_file = read(r#"{"status":{"soundFile":"C:/x/custom.wav"}}"#);
+        assert_eq!(old_file.status.sound_name, SoundName::File);
+        let chosen = read(r#"{"status":{"soundFile":"C:/x/custom.wav","soundName":"chime"}}"#);
+        assert_eq!(chosen.status.sound_name, SoundName::Chime);
+        let bad = read(r#"{"status":{"soundName":"nope","volume":10}}"#);
+        assert_eq!(bad.status, StatusSettings::default());
+    }
+
+    #[test]
     fn save_scrollback_defaults_true_and_reads_lenient() {
         assert!(TerminalSettings::default().save_scrollback);
         let read = |json: &str| serde_json::from_str::<TerminalSettings>(json).unwrap();
@@ -2047,6 +2092,7 @@ mod tests {
             StatusSettings {
                 sound_file: Some("a.wav".into()),
                 bell: false,
+                sound_name: SoundName::File,
                 ..StatusSettings::default()
             }
         );

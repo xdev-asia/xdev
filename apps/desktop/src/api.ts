@@ -45,6 +45,8 @@ import type {
   PtydStatus,
   SessionInfo,
   StatusSettings,
+  SoundName,
+  NotificationPermission,
   SettingsChanged,
   TerminalSettings,
   KeySettings,
@@ -323,6 +325,8 @@ export type {
   SessionInfo,
   OnQuit,
   StatusSettings,
+  SoundName,
+  NotificationPermission,
   HookEvent,
   HookDetail,
   Quota,
@@ -929,8 +933,15 @@ export interface Api {
   onStatusNotificationClick(cb: (ptyId: string) => void): Promise<() => void>;
   // The taskbar / dock badge; 0 clears it. Never rejects.
   statusBadge(count: number): Promise<void>;
-  // Copies the person's own sound (wav, mp3 or ogg, at most 1 MiB) or clears it with null;
-  // rejects with `bad_sound`.
+  // Removes the OS notifications still shown for one terminal (Linux; a no-op on macOS and Windows).
+  // Never rejects.
+  statusDismiss(ptyId: string): Promise<void>;
+  // What macOS says about this app's notifications; "unknown" elsewhere and in an unbundled dev run.
+  statusPermission(): Promise<NotificationPermission>;
+  // Opens the macOS pane for this app's notifications; rejects with `unsupported` off macOS.
+  statusOpenSettings(): Promise<void>;
+  // Copies the person's own sound (wav, mp3 or ogg, at most 5 MiB) or clears it with null;
+  // rejects with `bad_sound`. Picking one selects it (`soundName: "file"`); clearing goes back to "two-tone".
   statusSoundSet(path: string | null): Promise<StatusSettings>;
   // The own sound's bytes, or null when none is set or the file is gone.
   statusSound(): Promise<Uint8Array | null>;
@@ -1770,6 +1781,9 @@ const tauriApi: Api = {
   statusNotify: (title, body, ptyId) => call("status_notify", { title, body, ptyId }),
   onStatusNotificationClick: (cb) => listen<{ ptyId: string }>("status://notification-click", (e) => cb(e.payload.ptyId)),
   statusBadge: (count) => call("status_badge", { count }),
+  statusDismiss: (ptyId) => call<void>("status_dismiss", { ptyId }).catch(() => {}),
+  statusPermission: () => call("status_permission"),
+  statusOpenSettings: () => call("status_open_settings"),
   statusSoundSet: (path) => call("status_sound_set", { path }),
   statusSound: async () => {
     const bytes = await call<ArrayBuffer | number[] | null>("status_sound");

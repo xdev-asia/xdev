@@ -49,6 +49,12 @@ xdev-pty.workspace = true
 xdev-store.workspace = true
 xdev-workspace.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# Only to read the notification permission (Settings → Notifications).
+block2 = "0.6.2"
+objc2-foundation = "0.3.2"
+objc2-user-notifications = "0.3.2"
+
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 

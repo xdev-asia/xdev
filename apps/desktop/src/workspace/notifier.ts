@@ -13,7 +13,7 @@ export const BADGE_DEBOUNCE_MS = 200;
 export const FOCUS_JUMP_MS = 15000;
 
 export interface NotifierDeps {
-  api: Pick<Api, "statusNotify" | "statusBadge" | "trayAttention">;
+  api: Pick<Api, "statusNotify" | "statusBadge" | "trayAttention" | "statusDismiss">;
   /** The settings as stored now, read before each channel fires so a change in Settings applies at once. */
   settings(): Promise<StatusSettings>;
   /** Plays the status sound; true when it played (the player keeps its own 2 s floor). */
@@ -27,21 +27,30 @@ export const WORKTREE_MAX = 40;
 export const TITLE_MAX = 80;
 export const BODY_MAX = 180;
 
+/** Whitespace collapsed and cut at `max` code points, so a surrogate pair is never split. */
 function cut(text: string, max: number): string {
   const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
+  const chars = Array.from(flat);
+  return chars.length > max ? `${chars.slice(0, max - 1).join("").trimEnd()}…` : flat;
 }
 
 /**
  * The OS notification: worktree, tab (profile) and the state word in the title; in the body what the
- * hook said (`message`, else `error` on a failure, else `toolName`), or nothing. Never the prompt:
- * the hook file never holds it, and the terminal's own title is not used.
+ * hook said: its `message`; else on a failure the `error`; else "Using {tool}: {input}" or "Using
+ * {tool}"; else one line for the state. Never the prompt: the hook file never holds it, and the
+ * terminal's own title is not used.
  */
 export function noticeText(names: NoticeNames, status: Attention, detail: HookDetail | null, t: T): { title: string; body: string } {
   const word = t(`status.word.${status}`);
   const title = cut([cut(names.worktree, WORKTREE_MAX), names.tab, word].filter(Boolean).join(" · "), TITLE_MAX);
-  const said = detail?.message || (status === "failed" ? detail?.error : null) || detail?.toolName || "";
-  return { title, body: cut(said, BODY_MAX) };
+  const message = cut(detail?.message ?? "", BODY_MAX);
+  const error = status === "failed" ? cut(detail?.error ?? "", BODY_MAX) : "";
+  const tool = cut(detail?.toolName ?? "", BODY_MAX);
+  const input = cut(detail?.toolInput ?? "", BODY_MAX);
+  let body = message || error;
+  if (!body && tool) body = cut(input ? t("status.body.usingInput", { tool, input }) : t("status.body.using", { tool }), BODY_MAX);
+  if (!body && status !== "bell") body = t(`status.body.${status}`);
+  return { title, body };
 }
 
 /** Names for the notification text. Never the prompt: the tab name is the profile's, or one given by hand. */
@@ -55,6 +64,8 @@ export interface Notifier {
   attention(tab: Tab, status: Attention, names: NoticeNames, detail?: HookDetail | null): Promise<void>;
   /** The count of unread tabs; sent to the taskbar after `BADGE_DEBOUNCE_MS`, as 0 while the badge is off. */
   badge(count: number): void;
+  /** The tabs that are unread now; an OS notification for a tab that left the list is dismissed, once. */
+  unread(ptyIds: readonly string[]): void;
   /** The newest notification that reached the OS. */
   lastNotified(): { ptyId: string; at: number } | null;
   /** The pane of a notification sent within `FOCUS_JUMP_MS` of `now`, once; later calls get null. */
@@ -66,6 +77,8 @@ export interface Notifier {
 
 export function createNotifier(deps: NotifierDeps): Notifier {
   const recent = new Map<string, number>();
+  // Tabs with an OS notification on screen.
+  const notified = new Set<string>();
   let newest: { ptyId: string; at: number } | null = null;
   let jump: { ptyId: string; at: number } | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -96,6 +109,7 @@ export function createNotifier(deps: NotifierDeps): Notifier {
         const text = noticeText(names, status, detail, deps.t);
         await deps.api.statusNotify(text.title, text.body, tab.id);
         sent = true;
+        notified.add(tab.id);
         newest = jump = { ptyId: tab.id, at };
       } catch {
         // Best effort: the bell and the badge still say it.
@@ -103,6 +117,15 @@ export function createNotifier(deps: NotifierDeps): Notifier {
     }
     // A sound goes with the OS notification it belongs to; with that channel off it goes alone.
     if (settings.sound && (!settings.os || sent)) await deps.play(settings, at).catch(() => false);
+  }
+
+  function unread(ptyIds: readonly string[]): void {
+    const open = new Set(ptyIds);
+    for (const id of [...notified]) {
+      if (open.has(id)) continue;
+      notified.delete(id);
+      void deps.api.statusDismiss(id)?.catch?.(() => {});
+    }
   }
 
   function badge(count: number): void {
@@ -121,6 +144,7 @@ export function createNotifier(deps: NotifierDeps): Notifier {
   return {
     attention,
     badge,
+    unread,
     lastNotified: () => newest,
     takeFocusJump(now) {
       const found = jump && now - jump.at <= FOCUS_JUMP_MS ? jump.ptyId : null;

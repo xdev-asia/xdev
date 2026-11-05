@@ -1,4 +1,4 @@
-import type { Api, ApiError, HookDetail, HookEvent, PtyHook, StatusSettings } from "./api";
+import type { Api, ApiError, HookDetail, HookEvent, NotificationPermission, PtyHook, StatusSettings } from "./api";
 import type { SettingsEmit } from "./mockSettings";
 
 type StatusApi = Pick<
@@ -9,6 +9,9 @@ type StatusApi = Pick<
   | "statusNotify"
   | "onStatusNotificationClick"
   | "statusBadge"
+  | "statusDismiss"
+  | "statusPermission"
+  | "statusOpenSettings"
   | "statusSoundSet"
   | "statusSound"
   | "pickSoundFile"
@@ -22,6 +25,12 @@ export type MockStatus = StatusApi & {
   // What the app sent to the OS, newest last.
   __notifications: { title: string; body: string; ptyId: string }[];
   __badge(): number;
+  // The pane ids `statusDismiss` was called for, in order.
+  __dismissed: string[];
+  // What `statusPermission` answers next (default "unknown").
+  __setPermission(state: NotificationPermission): void;
+  // How many times `statusOpenSettings` was called.
+  __openedSettings(): number;
 };
 
 export const DEFAULT_STATUS: StatusSettings = {
@@ -35,6 +44,7 @@ export const DEFAULT_STATUS: StatusSettings = {
   os: true,
   sound: true,
   soundFile: null,
+  soundName: "two-tone",
   volume: 60,
   bell: true,
   badge: true,
@@ -49,6 +59,9 @@ export function createMockStatus(emit: SettingsEmit = () => {}): MockStatus {
   const hooks = new Set<(hook: PtyHook) => void>();
   const clicks = new Set<(ptyId: string) => void>();
   const notifications: MockStatus["__notifications"] = [];
+  const dismissed: string[] = [];
+  let permission: NotificationPermission = "unknown";
+  let opened = 0;
 
   return {
     async onPtyHook(cb) {
@@ -59,7 +72,8 @@ export function createMockStatus(emit: SettingsEmit = () => {}): MockStatus {
       return { ...settings };
     },
     async statusSettingsPut(next) {
-      settings = { ...next, soundFile: settings.soundFile, volume: Math.max(0, Math.min(100, Math.round(next.volume))) };
+      const soundName = next.soundName === "file" && settings.soundFile === null ? "two-tone" : next.soundName;
+      settings = { ...next, soundName, soundFile: settings.soundFile, volume: Math.max(0, Math.min(100, Math.round(next.volume))) };
       emit(["status"]);
       return { ...settings };
     },
@@ -73,13 +87,22 @@ export function createMockStatus(emit: SettingsEmit = () => {}): MockStatus {
     async statusBadge(count) {
       badge = count;
     },
+    async statusDismiss(ptyId) {
+      dismissed.push(ptyId);
+    },
+    async statusPermission() {
+      return permission;
+    },
+    async statusOpenSettings() {
+      opened += 1;
+    },
     async statusSoundSet(path) {
       if (path !== null && !SOUND.test(path)) {
         const error: ApiError = { code: "bad_sound" };
         return Promise.reject(error);
       }
       const ext = path?.match(SOUND)?.[1]?.toLowerCase();
-      settings = { ...settings, soundFile: ext ? `/demo/data/sounds/custom.${ext}` : null };
+      settings = { ...settings, soundFile: ext ? `/demo/data/sounds/custom.${ext}` : null, soundName: ext ? "file" : "two-tone" };
       emit(["status"]);
       return { ...settings };
     },
@@ -97,5 +120,10 @@ export function createMockStatus(emit: SettingsEmit = () => {}): MockStatus {
     },
     __notifications: notifications,
     __badge: () => badge,
+    __dismissed: dismissed,
+    __setPermission(state) {
+      permission = state;
+    },
+    __openedSettings: () => opened,
   };
 }

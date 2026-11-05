@@ -776,7 +776,7 @@ it("hidden worktree asking a question raises everything", async () => {
   expect(nodes(bell(view).props.children).find(n => n.props.className === "ws-bell-count")!.props.children).toBe("1");
   expect(view.of(LiveWorkspaceFooter)[0].props.waiting).toBe(1);
   // The OS hears the worktree and the tab, and the sound goes with it.
-  expect(notify).toHaveBeenCalledWith("oak · Claude Code · Needs you", "", tab.id);
+  expect(notify).toHaveBeenCalledWith("oak · Claude Code · Needs you", "Waiting for you.", tab.id);
   expect(sound.play).toHaveBeenCalledTimes(1);
 
   // The bell lists the tab; its row goes there.
@@ -876,6 +876,27 @@ it("the badge counts worktrees with something unread, not tabs", async () => {
   sessions.markRead(OAK);
   await rerun(view);
   expect(api.__badge()).toBe(0);
+});
+
+it("reading a notified tab dismisses its notification", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  const { sessions, tab } = attend(view);
+  api.__hook(tab.id, "needs-input");
+  await settle();
+  expect(api.__notifications.map(n => n.ptyId)).toEqual([tab.id]);
+  // Only the unread effect runs again: the effect that makes the notifier would start a new one.
+  const again = () => {
+    hooks.effects = [];
+    view.draw();
+    for (const effect of hooks.effects) if (String(effect).includes(".unread(")) effect();
+  };
+  again();
+  expect(api.__dismissed).toEqual([]);
+  sessions.markRead(OAK);
+  again();
+  again();
+  expect(api.__dismissed).toEqual([tab.id]);
 });
 
 it("the header button opens the jump palette and its actions reach the shell", async () => {
