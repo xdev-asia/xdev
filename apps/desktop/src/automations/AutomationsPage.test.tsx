@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { Segmented } from "@xdev-asia/ui";
 import { createMockApi, type AutomationInput } from "@/api";
 import type { MockApi } from "@/mockApi";
 import { mount, nodes, tick, type Node } from "@/kit/testHooks";
@@ -12,6 +13,7 @@ import { AutomationList } from "./AutomationList";
 import { AutomationRunDetails } from "./AutomationRunDetails";
 import { AutomationsPage } from "./AutomationsPage";
 import { DeleteAutomationDialog } from "./DeleteAutomationDialog";
+import { RunsDashboard } from "./RunsDashboard";
 import { TemplateEmptyState } from "./TemplateEmptyState";
 import { TEMPLATES } from "./templates";
 
@@ -273,4 +275,18 @@ it("opens a run's details, goes back, and reruns", async () => {
   expect(toast()).toContain("Automation run queued.");
   await m.settle();
   expect(find(m.all(), AutomationRunDetails)).toBeUndefined();
+});
+
+it("switches to the Runs view and back, with the one primary button kept", async () => {
+  const { m } = await open(async (api) => void (await api.automationCreate(input())));
+  expect(find(m.all(), RunsDashboard)).toBeUndefined();
+  const picker = m.all().find((n) => n.type === Segmented && n.props.label === "View")!;
+  expect(picker.props.options.map((o: { value: string }) => o.value)).toEqual(["list", "runs"]);
+  picker.props.onChange("runs");
+  const all = m.all();
+  expect(find(all, RunsDashboard)).toBeDefined();
+  expect(find(all, AutomationList)).toBeUndefined();
+  expect(all.filter((n) => n.props.variant === "primary")).toHaveLength(1);
+  picker.props.onChange("list");
+  expect(find(m.all(), AutomationList)).toBeDefined();
 });

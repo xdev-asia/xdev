@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
-import { Button, EmptyState, Icon, SearchInput, Toolbar, type MenuEntry } from "@xdev-asia/ui";
-import { type Api, type Automation, type AutomationRun, type AutomationsView, type ProfilesView, type RepoView, toApiError } from "@/api";
+import { Button, EmptyState, Icon, SearchInput, Segmented, Toolbar, type MenuEntry } from "@xdev-asia/ui";
+import { type Api, type Automation, type AutomationRun, type AutomationsView, type ProfilesView, type RepoView, type RunRow, toApiError } from "@/api";
 import { useI18n } from "@/i18n";
 import { pushToast } from "@/workspace/toastStore";
 import { useAutomationsSettings } from "@/settings/automationsSettings";
@@ -11,6 +11,7 @@ import { AutomationList, type RowAction } from "./AutomationList";
 import { AutomationRunDetails } from "./AutomationRunDetails";
 import { DeleteAutomationDialog, deleteAutomation } from "./DeleteAutomationDialog";
 import { MenuButton } from "./MenuButton";
+import { RunsDashboard } from "./RunsDashboard";
 import { TemplateEmptyState } from "./TemplateEmptyState";
 import { NO_QUERY, nextSort, visibleRows, type LastRunFilter, type ListQuery, type SortKey } from "./listModel";
 import { label as scheduleLabel } from "./schedule";
@@ -43,6 +44,9 @@ export function AutomationsPage(props: {
   const [deleting, setDeleting] = useState<Automation | null>(null);
   const [picking, setPicking] = useState(false);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
+  const [mode, setMode] = useState<"list" | "runs">("list");
+  // A run opened from the dashboard, which may belong to an automation that is not selected.
+  const [dashRun, setDashRun] = useState<AutomationRun | null>(null);
   const settings = useAutomationsSettings();
   const now = (props.now ?? Date.now)();
 
@@ -147,18 +151,31 @@ export function AutomationsPage(props: {
       title={t("automations.title")}
       actions={
         <>
-          <SearchInput
-            size="sm"
-            value={query.search}
-            placeholder={t("automations.search.placeholder")}
-            aria-label={t("automations.search.label")}
-            labels={{ search: t("automations.search.label"), clear: t("automations.search.clear") }}
-            onChange={(e) => setQuery({ ...query, search: e.target.value })}
-            onClear={() => setQuery({ ...query, search: "" })}
+          <Segmented
+            label={t("automations.view.label")}
+            value={mode}
+            options={[
+              { value: "list", label: t("automations.view.list") },
+              { value: "runs", label: t("automations.view.runs") },
+            ]}
+            onChange={(value) => setMode(value as "list" | "runs")}
           />
-          <MenuButton label={t("automations.filters")} items={filterItems} action="filters">
-            <Icon name="sliders" size={14} /> {t("automations.filters")}
-          </MenuButton>
+          {mode === "list" && (
+            <>
+              <SearchInput
+                size="sm"
+                value={query.search}
+                placeholder={t("automations.search.placeholder")}
+                aria-label={t("automations.search.label")}
+                labels={{ search: t("automations.search.label"), clear: t("automations.search.clear") }}
+                onChange={(e) => setQuery({ ...query, search: e.target.value })}
+                onClear={() => setQuery({ ...query, search: "" })}
+              />
+              <MenuButton label={t("automations.filters")} items={filterItems} action="filters">
+                <Icon name="sliders" size={14} /> {t("automations.filters")}
+              </MenuButton>
+            </>
+          )}
           <button type="button" className="ws-icon-btn" data-act="refresh" aria-label={t("automations.refresh")} title={t("automations.refresh")} onClick={reload}>
             <Icon name="restore" size={14} />
           </button>
@@ -207,7 +224,19 @@ export function AutomationsPage(props: {
     );
   }
 
-  const openRun = openRunId === null ? null : (runs.find((r) => r.id === openRunId) ?? null);
+  const openRun = openRunId === null ? null : (runs.find((r) => r.id === openRunId) ?? (dashRun?.id === openRunId ? dashRun : null));
+
+  // The dashboard row carries no output; the run itself is read for its details page.
+  async function openFromDashboard(row: RunRow): Promise<void> {
+    try {
+      const found = (await api.automationRuns(row.automationId)).find((r) => r.id === row.runId);
+      if (!found) return;
+      setDashRun(found);
+      setOpenRunId(found.id);
+    } catch (e) {
+      pushToast({ text: t("automations.toast.changeFailed", { code: toApiError(e).code }) });
+    }
+  }
   const dialogs = (
     <>
       {editing && (
@@ -264,27 +293,33 @@ export function AutomationsPage(props: {
   return (
     <section className="au-page" aria-label={t("automations.page.label")}>
       {toolbar}
-      {view.tooLong && (
-        <p className="au-note" role="status">
-          {t("automations.search.tooLong")}
-        </p>
+      {mode === "runs" ? (
+        <RunsDashboard api={api} reloadKey={tick} onOpen={(row) => void openFromDashboard(row)} />
+      ) : (
+        <>
+          {view.tooLong && (
+            <p className="au-note" role="status">
+              {t("automations.search.tooLong")}
+            </p>
+          )}
+          <div className="au-split">
+            <div className="au-main">{body}</div>
+            {current ? (
+              <AutomationDetail
+                automation={current}
+                schedule={schedules[current.id] ?? ""}
+                project={repoName(current.repoId)}
+                agentName={agentName(current.agent)}
+                runs={runs}
+                exists={worktreeExists}
+                onOpenRun={(run) => setOpenRunId(run.id)}
+              />
+            ) : (
+              automations.length > 0 && <p className="au-empty au-detail-empty">{t("automations.detail.empty")}</p>
+            )}
+          </div>
+        </>
       )}
-      <div className="au-split">
-        <div className="au-main">{body}</div>
-        {current ? (
-          <AutomationDetail
-            automation={current}
-            schedule={schedules[current.id] ?? ""}
-            project={repoName(current.repoId)}
-            agentName={agentName(current.agent)}
-            runs={runs}
-            exists={worktreeExists}
-            onOpenRun={(run) => setOpenRunId(run.id)}
-          />
-        ) : (
-          automations.length > 0 && <p className="au-empty au-detail-empty">{t("automations.detail.empty")}</p>
-        )}
-      </div>
       {dialogs}
     </section>
   );

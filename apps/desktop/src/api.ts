@@ -216,6 +216,11 @@ import type {
   Describe,
   DispatchResult,
   RunFinish,
+  RunRow,
+  RunTotals,
+  RunUsage,
+  RunsRange,
+  RunsSummary,
   ScheduleProblem,
 } from "@xdev/bindings";
 export type {
@@ -235,6 +240,11 @@ export type {
   Precheck,
   PrecheckResult,
   RunFinish,
+  RunRow,
+  RunTotals,
+  RunUsage,
+  RunsRange,
+  RunsSummary,
   RunStatus,
   RunTrigger,
   ScheduleProblem,
@@ -1480,6 +1490,8 @@ export interface Api {
   automationsList(): Promise<AutomationsView>;
   // The runs of one automation, newest first.
   automationRuns(automationId: string): Promise<AutomationRun[]>;
+  // Every run that began in the range (default 7d), newest first, with the tokens and cost of its agent session when one is matched, and the totals.
+  automationRunsSummary(range?: RunsRange): Promise<RunsSummary>;
   automationCreate(input: AutomationInput): Promise<Automation>;
   automationUpdate(id: string, input: AutomationInput): Promise<Automation>;
   automationSetEnabled(id: string, enabled: boolean): Promise<Automation>;
@@ -2132,6 +2144,7 @@ const tauriApi: Api = {
   onCliOpenTab: (cb) => listen<CliOpenTab>("cli://open-tab", (e) => cb(e.payload)),
   automationsList: () => call("automations_list"),
   automationRuns: (automationId) => call("automation_runs", { automationId }),
+  automationRunsSummary: (range) => call("automation_runs_summary", { range: range ?? null }),
   automationCreate: (input) => call("automation_create", { input }),
   automationUpdate: (id, input) => call("automation_update", { id, input }),
   automationSetEnabled: (id, enabled) => call("automation_set_enabled", { id, enabled }),
@@ -2196,7 +2209,7 @@ function browserApi(): Api {
   const xdevId = params.get("account") === "in" ? "signedIn" : "signedOut";
   // `?update=0.4.0` simulates a downloaded update, so the restart button can be previewed.
   const pending = params.get("update");
-  const mock = createMockApi(DEMO_SEED, { repo: !params.has("norepo"), commits: DEMO_COMMITS, runDelayMs: 4000, xdevId, update: pending });
+  const mock = createMockApi(DEMO_SEED, { repo: !params.has("norepo"), commits: DEMO_COMMITS, runDelayMs: 4000, automationsDemo: true, xdevId, update: pending });
   // Lets the preview simulate an AI agent or another editor from the devtools console.
   Object.assign(window, { xdevMock: mock });
   // The preview lands in the demo vault so the main layout is reachable without a dialog;

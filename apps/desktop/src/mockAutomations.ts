@@ -9,12 +9,18 @@ import type {
   DispatchResult,
   FailureCode,
   RunFinish,
+  RunUsage,
+  RunsRange,
+  RunsSummary,
+  RunRow,
+  RunTotals,
 } from "./api";
 
 type AutomationsApi = Pick<
   Api,
   | "automationsList"
   | "automationRuns"
+  | "automationRunsSummary"
   | "automationCreate"
   | "automationUpdate"
   | "automationSetEnabled"
@@ -38,6 +44,8 @@ export type MockAutomations = AutomationsApi & {
   /** Every dispatch result and run finish the UI reported, oldest first. */
   __automationReports(): { results: DispatchResult[]; finishes: RunFinish[] };
   /** Stores a run as the backend would, for list and history tests. */
+  /** Sets what a run's agent session used; a run without it has no usage. */
+  __automationUsage(runId: string, usage: RunUsage): void;
   __automationAddRun(run: Partial<AutomationRun> & Pick<AutomationRun, "automationId">): AutomationRun;
 };
 
@@ -87,11 +95,27 @@ function mockNext(from: number, count: number): number[] {
 
 const reject = (code: string, detail?: string): Promise<never> => Promise.reject(detail === undefined ? { code } : { code, detail });
 
-/** The automations backend's demo: an in-memory store; a test plays the tick through the `__automation` hooks. */
-export function createMockAutomations(options: { now?: () => number } = {}): MockAutomations {
+const RANGE_MS: Record<RunsRange, number> = { "24h": 24 * 60 * MINUTE, "7d": 7 * 24 * 60 * MINUTE, "30d": 30 * 24 * 60 * MINUTE };
+
+const cost = (usd: number): RunUsage["cost"] => ({ nanos: Math.round(usd * 1e9), unpriced: false, priced: true });
+
+function addTotals(t: RunTotals, row: RunRow): void {
+  t.runs += 1;
+  if (row.status === "completed") t.ok += 1;
+  if (row.status === "dispatch_failed") t.failed += 1;
+  if (row.usage) {
+    t.withUsage += 1;
+    t.tokens += row.usage.tokensIn + row.usage.tokensOut + row.usage.tokensCache;
+    t.cost = { nanos: t.cost.nanos + row.usage.cost.nanos, priced: t.cost.priced || row.usage.cost.priced, unpriced: t.cost.unpriced || row.usage.cost.unpriced };
+  }
+}
+
+/** The demo's automations backend: an in-memory store; a test plays the tick through the `__automation` hooks. `demo` seeds two automations with a week of runs, some with usage and some without. */
+export function createMockAutomations(options: { now?: () => number; demo?: boolean } = {}): MockAutomations {
   const now = options.now ?? (() => Date.now());
   let automations: Automation[] = [];
   let runs: AutomationRun[] = [];
+  const usage = new Map<string, RunUsage>();
   let seq = 0;
   let ready = 0;
   const results: DispatchResult[] = [];
@@ -171,12 +195,41 @@ export function createMockAutomations(options: { now?: () => number } = {}): Moc
     changed(run.automationId);
   };
 
-  return {
+  const summary = (range: RunsRange): RunsSummary => {
+    const at = now();
+    const since = at - RANGE_MS[range];
+    const placed = (r: AutomationRun) => r.startedAt ?? r.scheduledFor;
+    const rows: RunRow[] = [];
+    for (const r of [...runs].sort((x, y) => placed(y) - placed(x))) {
+      const a = automations.find((x) => x.id === r.automationId);
+      if (!a || placed(r) < since || placed(r) > at) continue;
+      rows.push({
+        runId: r.id, automationId: a.id, automationName: a.name, startedAt: r.startedAt, finishedAt: r.finishedAt, status: r.status,
+        durationMs: r.startedAt !== null && r.finishedAt !== null && r.finishedAt >= r.startedAt ? r.finishedAt - r.startedAt : null,
+        agent: a.agent, usage: usage.get(r.id) ?? null,
+      });
+    }
+    const empty = (): RunTotals => ({ runs: 0, ok: 0, failed: 0, withUsage: 0, tokens: 0, cost: { nanos: 0, unpriced: false, priced: false } });
+    const totals = empty();
+    const per = new Map<string, { automationName: string; totals: RunTotals }>();
+    for (const row of rows) {
+      addTotals(totals, row);
+      const entry = per.get(row.automationId) ?? { automationName: row.automationName, totals: empty() };
+      addTotals(entry.totals, row);
+      per.set(row.automationId, entry);
+    }
+    return { range, since, runs: rows, byAutomation: [...per].map(([automationId, e]) => ({ automationId, ...e })), totals };
+  };
+
+  const api: MockAutomations = {
     async automationsList() {
       return structuredClone({ automations, lastRuns: lastRuns() });
     },
     async automationRuns(automationId) {
       return structuredClone(runs.filter((r) => r.automationId === automationId).sort((x, y) => y.runNumber - x.runNumber));
+    },
+    async automationRunsSummary(range) {
+      return structuredClone(summary(range ?? "7d"));
     },
     async automationCreate(input) {
       const a = fill(`auto-${++seq}`, normalize(input), now());
@@ -261,6 +314,9 @@ export function createMockAutomations(options: { now?: () => number } = {}): Moc
     __automationDispatch: (e) => [...dispatches].forEach((cb) => cb(structuredClone(e))),
     __automationReady: () => ready,
     __automationReports: () => structuredClone({ results, finishes }),
+    __automationUsage(runId, u) {
+      usage.set(runId, structuredClone(u));
+    },
     __automationAddRun(patch) {
       const a = automations.find((x) => x.id === patch.automationId);
       if (!a) throw new Error(`no automation ${patch.automationId}`);
@@ -269,4 +325,29 @@ export function createMockAutomations(options: { now?: () => number } = {}): Moc
       return structuredClone(run);
     },
   };
+
+  if (options.demo) {
+    const at = now();
+    const input = (name: string, agent: string): AutomationInput => ({
+      name, prompt: "Run the checks and report.", precheck: null, agent, extraAgentArgs: null, repoId: "demo", workspaceMode: "existing",
+      worktree: "/demo/repo", baseBranch: null, setupDecision: "inherit", reuseSession: false, timezone: "UTC", rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+      dtstart: at, enabled: true, missedRunGraceMinutes: 720,
+    });
+    const nightly = fill(`auto-${++seq}`, input("Nightly audit", "claude"), at);
+    const triage = fill(`auto-${++seq}`, input("Issue triage", "codex"), at);
+    automations.push(nightly, triage);
+    const HOUR = 60 * MINUTE;
+    const seed = (a: Automation, hoursAgo: number, status: AutomationRun["status"], minutes: number, u?: RunUsage) => {
+      const start = at - hoursAgo * HOUR;
+      const run = newRun(a, { status, startedAt: start, scheduledFor: start, createdAt: start, finishedAt: start + minutes * MINUTE, worktree: "/demo/repo", worktreeName: "repo", trigger: "scheduled" });
+      if (u) usage.set(run.id, u);
+    };
+    seed(nightly, 3, "completed", 12, { tokensIn: 41_200, tokensOut: 9_800, tokensCache: 310_000, cost: cost(0.42) });
+    seed(nightly, 27, "completed", 9, { tokensIn: 38_000, tokensOut: 7_100, tokensCache: 280_000, cost: cost(0.36) });
+    seed(nightly, 51, "dispatch_failed", 1);
+    seed(triage, 6, "completed", 4, { tokensIn: 12_400, tokensOut: 2_300, tokensCache: 0, cost: cost(0.009) });
+    seed(triage, 30, "completed", 5);
+    seed(triage, 100, "completed", 6, { tokensIn: 15_000, tokensOut: 3_000, tokensCache: 20_000, cost: cost(0.02) });
+  }
+  return api;
 }

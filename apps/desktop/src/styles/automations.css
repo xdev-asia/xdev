@@ -381,3 +381,61 @@
     display: none;
   }
 }
+
+/* Runs dashboard: a stats row over a table that stacks into labelled rows on a narrow pane. */
+.au-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-3);
+  min-width: 0;
+}
+
+.au-dash-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-2);
+}
+
+.au-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--x-space-3);
+}
+
+@media (max-width: 640px) {
+  .au-dash thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .au-dash,
+  .au-dash tbody,
+  .au-dash tr,
+  .au-dash td {
+    display: block;
+  }
+
+  .au-dash tr {
+    padding: var(--x-space-2) 0;
+    border-bottom: 1px solid var(--x-color-line);
+  }
+
+  .au-dash td {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--x-space-3);
+    padding: var(--x-space-1) var(--x-space-3);
+    border-bottom: 0;
+    text-align: right;
+  }
+
+  .au-dash td::before {
+    content: attr(data-label);
+    color: var(--x-color-muted);
+    font-size: 12px;
+    text-align: left;
+  }
+}
