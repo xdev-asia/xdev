@@ -63,6 +63,8 @@ import type {
   OpenInSettings,
   OpenTarget,
   CloneProgress,
+  NestedRepo,
+  NestedScanResult,
   CreateProject,
   Created,
   NamePreview,
@@ -488,6 +490,8 @@ export type {
   OpenInSettings,
   OpenTarget,
   CloneProgress,
+  NestedRepo,
+  NestedScanResult,
   CreateProject,
   Created,
   NamePreview,
@@ -1038,6 +1042,11 @@ export interface Api {
   // Records a worktree from `RepoView.found`. Rejects with `worktree_exists` when it is already
   // recorded and `worktree_unknown` when no repo has it.
   worktreeAdopt(path: string): Promise<WorktreeView>;
+  // The repos under a folder, a few levels down (`.git` folders and files; symlinks, `node_modules` and
+  // `target` are skipped). Nothing is added. `cancelled` when `cancelNestedScan` cut it short.
+  scanNestedRepos(root: string): Promise<NestedScanResult>;
+  // Stops the scan running now; it resolves with what it had found.
+  cancelNestedScan(): Promise<void>;
   // Repo vaults (each repo's `docs/`, `exists: false` when there is none) then shared vaults.
   vaultList(): Promise<VaultView[]>;
   // Rejects with `bad_path` for a folder that is not there, `vault_exists` for one already listed.
@@ -1882,6 +1891,8 @@ const tauriApi: Api = {
   repoHookTrust: (path, kind, hash) => call("repo_hook_trust", { path, kind, hash }),
   worktreeArchiveRun: (path) => call("worktree_archive_run", { path }),
   worktreeAdopt: (path) => call("worktree_adopt", { path }),
+  scanNestedRepos: (root) => call("scan_nested_repos", { root }),
+  cancelNestedScan: () => call("cancel_nested_scan"),
   vaultList: () => call("vault_list"),
   vaultAdd: (path) => call("vault_add", { path }),
   vaultForget: (id) => call("vault_forget", { id }),

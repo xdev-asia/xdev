@@ -319,7 +319,7 @@ it("Open folder takes several folders; one failure of several is one toast, the 
   expect(view.html()).not.toContain(en("error.no_repo"));
 });
 
-it("Open folder with one failing folder shows the error notice, not a toast", async () => {
+it("Open folder with one folder that is no repo opens the dialog scanning it", async () => {
   const api = createMockApi({});
   vi.spyOn(api, "repoAdd").mockRejectedValue({ code: "no_repo" });
   vi.spyOn(api, "pickFolders").mockResolvedValueOnce(["/code/bad"]);
@@ -327,7 +327,18 @@ it("Open folder with one failing folder shows the error notice, not a toast", as
   view.list().props.onAddRepo();
   await view.of(AddProjectDialog)[0].props.onOpenFolder();
   await tick();
-  expect(view.html()).toContain(en("error.no_repo"));
+  expect(view.of(AddProjectDialog)[0].props.scanRoot).toBe("/code/bad");
+});
+
+it("Open folder with one failing folder shows the error notice, not a toast", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "repoAdd").mockRejectedValue({ code: "exists" });
+  vi.spyOn(api, "pickFolders").mockResolvedValueOnce(["/code/bad"]);
+  const view = await harness(api);
+  view.list().props.onAddRepo();
+  await view.of(AddProjectDialog)[0].props.onOpenFolder();
+  await tick();
+  expect(view.html()).toContain(en("error.exists"));
 });
 
 it("the create dialog gets the name preview from the api", async () => {
