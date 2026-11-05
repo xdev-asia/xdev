@@ -19,6 +19,7 @@ import { RepoBadge } from "@/workspace/RepoBadge";
 import { RemoveRepoDialog } from "@/workspace/RemoveRepoDialog";
 import { removeRepo } from "@/workspace/removeRepo";
 import { colorField, ghField, iconField, identityPatch, shown, type GhState, type IdentityDraft } from "./repoIdentityForm";
+import { McpConfigs } from "./McpConfigs";
 import { SettingGroup, SettingRow } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
@@ -53,6 +54,7 @@ function fieldOf(code: ApiError["code"]): Failure["field"] {
 
 const ISSUE_IDS = ["repos.issueCommand"];
 const IDENTITY_IDS = ["repos.color", "repos.icon", "repos.ghAccount"];
+const MCP_IDS = ["repos.mcpConfigs"];
 const SCRIPT_IDS = ["repos.scriptPolicy", "repos.scriptSource", "repos.localScripts", "repos.sharedScripts", "repos.repoFile"];
 
 /** One form per repo: short name, base ref, worktree folder and setup scripts. Save sends only what changed. */
@@ -554,6 +556,14 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
               <div className="ws-fields">
                 <SettingRow id="repos.issueCommand" filter={filter}>
                   {issueRow(repo)}
+                </SettingRow>
+              </div>
+            </SettingGroup>
+            <SettingGroup ids={MCP_IDS} filter={filter}>
+              <h4 className="settings-group">{t("settings.repos.mcp.title")}</h4>
+              <div className="ws-fields">
+                <SettingRow id="repos.mcpConfigs" filter={filter}>
+                  <McpConfigs api={api} repoPath={repo.path} />
                 </SettingRow>
               </div>
             </SettingGroup>

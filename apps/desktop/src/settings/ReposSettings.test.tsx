@@ -6,6 +6,7 @@ import { createMockApi, type RepoView } from "@/api";
 import { onOpenFile } from "@/files/openFile";
 import { translate } from "@/i18n";
 import { DEMO_WORKSPACE, type MockRepoFile } from "@/mockWorkspace";
+import { McpConfigs } from "./McpConfigs";
 import { ReposSettings } from "./ReposSettings";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
@@ -375,4 +376,11 @@ it("the preview shows the effective template: local, else trusted shared, else t
   expect(preview().props.children).toBe("Shared 123");
   v.type("demo-xdev", "localIssueCommand", "Local {number}");
   expect(preview().props.children).toBe("Local 123");
+});
+
+it("the repo form has an MCP configs row for that repo's checkout", async () => {
+  const v = await view();
+  const all = nodes(v.form("demo-xdev"));
+  expect(all.some((n) => n.props["id"] === "repos.mcpConfigs")).toBe(true);
+  expect(all.find((n) => n.type === McpConfigs)?.props.repoPath).toBe("/demo/xdev");
 });
