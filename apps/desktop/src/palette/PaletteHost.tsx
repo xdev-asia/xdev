@@ -15,6 +15,7 @@ import { actionItems, crashItems, quickCommandItems, settingItems, tabItems, wor
 import { JumpPalette } from "./JumpPalette";
 import { chatItems, taskItems } from "./moreItems";
 import { RecentStore } from "./recent";
+import { conversationItems } from "@/conversation/conversationStore";
 
 /** What the palette can make the shell do; the shell supplies each one. */
 export interface PaletteActions {
@@ -185,6 +186,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       ...crashItems(t, () => openCrashDialog({ latest: true })),
       ...missionItems(t),
       ...resourceItems(t),
+      ...conversationItems(t, front),
       ...(current && actions.runQuickCommand && actions.newQuickCommand
         ? quickCommandItems([...picked.global, ...picked.project], repoOfCurrent?.shortName ?? "", t, { run: actions.runQuickCommand, create: actions.newQuickCommand })
         : []),

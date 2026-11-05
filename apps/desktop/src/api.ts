@@ -352,6 +352,8 @@ export type { CliStatus } from "@xdev/bindings";
 export type { McpActivityView, McpHealth, McpToolView };
 import type { Grant as LinkGrant, Message as OrchMessage, MissionSettings, MissionTab, MissionView, TabLink, TabWorker, Worker as OrchWorker } from "@xdev/bindings";
 export type { LinkGrant, MissionSettings, MissionTab, MissionView, OrchMessage, OrchWorker, TabLink, TabWorker };
+import type { Conversation, ConversationEntry, ConversationTool } from "@xdev/bindings";
+export type { Conversation, ConversationEntry, ConversationTool };
 export type { Breadcrumb, CrashDetail, CrashReport, DiagnosticsExport, RenderCrash, StartupReport, StartupStep } from "@xdev/bindings";
 export type { RestoreMode } from "@xdev/bindings";
 export type { Theme, EditorTheme, SidebarLook, StatusBarItems, TitlebarMode } from "@xdev/bindings";
@@ -1754,6 +1756,8 @@ export interface Api {
   orchestrationWorkerFailover(tab: string): Promise<FailedOver | null>;
   // `orchestration://failover`: a worker failed over, restarted, or was marked failed; once each.
   onOrchestrationFailover(cb: (e: WorkerFailover) => void): Promise<() => void>;
+  /** One page of an agent session's conversation (its CLI session id or `<home id>:<id>` key): messages, tool steps and markers. `from` absent gives the last page; `limit` is 200 when absent, at most 1000. Rejects `not_found`, `bad_path`, `io`. */
+  agentConversation(key: string, from?: number, limit?: number): Promise<Conversation>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2471,6 +2475,7 @@ const tauriApi: Api = {
   orchestrationTabStop: (tab) => call("orchestration_tab_stop", { tab }),
   orchestrationWorkerFailover: (tab) => call("orchestration_worker_failover", { tab }),
   onOrchestrationFailover: (cb) => listen<WorkerFailover>("orchestration://failover", (e) => cb(e.payload)),
+  agentConversation: (key, from, limit) => call("agent_conversation", { key, from: from ?? null, limit: limit ?? null }),
 };
 
 const DEMO_CRASH: CrashReport = {

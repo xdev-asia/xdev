@@ -340,6 +340,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     crate::orch_sweep::FailedOver::export_all(cfg)?;
     xdev_orch::FailReason::export_all(cfg)?;
     xdev_orch::FailoverKind::export_all(cfg)?;
+    crate::conversation::Conversation::export_all(cfg)?;
     Ok(())
 }
 
