@@ -538,6 +538,7 @@ pub fn run() {
                 let mode = shell::quit_mode(app);
                 let on_quit = shell::on_quit_for(mode, settings_store::read(app).terminal.on_quit);
                 automations::stop(app);
+                app.state::<app_stats::AppStatsHub>().close_all();
                 app.state::<pty::Ptys>().quit(on_quit);
                 app.state::<power::Awake>().release();
                 if let Some(running) = app.try_state::<endpoint::Running>() {

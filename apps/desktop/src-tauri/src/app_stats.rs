@@ -187,31 +187,99 @@ pub struct AppStatsHub {
 }
 
 impl AppStatsHub {
-    pub(crate) fn record_spawn(&self, _data_dir: &Path) {}
-    pub(crate) fn record_pr(&self, _data_dir: &Path, _url: &str) {}
-    pub(crate) fn busy(&self, _data_dir: &Path, _tab: &str, _working: bool) {}
-    pub(crate) fn close_all(&self) {
-        let _ = (&self.inner, &self.epoch);
+    fn mono_now(&self) -> u64 {
+        self.epoch.get_or_init(Instant::now).elapsed().as_millis() as u64
     }
+
+    /// Runs `f` on the stats loaded from `data_dir` (read on first use). Saves when `f` returns true;
+    /// a failed save is logged and never returned.
+    pub(crate) fn with(&self, data_dir: &Path, f: impl FnOnce(&mut Stats, u64, i64) -> bool) {
+        let mono = self.mono_now();
+        let wall = wall_now_ms();
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.as_ref().is_none_or(|(dir, _)| dir != data_dir) {
+            let path = data_dir.join(FILE);
+            *guard = Some((data_dir.to_path_buf(), Stats::load(&path)));
+        }
+        let Some((dir, stats)) = guard.as_mut() else {
+            return;
+        };
+        if f(stats, mono, wall) {
+            if let Err(e) = stats.save(&dir.join(FILE)) {
+                eprintln!("app stats: cannot save: {e}");
+            }
+        }
+    }
+
+    pub(crate) fn record_spawn(&self, data_dir: &Path) {
+        self.with(data_dir, |s, _, wall| s.agent_started(wall));
+    }
+
+    pub(crate) fn record_pr(&self, data_dir: &Path, url: &str) {
+        self.with(data_dir, |s, _, wall| s.pr_seen(url, wall));
+    }
+
+    pub(crate) fn busy(&self, data_dir: &Path, tab: &str, working: bool) {
+        self.with(data_dir, |s, mono, wall| s.busy(tab, working, mono, wall));
+    }
+
+    /// Closes every running span, at quit. Does nothing when nothing was ever loaded.
+    pub(crate) fn close_all(&self) {
+        let mono = self.mono_now();
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let Some((dir, stats)) = guard.as_mut() else {
+            return;
+        };
+        if stats.close_all(mono) {
+            if let Err(e) = stats.save(&dir.join(FILE)) {
+                eprintln!("app stats: cannot save: {e}");
+            }
+        }
+    }
+}
+
+fn wall_now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as i64)
+}
+
+/// A tab id the busy command accepts: not empty, at most `TAB_ID_MAX` bytes.
+pub(crate) fn valid_tab_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= TAB_ID_MAX
 }
 
 #[tauri::command]
 pub fn app_stats_get(
     state: State<'_, AppState>,
-    _hub: State<'_, AppStatsHub>,
+    hub: State<'_, AppStatsHub>,
 ) -> Result<AppStatsView, CmdError> {
-    data_dir(&state)?;
-    Ok(Stats::default().view(0))
+    let dir = data_dir(&state)?;
+    let mut out = None;
+    hub.with(dir, |s, mono, _| {
+        out = Some(s.view(mono));
+        false
+    });
+    out.ok_or(CmdError {
+        code: "io",
+        detail: Some("stats unavailable".into()),
+    })
 }
 
 #[tauri::command]
 pub fn app_stats_busy(
     state: State<'_, AppState>,
-    _hub: State<'_, AppStatsHub>,
-    _tab_id: String,
-    _working: bool,
+    hub: State<'_, AppStatsHub>,
+    tab_id: String,
+    working: bool,
 ) -> Result<(), CmdError> {
-    data_dir(&state)?;
+    if !valid_tab_id(&tab_id) {
+        return Err(CmdError {
+            code: "bad_arg",
+            detail: Some("tab id".into()),
+        });
+    }
+    hub.busy(data_dir(&state)?, &tab_id, working);
     Ok(())
 }
 
@@ -373,5 +441,41 @@ mod tests {
         assert_eq!(s.live.len(), 1000);
         assert!(!s.live.contains_key("t0"));
         assert_eq!(s.saved.agent_busy_ms, 5_000);
+    }
+
+    #[test]
+    fn hub_loads_lazily_and_saves_on_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = AppStatsHub::default();
+        assert!(!file(&dir).exists());
+        hub.record_spawn(dir.path());
+        hub.record_spawn(dir.path());
+        assert_eq!(Stats::load(&file(&dir)).view(0).agents_started, 2);
+        hub.record_pr(dir.path(), "https://x/pr/1");
+        hub.record_pr(dir.path(), "https://x/pr/1");
+        assert_eq!(Stats::load(&file(&dir)).view(0).prs_created, 1);
+    }
+
+    #[test]
+    fn hub_close_all_without_load_is_a_noop() {
+        AppStatsHub::default().close_all();
+    }
+
+    #[test]
+    fn hub_busy_closes_a_span_and_saves() {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = AppStatsHub::default();
+        hub.busy(dir.path(), "t", true);
+        assert!(!file(&dir).exists());
+        hub.busy(dir.path(), "t", false);
+        assert!(file(&dir).exists());
+    }
+
+    #[test]
+    fn busy_command_rejects_empty_and_long_tab_ids() {
+        assert!(!valid_tab_id(""));
+        assert!(!valid_tab_id(&"a".repeat(TAB_ID_MAX + 1)));
+        assert!(valid_tab_id("tab-1"));
+        assert!(valid_tab_id(&"a".repeat(TAB_ID_MAX)));
     }
 }
