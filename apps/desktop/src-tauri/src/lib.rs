@@ -1,4 +1,5 @@
 mod accounts;
+mod agent_path;
 mod agent_sessions;
 mod app_menu;
 mod atomic;
@@ -327,6 +328,8 @@ pub fn run() {
             profiles::profile_remove,
             profiles::profile_reset,
             profiles::profiles_defaults,
+            profiles::agents_refresh,
+            profiles::agent_docs_open,
             profiles::shell_put,
             profiles::shell_remove,
             workspace::workspace_list,

@@ -451,6 +451,20 @@ pub(crate) fn launch_for(
     resume: Option<&str>,
     fork: bool,
 ) -> Result<Launch, CmdError> {
+    launch_with_prompt(data_dir, id, account, hooks, resume, fork, None)
+}
+
+/// `launch_for` with a first prompt for the agent (`Launch::prompt_argv` or
+/// `prompt_after`).
+pub(crate) fn launch_with_prompt(
+    data_dir: &Path,
+    id: &str,
+    account: Option<&str>,
+    hooks: Option<&Path>,
+    resume: Option<&str>,
+    fork: bool,
+    prompt: Option<&str>,
+) -> Result<Launch, CmdError> {
     let profiles = Profiles::load(data_dir).map_err(LaunchError::from)?;
     let accounts = Registry::load(data_dir)?;
     // Only the shell ids look at the shells; `wsl.exe` is not asked for an agent.
@@ -470,7 +484,7 @@ pub(crate) fn launch_for(
         shells: &shells,
         find: &find,
         account,
-        prompt: None,
+        prompt,
     };
     let mut launch = resolve(id, &ctx)?;
     match (resume, fork) {
@@ -581,6 +595,12 @@ pub(crate) fn spawn_launch(
     let (program, args) = launch.command();
     let prompt_after = launch.prompt_after;
     let mut env = launch.env;
+    // The PATH `agents_refresh` read, unless the profile sets its own.
+    if let Some(path) = xdev_agent::path_override()
+        && !env.iter().any(|(k, _)| k.eq_ignore_ascii_case("PATH"))
+    {
+        env.push(("PATH".to_owned(), path));
+    }
     env.push(("XDEV_PTY_ID".to_owned(), OsString::from(&id)));
     // Agents run `xdev orchestration ...` from here.
     if let Ok(exe) = std::env::current_exe() {
@@ -853,19 +873,21 @@ pub fn pty_spawn(
     out: Channel<InvokeResponseBody>,
     resume: Option<String>,
     fork: Option<bool>,
+    prompt: Option<String>,
 ) -> Result<PtyInfo, CmdError> {
     let data = data_dir(&state)?;
     let launch = if profile_id == SETUP_PROFILE {
         setup_launch(data, &cwd)?
     } else {
         let hooks = hooks_now(&app);
-        launch_for(
+        launch_with_prompt(
             data,
             &profile_id,
             account.as_deref(),
             hooks.as_deref(),
             resume.as_deref(),
             fork.unwrap_or(false),
+            prompt.as_deref(),
         )?
     };
     let exit_id = id.clone();

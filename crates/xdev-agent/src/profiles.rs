@@ -75,7 +75,8 @@ impl Cli {
         }
     }
 
-    pub(crate) fn of_id(id: &str) -> Option<Cli> {
+    /// The built-in agent with this profile id.
+    pub fn of_id(id: &str) -> Option<Cli> {
         Cli::ALL.into_iter().find(|cli| cli.as_str() == id)
     }
 

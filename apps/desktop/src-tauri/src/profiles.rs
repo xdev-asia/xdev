@@ -6,11 +6,13 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use serde::Serialize;
+use tauri::AppHandle;
 use tauri::State;
+use tauri_plugin_opener::OpenerExt;
 use xdev_agent::{
-    Approvals, CustomShell, DefaultAgent, Permissions, Profile, ProfileError, Profiles, PromptMode,
-    ShellKind, default_shell_id, efforts, find_builtin, find_program, has_permission_args,
-    list_shells, modes, pick_agent, spec,
+    Approvals, Cli, CustomShell, DefaultAgent, Permissions, Profile, ProfileError, Profiles,
+    PromptMode, ShellKind, default_shell_id, efforts, find_builtin, find_program,
+    has_permission_args, list_shells, modes, pick_agent, set_path_override, spec,
 };
 
 use crate::accounts::data_dir;
@@ -223,6 +225,37 @@ pub fn profiles_defaults(
     })
 }
 
+/// Reads the PATH a new terminal gets, uses it to find agents and to start
+/// them from now on, and shows the profiles again. A PATH that cannot be read
+/// keeps the old one.
+#[tauri::command(async)]
+pub fn agents_refresh(state: State<'_, AppState>) -> Result<ProfilesView, CmdError> {
+    if let Some(path) = crate::agent_path::refresh() {
+        set_path_override(Some(path));
+    }
+    view(data_dir(&state)?, &detect, distros())
+}
+
+/// The docs or install page of a built-in agent.
+pub(crate) fn agent_docs_url(id: &str) -> Result<&'static str, CmdError> {
+    Cli::of_id(id)
+        .map(|cli| spec(cli).docs_url)
+        .ok_or(CmdError {
+            code: "unknown_profile",
+            detail: Some(id.to_owned()),
+        })
+}
+
+#[tauri::command]
+pub fn agent_docs_open(app: AppHandle, id: String) -> Result<(), CmdError> {
+    app.opener()
+        .open_url(agent_docs_url(&id)?, None::<&str>)
+        .map_err(|e| CmdError {
+            code: "open_failed",
+            detail: Some(e.to_string()),
+        })
+}
+
 #[tauri::command(async)]
 pub fn shell_put(
     state: State<'_, AppState>,
@@ -277,6 +310,76 @@ mod tests {
         assert_eq!(v.default_agent, DefaultAgent::Auto);
         assert!(v.shells.iter().all(|s| s.id.starts_with("shell:")));
         assert!(v.shells.iter().any(|s| s.id == v.default_shell));
+    }
+
+    fn only(ids: &'static [&'static str]) -> impl Fn(&Profile) -> Option<PathBuf> {
+        move |p| {
+            ids.contains(&p.id.as_str())
+                .then(|| PathBuf::from("/bin/x"))
+        }
+    }
+
+    #[test]
+    fn view_reports_modes_custom_args_and_the_resolved_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock = ProfilesLock::default();
+        // Claude is missing: `auto` picks codex.
+        let v = view(dir.path(), &only(&["codex", "aider"]), &[]).unwrap();
+        assert_eq!(v.default_agent, DefaultAgent::Auto);
+        assert_eq!(v.resolved_default.as_deref(), Some("codex"));
+        let by = |id: &str| v.profiles.iter().find(|p| p.profile.id == id).unwrap();
+        assert_eq!(
+            by("claude").modes,
+            [
+                Permissions::Ask,
+                Permissions::AcceptEdits,
+                Permissions::Auto,
+                Permissions::Skip
+            ]
+        );
+        assert_eq!(by("opencode").modes, [Permissions::Ask]);
+        assert!(by("aider").prompt_after && !by("claude").prompt_after);
+        assert!(by("devin").docs);
+        assert!(!by("claude").custom_args);
+        // Nothing installed: a shell.
+        let none = view(dir.path(), &only(&[]), &[]).unwrap();
+        assert_eq!(none.resolved_default, None);
+        // A saved default that is not installed falls back to the order.
+        let saved = update(dir.path(), &lock, &only(&["goose"]), &[], |p| {
+            p.set_defaults(Approvals::Ask, DefaultAgent::Agent("codex".into()), None)
+        })
+        .unwrap();
+        assert_eq!(saved.resolved_default.as_deref(), Some("goose"));
+        // Blank is a shell whatever is installed.
+        let blank = update(dir.path(), &lock, &only(&["goose"]), &[], |p| {
+            p.set_defaults(Approvals::Ask, DefaultAgent::Blank, None)
+        })
+        .unwrap();
+        assert_eq!(blank.resolved_default, None);
+        // Own permission args are reported.
+        let custom_args = update(dir.path(), &lock, &only(&[]), &[], |p| {
+            let mut c = p.get("claude").unwrap().clone();
+            c.args = vec!["--permission-mode".into(), "plan".into()];
+            p.put(c)
+        })
+        .unwrap();
+        let claude = custom_args
+            .profiles
+            .iter()
+            .find(|p| p.profile.id == "claude")
+            .unwrap();
+        assert!(claude.custom_args);
+    }
+
+    #[test]
+    fn docs_url_is_the_table_url() {
+        assert_eq!(
+            agent_docs_url("devin").unwrap(),
+            xdev_agent::spec(Cli::Devin).docs_url
+        );
+        assert_eq!(agent_docs_url("nope").unwrap_err().code, "unknown_profile");
+        // A custom profile id is not a built-in.
+        assert_eq!(agent_docs_url("mine").unwrap_err().code, "unknown_profile");
     }
 
     #[test]
