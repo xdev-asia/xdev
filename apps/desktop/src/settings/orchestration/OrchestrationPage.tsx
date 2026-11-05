@@ -7,6 +7,7 @@ import type { SettingsSectionProps } from "../sections";
 import { HowToCards } from "./HowToCards";
 import { DEPTH_MAX, DEPTH_MIN, parseDepth, type HowToId } from "./howTo";
 import { SkillCard } from "./SkillCard";
+import { FailoverSection, type FailoverAgent } from "./FailoverSection";
 
 const COPIED_MS = 2000;
 
@@ -26,6 +27,7 @@ export function OrchestrationPage(props: SettingsSectionProps): JSX.Element {
   const [skillError, setSkillError] = useState<string>();
   const [copied, setCopied] = useState<"command" | "prompt" | null>(null);
   const [howTo, setHowTo] = useState<HowToId | null>(null);
+  const [agents, setAgents] = useState<FailoverAgent[]>([]);
   const saving = useRef(false);
   // Changes made while a save runs; the latest of each field is saved next.
   const queued = useRef<Partial<OrchestrationSettings> | null>(null);
@@ -39,6 +41,11 @@ export function OrchestrationPage(props: SettingsSectionProps): JSX.Element {
         setDepthText(String(s.nestedWorkerMaxDepth));
       },
       (e) => setError(toApiError(e).code),
+    );
+    // A backup agent must be on and installed, as a worker's agent must.
+    api.profiles().then(
+      (v) => setAgents(v.profiles.filter((p) => p.profile.enabled && p.installed).map((p) => ({ id: p.profile.id, name: p.profile.name }))),
+      () => undefined,
     );
     void refresh();
     return () => clearTimeout(copyTimer.current);
@@ -86,15 +93,17 @@ export function OrchestrationPage(props: SettingsSectionProps): JSX.Element {
   }
 
   // Each write returns what was stored (the depth is clamped there too); the page shows that.
-  async function patch(change: Partial<OrchestrationSettings>): Promise<void> {
-    if (settings === null) return;
+  // Resolves with whether this change was stored; a queued one counts as stored by the save that takes it.
+  async function patch(change: Partial<OrchestrationSettings>): Promise<boolean> {
+    if (settings === null) return false;
     if (saving.current) {
       queued.current = { ...queued.current, ...change };
-      return;
+      return true;
     }
     saving.current = true;
     let base = settings;
     let next: Partial<OrchestrationSettings> | null = change;
+    let stored = true;
     try {
       while (next) {
         try {
@@ -102,6 +111,7 @@ export function OrchestrationPage(props: SettingsSectionProps): JSX.Element {
           setSettings(base);
           setError(undefined);
         } catch (e) {
+          if (next === change) stored = false;
           setError(toApiError(e).code);
         }
         setDepthText(String(base.nestedWorkerMaxDepth));
@@ -111,6 +121,7 @@ export function OrchestrationPage(props: SettingsSectionProps): JSX.Element {
     } finally {
       saving.current = false;
     }
+    return stored;
   }
 
   function flash(what: "command" | "prompt"): void {
@@ -198,6 +209,8 @@ export function OrchestrationPage(props: SettingsSectionProps): JSX.Element {
           />
         </div>
       </SettingRow>
+
+      <FailoverSection settings={settings} agents={agents} onChange={patch} filter={filter} />
 
       <SettingRow id="orchestration.howTo" filter={filter}>
         <h4 className="settings-group">{t("settings.orchestration.howTo.title")}</h4>
