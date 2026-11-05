@@ -47,8 +47,7 @@ impl From<KitError> for CmdError {
             KitError::Parse(ref m) => match m.as_str() {
                 "bad skill name" => "bad_name",
                 "not UTF-8 text" => "not_utf8",
-                "draft too large" | "template too large" => "too_large",
-                "too many templates" => "too_many",
+                "draft too large" | "template too large" | "too many templates" => "too_large",
                 _ => "kit_bad_input",
             },
         };
@@ -680,7 +679,7 @@ pub fn prompt_templates_list(state: State<'_, AppState>) -> Result<Vec<PromptTem
 }
 
 /// Adds a template or replaces the one with its id; the list after. A new
-/// one past 200 is `too_many`.
+/// one past 200 is `too_large`, as for presets.
 #[tauri::command(async)]
 pub fn prompt_templates_put(
     state: State<'_, AppState>,
@@ -865,7 +864,7 @@ mod tests {
         }
         assert_eq!(
             f.ctx.templates_put(one("over")).unwrap_err().code,
-            "too_many"
+            "too_large"
         );
         let left = f.ctx.templates_delete("a").unwrap();
         assert_eq!(left.len(), xdev_kit::TEMPLATES_MAX - 1);
