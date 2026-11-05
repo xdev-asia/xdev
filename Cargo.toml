@@ -19,6 +19,7 @@ default-members = [
     "crates/xdev-agent",
     "crates/xdev-pty",
     "crates/xdev-ports",
+    "crates/xdev-ssh",
     "crates/xdev-ipc",
     "crates/xdev-awake",
     "crates/xdev-input-source",
@@ -51,6 +52,7 @@ xdev-orch = { path = "crates/xdev-orch" }
 xdev-policy = { path = "crates/xdev-policy" }
 xdev-ports = { path = "crates/xdev-ports" }
 xdev-pty = { path = "crates/xdev-pty" }
+xdev-ssh = { path = "crates/xdev-ssh" }
 xdev-store = { path = "crates/xdev-store" }
 xdev-vault = { path = "crates/xdev-vault" }
 xdev-workspace = { path = "crates/xdev-workspace" }
