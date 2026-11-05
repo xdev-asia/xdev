@@ -35,7 +35,7 @@ pub use codex_home::{
     CODEX_HOME_DIR, CODEX_HOOKS_SINCE, CODEX_INTERRUPT_SINCE, codex_hooks_json, hook_command,
     prepare_codex_home, private_codex_home, trust_hash,
 };
-pub use detect::{find_builtin, find_program};
+pub use detect::{find_builtin, find_builtin_in, find_program};
 pub use flags::{efforts, flags};
 pub use flow::RunOptions;
 pub use hooks::{
