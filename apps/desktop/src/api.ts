@@ -330,6 +330,8 @@ export type { Theme, EditorTheme, SidebarLook, StatusBarItems, TitlebarMode } fr
 export type { CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview } from "@xdev/bindings";
 export type { ConfigKind, TermConfigDetected, TermConfigPreview } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
+import type { PromptTemplate } from "@xdev/bindings";
+export type { PromptTemplate, TemplateMode } from "@xdev/bindings";
 
 // The IPC types come from Rust; see packages/bindings/README.md.
 export type {
@@ -1562,6 +1564,18 @@ export interface Api {
   diagnosticsRevealExport(path: string): Promise<void>;
   // Opens the folder of the app log.
   diagnosticsRevealLogs(): Promise<void>;
+  // The composer's unsent text of a terminal tab; null when it has none.
+  composerDraftGet(tabId: string): Promise<string | null>;
+  // Keeps the draft of a tab; an empty text clears it. Rejects with `too_large` over 64 KB.
+  composerDraftPut(tabId: string, text: string): Promise<void>;
+  // Forgets the draft of a tab; true when there was one.
+  composerDraftClear(tabId: string): Promise<boolean>;
+  // Every prompt template, by name.
+  promptTemplatesList(): Promise<PromptTemplate[]>;
+  // Adds a template or replaces the one with its id, and returns the list. Rejects with `too_large` past 200.
+  promptTemplatesPut(template: PromptTemplate): Promise<PromptTemplate[]>;
+  // Removes a template and returns the list.
+  promptTemplatesDelete(id: string): Promise<PromptTemplate[]>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2215,6 +2229,12 @@ const tauriApi: Api = {
   diagnosticsExport: (defaultName) => call("diagnostics_export", { defaultName }),
   diagnosticsRevealExport: (path) => call("diagnostics_reveal_export", { path }),
   diagnosticsRevealLogs: () => call("diagnostics_reveal_logs"),
+  composerDraftGet: (tabId) => call("composer_draft_get", { tabId }),
+  composerDraftPut: (tabId, text) => call("composer_draft_put", { tabId, text }),
+  composerDraftClear: (tabId) => call("composer_draft_clear", { tabId }),
+  promptTemplatesList: () => call("prompt_templates_list"),
+  promptTemplatesPut: (template) => call("prompt_templates_put", { template }),
+  promptTemplatesDelete: (id) => call("prompt_templates_delete", { id }),
 };
 
 const DEMO_CRASH: CrashReport = {
