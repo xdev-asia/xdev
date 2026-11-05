@@ -13,6 +13,7 @@ mod keybindings;
 mod kit;
 mod layout;
 mod links;
+mod links_open;
 mod open_in;
 mod profiles;
 mod pty;
@@ -299,6 +300,10 @@ pub fn run() {
             files::file_rename,
             files::file_trash,
             files::file_reveal,
+            links_open::file_links_resolve,
+            links_open::file_open_default,
+            links_open::open_url,
+            links_open::file_remote_url,
             files::files_list,
             files::files_search,
             files::files_search_cancel,

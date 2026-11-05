@@ -274,6 +274,7 @@ export type {
   CursorStyle,
   TerminalGpu,
   TerminalBell,
+  TerminalLinkClick,
   SettingsSection,
   SettingsChanged,
   SetupPolicy,
@@ -874,6 +875,15 @@ export interface Api {
   fileTrash(worktree: string, rel: string): Promise<void>;
   // Opens the OS file manager with the item selected where the OS allows it.
   fileReveal(worktree: string, rel: string): Promise<void>;
+  // Terminal links. Each candidate's worktree-relative path when it is an existing file inside
+  // `worktree`; null otherwise. At most 64 per call (`bad_arg`).
+  fileLinksResolve(worktree: string, paths: string[]): Promise<(string | null)[]>;
+  // Opens the file with the OS default app; `denied` for a file that can run as a program.
+  fileOpenDefault(worktree: string, rel: string): Promise<void>;
+  // http(s) only; `bad_arg` otherwise.
+  openUrl(url: string): Promise<void>;
+  // Hosted URL of the file at `line` (to `endLine`); `no_remote` when there is none.
+  fileRemoteUrl(worktree: string, rel: string, line: number, endLine: number | null): Promise<string>;
   // Search. Same `worktree` rule as Files. Both walk the worktree with `.gitignore` applied,
   // hidden files included, `.git` and links out of it skipped.
   // Every file, relative with forward slashes, sorted; `truncated` past 50 000 files.
@@ -1290,6 +1300,10 @@ const tauriApi: Api = {
   fileRename: (worktree, from, to) => call("file_rename", { worktree, from, to }),
   fileTrash: (worktree, rel) => call("file_trash", { worktree, rel }),
   fileReveal: (worktree, rel) => call("file_reveal", { worktree, rel }),
+  fileLinksResolve: (worktree, paths) => call("file_links_resolve", { worktree, paths }),
+  fileOpenDefault: (worktree, rel) => call("file_open_default", { worktree, rel }),
+  openUrl: (url) => call("open_url", { url }),
+  fileRemoteUrl: (worktree, rel, line, endLine) => call("file_remote_url", { worktree, rel, line, endLine }),
   filesList: (worktree) => call("files_list", { worktree }),
   filesSearch(worktree, query, id, onEvent) {
     const channel = new Channel<SearchEvent>();
