@@ -9,9 +9,9 @@ use ts_rs::{Config, TS};
 use xdev_automations::{Automation, AutomationInput, AutomationRun, Describe, ExtraArgsError};
 
 use crate::accounts::{Account, Accounts, LoginStart, Models};
-use crate::app_stats::AppStatsView;
 use crate::agent_sessions::{SessionQuery, SessionRow, SessionSearchStatus};
 use crate::ai_keys::AiKeyStatus;
+use crate::app_stats::AppStatsView;
 use crate::automations::{
     AutomationDispatch, AutomationsChanged, AutomationsView, DispatchResult, RunFinish,
     ScheduleProblem,

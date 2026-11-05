@@ -52,32 +52,76 @@ pub(crate) struct Stats {
 }
 
 impl Stats {
-    pub(crate) fn load(_path: &Path) -> Stats {
-        Stats::default()
+    /// Missing file: zeros. A file that does not parse is renamed to `.bad` and counting starts from zero.
+    pub(crate) fn load(path: &Path) -> Stats {
+        let bytes = match std::fs::read(path) {
+            Ok(b) => b,
+            Err(_) => return Stats::default(),
+        };
+        match serde_json::from_slice::<Saved>(&bytes) {
+            Ok(saved) if saved.schema == SCHEMA => Stats {
+                saved,
+                live: HashMap::new(),
+            },
+            _ => {
+                let mut bad = path.as_os_str().to_owned();
+                bad.push(".bad");
+                if let Err(e) = std::fs::rename(path, PathBuf::from(bad)) {
+                    eprintln!("app stats: cannot move the unreadable file aside: {e}");
+                }
+                Stats::default()
+            }
+        }
     }
 
-    pub(crate) fn save(&self, _path: &Path) -> std::io::Result<()> {
-        Ok(())
+    pub(crate) fn save(&self, path: &Path) -> std::io::Result<()> {
+        let mut saved = self.saved.clone();
+        saved.schema = SCHEMA;
+        let bytes = serde_json::to_vec_pretty(&saved).map_err(std::io::Error::other)?;
+        crate::atomic::write_atomic(path, &bytes)
     }
 
     pub(crate) fn view(&self, _mono_now: u64) -> AppStatsView {
         AppStatsView {
-            agents_started: 0,
-            prs_created: 0,
-            agent_busy_ms: 0,
-            since_ms: None,
+            agents_started: self.saved.agents_started,
+            prs_created: self.saved.prs_created,
+            agent_busy_ms: self.saved.agent_busy_ms,
+            since_ms: self.saved.since_ms,
         }
     }
 
-    pub(crate) fn agent_started(&mut self, _wall_now: i64) -> bool {
-        false
+    fn stamp(&mut self, wall_now: i64) {
+        self.saved.since_ms.get_or_insert(wall_now);
     }
 
-    pub(crate) fn pr_seen(&mut self, _url: &str, _wall_now: i64) -> bool {
-        false
+    pub(crate) fn agent_started(&mut self, wall_now: i64) -> bool {
+        self.saved.agents_started = self.saved.agents_started.saturating_add(1);
+        self.stamp(wall_now);
+        true
     }
 
-    pub(crate) fn busy(&mut self, _tab: &str, _working: bool, _mono_now: u64, _wall_now: i64) -> bool {
+    pub(crate) fn pr_seen(&mut self, url: &str, wall_now: i64) -> bool {
+        let url = url.trim();
+        if url.is_empty() || self.saved.counted_prs.iter().any(|u| u == url) {
+            return false;
+        }
+        self.saved.counted_prs.push(url.to_string());
+        let over = self.saved.counted_prs.len().saturating_sub(MAX_COUNTED_PRS);
+        if over > 0 {
+            self.saved.counted_prs.drain(..over);
+        }
+        self.saved.prs_created = self.saved.prs_created.saturating_add(1);
+        self.stamp(wall_now);
+        true
+    }
+
+    pub(crate) fn busy(
+        &mut self,
+        _tab: &str,
+        _working: bool,
+        _mono_now: u64,
+        _wall_now: i64,
+    ) -> bool {
         false
     }
 
@@ -120,4 +164,101 @@ pub fn app_stats_busy(
 ) -> Result<(), CmdError> {
     data_dir(&state)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn file(dir: &tempfile::TempDir) -> PathBuf {
+        dir.path().join(FILE)
+    }
+
+    #[test]
+    fn missing_file_loads_zeros() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Stats::load(&file(&dir));
+        assert_eq!(
+            s.view(0),
+            AppStatsView {
+                agents_started: 0,
+                prs_created: 0,
+                agent_busy_ms: 0,
+                since_ms: None
+            }
+        );
+    }
+
+    #[test]
+    fn save_then_load_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = Stats::load(&file(&dir));
+        assert!(s.agent_started(1_000));
+        assert!(s.pr_seen("https://x/pr/1", 2_000));
+        s.save(&file(&dir)).unwrap();
+        let back = Stats::load(&file(&dir));
+        assert_eq!(back.view(0), s.view(0));
+        assert_eq!(back.view(0).agents_started, 1);
+        assert_eq!(back.view(0).since_ms, Some(1_000));
+    }
+
+    #[test]
+    fn corrupt_file_is_renamed_bad_and_loads_zeros() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(file(&dir), "{").unwrap();
+        let s = Stats::load(&file(&dir));
+        assert_eq!(s.view(0).agents_started, 0);
+        assert!(dir.path().join("app-stats.json.bad").exists());
+        assert!(!file(&dir).exists());
+    }
+
+    #[test]
+    fn agent_started_counts_and_sets_since_once() {
+        let mut s = Stats::default();
+        assert!(s.agent_started(5_000));
+        assert!(s.agent_started(9_000));
+        let v = s.view(0);
+        assert_eq!(v.agents_started, 2);
+        assert_eq!(v.since_ms, Some(5_000));
+    }
+
+    #[test]
+    fn pr_seen_dedups_by_url() {
+        let mut s = Stats::default();
+        assert!(s.pr_seen("u1", 1));
+        assert!(!s.pr_seen("u1", 2));
+        assert!(s.pr_seen("u2", 3));
+        assert_eq!(s.view(0).prs_created, 2);
+    }
+
+    #[test]
+    fn pr_seen_ignores_empty_url() {
+        let mut s = Stats::default();
+        assert!(!s.pr_seen("", 1));
+        assert!(!s.pr_seen("   ", 1));
+        assert_eq!(s.view(0).prs_created, 0);
+        assert_eq!(s.view(0).since_ms, None);
+    }
+
+    #[test]
+    fn counted_prs_cap_keeps_total() {
+        let mut s = Stats::default();
+        for i in 0..=MAX_COUNTED_PRS {
+            assert!(s.pr_seen(&format!("u{i}"), 1));
+        }
+        assert_eq!(s.saved.counted_prs.len(), MAX_COUNTED_PRS);
+        assert_eq!(s.view(0).prs_created, MAX_COUNTED_PRS as u64 + 1);
+        assert!(!s.saved.counted_prs.contains(&"u0".to_string()));
+    }
+
+    #[test]
+    fn counters_saturate_at_u64_max() {
+        let mut s = Stats::default();
+        s.saved.agents_started = u64::MAX;
+        s.saved.prs_created = u64::MAX;
+        assert!(s.agent_started(1));
+        assert!(s.pr_seen("u", 1));
+        assert_eq!(s.view(0).agents_started, u64::MAX);
+        assert_eq!(s.view(0).prs_created, u64::MAX);
+    }
 }
