@@ -30,9 +30,11 @@ import "katex/dist/katex.min.css";
 import "./styles/preview-files.css";
 import { startEditorSettingsSync } from "./files/editorSettings";
 import { startNavigationSettingsSync } from "./settings/navigationSettings";
+import { startAutomationsSettingsSync } from "./settings/automationsSettings";
 import { startUsageSync } from "./settings/usageSettings";
 import { applyCachedTheme, startThemeSync } from "./ui/theme";
 import "./styles/agentSessions.css";
+import "./styles/automations.css";
 
 // Before the first render, so the window opens in the theme it closed in.
 applyCachedTheme();
@@ -45,6 +47,7 @@ startSettingsSync(api);
 startEditorSettingsSync(api);
 startNavigationSettingsSync(api);
 startUsageSync(api);
+startAutomationsSettingsSync(api);
 // The shortcuts: keybindings.json over the defaults, and the terminal key policy.
 startBindingsSync(api);
 

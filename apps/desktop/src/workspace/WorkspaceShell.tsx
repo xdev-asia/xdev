@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type CreateRequest, type PrSummary, type MenuAction } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type CreateRequest, type PrSummary, type MenuAction, type SetupDecision } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
@@ -82,6 +82,9 @@ import { SetupGate } from "./setupGate";
 import { startCliReport } from "./cliReport";
 import { startCliEvents } from "./cliEvents";
 import { openFailedToast, startOrchestrationEvents } from "./orchestrationEvents";
+import { AutomationsPage } from "@/automations/AutomationsPage";
+import { startAutomationDispatch } from "@/automations/dispatch";
+import { useAutomationsSettings } from "@/settings/automationsSettings";
 import { terminalOf } from "@/terminal/terminalRegistry";
 import { TrustDialog } from "./TrustDialog";
 import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
@@ -140,7 +143,7 @@ function storeSelected(path: string): void {
   }
 }
 
-type View = "workspace" | "docs" | "settings";
+type View = "workspace" | "docs" | "settings" | "automations";
 type PanelTab = "files" | "search" | "changes" | "checks" | "issues" | "ports";
 type Creating = { repoId: string; name?: string; agents: AgentChoice[]; defaultAgent: string | null };
 type Editing = { worktree: WorktreeView; busy: boolean; error?: ApiError["code"] };
@@ -265,8 +268,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [panes, setPanes] = useState<Record<string, string[]>>({});
   const [bellOpen, setBellOpen] = useState(false);
   const statusSettings = useStatusSettings();
+  const automationsSettings = useAutomationsSettings();
   // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
-  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, ensureMounted: (_w: string) => {}, prepareSetup: async (_w: string) => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {} }));
+  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, ensureMounted: (_w: string) => {}, prepareSetup: async (_w: string) => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {}, automationSetup: async (_w: string, _r: string, _d: SetupDecision) => {} }));
 
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
@@ -754,6 +758,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   };
   // `xdev worktree create --agent/--prompt`: the profile opens unfocused and gets the prompt once setup lets agents start.
   live.cliOpen = (worktree, profile, prompt) => void openDefaultAgent(worktree, profile || undefined, prompt ?? undefined);
+  // A worktree made for an automation run: `run` starts its setup, `inherit` only when the repo's setup is trusted with a Run policy.
+  live.automationSetup = async (worktree, _repoId, decision) => {
+    if (decision === "skip") return;
+    try {
+      const hooks = await api.repoHooks(worktree);
+      if (hooks.setup && (decision === "run" || decideSetup(hooks).step === "run")) startSetup(worktree, hooks);
+    } catch {
+      // The run goes on without setup.
+    }
+  };
   // The app CLI: the tabs as `xdev terminal` sees them, and what its endpoint asks of the window.
   useEffect(() => {
     if (!sessions) return;
@@ -776,6 +790,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       stopOrchestration();
       live.cliPoke = () => {};
     };
+  }, [api, sessions, gate]);
+  // Scheduled runs: the backend asks for a tab, the window opens it and reports back; this also says the window is ready.
+  useEffect(() => {
+    if (!sessions) return;
+    return startAutomationDispatch(api, {
+      sessions,
+      setup: (worktree, repoId, decision) => live.automationSetup(worktree, repoId, decision),
+      defer: (worktree, launch) => gate.defer(worktree, launch),
+      terminalLines: (id, max) => terminalOf(id)?.lines(max) ?? null,
+    });
   }, [api, sessions, gate]);
   const selectedPath = current?.path ?? null;
   useEffect(() => live.cliPoke(), [selectedPath]);
@@ -1739,6 +1763,21 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               </svg>
               <span>{t("workspace.nav.workspace")}</span>
             </button>
+            {automationsSettings.showButton && (
+              <button
+                type="button"
+                className="ws-nav-item"
+                data-nav="automations"
+                aria-current={view === "automations" ? "page" : undefined}
+                onClick={() => show("automations")}
+              >
+                <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 7v5l3 2" />
+                </svg>
+                <span>{t("workspace.nav.automations")}</span>
+              </button>
+            )}
             <button
               type="button"
               className="ws-nav-item"
@@ -2132,6 +2171,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           {docsMounted && <DocsApp key={docsKey} appRequest={appRequest} kit={{ worktree: current?.path ?? null, open: kitOpen, onOpened: kitOpened, onSendToAgent: sendToAgent, canSend: target(current?.path) !== null }} />}
         </div>
 
+        <div className="ws-automations" hidden={view !== "automations"}>
+          {view === "automations" && <AutomationsPage api={api} repos={repos} />}
+        </div>
+
         <div className="ws-settings" hidden={view !== "settings"}>
           {view === "settings" && (
             <SettingsView
@@ -2140,6 +2183,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               initial={settingsAt.section}
               arg={settingsAt.arg}
               target={settingsAt.target}
+              openView={(v) => show(v as View)}
               onChanged={() => {
                 void load();
                 void loadStatusSettings(api);

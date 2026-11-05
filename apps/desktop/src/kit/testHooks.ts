@@ -43,7 +43,8 @@ export function nodes(value: unknown): Node[] {
   if (Array.isArray(value)) return value.flatMap(nodes);
   if (!value || typeof value !== "object" || !("props" in value)) return [];
   const node = value as Node;
-  return [node, ...nodes(node.props.children)];
+  // A part's `actions` slot (Toolbar) holds its buttons; they render, so they count.
+  return [node, ...nodes(node.props.children), ...nodes(node.props.actions)];
 }
 
 export const textOf = (node: Node): string =>

@@ -1,0 +1,370 @@
+/* Automations: the list, its detail pane, the run pages and the editor. Tokens only. */
+
+.ws-automations {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--x-color-bg);
+  color: var(--x-color-ink);
+}
+
+.au-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-3);
+  padding: var(--x-space-4);
+  min-width: 0;
+}
+
+.au-split {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--x-space-4);
+  align-items: start;
+}
+
+.au-main,
+.au-detail {
+  min-width: 0;
+}
+
+.au-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  padding: var(--x-space-3);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-md);
+  background: var(--x-color-panel);
+}
+
+.au-detail-title {
+  margin: 0;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.au-detail-sub {
+  margin: var(--x-space-2) 0 0;
+  font-size: 13px;
+}
+
+.au-detail-empty,
+.au-empty {
+  margin: 0;
+  color: var(--x-color-muted);
+}
+
+.au-sub {
+  display: block;
+  color: var(--x-color-muted);
+  font-size: 12px;
+}
+
+.au-note {
+  margin: 0;
+  color: var(--x-color-muted);
+  font-size: 12px;
+}
+
+.au-summary {
+  margin: 0 0 var(--x-space-2);
+  color: var(--x-color-muted);
+  font-size: 12px;
+}
+
+.au-facts {
+  display: grid;
+  gap: var(--x-space-1);
+  margin: 0;
+}
+
+.au-fact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--x-space-2);
+  font-size: 12px;
+}
+
+.au-fact dt {
+  color: var(--x-color-muted);
+}
+
+.au-fact dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The table: rows are told apart by a hairline, the selected one by a tint. */
+.au-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.au-table th,
+.au-table td {
+  padding: var(--x-space-2) var(--x-space-3);
+  border-bottom: 1px solid var(--x-color-line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.au-table th {
+  color: var(--x-color-muted);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.au-row {
+  cursor: pointer;
+}
+
+.au-row:hover {
+  background: var(--x-color-surface);
+}
+
+.au-row[aria-selected="true"] {
+  background: var(--x-color-accent-soft);
+}
+
+.au-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.au-link,
+.au-sort {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.au-link {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.au-link:hover,
+.au-sort:hover {
+  text-decoration: underline;
+}
+
+.au-link:focus-visible,
+.au-sort:focus-visible {
+  outline: 2px solid var(--x-color-focus);
+  outline-offset: 2px;
+}
+
+.au-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Templates (the empty page). */
+.au-templates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--x-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  width: 100%;
+}
+
+.au-template {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-1);
+  width: 100%;
+  height: 100%;
+  padding: var(--x-space-3);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-md);
+  background: var(--x-color-panel);
+  color: var(--x-color-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.au-template:hover {
+  background: var(--x-color-surface);
+}
+
+.au-template:focus-visible {
+  outline: 2px solid var(--x-color-focus);
+  outline-offset: 2px;
+}
+
+.au-template-label {
+  font-weight: 500;
+}
+
+.au-template-desc,
+.au-template-cat {
+  color: var(--x-color-muted);
+  font-size: 12px;
+}
+
+/* Run details. */
+.au-run {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-3);
+  padding: var(--x-space-4);
+  min-width: 0;
+}
+
+.au-run-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.au-run-actions {
+  display: flex;
+  gap: var(--x-space-2);
+}
+
+.au-run-status {
+  margin: 0;
+}
+
+.au-error {
+  margin: 0;
+  padding: var(--x-space-2) var(--x-space-3);
+  border: 1px solid var(--x-color-danger);
+  border-radius: var(--x-radius-sm);
+  background: var(--x-color-danger-soft);
+  overflow-wrap: anywhere;
+}
+
+.au-output {
+  margin: 0;
+  padding: var(--x-space-3);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-sm);
+  background: var(--x-color-code-bg);
+  font-family: var(--x-font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: auto;
+  max-height: 60vh;
+}
+
+/* The editor: the prompt beside its settings. */
+.au-editor {
+  width: min(960px, calc(100vw - 2 * var(--x-space-4)));
+  max-height: calc(100vh - 2 * var(--x-space-4));
+  overflow: auto;
+}
+
+.au-editor-body {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--x-space-4);
+}
+
+.au-editor-main,
+.au-editor-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-3);
+  min-width: 0;
+}
+
+.au-editor-name {
+  display: flex;
+  gap: var(--x-space-2);
+  align-items: end;
+}
+
+.au-editor-name .ws-field {
+  flex: 1;
+}
+
+.au-schedule,
+.au-precheck,
+.au-extra,
+.au-cron {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+}
+
+.au-cron-fields {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--x-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+  color: var(--x-color-muted);
+  text-align: center;
+}
+
+.au-cron-fields li {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.au-cron-fields code {
+  overflow-wrap: anywhere;
+  color: var(--x-color-ink);
+  font-family: var(--x-font-mono);
+}
+
+.au-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-2);
+  align-items: center;
+}
+
+.au-steps {
+  display: grid;
+  gap: var(--x-space-2);
+  margin: 0 0 var(--x-space-3);
+  padding-left: var(--x-space-6);
+}
+
+.au-steps li span {
+  display: block;
+  color: var(--x-color-muted);
+  font-size: 12px;
+}
+
+/* A narrow window: the detail pane goes under the list, the editor's settings under the prompt. */
+@media (max-width: 480px) {
+  .au-split,
+  .au-editor-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .au-page,
+  .au-run {
+    padding: var(--x-space-2);
+  }
+
+  .au-table th,
+  .au-table td {
+    padding: var(--x-space-2);
+  }
+}
