@@ -37,8 +37,8 @@ describe("Sessions.restore", () => {
   it("resumes an agent tab with its own session id and puts the tab's fields back", async () => {
     const s = make();
     const resume = vi.spyOn(s, "resume");
-    const report = await s.restore(snap({ [A]: one({ t1: claude({ agentSession: "abc", title: "Fix it", renamed: true, pinned: true, color: "c2", account: "work" }) }) }), "all", never);
-    expect(resume).toHaveBeenCalledWith(A, "claude", "work", "abc", "Fix it", "claude");
+    const report = await s.restore(snap({ [A]: one({ t1: claude({ agentSession: "abc", title: "Fix it", renamed: true, pinned: true, color: "c2", account: "claude-3" }) }) }), "all", never);
+    expect(resume).toHaveBeenCalledWith(A, "claude", "claude-3", "abc", "Fix it", "claude");
     expect(never).not.toHaveBeenCalled();
     expect(report).toMatchObject({ resumed: 1, fresh: 0, skipped: [] });
     expect(s.tabs(A)[0]).toMatchObject({ agentSession: "abc", title: "Fix it", renamed: true, pinned: true, color: "c2" });
@@ -372,27 +372,35 @@ describe("restored accounts", () => {
     return s.tabs(A)[0];
   };
 
-  it("a tab that followed the active account follows it again while it is still the active one", async () => {
-    const tab = await restored({ account: "claude-2", accountSource: "active" });
-    expect(tab.account).toBeNull();
-  });
-
-  it("a tab that followed the active account but would now get another is pinned to the saved one", async () => {
-    const tab = await restored({ account: "claude-3", accountSource: "active" });
-    expect(tab.account).toBe("claude-3");
-  });
-
-  it("a tab's own pick stays pinned, and an older snapshot's account is read as one", async () => {
-    expect((await restored({ account: "claude-3", accountSource: "tab" })).account).toBe("claude-3");
+  it("a tab keeps the account it ran on, whether it was the default, routed or its own pick", async () => {
+    for (const accountSource of ["active", "routed", "tab"] as const) {
+      sessions?.dispose();
+      expect((await restored({ account: "claude-3", accountSource })).account).toBe("claude-3");
+    }
     sessions?.dispose();
+    // An older snapshot's account is read as the tab's own.
     expect((await restored({ account: "claude-3" })).account).toBe("claude-3");
   });
 
-  it("restoredAccount: a profile's account is looked up again, and an unreadable active account does not pin", () => {
-    const active = new Map<string, string | null>([["claude", "claude-2"]]);
-    expect(restoredAccount({ account: "x", accountSource: "profile" }, "claude", active)).toBeNull();
-    expect(restoredAccount({ account: "x", accountSource: "active" }, "claude", null)).toBeNull();
-    expect(restoredAccount({ account: null, accountSource: "active" }, "claude", active)).toBe(null);
-    expect(restoredAccount({ account: "claude-2", accountSource: "active" }, null, active)).toBeNull();
+  it("a tab whose account is gone starts on the default and says so in its first line", async () => {
+    const tab = await restored({ account: "removed", accountSource: "tab" });
+    // No account of its own: its start takes the default.
+    expect(tab.account).toBeNull();
+    expect(takePrime(tab.id)).toEqual({ bytes: null, note: translate("en", "accounts.restore.gone") });
+  });
+
+  it("a tab whose account is still there gets no note", async () => {
+    const tab = await restored({ account: "claude-3", accountSource: "tab" });
+    expect(takePrime(tab.id)).toBeNull();
+  });
+
+  it("restoredAccount: a profile's account is looked up again; an unreadable registry pins only the tab's own pick", () => {
+    const known = new Set(["claude-2", "claude-3"]);
+    expect(restoredAccount({ account: "x", accountSource: "profile" }, known)).toEqual({ account: null, gone: false });
+    expect(restoredAccount({ account: null, accountSource: "active" }, known)).toEqual({ account: null, gone: false });
+    expect(restoredAccount({ account: "claude-2", accountSource: "active" }, known)).toEqual({ account: "claude-2", gone: false });
+    expect(restoredAccount({ account: "x", accountSource: "routed" }, known)).toEqual({ account: null, gone: true });
+    expect(restoredAccount({ account: "claude-2", accountSource: "active" }, null)).toEqual({ account: null, gone: false });
+    expect(restoredAccount({ account: "claude-2", accountSource: "tab" }, null)).toEqual({ account: "claude-2", gone: false });
   });
 });

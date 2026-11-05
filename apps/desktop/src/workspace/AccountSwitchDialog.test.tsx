@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { translate } from "@/i18n";
 import en from "@/i18n/en.json";
 import vi_ from "@/i18n/vi.json";
-import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
+import { AccountSwitchDialog, type SwitchTab } from "./AccountSwitchDialog";
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0 }));
 vi.mock("react", async (original) => ({
@@ -16,6 +16,8 @@ vi.mock("react", async (original) => ({
   },
   useRef: () => ({ current: null }),
   useEffect: () => {},
+  useLayoutEffect: () => {},
+  useId: () => "id",
 }));
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
@@ -27,68 +29,59 @@ function nodes(value: unknown): Node[] {
   const node = value as Node;
   return [node, ...nodes(node.props.children)];
 }
-const rows: SwitchRow[] = [
-  { id: "a", label: "Fix the parser · xdev-oak", working: false },
-  { id: "b", label: "Write tests · xdev-oak", working: true },
-  { id: "c", label: "claude · xdev-elm", working: false },
-];
+const front: SwitchTab = { id: "a", label: "Fix the parser · xdev-oak", account: "claude-2", working: false };
 function harness(over: Partial<Parameters<typeof AccountSwitchDialog>[0]> = {}) {
-  const props = { provider: "claude" as const, from: "claude-2", to: "claude-3", rows, onRestart: vi.fn(), onKeep: vi.fn(), ...over };
+  const props = { provider: "claude" as const, to: "claude-3", tab: front, onApply: vi.fn(), onCancel: vi.fn(), ...over };
   const draw = () => { hooks.cursor = 0; return AccountSwitchDialog(props); };
-  const find = (action: string) => nodes(draw()).find((n) => n.props["data-action"] === action)!;
-  return { props, draw, html: () => renderToStaticMarkup(draw()), find };
+  const group = () => nodes(draw()).find((n) => n.props.name === "account-switch-scope")!;
+  return { props, draw, group, html: () => renderToStaticMarkup(draw()) };
 }
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; });
 
-it("names the switch and lists every tab, a working one marked", () => {
-  const html = harness().html();
-  expect(html).toContain(tr("accounts.switch.dialog.title"));
-  expect(html).toContain(tr("accounts.switch.dialog.body", { provider: tr("accounts.provider.claude"), from: "claude-2", to: "claude-3" }));
-  for (const r of rows) expect(html).toContain(r.label);
-  expect(html.match(new RegExp(tr("accounts.switch.dialog.working").replace(/[()]/g, "\\$&"), "g"))).toHaveLength(1);
+it("is a modal dialog named for the account, with one apply and one cancel", () => {
+  const dialog = harness().draw();
+  expect(dialog.props.modal).toBe(true);
+  expect(dialog.props.title).toBe(tr("accounts.switch.scope.title", { name: "claude-3" }));
+  expect(dialog.props.confirmLabel).toBe(tr("accounts.switch.scope.apply"));
+  expect(dialog.props.cancelLabel).toBe(tr("accounts.switch.scope.cancel"));
 });
-it("names the CLI default when there is no account", () => {
-  const html = harness({ from: null, to: null }).html();
-  expect(html).toContain(tr("accounts.switch.cliDefaultName"));
+
+it("offers this tab, naming it and its account, or the default for new tabs", () => {
+  const { options } = harness().group().props as { options: { value: string; label: string; hint: string }[] };
+  expect(options.map((o) => o.value)).toEqual(["tab", "default"]);
+  expect(options[0].hint).toBe(tr("accounts.switch.scope.tabHint", { tab: front.label, from: "claude-2" }));
+  expect(options[1].hint).toBe(tr("accounts.switch.scope.defaultHint", { provider: tr("accounts.provider.claude") }));
 });
-it("ticks every tab except the working ones", () => {
+
+it("warns that a working tab's turn stops, and names the CLI's own home", () => {
+  const { options } = harness({ tab: { ...front, account: null, working: true } }).group().props as { options: { hint: string }[] };
+  expect(options[0].hint).toBe(tr("accounts.switch.scope.tabHintWorking", { tab: front.label, from: tr("accounts.switch.cliDefaultName") }));
+});
+
+it("applies to this tab unless the default is picked", () => {
   const view = harness();
-  expect(view.find("switch-tab-a").props.checked).toBe(true);
-  expect(view.find("switch-tab-b").props.checked).toBe(false);
-  expect(view.find("switch-tab-c").props.checked).toBe(true);
+  expect(view.group().props.value).toBe("tab");
+  view.draw().props.onConfirm();
+  expect(view.props.onApply).toHaveBeenLastCalledWith("tab");
+  view.group().props.onChange("default");
+  expect(view.group().props.value).toBe("default");
+  view.draw().props.onConfirm();
+  expect(view.props.onApply).toHaveBeenLastCalledWith("default");
 });
-it("Restart selected sends the ticked ids, with the remember box", () => {
+
+it("cancel changes nothing", () => {
   const view = harness();
-  view.find("switch-tab-b").props.onChange({ target: { checked: true } });
-  view.find("switch-tab-a").props.onChange({ target: { checked: false } });
-  view.find("switch-restart").props.onClick();
-  expect(view.props.onRestart).toHaveBeenCalledWith(["b", "c"], false);
-  view.find("switch-remember").props.onChange({ target: { checked: true } });
-  view.find("switch-restart").props.onClick();
-  expect(view.props.onRestart).toHaveBeenLastCalledWith(["b", "c"], true);
+  view.draw().props.onCancel();
+  expect(view.props.onCancel).toHaveBeenCalledTimes(1);
+  expect(view.props.onApply).not.toHaveBeenCalled();
 });
-it("Restart selected is disabled with nothing ticked", () => {
-  const view = harness({ rows: [rows[1]] });
-  expect(view.find("switch-restart").props.disabled).toBe(true);
+
+it("uses theme tokens", () => {
+  expect(harness().html()).not.toMatch(/#[0-9a-f]{3,6}\b|rgb\(/i);
 });
-it("Keep all, and Escape, keep the tabs; only Keep all can be remembered", () => {
-  const view = harness();
-  view.find("switch-remember").props.onChange({ target: { checked: true } });
-  view.find("switch-keep").props.onClick();
-  expect(view.props.onKeep).toHaveBeenCalledWith(true);
-  const dialog = view.draw();
-  const prevent = vi.fn();
-  dialog.props.onCancel({ preventDefault: prevent });
-  expect(prevent).toHaveBeenCalled();
-  expect(view.props.onKeep).toHaveBeenLastCalledWith(false);
-});
-it("uses theme tokens and plain controls", () => {
-  const html = harness().html();
-  expect(html).not.toMatch(/#[0-9a-f]{3,6}\b|rgb\(/i);
-  expect(html.match(/type="checkbox"/g)).toHaveLength(rows.length + 1);
-});
+
 it("has the dialog strings in both languages", () => {
-  const keys = Object.keys(en).filter((k) => k.startsWith("accounts.switch."));
-  expect(keys.length).toBeGreaterThan(10);
+  const keys = Object.keys(en).filter((k) => k.startsWith("accounts.switch.") || k.startsWith("accounts.alert.") || k.startsWith("accounts.restore."));
+  expect(keys.length).toBeGreaterThan(15);
   for (const key of keys) expect(vi_).toHaveProperty(key);
 });

@@ -89,22 +89,25 @@ export interface RestoreOptions {
   carry?: (worktree: string) => boolean;
   openFile?: (worktree: string, rel: string) => Promise<boolean>;
   /** The line a terminal shows above its saved output (or instead of it); left out, English. */
-  note?: (key: "ptyd.restored" | "ptyd.fresh") => string;
+  note?: (key: RestoreNote) => string;
 }
 
 export type { RestoreMode };
 
+/** The lines a restored terminal may show above its output. */
+export type RestoreNote = "ptyd.restored" | "ptyd.fresh" | "accounts.restore.gone";
+
 /**
- * The account to open a restored terminal with: the tab's own pick stays pinned. A tab that followed
- * the active account follows it again, unless the active account is not the one it ran under (it
- * changed since the save): the saved conversation lives under the saved account, so the tab is pinned
- * to that. `active` maps a CLI to its active account now; null when it could not be read.
+ * The account to open a restored terminal with. A tab keeps the account it ran under, wherever that
+ * came from; only a profile's account is looked up again. `known` holds the names of the accounts
+ * there are now (null when they could not be read): a saved account that is gone falls back to the
+ * default (`gone`), and with no list a tab that did not pick its account itself follows the default.
  */
-export function restoredAccount(snap: { account: string | null; accountSource?: AccountSource | null; cli?: TabCli }, cli: TabCli, active: ReadonlyMap<string, string | null> | null): string | null {
+export function restoredAccount(snap: { account: string | null; accountSource?: AccountSource | null }, known: ReadonlySet<string> | null): { account: string | null; gone: boolean } {
   const source = snap.accountSource;
-  if (source === undefined || source === "tab") return snap.account;
-  if (source === "active" && cli !== null && active && (active.get(cli) ?? null) !== snap.account) return snap.account;
-  return null;
+  if (snap.account === null || source === "profile") return { account: null, gone: false };
+  if (known === null) return { account: source === undefined || source === "tab" ? snap.account : null, gone: false };
+  return known.has(snap.account) ? { account: snap.account, gone: false } : { account: null, gone: true };
 }
 
 const REVIEW_ID = "review:";

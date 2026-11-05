@@ -1,38 +1,28 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
-import type { SwitchRunning } from "@/api";
-import { ownAccount, Sessions, type Tab } from "./sessions";
-import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
-import { AGENTS_SETTINGS_DEFAULTS } from "@/mockSettings";
+import { ownAccount, runAccount, Sessions, type Tab } from "./sessions";
+import { restartTabs, type PendingSwitch } from "./accountSwitchFlow";
 
 const WT = "/demo/wt/xdev-oak";
 // What the terminal view does for a restarted tab: starts its pty, which reports the account it got.
-const boot = async (live: Sessions) => {
-  for (const t of live.tabs(WT)) live.noteStarted(t.id, await t.client.start(WT, "claude", 80, 24, () => {}, ownAccount(t)));
+const boot = async (live: Sessions, running: readonly string[] = []) => {
+  for (const t of live.tabs(WT).filter((x) => !running.includes(x.id))) live.noteStarted(t.id, await t.client.start(WT, "claude", 80, 24, () => {}, ownAccount(t)));
 };
 const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
 describe("account switch flow", () => {
   let sessions: Sessions | null = null;
-  let stop: (() => void) | null = null;
   afterEach(() => {
-    stop?.();
-    stop = null;
     sessions?.dispose();
     sessions = null;
   });
 
-  async function setup(policy: SwitchRunning) {
+  async function setup() {
     const api = createMockApi({});
     await api.ptyApprove("claude", null);
-    await api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, accountSwitch: policy });
     const live = (sessions = new Sessions(api));
     const notify = vi.fn();
-    const ask = vi.fn<(p: PendingSwitch) => void>();
-    const watcher = watchAccountSwitch({ api, sessions: live, notify, ask });
-    stop = watcher.stop;
-    await tick();
-    // An agent tab that follows the active account (claude-2), with a session of its own.
+    // An agent tab started on the default account (claude-2), with a session of its own.
     const agent = async (session: string | null = "sess-1") => {
       const tab = live.open(WT, "claude");
       const info = await tab.client.start(WT, "claude", 80, 24, () => {});
@@ -43,108 +33,64 @@ describe("account switch flow", () => {
       }
       return live.tab(tab.id)!;
     };
-    return { api, live, notify, ask, agent };
+    const move = (ids: string[], to: string | null = "claude-3", from: string | null = "claude-2") =>
+      restartTabs({ api, sessions: live, notify }, { provider: "claude", from, to, tabIds: ids }, ids);
+    return { api, live, notify, agent, move };
   }
   const only = (live: Sessions): Tab[] => live.tabs(WT);
 
-  it("Keep leaves the tabs alone", async () => {
-    const { api, live, ask, agent } = await setup("keep");
+  it("a new default leaves running tabs on the account they started with", async () => {
+    const { api, live, agent } = await setup();
     const tab = await agent();
+    expect(tab.account).toBe("claude-2");
     await api.accountActivate("claude", "claude-3");
     await tick();
-    expect(ask).not.toHaveBeenCalled();
-    expect(only(live).map((t) => t.id)).toEqual([tab.id]);
+    expect(only(live).map((t) => [t.id, t.account])).toEqual([[tab.id, "claude-2"]]);
+    // Its next start keeps that account too.
+    expect(runAccount(live.tab(tab.id)!)).toBe("claude-2");
+    // The running terminal's own start account does not change once the pty reports it.
+    expect(ownAccount(live.tab(tab.id)!)).toBeNull();
   });
 
-  it("Restart carries the session then restarts every affected tab under the new account", async () => {
-    const { api, live, ask, agent } = await setup("restart");
+  it("two tabs of one provider run on different accounts at once", async () => {
+    const { api, live, agent } = await setup();
+    const a = await agent("s-a");
+    await api.accountActivate("claude", "claude-3");
+    const b = await agent("s-b");
+    expect([live.tab(a.id)!.account, live.tab(b.id)!.account]).toEqual(["claude-2", "claude-3"]);
+  });
+
+  it("carries the session then restarts the tab under the new account, pinned", async () => {
+    const { api, live, agent, move } = await setup();
     const carry = vi.spyOn(api, "accountCarrySession");
     const a = await agent("s-a");
     const b = await agent("s-b");
-    await api.accountActivate("claude", "claude-3");
-    await tick();
-    expect(ask).not.toHaveBeenCalled();
-    expect(carry.mock.calls.map((c) => [c[1], c[2], c[3], c[4]])).toEqual([["claude-2", "claude-3", "s-a", WT], ["claude-2", "claude-3", "s-b", WT]]);
-    await boot(live);
+    await move([a.id]);
+    expect(carry.mock.calls.map((c) => [c[1], c[2], c[3], c[4]])).toEqual([["claude-2", "claude-3", "s-a", WT]]);
+    await boot(live, [b.id]);
     const now = only(live);
     expect(now).toHaveLength(2);
     expect(now.map((t) => t.id)).not.toContain(a.id);
-    expect(now.map((t) => t.resumeOf)).toEqual(["s-a", "s-b"]);
-    expect(now.every((t) => t.account === "claude-3" && t.accountSource === "active")).toBe(true);
-    expect(b.id).not.toBe(a.id);
+    expect(now.map((t) => t.id)).toContain(b.id);
+    const moved = now.find((t) => t.id !== b.id)!;
+    expect(moved).toMatchObject({ resumeOf: "s-a", account: "claude-3", accountSource: "tab" });
+    expect(live.tab(b.id)!.account).toBe("claude-2");
   });
 
-  it("does not touch shells, tabs with their own account or other providers", async () => {
-    const { api, live, agent } = await setup("restart");
-    const own = live.open(WT, "claude", "claude-3");
-    const info = await own.client.start(WT, "claude", 80, 24, () => {}, "claude-3");
-    live.noteStarted(own.id, info);
-    const shell = live.open(WT, "shell");
-    const mine = await agent();
-    await api.accountActivate("claude", "claude-3");
-    await tick();
-    const ids = only(live).map((t) => t.id);
-    expect(ids).toContain(own.id);
-    expect(ids).toContain(shell.id);
-    expect(ids).not.toContain(mine.id);
-    await api.accountActivate("codex", "codex-1");
-    await tick();
-    expect(only(live).map((t) => t.id)).toEqual(expect.arrayContaining([own.id, shell.id]));
-  });
-
-  it("Ask hands the affected tabs to the dialog and restarts nothing yet", async () => {
-    const { api, live, ask, agent } = await setup("ask");
+  it("moving to the CLI's own home is a switch too", async () => {
+    const { live, agent, move } = await setup();
     const a = await agent();
-    await api.accountActivate("claude", "claude-3");
-    await tick();
-    expect(ask).toHaveBeenCalledTimes(1);
-    expect(ask.mock.calls[0][0]).toMatchObject({ provider: "claude", from: "claude-2", to: "claude-3", tabIds: [a.id] });
-    expect(only(live).map((t) => t.id)).toEqual([a.id]);
-  });
-
-  it("Ask marks a working tab so the dialog can leave it unticked", async () => {
-    const { api, live, ask, agent } = await setup("ask");
-    const busy = await agent("s");
-    api.__hook(busy.id, "prompt");
-    await api.accountActivate("claude", "claude-3");
-    await tick();
-    expect(live.tab(busy.id)!.status).toBe("working");
-    expect(ask.mock.calls[0][0].tabIds).toEqual([busy.id]);
-  });
-
-  it("Ask says nothing when no tab is affected", async () => {
-    const { api, ask } = await setup("ask");
-    await api.accountActivate("claude", "claude-3");
-    await tick();
-    expect(ask).not.toHaveBeenCalled();
-  });
-
-  it("going back to the CLI default is a switch too", async () => {
-    const { api, live, agent } = await setup("restart");
-    await agent();
-    await api.accountActivate("claude", null);
-    await tick();
+    await move([a.id], null);
     const [now] = only(live);
-    expect(now.accountSource).toBe("active");
     expect(now.account).toBeNull();
   });
 
-  it("adding an account, or activating the one already active, is no switch", async () => {
-    const { api, ask, agent } = await setup("ask");
-    await agent();
-    await api.addAccount("extra", "claude", "/demo/accounts/extra");
-    await api.accountActivate("claude", "claude-2");
-    await tick();
-    expect(ask).not.toHaveBeenCalled();
-  });
-
   it("a failed carry restarts that tab fresh and says so", async () => {
-    const { api, live, notify, agent } = await setup("restart");
+    const { api, live, notify, agent, move } = await setup();
     vi.spyOn(api, "accountCarrySession").mockRejectedValueOnce({ code: "session_missing" });
     const a = await agent("gone");
     const b = await agent("kept");
-    await api.accountActivate("claude", "claude-3");
-    await tick();
+    await move([a.id, b.id]);
     await boot(live);
     const [first, second] = only(live);
     expect(first).toMatchObject({ resumeOf: null, agentSession: null, account: "claude-3" });
@@ -165,18 +111,17 @@ describe("account switch flow", () => {
   });
 
   it("a tab without a session id restarts without a carry", async () => {
-    const { api, live, agent } = await setup("restart");
+    const { api, live, agent, move } = await setup();
     const carry = vi.spyOn(api, "accountCarrySession");
-    await agent(null);
-    await api.accountActivate("claude", "claude-3");
-    await tick();
+    const a = await agent(null);
+    await move([a.id]);
     expect(carry).not.toHaveBeenCalled();
     await boot(live);
     expect(only(live)[0].account).toBe("claude-3");
   });
 
   it("restartTabs skips a tab that is gone and keeps the pin", async () => {
-    const { api, live, agent } = await setup("ask");
+    const { api, live, agent } = await setup();
     const a = await agent("s");
     live.setPinned(a.id, true);
     const pending: PendingSwitch = { provider: "claude", from: "claude-2", to: "claude-2", tabIds: [a.id, "gone"] };

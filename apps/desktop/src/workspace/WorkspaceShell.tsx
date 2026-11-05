@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, SSH_SHELL_PREFIX, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type IssuesPreset, type CreateRequest, type PrSummary, type MrSummary, type MenuAction, type SetupDecision, type BaseDrift } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type IssuesPreset, type CreateRequest, type PrSummary, type MrSummary, type MenuAction, type SetupDecision, type BaseDrift, type Provider } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
@@ -99,8 +99,9 @@ import { startAutomationDispatch } from "@/automations/dispatch";
 import { useAutomationsSettings } from "@/settings/automationsSettings";
 import { terminalOf } from "@/terminal/terminalRegistry";
 import { TrustDialog } from "./TrustDialog";
-import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
-import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
+import { AccountSwitchDialog, type SwitchScope, type SwitchTab } from "./AccountSwitchDialog";
+import { restartTabs } from "./accountSwitchFlow";
+import { watchQuotaAlerts } from "./quotaAlerts";
 import { QuitDialog } from "./QuitDialog";
 import { AboutDialog } from "./AboutDialog";
 import { checkForUpdates, HelpButton, type HelpPick, runHelpPick } from "./HelpMenu";
@@ -409,6 +410,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     return startAutoTabTitle({ api, sessions });
   }, [api, sessions]);
 
+  // An account crossing a quota threshold raises a toast that can move new tabs to another account.
+  useEffect(() => watchQuotaAlerts({ api, t: (key, vars) => live.t(key, vars), toast: pushToast }), [api]);
+
   // Layout restore: once per run, after the registry is known and before the saver starts (a saver that
   // ran first would replace the stored layout with an empty one). Nothing runs without a worktree.
   const restoreStarted = useRef(false);
@@ -485,29 +489,26 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     };
   }, [sessions]);
 
-  // The active account changed (Accounts, the usage popover, a removal): the running agent tabs that
-  // follow it are restarted, kept or asked about by the `agents.accountSwitch` setting.
-  // Switches queue: a second one while the dialog is open waits its turn instead of replacing the first.
-  const [switches, setSwitching] = useState<PendingSwitch[]>([]);
-  const switching = switches[0] ?? null;
-  useEffect(() => {
+  // "Use" on an account in the usage popover. Running tabs keep their account; with an agent tab of that
+  // provider in front, the dialog asks whether it moves that tab or the default for new tabs.
+  const [switching, setSwitching] = useState<{ provider: Provider; to: string; tab: SwitchTab } | null>(null);
+  const setDefaultAccount = (provider: Provider, name: string) =>
+    void api.accountActivate(provider, name).catch((e) => pushToast({ text: t("accounts.switch.failed", { code: toApiError(e).code }) }));
+  function pickAccount(provider: Provider, name: string): void {
+    const front = sessions && current ? sendTarget(sessions.tabs(current.path), shownTab[current.path] ?? null) : null;
+    if (!front || front.cli !== provider || front.account === name) return setDefaultAccount(provider, name);
+    const label = `${front.title ?? profileName(null, front.profileId, t)} · ${front.worktree.split(/[\\/]/).filter(Boolean).pop() ?? front.worktree}`;
+    setSwitching({ provider, to: name, tab: { id: front.id, label, account: front.account, working: front.status === "working" } });
+  }
+  function answerSwitch(scope: SwitchScope): void {
+    const pending = switching;
+    setSwitching(null);
+    if (!pending) return;
+    if (scope === "default") return setDefaultAccount(pending.provider, pending.to);
     if (!sessions) return;
-    const watcher = watchAccountSwitch({
-      api,
-      sessions,
-      notify: (key, vars) => pushToast({ text: live.t(key, vars) }),
-      ask: (p) => setSwitching((q) => [...q, p]),
-    });
-    return () => watcher.stop();
-  }, [api, sessions]);
-  async function answerSwitch(pending: PendingSwitch, restart: string[] | null, remember: boolean): Promise<void> {
-    setSwitching((q) => q.filter((p) => p !== pending));
-    if (remember) {
-      // "Don't ask again" stores what was chosen; a failed write only means it asks again.
-      const current = await api.agentsSettings().catch(() => null);
-      if (current) await api.agentsSettingsPut({ ...current, accountSwitch: restart ? "restart" : "keep" }).catch(() => {});
-    }
-    if (restart && sessions) await restartTabs({ api, sessions, notify: (key, vars) => pushToast({ text: live.t(key, vars) }) }, pending, restart);
+    // The tab's conversation is carried to the new account's home, then it restarts there.
+    const move = { provider: pending.provider, from: pending.tab.account, to: pending.to, tabIds: [pending.tab.id] };
+    void restartTabs({ api, sessions, notify: (key, vars) => pushToast({ text: live.t(key, vars) }) }, move, move.tabIds);
   }
 
   const paths = repos?.flatMap((r) => r.worktrees.map((w) => w.path)) ?? [];
@@ -2339,9 +2340,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         onOpenUsage={openUsage}
         onManageAccounts={openAccounts}
         onUsageSettings={() => openSettings("usage")}
-        onUseAccount={(provider, name) =>
-          void api.accountActivate(provider, name).catch((e) => pushToast({ text: t("accounts.switch.failed", { code: toApiError(e).code }) }))
-        }
+        onUseAccount={pickAccount}
         ports={<PortsItem store={ports} active={current?.path ?? null} onOpen={() => panelKey("ports")} />}
         onManageSsh={() => openSettings("ssh")}
         onOpenSshTerminal={current && sessions ? (alias) => void sessions.open(current.path, `${SSH_SHELL_PREFIX}${alias}`, null, null) : undefined}
@@ -2460,20 +2459,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           }}
         />
       )}
-      {switching && sessions && (
-        <AccountSwitchDialog
-          provider={switching.provider}
-          from={switching.from}
-          to={switching.to}
-          rows={switching.tabIds.flatMap((id): SwitchRow[] => {
-            const tab = sessions.tab(id);
-            if (!tab) return [];
-            const name = tab.title ?? profileName(null, tab.profileId, t);
-            return [{ id, label: `${name} · ${tab.worktree.split(/[\\/]/).filter(Boolean).pop() ?? tab.worktree}`, working: tab.status === "working" }];
-          })}
-          onRestart={(ids, remember) => void answerSwitch(switching, ids, remember)}
-          onKeep={(remember) => void answerSwitch(switching, null, remember)}
-        />
+      {switching && (
+        <AccountSwitchDialog provider={switching.provider} to={switching.to} tab={switching.tab} onApply={answerSwitch} onCancel={() => setSwitching(null)} />
       )}
       {quitting && <QuitDialog ask={quitting.ask} onChoose={quitting.answer} />}
       {about !== null && <AboutDialog version={about} onLink={(link) => void api.helpOpen(link)} onClose={() => setAbout(null)} />}
