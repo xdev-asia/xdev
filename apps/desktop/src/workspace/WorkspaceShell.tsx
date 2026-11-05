@@ -392,7 +392,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const restoreStarted = useRef(false);
   const saver = useRef<ReturnType<typeof startLayoutSave> | null>(null);
   const flushOnClose = useRef(() => saver.current?.flush());
+  // The layout restore has ended (or there was nothing to restore): automation runs may start, and find the tabs they reuse.
+  const [restored, setRestored] = useState(false);
   useEffect(() => {
+    if (sessions && repos && repos.length === 0) setRestored(true);
     if (!sessions || !repos || repos.length === 0 || restoreStarted.current) return;
     restoreStarted.current = true;
     const known = new Set(repos.flatMap((r) => r.worktrees.map((w) => w.path)));
@@ -409,6 +412,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         text: live.t("layout.restored", { resumed, fresh }),
         actions: [{ label: live.t("layout.undo"), run: () => void undoRestore(sessions, opened) }],
       });
+    }).finally(() => {
+      if (restoreStarted.current) setRestored(true);
     });
   }, [sessions, repos]);
   // The close guard, set up once at mount: it looks the saver and the tabs up when a close fires, so it
@@ -791,9 +796,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       live.cliPoke = () => {};
     };
   }, [api, sessions, gate]);
-  // Scheduled runs: the backend asks for a tab, the window opens it and reports back; this also says the window is ready.
+  // Scheduled runs: the backend asks for a tab, the window opens it and reports back; this also says the window is ready,
+  // so it waits for the layout restore.
   useEffect(() => {
-    if (!sessions) return;
+    if (!sessions || !restored) return;
     return startAutomationDispatch(api, {
       sessions,
       ensureMounted: (w) => live.ensureMounted(w),
@@ -801,7 +807,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       defer: (worktree, launch) => gate.defer(worktree, launch),
       terminalLines: (id, max) => terminalOf(id)?.lines(max) ?? null,
     });
-  }, [api, sessions, gate]);
+  }, [api, sessions, gate, restored]);
   const selectedPath = current?.path ?? null;
   useEffect(() => live.cliPoke(), [selectedPath]);
   useEffect(() => onOpenFile((req) => recentFiles.touch(req.worktree, req.rel)), []);

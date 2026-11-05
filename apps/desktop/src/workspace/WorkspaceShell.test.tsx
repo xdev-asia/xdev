@@ -1572,6 +1572,29 @@ it("reports its tabs to the app CLI and follows the endpoint's events", async ()
   expect(sessions.tabs(OAK).at(-1)?.profileId).toBe("claude");
 });
 
+it("tells the backend it is ready for automation runs only after the layout is restored", async () => {
+  const api = createMockApi({});
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const load = api.layoutLoad.bind(api);
+  vi.spyOn(api, "layoutLoad").mockImplementation(async () => (await held, load()));
+  const view = await harness(api);
+  attend(view);
+  await settle();
+  // Restored tabs are not there yet: a run dispatched now would not find the tab it reuses.
+  expect(api.__automationReady()).toBe(0);
+  release();
+  await settle();
+  hooks.effects = [];
+  view.draw();
+  for (const effect of hooks.effects.slice(2)) {
+    const cleanup = effect();
+    if (typeof cleanup === "function") cleanups.push(cleanup);
+  }
+  await settle();
+  expect(api.__automationReady()).toBeGreaterThanOrEqual(1);
+});
+
 it("a worker tab asked for in a worktree not shown yet gets that worktree mounted", async () => {
   const api = createMockApi({});
   let ask: ((e: WorkerOpen) => void) | undefined;
