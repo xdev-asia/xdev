@@ -18,4 +18,15 @@ describe("PtyClient resume", () => {
     const client = new PtyClient(api, "r2", "abc");
     await expect(client.start("/demo", "shell", 80, 24, () => {})).rejects.toMatchObject({ code: "bad_arg" });
   });
+
+  it("a fork needs a session id, as Rust does", async () => {
+    const api = createMockApi({});
+    await api.ptyApprove("claude", null);
+    await expect(
+      api.ptySpawn("f1", "/demo", "claude", null, 80, 24, () => {}, undefined, true),
+    ).rejects.toMatchObject({ code: "bad_arg" });
+    const info = await api.ptySpawn("f2", "/demo", "claude", null, 80, 24, () => {}, "abc", true);
+    expect(info.agent).toBe(true);
+    await api.ptyKill("f2");
+  });
 });

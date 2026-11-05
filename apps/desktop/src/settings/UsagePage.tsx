@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { Badge, Heatmap } from "@xdev-asia/ui";
-import { toApiError, type Agent, type ApiError, type UsageDisplay, type UsageReport, type UsageScope, type UsageSettings } from "@/api";
+import { toApiError, type Account, type Agent, type Quota, type ApiError, type UsageDisplay, type UsageReport, type UsageScope, type UsageSettings } from "@/api";
 import { useI18n } from "@/i18n";
 import { displayPath, formatCount, localDay, totalOf, type Tokens } from "@/kit/kitUi";
 import type { ShareCardData } from "@/kit/shareCard";
@@ -14,6 +14,7 @@ import { UsageShare } from "./UsageShare";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import { CACHE_TTL_LONG_MS, CACHE_TTL_SHORT_MS } from "./usageDefaults";
 import type { SettingsSectionProps } from "./sections";
+import { credentialRows } from "./usageCredentials";
 import { getUsageSettings, setUsageSettings, useUsageSettings } from "./usageSettings";
 
 export type Provider = "overview" | Agent;
@@ -27,6 +28,7 @@ const FOOTER_IDS = ["usage.display", ...AGENTS.map((a) => `usage.footer.${a}`)];
 const CACHE_IDS = ["usage.cacheTimer", "usage.cacheTtl"];
 export const CACHE_TTLS = [CACHE_TTL_SHORT_MS, CACHE_TTL_LONG_MS] as const;
 const SCAN_IDS = AGENTS.map((a) => `usage.scan.${a}`);
+const CRED_IDS = ["usage.credentials"];
 
 /** Settings → Stats & Usage: what the agents on this machine spent, from their local logs. */
 export function UsagePage(props: SettingsSectionProps): JSX.Element {
@@ -44,6 +46,10 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError["code"]>();
   const [reads, setReads] = useState(0);
+  // Credentials: read once on open and once per Check again; never polled.
+  const [accounts, setAccounts] = useState<Account[]>();
+  const [quota, setQuota] = useState<Quota[]>([]);
+  const [checking, setChecking] = useState(false);
   // The first read of the page reads the new log bytes; Refresh and Enable ask for it again.
   const refresh = useRef(true);
   const saving = useRef(false);
@@ -57,6 +63,31 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
       (e) => setError(toApiError(e).code),
     );
   }, [api]);
+
+  async function checkCredentials(): Promise<void> {
+    setChecking(true);
+    try {
+      const [a, q] = await Promise.all([api.accounts(), api.quota()]);
+      setAccounts(a.accounts);
+      setQuota(q);
+    } catch (e) {
+      setError(toApiError(e).code);
+    } finally {
+      setChecking(false);
+    }
+  }
+  useEffect(() => {
+    void checkCredentials();
+  }, [api]);
+  async function signIn(name: string): Promise<void> {
+    try {
+      await api.loginAccount(name);
+      // The sign-in is done; look once more, so the row does not stay on its old state.
+      await checkCredentials();
+    } catch (e) {
+      setError(toApiError(e).code);
+    }
+  }
 
   // Agents the chosen provider covers, and which of them may be read.
   const covered: Agent[] = provider === "overview" ? AGENTS : [provider];
@@ -320,6 +351,38 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
 
       {settings && (
         <>
+          <SettingGroup ids={CRED_IDS} filter={filter}>
+            <h4 className="settings-group">{t("settings.usage.credentials.group")}</h4>
+            <SettingRow id="usage.credentials" filter={filter}>
+              {accounts !== undefined && accounts.length === 0 ? (
+                <p className="kit-empty" data-field="credentials-empty">{t("settings.usage.credentials.empty")}</p>
+              ) : (
+                <ul className="settings-list">
+                  {credentialRows(accounts ?? [], quota).map((r) => (
+                    <li className="settings-item" key={r.name} data-credential={r.name}>
+                      <div className="settings-item-text">
+                        <strong>{t(`usage.stats.provider.${r.provider}`)} · {r.name}</strong>
+                        <span className="settings-path" data-field="credential-status">
+                          {t(`settings.usage.credentials.status.${r.status}`)}
+                          {r.note ? ` · ${t(`settings.usage.credentials.note.${r.note}`)}` : ""}
+                        </span>
+                      </div>
+                      {r.canSignIn && (
+                        <button type="button" className="btn-secondary" data-act={`signin-${r.name}`} onClick={() => void signIn(r.name)}>
+                          {t("settings.usage.credentials.signIn")}
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="settings-actions settings-actions-start">
+                <button type="button" className="btn-secondary" data-act="check-credentials" disabled={checking} onClick={() => void checkCredentials()}>
+                  {t("settings.usage.credentials.check")}
+                </button>
+              </div>
+            </SettingRow>
+          </SettingGroup>
           <SettingGroup ids={FOOTER_IDS} filter={filter}>
             <h4 className="settings-group">{t("settings.usage.footerGroup")}</h4>
             <SettingRow id="usage.display" filter={filter}>

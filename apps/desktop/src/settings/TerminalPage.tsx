@@ -6,6 +6,7 @@ import { setTerminalSettings, TERMINAL_DEFAULTS, TERMINAL_LIMITS } from "@/termi
 import { RunningTerminals } from "./RunningTerminals";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import { TerminalBehaviourSection } from "./terminal/TerminalBehaviourSection";
+import { TerminalKeyboardSection } from "./terminal/TerminalKeyboardSection";
 import { TerminalLookSection } from "./terminal/TerminalLookSection";
 import type { SettingsSectionProps } from "./sections";
 
@@ -230,8 +231,9 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
       </ul>
       </SettingGroup>
 
-      <TerminalLookSection current={current} busy={busy} patch={patch} filter={filter} />
+      <TerminalLookSection api={api} current={current} busy={busy} patch={patch} filter={filter} />
       <TerminalBehaviourSection current={current} busy={busy} patch={patch} filter={filter} />
+      <TerminalKeyboardSection current={current} busy={busy} patch={patch} filter={filter} />
 
       <SettingRow id="terminal.scrollback" filter={filter}>
       <h4 className="settings-group">{t("settings.terminal.buffer")}</h4>

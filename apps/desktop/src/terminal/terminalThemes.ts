@@ -37,9 +37,12 @@ export const TERMINAL_SCHEMES: readonly TerminalScheme[] = schemes.map(({ id, na
   colors,
 }));
 
-/** "app" or an unknown id: only background and foreground, from the xDev tokens (today's look). */
-export function terminalTheme(id: string, token: (name: string) => string | undefined): ITheme {
-  const scheme = TERMINAL_SCHEMES.find((s) => s.id === id);
+/**
+ * A bundled scheme, else an imported one (`custom`). "app" or an unknown id: only background and
+ * foreground, from the xDev tokens (today's look).
+ */
+export function terminalTheme(id: string, token: (name: string) => string | undefined, custom: readonly TerminalScheme[] = []): ITheme {
+  const scheme = TERMINAL_SCHEMES.find((s) => s.id === id) ?? custom.find((s) => s.id === id);
   if (scheme) return { ...scheme.colors };
   return { background: token("--x-color-surface"), foreground: token("--x-color-ink") };
 }

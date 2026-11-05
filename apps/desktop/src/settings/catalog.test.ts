@@ -69,3 +69,11 @@ describe("searchSettings", () => {
     expect(score("phong chu", "editor.vi")).toBe(300);
   });
 });
+
+it("a mac-only entry is listed for mac and for no other platform", async () => {
+  const { entriesFor } = await import("./catalog");
+  const id = "terminal.optionAsAlt";
+  expect(entriesFor("mac").some((x) => x.id === id)).toBe(true);
+  expect(entriesFor("win").some((x) => x.id === id)).toBe(false);
+  expect(entriesFor("linux").some((x) => x.id === id)).toBe(false);
+});

@@ -1,3 +1,4 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -6,6 +7,16 @@ import type {
   AccountSource,
   ActiveAccount,
   AgentsSettings,
+  OrchestrationSettings,
+  SkillStatus,
+  WorkerLifetime,
+  WorkerOpen,
+  WorkerOpenOutcome,
+  WorkerClose,
+  ReadTab,
+  WorkerChanged,
+  AwakeView,
+  KeepAwake,
   SwitchRunning,
   Approvals,
   Account,
@@ -37,6 +48,9 @@ import type {
   KeybindingsChanged,
   KeybindingsText,
   UiSettings,
+  CustomScheme,
+  OnNameTaken,
+  SchemePreview,
   OpenInSettings,
   OpenTarget,
   CloneProgress,
@@ -57,6 +71,15 @@ import type {
   Task,
   TasksContext,
   UpdateInfo,
+  UpdatePhase,
+  UpdateChannel,
+  ShellSettings,
+  ShellLabels,
+  CloseIntent,
+  CloseRequest,
+  QuitMode,
+  HelpLink,
+  MenuAction,
   VaultChanged,
   VaultSetup,
   VaultView,
@@ -95,6 +118,13 @@ import type {
   IssueDetail,
   IssueQuery,
   IssueState,
+  IssueDraft,
+  PrSummary,
+  PrBranch,
+  PrFilter,
+  PrQuery,
+  ProjectSummary,
+  CreateRequest,
   ShipView,
   RepoHooks,
   HookKind,
@@ -106,6 +136,8 @@ import type {
   CliAsk,
   CliOpenTab,
   TabReport,
+  XdevIdState,
+  XdevIdServer,
 } from "@xdev/bindings";
 import type {
   AgentSession,
@@ -131,6 +163,7 @@ import type {
   SearchQuery,
   SessionQuery,
   SessionRow,
+  SessionSearchStatus,
   Agent,
   Cost,
   Skill,
@@ -153,15 +186,18 @@ export { createMockApi };
 export type ScriptKind = Extract<HookKind, "setup" | "archive">;
 export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
-export type { Agent, AgentSession, Cost, SessionQuery, SessionRow };
+export type { Agent, AgentSession, Cost, SessionQuery, SessionRow, SessionSearchStatus };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
-export type { AccountSource, ActiveAccount, AgentsSettings, SwitchRunning };
+export type { AccountSource, ActiveAccount, AgentsSettings, AwakeView, KeepAwake, SwitchRunning };
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
+export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase };
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { CliAsk, CliOpenTab, TabReport };
+export type { OrchestrationSettings, SkillStatus, WorkerLifetime, WorkerOpen, WorkerOpenOutcome, WorkerClose, ReadTab, WorkerChanged };
 export type { RestoreMode } from "@xdev/bindings";
-export type { Theme } from "@xdev/bindings";
+export type { Theme, EditorTheme, SidebarLook, StatusBarItems } from "@xdev/bindings";
+export type { CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
 
 // The IPC types come from Rust; see packages/bindings/README.md.
@@ -264,6 +300,13 @@ export type {
   IssueDetail,
   IssueQuery,
   IssueState,
+  IssueDraft,
+  PrSummary,
+  PrBranch,
+  PrFilter,
+  PrQuery,
+  ProjectSummary,
+  CreateRequest,
   ShipView,
   GitSettings,
   SourceControlGroupOrder,
@@ -275,6 +318,7 @@ export type {
   CursorStyle,
   TerminalGpu,
   TerminalBell,
+  MacOptionAsAlt,
   SettingsSection,
   SettingsChanged,
   SetupPolicy,
@@ -317,6 +361,14 @@ export type PtyProfile = string;
 // Rust builds `CmdError.code` from each crate's `code()` as a plain string, so the codes the UI
 // knows how to translate are listed here by hand.
 export type ErrorCode =
+  | "account_keychain"
+  | "account_unavailable"
+  | "account_link"
+  | "account_state"
+  | "account_code"
+  | "account_expired"
+  | "account_timeout"
+  | "account_server"
   | "not_found"
   | "outside_vault"
   | "no_vault"
@@ -394,6 +446,9 @@ export type ErrorCode =
   | "invalid_profile"
   | "builtin_profile"
   | "profile_off"
+  | "theme_invalid"
+  | "theme_too_large"
+  | "theme_name_taken"
   | "not_installed"
   | "outside"
   | "kit_bad_input"
@@ -416,6 +471,11 @@ export type ErrorCode =
   | "gh_failed"
   | "issue_not_found"
   | "issue_other_repo"
+  | "pr_not_found"
+  | "gh_scope"
+  | "bad_draft"
+  | "branch_in_use"
+  | "bad_sparse"
   | "draft_failed"
   | "unsupported_agent"
   | "bad_sound"
@@ -468,10 +528,34 @@ export interface Api {
   // The downloaded update waiting for a restart, if any; Rust checks and downloads on its own.
   updateStatus(): Promise<UpdateInfo | null>;
   onUpdateReady(cb: (update: UpdateInfo) => void): Promise<() => void>;
-  // Restarts the app once installed, so it resolves only when there was nothing to install.
-  restartToUpdate(): Promise<void>;
+  // The version of this build.
+  appVersion(): Promise<string>;
   // An OS notification; the text comes from here so it follows the UI language.
   notifyUpdate(title: string, body: string): Promise<void>;
+  // A check the person asked for; `rc` also stores the release candidate channel. Resolves with where
+  // the check ended, and `onUpdatePhase` follows every step of it and of the background checks.
+  updateCheck(rc: boolean): Promise<UpdatePhase>;
+  updatePhase(): Promise<UpdatePhase>;
+  onUpdatePhase(cb: (phase: UpdatePhase) => void): Promise<() => void>;
+  // Settings → General, Window and Updates groups; the put returns what was stored.
+  shellSettings(): Promise<ShellSettings>;
+  shellSettingsPut(settings: ShellSettings): Promise<ShellSettings>;
+  // Asked from the window close handler: `hide` means Rust hid the window to the tray, `close` means
+  // go on to the quit guard. The notice text is what Rust shows the first time it hides.
+  shellCloseRequested(noticeTitle: string, noticeBody: string): Promise<CloseRequest>;
+  // Every quit goes through here; the window closes and the quit guard asks as for the close button.
+  shellQuit(mode: QuitMode): Promise<void>;
+  // The person said no in the quit guard.
+  shellQuitCancelled(): Promise<void>;
+  // The tray and native menu strings in the UI language.
+  shellLabelsSet(labels: ShellLabels): Promise<void>;
+  // A native menu or tray item the webview acts on.
+  onMenuAction(cb: (action: MenuAction) => void): Promise<() => void>;
+  helpOpen(link: HelpLink): Promise<void>;
+  // Lights the tray dot when the window is hidden or minimized.
+  trayAttention(): Promise<void>;
+  windowReload(): Promise<void>;
+  windowDevtoolsToggle(): Promise<void>;
   accounts(): Promise<Accounts>;
   quota(): Promise<Quota[]>;
   // With `dir`, an existing config folder is registered as is (a hive
@@ -526,6 +610,16 @@ export interface Api {
   // Oldest first.
   squadEvents(id: string): Promise<SquadEvent[]>;
   pickFolder(): Promise<string | null>;
+  // A native file dialog limited to `extensions` (no dot); null when cancelled.
+  pickFile(extensions: string[]): Promise<string | null>;
+  // Imported terminal schemes (`xdev-terminal-theme` files under the data dir), by name.
+  terminalThemes(): Promise<CustomScheme[]>;
+  // Reads and checks a theme file without saving it; rejects `theme_invalid` (detail: the field) or `theme_too_large`.
+  terminalThemePreview(path: string): Promise<SchemePreview>;
+  // Saves it; `theme_name_taken` when the name exists and `onTaken` is `fail`.
+  terminalThemeImport(path: string, onTaken: OnNameTaken): Promise<CustomScheme>;
+  // Moves an imported scheme to the trash.
+  terminalThemeRemove(id: string): Promise<void>;
   openVault(path: string): Promise<DocEntry[]>;
   lastVault(): Promise<string | null>;
   // `prompt` is true until the first-run offer has been answered or any folder opened.
@@ -538,6 +632,10 @@ export interface Api {
   // Settings -> Terminal; the put returns what was stored, with numbers clamped to their ranges.
   terminalSettings(): Promise<TerminalSettings>;
   terminalSettingsPut(s: TerminalSettings): Promise<TerminalSettings>;
+  /** Saves the clipboard image as a PNG in the temp folder; null when the clipboard holds no image. Rejects `too_large`. */
+  clipboardImageSave(): Promise<string | null>;
+  /** macOS keyboard input source id; null elsewhere. */
+  keyboardInputSource(): Promise<string | null>;
   /** Calls `listener` after any settings write, from this window or another. Returns the unsubscribe. */
   onSettingsChanged(listener: (e: SettingsChanged) => void): () => void;
   // Window view settings (zoom, 0.5..2); the put returns what was stored, clamped.
@@ -552,6 +650,22 @@ export interface Api {
   keybindingsReveal(): Promise<void>;
   // After our own write and when the file changes on disk.
   onKeybindingsChanged(fn: (text: string | null) => void): Promise<() => void>;
+  // xDev ID (the person's xDev account). The token never leaves Rust.
+  xdevIdState(): Promise<XdevIdState>;
+  xdevIdSignIn(): Promise<XdevIdState>;
+  xdevIdPaste(link: string): Promise<XdevIdState>;
+  xdevIdCancel(): Promise<XdevIdState>;
+  xdevIdSignOut(): Promise<XdevIdState>;
+  xdevIdRefresh(): Promise<XdevIdState>;
+  /** Opens the running attempt's link again; starts no new attempt. */
+  xdevIdReopen(): Promise<void>;
+  xdevIdManage(): Promise<void>;
+  /** The server in use, where it came from, and the stored setting. */
+  xdevIdServer(): Promise<XdevIdServer>;
+  /** Saves `xdevId.server` (empty: the default). A different server signs out first. */
+  xdevIdServerSet(value: string): Promise<XdevIdServer>;
+  // `xdev-id://changed`: after sign-in, sign-out, expiry, refresh or a new avatar.
+  onXdevIdChanged(cb: (s: XdevIdState) => void): Promise<() => void>;
   // The terminal policy and the hint toggle (settings.json `keys`); the put returns what was stored.
   keySettingsGet(): Promise<KeySettings>;
   keySettingsPut(s: KeySettings): Promise<KeySettings>;
@@ -587,9 +701,9 @@ export interface Api {
   // A terminal per tab. Output arrives on `onData` until the tab calls `ptyKill`; an agent profile
   // rejects with `needs_approval` / `denied` until `ptyApprove` records it in the policy.
   // `resume` is an agent session id (A-Z, a-z, 0-9, `_`, `-`): the CLI continues that session.
-  ptySpawn(id: string, cwd: string, profileId: PtyProfile, account: string | null, cols: number, rows: number, onData: (bytes: Uint8Array) => void, resume?: string): Promise<PtyInfo>;
-  // Approves the launch `ptySpawn` was refused for; pass the same `resume`, as it is part of the launch line.
-  ptyApprove(profileId: PtyProfile, account: string | null, resume?: string): Promise<void>;
+  ptySpawn(id: string, cwd: string, profileId: PtyProfile, account: string | null, cols: number, rows: number, onData: (bytes: Uint8Array) => void, resume?: string, fork?: boolean): Promise<PtyInfo>;
+  // Approves the launch `ptySpawn` was refused for; pass the same `resume` and `fork`, as they are part of the launch line.
+  ptyApprove(profileId: PtyProfile, account: string | null, resume?: string, fork?: boolean): Promise<void>;
   // Agent profiles and the shells of the `+` menu; each write returns the whole view.
   profiles(): Promise<ProfilesView>;
   profilePut(p: Profile): Promise<ProfilesView>;
@@ -695,7 +809,9 @@ export interface Api {
   // base ref. A taken name is made as `name-2`, `-3`, … (the title keeps what was typed). Rejects
   // with `bad_name`, `branch_exists` (99 taken), `worktree_exists` or `bad_ref`, and with
   // `bad_branch_prefix` when Settings → Git holds a custom prefix no branch name can start with.
-  worktreeCreate(repoId: string, name: string, from: string | null): Promise<WorktreeCreated>;
+  // `request` reuses a local branch (`existing`; `branch_in_use`, `bad_ref`) and limits the checkout to
+  // cone folders (`sparse`; `bad_sparse`).
+  worktreeCreate(repoId: string, name: string, from: string | null, request?: CreateRequest): Promise<WorktreeCreated>;
   // What `worktreeCreate` would name the branch and folder for a typed name, without making
   // anything; `suffixed` when the name was taken and got `-2`, `-3`, …
   worktreeNamePreview(repoId: string, name: string): Promise<NamePreview>;
@@ -771,6 +887,21 @@ export interface Api {
   issueResolve(repoId: string, text: string): Promise<Issue | null>;
   // Opens the issue in the browser through `gh`.
   issueOpen(repoId: string, number: number): Promise<void>;
+  // Opens a new issue; rejects `bad_draft` for a blank or over-long title, or `gh_scope` when the
+  // login lacks a scope.
+  issueCreate(repoId: string, draft: IssueDraft): Promise<Issue>;
+  // Pull requests and Projects of the repo through `gh`. `prGet` rejects `pr_not_found`.
+  prsList(repoId: string, query: PrQuery): Promise<PrSummary[]>;
+  prGet(repoId: string, number: number): Promise<PrSummary>;
+  prOpen(repoId: string, number: number): Promise<void>;
+  // The local branch to start a pull request on, fetched when needed; `branch_in_use` when a
+  // worktree has it. A fork gives `pr-<n>`.
+  prBranch(repoId: string, number: number): Promise<PrBranch>;
+  // Deletes a branch `prBranch` fetched when the worktree on it was never made; a branch it did not
+  // fetch, or one a worktree has, is left alone.
+  prBranchDiscard(repoId: string, branch: string): Promise<void>;
+  projectsList(repoId: string): Promise<ProjectSummary[]>;
+  projectOpen(repoId: string, number: number): Promise<void>;
   // The log of the failed job behind a check's link (capped), for the Fix checks recipe; null when
   // `gh` cannot give it.
   worktreeCheckLog(path: string, link: string): Promise<string | null>;
@@ -841,6 +972,10 @@ export interface Api {
   // The agent sessions of every home, matched to the workspace; `refresh` reads the new log
   // bytes first. Rejects with `bad_arg` when `query.limit` is over 500.
   agentSessions(query: SessionQuery, refresh: boolean): Promise<SessionRow[]>;
+  /** What the conversation text index holds. */
+  sessionSearchStatus(): Promise<SessionSearchStatus>;
+  /** Turns the search off, then deletes the index; returns the stored settings. */
+  sessionSearchClear(): Promise<AgentsSettings>;
 
   // Quick commands
   // Every saved command (settings.json `quickCommands`), global and per repo together, in order.
@@ -904,6 +1039,15 @@ export interface Api {
   // Settings → Agents; the put returns what was stored.
   agentsSettings(): Promise<AgentsSettings>;
   agentsSettingsPut(v: AgentsSettings): Promise<AgentsSettings>;
+  // Settings → Orchestration; the put returns what was stored, with the depth clamped to 1..9.
+  orchestrationSettings(): Promise<OrchestrationSettings>;
+  orchestrationSettingsPut(v: OrchestrationSettings): Promise<OrchestrationSettings>;
+  // Keep computer awake: the stored mode, whether an OS request is held, whether this machine can hold one.
+  keepAwake(): Promise<AwakeView>;
+  keepAwakeSet(mode: KeepAwake): Promise<AwakeView>;
+  // Reports whether any agent tab is working; the backend decides in `agent` mode.
+  keepAwakeAgents(working: boolean): Promise<AwakeView>;
+  onKeepAwakeChanged(cb: (v: AwakeView) => void): Promise<() => void>;
   usageSettings(): Promise<UsageSettings>;
   usageSettingsPut(v: UsageSettings): Promise<UsageSettings>;
 
@@ -926,6 +1070,17 @@ export interface Api {
   onCliOpenTab(cb: (e: CliOpenTab) => void): Promise<() => void>;
   // A CLI write that needs the person (`cli://ask`); answer with `cliApprove`.
   onCliAsk(cb: (e: CliAsk) => void): Promise<() => void>;
+  // Orchestration. The skill card, the strip over a worker's terminal, and the answers the UI owes the backend.
+  orchestrationSkillStatus(): Promise<SkillStatus>;
+  orchestrationSkillInstall(force?: boolean): Promise<SkillStatus>;
+  orchestrationWorkerLifetime(tab: string): Promise<WorkerLifetime | null>;
+  orchestrationWorkerKeepOpen(tab: string, keep: boolean): Promise<WorkerLifetime>;
+  orchestrationWorkerOpened(dispatch: string, outcome: WorkerOpenOutcome): Promise<void>;
+  orchestrationReadAnswer(request: number, text: string): Promise<void>;
+  onOrchestrationOpenWorker(cb: (e: WorkerOpen) => void): Promise<() => void>;
+  onOrchestrationCloseWorker(cb: (e: WorkerClose) => void): Promise<() => void>;
+  onOrchestrationReadTab(cb: (e: ReadTab) => void): Promise<() => void>;
+  onOrchestrationWorkerChanged(cb: (e: WorkerChanged) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -933,6 +1088,14 @@ function seen({ path, hash }: Seen): Seen {
 }
 
 export const ERROR_CODES: readonly ErrorCode[] = [
+  "account_keychain",
+  "account_unavailable",
+  "account_link",
+  "account_state",
+  "account_code",
+  "account_expired",
+  "account_timeout",
+  "account_server",
   "not_found",
   "outside_vault",
   "no_vault",
@@ -1010,6 +1173,9 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "invalid_profile",
   "builtin_profile",
   "profile_off",
+  "theme_invalid",
+  "theme_too_large",
+  "theme_name_taken",
   "not_installed",
   "outside",
   "kit_bad_input",
@@ -1032,6 +1198,11 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "gh_failed",
   "issue_not_found",
   "issue_other_repo",
+  "pr_not_found",
+  "gh_scope",
+  "bad_draft",
+  "branch_in_use",
+  "bad_sparse",
   "draft_failed",
   "unsupported_agent",
   "bad_sound",
@@ -1067,8 +1238,22 @@ function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 const tauriApi: Api = {
   updateStatus: () => call("update_status"),
   onUpdateReady: (cb) => listen<UpdateInfo>("update-ready", (e) => cb(e.payload)),
-  restartToUpdate: () => call("update_restart"),
+  appVersion: () => getVersion(),
   notifyUpdate: (title, body) => call("update_notify", { title, body }),
+  updateCheck: (rc) => call("update_check", { rc }),
+  updatePhase: () => call("update_phase"),
+  onUpdatePhase: (cb) => listen<UpdatePhase>("update-phase", (e) => cb(e.payload)),
+  shellSettings: () => call("shell_settings_get"),
+  shellSettingsPut: (settings) => call("shell_settings_put", { settings }),
+  shellCloseRequested: (noticeTitle, noticeBody) => call("shell_close_requested", { noticeTitle, noticeBody }),
+  shellQuit: (mode) => call("shell_quit", { mode }),
+  shellQuitCancelled: () => call("shell_quit_cancelled"),
+  shellLabelsSet: (labels) => call("shell_labels_set", { labels }),
+  onMenuAction: (cb) => listen<{ action: MenuAction }>("shell://menu", (e) => cb(e.payload.action)),
+  helpOpen: (link) => call("help_open", { link }),
+  trayAttention: () => call("tray_attention"),
+  windowReload: () => call("window_reload"),
+  windowDevtoolsToggle: () => call("window_devtools_toggle"),
   accounts: () => call("accounts_list"),
   quota: () => call("accounts_quota"),
   addAccount: (name, provider, dir) => call("account_add", { name, provider, dir: dir ?? null }),
@@ -1104,6 +1289,14 @@ const tauriApi: Api = {
     const picked = await open({ directory: true });
     return typeof picked === "string" ? picked : null;
   },
+  async pickFile(extensions) {
+    const picked = await open({ multiple: false, directory: false, filters: [{ name: "", extensions }] });
+    return typeof picked === "string" ? picked : null;
+  },
+  terminalThemes: () => call("terminal_themes_list"),
+  terminalThemePreview: (path) => call("terminal_theme_preview", { path }),
+  terminalThemeImport: (path, onTaken) => call("terminal_theme_import", { path, onTaken }),
+  terminalThemeRemove: (id) => call("terminal_theme_remove", { id }),
   openVault: (path) => call("open_vault", { path }),
   lastVault: () => call("last_vault"),
   vaultSetup: () => call("vault_setup"),
@@ -1112,6 +1305,8 @@ const tauriApi: Api = {
   setGitSettings: (git) => call("set_git_settings", { git }),
   terminalSettings: () => call("terminal_settings_get"),
   terminalSettingsPut: (settings) => call("terminal_settings_put", { settings }),
+  clipboardImageSave: () => call("clipboard_image_save"),
+  keyboardInputSource: () => call("keyboard_input_source"),
   onSettingsChanged: (listener) => {
     const unlisten = listen<SettingsChanged>("settings://changed", (e) => listener(e.payload));
     return () => void unlisten.then((stop) => stop());
@@ -1122,6 +1317,17 @@ const tauriApi: Api = {
   keybindingsWrite: (text) => call("keybindings_write", { text }),
   keybindingsReveal: () => call("keybindings_reveal"),
   onKeybindingsChanged: (fn) => listen<KeybindingsChanged>("keybindings://changed", (e) => fn(e.payload.text)),
+  xdevIdState: () => call("xdev_id_state"),
+  xdevIdSignIn: () => call("xdev_id_sign_in"),
+  xdevIdPaste: (link) => call("xdev_id_paste", { link }),
+  xdevIdCancel: () => call("xdev_id_cancel"),
+  xdevIdSignOut: () => call("xdev_id_sign_out"),
+  xdevIdRefresh: () => call("xdev_id_refresh"),
+  xdevIdReopen: () => call("xdev_id_reopen"),
+  xdevIdManage: () => call("xdev_id_manage"),
+  xdevIdServer: () => call("xdev_id_server"),
+  xdevIdServerSet: (value) => call("xdev_id_server_set", { value }),
+  onXdevIdChanged: (cb) => listen<XdevIdState>("xdev-id://changed", (e) => cb(e.payload)),
   keySettingsGet: () => call("key_settings_get"),
   keySettingsPut: (settings) => call("key_settings_put", { settings }),
   gitUserName: () => call("git_user_name"),
@@ -1147,13 +1353,13 @@ const tauriApi: Api = {
   exportWrite: (expected) => call("export_write", { expected }),
   docFreshness: (path) => call("doc_freshness", { path }),
   staleDocs: () => call("stale_docs"),
-  ptySpawn(id, cwd, profileId, account, cols, rows, onData, resume) {
+  ptySpawn(id, cwd, profileId, account, cols, rows, onData, resume, fork) {
     // Rust sends raw bytes, which arrive as an ArrayBuffer.
     const out = new Channel<ArrayBuffer | number[]>();
     out.onmessage = (msg) => onData(toBytes(msg));
-    return call("pty_spawn", { id, cwd, profileId, account, cols, rows, out, resume: resume ?? null });
+    return call("pty_spawn", { id, cwd, profileId, account, cols, rows, out, resume: resume ?? null, fork: fork ?? null });
   },
-  ptyApprove: (profileId, account, resume) => call("pty_approve", { profileId, account, resume: resume ?? null }),
+  ptyApprove: (profileId, account, resume, fork) => call("pty_approve", { profileId, account, resume: resume ?? null, fork: fork ?? null }),
   profiles: () => call("profiles_list"),
   profilePut: (profile) => call("profile_put", { profile }),
   profileRemove: (id) => call("profile_remove", { id }),
@@ -1216,7 +1422,7 @@ const tauriApi: Api = {
   vaultAdd: (path) => call("vault_add", { path }),
   vaultForget: (id) => call("vault_forget", { id }),
   vaultCreateDocs: (repoId, file, content) => call("vault_create_docs", { repoId, file, content }),
-  worktreeCreate: (repoId, name, from) => call("worktree_create", { repoId, name, from }),
+  worktreeCreate: (repoId, name, from, request) => call("worktree_create", { repoId, name, from, request: request ?? null }),
   worktreeNamePreview: (repoId, name) => call("worktree_name_preview", { repoId, name }),
   worktreePin: (path, pinned) => call("worktree_pin", { path, pinned }),
   worktreeRemove: (path, force, confirmed) => call("worktree_remove", { path, force, confirmed }),
@@ -1254,6 +1460,14 @@ const tauriApi: Api = {
   issueView: (repoId, number) => call("issue_view", { repoId, number }),
   issueResolve: (repoId, text) => call("issue_resolve", { repoId, text }),
   issueOpen: (repoId, number) => call("issue_open", { repoId, number }),
+  issueCreate: (repoId, draft) => call("issue_create", { repoId, draft }),
+  prsList: (repoId, query) => call("prs_list", { repoId, query }),
+  prGet: (repoId, number) => call("pr_get", { repoId, number }),
+  prOpen: (repoId, number) => call("pr_open", { repoId, number }),
+  prBranch: (repoId, number) => call("pr_branch", { repoId, number }),
+  prBranchDiscard: (repoId, branch) => call("pr_branch_discard", { repoId, branch }),
+  projectsList: (repoId) => call("projects_list", { repoId }),
+  projectOpen: (repoId, number) => call("project_open", { repoId, number }),
   worktreeCheckLog: (path, link) => call("worktree_check_log", { path, link }),
   worktreeDraftCommit: (path, files) => call("worktree_draft_commit", { path, files }),
   worktreeDraftPr: (path) => call("worktree_draft_pr", { path }),
@@ -1291,6 +1505,8 @@ const tauriApi: Api = {
   kitPathsExist: (root, paths) => call("kit_paths_exist", { root, paths }),
   kitPromptHistory: (limit) => call("kit_prompt_history", { limit }),
   agentSessions: (query, refresh) => call("agent_sessions", { query, refresh }),
+  sessionSearchStatus: () => call("session_search_status"),
+  sessionSearchClear: () => call("session_search_clear"),
   quickCommandsList: () => call("quick_commands_list"),
   quickCommandUpsert: (item) => call("quick_command_upsert", { item }),
   quickCommandDelete: (id) => call("quick_command_delete", { id }),
@@ -1320,6 +1536,12 @@ const tauriApi: Api = {
   diffSettingsPut: (settings) => call("diff_settings_put", { settings }),
   agentsSettings: () => call("agents_settings_get"),
   agentsSettingsPut: (settings) => call("agents_settings_put", { settings }),
+  orchestrationSettings: () => call("orchestration_settings_get"),
+  orchestrationSettingsPut: (settings) => call("orchestration_settings_put", { settings }),
+  keepAwake: () => call("keep_awake_get"),
+  keepAwakeSet: (mode) => call("keep_awake_set", { mode }),
+  keepAwakeAgents: (working) => call("keep_awake_agents", { working }),
+  onKeepAwakeChanged: (cb) => listen<AwakeView>("keep-awake://changed", (e) => cb(e.payload)),
   usageSettings: () => call("usage_settings_get"),
   usageSettingsPut: (settings) => call("usage_settings_put", { settings }),
   layoutLoad: () => call("layout_load"),
@@ -1329,18 +1551,30 @@ const tauriApi: Api = {
   onWorkspaceChanged: (cb) => listen("workspace://changed", () => cb()),
   onCliOpenTab: (cb) => listen<CliOpenTab>("cli://open-tab", (e) => cb(e.payload)),
   onCliAsk: (cb) => listen<CliAsk>("cli://ask", (e) => cb(e.payload)),
+  orchestrationSkillStatus: () => call("orchestration_skill_status"),
+  orchestrationSkillInstall: (force = false) => call("orchestration_skill_install", { force }),
+  orchestrationWorkerLifetime: (tab) => call("orchestration_worker_lifetime", { tab }),
+  orchestrationWorkerKeepOpen: (tab, keep) => call("orchestration_worker_keep_open", { tab, keep }),
+  orchestrationWorkerOpened: (dispatch, outcome) => call("orchestration_worker_opened", { dispatch, outcome }),
+  orchestrationReadAnswer: (request, text) => call("orchestration_read_answer", { request, text }),
+  onOrchestrationOpenWorker: (cb) => listen<WorkerOpen>("orchestration://open-worker", (e) => cb(e.payload)),
+  onOrchestrationCloseWorker: (cb) => listen<WorkerClose>("orchestration://close-worker", (e) => cb(e.payload)),
+  onOrchestrationReadTab: (cb) => listen<ReadTab>("orchestration://read-tab", (e) => cb(e.payload)),
+  onOrchestrationWorkerChanged: (cb) => listen<WorkerChanged>("orchestration://worker-changed", (e) => cb(e.payload)),
 };
 
 function browserApi(): Api {
   const params = new URLSearchParams(location.search);
-  const mock = createMockApi(DEMO_SEED, { repo: !params.has("norepo"), commits: DEMO_COMMITS, runDelayMs: 4000 });
+  // `?account=in` previews the signed-in xDev ID.
+  const xdevId = params.get("account") === "in" ? "signedIn" : "signedOut";
+  // `?update=0.4.0` simulates a downloaded update, so the restart button can be previewed.
+  const pending = params.get("update");
+  const mock = createMockApi(DEMO_SEED, { repo: !params.has("norepo"), commits: DEMO_COMMITS, runDelayMs: 4000, xdevId, update: pending });
   // Lets the preview simulate an AI agent or another editor from the devtools console.
   Object.assign(window, { xdevMock: mock });
   // The preview lands in the demo vault so the main layout is reachable without a dialog;
   // `?welcome` simulates a first launch instead.
   const firstRun = params.has("welcome");
-  // `?update=0.4.0` simulates a downloaded update, so the restart button can be previewed.
-  const pending = params.get("update");
   let seeded = false;
   return {
     ...mock,

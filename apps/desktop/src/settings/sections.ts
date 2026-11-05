@@ -1,10 +1,13 @@
 import type { JSX } from "react";
 import type { Api } from "@/api";
+import { AccountPage } from "./account/AccountPage";
 import { AgentsPage } from "./agents/AgentsPage";
+import { AppearancePage } from "./AppearancePage";
 import { EditorPage } from "./EditorPage";
 import { GeneralPage } from "./GeneralPage";
 import { GitSettings } from "./GitSettings";
 import { OpenInPage } from "./OpenInPage";
+import { OrchestrationPage } from "./orchestration/OrchestrationPage";
 import { NotificationsPage } from "./notifications/NotificationsPage";
 import { QuickCommandsPage } from "./quickCommands/QuickCommandsPage";
 import { ReposSettings } from "./ReposSettings";
@@ -43,7 +46,10 @@ export interface SettingsSection {
 // The left list of the Settings view, in order; another section is one more entry.
 export const SECTIONS: SettingsSection[] = [
   { id: "general", labelKey: "settings.general.title", Component: GeneralPage },
+  { id: "appearance", labelKey: "settings.appearance.title", Component: AppearancePage },
+  { id: "account", labelKey: "account.title", Component: AccountPage },
   { id: "agents", labelKey: "settings.agents.title", Component: AgentsPage },
+  { id: "orchestration", labelKey: "settings.orchestration.title", Component: OrchestrationPage },
   { id: "usage", labelKey: "settings.usage.title", Component: UsagePage },
   { id: "notifications", labelKey: "settings.notifications.title", Component: NotificationsPage },
   { id: "terminal", labelKey: "settings.terminal.title", Component: TerminalPage },

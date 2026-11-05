@@ -173,3 +173,38 @@ it("a focus soon after a notification points at its pane, once", async () => {
   s.notifier.cancelFocusJump();
   expect(s.notifier.takeFocusJump(s.now() + 1000)).toBeNull();
 });
+
+it("lights the tray once per burst when the event is on", async () => {
+  const s = setup();
+  const lit = vi.spyOn(s.api, "trayAttention");
+  await Promise.all([s.notifier.attention(tab("a"), "needs-you", names), s.notifier.attention(tab("a"), "needs-you", names)]);
+  expect(lit).toHaveBeenCalledTimes(1);
+  s.advance(COOLDOWN_MS);
+  await s.notifier.attention(tab("a"), "needs-you", names);
+  expect(lit).toHaveBeenCalledTimes(2);
+});
+
+it("does not light the tray when the master switch or the event is off", async () => {
+  const off = setup({ enabled: false });
+  const lit = vi.spyOn(off.api, "trayAttention");
+  await off.notifier.attention(tab("a"), "needs-you", names);
+  expect(lit).not.toHaveBeenCalled();
+  const quiet = setup({ onNeedsInput: false });
+  const litQuiet = vi.spyOn(quiet.api, "trayAttention");
+  await quiet.notifier.attention(tab("a"), "needs-you", names);
+  expect(litQuiet).not.toHaveBeenCalled();
+});
+
+it("a tray call that never answers does not hold the OS notification back", async () => {
+  const s = setup();
+  vi.spyOn(s.api, "trayAttention").mockReturnValue(new Promise(() => {}));
+  await s.notifier.attention(tab("a"), "needs-you", names);
+  expect(s.notify).toHaveBeenCalledTimes(1);
+});
+
+it("a failing tray call never stops the OS notification", async () => {
+  const s = setup();
+  vi.spyOn(s.api, "trayAttention").mockRejectedValue(new Error("no tray"));
+  await s.notifier.attention(tab("a"), "needs-you", names);
+  expect(s.notify).toHaveBeenCalledTimes(1);
+});

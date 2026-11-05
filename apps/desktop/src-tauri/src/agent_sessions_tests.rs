@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -133,7 +134,13 @@ impl Fixture {
 
     fn rows(&self, q: &SessionQuery) -> Vec<SessionRow> {
         let refs: Vec<&AgentSession> = self.all.iter().collect();
-        select(&refs, &self.folders, q, &|p| Path::new(p).is_dir())
+        select(
+            &refs,
+            &self.folders,
+            q,
+            &|p| Path::new(p).is_dir(),
+            &HashMap::new(),
+        )
     }
 }
 
@@ -336,17 +343,17 @@ fn a_refresh_reads_the_logs_and_saves_the_index() {
     let homes = || vec![claude_home(&root.join("user"))];
     let q = query(SessionScope::All);
 
-    let rows = sessions(&data, homes, &q, None).unwrap();
+    let rows = sessions(&data, homes, &q, None, None).unwrap();
     assert!(rows.is_empty(), "no refresh, no saved index");
 
-    let rows = sessions(&data, homes, &q, Some(0)).unwrap();
+    let rows = sessions(&data, homes, &q, Some(0), None).unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].session.title.as_deref(), Some("hello there"));
     assert!(rows[0].resumable);
     assert!(data.join("kit").join("sessions.json").is_file());
 
     // Kept between calls without a refresh.
-    assert_eq!(sessions(&data, homes, &q, None).unwrap().len(), 1);
+    assert_eq!(sessions(&data, homes, &q, None, None).unwrap().len(), 1);
 }
 
 /// 2030-01-01T00:00:00Z in unix ms.
@@ -386,11 +393,299 @@ fn a_narrower_window_prunes_on_the_next_refresh() {
     let now = JAN_2030 + 10 * DAY;
     let ids = |rows: Vec<SessionRow>| rows.into_iter().map(|r| r.session.id).collect::<Vec<_>>();
 
-    let rows = sessions(&data, homes, &q, Some(history_cutoff(now, 90))).unwrap();
+    let rows = sessions(&data, homes, &q, Some(history_cutoff(now, 90)), None).unwrap();
     assert_eq!(ids(rows), ["new", "old"]);
 
-    let rows = sessions(&data, homes, &q, Some(history_cutoff(now, 5))).unwrap();
+    let rows = sessions(&data, homes, &q, Some(history_cutoff(now, 5)), None).unwrap();
     assert_eq!(ids(rows), ["new"]);
     // The pruned index is the one saved.
     assert_eq!(SessionIndex::load(&data).list().len(), 1);
+}
+
+#[test]
+fn a_content_hit_picks_a_session_the_metadata_misses() {
+    let fx = fixture();
+    let refs: Vec<&AgentSession> = fx.all.iter().collect();
+    let target = fx.all[0].key.clone();
+    let hits = HashMap::from([(target.clone(), "the <mark>zebra</mark> crossed".to_string())]);
+    let mut q = query(SessionScope::All);
+    q.text = Some("zebra".into());
+    let rows = select(&refs, &fx.folders, &q, &|_| true, &hits);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].session.key, target);
+    assert_eq!(
+        rows[0].hit.as_deref(),
+        Some("the <mark>zebra</mark> crossed")
+    );
+}
+
+#[test]
+fn a_metadata_match_keeps_no_snippet() {
+    let fx = fixture();
+    let refs: Vec<&AgentSession> = fx.all.iter().collect();
+    let mut q = query(SessionScope::All);
+    q.text = Some("parser".into());
+    let rows = select(&refs, &fx.folders, &q, &|_| true, &HashMap::new());
+    assert!(!rows.is_empty());
+    assert!(rows.iter().all(|r| r.hit.is_none()));
+}
+
+/// A claude home with one logged conversation; returns (root, data).
+fn chat_root(prompt: &str, reply: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let data = root.join("data");
+    fs::create_dir_all(&data).unwrap();
+    let logs = root
+        .join("user")
+        .join(".claude")
+        .join("projects")
+        .join("-w");
+    fs::create_dir_all(&logs).unwrap();
+    let ts = "2030-01-01T00:00:00Z";
+    let user =
+        format!(r#"{{"type":"user","timestamp":"{ts}","message":{{"content":"{prompt}"}}}}"#);
+    let agent = format!(
+        r#"{{"type":"assistant","timestamp":"{ts}","message":{{"id":"m1","content":[{{"type":"text","text":"{reply}"}}]}}}}"#
+    );
+    fs::write(logs.join("s1.jsonl"), format!("{user}\n{agent}\n")).unwrap();
+    (dir, root, data)
+}
+
+#[test]
+fn no_consent_means_no_index_file_and_no_content_match() {
+    let (_dir, root, data) = chat_root("hello", "the zebra crossed");
+    let homes = || vec![claude_home(&root.join("user"))];
+    let mut q = query(SessionScope::All);
+    q.text = Some("zebra".into());
+    let rows = sessions(&data, homes, &q, Some(0), None).unwrap();
+    assert!(rows.is_empty());
+    assert!(!search_path(&data).exists());
+}
+
+#[test]
+fn with_consent_a_refresh_indexes_and_a_search_finds_the_message_text() {
+    let (_dir, root, data) = chat_root("hello", "the zebra crossed");
+    let path = search_path(&data);
+    let homes = || vec![claude_home(&root.join("user"))];
+    let mut q = query(SessionScope::All);
+    q.text = Some("zebra".into());
+    let rows = sessions(&data, homes, &q, Some(0), Some(&path)).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(
+        rows[0]
+            .hit
+            .as_deref()
+            .unwrap()
+            .contains("<mark>zebra</mark>")
+    );
+    // Kept between calls: a search without a refresh reads the same file.
+    let rows = sessions(&data, homes, &q, None, Some(&path)).unwrap();
+    assert_eq!(rows.len(), 1);
+    let index = SessionTextIndex::open(&path).unwrap();
+    assert_eq!(index.counts().unwrap(), (1, 2));
+    assert!(index.updated_at().unwrap().is_some());
+}
+
+#[test]
+fn a_session_pruned_by_the_history_window_leaves_the_text_index() {
+    let (_dir, root, data) = chat_root("hello", "the zebra crossed");
+    let path = search_path(&data);
+    let homes = || vec![claude_home(&root.join("user"))];
+    let q = query(SessionScope::All);
+    sessions(&data, homes, &q, Some(0), Some(&path)).unwrap();
+    assert_eq!(
+        SessionTextIndex::open(&path).unwrap().counts().unwrap(),
+        (1, 2)
+    );
+    // A cutoff after the session's last line prunes it.
+    sessions(&data, homes, &q, Some(JAN_2030 + DAY), Some(&path)).unwrap();
+    assert_eq!(
+        SessionTextIndex::open(&path).unwrap().counts().unwrap(),
+        (0, 0)
+    );
+}
+
+#[test]
+fn clear_turns_the_search_off_before_it_deletes() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("session-search.sqlite");
+    fs::write(&path, b"x").unwrap();
+    let seen_file = std::cell::Cell::new(None);
+    let on = crate::settings::AgentsSettings {
+        session_search: true,
+        ..Default::default()
+    };
+    let saved = clear_search(
+        on,
+        |next| {
+            // The store sees the flag off while the file still exists.
+            seen_file.set(Some(path.exists()));
+            assert!(!next.session_search);
+            Ok(next)
+        },
+        &path,
+    )
+    .unwrap();
+    assert_eq!(seen_file.get(), Some(true));
+    assert!(!saved.session_search);
+    assert!(!path.exists());
+}
+
+#[test]
+fn clear_keeps_the_index_when_the_settings_cannot_be_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("session-search.sqlite");
+    fs::write(&path, b"x").unwrap();
+    let on = crate::settings::AgentsSettings {
+        session_search: true,
+        ..Default::default()
+    };
+    let err = clear_search(
+        on,
+        |_| {
+            Err(CmdError {
+                code: "io",
+                detail: None,
+            })
+        },
+        &path,
+    );
+    assert!(err.is_err());
+    assert!(path.exists());
+}
+
+#[test]
+fn consent_revoked_while_waiting_for_the_lock_builds_no_index() {
+    let (_dir, root, data) = chat_root("hello", "the zebra crossed");
+    let path = search_path(&data);
+    let homes = || vec![claude_home(&root.join("user"))];
+    let mut q = query(SessionScope::All);
+    q.text = Some("zebra".into());
+    // The caller saw consent, then a clear turned it off before the lock was free.
+    let rows = sessions_with_consent(&data, homes, &q, Some(0), Some(&path), &|| false).unwrap();
+    assert!(rows.is_empty());
+    assert!(!path.exists());
+    assert!(!data.join("kit").join("session-search.sqlite-wal").exists());
+    // With consent still on, the same call indexes.
+    let rows = sessions_with_consent(&data, homes, &q, Some(0), Some(&path), &|| true).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(path.exists());
+}
+
+#[test]
+fn the_status_read_never_creates_the_index() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = search_path(dir.path());
+    assert_eq!(read_counts(&path).unwrap(), (0, 0, None));
+    assert!(!path.exists());
+    assert!(!dir.path().join("kit").exists());
+    let (_dir, root, data) = chat_root("hello", "the zebra crossed");
+    let path = search_path(&data);
+    let homes = || vec![claude_home(&root.join("user"))];
+    sessions(
+        &data,
+        homes,
+        &query(SessionScope::All),
+        Some(0),
+        Some(&path),
+    )
+    .unwrap();
+    let (sessions, messages, updated) = read_counts(&path).unwrap();
+    assert_eq!((sessions, messages), (1, 2));
+    assert!(updated.is_some());
+}
+
+#[test]
+fn a_codex_log_is_indexed_under_the_key_the_metadata_index_uses() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let data = root.join("data");
+    fs::create_dir_all(&data).unwrap();
+    let day = root
+        .join("user")
+        .join(".codex")
+        .join("sessions")
+        .join("2030")
+        .join("01")
+        .join("01");
+    fs::create_dir_all(&day).unwrap();
+    let id = "01a1a18f-2257-7d10-81b3-4888e4b169ff";
+    let cwd = root.join("w");
+    fs::create_dir_all(&cwd).unwrap();
+    let log = [
+        format!(
+            r#"{{"type":"session_meta","timestamp":"2030-01-01T00:00:00Z","payload":{{"id":"{id}","cwd":{}}}}}"#,
+            serde_json::to_string(&path_of(&cwd)).unwrap()
+        ),
+        r#"{"type":"response_item","timestamp":"2030-01-01T00:00:01Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"find the quokka bug"}]}}"#.to_string(),
+        r#"{"type":"response_item","timestamp":"2030-01-01T00:00:02Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"fixed it"}]}}"#.to_string(),
+    ]
+    .join("\n");
+    fs::write(
+        day.join(format!("rollout-2030-01-01T00-00-00-{id}.jsonl")),
+        log + "\n",
+    )
+    .unwrap();
+    let home = || {
+        vec![Home {
+            id: "own-codex".into(),
+            agent: Agent::Codex,
+            path: root.join("user").join(".codex"),
+            source: HomeSource::Own,
+        }]
+    };
+    let path = search_path(&data);
+    let mut q = query(SessionScope::All);
+    q.text = Some("quokka".into());
+    let rows = sessions(&data, home, &q, Some(0), Some(&path)).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].session.key, format!("own-codex:{id}"));
+    assert!(
+        rows[0]
+            .hit
+            .as_deref()
+            .unwrap()
+            .contains("<mark>quokka</mark>")
+    );
+    // The text is kept under that same key, so retention does not drop it.
+    assert_eq!(
+        SessionTextIndex::open(&path).unwrap().counts().unwrap(),
+        (1, 2)
+    );
+}
+
+#[test]
+fn a_batched_first_build_stores_what_one_batch_stores() {
+    let (_dir, root, data) = chat_root("hello", "the zebra crossed");
+    let logs = root
+        .join("user")
+        .join(".claude")
+        .join("projects")
+        .join("-w");
+    for n in 2..5 {
+        let line = format!(
+            r#"{{"type":"user","timestamp":"2030-01-01T00:00:00Z","message":{{"content":"note {n} about zebra"}}}}"#
+        );
+        fs::write(logs.join(format!("s{n}.jsonl")), line + "\n").unwrap();
+    }
+    let homes = vec![claude_home(&root.join("user"))];
+    let one = root.join("one.sqlite");
+    let many = root.join("many.sqlite");
+    let mut metadata = SessionIndex::load(&data);
+    metadata.refresh(&homes);
+    let keep: HashSet<String> = metadata.list().iter().map(|s| s.key.clone()).collect();
+    refresh_text_in(&one, &homes, &keep, 10_000).unwrap();
+    refresh_text_in(&many, &homes, &keep, 1).unwrap();
+    let count = |p: &Path| SessionTextIndex::open(p).unwrap().counts().unwrap();
+    assert_eq!(count(&one), (4, 5));
+    assert_eq!(count(&many), count(&one));
+    // Marks were saved per batch: a second pass reads nothing new.
+    let before = SessionTextIndex::open(&many).unwrap().marks().unwrap();
+    refresh_text_in(&many, &homes, &keep, 1).unwrap();
+    assert_eq!(
+        SessionTextIndex::open(&many).unwrap().marks().unwrap(),
+        before
+    );
+    assert_eq!(count(&many), (4, 5));
 }
