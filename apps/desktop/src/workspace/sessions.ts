@@ -830,6 +830,23 @@ export class Sessions {
     this.emit();
   }
 
+  /** Marks one tab read: its unread goes at once. An unknown or already read tab is left alone. */
+  markTabRead(id: string): void {
+    const entry = this.entries.get(id);
+    if (!entry || !entry.tab.unread) return;
+    this.update(entry, { unread: false, unreadAt: null, unreadReason: null });
+  }
+
+  /**
+   * Marks one tab unread by hand, until it is next seen. It keeps the reason it had, or `needs-you`
+   * when it had none.
+   */
+  markTabUnread(id: string): void {
+    const entry = this.entries.get(id);
+    if (!entry || entry.tab.unread) return;
+    this.update(entry, { unread: true, unreadAt: this.now(), unreadReason: entry.tab.unreadReason ?? "needs-you" });
+  }
+
   /** Marks a worktree unread by hand, until one of its panes is next seen. */
   markUnread(worktree: string): void {
     if (this.marked.has(worktree)) return;

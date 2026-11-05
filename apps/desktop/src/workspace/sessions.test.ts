@@ -561,6 +561,37 @@ describe("Sessions", () => {
     expect(live.unread(A)).toBe(false);
   });
 
+  it("marks one tab read or unread by hand", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const one = live.open(A, "claude");
+    const two = live.open(B, "claude");
+    const heard = vi.fn();
+    live.subscribe(heard);
+    live.markTabUnread(one.id);
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(live.unreadTabs().map((t) => t.id)).toEqual([one.id]);
+    expect(live.unreadTabs()[0].unreadReason).toBe("needs-you");
+    expect(live.unreadTabs()[0].unreadAt).not.toBeNull();
+    // Seeing other tabs leaves it unread; seeing it again clears it.
+    live.setSeen([two.id]);
+    expect(live.unreadTabs().map((t) => t.id)).toEqual([one.id]);
+    live.setSeen([one.id]);
+    expect(live.unreadTabs()).toEqual([]);
+    // Mark read clears it at once, and the bell count with it.
+    live.setSeen([]);
+    live.markTabUnread(two.id);
+    expect(live.unreadWorktrees()).toEqual([B]);
+    live.markTabRead(two.id);
+    expect(live.unreadTabs()).toEqual([]);
+    expect(live.unreadWorktrees()).toEqual([]);
+    // An unknown id is a no-op, and so is a repeat.
+    heard.mockClear();
+    live.markTabRead("nope");
+    live.markTabUnread("nope");
+    live.markTabRead(two.id);
+    expect(heard).not.toHaveBeenCalled();
+  });
+
   it("a title sets the name unless renamed", () => {
     const live = (sessions = new Sessions(createMockApi({})));
     const tab = live.open(A, "claude");
