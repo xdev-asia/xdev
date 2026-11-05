@@ -1,0 +1,139 @@
+/* Kanban board (.kb-*): a drawer of worktrees, one column per work status. */
+.kb {
+  --x-color-bg: var(--bg-0);
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(96vw, 1100px);
+  max-width: none;
+  height: min(80vh, 720px);
+  padding: var(--x-space-4);
+  gap: var(--x-space-3);
+}
+
+.kb[open] {
+  display: flex;
+}
+
+.kb[data-dragging="true"] {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.kb-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x-space-3);
+}
+
+.kb-head .dialog-title {
+  margin: 0;
+}
+
+/* Columns scroll sideways when the window is too narrow to show them all. */
+.kb-board {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: var(--x-space-3);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+}
+
+.kb-col {
+  display: flex;
+  flex: 1 0 220px;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: var(--x-space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-1);
+  scroll-snap-align: start;
+}
+
+/* The column a drop would land in: a tint and a 1px border. */
+.kb-col[data-over="true"] {
+  border-color: var(--signal);
+  background: var(--signal-bg);
+}
+
+.kb-col-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--x-space-2);
+  margin: 0 0 var(--x-space-2);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.kb-col-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.kb-cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.kb-card {
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  touch-action: pan-x;
+}
+
+.kb-card[data-dragging="true"] {
+  opacity: 0.5;
+}
+
+.kb-card .ws-wt-main {
+  cursor: grab;
+}
+
+.kb-empty,
+.kb-none {
+  margin: 0;
+  padding: var(--x-space-2);
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.kb-ghost {
+  position: fixed;
+  z-index: 1;
+  max-width: 200px;
+  padding: 4px 8px;
+  overflow: hidden;
+  border: 1px solid var(--signal);
+  border-radius: var(--radius-m);
+  background: var(--bg-3);
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  transform: translate(8px, 8px);
+}
+
+@media (max-width: 600px) {
+  .kb {
+    width: 100vw;
+    height: 100vh;
+    max-height: none;
+    border-radius: 0;
+  }
+
+  .kb-col {
+    flex-basis: 240px;
+  }
+}

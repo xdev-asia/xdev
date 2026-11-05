@@ -45,6 +45,8 @@ export interface WorktreeListProps {
   /** Moves a repo or folder into a group (or out, with null) at an index. */
   onGroupMove?(member: string, group: string | null, index: number): void;
   onNewGroup?(): void;
+  /** Opens the board of worktrees by work status; without it the header has no board button. */
+  onOpenBoard?(): void;
   onRenameGroup?(group: RepoGroup): void;
   onRemoveGroup?(group: RepoGroup): void;
   /** Lists a plain folder; without it the footer has no such button. */
@@ -765,6 +767,13 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         <h2>{t("workspace.heading")}</h2>
         {props.onPrefs && <SidebarFilters prefs={prefs} hidden={shown.hidden} onPrefs={props.onPrefs} />}
         {props.onPrefs && <SidebarOptions prefs={prefs} onPrefs={props.onPrefs} />}
+        {props.onOpenBoard && (
+          <button type="button" className="ws-icon-btn" aria-label={t("kanban.open")} title={t("kanban.open")} onClick={() => props.onOpenBoard?.()}>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 5h5v14H4zM15 5h5v9h-5z" />
+            </svg>
+          </button>
+        )}
         <button
           type="button"
           className="ws-icon-btn"
