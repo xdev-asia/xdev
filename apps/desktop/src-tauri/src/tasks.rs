@@ -72,11 +72,16 @@ fn runner(data: &Path, account: Option<&str>) -> Result<Box<dyn Runner>, CmdErro
         }
         None => (Provider::Claude, None),
     };
-    Ok(provider_runner(provider, account_dir))
+    Ok(provider_runner(provider, account_dir)?)
 }
 
-pub(crate) fn provider_runner(provider: Provider, account_dir: Option<PathBuf>) -> Box<dyn Runner> {
-    match provider {
+/// Tasks and squads run Claude and Codex only; another provider's account
+/// is a `runner` error.
+pub(crate) fn provider_runner(
+    provider: Provider,
+    account_dir: Option<PathBuf>,
+) -> Result<Box<dyn Runner>, AgentError> {
+    Ok(match provider {
         Provider::Claude => Box::new(ClaudeRunner {
             account_dir,
             timeout: RUN_TIMEOUT,
@@ -85,7 +90,17 @@ pub(crate) fn provider_runner(provider: Provider, account_dir: Option<PathBuf>) 
             account_dir,
             timeout: RUN_TIMEOUT,
         }),
-    }
+        Provider::Gemini
+        | Provider::QwenCode
+        | Provider::Opencode
+        | Provider::Amp
+        | Provider::Cursor => {
+            return Err(AgentError::Runner(format!(
+                "{} accounts cannot run tasks",
+                provider.as_str()
+            )));
+        }
+    })
 }
 
 /// Loaded on every call, so an edit to the policy file applies to the next

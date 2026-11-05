@@ -225,12 +225,14 @@ pub async fn accounts_quota(
     Ok(quotas)
 }
 
-/// Each provider's account routing, Claude first.
+/// The account routing of each provider that keeps accounts apart, Claude
+/// first; a single-account provider has nothing to route.
 #[tauri::command(async)]
 pub fn accounts_routing(state: State<'_, AppState>) -> Result<Vec<xdev_ai::Routing>, CmdError> {
     let registry = Registry::load(data_dir(&state)?)?;
-    Ok([Provider::Claude, Provider::Codex]
+    Ok(Provider::ALL
         .into_iter()
+        .filter(|p| p.isolated())
         .map(|p| registry.routing(p))
         .collect())
 }
@@ -303,19 +305,16 @@ pub fn account_add(
         let _ = app.emit(CHANGED_EVENT, ());
         return Ok(added);
     }
-    let dir = xdev_ai::account_dir(data, &name);
-    let entry = registry.add(&name, provider, dir)?.clone();
-    // Checked before anything is written, so a failed add leaves no
-    // half-made account behind.
-    provider.command()?;
-    std::fs::create_dir_all(&entry.dir).map_err(AiError::from)?;
+    // A single-account provider registers its CLI's own sign-in.
+    let entry = registry.create(data, &name, provider)?;
     registry.save(data)?;
     let _ = app.emit(CHANGED_EVENT, ());
     Ok(account(&entry))
 }
 
-/// Registers a Claude Code or Codex config folder that already exists, such
-/// as a hive account. Its sign-in is used as is; nothing is copied or made.
+/// Registers a config folder that already exists, such as a hive account.
+/// Its sign-in is used as is; nothing is copied or made. A single-account
+/// provider has no variable to point at another folder.
 fn import(
     data: &Path,
     registry: &mut Registry,
@@ -323,6 +322,9 @@ fn import(
     provider: Provider,
     dir: &Path,
 ) -> Result<Account, CmdError> {
+    if !provider.isolated() {
+        return Err(AiError::SingleAccount.into());
+    }
     if !dir.is_dir() {
         return Err(AiError::NotFound.into());
     }
@@ -446,7 +448,9 @@ pub fn routing_models() -> Models {
 pub fn account_login(state: State<'_, AppState>, name: String) -> Result<LoginStart, CmdError> {
     let registry = Registry::load(data_dir(&state)?)?;
     let entry = registry.get(&name).ok_or(AiError::NotFound)?;
-    let command = xdev_ai::login_command(entry.provider, &entry.dir, cfg!(windows));
+    // A single-account CLI is signed in on its own, outside xDev.
+    let command = xdev_ai::login_command(entry.provider, &entry.dir, cfg!(windows))
+        .ok_or(AiError::SingleAccount)?;
     Ok(LoginStart {
         opened: open_login(entry)?,
         command,
@@ -461,12 +465,13 @@ fn open_login(entry: &AccountEntry) -> Result<bool, CmdError> {
     const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
 
     let provider = entry.provider;
+    let var = provider.home_var().ok_or(AiError::SingleAccount)?;
     let cli = provider.command()?;
     let program = cli.get_program().to_string_lossy().into_owned();
     let args = provider.login_args().join(" ");
     std::process::Command::new("cmd.exe")
         .raw_arg(format!("/c \"\"{program}\" {args} & pause\""))
-        .env(provider.home_var(), &entry.dir)
+        .env(var, &entry.dir)
         .creation_flags(CREATE_NEW_CONSOLE)
         .spawn()
         .map_err(AiError::from)?;
@@ -565,6 +570,24 @@ mod tests {
     }
 
     #[test]
+    fn a_single_account_provider_imports_no_folder() {
+        let data = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let mut registry = Registry::load(data.path()).unwrap();
+        let Err(err) = import(
+            data.path(),
+            &mut registry,
+            "c",
+            Provider::Cursor,
+            other.path(),
+        ) else {
+            panic!("a folder was registered for a single-account provider");
+        };
+        assert_eq!(err.code, "single_account");
+        assert!(registry.accounts.is_empty());
+    }
+
+    #[test]
     fn carry_resolves_names_and_the_default_home() {
         let tmp = tempfile::tempdir().unwrap();
         let data = tmp.path().join("data");
@@ -625,7 +648,7 @@ mod tests {
         assert_eq!(CmdError::from(AiError::Exists).code, "exists");
         assert_eq!(CmdError::from(AiError::NoClaude).code, "no_claude");
         assert_eq!(CmdError::from(AiError::NoCodex).code, "no_codex");
-        let unknown = Provider::parse("gemini").unwrap_err();
+        let unknown = Provider::parse("nope").unwrap_err();
         assert_eq!(CmdError::from(unknown).code, "unknown_provider");
     }
 

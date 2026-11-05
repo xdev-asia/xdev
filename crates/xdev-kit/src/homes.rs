@@ -101,6 +101,12 @@ pub fn homes(data_dir: &Path, user_home: &Path, env: &dyn Fn(&str) -> Option<Str
         let agent = match entry.provider {
             Provider::Claude => Agent::Claude,
             Provider::Codex => Agent::Codex,
+            // The kit reads Claude and Codex homes only.
+            Provider::Gemini
+            | Provider::QwenCode
+            | Provider::Opencode
+            | Provider::Amp
+            | Provider::Cursor => continue,
         };
         add(
             format!("acct-{}", entry.name),

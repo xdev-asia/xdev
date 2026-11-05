@@ -117,7 +117,7 @@ fn hand_edited_file_breaking_the_rules_is_bad() {
     for text in [
         r#"{"version":1,"reserve_percent":95,"accounts":[]}"#,
         r#"{"version":1,"reserve_percent":30,"accounts":[{"name":"../x","provider":"claude","dir":"d"}]}"#,
-        r#"{"version":1,"reserve_percent":30,"accounts":[{"name":"a","provider":"gemini","dir":"d"}]}"#,
+        r#"{"version":1,"reserve_percent":30,"accounts":[{"name":"a","provider":"nope","dir":"d"}]}"#,
         r#"{"version":1,"reserve_percent":30,"accounts":[{"name":"a","provider":"claude","dir":"d"},{"name":"a","provider":"claude","dir":"e"}]}"#,
     ] {
         fs::write(&path, text).unwrap();
@@ -152,10 +152,27 @@ fn error_codes() {
 
 #[test]
 fn provider_names() {
-    for p in [Provider::Claude, Provider::Codex] {
+    for p in Provider::ALL {
         assert_eq!(Provider::parse(p.as_str()).unwrap(), p);
         assert_eq!(serde_json::to_value(p).unwrap(), p.as_str());
+        assert_eq!(
+            serde_json::from_value::<Provider>(p.as_str().into()).unwrap(),
+            p
+        );
     }
+    let ids: Vec<&str> = Provider::ALL.iter().map(|p| p.as_str()).collect();
+    assert_eq!(
+        ids,
+        [
+            "claude",
+            "codex",
+            "gemini",
+            "qwen-code",
+            "opencode",
+            "amp",
+            "cursor"
+        ]
+    );
     assert!(matches!(
         Provider::parse("Codex"),
         Err(AiError::UnknownProvider)
@@ -408,4 +425,61 @@ fn carry_of_a_missing_or_bad_session_is_session_missing() {
     let err = carry_session(&from, &to, ID, &cwd).unwrap_err();
     assert_eq!(err.code(), "session_missing");
     assert!(!to.dir.exists());
+}
+
+// --- single-account providers ---
+
+#[test]
+fn only_providers_with_a_home_variable_are_isolated() {
+    let isolated: Vec<Provider> = Provider::ALL.into_iter().filter(|p| p.isolated()).collect();
+    assert_eq!(
+        isolated,
+        [Provider::Claude, Provider::Codex, Provider::Gemini]
+    );
+    assert_eq!(Provider::Gemini.home_var(), Some("GEMINI_CLI_HOME"));
+    assert_eq!(Provider::Amp.home_var(), None);
+}
+
+#[test]
+fn a_single_account_provider_refuses_a_second_account() {
+    let data = TempDir::new().unwrap();
+    let mut reg = Registry::default();
+    reg.add("amp", Provider::Amp, data.path().join("amp"))
+        .unwrap();
+    let err = reg
+        .add("amp-2", Provider::Amp, data.path().join("amp-2"))
+        .unwrap_err();
+    assert!(matches!(err, AiError::SingleAccount));
+    assert_eq!(err.code(), "single_account");
+    // Refused before the CLI is looked for or a folder is made.
+    let err = reg.create(data.path(), "amp-3", Provider::Amp).unwrap_err();
+    assert!(matches!(err, AiError::SingleAccount));
+    assert_eq!(reg.accounts.len(), 1);
+    // Nothing to switch to.
+    assert!(matches!(
+        reg.activate(Provider::Amp, Some("amp")),
+        Err(AiError::SingleAccount)
+    ));
+    reg.activate(Provider::Amp, None).unwrap();
+    // An isolated provider keeps as many as it likes.
+    for name in ["g1", "g2"] {
+        reg.add(name, Provider::Gemini, account_dir(data.path(), name))
+            .unwrap();
+    }
+    reg.activate(Provider::Gemini, Some("g2")).unwrap();
+}
+
+#[test]
+fn a_file_with_two_single_accounts_is_bad() {
+    let data = TempDir::new().unwrap();
+    write(
+        &data.path().join("accounts.json"),
+        r#"{"version":1,"reserve_percent":30,"accounts":[
+            {"name":"a","provider":"cursor","dir":"x"},
+            {"name":"b","provider":"cursor","dir":"y"}]}"#,
+    );
+    assert!(matches!(
+        Registry::load(data.path()),
+        Err(AiError::BadRegistry)
+    ));
 }

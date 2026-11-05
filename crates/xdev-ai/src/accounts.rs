@@ -7,8 +7,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde::{Deserialize, Serialize};
 
 use crate::AiError;
-use crate::claude::AccountStatus;
+use crate::claude::{AccountStatus, StatusState};
 use crate::pool::{Policy, Route, Usage, pick_account};
+use crate::providers::{Isolation, home_under, spec, user_home};
 use crate::quota::{Quota, QuotaState, Reason, highest};
 
 const FILE: &str = "accounts.json";
@@ -25,46 +26,73 @@ const MAX_THRESHOLDS: usize = 4;
 pub enum Provider {
     Claude,
     Codex,
+    Gemini,
+    #[serde(rename = "qwen-code")]
+    QwenCode,
+    Opencode,
+    Amp,
+    Cursor,
 }
 
 impl Provider {
+    /// Every provider, in the order the UI lists them.
+    pub const ALL: [Provider; 7] = [
+        Provider::Claude,
+        Provider::Codex,
+        Provider::Gemini,
+        Provider::QwenCode,
+        Provider::Opencode,
+        Provider::Amp,
+        Provider::Cursor,
+    ];
+
     pub fn as_str(self) -> &'static str {
-        match self {
-            Provider::Claude => "claude",
-            Provider::Codex => "codex",
-        }
+        spec(self).id
     }
 
     pub fn parse(text: &str) -> Result<Provider, AiError> {
-        match text {
-            "claude" => Ok(Provider::Claude),
-            "codex" => Ok(Provider::Codex),
-            _ => Err(AiError::UnknownProvider),
-        }
+        Provider::ALL
+            .into_iter()
+            .find(|p| p.as_str() == text)
+            .ok_or(AiError::UnknownProvider)
     }
 
-    /// The provider's CLI, or `no_claude` / `no_codex`.
+    /// The provider's CLI, or `no_claude` / `no_codex` / `no_cli`.
     pub fn command(self) -> Result<Command, AiError> {
         match self {
             Provider::Claude => crate::claude::claude_command(),
             Provider::Codex => crate::codex::codex_command(),
+            _ => {
+                let row = spec(self);
+                crate::claude::find_cli(row.bin_var, row.program, AiError::NoCli)
+            }
         }
     }
 
-    /// The variable that points the CLI at the account's folder.
-    pub fn home_var(self) -> &'static str {
-        match self {
-            Provider::Claude => "CLAUDE_CONFIG_DIR",
-            Provider::Codex => "CODEX_HOME",
+    /// The variable that points the CLI at the account's folder; `None` for
+    /// a provider that keeps a single account.
+    pub fn home_var(self) -> Option<&'static str> {
+        match spec(self).isolation {
+            Isolation::Home(var) => Some(var),
+            Isolation::Single => None,
         }
     }
 
-    /// The CLI arguments that sign an account in.
+    /// Whether each account has its own folder, so tabs can switch between
+    /// them. A provider that is not keeps one account, its CLI's own.
+    pub fn isolated(self) -> bool {
+        self.home_var().is_some()
+    }
+
+    /// Whether xDev can read the provider's quota. Without, its accounts'
+    /// quota is unknown and "most quota" routing leaves them out.
+    pub fn has_quota(self) -> bool {
+        spec(self).quota
+    }
+
+    /// The CLI arguments that sign an account in; empty runs the CLI itself.
     pub fn login_args(self) -> &'static [&'static str] {
-        match self {
-            Provider::Claude => &["auth", "login"],
-            Provider::Codex => &["login"],
-        }
+        spec(self).login_args
     }
 }
 
@@ -228,12 +256,40 @@ impl Registry {
         if self.get(name).is_some() {
             return Err(AiError::Exists);
         }
+        // Its CLI has one sign-in, so a second account would be the same one.
+        if !provider.isolated() && self.accounts.iter().any(|a| a.provider == provider) {
+            return Err(AiError::SingleAccount);
+        }
         self.accounts.push(AccountEntry {
             name: name.to_owned(),
             provider,
             dir,
         });
         Ok(self.accounts.last().expect("just pushed"))
+    }
+
+    /// Registers a new account and makes its folder: its own under
+    /// `data_dir` for a provider that keeps accounts apart, else the CLI's
+    /// own home, which is never created nor touched. A CLI that is not
+    /// installed fails before anything is written. The caller saves.
+    pub fn create(
+        &mut self,
+        data_dir: &Path,
+        name: &str,
+        provider: Provider,
+    ) -> Result<AccountEntry, AiError> {
+        let dir = if provider.isolated() {
+            account_dir(data_dir, name)
+        } else {
+            default_home(provider).ok_or(AiError::NotFound)?
+        };
+        // Checked on a copy first, so a failed add leaves nothing behind.
+        self.clone().add(name, provider, dir.clone())?;
+        provider.command()?;
+        if provider.isolated() {
+            fs::create_dir_all(&dir)?;
+        }
+        Ok(self.add(name, provider, dir)?.clone())
     }
 
     /// Only unregisters: the folder holds the person's credentials, which
@@ -268,6 +324,10 @@ impl Registry {
     /// the provider's tabs run on the CLI's own home. An unknown name or
     /// another provider's account is `NotFound`.
     pub fn activate(&mut self, provider: Provider, name: Option<&str>) -> Result<(), AiError> {
+        // Its one sign-in is what its tabs use anyway: nothing to switch.
+        if name.is_some() && !provider.isolated() {
+            return Err(AiError::SingleAccount);
+        }
         if let Some(name) = name
             && !self
                 .get(name)
@@ -317,7 +377,12 @@ impl Registry {
                         .is_some_and(|entry| entry.provider == routing.provider)
             })
         };
-        if routing.thresholds.len() > MAX_THRESHOLDS
+        // A single account has nothing to route, and "most quota" needs a
+        // quota to compare.
+        let routable = routing.provider.isolated()
+            && (routing.provider.has_quota() || routing.policy != Policy::MostQuota);
+        if !routable
+            || routing.thresholds.len() > MAX_THRESHOLDS
             || !routing.thresholds.iter().all(percent)
             || !percent(&routing.switch_at)
             || !own(&routing.pool)
@@ -335,7 +400,10 @@ impl Registry {
     /// readings: an account they show signed out is never picked, one they
     /// leave out counts as unknown. `avoid` asks for an account other than
     /// it (a quota alert's "use another account"): `Manual` then routes by
-    /// most quota left, and no other account gives `None`.
+    /// most quota left (round robin for a provider with no quota source),
+    /// and no other account gives `None`. "Most quota" never picks an
+    /// account whose quota xDev has no source for. A single-account
+    /// provider is never routed.
     pub fn route(
         &self,
         provider: Provider,
@@ -343,6 +411,9 @@ impl Registry {
         last_used: Option<&str>,
         avoid: Option<&str>,
     ) -> Option<String> {
+        if !provider.isolated() {
+            return None;
+        }
         let routing = self.routing(provider);
         let signed_out = |name: &str| {
             quotas.iter().any(|q| {
@@ -375,9 +446,17 @@ impl Registry {
             })
             .collect();
         let policy = match (avoid, routing.policy) {
-            (Some(_), Policy::Manual) => Policy::MostQuota,
+            (Some(_), Policy::Manual) if provider.has_quota() => Policy::MostQuota,
+            (Some(_), Policy::Manual) => Policy::RoundRobin,
             (_, policy) => policy,
         };
+        if policy == Policy::MostQuota {
+            pool.retain(|name| {
+                !quotas
+                    .iter()
+                    .any(|q| q.name == *name && q.reason == Some(Reason::NoQuotaSource))
+            });
+        }
         let route = Route {
             policy,
             default: self.active(provider).map(|a| a.name.as_str()),
@@ -464,6 +543,12 @@ fn find_session(account: &AccountEntry, session: &str, cwd: &Path) -> Option<Pat
                 name.starts_with("rollout-") && name.ends_with(&suffix)
             })
         }
+        // xDev does not know where these keep their sessions.
+        Provider::Gemini
+        | Provider::QwenCode
+        | Provider::Opencode
+        | Provider::Amp
+        | Provider::Cursor => None,
     }
 }
 
@@ -495,43 +580,73 @@ fn find_file(dir: &Path, matches: &dyn Fn(&str) -> bool) -> Option<PathBuf> {
 }
 
 /// The home a provider's CLI uses with no account: its home variable from
-/// the environment, else `~/.claude` or `~/.codex`.
+/// the environment, else its folder under the user's home (`~/.claude`,
+/// `~/.codex`, ...).
 pub fn default_home(provider: Provider) -> Option<PathBuf> {
-    match provider {
-        Provider::Claude => {
-            if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|d| !d.is_empty()) {
-                return Some(PathBuf::from(dir));
-            }
-            let user = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-                .filter(|h| !h.is_empty())?;
-            Some(PathBuf::from(user).join(".claude"))
-        }
-        Provider::Codex => crate::codex::codex_home(None),
+    if provider == Provider::Codex {
+        return crate::codex::codex_home(None);
     }
+    if let Some(var) = provider.home_var()
+        && let Some(dir) = std::env::var_os(var).filter(|d| !d.is_empty())
+    {
+        return Some(PathBuf::from(dir));
+    }
+    Some(home_under(provider, &user_home()?))
 }
 
 /// Sign-in state from the account's own CLI. Never fails: a missing CLI is
-/// `no_claude` / `no_codex`, anything else unexpected is `error`.
+/// `no_claude` / `no_codex` / `no_cli`, anything else unexpected is `error`.
+/// The other providers' sign-in is the presence of their sign-in file,
+/// which is never read; one with no known file is `undetected`.
 pub fn status(entry: &AccountEntry) -> AccountStatus {
     match entry.provider {
         Provider::Claude => crate::claude::status(&entry.dir),
         Provider::Codex => crate::codex::status(&entry.dir),
+        provider => {
+            if provider.command().is_err() {
+                return AccountStatus::bare(StatusState::NoCli);
+            }
+            marker_status(provider, &entry.dir)
+        }
     }
 }
 
-/// The command that signs an account in, in the platform shell's own syntax.
-pub fn login_command(provider: Provider, dir: &Path, windows: bool) -> String {
+/// `status` of a provider whose CLI is installed, from its sign-in file.
+pub(crate) fn marker_status(provider: Provider, dir: &Path) -> AccountStatus {
+    AccountStatus::bare(match crate::providers::signed_in(provider, dir) {
+        Some(true) => StatusState::LoggedIn,
+        Some(false) => StatusState::LoggedOut,
+        None => StatusState::Undetected,
+    })
+}
+
+/// The command that signs an account in, in the platform shell's own
+/// syntax; `None` for a single-account provider, whose CLI the person signs
+/// in on its own.
+pub fn login_command(provider: Provider, dir: &Path, windows: bool) -> Option<String> {
+    let var = provider.home_var()?;
     let dir = dir.to_string_lossy();
-    let var = provider.home_var();
-    let run = format!("{} {}", provider.as_str(), provider.login_args().join(" "));
-    if windows {
+    let run = std::iter::once(spec(provider).program)
+        .chain(provider.login_args().iter().copied())
+        .collect::<Vec<_>>()
+        .join(" ");
+    Some(if windows {
         format!("$env:{var}='{}'; {run}", dir.replace('\'', "''"))
     } else {
         format!("{var}='{}' {run}", dir.replace('\'', r"'\''"))
-    }
+    })
 }
 
-/// Where a new account's folder (`CLAUDE_CONFIG_DIR` or `CODEX_HOME`) goes.
+/// The process that signs `entry` in: its CLI with the login arguments, run
+/// on the account's folder. A single-account provider is `SingleAccount`.
+pub fn login_process(entry: &AccountEntry) -> Result<Command, AiError> {
+    let var = entry.provider.home_var().ok_or(AiError::SingleAccount)?;
+    let mut cmd = entry.provider.command()?;
+    cmd.args(entry.provider.login_args()).env(var, &entry.dir);
+    Ok(cmd)
+}
+
+/// Where a new account's folder (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, ...) goes.
 pub fn account_dir(data_dir: &Path, name: &str) -> PathBuf {
     data_dir.join("accounts").join(name)
 }

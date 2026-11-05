@@ -3,4 +3,4 @@
 /**
  * Why a quota is `unknown`.
  */
-export type Reason = "no_credentials" | "expired" | "unavailable" | "logged_out" | "no_claude" | "no_codex" | "no_sessions";
+export type Reason = "no_credentials" | "expired" | "unavailable" | "logged_out" | "no_claude" | "no_codex" | "no_sessions" | "no_cli" | "no_quota_source";

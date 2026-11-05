@@ -16,7 +16,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use xdev_agent::{
     AccountSource, Cli, Context, HookEvent, Launch, LaunchError, Permissions, Profile, Profiles,
     ShellEntry, ShellKind, TrustKind, TrustTarget, default_shell_id, find_builtin, find_program,
-    list_shells, resolve, spec, ssh_shell, trust_folder, wsl_distros,
+    list_shells, provider_of, resolve, spec, ssh_shell, trust_folder, wsl_distros,
 };
 use xdev_ai::Registry;
 use xdev_policy::{Action, Audited, Policy, Verdict, agent_fingerprint};
@@ -479,15 +479,6 @@ pub(crate) fn launch_for(
     launch_with_prompt(data_dir, id, account, hooks, resume, fork, None)
 }
 
-/// The provider whose accounts `cli` runs on, if it has any.
-fn provider_of(cli: Cli) -> Option<xdev_ai::Provider> {
-    match cli {
-        Cli::Claude => Some(xdev_ai::Provider::Claude),
-        Cli::Codex => Some(xdev_ai::Provider::Codex),
-        _ => None,
-    }
-}
-
 /// The provider and account to remember as the last one routing started,
 /// for a launch that took the default or a routed account.
 fn routed_start(launch: &Launch) -> Option<(xdev_ai::Provider, String)> {
@@ -495,7 +486,8 @@ fn routed_start(launch: &Launch) -> Option<(xdev_ai::Provider, String)> {
     if !matches!(source, AccountSource::Active | AccountSource::Routed) {
         return None;
     }
-    Some((launch.cli.and_then(provider_of)?, launch.account.clone()?))
+    let provider = launch.cli.and_then(provider_of).filter(|p| p.isolated())?;
+    Some((provider, launch.account.clone()?))
 }
 
 /// `launch_for` with a first prompt for the agent (`Launch::prompt_argv` or
@@ -2154,6 +2146,11 @@ mod tests {
         );
         assert_eq!(
             routed_start(&with(Some(AccountSource::Active), Some(Cli::Gemini))),
+            Some((xdev_ai::Provider::Gemini, "work".into()))
+        );
+        // A single-account CLI is never routed, so it never counts.
+        assert_eq!(
+            routed_start(&with(Some(AccountSource::Active), Some(Cli::Amp))),
             None
         );
         assert_eq!(routed_start(&with(None, claude)), None);

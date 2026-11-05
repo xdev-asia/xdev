@@ -74,7 +74,7 @@ struct Registered {
 impl RunnerFor for Registered {
     fn runner(&self, account: &str) -> Result<Box<dyn Runner>, AgentError> {
         let entry = self.reg.get(account).ok_or(AgentError::UnknownAccount)?;
-        Ok(provider_runner(entry.provider, Some(entry.dir.clone())))
+        provider_runner(entry.provider, Some(entry.dir.clone()))
     }
 
     fn provider(&self, account: &str) -> String {

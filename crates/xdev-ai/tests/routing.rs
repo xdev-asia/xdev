@@ -238,3 +238,95 @@ fn avoid_picks_another_account_or_none() {
         None
     );
 }
+
+#[test]
+fn most_quota_never_picks_an_account_with_no_quota_source() {
+    let data = TempDir::new().unwrap();
+    let mut reg = registry(&data);
+    reg.set_routing(Routing {
+        policy: Policy::MostQuota,
+        auto_switch: true,
+        switch_at: 95,
+        ..Routing::new(Provider::Claude)
+    })
+    .unwrap();
+    let mut blind = used("spare", 0.0);
+    blind.state = QuotaState::Unknown;
+    blind.reason = Some(Reason::NoQuotaSource);
+    blind.windows.clear();
+    // Both known accounts are over the limit; an unknown one would be
+    // picked as never over it, but quota unknown is left out.
+    let quotas = [used("work", 97.0), used("home", 98.0), blind];
+    assert_eq!(
+        reg.route(Provider::Claude, &quotas, None, None).as_deref(),
+        Some("work")
+    );
+}
+
+fn gemini(data: &TempDir) -> Registry {
+    let mut reg = Registry::load(data.path()).unwrap();
+    for name in ["g1", "g2", "g3"] {
+        reg.add(name, Provider::Gemini, data.path().join(name))
+            .unwrap();
+    }
+    reg
+}
+
+#[test]
+fn a_provider_without_quota_routes_by_round_robin_and_priority_only() {
+    let data = TempDir::new().unwrap();
+    let mut reg = gemini(&data);
+    let err = reg
+        .set_routing(Routing {
+            policy: Policy::MostQuota,
+            ..Routing::new(Provider::Gemini)
+        })
+        .unwrap_err();
+    assert!(matches!(err, AiError::BadRouting));
+    reg.set_routing(Routing {
+        policy: Policy::RoundRobin,
+        ..Routing::new(Provider::Gemini)
+    })
+    .unwrap();
+    assert_eq!(
+        reg.route(Provider::Gemini, &[], Some("g1"), None)
+            .as_deref(),
+        Some("g2")
+    );
+    reg.set_routing(Routing {
+        policy: Policy::Priority,
+        priority: names(&["g3"]),
+        ..Routing::new(Provider::Gemini)
+    })
+    .unwrap();
+    assert_eq!(
+        reg.route(Provider::Gemini, &[], None, None).as_deref(),
+        Some("g3")
+    );
+}
+
+#[test]
+fn use_another_account_without_quota_takes_the_next_one() {
+    let data = TempDir::new().unwrap();
+    let mut reg = gemini(&data);
+    reg.activate(Provider::Gemini, Some("g1")).unwrap();
+    assert_eq!(
+        reg.route(Provider::Gemini, &[], Some("g1"), Some("g1"))
+            .as_deref(),
+        Some("g2")
+    );
+}
+
+#[test]
+fn a_single_account_provider_is_never_routed() {
+    let data = TempDir::new().unwrap();
+    let mut reg = Registry::load(data.path()).unwrap();
+    reg.add("amp", Provider::Amp, data.path().join("amp"))
+        .unwrap();
+    assert!(matches!(
+        reg.set_routing(Routing::new(Provider::Amp)),
+        Err(AiError::BadRouting)
+    ));
+    assert_eq!(reg.route(Provider::Amp, &[], None, None), None);
+    assert_eq!(reg.route(Provider::Amp, &[], None, Some("amp")), None);
+}
