@@ -98,6 +98,7 @@ export type { LineHit } from "./LineHit";
 export type { Linked } from "./Linked";
 export type { LoginStart } from "./LoginStart";
 export type { MadeBy } from "./MadeBy";
+export type { MediaKind } from "./MediaKind";
 export type { MemoryFile } from "./MemoryFile";
 export type { MemoryIssue } from "./MemoryIssue";
 export type { MemoryKind } from "./MemoryKind";
