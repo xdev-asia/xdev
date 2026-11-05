@@ -2,13 +2,13 @@
 //! subscriber. Events are made worktree-relative, filtered, coalesced and
 //! flushed in batches (75 ms leading, 100 ms cadence).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use notify_debouncer_full::notify::event::{ModifyKind, RenameMode};
 use notify_debouncer_full::notify::{self, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -203,11 +203,16 @@ fn rel_of(root: &Path, path: &Path) -> Option<String> {
 /// exists.
 type Stat<'a> = &'a dyn Fn(&Path) -> Option<bool>;
 
+/// True when the file at the path was there before the watch started.
+type Older<'a> = &'a dyn Fn(&Path) -> bool;
+
 /// The events one notify event stands for. A write can arrive as a create
 /// on macOS, a rename as `From`/`To` halves on Windows and Linux, so kinds
 /// that say "something is there" are checked with a stat: a path that is
-/// gone is a delete, and a folder's own modify is noise.
-fn map_event(root: &Path, event: &notify::Event, stat: Stat<'_>) -> Vec<FsEvent> {
+/// gone is a delete, and a folder's own modify is noise. A create of a
+/// file `older` than the watch is an update: FSEvents keeps a recent file's
+/// ItemCreated flag on later events, so a write can arrive as a create.
+fn map_event(root: &Path, event: &notify::Event, stat: Stat<'_>, older: Older<'_>) -> Vec<FsEvent> {
     if event.need_rescan() {
         return vec![FsEvent::overflow()];
     }
@@ -244,9 +249,18 @@ fn map_event(root: &Path, event: &notify::Event, stat: Stat<'_>) -> Vec<FsEvent>
         EventKind::Remove(_) | EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
             paths.iter().filter_map(|p| gone(p)).collect()
         }
+        EventKind::Create(_) => paths
+            .iter()
+            .filter_map(|p| {
+                let mut e = present(p, FsEventKind::Create)?;
+                if e.kind == FsEventKind::Create && e.dir == Some(false) && older(p) {
+                    e.kind = FsEventKind::Update;
+                }
+                Some(e)
+            })
+            .collect(),
         // A rename of unknown direction: the disk decides.
-        EventKind::Create(_)
-        | EventKind::Modify(ModifyKind::Name(
+        EventKind::Modify(ModifyKind::Name(
             RenameMode::To | RenameMode::Any | RenameMode::Other,
         )) => paths
             .iter()
@@ -270,6 +284,47 @@ fn disk_stat(path: &Path) -> Option<bool> {
     std::fs::symlink_metadata(path).ok().map(|m| m.is_dir())
 }
 
+/// `older` for the real disk: only FSEvents (macOS) reports stale creates.
+/// Elsewhere a create is real, and a file moved in keeps its old birth time,
+/// so asking there would hide new files from the tree.
+fn born_before(path: &Path, started: SystemTime) -> bool {
+    cfg!(target_os = "macos")
+        && std::fs::symlink_metadata(path)
+            .and_then(|m| m.created())
+            .is_ok_and(|born| born < started)
+}
+
+/// The files this watcher has reported and not seen go since. A second
+/// create of one is an update (a sticky FSEvents flag, a save that renames
+/// over the file).
+#[derive(Debug, Default)]
+pub(crate) struct Known(HashSet<String>);
+
+impl Known {
+    /// Past this many paths the set starts over; a create then stays a create.
+    const MAX: usize = 100_000;
+
+    pub(crate) fn correct(&mut self, mut e: FsEvent) -> FsEvent {
+        match e.kind {
+            FsEventKind::Overflow => self.0.clear(),
+            FsEventKind::Delete => {
+                let prefix = format!("{}/", e.rel);
+                self.0.retain(|p| *p != e.rel && !p.starts_with(&prefix));
+            }
+            FsEventKind::Create | FsEventKind::Update if e.dir == Some(false) => {
+                if !self.0.insert(e.rel.clone()) && e.kind == FsEventKind::Create {
+                    e.kind = FsEventKind::Update;
+                }
+                if self.0.len() > Self::MAX {
+                    self.0.clear();
+                }
+            }
+            FsEventKind::Create | FsEventKind::Update => {}
+        }
+        e
+    }
+}
+
 /// One watched root: its flush thread (which owns the notify watcher) and
 /// the subscribers it sends to.
 struct Root {
@@ -285,11 +340,13 @@ impl Root {
         let (tx, rx) = mpsc::channel::<Msg>();
         let callback_tx = tx.clone();
         let base = root.to_path_buf();
+        let started = SystemTime::now();
+        let older = move |p: &Path| born_before(p, started);
         let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             // The thread may be gone already; nobody needs the event then.
             match res {
                 Ok(event) => {
-                    for e in map_event(&base, &event, &disk_stat) {
+                    for e in map_event(&base, &event, &disk_stat, &older) {
                         let _ = callback_tx.send(Msg::Event(e));
                     }
                 }
@@ -347,6 +404,7 @@ fn deliver(sinks: &Sinks, events: &[FsEvent]) {
 /// (a stop, a failure) also ends the watch.
 fn run(rx: &Receiver<Msg>, watcher: RecommendedWatcher, sinks: &Sinks, dead: &AtomicBool) {
     let mut batch = Batch::default();
+    let mut known = Known::default();
     loop {
         let msg = match batch.due() {
             Some(at) => match rx.recv_timeout(at.saturating_duration_since(Instant::now())) {
@@ -361,7 +419,7 @@ fn run(rx: &Receiver<Msg>, watcher: RecommendedWatcher, sinks: &Sinks, dead: &At
         };
         match msg {
             Some(Msg::Event(e)) => {
-                batch.push(e, Instant::now());
+                batch.push(known.correct(e), Instant::now());
             }
             Some(Msg::Failed) => {
                 dead.store(true, Ordering::SeqCst);
@@ -742,8 +800,22 @@ mod tests {
         assert_eq!(e.dir, Some(false));
 
         fs::write(fx.repo.join("a.txt"), "two\n").unwrap();
-        let seen = collect_until(&rx, |s| has(s, FsEventKind::Update, "a.txt"));
-        assert!(has(&seen, FsEventKind::Update, "a.txt"), "{seen:?}");
+        let seen = collect_until(&rx, |s| {
+            has(s, FsEventKind::Update, "a.txt")
+                || (cfg!(target_os = "macos") && has(s, FsEventKind::Create, "a.txt"))
+        });
+        if cfg!(target_os = "macos") {
+            // FSEvents flags are sticky and may still say "created"; the
+            // watcher corrects that (see the map_event and Known tests), and
+            // the app re-reads an open file on either kind.
+            assert!(
+                has(&seen, FsEventKind::Update, "a.txt")
+                    || has(&seen, FsEventKind::Create, "a.txt"),
+                "{seen:?}"
+            );
+        } else {
+            assert!(has(&seen, FsEventKind::Update, "a.txt"), "{seen:?}");
+        }
 
         fs::remove_file(fx.repo.join("a.txt")).unwrap();
         let seen = collect_until(&rx, |s| has(s, FsEventKind::Delete, "a.txt"));
@@ -830,7 +902,7 @@ mod tests {
                 .find(|(d, _)| Path::new(d) == p)
                 .map(|(_, dir)| *dir)
         };
-        map_event(root, &notify_event(kind, paths), &stat)
+        map_event(root, &notify_event(kind, paths), &stat, &|_| false)
             .into_iter()
             .map(|e| (e.kind, e.rel, e.dir))
             .collect()
@@ -921,7 +993,65 @@ mod tests {
             .is_empty()
         );
         let rescan = notify::Event::new(EventKind::Other).set_flag(notify::event::Flag::Rescan);
-        let out = map_event(Path::new("/r"), &rescan, &|_| None);
+        let out = map_event(Path::new("/r"), &rescan, &|_| None, &|_| false);
         assert_eq!(out, [FsEvent::overflow()]);
+    }
+
+    #[test]
+    fn map_event_reports_a_create_of_a_file_older_than_the_watch_as_update() {
+        // FSEvents keeps ItemCreated set on later events of a recent file:
+        // a write to a file that was there before the watch arrives as a create.
+        let event = notify_event(EventKind::Create(CreateKind::File), &["/r/a.txt"]);
+        let old = |_: &Path| true;
+        let out = map_event(Path::new("/r"), &event, &|_| Some(false), &old);
+        assert_eq!(kinds(&out), [(Update, "a.txt")]);
+        // A folder is left alone: its create is what the tree needs.
+        let event = notify_event(EventKind::Create(CreateKind::Folder), &["/r/d"]);
+        let out = map_event(Path::new("/r"), &event, &|_| Some(true), &old);
+        assert_eq!(kinds(&out), [(Create, "d")]);
+        // A rename into the root is a create whatever its age.
+        let any = EventKind::Modify(ModifyKind::Name(RenameMode::Any));
+        let out = map_event(
+            Path::new("/r"),
+            &notify_event(any, &["/r/m.txt"]),
+            &|_| Some(false),
+            &old,
+        );
+        assert_eq!(kinds(&out), [(Create, "m.txt")]);
+    }
+
+    fn file(kind: FsEventKind, rel: &str) -> FsEvent {
+        FsEvent {
+            kind,
+            rel: rel.to_owned(),
+            dir: (kind != Delete).then_some(false),
+        }
+    }
+
+    #[test]
+    fn known_turns_a_create_of_a_file_already_reported_into_an_update() {
+        let mut known = Known::default();
+        assert_eq!(known.correct(file(Create, "n.txt")).kind, Create);
+        // A later write that arrives as a create (a sticky flag, a save by rename).
+        assert_eq!(known.correct(file(Create, "n.txt")).kind, Update);
+        assert_eq!(known.correct(file(Update, "n.txt")).kind, Update);
+        // Gone and back: a real create again.
+        assert_eq!(known.correct(file(Delete, "n.txt")).kind, Delete);
+        assert_eq!(known.correct(file(Create, "n.txt")).kind, Create);
+        // A deleted folder forgets what was under it.
+        known.correct(file(Create, "d/x.txt"));
+        known.correct(file(Delete, "d"));
+        assert_eq!(known.correct(file(Create, "d/x.txt")).kind, Create);
+        // An overflow forgets everything; folders are never turned.
+        known.correct(file(Create, "y.txt"));
+        known.correct(FsEvent::overflow());
+        assert_eq!(known.correct(file(Create, "y.txt")).kind, Create);
+        let dir = FsEvent {
+            kind: Create,
+            rel: "e".into(),
+            dir: Some(true),
+        };
+        known.correct(dir.clone());
+        assert_eq!(known.correct(dir).kind, Create);
     }
 }

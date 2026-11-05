@@ -74,6 +74,18 @@ it("reloads a clean file after the debounce, silently", async () => {
   expect(getToasts()).toHaveLength(0);
 });
 
+it("a create for an open file re-checks it like an update (macOS reports writes as creates)", async () => {
+  const { store, clock, read, open, feed } = setup({ "a.ts": text("two", "h2"), "b.ts": text("disk", "h3") });
+  open("a.ts");
+  open("b.ts");
+  store.edit(W, "b.ts", "mine");
+  feed(ev("create", "a.ts"), ev("create", "b.ts"));
+  await clock.advance(RELOAD_DEBOUNCE_MS);
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(store.get(W, "a.ts")).toMatchObject({ text: "two", hash: "h2", external: null });
+  expect(store.get(W, "b.ts")).toMatchObject({ text: "mine", external: "changed" });
+});
+
 it("a burst of updates reads once", async () => {
   const { clock, read, open, feed } = setup({ "a.ts": text("two", "h2") });
   open("a.ts");
