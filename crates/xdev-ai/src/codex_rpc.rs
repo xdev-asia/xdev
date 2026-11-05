@@ -36,7 +36,7 @@ pub(crate) struct ProbeTimeouts {
 impl Default for ProbeTimeouts {
     fn default() -> Self {
         ProbeTimeouts {
-            init: Duration::from_secs(30),
+            init: Duration::from_secs(10),
             rpc: Duration::from_secs(10),
             drain: Duration::from_secs(5),
         }
@@ -56,6 +56,21 @@ pub(crate) enum ProbeError {
     Exited(Option<i32>),
     Rpc(String),
     Io(io::Error),
+}
+
+/// A failure is kept for the reuse window like a reading, so it is cloned;
+/// an I/O error keeps its kind and text.
+impl Clone for ProbeError {
+    fn clone(&self) -> Self {
+        match self {
+            ProbeError::NoCodex => ProbeError::NoCodex,
+            ProbeError::Auth(s) => ProbeError::Auth(s.clone()),
+            ProbeError::Timeout => ProbeError::Timeout,
+            ProbeError::Exited(c) => ProbeError::Exited(*c),
+            ProbeError::Rpc(s) => ProbeError::Rpc(s.clone()),
+            ProbeError::Io(e) => ProbeError::Io(io::Error::new(e.kind(), e.to_string())),
+        }
+    }
 }
 
 /// A line from a pipe, or its end.
@@ -512,9 +527,9 @@ pub(crate) mod tests {
                     "rpc-auth" => reply(
                         json!({ "error": { "code": -32600, "message": "Please sign in again" } }),
                     ),
-                    "rpc-other" => reply(
-                        json!({ "error": { "code": -32603, "message": "internal error" } }),
-                    ),
+                    "rpc-other" => {
+                        reply(json!({ "error": { "code": -32603, "message": "internal error" } }))
+                    }
                     "rpc-missing" => {
                         reply(json!({ "error": { "code": -32601, "message": "method not found" } }))
                     }

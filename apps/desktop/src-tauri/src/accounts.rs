@@ -97,13 +97,23 @@ pub fn accounts_list(state: State<'_, AppState>) -> Result<Accounts, CmdError> {
     })
 }
 
-#[tauri::command(async)]
-pub fn accounts_quota(state: State<'_, AppState>) -> Result<Vec<Quota>, CmdError> {
+/// A Codex quota may wait seconds on its `app-server` probe while holding
+/// that home's lock, so the reads run on a blocking thread and not on the
+/// async runtime's workers.
+#[tauri::command]
+pub async fn accounts_quota(state: State<'_, AppState>) -> Result<Vec<Quota>, CmdError> {
     let registry = Registry::load(data_dir(&state)?)?;
-    let reserve = registry.reserve_percent;
-    Ok(each(&registry.accounts, |e| {
-        xdev_ai::quota(e, &xdev_ai::status(e), reserve)
-    }))
+    tauri::async_runtime::spawn_blocking(move || {
+        let reserve = registry.reserve_percent;
+        each(&registry.accounts, |e| {
+            xdev_ai::quota(e, &xdev_ai::status(e), reserve)
+        })
+    })
+    .await
+    .map_err(|e| CmdError {
+        code: "io",
+        detail: Some(e.to_string()),
+    })
 }
 
 #[tauri::command(async)]
