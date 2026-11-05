@@ -926,6 +926,7 @@ pub fn dispatch(
         "worktree.create" => worktree_create(ctx, req, caller),
         "terminal.wait" => terminal_wait(ctx, req, gone),
         "terminal.show" => crate::cli_terminal::terminal_show(ctx, req),
+        "terminal.read" => crate::cli_terminal::terminal_read(ctx, req),
         m if m.starts_with("orchestration.") => orchestration::handle(ctx, req, caller, gone),
         other => Err(bad_request(format!("unknown method {other}"))),
     }

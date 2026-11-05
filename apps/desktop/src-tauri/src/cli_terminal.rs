@@ -6,7 +6,11 @@ use serde_json::{Value, json};
 
 use crate::cli_verbs::{Ctx, TabReport, params};
 use crate::endpoint::{AppError, Request};
+use crate::term_tail::TailRead;
 
+/// How many lines `terminal read` gives without `--limit`, and at most.
+pub const READ_LIMIT_DEFAULT: usize = 120;
+pub const READ_LIMIT_MAX: usize = 5000;
 /// How many lines `terminal show` previews.
 pub const SHOW_PREVIEW_LINES: usize = 20;
 
@@ -14,6 +18,14 @@ pub const SHOW_PREVIEW_LINES: usize = 20;
 #[serde(rename_all = "camelCase")]
 struct ShowParams {
     tab: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadParams {
+    tab: String,
+    limit: Option<usize>,
+    cursor: Option<u64>,
 }
 
 fn kind(t: &TabReport) -> &'static str {
@@ -41,6 +53,45 @@ pub(crate) fn terminal_show(ctx: &Ctx<'_>, req: &Request) -> Result<Value, AppEr
         "lastOutputMs": t.last_output_ms,
         "cwd": cwd,
         "preview": preview,
+    }))
+}
+
+/// The tail of tab `id`; empty at cursor 0 when it printed nothing yet.
+fn stream(ctx: &Ctx<'_>, id: &str, cursor: Option<u64>, limit: usize) -> TailRead {
+    ctx.tails
+        .read(id, cursor, limit)
+        .unwrap_or_else(|| TailRead {
+            text: String::new(),
+            truncated: cursor.is_some_and(|c| c > 0),
+            limited: false,
+            oldest_cursor: 0,
+            next_cursor: 0,
+            latest_cursor: 0,
+            returned_line_count: 0,
+        })
+}
+
+/// `terminal.read`: the last `limit` lines the tab printed, or only those
+/// after `cursor`, escape-stripped.
+pub(crate) fn terminal_read(ctx: &Ctx<'_>, req: &Request) -> Result<Value, AppError> {
+    let p: ReadParams = params(req)?;
+    let limit = p
+        .limit
+        .unwrap_or(READ_LIMIT_DEFAULT)
+        .clamp(1, READ_LIMIT_MAX);
+    let t = ctx.board.resolve(&p.tab)?;
+    let r = stream(ctx, &t.id, p.cursor, limit);
+    Ok(json!({
+        "handle": t.id,
+        "status": t.state(),
+        "source": "stream",
+        "tail": r.text,
+        "truncated": r.truncated,
+        "limited": r.limited,
+        "oldestCursor": r.oldest_cursor,
+        "nextCursor": r.next_cursor,
+        "latestCursor": r.latest_cursor,
+        "returnedLineCount": r.returned_line_count,
     }))
 }
 
@@ -92,5 +143,87 @@ mod tests {
             (r["kind"].as_str(), r["preview"].as_str()),
             (Some("shell"), Some(""))
         );
+    }
+
+    fn numbered(from: usize, to: usize) -> String {
+        (from..=to).map(|n| format!("{n}\r\n")).collect()
+    }
+
+    #[test]
+    fn read_defaults_to_120_lines_from_the_stream() {
+        let f = fixture();
+        f.board
+            .replace(vec![tab("p-other", &f.other, false, "idle")], None);
+        f.tails.feed("p-other", numbered(1, 130).as_bytes());
+        let r = f
+            .call(None, "terminal.read", json!({"tab": "p-other"}))
+            .unwrap();
+        assert_eq!(r["handle"], "p-other");
+        assert_eq!(r["status"], "idle");
+        assert_eq!(r["source"], "stream");
+        assert_eq!(r["returnedLineCount"], 120);
+        assert_eq!(r["limited"], true);
+        assert_eq!(r["truncated"], false);
+        let text = r["tail"].as_str().unwrap();
+        assert!(
+            text.starts_with("11\n") && text.ends_with("130\n"),
+            "{text}"
+        );
+        assert_eq!(r["oldestCursor"], 0);
+        assert_eq!(r["nextCursor"], r["latestCursor"]);
+    }
+
+    #[test]
+    fn read_after_a_cursor_returns_only_new_text() {
+        let f = fixture();
+        f.board
+            .replace(vec![tab("p-other", &f.other, false, "idle")], None);
+        // Nothing printed yet: empty, at cursor 0.
+        let r = f
+            .call(None, "terminal.read", json!({"tab": "p-other"}))
+            .unwrap();
+        assert_eq!(
+            (r["tail"].as_str(), r["nextCursor"].as_u64()),
+            (Some(""), Some(0))
+        );
+        f.tails.feed("p-other", b"$ make\r\n");
+        let r = f
+            .call(
+                None,
+                "terminal.read",
+                json!({"tab": "p-other", "cursor": 0}),
+            )
+            .unwrap();
+        assert_eq!(r["tail"], "$ make\n");
+        f.tails.feed("p-other", b"\x1b[1mok\x1b[0m\r\n");
+        let r = f
+            .call(
+                None,
+                "terminal.read",
+                json!({"tab": "p-other", "cursor": r["nextCursor"]}),
+            )
+            .unwrap();
+        assert_eq!(r["tail"], "ok\n");
+        assert_eq!(r["returnedLineCount"], 1);
+    }
+
+    #[test]
+    fn read_clamps_the_limit_to_5000() {
+        let f = fixture();
+        f.board
+            .replace(vec![tab("p-other", &f.other, false, "idle")], None);
+        f.tails.feed("p-other", numbered(1, 5100).as_bytes());
+        let read = |limit: u64| {
+            f.call(
+                None,
+                "terminal.read",
+                json!({"tab": "p-other", "limit": limit}),
+            )
+            .unwrap()["returnedLineCount"]
+                .clone()
+        };
+        assert_eq!(read(99_999), 5000);
+        assert_eq!(read(7), 7);
+        assert_eq!(read(0), 1);
     }
 }
