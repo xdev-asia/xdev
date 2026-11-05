@@ -618,7 +618,7 @@ fn modern_requests_get_result_type_and_server_info() {
         "9.9.9"
     );
     assert!(r["ttlMs"].as_u64().is_some());
-    assert_eq!(r["cacheScope"], "public");
+    assert_eq!(r["cacheScope"], "private");
     assert_eq!(r["tools"].as_array().unwrap().len(), 6);
 
     let reply = one(

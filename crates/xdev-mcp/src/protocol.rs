@@ -7,6 +7,7 @@ use std::io::{BufRead, Write};
 
 use serde_json::{Map, Value, json};
 
+use crate::app_tools::{Host, NoApp};
 use crate::{Docs, SUPPORTED, tools};
 
 const MAX_MESSAGE_BYTES: usize = 16 * 1024 * 1024;
@@ -24,8 +25,10 @@ const META_VERSION: &str = "io.modelcontextprotocol/protocolVersion";
 const META_CAPABILITIES: &str = "io.modelcontextprotocol/clientCapabilities";
 const META_SERVER_INFO: &str = "io.modelcontextprotocol/serverInfo";
 
-/// The tool list and identity only change with a new build, which restarts the process.
+/// Identity only changes with a new build, which restarts the process.
 const TTL_MS: u64 = 3_600_000;
+/// The tool list also follows the person's switches in Settings → MCP.
+const LIST_TTL_MS: u64 = 30_000;
 
 pub(crate) struct RpcError {
     code: i64,
@@ -46,11 +49,26 @@ impl RpcError {
 /// Serves until EOF on `input`. Errors only on I/O failure of `output`.
 pub fn serve(
     docs: &mut dyn Docs,
+    input: impl BufRead,
+    output: impl Write,
+    version: &str,
+) -> std::io::Result<()> {
+    serve_with(docs, &mut NoApp, input, output, version)
+}
+
+/// [`serve`] with the app tools of `host`.
+pub fn serve_with(
+    docs: &mut dyn Docs,
+    host: &mut dyn Host,
     mut input: impl BufRead,
     mut output: impl Write,
     version: &str,
 ) -> std::io::Result<()> {
-    let mut server = Server { docs, version };
+    let mut server = Server {
+        docs,
+        host,
+        version,
+    };
     let mut line = Vec::new();
     loop {
         line.clear();
@@ -105,6 +123,7 @@ fn read_line(
 
 struct Server<'a> {
     docs: &'a mut dyn Docs,
+    host: &'a mut dyn Host,
     version: &'a str,
 }
 
@@ -178,14 +197,15 @@ impl Server<'_> {
                 "cacheScope": "private",
             }),
             "tools/list" => {
-                let mut list = json!({"tools": tools::definitions()});
+                let mut list = json!({"tools": tools::definitions(&*self.host)});
                 if per_request {
-                    list["ttlMs"] = json!(TTL_MS);
-                    list["cacheScope"] = json!("public");
+                    // Short, because the person can switch app tools on or off meanwhile.
+                    list["ttlMs"] = json!(LIST_TTL_MS);
+                    list["cacheScope"] = json!("private");
                 }
                 list
             }
-            "tools/call" => tools::call(self.docs, params)?,
+            "tools/call" => tools::call(self.docs, self.host, params)?,
             _ => {
                 return Err(RpcError::new(
                     METHOD_NOT_FOUND,
