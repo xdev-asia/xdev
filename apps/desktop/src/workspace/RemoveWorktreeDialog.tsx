@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import type { ApiError, WorktreeView } from "@/api";
 import { useI18n } from "@/i18n";
+import { showsDontAsk } from "./deleteFlow";
 
 // Mounted only while open. `dirty` turns the confirm into the forced delete.
 export function RemoveWorktreeDialog(props: {
@@ -17,6 +18,10 @@ export function RemoveWorktreeDialog(props: {
   error?: ApiError["code"];
   /** How many worktrees name this one as their parent. */
   children?: number;
+  /** The nested tick starts on (the row menu's "Delete with nested worktrees"). */
+  nestedDefault?: boolean;
+  /** Ticked "Don't ask again" on a confirmed delete; without it the tick is left out. */
+  onDontAsk?(skip: boolean): void;
   /** `nested`: the children go too. */
   onConfirm(nested: boolean): void;
   /** Archive instead of delete: the folder goes, the branch stays. */
@@ -25,7 +30,8 @@ export function RemoveWorktreeDialog(props: {
 }): JSX.Element {
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
-  const [nested, setNested] = useState(false);
+  const [nested, setNested] = useState(props.nestedDefault === true);
+  const [skip, setSkip] = useState(false);
 
   useEffect(() => {
     const d = dialog.current;
@@ -68,6 +74,12 @@ export function RemoveWorktreeDialog(props: {
           <span>{t("workspace.remove.nested")}</span>
         </label>
       )}
+      {props.onDontAsk && showsDontAsk({ dirty: props.dirty, children: props.children ?? 0, count: 1 }) && (
+        <label className="ws-tick">
+          <input type="checkbox" data-dont-ask checked={skip} disabled={props.busy} onChange={(e) => setSkip(e.target.checked)} />
+          <span>{t("workspace.remove.dontAsk")}</span>
+        </label>
+      )}
       {props.archiving && (
         <p className="dialog-body" role="status">
           {t("workspace.remove.archiving")}
@@ -96,7 +108,10 @@ export function RemoveWorktreeDialog(props: {
             {t("workspace.remove.archiveInstead")}
           </button>
         )}
-        <button type="button" className="ws-danger" disabled={props.busy} onClick={() => props.onConfirm(nested)}>
+        <button type="button" className="ws-danger" disabled={props.busy} onClick={() => {
+            if (skip) props.onDontAsk?.(true);
+            props.onConfirm(nested);
+          }}>
           {props.busy ? t("workspace.remove.busy") : props.failed ? t("workspace.remove.anyway") : props.dirty ? t("workspace.remove.force") : t("workspace.remove.confirm")}
         </button>
       </div>

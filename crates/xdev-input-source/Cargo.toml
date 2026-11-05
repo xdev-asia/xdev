@@ -1,0 +1,15 @@
+[package]
+name = "xdev-input-source"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+
+# The workspace forbids unsafe code; here it is denied instead, so the macOS
+# module can allow it for the Carbon input source calls.
+[lints.rust]
+unsafe_code = "deny"

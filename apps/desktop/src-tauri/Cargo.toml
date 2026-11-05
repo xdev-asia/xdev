@@ -13,11 +13,14 @@ name = "xdev_desktop"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+arboard = { version = "3", features = ["wayland-data-control"] }
 blake3.workspace = true
 notify-debouncer-full.workspace = true
+png = "0.18"
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = ["devtools", "image-png"] }
+tauri-plugin-clipboard-manager = "=2.5.0"
 tauri-plugin-deep-link = "2.6.3"
 tauri-plugin-dialog = "2.8.4"
 tauri-plugin-notification = "2.6.0"
@@ -32,6 +35,7 @@ xdev-awake.workspace = true
 xdev-core.workspace = true
 xdev-git.workspace = true
 xdev-id.workspace = true
+xdev-input-source.workspace = true
 xdev-ipc.workspace = true
 xdev-kit.workspace = true
 xdev-orch.workspace = true
@@ -39,6 +43,9 @@ xdev-policy.workspace = true
 xdev-pty.workspace = true
 xdev-store.workspace = true
 xdev-workspace.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp"] }
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
@@ -59,5 +66,6 @@ xdev-orch = { workspace = true, features = ["ts"] }
 xdev-pty = { workspace = true, features = ["ts"] }
 xdev-workspace = { workspace = true, features = ["ts"] }
 
-[lints]
-workspace = true
+[lints.rust]
+# The process table on Windows needs the ToolHelp calls; they are allowed one by one.
+unsafe_code = "deny"

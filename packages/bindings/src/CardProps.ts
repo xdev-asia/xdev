@@ -3,4 +3,4 @@
 /**
  * Which parts a detailed worktree card shows. All on by default.
  */
-export type CardProps = { branch: boolean, time: boolean, comment: boolean, workStatus: boolean, workItem: boolean, agents: boolean, diffStat: boolean, pr: boolean, projectChip: boolean, };
+export type CardProps = { branch: boolean, time: boolean, comment: boolean, workStatus: boolean, workItem: boolean, agents: boolean, diffStat: boolean, pr: boolean, projectChip: boolean, ports: boolean, };

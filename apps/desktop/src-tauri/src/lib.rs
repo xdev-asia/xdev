@@ -6,12 +6,15 @@ mod atomic;
 mod bindings;
 mod cli_path;
 mod cli_verbs;
+mod clipboard;
 mod commands;
 mod endpoint;
 mod files;
+mod history;
 mod hooks;
 mod issues;
 mod keybindings;
+mod keyboard;
 mod kit;
 mod layout;
 mod links;
@@ -20,6 +23,7 @@ mod orch_pump;
 mod orch_skill;
 mod orch_sweep;
 mod orchestration;
+mod ports;
 mod power;
 mod profiles;
 mod prs;
@@ -41,6 +45,7 @@ mod tasks;
 mod terminal_themes;
 mod tray;
 mod updater;
+mod usage_share;
 mod workspace;
 mod xdev_id;
 
@@ -78,8 +83,11 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(updater::Pending::default())
         .manage(xdev_id::XdevIdHub::production())
         .manage(updater::Phase::default())
@@ -190,6 +198,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_version,
+            clipboard::clipboard_image_save,
+            keyboard::keyboard_input_source,
             updater::update_status,
             updater::update_notify,
             shell::shell_close_requested,
@@ -303,6 +313,8 @@ pub fn run() {
             power::keep_awake_get,
             power::keep_awake_set,
             power::keep_awake_agents,
+            ports::ports_scan,
+            ports::port_stop,
             pty::pty_spawn,
             pty::pty_approve,
             pty::pty_write,
@@ -387,6 +399,13 @@ pub fn run() {
             ship::worktree_ship,
             ship::worktree_push,
             ship::worktree_pull,
+            ship::worktree_fast_forward,
+            ship::worktree_rebase_from_base,
+            history::worktree_log,
+            history::worktree_commit_files,
+            history::worktree_commit_file,
+            history::worktree_open_commit,
+            history::worktree_open_file_on_host,
             ship::worktree_sync,
             ship::worktree_fetch,
             ship::worktree_force_push,
@@ -429,6 +448,8 @@ pub fn run() {
             kit::kit_skill_restore,
             kit::kit_usage,
             kit::kit_usage_report,
+            usage_share::usage_share_copy_image,
+            usage_share::usage_share_post,
             kit::kit_paths_exist,
             kit::kit_prompt_history,
             agent_sessions::agent_sessions,

@@ -96,6 +96,9 @@ import type {
   WorktreeStat,
   WorktreeView,
   WorktreeCreated,
+  LivePort,
+  PortQuery,
+  WorktreePorts,
   Linked,
   DefaultTab,
   DetailsPatch,
@@ -105,6 +108,7 @@ import type {
   SidebarPrefs,
   SidebarGroupBy,
   SidebarSort,
+  ProjectOrder,
   CardProps,
   Check,
   GhAccount,
@@ -126,6 +130,15 @@ import type {
   ProjectSummary,
   CreateRequest,
   ShipView,
+  RepoLog,
+  LogCommit,
+  CommitRef,
+  RefKind,
+  LogRef,
+  CommitFiles,
+  CommitFile,
+  CommitFileStatus,
+  PullPolicy,
   RepoHooks,
   HookKind,
   HookRun,
@@ -165,6 +178,7 @@ import type {
   SessionRow,
   SessionSearchStatus,
   Agent,
+  Cost,
   Skill,
   UsageDisplay,
   UsageReport,
@@ -185,7 +199,7 @@ export { createMockApi };
 export type ScriptKind = Extract<HookKind, "setup" | "archive">;
 export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
-export type { Agent, AgentSession, SessionQuery, SessionRow, SessionSearchStatus };
+export type { Agent, AgentSession, Cost, SessionQuery, SessionRow, SessionSearchStatus };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, AwakeView, KeepAwake, SwitchRunning };
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
@@ -286,6 +300,7 @@ export type {
   SidebarPrefs,
   SidebarGroupBy,
   SidebarSort,
+  ProjectOrder,
   CardProps,
   WorkItem,
   WorkItemKind,
@@ -307,6 +322,15 @@ export type {
   ProjectSummary,
   CreateRequest,
   ShipView,
+  RepoLog,
+  LogCommit,
+  CommitRef,
+  RefKind,
+  LogRef,
+  CommitFiles,
+  CommitFile,
+  CommitFileStatus,
+  PullPolicy,
   GitSettings,
   SourceControlGroupOrder,
   GitRecipes,
@@ -317,6 +341,7 @@ export type {
   CursorStyle,
   TerminalGpu,
   TerminalBell,
+  MacOptionAsAlt,
   SettingsSection,
   SettingsChanged,
   SetupPolicy,
@@ -327,6 +352,9 @@ export type {
   DefaultTab,
   Linked,
   WorktreeCreated,
+  LivePort,
+  PortQuery,
+  WorktreePorts,
   HookRun,
   KeySettings,
   TerminalKeyPolicy,
@@ -370,6 +398,11 @@ export type ErrorCode =
   | "not_found"
   | "outside_vault"
   | "no_vault"
+  | "share_too_large"
+  | "share_bad_image"
+  | "share_clipboard"
+  | "share_open"
+  | "port_unknown"
   | "io"
   | "not_utf8"
   | "too_large"
@@ -453,6 +486,15 @@ export type ErrorCode =
   | "no_upstream"
   | "push_rejected"
   | "pull_diverged"
+  | "update_dirty"
+  | "update_untracked"
+  | "update_conflicted"
+  | "update_conflicts"
+  | "base_not_remote"
+  | "pull_policy"
+  | "no_web_remote"
+  | "needs_force"
+  | "open_failed"
   | "force_base"
   | "nothing_to_amend"
   | "amend_pushed"
@@ -626,6 +668,10 @@ export interface Api {
   // Settings -> Terminal; the put returns what was stored, with numbers clamped to their ranges.
   terminalSettings(): Promise<TerminalSettings>;
   terminalSettingsPut(s: TerminalSettings): Promise<TerminalSettings>;
+  /** Saves the clipboard image as a PNG in the temp folder; null when the clipboard holds no image. Rejects `too_large`. */
+  clipboardImageSave(): Promise<string | null>;
+  /** macOS keyboard input source id; null elsewhere. */
+  keyboardInputSource(): Promise<string | null>;
   /** Calls `listener` after any settings write, from this window or another. Returns the unsubscribe. */
   onSettingsChanged(listener: (e: SettingsChanged) => void): () => void;
   // Window view settings (zoom, 0.5..2); the put returns what was stored, clamped.
@@ -809,7 +855,8 @@ export interface Api {
   // Rejects with `needs_approval` until `confirmed`, then with `worktree_dirty` for uncommitted
   // work until `force`, and with `primary_worktree` for the main checkout. A branch made here and
   // merged (or any with `force`) is deleted; otherwise it is kept and listed for review.
-  worktreeRemove(path: string, force: boolean, confirmed: boolean): Promise<Removed>;
+  // `deleteUnmerged` (default `force`) is what lets an unmerged branch go; `force` only skips the dirty check.
+  worktreeRemove(path: string, force: boolean, confirmed: boolean, deleteUnmerged?: boolean): Promise<Removed>;
   // Removes the folder and keeps the branch, listed under Archived. The same gate and dirty check as
   // `worktreeRemove`; a detached worktree rejects with `detached` until `force`.
   worktreeArchive(path: string, force: boolean, confirmed: boolean): Promise<Removed>;
@@ -823,6 +870,10 @@ export interface Api {
   keptKeep(repoId: string, branch: string): Promise<void>;
   // Deletes a kept branch from git. Rejects with `needs_approval` until `confirmed`, `kept_unknown`.
   branchDelete(repoId: string, branch: string, confirmed: boolean): Promise<void>;
+  // The TCP ports each worktree's terminals listen on, in the order asked.
+  portsScan(queries: PortQuery[]): Promise<WorktreePorts[]>;
+  // Ends the process on a port. Rejects with `needs_approval` until `confirmed`, `port_unknown`.
+  portStop(ptyIds: string[], pid: number, confirmed: boolean): Promise<void>;
   // Repos (with their kept branches), plain folders and groups in shown order.
   workspaceSidebar(): Promise<SidebarItem[]>;
   // The top-level order; unknown ids are skipped and items left out follow in the order added.
@@ -854,7 +905,23 @@ export interface Api {
   // with `no_upstream` or `pull_diverged`; a commit or amend with `hook_failed` (detail is the hook output).
   worktreeShip(path: string): Promise<ShipView>;
   worktreePush(path: string): Promise<ShipView>;
+  // Also rejects with `pull_policy` (git cannot reconcile; see Settings → Git) and `update_conflicts`
+  // (the pull stopped with conflicts and is left in progress). `worktreeSync` also rejects with `needs_force`.
   worktreePull(path: string): Promise<ShipView>;
+  // Fast-forwards to the upstream. Rejects with `no_upstream`, `detached`, `pull_diverged`, `update_dirty`
+  // and `update_untracked` (detail "fast-forward").
+  worktreeFastForward(path: string): Promise<ShipView>;
+  // Rebases onto the base. Rejects with `base_not_remote`, `update_dirty`, `update_untracked`
+  // (detail "rebase"), `update_conflicted` and `update_conflicts` (the rebase is left in progress).
+  worktreeRebaseFromBase(path: string): Promise<ShipView>;
+  // The commit graph of `HEAD`; `limit` is clamped to 1..200.
+  worktreeLog(path: string, limit: number, skip: number): Promise<RepoLog>;
+  // Rejects with `bad_arg` for a bad id and `git` when it does not resolve.
+  worktreeCommitFiles(path: string, id: string): Promise<CommitFiles>;
+  worktreeCommitFile(path: string, id: string, file: string): Promise<WorktreeFileDiff>;
+  // Reject with `no_web_remote` or `open_failed`. The URL is built in Rust.
+  worktreeOpenCommit(path: string, id: string): Promise<void>;
+  worktreeOpenFileOnHost(path: string, file: string, line: number | null, endLine: number | null): Promise<void>;
   worktreeSync(path: string): Promise<ShipView>;
   worktreeFetch(path: string): Promise<ShipView>;
   // `expected` is the remote commit the caller saw; without `confirmed` this rejects with `needs_approval`.
@@ -950,6 +1017,9 @@ export interface Api {
   kitUsage(sinceDay: string, untilDay: string, refresh: boolean): Promise<UsageSummary>;
   // The Stats page: filtered by agent and scope, and by `usage.scan` (an agent whose scan is off is not read).
   kitUsageReport(args: Omit<UsageReportArgs, "utcOffsetMinutes">): Promise<UsageReport>;
+  // The share dialog: a PNG to the clipboard, and a post opened in the browser.
+  usageShareCopyImage(png: Uint8Array): Promise<void>;
+  usageSharePost(text: string): Promise<void>;
   // Whether each relative path exists under `root` (an agent home, repo or worktree).
   kitPathsExist(root: string, paths: string[]): Promise<boolean[]>;
   // Newest first, at most `limit` (and 1000).
@@ -1090,6 +1160,11 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "not_found",
   "outside_vault",
   "no_vault",
+  "share_too_large",
+  "share_bad_image",
+  "share_clipboard",
+  "share_open",
+  "port_unknown",
   "io",
   "not_utf8",
   "too_large",
@@ -1173,6 +1248,15 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "no_upstream",
   "push_rejected",
   "pull_diverged",
+  "update_dirty",
+  "update_untracked",
+  "update_conflicted",
+  "update_conflicts",
+  "base_not_remote",
+  "pull_policy",
+  "no_web_remote",
+  "needs_force",
+  "open_failed",
   "force_base",
   "nothing_to_amend",
   "amend_pushed",
@@ -1292,6 +1376,8 @@ const tauriApi: Api = {
   setGitSettings: (git) => call("set_git_settings", { git }),
   terminalSettings: () => call("terminal_settings_get"),
   terminalSettingsPut: (settings) => call("terminal_settings_put", { settings }),
+  clipboardImageSave: () => call("clipboard_image_save"),
+  keyboardInputSource: () => call("keyboard_input_source"),
   onSettingsChanged: (listener) => {
     const unlisten = listen<SettingsChanged>("settings://changed", (e) => listener(e.payload));
     return () => void unlisten.then((stop) => stop());
@@ -1410,12 +1496,14 @@ const tauriApi: Api = {
   worktreeCreate: (repoId, name, from, request) => call("worktree_create", { repoId, name, from, request: request ?? null }),
   worktreeNamePreview: (repoId, name) => call("worktree_name_preview", { repoId, name }),
   worktreePin: (path, pinned) => call("worktree_pin", { path, pinned }),
-  worktreeRemove: (path, force, confirmed) => call("worktree_remove", { path, force, confirmed }),
+  worktreeRemove: (path, force, confirmed, deleteUnmerged) => call("worktree_remove", { path, force, confirmed, deleteUnmerged: deleteUnmerged ?? null }),
   worktreeArchive: (path, force, confirmed) => call("worktree_archive", { path, force, confirmed }),
   worktreeDetails: (path, patch) => call("worktree_details", { path, patch }),
   worktreeRestore: (repoId, branch) => call("worktree_restore", { repoId, branch }),
   keptKeep: (repoId, branch) => call("kept_keep", { repoId, branch }),
   branchDelete: (repoId, branch, confirmed) => call("branch_delete", { repoId, branch, confirmed }),
+  portsScan: (queries) => call("ports_scan", { queries }),
+  portStop: (ptyIds, pid, confirmed) => call("port_stop", { ptyIds, pid, confirmed }),
   workspaceSidebar: () => call("workspace_sidebar"),
   sidebarOrder: (ids) => call("sidebar_order", { ids }),
   groupPut: (id, name) => call("group_put", { id, name }),
@@ -1432,6 +1520,13 @@ const tauriApi: Api = {
   worktreeShip: (path) => call("worktree_ship", { path }),
   worktreePush: (path) => call("worktree_push", { path }),
   worktreePull: (path) => call("worktree_pull", { path }),
+  worktreeFastForward: (path) => call("worktree_fast_forward", { path }),
+  worktreeRebaseFromBase: (path) => call("worktree_rebase_from_base", { path }),
+  worktreeLog: (path, limit, skip) => call("worktree_log", { path, limit, skip }),
+  worktreeCommitFiles: (path, id) => call("worktree_commit_files", { path, id }),
+  worktreeCommitFile: (path, id, file) => call("worktree_commit_file", { path, id, file }),
+  worktreeOpenCommit: (path, id) => call("worktree_open_commit", { path, id }),
+  worktreeOpenFileOnHost: (path, file, line, endLine) => call("worktree_open_file_on_host", { path, file, line, endLine }),
   worktreeSync: (path) => call("worktree_sync", { path }),
   worktreeFetch: (path) => call("worktree_fetch", { path }),
   worktreeForcePush: (path, expected, confirmed) => call("worktree_force_push", { path, expected, confirmed }),
@@ -1484,6 +1579,9 @@ const tauriApi: Api = {
   kitUsage: (sinceDay, untilDay, refresh) =>
     call("kit_usage", { sinceDay, untilDay, refresh, utcOffsetMinutes: -new Date().getTimezoneOffset() }),
   kitUsageReport: (args) => call("kit_usage_report", { args: { ...args, utcOffsetMinutes: -new Date().getTimezoneOffset() } }),
+  // A raw body, not `call`'s record: the PNG never travels as a JSON number array.
+  usageShareCopyImage: (png) => invoke<void>("usage_share_copy_image", png).catch((e: unknown) => Promise.reject(toApiError(e))),
+  usageSharePost: (text) => call("usage_share_post", { text }),
   kitPathsExist: (root, paths) => call("kit_paths_exist", { root, paths }),
   kitPromptHistory: (limit) => call("kit_prompt_history", { limit }),
   agentSessions: (query, refresh) => call("agent_sessions", { query, refresh }),

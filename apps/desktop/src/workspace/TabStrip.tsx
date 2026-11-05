@@ -22,6 +22,8 @@ export interface StripItem {
   file?: { rel: string; dirty: boolean };
   /** Set for a Markdown preview tab: the path of the file it shows. */
   preview?: { rel: string };
+  /** Set for the commit tab: the commit it shows. */
+  commit?: { id: string };
 }
 
 export interface MenuGroup {
@@ -96,7 +98,9 @@ export function TabStrip(props: {
         ? fileName(item.file.rel)
         : item.preview
           ? t("files.preview.tab", { name: fileName(item.preview.rel) })
-          : t("review.tab");
+          : item.commit
+            ? t("commitView.tab", { id: item.commit.id.slice(0, 7) })
+            : t("review.tab");
 
   const menuItem = (key: string, label: string, run: () => void, extra?: { danger?: boolean; disabled?: boolean }) => (
     <button
@@ -122,6 +126,8 @@ export function TabStrip(props: {
 
   // The tab menu; the review tab is no terminal, so it has no pin, colour or title.
   const contextItems = (item: StripItem): MenuItem[] => {
+    // The commit tab stays in its pane: it has only Close.
+    if (item.commit) return [{ id: "close", labelKey: "tabMenu.close", run: () => props.onClose(item.id) }];
     if (!item.tab) {
       return [
         {
@@ -209,7 +215,7 @@ export function TabStrip(props: {
                       ? t("workspace.tabs.unreadLabel", { name: shownName(tab), status: statusLabel(tab.status).toLocaleLowerCase() })
                       : undefined
                   }
-                  title={tab?.title ?? item.file?.rel ?? item.preview?.rel}
+                  title={tab?.title ?? item.file?.rel ?? item.preview?.rel ?? (item.commit ? t("commitView.tab", { id: item.commit.id.slice(0, 7) }) : undefined)}
                   onClick={() => props.onSelect(item.id)}
                   onDoubleClick={() => tab && setRenaming(item.id)}
                 >

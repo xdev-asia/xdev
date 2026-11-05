@@ -20,12 +20,13 @@ default-members = [
     "crates/xdev-pty",
     "crates/xdev-ipc",
     "crates/xdev-awake",
+    "crates/xdev-input-source",
     "crates/xdev-workspace",
     "crates/xdev-cli",
 ]
 
 [workspace.package]
-version = "0.5.0" # x-release-please-version
+version = "0.6.0" # x-release-please-version
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/xdev-asia/xdev"
@@ -40,6 +41,7 @@ xdev-git = { path = "crates/xdev-git" }
 xdev-id = { path = "crates/xdev-id" }
 xdev-ipc = { path = "crates/xdev-ipc" }
 xdev-awake = { path = "crates/xdev-awake" }
+xdev-input-source = { path = "crates/xdev-input-source" }
 xdev-kit = { path = "crates/xdev-kit" }
 xdev-mcp = { path = "crates/xdev-mcp" }
 xdev-orch = { path = "crates/xdev-orch" }

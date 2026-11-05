@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
+import { Badge, Heatmap } from "@xdev-asia/ui";
 import { toApiError, type Account, type Agent, type Quota, type ApiError, type UsageDisplay, type UsageReport, type UsageScope, type UsageSettings } from "@/api";
 import { useI18n } from "@/i18n";
-import { displayPath, formatCount, totalOf, type Tokens } from "@/kit/kitUi";
+import { displayPath, formatCount, localDay, totalOf, type Tokens } from "@/kit/kitUi";
+import type { ShareCardData } from "@/kit/shareCard";
 import { TokenTable } from "@/kit/UsageTab";
 import { UsageChart } from "@/kit/UsageChart";
 import { rangeDays, type UsageRange } from "@/kit/usageRange";
+import { RECENT_DAYS, bestDay, cacheReuse, formatCost, recentDays } from "@/kit/usageStats";
+import { UsageRecentSessions } from "./UsageRecentSessions";
+import { UsageShare } from "./UsageShare";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import { CACHE_TTL_LONG_MS, CACHE_TTL_SHORT_MS } from "./usageDefaults";
 import type { SettingsSectionProps } from "./sections";
@@ -153,6 +158,28 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
   const since = report?.tracking_since ? new Date(report.tracking_since).toLocaleDateString() : t("usage.stats.noDate");
   const days = report?.summary.days ?? [];
   const empty = report !== undefined && (days.length === 0 || tokens === 0);
+  const cost = report?.cost;
+  const costText = cost === undefined ? "–" : formatCost(cost);
+  const costNote = cost !== undefined && cost.priced && cost.unpriced ? t("usage.stats.cost.excludes") : undefined;
+  const costs = report === undefined ? undefined : Object.fromEntries(report.cost_by_agent.map(([a, c]) => [label(a), formatCost(c)]));
+  const claudeTokens = report?.by_agent.find(([a]) => a === "claude")?.[1];
+  const reuse = provider === "claude" && claudeTokens !== undefined ? cacheReuse(claudeTokens) : null;
+  const heat = provider === "overview" ? recentDays(days, RECENT_DAYS, new Date()) : [];
+  const best = provider === "overview" ? bestDay(days) : null;
+  // The card is for one agent: Overview mixes them and has none.
+  const shareData: ShareCardData | null =
+    report === undefined || provider === "overview"
+      ? null
+      : {
+          provider,
+          range,
+          untilDay: localDay(new Date()),
+          cost: report.cost,
+          tokens,
+          topModel: report.summary.by_model[0]?.[0] ?? null,
+          sessions: report.sessions,
+          days,
+        };
 
   return (
     <div className="settings-page usage-page">
@@ -173,12 +200,19 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
           [
             ["sessions", formatCount(report?.sessions ?? 0, locale)],
             ["tokens", formatCount(tokens, locale)],
+            ["cost", costText],
             ["since", since],
           ] as const
         ).map(([key, value]) => (
-          <div className="usage-tile" key={key} data-tile={key}>
+          <div
+            className="usage-tile"
+            key={key}
+            data-tile={key}
+            title={key === "cost" && report !== undefined ? t("usage.stats.cost.asOf", { date: report.prices_as_of }) : undefined}
+          >
             <span className="usage-tile-label">{t(`usage.stats.tile.${key}`)}</span>
             <strong className="usage-tile-value">{value}</strong>
+            {key === "cost" && costNote !== undefined && <small className="usage-tile-note" data-cost-note>{costNote}</small>}
           </div>
         ))}
       </div>
@@ -215,6 +249,7 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
           </select>
         </label>
         <div className="settings-actions settings-actions-start">
+          {shareData !== null && !empty && <UsageShare api={api} data={shareData} />}
           <button
             type="button"
             className="btn-secondary"
@@ -256,9 +291,30 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
           </div>
           <UsageChart days={days} />
           {provider === "overview" ? (
-            <TokenTable title={t("usage.stats.byProvider")} rows={report.by_agent.map<[string, Tokens]>(([a, tk]) => [label(a), tk])} />
+            <>
+              <TokenTable title={t("usage.stats.byProvider")} rows={report.by_agent.map<[string, Tokens]>(([a, tk]) => [label(a), tk])} costs={costs} />
+              <section className="kit-block usage-heatmap" aria-label={t("usage.stats.heatmap.title")} data-heatmap>
+                <h3 className="kit-h">{t("usage.stats.heatmap.title")}</h3>
+                <p className="settings-hint">{t("usage.stats.heatmap.description", { days: RECENT_DAYS })}</p>
+                <Heatmap
+                  label={t("usage.stats.heatmap.label", { days: RECENT_DAYS })}
+                  cells={heat.map((d) => ({ key: d.day, level: d.level, label: t("usage.stats.heatmap.cell", { day: d.day, tokens: formatCount(d.total, locale) }) }))}
+                  startWeekday={heat.length === 0 ? 0 : new Date(`${heat[0]!.day}T00:00:00`).getDay()}
+                  lessLabel={t("usage.stats.heatmap.less")}
+                  moreLabel={t("usage.stats.heatmap.more")}
+                />
+                {best !== null && <Badge status="neutral">{t("usage.stats.heatmap.best", { day: best })}</Badge>}
+              </section>
+            </>
           ) : (
             <>
+              {reuse !== null && (
+                <p className="usage-cache" data-cache-line>
+                  <strong>{t("usage.stats.cache.reuse", { percent: Math.round(reuse * 100) })}</strong>
+                  <span className="settings-hint">{t("usage.stats.cache.note")}</span>
+                </p>
+              )}
+              <UsageRecentSessions agent={provider} sessions={report.recent_sessions} />
               <TokenTable title={t("kit.usage.byModel")} rows={report.summary.by_model} />
               <TokenTable title={t("kit.usage.byFolder")} rows={report.summary.by_folder.map<[string, Tokens]>(([f, tk]) => [displayPath(f), tk])} />
             </>
