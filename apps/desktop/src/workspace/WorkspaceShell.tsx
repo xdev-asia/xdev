@@ -620,11 +620,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => live.cliPoke(), [selectedPath]);
   useEffect(() => onOpenFile((req) => recentFiles.touch(req.worktree, req.rel)), []);
   // Ctrl+Enter in quick open: the file goes into a new pane to the right of the focused one.
-  function openFileSide(worktree: string, rel: string, line?: number): void {
+  function openFileSide(worktree: string, rel: string, line?: number, column?: number): void {
     const layout = sessions?.layout(worktree);
     const id = fileTabId(rel);
     if (sessions && layout && !paneOf(layout, id)) sessions.setLayout(worktree, splitPane(layout, layout.focused, "right", id));
-    requestOpenFile({ worktree, rel, line });
+    requestOpenFile({ worktree, rel, line, column });
   }
   useEffect(() => startAutosave(api, fileTabs, t), [api, t]);
 
@@ -1843,10 +1843,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         worktree={current?.path ?? null}
         recent={recentFiles}
         onClose={() => setQuickOpen(false)}
-        onOpen={(rel, { line, side }) => {
+        onOpen={(rel, { line, column, side }) => {
           if (!current) return;
-          if (side) openFileSide(current.path, rel, line);
-          else requestOpenFile({ worktree: current.path, rel, line });
+          if (side) openFileSide(current.path, rel, line, column);
+          else requestOpenFile({ worktree: current.path, rel, line, column });
         }}
       />
       <PaletteHost

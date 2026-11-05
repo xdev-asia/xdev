@@ -17,11 +17,25 @@ export interface Ranked {
   hits: Range[];
 }
 
-/** `App.tsx:42` is the path `App.tsx` and the line 42. */
-export function splitLine(input: string): { query: string; line?: number } {
-  const m = /^(.*?):(\d+)$/.exec(input.trim());
-  if (!m || Number(m[2]) < 1) return { query: input };
-  return { query: m[1], line: Number(m[2]) };
+/**
+ * `App.tsx:42` is the path `App.tsx` and the line 42; `App.tsx:42:7` adds the column. A drive
+ * (`C:`, `C:\x`) is not a suffix; a number below 1 or past the safe integers makes the whole
+ * input a plain query.
+ */
+export function splitLine(input: string): { query: string; line?: number; column?: number } {
+  let query = input.trim();
+  const nums: number[] = [];
+  for (let i = 0; i < 2; i++) {
+    const m = /:(\d+)$/.exec(query);
+    if (!m) break;
+    const n = Number(m[1]);
+    if (!Number.isSafeInteger(n) || n < 1) return { query: input };
+    nums.unshift(n);
+    query = query.slice(0, m.index);
+  }
+  if (nums.length === 0) return { query: input };
+  const [line, column] = nums;
+  return { query, line, ...(column !== undefined ? { column } : {}) };
 }
 
 // One token against one file: the best of its name and its path, with ranges in `rel`.
