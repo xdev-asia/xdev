@@ -16,6 +16,7 @@ import type {
   ReadTab,
   WorkerChanged,
   AwakeView,
+  AppStatsView,
   PortScan,
   KeepAwake,
   SwitchRunning,
@@ -264,7 +265,7 @@ export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
 export type { Agent, AgentSession, Cost, SessionQuery, SessionRow, SessionSearchStatus };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
-export type { AccountSource, ActiveAccount, AgentsSettings, AwakeView, KeepAwake, SwitchRunning };
+export type { AccountSource, ActiveAccount, AgentsSettings, AppStatsView, AwakeView, KeepAwake, SwitchRunning };
 export type { PortEvidence, PortKind, PortProtocol, PortScan, WorkspacePort } from "@xdev/bindings";
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
@@ -1274,6 +1275,10 @@ export interface Api {
   // Reports whether any agent tab is working; the backend decides in `agent` mode.
   keepAwakeAgents(working: boolean): Promise<AwakeView>;
   onKeepAwakeChanged(cb: (v: AwakeView) => void): Promise<() => void>;
+  // Counters kept on this computer: agents started, time agents worked, PRs created.
+  appStats(): Promise<AppStatsView>;
+  // A tab entered (true) or left (false) the working status.
+  appStatsBusy(tabId: string, working: boolean): Promise<void>;
   // Ports: one scan of the local listeners for these worktrees (`force` skips the back-off wait), stopping
   // the process behind a port id, opening its URL in the OS browser, and a terminal printing a new URL.
   portsScan(worktrees: string[], force: boolean): Promise<PortScan>;
@@ -1908,6 +1913,8 @@ const tauriApi: Api = {
   keepAwakeSet: (mode) => call("keep_awake_set", { mode }),
   keepAwakeAgents: (working) => call("keep_awake_agents", { working }),
   onKeepAwakeChanged: (cb) => listen<AwakeView>("keep-awake://changed", (e) => cb(e.payload)),
+  appStats: () => call("app_stats_get"),
+  appStatsBusy: (tabId, working) => call("app_stats_busy", { tabId, working }),
   portsScan: (worktrees, force) => call("ports_scan", { worktrees, force }),
   portsStop: (worktrees, id, consent) => call("ports_stop", { worktrees, id, confirmed: consent.confirmed, outsideTerminal: consent.outsideTerminal }),
   portsOpen: (id) => call("ports_open", { id }),

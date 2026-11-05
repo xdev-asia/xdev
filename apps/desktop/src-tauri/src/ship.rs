@@ -608,23 +608,49 @@ fn draft_runner(data: &Path, path: &Path, recipe: &Recipe) -> Result<Box<dyn Run
     })
 }
 
+/// The URL of a PR the stats count when a lookup finds it: only for a worktree xDev made
+/// (`start` is set), never the primary checkout. A PR someone else opened for a branch later
+/// checked out in an xDev worktree counts too; that is a known limit.
+fn pr_to_count<'a>(start: Option<&str>, pr: Option<&'a PrView>) -> Option<&'a str> {
+    start?;
+    pr.map(|p| p.url.as_str())
+}
+
+/// The URL of a PR xDev just created.
+fn created_pr_url(pr: &PrView) -> &str {
+    &pr.url
+}
+
 #[tauri::command(async)]
-pub fn worktree_pr(state: State<'_, AppState>, path: PathBuf) -> Result<Option<PrView>, CmdError> {
-    let known = locate(data_dir(&state)?, &path)?;
-    run_gh(&SystemGh, known.gh_account, |gh| pr_with(gh, &path))
+pub fn worktree_pr(
+    state: State<'_, AppState>,
+    stats: State<'_, crate::app_stats::AppStatsHub>,
+    path: PathBuf,
+) -> Result<Option<PrView>, CmdError> {
+    let data = data_dir(&state)?;
+    let known = locate(data, &path)?;
+    let pr = run_gh(&SystemGh, known.gh_account, |gh| pr_with(gh, &path))?;
+    if let Some(url) = pr_to_count(known.start.as_deref(), pr.as_ref()) {
+        stats.record_pr(data, url);
+    }
+    Ok(pr)
 }
 
 #[tauri::command(async)]
 pub fn worktree_pr_create(
     state: State<'_, AppState>,
+    stats: State<'_, crate::app_stats::AppStatsHub>,
     path: PathBuf,
     draft: PrDraft,
 ) -> Result<PrView, CmdError> {
-    let known = locate(data_dir(&state)?, &path)?;
+    let data = data_dir(&state)?;
+    let known = locate(data, &path)?;
     let repo = Repo::discover(&path)?;
-    run_gh(&SystemGh, known.gh_account, |gh| {
+    let view = run_gh(&SystemGh, known.gh_account, |gh| {
         create_pr_with(gh, &repo, &known.base_ref, draft)
-    })
+    })?;
+    stats.record_pr(data, created_pr_url(&view));
+    Ok(view)
 }
 
 #[tauri::command(async)]
@@ -906,6 +932,30 @@ mod tests {
     use xdev_workspace::{add_repo, create_worktree};
 
     use super::*;
+
+    fn pr_view(url: &str) -> PrView {
+        PrView {
+            number: 1,
+            url: url.to_owned(),
+            state: xdev_git::PrState::Open,
+            title: String::new(),
+            base: "main".to_owned(),
+            head: "feat".to_owned(),
+        }
+    }
+
+    #[test]
+    fn pr_counts_only_for_xdev_worktrees() {
+        let pr = pr_view("https://x/pr/1");
+        assert_eq!(pr_to_count(Some("main"), Some(&pr)), Some("https://x/pr/1"));
+        assert_eq!(pr_to_count(None, Some(&pr)), None);
+        assert_eq!(pr_to_count(Some("main"), None), None);
+    }
+
+    #[test]
+    fn created_pr_always_counts() {
+        assert_eq!(created_pr_url(&pr_view("https://x/pr/2")), "https://x/pr/2");
+    }
 
     fn git(dir: &Path, args: &[&str]) -> String {
         let out = Command::new("git")

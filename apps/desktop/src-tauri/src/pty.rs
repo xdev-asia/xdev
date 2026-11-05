@@ -1064,10 +1064,12 @@ pub fn pty_spawn(
         )?
     };
     add_extra_args(&mut launch, extra_args.as_deref().unwrap_or_default())?;
+    let starts_agent = crate::app_stats::counts_as_start(launch.agent, resume.as_deref(), fork);
     let exit_id = id.clone();
     let feed_id = id.clone();
     let feed_cwd = cwd.clone();
     let feed_app = app.clone();
+    let stats_app = app.clone();
     let trust = trust_plan(
         &launch,
         &cwd,
@@ -1077,7 +1079,7 @@ pub fn pty_spawn(
         resume.is_none() && !fork.unwrap_or(false),
         &|name| std::env::var_os(name),
     );
-    spawn_launch_trusted(
+    let info = spawn_launch_trusted(
         &ptys,
         data,
         id,
@@ -1097,7 +1099,13 @@ pub fn pty_spawn(
             // the pump before the last output (often the error) is sent.
             let _ = app.emit("pty://exit", PtyExit { id: exit_id, code });
         },
-    )
+    )?;
+    if starts_agent {
+        stats_app
+            .state::<crate::app_stats::AppStatsHub>()
+            .record_spawn(data);
+    }
+    Ok(info)
 }
 
 #[tauri::command(async)]
@@ -1162,12 +1170,18 @@ pub fn pty_ack(ptys: State<'_, Ptys>, id: String, n: usize) -> Result<(), CmdErr
 // Off the main thread: ending a process tree waits on taskkill and the console.
 #[tauri::command(async)]
 pub fn pty_kill(
+    state: State<'_, AppState>,
     ptys: State<'_, Ptys>,
     ports: State<'_, crate::ports::Ports>,
     tails: State<'_, crate::term_tail::TermTails>,
+    stats: State<'_, crate::app_stats::AppStatsHub>,
     id: String,
 ) {
     tails.forget(&id);
+    // A tab closed while working sends no status edge, so its span ends here.
+    if let Ok(data) = data_dir(&state) {
+        stats.busy(data, &id, false);
+    }
     pty_kill_in(&ptys, &ports, &id);
 }
 
@@ -2401,6 +2415,7 @@ b",
         let l = setup_launch(&f.data, &f.repo).unwrap();
         assert_eq!(l.profile, SETUP_PROFILE);
         assert!(!l.agent);
+        assert!(!crate::app_stats::counts_as_start(l.agent, None, None));
         assert_eq!(l.args.last().map(String::as_str), Some("echo hi"));
         let env: HashMap<_, _> = l.env.iter().cloned().collect();
         assert_eq!(
