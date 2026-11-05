@@ -565,6 +565,7 @@ const READ_ONLY: &[&str] = &[
     "gate-list",
     "read",
     "request-show",
+    "links",
 ];
 
 /// `orchestration.<verb>`; a verb that is not built answers `unsupported`.
@@ -1097,6 +1098,36 @@ fn handle_verb(
                 })?;
             Ok(serde_json::json!({ "text": text }))
         }
+        "read" => read_linked(ctx, req, &acting),
+        "handoff" => {
+            let from = acting.tab.clone().ok_or_else(|| {
+                AppError::new(
+                    "no_tab",
+                    "not called from an xDev terminal; pass --as <tab>",
+                )
+            })?;
+            let to = text_param(req, "to")
+                .ok_or_else(|| AppError::new("bad_request", "handoff needs --to <tab>"))?;
+            let body = text_param(req, "body").unwrap_or_default();
+            let (tabs, _) = ctx.board.tabs();
+            let target = tab_named(&tabs, &to)?;
+            let h = Handoff {
+                from: &from,
+                to: &target.id,
+                body: &body,
+            };
+            let msg = hand_off(ctx.orch, ctx.data, &tabs, h, ctx.write_pty, ctx.now_ms)?;
+            to_value(&msg)
+        }
+        "links" => {
+            let tab = acting.tab.clone();
+            let links = ctx.orch.with_store(ctx.data, |s| s.link_list())?;
+            let mine: Vec<_> = links
+                .into_iter()
+                .filter(|l| tab.as_deref().is_none_or(|t| l.from == t))
+                .collect();
+            to_value(&mine)
+        }
         other => Err(AppError::new(
             "unsupported",
             format!("orchestration {other} is not built yet"),
@@ -1398,6 +1429,514 @@ fn worker_start(
     to_value(&receipt)
 }
 
+/// One tab as Mission Control lists it: what the UI last reported, the
+/// worker in it, and when it was last nudged.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct MissionTab {
+    pub id: String,
+    pub title: Option<String>,
+    pub worktree: String,
+    pub profile: String,
+    pub agent: bool,
+    /// `working`, `needs-you`, `done` or `idle`.
+    pub status: String,
+    /// Epoch ms of the last output; 0 when there was none.
+    pub last_output_ms: i64,
+    pub exited: bool,
+    pub worker: Option<xdev_orch::TabWorker>,
+    pub last_nudge_ms: Option<i64>,
+}
+
+/// What Mission Control and the team map show.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct MissionView {
+    pub tabs: Vec<MissionTab>,
+    pub links: Vec<xdev_orch::TabLink>,
+    pub settings: xdev_orch::MissionSettings,
+    pub now_ms: i64,
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+}
+
+fn cmd_err(e: OrchError) -> CmdError {
+    CmdError {
+        code: "orchestration",
+        detail: Some(format!("{}: {}", e.code, e.message)),
+    }
+}
+
+fn app_cmd_err(e: AppError) -> CmdError {
+    CmdError {
+        code: "orchestration",
+        detail: Some(format!("{}: {}", e.code, e.message)),
+    }
+}
+
+/// The view over `tabs`. Links whose tab left the board are pruned, but
+/// only once the board holds tabs: before the first report it is empty.
+pub(crate) fn mission_of(
+    store: &Store,
+    tabs: &[crate::cli_verbs::TabReport],
+    now: i64,
+) -> Result<MissionView, OrchError> {
+    if !tabs.is_empty() {
+        store.links_prune(&|id| tabs.iter().any(|t| t.id == id))?;
+    }
+    let workers = store.tab_workers()?;
+    let mut out = Vec::with_capacity(tabs.len());
+    for t in tabs {
+        out.push(MissionTab {
+            id: t.id.clone(),
+            title: t.title.clone(),
+            worktree: t.worktree.clone(),
+            profile: t.profile.clone(),
+            agent: t.agent,
+            status: t.status.clone(),
+            last_output_ms: t.last_output_ms,
+            exited: t.exited,
+            worker: workers.iter().rev().find(|w| w.tab == t.id).cloned(),
+            last_nudge_ms: store.last_nudge(&t.id)?.map(|(at, _)| at),
+        });
+    }
+    Ok(MissionView {
+        tabs: out,
+        links: store.link_list()?,
+        settings: store.mission_settings()?,
+        now_ms: now,
+    })
+}
+
+/// The open agent tab `id`: what may be typed into.
+fn agent_tab(
+    tabs: &[crate::cli_verbs::TabReport],
+    id: &str,
+) -> Result<crate::cli_verbs::TabReport, AppError> {
+    let t = tabs
+        .iter()
+        .find(|t| t.id == id)
+        .ok_or_else(|| AppError::new("not_found", format!("no open tab {id}")))?;
+    if t.exited {
+        return Err(AppError::new("closed", format!("tab {id} has exited")));
+    }
+    if !t.agent {
+        return Err(AppError::new(
+            "terminal_not_agent",
+            format!("tab {id} runs no agent; text is only handed to an agent"),
+        ));
+    }
+    Ok(t.clone())
+}
+
+/// The live tab `name` stands for: its id, else its title (any case). Two
+/// tabs with that title are `ambiguous`.
+pub(crate) fn tab_named(
+    tabs: &[crate::cli_verbs::TabReport],
+    name: &str,
+) -> Result<crate::cli_verbs::TabReport, AppError> {
+    let name = name.trim().trim_start_matches('@');
+    if let Some(t) = tabs.iter().find(|t| t.id == name && !t.exited) {
+        return Ok(t.clone());
+    }
+    let hits: Vec<_> = tabs
+        .iter()
+        .filter(|t| !t.exited)
+        .filter(|t| {
+            t.title
+                .as_deref()
+                .is_some_and(|title| title.eq_ignore_ascii_case(name))
+        })
+        .collect();
+    match hits.as_slice() {
+        [one] => Ok((*one).clone()),
+        [] => Err(AppError::new("not_found", format!("no live tab {name}"))),
+        _ => Err(AppError::new(
+            "ambiguous",
+            format!("{} tabs are called {name}; use the tab id", hits.len()),
+        )),
+    }
+}
+
+/// Types `text` into an agent tab as one paste, then Enter after a short
+/// delay, as `terminal send --enter` does.
+fn type_into(write: &dyn Fn(&str, &[u8]) -> bool, tab: &str, text: &str) -> Result<(), AppError> {
+    let (bytes, then_enter) = crate::cli_terminal::send_bytes(Some(text), true, false, true);
+    if !write(tab, &bytes) {
+        return Err(AppError::new(
+            "closed",
+            format!("tab {tab} has no terminal"),
+        ));
+    }
+    if then_enter {
+        std::thread::sleep(Duration::from_millis(crate::orch_pump::ENTER_DELAY_MS));
+        write(tab, b"\r");
+    }
+    Ok(())
+}
+
+/// Hands `body` from tab `from` to the agent in tab `to`: typed in with a
+/// header naming the sender, and kept as mail.
+/// A hand-off: text from one tab for the agent in another.
+pub(crate) struct Handoff<'a> {
+    pub from: &'a str,
+    pub to: &'a str,
+    pub body: &'a str,
+}
+
+pub(crate) fn hand_off(
+    hub: &OrchHub,
+    data: &std::path::Path,
+    tabs: &[crate::cli_verbs::TabReport],
+    h: Handoff<'_>,
+    write: &dyn Fn(&str, &[u8]) -> bool,
+    now: i64,
+) -> Result<xdev_orch::Message, AppError> {
+    let Handoff { from, to, body } = h;
+    if body.trim().is_empty() {
+        return Err(AppError::new("bad_request", "nothing to hand off"));
+    }
+    if body.len() > crate::cli_terminal::SEND_MAX_BYTES {
+        return Err(AppError::new(
+            "bad_request",
+            format!(
+                "a hand-off is at most {} bytes",
+                crate::cli_terminal::SEND_MAX_BYTES
+            ),
+        ));
+    }
+    if from == to {
+        return Err(AppError::new(
+            "bad_request",
+            "a tab cannot hand off to itself",
+        ));
+    }
+    let sender = tabs
+        .iter()
+        .find(|t| t.id == from)
+        .ok_or_else(|| AppError::new("not_found", format!("no open tab {from}")))?;
+    let target = agent_tab(tabs, to)?;
+    let title = sender.title.clone().unwrap_or_else(|| sender.id.clone());
+    type_into(write, &target.id, &xdev_orch::handoff_text(&title, body))?;
+    Ok(hub.with_store(data, |s| s.handoff(from, &target.id, body.trim(), now))?)
+}
+
+/// Types the nudge text into tab `to` and keeps it as mail.
+pub(crate) fn nudge_tab(
+    hub: &OrchHub,
+    data: &std::path::Path,
+    tabs: &[crate::cli_verbs::TabReport],
+    to: &str,
+    write: &dyn Fn(&str, &[u8]) -> bool,
+    now: i64,
+) -> Result<xdev_orch::Message, AppError> {
+    let target = agent_tab(tabs, to)?;
+    let text = hub.with_store(data, |s| s.mission_settings())?.nudge_prompt;
+    type_into(write, &target.id, &text)?;
+    Ok(hub.with_store(data, |s| s.nudge(&target.id, &text, now))?)
+}
+
+/// The links and open tabs a read is checked against, read fresh each time.
+struct LinkBook<'a> {
+    store: &'a Store,
+    open: &'a dyn Fn(&str) -> bool,
+}
+
+impl xdev_policy::LinkBook for LinkBook<'_> {
+    fn grants(&self, reader: &str, target: &str) -> Option<xdev_policy::Grants> {
+        self.store
+            .link_get(reader, target)
+            .ok()
+            .flatten()
+            .map(|l| xdev_policy::Grants {
+                transcript: l.transcript,
+                screen: l.screen,
+            })
+    }
+    fn is_open(&self, tab: &str) -> bool {
+        (self.open)(tab)
+    }
+    fn prune(&mut self, reader: &str, target: &str) {
+        let _ = self.store.link_remove(reader, target);
+    }
+}
+
+/// Whether `reader` may read `kind` of `target` now; `denied` when not.
+pub(crate) fn check_link_read(
+    store: &Store,
+    open: &dyn Fn(&str) -> bool,
+    reader: &str,
+    target: &str,
+    kind: xdev_policy::ReadKind,
+) -> Result<(), OrchError> {
+    let mut book = LinkBook { store, open };
+    match xdev_policy::check_read(&mut book, reader, target, kind) {
+        xdev_policy::Verdict::Allow => Ok(()),
+        xdev_policy::Verdict::Ask { reason } | xdev_policy::Verdict::Deny { reason } => {
+            Err(OrchError::new("denied", reason))
+        }
+    }
+}
+
+/// How many messages a transcript read gives.
+const TRANSCRIPT_MESSAGES: usize = 50;
+/// How many screen lines a screen read gives.
+const SCREEN_LINES: u32 = 200;
+
+/// `orchestration.read`: the calling tab reads a linked tab's transcript
+/// (its mail) or its screen, through the grants of the link.
+fn read_linked(ctx: &Ctx<'_>, req: &Request, acting: &Acting) -> Result<Value, AppError> {
+    let reader = acting.tab.clone().ok_or_else(|| {
+        AppError::new(
+            "no_tab",
+            "not called from an xDev terminal; pass --as <tab>",
+        )
+    })?;
+    let what = text_param(req, "what").unwrap_or_else(|| "transcript".to_owned());
+    let kind = match what.as_str() {
+        "transcript" => xdev_policy::ReadKind::Transcript,
+        "screen" => xdev_policy::ReadKind::Screen,
+        other => {
+            return Err(AppError::new(
+                "bad_request",
+                format!("--what is transcript or screen, not {other}"),
+            ));
+        }
+    };
+    let name = text_param(req, "tab")
+        .ok_or_else(|| AppError::new("bad_request", "read needs --tab <tab>"))?;
+    let (tabs, _) = ctx.board.tabs();
+    let open = |id: &str| tabs.iter().any(|t| t.id == id);
+    // A closed tab is named by id only; its title is gone with it.
+    let target = tab_named(&tabs, &name).map_or(name.clone(), |t| t.id);
+    ctx.orch.with_store(ctx.data, |s| {
+        check_link_read(s, &open, &reader, &target, kind)
+    })?;
+    match kind {
+        xdev_policy::ReadKind::Transcript => {
+            let messages = ctx
+                .orch
+                .with_store(ctx.data, |s| s.tab_messages(&target, TRANSCRIPT_MESSAGES))?;
+            let text = messages
+                .iter()
+                .map(|m| format!("{} -> {} [{}]\n{}", m.from, m.to, m.subject, m.body))
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            Ok(
+                json!({ "tab": target, "what": "transcript", "text": text, "count": messages.len() }),
+            )
+        }
+        xdev_policy::ReadKind::Screen => {
+            let request = ctx.orch.next_read();
+            let ask = ReadTab {
+                request,
+                tab: target.clone(),
+                max_chars: 200_000,
+                max_lines: Some(SCREEN_LINES),
+            };
+            let text = ctx
+                .orch
+                .reads
+                .ask(
+                    request,
+                    || {
+                        if let Ok(p) = to_value(&ask) {
+                            (ctx.emit)("orchestration://read-tab", p);
+                        }
+                    },
+                    ctx.orch.waits.read,
+                )
+                .ok_or_else(|| {
+                    AppError::new("read_unavailable", "the terminal did not answer in time")
+                })?;
+            Ok(json!({ "tab": target, "what": "screen", "text": text }))
+        }
+    }
+}
+
+fn board_tabs(app: &AppHandle) -> Vec<crate::cli_verbs::TabReport> {
+    use tauri::Manager;
+    app.state::<crate::cli_verbs::CliHub>().board.tabs().0
+}
+
+fn pty_writer(app: &AppHandle) -> impl Fn(&str, &[u8]) -> bool + '_ {
+    use tauri::Manager;
+    move |tab: &str, bytes: &[u8]| {
+        app.state::<crate::pty::Ptys>()
+            .with(tab, |s| s.write(bytes.to_vec()))
+            .is_ok()
+    }
+}
+
+/// Mission Control: every tab the UI reported, its worker, its links.
+#[tauri::command(async)]
+pub fn orchestration_mission(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    hub: State<'_, OrchHub>,
+) -> Result<MissionView, CmdError> {
+    let data = data_dir(&state)?;
+    let tabs = board_tabs(&app);
+    hub.with_store(data, |s| mission_of(s, &tabs, now_ms()))
+        .map_err(cmd_err)
+}
+
+/// Stores Mission Control's settings and returns them, normalized.
+#[tauri::command(async)]
+pub fn orchestration_mission_settings_put(
+    state: State<'_, AppState>,
+    hub: State<'_, OrchHub>,
+    settings: xdev_orch::MissionSettings,
+) -> Result<xdev_orch::MissionSettings, CmdError> {
+    let data = data_dir(&state)?;
+    hub.with_store(data, |s| s.mission_settings_put(settings))
+        .map_err(cmd_err)
+}
+
+/// Links `from -> to` with both grants off (an existing link is kept).
+#[tauri::command(async)]
+pub fn orchestration_link_put(
+    state: State<'_, AppState>,
+    hub: State<'_, OrchHub>,
+    from: String,
+    to: String,
+) -> Result<xdev_orch::TabLink, CmdError> {
+    let data = data_dir(&state)?;
+    hub.with_store(data, |s| s.link_put(&from, &to, now_ms()))
+        .map_err(cmd_err)
+}
+
+/// Turns one grant of `from -> to` on or off.
+#[tauri::command(async)]
+pub fn orchestration_link_grant(
+    state: State<'_, AppState>,
+    hub: State<'_, OrchHub>,
+    from: String,
+    to: String,
+    grant: xdev_orch::Grant,
+    on: bool,
+) -> Result<xdev_orch::TabLink, CmdError> {
+    let data = data_dir(&state)?;
+    hub.with_store(data, |s| s.link_set_grant(&from, &to, grant, on, now_ms()))
+        .map_err(cmd_err)
+}
+
+/// Points `from -> to` at `target`; the grants start off again.
+#[tauri::command(async)]
+pub fn orchestration_link_retarget(
+    state: State<'_, AppState>,
+    hub: State<'_, OrchHub>,
+    from: String,
+    to: String,
+    target: String,
+) -> Result<xdev_orch::TabLink, CmdError> {
+    let data = data_dir(&state)?;
+    hub.with_store(data, |s| s.link_retarget(&from, &to, &target, now_ms()))
+        .map_err(cmd_err)
+}
+
+/// Removes the link `from -> to`.
+#[tauri::command(async)]
+pub fn orchestration_link_remove(
+    state: State<'_, AppState>,
+    hub: State<'_, OrchHub>,
+    from: String,
+    to: String,
+) -> Result<bool, CmdError> {
+    let data = data_dir(&state)?;
+    hub.with_store(data, |s| s.link_remove(&from, &to))
+        .map_err(cmd_err)
+}
+
+/// Types the nudge text into the agent in `tab`; returns the mail kept.
+#[tauri::command(async)]
+pub fn orchestration_nudge(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    hub: State<'_, OrchHub>,
+    tab: String,
+) -> Result<xdev_orch::Message, CmdError> {
+    let data = data_dir(&state)?;
+    let tabs = board_tabs(&app);
+    nudge_tab(&hub, data, &tabs, &tab, &pty_writer(&app), now_ms()).map_err(app_cmd_err)
+}
+
+/// Hands `text` from tab `from` to the agent in tab `to`.
+#[tauri::command(async)]
+pub fn orchestration_handoff(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    hub: State<'_, OrchHub>,
+    from: String,
+    to: String,
+    text: String,
+) -> Result<xdev_orch::Message, CmdError> {
+    let data = data_dir(&state)?;
+    let tabs = board_tabs(&app);
+    let h = Handoff {
+        from: &from,
+        to: &to,
+        body: &text,
+    };
+    hand_off(&hub, data, &tabs, h, &pty_writer(&app), now_ms()).map_err(app_cmd_err)
+}
+
+/// Stops the worker in `tab` the way `worker-stop` does: the tab is asked
+/// to close, and the worker is stopped once it has left the board.
+#[tauri::command(async)]
+pub fn orchestration_tab_stop(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    hub: State<'_, OrchHub>,
+    tab: String,
+) -> Result<xdev_orch::Worker, CmdError> {
+    use tauri::{Emitter, Manager};
+    let data = data_dir(&state)?.to_owned();
+    let w = hub
+        .with_store(&data, |s| {
+            let w = s
+                .live_worker_of_tab(&tab)?
+                .ok_or_else(|| OrchError::new("not_worker", format!("{tab} runs no worker")))?;
+            s.worker_stop_begin(&w.dispatch_id, now_ms())
+        })
+        .map_err(cmd_err)?;
+    let id = w.dispatch_id.clone();
+    let _ = app.emit(
+        "orchestration://worker-changed",
+        WorkerChanged { tab: tab.clone() },
+    );
+    let _ = app.emit(
+        "orchestration://close-worker",
+        WorkerClose {
+            dispatch: id.clone(),
+            tab: tab.clone(),
+        },
+    );
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        let hub = handle.state::<OrchHub>();
+        let deadline = std::time::Instant::now() + hub.waits.stop;
+        let went = loop {
+            if !board_tabs(&handle).iter().any(|t| t.id == tab) {
+                break true;
+            }
+            if std::time::Instant::now() >= deadline {
+                break false;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        let _ = hub.with_store(&data, |s| s.worker_stop_end(&id, went, now_ms()));
+        let _ = handle.emit("orchestration://worker-changed", WorkerChanged { tab });
+    });
+    Ok(w)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1674,7 +2213,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let hub = OrchHub::default();
         let version = hub.with_store(dir.path(), |s| s.version()).unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, xdev_orch::store::SCHEMA_VERSION);
         assert!(dir.path().join("orchestration.db").is_file());
     }
 
@@ -2260,5 +2799,175 @@ line", "title": "A"}),
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    fn board(f: &crate::cli_verbs::tests::Fixture) {
+        use crate::cli_verbs::tests::tab;
+        let mut lead = tab("p-lead", &f.lead, true, "idle");
+        lead.title = Some("Lead".to_owned());
+        let mut child = tab("p-child", &f.child, true, "idle");
+        child.title = Some("Reviewer".to_owned());
+        let shell = tab("p-other", &f.other, false, "idle");
+        f.board.replace(vec![lead, child, shell], None);
+    }
+
+    #[test]
+    fn a_linked_read_needs_a_link_and_the_grant_and_stops_when_revoked() {
+        let mut f = crate::cli_verbs::tests::fixture();
+        f.read_answer = Some("screen text".to_owned());
+        board(&f);
+        let read = |what: &str| {
+            f.call(
+                Some("p-lead"),
+                "orchestration.read",
+                json!({"tab": "Reviewer", "what": what}),
+            )
+        };
+        assert_eq!(read("transcript").unwrap_err().code, "denied");
+        f.orch
+            .with_store(&f.data, |s| s.link_put("p-lead", "p-child", 1))
+            .unwrap();
+        // Both grants start off.
+        assert_eq!(read("transcript").unwrap_err().code, "denied");
+        assert_eq!(read("screen").unwrap_err().code, "denied");
+        f.orch
+            .with_store(&f.data, |s| {
+                s.link_set_grant("p-lead", "p-child", xdev_orch::Grant::Screen, true, 2)
+            })
+            .unwrap();
+        let got = read("screen").unwrap();
+        assert_eq!(got["text"], "screen text");
+        assert_eq!(read("transcript").unwrap_err().code, "denied");
+        f.orch
+            .with_store(&f.data, |s| {
+                s.link_set_grant("p-lead", "p-child", xdev_orch::Grant::Screen, false, 3)
+            })
+            .unwrap();
+        assert_eq!(read("screen").unwrap_err().code, "denied");
+        // The other way round was never linked.
+        let back = f.call(
+            Some("p-child"),
+            "orchestration.read",
+            json!({"tab": "p-lead", "what": "screen"}),
+        );
+        assert_eq!(back.unwrap_err().code, "denied");
+        assert_eq!(read("bogus").unwrap_err().code, "bad_request");
+    }
+
+    #[test]
+    fn a_read_of_a_closed_tab_prunes_its_link() {
+        let f = crate::cli_verbs::tests::fixture();
+        board(&f);
+        f.orch
+            .with_store(&f.data, |s| {
+                s.link_put("p-lead", "p-gone", 1)?;
+                s.link_set_grant("p-lead", "p-gone", xdev_orch::Grant::Transcript, true, 1)
+            })
+            .unwrap();
+        let e = f.call(
+            Some("p-lead"),
+            "orchestration.read",
+            json!({"tab": "p-gone", "what": "transcript"}),
+        );
+        assert_eq!(e.unwrap_err().code, "denied");
+        let left = f.orch.with_store(&f.data, |s| s.link_list()).unwrap();
+        assert!(left.is_empty());
+    }
+
+    #[test]
+    fn a_handoff_types_a_header_naming_the_sender_and_is_kept_as_mail() {
+        let f = crate::cli_verbs::tests::fixture();
+        board(&f);
+        let got = f
+            .call(
+                Some("p-lead"),
+                "orchestration.handoff",
+                json!({"to": "@reviewer", "body": "please review the diff"}),
+            )
+            .unwrap();
+        assert_eq!(got["to"], "tab:p-child");
+        assert_eq!(got["type"], "handoff");
+        let writes = f.pty_writes.lock().unwrap().clone();
+        assert_eq!(writes[0].0, "p-child");
+        let typed = String::from_utf8_lossy(&writes[0].1).into_owned();
+        assert!(typed.contains("[Handoff from Lead]\nplease review the diff"));
+        assert_eq!(writes.last().unwrap().1, b"\r");
+        // The transcript of the target now holds it, for a reader with the grant.
+        f.orch
+            .with_store(&f.data, |s| {
+                s.link_put("p-other", "p-child", 1)?;
+                s.link_set_grant("p-other", "p-child", xdev_orch::Grant::Transcript, true, 1)
+            })
+            .unwrap();
+        let read = f
+            .call(
+                Some("p-other"),
+                "orchestration.read",
+                json!({"tab": "p-child"}),
+            )
+            .unwrap();
+        assert_eq!(read["count"], 1);
+        assert!(read["text"].as_str().unwrap().contains("please review"));
+    }
+
+    #[test]
+    fn a_handoff_goes_only_to_a_live_agent_tab() {
+        let f = crate::cli_verbs::tests::fixture();
+        board(&f);
+        let send = |to: &str| {
+            f.call(
+                Some("p-lead"),
+                "orchestration.handoff",
+                json!({"to": to, "body": "x"}),
+            )
+        };
+        assert_eq!(send("p-other").unwrap_err().code, "terminal_not_agent");
+        assert_eq!(send("nobody").unwrap_err().code, "not_found");
+        assert_eq!(send("Lead").unwrap_err().code, "bad_request");
+        assert!(f.pty_writes.lock().unwrap().is_empty());
+        let none = f.call(
+            None,
+            "orchestration.handoff",
+            json!({"to": "p-child", "body": "x"}),
+        );
+        assert_eq!(none.unwrap_err().code, "no_tab");
+    }
+
+    #[test]
+    fn the_mission_view_lists_tabs_links_and_nudges_and_prunes_closed_links() {
+        let f = crate::cli_verbs::tests::fixture();
+        board(&f);
+        let (tabs, _) = f.board.tabs();
+        let write = |_: &str, _: &[u8]| true;
+        let m = nudge_tab(&f.orch, &f.data, &tabs, "p-child", &write, 50).unwrap();
+        assert_eq!(m.subject, "nudge");
+        assert_eq!(
+            nudge_tab(&f.orch, &f.data, &tabs, "p-other", &write, 50)
+                .unwrap_err()
+                .code,
+            "terminal_not_agent"
+        );
+        let view = f
+            .orch
+            .with_store(&f.data, |s| {
+                s.link_put("p-lead", "p-child", 1)?;
+                s.link_put("p-lead", "p-gone", 1)?;
+                mission_of(s, &tabs, 99)
+            })
+            .unwrap();
+        assert_eq!(view.tabs.len(), 3);
+        assert_eq!(view.links.len(), 1);
+        let child = view.tabs.iter().find(|t| t.id == "p-child").unwrap();
+        assert_eq!(child.last_nudge_ms, Some(50));
+        assert_eq!(view.settings.stuck_minutes, 10);
+        // An empty board (before the first report) prunes nothing.
+        let kept = f
+            .orch
+            .with_store(&f.data, |s| {
+                s.link_put("p-lead", "p-gone", 1)?;
+                mission_of(s, &[], 99)
+            })
+            .unwrap();
+        assert_eq!(kept.links.len(), 2);
     }
 }

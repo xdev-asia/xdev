@@ -6,6 +6,7 @@ pub mod error;
 pub mod gates;
 pub mod guide;
 pub mod ids;
+pub mod links;
 pub mod mail;
 pub mod model;
 pub mod preamble;
@@ -19,6 +20,10 @@ pub mod workers;
 
 pub use error::OrchError;
 pub use gates::AskAnswer;
+pub use links::{
+    Grant, MissionSettings, NUDGE_DEFAULT, STUCK_MINUTES_DEFAULT, TabLink, TabWorker, handoff_text,
+    tab_address,
+};
 pub use mail::{CheckOpts, Identity, InboxRow, NewMessage, SendReceipt, Wake};
 pub use model::*;
 pub use preamble::{PreambleInput, SPEC_BUDGET, build as build_preamble};

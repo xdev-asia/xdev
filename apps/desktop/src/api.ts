@@ -336,6 +336,8 @@ export type { CliAsk, CliOpenFile, CliOpenTab, TabReport };
 export type { OrchestrationSettings, SkillStatus, WorkerLifetime, WorkerOpen, WorkerOpenOutcome, WorkerClose, ReadTab, WorkerChanged };
 export type { CliStatus } from "@xdev/bindings";
 export type { McpActivityView, McpHealth, McpToolView };
+import type { Grant as LinkGrant, Message as OrchMessage, MissionSettings, MissionTab, MissionView, TabLink, TabWorker, Worker as OrchWorker } from "@xdev/bindings";
+export type { LinkGrant, MissionSettings, MissionTab, MissionView, OrchMessage, OrchWorker, TabLink, TabWorker };
 export type { Breadcrumb, CrashDetail, CrashReport, DiagnosticsExport, RenderCrash, StartupReport, StartupStep } from "@xdev/bindings";
 export type { RestoreMode } from "@xdev/bindings";
 export type { Theme, EditorTheme, SidebarLook, StatusBarItems, TitlebarMode } from "@xdev/bindings";
@@ -764,7 +766,8 @@ export type ErrorCode =
   | "config_shape"
   | "config_version"
   | "config_sections"
-  | "config_too_large";
+  | "config_too_large"
+  | "orchestration";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -1675,6 +1678,22 @@ export interface Api {
   repoEnvSecretClear(repoId: string, key: string): Promise<void>;
   // The effective project env, secrets masked; `overrides` marks a name the process env also has.
   repoEnvPreview(repoId: string): Promise<EnvPreviewRow[]>;
+  // Mission Control: the reported tabs with their worker, last nudge and links. Links to tabs that left are pruned.
+  orchestrationMission(): Promise<MissionView>;
+  // Stores the stuck threshold (1-1440 minutes) and the nudge text; returns what was stored.
+  orchestrationMissionSettingsPut(settings: MissionSettings): Promise<MissionSettings>;
+  // Links `from -> to` (from may read to) with both grants off; an existing link is kept.
+  orchestrationLinkPut(from: string, to: string): Promise<TabLink>;
+  orchestrationLinkGrant(from: string, to: string, grant: LinkGrant, on: boolean): Promise<TabLink>;
+  // Points the link at `target`; its grants start off again.
+  orchestrationLinkRetarget(from: string, to: string, target: string): Promise<TabLink>;
+  orchestrationLinkRemove(from: string, to: string): Promise<boolean>;
+  // Types the nudge text into the agent in `tab` and keeps it as mail.
+  orchestrationNudge(tab: string): Promise<OrchMessage>;
+  // Types `text` into the agent in `to` under a header naming `from`. Rejects for a shell or a closed tab.
+  orchestrationHandoff(from: string, to: string, text: string): Promise<OrchMessage>;
+  // Stops the worker in `tab` along the worker-stop path; rejects with `not_worker` for a tab without one.
+  orchestrationTabStop(tab: string): Promise<OrchWorker>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -1866,6 +1885,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "config_version",
   "config_sections",
   "config_too_large",
+  "orchestration",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -2365,6 +2385,15 @@ const tauriApi: Api = {
   repoEnvSecretSet: (repoId, key, value) => call("repo_env_secret_set", { repoId, key, value }),
   repoEnvSecretClear: (repoId, key) => call("repo_env_secret_clear", { repoId, key }),
   repoEnvPreview: (repoId) => call("repo_env_preview", { repoId }),
+  orchestrationMission: () => call("orchestration_mission"),
+  orchestrationMissionSettingsPut: (settings) => call("orchestration_mission_settings_put", { settings }),
+  orchestrationLinkPut: (from, to) => call("orchestration_link_put", { from, to }),
+  orchestrationLinkGrant: (from, to, grant, on) => call("orchestration_link_grant", { from, to, grant, on }),
+  orchestrationLinkRetarget: (from, to, target) => call("orchestration_link_retarget", { from, to, target }),
+  orchestrationLinkRemove: (from, to) => call("orchestration_link_remove", { from, to }),
+  orchestrationNudge: (tab) => call("orchestration_nudge", { tab }),
+  orchestrationHandoff: (from, to, text) => call("orchestration_handoff", { from, to, text }),
+  orchestrationTabStop: (tab) => call("orchestration_tab_stop", { tab }),
 };
 
 const DEMO_CRASH: CrashReport = {

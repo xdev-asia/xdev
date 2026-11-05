@@ -1,0 +1,213 @@
+/* Mission Control and the team map. Tokens only; state is a tint, a 1px border or a status dot. */
+
+.mc-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-3);
+  max-height: min(70vh, 720px);
+  overflow: auto;
+  min-width: 0;
+}
+
+.mc-status {
+  margin: 0;
+  min-height: 1.4em;
+  color: var(--x-color-muted);
+  font-size: 13px;
+}
+
+.mc-panel { min-width: 0; }
+
+.mc-empty,
+.mc-hint {
+  margin: 0;
+  color: var(--x-color-muted);
+  font-size: 13px;
+}
+
+.mc-list,
+.mc-links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+}
+
+.mc-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  padding: var(--x-space-3);
+  border: 1px solid var(--x-color-line);
+  border-radius: 10px;
+  background: var(--x-color-surface);
+  min-width: 0;
+}
+
+.mc-row[data-stuck] {
+  background: var(--x-color-warn-soft);
+  border-color: var(--x-color-warn-line);
+}
+
+.mc-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+  color: var(--x-color-ink);
+  font-weight: 600;
+}
+
+.mc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-1) var(--x-space-3);
+  margin: 0;
+  color: var(--x-color-muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.mc-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2) var(--x-space-3);
+  padding: var(--x-space-2);
+  border: 1px solid var(--x-color-line);
+  border-radius: 8px;
+  background: var(--x-color-panel);
+}
+
+.mc-link-name {
+  color: var(--x-color-ink);
+  overflow-wrap: anywhere;
+}
+
+.mc-warn {
+  flex-basis: 100%;
+  margin: 0;
+  padding: var(--x-space-1) var(--x-space-2);
+  border: 1px solid var(--x-color-warn-line);
+  border-radius: 6px;
+  background: var(--x-color-warn-soft);
+  color: var(--x-color-ink);
+  font-size: 13px;
+}
+
+.mc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+}
+
+.mc-actions .lang-select,
+.mc-link .lang-select {
+  min-height: 28px;
+  max-width: 100%;
+}
+
+.mc-settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-3);
+  padding-top: var(--x-space-2);
+}
+
+/* Team map */
+
+.mc-map {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+}
+
+.mc-map-scroll {
+  overflow: auto;
+  max-width: 100%;
+  border: 1px solid var(--x-color-line);
+  border-radius: 10px;
+  background: var(--x-color-surface);
+}
+
+.mc-map-svg { display: block; }
+
+.mc-node { cursor: pointer; outline: none; }
+
+.mc-node rect {
+  fill: var(--x-color-panel);
+  stroke: var(--x-color-line);
+  stroke-width: 1;
+}
+
+.mc-node text {
+  fill: var(--x-color-ink);
+  font-size: 13px;
+}
+
+.mc-node:hover rect { fill: var(--x-color-accent-soft); }
+
+.mc-node:focus-visible rect {
+  stroke: var(--x-color-focus);
+  stroke-width: 3;
+}
+
+.mc-edge line {
+  stroke: var(--x-color-muted);
+  stroke-width: 1.5;
+}
+
+.mc-arrow { fill: var(--x-color-muted); }
+
+.mc-edge-label {
+  fill: var(--x-color-muted);
+  font-size: 11px;
+}
+
+/* Hand-off: the textarea with the list of live tabs under it */
+
+.mc-handoff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-3);
+}
+
+.mc-combo { position: relative; }
+
+.mc-options {
+  list-style: none;
+  margin: var(--x-space-1) 0 0;
+  padding: var(--x-space-1);
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--x-color-line);
+  border-radius: 8px;
+  background: var(--x-color-panel);
+}
+
+.mc-options[hidden] { display: none; }
+
+.mc-option {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--x-space-2);
+  border-radius: 6px;
+  color: var(--x-color-ink);
+  cursor: pointer;
+}
+
+.mc-option[aria-selected="true"] {
+  background: var(--x-color-accent-soft);
+  outline: 1px solid var(--x-color-focus);
+}
+
+/* The way into Mission Control from the activity panel's agents view. */
+.act-mission {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--x-space-2) 0;
+}

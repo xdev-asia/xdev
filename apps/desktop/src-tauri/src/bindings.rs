@@ -326,6 +326,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_kit::TemplateMode::export_all(cfg)?;
     xdev_ai::Routing::export_all(cfg)?;
     xdev_ai::QuotaAlert::export_all(cfg)?;
+    crate::orchestration::MissionView::export_all(cfg)?;
+    xdev_orch::Grant::export_all(cfg)?;
+    xdev_orch::Worker::export_all(cfg)?;
     Ok(())
 }
 
