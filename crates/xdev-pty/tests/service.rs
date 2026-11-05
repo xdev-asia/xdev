@@ -453,3 +453,32 @@ fn no_snapshots_flag_writes_nothing() {
     thread::sleep(Duration::from_millis(1000));
     assert!(!svc.dir.path().join(snapshot::DIR_NAME).exists());
 }
+
+#[test]
+fn clear_empties_ring_and_snapshot() {
+    let svc = service("clear", fast);
+    let mut c = svc.client();
+    c.spawn("p1", &idle("old-output"));
+    c.until(|_, out| contains(out, b"old-output"));
+    snapshot_has(&svc, "p1", b"old-output");
+    c.send(Frame::ClearScrollback { id: "p1".into() });
+    c.until(|f, _| matches!(f, Frame::Cleared { .. }));
+    assert_eq!(snapshot::read(svc.dir.path(), "p1", 10).unwrap(), None);
+    // A new attach from 0 replays nothing older than the clear.
+    let mut b = svc.client();
+    b.send(Frame::Attach {
+        id: "p1".into(),
+        from_seq: 0,
+    });
+    let (_, out) = b.until(|f, _| matches!(f, Frame::Output { .. }));
+    assert!(!contains(&out, b"old-output"));
+    // The PTY still runs.
+    assert_eq!(sessions(&mut b)[0].exited, None);
+    // An unknown id is pty_gone.
+    c.send(Frame::ClearScrollback { id: "nope".into() });
+    let (frames, _) = c.until(|f, _| matches!(f, Frame::Error { .. }));
+    assert!(matches!(
+        frames.last(),
+        Some(Frame::Error { code, .. }) if code == "pty_gone"
+    ));
+}

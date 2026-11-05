@@ -534,6 +534,25 @@ fn handle(shared: &Arc<Shared>, conn: &Arc<Conn>, frame: Frame) {
             }
             shared.save_sessions();
         }
+        Frame::ClearScrollback { id } => {
+            let reply = match shared.get(&id) {
+                Some(pty) => {
+                    {
+                        let mut out = lock(&pty.out);
+                        out.ring.clear();
+                        out.dirty = false;
+                    }
+                    let _io = lock(&pty.snap_io);
+                    let _ = snapshot::remove(&shared.cfg.dir, &pty.id);
+                    Frame::Cleared { id }
+                }
+                None => Frame::Error {
+                    id: Some(id),
+                    code: "pty_gone".to_owned(),
+                },
+            };
+            conn.send(reply);
+        }
         Frame::List => conn.send(Frame::Sessions {
             sessions: shared.infos(),
         }),
