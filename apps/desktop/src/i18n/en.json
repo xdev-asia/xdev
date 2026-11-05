@@ -2574,5 +2574,21 @@
   "prc.send.ack": "Resolve and reply on GitHub afterwards",
   "prc.send.failed": "Could not give the comments to the agent.",
   "prc.send.summary": "Sent to the agent. Marked {resolved} resolved, replied to {replied}, skipped {skipped}, failed {failed}.",
-  "settings.git.recipes.addressComments": "Address PR comments"
+  "settings.git.recipes.addressComments": "Address PR comments",
+  "checks.rerun": "Rerun",
+  "checks.rerun.menu": "Rerun checks",
+  "checks.rerun.all": "Rerun all checks",
+  "checks.rerun.failed": "Rerun unsuccessful",
+  "checks.rerun.done": "Started {count} workflow runs.",
+  "checks.rerun.done.one": "Started {count} workflow run.",
+  "checks.rerun.skipped": "{count} checks outside GitHub Actions were skipped.",
+  "checks.rerun.skipped.one": "{count} check outside GitHub Actions was skipped.",
+  "checks.triage.failing": "{count} checks failed",
+  "checks.triage.failing.one": "{count} check failed",
+  "checks.triage.cancelled": "{count} checks were cancelled",
+  "checks.triage.cancelled.one": "{count} check was cancelled",
+  "checks.triage.pending": "{count} checks are still running",
+  "checks.triage.pending.one": "{count} check is still running",
+  "checks.triage.unresolved": "{count} checks were skipped and none passed",
+  "checks.triage.unresolved.one": "{count} check was skipped and none passed"
 }

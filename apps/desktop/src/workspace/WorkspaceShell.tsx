@@ -55,7 +55,7 @@ import { removeRepo } from "./removeRepo";
 import { VaultNav } from "./VaultNav";
 import type { AppId } from "@/shell/apps";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
-import { sendCheckFix, sendCommentsFix, sendFix } from "./fixAgent";
+import { sendCheckFix, sendChecksFix, sendCommentsFix, sendFix } from "./fixAgent";
 import type { CommentGroup } from "./prComments";
 import type { SendOutcome } from "./PrSendBar";
 import { sendToAgentTab, sendToOpenedTab, type SendChoice } from "./agentPrompt";
@@ -1507,6 +1507,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
   }
 
+  // Gives every failing check, each with its log when there is one, to one agent prompt.
+  async function fixChecks(checks: Check[]): Promise<void> {
+    if (!sessions || !current) return;
+    const path = current.path;
+    const tab = await sendChecksFix(api, sessions, path, shownTab[path] ?? null, current.branch ?? "", checks);
+    setFixNote(!tab);
+    if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
+  }
+
   // Gives a failed check, with its log when there is one, to an agent of the worktree.
   async function fixCheck(check: Check): Promise<void> {
     if (!sessions || !current) return;
@@ -1975,7 +1984,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             </div>
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "checks"}>
               {current ? (
-                <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={panelTab === "checks"} onFix={(check) => fixCheck(check)} />
+                <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={panelTab === "checks"} onFix={(check) => fixCheck(check)} onFixAll={(checks) => fixChecks(checks)} />
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
               )}

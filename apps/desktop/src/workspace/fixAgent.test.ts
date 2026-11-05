@@ -184,7 +184,7 @@ it("Resolve conflicts opens a tab of the recipe's profile when it names one, els
 import type { PrComment } from "@/api";
 import { PrCommentStore } from "./prCommentStore";
 import { groupComments } from "./prComments";
-import { acknowledge, sendCommentsFix } from "./fixAgent";
+import { acknowledge, sendChecksFix, sendCommentsFix } from "./fixAgent";
 
 const OAK = "/demo/wt/xdev-oak";
 function cm(over: Partial<PrComment>): PrComment {
@@ -260,4 +260,26 @@ it("runs at most four acknowledgements at once", async () => {
   await acknowledge(store, OAK, 7, g.needsReview);
   expect(peak).toBeLessThanOrEqual(4);
   expect(peak).toBeGreaterThan(1);
+});
+
+it("sends every failing check in one prompt", async () => {
+  const a = tab("a");
+  const api = apiWith(() => {});
+  vi.spyOn(api, "worktreeCheckLog").mockImplementation(async (_w, link) => `log of ${link}`);
+  const checks = [
+    { name: "lint", workflow: "ci", bucket: "fail" as const, link: "https://x/1" },
+    { name: "test", workflow: "ci", bucket: "fail" as const, link: null },
+  ];
+  await sendChecksFix(api, fake([a]).sessions, "/w", "a", "feat", checks);
+  expect(a.client.input).toHaveBeenCalledTimes(1);
+  const typed = (a.client.input as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+  expect(typed).toContain("Check: lint, test");
+  expect(typed).toContain("--- lint ---");
+  expect(typed).toContain("log of https://x/1");
+});
+
+it("sends nothing for no failing checks", async () => {
+  const a = tab("a");
+  expect(await sendChecksFix(apiWith(() => {}), fake([a]).sessions, "/w", "a", "feat", [])).toBeNull();
+  expect(a.client.input).not.toHaveBeenCalled();
 });

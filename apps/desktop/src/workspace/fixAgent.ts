@@ -120,3 +120,37 @@ export async function sendCommentsFix(
   if (!tab || !ack) return { tab, summary: null };
   return { tab, summary: await acknowledge(store, pr.worktree, pr.number, groups) };
 }
+
+/** The most log a prompt carries for each check when several go at once. */
+const LOG_EACH_MAX = 8_000;
+
+/**
+ * `sendFix` for every failing check at once: one prompt, the checks named together, each with its
+ * log when `gh` can give it. A single check reads as `sendCheckFix` does.
+ */
+export async function sendChecksFix(
+  api: Api,
+  sessions: Sessions,
+  worktree: string,
+  shown: string | null,
+  branch: string,
+  checks: readonly Check[],
+): Promise<Tab | null> {
+  if (checks.length === 0) return null;
+  if (checks.length === 1) return sendCheckFix(api, sessions, worktree, shown, branch, checks[0]);
+  const logs = await Promise.all(
+    checks.map(async (c) => (c.link ? ((await api.worktreeCheckLog(worktree, c.link).catch(() => null)) ?? "") : "")),
+  );
+  const log = checks
+    .map((c, i) => (logs[i] === "" ? "" : `--- ${c.name} ---\n${logs[i].slice(-LOG_EACH_MAX)}`))
+    .filter(Boolean)
+    .join("\n\n");
+  const flows = [...new Set(checks.map((c) => c.workflow ?? "").filter(Boolean))];
+  return sendFix(api, sessions, worktree, shown, "fixChecks", {
+    branch,
+    checkName: checks.map((c) => c.name).join(", "),
+    workflow: flows.join(", "),
+    link: checks.map((c) => c.link ?? "").filter(Boolean).join("\n"),
+    log,
+  });
+}

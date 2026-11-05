@@ -5,6 +5,7 @@ import { createMockApi, type Api, type Check, type PrView } from "@/api";
 import { DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE } from "@/mockWorkspace";
 import { translate } from "@/i18n";
 import { ChecksPanel } from "./ChecksPanel";
+import { ChecksTriage } from "./ChecksTriage";
 import { PrStore } from "./prs";
 import { PrCommentStore } from "./prCommentStore";
 
@@ -112,7 +113,7 @@ it("open on GitHub calls worktreePrOpen", async () => {
   expect(open.mock.calls).toEqual([[OAK, false], [OAK, true]]);
 });
 
-it("refreshes every 30 s only while pending and visible", async () => {
+it("reads again after a minute, then every two while nothing changes, and stops when hidden", async () => {
   vi.useFakeTimers();
   const api = seeded({ [OAK]: PR }, { [OAK]: CHECKS });
   const read = vi.spyOn(api, "worktreePr");
@@ -123,28 +124,100 @@ it("refreshes every 30 s only while pending and visible", async () => {
   const shown = mount(api, prs, true);
   await vi.advanceTimersByTimeAsync(0);
   expect(read).toHaveBeenCalledTimes(1);
-  await vi.advanceTimersByTimeAsync(30_000);
+  await vi.advanceTimersByTimeAsync(59_000);
+  expect(read).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(1_000);
   expect(read).toHaveBeenCalledTimes(2);
-  await vi.advanceTimersByTimeAsync(30_000);
+  // Unchanged: the next wait is 120 s.
+  await vi.advanceTimersByTimeAsync(119_000);
+  expect(read).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(1_000);
   expect(read).toHaveBeenCalledTimes(3);
   for (const clean of shown.cleanups) if (typeof clean === "function") clean();
-  await vi.advanceTimersByTimeAsync(60_000);
+  await vi.advanceTimersByTimeAsync(600_000);
   expect(read).toHaveBeenCalledTimes(3);
 
   // Hidden: the mount load only.
   read.mockClear();
   mount(api, prs, false);
-  await vi.advanceTimersByTimeAsync(90_000);
+  await vi.advanceTimersByTimeAsync(600_000);
   expect(read).toHaveBeenCalledTimes(1);
+});
 
-  // Nothing pending: the mount load only.
-  const done = seeded({ [OAK]: PR }, { [OAK]: CHECKS.map((c) => ({ ...c, bucket: "pass" as const })) });
-  const quiet = new PrStore(done);
-  await quiet.load(OAK, { checks: true });
-  const calm = vi.spyOn(done, "worktreePr");
-  mount(done, quiet, true);
-  await vi.advanceTimersByTimeAsync(90_000);
-  expect(calm).toHaveBeenCalledTimes(1);
+it("goes back to a minute when the checks changed", async () => {
+  vi.useFakeTimers();
+  const api = seeded({ [OAK]: PR }, { [OAK]: CHECKS });
+  const prs = new PrStore(api);
+  await prs.load(OAK, { checks: true });
+  const read = vi.spyOn(api, "worktreePr");
+  vi.spyOn(api, "worktreePrChecks").mockResolvedValueOnce(CHECKS.map((c) => ({ ...c, bucket: "pass" as const })));
+  mount(api, prs, true);
+  await vi.advanceTimersByTimeAsync(0);
+  read.mockClear();
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(read).toHaveBeenCalledTimes(1);
+  // It changed, so the wait stays a minute.
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(read).toHaveBeenCalledTimes(2);
+});
+
+it("backs off when reads fail", async () => {
+  vi.useFakeTimers();
+  const api = seeded({ [OAK]: PR }, { [OAK]: CHECKS });
+  const prs = new PrStore(api);
+  await prs.load(OAK, { checks: true });
+  const read = vi.spyOn(api, "worktreePr").mockRejectedValue({ code: "gh_failed" });
+  mount(api, prs, true);
+  await vi.advanceTimersByTimeAsync(0);
+  read.mockClear();
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(read).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(119_000);
+  expect(read).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(read).toHaveBeenCalledTimes(2);
+});
+
+it("rerun menu: unsuccessful is disabled when nothing failed, and the texts follow the report", async () => {
+  const passing = CHECKS.map((c) => ({ ...c, bucket: "pass" as const, link: "https://example.test/actions/runs/5/job/9" }));
+  const api = seeded({ [OAK]: PR }, { [OAK]: passing });
+  const prs = new PrStore(api);
+  await prs.load(OAK, { checks: true });
+  const view = mount(api, prs, true);
+  const open = () => view.all().find((n) => n.type === "button" && n.props["aria-haspopup"] === "menu")!;
+  expect(open()).toBeTruthy();
+  open().props.onClick();
+  const menu = view.all().find((n) => n.props.label === en("checks.rerun.menu"))!;
+  const items = menu.props.items as { label: string; disabled?: boolean; onSelect: () => void }[];
+  expect(items.map((i) => [i.label, i.disabled ?? false])).toEqual([[en("checks.rerun.all"), false], [en("checks.rerun.failed"), true]]);
+  const run = vi.spyOn(api, "worktreePrChecksRerun");
+  items[0].onSelect();
+  await tick();
+  expect(run).toHaveBeenCalledWith(OAK, 7, false);
+  expect(view.html()).toContain(en("checks.rerun.done.one", { count: 1 }));
+});
+
+it("shows the triage strip and Fix hands every failing check over once", async () => {
+  const api = seeded({ [OAK]: PR }, { [OAK]: CHECKS });
+  const prs = new PrStore(api);
+  await prs.load(OAK, { checks: true });
+  const onFixAll = vi.fn();
+  const values: unknown[] = [];
+  const draw = () => {
+    hooks.values = values; hooks.cursor = 0; hooks.active = true;
+    try { return ChecksPanel({ api, worktree: OAK, prs, visible: true, onFixAll }); } finally { hooks.active = false; }
+  };
+  draw();
+  hooks.effects.splice(0).forEach((e) => e());
+  await tick();
+  const view = nodes(draw());
+  const strip = view.find((n) => n.type === ChecksTriage)!;
+  expect(strip.props.onFix).toBeTypeOf("function");
+  strip.props.onFix([CHECKS[2]]);
+  expect(onFixAll).toHaveBeenCalledTimes(1);
+  expect(onFixAll.mock.calls[0][0].map((c: Check) => c.name)).toEqual(["lint"]);
+  expect(renderToStaticMarkup(draw())).toContain("data-fix-all");
+  expect(renderToStaticMarkup(draw())).toContain(en("checks.triage.failing.one", { count: 1 }));
 });
 
 const fixButtons = (view: ReturnType<typeof mount>) => view.all().filter((n) => n.type === "button" && n.props["data-fix"] !== undefined);
