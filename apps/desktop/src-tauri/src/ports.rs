@@ -347,8 +347,9 @@ mod tests {
     }
 
     #[test]
-    fn one_confirmation_stops_a_listener_under_an_xdev_terminal() {
+    fn a_listener_that_is_the_terminal_itself_needs_the_second_confirmation() {
         let (scanner, urls, wts) = fixture();
+        // Pid 7 is the terminal's own shell or program, not a process under it.
         let roots = [PtyRoot {
             pid: 7,
             worktree: PathBuf::from("/w/a"),
@@ -357,7 +358,10 @@ mod tests {
             confirmed: true,
             outside_terminal: false,
         };
-        assert!(stop_in(&scanner, &urls, &roots, &wts, "127.0.0.1:5173:7", once, &[]).is_ok());
+        let id = "127.0.0.1:5173:7";
+        let err = stop_in(&scanner, &urls, &roots, &wts, id, once, &[]).unwrap_err();
+        assert_eq!(err.code, "port_terminal_root");
+        assert!(stop_in(&scanner, &urls, &roots, &wts, id, TWICE, &[]).is_ok());
     }
 
     #[test]
