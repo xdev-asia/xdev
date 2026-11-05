@@ -22,6 +22,11 @@ export function resolveFileLink(link: Link, from: string): string | null {
   return joinRel(link.target.startsWith("/") ? "x" : from, target);
 }
 
+/** The worktree path of an image `src` in the file `from`: a leading `/` starts at the worktree root, like a link. */
+function imagePath(from: string, src: string): string | null {
+  return src.startsWith("/") ? joinRel("x", src.slice(1)) : joinRel(from, src);
+}
+
 /** A relative image `src`: no scheme, not protocol-relative, not an anchor. */
 export function isRelativeSrc(src: string): boolean {
   return src !== "" && !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(src) && !src.startsWith("//") && !src.startsWith("#");
@@ -136,7 +141,7 @@ export function fillImages(root: ImageHost, io: FillIo): () => void {
   let live = true;
   for (const el of Array.from(root.querySelectorAll(".md-image[data-src]"))) {
     const src = el.getAttribute("data-src") ?? "";
-    const rel = isRelativeSrc(src) ? joinRel(io.rel, safeDecode(src.split(/[?#]/)[0])) : null;
+    const rel = isRelativeSrc(src) ? imagePath(io.rel, safeDecode(src.split(/[?#]/)[0])) : null;
     if (rel === null) continue;
     cache.url(rel).then(
       (url) => {
