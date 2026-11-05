@@ -159,6 +159,18 @@ describe("PtyClient", () => {
     }
   });
 
+  it("a spawn refused for approval keeps the prompt for the retry", async () => {
+    const api = createMockApi({});
+    const spawn = vi.spyOn(api, "ptySpawn");
+    const client = new PtyClient(api, "p3", undefined, undefined, "fix it");
+    await expect(client.start("/demo", "claude", 80, 24, () => {})).rejects.toMatchObject({ code: "needs_approval" });
+    expect(spawn.mock.calls[0][9]).toBe("fix it");
+    await api.ptyApprove("claude", null);
+    await client.start("/demo", "claude", 80, 24, () => {});
+    expect(spawn.mock.calls[1][9]).toBe("fix it");
+    client.dispose();
+  });
+
   it("an after-start agent is typed the prompt after its first output and 1500 ms quiet", async () => {
     vi.useFakeTimers();
     try {

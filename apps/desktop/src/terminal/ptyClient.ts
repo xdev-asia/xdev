@@ -175,6 +175,8 @@ export class PtyClient {
       }, this.resume, this.fork, prompt);
     } catch (e) {
       watch?.cancel();
+      // Nothing started, so a retry (say, after approval) still sends it.
+      this.prompt ??= prompt;
       throw e;
     }
     this.size = [cols, rows];
