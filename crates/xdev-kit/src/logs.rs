@@ -143,8 +143,10 @@ pub(crate) struct LineRead {
     pub offset: u64,
     /// Lines longer than the buffer cap, parsed as they streamed.
     pub long_lines: usize,
-    /// The largest capacity the line buffer reached.
+    /// The largest capacity a line buffer reached.
     pub buf_peak: usize,
+    /// Long lines that did not fit even with their strings cut short.
+    pub streamed: usize,
 }
 
 /// Calls `f` with each complete, non-blank line from `start` read as `T`
@@ -166,6 +168,8 @@ pub(crate) fn for_each_record<T: DeserializeOwned>(
         ..LineRead::default()
     };
     let mut buf: Vec<u8> = Vec::new();
+    let mut short: Vec<u8> = Vec::new();
+    let mut chunk = vec![0; LONG_LINE_CHUNK];
     loop {
         buf.clear();
         let mut complete = false;
@@ -197,8 +201,46 @@ pub(crate) fn for_each_record<T: DeserializeOwned>(
         }
         done.buf_peak = done.buf_peak.max(buf.capacity());
         if long {
+            let line_start = done.offset;
+            // The line with its long strings cut short, which is what `T`
+            // keeps of it anyway; most of a long line is one or two blobs.
+            let mut cut = Shorten::new(buf_max);
+            short.clear();
             let mut src = LineSrc {
                 head: &buf,
+                at: 0,
+                reader: &mut reader,
+                len: 0,
+                ended: false,
+                blank: true,
+            };
+            loop {
+                let n = src.read(&mut chunk)?;
+                if n == 0 {
+                    break;
+                }
+                grow(&mut short, n, buf_max);
+                cut.feed(&chunk[..n], &mut short);
+            }
+            let (ended, len, blank) = (src.ended, src.len, src.blank);
+            done.buf_peak = done.buf_peak.max(short.capacity());
+            if !ended {
+                return Ok(done);
+            }
+            done.offset += len;
+            done.long_lines += 1;
+            if blank {
+                continue;
+            }
+            if !cut.over {
+                f(serde_json::from_slice::<T>(trim_end(&short)).ok());
+                continue;
+            }
+            // Even cut short it does not fit: parse it again as it streams.
+            done.streamed += 1;
+            reader.seek(SeekFrom::Start(line_start))?;
+            let mut src = LineSrc {
+                head: &[],
                 at: 0,
                 reader: &mut reader,
                 len: 0,
@@ -214,25 +256,14 @@ pub(crate) fn for_each_record<T: DeserializeOwned>(
             };
             // What the parser left of the line, an error's rest included.
             io::copy(&mut bytes, &mut io::sink())?;
-            drop(bytes);
-            if !src.ended {
-                return Ok(done);
-            }
-            done.offset += src.len;
-            done.long_lines += 1;
-            if !src.blank {
-                f(parsed.ok());
-            }
+            f(parsed.ok());
             continue;
         }
         if !complete {
             return Ok(done);
         }
         done.offset += buf.len() as u64;
-        let mut line = &buf[..buf.len() - 1];
-        if line.last() == Some(&b'\r') {
-            line = &line[..line.len() - 1];
-        }
+        let line = trim_end(&buf);
         if !is_blank(line) {
             f(serde_json::from_slice::<T>(line).ok());
         }
@@ -248,11 +279,212 @@ fn grow(buf: &mut Vec<u8>, more: usize, max: usize) {
     }
 }
 
+/// A line without its `\n` or `\r\n`.
+fn trim_end(line: &[u8]) -> &[u8] {
+    let line = line.strip_suffix(b"\n").unwrap_or(line);
+    line.strip_suffix(b"\r").unwrap_or(line)
+}
+
+/// The chunk a long line is read in.
+const LONG_LINE_CHUNK: usize = 64 << 10;
+
+/// The most bytes a string of a long line keeps: more than any field a
+/// record holds (`TEXT_CHARS_MAX` chars), and a quarter of the buffer at most.
+const LONG_STRING_KEEP: usize = 64 << 10;
+
+/// Containers nested deeper than this become `null` in a long line: the
+/// records read nothing below `line.message.content[i]`.
+const LONG_LINE_DEPTH: usize = 4;
+
+/// Copies a JSON line with each string cut after `keep` bytes, at a char and
+/// escape boundary, and each container deeper than `LONG_LINE_DEPTH` made
+/// `null`, so the copy still parses and keeps every field a record reads.
+struct Shorten {
+    max: usize,
+    /// Containers open around the current byte.
+    depth: usize,
+    /// Containers open inside the one being dropped (0: none dropped).
+    skip: usize,
+    keep: usize,
+    /// The copy reached `max`; what it holds is not the whole line.
+    over: bool,
+    in_str: bool,
+    /// The rest of the current string is dropped.
+    cut: bool,
+    /// Bytes kept of the current string.
+    run: usize,
+    /// The last byte was a `\` inside a string.
+    esc: bool,
+    /// Hex digits left of a `\u` escape, and their value so far.
+    hex_left: u8,
+    hex: u32,
+    /// A high surrogate escape that its low half must follow.
+    low_due: bool,
+}
+
+impl Shorten {
+    fn new(max: usize) -> Self {
+        Shorten {
+            max,
+            depth: 0,
+            skip: 0,
+            keep: LONG_STRING_KEEP.min(max / 4),
+            over: false,
+            in_str: false,
+            cut: false,
+            run: 0,
+            esc: false,
+            hex_left: 0,
+            hex: 0,
+            low_due: false,
+        }
+    }
+
+    fn feed(&mut self, mut chunk: &[u8], out: &mut Vec<u8>) {
+        while !chunk.is_empty() {
+            if self.in_str && self.cut && !self.esc {
+                // Inside a dropped string only a quote or a backslash matters.
+                match chunk.iter().position(|b| matches!(b, b'"' | b'\\')) {
+                    Some(i) => chunk = &chunk[i..],
+                    None => return,
+                }
+            } else if self.skip > 0 && !self.in_str {
+                let stop = |b: &u8| matches!(b, b'"' | b'{' | b'}' | b'[' | b']');
+                match chunk.iter().position(stop) {
+                    Some(i) => chunk = &chunk[i..],
+                    None => return,
+                }
+            }
+            self.step(chunk[0], out);
+            chunk = &chunk[1..];
+        }
+    }
+
+    fn push(&mut self, b: u8, out: &mut Vec<u8>) {
+        if out.len() < self.max {
+            out.push(b);
+        } else {
+            self.over = true;
+        }
+    }
+
+    fn step(&mut self, b: u8, out: &mut Vec<u8>) {
+        if self.skip > 0 {
+            self.skip_byte(b);
+            return;
+        }
+        if !self.in_str {
+            match b {
+                b'{' | b'[' => {
+                    self.depth += 1;
+                    if self.depth > LONG_LINE_DEPTH {
+                        self.skip = 1;
+                        for c in *b"null" {
+                            self.push(c, out);
+                        }
+                        return;
+                    }
+                }
+                b'}' | b']' => self.depth = self.depth.saturating_sub(1),
+                _ => {}
+            }
+            self.push(b, out);
+            if b == b'"' {
+                self.in_str = true;
+                self.cut = false;
+                self.run = 0;
+            }
+            return;
+        }
+        if self.cut {
+            if self.esc {
+                self.esc = false;
+            } else if b == b'\\' {
+                self.esc = true;
+            } else if b == b'"' {
+                self.in_str = false;
+                self.push(b, out);
+            }
+            return;
+        }
+        if self.esc {
+            self.esc = false;
+            if b == b'u' {
+                self.hex_left = 4;
+                self.hex = 0;
+            } else {
+                self.low_due = false;
+            }
+            self.keep_byte(b, out);
+            return;
+        }
+        if self.hex_left > 0 {
+            self.hex = self.hex << 4 | char::from(b).to_digit(16).unwrap_or(0);
+            self.hex_left -= 1;
+            if self.hex_left == 0 {
+                self.low_due = (0xD800..=0xDBFF).contains(&self.hex);
+            }
+            self.keep_byte(b, out);
+            return;
+        }
+        if b == b'"' {
+            self.in_str = false;
+            self.low_due = false;
+            self.push(b, out);
+            return;
+        }
+        if b != b'\\' {
+            // A high surrogate not followed by an escape stands alone.
+            self.low_due = false;
+        }
+        if self.run >= self.keep && !self.low_due && b & 0xC0 != 0x80 {
+            self.cut = true;
+            self.esc = b == b'\\';
+            return;
+        }
+        if b == b'\\' {
+            self.esc = true;
+        }
+        self.keep_byte(b, out);
+    }
+
+    /// A byte of a dropped container.
+    fn skip_byte(&mut self, b: u8) {
+        if self.in_str {
+            if self.esc {
+                self.esc = false;
+            } else if b == b'\\' {
+                self.esc = true;
+            } else if b == b'"' {
+                self.in_str = false;
+            }
+            return;
+        }
+        match b {
+            b'"' => {
+                self.in_str = true;
+                // Lets `feed` jump to the string's end.
+                self.cut = true;
+            }
+            b'{' | b'[' => self.skip += 1,
+            b'}' | b']' => {
+                self.skip -= 1;
+                if self.skip == 0 {
+                    self.depth -= 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn keep_byte(&mut self, b: u8, out: &mut Vec<u8>) {
+        self.run += 1;
+        self.push(b, out);
+    }
+}
+
 /// One line as a reader: the bytes already buffered, then the file up to and
 /// with the next `\n`.
-/// The chunk a long line is parsed through.
-const LONG_LINE_CHUNK: usize = 8 << 10;
-
 struct LineSrc<'a, R> {
     head: &'a [u8],
     at: usize,
@@ -439,15 +671,54 @@ mod tests {
                 }),
             ]
         );
-        assert_eq!(done.long_lines, 1);
+        assert_eq!((done.long_lines, done.streamed), (1, 0));
         assert!(done.buf_peak <= 1024, "buffer grew to {}", done.buf_peak);
         assert_eq!(done.offset, content.len() as u64);
     }
 
     #[test]
+    fn long_strings_are_cut_at_char_and_escape_bounds_and_still_parse() {
+        // Multi-byte chars, plain escapes and surrogate pairs across the cut.
+        for blob in ["é", "\\\"", "\\uD83D\\uDE00", "ab\\n", "€x"] {
+            let big = blob.repeat(20_000);
+            let content = format!("{{\"skip\":\"{big}\",\"n\":7,\"t\":\"kept\"}}\n");
+            let (got, done) = read(content.as_bytes(), 1024);
+            assert_eq!(
+                got,
+                vec![Some(Rec {
+                    n: 7,
+                    t: "kept".into()
+                })],
+                "blob {blob}"
+            );
+            assert_eq!((done.long_lines, done.streamed), (1, 0), "blob {blob}");
+            assert!(done.buf_peak <= 1024);
+        }
+    }
+
+    #[test]
+    fn deep_containers_of_a_long_line_are_dropped_and_it_still_parses() {
+        let many = vec!["\"ab]c{\\\"\""; 20_000].join(",");
+        let content = format!(
+            "{{\"r\":{{\"p\":[{{\"lines\":[{many}],\"o\":{{}}}}]}},\"n\":2,\"t\":\"kept\"}}\n"
+        );
+        let (got, done) = read(content.as_bytes(), 1024);
+        assert_eq!(
+            got,
+            vec![Some(Rec {
+                n: 2,
+                t: "kept".into()
+            })]
+        );
+        assert_eq!((done.long_lines, done.streamed), (1, 0));
+    }
+
+    #[test]
     fn a_long_line_that_does_not_parse_is_bad_and_the_next_is_read() {
+        // Not a string to cut: it is parsed as it streams.
         let content = format!("{{\"n\":{}\n{{\"n\":4}}\n", "9".repeat(5000));
         let (got, done) = read(content.as_bytes(), 512);
+        assert_eq!(done.streamed, 1);
         assert_eq!(
             got,
             vec![
