@@ -204,10 +204,10 @@ impl AppStatsHub {
         let Some((dir, stats)) = guard.as_mut() else {
             return;
         };
-        if f(stats, mono, wall) {
-            if let Err(e) = stats.save(&dir.join(FILE)) {
-                eprintln!("app stats: cannot save: {e}");
-            }
+        if f(stats, mono, wall)
+            && let Err(e) = stats.save(&dir.join(FILE))
+        {
+            eprintln!("app stats: cannot save: {e}");
         }
     }
 
@@ -230,10 +230,10 @@ impl AppStatsHub {
         let Some((dir, stats)) = guard.as_mut() else {
             return;
         };
-        if stats.close_all(mono) {
-            if let Err(e) = stats.save(&dir.join(FILE)) {
-                eprintln!("app stats: cannot save: {e}");
-            }
+        if stats.close_all(mono)
+            && let Err(e) = stats.save(&dir.join(FILE))
+        {
+            eprintln!("app stats: cannot save: {e}");
         }
     }
 }
