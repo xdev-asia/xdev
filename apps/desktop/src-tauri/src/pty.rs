@@ -12,11 +12,11 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use xdev_agent::{
     AccountSource, Cli, Context, HookEvent, Launch, LaunchError, Permissions, Profile, Profiles,
-    ShellEntry, ShellKind, default_shell_id, find_builtin, find_program, list_shells, resolve,
-    wsl_distros,
+    ShellEntry, ShellKind, TrustKind, TrustTarget, default_shell_id, find_builtin, find_program,
+    list_shells, resolve, spec, trust_folder, wsl_distros,
 };
 use xdev_ai::Registry;
 use xdev_policy::{Action, Audited, Policy, Verdict, agent_fingerprint};
@@ -549,7 +549,96 @@ pub(crate) fn add_resume(launch: &mut Launch, id: &str) -> Result<(), CmdError> 
     Ok(())
 }
 
-/// Gates an agent, then starts `launch` in `cwd`.
+/// How long folder trust may delay a start; codex's private `config.toml`
+/// may sit behind a slow disk or a sync client.
+const TRUST_WAIT: Duration = Duration::from_millis(1500);
+const TRUST_WAIT_CODEX: Duration = Duration::from_secs(20);
+
+/// Folder trust to write before an agent starts.
+pub(crate) struct TrustPlan {
+    kind: TrustKind,
+    folder: PathBuf,
+    target: TrustTarget,
+}
+
+/// The trust a fresh agent launch gets, or `None`: the setting is off, the
+/// launch resumes or forks a session, the program is a shell or custom, or
+/// the agent has no trust store. `env` is the launch env, `proc_env` the
+/// process one.
+pub(crate) fn trust_plan(
+    launch: &Launch,
+    cwd: &Path,
+    data_dir: &Path,
+    home: Option<PathBuf>,
+    enabled: bool,
+    fresh: bool,
+    proc_env: &dyn Fn(&str) -> Option<OsString>,
+) -> Option<TrustPlan> {
+    if !enabled || !fresh || !launch.agent {
+        return None;
+    }
+    let cli = launch.cli?;
+    let kind = spec(cli).trust?;
+    let var = |name: &str| {
+        launch
+            .env
+            .iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.clone())
+            .or_else(|| proc_env(name))
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+    };
+    // Only the private home xDev runs codex on; never the person's own.
+    let private = data_dir.join(xdev_agent::CODEX_HOME_DIR);
+    let codex_home = var("CODEX_HOME").filter(|dir| dir.starts_with(&private));
+    Some(TrustPlan {
+        kind,
+        folder: cwd.to_path_buf(),
+        target: TrustTarget {
+            home: home?,
+            claude_config: var("CLAUDE_CONFIG_DIR"),
+            kimi_home: var("KIMI_CODE_HOME"),
+            codex_home,
+        },
+    })
+}
+
+/// Runs `work` on its own thread and waits at most `deadline` for its
+/// result; `None` when it is still running then (it carries on in the
+/// background, a write is atomic either way).
+pub(crate) fn run_with_deadline<T: Send + 'static>(
+    deadline: Duration,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Option<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(work());
+    });
+    rx.recv_timeout(deadline).ok()
+}
+
+/// Writes the trust of `plan` within its deadline. A failure or a timeout is
+/// logged and the launch goes on untrusted.
+fn apply_trust(plan: TrustPlan) {
+    let wait = if plan.kind == TrustKind::Codex {
+        TRUST_WAIT_CODEX
+    } else {
+        TRUST_WAIT
+    };
+    let kind = plan.kind;
+    match run_with_deadline(wait, move || {
+        trust_folder(plan.kind, &plan.folder, &plan.target)
+    }) {
+        Some(Ok(())) => {}
+        Some(Err(e)) => eprintln!("folder trust for {kind:?}: {}: {e}", e.code()),
+        None => eprintln!("folder trust for {kind:?} timed out"),
+    }
+}
+
+/// Gates an agent, then starts `launch` in `cwd` (no folder trust).
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_launch(
     ptys: &Ptys,
@@ -559,6 +648,26 @@ pub(crate) fn spawn_launch(
     launch: Launch,
     cols: u16,
     rows: u16,
+    on_output: impl FnMut(Vec<u8>) + Send + 'static,
+    on_exit: impl FnOnce(Option<i32>) + Send + 'static,
+) -> Result<PtyInfo, CmdError> {
+    spawn_launch_trusted(
+        ptys, data_dir, id, cwd, launch, cols, rows, None, on_output, on_exit,
+    )
+}
+
+/// `spawn_launch` that first writes `trust`, once the policy gate has passed:
+/// a launch that is refused trusts nothing.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn spawn_launch_trusted(
+    ptys: &Ptys,
+    data_dir: &Path,
+    id: String,
+    cwd: PathBuf,
+    launch: Launch,
+    cols: u16,
+    rows: u16,
+    trust: Option<TrustPlan>,
     on_output: impl FnMut(Vec<u8>) + Send + 'static,
     on_exit: impl FnOnce(Option<i32>) + Send + 'static,
 ) -> Result<PtyInfo, CmdError> {
@@ -591,6 +700,9 @@ pub(crate) fn spawn_launch(
                 });
             }
         }
+    }
+    if let Some(plan) = trust {
+        apply_trust(plan);
     }
     let (program, args) = launch.command();
     let prompt_after = launch.prompt_after;
@@ -891,7 +1003,16 @@ pub fn pty_spawn(
         )?
     };
     let exit_id = id.clone();
-    spawn_launch(
+    let trust = trust_plan(
+        &launch,
+        &cwd,
+        data,
+        app.path().home_dir().ok(),
+        settings_store::read(&app).agents.workspace_trust,
+        resume.is_none() && !fork.unwrap_or(false),
+        &|name| std::env::var_os(name),
+    );
+    spawn_launch_trusted(
         &ptys,
         data,
         id,
@@ -899,6 +1020,7 @@ pub fn pty_spawn(
         launch,
         cols,
         rows,
+        trust,
         move |bytes| {
             // A closed channel means the tab is gone; `pty_kill` follows.
             let _ = out.send(InvokeResponseBody::Raw(bytes));
@@ -2047,6 +2169,107 @@ b",
             OsString::from(f.repo.display().to_string())
         );
         assert_eq!(env["XDEV_WORKSPACE_NAME"], OsString::from("xdev"));
+    }
+
+    fn trust_launch(cli: Option<Cli>, agent: bool, env: &[(&str, &str)]) -> Launch {
+        Launch {
+            profile: "p".to_owned(),
+            program: PathBuf::from("p"),
+            args: Vec::new(),
+            env: env
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).into()))
+                .collect(),
+            agent,
+            permissions: Permissions::Ask,
+            account: None,
+            account_source: None,
+            startup: Vec::new(),
+            cli,
+            hooks: false,
+            hook_events: Vec::new(),
+            prompt_after: None,
+            prompt_argv: Vec::new(),
+        }
+    }
+
+    fn plan(launch: &Launch, enabled: bool, fresh: bool) -> Option<TrustPlan> {
+        trust_plan(
+            launch,
+            Path::new("/work/wt"),
+            Path::new("/data"),
+            Some(PathBuf::from("/home/u")),
+            enabled,
+            fresh,
+            &|name| (name == "KIMI_CODE_HOME").then(|| "/kimi".into()),
+        )
+    }
+
+    #[test]
+    fn trust_is_planned_only_for_a_fresh_agent_with_the_setting_on() {
+        let claude = trust_launch(Some(Cli::Claude), true, &[]);
+        let p = plan(&claude, true, true).unwrap();
+        assert_eq!(p.kind, TrustKind::Claude);
+        assert_eq!(p.folder, Path::new("/work/wt"));
+        assert_eq!(p.target.home, Path::new("/home/u"));
+        assert!(plan(&claude, false, true).is_none(), "setting off");
+        assert!(plan(&claude, true, false).is_none(), "resume or fork");
+        assert!(plan(&trust_launch(Some(Cli::Claude), false, &[]), true, true).is_none());
+        assert!(
+            plan(&trust_launch(None, true, &[]), true, true).is_none(),
+            "custom"
+        );
+        // An agent with no trust store.
+        assert!(plan(&trust_launch(Some(Cli::Aider), true, &[]), true, true).is_none());
+        // No home folder, no plan.
+        assert!(
+            trust_plan(
+                &claude,
+                Path::new("/w"),
+                Path::new("/data"),
+                None,
+                true,
+                true,
+                &|_| None
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn trust_target_follows_the_launch_env_and_the_private_codex_home_only() {
+        let kimi = trust_launch(Some(Cli::Kimi), true, &[("CLAUDE_CONFIG_DIR", "/cfg")]);
+        let p = plan(&kimi, true, true).unwrap();
+        assert_eq!(p.target.claude_config.as_deref(), Some(Path::new("/cfg")));
+        // Not set by the launch: the process env.
+        assert_eq!(p.target.kimi_home.as_deref(), Some(Path::new("/kimi")));
+        let private = Path::new("/data")
+            .join(xdev_agent::CODEX_HOME_DIR)
+            .join("default-x");
+        let own = trust_launch(Some(Cli::Codex), true, &[("CODEX_HOME", "/home/u/.codex")]);
+        assert_eq!(plan(&own, true, true).unwrap().target.codex_home, None);
+        let mine = trust_launch(
+            Some(Cli::Codex),
+            true,
+            &[("CODEX_HOME", private.to_str().unwrap())],
+        );
+        assert_eq!(
+            plan(&mine, true, true).unwrap().target.codex_home,
+            Some(private)
+        );
+    }
+
+    #[test]
+    fn a_blocked_trust_writer_does_not_hold_the_start() {
+        let start = std::time::Instant::now();
+        let (hold_tx, hold_rx) = mpsc::channel::<()>();
+        let got = run_with_deadline(Duration::from_millis(200), move || {
+            let _ = hold_rx.recv_timeout(Duration::from_secs(30));
+        });
+        assert!(got.is_none());
+        assert!(start.elapsed() < Duration::from_secs(3));
+        drop(hold_tx);
+        assert_eq!(run_with_deadline(Duration::from_secs(2), || 7), Some(7));
     }
 
     #[test]

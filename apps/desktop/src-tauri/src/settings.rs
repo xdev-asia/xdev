@@ -2620,6 +2620,22 @@ then sum up"
     }
 
     #[test]
+    fn an_old_agents_section_reads_workspace_trust_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        for text in [
+            "{}",
+            r#"{ "agents": { "accountSwitch": "keep" } }"#,
+            r#"{ "agents": { "workspaceTrust": "yes" } }"#,
+        ] {
+            fs::write(&path, text).unwrap();
+            assert!(load(&path).agents.workspace_trust, "{text}");
+        }
+        fs::write(&path, r#"{ "agents": { "workspaceTrust": false } }"#).unwrap();
+        assert!(!load(&path).agents.workspace_trust);
+    }
+
+    #[test]
     fn agents_settings_default_to_ask_and_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(FILE_NAME);

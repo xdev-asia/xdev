@@ -19,6 +19,7 @@ mod shells;
 mod squad;
 mod squad_run;
 mod store;
+mod trust;
 mod version;
 
 use std::path::PathBuf;
@@ -62,6 +63,7 @@ pub use squad::{
 };
 pub use squad_run::{QuotaCheck, RunnerFor, SquadDeps};
 pub use store::TaskStore;
+pub use trust::{TrustError, TrustTarget, trust_folder};
 pub use version::{CliVersion, cli_version};
 
 /// Tools an agent gets when the caller names none: file work only.
