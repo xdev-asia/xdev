@@ -22,6 +22,7 @@ use crate::accounts::data_dir;
 use crate::agent_sessions::{SessionRow, worktree_sessions};
 use crate::commands::{AppState, CmdError, load_git_settings};
 use crate::kit::Ctx;
+use crate::profiles::{Find, default_agent_id, detect};
 use crate::recipes::{BRANCH_VARS, COMMIT_VARS, PR_VARS, render};
 use crate::settings::Recipe;
 use crate::tasks::{gate, provider_runner};
@@ -548,11 +549,11 @@ fn draft_pr_with(
 }
 
 /// The provider a recipe's agent runs drafts through: its profile's CLI, or
-/// the default agent's. Only Claude and Codex have a runner; Gemini and a
-/// custom program do not.
-fn recipe_provider(data: &Path, recipe: &Recipe) -> Result<Provider, CmdError> {
+/// the default agent's, resolved like the UI's. Only Claude and Codex have a
+/// runner; Gemini and a custom program do not.
+fn recipe_provider(data: &Path, recipe: &Recipe, find: Find<'_>) -> Result<Provider, CmdError> {
     let profiles = Profiles::load(data)?;
-    let default_id = profiles.default_id();
+    let default_id = default_agent_id(&profiles, find);
     let id = recipe.agent.as_deref().unwrap_or(&default_id);
     let profile = profiles
         .get(id)
@@ -571,9 +572,10 @@ fn draft_runner_with(
     path: &Path,
     recipe: &Recipe,
     gate: &dyn Gate,
+    find: Find<'_>,
     make: impl FnOnce(Provider) -> Box<dyn Runner>,
 ) -> Result<Box<dyn Runner>, CmdError> {
-    let provider = recipe_provider(data, recipe)?;
+    let provider = recipe_provider(data, recipe, find)?;
     let action = Action::SpawnAgent {
         provider: provider.as_str().to_owned(),
         account: None,
@@ -589,7 +591,7 @@ fn draft_runner_with(
 }
 
 fn draft_runner(data: &Path, path: &Path, recipe: &Recipe) -> Result<Box<dyn Runner>, CmdError> {
-    draft_runner_with(data, path, recipe, &gate(data)?, |p| {
+    draft_runner_with(data, path, recipe, &gate(data)?, &detect, |p| {
         provider_runner(p, None)
     })
 }
@@ -1690,11 +1692,45 @@ mod tests {
         }
     }
 
+    fn all_found(_: &xdev_agent::Profile) -> Option<PathBuf> {
+        Some(PathBuf::from("/bin/x"))
+    }
+
     fn built_with(data: &Path, recipe: &Recipe, gate: &FakeGate) -> Result<String, CmdError> {
-        draft_runner_with(data, Path::new("wt"), recipe, gate, |p| {
+        built_found(data, recipe, gate, &all_found)
+    }
+
+    fn built_found(
+        data: &Path,
+        recipe: &Recipe,
+        gate: &FakeGate,
+        find: &dyn Fn(&xdev_agent::Profile) -> Option<PathBuf>,
+    ) -> Result<String, CmdError> {
+        draft_runner_with(data, Path::new("wt"), recipe, gate, find, |p| {
             Box::new(Labeled(p.as_str()))
         })
         .map(|r| r.provider().to_owned())
+    }
+
+    #[test]
+    fn no_profile_under_auto_is_the_agent_auto_resolves() {
+        let dir = tempfile::tempdir().unwrap();
+        let gate = FakeGate::new(Verdict::Allow);
+        let codex =
+            |p: &xdev_agent::Profile| (p.id == "codex").then(|| PathBuf::from("/bin/codex"));
+        assert_eq!(
+            built_found(dir.path(), &recipe_of(None), &gate, &codex).unwrap(),
+            "codex"
+        );
+        // Auto resolving to an agent with no runner says which one.
+        let gemini = |p: &xdev_agent::Profile| (p.id == "gemini").then(|| PathBuf::from("/bin/g"));
+        let e = built_found(dir.path(), &recipe_of(None), &gate, &gemini)
+            .err()
+            .unwrap();
+        assert_eq!(
+            (e.code, e.detail.as_deref()),
+            ("unsupported_agent", Some("gemini"))
+        );
     }
 
     fn built_for(data: &Path, recipe: &Recipe) -> Result<String, CmdError> {

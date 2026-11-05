@@ -82,10 +82,10 @@ pub struct ProfilesView {
     pub shells: Vec<ShellView>,
 }
 
-type Find<'a> = &'a dyn Fn(&Profile) -> Option<PathBuf>;
+pub(crate) type Find<'a> = &'a dyn Fn(&Profile) -> Option<PathBuf>;
 
 /// Where a profile's program is installed, by the real detectors.
-fn detect(profile: &Profile) -> Option<PathBuf> {
+pub(crate) fn detect(profile: &Profile) -> Option<PathBuf> {
     match profile.cli {
         Some(cli) => find_builtin(cli),
         None => profile.program.as_deref().and_then(find_program),
@@ -96,17 +96,29 @@ fn lock_guard(lock: &ProfilesLock) -> MutexGuard<'_, ()> {
     lock.0.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// The agent the default starts, as the UI resolves it: `None` for a shell.
+fn resolved_default(profiles: &Profiles, find: Find<'_>) -> Option<String> {
+    pick_agent(&profiles.default_agent, &|id| {
+        profiles
+            .get(id)
+            .is_some_and(|p| p.enabled && find(p).is_some())
+    })
+}
+
+/// The profile id a caller with no terminal starts: the agent the default
+/// resolves to, else the saved id (or claude), so its launch says it is
+/// missing rather than starting another agent.
+pub(crate) fn default_agent_id(profiles: &Profiles, find: Find<'_>) -> String {
+    resolved_default(profiles, find).unwrap_or_else(|| profiles.default_id())
+}
+
 fn build(profiles: &Profiles, find: Find<'_>, distros: &[String]) -> ProfilesView {
     let entries = list_shells(&profiles.shells, distros);
     let default_shell = format!("shell:{}", default_shell_id(profiles, &entries));
     ProfilesView {
         approvals: profiles.approvals,
         default_agent: profiles.default_agent.clone(),
-        resolved_default: pick_agent(&profiles.default_agent, &|id| {
-            profiles
-                .get(id)
-                .is_some_and(|p| p.enabled && find(p).is_some())
-        }),
+        resolved_default: resolved_default(profiles, find),
         default_shell,
         profiles: profiles
             .profiles
@@ -317,6 +329,18 @@ mod tests {
             ids.contains(&p.id.as_str())
                 .then(|| PathBuf::from("/bin/x"))
         }
+    }
+
+    #[test]
+    fn the_default_agent_id_follows_auto_and_names_a_missing_one() {
+        let mut p = Profiles::default();
+        // Auto: the first usable agent, as the UI resolves it.
+        assert_eq!(default_agent_id(&p, &only(&["codex"])), "codex");
+        // Nothing usable: claude, so the launch says it is missing.
+        assert_eq!(default_agent_id(&p, &only(&[])), "claude");
+        // A saved agent stays itself even when missing.
+        p.default_agent = DefaultAgent::Agent("gemini".into());
+        assert_eq!(default_agent_id(&p, &only(&["codex"])), "gemini");
     }
 
     #[test]
