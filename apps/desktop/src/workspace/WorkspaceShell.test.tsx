@@ -662,21 +662,23 @@ it("a CLI open of an agent that is not installed opens nothing", async () => {
   for (const x of getToasts()) dismissToast(x.id);
 });
 
-it("new_worktree_skips_uninstalled_default", async () => {
+it("new worktree with a saved default that is not installed opens the default shell", async () => {
   const api = createMockApi({});
-  // Gemini is not installed in the mock: the first usable agent of the auto order starts.
+  // Gemini is not installed in the mock; no other agent takes its place.
   await api.profilesDefaults("ask", "gemini", null);
+  const shell = (await api.profiles()).defaultShell;
   const view = await harness(api);
-  expect(await createBirch(view)).toEqual(["claude"]);
+  expect(await createBirch(view)).toEqual([shell]);
 });
 
-it("new worktree skips a default agent that is turned off", async () => {
+it("new worktree with a saved default that is turned off opens the default shell", async () => {
   const api = createMockApi({});
   const codex = (await api.profiles()).profiles.find(p => p.profile.id === "codex")!.profile;
   await api.profilePut({ ...codex, enabled: false });
   await api.profilesDefaults("ask", "codex", null);
+  const shell = (await api.profiles()).defaultShell;
   const view = await harness(api);
-  expect(await createBirch(view)).toEqual(["claude"]);
+  expect(await createBirch(view)).toEqual([shell]);
 });
 
 it("new worktree with no installed agent opens the default shell and types nothing", async () => {

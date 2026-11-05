@@ -344,12 +344,12 @@ mod tests {
         // Nothing installed: a shell.
         let none = view(dir.path(), &only(&[]), &[]).unwrap();
         assert_eq!(none.resolved_default, None);
-        // A saved default that is not installed falls back to the order.
+        // A saved default that is not installed is a shell, not another agent.
         let saved = update(dir.path(), &lock, &only(&["goose"]), &[], |p| {
             p.set_defaults(Approvals::Ask, DefaultAgent::Agent("codex".into()), None)
         })
         .unwrap();
-        assert_eq!(saved.resolved_default.as_deref(), Some("goose"));
+        assert_eq!(saved.resolved_default, None);
         // Blank is a shell whatever is installed.
         let blank = update(dir.path(), &lock, &only(&["goose"]), &[], |p| {
             p.set_defaults(Approvals::Ask, DefaultAgent::Blank, None)

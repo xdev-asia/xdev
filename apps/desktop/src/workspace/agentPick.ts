@@ -11,12 +11,13 @@ export const MAX_QUERY = 2048;
 const BLANK_WORDS = ["terminal", "shell"];
 
 /**
- * The profile id the default agent starts: the saved agent when it is usable, else the first usable
- * agent of the auto order; `null` (a shell) for `blank` or when nothing is usable.
+ * The profile id the default agent starts: the saved agent when it is usable, for `auto` the first
+ * usable agent of the auto order; `null` (a shell) for `blank`, a saved agent that is not usable, or
+ * when nothing is usable. Mirrors `pick_agent` in `crates/xdev-agent`.
  */
 export function pickAgent(defaultAgent: string, usable: (id: string) => boolean): string | null {
   if (defaultAgent === "blank") return null;
-  if (defaultAgent !== "auto" && usable(defaultAgent)) return defaultAgent;
+  if (defaultAgent !== "auto") return usable(defaultAgent) ? defaultAgent : null;
   return AUTO_ORDER.find((id) => usable(id)) ?? null;
 }
 

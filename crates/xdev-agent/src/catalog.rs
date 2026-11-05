@@ -260,13 +260,14 @@ pub fn modes(cli: Cli) -> Vec<Permissions> {
 }
 
 /// The built-in profile the default agent picks. `usable` says whether a
-/// profile id is installed and enabled. A saved agent that is not usable
-/// falls back to the `auto` order; no usable agent gives `None` (a shell).
+/// profile id is installed and enabled. Only `auto` walks the order; a saved
+/// agent that is not usable, like no usable agent, gives `None` (a shell), so
+/// another vendor's agent never starts in its place.
 pub fn pick_agent(default: &DefaultAgent, usable: &dyn Fn(&str) -> bool) -> Option<String> {
     match default {
         DefaultAgent::Blank => None,
-        DefaultAgent::Agent(id) if usable(id) => Some(id.clone()),
-        DefaultAgent::Agent(_) | DefaultAgent::Auto => AUTO_ORDER
+        DefaultAgent::Agent(id) => usable(id).then(|| id.clone()),
+        DefaultAgent::Auto => AUTO_ORDER
             .iter()
             .map(|cli| cli.as_str())
             .find(|id| usable(id))
@@ -308,6 +309,24 @@ pub fn has_permission_args(cli: Cli, args: &[String]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_auto_walks_the_order() {
+        let only = |ids: &'static [&'static str]| move |id: &str| ids.contains(&id);
+        assert_eq!(
+            pick_agent(&DefaultAgent::Auto, &only(&["aider", "codex"])).as_deref(),
+            Some("codex")
+        );
+        let saved = DefaultAgent::Agent("devin".into());
+        assert_eq!(
+            pick_agent(&saved, &only(&["devin"])).as_deref(),
+            Some("devin")
+        );
+        // A saved agent that is missing is a shell, never another agent.
+        assert_eq!(pick_agent(&saved, &only(&["claude"])), None);
+        assert_eq!(pick_agent(&DefaultAgent::Blank, &|_| true), None);
+        assert_eq!(pick_agent(&DefaultAgent::Auto, &|_| false), None);
+    }
 
     #[test]
     fn thirteen_specs_in_cli_order() {

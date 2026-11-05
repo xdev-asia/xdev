@@ -49,9 +49,10 @@ describe("pickAgent", () => {
     expect(AUTO_ORDER[0]).toBe("claude");
   });
 
-  it("a saved agent wins when usable, else auto; blank and nothing usable give null", () => {
+  it("a saved agent wins when usable, else null; blank and nothing usable give null", () => {
     expect(pickAgent("devin", (id) => id === "devin" || id === "claude")).toBe("devin");
-    expect(pickAgent("devin", (id) => id === "codex")).toBe("codex");
+    // A saved agent that is missing is a shell, never another agent.
+    expect(pickAgent("devin", (id) => id === "codex")).toBeNull();
     expect(pickAgent("blank", () => true)).toBeNull();
     expect(pickAgent("auto", () => false)).toBeNull();
   });
