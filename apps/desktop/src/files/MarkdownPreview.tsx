@@ -7,11 +7,29 @@ import { fillMermaid, mermaidTheme, renderMermaid, type MermaidRender } from "./
 import { MermaidDialog } from "./MermaidDialog";
 import { openFile } from "./openFile";
 import { ensureParsers, fenceLanguages } from "./parsers";
-import { fillImages, resolveFileLink } from "./previewLinks";
+import { useDebounced } from "./debounce";
+import { ImageCache, fillImages, resolveFileLink } from "./previewLinks";
 
-/** Rendered Markdown of `text` (unsaved edits included). Links open files; images read through the backend. */
-export function MarkdownPreview(props: { api: Api; worktree: string; rel: string; text: string; onHeadings?: (h: Heading[]) => void; mermaid?: MermaidRender }): JSX.Element {
-  const { api, worktree, rel, text, onHeadings, mermaid = renderMermaid } = props;
+export interface MarkdownPreviewProps {
+  api: Api;
+  worktree: string;
+  rel: string;
+  text: string;
+  onHeadings?: (h: Heading[]) => void;
+  mermaid?: MermaidRender;
+  /** Wait this long (ms) after the last change of `text` before rendering; for text that follows typing. */
+  debounceMs?: number;
+  /** The view is not on screen: nothing renders, reads images or draws diagrams until it is shown. */
+  hidden?: boolean;
+}
+
+/**
+ * Rendered Markdown of `text` (unsaved edits included). Links open files; images read through the
+ * backend, each path once per preview.
+ */
+export function MarkdownPreview(props: MarkdownPreviewProps): JSX.Element {
+  const { api, worktree, rel, onHeadings, mermaid = renderMermaid, debounceMs = 0, hidden = false } = props;
+  const text = useDebounced(props.text, debounceMs, hidden);
   const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
   const [diagram, setDiagram] = useState<string | null>(null);
@@ -41,21 +59,24 @@ export function MarkdownPreview(props: { api: Api; worktree: string; rel: string
     [text, rel, parsers, t],
   );
   useEffect(() => onHeadings?.(rendered.headings), [rendered, onHeadings]);
+  // One cache per preview: an image path is read once, and its URL lives until the preview goes away.
+  const images = useMemo(() => new ImageCache(api, worktree), [api, worktree]);
+  useEffect(() => () => images.dispose(), [images]);
   useEffect(() => {
     const el = host.current;
-    return el ? fillImages(el, { api, worktree, rel }) : undefined;
-  }, [rendered.html, api, worktree, rel]);
+    return el && !hidden ? fillImages(el, { api, worktree, rel, cache: images }) : undefined;
+  }, [rendered.html, api, worktree, rel, images, hidden]);
 
   useEffect(() => {
     const el = host.current;
-    if (!el) return;
+    if (!el || hidden) return;
     const css = getComputedStyle(document.documentElement);
     return fillMermaid(el, {
       render: mermaid,
       theme: mermaidTheme((name) => css.getPropertyValue(name)),
       labels: { invalid: t("files.preview.mermaid.invalid"), error: (message) => t("files.preview.mermaid.error", { message }), expand: t("files.preview.mermaid.expand") },
     });
-  }, [rendered, mermaid, t]);
+  }, [rendered.html, mermaid, t, hidden]);
 
   // Links never navigate the WebView; only `data-doc` links do anything, and they open a file here.
   const onClick = (e: MouseEvent<HTMLElement>): void => {

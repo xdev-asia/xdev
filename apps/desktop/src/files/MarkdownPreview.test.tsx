@@ -7,14 +7,14 @@ import { MarkdownPreview } from "./MarkdownPreview";
 import { MermaidDialog } from "./MermaidDialog";
 import { fillMermaid, mermaidTheme, type MermaidLabels } from "./mermaid";
 
-const hooks = vi.hoisted(() => ({ active: false, deps: [] as unknown[][] }));
+const hooks = vi.hoisted(() => ({ active: false, deps: [] as unknown[][], effects: [] as Array<() => unknown>, host: undefined as unknown }));
 vi.mock("react", async (original) => {
   const react = await original<typeof import("react")>();
   return {
     ...react,
-    useEffect: (e: any, d?: any) => (hooks.active ? void hooks.deps.push(d ?? []) : react.useEffect(e, d)),
+    useEffect: (e: any, d?: any) => (hooks.active ? void (hooks.deps.push(d ?? []), hooks.effects.push(e)) : react.useEffect(e, d)),
     useMemo: (f: any, d: any) => (hooks.active ? f() : react.useMemo(f, d)),
-    useRef: (v: any) => (hooks.active ? { current: v } : react.useRef(v)),
+    useRef: (v: any) => (hooks.active ? { current: v === null && hooks.host ? hooks.host : v } : react.useRef(v)),
     useState: (i: any) => (hooks.active ? [typeof i === "function" ? i() : i, () => {}] : react.useState(i)),
   };
 });
@@ -104,6 +104,44 @@ it("the image effect is keyed on the html, so a rerender with the same html keep
   };
   const first = deps();
   const second = deps();
-  expect(first.some((d) => typeof d === "string" && d.includes("md-image"))).toBe(true);
-  expect(second.every((d, i) => Object.is(d, first[i]))).toBe(true);
+  expect(typeof first[0]).toBe("string");
+  expect(first[0]).toContain("md-image");
+  expect(second[0]).toBe(first[0]);
+  // No dependency is the rendered result itself: that is a new object on every render.
+  expect(first.some((d) => typeof d === "object" && d !== null && "html" in d)).toBe(false);
+});
+
+const host = () => ({ querySelectorAll: vi.fn(() => []), getAttribute: () => null });
+const effectsOf = (props: Partial<Parameters<typeof MarkdownPreview>[0]>, el: ReturnType<typeof host>) => {
+  hooks.effects = [];
+  hooks.deps = [];
+  hooks.host = el;
+  try {
+    run(() => MarkdownPreview({ api: createMockApi({}), worktree: "C:/wt/a", rel: "a.md", text: "![a](p.png)", ...props }));
+  } finally {
+    hooks.host = undefined;
+  }
+  return hooks.effects;
+};
+
+it("a hidden preview reads no images and draws no diagrams; a shown one looks for its placeholders", () => {
+  const hidden = host();
+  for (const effect of effectsOf({ hidden: true }, hidden)) effect();
+  expect(hidden.querySelectorAll).not.toHaveBeenCalled();
+  const shown = host();
+  // The images effect is the one keyed on the worktree; the diagram effect needs a real page.
+  const effects = effectsOf({ hidden: false }, shown);
+  effects[hooks.deps.findIndex((d) => d.includes("C:/wt/a"))]();
+  expect(shown.querySelectorAll).toHaveBeenCalledWith(".md-image[data-src]");
+});
+
+it("the image and diagram effects wake up when the preview is shown", () => {
+  hooks.deps = [];
+  run(() => MarkdownPreview({ api: createMockApi({}), worktree: "C:/wt/a", rel: "a.md", text: "x", hidden: true }));
+  const hiddenDeps = hooks.deps.filter((d) => d.includes(true));
+  hooks.deps = [];
+  run(() => MarkdownPreview({ api: createMockApi({}), worktree: "C:/wt/a", rel: "a.md", text: "x", hidden: false }));
+  // The debounce, the images and the diagrams all depend on it.
+  expect(hiddenDeps).toHaveLength(3);
+  expect(hooks.deps.filter((d) => d.includes(false))).toHaveLength(3);
 });
