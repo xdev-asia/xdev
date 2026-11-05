@@ -1,6 +1,9 @@
 import { toApiError, type Api, type ApiError, type PortScan, type PortStopConsent } from "@/api";
 
-const POLL_MS = 30_000;
+/** While a ports surface is on screen. */
+export const POLL_MS = 5_000;
+/** While a ports surface is open but the window is hidden or minimised. */
+export const HIDDEN_POLL_MS = 30_000;
 const AFTER_URL_MS = 1_000;
 const AFTER_STOP_MS = 500;
 
@@ -12,8 +15,9 @@ export type PortsState = {
 };
 
 /**
- * The listening ports, read through the api. Polls every 30 s while the panel is visible; a
- * newly visible panel and a URL a terminal printed force a scan. Scans in flight are shared. The
+ * The listening ports, read through the api. Polls every 5 s while a ports surface is on screen
+ * and every 30 s while the window is hidden; nothing polls while no surface reads the list. A
+ * newly visible surface and a URL a terminal printed force a scan. Scans in flight are shared. The
  * last good list survives one failed call.
  */
 export class PortsStore {
@@ -21,6 +25,7 @@ export class PortsStore {
   private worktrees: string[] = [];
   private running: Promise<void> | null = null;
   private visible = false;
+  private hidden = false;
   private wanted = new Set<string>();
   private poll: ReturnType<typeof setInterval> | null = null;
   private timers = new Set<ReturnType<typeof setTimeout>>();
@@ -61,15 +66,27 @@ export class PortsStore {
     this.apply(this.wanted.size > 0);
   }
 
+  /** The window is hidden or minimised: polling slows down, and a window shown again scans at once. */
+  setHidden(hidden: boolean): void {
+    if (hidden === this.hidden) return;
+    this.hidden = hidden;
+    if (!this.visible) return;
+    this.restart();
+    if (!hidden) void this.refresh();
+  }
+
   /** Polling runs only while wanted; becoming wanted scans at once. */
   private apply(visible: boolean): void {
     if (visible === this.visible) return;
     this.visible = visible;
+    this.restart();
+    if (visible) void this.refresh();
+  }
+
+  private restart(): void {
     if (this.poll) clearInterval(this.poll);
     this.poll = null;
-    if (!visible) return;
-    this.poll = setInterval(() => void this.refresh(), POLL_MS);
-    void this.refresh();
+    if (this.visible) this.poll = setInterval(() => void this.refresh(), this.hidden ? HIDDEN_POLL_MS : POLL_MS);
   }
 
   /** Listens for printed URLs: one scan now and one a second later. */

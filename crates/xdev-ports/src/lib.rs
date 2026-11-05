@@ -80,7 +80,9 @@ pub struct PortScan {
     /// Milliseconds since the epoch.
     pub scanned_at: u64,
     pub ports: Vec<WorkspacePort>,
-    /// Why there is no fresh list: `scan_timeout`, `scan_failed` or `unsupported`.
+    /// Why there is no fresh list: `scan_timeout`, `scan_failed`,
+    /// `unsupported`, or `no_terminal` when no queried worktree runs a
+    /// terminal and the OS was not read.
     pub unavailable: Option<String>,
     pub detail: Option<String>,
     /// Seconds until the next try, with `scan_timeout`.

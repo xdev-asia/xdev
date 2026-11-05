@@ -1417,6 +1417,7 @@
   "ports.empty.noWorkspace": "No workspace selected",
   "ports.empty.scanning": "Scanning…",
   "ports.empty.none": "No ports detected",
+  "ports.empty.noTerminal": "No terminal running. Ports show once a terminal starts in this workspace.",
   "ports.empty.noLocal": "No local ports detected",
   "ports.unavailable": "Port scan unavailable on {platform}: {reason}",
   "ports.paused": "Port scanning is paused after a command timeout. Retrying in {seconds} s.",

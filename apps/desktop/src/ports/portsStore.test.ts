@@ -19,14 +19,14 @@ function setup() {
   return { api, store, scanSpy };
 }
 
-it("polls every 30 s only while visible", async () => {
+it("polls every 5 s only while visible", async () => {
   const { store, scanSpy } = setup();
   await vi.advanceTimersByTimeAsync(60_000);
   expect(scanSpy).not.toHaveBeenCalled();
   store.setVisible(true);
   await vi.advanceTimersByTimeAsync(0);
   expect(scanSpy).toHaveBeenCalledTimes(1);
-  await vi.advanceTimersByTimeAsync(30_000);
+  await vi.advanceTimersByTimeAsync(5_000);
   expect(scanSpy).toHaveBeenCalledTimes(2);
   store.setVisible(false);
   await vi.advanceTimersByTimeAsync(120_000);
@@ -114,5 +114,40 @@ it("new worktrees force a scan while visible", async () => {
   store.setWorktrees([...W, "/demo/wt/other"]);
   await vi.advanceTimersByTimeAsync(0);
   expect(scanSpy).toHaveBeenCalledTimes(2);
+  store.dispose();
+});
+
+it("slows to every 30 s while the window is hidden and scans when it shows again", async () => {
+  const { store, scanSpy } = setup();
+  store.setHidden(true);
+  await vi.advanceTimersByTimeAsync(60_000);
+  // Hidden alone starts nothing: no surface reads the list.
+  expect(scanSpy).not.toHaveBeenCalled();
+  store.want("cards", true);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(scanSpy).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(29_000);
+  expect(scanSpy).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(scanSpy).toHaveBeenCalledTimes(2);
+  store.setHidden(false);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(scanSpy).toHaveBeenCalledTimes(3);
+  await vi.advanceTimersByTimeAsync(5_000);
+  expect(scanSpy).toHaveBeenCalledTimes(4);
+  store.dispose();
+});
+
+it("shares one scan between a poll and a forced refresh", async () => {
+  const { store, scanSpy } = setup();
+  let finish: (s: PortScan) => void = () => {};
+  scanSpy.mockImplementation(() => new Promise<PortScan>((done) => { finish = done; }));
+  store.setVisible(true);
+  const forced = store.refresh();
+  await vi.advanceTimersByTimeAsync(5_000);
+  expect(scanSpy).toHaveBeenCalledTimes(1);
+  finish(scan(1));
+  await forced;
+  expect(store.state().scan?.scannedAt).toBe(1);
   store.dispose();
 });

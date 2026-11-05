@@ -1417,6 +1417,7 @@
   "ports.empty.noWorkspace": "Chưa chọn không gian làm việc",
   "ports.empty.scanning": "Đang quét…",
   "ports.empty.none": "Không phát hiện cổng nào",
+  "ports.empty.noTerminal": "Chưa có terminal nào chạy. Cổng sẽ hiện khi một terminal khởi động trong không gian làm việc này.",
   "ports.empty.noLocal": "Không phát hiện cổng cục bộ nào",
   "ports.unavailable": "Không quét được cổng trên {platform}: {reason}",
   "ports.paused": "Quét cổng tạm dừng sau khi lệnh quá thời gian. Thử lại sau {seconds} giây.",

@@ -138,6 +138,21 @@ fn platform() -> &'static str {
     }
 }
 
+impl PortScan {
+    /// The answer, without reading the OS, when no queried worktree runs a
+    /// terminal xDev started.
+    pub fn no_terminal() -> Self {
+        Self {
+            platform: platform().into(),
+            scanned_at: now_ms(),
+            ports: Vec::new(),
+            unavailable: Some("no_terminal".into()),
+            detail: None,
+            retry_in: None,
+        }
+    }
+}
+
 impl<P: Probe> Scanner<P> {
     pub fn new(probe: P, clock: fn() -> Instant) -> Self {
         Self {
