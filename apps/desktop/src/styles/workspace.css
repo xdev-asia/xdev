@@ -1487,6 +1487,24 @@ button.ws-tree-row:focus-visible {
   outline-offset: -1px;
 }
 
+button.ws-tree-row[aria-selected="true"],
+button.ws-tree-row[data-active="true"] {
+  background: var(--bg-3);
+}
+
+.ws-tree-name:has(+ .ws-tree-dir) {
+  flex: 0 1 auto;
+}
+
+.ws-tree-dir {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--x-color-muted);
+}
+
 .ws-tree-icon {
   flex-shrink: 0;
   color: var(--text-3);

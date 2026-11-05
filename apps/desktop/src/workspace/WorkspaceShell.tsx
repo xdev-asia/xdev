@@ -21,7 +21,7 @@ import { setTerminalKeyHost, startDiagnosticToasts } from "@/keys/terminalKey";
 import { startOptionAsAltProbe } from "@/terminal/optionAsAlt";
 import { startAutosave } from "@/files/autosave";
 import { useWorktreeWatch } from "./useWorktreeWatch";
-import { fileTabId, fileTabs } from "@/files/fileTabs";
+import { fileTabId, fileTabRel, fileTabs } from "@/files/fileTabs";
 import { onOpenFile, openFile as requestOpenFile, type OpenFileRequest } from "@/files/openFile";
 import { paneOf, splitPane } from "./paneTree";
 import { QuickOpenDialog } from "@/search/QuickOpenDialog";
@@ -2172,6 +2172,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                       queue={fsWatch.queue}
                       watchHealth={fsWatch.health}
                       onOpen={(file) => openFile(current.path, file)}
+                      activeFile={fileTabRel(shownTab[current.path] ?? "")}
+                      onSearch={() => {
+                        setPanelTab("search");
+                        setSearchFocus((n) => n + 1);
+                      }}
                     />
                   ) : (
                     <p className="ws-empty">{t("workspace.panel.empty")}</p>

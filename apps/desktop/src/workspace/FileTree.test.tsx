@@ -103,7 +103,7 @@ function tree(api: Api, changes: WorktreeChange[] = CHANGES) {
 }
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; });
-afterEach(() => { vi.restoreAllMocks(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it("expands a folder on click and lists it once", async () => {
   const api = createMockApi({});
@@ -169,15 +169,97 @@ it("opening a changed file calls onOpen", async () => {
   expect(view.onOpen).toHaveBeenCalledTimes(1);
 });
 
-it("the filter keeps loaded names that match, and the folders above them", async () => {
+it("the filter button opens a name filter over every file; Escape clears and closes it", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "filesList").mockResolvedValue({ files: ["src/App.tsx", "src/deep/app.test.ts", "README.md"], truncated: false });
+  const view = tree(api);
+  await tick();
+  const field = () => view.all().find((n) => n.props["data-field"] === "filter");
+  expect(field()).toBeUndefined();
+  view.all().find((n) => n.props["data-action"] === "filter")!.props.onClick();
+  view.again(CHANGES);
+  await tick();
+  field()!.props.onChange({ target: { value: "APP" } });
+  // Nothing was opened, yet both matches show, with the folder they are in.
+  expect(view.rows().map(view.label)).toEqual(["App.tsx", "app.test.ts"]);
+  expect(view.html()).toContain("src/deep");
+  field()!.props.onKeyDown({ key: "Escape", preventDefault() {} });
+  expect(field()).toBeUndefined();
+  expect(view.rows().map(view.label)).toContain("docs");
+});
+
+it("arrow keys walk the rows, Right opens a folder, Left closes it, Enter opens a file", async () => {
   const view = tree(createMockApi({}));
   await tick();
-  view.row("src").props.onClick();
+  const key = (k: string, extra: Record<string, unknown> = {}) => {
+    const e = { key: k, code: "", preventDefault: vi.fn(), ...extra };
+    view.all().find((n) => n.props.role === "tree")!.props.onKeyDown(e);
+    return e;
+  };
+  const selected = () => view.rows().filter((r) => r.props["aria-selected"]).map(view.label);
+  expect(view.row("docs").props.tabIndex).toBe(0);
+  expect(view.row("src").props.tabIndex).toBe(-1);
+  expect(key("ArrowDown").preventDefault).toHaveBeenCalled();
+  expect(selected()).toEqual(["docs"]);
+  key("ArrowDown");
+  expect(selected()).toEqual(["src"]);
+  expect(view.row("src").props.tabIndex).toBe(0);
+  key("ArrowRight");
   await tick();
-  view.all().find((n) => n.props["data-field"] === "filter")!.props.onChange({ target: { value: "app" } });
-  expect(view.rows().map(view.label)).toEqual(["src", "App.tsx"]);
-  view.all().find((n) => n.props["data-field"] === "filter")!.props.onChange({ target: { value: "" } });
-  expect(view.rows().length).toBeGreaterThan(2);
+  expect(view.row("src").props["aria-expanded"]).toBe(true);
+  key("ArrowRight");
+  expect(selected()).toEqual(["lib"]);
+  key("ArrowLeft");
+  expect(selected()).toEqual(["src"]);
+  key("ArrowLeft");
+  expect(view.row("src").props["aria-expanded"]).toBe(false);
+  key("End");
+  expect(selected()).toEqual(["README.md"]);
+  key("Home");
+  expect(selected()).toEqual(["docs"]);
+  key("End");
+  const opened: OpenFileRequest[] = [];
+  const stop = onOpenFile((r) => opened.push(r));
+  key("Enter");
+  stop();
+  expect(opened).toEqual([{ worktree: OAK, rel: "README.md" }]);
+});
+
+it("Delete on the selected row asks first; Cmd+Backspace does too; modified keys copy paths", async () => {
+  const api = createMockApi({});
+  const view = tree(api);
+  await tick();
+  const tr = () => view.all().find((n) => n.props.role === "tree")!.props;
+  tr().onKeyDown({ key: "End", code: "", preventDefault() {} });
+  tr().onKeyDown({ key: "Delete", code: "", preventDefault() {} });
+  expect(view.all().find((n) => n.type === ConfirmDialog)!.props.open).toBe(true);
+  view.all().find((n) => n.type === ConfirmDialog)!.props.onCancel();
+  tr().onKeyDown({ key: "Backspace", metaKey: true, code: "", preventDefault() {} });
+  expect(view.all().find((n) => n.type === ConfirmDialog)!.props.open).toBe(true);
+  // Plain Backspace is not Delete.
+  view.all().find((n) => n.type === ConfirmDialog)!.props.onCancel();
+  tr().onKeyDown({ key: "Backspace", code: "", preventDefault() {} });
+  expect(view.all().find((n) => n.type === ConfirmDialog)!.props.open).toBe(false);
+});
+
+it("the active file opens its folders when the tree follows it, and not when it was turned off", async () => {
+  const api = createMockApi({});
+  const list = vi.spyOn(api, "worktreeListDir");
+  const mk = (follow: boolean, active: string | null) => {
+    vi.stubGlobal("localStorage", { getItem: (k: string) => (k === "xdev.tree.revealActive" && !follow ? "0" : null), setItem() {}, removeItem() {} });
+    hooks.values = [];
+    hooks.effects = [];
+    return mount((c) => FileTree({ api, worktree: OAK, changes: c, onOpen: vi.fn(), activeFile: active }), CHANGES);
+  };
+  const on = mk(true, "src/lib/util.ts");
+  await tick();
+  expect(list).toHaveBeenCalledWith(OAK, "src");
+  expect(list).toHaveBeenCalledWith(OAK, "src/lib");
+  expect(nodes(on.all()).filter((n) => n.props["aria-expanded"] === true).length).toBeGreaterThanOrEqual(1);
+  list.mockClear();
+  mk(false, "src/lib/util.ts");
+  await tick();
+  expect(list).not.toHaveBeenCalledWith(OAK, "src");
 });
 
 it("Collapse all closes every folder", async () => {
@@ -210,7 +292,7 @@ it("the file menu lists the actions, the folder menu has no Open", async () => {
   const view = tree(createMockApi({}));
   await tick();
   rightClick(view, "README.md");
-  expect(menuOf(view)!.items.map((i: { id: string }) => i.id)).toEqual(["open", "copyPath", "copyRel", "sep1", "newFile", "newFolder", "rename", "delete", "sep2", "reveal", "openOnHost"]);
+  expect(menuOf(view)!.items.map((i: { id: string }) => i.id)).toEqual(["open", "copyPath", "copyRel", "sep1", "findInFolder", "newFile", "newFolder", "rename", "delete", "sep2", "reveal", "openOnHost"]);
   menuOf(view)!.onClose();
   expect(menuOf(view)).toBeUndefined();
   rightClick(view, "docs");

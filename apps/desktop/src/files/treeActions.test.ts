@@ -4,7 +4,8 @@ import { translate } from "@/i18n";
 import { getToasts, resetToastsForTests } from "@/workspace/toastStore";
 import { FileTabs } from "./fileTabs";
 import { onOpenFile, type OpenFileRequest } from "./openFile";
-import { absolutePath, copyRelative, createEntry, deleteEntry, renameEntry, type TreeIo } from "./treeActions";
+import { consumeSearchPrefill, resetSearchPrefill } from "@/search/searchPrefill";
+import { absolutePath, copyRelative, createEntry, deleteEntry, findInFolder, folderGlob, renameEntry, treeMenuItems, type TreeIo, type TreeMenuHandlers } from "./treeActions";
 
 const W = "C:\\wt\\a";
 const t = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
@@ -91,4 +92,36 @@ it("a refused delete keeps the tabs and shows the error", async () => {
   expect(await deleteEntry(io(api), "a.ts")).toBeNull();
   expect(store.get(W, "a.ts")).not.toBeNull();
   expect(getToasts()).toHaveLength(1);
+});
+
+it("the find-in-folder glob uses / and the root has no folder part", () => {
+  expect(folderGlob("src/files")).toBe("src/files/**");
+  expect(folderGlob("src\\files\\")).toBe("src/files/**");
+  expect(folderGlob("")).toBe("**");
+  expect(folderGlob("/")).toBe("**");
+});
+
+it("find in folder posts the include glob to the search", () => {
+  resetSearchPrefill();
+  findInFolder("src\\a");
+  expect(consumeSearchPrefill()).toEqual({ include: "src/a/**" });
+  findInFolder("");
+  expect(consumeSearchPrefill()).toEqual({ include: "**" });
+});
+
+const ids = (target: { rel: string; dir: boolean } | null) => treeMenuItems(target, {} as TreeMenuHandlers).map((i) => i.id);
+
+it("the menu has the items each row kind needs, and no terminal item", () => {
+  expect(ids({ rel: "src/a.ts", dir: false })).toEqual(["open", "copyPath", "copyRel", "sep1", "findInFolder", "newFile", "newFolder", "rename", "delete", "sep2", "reveal", "openOnHost"]);
+  expect(ids({ rel: "src", dir: true })).toEqual(["copyPath", "copyRel", "sep1", "findInFolder", "newFile", "newFolder", "rename", "delete", "sep2", "reveal"]);
+  expect(ids(null)).toEqual(["findInFolder", "newFile", "newFolder"]);
+});
+
+it("find in folder on a file uses its parent folder; on a folder, itself; on the root, all", () => {
+  const found: string[] = [];
+  const h = { findIn: (dir: string) => found.push(dir) } as unknown as TreeMenuHandlers;
+  for (const target of [{ rel: "src/a/b.ts", dir: false }, { rel: "src/a", dir: true }, { rel: "top.ts", dir: false }, null]) {
+    treeMenuItems(target, h).find((i) => i.id === "findInFolder")!.run!();
+  }
+  expect(found).toEqual(["src/a", "src/a", "", ""]);
 });
