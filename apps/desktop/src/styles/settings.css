@@ -808,6 +808,12 @@
   border-radius: var(--radius-s);
 }
 
+/* Five modes in a 360 px window: the group wraps instead of running past the edge. */
+.settings-option-modes .segmented {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
 /* Orchestration page */
 .orch-coverage {
   display: flex;

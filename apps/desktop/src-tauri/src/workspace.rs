@@ -36,7 +36,7 @@ use crate::settings::GitSettings;
 use crate::tasks::gate;
 
 /// Files bigger than this are not read into the diff view.
-const MAX_BYTES: u64 = 1 << 20;
+pub(crate) const MAX_BYTES: u64 = 1 << 20;
 /// Git's own look for binary: a NUL in the first 8 KiB.
 const SNIFF_BYTES: usize = 8 << 10;
 
@@ -253,13 +253,18 @@ fn remove_with(
     path: &Path,
     force: bool,
     confirmed: bool,
+    delete_unmerged: Option<bool>,
 ) -> Result<Removed, CmdError> {
     let action = Action::Delete {
         path: path.to_owned(),
     };
     allowed(data, &action, confirmed)?;
     let now = clock().0;
-    update(data, lock, |reg| remove_worktree(reg, path, force, now))
+    // `None` keeps the old meaning: `force` also deletes an unmerged branch.
+    let delete_unmerged = delete_unmerged.unwrap_or(force);
+    update(data, lock, |reg| {
+        remove_worktree(reg, path, force, delete_unmerged, now)
+    })
 }
 
 /// Removes the folder and keeps the branch; the same delete gate as
@@ -358,7 +363,7 @@ fn changes(data: &Path, path: &Path) -> Result<Vec<WorktreeChange>, CmdError> {
         .collect())
 }
 
-fn skipped(why: Skip) -> WorktreeFileDiff {
+pub(crate) fn skipped(why: Skip) -> WorktreeFileDiff {
     WorktreeFileDiff {
         old: None,
         new: None,
@@ -366,7 +371,7 @@ fn skipped(why: Skip) -> WorktreeFileDiff {
     }
 }
 
-fn is_binary(bytes: &[u8]) -> bool {
+pub(crate) fn is_binary(bytes: &[u8]) -> bool {
     bytes[..bytes.len().min(SNIFF_BYTES)].contains(&0) || std::str::from_utf8(bytes).is_err()
 }
 
@@ -1032,8 +1037,16 @@ pub fn worktree_remove(
     path: PathBuf,
     force: bool,
     confirmed: bool,
+    delete_unmerged: Option<bool>,
 ) -> Result<Removed, CmdError> {
-    remove_with(data_dir(&state)?, &lock, &path, force, confirmed)
+    remove_with(
+        data_dir(&state)?,
+        &lock,
+        &path,
+        force,
+        confirmed,
+        delete_unmerged,
+    )
 }
 
 #[tauri::command(async)]
@@ -1436,11 +1449,11 @@ mod tests {
     fn worktree_remove_asks_then_runs_when_confirmed() {
         let fx = fixture();
         let lock = WorkspaceLock::default();
-        let asked = remove_with(&fx.data, &lock, &fx.first, false, false);
+        let asked = remove_with(&fx.data, &lock, &fx.first, false, false, None);
         assert_eq!(code(asked), "needs_approval");
         assert!(fx.first.exists());
 
-        remove_with(&fx.data, &lock, &fx.first, false, true).unwrap();
+        remove_with(&fx.data, &lock, &fx.first, false, true, None).unwrap();
         assert!(!fx.first.exists());
         let verdicts: Vec<_> = xdev_policy::read_audit(&fx.data)
             .unwrap()
@@ -1520,7 +1533,7 @@ mod tests {
         let fx = fixture();
         fs::write(fx.data.join("policy.json"), r#"{"delete":"deny"}"#).unwrap();
         let lock = WorkspaceLock::default();
-        let err = remove_with(&fx.data, &lock, &fx.first, false, true).unwrap_err();
+        let err = remove_with(&fx.data, &lock, &fx.first, false, true, None).unwrap_err();
         assert_eq!(err.code, "denied");
         assert_eq!(err.detail.as_deref(), Some("delete denied by policy"));
         assert!(fx.first.exists());

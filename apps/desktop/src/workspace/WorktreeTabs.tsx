@@ -50,6 +50,7 @@ import {
 } from "./paneTree";
 import { CloseTabsDialog } from "./CloseTabsDialog";
 import { bodyStyle, PaneView, paneRects } from "./PaneView";
+import { CommitView, type CommitAsk } from "./CommitView";
 import { cliOf, ownAccount, type Sessions, type Tab, type TabCli } from "./sessions";
 import type { SetupGate } from "./setupGate";
 import { TabStrip, type MenuGroup, type StripItem } from "./TabStrip";
@@ -73,6 +74,8 @@ type CloseReason = "running" | "pinned";
 
 // The review tab's id; terminal tabs use their pty id, which never has a colon.
 const REVIEW_TAB = "review:";
+// The commit tab's id: one per worktree, pointed at the last commit asked for, never restored.
+const COMMIT_TAB = "commit:";
 
 type Leaf = Extract<PaneNode, { kind: "leaf" }>;
 
@@ -96,6 +99,8 @@ export function WorktreeTabs(props: {
   branch?: string | null;
   visible: boolean;
   reveal?: Reveal;
+  /** A commit to show in the commit tab; a new `seq` opens it again, on this commit. */
+  commit?: CommitAsk;
   /** Brings a terminal tab to the front; a new `seq` is a new request. */
   front?: { id: string; seq: number };
   /** Told which tab is in front, so the shell knows where a prompt from the Agent kit goes. */
@@ -142,6 +147,9 @@ export function WorktreeTabs(props: {
   const [review, setReview] = useState<Reveal | null>(null);
   const [revealed, setRevealed] = useState(0);
   const [fronted, setFronted] = useState(0);
+  // The one commit tab; an ask opens it (or points it at another commit).
+  const [commitAsk, setCommitAsk] = useState<CommitAsk | null>(null);
+  const [commitSeen, setCommitSeen] = useState(0);
 
   const subscribe = useCallback((listener: () => void) => sessions.subscribe(listener), [sessions]);
   const snapshot = () => sessions.tabs(worktree);
@@ -159,15 +167,17 @@ export function WorktreeTabs(props: {
     setRevealed(reveal.seq);
     setReview(open);
   }
-  // The layout with the review tab in or out of it: the same object when nothing changes. The store
-  // catches up in the effect below.
-  const withReview: PaneLayout | null = open
-    ? stored
-      ? addTab(stored, REVIEW_TAB)
-      : single(REVIEW_TAB)
-    : stored && paneOf(stored, REVIEW_TAB)
-      ? removeTab(stored, REVIEW_TAB)
-      : stored;
+  let commitOpen = commitAsk;
+  if (props.commit && props.commit.seq !== commitSeen) {
+    commitOpen = props.commit;
+    setCommitSeen(commitOpen.seq);
+    setCommitAsk(commitOpen);
+  }
+  // The layout with a tab in or out of it: the same object when nothing changes. The store catches up
+  // in the effect below.
+  const withTab = (base: PaneLayout | null, id: string, on: boolean): PaneLayout | null =>
+    on ? (base ? addTab(base, id) : single(id)) : base && paneOf(base, id) ? removeTab(base, id) : base;
+  const withReview = withTab(withTab(stored, REVIEW_TAB, open !== null), COMMIT_TAB, commitOpen !== null);
   // The same for file tabs: the open files of the store are the tabs; a closed one leaves its pane.
   const files = useOpenFiles(worktree);
   const fileIds = new Set(files.map((f) => fileTabId(f.rel)));
@@ -195,7 +205,7 @@ export function WorktreeTabs(props: {
   const [everFront] = useState(() => new Set<string>());
   for (const id of frontIds) everFront.add(id);
   // A string, so the shell hears only when the set on screen changes.
-  const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB && !isFileTab(id) && !isPreviewTab(id)).join(" ");
+  const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB && id !== COMMIT_TAB && !isFileTab(id) && !isPreviewTab(id)).join(" ");
   const { onShown, onPanes, front } = props;
   useEffect(() => onShown?.(shown), [shown]);
   // The focus order for MRU; a walk records only where it ends, not the tabs it passed (R4).
@@ -215,6 +225,9 @@ export function WorktreeTabs(props: {
   useEffect(() => {
     if (reveal && layout && paneOf(layout, REVIEW_TAB)) sessions.setLayout(worktree, selectTab(layout, REVIEW_TAB));
   }, [reveal?.seq]);
+  useEffect(() => {
+    if (props.commit && layout && paneOf(layout, COMMIT_TAB)) sessions.setLayout(worktree, selectTab(layout, COMMIT_TAB));
+  }, [props.commit?.seq]);
 
   const { view } = useProfiles();
   // The CLI a profile runs, from the profile view; the built-in ids stand in until it loads.
@@ -284,6 +297,11 @@ export function WorktreeTabs(props: {
       return fileTabs.close(worktree, rel);
     }
     if (isPreviewTab(id)) return void (layout && setLayout(removeTab(layout, id)));
+    if (id === COMMIT_TAB) {
+      setCommitAsk(null);
+      if (layout) setLayout(removeTab(layout, COMMIT_TAB));
+      return;
+    }
     if (id !== REVIEW_TAB) return void sessions.close(id);
     setReview(null);
     if (layout) setLayout(removeTab(layout, REVIEW_TAB));
@@ -529,6 +547,7 @@ export function WorktreeTabs(props: {
       if (id === REVIEW_TAB) return [{ id, tab: null }];
       const previewRel = previewTabRel(id);
       if (previewRel !== null) return [{ id, tab: null, preview: { rel: previewRel } }];
+      if (id === COMMIT_TAB) return commitOpen ? [{ id, tab: null, commit: { id: commitOpen.id } }] : [];
       const rel = fileTabRel(id);
       if (rel !== null) {
         const entry = files.find((f) => f.rel === rel);
@@ -576,7 +595,7 @@ export function WorktreeTabs(props: {
             worktree={worktree}
             repo={props.repo ?? null}
             repoName={props.repoName ?? ""}
-            tab={leaf.active === REVIEW_TAB ? null : (byId.get(leaf.active ?? "") ?? null)}
+            tab={leaf.active === REVIEW_TAB || leaf.active === COMMIT_TAB ? null : (byId.get(leaf.active ?? "") ?? null)}
             openSeq={layout?.focused === leaf.id ? props.quickSeq : undefined}
             onFocus={() => setKick((k) => k + 1)}
             onManage={() => props.onManageQuickCommands?.()}
@@ -593,6 +612,7 @@ export function WorktreeTabs(props: {
     return rect && frontIds.has(id) ? { hidden: false, style: bodyStyle(rect) } : { hidden: true };
   };
   const reviewAt = placed(REVIEW_TAB);
+  const commitAt = placed(COMMIT_TAB);
 
   return (
     <div className="ws-tabs" hidden={!visible}>
@@ -719,6 +739,11 @@ export function WorktreeTabs(props: {
               ];
             }),
           )}
+        {commitOpen && (
+          <div className="ws-tab-pane" role="tabpanel" data-tab={COMMIT_TAB} hidden={commitAt.hidden} style={commitAt.style}>
+            <CommitView api={api} worktree={worktree} commit={commitOpen} />
+          </div>
+        )}
 
         {open && (
           <div className="ws-tab-pane" role="tabpanel" data-tab={REVIEW_TAB} hidden={reviewAt.hidden} style={reviewAt.style}>
@@ -727,7 +752,7 @@ export function WorktreeTabs(props: {
         )}
       </div>
 
-      {tabs.length === 0 && !open && files.length === 0 && (
+      {tabs.length === 0 && !open && !commitOpen && files.length === 0 && (
         <div className="ws-center-empty">
           <p>{t("workspace.tabs.empty")}</p>
           <div className="ws-launch">

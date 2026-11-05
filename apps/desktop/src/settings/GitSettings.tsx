@@ -150,6 +150,27 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
         {t("settings.git.compareHint")}
       </small>
       </SettingRow>
+      <SettingRow id="git.pullPolicy" filter={filter}>
+      <h4 className="settings-group" id="settings-git-pullpolicy">
+        {t("settings.git.pullPolicy")}
+      </h4>
+      <div className="segmented settings-git-modes" role="group" aria-labelledby="settings-git-pullpolicy" aria-describedby="settings-git-pullpolicy-hint">
+        {(["ff-only", "merge", "rebase", "git-config"] as const).map((policy) => (
+          <button
+            key={policy}
+            type="button"
+            data-pull-policy={policy}
+            aria-pressed={git.pullPolicy === policy}
+            onClick={() => change({ pullPolicy: policy })}
+          >
+            {t(`settings.git.pullPolicy.${policy}`)}
+          </button>
+        ))}
+      </div>
+      <small id="settings-git-pullpolicy-hint" className="settings-hint">
+        {t("settings.git.pullPolicyHint")}
+      </small>
+      </SettingRow>
       <SettingRow id="git.groupOrder" filter={filter}>
       <h4 className="settings-group" id="settings-git-grouporder">
         {t("settings.git.groupOrder")}

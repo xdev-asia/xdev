@@ -11,6 +11,7 @@ function fakeTerm(over: Partial<XTermLike> = {}, buffer: string[] = []) {
     getSelection: vi.fn(() => selection),
     hasSelection: vi.fn(() => selection.length > 0),
     paste: vi.fn(),
+    modes: { bracketedPasteMode: true },
     selectAll: vi.fn(),
     clear: vi.fn(),
     reset: vi.fn(),
@@ -82,6 +83,39 @@ it("paste of an empty or refused clipboard does nothing", async () => {
   readText.mockRejectedValueOnce(new Error("denied"));
   await h.paste();
   expect(term.paste).not.toHaveBeenCalled();
+});
+
+it("paste with no text saves the clipboard image and writes its path as a bracketed paste", async () => {
+  const { term } = fakeTerm();
+  const client = fakeClient();
+  const pasted = vi.fn();
+  const h = createTerminalHandle({
+    term: () => term,
+    client: () => client as unknown as PtyClient,
+    find: vi.fn(),
+    saveImage: async () => "/tmp/a.png",
+    pasted,
+  });
+  readText.mockResolvedValueOnce("");
+  await h.paste();
+  expect(client.input).toHaveBeenCalledWith("[200~/tmp/a.png[201~");
+  expect(term.paste).not.toHaveBeenCalled();
+  expect(pasted).toHaveBeenCalledWith("image");
+});
+
+it("paste reports a failed image save", async () => {
+  const { term } = fakeTerm();
+  const pasted = vi.fn();
+  const h = createTerminalHandle({
+    term: () => term,
+    client: () => fakeClient() as unknown as PtyClient,
+    find: vi.fn(),
+    saveImage: async () => Promise.reject({ code: "too_large" }),
+    pasted,
+  });
+  readText.mockResolvedValueOnce("");
+  await h.paste();
+  expect(pasted).toHaveBeenCalledWith("too_large");
 });
 
 it("clear, select all and focus act on the xterm and write nothing to the pty (R4)", () => {

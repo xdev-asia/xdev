@@ -1,4 +1,4 @@
-import type { Agent, Api, ApiError, Home, MemorySet, ProviderSwitches, PromptEntry, Skill, UsageReport, UsageSummary } from "./api";
+import type { Agent, Api, Cost, ApiError, Home, MemorySet, ProviderSwitches, PromptEntry, Skill, UsageReport, UsageSummary } from "./api";
 import { DEMO_WORKSPACE } from "./mockWorkspace";
 
 type KitApi = Pick<
@@ -15,9 +15,15 @@ type KitApi = Pick<
   | "kitSkillRestore"
   | "kitUsage"
   | "kitUsageReport"
+  | "usageShareCopyImage"
+  | "usageSharePost"
   | "kitPathsExist"
   | "kitPromptHistory"
 >;
+
+/** What the share commands received, for tests. */
+export type ShareLog = { pngLength: number | null; post: string | null };
+export type MockKit = KitApi & { __shareLog: ShareLog };
 
 type MemoryFile = MemorySet["files"][number];
 type Tokens = UsageSummary["days"][number][1];
@@ -34,6 +40,7 @@ const DEMO_REPO_FILES = ["README.md", "package.json", "src/App.tsx", "src/main.t
 const NAME = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const REMOVED_ROOT = "/demo/data/kit/removed";
 const HISTORY_MAX = 1000;
+const NO_COST: Cost = { nanos: 0, unpriced: false, priced: false };
 const DAY_MS = 86_400_000;
 // The earliest session of the demo's logs.
 const TRACKING_SINCE = "2026-01-01T00:00:00Z";
@@ -105,7 +112,8 @@ const weight = (t: Tokens) => t.input + t.output + t.cache_read + t.cache_write;
 
 /** In-memory agent kit that follows the Rust commands: the same error codes, stamps and roots. */
 /** `scan` says which agents' logs may be read, like `usage.scan`; the default reads both. */
-export function createMockKit(scan: () => Promise<ProviderSwitches> = async () => ({ claude: true, codex: true })): KitApi {
+export function createMockKit(scan: () => Promise<ProviderSwitches> = async () => ({ claude: true, codex: true })): MockKit {
+  const shareLog: ShareLog = { pngLength: null, post: null };
   const knownTrees = new Set(DEMO_WORKSPACE.repos.flatMap((r) => r.worktrees.map((w) => w.path)));
   // Skill folders by path. Two skills share a name across the homes, so the demo has duplicates.
   const skills = new Map<string, SkillRow>([
@@ -177,7 +185,8 @@ export function createMockKit(scan: () => Promise<ProviderSwitches> = async () =
     return HOMES.some((h) => skillsDir === `${h.path}/skills`) ? skillsDir : null;
   }
 
-  const api: KitApi = {
+  const api: MockKit = {
+    __shareLog: shareLog,
     async kitHomes() {
       return structuredClone(HOMES);
     },
@@ -298,7 +307,7 @@ export function createMockKit(scan: () => Promise<ProviderSwitches> = async () =
       const off = await scan();
       const agents: Agent[] = (args.agent === null ? (["claude", "codex"] as Agent[]) : [args.agent]).filter((a) => off[a]);
       const empty = { days: [], by_home: [], by_folder: [], by_model: [], top_sessions: [] } satisfies UsageSummary;
-      if (agents.length === 0) return { summary: empty, by_agent: [], sessions: 0, tracking_since: null };
+      if (agents.length === 0) return { summary: empty, by_agent: [], sessions: 0, tracking_since: null, cost: NO_COST, cost_by_agent: [], recent_sessions: [], prices_as_of: "2026-11-04" };
       // All time reaches back a year in the demo; the first session is the same whatever the range.
       const since = args.sinceDay ?? addDay(args.untilDay, -365);
       const full = await api.kitUsage(since, args.untilDay, false);
@@ -318,7 +327,20 @@ export function createMockKit(scan: () => Promise<ProviderSwitches> = async () =
         by_model: full.by_model.filter(([m]) => agents.includes(m === "gpt-5" ? "codex" : "claude")),
         top_sessions,
       };
-      return { summary, by_agent, sessions: top_sessions.length, tracking_since: Date.parse(TRACKING_SINCE) } satisfies UsageReport;
+      // Demo prices: 3 USD per million input and 15 per million output tokens, cache counted as input.
+      const price = (t: Tokens): Cost => ({ nanos: (t.input + t.cache_read + t.cache_write) * 3000 + t.output * 15000, unpriced: false, priced: true });
+      const cost_by_agent = by_agent.map(([a, t]) => [a, price(t)] as [Agent, Cost]);
+      const cost = price(sum(by_agent.map(([, t]) => t)));
+      return {
+        summary, by_agent, sessions: top_sessions.length, tracking_since: Date.parse(TRACKING_SINCE),
+        cost, cost_by_agent, recent_sessions: top_sessions, prices_as_of: "2026-11-04",
+      } satisfies UsageReport;
+    },
+    async usageShareCopyImage(png) {
+      shareLog.pngLength = png.length;
+    },
+    async usageSharePost(text) {
+      shareLog.post = text;
     },
     async kitPathsExist(root, paths) {
       const home = HOMES.find((h) => h.path === root);
