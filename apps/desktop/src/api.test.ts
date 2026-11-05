@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { toApiError, type Api, type Change, type Seen } from "./api";
+import { AI_KEY_PROVIDERS, toApiError, type AiKeyProvider, type Api, type Change, type Seen } from "./api";
 import { setVerified } from "./doc/frontmatter";
 import {
   coverMatcher,
@@ -901,4 +901,49 @@ it("sends the port calls to Tauri with the worktrees and the id", async () => {
       ["ports_open", { id: "localhost:5173:42" }],
     ]);
   } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
+});
+
+describe("mock provider keys", () => {
+  const KEY = "test-placeholder";
+
+  it("aiKeys lists three providers unsaved by default", async () => {
+    const api = createMockApi(seed);
+    expect(await api.aiKeys()).toEqual([
+      { provider: "anthropic", saved: false },
+      { provider: "openai", saved: false },
+      { provider: "gemini", saved: false },
+    ]);
+  });
+
+  it("aiKeySet then aiKeys shows saved and never returns the key", async () => {
+    const api = createMockApi(seed);
+    await api.aiKeySet("openai", `  ${KEY} `);
+    const rows = await api.aiKeys();
+    expect(rows.find((r) => r.provider === "openai")?.saved).toBe(true);
+    expect(JSON.stringify(rows)).not.toContain(KEY);
+  });
+
+  it("aiKeySet rejects blank, too long and unknown", async () => {
+    const api = createMockApi(seed);
+    await expect(api.aiKeySet("openai", "   ")).rejects.toMatchObject({ code: "empty_key" });
+    await expect(api.aiKeySet("openai", "a".repeat(4097))).rejects.toMatchObject({ code: "too_large" });
+    await expect(api.aiKeySet("other" as AiKeyProvider, KEY)).rejects.toMatchObject({ code: "unknown_provider" });
+    await api.aiKeySet("openai", "a".repeat(4096));
+    expect((await api.aiKeys()).find((r) => r.provider === "openai")?.saved).toBe(true);
+  });
+
+  it("aiKeyRemove returns true then false", async () => {
+    const api = createMockApi(seed);
+    await api.aiKeySet("anthropic", KEY);
+    expect(await api.aiKeyRemove("anthropic")).toBe(true);
+    expect(await api.aiKeyRemove("anthropic")).toBe(false);
+    expect((await api.aiKeys()).every((r) => !r.saved)).toBe(true);
+  });
+
+  it("seed aiKeys starts those providers saved", async () => {
+    const api = createMockApi(seed, { aiKeys: ["gemini"] });
+    const saved = (await api.aiKeys()).filter((r) => r.saved).map((r) => r.provider);
+    expect(saved).toEqual(["gemini"]);
+    expect(AI_KEY_PROVIDERS).toHaveLength(3);
+  });
 });
