@@ -47,9 +47,12 @@ export function startAutomationDispatch(api: Api, host: DispatchHost): () => voi
   const finish = (runId: string, tabId: string, completed: boolean) => {
     if (finished.has(runId)) return;
     finished.add(runId);
-    const lines = completed ? host.terminalLines(tabId, SNAPSHOT_LINES) : null;
+    // One line more than is kept tells a cut terminal from one of exactly that many lines.
+    const lines = completed ? host.terminalLines(tabId, SNAPSHOT_LINES + 1) : null;
+    const truncated = lines !== null && lines.length > SNAPSHOT_LINES;
+    const kept = lines && truncated ? lines.slice(-SNAPSHOT_LINES) : lines;
     void api
-      .automationRunFinish({ runId, completed, output: lines ? lines.join("\n") : null, truncated: lines !== null && lines.length >= SNAPSHOT_LINES })
+      .automationRunFinish({ runId, completed, output: kept ? kept.join("\n") : null, truncated })
       .catch(() => {});
   };
 

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ApiError, AutomationDispatch } from "@/api";
 import { createMockApi } from "@/mockApi";
 import type { Tab } from "@/workspace/sessions";
-import { START_DEADLINE_MS, startAutomationDispatch, type DispatchHost } from "./dispatch";
+import { SNAPSHOT_LINES, START_DEADLINE_MS, startAutomationDispatch, type DispatchHost } from "./dispatch";
 
 const flush = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
@@ -240,6 +240,20 @@ describe("startAutomationDispatch", () => {
     f.status(f.tabs[0], "done");
     await flush();
     expect(api.__automationReports().finishes[0]).toMatchObject({ completed: true, truncated: true });
+  });
+
+  it("keeps a terminal of exactly the kept lines as not cut", async () => {
+    const f = fakeHost({ terminalLines: (_id, max) => Array.from({ length: Math.min(max, SNAPSHOT_LINES) }, (_, i) => `l${i}`) });
+    const { api } = await setup(f.host);
+    api.__automationDispatch(dispatch());
+    await flush();
+    await f.ready(f.tabs[0]);
+    f.status(f.tabs[0], "working");
+    f.status(f.tabs[0], "done");
+    await flush();
+    const [finish] = api.__automationReports().finishes;
+    expect(finish).toMatchObject({ completed: true, truncated: false });
+    expect(finish.output!.split("\n")).toHaveLength(SNAPSHOT_LINES);
   });
 
   it("does not complete a run for a done that came before any work", async () => {
