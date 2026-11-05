@@ -3875,5 +3875,22 @@
   "nested.none": "No repositories found in this folder.",
   "nested.registered": "Already added",
   "nested.cancelled": "Scan stopped early. {count} found so far.",
-  "nested.addSelected": "Add selected ({count})"
+  "nested.addSelected": "Add selected ({count})",
+  "settings.advanced.title": "Advanced",
+  "settings.advanced.intro": "Network and machine options. A proxy and a Node mirror apply to terminals you open next and to update checks.",
+  "settings.advanced.proxy": "Proxy URL",
+  "settings.advanced.proxy.hint": "Sets HTTP_PROXY, HTTPS_PROXY and ALL_PROXY in new terminals. Leave empty for no proxy.",
+  "settings.advanced.proxy.scheme": "Use an http, https or socks5 address, such as http://127.0.0.1:8080.",
+  "settings.advanced.proxy.invalid": "Enter a full address with a host, such as http://127.0.0.1:8080.",
+  "settings.advanced.noProxy": "Bypass list",
+  "settings.advanced.noProxy.hint": "Hosts that skip the proxy, one per line. A leading dot matches subdomains.",
+  "settings.advanced.nodeMirror": "Node mirror",
+  "settings.advanced.nodeMirror.hint": "Package registry for new terminals (npm_config_registry). Leave empty to use the default.",
+  "settings.advanced.mirror.scheme": "Use an http or https address, such as https://registry.npmmirror.com.",
+  "settings.advanced.mirror.invalid": "Enter a full address with a host, such as https://registry.npmmirror.com.",
+  "settings.advanced.machineName": "Machine name",
+  "settings.advanced.machineName.hint": "Shown in About and the diagnostics file. Leave empty to use this computer's host name.",
+  "settings.advanced.save": "Save changes",
+  "error.bad_proxy": "The proxy address cannot be used. Enter an http, https or socks5 address.",
+  "error.bad_mirror": "The Node mirror address cannot be used. Enter an http or https address."
 }

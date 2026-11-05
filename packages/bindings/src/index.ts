@@ -166,6 +166,7 @@ export type { NamePreview } from "./NamePreview";
 export type { NavigationSettings } from "./NavigationSettings";
 export type { NestedRepo } from "./NestedRepo";
 export type { NestedScanResult } from "./NestedScanResult";
+export type { NetworkSettings } from "./NetworkSettings";
 export type { NotificationPermission } from "./NotificationPermission";
 export type { OnNameTaken } from "./OnNameTaken";
 export type { OnQuit } from "./OnQuit";

@@ -29,6 +29,7 @@ pub(crate) const MAX_SOURCE: u64 = 50 * 1024 * 1024;
 pub(crate) struct BundleInput {
     pub bundle_id: String,
     pub app_version: String,
+    pub machine_name: String,
     pub platform: String,
     pub arch: String,
     pub collected_at: String,
@@ -78,6 +79,7 @@ pub(crate) fn build_bundle(input: &BundleInput, cap: usize) -> String {
         "type": "bundle-header",
         "bundle_id": input.bundle_id,
         "app_version": input.app_version,
+        "machine_name": input.machine_name,
         "platform": input.platform,
         "arch": input.arch,
         "collected_at": input.collected_at,
@@ -203,6 +205,7 @@ fn collect(app: &tauri::AppHandle) -> BundleInput {
     BundleInput {
         bundle_id: uuid::Uuid::new_v4().to_string(),
         app_version: xdev_core::version().to_string(),
+        machine_name: crate::network::machine_name(&crate::settings_store::read(app).network),
         platform: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
         collected_at: iso(crate::workspace::clock().0),
@@ -276,6 +279,7 @@ mod tests {
         BundleInput {
             bundle_id: "id".into(),
             app_version: "1.0.0".into(),
+            machine_name: "dev box".into(),
             platform: "windows".into(),
             arch: "x86_64".into(),
             collected_at: "2026-11-04T00:00:00Z".into(),

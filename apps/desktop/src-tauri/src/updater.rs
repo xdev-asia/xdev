@@ -194,13 +194,22 @@ fn status_error(status: u16, remaining: Option<&str>) -> ReleaseListError {
     }
 }
 
+/// The host the update requests go to, which the bypass list is checked against.
+const UPDATE_HOST: &str = "github.com";
+
 async fn fetch_releases(app: &AppHandle, rc: bool) -> ReleaseList {
     let failed = |reason, detail: String| ReleaseList::Error {
         reason,
         detail: Some(detail),
     };
     let running = app.package_info().version.clone();
-    let client = match reqwest::Client::builder()
+    let net = settings_store::read(app).network;
+    let proxy = if crate::network::bypasses(UPDATE_HOST, &net.no_proxy) {
+        crate::network::ClientProxy::default()
+    } else {
+        crate::network::client_proxy_logged(&net)
+    };
+    let client = match crate::network::apply_to_client(reqwest::Client::builder(), &proxy)
         .user_agent(format!("xdev-desktop/{running}"))
         .timeout(RELEASES_TIMEOUT)
         .build()
@@ -417,19 +426,30 @@ async fn check_once(
     channel: UpdateChannel,
     tag: Option<&str>,
 ) -> tauri_plugin_updater::Result<UpdatePhase> {
+    let net = settings_store::read(app).network;
+    let with_proxy =
+        |builder: tauri_plugin_updater::UpdaterBuilder| match crate::network::proxy_for_host(
+            &net,
+            UPDATE_HOST,
+        ) {
+            Some(proxy) => builder.proxy(proxy),
+            None => builder,
+        };
     let updater = match (tag, channel) {
         (Some(tag), _) => {
             let url = tag_endpoint(tag).expect("a validated tag");
             let url = tauri::Url::parse(&url).expect("a valid url from a validated tag");
-            app.updater_builder()
+            with_proxy(app.updater_builder())
                 .endpoints(vec![url])?
                 .version_comparator(|current, remote| remote.version != current)
                 .build()?
         }
-        (None, UpdateChannel::Stable) => app.updater()?,
+        (None, UpdateChannel::Stable) => with_proxy(app.updater_builder()).build()?,
         (None, UpdateChannel::Rc) => {
             let url = tauri::Url::parse(endpoint(channel)).expect("a fixed, valid url");
-            app.updater_builder().endpoints(vec![url])?.build()?
+            with_proxy(app.updater_builder())
+                .endpoints(vec![url])?
+                .build()?
         }
     };
     let Some(update) = updater.check().await? else {

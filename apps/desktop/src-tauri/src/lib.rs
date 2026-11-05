@@ -32,6 +32,7 @@ mod kit;
 mod layout;
 mod links;
 mod links_open;
+mod network;
 mod open_in;
 mod orch_pump;
 mod orch_skill;
@@ -334,6 +335,9 @@ pub fn run() {
             commands::agents_settings_put,
             commands::automations_settings_get,
             commands::automations_settings_put,
+            commands::network_settings_get,
+            commands::network_settings_put,
+            commands::machine_name_get,
             commands::usage_settings_get,
             commands::usage_settings_put,
             orchestration::orchestration_settings_get,

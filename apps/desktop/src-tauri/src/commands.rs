@@ -304,6 +304,40 @@ pub fn automations_settings_put(
     .map(|s| s.automations)
 }
 
+/// Settings → Advanced as stored; the defaults when nothing is.
+#[tauri::command(async)]
+pub fn network_settings_get(app: AppHandle) -> settings::NetworkSettings {
+    settings_store::read(&app).network
+}
+
+/// Stores Settings → Advanced and returns what was stored. A proxy or mirror
+/// that does not validate is refused with `bad_proxy` or `bad_mirror`.
+#[tauri::command(async)]
+pub fn network_settings_put(
+    app: AppHandle,
+    settings: settings::NetworkSettings,
+) -> Result<settings::NetworkSettings, CmdError> {
+    let settings = settings.normalized();
+    if let Some(field) = crate::network::invalid_field(&settings) {
+        return Err(CmdError {
+            code: if field == "proxyUrl" {
+                "bad_proxy"
+            } else {
+                "bad_mirror"
+            },
+            detail: Some(field.to_owned()),
+        });
+    }
+    settings_store::write(&app, &[SettingsSection::Network], |s| s.network = settings)
+        .map(|s| s.network)
+}
+
+/// The name About shows: the chosen one, else the OS host name.
+#[tauri::command(async)]
+pub fn machine_name_get(app: AppHandle) -> String {
+    crate::network::machine_name(&settings_store::read(&app).network)
+}
+
 /// Settings → Stats & Usage as stored; the defaults when nothing is.
 #[tauri::command(async)]
 pub fn usage_settings_get(app: AppHandle) -> settings::UsageSettings {

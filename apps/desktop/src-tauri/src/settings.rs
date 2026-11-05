@@ -96,6 +96,10 @@ pub struct Settings {
     /// Settings → Automations; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub automations: AutomationsSettings,
+    /// Settings → Advanced: proxy, bypass list, package mirror and machine
+    /// name; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub network: NetworkSettings,
 }
 
 /// Settings → xDev ID.
@@ -326,6 +330,34 @@ impl Default for AutomationsSettings {
             show_button: true,
             skip_delete_confirm: false,
         }
+    }
+}
+
+/// Settings → Advanced. Every field is empty by default, which means "none".
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct NetworkSettings {
+    /// `http://`, `https://` or `socks5://` URL; empty: no proxy. Used by new
+    /// terminals and by the updater.
+    pub proxy_url: String,
+    /// Host patterns that skip the proxy, one per entry.
+    pub no_proxy: Vec<String>,
+    /// Package registry URL for new terminals (`npm_config_registry`); empty: none.
+    pub node_mirror: String,
+    /// What About and the diagnostics file call this machine; empty: the OS host name.
+    pub machine_name: String,
+}
+
+impl NetworkSettings {
+    /// Trims every field and cleans the bypass list. A proxy or mirror that does
+    /// not validate is kept as typed (the put refuses it before it gets here).
+    pub fn normalized(mut self) -> Self {
+        self.proxy_url = self.proxy_url.trim().to_owned();
+        self.node_mirror = self.node_mirror.trim().to_owned();
+        self.no_proxy = crate::network::clean_no_proxy(&self.no_proxy);
+        self.machine_name = crate::network::clean_machine_name(&self.machine_name);
+        self
     }
 }
 
@@ -1507,6 +1539,7 @@ pub enum SettingsSection {
     Orchestration,
     Shell,
     Automations,
+    Network,
 }
 
 /// What a `settings://changed` event carries.

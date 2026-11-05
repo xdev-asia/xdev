@@ -201,6 +201,11 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("diagnostics.crash", "diagnostics.crash.title", ["diagnostics", "crash", "report", "sự cố", "su co", "chẩn đoán", "chan doan"]),
   // Experimental
   e("experimental.autoSleep", "settings.agents.autoSleep.label", ["experimental", "beta", "lab", "sleep", "auto", "thử nghiệm", "thu nghiem"], "settings.agents.autoSleep.hint"),
+  // Advanced
+  e("advanced.proxy", "settings.advanced.proxy", ["proxy", "http", "https", "socks5", "network", "terminal", "update", "máy chủ proxy", "may chu proxy", "mạng", "mang"], "settings.advanced.proxy.hint"),
+  e("advanced.noProxy", "settings.advanced.noProxy", ["proxy", "bypass", "no_proxy", "exclude", "hosts", "bỏ qua", "bo qua", "loại trừ", "loai tru"], "settings.advanced.noProxy.hint"),
+  e("advanced.nodeMirror", "settings.advanced.nodeMirror", ["node", "npm", "registry", "mirror", "package", "gương", "guong", "kho gói", "kho goi"], "settings.advanced.nodeMirror.hint"),
+  e("advanced.machineName", "settings.advanced.machineName", ["machine", "name", "host", "hostname", "computer", "device", "tên máy", "ten may", "máy tính", "may tinh"], "settings.advanced.machineName.hint"),
 ];
 
 /** The longest query searched, in bytes after trim; longer input is cut. */

@@ -683,6 +683,25 @@ pub(crate) fn add_extra_args(launch: &mut Launch, args: &[String]) -> Result<(),
     Ok(())
 }
 
+/// Adds the proxy, bypass and registry variables of Settings → Advanced to a
+/// launch env, leaving any variable the profile or the process already sets.
+pub(crate) fn add_network_env(
+    env: &mut Vec<(String, OsString)>,
+    net: &crate::settings::NetworkSettings,
+) {
+    let extra = crate::network::terminal_env(net, &|name| {
+        std::env::var_os(name).is_some()
+            || env.iter().any(|(k, _)| {
+                if cfg!(windows) {
+                    k.eq_ignore_ascii_case(name)
+                } else {
+                    k == name
+                }
+            })
+    });
+    env.extend(extra);
+}
+
 /// Gates an agent, then starts `launch` in `cwd` (no folder trust).
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
@@ -1069,6 +1088,7 @@ pub fn pty_spawn(
         )?
     };
     add_extra_args(&mut launch, extra_args.as_deref().unwrap_or_default())?;
+    add_network_env(&mut launch.env, &settings_store::read(&app).network);
     let starts_agent = crate::app_stats::counts_as_start(launch.agent, resume.as_deref(), fork);
     let exit_id = id.clone();
     let feed_id = id.clone();
@@ -2512,6 +2532,20 @@ b",
             OsString::from(f.repo.display().to_string())
         );
         assert_eq!(env["XDEV_WORKSPACE_NAME"], OsString::from("xdev"));
+    }
+
+    #[test]
+    fn a_launch_env_keeps_its_own_proxy_over_the_network_settings() {
+        let net = crate::settings::NetworkSettings {
+            proxy_url: "http://p:8080".into(),
+            node_mirror: "https://m.example".into(),
+            ..Default::default()
+        };
+        let mut env: Vec<(String, OsString)> =
+            vec![("HTTP_PROXY".to_owned(), OsString::from("http://mine:1"))];
+        add_network_env(&mut env, &net);
+        let env: HashMap<_, _> = env.into_iter().collect();
+        assert_eq!(env["HTTP_PROXY"], OsString::from("http://mine:1"));
     }
 
     fn trust_launch(cli: Option<Cli>, agent: bool, env: &[(&str, &str)]) -> Launch {

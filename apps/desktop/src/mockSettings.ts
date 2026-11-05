@@ -1,4 +1,4 @@
-import type { AgentsSettings, OrchestrationSettings, Api, AutomationsSettings, UsageSettings, DiffSettings, EditorSettings, KeySettings, NavigationSettings, SettingsChanged, SettingsSection, CardProps, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
+import type { NetworkSettings, AgentsSettings, OrchestrationSettings, Api, AutomationsSettings, UsageSettings, DiffSettings, EditorSettings, KeySettings, NavigationSettings, SettingsChanged, SettingsSection, CardProps, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
 import { clampEditorSettings, EDITOR_DEFAULTS } from "./files/editorDefaults";
 import { KEY_SETTINGS_DEFAULTS } from "./keys/bindingsStore";
 import { AUTOMATIONS_DEFAULTS, DIFF_DEFAULTS, NAVIGATION_DEFAULTS } from "./settings/generalDefaults";
@@ -33,6 +33,9 @@ type SettingsApi = Pick<
   | "usageSettingsPut"
   | "automationsSettings"
   | "automationsSettingsPut"
+  | "networkSettings"
+  | "networkSettingsPut"
+  | "machineName"
 >;
 
 /** `CardProps::default()` in Rust: every card property shows. */
@@ -139,6 +142,7 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
   let orchestration: OrchestrationSettings = { ...ORCHESTRATION_DEFAULTS };
   let usage: UsageSettings = structuredClone(USAGE_DEFAULTS);
   let automations: AutomationsSettings = { ...AUTOMATIONS_DEFAULTS };
+  let network: NetworkSettings = { proxyUrl: "", noProxy: [], nodeMirror: "", machineName: "" };
   return {
     onSettingsChanged: hub.onSettingsChanged,
     async terminalSettings() {
@@ -231,6 +235,17 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
       automations = { ...AUTOMATIONS_DEFAULTS, ...next };
       hub.emit(["automations"]);
       return { ...automations };
+    },
+    async networkSettings() {
+      return { ...network, noProxy: [...network.noProxy] };
+    },
+    async networkSettingsPut(next) {
+      network = { ...next, noProxy: [...next.noProxy] };
+      hub.emit(["network"]);
+      return { ...network, noProxy: [...network.noProxy] };
+    },
+    async machineName() {
+      return network.machineName.trim() || "this-machine";
     },
     async usageSettings() {
       return structuredClone(usage);

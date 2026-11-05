@@ -39,7 +39,7 @@ use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
     AgentsSettings, AutomationsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings,
-    IssuesPreset, KeySettings, MacOptionAsAlt, NavigationSettings, OpenInSettings,
+    IssuesPreset, KeySettings, MacOptionAsAlt, NavigationSettings, NetworkSettings, OpenInSettings,
     OrchestrationSettings, RestoreMode, SettingsChanged, ShellSettings, SidebarLook, SidebarPrefs,
     StatusBarItems, StatusSettings, TerminalLinkClick, TerminalSettings, Theme, UiSettings,
     UpdateChannel, UsageSettings, XdevIdSettings,
@@ -164,6 +164,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_orch::MessageType::export_all(cfg)?;
     xdev_orch::Priority::export_all(cfg)?;
     AutomationsSettings::export_all(cfg)?;
+    NetworkSettings::export_all(cfg)?;
     Automation::export_all(cfg)?;
     AutomationRun::export_all(cfg)?;
     AutomationInput::export_all(cfg)?;
