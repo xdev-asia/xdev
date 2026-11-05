@@ -284,6 +284,14 @@ pub fn prompt_args(cli: Cli, prompt: &str) -> Vec<String> {
     }
 }
 
+/// The env a mode sets when the agent has no flag for it (goose skip).
+pub fn permission_env(cli: Cli, mode: Permissions) -> &'static [(&'static str, &'static str)] {
+    match mode {
+        Permissions::Skip => spec(cli).skip_env,
+        _ => &[],
+    }
+}
+
 /// Whether `args` already hold a permission flag of this agent (skip, auto or
 /// accept-edits), so xDev adds none of its own.
 pub fn has_permission_args(cli: Cli, args: &[String]) -> bool {
@@ -356,6 +364,32 @@ mod tests {
             assert!(s.docs_url.starts_with("https://"), "{}", s.title);
             assert!(!s.commands.is_empty());
         }
+    }
+
+    #[test]
+    fn permission_env_is_skip_only() {
+        assert_eq!(
+            permission_env(Cli::Goose, Permissions::Skip),
+            [("GOOSE_MODE", "auto")]
+        );
+        assert!(permission_env(Cli::Goose, Permissions::Ask).is_empty());
+        assert!(permission_env(Cli::Claude, Permissions::Skip).is_empty());
+    }
+
+    #[test]
+    fn custom_permission_args_are_found() {
+        let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(has_permission_args(
+            Cli::Claude,
+            &args(&["--permission-mode", "plan"])
+        ));
+        assert!(has_permission_args(
+            Cli::Claude,
+            &args(&["--permission-mode=plan"])
+        ));
+        assert!(has_permission_args(Cli::Cursor, &args(&["--yolo"])));
+        assert!(!has_permission_args(Cli::Claude, &args(&["--verbose"])));
+        assert!(!has_permission_args(Cli::Opencode, &args(&["--yolo"])));
     }
 
     #[test]

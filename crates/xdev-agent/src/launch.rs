@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use xdev_ai::{AiError, Provider, Registry, codex_home};
 
+use crate::catalog::{has_permission_args, permission_env};
 use crate::codex_home::{codex_hook_events, prepare_codex_home};
 use crate::flags::flags;
 use crate::hooks::{HookEvent, hook_args, hook_events};
@@ -209,11 +210,16 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
 
     let permissions = ctx.profiles.effective(profile);
     let mut args = match profile.cli {
+        // Permission flags of the person's own args replace xDev's.
         Some(cli) => flags(
             cli,
             profile.model.as_deref(),
             profile.effort.as_deref(),
-            permissions,
+            if has_permission_args(cli, &profile.args) {
+                Permissions::Ask
+            } else {
+                permissions
+            },
         ),
         None => Vec::new(),
     };
@@ -224,6 +230,15 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         .iter()
         .map(|e| (e.name.clone(), OsString::from(&e.value)))
         .collect();
+    if let Some(cli) = profile.cli
+        && !has_permission_args(cli, &profile.args)
+    {
+        for (name, value) in permission_env(cli, permissions) {
+            if !env.iter().any(|(key, _)| key == name) {
+                env.push(((*name).to_owned(), OsString::from(value)));
+            }
+        }
+    }
     let provider = match profile.cli {
         Some(Cli::Claude) => Some(Provider::Claude),
         Some(Cli::Codex) => Some(Provider::Codex),
@@ -501,6 +516,38 @@ mod tests {
         assert_eq!(l.profile, "claude");
         // Args opt out of the global switch, so no mode flag.
         assert_eq!(l.permissions, Permissions::Ask);
+    }
+
+    #[test]
+    fn resolve_own_permission_args_replace_the_mode() {
+        let mut c = builtin(Cli::Claude);
+        c.permissions = Some(Permissions::Skip);
+        c.args = vec!["--permission-mode".into(), "plan".into()];
+        let l = run(&with(c), "claude", None, &found).unwrap();
+        assert_eq!(l.args, ["--permission-mode", "plan"]);
+    }
+
+    #[test]
+    fn resolve_goose_skip_sets_env_not_args() {
+        let p = Profiles {
+            approvals: Approvals::Skip,
+            ..Profiles::default()
+        };
+        let l = run(&p, "goose", None, &found).unwrap();
+        assert_eq!(l.permissions, Permissions::Skip);
+        assert!(l.args.is_empty());
+        assert!(l.env.iter().any(|(k, v)| k == "GOOSE_MODE" && v == "auto"));
+    }
+
+    #[test]
+    fn resolve_opencode_follows_skip_as_ask() {
+        let p = Profiles {
+            approvals: Approvals::Skip,
+            ..Profiles::default()
+        };
+        let l = run(&p, "opencode", None, &found).unwrap();
+        assert_eq!(l.permissions, Permissions::Ask);
+        assert!(l.args.is_empty());
     }
 
     #[test]

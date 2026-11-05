@@ -28,8 +28,8 @@ use xdev_git::GitError;
 use xdev_policy::Verdict;
 
 pub use catalog::{
-    AUTO_ORDER, AgentSpec, PromptMode, TrustKind, has_permission_args, modes, pick_agent,
-    prompt_args, spec,
+    AUTO_ORDER, AgentSpec, PromptMode, TrustKind, has_permission_args, modes, permission_env,
+    pick_agent, prompt_args, spec,
 };
 pub use codex_home::{
     CODEX_HOME_DIR, CODEX_HOOKS_SINCE, CODEX_INTERRUPT_SINCE, codex_hooks_json, hook_command,

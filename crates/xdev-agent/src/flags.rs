@@ -104,6 +104,47 @@ mod tests {
     }
 
     #[test]
+    fn auto_for_claude_and_codex_only() {
+        assert_eq!(
+            flags(Cli::Claude, None, None, Permissions::Auto),
+            ["--permission-mode", "auto"]
+        );
+        assert_eq!(
+            flags(Cli::Codex, None, None, Permissions::Auto),
+            ["--approve-for-me"]
+        );
+        for cli in Cli::ALL {
+            if !matches!(cli, Cli::Claude | Cli::Codex) {
+                assert!(flags(cli, None, None, Permissions::Auto).is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn skip_follows_the_table() {
+        let skip = |cli| flags(cli, None, None, Permissions::Skip);
+        assert_eq!(skip(Cli::Cursor), ["--yolo"]);
+        assert_eq!(skip(Cli::Copilot), ["--yolo"]);
+        assert_eq!(skip(Cli::Amp), ["--dangerously-allow-all"]);
+        assert_eq!(skip(Cli::Droid), ["--auto", "high"]);
+        assert_eq!(skip(Cli::QwenCode), ["--approval-mode", "yolo"]);
+        assert_eq!(skip(Cli::Kimi), ["--yolo"]);
+        assert_eq!(
+            skip(Cli::Devin),
+            [
+                "--permission-mode",
+                "bypass",
+                "--respect-workspace-trust",
+                "false"
+            ]
+        );
+        assert_eq!(skip(Cli::Aider), ["--yes-always"]);
+        // No flag: opencode has no skip, goose uses env.
+        assert!(skip(Cli::Opencode).is_empty());
+        assert!(skip(Cli::Goose).is_empty());
+    }
+
+    #[test]
     fn ask_and_blank_values_add_nothing() {
         for cli in Cli::ALL {
             assert!(flags(cli, None, None, Permissions::Ask).is_empty());

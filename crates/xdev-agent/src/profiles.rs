@@ -1066,6 +1066,17 @@ mod tests {
     }
 
     #[test]
+    fn global_auto_follows_only_where_offered() {
+        let p = Profiles {
+            approvals: Approvals::Auto,
+            ..Profiles::default()
+        };
+        assert_eq!(p.effective(p.get("claude").unwrap()), Permissions::Auto);
+        assert_eq!(p.effective(p.get("codex").unwrap()), Permissions::Auto);
+        assert_eq!(p.effective(p.get("gemini").unwrap()), Permissions::Ask);
+    }
+
+    #[test]
     fn disabling_default_resets_to_auto() {
         let mut p = Profiles::default();
         p.set_defaults(Approvals::Ask, DefaultAgent::Agent("codex".into()), None)
