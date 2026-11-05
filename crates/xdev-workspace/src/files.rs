@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use serde::{Deserialize, Serialize};
 
 use crate::WorkspaceError;
-use crate::ops::rel_under;
+use crate::ops::{path_key, rel_under};
 
 /// Larger files open read-only as "too large"; nothing of them is read.
 pub const READ_MAX: u64 = 2 * 1024 * 1024;
@@ -324,6 +324,167 @@ pub fn entry_path(worktree: &str, rel: &str) -> Result<PathBuf, WorkspaceError> 
     let disk = rel_under(worktree, rel)?;
     fs::symlink_metadata(&disk).map_err(|e| missing(e, rel))?;
     Ok(disk)
+}
+
+/// The worktree-relative path (with `/`) of the existing regular file that `text`, as a terminal
+/// printed it, names inside `worktree`; `None` for anything else. `text` is a relative path, an
+/// absolute one, `~/…` (with `home`) or a `file://` URI, and carries no `:line:col`. A link, a
+/// folder, a path under `.git`, one that leaves the worktree and a UNC path are all `None`.
+pub fn link_rel(worktree: &str, text: &str, home: Option<&Path>) -> Option<String> {
+    let text = text.trim();
+    if text.is_empty() || text.contains('\0') {
+        return None;
+    }
+    let printed = printed_path(text, home)?;
+    let root = Split::of(worktree)?;
+    let mut rel = Split::of(&absolute(&root, &printed))?.under(&root);
+    if rel.is_none() && cfg!(target_os = "macos") {
+        // APFS is usually case-insensitive and `/tmp` is a link: compare what the OS resolves.
+        let abs = fs::canonicalize(absolute(&root, &printed)).ok()?;
+        let top = fs::canonicalize(worktree).ok()?;
+        rel = Split::of(&abs.to_string_lossy())?.under(&Split::of(&top.to_string_lossy())?);
+    }
+    let rel = rel?;
+    let disk = entry_path(worktree, &rel).ok()?;
+    // The entry itself: a link is not followed.
+    fs::symlink_metadata(disk)
+        .is_ok_and(|m| m.is_file())
+        .then_some(rel)
+}
+
+/// `text` as a path: `file://` decoded, `~/` expanded, `\` read as `/` on Windows.
+fn printed_path(text: &str, home: Option<&Path>) -> Option<String> {
+    let path = if let Some(uri) = strip_ci(text, "file://") {
+        let rest = strip_ci(uri, "localhost").unwrap_or(uri);
+        if !rest.starts_with('/') {
+            return None;
+        }
+        let rest = percent_decode(rest)?;
+        // `/E:/x` is the drive path `E:/x`.
+        if cfg!(windows) && rest.len() > 2 && rest.as_bytes()[2] == b':' {
+            rest[1..].to_owned()
+        } else {
+            rest
+        }
+    } else if let Some(rest) = text.strip_prefix("~/").or_else(|| text.strip_prefix("~\\")) {
+        format!("{}/{}", home?.to_string_lossy(), rest)
+    } else {
+        text.to_owned()
+    };
+    Some(if cfg!(windows) {
+        path.replace('\\', "/")
+    } else {
+        path
+    })
+}
+
+fn strip_ci<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
+    let head = text.get(..prefix.len())?;
+    head.eq_ignore_ascii_case(prefix)
+        .then(|| &text[prefix.len()..])
+}
+
+fn percent_decode(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = text.get(i + 1..i + 3)?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+/// `printed` joined to the worktree when it is relative.
+fn absolute(root: &Split, printed: &str) -> String {
+    if Split::is_absolute(printed) {
+        printed.to_owned()
+    } else {
+        format!("{}/{}", root.text(), printed)
+    }
+}
+
+/// An absolute path as a root (`/`, `E:`) and its names, with `.`, `..` and empty parts folded.
+struct Split {
+    root: String,
+    names: Vec<String>,
+}
+
+impl Split {
+    fn is_absolute(path: &str) -> bool {
+        let path = path
+            .strip_prefix("//?/")
+            .filter(|_| cfg!(windows))
+            .unwrap_or(path);
+        path.starts_with('/') || (cfg!(windows) && Self::drive(path).is_some())
+    }
+
+    fn drive(path: &str) -> Option<&str> {
+        let b = path.as_bytes();
+        (b.len() >= 2
+            && b[0].is_ascii_alphabetic()
+            && b[1] == b':'
+            && (b.len() == 2 || b[2] == b'/'))
+            .then(|| &path[..2])
+    }
+
+    /// `None` for a relative path, a UNC path, or one with `..` above its root.
+    fn of(path: &str) -> Option<Split> {
+        let path = path.replace('\\', "/");
+        let path = if cfg!(windows) {
+            let lower = path.to_ascii_lowercase();
+            if lower.starts_with("//?/unc/") {
+                return None;
+            }
+            path.strip_prefix("//?/").unwrap_or(&path).to_owned()
+        } else {
+            path
+        };
+        let (root, rest) = if cfg!(windows) {
+            if path.starts_with("//") {
+                return None;
+            }
+            let drive = Self::drive(&path)?;
+            (drive.to_owned(), &path[2..])
+        } else {
+            ("".to_owned(), path.strip_prefix('/')?)
+        };
+        let mut names: Vec<String> = Vec::new();
+        for part in rest.split('/') {
+            match part {
+                "" | "." => {}
+                ".." => {
+                    names.pop()?;
+                }
+                name => names.push(name.to_owned()),
+            }
+        }
+        Some(Split { root, names })
+    }
+
+    fn text(&self) -> String {
+        format!("{}/{}", self.root, self.names.join("/"))
+    }
+
+    /// The names below `top` when this path is inside it.
+    fn under(&self, top: &Split) -> Option<String> {
+        let n = top.names.len();
+        if self.names.len() <= n {
+            return None;
+        }
+        let head = Split {
+            root: self.root.clone(),
+            names: self.names[..n].to_vec(),
+        };
+        (path_key(Path::new(&head.text())) == path_key(Path::new(&top.text())))
+            .then(|| self.names[n..].join("/"))
+    }
 }
 
 #[cfg(test)]
@@ -729,6 +890,166 @@ mod tests {
         assert_eq!(code("src/gone.rs"), "not_found");
         assert_eq!(code("src/../../x"), "bad_path");
         assert_eq!(code(".git"), "bad_path");
+    }
+
+    // The worktree is `<tmp>/wt` so a sibling file can show a path that leaves it.
+    fn link_tree() -> (TempDir, String) {
+        let tmp = TempDir::new().unwrap();
+        let wt = tmp.path().join("wt");
+        fs::create_dir_all(wt.join("src")).unwrap();
+        fs::create_dir_all(wt.join(".git")).unwrap();
+        fs::create_dir_all(wt.join("dir")).unwrap();
+        fs::write(wt.join("src").join("a.ts"), "x").unwrap();
+        fs::write(wt.join("my file.txt"), "x").unwrap();
+        fs::write(wt.join(".git").join("config"), "x").unwrap();
+        fs::write(tmp.path().join("outside.ts"), "x").unwrap();
+        let root = wt.to_string_lossy().into_owned();
+        (tmp, root)
+    }
+
+    #[test]
+    fn link_rel_resolves_relative_and_absolute_paths_inside() {
+        let (_tmp, wt) = link_tree();
+        let some = |text: &str| link_rel(&wt, text, None);
+        assert_eq!(some("src/a.ts").as_deref(), Some("src/a.ts"));
+        assert_eq!(some("./src/a.ts").as_deref(), Some("src/a.ts"));
+        assert_eq!(some("src/../src/a.ts").as_deref(), Some("src/a.ts"));
+        assert_eq!(some(&format!("{wt}/src/a.ts")).as_deref(), Some("src/a.ts"));
+        assert_eq!(
+            some(&format!("{wt}/src/../src/a.ts")).as_deref(),
+            Some("src/a.ts")
+        );
+        assert_eq!(some("  src/a.ts ").as_deref(), Some("src/a.ts"));
+    }
+
+    #[test]
+    fn link_rel_refuses_what_leaves_or_is_not_a_file() {
+        let (tmp, wt) = link_tree();
+        let outside = tmp.path().join("outside.ts").to_string_lossy().into_owned();
+        for text in [
+            "../outside.ts",
+            "src/../../outside.ts",
+            outside.as_str(),
+            "src",
+            "dir",
+            ".git/config",
+            "./.git/config",
+            "missing.ts",
+            "",
+            "/",
+            "..",
+            "src/a.ts\0",
+        ] {
+            assert_eq!(link_rel(&wt, text, None), None, "{text:?}");
+        }
+        // The worktree folder itself and a sibling that only shares its prefix.
+        assert_eq!(link_rel(&wt, &wt, None), None);
+        fs::create_dir(tmp.path().join("wt2")).unwrap();
+        fs::write(tmp.path().join("wt2").join("a.ts"), "x").unwrap();
+        let sibling = tmp.path().join("wt2").join("a.ts");
+        assert_eq!(link_rel(&wt, &sibling.to_string_lossy(), None), None);
+    }
+
+    #[test]
+    fn link_rel_reads_file_uris_and_percent_escapes() {
+        let (_tmp, wt) = link_tree();
+        let uri = |tail: &str| format!("file://{wt}/{tail}");
+        assert_eq!(
+            link_rel(&wt, &uri("src/a.ts"), None).as_deref(),
+            Some("src/a.ts")
+        );
+        assert_eq!(
+            link_rel(&wt, &uri("my%20file.txt"), None).as_deref(),
+            Some("my file.txt")
+        );
+        assert_eq!(
+            link_rel(&wt, &format!("FILE://localhost{wt}/src/a.ts"), None).as_deref(),
+            Some("src/a.ts")
+        );
+        assert_eq!(link_rel(&wt, &uri("my%2"), None), None);
+        assert_eq!(link_rel(&wt, &uri("%FF.ts"), None), None);
+        assert_eq!(link_rel(&wt, "file://host/src/a.ts", None), None);
+    }
+
+    #[test]
+    fn link_rel_expands_the_home_folder() {
+        let (tmp, wt) = link_tree();
+        let home = tmp.path();
+        assert_eq!(
+            link_rel(&wt, "~/wt/src/a.ts", Some(home)).as_deref(),
+            Some("src/a.ts")
+        );
+        assert_eq!(link_rel(&wt, "~/wt/src/a.ts", None), None);
+        assert_eq!(link_rel(&wt, "~/outside.ts", Some(home)), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn link_rel_does_not_follow_links() {
+        let (tmp, wt) = link_tree();
+        let wt_path = Path::new(&wt);
+        std::os::unix::fs::symlink(wt_path.join("src").join("a.ts"), wt_path.join("link.ts"))
+            .unwrap();
+        std::os::unix::fs::symlink(tmp.path(), wt_path.join("up")).unwrap();
+        assert_eq!(link_rel(&wt, "link.ts", None), None);
+        assert_eq!(link_rel(&wt, "up/outside.ts", None), None);
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn link_rel_is_case_sensitive_on_linux() {
+        let (_tmp, wt) = link_tree();
+        assert_eq!(link_rel(&wt, "SRC/a.ts", None), None);
+        assert_eq!(
+            link_rel(&wt, &format!("{}/src/a.ts", wt.to_uppercase()), None),
+            None
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn link_rel_matches_other_case_where_the_volume_ignores_it() {
+        let (_tmp, wt) = link_tree();
+        // Skip on a case-sensitive volume.
+        if !Path::new(&wt).join("SRC").exists() {
+            return;
+        }
+        assert_eq!(
+            link_rel(&wt, &format!("{}/SRC/A.ts", wt.to_uppercase()), None).as_deref(),
+            Some("src/a.ts")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn link_rel_reads_drive_paths_and_other_case_on_windows() {
+        let (_tmp, wt) = link_tree();
+        let key = wt.replace('\\', "/");
+        let back = wt.replace('/', "\\");
+        assert_eq!(
+            link_rel(&wt, &format!(r"{back}\src\a.ts"), None).as_deref(),
+            Some("src/a.ts")
+        );
+        assert_eq!(
+            link_rel(&wt, &format!("{key}/src/a.ts"), None).as_deref(),
+            Some("src/a.ts")
+        );
+        assert_eq!(
+            link_rel(&wt, &format!("{}/SRC/A.TS", key.to_uppercase()), None).as_deref(),
+            Some("src/a.ts")
+        );
+        // A canonical (`\\?\`) worktree against a plain printed path.
+        let canonical = fs::canonicalize(&wt)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert!(canonical.starts_with(r"\\?\"));
+        assert_eq!(
+            link_rel(&canonical, &format!("{key}/src/a.ts"), None).as_deref(),
+            Some("src/a.ts")
+        );
+        assert_eq!(link_rel(&wt, r"\\server\share\src\a.ts", None), None);
+        assert_eq!(link_rel(&wt, "//server/share/src/a.ts", None), None);
     }
 
     /// The real OS trash; run by hand where one exists (a CI runner may have none).

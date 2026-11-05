@@ -23,7 +23,7 @@ use xdev_git::GitError;
 pub use create::{CreateProject, Created, PROJECT_NAME_MAX, ProjectKind, create_project};
 pub use files::{
     Eol, FileKind, FileText, OsTrash, READ_MAX, Trash, WriteOutcome, create_entry, entry_path,
-    read_file, rename_entry, trash_entry, trash_entry_with, write_file,
+    link_rel, read_file, rename_entry, trash_entry, trash_entry_with, write_file,
 };
 pub use groups::{
     FolderEntry, RepoGroup, SidebarItem, folder_add, folder_forget, group_move, group_put,
