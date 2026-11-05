@@ -1972,7 +1972,7 @@
   "files.tree.refresh": "Refresh",
   "files.tree.collapseAll": "Collapse all",
   "files.watch.limit.title": "Live file updates are off",
-  "files.watch.limit.body": "The system limit on watched folders is reached. Raise fs.inotify.max_user_watches, then open the worktree again.",
+  "files.watch.limit.body": "The system limit on watched folders is reached. Raise fs.inotify.max_user_watches; watching starts again on its own.",
   "files.name.newFile": "New file name",
   "files.name.newFolder": "New folder name",
   "files.name.rename": "New name",

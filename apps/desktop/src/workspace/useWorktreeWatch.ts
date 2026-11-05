@@ -22,7 +22,13 @@ export function useWorktreeWatch(api: Api, worktree: string | null, io: FileIo):
     if (worktree === null) return;
     const watch = new WorktreeWatch({ api, worktree, io: () => ioNow.current, onBatch: setEvents, onHealth: setHealth });
     watch.start();
-    return () => watch.stop();
+    // Back in the window: whatever changed meanwhile (a watcher that is down misses it) is read.
+    const focus = () => watch.recheck();
+    window.addEventListener("focus", focus);
+    return () => {
+      window.removeEventListener("focus", focus);
+      watch.stop();
+    };
   }, [api, worktree]);
   return { events, health };
 }

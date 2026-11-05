@@ -1972,7 +1972,7 @@
   "files.tree.refresh": "Làm mới",
   "files.tree.collapseAll": "Thu gọn tất cả",
   "files.watch.limit.title": "Đã tắt cập nhật tệp trực tiếp",
-  "files.watch.limit.body": "Đã chạm giới hạn số thư mục được theo dõi của hệ thống. Hãy tăng fs.inotify.max_user_watches rồi mở lại worktree.",
+  "files.watch.limit.body": "Đã chạm giới hạn số thư mục được theo dõi của hệ thống. Hãy tăng fs.inotify.max_user_watches; việc theo dõi sẽ tự chạy lại.",
   "files.name.newFile": "Tên tệp mới",
   "files.name.newFolder": "Tên thư mục mới",
   "files.name.rename": "Tên mới",

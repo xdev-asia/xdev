@@ -1,45 +1,15 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { createMockApi, type FileText, type FsEvent } from "@/api";
-import { DELETE_SETTLE_MS, RELOAD_DEBOUNCE_MS, reconcile, resetWatchState, type Timers } from "./fileWatch";
+import { DELETE_SETTLE_MS, RELOAD_DEBOUNCE_MS, reconcile, resetWatchState } from "./fileWatch";
 import { FileTabs } from "./fileTabs";
 import { reloadWithUndo } from "./fileIO";
 import { getToasts } from "@/workspace/toastStore";
+import { fakeTimers, tick } from "./testClock";
 
 const W = "/wt/a";
 const t = (k: string) => k;
 const ev = (kind: FsEvent["kind"], rel: string, dir: boolean | null = false): FsEvent => ({ kind, rel, dir });
 const text = (body: string, hash: string): FileText => ({ rel: "x", text: body, kind: "text", size: body.length, hash, eol: "lf" });
-const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
-
-/** A clock that only moves when the test says so. */
-function fakeTimers() {
-  let now = 0;
-  let next = 1;
-  const queue = new Map<number, { at: number; fn: () => void }>();
-  const timers: Timers = {
-    set: (fn, ms) => {
-      const id = next++;
-      queue.set(id, { at: now + ms, fn });
-      return id;
-    },
-    clear: (id) => void queue.delete(id as number),
-  };
-  const advance = async (ms: number) => {
-    const end = now + ms;
-    for (;;) {
-      const due = [...queue.entries()].filter(([, q]) => q.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
-      if (!due) break;
-      queue.delete(due[0]);
-      now = due[1].at;
-      due[1].fn();
-      await tick();
-    }
-    now = end;
-    await tick();
-  };
-  return { timers, advance, pending: () => queue.size };
-}
-
 function setup(disk: Record<string, FileText | null>) {
   const api = createMockApi({});
   const read = vi.spyOn(api, "fileRead").mockImplementation(async (_w, rel) => {
