@@ -27,7 +27,7 @@ pub const PREFIX: &str = "xdev-ptyd";
 /// What the service writes on every spawn and exit, for a look from outside.
 pub const SESSIONS_FILE: &str = "sessions.json";
 /// The minor protocol version; a client may use what the Welcome lists.
-pub const MINOR: u32 = 0;
+pub const MINOR: u32 = 1;
 
 /// A client that sends no Hello in this long is dropped.
 const HELLO_WAIT: Duration = Duration::from_secs(5);
@@ -49,6 +49,8 @@ pub struct Config {
     /// The service ends this long after it last had a client or a live PTY.
     pub idle_exit: Duration,
     pub version: String,
+    /// Save the last output of each PTY under `dir` for a later restore.
+    pub snapshots: bool,
 }
 
 impl Config {
@@ -61,8 +63,20 @@ impl Config {
             lag: Duration::from_secs(10),
             idle_exit: Duration::from_secs(15),
             version: env!("CARGO_PKG_VERSION").to_owned(),
+            snapshots: true,
         }
     }
+}
+
+/// What the Welcome lists: `clear` is `ClearScrollback`, `snapshot` is the
+/// saved output.
+fn features(snapshots: bool) -> Vec<String> {
+    let mut f = vec!["ring".to_owned()];
+    if snapshots {
+        f.push("snapshot".to_owned());
+    }
+    f.push("clear".to_owned());
+    f
 }
 
 /// A running service; `wait` blocks until it ends.
@@ -373,7 +387,7 @@ fn serve(shared: Arc<Shared>, stream: Stream) {
     conn.send(Frame::Welcome {
         protocol: PROTOCOL,
         minor: MINOR,
-        features: vec!["ring".to_owned()],
+        features: features(shared.cfg.snapshots),
         service_version: shared.cfg.version.clone(),
         pid: std::process::id(),
     });

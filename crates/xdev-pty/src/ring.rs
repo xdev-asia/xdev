@@ -59,6 +59,19 @@ impl Ring {
         self.read(seq, usize::MAX)
     }
 
+    /// Drops what is held. `end` stays, so a client that asks for an old seq
+    /// gets a gap and nothing older than the clear.
+    pub fn clear(&mut self) {
+        self.dropped = self.buf.back().copied().or(self.dropped);
+        self.buf.clear();
+    }
+
+    /// The newest `max` bytes held.
+    pub fn tail(&self, max: usize) -> Vec<u8> {
+        let skip = self.buf.len().saturating_sub(max);
+        self.buf.range(skip..).copied().collect()
+    }
+
     /// `since`, at most `max` bytes of it.
     pub fn read(&self, seq: u64, max: usize) -> (Vec<u8>, u64) {
         let start = self.start();
@@ -147,6 +160,24 @@ mod tests {
         let mut r = Ring::new(4);
         r.push(b"abcdefgh");
         assert_eq!(r.since(2), (b"efgh".to_vec(), 2));
+    }
+
+    #[test]
+    fn clear_keeps_end() {
+        let mut r = Ring::new(8);
+        r.push(
+            b"abc
+def",
+        );
+        r.clear();
+        assert_eq!(r.end(), 7);
+        assert_eq!(r.start(), 7);
+        assert_eq!(r.since(0), (Vec::new(), 7));
+        r.push(b"gh");
+        assert_eq!(r.start(), 7);
+        assert_eq!(r.since(0), (b"gh".to_vec(), 7));
+        assert_eq!(r.tail(1), b"h".to_vec());
+        assert_eq!(r.tail(10), b"gh".to_vec());
     }
 
     #[test]
