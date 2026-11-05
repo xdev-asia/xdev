@@ -6,10 +6,26 @@ const decode = (chunks: Uint8Array[]) => chunks.map((c) => new TextDecoder().dec
 describe("mock terminal service", () => {
   it("is off by default: attach is pty_gone and the list is empty", async () => {
     const api = createMockApi({});
-    expect(await api.ptydStatus()).toEqual({ state: "off", serviceVersion: null, reason: null });
+    expect(await api.ptydStatus()).toEqual({ state: "off", serviceVersion: null, reason: null, features: [] });
     await expect(api.ptyAttach("t1", 0, () => {})).rejects.toMatchObject({ code: "pty_gone" });
     expect(await api.ptydSessions()).toEqual([]);
     await expect(api.ptydEnd("t1")).rejects.toMatchObject({ code: "ptyd_unreachable" });
+  });
+
+  it("snapshot set, read, cleared", async () => {
+    const api = createMockApi({});
+    expect(await api.ptySnapshot("t1")).toBeNull();
+    api.__snapshotSet("t1", new TextEncoder().encode("old\n"));
+    expect(decode([(await api.ptySnapshot("t1"))!])).toBe("old\n");
+    await api.ptySnapshotClear("t1");
+    expect(await api.ptySnapshot("t1")).toBeNull();
+    await expect(api.ptydClearScrollback("t1")).rejects.toMatchObject({ code: "ptyd_unreachable" });
+    api.__ptydSet({ state: "running", serviceVersion: "0.4.0", features: ["clear"] });
+    api.__ptydHold({ id: "t1", output: "before" });
+    api.__snapshotSet("t1", new Uint8Array([1]));
+    await api.ptydClearScrollback("t1");
+    expect(await api.ptySnapshot("t1")).toBeNull();
+    await expect(api.ptydClearScrollback("nope")).rejects.toMatchObject({ code: "pty_gone" });
   });
 
   it("attaches to a held pty and replays from the seq", async () => {

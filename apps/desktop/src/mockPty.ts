@@ -17,6 +17,9 @@ type PtyApi = Pick<
   | "ptydEnd"
   | "ptydEndAll"
   | "ptydRestart"
+  | "ptySnapshot"
+  | "ptySnapshotClear"
+  | "ptydClearScrollback"
   | "ptydQuitChoice"
   | "onPtydStatus"
 >;
@@ -37,6 +40,8 @@ export type MockPtyd = {
   __ptydSet(status: Partial<PtydStatus> & Pick<PtydStatus, "state">): void;
   // A pty the service runs with no tab attached, as after a restart of the app.
   __ptydHold(held: MockHeld): void;
+  // Saves `bytes` as the output of terminal `id`, as the service would.
+  __snapshotSet(id: string, bytes: Uint8Array): void;
   // The last `ptydQuitChoice` answer; null when none was given.
   __quitChoice(): boolean | null;
   // The `prompt` each `ptySpawn` got, by pty id; absent when it had none.
@@ -74,7 +79,9 @@ export function createMockPty(
   const approvedOnce = new Set<PtyProfile>();
   const exits = new Set<(exit: PtyExit) => void>();
   // The demo has no terminal service until a test says so: terminals run in the app.
-  let status: PtydStatus = { state: "off", serviceVersion: null, reason: null };
+  let status: PtydStatus = { state: "off", serviceVersion: null, reason: null, features: [] };
+  // What the service saved of each terminal.
+  const snapshots = new Map<string, Uint8Array>();
   const statusListeners = new Set<(s: PtydStatus) => void>();
   const held = new Map<string, MockHeld & { info: PtyInfo; startedMs: number }>();
   let quitChoice: boolean | null = null;
@@ -278,7 +285,20 @@ export function createMockPty(
     },
     async ptydRestart() {
       for (const id of [...held.keys()]) end(id);
-      setStatus({ state: "running", serviceVersion: "demo", reason: null });
+      setStatus({ state: "running", serviceVersion: "demo", reason: null, features: ["ring", "snapshot", "clear"] });
+    },
+    async ptySnapshot(id) {
+      return snapshots.get(id) ?? null;
+    },
+    async ptySnapshotClear(id) {
+      snapshots.delete(id);
+    },
+    async ptydClearScrollback(id) {
+      if (!serviceUp()) return reject("ptyd_unreachable");
+      if (!held.has(id)) return reject("pty_gone");
+      const pty = held.get(id)!;
+      held.set(id, { ...pty, output: "", lost: (pty.lost ?? 0) + encode(pty.output ?? "").length });
+      snapshots.delete(id);
     },
     async ptydQuitChoice(endAll) {
       quitChoice = endAll;
@@ -288,7 +308,10 @@ export function createMockPty(
       return () => statusListeners.delete(cb);
     },
     __ptydSet(next) {
-      setStatus({ serviceVersion: null, reason: null, ...next });
+      setStatus({ serviceVersion: null, reason: null, features: [], ...next });
+    },
+    __snapshotSet(id, bytes) {
+      snapshots.set(id, bytes);
     },
     __ptydHold(h) {
       held.set(h.id, { ...h, info: { ...shellInfo(h.id), ...h.info }, startedMs: Date.now() });

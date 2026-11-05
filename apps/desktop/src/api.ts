@@ -856,7 +856,7 @@ export interface Api {
   // Reattaches a tab to the terminal service's pty `id`: output from byte `fromSeq` on arrives on
   // `onData`, then the live output. Rejects with `pty_gone` when the service does not hold it.
   ptyAttach(id: string, fromSeq: number, onData: (bytes: Uint8Array) => void): Promise<PtyAttached>;
-  // Where terminals run: `off` (in the app), `running` (the service), `fallback`, `old-version`.
+  // Where terminals run: `off` (in the app), `running` (the service), `fallback`, `old-version`, `newer-version`.
   ptydStatus(): Promise<PtydStatus>;
   // Every pty the service holds, attached or not.
   ptydSessions(): Promise<SessionInfo[]>;
@@ -864,6 +864,12 @@ export interface Api {
   ptydEndAll(): Promise<void>;
   // Ends the service and every pty in it, then starts it again (Retry after a fallback).
   ptydRestart(): Promise<void>;
+  // The saved output of the terminal `id` (the last 512 KB), or null when none is saved.
+  ptySnapshot(id: string): Promise<Uint8Array | null>;
+  // Deletes the saved output of `id`; a missing one is fine.
+  ptySnapshotClear(id: string): Promise<void>;
+  // Empties what the service holds of `id`, its ring and its saved output. The terminal keeps running.
+  ptydClearScrollback(id: string): Promise<void>;
   // The answer to "On quit: Ask", given before the window closes: true ends every pty.
   ptydQuitChoice(end: boolean): Promise<void>;
   onPtydStatus(cb: (s: PtydStatus) => void): Promise<() => void>;
@@ -1646,6 +1652,12 @@ const tauriApi: Api = {
   ptydEnd: (id) => call("ptyd_end", { id }),
   ptydEndAll: () => call("ptyd_end_all"),
   ptydRestart: () => call("ptyd_restart"),
+  ptySnapshot: async (id) => {
+    const got = await call<ArrayBuffer | number[] | null>("pty_snapshot", { id });
+    return got === null ? null : toBytes(got);
+  },
+  ptySnapshotClear: (id) => call("pty_snapshot_clear", { id }),
+  ptydClearScrollback: (id) => call("ptyd_clear_scrollback", { id }),
   ptydQuitChoice: (end) => call("ptyd_quit_choice", { end }),
   onPtydStatus: (cb) => listen<PtydStatus>("ptyd://status", (e) => cb(e.payload)),
   onPtyHook: (cb) => listen<PtyHook>("pty://hook", (e) => cb(e.payload)),
