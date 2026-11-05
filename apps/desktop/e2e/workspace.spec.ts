@@ -62,13 +62,18 @@ test("the sessions panel lists agent sessions", async ({ page, openApp }) => {
   await expect(panel.getByRole("button", { name: /^Fix the parser test/ })).toBeHidden();
 });
 
-test("the automations page renders its templates", async ({ page, openApp }) => {
+test("the automations page lists the seeded automations and shows the runs dashboard", async ({ page, openApp }) => {
   await openApp();
   await page.getByRole("navigation", { name: "App" }).getByRole("button", { name: "Automations" }).click();
   const page_ = page.getByRole("region", { name: "Automations" });
   await expect(page_.getByRole("searchbox", { name: "Search automations" })).toBeVisible();
   await expect(page_.getByRole("button", { name: "New automation" })).toBeVisible();
-  await expect(page_.getByRole("list", { name: "Start with a template" })).toBeVisible();
+  await expect(page_.getByRole("button", { name: "Start from a template" })).toBeVisible();
+  await expect(page_.getByRole("grid", { name: "Automations" }).getByRole("button", { name: "Nightly audit", exact: true })).toBeVisible();
+  await page_.getByRole("button", { name: "Runs", exact: true }).click();
+  const dash = page_.getByRole("region", { name: "Runs dashboard" });
+  await expect(dash.getByRole("table", { name: "Runs" })).toBeVisible();
+  await expect(page_.getByRole("searchbox", { name: "Search automations" })).toBeHidden();
 });
 
 test("docs: the Changes tab lists the seeded outside edit", async ({ page, openApp }) => {
