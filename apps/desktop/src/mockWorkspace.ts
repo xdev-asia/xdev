@@ -3,7 +3,7 @@ import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { pushDirHistory } from "./settings/worktreeDir";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
-import type { Api, ApiError, Check, MergeBlock, PrComment, PrMergeInfo, Reaction, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, PullPolicy, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SparsePreset, SidebarItem, VaultView, PrDraft, PrView, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, NestedRepo, Check, MergeBlock, PrComment, PrMergeInfo, Reaction, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, PullPolicy, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SparsePreset, SidebarItem, VaultView, PrDraft, PrView, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 import { fromWork } from "@/workspace/branchName";
 import { REPO_COLORS, isHexColor } from "@/workspace/repoIdentity";
@@ -25,6 +25,8 @@ type WorkspaceApi = Pick<
   | "repoFileCommandsTrust"
   | "worktreeArchiveRun"
   | "worktreeAdopt"
+  | "scanNestedRepos"
+  | "cancelNestedScan"
   | "vaultList"
   | "vaultAdd"
   | "vaultForget"
@@ -432,12 +434,14 @@ function demoDiff(file: string, kind: WorktreeChange["kind"]): WorktreeFileDiff 
 export function createMockWorkspace(
   seed: MockWorkspaceSeed = DEMO_WORKSPACE,
   emit: SettingsEmit = () => {},
-): WorkspaceApi & Omit<MockFiles, "tree"> & { __setupRun(cwd: string): Promise<MockSetupRun> } {
+): WorkspaceApi & Omit<MockFiles, "tree"> & { __setupRun(cwd: string): Promise<MockSetupRun>; __nested(root: string, repos: NestedRepo[]): void } {
   const repos: RepoView[] = structuredClone(seed.repos);
   const changes = new Map<string, WorktreeChange[]>(Object.entries(structuredClone(seed.changes)));
   let commits = 0;
   for (const repo of repos) repo.found = structuredClone(seed.found?.[repo.id] ?? repo.found);
   const docs = new Set(seed.docs ?? []);
+  // What a scan of a folder finds; a folder with nothing set finds nothing.
+  const nested = new Map<string, NestedRepo[]>();
   const shared: string[] = [...(seed.vaults ?? [])];
   let git: GitSettings = { ...DEFAULT_GIT_SETTINGS, ...seed.git };
   const userName = seed.gitUserName ?? null;
@@ -844,6 +848,15 @@ export function createMockWorkspace(
       if (!script) return reject("hook_none", "setup");
       if (!script.trusted) return reject("hook_untrusted", "setup");
       return { text: script.text, code: found.file?.setupCode ?? 0 };
+    },
+    async scanNestedRepos(root) {
+      const found = nested.get(trimPath(root)) ?? [];
+      const known = new Set(repos.map((r) => r.path));
+      return { repos: found.map((r) => ({ ...r, registered: r.registered || known.has(r.path) })), cancelled: false };
+    },
+    async cancelNestedScan() {},
+    __nested(root, found) {
+      nested.set(trimPath(root), structuredClone(found));
     },
     async worktreeAdopt(path) {
       if (repos.some((r) => r.path === path)) return reject("primary_worktree", path);

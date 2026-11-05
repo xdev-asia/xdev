@@ -92,6 +92,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("sidebar.left.toggle", "view", ["Mod+B"]),
   def("sidebar.right.toggle", "view", ["Mod+L"]),
   def("sidebar.sleepingOnly.toggle", "view", []),
+  def("sidebar.visibility.open", "view", []),
   def("zoom.in", "view", ["Mod+=", "Mod+NumpadAdd"]),
   def("zoom.out", "view", ["Mod+-", "Mod+NumpadSubtract"]),
   def("zoom.reset", "view", ["Mod+0"]),

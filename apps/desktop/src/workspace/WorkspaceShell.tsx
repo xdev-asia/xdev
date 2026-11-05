@@ -312,6 +312,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [forgetting, setForgetting] = useState<{ repo: RepoView; error?: ApiError["code"] } | null>(null);
   // The Add project dialog (Open folder… or Clone from URL).
   const [adding, setAdding] = useState(false);
+  // The folder the Add project dialog opens scanning, when a picked folder held no repo itself.
+  const [scanRoot, setScanRoot] = useState<string>();
   const [openInApps, setOpenInApps] = useState<OpenInApp[]>([]);
   // A new value asks the front pane to open its quick commands popover.
   const [quickSeq, setQuickSeq] = useState(0);
@@ -1074,6 +1076,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   function addRepo(): void {
     setNotice(undefined);
+    setScanRoot(undefined);
     setAdding(true);
   }
 
@@ -1082,14 +1085,31 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setNotice(undefined);
     const paths = await api.pickFolders().catch(() => [] as string[]);
     if (paths.length === 0) return;
+    await addPaths(paths, true);
+  }
+
+  /** Adds the folders, selects the first new worktree and says what failed. A lone folder that is no repo opens the scan step instead. */
+  async function addPaths(paths: string[], offerScan: boolean): Promise<void> {
     const result = await addRepoFolders(api, paths);
     await load();
     const first = result.added[0]?.worktrees[0];
     if (first) select(first);
+    if (offerScan && paths.length === 1 && result.failed[0]?.code === "no_repo") {
+      setScanRoot(paths[0]);
+      setAdding(true);
+      return;
+    }
     const notice = addFoldersNotice(result, paths.length);
     if (notice === null) return;
     if ("code" in notice) setNotice(notice.code);
     else pushToast({ text: t("addProject.openFolders.partial", notice.toast) });
+  }
+
+  async function addScanned(paths: string[]): Promise<void> {
+    setAdding(false);
+    setScanRoot(undefined);
+    setNotice(undefined);
+    await addPaths(paths, false);
   }
 
   async function sidebarCall(run: () => Promise<unknown>): Promise<boolean> {
@@ -2471,7 +2491,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           onOpenFolder={() => void addRepoFolder()}
           onCloned={(repo) => void repoCloned(repo)}
           onCreated={(created) => void projectCreated(created)}
-          onCancel={() => setAdding(false)}
+          onCancel={() => {
+            setAdding(false);
+            setScanRoot(undefined);
+          }}
+          scanRoot={scanRoot}
+          onAddRepos={(paths) => void addScanned(paths)}
         />
       )}
       {forgetting && (

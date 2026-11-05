@@ -61,6 +61,10 @@ export const SIDEBAR_PREFS_DEFAULTS: SidebarPrefs = {
   card: CARD_PROPS_DEFAULTS,
   projectOrder: "manual",
   pinnedInGroups: false,
+  projectFilter: [],
+  externalDefaultHidden: true,
+  hiddenWorktrees: [],
+  shownWorktrees: [],
 };
 
 export { KEY_SETTINGS_DEFAULTS };

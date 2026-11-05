@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import type { RepoView, SidebarItem, SidebarPrefs, WorkItem, WorktreeView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { NO_DETAILS } from "./worktreeDetails";
-import { flattenRepos, itemLabel, moveTarget, nestRows, pinnedEntries, topIds, visibleEntries, type WtEntry } from "./sidebarModel";
+import { activeProjects, filterByProject, flattenRepos, itemLabel, moveTarget, nestRows, pinnedEntries, topIds, visibleEntries, type WtEntry } from "./sidebarModel";
 
 const OFF: SidebarPrefs = SIDEBAR_PREFS_DEFAULTS;
 
@@ -127,4 +127,43 @@ it("Sleeping only never hides the selected worktree and combines with the other 
   const both = visibleEntries(entries(r), { ...OFF, hideDefault: true }, null, { only: true, asleep });
   expect(both.entries.map((e) => e.wt.name)).toEqual(["a2"]);
   expect(both.hidden).toBe(2);
+});
+
+it("the project filter keeps the listed projects; empty or unknown ids keep all", () => {
+  const a = repo("a", [wt("a1")]);
+  const b = repo("b", [wt("b1"), wt("b2")]);
+  const all = [...entries(a), ...entries(b)];
+  const names = (list: WtEntry[]) => list.map((e) => e.wt.name);
+  expect(names(filterByProject(all, []))).toEqual(["a1", "b1", "b2"]);
+  expect(names(filterByProject(all, ["b"]))).toEqual(["b1", "b2"]);
+  expect(names(filterByProject(all, ["a", "b"]))).toEqual(["a1", "b1", "b2"]);
+  // An id that is no listed repo is ignored; a filter of only such ids keeps every project.
+  expect(names(filterByProject(all, ["a", "gone"]))).toEqual(["a1"]);
+  expect(names(filterByProject(all, ["gone"]))).toEqual(["a1", "b1", "b2"]);
+  expect(activeProjects(["x"], ["a"])).toBeNull();
+  expect(activeProjects(["a", "x"], ["a"])).toEqual(new Set(["a"]));
+});
+
+it("the project filter combines with the other filters and counts what it hides", () => {
+  const a = repo("a", [wt("a1"), wt("a2", { detached: true })]);
+  const b = repo("b", [wt("b1")]);
+  const all = [...entries(a), ...entries(b)];
+  const prefs = { ...OFF, projectFilter: ["a"], hideDetached: true };
+  const out = visibleEntries(all, prefs, null);
+  expect(out.entries.map((e) => e.wt.name)).toEqual(["a1"]);
+  expect(out.hidden).toBe(2);
+  // The selected worktree stays even outside the filter.
+  expect(visibleEntries(all, prefs, "/wt/b1").entries.map((e) => e.wt.name)).toEqual(["a1", "b1"]);
+  // With the sleeping filter on too.
+  const sleeping = { only: true, asleep: { "/wt/a1": false, "/wt/b1": true } };
+  expect(visibleEntries(all, { ...OFF, projectFilter: ["a"] }, null, sleeping).entries).toEqual([]);
+});
+
+it("a worktree hidden from the sidebar is dropped without counting as filtered, unless selected", () => {
+  const a = repo("a", [wt("main", { primary: true }), wt("x"), wt("y")]);
+  const prefs = { ...OFF, hiddenWorktrees: ["/wt/x", "/wt/main"] };
+  const out = visibleEntries(entries(a), prefs, null);
+  expect(out.entries.map((e) => e.wt.name)).toEqual(["main", "y"]);
+  expect(out.hidden).toBe(0);
+  expect(visibleEntries(entries(a), prefs, "/wt/x").entries.map((e) => e.wt.name)).toEqual(["main", "x", "y"]);
 });

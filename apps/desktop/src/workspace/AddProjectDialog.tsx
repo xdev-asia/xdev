@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent, JSX } from "react";
 import { toApiError, type Api, type Created, type ProjectKind, type RepoView } from "@/api";
 import { useI18n } from "@/i18n";
+import { NestedRepoChecklist } from "./NestedRepoChecklist";
 
-type CloneApi = Pick<Api, "repoClone" | "repoCloneCancel" | "repoCloneName" | "repoCreate" | "pickFolder">;
+type CloneApi = Pick<Api, "repoClone" | "repoCloneCancel" | "repoCloneName" | "repoCreate" | "pickFolder"> & Partial<Pick<Api, "scanNestedRepos" | "cancelNestedScan">>;
 
 /** Which field a refused Create points at; the rest show under the form. */
 const CREATE_FIELD: Record<string, "name" | "folder"> = { bad_name: "name", exists: "name", not_found: "folder" };
@@ -37,11 +38,16 @@ export function AddProjectDialog(props: {
   onCloned(repo: RepoView): void;
   onCreated(created: Created): void;
   onCancel(): void;
+  /** A folder to scan for repositories as soon as the dialog opens (a picked folder that is no repo). */
+  scanRoot?: string;
+  /** Adds the repositories ticked in the scan step. */
+  onAddRepos?(paths: string[]): void;
 }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
-  const [mode, setMode] = useState<"choose" | "clone" | "create">("choose");
+  const [mode, setMode] = useState<"choose" | "clone" | "create" | "scan">(props.scanRoot ? "scan" : "choose");
+  const [scanRoot, setScanRoot] = useState(props.scanRoot ?? "");
   const [url, setUrl] = useState("");
   const [folder, setFolder] = useState(props.startFolder);
   const [name, setName] = useState("");
@@ -76,6 +82,13 @@ export function AddProjectDialog(props: {
   async function choose(): Promise<void> {
     const picked = await api.pickFolder().catch(() => null);
     if (picked) setFolder(picked);
+  }
+
+  async function scan(): Promise<void> {
+    const picked = await api.pickFolder().catch(() => null);
+    if (!picked) return;
+    setScanRoot(picked);
+    setMode("scan");
   }
 
   async function clone(e?: FormEvent): Promise<void> {
@@ -170,6 +183,11 @@ export function AddProjectDialog(props: {
             <button type="button" className="btn-secondary" data-choice="create" onClick={() => setMode("create")}>
               {t("addProject.create.choice")}
             </button>
+            {api.scanNestedRepos && api.cancelNestedScan && props.onAddRepos && (
+              <button type="button" className="btn-secondary" data-choice="scan" onClick={() => void scan()}>
+                {t("nested.choice")}
+              </button>
+            )}
           </div>
           <div className="dialog-actions">
             <button type="button" className="btn-secondary" onClick={props.onCancel}>
@@ -177,6 +195,13 @@ export function AddProjectDialog(props: {
             </button>
           </div>
         </>
+      ) : mode === "scan" && api.scanNestedRepos && api.cancelNestedScan ? (
+        <NestedRepoChecklist
+          api={{ scanNestedRepos: api.scanNestedRepos, cancelNestedScan: api.cancelNestedScan }}
+          root={scanRoot}
+          onAdd={(paths) => props.onAddRepos?.(paths)}
+          onBack={back}
+        />
       ) : mode === "create" ? (
         <form onSubmit={(e) => void create(e)}>
           <div className="ws-fields">

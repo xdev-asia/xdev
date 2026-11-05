@@ -338,6 +338,18 @@ it("a long name and branch are cut by the row and keep their full text in a titl
 
 const FOUND: WorktreeView = { path: "/demo/elsewhere/spike", name: "spike", branch: "spike", head: "6666666666666666666666666666666666666666", start: null, primary: false, pinned: false, detached: false, ...NO_DETAILS };
 
+it("found worktrees are left out while new outside worktrees default to hidden, and a review line offers the dialog", () => {
+  const withFound = () => {
+    const list = repos();
+    list[0].found = [FOUND];
+    return list;
+  };
+  const view = harness(DOTS, withFound, { onPrefs: () => {} });
+  expect(view.all().filter(n => n.props.className === "ws-found")).toHaveLength(0);
+  expect(view.all().some(n => n.props.className === "ws-review-line")).toBe(true);
+  expect(view.html()).toContain(en("visibility.review.new", { count: 1 }));
+});
+
 it("found worktrees show under their repo and Adopt calls onAdopt", () => {
   const adopted: WorktreeView[] = [];
   const withFound = () => {
@@ -345,7 +357,7 @@ it("found worktrees show under their repo and Adopt calls onAdopt", () => {
     list[0].found = [FOUND];
     return list;
   };
-  const view = harness(DOTS, withFound, { onAdopt: (w) => adopted.push(w) });
+  const view = harness(DOTS, withFound, { onAdopt: (w) => adopted.push(w), prefs: prefsWith({ externalDefaultHidden: false }) });
   const group = () => view.all().find(n => n.props.className === "ws-found" && n.props["data-repo"] === "demo-xdev")!;
   const toggle = () => nodes(group().props.children).find(n => n.type === "button" && n.props.className?.includes("ws-found-head"))!;
   expect(view.all().filter(n => n.props.className === "ws-found")).toHaveLength(1);

@@ -37,6 +37,8 @@ export type ActionId =
   | "sidebar.left.toggle" | "sidebar.right.toggle"
   // Bound to nothing by default: the sidebar lists only sleeping worktrees.
   | "sidebar.sleepingOnly.toggle"
+  // Bound to nothing by default: opens the dialog that shows or hides worktrees in the sidebar.
+  | "sidebar.visibility.open"
   | "panel.explorer" | "panel.search" | "panel.sourceControl" | "panel.issues" | "panel.ports"
   | "terminal.clear" | "terminal.copy" | "terminal.paste" | "terminal.selectAll" | "terminal.find"
   | "zoom.in" | "zoom.out" | "zoom.reset"

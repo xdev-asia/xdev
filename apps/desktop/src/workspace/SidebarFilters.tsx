@@ -5,13 +5,21 @@ import { useI18n } from "@/i18n";
 
 const KEYS = ["hideDefault", "hideDetached", "hideAutomation", "hideCli"] as const;
 
+/** A project the picker offers. */
+export interface ProjectChoice {
+  id: string;
+  name: string;
+}
+
 /**
- * The filter button of the sidebar header: four switches saved as preferences and Sleeping only (kept by
- * the list, not saved), and "N hidden" that clears them.
+ * The filter button of the sidebar header: four switches saved as preferences, the project picker
+ * (saved too), Sleeping only (kept by the list, not saved), and "N hidden" that clears them.
  */
 export function SidebarFilters(props: {
   prefs: SidebarPrefs;
   hidden: number;
+  /** The repos to pick from; without them the picker is left out. */
+  projects?: ProjectChoice[];
   onPrefs(prefs: SidebarPrefs): void;
   sleepingOnly?: boolean;
   onSleepingOnly?(on: boolean): void;
@@ -20,7 +28,12 @@ export function SidebarFilters(props: {
   const [open, setOpen] = useState(false);
   const { prefs } = props;
   const sleepingOnly = props.sleepingOnly === true;
-  const on = KEYS.some((k) => prefs[k]) || sleepingOnly;
+  const projects = props.projects ?? [];
+  // Ids of repos that are gone do not count as a filter.
+  const picked = new Set(prefs.projectFilter.filter((id) => projects.some((p) => p.id === id)));
+  const on = KEYS.some((k) => prefs[k]) || sleepingOnly || picked.size > 0;
+  const pick = (id: string, checked: boolean) =>
+    props.onPrefs({ ...prefs, projectFilter: checked ? [...picked, id] : [...picked].filter((p) => p !== id) });
   return (
     <div className="ws-filters">
       {on && (
@@ -30,7 +43,7 @@ export function SidebarFilters(props: {
           title={t("filters.clear")}
           onClick={() => {
             props.onSleepingOnly?.(false);
-            props.onPrefs({ ...props.prefs, hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false });
+            props.onPrefs({ ...props.prefs, hideDefault: false, hideDetached: false, hideAutomation: false, hideCli: false, projectFilter: [] });
           }}
         >
           {t("filters.hidden", { count: props.hidden })}
@@ -58,6 +71,21 @@ export function SidebarFilters(props: {
               <span>{t(`filters.${key}`)}</span>
             </label>
           ))}
+          {projects.length > 1 && (
+            <div className="ws-filters-projects" role="group" aria-label={t("filters.projects")}>
+              <span className="ws-options-label">{t("filters.projects")}</span>
+              <label className="ws-filters-row">
+                <input type="checkbox" checked={picked.size === 0} onChange={() => props.onPrefs({ ...prefs, projectFilter: [] })} />
+                <span>{t("filters.projects.all")}</span>
+              </label>
+              {projects.map((p) => (
+                <label key={p.id} className="ws-filters-row">
+                  <input type="checkbox" checked={picked.has(p.id)} onChange={(e) => pick(p.id, e.target.checked)} />
+                  <span>{p.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
           {props.onSleepingOnly && (
             <label className="ws-filters-row">
               <input type="checkbox" checked={sleepingOnly} onChange={(e) => props.onSleepingOnly?.(e.target.checked)} />

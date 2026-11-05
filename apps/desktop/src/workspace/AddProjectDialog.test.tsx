@@ -299,3 +299,22 @@ it("Cancel on the Create form returns to the choices", async () => {
   expect(v.text()).toContain(en("addProject.openFolder"));
   expect(v.handlers.onCancel).not.toHaveBeenCalled();
 });
+
+it("offers Scan for repositories only when it can scan and add, and picks the folder first", async () => {
+  const base = createMockApi({});
+  const draw = (api: Partial<Api>, onAddRepos?: () => void, scanRoot?: string) => {
+    hooks.cursor = 0;
+    hooks.active = true;
+    try { return nodes(AddProjectDialog({ api: { ...base, ...api } as CloneApi, startFolder: "/code", onOpenFolder() {}, onCloned() {}, onCreated() {}, onCancel() {}, onAddRepos, scanRoot })); } finally { hooks.active = false; }
+  };
+  const choice = () => draw({}, () => {}).find((n) => n.props["data-choice"] === "scan");
+  expect(draw({ scanNestedRepos: undefined, cancelNestedScan: undefined }, () => {}).some((n) => n.props["data-choice"] === "scan")).toBe(false);
+  expect(draw({}).some((n) => n.props["data-choice"] === "scan")).toBe(false);
+  vi.spyOn(base, "pickFolder").mockResolvedValueOnce("/code/many");
+  choice()!.props.onClick();
+  await tick();
+  const scanning = draw({}, () => {}).find((n) => n.props.root !== undefined);
+  expect(scanning?.props.root).toBe("/code/many");
+  hooks.values = []; hooks.cursor = 0;
+  expect(draw({}, () => {}, "/code/start").find((n) => n.props.root !== undefined)?.props.root).toBe("/code/start");
+});

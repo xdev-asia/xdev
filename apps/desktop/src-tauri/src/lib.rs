@@ -66,6 +66,7 @@ mod terminal_themes;
 mod tray;
 mod updater;
 mod usage_share;
+mod visibility;
 mod workspace;
 mod xdev_id;
 
@@ -119,6 +120,7 @@ pub fn run() {
         .manage(pty::Ptys::pending())
         .manage(workspace::WorkspaceLock::default())
         .manage(workspace::Clones::default())
+        .manage(visibility::NestedScanState::default())
         .manage(review_notes::ReviewNotesLock::default())
         .manage(profiles::ProfilesLock::default())
         .manage(files::Searches::default())
@@ -472,6 +474,8 @@ pub fn run() {
             workspace::repo_hook_trust,
             workspace::worktree_archive_run,
             workspace::worktree_adopt,
+            visibility::scan_nested_repos,
+            visibility::cancel_nested_scan,
             workspace::vault_list,
             workspace::vault_add,
             workspace::vault_forget,

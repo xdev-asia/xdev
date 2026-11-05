@@ -6,6 +6,7 @@ mod groups;
 mod hooks;
 mod kept;
 mod names;
+mod nested;
 mod ops;
 mod registry;
 mod repo_commands;
@@ -40,6 +41,7 @@ pub use kept::{
     kept_list, restore_worktree,
 };
 pub use names::{PrefixIssue, SUFFIX_MAX, from_work, normalize_prefix, prefix_issue, suffixed};
+pub use nested::{NESTED_SCAN_DEPTH, NestedScan, scan_nested_repos};
 pub use ops::{
     BranchPrefix, COMMENT_MAX, CreateOptions, DetailsPatch, DirEntry, DirListing, ITEM_URL_MAX,
     NamePreview, Removed, RepoPatch, RepoView, TITLE_MAX, WorktreeStat, WorktreeView, add_repo,
