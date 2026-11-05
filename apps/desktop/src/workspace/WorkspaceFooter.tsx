@@ -11,7 +11,7 @@ import { KeepAwakeItem } from "./KeepAwakeItem";
 import { UsagePopover } from "./UsagePopover";
 import { pushToast } from "./toastStore";
 import { footerQuota, shownPercent } from "./usageModel";
-import { loadEmptyCtaHidden, saveEmptyCtaHidden, showEmptyCta, usageMenuItems } from "./usageMenu";
+import { hideUsageSegment, isMenuKey, loadEmptyCtaHidden, saveEmptyCtaHidden, segmentMenuItems, showEmptyCta, usageMenuItems } from "./usageMenu";
 
 /** A meter above this share of its window shows in the warn colour. */
 export const WARN_PERCENT = 80;
@@ -127,6 +127,15 @@ export function WorkspaceFooter(props: {
         props.onMetersMenu?.({ x: e.clientX, y: e.clientY });
       }
     : undefined;
+  // Shift+F10 or the menu key opens the menu below the segment, where a pointer would be.
+  const onMetersKey = props.onMetersMenu
+    ? (e: { key: string; shiftKey: boolean; preventDefault(): void; currentTarget: { getBoundingClientRect(): { left: number; bottom: number } } }) => {
+        if (!isMenuKey(e)) return;
+        e.preventDefault();
+        const box = e.currentTarget.getBoundingClientRect();
+        props.onMetersMenu?.({ x: box.left, y: box.bottom });
+      }
+    : undefined;
   const onEmptyContext = props.onEmptyMenu
     ? (e: { preventDefault(): void; clientX: number; clientY: number }) => {
         e.preventDefault();
@@ -148,6 +157,7 @@ export function WorkspaceFooter(props: {
             aria-expanded={props.usageOpen === true}
             onClick={props.onToggleUsage}
             onContextMenu={onMetersContext}
+            onKeyDown={onMetersKey}
           >
             {meters.map((m) => (
               <MeterItem key={m.label} meter={m} display={display} />
@@ -155,7 +165,7 @@ export function WorkspaceFooter(props: {
           </button>
         ) : (
           // One tab stop, so the footer is in the focus order and the meters are read out.
-          <span className="ws-meters" role="group" aria-label={t("workspace.footer.usage")} tabIndex={0} onContextMenu={onMetersContext}>
+          <span className="ws-meters" role="group" aria-label={t("workspace.footer.usage")} tabIndex={0} onContextMenu={onMetersContext} onKeyDown={onMetersKey}>
             {meters.map((m) => (
               <MeterItem key={m.label} meter={m} display={display} />
             ))}
@@ -255,8 +265,18 @@ export function LiveWorkspaceFooter(props: {
   const close = () => setOpen(false);
   // Only when nothing is set up at all: not while loading, and not when the switches hide the meters.
   const emptyCta = showEmptyCta(quota, accounts, ctaHidden);
-  const put = (next: UsageSettings) =>
-    void api.usageSettingsPut(next).then(setUsageSettings, () => pushToast({ text: t("usage.menu.failed") }));
+  const hideUsage = () => {
+    setMenuAt(null);
+    hideUsageSegment(usage, put, (undo) => pushToast({ text: t("usage.menu.hidden"), actions: [{ label: t("usage.menu.undo"), run: undo }] }));
+  };
+  const put = (next: UsageSettings, saved?: () => void) =>
+    void api.usageSettingsPut(next).then(
+      (stored) => {
+        setUsageSettings(stored);
+        saved?.();
+      },
+      () => pushToast({ text: t("usage.menu.failed") }),
+    );
   const popover = (
     <UsagePopover
       quota={quota}
@@ -300,15 +320,26 @@ export function LiveWorkspaceFooter(props: {
             items={
               menuAt.kind === "empty"
                 ? [{ id: "hide", labelKey: "usage.empty.hide", run: () => { saveEmptyCtaHidden(true); setCtaHidden(true); } }]
-                : usageMenuItems(
-                    usage,
-                    put,
-                    onUsageSettings &&
-                      (() => {
-                        setMenuAt(null);
-                        onUsageSettings();
-                      }),
-                  )
+                : [
+                    ...segmentMenuItems(
+                      hideUsage,
+                      onManageAccounts &&
+                        (() => {
+                          setMenuAt(null);
+                          onManageAccounts();
+                        }),
+                    ),
+                    { id: "sep-segment", labelKey: "", kind: "separator" as const },
+                    ...usageMenuItems(
+                      usage,
+                      put,
+                      onUsageSettings &&
+                        (() => {
+                          setMenuAt(null);
+                          onUsageSettings();
+                        }),
+                    ),
+                  ]
             }
             onClose={() => setMenuAt(null)}
           />

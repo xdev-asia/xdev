@@ -275,3 +275,18 @@ it("the live footer shows no link before the accounts are read", () => {
   live.quota = [];
   expect(renderLive()).not.toContain("usage-setup");
 });
+
+it("Shift+F10 on the meters button opens the menu below it; other keys do nothing", () => {
+  const onMetersMenu = vi.fn();
+  const preventDefault = vi.fn();
+  const button = findAction(tree([account("a", [["five_hour", 1]])], { onToggleUsage() {}, onMetersMenu }), "usage");
+  const keyDown = button!.props!.onKeyDown as (e: unknown) => void;
+  const currentTarget = { getBoundingClientRect: () => ({ left: 10, bottom: 20 }) };
+  keyDown({ key: "a", shiftKey: false, preventDefault, currentTarget });
+  expect(onMetersMenu).not.toHaveBeenCalled();
+  keyDown({ key: "F10", shiftKey: true, preventDefault, currentTarget });
+  keyDown({ key: "ContextMenu", shiftKey: false, preventDefault, currentTarget });
+  expect(onMetersMenu).toHaveBeenCalledTimes(2);
+  expect(onMetersMenu).toHaveBeenCalledWith({ x: 10, y: 20 });
+  expect(preventDefault).toHaveBeenCalledTimes(2);
+});

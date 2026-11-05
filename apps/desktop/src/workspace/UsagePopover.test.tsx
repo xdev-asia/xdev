@@ -32,6 +32,8 @@ function find(node: ReactNode, action: string, out: ReactElement<Record<string, 
     const el = node as ReactElement<Record<string, unknown>>;
     if (el.props["data-action"] === action) out.push(el);
     find(el.props.children as ReactNode, action, out);
+    // EmptyState takes its button as a prop, not as children.
+    find(el.props.actions as ReactNode, action, out);
   }
   return out;
 }
@@ -99,6 +101,15 @@ it("empty and unreadable states", () => {
   expect(html({ rows: null })).toContain(en("usage.popover.unreadable"));
   expect(html({ rows: null, loading: true })).toContain(en("usage.popover.loading"));
   expect(html({ rows: [] })).toContain(en("usage.popover.empty"));
+});
+it("the empty state is an EmptyState whose Connect button opens the accounts", () => {
+  const props = base({ rows: [] });
+  const markup = renderToStaticMarkup(UsagePopoverView(props));
+  expect(markup).toContain('class="x-empty"');
+  expect(markup).toContain(en("usage.popover.emptyHint"));
+  expect(markup).toContain(en("usage.popover.connect"));
+  call(UsagePopoverView(props), "usage-connect", "onClick");
+  expect(props.onManageAccounts).toHaveBeenCalledTimes(1);
 });
 it("the saved mode defaults to detailed", () => {
   expect(loadUsageMode()).toBe("detailed");

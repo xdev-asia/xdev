@@ -3635,5 +3635,14 @@
   "tip.cliSkill.done": "Done",
   "tip.cliSkill.label": "Tip: xDev skill",
   "keys.action.tab.closeAll": "Close all tabs",
-  "workspace.tabs.switcher": "Recent tabs"
+  "workspace.tabs.switcher": "Recent tabs",
+  "usage.menu.hide": "Hide from status bar",
+  "usage.menu.manage": "Manage accounts",
+  "usage.menu.label": "Usage meters",
+  "usage.menu.hidden": "Usage hidden. Show it again in Settings > Appearance.",
+  "usage.menu.undo": "Undo",
+  "usage.popover.emptyHint": "Connect a Claude or Codex account to see its limits here.",
+  "usage.popover.connect": "Connect an account",
+  "accounts.status.needsReauth": "Needs re-auth",
+  "accounts.signInAgain": "Sign in again"
 }

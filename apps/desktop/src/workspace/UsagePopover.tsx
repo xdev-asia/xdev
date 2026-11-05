@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
+import { Button, EmptyState } from "@xdev-asia/ui";
 import type { Accounts, Provider, Quota, UsageDisplay } from "@/api";
 import { useI18n } from "@/i18n";
 import { resetLabel, shownPercent, USAGE_MODE_KEY, usageRows, type UsageMode, type UsageRow } from "./usageModel";
@@ -97,7 +98,11 @@ export function UsagePopoverView(props: UsagePopoverViewProps): JSX.Element {
         {rows === null ? (
           <p className="ws-usage-empty" role="status">{t(props.loading ? "usage.popover.loading" : "usage.popover.unreadable")}</p>
         ) : rows.length === 0 ? (
-          <p className="ws-usage-empty" role="status">{t("usage.popover.empty")}</p>
+          <EmptyState
+            title={t("usage.popover.empty")}
+            hint={t("usage.popover.emptyHint")}
+            actions={<Button type="button" data-action="usage-connect" onClick={props.onManageAccounts}>{t("usage.popover.connect")}</Button>}
+          />
         ) : (
           <div className="ws-usage-list">
             {rows.map((row) => {
