@@ -199,6 +199,7 @@ import type {
   AutomationsChanged,
   AutomationsSettings,
   AutomationsView,
+  NetworkSettings,
   Describe,
   DispatchResult,
   RunFinish,
@@ -212,6 +213,7 @@ export type {
   AutomationsChanged,
   AutomationsSettings,
   AutomationsView,
+  NetworkSettings,
   Describe,
   DispatchResult,
   ExtraArgsError,
@@ -1364,6 +1366,11 @@ export interface Api {
   // Settings → Automations; the put returns what was stored.
   automationsSettings(): Promise<AutomationsSettings>;
   automationsSettingsPut(v: AutomationsSettings): Promise<AutomationsSettings>;
+  // Settings → Advanced; the put returns what was stored and refuses an invalid proxy or mirror.
+  networkSettings(): Promise<NetworkSettings>;
+  networkSettingsPut(v: NetworkSettings): Promise<NetworkSettings>;
+  // The machine name in effect: the chosen one, else the OS host name.
+  machineName(): Promise<string>;
 
   // Layout
   // The tabs and splits saved for the next start (`<data_dir>/layout.json`); null when none is saved
@@ -2018,6 +2025,9 @@ const tauriApi: Api = {
   onPortsAdvertised: (cb) => listen<{ worktree: string }>("ports://advertised", (e) => cb(e.payload.worktree)),
   automationsSettings: () => call("automations_settings_get"),
   automationsSettingsPut: (settings) => call("automations_settings_put", { settings }),
+  networkSettings: () => call("network_settings_get"),
+  networkSettingsPut: (settings) => call("network_settings_put", { settings }),
+  machineName: () => call("machine_name_get"),
   usageSettings: () => call("usage_settings_get"),
   usageSettingsPut: (settings) => call("usage_settings_put", { settings }),
   layoutLoad: () => call("layout_load"),

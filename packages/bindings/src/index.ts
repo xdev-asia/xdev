@@ -161,6 +161,7 @@ export type { MrState } from "./MrState";
 export type { MrSummary } from "./MrSummary";
 export type { NamePreview } from "./NamePreview";
 export type { NavigationSettings } from "./NavigationSettings";
+export type { NetworkSettings } from "./NetworkSettings";
 export type { NotificationPermission } from "./NotificationPermission";
 export type { OnNameTaken } from "./OnNameTaken";
 export type { OnQuit } from "./OnQuit";

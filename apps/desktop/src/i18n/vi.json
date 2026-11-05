@@ -3749,5 +3749,22 @@
   "error.glab_failed": "glab báo lỗi. Chi tiết hiển thị cùng lỗi.",
   "error.mr_not_found": "Không tìm thấy merge request đó trong repo này.",
   "workspace.create.tab.gitlab": "Merge request",
-  "workspace.create.mrHint": "Chọn một merge request để tạo worktree từ đó."
+  "workspace.create.mrHint": "Chọn một merge request để tạo worktree từ đó.",
+  "settings.advanced.title": "Nâng cao",
+  "settings.advanced.intro": "Tuỳ chọn mạng và máy. Proxy và bản sao Node áp dụng cho các terminal mở sau đó và cho việc kiểm tra cập nhật.",
+  "settings.advanced.proxy": "Địa chỉ proxy",
+  "settings.advanced.proxy.hint": "Đặt HTTP_PROXY, HTTPS_PROXY và ALL_PROXY trong terminal mới. Để trống nếu không dùng proxy.",
+  "settings.advanced.proxy.scheme": "Dùng địa chỉ http, https hoặc socks5, ví dụ http://127.0.0.1:8080.",
+  "settings.advanced.proxy.invalid": "Nhập địa chỉ đầy đủ có máy chủ, ví dụ http://127.0.0.1:8080.",
+  "settings.advanced.noProxy": "Danh sách bỏ qua",
+  "settings.advanced.noProxy.hint": "Các máy chủ không đi qua proxy, mỗi dòng một mục. Dấu chấm đầu khớp với tên miền con.",
+  "settings.advanced.nodeMirror": "Bản sao Node",
+  "settings.advanced.nodeMirror.hint": "Kho gói cho terminal mới (npm_config_registry). Để trống để dùng mặc định.",
+  "settings.advanced.mirror.scheme": "Dùng địa chỉ http hoặc https, ví dụ https://registry.npmmirror.com.",
+  "settings.advanced.mirror.invalid": "Nhập địa chỉ đầy đủ có máy chủ, ví dụ https://registry.npmmirror.com.",
+  "settings.advanced.machineName": "Tên máy",
+  "settings.advanced.machineName.hint": "Hiện trong phần Giới thiệu và tệp chẩn đoán. Để trống để dùng tên máy của hệ điều hành.",
+  "settings.advanced.save": "Lưu thay đổi",
+  "error.bad_proxy": "Không dùng được địa chỉ proxy. Nhập địa chỉ http, https hoặc socks5.",
+  "error.bad_mirror": "Không dùng được địa chỉ bản sao Node. Nhập địa chỉ http hoặc https."
 }

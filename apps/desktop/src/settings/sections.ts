@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import type { Api } from "@/api";
+import { AdvancedPage } from "./AdvancedPage";
 import { AccountPage } from "./account/AccountPage";
 import { AgentsPage } from "./agents/AgentsPage";
 import { AppearancePage } from "./AppearancePage";
@@ -79,6 +80,7 @@ export const SECTIONS: SettingsSection[] = [
   { id: "qcmd", group: "interface", labelKey: "qcmd.title", Component: QuickCommandsPage },
   { id: "account", group: "integrations", labelKey: "account.title", Component: AccountPage },
   { id: "vaults", group: "integrations", labelKey: "settings.vaults.title", Component: VaultsSettings },
+  { id: "advanced", group: "advanced", labelKey: "settings.advanced.title", Component: AdvancedPage },
   { id: "diagnostics", group: "advanced", labelKey: "settings.diagnostics.title", Component: DiagnosticsPage },
   { id: "experimental", group: "advanced", labelKey: "settings.experimental.title", Component: ExperimentalPage },
 ];
