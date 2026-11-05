@@ -42,3 +42,18 @@
 .dialog[data-size="wide"] .image-stage {
   height: 60vh;
 }
+.media-player {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: var(--x-space-3);
+}
+.media-player video {
+  max-width: 100%;
+  max-height: 100%;
+}
+.media-player audio {
+  width: 100%;
+}
