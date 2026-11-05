@@ -3,7 +3,7 @@
 //! calls and results, side chains, meta lines and wrapper text are left out.
 //! Nothing is stored here; the caller keeps the text and the read marks.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::fs;
 use std::path::Path;
 
@@ -92,6 +92,92 @@ pub fn scan_transcripts(
         sink(TranscriptEvent::Gone { file });
     }
     stats
+}
+
+/// The most bytes `tail_turns` reads from the end of a log.
+const TAIL_BYTES: u64 = 4 << 20;
+
+/// One turn of a conversation, for showing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TailTurn {
+    pub role: TextRole,
+    pub text: String,
+    /// Unix ms; 0 when the line has no time.
+    pub at: i64,
+}
+
+/// The last `turns` user and assistant texts of one log, oldest first, each
+/// cut to `chars` characters. It reads the same lines as `scan_transcripts`
+/// but only the last `TAIL_BYTES` of a long log.
+pub fn tail_turns(home: &Home, path: &Path, turns: usize, chars: usize) -> Vec<TailTurn> {
+    let mut ring: VecDeque<TailTurn> = VecDeque::with_capacity(turns + 1);
+    if turns == 0 {
+        return Vec::new();
+    }
+    let mut marks = BTreeMap::new();
+    let file = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let file_key = file.to_string_lossy().into_owned();
+    if let Some(from) = tail_start(&file) {
+        // A mark that differs from the file makes the read go on from `from`.
+        let stem = file
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        marks.insert(
+            file_key.clone(),
+            FileMark {
+                len: 0,
+                mtime_ns: -1,
+                offset: from,
+                session: format!("{}:{stem}", home.id),
+                recent_ids: Vec::new(),
+            },
+        );
+    }
+    let mut stats = RefreshStats::default();
+    scan_file(
+        home,
+        &file,
+        &file_key,
+        &mut marks,
+        None,
+        &mut |event| {
+            if let TranscriptEvent::Text(t) = event {
+                if ring.len() == turns {
+                    ring.pop_front();
+                }
+                ring.push_back(TailTurn {
+                    role: t.role,
+                    text: t.text.chars().take(chars).collect(),
+                    at: t.at,
+                });
+            }
+        },
+        &mut stats,
+    );
+    ring.into()
+}
+
+/// Where a read of a long log starts: just after the first newline in its
+/// last `TAIL_BYTES`. `None` when the whole log is read.
+fn tail_start(path: &Path) -> Option<u64> {
+    use std::io::{Read, Seek, SeekFrom};
+    let len = fs::metadata(path).ok()?.len();
+    let from = len.checked_sub(TAIL_BYTES)?;
+    let mut file = fs::File::open(path).ok()?;
+    file.seek(SeekFrom::Start(from)).ok()?;
+    let mut buf = [0u8; 8192];
+    let mut at = from;
+    loop {
+        let n = file.read(&mut buf).ok()?;
+        if n == 0 {
+            return Some(len);
+        }
+        if let Some(i) = buf[..n].iter().position(|b| *b == b'\n') {
+            return Some(at + i as u64 + 1);
+        }
+        at += n as u64;
+    }
 }
 
 /// The events of one log as it is read.
