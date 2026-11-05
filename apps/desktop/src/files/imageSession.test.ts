@@ -102,4 +102,44 @@ describe("ImageSession", () => {
     s.onPan(9, 9);
     expect(s.origin()).toEqual({ x: 9, y: 9 });
   });
+
+  describe("zoom limits relative to the fit scale", () => {
+    const big = { w: 8000, h: 6000 };
+    it("gives PanZoom absolute limits: 0.25x to 8x of fit, and always reaching 100% of the pixels", async () => {
+      const { s } = await ready("a.png", big);
+      const fit = s.fit();
+      expect(fit).toBeLessThan(0.1);
+      const { min, max } = s.limits();
+      expect(min).toBeCloseTo(0.25 * fit);
+      expect(max).toBeCloseTo(Math.max(8 * fit, 1));
+      const small = await ready("a.png", { w: 100, h: 50 });
+      expect(small.s.limits()).toEqual({ min: 0.25, max: 8 });
+    });
+    it("a wheel zoom out from fit goes below fit, not up to an absolute 0.25", async () => {
+      const { s } = await ready("a.png", big);
+      const fit = s.fit();
+      s.onZoom({ zoom: fit * 0.8, x: 0, y: 0 });
+      expect(s.get().zoom).toBeCloseTo(0.8);
+      s.onZoom({ zoom: fit * 0.001, x: 0, y: 0 });
+      expect(s.get().zoom).toBe(0.25);
+      s.onZoom({ zoom: 50, x: 0, y: 0 });
+      expect(s.scale()).toBeCloseTo(1);
+    });
+    it("toolbar steps and the wheel agree on the limits", async () => {
+      const { s } = await ready("a.png", big);
+      for (let i = 0; i < 80; i++) s.zoomOut();
+      expect(s.get().zoom).toBe(0.25);
+      for (let i = 0; i < 80; i++) s.zoomIn();
+      expect(s.scale()).toBeCloseTo(s.limits().max);
+      const wheelFloor = s.limits().min / s.fit();
+      expect(wheelFloor).toBeCloseTo(0.25);
+    });
+    it("the 0 key resets like the Fit button", async () => {
+      const { s } = await ready("a.png", big);
+      s.zoomIn();
+      s.onPan(4, 4);
+      s.onReset();
+      expect(s.get()).toMatchObject({ zoom: 1, pan: null });
+    });
+  });
 });
