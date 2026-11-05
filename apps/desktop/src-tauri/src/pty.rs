@@ -893,6 +893,7 @@ pub fn pty_spawn(
         rows,
         move |bytes| {
             crate::ports::feed_output(&feed_app, &feed_id, &feed_cwd, &bytes);
+            crate::term_tail::feed(&feed_app, &feed_id, &bytes);
             // A closed channel means the tab is gone; `pty_kill` follows.
             let _ = out.send(InvokeResponseBody::Raw(bytes));
         },
@@ -945,7 +946,13 @@ pub fn pty_ack(ptys: State<'_, Ptys>, id: String, n: usize) -> Result<(), CmdErr
 
 // Off the main thread: ending a process tree waits on taskkill and the console.
 #[tauri::command(async)]
-pub fn pty_kill(ptys: State<'_, Ptys>, ports: State<'_, crate::ports::Ports>, id: String) {
+pub fn pty_kill(
+    ptys: State<'_, Ptys>,
+    ports: State<'_, crate::ports::Ports>,
+    tails: State<'_, crate::term_tail::TermTails>,
+    id: String,
+) {
+    tails.forget(&id);
     pty_kill_in(&ptys, &ports, &id);
 }
 
@@ -985,6 +992,7 @@ pub fn pty_attach(
             if let Some(cwd) = &feed_cwd {
                 crate::ports::feed_output(&feed_app, &feed_id, cwd, &bytes);
             }
+            crate::term_tail::feed(&feed_app, &feed_id, &bytes);
             let _ = out.send(InvokeResponseBody::Raw(bytes));
         }),
         on_exit: Box::new(move |code| {

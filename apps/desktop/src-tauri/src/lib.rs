@@ -44,7 +44,6 @@ mod ship;
 mod squads;
 mod status;
 mod tasks;
-#[allow(dead_code)] // fed from pty.rs by the next change
 mod term_tail;
 mod terminal_themes;
 mod tray;
@@ -105,6 +104,7 @@ pub fn run() {
         .manage(status::Shown::default())
         .manage(power::Awake::default())
         .manage(ports::Ports::default())
+        .manage(term_tail::TermTails::default())
         .manage(cli_verbs::CliHub::default())
         .manage(orchestration::OrchHub::default())
         .manage(keybindings::LastSent::default())
