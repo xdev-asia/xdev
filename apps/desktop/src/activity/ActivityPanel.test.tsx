@@ -1,10 +1,12 @@
 import { expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import { Button, EmptyState, ListRow, StatusDot, SearchInput, Segmented } from "@xdev-asia/ui";
+import { Button, EmptyState, ListRow, StatusDot, Tooltip, SearchInput, Segmented } from "@xdev-asia/ui";
 import { ContextMenu } from "@/ui/ContextMenu";
 import { translate } from "@/i18n";
 import type { Tab } from "@/workspace/sessions";
-import { ActivityView, optionItems, rowItems, type ActivityViewProps } from "./ActivityPanel";
+import { ActivityFeed } from "./feed";
+import { dismissToast, getToasts, resetToastsForTests } from "@/workspace/toastStore";
+import { ActivityView, UNDO_MS, clearFeedWithUndo, optionItems, rowItems, type ActivityViewProps } from "./ActivityPanel";
 import type { FeedEntry } from "./feed";
 import type { ActivityOptions } from "./options";
 import { activityThreads } from "./threads";
@@ -51,7 +53,7 @@ it("Segmented switches between Threads and Feed", () => {
 it("rows list the threads and a click jumps to the tab", () => {
   const { calls, tree } = view();
   const rows = of(tree, ListRow);
-  expect(rows.map((r) => r.props.title)).toEqual(["T a", "T b"]);
+  expect(rows.map((r) => nodes(r.props.title).find((n) => n.props.className === "act-title")!.props.children)).toEqual(["T a", "T b"]);
   rows[1]!.props.onClick();
   expect(calls.jump).toEqual(["b"]);
 });
@@ -222,4 +224,31 @@ it("the bulk bar counts the selection and acts on it; Escape clears it", () => {
   tree.find((n) => n.props.className === "act-panel")!.props.onKeyDown({ key: "Escape" });
   expect(calls.selection).toHaveLength(2);
   expect(view({ groups }).tree.some((n) => n.props.className === "act-bulk")).toBe(false);
+});
+
+it("the title has a hover card with worktree, state, reason and age", () => {
+  const sources = [{ tab: tab("a", { status: "done", unread: true, unreadReason: "done" }), lastOutput: NOW - 5 * 60_000 }];
+  const { tree } = view({ groups: activityThreads(sources, names, "", off) });
+  const tip = of(nodes(of(tree, ListRow)[0]!.props.title), Tooltip)[0]!;
+  expect(tip.props.content).toBe(["oak", en("workspace.tabs.status.done"), en("attention.reason.done"), "5 min"].join(" · "));
+});
+
+it("clearing the feed shows an Undo toast that brings the entries back", () => {
+  resetToastsForTests();
+  const feed = new ActivityFeed();
+  const tb = { id: "a", worktree: "/a", profileId: "claude", title: null } as Tab;
+  feed.record(tb, "idle", "working", 1);
+  clearFeedWithUndo(feed, en);
+  expect(feed.snapshot()).toEqual([]);
+  const [toast] = getToasts();
+  expect(toast!.text).toBe(en("activity.cleared"));
+  expect(toast!.actions.map((a) => a.label)).toEqual([en("activity.undo")]);
+  expect(UNDO_MS).toBe(6000);
+  toast!.actions[0]!.run();
+  expect(feed.snapshot()).toHaveLength(1);
+  dismissToast(toast!.id);
+  // An empty feed has nothing to undo, so no toast.
+  clearFeedWithUndo(new ActivityFeed(), en);
+  expect(getToasts()).toEqual([]);
+  resetToastsForTests();
 });

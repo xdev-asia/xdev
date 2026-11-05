@@ -3279,6 +3279,5 @@
   "activity.selection.clear": "Bỏ chọn",
   "activity.cleared": "Đã xoá nguồn tin",
   "activity.undo": "Hoàn tác",
-  "activity.hover": "{worktree}, {state}, {reason}, {age}",
   "attention.unread": "Chưa đọc"
 }

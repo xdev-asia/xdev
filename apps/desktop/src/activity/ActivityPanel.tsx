@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
-import { Button, EmptyState, StatusDot, ListRow, SearchInput, Segmented } from "@xdev-asia/ui";
+import { Button, EmptyState, StatusDot, Tooltip, ListRow, SearchInput, Segmented } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
 import { reasonKey } from "@/workspace/attention";
 import { CloseTabsDialog } from "@/workspace/CloseTabsDialog";
@@ -9,6 +9,7 @@ import { profileName } from "@/agents/profileStore";
 import { AgentIcon } from "@/workspace/AgentIcon";
 import { ago } from "@/workspace/ago";
 import { useStatusSettings } from "@/status/statusSettings";
+import { pushToast } from "@/workspace/toastStore";
 import type { Sessions, Tab } from "@/workspace/sessions";
 import type { ActivityFeed, FeedEntry } from "./feed";
 import { clear as clearSelection, range, toggle, type Selection } from "./selection";
@@ -56,6 +57,16 @@ export function optionItems(options: ActivityOptions, onOptions: (o: ActivityOpt
     { id: "compact", labelKey: "activity.option.compact", checked: options.compact, run: () => onOptions({ ...options, compact: !options.compact }) },
   ];
 }
+
+/** Clears the feed and offers to undo it for a few seconds. Nothing to clear shows no toast. */
+export function clearFeedWithUndo(feed: ActivityFeed, t: T): void {
+  const token = feed.clear();
+  if (token === 0) return;
+  pushToast({ id: "activity-cleared", text: t("activity.cleared"), ttlMs: UNDO_MS, actions: [{ label: t("activity.undo"), run: () => void feed.restore(token) }] });
+}
+
+/** How long the undo toast stays. */
+export const UNDO_MS = 6000;
 
 /** The menu of one thread row: go to it, mark it read or unread, close it. */
 export function rowItems(tab: Tab, on: { jump(id: string): void; markRead(ids: string[]): void; markUnread(ids: string[]): void; close(id: string): void }): MenuItem[] {
@@ -118,7 +129,11 @@ function threadRows(groups: ThreadGroup[], now: number, t: T, props: ActivityVie
                 {th.tab.unread && <StatusDot tone="accent" label={t("attention.unread")} />}
               </>
             }
-            title={title}
+            title={
+              <Tooltip content={[th.worktreeName, state, reason, age].filter(Boolean).join(" · ")}>
+                <span className="act-title">{title}</span>
+              </Tooltip>
+            }
             meta={meta}
             onClick={() => onJump(th.tab.id)}
             trailing={
@@ -280,6 +295,7 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
   const [asked, setAsked] = useState(props.ask?.seq);
   const [query, setQuery] = useState("");
   const [options, setOptions] = useState<ActivityOptions>(loadActivityOptions);
+  const { t } = useI18n();
   const statusSettings = useStatusSettings();
   const [selection, setSelection] = useState<{ selected: Selection; anchor: string | null }>({ selected: clearSelection(), anchor: null });
   const [rowMenu, setRowMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
@@ -342,7 +358,7 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
       onJump={props.onJump}
       onMarkRead={(ids) => ids.forEach((id) => sessions.markTabRead(id))}
       onMarkUnread={(ids) => ids.forEach((id) => sessions.markTabUnread(id))}
-      onClearFeed={() => feed.clear()}
+      onClearFeed={() => clearFeedWithUndo(feed, t)}
     />
     {closing && (
       <CloseTabsDialog
