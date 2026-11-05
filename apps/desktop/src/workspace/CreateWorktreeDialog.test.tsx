@@ -292,3 +292,66 @@ it("a failed branch list is reported to the field, which still takes a typed ref
   m.submit();
   expect(m.onCreate.mock.calls[0][2]).toBe("v1.2");
 });
+
+it("a preset fills the sparse folders, and Save as preset stores the typed folders for the repo", async () => {
+  const api = createMockApi({});
+  const repos = [{ ...structuredClone(DEMO_WORKSPACE.repos[0]), sparsePresets: [{ name: "Docs", dirs: ["docs", "apps/desktop"] }] }];
+  const m = mount({ repos, api });
+  const picker = () => m.all().find((n) => n.props["data-sparse-preset"])!;
+  const sparse = () => m.all().find((n) => n.type === "textarea" && n.props.className === "ws-mono")!;
+  const save = () => m.all().find((n) => n.props["data-sparse-save"]);
+  expect(save()).toBeUndefined();
+  picker().props.onChange({ target: { value: "Docs" } });
+  m.redraw();
+  expect(sparse().props.value).toBe("docs\napps/desktop");
+
+  const update = vi.spyOn(api, "repoUpdate");
+  m.setSparse("src\n");
+  const name = () => m.all().find((n) => n.type === "input" && n.props["aria-label"] === en("workspace.create.sparsePresetName"))!;
+  expect(save()!.props.disabled).toBe(true);
+  name().props.onChange({ target: { value: "Source" } });
+  m.redraw();
+  // Enter in the name saves the preset; it does not create.
+  name().props.onKeyDown({ key: "Enter", preventDefault() {} });
+  await flush();
+  m.redraw();
+  expect(m.onCreate).not.toHaveBeenCalled();
+  expect(update).toHaveBeenCalledWith(repos[0].id, { sparsePresets: [{ name: "Docs", dirs: ["docs", "apps/desktop"] }, { name: "Source", dirs: ["src"] }] });
+  expect(m.all().some((n) => n.props.role === "status" && n.props.children === en("workspace.create.sparseSaved"))).toBe(true);
+  expect(picker().props.children[1].map((o: Node) => o.props.value)).toEqual(["Docs", "Source"]);
+  expect(name().props.value).toBe("");
+});
+
+it("Save as preset refuses an unusable name without a call", async () => {
+  const api = createMockApi({});
+  const update = vi.spyOn(api, "repoUpdate");
+  const m = mount({ api });
+  m.setSparse("src");
+  m.all().find((n) => n.type === "input" && n.props["aria-label"] === en("workspace.create.sparsePresetName"))!.props.onChange({ target: { value: "x".repeat(61) } });
+  m.redraw();
+  m.all().find((n) => n.props["data-sparse-save"])!.props.onClick();
+  m.redraw();
+  expect(update).not.toHaveBeenCalled();
+  expect(m.all().some((n) => n.props.role === "alert" && n.props.children === en("workspace.create.sparseSaveBad"))).toBe(true);
+});
+
+it("warns, without blocking Create, when the new branch exists on the remote", async () => {
+  vi.useFakeTimers();
+  try {
+    const namePreview = vi.fn(async (_repo: string, name: string) => ({ branch: name, folder: name, suffixed: false, ...(name === "taken" ? { remote: "origin/taken" } : {}) }));
+    const m = mount({ namePreview });
+    const warning = () => m.all().find((n) => n.props["data-remote-branch"]);
+    m.typeName("taken");
+    await vi.advanceTimersByTimeAsync(2000);
+    m.redraw();
+    expect(warning()?.props.role).toBe("status");
+    expect(warning()?.props.children).toBe(translate("en", "createWorktree.preview.remote", { remote: "origin/taken" }));
+    expect(m.create().props.disabled).toBe(false);
+    m.typeName("free");
+    await vi.advanceTimersByTimeAsync(2000);
+    m.redraw();
+    expect(warning()).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+});

@@ -1,11 +1,14 @@
 import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
 import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
+import { pushDirHistory } from "./settings/worktreeDir";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
-import type { Api, ApiError, Check, MergeBlock, PrComment, PrMergeInfo, Reaction, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, PullPolicy, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, Check, MergeBlock, PrComment, PrMergeInfo, Reaction, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, PullPolicy, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SparsePreset, SidebarItem, VaultView, PrDraft, PrView, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 import { fromWork } from "@/workspace/branchName";
 import { REPO_COLORS, isHexColor } from "@/workspace/repoIdentity";
+import { sparseDirs } from "@/workspace/createSource";
+import { SPARSE_PRESETS_MAX, dedupePresets, presetName } from "@/workspace/sparsePresets";
 
 type WorkspaceApi = Pick<
   Api,
@@ -376,6 +379,14 @@ function sparseOk(dirs: string[]): boolean {
 // Whether `path` is `base` or lies under it.
 function within(path: string, base: string): boolean {
   return path === base || path.startsWith(`${base}/`);
+}
+
+// As `worktree_root_for`: the repo's own folder when changed from `<parent>/wt`, then the global one.
+function worktreeRootOf(repo: RepoView, globalDir: string): string {
+  const fallback = `${repo.path.replace(/[\/][^\/]*$/, "")}/wt`;
+  if (trimPath(repo.worktreeRoot) !== fallback) return trimPath(repo.worktreeRoot);
+  const g = trimPath(globalDir);
+  return g !== "" && isAbsolute(g) && !within(g, repo.path) ? g : fallback;
 }
 
 function folderName(path: string): string {
@@ -758,6 +769,14 @@ export function createMockWorkspace(
       if (typeof color === "string" && !(REPO_COLORS as readonly string[]).includes(color) && !isHexColor(color)) return reject("bad_color", color);
       if (icon?.kind === "emoji" && !oneEmoji(icon.value)) return reject("bad_icon", icon.value);
       if (localIssueCommand !== undefined && new TextEncoder().encode(localIssueCommand).length > ISSUE_COMMAND_MAX) return reject("too_large", "issue command");
+      let presets: SparsePreset[] | undefined = patch.sparsePresets === undefined ? undefined : [];
+      for (const p of patch.sparsePresets ?? []) {
+        if (presetName(p.name) === null) return reject("bad_name", p.name);
+        const dirs = sparseDirs(p.dirs.join("\n"));
+        if (dirs === "bad" || dirs.length === 0) return reject("bad_sparse", p.dirs.join(", "));
+        presets = dedupePresets([...(presets ?? []), { name: p.name, dirs }]);
+      }
+      if (presets !== undefined && presets.length > SPARSE_PRESETS_MAX) return reject("too_large", "sparse presets");
       if (shortName !== undefined) repo.shortName = shortName;
       if (baseRef !== undefined) repo.baseRef = baseRef;
       if (worktreeRoot !== undefined) repo.worktreeRoot = trimPath(worktreeRoot);
@@ -770,6 +789,8 @@ export function createMockWorkspace(
       if (icon !== undefined) repo.icon = icon;
       if (patch.ghAccount !== undefined) repo.ghAccount = patch.ghAccount;
       if (localIssueCommand !== undefined) repo.localIssueCommand = localIssueCommand;
+      if (presets !== undefined && presets.length > 0) repo.sparsePresets = presets;
+      else if (presets !== undefined) delete repo.sparsePresets;
       return structuredClone(repo);
     },
     async ghLogins() {
@@ -864,7 +885,14 @@ export function createMockWorkspace(
       return { ...git };
     },
     async setGitSettings(next) {
-      git = { ...next, branchPrefixCustom: normalizePrefix(next.branchPrefixCustom) };
+      // Settings saved by an older caller may lack the folder fields.
+      const typed = next.worktreeDir ?? "";
+      const worktreeDir = isAbsolute(typed.trim()) ? trimPath(typed) : "";
+      const worktreeDirHistory = pushDirHistory(
+        [...(next.worktreeDirHistory ?? [])].reverse().reduce<string[]>(pushDirHistory, []),
+        worktreeDir,
+      );
+      git = { ...next, branchPrefixCustom: normalizePrefix(next.branchPrefixCustom), worktreeDir, worktreeDirHistory };
       emit(["git"]);
       return { ...git };
     },
@@ -885,9 +913,8 @@ export function createMockWorkspace(
         const typedName = name.trim();
         const folder = slug(typedName === "" ? (existing.split("/").pop() ?? existing) : typedName);
         if (folder === "") return reject("bad_name", typedName);
-        const parentDir = repo.path.replace(/[\/][^\/]*$/, "");
         // `madeBy: "cli"` keeps the branch on remove, as `made_here: false` does in the desktop.
-        const wt = { ...worktree(`${parentDir}/wt/${repo.shortName}-${folder}`, folder, existing, false), madeBy: "cli" as const };
+        const wt = { ...worktree(`${worktreeRootOf(repo, git.worktreeDir)}/${repo.shortName}-${folder}`, folder, existing, false), madeBy: "cli" as const };
         wt.autoName = false;
         if (typedName !== "") wt.title = typedName;
         repo.worktrees.push(wt);
@@ -908,8 +935,7 @@ export function createMockWorkspace(
       const named = nameTyped(repo, leaf, prefixed);
       if (!named) return reject("branch_exists", prefixed(leaf));
       const { branch, folder } = named;
-      const parent = repo.path.replace(/[\/][^\/]*$/, "");
-      const wt = worktree(`${parent}/wt/${repo.shortName}-${folder}`, folder, branch, false);
+      const wt = worktree(`${worktreeRootOf(repo, git.worktreeDir)}/${repo.shortName}-${folder}`, folder, branch, false);
       wt.autoName = typed === "";
       if (typed !== "" && (named.suffixed || /\p{Extended_Pictographic}/u.test(typed))) wt.title = [...typed].slice(0, TITLE_MAX).join("");
       repo.worktrees.push(wt);
@@ -953,7 +979,9 @@ export function createMockWorkspace(
       if (leaf === "" || leaf.includes("..") || leaf.endsWith("/") || leaf.endsWith(".lock")) return reject("bad_name", typed);
       const named = nameTyped(repo, leaf, prefixed);
       if (!named) return reject("branch_exists", prefixed(leaf));
-      return { branch: named.branch, folder: `${repo.shortName}-${named.folder}`, suffixed: named.suffixed };
+      // As the desktop: a remote-tracking branch of the same name, from the last fetch.
+      const remote = REVIEW_BRANCHES.find((b) => b.remote && b.name === `origin/${named.branch}`)?.name;
+      return { branch: named.branch, folder: `${repo.shortName}-${named.folder}`, suffixed: named.suffixed, ...(remote ? { remote } : {}) };
     },
     async worktreePin(path, pinned) {
       const found = findWorktree(path);

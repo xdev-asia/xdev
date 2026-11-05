@@ -384,3 +384,38 @@ it("the repo form has an MCP configs row for that repo's checkout", async () => 
   expect(all.some((n) => n.props["id"] === "repos.mcpConfigs")).toBe(true);
   expect(all.find((n) => n.type === McpConfigs)?.props.repoPath).toBe("/demo/xdev");
 });
+
+it("sparse presets: lists none, adds one on its own save, refuses a bad one, and removes one", async () => {
+  const v = await view();
+  const update = vi.spyOn(v.api, "repoUpdate");
+  expect(v.html()).toContain(en("settings.repos.presets.none"));
+  const add = () => nodes(v.form("demo-xdev")).find((n) => n.props["data-preset-add"])!;
+  expect(add().props.disabled).toBe(true);
+
+  // A name with folders that are not usable is refused here, before any save.
+  v.type("demo-xdev", "presetName", "Docs");
+  v.type("demo-xdev", "presetDirs", "../up");
+  add().props.onClick();
+  await tick();
+  expect(update).not.toHaveBeenCalled();
+  expect(v.html()).toContain(en("settings.repos.presets.bad"));
+
+  // A pending short name stays typed and is not sent with the preset.
+  v.type("demo-xdev", "shortName", "pending");
+  v.type("demo-xdev", "presetDirs", "docs\napps/desktop\n");
+  v.field("demo-xdev", "presetName").props.onKeyDown({ key: "Enter", preventDefault() {} });
+  await tick();
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { sparsePresets: [{ name: "Docs", dirs: ["docs", "apps/desktop"] }] });
+  expect(v.field("demo-xdev", "presetName").props.value).toBe("");
+  expect(v.field("demo-xdev", "shortName").props.value).toBe("pending");
+  expect(v.onChanged).toHaveBeenCalledTimes(1);
+  const row = () => nodes(v.form("demo-xdev")).find((n) => n.props["data-preset"] === "Docs");
+  expect(row()).toBeDefined();
+  expect(v.html()).toContain("docs, apps/desktop");
+
+  nodes(row()!).find((n) => n.type === "button")!.props.onClick();
+  await tick();
+  expect(update).toHaveBeenLastCalledWith("demo-xdev", { sparsePresets: [] });
+  expect(row()).toBeUndefined();
+  expect((await v.api.workspaceList()).find((r) => r.id === "demo-xdev")!.sparsePresets ?? []).toEqual([]);
+});

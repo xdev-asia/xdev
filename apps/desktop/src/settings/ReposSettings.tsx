@@ -11,6 +11,7 @@ import {
   type RepoView,
   type ScriptSource,
   type SetupPolicy,
+  type SparsePreset,
 } from "@/api";
 import { openFile } from "@/files/openFile";
 import { ISSUE_VARS, effectiveIssueCommand, renderIssueCommand } from "@/issues/issueTemplate";
@@ -18,6 +19,8 @@ import { useI18n } from "@/i18n";
 import { RepoBadge } from "@/workspace/RepoBadge";
 import { RemoveRepoDialog } from "@/workspace/RemoveRepoDialog";
 import { removeRepo } from "@/workspace/removeRepo";
+import { sparseDirs } from "@/workspace/createSource";
+import { addPreset, removePreset } from "@/workspace/sparsePresets";
 import { colorField, ghField, iconField, identityPatch, shown, type GhState, type IdentityDraft } from "./repoIdentityForm";
 import { McpConfigs } from "./McpConfigs";
 import { SettingGroup, SettingRow } from "./SettingRow";
@@ -27,7 +30,9 @@ type Field = "shortName" | "baseRef" | "worktreeRoot" | "setupPolicy" | "scriptS
 type TextField = "shortName" | "baseRef" | "worktreeRoot";
 type ScriptField = "localSetup" | "localArchive";
 type Draft = Partial<Record<Field, string>>;
-type Failure = { field: Field | "color" | "icon" | "form"; code: ApiError["code"] };
+type Failure = { field: Field | "color" | "icon" | "presets" | "form"; code: ApiError["code"] };
+// A preset being typed: its name and its folders, one per line.
+type PresetDraft = { name: string; dirs: string; bad?: boolean };
 
 const FIELDS: Field[] = ["shortName", "baseRef", "worktreeRoot", "setupPolicy", "scriptSource", "localSetup", "localArchive", "localIssueCommand"];
 // Scripts keep their own whitespace; the other fields are trimmed.
@@ -72,6 +77,7 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
   const [identity, setIdentity] = useState<Record<string, IdentityDraft>>({});
   const [gh, setGh] = useState<GhState>({ logins: null, error: null, loading: false });
   const [loadError, setLoadError] = useState<ApiError["code"]>();
+  const [presetDrafts, setPresetDrafts] = useState<Record<string, PresetDraft>>({});
 
   function loadHooks(repo: RepoView): void {
     const path = hooksPath(repo);
@@ -168,6 +174,36 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
     }
   }
 
+  // Presets save on their own, apart from the form, so typed fields stay as they are.
+  async function savePresets(repo: RepoView, presets: SparsePreset[]): Promise<boolean> {
+    if (busy !== null) return false;
+    setBusy(repo.id);
+    try {
+      const next = await api.repoUpdate(repo.id, { sparsePresets: presets });
+      setRepos((list) => list?.map((r) => (r.id === repo.id ? next : r)) ?? null);
+      setFailures(({ [repo.id]: _, ...rest }) => rest);
+      props.onChanged();
+      return true;
+    } catch (e) {
+      setFailures((f) => ({ ...f, [repo.id]: { field: "presets", code: toApiError(e).code } }));
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function editPreset(repo: RepoView, next: Partial<PresetDraft>): void {
+    setPresetDrafts((d) => ({ ...d, [repo.id]: { ...(d[repo.id] ?? { name: "", dirs: "" }), ...next, bad: false } }));
+  }
+
+  async function addPresetOf(repo: RepoView): Promise<void> {
+    const draft = presetDrafts[repo.id] ?? { name: "", dirs: "" };
+    const dirs = sparseDirs(draft.dirs);
+    const next = dirs === "bad" ? "bad" : addPreset(repo.sparsePresets ?? [], draft.name, dirs);
+    if (next === "bad") return setPresetDrafts((d) => ({ ...d, [repo.id]: { ...draft, bad: true } }));
+    if (await savePresets(repo, next)) setPresetDrafts(({ [repo.id]: _, ...rest }) => rest);
+  }
+
   // Trusts the hash that is shown. When the file changed since (the call is refused), the new text is shown instead.
   async function trust(repo: RepoView, kind: ScriptKind, script: HookScript): Promise<void> {
     const path = hooksPath(repo);
@@ -194,6 +230,7 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
   }
 
   function message(failure: Failure): string {
+    if (failure.field === "presets" && ["bad_name", "bad_sparse", "too_large"].includes(failure.code)) return t("settings.repos.presets.bad");
     if (failure.code === "bad_name") return t("settings.repos.badName");
     if (failure.code === "too_large") return t("settings.repos.issue.tooLarge");
     if (failure.code === "bad_color") return t("settings.repos.identity.badColor");
@@ -281,6 +318,74 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
           </SettingRow>
         </div>
       </>
+    );
+  }
+
+  // Named folder lists for a sparse checkout: each with Remove, then a name and folders to add one.
+  function presetRows(repo: RepoView): JSX.Element {
+    const presets = repo.sparsePresets ?? [];
+    const draft = presetDrafts[repo.id] ?? { name: "", dirs: "" };
+    const disabled = busy !== null;
+    return (
+      <div className="ws-field" role="group" aria-labelledby={`settings-${repo.id}-presets-label`}>
+        <span id={`settings-${repo.id}-presets-label`}>{t("settings.repos.presets")}</span>
+        {presets.length === 0 ? (
+          <small className="settings-hint">{t("settings.repos.presets.none")}</small>
+        ) : (
+          <ul className="settings-list">
+            {presets.map((p) => (
+              <li key={p.name} className="settings-item" data-preset={p.name}>
+                <div className="settings-item-text">
+                  <strong>{p.name}</strong>
+                  <small className="settings-hint ws-mono">{p.dirs.join(", ")}</small>
+                </div>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={disabled}
+                  aria-label={t("settings.repos.presets.remove", { name: p.name })}
+                  onClick={() => void savePresets(repo, removePreset(presets, p.name))}
+                >
+                  {t("settings.repos.presets.removeShort")}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <label className="ws-field">
+          <span>{t("settings.repos.presets.name")}</span>
+          <input
+            type="text"
+            name="presetName"
+            value={draft.name}
+            spellCheck={false}
+            disabled={disabled}
+            onChange={(e) => editPreset(repo, { name: e.target.value })}
+            onKeyDown={(e) => {
+              // Enter adds the preset instead of saving the whole form.
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              void addPresetOf(repo);
+            }}
+          />
+        </label>
+        <label className="ws-field">
+          <span>{t("settings.repos.presets.dirs")}</span>
+          <textarea name="presetDirs" className="ws-mono" rows={3} value={draft.dirs} spellCheck={false} disabled={disabled} onChange={(e) => editPreset(repo, { dirs: e.target.value })} />
+        </label>
+        {draft.bad && (
+          <small className="error-text settings-error" role="alert">
+            {t("settings.repos.presets.bad")}
+          </small>
+        )}
+        {errorFor(repo, "presets")}
+        <div className="settings-actions settings-actions-start">
+          <button type="button" className="btn-secondary" data-preset-add disabled={disabled || draft.name.trim() === "" || draft.dirs.trim() === ""} onClick={() => void addPresetOf(repo)}>
+            {t("settings.repos.presets.add")}
+          </button>
+        </div>
+        <small className="settings-hint">{t("settings.repos.presets.hint")}</small>
+      </div>
     );
   }
 
@@ -496,6 +601,9 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
                   {t("settings.repos.worktreeRootHint")}
                 </small>
               </div>
+              </SettingRow>
+              <SettingRow id="repos.sparsePresets" filter={filter}>
+                {presetRows(repo)}
               </SettingRow>
             </div>
             <SettingGroup ids={SCRIPT_IDS} filter={filter}>

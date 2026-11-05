@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type IssuesPreset, type CreateRequest, type PrSummary, type MenuAction, type SetupDecision } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type IssuesPreset, type CreateRequest, type PrSummary, type MenuAction, type SetupDecision, type BaseDrift } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
@@ -29,6 +29,7 @@ import { recentFiles } from "@/search/recentFiles";
 import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
+import { baseBehindToast } from "./baseBehind";
 import { addFoldersNotice, addRepoFolders } from "./addFolders";
 import { livePortsByWorktree, stopFromCard } from "./livePorts";
 import type { LivePort } from "./livePorts";
@@ -224,12 +225,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The tab the create dialog was last on, for the next opening of this shell.
   const createTab = useRef<CreateTab>("name");
   // Creates run after the dialog has closed; what a finished one does is read from this render.
-  const afterCreate = useRef<{ api: Api; created(wt: WorktreeView, args: CreateArgs): void; reload(): void; linked(shared: Linked[]): void }>({ api, created() {}, reload() {}, linked() {} });
+  const afterCreate = useRef<{ api: Api; created(wt: WorktreeView, args: CreateArgs): void; reload(): void; linked(shared: Linked[]): void; behind(drift: BaseDrift): void }>({ api, created() {}, reload() {}, linked() {}, behind() {} });
   const [pending] = useState(
     () =>
       new PendingCreates({
         create: (repoId, name, from, request) => afterCreate.current.api.worktreeCreate(repoId, name, from, request).then((made) => {
           afterCreate.current.linked(made.shared);
+          if (made.baseBehind) afterCreate.current.behind(made.baseBehind);
           return made.worktree;
         }),
         // Cancel was the go-ahead; a fresh worktree is clean, so its branch goes too.
@@ -1365,7 +1367,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     await openDefaultAgent(wt.path, extra ? extra.agent : undefined, extra?.prompt);
     select(wt);
   }
-  afterCreate.current = { api, created: (wt, args) => void created(wt, args), reload: () => void load(), linked: reportLinks };
+  afterCreate.current = { api, created: (wt, args) => void created(wt, args), reload: () => void load(), linked: reportLinks, behind: (drift) => void pushToast(baseBehindToast(drift, api, t)) };
 
   // Shared paths that did not link are said once, with the reason; the worktree is made all the same.
   function reportLinks(shared: Linked[]): void {

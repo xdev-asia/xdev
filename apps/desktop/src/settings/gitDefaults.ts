@@ -29,4 +29,7 @@ export const DEFAULT_GIT_SETTINGS: GitSettings = {
     resolveConflicts: { ...DEFAULT_RECIPE, args: [] },
     addressComments: { ...DEFAULT_RECIPE, args: [] },
   },
+  worktreeDir: "",
+  worktreeDirHistory: [],
+  localBaseRefreshTipDismissed: false,
 };
