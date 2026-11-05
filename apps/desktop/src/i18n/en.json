@@ -3279,5 +3279,6 @@
   "activity.selection.clear": "Clear selection",
   "activity.cleared": "Feed cleared",
   "activity.undo": "Undo",
-  "activity.hover": "{worktree}, {state}, {reason}, {age}"
+  "activity.hover": "{worktree}, {state}, {reason}, {age}",
+  "attention.unread": "Unread"
 }

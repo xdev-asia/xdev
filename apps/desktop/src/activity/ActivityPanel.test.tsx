@@ -1,9 +1,10 @@
 import { expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import { Button, EmptyState, ListRow, SearchInput, Segmented } from "@xdev-asia/ui";
+import { Button, EmptyState, ListRow, StatusDot, SearchInput, Segmented } from "@xdev-asia/ui";
+import { ContextMenu } from "@/ui/ContextMenu";
 import { translate } from "@/i18n";
 import type { Tab } from "@/workspace/sessions";
-import { ActivityView, optionItems, type ActivityViewProps } from "./ActivityPanel";
+import { ActivityView, optionItems, rowItems, type ActivityViewProps } from "./ActivityPanel";
 import type { FeedEntry } from "./feed";
 import type { ActivityOptions } from "./options";
 import { activityThreads } from "./threads";
@@ -27,12 +28,12 @@ const tab = (id: string, over: Partial<Tab> = {}) => ({ id, worktree: "/a", prof
 const off: ActivityOptions = { showIdle: false, groupBy: "none", filter: "all", compact: false };
 
 function view(over: Partial<ActivityViewProps> = {}) {
-  const calls = { read: [] as string[][], unread: [] as string[][], tab: [] as string[], query: [] as string[], options: [] as unknown[], menu: [] as unknown[], jump: [] as string[], clear: 0 };
+  const calls = { rowMenu: [] as unknown[], close: [] as string[], read: [] as string[][], unread: [] as string[][], tab: [] as string[], query: [] as string[], options: [] as unknown[], menu: [] as unknown[], jump: [] as string[], clear: 0 };
   const sources = [{ tab: tab("a"), lastOutput: NOW - 1000 }, { tab: tab("b"), lastOutput: NOW - 60_000 }];
   const props: ActivityViewProps = {
-    tab: "threads", query: "", options: off, groups: activityThreads(sources, names, "", off), anyThreads: true, feed: [], names, now: NOW, menuAt: null,
+    tab: "threads", query: "", options: off, groups: activityThreads(sources, names, "", off), anyThreads: true, feed: [], names, now: NOW, menuAt: null, rowMenu: null,
     onTab: (v) => void calls.tab.push(v), onQuery: (v) => void calls.query.push(v), onOptions: (v) => void calls.options.push(v),
-    onMenu: (v) => void calls.menu.push(v), onJump: (v) => void calls.jump.push(v), onClearFeed: () => void calls.clear++, onMarkRead: (v) => void calls.read.push(v), onMarkUnread: (v) => void calls.unread.push(v), ...over,
+    onMenu: (v) => void calls.menu.push(v), onJump: (v) => void calls.jump.push(v), onClearFeed: () => void calls.clear++, onRowMenu: (v) => void calls.rowMenu.push(v), onCloseTab: (v) => void calls.close.push(v), onMarkRead: (v) => void calls.read.push(v), onMarkUnread: (v) => void calls.unread.push(v), ...over,
   };
   return { calls, tree: nodes(ActivityView(props)) };
 }
@@ -137,4 +138,45 @@ it("Mark all read passes the visible ids, and waits for something unread", () =>
 it("the compact option sets data-density on the list", () => {
   expect(view().tree.find((n) => n.props.className === "act-list")!.props["data-density"]).toBeUndefined();
   expect(view({ options: { ...off, compact: true } }).tree.find((n) => n.props.className === "act-list")!.props["data-density"]).toBe("compact");
+});
+
+it("an unread row shows why, with a dot and a toggle that marks it read", () => {
+  const sources = [{ tab: tab("a", { unread: true, unreadReason: "failed" }), lastOutput: NOW - 1000 }, { tab: tab("b"), lastOutput: NOW - 2000 }];
+  const { calls, tree } = view({ groups: activityThreads(sources, names, "", off) });
+  const [a, b] = of(tree, ListRow);
+  expect(a!.props.meta).toMatch(new RegExp("^" + en("attention.reason.failed")));
+  expect(b!.props.meta).not.toContain(en("attention.reason.failed"));
+  const toggles = [a!, b!].map((r) => nodes(r.props.trailing)[0]!);
+  expect(of(nodes(a!.props.leading), StatusDot)).toHaveLength(1);
+  expect(of(nodes(b!.props.leading), StatusDot)).toHaveLength(0);
+  expect(toggles.map((n) => n.props.children)).toEqual([en("attention.markRead"), en("attention.markUnread")]);
+  toggles[0]!.props.onClick();
+  toggles[1]!.props.onClick();
+  expect(calls.read).toEqual([["a"]]);
+  expect(calls.unread).toEqual([["b"]]);
+});
+
+it("the row menu has Jump, Mark read or unread, and Close tab", () => {
+  const calls: string[] = [];
+  const on = { jump: (id: string) => void calls.push("jump " + id), markRead: (ids: string[]) => void calls.push("read " + ids), markUnread: (ids: string[]) => void calls.push("unread " + ids), close: (id: string) => void calls.push("close " + id) };
+  const unread = rowItems(tab("a", { unread: true }), on);
+  expect(unread.map((i) => i.labelKey)).toEqual(["activity.row.jump", "attention.markRead", "", "activity.row.close"]);
+  expect(rowItems(tab("a"), on)[1]!.labelKey).toBe("attention.markUnread");
+  for (const item of unread) item.run?.();
+  expect(calls).toEqual(["jump a", "read a", "close a"]);
+});
+
+it("a right click asks for the row menu, which opens for that tab and closes it", () => {
+  const sources = [{ tab: tab("a"), lastOutput: 1 }];
+  const groups = activityThreads(sources, names, "", off);
+  const { calls, tree } = view({ groups });
+  let prevented = 0;
+  tree.find((n) => n.props.className === "act-item")!.props.onContextMenu({ preventDefault: () => void prevented++, clientX: 5, clientY: 6 });
+  expect(prevented).toBe(1);
+  expect(calls.rowMenu).toEqual([{ x: 5, y: 6, tabId: "a" }]);
+  const open = view({ groups, rowMenu: { x: 5, y: 6, tabId: "a" } });
+  const menu = of(open.tree, ContextMenu)[0]!;
+  expect(menu.props.items.map((i: { id: string }) => i.id)).toEqual(["jump", "markUnread", "sep", "close"]);
+  menu.props.items[3].run();
+  expect(open.calls.close).toEqual(["a"]);
 });

@@ -275,3 +275,23 @@
 .act-list[data-density="compact"] .x-list-row-meta {
   display: none;
 }
+
+.act-item {
+  list-style: none;
+}
+
+.act-toggle {
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.act-toggle:hover,
+.act-toggle:focus-visible {
+  background: var(--bg-3);
+}

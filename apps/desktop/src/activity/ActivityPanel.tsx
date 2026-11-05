@@ -1,13 +1,15 @@
 import { useEffect, useReducer, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
-import { Button, EmptyState, ListRow, SearchInput, Segmented } from "@xdev-asia/ui";
+import { Button, EmptyState, StatusDot, ListRow, SearchInput, Segmented } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
+import { reasonKey } from "@/workspace/attention";
+import { CloseTabsDialog } from "@/workspace/CloseTabsDialog";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import { profileName } from "@/agents/profileStore";
 import { AgentIcon } from "@/workspace/AgentIcon";
 import { ago } from "@/workspace/ago";
 import { useStatusSettings } from "@/status/statusSettings";
-import type { Sessions } from "@/workspace/sessions";
+import type { Sessions, Tab } from "@/workspace/sessions";
 import type { ActivityFeed, FeedEntry } from "./feed";
 import { loadActivityOptions, saveActivityOptions, type ActivityFilter, type ActivityGroupBy, type ActivityOptions } from "./options";
 import { activityThreads, hasAgentThreads, type ThreadGroup, type WorktreeName } from "./threads";
@@ -27,11 +29,15 @@ export interface ActivityViewProps {
   now: number;
   /** Where the options menu is open (screen point), or null. */
   menuAt: { x: number; y: number } | null;
+  /** Where a row's menu is open (screen point) and for which tab, or null. */
+  rowMenu: { x: number; y: number; tabId: string } | null;
   onTab(tab: ActivityTab): void;
   onQuery(query: string): void;
   onOptions(options: ActivityOptions): void;
   onMenu(at: { x: number; y: number } | null): void;
+  onRowMenu(menu: { x: number; y: number; tabId: string } | null): void;
   onJump(tabId: string): void;
+  onCloseTab(tabId: string): void;
   /** Marks these tabs read or unread. */
   onMarkRead(ids: string[]): void;
   onMarkUnread(ids: string[]): void;
@@ -46,6 +52,18 @@ export function optionItems(options: ActivityOptions, onOptions: (o: ActivityOpt
   ];
 }
 
+/** The menu of one thread row: go to it, mark it read or unread, close it. */
+export function rowItems(tab: Tab, on: { jump(id: string): void; markRead(ids: string[]): void; markUnread(ids: string[]): void; close(id: string): void }): MenuItem[] {
+  return [
+    { id: "jump", labelKey: "activity.row.jump", run: () => on.jump(tab.id) },
+    tab.unread
+      ? { id: "markRead", labelKey: "attention.markRead", run: () => on.markRead([tab.id]) }
+      : { id: "markUnread", labelKey: "attention.markUnread", run: () => on.markUnread([tab.id]) },
+    { id: "sep", labelKey: "", kind: "separator" },
+    { id: "close", labelKey: "activity.row.close", danger: true, run: () => on.close(tab.id) },
+  ];
+}
+
 const GROUP_OPTIONS: readonly ActivityGroupBy[] = ["none", "status", "worktree", "agent"];
 const FILTER_OPTIONS: readonly ActivityFilter[] = ["all", "unread"];
 
@@ -56,7 +74,8 @@ function groupLabel(group: ThreadGroup, t: T): string {
   return group.name ?? "";
 }
 
-function threadRows(groups: ThreadGroup[], now: number, t: T, onJump: (id: string) => void): JSX.Element[] {
+function threadRows(groups: ThreadGroup[], now: number, t: T, props: ActivityViewProps): JSX.Element[] {
+  const onJump = props.onJump;
   return groups.flatMap((group) => {
     const rows = group.threads.map((th) => {
       const state = t(`workspace.tabs.status.${th.tab.status}`);
@@ -65,15 +84,35 @@ function threadRows(groups: ThreadGroup[], now: number, t: T, onJump: (id: strin
       const age = th.lastOutput === null ? null : ago(th.lastOutput, now, t);
       // A header already says the status or the worktree, so the row leaves that out.
       const when = [group.kind === "status" ? null : state, age].filter((x): x is string => !!x).join(" · ");
+      const reason = th.tab.unread && th.tab.unreadReason ? t(reasonKey(th.tab.unreadReason)) : null;
+      const meta = [reason, group.kind === "worktree" ? when : [where, when].filter(Boolean).join(" · ")].filter(Boolean).join(" · ");
       return (
-        <ListRow
+        <li
           key={th.tab.id}
-          as="li"
-          leading={<AgentIcon profile={th.tab.profileId} />}
-          title={title}
-          meta={group.kind === "worktree" ? when : [where, when].filter(Boolean).join(" · ")}
-          onClick={() => onJump(th.tab.id)}
-        />
+          className="act-item"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            props.onRowMenu({ x: e.clientX, y: e.clientY, tabId: th.tab.id });
+          }}
+        >
+          <ListRow
+            as="div"
+            leading={
+              <>
+                <AgentIcon profile={th.tab.profileId} />
+                {th.tab.unread && <StatusDot tone="accent" label={t("attention.unread")} />}
+              </>
+            }
+            title={title}
+            meta={meta}
+            onClick={() => onJump(th.tab.id)}
+            trailing={
+              <button type="button" className="act-toggle" onClick={() => (th.tab.unread ? props.onMarkRead([th.tab.id]) : props.onMarkUnread([th.tab.id]))}>
+                {t(th.tab.unread ? "attention.markRead" : "attention.markUnread")}
+              </button>
+            }
+          />
+        </li>
       );
     });
     if (group.kind === "none") return rows;
@@ -106,10 +145,11 @@ export function ActivityView(props: ActivityViewProps): JSX.Element {
   const { tab, query, options } = props;
   const items = optionItems(options, props.onOptions);
   const visible = props.groups.flatMap((g) => g.threads);
+  const rowTab = props.rowMenu ? visible.find((th) => th.tab.id === props.rowMenu?.tabId)?.tab : undefined;
   const anyUnread = visible.some((th) => th.tab.unread);
   const list =
     tab === "threads"
-      ? threadRows(props.groups, props.now, t, props.onJump)
+      ? threadRows(props.groups, props.now, t, props)
       : feedRows(props.feed, props.names, props.now, t, props.onJump);
   const emptyKey =
     tab === "feed" ? "activity.empty.feed" : !props.anyThreads ? "activity.empty.threads" : "activity.empty.match";
@@ -177,6 +217,13 @@ export function ActivityView(props: ActivityViewProps): JSX.Element {
         <ul className="act-list" data-density={options.compact ? "compact" : undefined}>{list}</ul>
       )}
       {props.menuAt && <ContextMenu at={props.menuAt} items={items} onClose={() => props.onMenu(null)} />}
+      {rowTab && props.rowMenu && (
+        <ContextMenu
+          at={props.rowMenu}
+          items={rowItems(rowTab, { jump: props.onJump, markRead: props.onMarkRead, markUnread: props.onMarkUnread, close: props.onCloseTab })}
+          onClose={() => props.onRowMenu(null)}
+        />
+      )}
     </section>
   );
 }
@@ -198,6 +245,8 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
   const [query, setQuery] = useState("");
   const [options, setOptions] = useState<ActivityOptions>(loadActivityOptions);
   const statusSettings = useStatusSettings();
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
+  const [closing, setClosing] = useState<{ id: string; reason: "running" | "pinned" } | null>(null);
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   if (props.ask && props.ask.seq !== asked) {
     setAsked(props.ask.seq);
@@ -219,7 +268,17 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
   const groups = activityThreads(sources, props.names, query, options, statusSettings);
   const anyThreads = hasAgentThreads(sources);
 
+  // Closing a pinned tab or one whose agent is running asks first, as the tab strip does.
+  function askClose(id: string): void {
+    const found = sessions.tab(id);
+    if (!found) return;
+    const reason = found.pinned ? "pinned" : found.agent && found.exitCode === undefined && (found.status === "working" || found.status === "needs-you") ? "running" : null;
+    if (reason) setClosing({ id, reason });
+    else void sessions.close(id);
+  }
+
   return (
+    <>
     <ActivityView
       tab={tab}
       query={query}
@@ -230,6 +289,9 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
       names={props.names}
       now={Date.now()}
       menuAt={menuAt}
+      rowMenu={rowMenu}
+      onRowMenu={setRowMenu}
+      onCloseTab={askClose}
       onTab={setTab}
       onQuery={setQuery}
       onOptions={(o) => {
@@ -242,5 +304,16 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
       onMarkUnread={(ids) => ids.forEach((id) => sessions.markTabUnread(id))}
       onClearFeed={() => feed.clear()}
     />
+    {closing && (
+      <CloseTabsDialog
+        reason={closing.reason}
+        onConfirm={() => {
+          void sessions.close(closing.id);
+          setClosing(null);
+        }}
+        onCancel={() => setClosing(null)}
+      />
+    )}
+    </>
   );
 }
