@@ -237,7 +237,19 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         None => Vec::new(),
     };
     args.extend(profile.args.iter().cloned());
-    let (prompt_argv, prompt_after) = place_prompt(profile.cli, &program, ctx.prompt);
+    let startup: Vec<String> = profile
+        .startup
+        .iter()
+        .map(|line| line.trim().to_owned())
+        .filter(|line| !line.is_empty())
+        .collect();
+    let (prompt_argv, prompt_after) = place_prompt(
+        profile.cli,
+        &program,
+        ctx.prompt,
+        cfg!(windows),
+        !startup.is_empty(),
+    );
 
     let mut env: Vec<(String, OsString)> = profile
         .env
@@ -305,12 +317,7 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         permissions,
         account: account.map(str::to_owned),
         account_source,
-        startup: profile
-            .startup
-            .iter()
-            .map(|line| line.trim().to_owned())
-            .filter(|line| !line.is_empty())
-            .collect(),
+        startup,
         cli: profile.cli,
         hooks: false,
         hook_events: Vec::new(),
@@ -323,10 +330,17 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
 /// their command line) and the text to type once the agent has started
 /// (after-start agents, custom programs, a Windows `.cmd`/`.bat` shim, and a
 /// prompt an argument parser would read as a flag).
+///
+/// On Windows the prompt is never an argument when startup lines wrap the
+/// CLI (`wrapped`) or when it holds a `"`: PowerShell re-quotes arguments
+/// itself and can split one (see `native_arg`), so a prompt could add flags
+/// the policy gate never saw.
 fn place_prompt(
     cli: Option<Cli>,
     program: &Path,
     prompt: Option<&str>,
+    windows: bool,
+    wrapped: bool,
 ) -> (Vec<String>, Option<String>) {
     let Some(prompt) = prompt.filter(|p| !p.trim().is_empty()) else {
         return (Vec::new(), None);
@@ -336,13 +350,14 @@ fn place_prompt(
         return typed();
     };
     let line = prompt_args(cli, prompt);
-    let shim = cfg!(windows)
+    let shim = windows
         && program
             .extension()
             .and_then(OsStr::to_str)
             .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
     let flag_like = spec(cli).prompt == PromptMode::Argv && prompt.starts_with('-');
-    if line.is_empty() || shim || flag_like {
+    let requoted = windows && (wrapped || prompt.contains('"'));
+    if line.is_empty() || shim || flag_like || requoted {
         return typed();
     }
     (line, None)
@@ -408,7 +423,8 @@ fn wrap_powershell(lines: &[String], program: &str, args: &[String]) -> (PathBuf
 ///
 /// Known gap, seen on 5.1: PowerShell decides itself whether to wrap, and an
 /// argument whose whitespace follows an odd number of quotes (`"a b"`) is
-/// passed unwrapped, so the program sees two arguments.
+/// passed unwrapped, so the program sees two arguments. `place_prompt`
+/// keeps a prompt out of it.
 fn native_arg(text: &str) -> String {
     if text.is_empty() {
         return "\"\"".to_owned();
@@ -620,6 +636,51 @@ mod tests {
         assert_eq!(with_prompt.args, without.args);
         assert_eq!(with_prompt.program, without.program);
         assert_eq!(with_prompt.permissions, without.permissions);
+    }
+
+    const INJECTED: &str = "x\" --dangerously-skip-permissions \"y";
+
+    #[test]
+    fn a_quoted_prompt_never_adds_a_flag_on_windows() {
+        let exe = Path::new("C:/n/claude.exe");
+        // Startup lines wrap the CLI in PowerShell: always typed.
+        for prompt in [INJECTED, "fix it"] {
+            let (argv, after) = place_prompt(Some(Cli::Claude), exe, Some(prompt), true, true);
+            assert!(argv.is_empty(), "{prompt}");
+            assert_eq!(after.as_deref(), Some(prompt));
+        }
+        // A direct spawn types a prompt that holds a quote.
+        let (argv, after) = place_prompt(Some(Cli::Claude), exe, Some(INJECTED), true, false);
+        assert!(argv.is_empty());
+        assert_eq!(after.as_deref(), Some(INJECTED));
+        let (argv, _) = place_prompt(Some(Cli::Claude), exe, Some("fix it"), true, false);
+        assert_eq!(argv, ["fix it"]);
+        // Elsewhere the prompt stays one argument, quotes and all.
+        let bin = Path::new("/bin/claude");
+        let (argv, _) = place_prompt(Some(Cli::Claude), bin, Some(INJECTED), false, true);
+        assert_eq!(argv, [INJECTED]);
+    }
+
+    #[test]
+    fn a_quoted_prompt_with_startup_is_never_its_own_flag() {
+        let mut c = builtin(Cli::Claude);
+        c.startup = vec!["cd src".into()];
+        let p = with(c);
+        let l = run_prompt(&p, "claude", "/bin/claude", INJECTED);
+        let (_, args) = l.command();
+        assert!(!args.iter().any(|a| a == "--dangerously-skip-permissions"));
+        if cfg!(windows) {
+            assert!(l.prompt_argv.is_empty());
+            assert_eq!(l.prompt_after.as_deref(), Some(INJECTED));
+            assert!(!decode_powershell(&args).contains("dangerously"));
+        } else {
+            assert_eq!(l.prompt_argv, [INJECTED]);
+        }
+        // Without startup lines the prompt is one whole argument, or typed.
+        let l = run_prompt(&Profiles::default(), "claude", "/bin/claude", INJECTED);
+        let (_, args) = l.command();
+        assert!(!args.iter().any(|a| a == "--dangerously-skip-permissions"));
+        assert!(l.prompt_argv.is_empty() || l.prompt_argv == [INJECTED]);
     }
 
     #[cfg(windows)]
