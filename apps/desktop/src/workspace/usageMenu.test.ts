@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { USAGE_DEFAULTS } from "@/settings/usageDefaults";
-import { EMPTY_CTA_KEY, loadEmptyCtaHidden, saveEmptyCtaHidden, usageMenuItems } from "./usageMenu";
+import { EMPTY_CTA_KEY, loadEmptyCtaHidden, saveEmptyCtaHidden, showEmptyCta, usageMenuItems } from "./usageMenu";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -37,4 +37,14 @@ it("the hidden flag is false when missing, garbage or unreadable", () => {
   vi.stubGlobal("localStorage", { getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); } });
   expect(loadEmptyCtaHidden()).toBe(false);
   expect(() => saveEmptyCtaHidden(true)).not.toThrow();
+});
+
+it("the set-up link needs both reads done, no account and no hide flag", () => {
+  const none = { reservePercent: 30, accounts: [], active: {} } as never;
+  const some = { reservePercent: 30, accounts: [{ name: "a" }], active: {} } as never;
+  expect(showEmptyCta([], none, false)).toBe(true);
+  expect(showEmptyCta([], none, true)).toBe(false);
+  expect(showEmptyCta(null, none, false)).toBe(false);
+  expect(showEmptyCta([], null, false)).toBe(false);
+  expect(showEmptyCta([], some, false)).toBe(false);
 });

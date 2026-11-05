@@ -250,3 +250,28 @@ it("an open menu renders after the popover", () => {
   const html = render([account("a", [["five_hour", 1]])], { onToggleUsage() {}, usageOpen: true, usagePopover: "POPOVER", menu: "MENU" });
   expect(html.indexOf("MENU")).toBeGreaterThan(html.indexOf("POPOVER"));
 });
+
+it("emptyCta shows the set-up link with its hint; click and right-click reach the callbacks", () => {
+  const onSetupUsage = vi.fn();
+  const onEmptyMenu = vi.fn();
+  const html = render([], { emptyCta: true, onSetupUsage });
+  expect(html).toMatch(/<button type="button" class="ws-footer-link" data-action="usage-setup" title="Add a Claude or Codex account[^"]*"/);
+  expect(html).toContain(en("usage.empty.cta"));
+  const link = findAction(tree([], { emptyCta: true, onSetupUsage, onEmptyMenu }), "usage-setup")!;
+  (link.props!.onClick as () => void)();
+  expect(onSetupUsage).toHaveBeenCalled();
+  const preventDefault = vi.fn();
+  (link.props!.onContextMenu as (e: unknown) => void)({ preventDefault, clientX: 3, clientY: 4 });
+  expect(onEmptyMenu).toHaveBeenCalledWith({ x: 3, y: 4 });
+  expect(preventDefault).toHaveBeenCalled();
+});
+
+it("no link without emptyCta or when meters show", () => {
+  expect(render([])).not.toContain("usage-setup");
+  expect(render([account("a", [["five_hour", 1]])], { emptyCta: true })).not.toContain("usage-setup");
+});
+
+it("the live footer shows no link before the accounts are read", () => {
+  live.quota = [];
+  expect(renderLive()).not.toContain("usage-setup");
+});

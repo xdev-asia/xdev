@@ -1,4 +1,4 @@
-import type { Provider, UsageSettings } from "@/api";
+import type { Accounts, Provider, Quota, UsageSettings } from "@/api";
 import type { MenuItem } from "@/ui/ContextMenu";
 
 export const EMPTY_CTA_KEY = "xdev.usage.emptyCta.hidden";
@@ -35,4 +35,9 @@ export function saveEmptyCtaHidden(hidden: boolean): void {
   } catch {
     // The choice only fails to survive a restart.
   }
+}
+
+/** The set-up link shows only when nothing is set up: no account, and both reads finished. */
+export function showEmptyCta(quota: Quota[] | null, accounts: Accounts | null, hidden: boolean): boolean {
+  return !hidden && quota !== null && quota.length === 0 && accounts !== null && accounts.accounts.length === 0;
 }

@@ -11,7 +11,7 @@ import { KeepAwakeItem } from "./KeepAwakeItem";
 import { UsagePopover } from "./UsagePopover";
 import { pushToast } from "./toastStore";
 import { footerQuota, shownPercent } from "./usageModel";
-import { usageMenuItems } from "./usageMenu";
+import { loadEmptyCtaHidden, saveEmptyCtaHidden, showEmptyCta, usageMenuItems } from "./usageMenu";
 
 /** A meter above this share of its window shows in the warn colour. */
 export const WARN_PERCENT = 80;
@@ -102,6 +102,11 @@ export function WorkspaceFooter(props: {
   usageButtonRef?: Ref<HTMLButtonElement>;
   /** Right-click on the meters; `at` is where the menu opens. */
   onMetersMenu?: (at: { x: number; y: number }) => void;
+  /** No account exists yet: shows a link to set up the meters in place of them. */
+  emptyCta?: boolean;
+  onSetupUsage?: () => void;
+  /** Right-click on the set-up link. */
+  onEmptyMenu?: (at: { x: number; y: number }) => void;
   /** The context menu, drawn after the popover. */
   menu?: ReactNode;
   /** Which of xDev's own items show (Settings > Appearance); all by default. The update notice and the meters are not items. */
@@ -120,6 +125,12 @@ export function WorkspaceFooter(props: {
     ? (e: { preventDefault(): void; clientX: number; clientY: number }) => {
         e.preventDefault();
         props.onMetersMenu?.({ x: e.clientX, y: e.clientY });
+      }
+    : undefined;
+  const onEmptyContext = props.onEmptyMenu
+    ? (e: { preventDefault(): void; clientX: number; clientY: number }) => {
+        e.preventDefault();
+        props.onEmptyMenu?.({ x: e.clientX, y: e.clientY });
       }
     : undefined;
   return (
@@ -150,6 +161,11 @@ export function WorkspaceFooter(props: {
             ))}
           </span>
         ))}
+      {meters.length === 0 && props.emptyCta && (
+        <button type="button" className="ws-footer-link" data-action="usage-setup" title={t("usage.empty.hint")} onClick={props.onSetupUsage} onContextMenu={onEmptyContext}>
+          {t("usage.empty.cta")}
+        </button>
+      )}
       {props.usageOpen && props.usagePopover}
       {props.menu}
       {items.tokenUsage && props.onOpenUsage && (
@@ -202,7 +218,8 @@ export function LiveWorkspaceFooter(props: {
   const update = useUpdate(api);
   const [open, setOpen] = useState(false);
   const [accounts, setAccounts] = useState<Accounts | null>(null);
-  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number; kind: "meters" | "empty" } | null>(null);
+  const [ctaHidden, setCtaHidden] = useState(loadEmptyCtaHidden);
   const button = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(false);
 
@@ -236,6 +253,8 @@ export function LiveWorkspaceFooter(props: {
   }, [hidden]);
 
   const close = () => setOpen(false);
+  // Only when nothing is set up at all: not while loading, and not when the switches hide the meters.
+  const emptyCta = showEmptyCta(quota, accounts, ctaHidden);
   const put = (next: UsageSettings) =>
     void api.usageSettingsPut(next).then(setUsageSettings, () => pushToast({ text: t("usage.menu.failed") }));
   const popover = (
@@ -270,20 +289,27 @@ export function LiveWorkspaceFooter(props: {
       usageOpen={open}
       usagePopover={popover}
       usageButtonRef={button}
-      onMetersMenu={setMenuAt}
+      onMetersMenu={(at) => setMenuAt({ ...at, kind: "meters" })}
+      emptyCta={emptyCta}
+      onSetupUsage={onManageAccounts}
+      onEmptyMenu={(at) => setMenuAt({ ...at, kind: "empty" })}
       menu={
         menuAt && (
           <ContextMenu
             at={menuAt}
-            items={usageMenuItems(
-              usage,
-              put,
-              onUsageSettings &&
-                (() => {
-                  setMenuAt(null);
-                  onUsageSettings();
-                }),
-            )}
+            items={
+              menuAt.kind === "empty"
+                ? [{ id: "hide", labelKey: "usage.empty.hide", run: () => { saveEmptyCtaHidden(true); setCtaHidden(true); } }]
+                : usageMenuItems(
+                    usage,
+                    put,
+                    onUsageSettings &&
+                      (() => {
+                        setMenuAt(null);
+                        onUsageSettings();
+                      }),
+                  )
+            }
             onClose={() => setMenuAt(null)}
           />
         )
