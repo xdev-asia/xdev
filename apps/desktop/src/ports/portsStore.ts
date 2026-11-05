@@ -32,6 +32,11 @@ export class PortsStore {
   private failures = 0;
   private listeners = new Set<() => void>();
   private version = 0;
+  /** Counts finished stops; a scan that started before the last one finished is stale. */
+  private stops = 0;
+  /** The `stops` count when `running` started. */
+  private runningSince = 0;
+  private disposed = false;
 
   constructor(private readonly api: Api) {}
 
@@ -97,27 +102,39 @@ export class PortsStore {
     });
   }
 
-  /** One scan; whoever asks while one runs gets the same promise. */
+  /**
+   * One scan; whoever asks while one runs gets the same promise, unless a stop finished since it
+   * started. The result of a scan that started before a stop finished is dropped: the list the
+   * stop returned is newer.
+   */
   refresh(): Promise<void> {
-    if (this.running) return this.running;
+    if (this.running && this.runningSince === this.stops) return this.running;
+    const since = this.stops;
+    const current = () => since === this.stops;
     this.current = { ...this.current, loading: true };
     this.bump();
     const run = this.api.portsScan(this.worktrees, true).then(
       (scan) => {
+        if (!current()) return;
         this.failures = 0;
         this.current = { scan, error: null, loading: false };
       },
       (e: unknown) => {
+        if (!current()) return;
         this.failures += 1;
         const keep = this.failures <= 1 ? this.current.scan : null;
         this.current = { scan: keep, error: toApiError(e), loading: false };
       },
     );
-    this.running = run.finally(() => {
+    const shared: Promise<void> = run.finally(() => {
+      if (this.running !== shared) return;
       this.running = null;
+      if (this.current.loading) this.current = { ...this.current, loading: false };
       this.bump();
     });
-    return this.running;
+    this.running = shared;
+    this.runningSince = since;
+    return shared;
   }
 
   /**
@@ -131,11 +148,13 @@ export class PortsStore {
       this.current = { scan, error: null, loading: false };
       this.bump();
     } finally {
+      this.stops += 1;
       this.later(AFTER_STOP_MS, () => this.refresh());
     }
   }
 
   dispose(): void {
+    this.disposed = true;
     this.wanted.clear();
     this.apply(false);
     for (const t of this.timers) clearTimeout(t);
@@ -143,6 +162,7 @@ export class PortsStore {
   }
 
   private later(ms: number, fn: () => void): void {
+    if (this.disposed) return;
     const t = setTimeout(() => {
       this.timers.delete(t);
       void fn();

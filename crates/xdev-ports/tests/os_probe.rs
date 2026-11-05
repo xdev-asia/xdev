@@ -23,7 +23,8 @@ fn the_probe_lists_a_socket_this_test_opened() {
 }
 
 #[test]
-fn terminate_ends_a_child_and_forgives_one_that_is_gone() {
+// No second signal after `wait()`: the pid is free again and may name another process.
+fn terminate_ends_a_child() {
     let mut child = if cfg!(windows) {
         let mut c = Command::new("ping");
         c.args(["-n", "30", "127.0.0.1"]);
@@ -39,7 +40,6 @@ fn terminate_ends_a_child_and_forgives_one_that_is_gone() {
     let pid = child.id();
     OsProbe.terminate(pid).unwrap();
     child.wait().unwrap();
-    OsProbe.terminate(pid).unwrap();
 }
 
 /// Which part of the tree this test binary plays when it runs itself.
