@@ -310,9 +310,12 @@ impl<P: Probe> Scanner<P> {
     /// start time the scan saw, so a reused pid is never hit. `protected`
     /// pids are refused.
     ///
-    /// The pid and its tree get TERM, then KILL when the port is still open
-    /// after the grace time. Succeeds only once a read of the live table
-    /// shows nothing listening on the port, and returns the list after it.
+    /// The tree under the pid is read once, as (pid, start time), before any
+    /// signal. Each of its pids gets TERM; when the port is still open after
+    /// the grace time, KILL goes only to the pids that still have the start
+    /// time the read saw, and not at all where TERM already was the hard
+    /// stop (Windows). Succeeds only once a read of the live table shows
+    /// nothing listening on the port, and returns the list after it.
     pub fn stop(
         &self,
         id: &str,
@@ -352,17 +355,41 @@ impl<P: Probe> Scanner<P> {
             .get(&pid)
             .cloned()
             .ok_or(StopError::Changed)?;
-        self.still_the_same(pid, port.port, &seen)?;
+        let live = self.still_the_same(pid, port.port, &seen)?;
+        // The tree as it stands before any signal: a child whose parent ends is
+        // moved under another parent and could not be found from the pid after.
+        let tree: Vec<(u32, Identity)> = tree_of(pid, &live)
+            .into_iter()
+            .filter(|p| !protected.contains(&p.pid))
+            .map(|p| (p.pid, Identity::of(p)))
+            .collect();
         let number = port.port;
-        self.probe
-            .terminate(pid)
-            .map_err(|e| StopError::Failed(e.to_string()))?;
+        let mut failed = None;
+        for (at, (p, _)) in tree.iter().enumerate() {
+            match self.probe.terminate(*p) {
+                Ok(()) => {}
+                // The listener itself: nothing was signalled yet.
+                Err(e) if at == 0 => return Err(StopError::Failed(e.to_string())),
+                Err(e) => {
+                    failed.get_or_insert(e.to_string());
+                }
+            }
+        }
         if !self.closes(number) {
-            self.probe
-                .kill(pid)
-                .map_err(|e| StopError::Failed(e.to_string()))?;
+            // Where TERM already was the hard stop, a second one could only
+            // hit a pid the OS gave to someone else since.
+            if !self.probe.terminate_is_final() {
+                let now = self.probe.processes().map_err(|_| StopError::Unavailable)?;
+                for (p, was) in &tree {
+                    if same_process(*p, was, &now)
+                        && let Err(e) = self.probe.kill(*p)
+                    {
+                        failed.get_or_insert(e.to_string());
+                    }
+                }
+            }
             if !self.closes(number) {
-                return Err(StopError::StillListening);
+                return Err(failed.map_or(StopError::StillListening, StopError::Failed));
             }
         }
         Ok(self.scan(roots, worktrees, urls, true))
@@ -387,7 +414,8 @@ impl<P: Probe> Scanner<P> {
     }
 
     /// Reads the live tables: `pid` still runs as `seen` and listens on `port`.
-    fn still_the_same(&self, pid: u32, port: u16, seen: &Identity) -> Result<(), StopError> {
+    /// Returns the process table it read.
+    fn still_the_same(&self, pid: u32, port: u16, seen: &Identity) -> Result<Vec<Proc>, StopError> {
         let listeners: Vec<Listener> = self
             .probe
             .listeners(SCAN_TIMEOUT)
@@ -400,16 +428,47 @@ impl<P: Probe> Scanner<P> {
         }
         let procs = self.probe.processes().map_err(|_| StopError::Unavailable)?;
         match procs.iter().find(|p| p.pid == pid) {
-            Some(now) if Identity::of(now) == *seen => Ok(()),
+            Some(now) if Identity::of(now) == *seen => Ok(procs),
             _ => Err(StopError::Changed),
         }
     }
 }
 
+/// Whether `pid` in `procs` is still the process `was` describes. An unknown
+/// start time cannot tell a reused pid apart, so it never matches.
+fn same_process(pid: u32, was: &Identity, procs: &[Proc]) -> bool {
+    was.start.is_some()
+        && procs
+            .iter()
+            .any(|p| p.pid == pid && Identity::of(p) == *was)
+}
+
+/// `pid` and every process under it in `procs`, parents before children.
+fn tree_of(pid: u32, procs: &[Proc]) -> Vec<&Proc> {
+    let Some(top) = procs.iter().find(|p| p.pid == pid) else {
+        return Vec::new();
+    };
+    let mut out = vec![top];
+    let mut i = 0;
+    while i < out.len() {
+        let parent = out[i];
+        for p in procs {
+            if p.ppid == Some(parent.pid)
+                && p.pid != parent.pid
+                && !out.iter().any(|o| o.pid == p.pid)
+            {
+                out.push(p);
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Arc, OnceLock};
 
     use super::*;
@@ -447,6 +506,12 @@ mod tests {
         hard: Arc<Mutex<Vec<u32>>>,
         /// 0 ends on TERM, 1 only on KILL, 2 never.
         stubborn: Arc<AtomicUsize>,
+        /// Pids that ignore TERM whatever `stubborn` says.
+        deaf: Arc<Mutex<Vec<u32>>>,
+        /// The process table from the first TERM on, when set.
+        after_term: Arc<Mutex<Option<Vec<Proc>>>>,
+        /// TERM is already the hard stop, as on Windows.
+        forced: Arc<AtomicBool>,
     }
 
     impl Fake {
@@ -483,10 +548,19 @@ mod tests {
         }
         fn terminate(&self, pid: u32) -> Result<(), ScanError> {
             self.killed.lock().unwrap().push(pid);
-            if self.stubborn.load(Ordering::SeqCst) == 0 {
+            if let Some(table) = self.after_term.lock().unwrap().take() {
+                *self.procs.lock().unwrap() = table;
+                *self.later.lock().unwrap() = None;
+            }
+            if self.stubborn.load(Ordering::SeqCst) == 0
+                && !self.deaf.lock().unwrap().contains(&pid)
+            {
                 self.end(pid);
             }
             Ok(())
+        }
+        fn terminate_is_final(&self) -> bool {
+            self.forced.load(Ordering::SeqCst)
         }
         fn kill(&self, pid: u32) -> Result<(), ScanError> {
             self.hard.lock().unwrap().push(pid);
@@ -868,6 +942,112 @@ mod tests {
             .unwrap_err();
         assert_eq!(err, StopError::NotStartedByApp);
         assert!(f.killed.lock().unwrap().is_empty());
+    }
+
+    fn child(pid: u32, ppid: u32) -> Proc {
+        Proc {
+            ppid: Some(ppid),
+            ..proc(pid, "/w/a")
+        }
+    }
+
+    #[test]
+    fn the_tree_holds_every_descendant_once_and_survives_a_loop() {
+        let p = |pid: u32, ppid: Option<u32>| Proc {
+            ppid,
+            ..proc(pid, "/")
+        };
+        let procs = [
+            p(1, None),
+            p(10, Some(1)),
+            p(11, Some(10)),
+            p(12, Some(10)),
+            p(13, Some(12)),
+            p(20, Some(1)),
+            // A loop must not hang the walk.
+            p(30, Some(31)),
+            p(31, Some(30)),
+        ];
+        let pids = |pid| {
+            tree_of(pid, &procs)
+                .iter()
+                .map(|p| p.pid)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(pids(10), vec![10, 11, 12, 13]);
+        assert_eq!(pids(30), vec![30, 31]);
+        assert!(pids(99).is_empty());
+    }
+
+    #[test]
+    fn stop_signals_the_whole_tree_read_before_the_first_signal() {
+        let (s, f, urls, wts) = with_port("/w/a");
+        f.procs
+            .lock()
+            .unwrap()
+            .extend([child(8, 7), child(9, 8), proc(10, "/w/a")]);
+        s.stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[])
+            .unwrap();
+        assert_eq!(*f.killed.lock().unwrap(), vec![7, 8, 9]);
+    }
+
+    #[test]
+    fn kill_skips_a_pid_of_the_tree_that_was_reused_meanwhile() {
+        let (s, f, urls, wts) = with_port("/w/a");
+        f.procs.lock().unwrap().push(child(8, 7));
+        f.stubborn.store(1, Ordering::SeqCst);
+        // After TERM, pid 8 ended and an unrelated process took the pid.
+        let mut reused = proc(8, "/elsewhere");
+        reused.name = "postgres".into();
+        reused.start = Some(5_000);
+        *f.after_term.lock().unwrap() = Some(vec![proc(7, "/w/a"), reused]);
+        s.stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[])
+            .unwrap();
+        assert_eq!(*f.killed.lock().unwrap(), vec![7, 8]);
+        assert_eq!(*f.hard.lock().unwrap(), vec![7]);
+    }
+
+    #[test]
+    fn kill_reaches_a_child_that_was_moved_under_init_and_still_listens() {
+        let (s, f, urls, wts) = setup();
+        // A worker shares the port with the server it was forked from.
+        f.queue(Ok(vec![
+            listen(5173, 7),
+            Listener {
+                bind_host: "::1".into(),
+                port: 5173,
+                pid: Some(8),
+            },
+        ]));
+        *f.procs.lock().unwrap() = vec![proc(7, "/w/a"), child(8, 7)];
+        f.deaf.lock().unwrap().push(8);
+        // TERM ends the server; the worker now hangs under init.
+        *f.after_term.lock().unwrap() = Some(vec![child(8, 1)]);
+        s.stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[])
+            .unwrap();
+        assert_eq!(*f.hard.lock().unwrap(), vec![8]);
+    }
+
+    #[test]
+    fn a_forced_term_is_not_followed_by_a_second_kill() {
+        let (s, f, urls, wts) = with_port("/w/a");
+        f.forced.store(true, Ordering::SeqCst);
+        f.stubborn.store(1, Ordering::SeqCst);
+        let err = s
+            .stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[])
+            .unwrap_err();
+        assert_eq!(err, StopError::StillListening);
+        assert_eq!(*f.killed.lock().unwrap(), vec![7]);
+        assert!(f.hard.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_protected_pid_in_the_tree_is_never_signalled() {
+        let (s, f, urls, wts) = with_port("/w/a");
+        f.procs.lock().unwrap().push(child(8, 7));
+        s.stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[8])
+            .unwrap();
+        assert_eq!(*f.killed.lock().unwrap(), vec![7]);
     }
 
     #[test]

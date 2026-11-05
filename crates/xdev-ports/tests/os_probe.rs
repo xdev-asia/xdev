@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use xdev_ports::urls::AdvertisedUrls;
-use xdev_ports::{OsProbe, Probe, PtyRoot, Scanner, StopConsent};
+use xdev_ports::{OsProbe, Probe, Proc, PtyRoot, Scanner, StopConsent};
 
 #[test]
 fn the_probe_lists_a_socket_this_test_opened() {
@@ -81,12 +81,33 @@ fn tree_helper() {
     }
 }
 
-/// Ends the whole tree when the test ends, even by a panic.
+/// Ends the whole tree when the test ends, even by a panic. A signal stops
+/// one pid, so the tree this test started is walked here, children only
+/// through a parent that started no later than them.
 struct Tree(Child);
 
 impl Drop for Tree {
     fn drop(&mut self) {
-        let _ = OsProbe.kill(self.0.id());
+        let procs = OsProbe.processes().unwrap_or_default();
+        let mut tree: Vec<&Proc> = procs.iter().filter(|p| p.pid == self.0.id()).collect();
+        let mut i = 0;
+        while i < tree.len() {
+            let parent = tree[i];
+            for p in &procs {
+                let started_after = matches!((parent.start, p.start), (Some(a), Some(b)) if a <= b);
+                if p.ppid == Some(parent.pid)
+                    && started_after
+                    && !tree.iter().any(|t| t.pid == p.pid)
+                {
+                    tree.push(p);
+                }
+            }
+            i += 1;
+        }
+        for p in tree.iter().skip(1) {
+            let _ = OsProbe.kill(p.pid);
+        }
+        let _ = self.0.kill();
         let _ = self.0.wait();
     }
 }
