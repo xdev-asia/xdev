@@ -1057,8 +1057,10 @@ mod tests {
 
     #[test]
     fn link_rel_expands_the_home_folder() {
-        let (tmp, wt) = link_tree();
-        let home = tmp.path();
+        let (_tmp, wt) = link_tree();
+        // The worktree's parent, not `tmp.path()`: on a runner that one may
+        // be the 8.3 short name, which is not the long form of `wt`.
+        let home = Path::new(&wt).parent().unwrap();
         assert_eq!(
             link_rel(&wt, "~/wt/src/a.ts", Some(home)).as_deref(),
             Some("src/a.ts")
