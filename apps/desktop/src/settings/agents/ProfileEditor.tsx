@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { JSX } from "react";
 import type { Account, ApiError, Approvals, Profile, ProfileView } from "@/api";
 import { useI18n } from "@/i18n";
-import { accountsFor, draftCustomArgs, draftFlags, draftOf, profileOf, type Draft } from "./agentForm";
+import { accountsFor, draftCustomArgs, draftFlags, draftMode, draftOf, profileOf, type Draft } from "./agentForm";
 
 /**
  * The inline editor of one profile; `view` is null for a new custom profile.
@@ -37,6 +37,7 @@ export function ProfileEditor(props: {
   // Read from the draft, so the tag and hint follow the fields as they are typed.
   const customArgs = builtin && draftCustomArgs(draft, props.view);
   const flags = builtin ? draftFlags(draft, props.view, props.approvals).join(" ") : "";
+  const approveForMe = flags !== "" && draftMode(draft, props.view, props.approvals) === "auto";
 
   const set = (key: keyof Draft) => (e: { target: { value: string } }) => {
     const value = e.target.value;
@@ -94,6 +95,11 @@ export function ProfileEditor(props: {
               ))}
             </select>
           </label>
+        )}
+        {approveForMe && (
+          <small className="settings-hint" data-field="autoHint">
+            {t("settings.agents.perm.autoHint")}
+          </small>
         )}
         {customArgs && <small className="settings-hint">{t("settings.agents.perm.customHint")}</small>}
         {flags !== "" && (

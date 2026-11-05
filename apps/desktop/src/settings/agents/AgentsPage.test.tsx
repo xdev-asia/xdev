@@ -618,6 +618,18 @@ it("the_flag_tag_follows_the_draft_not_the_saved_profile", async () => {
   expect(ed.draw().some((n) => n.props.children === en("settings.agents.perm.customHint"))).toBe(true);
 });
 
+it("choosing_approve_for_me_shows_what_it_does", async () => {
+  const p = await page();
+  p.button(p.row("claude"), en("settings.agents.edit")).props.onClick();
+  const ed = drawEditor(p.editor()!);
+  const hint = () => ed.draw().find((n) => n.props["data-field"] === "autoHint");
+  expect(hint()).toBeUndefined();
+  ed.type("permissions", "auto");
+  expect(hint()!.props.children).toBe(en("settings.agents.perm.autoHint"));
+  ed.type("permissions", "skip");
+  expect(hint()).toBeUndefined();
+});
+
 it("a_profile_with_its_own_launch_arguments_shows_the_custom_hint_and_no_flag_tag", async () => {
   const p = await page(async (api) => {
     const claude = (await api.profiles()).profiles.find((v) => v.profile.id === "claude")!.profile;
