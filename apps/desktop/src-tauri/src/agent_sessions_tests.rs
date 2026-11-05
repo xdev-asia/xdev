@@ -357,6 +357,16 @@ fn a_refresh_reads_the_logs_and_saves_the_index() {
 }
 
 /// 2030-01-01T00:00:00Z in unix ms.
+fn set_mtime(path: &Path, ms: i64) {
+    let at = std::time::UNIX_EPOCH + Duration::from_millis(u64::try_from(ms).unwrap());
+    fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(at)
+        .unwrap();
+}
+
 const JAN_2030: i64 = 1_893_456_000_000;
 const DAY: i64 = 24 * 60 * 60 * 1000;
 
@@ -388,6 +398,9 @@ fn a_narrower_window_prunes_on_the_next_refresh() {
     // Ten days and one day before the "now" below.
     fs::write(logs.join("old.jsonl"), line("old", "2030-01-01T00:00:00Z")).unwrap();
     fs::write(logs.join("new.jsonl"), line("new", "2030-01-10T00:00:00Z")).unwrap();
+    // Last written when their lines were, so the window does not skip them.
+    set_mtime(&logs.join("old.jsonl"), JAN_2030);
+    set_mtime(&logs.join("new.jsonl"), JAN_2030 + 9 * DAY);
     let homes = || vec![claude_home(&root.join("user"))];
     let q = query(SessionScope::All);
     let now = JAN_2030 + 10 * DAY;
@@ -675,17 +688,125 @@ fn a_batched_first_build_stores_what_one_batch_stores() {
     let mut metadata = SessionIndex::load(&data);
     metadata.refresh(&homes);
     let keep: HashSet<String> = metadata.list().iter().map(|s| s.key.clone()).collect();
-    refresh_text_in(&one, &homes, &keep, 10_000).unwrap();
-    refresh_text_in(&many, &homes, &keep, 1).unwrap();
+    refresh_text_in(&one, &homes, &keep, None, 10_000).unwrap();
+    refresh_text_in(&many, &homes, &keep, None, 1).unwrap();
     let count = |p: &Path| SessionTextIndex::open(p).unwrap().counts().unwrap();
     assert_eq!(count(&one), (4, 5));
     assert_eq!(count(&many), count(&one));
     // Marks were saved per batch: a second pass reads nothing new.
     let before = SessionTextIndex::open(&many).unwrap().marks().unwrap();
-    refresh_text_in(&many, &homes, &keep, 1).unwrap();
+    refresh_text_in(&many, &homes, &keep, None, 1).unwrap();
     assert_eq!(
         SessionTextIndex::open(&many).unwrap().marks().unwrap(),
         before
     );
     assert_eq!(count(&many), (4, 5));
+}
+
+/// A data dir and a Claude home with one log, written now.
+fn one_log_root() -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let logs = root
+        .join("user")
+        .join(".claude")
+        .join("projects")
+        .join("-w");
+    fs::create_dir_all(&logs).unwrap();
+    let ts = rfc3339_now();
+    fs::write(
+        logs.join("s1.jsonl"),
+        format!(
+            r#"{{"type":"user","sessionId":"s1","timestamp":"{ts}","message":{{"content":"hi"}}}}"#
+        ) + "\n",
+    )
+    .unwrap();
+    let data = root.join("data");
+    (dir, root, data)
+}
+
+/// The current time as an RFC 3339 UTC stamp (whole seconds).
+fn rfc3339_now() -> String {
+    let secs = now_ms() / 1000;
+    let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+    // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
+}
+
+fn refreshing_of(data: &Path) -> bool {
+    REFRESH
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .run
+        .as_ref()
+        .is_some_and(|(dir, _)| dir == data)
+}
+
+#[test]
+fn two_refreshes_of_one_data_dir_at_once_read_the_logs_once() {
+    use std::sync::atomic::AtomicUsize;
+    let (_dir, root, data) = one_log_root();
+    let calls = AtomicUsize::new(0);
+    let user = root.join("user");
+    let homes = || {
+        calls.fetch_add(1, Ordering::SeqCst);
+        std::thread::sleep(Duration::from_millis(2_500));
+        vec![claude_home(&user)]
+    };
+    let cutoff = history_cutoff(now_ms(), HISTORY_DAYS);
+    let q = query(SessionScope::All);
+    let rows = std::thread::scope(|s| {
+        let first = s.spawn(|| sessions(&data, homes, &q, Some(cutoff), None).unwrap());
+        std::thread::sleep(Duration::from_millis(300));
+        let second = s.spawn(|| sessions(&data, homes, &q, Some(cutoff), None).unwrap());
+        (first.join().unwrap(), second.join().unwrap())
+    });
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "one read of the logs");
+    assert_eq!(rows.0.len(), 1);
+    assert_eq!(
+        rows.1.len(),
+        1,
+        "the waiter answers from what the refresh read"
+    );
+}
+
+#[test]
+fn a_list_and_a_branch_name_do_not_wait_for_a_running_refresh() {
+    let (_dir, root, data) = one_log_root();
+    let user = root.join("user");
+    let slow = || {
+        std::thread::sleep(Duration::from_millis(4_000));
+        vec![claude_home(&user)]
+    };
+    let never = || -> Vec<Home> { panic!("a read must not read the logs") };
+    let cutoff = history_cutoff(now_ms(), HISTORY_DAYS);
+    let q = query(SessionScope::All);
+    std::thread::scope(|s| {
+        let refresh = s.spawn(|| sessions(&data, slow, &q, Some(cutoff), None).unwrap());
+        // Until this refresh has started, a branch name would run its own.
+        let started = Instant::now();
+        while !refreshing_of(&data) && started.elapsed() < Duration::from_secs(30) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let t = Instant::now();
+        sessions(&data, never, &q, None, None).unwrap();
+        worktree_sessions(&data, never, &root.join("w")).unwrap();
+        let took = t.elapsed();
+        assert!(took < Duration::from_secs(2), "reads took {took:?}");
+        assert_eq!(refresh.join().unwrap().len(), 1);
+    });
 }

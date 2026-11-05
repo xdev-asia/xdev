@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
 import { Sessions } from "@/workspace/sessions";
-import { AgentSessionsStore, PAGE, REFRESH_MS } from "./store";
+import { AgentSessionsStore, PAGE, POLL_MS, READING_MS, REFRESH_MS } from "./store";
 
 const A = "/demo/wt/xdev-oak";
 
@@ -98,6 +98,64 @@ describe("AgentSessionsStore", () => {
     stop();
     await vi.advanceTimersByTimeAsync(REFRESH_MS * 2);
     expect(ask).toHaveBeenCalledTimes(2);
+  });
+
+  it("two refreshes at once ask Rust to read the logs once", async () => {
+    const api = createMockApi({});
+    const ask = vi.spyOn(api, "agentSessions");
+    store = new AgentSessionsStore(api, null);
+    const first = store.refresh();
+    const second = store.refresh();
+    expect(second).toBe(first);
+    await Promise.all([first, second]);
+    expect(ask).toHaveBeenCalledTimes(1);
+    await store.refresh();
+    expect(ask).toHaveBeenCalledTimes(2);
+  });
+
+  it("a long refresh says it is reading and shows the rows read so far", async () => {
+    vi.useFakeTimers();
+    const api = createMockApi({});
+    const real = api.agentSessions.bind(api);
+    let release: () => void = () => {};
+    const ask = vi.spyOn(api, "agentSessions").mockImplementationOnce(async (q, r) => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return real(q, r);
+    });
+    store = new AgentSessionsStore(api, null);
+    const done = store.refresh();
+    await vi.advanceTimersByTimeAsync(READING_MS - 1);
+    expect(store.state.reading).toBe(false);
+    expect(ask).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(store.state.reading).toBe(true);
+    expect(ask).toHaveBeenLastCalledWith(expect.anything(), false);
+    expect(store.state.rows.length).toBeGreaterThan(3);
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(ask).toHaveBeenCalledTimes(3);
+    release();
+    await done;
+    expect(store.state.reading).toBe(false);
+    expect(store.state.loading).toBe(false);
+    await vi.advanceTimersByTimeAsync(POLL_MS * 3);
+    expect(ask).toHaveBeenCalledTimes(3);
+  });
+
+  it("a query changed during a refresh is read again when it ends", async () => {
+    const api = createMockApi({});
+    const real = api.agentSessions.bind(api);
+    let release: () => void = () => {};
+    const ask = vi.spyOn(api, "agentSessions").mockImplementationOnce(async (q, r) => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return real(q, r);
+    });
+    store = new AgentSessionsStore(api, null);
+    const done = store.refresh();
+    await store.setQuery({ text: "parser" });
+    release();
+    await done;
+    expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ text: "parser" }), false);
+    expect(store.state.rows.map((r) => r.session.id)).toEqual(["0b1e6f3a-demo-0001"]);
   });
 
   it("refreshes once when an agent tab exits, not for a shell", async () => {

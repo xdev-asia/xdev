@@ -1845,6 +1845,7 @@
   "agentSessions.empty": "Các phiên agent sẽ hiện ở đây sau khi bạn chạy Claude hoặc Codex.",
   "agentSessions.noMatch": "Không có phiên nào khớp.",
   "agentSessions.indexing": "Đang lập chỉ mục phiên…",
+  "agentSessions.reading": "Đang đọc nhật ký phiên…",
   "agentSessions.more": "Hiện thêm",
   "agentSessions.mismatch.title": "Tiếp tục trong thư mục khác?",
   "agentSessions.mismatch.body": "Phiên này chạy trong {folder}, không phải worktree xDev biết. Tiếp tục trong {target} có thể không tìm thấy phiên, vì agent lưu phiên theo từng thư mục.",

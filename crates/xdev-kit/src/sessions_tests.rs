@@ -381,3 +381,59 @@ fn prune_drops_old_sessions_only() {
         .collect();
     assert_eq!(titles, ["old", "new"]);
 }
+
+fn set_mtime_ms(file: &Path, ms: i64) {
+    let at = std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms as u64);
+    fs::File::options()
+        .write(true)
+        .open(file)
+        .unwrap()
+        .set_modified(at)
+        .unwrap();
+}
+
+#[test]
+fn a_log_last_written_before_the_window_is_not_opened() {
+    let (_dir, h, file) = claude_home_with(
+        "{\"type\":\"user\",\"timestamp\":\"2026-11-02T10:00:00Z\",\"message\":{\"content\":\"old\"}}\n",
+    );
+    set_mtime_ms(&file, T_NOV2_10H);
+    let mut index = SessionIndex::default();
+    let stats = index.refresh_since(std::slice::from_ref(&h), Some(T_NOV3_09H), &mut |_| {});
+    assert_eq!(stats.files_read, 0);
+    assert!(index.files.is_empty(), "an old log gets no mark");
+    assert!(index.sessions.is_empty());
+    // A wider window reads it.
+    let stats = index.refresh_since(&[h], Some(T_NOV2_10H), &mut |_| {});
+    assert_eq!(stats.files_read, 1);
+    assert_eq!(index.list().len(), 1);
+}
+
+#[test]
+fn a_line_of_many_mb_is_read_for_its_fields_only() {
+    let blob = "A".repeat(3 << 20);
+    let log = [
+        format!(
+            "{{\"type\":\"user\",\"timestamp\":\"2026-11-02T10:00:00Z\",\"message\":{{\"content\":[{{\"type\":\"text\",\"text\":\"Look at this\"}},{{\"type\":\"image\",\"source\":{{\"data\":\"{blob}\"}}}}]}}}}"
+        ),
+        format!(
+            "{{\"type\":\"user\",\"toolUseResult\":{{\"stdout\":\"{blob}\"}},\"message\":{{\"content\":[{{\"type\":\"tool_result\",\"content\":\"{blob}\"}}]}}}}"
+        ),
+        format!(
+            "{{\"type\":\"assistant\",\"timestamp\":\"2026-11-03T09:00:00Z\",\"message\":{{\"id\":\"m1\",\"model\":\"claude-x\",\"content\":[{{\"type\":\"tool_use\",\"input\":{{\"content\":\"{blob}\"}}}}]}}}}"
+        ),
+    ]
+    .join("\n")
+        + "\n";
+    let (_dir, h, _) = claude_home_with(&log);
+    let mut index = SessionIndex::default();
+    let stats = index.refresh(&[h]);
+    assert_eq!(stats.bad_lines, 0);
+    let list = index.list();
+    assert_eq!(list.len(), 1);
+    let s = list[0];
+    assert_eq!(s.title.as_deref(), Some("Look at this"));
+    assert_eq!(s.messages, 2);
+    assert_eq!(s.model.as_deref(), Some("claude-x"));
+    assert_eq!((s.first, s.last), (T_NOV2_10H, T_NOV3_09H));
+}

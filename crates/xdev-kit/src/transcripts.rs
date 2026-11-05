@@ -7,12 +7,11 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::Path;
 
-use serde_json::Value;
-
 use crate::logs::{
-    FileMark, for_each_line, is_blank, line_time, log_files, mtime_ns, parse_line, start_at,
+    FileMark, LINE_BUF_MAX, LineRead, for_each_record, log_files, mtime_ns, parse_ts, start_at,
 };
-use crate::sessions::{claude_prompt, codex_text, flag, is_wrapper, str_at, type_of, uuid_tail};
+use crate::records::{ClaudeLine, CodexLine, Content, Obj, Str};
+use crate::sessions::{claude_prompt, codex_text, is_older, is_wrapper, uuid_tail};
 use crate::{Agent, Home, RefreshStats};
 
 /// The most characters one message keeps.
@@ -55,13 +54,20 @@ pub enum TranscriptEvent {
     },
 }
 
-type Found = Vec<(TextRole, String, i64)>;
+/// Texts of a Codex log held back until its session id is known: the
+/// `session_meta` line comes first, so this is reached only by a log without
+/// one.
+const HOLD_MAX: usize = 64;
 
 /// Reads what is new in the logs of `homes` past `marks` and updates `marks`.
-/// Events of one file come in log order, after its `Reset`.
+/// A log read from its start begins with `Reset`, so a caller may store the
+/// texts of a long log before its `Done` and still not keep a text twice.
+/// A log not yet marked and last written before `since_ms` is not opened.
+/// Events of one file come in log order.
 pub fn scan_transcripts(
     homes: &[Home],
     marks: &mut BTreeMap<String, FileMark>,
+    since_ms: Option<i64>,
     sink: &mut dyn FnMut(TranscriptEvent),
 ) -> RefreshStats {
     let mut stats = RefreshStats::default();
@@ -73,7 +79,7 @@ pub fn scan_transcripts(
             if !present.insert(file_key.clone()) {
                 continue;
             }
-            scan_file(home, &file, &file_key, marks, sink, &mut stats);
+            scan_file(home, &file, &file_key, marks, since_ms, sink, &mut stats);
         }
     }
     let gone: Vec<String> = marks
@@ -88,11 +94,72 @@ pub fn scan_transcripts(
     stats
 }
 
+/// The events of one log as it is read.
+struct Out<'a> {
+    file: &'a str,
+    home_id: &'a str,
+    id: String,
+    /// The session id can no longer change.
+    settled: bool,
+    held: Vec<(TextRole, String, i64)>,
+    reset_due: bool,
+    sink: &'a mut dyn FnMut(TranscriptEvent),
+}
+
+impl Out<'_> {
+    fn key(&self) -> String {
+        format!("{}:{}", self.home_id, self.id)
+    }
+
+    fn reset_if_due(&mut self) {
+        if self.reset_due {
+            self.reset_due = false;
+            (self.sink)(TranscriptEvent::Reset {
+                file: self.file.to_string(),
+            });
+        }
+    }
+
+    fn text(&mut self, role: TextRole, text: String, at: i64) {
+        if !self.settled {
+            self.held.push((role, text, at));
+            if self.held.len() >= HOLD_MAX {
+                self.settle();
+            }
+            return;
+        }
+        self.reset_if_due();
+        let session_key = self.key();
+        (self.sink)(TranscriptEvent::Text(TranscriptText {
+            file: self.file.to_string(),
+            session_key,
+            role,
+            text,
+            at,
+        }));
+    }
+
+    fn session_id(&mut self, id: &str) {
+        if !self.settled {
+            self.id = id.to_string();
+        }
+        self.settle();
+    }
+
+    fn settle(&mut self) {
+        self.settled = true;
+        for (role, text, at) in std::mem::take(&mut self.held) {
+            self.text(role, text, at);
+        }
+    }
+}
+
 fn scan_file(
     home: &Home,
     path: &Path,
     file_key: &str,
     marks: &mut BTreeMap<String, FileMark>,
+    since_ms: Option<i64>,
     sink: &mut dyn FnMut(TranscriptEvent),
     stats: &mut RefreshStats,
 ) {
@@ -102,13 +169,14 @@ fn scan_file(
     let (len, mtime) = (meta.len(), mtime_ns(&meta));
     let mut start = 0;
     let mut known_key = None;
-    let had_mark = marks.contains_key(file_key);
     if let Some(mark) = marks.get(file_key) {
         let Some(from) = start_at(mark, len, mtime) else {
             return;
         };
         start = from;
         known_key = Some(mark.session.clone());
+    } else if is_older(mtime, since_ms) {
+        return;
     }
     let stem = path
         .file_stem()
@@ -124,56 +192,62 @@ fn scan_file(
     {
         id = rest.to_string();
     }
+    let mut out = Out {
+        file: file_key,
+        home_id: &home.id,
+        id,
+        settled: home.agent == Agent::Claude || start > 0,
+        held: Vec::new(),
+        reset_due: start == 0,
+        sink,
+    };
     let mut bad = 0;
-    // Texts wait until the end of the read: a Codex file names its session
-    // on its first line, and a rewritten file must reset before it adds.
-    let mut found: Found = Vec::new();
     let mut last_at = 0;
-    let result = for_each_line(path, start, |_, line| {
-        let Some(v) = parse_line(line) else {
-            if !is_blank(line) {
-                bad += 1;
-            }
-            return;
-        };
-        let at = line_time(&v).unwrap_or(last_at);
+    let mut at_of = |timestamp: &Str| {
+        let at = timestamp.raw().and_then(parse_ts).unwrap_or(last_at);
         last_at = at;
-        match home.agent {
-            Agent::Claude => claude_line(&v, at, &mut found),
-            Agent::Codex => codex_line(&v, at, &mut id, &mut found),
+        at
+    };
+    let result = match home.agent {
+        Agent::Claude => {
+            for_each_record::<Obj<ClaudeLine>>(path, start, LINE_BUF_MAX, |line| match line {
+                Some(line) => {
+                    let v = line.0.unwrap_or_default();
+                    let at = at_of(&v.timestamp);
+                    claude_line(v, at, &mut out);
+                }
+                None => bad += 1,
+            })
         }
-    });
-    let Ok(offset) = result else {
+        Agent::Codex => {
+            for_each_record::<Obj<CodexLine>>(path, start, LINE_BUF_MAX, |line| match line {
+                Some(line) => {
+                    let v = line.0.unwrap_or_default();
+                    let at = at_of(&v.timestamp);
+                    codex_line(v, at, &mut out);
+                }
+                None => bad += 1,
+            })
+        }
+    };
+    let Ok(LineRead { offset, .. }) = result else {
         return;
     };
     stats.files_read += 1;
     stats.bad_lines += bad;
     stats.bytes += offset.saturating_sub(start);
 
-    let session_key = format!("{}:{id}", home.id);
-    if had_mark && start == 0 {
-        sink(TranscriptEvent::Reset {
-            file: file_key.to_string(),
-        });
-    }
-    for (role, text, at) in found {
-        sink(TranscriptEvent::Text(TranscriptText {
-            file: file_key.to_string(),
-            session_key: session_key.clone(),
-            role,
-            text,
-            at,
-        }));
-    }
+    out.settle();
+    out.reset_if_due();
     let mark = FileMark {
         len,
         mtime_ns: mtime,
         offset,
-        session: session_key,
+        session: out.key(),
         recent_ids: Vec::new(),
     };
     marks.insert(file_key.to_string(), mark.clone());
-    sink(TranscriptEvent::Done {
+    (out.sink)(TranscriptEvent::Done {
         file: file_key.to_string(),
         mark,
     });
@@ -185,59 +259,58 @@ fn cap(text: &str) -> Option<String> {
 }
 
 /// The `text` items of a content array, wrappers left out, joined by lines.
-fn joined_text(content: &Value) -> Option<String> {
+fn joined_text(content: &Content) -> Option<String> {
     match content {
-        Value::String(s) => (!is_wrapper(s)).then(|| s.clone()),
-        Value::Array(items) => {
+        Content::Text(s) => s.raw().filter(|s| !is_wrapper(s)).map(str::to_string),
+        Content::Items(items) => {
             let parts: Vec<&str> = items
                 .iter()
-                .filter_map(|i| i.get("text").and_then(Value::as_str))
+                .filter_map(|i| i.get()?.text.raw())
                 .filter(|t| !is_wrapper(t))
                 .collect();
             (!parts.is_empty()).then(|| parts.join("\n"))
         }
-        _ => None,
+        Content::None => None,
     }
 }
 
-fn claude_line(v: &Value, at: i64, out: &mut Found) {
-    if flag(v, "isSidechain") || flag(v, "isMeta") {
+fn claude_line(v: ClaudeLine, at: i64, out: &mut Out<'_>) {
+    if v.is_sidechain.0 || v.is_meta.0 {
         return;
     }
-    let Some(content) = v.get("message").and_then(|m| m.get("content")) else {
+    let Some(message) = v.message.and_then(|m| m.0) else {
         return;
     };
-    let (role, text) = match type_of(v) {
+    let content = &message.content;
+    let (role, text) = match v.kind.raw() {
         Some("user") => (TextRole::User, claude_prompt(content).map(str::to_string)),
         Some("assistant") => (TextRole::Assistant, joined_text(content)),
         _ => return,
     };
     if let Some(text) = text.as_deref().and_then(cap) {
-        out.push((role, text, at));
+        out.text(role, text, at);
     }
 }
 
-fn codex_line(v: &Value, at: i64, id: &mut String, out: &mut Found) {
-    let Some(payload) = v.get("payload") else {
+fn codex_line(v: CodexLine, at: i64, out: &mut Out<'_>) {
+    let Some(payload) = v.payload else {
         return;
     };
-    match type_of(v) {
+    let payload = payload.0.unwrap_or_default();
+    match v.kind.raw() {
         Some("session_meta") => {
-            if let Some(found) = str_at(payload, "id") {
-                *id = found.to_string();
+            if let Some(found) = payload.id.get() {
+                out.session_id(found);
             }
         }
-        Some("response_item") if type_of(payload) == Some("message") => {
-            let (role, text) = match payload.get("role").and_then(Value::as_str) {
-                Some("user") => (TextRole::User, codex_text(payload).map(str::to_string)),
-                Some("assistant") => (
-                    TextRole::Assistant,
-                    payload.get("content").and_then(joined_text),
-                ),
+        Some("response_item") if payload.kind.is("message") => {
+            let (role, text) = match payload.role.raw() {
+                Some("user") => (TextRole::User, codex_text(&payload).map(str::to_string)),
+                Some("assistant") => (TextRole::Assistant, joined_text(&payload.content)),
                 _ => return,
             };
             if let Some(text) = text.as_deref().and_then(cap) {
-                out.push((role, text, at));
+                out.text(role, text, at);
             }
         }
         _ => {}

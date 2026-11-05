@@ -5,7 +5,8 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Condvar, Mutex, PoisonError, RwLock};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -199,8 +200,8 @@ fn clear_search(
 #[tauri::command(async)]
 pub fn session_search_clear(app: tauri::AppHandle, state: State<'_, AppState>) -> Saved {
     let ctx = Ctx::of(&state)?;
-    // A refresh holds this lock while it writes the index.
-    let _guard = INDEX.lock().unwrap_or_else(PoisonError::into_inner);
+    // A build or a search holds this lock while it reads the index.
+    let _text = TEXT_FILE.write().unwrap_or_else(PoisonError::into_inner);
     clear_search(
         crate::settings_store::read(&app).agents,
         |agents| {
@@ -214,8 +215,31 @@ pub fn session_search_clear(app: tauri::AppHandle, state: State<'_, AppState>) -
 }
 
 /// The index of the last data dir asked for, kept between calls so a list
-/// does not read the file again; one refresh at a time.
+/// does not read the file again. A refresh works on its own copy and puts it
+/// here as it goes, so a read never waits for a refresh.
 static INDEX: Mutex<Option<(PathBuf, SessionIndex)>> = Mutex::new(None);
+
+/// Held to read the text index (a build or a search); a clear holds it alone,
+/// so what it turned off cannot be read again after it.
+static TEXT_FILE: RwLock<()> = RwLock::new(());
+
+/// One refresh at a time. A caller that comes while one runs for the same
+/// data dir waits for it instead of reading the logs again.
+static REFRESH: Mutex<Running> = Mutex::new(Running {
+    run: None,
+    ended: 0,
+});
+static REFRESH_DONE: Condvar = Condvar::new();
+
+struct Running {
+    /// The data dir of the refresh that runs, and whether it reads text.
+    run: Option<(PathBuf, bool)>,
+    /// Refreshes ended so far.
+    ended: u64,
+}
+
+/// A running refresh's copy reaches the readers this often.
+const PUBLISH_EVERY: Duration = Duration::from_millis(500);
 
 /// `refresh` reads the new log bytes first; it runs on a blocking thread.
 #[tauri::command]
@@ -231,7 +255,7 @@ pub async fn agent_sessions(
     let ctx = Ctx::of(&state)?;
     let cutoff = refresh.then(|| history_cutoff(now_ms(), HISTORY_DAYS));
     // Conversation text is read and searched only after the person agreed. The
-    // path is only a candidate: consent is read again under the lock.
+    // path is only a candidate: consent is read again under the text lock.
     let search = search_path(&ctx.data);
     tauri::async_runtime::spawn_blocking(move || {
         let consent = || crate::settings_store::read(&app).agents.session_search;
@@ -264,8 +288,8 @@ fn sessions(
     sessions_with_consent(data, homes, query, refresh, search, &|| true)
 }
 
-/// `sessions`, with `consent` asked once the `INDEX` lock is held: a clear
-/// takes the same lock, so what it turned off cannot be read again after it.
+/// `sessions`, with `consent` asked under the text lock: a clear takes the
+/// same lock, so what it turned off cannot be read again after it.
 fn sessions_with_consent(
     data: &Path,
     homes: impl FnOnce() -> Vec<Home>,
@@ -274,31 +298,23 @@ fn sessions_with_consent(
     search: Option<&Path>,
     consent: &dyn Fn() -> bool,
 ) -> Result<Vec<SessionRow>, CmdError> {
-    let mut guard = INDEX.lock().unwrap_or_else(PoisonError::into_inner);
-    if guard.as_ref().is_none_or(|(dir, _)| dir != data) {
-        *guard = Some((data.to_path_buf(), SessionIndex::load(data)));
-    }
-    let Some((_, index)) = guard.as_mut() else {
-        unreachable!("set just above");
-    };
-    let search = search.filter(|_| consent());
     if let Some(cutoff) = refresh {
-        let homes = homes();
-        index.refresh(&homes);
-        index.prune(cutoff);
-        index.save(data)?;
-        if let Some(path) = search {
-            let keep: HashSet<String> = index.list().iter().map(|s| s.key.clone()).collect();
-            refresh_text(path, &homes, &keep)?;
-        }
+        refresh_once(data, homes, cutoff, search, consent)?;
     }
     let hits = match (search, query.text.as_deref()) {
-        (Some(path), Some(text)) if !text.trim().is_empty() && path.is_file() => {
-            text_hits(path, text)?
+        (Some(path), Some(text)) if !text.trim().is_empty() => {
+            let _text = TEXT_FILE.read().unwrap_or_else(PoisonError::into_inner);
+            if consent() && path.is_file() {
+                text_hits(path, text)?
+            } else {
+                HashMap::new()
+            }
         }
         _ => HashMap::new(),
     };
     let folders = Folders::of(&Registry::load(data)?);
+    let mut guard = INDEX.lock().unwrap_or_else(PoisonError::into_inner);
+    let index = snapshot(&mut guard, data);
     Ok(select(
         &index.list(),
         &folders,
@@ -308,15 +324,109 @@ fn sessions_with_consent(
     ))
 }
 
+/// The kept index of `data`, loaded when another one (or none) is kept.
+fn snapshot<'a>(kept: &'a mut Option<(PathBuf, SessionIndex)>, data: &Path) -> &'a SessionIndex {
+    if kept.as_ref().is_none_or(|(dir, _)| dir != data) {
+        *kept = Some((data.to_path_buf(), SessionIndex::load(data)));
+    }
+    let Some((_, index)) = kept.as_ref() else {
+        unreachable!("set just above");
+    };
+    index
+}
+
+/// Whether a refresh is reading the logs now.
+fn refreshing() -> bool {
+    REFRESH
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .run
+        .is_some()
+}
+
+/// Ends the refresh it was made for, even on a panic.
+struct RunGuard;
+
+impl Drop for RunGuard {
+    fn drop(&mut self) {
+        let mut state = REFRESH.lock().unwrap_or_else(PoisonError::into_inner);
+        state.run = None;
+        state.ended += 1;
+        REFRESH_DONE.notify_all();
+    }
+}
+
+/// Runs a refresh of `data`, or waits for the one that runs. A caller that
+/// finds a refresh of the same data dir that reads at least as much shares
+/// its outcome; any other caller waits for it to end and then runs its own.
+fn refresh_once(
+    data: &Path,
+    homes: impl FnOnce() -> Vec<Home>,
+    cutoff: i64,
+    search: Option<&Path>,
+    consent: &dyn Fn() -> bool,
+) -> Result<(), CmdError> {
+    let mut state = REFRESH.lock().unwrap_or_else(PoisonError::into_inner);
+    while let Some((dir, text)) = state.run.as_ref() {
+        let shared = dir == data && (*text || search.is_none());
+        let ended = state.ended;
+        while state.run.is_some() && state.ended == ended {
+            state = REFRESH_DONE
+                .wait(state)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+        if shared {
+            return Ok(());
+        }
+    }
+    state.run = Some((data.to_path_buf(), search.is_some()));
+    drop(state);
+    let _run = RunGuard;
+    run_refresh(data, homes, cutoff, search, consent)
+}
+
+/// Puts a pruned copy of `index` where the readers find it.
+fn publish(data: &Path, index: &SessionIndex, cutoff: i64) {
+    let mut copy = index.clone();
+    copy.prune(cutoff);
+    *INDEX.lock().unwrap_or_else(PoisonError::into_inner) = Some((data.to_path_buf(), copy));
+}
+
+fn run_refresh(
+    data: &Path,
+    homes: impl FnOnce() -> Vec<Home>,
+    cutoff: i64,
+    search: Option<&Path>,
+    consent: &dyn Fn() -> bool,
+) -> Result<(), CmdError> {
+    let mut index = {
+        let mut guard = INDEX.lock().unwrap_or_else(PoisonError::into_inner);
+        snapshot(&mut guard, data).clone()
+    };
+    let homes = homes();
+    let mut published = Instant::now();
+    index.refresh_since(&homes, Some(cutoff), &mut |so_far| {
+        if published.elapsed() >= PUBLISH_EVERY {
+            publish(data, so_far, cutoff);
+            published = Instant::now();
+        }
+    });
+    index.prune(cutoff);
+    let saved = index.save(data);
+    let keep: HashSet<String> = index.list().iter().map(|s| s.key.clone()).collect();
+    *INDEX.lock().unwrap_or_else(PoisonError::into_inner) = Some((data.to_path_buf(), index));
+    saved?;
+    if let Some(path) = search {
+        let _text = TEXT_FILE.read().unwrap_or_else(PoisonError::into_inner);
+        if consent() {
+            refresh_text_in(path, &homes, &keep, Some(cutoff), TEXT_BATCH)?;
+        }
+    }
+    Ok(())
+}
+
 /// Messages held before a batch is written to the text index.
 const TEXT_BATCH: usize = 2_000;
-
-/// Reads what is new in the logs into the text index, then drops the texts
-/// of sessions the metadata index no longer holds (`keep`). The caller holds
-/// the `INDEX` lock.
-fn refresh_text(path: &Path, homes: &[Home], keep: &HashSet<String>) -> Result<(), CmdError> {
-    refresh_text_in(path, homes, keep, TEXT_BATCH)
-}
 
 /// Texts, marks and drops waiting for the next transaction.
 #[derive(Default)]
@@ -343,14 +453,20 @@ impl Pending {
     }
 }
 
-/// `refresh_text` writing a transaction whenever `batch` messages are
-/// waiting, cut only between files and with the marks of those files, so a
-/// first build over a long history keeps few messages in memory and a failure
-/// leaves a consistent index that the next refresh goes on from.
+/// Reads what is new in the logs into the text index, then drops the texts
+/// of sessions the metadata index no longer holds (`keep`). A log not yet
+/// read and last written before `since` (unix ms) is left alone. A
+/// transaction is written whenever `batch` messages are waiting: between
+/// files with the marks of those files, or inside a log read from its start
+/// (it began with a reset, so a failure there leaves no text twice). A first
+/// build over a long history so keeps few messages in memory, and a failure
+/// leaves a consistent index that the next refresh goes on from. The caller
+/// holds `TEXT_FILE`.
 fn refresh_text_in(
     path: &Path,
     homes: &[Home],
     keep: &HashSet<String>,
+    since: Option<i64>,
     batch: usize,
 ) -> Result<(), CmdError> {
     let _busy = Indexing::begin();
@@ -364,21 +480,33 @@ fn refresh_text_in(
     let before = marks.clone();
     let mut pending = Pending::default();
     let mut failed: Option<CmdError> = None;
-    scan_transcripts(homes, &mut marks, &mut |event| {
+    // The log being read from its start, if any.
+    let mut from_start: Option<String> = None;
+    scan_transcripts(homes, &mut marks, since, &mut |event| {
         if failed.is_some() {
             return;
         }
         match event {
-            TranscriptEvent::Reset { file } => pending.reset.push(file),
+            TranscriptEvent::Reset { file } => {
+                from_start = Some(file.clone());
+                pending.reset.push(file);
+            }
             TranscriptEvent::Gone { file } => pending.gone.push(file),
-            TranscriptEvent::Text(t) => pending.texts.push(StoredText {
-                file: t.file,
-                session_key: t.session_key,
-                role: u8::from(t.role == TextRole::Assistant),
-                text: t.text,
-                at: t.at,
-            }),
+            TranscriptEvent::Text(t) => {
+                let cut_here = from_start.as_deref() == Some(t.file.as_str());
+                pending.texts.push(StoredText {
+                    file: t.file,
+                    session_key: t.session_key,
+                    role: u8::from(t.role == TextRole::Assistant),
+                    text: t.text,
+                    at: t.at,
+                });
+                if cut_here && pending.texts.len() >= batch {
+                    failed = pending.write(&mut index).err();
+                }
+            }
             TranscriptEvent::Done { file, mark } => {
+                from_start = None;
                 if before.get(&file) != Some(&mark)
                     && let Ok(json) = serde_json::to_string(&mark)
                 {
@@ -409,7 +537,9 @@ fn text_hits(path: &Path, text: &str) -> Result<HashMap<String, String>, CmdErro
 }
 
 /// The sessions that ran inside the worktree at `path`, newest first, after
-/// reading the logs' new bytes. For naming a branch from the first prompt.
+/// reading the logs' new bytes. While a refresh runs it answers from what
+/// that refresh has read so far instead of waiting. For naming a branch from
+/// the first prompt.
 pub(crate) fn worktree_sessions(
     data: &Path,
     homes: impl FnOnce() -> Vec<Home>,
@@ -425,13 +555,8 @@ pub(crate) fn worktree_sessions(
         sort: SessionSort::LastDesc,
         limit: 50,
     };
-    sessions(
-        data,
-        homes,
-        &query,
-        Some(history_cutoff(now_ms(), HISTORY_DAYS)),
-        None,
-    )
+    let refresh = (!refreshing()).then(|| history_cutoff(now_ms(), HISTORY_DAYS));
+    sessions(data, homes, &query, refresh, None)
 }
 
 /// The registry folder (worktree or repo checkout) a session ran in, and its
@@ -564,3 +689,7 @@ fn select(
 #[cfg(test)]
 #[path = "agent_sessions_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "agent_sessions_bench.rs"]
+mod bench;

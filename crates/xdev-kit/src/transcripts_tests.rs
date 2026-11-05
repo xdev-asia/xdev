@@ -40,7 +40,7 @@ fn codex_home(content: &str) -> (tempfile::TempDir, Home, PathBuf) {
 
 fn scan(homes: &[Home], marks: &mut BTreeMap<String, FileMark>) -> Vec<TranscriptEvent> {
     let mut out = Vec::new();
-    scan_transcripts(homes, marks, &mut |e| out.push(e));
+    scan_transcripts(homes, marks, None, &mut |e| out.push(e));
     out
 }
 
@@ -84,7 +84,8 @@ fn claude_user_and_assistant_text_only() {
             (TextRole::Assistant, "Looking at it now".to_string()),
         ]
     );
-    let TranscriptEvent::Text(first) = &events[0] else {
+    assert!(matches!(events[0], TranscriptEvent::Reset { .. }));
+    let TranscriptEvent::Text(first) = &events[1] else {
         panic!("text first: {events:?}");
     };
     assert_eq!(first.session_key, "own-claude:sess-1");
@@ -193,10 +194,52 @@ fn each_file_ends_with_a_done_event_carrying_its_mark() {
         .unwrap()
         .to_string_lossy()
         .into_owned();
-    assert!(matches!(events[0], TranscriptEvent::Text(_)));
+    assert!(matches!(events[0], TranscriptEvent::Reset { .. }));
+    assert!(matches!(events[1], TranscriptEvent::Text(_)));
     let Some(TranscriptEvent::Done { file, mark }) = events.last() else {
         panic!("no done event: {events:?}");
     };
     assert_eq!(file, &key);
     assert_eq!(Some(mark), marks.get(&key));
+}
+
+#[test]
+fn an_unmarked_log_older_than_the_window_is_not_opened() {
+    let (_dir, h, file) = claude_home(&claude_log());
+    let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+    fs::File::options()
+        .write(true)
+        .open(&file)
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    let mut marks = BTreeMap::new();
+    let mut events = Vec::new();
+    let stats = scan_transcripts(
+        std::slice::from_ref(&h),
+        &mut marks,
+        Some(1_700_000_001_000),
+        &mut |e| events.push(e),
+    );
+    assert_eq!(stats.files_read, 0);
+    assert!(events.is_empty());
+    assert!(marks.is_empty());
+}
+
+#[test]
+fn a_codex_log_without_session_meta_still_sends_its_texts() {
+    let mut items = Vec::new();
+    for i in 0..(HOLD_MAX + 3) {
+        items.push(format!(
+            r#"{{"type":"response_item","payload":{{"type":"message","role":"user","content":[{{"type":"input_text","text":"p{i}"}}]}}}}"#
+        ));
+    }
+    let refs: Vec<&str> = items.iter().map(String::as_str).collect();
+    let (_dir, h, _) = codex_home(&lines(&refs));
+    let mut marks = BTreeMap::new();
+    let events = scan(&[h], &mut marks);
+    let got = texts(&events);
+    assert_eq!(got.len(), HOLD_MAX + 3);
+    assert_eq!(got[0].1, "p0");
+    assert!(matches!(events[0], TranscriptEvent::Reset { .. }));
 }
