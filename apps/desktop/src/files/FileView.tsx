@@ -4,6 +4,7 @@ import type { Api } from "@/api";
 import { useI18n } from "@/i18n";
 import { Button } from "@xdev-asia/ui";
 import { ImageView } from "./ImageView";
+import { MediaView } from "./MediaView";
 import { LoadError } from "./LoadError";
 import { CodeEditor } from "./CodeEditor";
 import { useEditorSettings } from "./editorSettings";
@@ -36,12 +37,7 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
   if (viewer === "image") {
     body = <ImageView api={api} worktree={worktree} rel={rel} />;
   } else if (viewer === "media") {
-    body = (
-      <div className="file-note">
-        <p className="ws-empty">{t("files.binary")}</p>
-        {reveal}
-      </div>
-    );
+    body = <MediaView api={api} worktree={worktree} rel={rel} />;
   } else if (!entry || entry.status === "loading") {
     body = <p className="ws-empty">{t("files.loading")}</p>;
   } else if (entry.status === "error") {

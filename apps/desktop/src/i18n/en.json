@@ -2513,5 +2513,7 @@
   "files.zoom.fitScreen": "Fit to screen",
   "files.zoom.actual": "Actual size",
   "files.openDefault": "Open in default app",
-  "files.openDefault.failed": "Could not open the file in the default app"
+  "files.openDefault.failed": "Could not open the file in the default app",
+  "files.media.failed": "This file cannot be played here.",
+  "files.media.tooLarge.body": "Audio and video over 64 MB do not open here."
 }

@@ -2513,5 +2513,7 @@
   "files.zoom.fitScreen": "Vừa màn hình",
   "files.zoom.actual": "Kích thước thật",
   "files.openDefault": "Mở bằng ứng dụng mặc định",
-  "files.openDefault.failed": "Không mở được tệp bằng ứng dụng mặc định"
+  "files.openDefault.failed": "Không mở được tệp bằng ứng dụng mặc định",
+  "files.media.failed": "Không phát được tệp này ở đây.",
+  "files.media.tooLarge.body": "Âm thanh và video lớn hơn 64 MB không mở ở đây."
 }
