@@ -1838,6 +1838,7 @@
   "agentSessions.empty": "Agent sessions appear here after you run Claude or Codex.",
   "agentSessions.noMatch": "No sessions match.",
   "agentSessions.indexing": "Indexing sessions…",
+  "agentSessions.reading": "Reading session logs…",
   "agentSessions.more": "Show more",
   "agentSessions.mismatch.title": "Resume in another folder?",
   "agentSessions.mismatch.body": "This session ran in {folder}, which is not a worktree xDev knows. Resuming it in {target} may not find it, because the agent keeps its sessions per folder.",

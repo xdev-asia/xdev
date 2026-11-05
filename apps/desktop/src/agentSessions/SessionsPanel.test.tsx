@@ -42,7 +42,7 @@ function row(key: string, title: string | null, last: number, extra: Partial<Ses
 
 function props(rows: SessionRow[], over: Partial<SessionsPanelProps> = {}, state: Partial<AgentSessionsState> = {}): SessionsPanelProps {
   return {
-    state: { query: DEFAULT_QUERY, rows, loading: false, error: null, homes: ["local"], more: false, contentSearch: false, ...state },
+    state: { query: DEFAULT_QUERY, rows, loading: false, error: null, homes: ["local"], more: false, contentSearch: false, reading: false, ...state },
     now: NOW,
     canScope: { worktree: true, repo: true },
     openTab: () => null,
@@ -124,6 +124,18 @@ describe("SessionsPanel", () => {
     expect(html(props([]))).toContain(translate("en", "agentSessions.empty"));
     const filtered = props([], {}, { query: { ...DEFAULT_QUERY, text: "zzz" } });
     expect(html(filtered)).toContain(translate("en", "agentSessions.noMatch"));
+  });
+
+  it("while a long refresh reads, the rows stay and a quiet status says so", () => {
+    const reading = translate("en", "agentSessions.reading");
+    expect(html(props([row("a", "Fix login", NOW)]))).not.toContain(reading);
+    const markup = html(props([row("a", "Fix login", NOW)], {}, { reading: true, loading: true }));
+    expect(markup).toContain(`role="status">${reading}<`);
+    expect(markup).toContain("Fix login");
+    const empty = html(props([], {}, { reading: true, loading: false }));
+    expect(empty).toContain(reading);
+    expect(empty).not.toContain(translate("en", "agentSessions.empty"));
+    expect(empty).not.toContain(translate("en", "agentSessions.indexing"));
   });
 
   it("the home filter shows only with more than one home", () => {

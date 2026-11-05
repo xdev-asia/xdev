@@ -206,6 +206,11 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
           {t(`error.${state.error.code}`)}
         </p>
       )}
+      {state.reading && (
+        <p className="as-status" role="status">
+          {t("agentSessions.reading")}
+        </p>
+      )}
       <div ref={list} className="as-list">
         {groups.map((g) => (
           <div key={g.id} className="as-group">
@@ -213,8 +218,8 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
             <ul className="as-rows">{g.rows.map(renderRow)}</ul>
           </div>
         ))}
-        {rows.length === 0 && state.loading && <p className="as-empty">{t("agentSessions.indexing")}</p>}
-        {rows.length === 0 && !state.loading && !state.error && (
+        {rows.length === 0 && state.loading && !state.reading && <p className="as-empty">{t("agentSessions.indexing")}</p>}
+        {rows.length === 0 && !state.loading && !state.reading && !state.error && (
           <p className="as-empty">{filtered ? t("agentSessions.noMatch") : t("agentSessions.empty")}</p>
         )}
         {state.more && (

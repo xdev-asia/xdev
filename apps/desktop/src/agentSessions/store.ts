@@ -7,6 +7,10 @@ export const PAGE = 100;
 /** The search box waits this long after the last key. */
 export const SEARCH_MS = 150;
 const LIMIT_MAX = 500;
+/** A refresh that runs this long says so and shows the rows read so far. */
+export const READING_MS = 1_000;
+/** While a long refresh runs, the rows it has read so far are fetched this often. */
+export const POLL_MS = 2_000;
 
 export interface AgentSessionsState {
   query: SessionQuery;
@@ -21,6 +25,8 @@ export interface AgentSessionsState {
   more: boolean;
   /** The person let the app index conversation text, so a search also looks inside it. */
   contentSearch: boolean;
+  /** A refresh has run for `READING_MS`: the rows are what it has read so far. */
+  reading: boolean;
 }
 
 export const DEFAULT_QUERY: SessionQuery = { text: null, scope: { kind: "all" }, agent: null, homeId: null, sort: "lastDesc", limit: PAGE };
@@ -30,7 +36,16 @@ export const DEFAULT_QUERY: SessionQuery = { text: null, scope: { kind: "all" },
  * Rust read new log bytes; `setQuery` only filters what the index holds.
  */
 export class AgentSessionsStore {
-  private current: AgentSessionsState = { query: DEFAULT_QUERY, rows: [], loading: false, error: null, homes: [], more: false, contentSearch: false };
+  private current: AgentSessionsState = {
+    query: DEFAULT_QUERY,
+    rows: [],
+    loading: false,
+    error: null,
+    homes: [],
+    more: false,
+    contentSearch: false,
+    reading: false,
+  };
   private readonly listeners = new Set<() => void>();
   private serial = 0;
   private watchers = 0;
@@ -38,6 +53,10 @@ export class AgentSessionsStore {
   private readonly unlisten: Promise<() => void> | null;
   private disposed = false;
   private typing: ReturnType<typeof setTimeout> | null = null;
+  /** The refresh in flight; another call shares it. */
+  private refreshing: Promise<void> | null = null;
+  private slow: ReturnType<typeof setTimeout> | null = null;
+  private poll: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly api: Pick<Api, "agentSessions" | "agentsSettings" | "onPtyExit">,
@@ -63,7 +82,7 @@ export class AgentSessionsStore {
   /** Changes the query and reads the index again, without touching the logs. */
   setQuery(patch: Partial<SessionQuery>): Promise<void> {
     this.set({ query: { ...this.current.query, ...patch } });
-    return this.read(false);
+    return this.read();
   }
 
   /** The search text, applied `SEARCH_MS` after the last call. Blank means no text. */
@@ -81,9 +100,15 @@ export class AgentSessionsStore {
     return limit === this.current.query.limit ? Promise.resolve() : this.setQuery({ limit });
   }
 
-  /** Reads the logs for new sessions, then the list. */
+  /**
+   * Reads the logs for new sessions, then the list. A call while a refresh runs shares it. A refresh
+   * that takes long sets `reading` and fetches the rows it has read so far every `POLL_MS`.
+   */
   refresh(): Promise<void> {
-    return this.read(true);
+    this.refreshing ??= this.runRefresh().finally(() => {
+      this.refreshing = null;
+    });
+    return this.refreshing;
   }
 
   /** For a panel that is on screen: refreshes now and every minute; the returned function stops it. */
@@ -107,23 +132,57 @@ export class AgentSessionsStore {
     if (this.typing) clearTimeout(this.typing);
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    this.stopPolling();
     this.listeners.clear();
     void this.unlisten?.then((stop) => stop()).catch(() => {});
   }
 
-  private async read(refresh: boolean): Promise<void> {
+  private async runRefresh(): Promise<void> {
+    const query = this.current.query;
+    this.set({ loading: true });
+    this.slow = setTimeout(() => {
+      this.slow = null;
+      this.set({ reading: true });
+      void this.read();
+      this.poll = setInterval(() => void this.read(), POLL_MS);
+    }, READING_MS);
+    try {
+      const rows = await this.api.agentSessions(query, true);
+      this.stopPolling();
+      // A query changed meanwhile asks for its own rows; else these are the newest.
+      if (this.current.query === query) await this.show(rows, ++this.serial);
+      else await this.read();
+    } catch (e) {
+      this.stopPolling();
+      if (this.current.query === query) this.set({ loading: false, error: toApiError(e) });
+    } finally {
+      this.set({ reading: false });
+    }
+  }
+
+  private stopPolling(): void {
+    if (this.slow) clearTimeout(this.slow);
+    if (this.poll) clearInterval(this.poll);
+    this.slow = this.poll = null;
+  }
+
+  /** Reads the index for the current query, without touching the logs. */
+  private async read(): Promise<void> {
     const mine = ++this.serial;
     this.set({ loading: true });
     try {
-      const rows = await this.api.agentSessions(this.current.query, refresh);
-      const contentSearch = await this.api.agentsSettings().then((s) => s.sessionSearch, () => false);
-      // A newer read owns the state.
-      if (mine !== this.serial) return;
-      const homes = [...new Set([...this.current.homes, ...rows.map((r) => r.session.homeId)])].sort();
-      this.set({ rows, loading: false, error: null, homes, contentSearch, more: rows.length >= this.current.query.limit });
+      await this.show(await this.api.agentSessions(this.current.query, false), mine);
     } catch (e) {
       if (mine === this.serial) this.set({ loading: false, error: toApiError(e) });
     }
+  }
+
+  private async show(rows: SessionRow[], mine: number): Promise<void> {
+    const contentSearch = await this.api.agentsSettings().then((s) => s.sessionSearch, () => false);
+    // A newer read owns the state.
+    if (mine !== this.serial) return;
+    const homes = [...new Set([...this.current.homes, ...rows.map((r) => r.session.homeId)])].sort();
+    this.set({ rows, loading: false, error: null, homes, contentSearch, more: rows.length >= this.current.query.limit });
   }
 
   private set(patch: Partial<AgentSessionsState>): void {
