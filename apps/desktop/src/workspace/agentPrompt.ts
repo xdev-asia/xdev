@@ -13,9 +13,38 @@ export function pastePrompt(text: string): string {
   return PASTE_START + text.replace(/\r\n/g, "\n").replace(CONTROLS, "") + PASTE_END + "\r";
 }
 
-
 /** How long a new agent tab gets to start and go quiet before the prompt is given up. */
 export const AGENT_START_MS = 30_000;
+/** How long an after-start agent stays silent after its first output before its prompt is typed. */
+export const PROMPT_QUIET_MS = 1_500;
+
+/**
+ * Watches a starting program for its prompt: `ready` resolves true once it printed (`output`) and
+ * then stayed quiet for `quietMs`; false at `timeoutMs` or on `cancel`.
+ */
+export function whenQuiet(timeoutMs = AGENT_START_MS, quietMs = PROMPT_QUIET_MS): { ready: Promise<boolean>; output(): void; cancel(): void } {
+  let settle: (ok: boolean) => void = () => {};
+  const ready = new Promise<boolean>((resolve) => (settle = resolve));
+  let quiet: ReturnType<typeof setTimeout> | undefined;
+  let done = false;
+  const finish = (ok: boolean) => {
+    if (done) return;
+    done = true;
+    clearTimeout(quiet);
+    clearTimeout(bound);
+    settle(ok);
+  };
+  const bound = setTimeout(() => finish(false), timeoutMs);
+  return {
+    ready,
+    output() {
+      if (done) return;
+      clearTimeout(quiet);
+      quiet = setTimeout(() => finish(true), quietMs);
+    },
+    cancel: () => finish(false),
+  };
+}
 
 /**
  * Types `text` into an agent tab of `worktree`: the one in front when it is a running agent tab,

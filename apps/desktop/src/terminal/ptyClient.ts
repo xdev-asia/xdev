@@ -1,4 +1,5 @@
 import type { Api, PtyAttached, PtyInfo, PtyProfile } from "@/api";
+import { pastePrompt, whenQuiet } from "@/workspace/agentPrompt";
 
 /** Output is acknowledged in steps this big; Rust pauses a terminal at 4 MB unacknowledged. */
 export const ACK_BYTES = 256 * 1024;
@@ -47,6 +48,11 @@ export class PtyClient {
     private readonly resume?: string,
     /** The pty forks `resume` into a new session instead of continuing it; only its first launch does. */
     private readonly fork?: boolean,
+    /**
+     * The first prompt of the agent, for its first launch only: the spawn puts it on the command
+     * line, or, for an agent that takes it after start, it is typed once the agent went quiet.
+     */
+    private prompt?: string,
   ) {}
 
   /**
@@ -156,15 +162,30 @@ export class PtyClient {
     // A view that mounts and unmounts in one tick (StrictMode in dev) never starts a pty.
     await Promise.resolve();
     if (this.disposed) throw new Error("disposed");
-    const info = await this.api.ptySpawn(this.id, cwd, profileId, account, cols, rows, (bytes) =>
-      // Acked once the terminal has drawn it, so a slow view pauses the pty.
-      write(bytes, () => this.rendered(bytes.length)),
-      this.resume,
-      this.fork,
-    );
+    const prompt = this.prompt;
+    this.prompt = undefined;
+    // Output can come before the spawn resolves, so the watch starts with it.
+    const watch = prompt !== undefined ? whenQuiet() : null;
+    let info: PtyInfo;
+    try {
+      info = await this.api.ptySpawn(this.id, cwd, profileId, account, cols, rows, (bytes) => {
+        watch?.output();
+        // Acked once the terminal has drawn it, so a slow view pauses the pty.
+        write(bytes, () => this.rendered(bytes.length));
+      }, this.resume, this.fork, prompt);
+    } catch (e) {
+      watch?.cancel();
+      throw e;
+    }
     this.size = [cols, rows];
     this.live = true;
     for (const text of this.queued.splice(0)) void this.input(text).catch(() => {});
+    const after = info.promptAfter;
+    if (watch && after) {
+      void watch.ready.then((ok) => (ok && !this.disposed ? this.input(pastePrompt(after)) : undefined)).catch(() => {});
+    } else {
+      watch?.cancel();
+    }
     return info;
   }
 

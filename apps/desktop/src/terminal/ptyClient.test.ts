@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
+import { AGENT_START_MS, pastePrompt } from "@/workspace/agentPrompt";
 import { PtyClient, toBytes } from "./ptyClient";
 
 const text = (chunks: Uint8Array[]) => new TextDecoder().decode(Uint8Array.from(chunks.flatMap((c) => [...c])));
@@ -132,9 +133,60 @@ describe("PtyClient", () => {
     await api.ptyApprove("claude", null, "src-1", true);
     const spawn = vi.spyOn(api, "ptySpawn");
     await new PtyClient(api, "f1", "src-1", true).start("/demo", "claude", 80, 24, () => {});
-    expect(spawn.mock.calls[0].slice(7)).toEqual(["src-1", true]);
+    expect(spawn.mock.calls[0].slice(7, 9)).toEqual(["src-1", true]);
     await new PtyClient(api, "f2").start("/demo", "shell", 80, 24, () => {});
-    expect(spawn.mock.calls[1].slice(7)).toEqual([undefined, undefined]);
+    expect(spawn.mock.calls[1].slice(7)).toEqual([undefined, undefined, undefined]);
+  });
+
+  it("an argv agent gets its prompt in the spawn and nothing is typed", async () => {
+    vi.useFakeTimers();
+    try {
+      const api = createMockApi({});
+      await api.ptyApprove("claude", null);
+      const spawn = vi.spyOn(api, "ptySpawn");
+      const write = vi.spyOn(api, "ptyWrite");
+      const client = new PtyClient(api, "p1", undefined, undefined, "fix it");
+      await client.start("/demo", "claude", 80, 24, () => {});
+      expect(spawn.mock.calls[0][9]).toBe("fix it");
+      await vi.advanceTimersByTimeAsync(AGENT_START_MS + 2_000);
+      expect(write).not.toHaveBeenCalled();
+      // A restart of the client never sends it again.
+      await api.ptyKill("p1");
+      await client.start("/demo", "claude", 80, 24, () => {});
+      expect(spawn.mock.calls[1][9]).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("an after-start agent is typed the prompt after its first output and 1500 ms quiet", async () => {
+    vi.useFakeTimers();
+    try {
+      const api = createMockApi({});
+      let emit: (bytes: Uint8Array) => void = () => {};
+      vi.spyOn(api, "ptySpawn").mockImplementation(async (id, _cwd, profile, _account, _cols, _rows, onData) => {
+        emit = onData;
+        return { id, pid: 1, program: "amp", agent: true, profile, permissions: "ask", account: null, accountSource: null, hooks: false, hookEvents: [], cli: null, promptAfter: "fix it" };
+      });
+      const write = vi.spyOn(api, "ptyWrite").mockResolvedValue();
+      const client = new PtyClient(api, "p2", undefined, undefined, "fix it");
+      await client.start("/demo", "amp", 80, 24, () => {});
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(write).not.toHaveBeenCalled();
+      emit(new Uint8Array([65]));
+      await vi.advanceTimersByTimeAsync(1_000);
+      emit(new Uint8Array([66]));
+      await vi.advanceTimersByTimeAsync(1_400);
+      expect(write).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(write).toHaveBeenCalledOnce();
+      expect(new TextDecoder().decode(write.mock.calls[0][1])).toBe(pastePrompt("fix it"));
+      emit(new Uint8Array([67]));
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(write).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a client disposed in the same tick never spawns", async () => {
