@@ -30,7 +30,10 @@ pub(crate) const WEEKLY_MINUTES: i64 = 10_080;
 pub(crate) struct ProbeTimeouts {
     pub init: Duration,
     pub rpc: Duration,
+    /// After stdin is closed, how long the probe may take to exit by itself.
     pub drain: Duration,
+    /// After the TERM, how long before the kill.
+    pub term: Duration,
 }
 
 impl Default for ProbeTimeouts {
@@ -38,7 +41,8 @@ impl Default for ProbeTimeouts {
         ProbeTimeouts {
             init: Duration::from_secs(10),
             rpc: Duration::from_secs(10),
-            drain: Duration::from_secs(5),
+            drain: Duration::from_secs(1),
+            term: Duration::from_secs(2),
         }
     }
 }
@@ -181,25 +185,72 @@ fn exited(child: &mut Child, stderr: &str) -> ProbeError {
     }
 }
 
-/// Closes stdin, asks the group to stop, waits `drain`, then kills the tree.
-/// The kill comes last: a probe that is refreshing its token must be able to
-/// finish writing it.
-fn shutdown(mut child: Child, stdin: ChildStdin, drain: Duration) {
-    drop(stdin);
-    if matches!(child.try_wait(), Ok(Some(_))) {
-        return;
+/// The steps of stopping a probe, apart so their order can be tested.
+trait Stop {
+    fn close_stdin(&mut self);
+    fn exited(&mut self) -> bool;
+    fn term(&mut self);
+    fn kill(&mut self);
+}
+
+struct Probe {
+    child: Child,
+    stdin: Option<ChildStdin>,
+}
+
+impl Stop for Probe {
+    fn close_stdin(&mut self) {
+        self.stdin = None;
     }
-    term_group(child.id());
-    let until = Instant::now() + drain;
-    while Instant::now() < until {
-        if matches!(child.try_wait(), Ok(Some(_))) {
-            return;
+    fn exited(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(Some(_)))
+    }
+    fn term(&mut self) {
+        term_group(self.child.id());
+    }
+    fn kill(&mut self) {
+        kill_tree(self.child.id());
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// Polls `exited` until it is true or `wait` has passed.
+fn exits_within(p: &mut impl Stop, wait: Duration) -> bool {
+    let until = Instant::now() + wait;
+    loop {
+        if p.exited() {
+            return true;
+        }
+        if Instant::now() >= until {
+            return false;
         }
         thread::sleep(Duration::from_millis(20));
     }
-    kill_tree(child.id());
-    let _ = child.kill();
-    let _ = child.wait();
+}
+
+/// Closes stdin and waits `drain` for the probe to leave on its own; only
+/// then asks the group to stop, waits `term`, and kills the tree. A probe
+/// that is refreshing its token gets the drain to finish writing it before
+/// any signal.
+fn stop_in_order(p: &mut impl Stop, drain: Duration, term: Duration) {
+    p.close_stdin();
+    if exits_within(p, drain) {
+        return;
+    }
+    p.term();
+    if exits_within(p, term) {
+        return;
+    }
+    p.kill();
+}
+
+fn shutdown(child: Child, stdin: ChildStdin, t: ProbeTimeouts) {
+    let mut probe = Probe {
+        child,
+        stdin: Some(stdin),
+    };
+    stop_in_order(&mut probe, t.drain, t.term);
 }
 
 /// Spawns `cmd` (already carrying args, env, cwd), runs the handshake and
@@ -250,7 +301,7 @@ pub(crate) fn read_rate_limits(
         );
         await_response(&rx, &mut child, 2, t.rpc)
     })();
-    shutdown(child, stdin, t.drain);
+    shutdown(child, stdin, t);
 
     let windows = parse_rpc_rate_limits(&answer?, now);
     if windows.is_empty() {
@@ -573,6 +624,7 @@ pub(crate) mod tests {
             init: Duration::from_secs(10),
             rpc: Duration::from_secs(10),
             drain: Duration::from_secs(5),
+            term: Duration::from_secs(2),
         }
     }
 
@@ -623,6 +675,7 @@ pub(crate) mod tests {
             init: Duration::from_secs(2),
             rpc: Duration::from_secs(2),
             drain: Duration::from_secs(2),
+            term: Duration::from_secs(2),
         };
         let start = Instant::now();
         let e = read_rate_limits(fake("hang"), t, 0).unwrap_err();
@@ -669,6 +722,92 @@ pub(crate) mod tests {
             assert!(Instant::now() < deadline, "server {pid} survived");
             thread::sleep(Duration::from_millis(100));
         }
+    }
+
+    /// Records each stop step; the child exits after `exits_after` polls.
+    struct Recorder {
+        steps: Vec<&'static str>,
+        polls: usize,
+        exits_after: Option<usize>,
+    }
+
+    impl Stop for Recorder {
+        fn close_stdin(&mut self) {
+            self.steps.push("close");
+        }
+        fn exited(&mut self) -> bool {
+            self.polls += 1;
+            self.exits_after.is_some_and(|n| self.polls > n)
+        }
+        fn term(&mut self) {
+            self.steps.push("term");
+        }
+        fn kill(&mut self) {
+            self.steps.push("kill");
+        }
+    }
+
+    fn recorder(exits_after: Option<usize>) -> Recorder {
+        Recorder {
+            steps: Vec::new(),
+            polls: 0,
+            exits_after,
+        }
+    }
+
+    #[test]
+    fn a_child_that_exits_in_the_drain_gets_no_signal() {
+        let mut r = recorder(Some(3));
+        stop_in_order(&mut r, Duration::from_secs(2), Duration::from_secs(2));
+        assert_eq!(r.steps, ["close"]);
+    }
+
+    #[test]
+    fn a_child_that_stops_on_term_is_not_killed() {
+        let mut r = recorder(None);
+        let start = Instant::now();
+        // Exits on the first poll after the TERM.
+        stop_in_order(
+            &mut ExitOnTerm(&mut r),
+            Duration::from_millis(100),
+            Duration::from_secs(2),
+        );
+        assert_eq!(r.steps, ["close", "term"]);
+        // The TERM waited for the whole drain.
+        assert!(start.elapsed() >= Duration::from_millis(100));
+    }
+
+    struct ExitOnTerm<'a>(&'a mut Recorder);
+
+    impl Stop for ExitOnTerm<'_> {
+        fn close_stdin(&mut self) {
+            self.0.close_stdin();
+        }
+        fn exited(&mut self) -> bool {
+            self.0.steps.contains(&"term")
+        }
+        fn term(&mut self) {
+            self.0.term();
+        }
+        fn kill(&mut self) {
+            self.0.kill();
+        }
+    }
+
+    #[test]
+    fn a_child_that_ignores_everything_is_closed_then_termed_then_killed() {
+        let mut r = recorder(None);
+        stop_in_order(
+            &mut r,
+            Duration::from_millis(100),
+            Duration::from_millis(100),
+        );
+        assert_eq!(r.steps, ["close", "term", "kill"]);
+    }
+
+    #[test]
+    fn the_default_drain_is_short() {
+        assert!(ProbeTimeouts::default().drain <= Duration::from_secs(1));
     }
 
     #[test]
