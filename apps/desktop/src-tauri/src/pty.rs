@@ -11,7 +11,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::ipc::{Channel, InvokeResponseBody};
+use tauri::ipc::{Channel, InvokeResponseBody, Response};
 use tauri::{AppHandle, Emitter, Manager, State};
 use xdev_agent::{
     AccountSource, Cli, Context, HookEvent, Launch, LaunchError, Permissions, Profile, Profiles,
@@ -20,9 +20,9 @@ use xdev_agent::{
 };
 use xdev_ai::Registry;
 use xdev_policy::{Action, Audited, Policy, Verdict, agent_fingerprint};
-use xdev_pty::client::Sink;
+use xdev_pty::client::{Sink, service_dir};
 use xdev_pty::proto::SessionInfo;
-use xdev_pty::{PtyError, Session, SpawnSpec};
+use xdev_pty::{PtyError, Session, SpawnSpec, snapshot};
 use xdev_workspace::{
     HookKind, Registry as Workspace, SetupPolicy, WorkspaceError, hook_env, hooks_for,
 };
@@ -120,6 +120,9 @@ pub enum PtydState {
     Fallback,
     /// A service of an older build answers; it runs until restarted.
     OldVersion,
+    /// A service of a newer build answers; this app does not use it and runs
+    /// terminals itself until the person reopens them here.
+    NewerVersion,
 }
 
 /// Payload of `ptyd_status` and the `ptyd://status` event.
@@ -131,6 +134,8 @@ pub struct PtydStatus {
     pub service_version: Option<String>,
     /// The error code of a fallback.
     pub reason: Option<String>,
+    /// What the service can do (`ring`, `snapshot`, `clear`); empty without one.
+    pub features: Vec<String>,
 }
 
 /// One live PTY, in the app (`Session`) or in the service.
@@ -1271,6 +1276,57 @@ pub fn ptyd_status(ptys: State<'_, Ptys>) -> PtydStatus {
     ptys.host_status().1
 }
 
+/// The saved output of `id`, at most `SNAPSHOT_MAX` bytes; none when there is
+/// no service dir, no file, or the id is not a safe name.
+fn snapshot_bytes(service_dir: Option<&Path>, id: &str) -> Option<Vec<u8>> {
+    let dir = service_dir?;
+    snapshot::read(dir, id, snapshot::SNAPSHOT_MAX)
+        .ok()
+        .flatten()
+}
+
+fn service_dir_of(app: &AppHandle) -> Option<PathBuf> {
+    let state = app.state::<AppState>();
+    state.local_dir.as_deref().map(service_dir)
+}
+
+/// The output the service saved for a PTY that is gone: raw bytes, or null.
+#[tauri::command(async)]
+pub fn pty_snapshot(app: AppHandle, id: String) -> Result<Response, CmdError> {
+    Ok(match snapshot_bytes(service_dir_of(&app).as_deref(), &id) {
+        Some(bytes) => Response::new(InvokeResponseBody::Raw(bytes)),
+        None => Response::new(InvokeResponseBody::Json("null".to_owned())),
+    })
+}
+
+/// Deletes the saved output of `id` (used once it has been restored).
+#[tauri::command(async)]
+pub fn pty_snapshot_clear(app: AppHandle, id: String) -> Result<(), CmdError> {
+    if let Some(dir) = service_dir_of(&app) {
+        snapshot::remove(&dir, &id).map_err(|e| CmdError {
+            code: "io",
+            detail: Some(e.to_string()),
+        })?;
+    }
+    Ok(())
+}
+
+/// Empties the service's ring and the saved output of a running PTY.
+/// `ptyd_old` when the service predates the feature.
+#[tauri::command(async)]
+pub fn ptyd_clear_scrollback(
+    app: AppHandle,
+    ptys: State<'_, Ptys>,
+    id: String,
+) -> Result<(), CmdError> {
+    let client = ptys.host().service().ok_or_else(unreachable_service)?;
+    client.clear_scrollback(&id)?;
+    if let Some(dir) = service_dir_of(&app) {
+        let _ = snapshot::remove(&dir, &id);
+    }
+    Ok(())
+}
+
 #[tauri::command(async)]
 pub fn ptyd_sessions(ptys: State<'_, Ptys>) -> Result<Vec<SessionInfo>, CmdError> {
     match ptys.host().service() {
@@ -1325,6 +1381,39 @@ mod tests {
 
     use super::*;
     use xdev_agent::{Cli, hook_args};
+
+    #[test]
+    fn snapshot_reads_raw_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        snapshot::write(
+            dir.path(),
+            "tab-1",
+            b"one
+[31mred[0m
+",
+        )
+        .unwrap();
+        assert_eq!(
+            snapshot_bytes(Some(dir.path()), "tab-1"),
+            Some(
+                b"one
+[31mred[0m
+"
+                .to_vec()
+            )
+        );
+        assert_eq!(snapshot_bytes(Some(dir.path()), "other"), None);
+        assert_eq!(snapshot_bytes(None, "tab-1"), None);
+    }
+
+    #[test]
+    fn snapshot_bad_id_is_none() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("secret.bin"), b"x").unwrap();
+        for id in ["../secret", r"..\secret", "a/b", ""] {
+            assert_eq!(snapshot_bytes(Some(dir.path()), id), None, "{id}");
+        }
+    }
 
     fn shell(script: &str) -> (PathBuf, Vec<String>) {
         if cfg!(windows) {

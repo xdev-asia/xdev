@@ -90,6 +90,13 @@ pub enum Frame {
         code: Option<i32>,
     },
     QuitAll,
+    /// Empties the ring and the snapshot of one PTY; it keeps running.
+    ClearScrollback {
+        id: String,
+    },
+    Cleared {
+        id: String,
+    },
     Error {
         id: Option<String>,
         code: String,
@@ -146,6 +153,8 @@ const KIND_DETACHED: u8 = 15;
 const KIND_EXITED: u8 = 16;
 const KIND_QUIT_ALL: u8 = 17;
 const KIND_ERROR: u8 = 18;
+const KIND_CLEAR_SCROLLBACK: u8 = 19;
+const KIND_CLEARED: u8 = 20;
 
 fn kind(f: &Frame) -> u8 {
     match f {
@@ -167,6 +176,8 @@ fn kind(f: &Frame) -> u8 {
         Frame::Exited { .. } => KIND_EXITED,
         Frame::QuitAll => KIND_QUIT_ALL,
         Frame::Error { .. } => KIND_ERROR,
+        Frame::ClearScrollback { .. } => KIND_CLEAR_SCROLLBACK,
+        Frame::Cleared { .. } => KIND_CLEARED,
     }
 }
 
@@ -248,7 +259,7 @@ pub fn read_frame(r: &mut impl Read) -> Result<Option<Frame>, ProtoError> {
                     data: data.to_vec(),
                 }
             }
-            KIND_HELLO..=KIND_ERROR => {
+            KIND_HELLO..=KIND_CLEARED => {
                 let f: Frame =
                     serde_json::from_slice(body).map_err(|e| ProtoError::Bad(e.to_string()))?;
                 if self::kind(&f) != kind {
@@ -363,6 +374,8 @@ mod tests {
                 id: None,
                 code: "pty_gone".into(),
             },
+            Frame::ClearScrollback { id: id() },
+            Frame::Cleared { id: id() },
         ]
     }
 
@@ -417,6 +430,32 @@ mod tests {
         buf.extend(4u32.to_le_bytes());
         buf.extend([200, 1, 2, 3]);
         buf.extend(encode(&[Frame::List]));
+        assert_eq!(
+            read_frame(&mut Cursor::new(buf)).unwrap(),
+            Some(Frame::List)
+        );
+    }
+
+    #[test]
+    fn clear_scrollback_round_trips() {
+        let frames = [
+            Frame::ClearScrollback { id: "t".into() },
+            Frame::Cleared { id: "t".into() },
+        ];
+        let mut r = Cursor::new(encode(&frames));
+        for want in &frames {
+            assert_eq!(read_frame(&mut r).unwrap().as_ref(), Some(want));
+        }
+    }
+
+    #[test]
+    fn old_reader_skips_kind_19() {
+        // A reader from before kinds 19 and 20 steps over them by length.
+        let mut buf = encode(&[Frame::ClearScrollback { id: "t".into() }]);
+        buf.extend(encode(&[Frame::List]));
+        assert_eq!(buf[4], KIND_CLEAR_SCROLLBACK);
+        // Simulate the old reader: the kind falls to the unknown arm.
+        buf[4] = 200;
         assert_eq!(
             read_frame(&mut Cursor::new(buf)).unwrap(),
             Some(Frame::List)

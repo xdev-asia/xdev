@@ -185,6 +185,7 @@ fn binary_opts(local: &std::path::Path, prefix: &str) -> StartOptions {
         app_version: "9.9.9-test".into(),
         ring_mb: 1,
         prefix: prefix.into(),
+        snapshots: true,
     }
 }
 
@@ -235,4 +236,28 @@ fn install_keeps_the_two_newest_version_folders() {
     std::fs::write(&bin, b"binary-2").unwrap();
     install(&ptyd, &bin, "0.3.0").unwrap();
     assert_eq!(std::fs::read(&copy).unwrap(), b"binary-2");
+}
+
+#[test]
+fn clear_on_a_service_with_the_feature_empties_it() {
+    let svc = in_process("clear");
+    let c = svc.client();
+    assert!(c.features().iter().any(|f| f == "clear"));
+    let (s, out, _) = sink();
+    c.spawn(
+        "p1",
+        spec(&idle("before-clear")),
+        serde_json::Value::Null,
+        s,
+    )
+    .unwrap();
+    wait_for(&out, &c, "p1", "before-clear");
+    c.clear_scrollback("p1").unwrap();
+    assert_eq!(c.clear_scrollback("nope").unwrap_err().code, "pty_gone");
+    let b = svc.client();
+    let (s2, out2, _) = sink();
+    b.attach("p1", 0, s2).unwrap();
+    thread::sleep(Duration::from_millis(300));
+    assert!(!String::from_utf8_lossy(&out2.lock().unwrap()).contains("before-clear"));
+    c.quit_all().unwrap();
 }

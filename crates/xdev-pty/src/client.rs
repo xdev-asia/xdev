@@ -58,6 +58,8 @@ pub struct Welcome {
     pub service_version: String,
     pub pid: u32,
     pub minor: u32,
+    /// What the service can do beyond the base protocol (`ring`, `snapshot`, `clear`).
+    pub features: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +88,8 @@ pub struct StartOptions {
     pub ring_mb: u8,
     /// The endpoint prefix; tests pass their own.
     pub prefix: String,
+    /// Save the output of each PTY for a restore; off adds `--no-snapshots`.
+    pub snapshots: bool,
 }
 
 impl StartOptions {
@@ -102,6 +106,7 @@ impl Default for StartOptions {
             app_version: String::new(),
             ring_mb: 2,
             prefix: PREFIX.to_owned(),
+            snapshots: true,
         }
     }
 }
@@ -117,6 +122,7 @@ struct Inner {
     spawns: Mutex<HashMap<String, Sender<SpawnReply>>>,
     attaches: Mutex<HashMap<String, Pending>>,
     lists: Mutex<VecDeque<Sender<Vec<SessionInfo>>>>,
+    clears: Mutex<HashMap<String, Sender<Result<(), String>>>>,
     alive: AtomicBool,
     /// Set once the reader has ended and every sink heard it.
     closed: AtomicBool,
@@ -258,11 +264,13 @@ fn hello(endpoint: &Endpoint, dir: &Path, app_version: &str) -> Result<Client, H
             service_version,
             pid,
             minor,
+            features,
             ..
         })) => Welcome {
             service_version,
             pid,
             minor,
+            features,
         },
         Ok(Some(Frame::Error { code, .. })) if code == "ptyd_version" => {
             return Err(Hello::Version);
@@ -282,6 +290,7 @@ fn hello(endpoint: &Endpoint, dir: &Path, app_version: &str) -> Result<Client, H
         spawns: Mutex::default(),
         attaches: Mutex::default(),
         lists: Mutex::default(),
+        clears: Mutex::default(),
         alive: AtomicBool::new(true),
         closed: AtomicBool::new(false),
         on_close: Mutex::new(None),
@@ -306,6 +315,7 @@ fn read_loop(inner: Arc<Inner>, mut r: Stream) {
     lock(&inner.spawns).clear();
     lock(&inner.attaches).clear();
     lock(&inner.lists).clear();
+    lock(&inner.clears).clear();
     let on_close = {
         let mut slot = lock(&inner.on_close);
         inner.closed.store(true, Ordering::SeqCst);
@@ -365,10 +375,17 @@ impl Inner {
                 }
             }
             Frame::Error { id: Some(id), code } => {
-                if let Some(tx) = lock(&self.spawns).remove(&id) {
+                if let Some(tx) = lock(&self.clears).remove(&id) {
+                    let _ = tx.send(Err(code));
+                } else if let Some(tx) = lock(&self.spawns).remove(&id) {
                     let _ = tx.send(Err(code));
                 } else if let Some(p) = lock(&self.attaches).remove(&id) {
                     let _ = p.tx.send(Err(code));
+                }
+            }
+            Frame::Cleared { id } => {
+                if let Some(tx) = lock(&self.clears).remove(&id) {
+                    let _ = tx.send(Ok(()));
                 }
             }
             Frame::Sessions { sessions } => {
@@ -388,6 +405,15 @@ impl Inner {
     }
 }
 
+/// `ptyd_old` unless the service lists `clear`.
+fn can_clear(features: &[String]) -> Result<(), ClientError> {
+    if features.iter().any(|f| f == "clear") {
+        Ok(())
+    } else {
+        Err(ClientError::new("ptyd_old", None))
+    }
+}
+
 fn wait<T>(rx: mpsc::Receiver<Result<T, String>>) -> Result<T, ClientError> {
     match rx.recv_timeout(REPLY_WAIT) {
         Ok(Ok(v)) => Ok(v),
@@ -399,6 +425,27 @@ fn wait<T>(rx: mpsc::Receiver<Result<T, String>>) -> Result<T, ClientError> {
 impl Client {
     pub fn welcome(&self) -> &Welcome {
         &self.welcome
+    }
+
+    /// What the service lists in its Welcome.
+    pub fn features(&self) -> &[String] {
+        &self.welcome.features
+    }
+
+    /// Empties the ring and the saved snapshot of `id`; it keeps running.
+    /// `ptyd_old` when the service predates the `clear` feature.
+    pub fn clear_scrollback(&self, id: &str) -> Result<(), ClientError> {
+        can_clear(&self.welcome.features)?;
+        let (tx, rx) = mpsc::channel();
+        lock(&self.inner.clears).insert(id.to_owned(), tx);
+        let sent = self
+            .inner
+            .send(&Frame::ClearScrollback { id: id.to_owned() });
+        if let Err(e) = sent {
+            lock(&self.inner.clears).remove(id);
+            return Err(e);
+        }
+        wait(rx)
     }
 
     /// False once the connection has dropped.
@@ -618,9 +665,12 @@ fn launch(exe: &Path, opts: &StartOptions) -> io::Result<()> {
         .arg("--ring-mb")
         .arg(opts.ring_mb.to_string())
         .arg("--prefix")
-        .arg(&opts.prefix)
-        // Not a worktree: a service sitting in one would keep it from being removed.
-        .current_dir(&opts.dir)
+        .arg(&opts.prefix);
+    if !opts.snapshots {
+        cmd.arg("--no-snapshots");
+    }
+    // Not a worktree: a service sitting in one would keep it from being removed.
+    cmd.current_dir(&opts.dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -683,6 +733,13 @@ fn lock<T: ?Sized>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clear_on_old_service_is_ptyd_old() {
+        let old = vec!["ring".to_owned()];
+        assert_eq!(can_clear(&old).unwrap_err().code, "ptyd_old");
+        assert!(can_clear(&["ring".to_owned(), "clear".to_owned()]).is_ok());
+    }
 
     #[test]
     fn a_debug_build_keeps_its_own_service_dir() {

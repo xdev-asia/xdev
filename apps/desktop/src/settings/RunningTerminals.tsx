@@ -3,8 +3,9 @@ import type { JSX } from "react";
 import { toApiError, type Api, type ApiError, type PtydStatus, type SessionInfo } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
+import { requestTabJump } from "@/workspace/tabJump";
 
-type Ask = { kind: "end"; session: SessionInfo } | { kind: "endAll" } | { kind: "restart" };
+type Ask = { kind: "end"; session: SessionInfo } | { kind: "clear"; session: SessionInfo } | { kind: "endAll" } | { kind: "restart" };
 
 /** Settings → Terminal → Running terminals: what the terminal service holds, with End and Restart. */
 export function RunningTerminals(props: { api: Api }): JSX.Element {
@@ -34,6 +35,7 @@ export function RunningTerminals(props: { api: Api }): JSX.Element {
 
   const up = status?.state === "running" || status?.state === "old-version";
   const count = sessions.length;
+  const canClear = status?.features.includes("clear") === true;
   const name = (s: SessionInfo) => s.meta.profile ?? s.program;
 
   async function confirm(): Promise<void> {
@@ -44,6 +46,7 @@ export function RunningTerminals(props: { api: Api }): JSX.Element {
     setError(undefined);
     try {
       if (ask.kind === "end") await api.ptydEnd(ask.session.id);
+      else if (ask.kind === "clear") await api.ptydClearScrollback(ask.session.id);
       else if (ask.kind === "endAll") await api.ptydEndAll();
       else await api.ptydRestart();
     } catch (e) {
@@ -55,7 +58,9 @@ export function RunningTerminals(props: { api: Api }): JSX.Element {
   }
 
   const question =
-    asking?.kind === "end"
+    asking?.kind === "clear"
+      ? { title: t("settings.terminal.service.clearTitle"), body: t("settings.terminal.service.clearBody"), label: t("settings.terminal.service.clear") }
+      : asking?.kind === "end"
       ? { title: t("settings.terminal.service.endTitle"), body: t("settings.terminal.service.endBody", { name: name(asking.session) }), label: t("settings.terminal.service.end") }
       : asking?.kind === "endAll"
         ? { title: t("settings.terminal.service.endAllTitle", { count }), body: t("settings.terminal.service.endAllBody", { count }), label: t("settings.terminal.service.endAll") }
@@ -86,9 +91,21 @@ export function RunningTerminals(props: { api: Api }): JSX.Element {
                   <span className="settings-path">{s.meta.worktree ?? s.cwd}</span>
                   <span className="settings-hint">{t(s.attached ? "settings.terminal.service.attached" : "settings.terminal.service.detached")}</span>
                 </div>
-                <button type="button" className="btn-secondary" disabled={busy} onClick={() => setAsking({ kind: "end", session: s })}>
-                  {t("settings.terminal.service.end")}
-                </button>
+                <div className="settings-actions settings-actions-start">
+                  <button type="button" className="btn-secondary" disabled={busy} onClick={() => setAsking({ kind: "end", session: s })}>
+                    {t("settings.terminal.service.end")}
+                  </button>
+                  {s.attached && (
+                    <button type="button" className="btn-secondary" aria-label={t("settings.terminal.service.goToLabel", { name: name(s) })} onClick={() => requestTabJump(s.id)}>
+                      {t("settings.terminal.service.goTo")}
+                    </button>
+                  )}
+                  {canClear && (
+                    <button type="button" className="btn-secondary" disabled={busy} onClick={() => setAsking({ kind: "clear", session: s })}>
+                      {t("settings.terminal.service.clear")}
+                    </button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>

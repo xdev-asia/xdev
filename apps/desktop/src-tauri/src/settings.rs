@@ -1024,6 +1024,10 @@ pub struct TerminalSettings {
     /// The service's output ring per PTY, in MB, 1..=16.
     #[serde(deserialize_with = "lenient_ring_mb")]
     pub ring_mb: u8,
+    /// The service keeps the last 512 KB of each terminal's output on this
+    /// device, so a terminal can show it after a restart; read at start.
+    #[serde(deserialize_with = "lenient_save_scrollback")]
+    pub save_scrollback: bool,
     /// "app" or a built-in scheme id; `[a-z0-9-]{1,40}`, anything else is "app".
     #[serde(deserialize_with = "lenient_theme")]
     pub theme: String,
@@ -1079,6 +1083,7 @@ impl Default for TerminalSettings {
             service: true,
             on_quit: OnQuit::Keep,
             ring_mb: 2,
+            save_scrollback: true,
             theme: THEME_APP.into(),
             gpu: TerminalGpu::Auto,
             bell: TerminalBell::None,
@@ -1589,6 +1594,10 @@ fn lenient_service<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bool, D::E
     Ok(serde_json::from_value(value).unwrap_or(TerminalSettings::default().service))
 }
 
+fn lenient_save_scrollback<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bool, D::Error> {
+    lenient_or(de, true)
+}
+
 fn lenient_ring_mb<'de, D: serde::Deserializer<'de>>(de: D) -> Result<u8, D::Error> {
     let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
     Ok(serde_json::from_value(value).unwrap_or(TerminalSettings::default().ring_mb))
@@ -1725,6 +1734,16 @@ pub fn save(path: &Path, settings: &Settings) -> io::Result<()> {
 mod tests {
     use super::*;
     use crate::quick_commands::{QuickAction, QuickScope};
+
+    #[test]
+    fn save_scrollback_defaults_true_and_reads_lenient() {
+        assert!(TerminalSettings::default().save_scrollback);
+        let read = |json: &str| serde_json::from_str::<TerminalSettings>(json).unwrap();
+        assert!(read("{}").save_scrollback);
+        assert!(!read(r#"{"saveScrollback": false}"#).save_scrollback);
+        assert!(read(r#"{"saveScrollback": "no"}"#).save_scrollback);
+        assert!(read(r#"{"saveScrollback": null}"#).save_scrollback);
+    }
 
     #[test]
     fn settings_roundtrip() {
@@ -2215,6 +2234,7 @@ mod tests {
             service: false,
             on_quit: OnQuit::Ask,
             ring_mb: 8,
+            save_scrollback: false,
             theme: "tokyo-night".into(),
             gpu: TerminalGpu::Off,
             bell: TerminalBell::Visual,

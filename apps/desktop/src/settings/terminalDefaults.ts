@@ -17,6 +17,7 @@ export const TERMINAL_DEFAULTS: TerminalSettings = {
   service: true,
   onQuit: "keep",
   ringMb: 2,
+  saveScrollback: true,
   theme: "app",
   gpu: "auto",
   bell: "none",

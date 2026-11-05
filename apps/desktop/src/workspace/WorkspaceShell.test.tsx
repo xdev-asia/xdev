@@ -30,6 +30,7 @@ import { Sessions } from "./sessions";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { AccountSwitchDialog } from "./AccountSwitchDialog";
 import { WorkspaceShell } from "./WorkspaceShell";
+import { requestTabJump } from "./tabJump";
 import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeList } from "./WorktreeList";
 import { WorktreeTabs } from "./WorktreeTabs";
@@ -1701,4 +1702,14 @@ it.each([[true, 1], [false, 0]])("dismissing a failed pull request create takes 
   view.list().props.onDismissCreate(failed.id);
   expect(discard).toHaveBeenCalledTimes(discards);
   if (fetched) expect(discard).toHaveBeenCalledWith("demo-xdev", "develop");
+});
+
+it("tab jump request focuses the tab", async () => {
+  const view = await harness();
+  const { tab } = attend(view);
+  await settle();
+  expect(requestTabJump("no-such-tab")).toBe(false);
+  expect(requestTabJump(tab.id)).toBe(true);
+  expect(view.list().props.selected).toBe(OAK);
+  expect(view.of(WorktreeTabs).find(n => n.props.worktree === OAK)!.props.front).toMatchObject({ id: tab.id });
 });

@@ -1,6 +1,6 @@
 import type { Api, RestoreMode } from "@/api";
 import type { FileTabs } from "@/files/fileTabs";
-import { LAYOUT_VERSION, type RestoreReport, type SessionFallback } from "./layoutSnapshot";
+import { LAYOUT_VERSION, type RestoreOptions, type RestoreReport, type SessionFallback } from "./layoutSnapshot";
 import type { Sessions } from "./sessions";
 import { markStartup } from "@/startup/startupSteps";
 
@@ -118,6 +118,7 @@ export async function restoreLayout(
   known: (worktree: string) => boolean,
   openFile: (worktree: string, rel: string) => Promise<boolean>,
   carry?: (worktree: string) => boolean,
+  note?: RestoreOptions["note"],
 ): Promise<LayoutRestore | null> {
   try {
     const began = Date.now();
@@ -126,7 +127,7 @@ export async function restoreLayout(
       void markStartup(api, { id: "layout.restore", ok: true, ms: Date.now() - began });
       return null;
     }
-    const report = await sessions.restore(snapshot, ui.restore, sessionFallback(api), { known, openFile, carry });
+    const report = await sessions.restore(snapshot, ui.restore, sessionFallback(api), { known, openFile, carry, note });
     void markStartup(api, { id: "layout.restore", ok: true, ms: Date.now() - began });
     return { mode: ui.restore, report };
   } catch (e) {

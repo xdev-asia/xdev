@@ -1,5 +1,7 @@
 import { PROVIDERS, toApiError, type AccountSource, type Api, type HookDetail, type PtyInfo, type PtyProfile, type RestoreMode } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
+import { setPrime } from "@/terminal/restorePrime";
+import { translate } from "@/i18n";
 import { ownAccount } from "./ownAccount";
 
 // Where `ownAccount` lives to keep it free of the api import; callers may still take it from here.
@@ -290,7 +292,7 @@ export class Sessions {
         } else if (mode === "none") {
           continue;
         } else if (snap.kind === "terminal") {
-          const tab = (attach && (await this.attachTerminal(worktree, snap, report))) || (await this.restoreTerminal(worktree, snap, mode, fallback, report));
+          const tab = (attach && (await this.attachTerminal(worktree, snap, report))) || (await this.restoreTerminal(worktree, snap, mode, fallback, report, options.note));
           if (!tab) continue;
           ids.set(key, tab.id);
           opened.push(tab.id);
@@ -375,7 +377,7 @@ export class Sessions {
   }
 
   /** One terminal tab of a snapshot, or null when `mode` or a missing session leaves it out. */
-  private async restoreTerminal(worktree: string, snap: Extract<TabSnapshot, { kind: "terminal" }>, mode: RestoreMode, fallback: SessionFallback, report: RestoreReport): Promise<Tab | null> {
+  private async restoreTerminal(worktree: string, snap: Extract<TabSnapshot, { kind: "terminal" }>, mode: RestoreMode, fallback: SessionFallback, report: RestoreReport, note?: (key: "ptyd.restored" | "ptyd.fresh") => string): Promise<Tab | null> {
     const cli = snap.cli === undefined ? cliOf(snap.profileId) : snap.cli;
     const account = restoredAccount(snap, cli, this.restoreActive);
     let tab: Tab;
@@ -402,7 +404,20 @@ export class Sessions {
     const auto = snap.autoTitled === true && snap.renamed !== true && !!snap.title;
     if (snap.autoTitled === true && snap.title) entry.autoTitle = snap.title;
     this.update(entry, { title: snap.title, renamed: snap.renamed === true, autoTitled: auto, pinned: snap.pinned === true, color });
+    await this.primeFromSnapshot(snap.ptyId, tab.id, note);
     return entry.tab;
+  }
+
+  /**
+   * The old pty is gone, but the service may have saved its output: the new terminal shows it first,
+   * under a dim note. The saved copy is deleted once it is handed over.
+   */
+  private async primeFromSnapshot(oldId: string | undefined, newId: string, note?: (key: "ptyd.restored" | "ptyd.fresh") => string): Promise<void> {
+    if (typeof oldId !== "string" || !oldId) return;
+    const bytes = await this.api.ptySnapshot(oldId).catch(() => null);
+    const say = note ?? ((key: "ptyd.restored" | "ptyd.fresh") => translate("en", key));
+    setPrime(newId, { bytes: bytes && bytes.length > 0 ? bytes : null, note: say(bytes && bytes.length > 0 ? "ptyd.restored" : "ptyd.fresh") });
+    if (bytes) await this.api.ptySnapshotClear(oldId).catch(() => {});
   }
 
   /** Every tab that resumed an agent session, in the order they opened. */

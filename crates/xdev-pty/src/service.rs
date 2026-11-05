@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError, Weak};
 use std::thread;
@@ -20,6 +20,7 @@ use xdev_ipc::{Endpoint, IpcError, Stream, endpoint, new_token, token_eq};
 
 use crate::proto::{DATA_MAX, Frame, PROTOCOL, SessionInfo, read_frame, write_frame};
 use crate::ring::Ring;
+use crate::snapshot;
 use crate::{Session, SpawnSpec, WINDOW};
 
 /// The endpoint prefix; `xdev_ipc::endpoint` adds the user, channel and major.
@@ -27,7 +28,7 @@ pub const PREFIX: &str = "xdev-ptyd";
 /// What the service writes on every spawn and exit, for a look from outside.
 pub const SESSIONS_FILE: &str = "sessions.json";
 /// The minor protocol version; a client may use what the Welcome lists.
-pub const MINOR: u32 = 0;
+pub const MINOR: u32 = 1;
 
 /// A client that sends no Hello in this long is dropped.
 const HELLO_WAIT: Duration = Duration::from_secs(5);
@@ -49,6 +50,10 @@ pub struct Config {
     /// The service ends this long after it last had a client or a live PTY.
     pub idle_exit: Duration,
     pub version: String,
+    /// Save the last output of each PTY under `dir` for a later restore.
+    pub snapshots: bool,
+    /// The least time between two snapshots of one PTY.
+    pub snapshot_every: Duration,
 }
 
 impl Config {
@@ -61,8 +66,21 @@ impl Config {
             lag: Duration::from_secs(10),
             idle_exit: Duration::from_secs(15),
             version: env!("CARGO_PKG_VERSION").to_owned(),
+            snapshots: true,
+            snapshot_every: Duration::from_secs(5),
         }
     }
+}
+
+/// What the Welcome lists: `clear` is `ClearScrollback`, `snapshot` is the
+/// saved output.
+fn features(snapshots: bool) -> Vec<String> {
+    let mut f = vec!["ring".to_owned()];
+    if snapshots {
+        f.push("snapshot".to_owned());
+    }
+    f.push("clear".to_owned());
+    f
 }
 
 /// A running service; `wait` blocks until it ends.
@@ -89,6 +107,11 @@ struct Pty {
     pid: OnceLock<Option<u32>>,
     session: Mutex<Option<Session>>,
     out: Mutex<Out>,
+    /// Set by `Kill`: the person closed the tab, so no snapshot is kept.
+    killed: AtomicBool,
+    /// Held while a snapshot is written or removed, so a late write cannot
+    /// bring back a file `Kill` just deleted.
+    snap_io: Mutex<()>,
     last_input_ms: AtomicI64,
 }
 
@@ -97,6 +120,9 @@ struct Out {
     client: Option<Client>,
     exited: Option<Option<i32>>,
     last_output_ms: i64,
+    /// Output since the last snapshot.
+    dirty: bool,
+    snap_at: Instant,
 }
 
 /// The connection a PTY's output goes to.
@@ -137,6 +163,11 @@ pub fn start(cfg: Config) -> Result<Service, IpcError> {
         quit: Mutex::new(false),
         done: Condvar::new(),
     });
+    if shared.cfg.snapshots {
+        let _ = snapshot::prune(&shared.cfg.dir, SystemTime::now());
+    } else {
+        let _ = snapshot::clear_all(&shared.cfg.dir);
+    }
     shared.save_sessions();
     {
         let shared = shared.clone();
@@ -195,6 +226,7 @@ impl Shared {
         let ptys = std::mem::take(&mut *lock(&self.ptys));
         for pty in ptys.values() {
             pty.end();
+            self.snapshot(pty, true);
         }
         self.save_sessions();
     }
@@ -219,6 +251,28 @@ impl Shared {
             .is_err()
         {
             let _ = fs::remove_file(&tmp);
+        }
+    }
+
+    /// Saves the tail of the ring of `pty` when it has new output (`force`
+    /// skips the wait between two saves). The bytes are copied under the
+    /// lock and written outside it. Best effort.
+    fn snapshot(&self, pty: &Pty, force: bool) {
+        if !self.cfg.snapshots || pty.killed.load(Ordering::SeqCst) {
+            return;
+        }
+        let bytes = {
+            let mut out = lock(&pty.out);
+            if !out.dirty || !(force || out.snap_at.elapsed() >= self.cfg.snapshot_every) {
+                return;
+            }
+            out.dirty = false;
+            out.snap_at = Instant::now();
+            out.ring.tail(snapshot::SNAPSHOT_MAX)
+        };
+        let _io = lock(&pty.snap_io);
+        if !pty.killed.load(Ordering::SeqCst) {
+            let _ = snapshot::write(&self.cfg.dir, &pty.id, &bytes);
         }
     }
 
@@ -309,7 +363,8 @@ fn tick(shared: Weak<Shared>) {
             return;
         }
         let ptys: Vec<Arc<Pty>> = lock(&shared.ptys).values().cloned().collect();
-        for pty in ptys {
+        for pty in &ptys {
+            shared.snapshot(pty, false);
             let mut out = lock(&pty.out);
             let lagging = out
                 .client
@@ -373,7 +428,7 @@ fn serve(shared: Arc<Shared>, stream: Stream) {
     conn.send(Frame::Welcome {
         protocol: PROTOCOL,
         minor: MINOR,
-        features: vec!["ring".to_owned()],
+        features: features(shared.cfg.snapshots),
         service_version: shared.cfg.version.clone(),
         pid: std::process::id(),
     });
@@ -472,9 +527,31 @@ fn handle(shared: &Arc<Shared>, conn: &Arc<Conn>, frame: Frame) {
         Frame::Kill { id } => {
             let pty = lock(&shared.ptys).remove(&id);
             if let Some(pty) = pty {
+                pty.killed.store(true, Ordering::SeqCst);
                 pty.end();
+                let _io = lock(&pty.snap_io);
+                let _ = snapshot::remove(&shared.cfg.dir, &pty.id);
             }
             shared.save_sessions();
+        }
+        Frame::ClearScrollback { id } => {
+            let reply = match shared.get(&id) {
+                Some(pty) => {
+                    {
+                        let mut out = lock(&pty.out);
+                        out.ring.clear();
+                        out.dirty = false;
+                    }
+                    let _io = lock(&pty.snap_io);
+                    let _ = snapshot::remove(&shared.cfg.dir, &pty.id);
+                    Frame::Cleared { id }
+                }
+                None => Frame::Error {
+                    id: Some(id),
+                    code: "pty_gone".to_owned(),
+                },
+            };
+            conn.send(reply);
         }
         Frame::List => conn.send(Frame::Sessions {
             sessions: shared.infos(),
@@ -519,7 +596,11 @@ fn spawn(
             }),
             exited: None,
             last_output_ms: now,
+            dirty: false,
+            snap_at: Instant::now(),
         }),
+        killed: AtomicBool::new(false),
+        snap_io: Mutex::new(()),
         last_input_ms: AtomicI64::new(now),
     });
     let window = shared.cfg.window;
@@ -531,6 +612,7 @@ fn spawn(
             let mut out = lock(&pty.out);
             out.ring.push(&bytes);
             out.last_output_ms = now_ms();
+            out.dirty = true;
             feed(&pty.id, &mut out, window);
         }
     };
@@ -548,6 +630,7 @@ fn spawn(
                 }
             }
             if let Some(shared) = shared.upgrade() {
+                shared.snapshot(&pty, true);
                 shared.save_sessions();
             }
         }
@@ -558,6 +641,7 @@ fn spawn(
     let _ = pty.pid.set(pid);
     *lock(&pty.session) = Some(session);
     if let Some(old) = ptys.insert(id, pty) {
+        old.killed.store(true, Ordering::SeqCst);
         old.end();
     }
     drop(ptys);

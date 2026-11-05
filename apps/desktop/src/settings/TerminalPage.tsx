@@ -17,7 +17,7 @@ export const CLIPBOARD_SWITCHES = ["copyOnSelect", "rightClickPaste", "osc52Clip
 const FONT_IDS = ["terminal.fontFamily", "terminal.fontSize", "terminal.fontWeight", "terminal.lineHeight"];
 const CURSOR_IDS = ["terminal.cursorStyle", "terminal.cursorBlink"];
 export const ON_QUIT: OnQuit[] = ["keep", "end", "ask"];
-const SERVICE_IDS = ["terminal.service", "terminal.onQuit", "terminal.ringMb"];
+const SERVICE_IDS = ["terminal.service", "terminal.onQuit", "terminal.ringMb", "terminal.saveScrollback"];
 type NumberField = "fontSize" | "lineHeight" | "scrollback" | "ringMb";
 type Draft = Partial<Record<NumberField | "fontFamily", string>>;
 
@@ -316,6 +316,25 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
         </label>
         </SettingRow>
       </div>
+      <ul className="settings-list">
+        {settingShown(filter, "terminal.saveScrollback") && (
+        <li className="settings-item" data-switch="saveScrollback" data-setting-id="terminal.saveScrollback">
+          <div className="settings-item-text">
+            <strong>{t("settings.terminal.saveScrollback")}</strong>
+            <span className="settings-path">{t("settings.terminal.saveScrollbackHint")}</span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            className="agent-switch"
+            aria-checked={current.saveScrollback}
+            aria-label={t("settings.terminal.saveScrollback")}
+            disabled={busy}
+            onClick={() => void patch({ saveScrollback: !current.saveScrollback })}
+          />
+        </li>
+        )}
+      </ul>
       </SettingGroup>
 
       <SettingRow id="terminal.running" filter={filter}>

@@ -9,6 +9,7 @@ mod pump;
 pub mod ring;
 pub mod service;
 mod session;
+pub mod snapshot;
 
 pub use pump::{COALESCE, Flow, READ_CHUNK, WINDOW};
 pub use session::{PtyError, Session, SpawnSpec};

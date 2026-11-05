@@ -3,4 +3,4 @@
 /**
  * Where terminals run this app run.
  */
-export type PtydState = "off" | "running" | "fallback" | "old-version";
+export type PtydState = "off" | "running" | "fallback" | "old-version" | "newer-version";

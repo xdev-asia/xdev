@@ -1,5 +1,6 @@
 //! The terminal service: `xdev-ptyd --dir <service dir> [--ring-mb N]
-//! [--prefix P]`, the dir being `client::service_dir`; the prefix is for
+//! [--prefix P]
+//! [--no-snapshots]`, the dir being `client::service_dir`; the prefix is for
 //! tests that must not meet a real service.
 //! The app starts it detached; it ends 15 s after its last PTY and client.
 
@@ -17,17 +18,21 @@ fn main() -> ExitCode {
     let mut dir: Option<PathBuf> = None;
     let mut ring = RING_DEFAULT;
     let mut prefix: Option<String> = None;
+    let mut snapshots = true;
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--dir") => dir = args.next().map(PathBuf::from),
             Some("--prefix") => prefix = args.next().and_then(|p| p.into_string().ok()),
+            Some("--no-snapshots") => snapshots = false,
             Some("--ring-mb") => {
                 let mb: Option<usize> = args.next().and_then(|v| v.to_str()?.parse().ok());
                 ring = mb.map_or(RING_DEFAULT, |mb| (mb * 1024 * 1024).clamp(1, RING_MAX));
             }
             _ => {
-                eprintln!("usage: xdev-ptyd --dir <dir> [--ring-mb <1..16>] [--prefix <p>]");
+                eprintln!(
+                    "usage: xdev-ptyd --dir <dir> [--ring-mb <1..16>] [--prefix <p>] [--no-snapshots]"
+                );
                 return ExitCode::from(2);
             }
         }
@@ -37,6 +42,7 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     };
     let mut cfg = Config::new(dir, ring);
+    cfg.snapshots = snapshots;
     if let Some(prefix) = prefix {
         cfg.endpoint = endpoint(&cfg.dir, &prefix, PROTOCOL);
     }

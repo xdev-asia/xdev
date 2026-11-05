@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use xdev_ipc::{Endpoint, IpcError, Stream, endpoint, read_token};
 use xdev_pty::proto::{Frame, PROTOCOL, read_frame, write_frame};
 use xdev_pty::service::{Config, SESSIONS_FILE, start};
+use xdev_pty::snapshot;
 
 const DEADLINE: Duration = Duration::from_secs(10);
 
@@ -382,4 +383,102 @@ fn a_connected_client_keeps_an_idle_service_up() {
     assert!(!svc.ended_within(Duration::from_secs(1)));
     drop(c);
     assert!(svc.ended_within(Duration::from_secs(5)));
+}
+
+fn fast(cfg: &mut Config) {
+    cfg.snapshot_every = Duration::from_millis(200);
+}
+
+/// Waits until the snapshot of `id` holds `text`; panics at the deadline.
+fn snapshot_has(svc: &Svc, id: &str, text: &[u8]) {
+    let start = Instant::now();
+    loop {
+        if let Ok(Some(bytes)) = snapshot::read(svc.dir.path(), id, usize::MAX)
+            && contains(&bytes, text)
+        {
+            return;
+        }
+        assert!(start.elapsed() < DEADLINE, "no snapshot with {text:?}");
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[test]
+fn snapshot_written_after_output_within_bound() {
+    let svc = service("snap", fast);
+    let mut c = svc.client();
+    c.spawn("p1", &idle("saved-line"));
+    c.until(|_, out| contains(out, b"saved-line"));
+    snapshot_has(&svc, "p1", b"saved-line");
+}
+
+#[test]
+fn kill_deletes_snapshot() {
+    let svc = service("snapkill", fast);
+    let mut c = svc.client();
+    c.spawn("p1", &idle("gone-soon"));
+    c.until(|_, out| contains(out, b"gone-soon"));
+    snapshot_has(&svc, "p1", b"gone-soon");
+    c.send(Frame::Kill { id: "p1".into() });
+    // The list answers after the Kill was handled.
+    assert!(sessions(&mut c).is_empty());
+    // The exit of the killed child must not bring the file back.
+    thread::sleep(Duration::from_millis(1000));
+    assert_eq!(snapshot::read(svc.dir.path(), "p1", 10).unwrap(), None);
+}
+
+#[test]
+fn quit_all_keeps_snapshot() {
+    let mut svc = service("snapquit", |cfg| {
+        // Never by the tick: only the quit may write it.
+        cfg.snapshot_every = Duration::from_secs(3600);
+    });
+    let mut c = svc.client();
+    c.spawn("p1", &idle("kept-line"));
+    c.until(|_, out| contains(out, b"kept-line"));
+    c.send(Frame::QuitAll);
+    assert!(svc.ended_within(DEADLINE));
+    snapshot_has(&svc, "p1", b"kept-line");
+}
+
+#[test]
+fn no_snapshots_flag_writes_nothing() {
+    let svc = service("snapoff", |cfg| {
+        fast(cfg);
+        cfg.snapshots = false;
+    });
+    let mut c = svc.client();
+    c.spawn("p1", &idle("not-saved"));
+    c.until(|_, out| contains(out, b"not-saved"));
+    thread::sleep(Duration::from_millis(1000));
+    assert!(!svc.dir.path().join(snapshot::DIR_NAME).exists());
+}
+
+#[test]
+fn clear_empties_ring_and_snapshot() {
+    let svc = service("clear", fast);
+    let mut c = svc.client();
+    c.spawn("p1", &idle("old-output"));
+    c.until(|_, out| contains(out, b"old-output"));
+    snapshot_has(&svc, "p1", b"old-output");
+    c.send(Frame::ClearScrollback { id: "p1".into() });
+    c.until(|f, _| matches!(f, Frame::Cleared { .. }));
+    assert_eq!(snapshot::read(svc.dir.path(), "p1", 10).unwrap(), None);
+    // A new attach from 0 replays nothing older than the clear.
+    let mut b = svc.client();
+    b.send(Frame::Attach {
+        id: "p1".into(),
+        from_seq: 0,
+    });
+    let (_, out) = b.until(|f, _| matches!(f, Frame::Output { .. }));
+    assert!(!contains(&out, b"old-output"));
+    // The PTY still runs.
+    assert_eq!(sessions(&mut b)[0].exited, None);
+    // An unknown id is pty_gone.
+    c.send(Frame::ClearScrollback { id: "nope".into() });
+    let (frames, _) = c.until(|f, _| matches!(f, Frame::Error { .. }));
+    assert!(matches!(
+        frames.last(),
+        Some(Frame::Error { code, .. }) if code == "pty_gone"
+    ));
 }

@@ -2,6 +2,7 @@
 //! service) or in the per-user `xdev-ptyd` service (`ServiceHost`), which
 //! keeps it running when the app quits, updates or crashes.
 
+use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
@@ -28,6 +29,7 @@ impl From<ClientError> for CmdError {
             "ptyd_auth" => "ptyd_auth",
             "ptyd_version" => "ptyd_version",
             "ptyd_start_failed" => "ptyd_start_failed",
+            "ptyd_old" => "ptyd_old",
             _ => "ptyd_unreachable",
         };
         CmdError {
@@ -160,6 +162,34 @@ impl PtyHandle for ServicePty {
     }
 }
 
+/// `major.minor.patch` of a version, and whether a pre-release tag follows.
+/// A part that is not a number reads as 0.
+fn parse_version(v: &str) -> ([u64; 3], Option<&str>) {
+    let v = v.trim().trim_start_matches('v');
+    let v = v.split('+').next().unwrap_or(v);
+    let (core, pre) = match v.split_once('-') {
+        Some((core, pre)) => (core, Some(pre)),
+        None => (v, None),
+    };
+    let mut parts = [0u64; 3];
+    for (slot, part) in parts.iter_mut().zip(core.split('.')) {
+        *slot = part.parse().unwrap_or(0);
+    }
+    (parts, pre)
+}
+
+/// How the service's version ranks against the app's: numeric triples, and a
+/// pre-release tag counts as older than the same release.
+pub(crate) fn compare_versions(service: &str, app: &str) -> Ordering {
+    let ((s, s_pre), (a, a_pre)) = (parse_version(service), parse_version(app));
+    s.cmp(&a).then_with(|| match (s_pre, a_pre) {
+        (None, None) => Ordering::Equal,
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (Some(x), Some(y)) => x.cmp(y),
+    })
+}
+
 /// The host for this app run. `start` runs only when the setting is on; a
 /// failure falls back to the app (R3) with the reason in the status.
 pub(crate) fn choose_host(
@@ -173,15 +203,27 @@ pub(crate) fn choose_host(
     match start() {
         Ok(client) => {
             let version = client.welcome().service_version.clone();
-            let state = if version == app_version {
-                PtydState::Running
-            } else {
-                PtydState::OldVersion
+            let state = match compare_versions(&version, app_version) {
+                Ordering::Equal => PtydState::Running,
+                Ordering::Less => PtydState::OldVersion,
+                // Held: a newer xDev owns this service. Nothing is ended
+                // until the person reopens the terminals here.
+                Ordering::Greater => {
+                    let held = PtydStatus {
+                        features: client.features().to_vec(),
+                        ..status(PtydState::NewerVersion, Some(version), None)
+                    };
+                    return (Arc::new(LocalHost), held);
+                }
+            };
+            let held = PtydStatus {
+                features: client.features().to_vec(),
+                ..status(state, Some(version), None)
             };
             let host = ServiceHost {
                 client: Arc::new(client),
             };
-            (Arc::new(host), status(state, Some(version), None))
+            (Arc::new(host), held)
         }
         Err(e) => (
             Arc::new(LocalHost),
@@ -214,11 +256,17 @@ pub(crate) fn start_host(app: &AppHandle, local_dir: Option<&Path>) {
             code: "ptyd_start_failed".into(),
             detail: Some(format!("no {BINARY} next to the app")),
         })?;
+        if !terminal.save_scrollback {
+            // Off also deletes what is saved, even when a running service
+            // started before the switch was turned off.
+            let _ = xdev_pty::snapshot::clear_all(&service_dir(local));
+        }
         ensure(&StartOptions {
             dir: service_dir(local),
             binary,
             app_version: version.clone(),
             ring_mb: terminal.ring_mb,
+            snapshots: terminal.save_scrollback,
             ..StartOptions::default()
         })
     });
@@ -310,6 +358,7 @@ pub(crate) fn status(
         state,
         service_version,
         reason,
+        features: Vec::new(),
     }
 }
 
@@ -366,6 +415,45 @@ mod tests {
         // A bundle has it only with this config.
         let release = include_str!("../../../../.github/workflows/release.yml");
         assert!(release.contains("--config src-tauri/tauri.ptyd.conf.json"));
+    }
+
+    #[test]
+    fn versions_compare_semver() {
+        use Ordering::*;
+        assert_eq!(compare_versions("0.7.0", "0.7.0"), Equal);
+        assert_eq!(compare_versions("0.10.0", "0.9.5"), Greater);
+        assert_eq!(compare_versions("1.0.0", "1.0.1"), Less);
+        assert_eq!(compare_versions("2.0.0", "1.99.99"), Greater);
+        assert_eq!(compare_versions("1.0.0-beta.1", "1.0.0"), Less);
+        assert_eq!(compare_versions("1.0.0", "1.0.0-beta.1"), Greater);
+        assert_eq!(compare_versions("v1.2.3+build5", "1.2.3"), Equal);
+    }
+
+    #[test]
+    fn newer_service_is_held_local() {
+        // A service whose version is above the app's is not used. Version
+        // text is the whole test: the service is the real one in-process.
+        let dir = tempfile::tempdir().unwrap();
+        let ep = xdev_ipc::endpoint(dir.path(), "xdev-ptyd-held-test", xdev_pty::proto::PROTOCOL);
+        let mut cfg = xdev_pty::service::Config::new(dir.path().to_owned(), 64 * 1024);
+        cfg.endpoint = ep.clone();
+        cfg.version = "99.0.0".into();
+        let service = xdev_pty::service::start(cfg).unwrap();
+        let handle = std::thread::spawn(move || service.wait());
+        let (host, st) = choose_host(true, "1.0.0", || {
+            xdev_pty::client::connect(dir.path(), &ep, "1.0.0")
+        });
+        assert_eq!(st.state, PtydState::NewerVersion);
+        assert_eq!(st.service_version.as_deref(), Some("99.0.0"));
+        assert!(st.features.iter().any(|f| f == "clear"));
+        assert!(host.service().is_none());
+        // An older app version meets an older service the old way.
+        let (host, st) = choose_host(true, "99.0.0", || {
+            xdev_pty::client::connect(dir.path(), &ep, "99.0.0")
+        });
+        assert_eq!(st.state, PtydState::Running);
+        host.service().unwrap().quit_all().unwrap();
+        handle.join().unwrap();
     }
 
     #[test]
