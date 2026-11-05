@@ -7,13 +7,13 @@ import { loadCustomSchemes, useCustomSchemes } from "@/terminal/customSchemes";
 import { TERMINAL_SCHEMES } from "@/terminal/terminalThemes";
 import { THEME_APP } from "@/settings/terminalDefaults";
 import { TERMINAL_LIMITS } from "@/terminal/terminalSettings";
-import { SettingGroup, SettingRow } from "../SettingRow";
+import { SettingGroup, SettingRow, settingShown } from "../SettingRow";
 import { ANSI_KEYS } from "./ansiKeys";
 import { ImportSchemeDialog, type ImportError } from "./ImportSchemeDialog";
 import { parseNumber, type TerminalSectionProps } from "./sectionProps";
 
 export const GPU_MODES: TerminalGpu[] = ["auto", "on", "off"];
-const THEME_IDS = ["terminal.theme", "terminal.themeImport"];
+const THEME_IDS = ["terminal.theme", "terminal.themeFollowApp", "terminal.themeLight", "terminal.themeImport"];
 const RENDER_IDS = ["terminal.gpu", "terminal.minimumContrast"];
 export { ANSI_KEYS };
 
@@ -32,6 +32,7 @@ export function TerminalLookSection(props: TerminalSectionProps): JSX.Element {
   // The contrast while it is being typed in; written on blur or Enter.
   const [contrast, setContrast] = useState<string | undefined>(undefined);
   const scheme = TERMINAL_SCHEMES.find((s) => s.id === current.theme) ?? custom.find((s) => s.id === current.theme);
+  const lightScheme = TERMINAL_SCHEMES.find((s) => s.id === current.themeLight) ?? custom.find((s) => s.id === current.themeLight);
 
   async function startImport(): Promise<void> {
     if (!api) return;
@@ -127,6 +128,63 @@ export function TerminalLookSection(props: TerminalSectionProps): JSX.Element {
             </p>
           )}
         </SettingRow>
+        <ul className="settings-list">
+          {settingShown(filter, "terminal.themeFollowApp") && (
+            <li className="settings-item" data-switch="themeFollowApp" data-setting-id="terminal.themeFollowApp">
+              <div className="settings-item-text">
+                <strong>{t("settings.terminal.theme.followApp")}</strong>
+                <small className="settings-hint">{t("settings.terminal.theme.followAppHint")}</small>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                className="agent-switch"
+                aria-checked={current.themeFollowApp}
+                aria-label={t("settings.terminal.theme.followApp")}
+                disabled={busy}
+                onClick={() => void patch({ themeFollowApp: !current.themeFollowApp })}
+              />
+            </li>
+          )}
+        </ul>
+        {current.themeFollowApp && (
+          <SettingRow id="terminal.themeLight" filter={filter}>
+            <div className="ws-fields">
+              <label className="ws-field">
+                <span>{t("settings.terminal.theme.light")}</span>
+                <select
+                  value={lightScheme ? lightScheme.id : THEME_APP}
+                  disabled={busy}
+                  data-field="themeLight"
+                  onChange={(e) => void patch({ themeLight: e.target.value })}
+                >
+                  <option value={THEME_APP}>{t("settings.terminal.theme.app")}</option>
+                  {TERMINAL_SCHEMES.filter((x) => x.mode === "light").map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name}
+                    </option>
+                  ))}
+                  <optgroup label={t("settings.terminal.theme.darkGroup")}>
+                    {TERMINAL_SCHEMES.filter((x) => x.mode === "dark").map((x) => (
+                      <option key={x.id} value={x.id}>
+                        {x.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {custom.length > 0 && (
+                    <optgroup label={t("settings.terminal.theme.imported")}>
+                      {custom.map((x) => (
+                        <option key={x.id} value={x.id}>
+                          {x.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </label>
+            </div>
+          </SettingRow>
+        )}
       </SettingGroup>
 
       {api && (

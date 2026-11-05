@@ -107,6 +107,7 @@ import { runMenuAction } from "@/shell/menuActions";
 import { useShellLabels } from "@/shell/shellLabels";
 import { askQuit, guardClose, installCloseGuard, type QuitAsk, type QuitChoice } from "./quitGuard";
 import { getTerminalSettings } from "@/terminal/terminalSettings";
+import { eventInTerminal, FONT_STEP, stepTerminalFont } from "@/terminal/terminalZoom";
 import { createNotifier, type Notifier } from "./notifier";
 import { AgentSessionsStore } from "@/agentSessions/store";
 import { confirmResume } from "@/agentSessions/resumeFlow";
@@ -1005,9 +1006,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     "panel.sourceControl": () => panelKey("changes"),
     "panel.issues": () => panelKey("issues"),
     "panel.ports": () => panelKey("ports"),
-    "zoom.in": () => void stepZoom(api, ZOOM_STEP),
-    "zoom.out": () => void stepZoom(api, -ZOOM_STEP),
-    "zoom.reset": () => void stepZoom(api, 0),
+    // In a focused terminal the chord changes the terminal font size; elsewhere it zooms the window.
+    "zoom.in": (e) => void (eventInTerminal(e) ? stepTerminalFont(api, FONT_STEP) : stepZoom(api, ZOOM_STEP)),
+    "zoom.out": (e) => void (eventInTerminal(e) ? stepTerminalFont(api, -FONT_STEP) : stepZoom(api, -ZOOM_STEP)),
+    "zoom.reset": (e) => void (eventInTerminal(e) ? stepTerminalFont(api, 0) : stepZoom(api, 0)),
   });
   useKeymap(
     {

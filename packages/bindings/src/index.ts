@@ -94,6 +94,7 @@ export type { FileStatus } from "./FileStatus";
 export type { FileText } from "./FileText";
 export type { FolderEntry } from "./FolderEntry";
 export type { FontWeight } from "./FontWeight";
+export type { FontWeightBold } from "./FontWeightBold";
 export type { ForkSync } from "./ForkSync";
 export type { ForkSyncBlock } from "./ForkSyncBlock";
 export type { ForkSyncStatus } from "./ForkSyncStatus";

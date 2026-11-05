@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { TERMINAL_DEFAULTS } from "./terminalSettings";
-import { xtermOptions } from "./terminalOptions";
+import { withAlpha, xtermOptions } from "./terminalOptions";
 import { TERMINAL_SCHEMES } from "./terminalThemes";
 
 const token = (name: string) => ({ "--x-color-surface": "#101010", "--x-color-ink": "#eeeeee" })[name];
@@ -30,4 +30,32 @@ it("takes a custom scheme from the list it is given", () => {
   const colors = { ...TERMINAL_SCHEMES[0].colors, background: "#123456" };
   const custom = [{ id: "custom-mine", name: "Mine", mode: "dark" as const, colors }];
   expect(xtermOptions({ ...TERMINAL_DEFAULTS, theme: "custom-mine" }, "mono", token, custom).theme).toEqual(colors);
+});
+
+it("light mode uses the light theme only when a separate one is on", () => {
+  const s = { ...TERMINAL_DEFAULTS, theme: "nord", themeLight: "one-light" };
+  const one = TERMINAL_SCHEMES.find((x) => x.id === "one-light")!;
+  const nord = TERMINAL_SCHEMES.find((x) => x.id === "nord")!;
+  expect(xtermOptions(s, "mono", token, [], true).theme).toEqual(nord.colors);
+  expect(xtermOptions({ ...s, themeFollowApp: true }, "mono", token, [], true).theme).toEqual(one.colors);
+  expect(xtermOptions({ ...s, themeFollowApp: true }, "mono", token, [], false).theme).toEqual(nord.colors);
+});
+
+it("the new text and transparency options reach xterm", () => {
+  const o = xtermOptions({ ...TERMINAL_DEFAULTS, fontWeightBold: "600", scrollOnInput: false }, "mono", token);
+  expect(o).toMatchObject({ fontWeightBold: "600", scrollOnUserInput: false, allowTransparency: false });
+});
+
+it("opacity below 1 turns transparency on and puts an alpha byte on a hex background", () => {
+  const o = xtermOptions({ ...TERMINAL_DEFAULTS, theme: "nord", backgroundOpacity: 0.5 }, "mono", token);
+  expect(o.allowTransparency).toBe(true);
+  expect(o.theme.background).toMatch(/^#[0-9a-f]{6}80$/);
+  expect(xtermOptions({ ...TERMINAL_DEFAULTS, backgroundOpacity: 1 }, "mono", token).theme.background).toBe("#101010");
+});
+
+it("withAlpha leaves a non-hex colour and full opacity alone, and expands #rgb", () => {
+  expect(withAlpha("rgb(1, 2, 3)", 0.5)).toBe("rgb(1, 2, 3)");
+  expect(withAlpha("#102030", 1)).toBe("#102030");
+  expect(withAlpha("#abc", 0.5)).toBe("#aabbcc80");
+  expect(withAlpha(undefined, 0.5)).toBeUndefined();
 });

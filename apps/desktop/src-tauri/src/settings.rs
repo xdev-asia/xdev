@@ -1058,7 +1058,35 @@ pub struct TerminalSettings {
     /// macOS only: whether the Option key sends Alt/Esc sequences or composes characters.
     #[serde(deserialize_with = "lenient")]
     pub mac_option_as_alt: MacOptionAsAlt,
+    /// The scheme used while the app is in light mode and `theme_follow_app` is on; same rule as
+    /// `theme`.
+    #[serde(deserialize_with = "lenient_theme_light")]
+    pub theme_light: String,
+    /// Off: `theme` in both modes. On: `theme_light` while the app is light.
+    #[serde(deserialize_with = "lenient_bool_false")]
+    pub theme_follow_app: bool,
+    /// Draw the panes that do not have focus dimmer.
+    #[serde(deserialize_with = "lenient_bool_false")]
+    pub dim_inactive_panes: bool,
+    /// The line between two panes, 1..=4 px.
+    #[serde(deserialize_with = "lenient_divider")]
+    pub pane_divider_px: u8,
+    /// The weight of bold text.
+    #[serde(deserialize_with = "lenient")]
+    pub font_weight_bold: FontWeightBold,
+    /// Typing scrolls the terminal to the bottom.
+    #[serde(deserialize_with = "lenient_scroll_on_input")]
+    pub scroll_on_input: bool,
+    /// Space around the text, 0..=24 px.
+    #[serde(deserialize_with = "lenient_padding")]
+    pub padding_px: u8,
+    /// 0.5..=1.0; 1 is opaque.
+    #[serde(deserialize_with = "lenient_bg_opacity")]
+    pub background_opacity: f32,
 }
+
+/// The theme id used in light mode when none is set.
+pub const THEME_LIGHT_DEFAULT: &str = "one-light";
 
 /// The default double-click word separators, the reference app's.
 pub const DEFAULT_WORD_SEPARATORS: &str = " ()[]{}',\"`";
@@ -1095,6 +1123,14 @@ impl Default for TerminalSettings {
             link_click: TerminalLinkClick::Actions,
             url_middle_click: TerminalLinkClick::Open,
             mac_option_as_alt: MacOptionAsAlt::Auto,
+            theme_light: THEME_LIGHT_DEFAULT.into(),
+            theme_follow_app: false,
+            dim_inactive_panes: false,
+            pane_divider_px: 1,
+            font_weight_bold: FontWeightBold::Bold,
+            scroll_on_input: true,
+            padding_px: 8,
+            background_opacity: 1.0,
         }
     }
 }
@@ -1107,6 +1143,9 @@ impl TerminalSettings {
     pub const SCROLL: RangeInclusive<f32> = 0.5..=3.0;
     pub const FAST_SCROLL: RangeInclusive<f32> = 1.0..=10.0;
     pub const CONTRAST: RangeInclusive<f32> = 1.0..=21.0;
+    pub const DIVIDER_PX: RangeInclusive<u8> = 1..=4;
+    pub const PADDING_PX: RangeInclusive<u8> = 0..=24;
+    pub const BG_OPACITY: RangeInclusive<f32> = 0.5..=1.0;
 
     /// As stored: every number inside its range.
     pub fn clamped(mut self) -> Self {
@@ -1142,6 +1181,20 @@ impl TerminalSettings {
             self.minimum_contrast,
             Self::CONTRAST,
             default.minimum_contrast,
+        );
+        if !valid_theme_id(&self.theme_light) {
+            self.theme_light = THEME_LIGHT_DEFAULT.into();
+        }
+        self.pane_divider_px = self
+            .pane_divider_px
+            .clamp(*Self::DIVIDER_PX.start(), *Self::DIVIDER_PX.end());
+        self.padding_px = self
+            .padding_px
+            .clamp(*Self::PADDING_PX.start(), *Self::PADDING_PX.end());
+        self.background_opacity = clamp_or(
+            self.background_opacity,
+            Self::BG_OPACITY,
+            default.background_opacity,
         );
         self
     }
@@ -1198,6 +1251,22 @@ pub enum FontWeight {
     Normal,
     Medium,
     Bold,
+}
+
+/// Settings → Terminal → Bold weight.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub enum FontWeightBold {
+    #[default]
+    #[serde(rename = "bold")]
+    #[cfg_attr(test, ts(rename = "bold"))]
+    Bold,
+    #[serde(rename = "600")]
+    #[cfg_attr(test, ts(rename = "600"))]
+    W600,
+    #[serde(rename = "700")]
+    #[cfg_attr(test, ts(rename = "700"))]
+    W700,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1691,6 +1760,26 @@ fn lenient_middle<'de, D: serde::Deserializer<'de>>(de: D) -> Result<TerminalLin
 
 fn lenient_theme<'de, D: serde::Deserializer<'de>>(de: D) -> Result<String, D::Error> {
     lenient_or(de, THEME_APP.to_owned())
+}
+
+fn lenient_theme_light<'de, D: serde::Deserializer<'de>>(de: D) -> Result<String, D::Error> {
+    lenient_or(de, THEME_LIGHT_DEFAULT.to_owned())
+}
+
+fn lenient_divider<'de, D: serde::Deserializer<'de>>(de: D) -> Result<u8, D::Error> {
+    lenient_or(de, TerminalSettings::default().pane_divider_px)
+}
+
+fn lenient_padding<'de, D: serde::Deserializer<'de>>(de: D) -> Result<u8, D::Error> {
+    lenient_or(de, TerminalSettings::default().padding_px)
+}
+
+fn lenient_bg_opacity<'de, D: serde::Deserializer<'de>>(de: D) -> Result<f32, D::Error> {
+    lenient_or(de, TerminalSettings::default().background_opacity)
+}
+
+fn lenient_scroll_on_input<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bool, D::Error> {
+    lenient_or(de, true)
 }
 
 fn lenient_words<'de, D: serde::Deserializer<'de>>(de: D) -> Result<String, D::Error> {
@@ -2334,6 +2423,14 @@ mod tests {
             link_click: TerminalLinkClick::Open,
             url_middle_click: TerminalLinkClick::None,
             mac_option_as_alt: MacOptionAsAlt::Left,
+            theme_light: "rose-pine-dawn".into(),
+            theme_follow_app: true,
+            dim_inactive_panes: true,
+            pane_divider_px: 3,
+            font_weight_bold: FontWeightBold::W600,
+            scroll_on_input: false,
+            padding_px: 12,
+            background_opacity: 0.8,
         };
         let settings = Settings {
             terminal: terminal.clone(),
@@ -3577,6 +3674,90 @@ then sum up"
                 .unwrap();
         assert_eq!(t.link_click, TerminalLinkClick::Open);
         assert_eq!(t.url_middle_click, TerminalLinkClick::Actions);
+    }
+
+    #[test]
+    fn terminal_look_keys_missing_from_an_old_file_read_as_defaults() {
+        let t: TerminalSettings =
+            serde_json::from_str(r#"{ "fontSize": 15, "theme": "nord" }"#).unwrap();
+        assert_eq!((t.font_size, t.theme.as_str()), (15, "nord"));
+        assert_eq!(t.theme_light, "one-light");
+        assert!(!t.theme_follow_app && !t.dim_inactive_panes);
+        assert_eq!(t.pane_divider_px, 1);
+        assert_eq!(t.font_weight_bold, FontWeightBold::Bold);
+        assert!(t.scroll_on_input);
+        assert_eq!((t.padding_px, t.background_opacity), (8, 1.0));
+        assert_eq!(
+            TerminalSettings {
+                font_size: 15,
+                theme: "nord".into(),
+                ..TerminalSettings::default()
+            },
+            t
+        );
+        // A whole old settings file, with no terminal look keys at all.
+        let all: Settings =
+            serde_json::from_str(r#"{ "terminal": { "scrollback": 500 } }"#).unwrap();
+        assert_eq!(all.terminal.scrollback, 500);
+        assert_eq!(all.terminal.padding_px, 8);
+    }
+
+    #[test]
+    fn terminal_look_bad_values_cost_only_themselves() {
+        let t: TerminalSettings = serde_json::from_str(
+            r#"{ "themeLight": 5, "themeFollowApp": "yes", "dimInactivePanes": [],
+                 "paneDividerPx": "x", "fontWeightBold": "heavy", "scrollOnInput": null,
+                 "paddingPx": -3, "backgroundOpacity": {}, "fontSize": 17 }"#,
+        )
+        .unwrap();
+        let d = TerminalSettings::default();
+        assert_eq!(t.theme_light, d.theme_light);
+        assert!(!t.theme_follow_app && !t.dim_inactive_panes);
+        assert_eq!(t.pane_divider_px, d.pane_divider_px);
+        assert_eq!(t.font_weight_bold, FontWeightBold::Bold);
+        assert!(t.scroll_on_input);
+        assert_eq!((t.padding_px, t.background_opacity), (8, 1.0));
+        assert_eq!(t.font_size, 17);
+        let t: TerminalSettings = serde_json::from_str(r#"{ "fontWeightBold": "700" }"#).unwrap();
+        assert_eq!(t.font_weight_bold, FontWeightBold::W700);
+    }
+
+    #[test]
+    fn terminal_look_numbers_clamp() {
+        let with = |divider, padding, opacity| {
+            TerminalSettings {
+                pane_divider_px: divider,
+                padding_px: padding,
+                background_opacity: opacity,
+                ..TerminalSettings::default()
+            }
+            .clamped()
+        };
+        let hi = with(99, 99, 9.0);
+        assert_eq!(
+            (hi.pane_divider_px, hi.padding_px, hi.background_opacity),
+            (4, 24, 1.0)
+        );
+        let lo = with(0, 0, 0.0);
+        assert_eq!(
+            (lo.pane_divider_px, lo.padding_px, lo.background_opacity),
+            (1, 0, 0.5)
+        );
+        assert_eq!(with(2, 12, f32::NAN).background_opacity, 1.0);
+        let fine = TerminalSettings {
+            pane_divider_px: 3,
+            padding_px: 12,
+            background_opacity: 0.75,
+            theme_light: "gruvbox-light".into(),
+            ..TerminalSettings::default()
+        };
+        assert_eq!(fine.clone().clamped(), fine);
+        // A bad light theme id falls back to the light default, not to "app".
+        let bad = TerminalSettings {
+            theme_light: "No Such!".into(),
+            ..TerminalSettings::default()
+        };
+        assert_eq!(bad.clamped().theme_light, "one-light");
     }
 
     /// `TERMINAL_DEFAULTS` in the UI and the generated binding name the same

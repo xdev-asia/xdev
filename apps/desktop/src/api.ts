@@ -444,6 +444,7 @@ export type {
   BranchPrefixMode,
   TerminalSettings,
   FontWeight,
+  FontWeightBold,
   CursorStyle,
   TerminalGpu,
   TerminalBell,
