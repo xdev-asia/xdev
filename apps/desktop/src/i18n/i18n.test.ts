@@ -15,6 +15,12 @@ describe("i18n", () => {
     }
   });
 
+  it("an ellipsis is one character", () => {
+    for (const dict of [en, vi]) {
+      for (const [key, value] of Object.entries(dict)) expect(value, key).not.toContain("...");
+    }
+  });
+
   it("detectLocale follows the OS language", () => {
     expect(detectLocale("vi-VN")).toBe("vi");
     expect(detectLocale("vi")).toBe("vi");

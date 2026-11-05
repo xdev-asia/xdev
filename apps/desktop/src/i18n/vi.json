@@ -1608,7 +1608,7 @@
   "workspace.tabs.agents": "Agent",
   "workspace.tabs.shells": "Shell",
   "workspace.agentPicker.label": "Agent",
-  "workspace.agentPicker.search": "Tìm agent...",
+  "workspace.agentPicker.search": "Tìm agent…",
   "workspace.agentPicker.empty": "Không có agent nào khớp.",
   "workspace.agentPicker.blank": "Terminal trống",
   "workspace.agentPicker.setDefault": "Đặt làm mặc định",
