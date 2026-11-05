@@ -3,6 +3,7 @@ mod agent_path;
 mod agent_session_log;
 mod agent_sessions;
 mod ai_keys;
+mod app_icon;
 mod app_menu;
 mod app_stats;
 mod applog;
@@ -201,7 +202,11 @@ pub fn run() {
             tray::sync(app.handle());
             app_menu::listen(app.handle());
             app_menu::install(app.handle());
-            window_chrome::apply(app.handle(), settings_store::read(app.handle()).ui.titlebar);
+            {
+                let ui = settings_store::read(app.handle()).ui;
+                window_chrome::apply(app.handle(), ui.titlebar);
+                app_icon::apply(app.handle(), &ui.app_icon);
+            }
             if let Some(data) = xdev_core::data_dir() {
                 app.manage(automations::AutomationService::open(&data));
                 automations::start(app.handle());
@@ -327,6 +332,7 @@ pub fn run() {
             commands::key_settings_put,
             commands::ui_settings_get,
             commands::ui_settings_put,
+            commands::app_icon_set,
             layout::layout_load,
             layout::layout_save,
             open_in::open_in_settings,

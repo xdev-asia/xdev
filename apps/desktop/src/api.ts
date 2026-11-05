@@ -890,6 +890,8 @@ export interface Api {
   // Window view settings (zoom, 0.5..2); the put returns what was stored, clamped.
   uiSettingsGet(): Promise<UiSettings>;
   uiSettingsPut(s: UiSettings): Promise<UiSettings>;
+  /** Stores Settings → Appearance → App icon (an unknown id stores "default"), puts it on the windows or the Dock, and returns the view settings as stored. */
+  appIconSet(id: string): Promise<UiSettings>;
   // Keys. `keybindings.json` in the app config folder holds the shortcut overrides; Rust only moves
   // the text, `keys/keybindingsFile.ts` parses it. `text` is null when there is no file.
   keybindingsRead(): Promise<KeybindingsText>;
@@ -1848,6 +1850,7 @@ const tauriApi: Api = {
   },
   uiSettingsGet: () => call("ui_settings_get"),
   uiSettingsPut: (settings) => call("ui_settings_put", { settings }),
+  appIconSet: (id) => call("app_icon_set", { id }),
   keybindingsRead: () => call("keybindings_read"),
   keybindingsWrite: (text) => call("keybindings_write", { text }),
   keybindingsReveal: () => call("keybindings_reveal"),

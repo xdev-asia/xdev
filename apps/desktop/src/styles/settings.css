@@ -998,6 +998,76 @@
   cursor: default;
 }
 
+/* Settings > Appearance > App icon: six thumbnail tiles as one radio group; they wrap at 360px.
+   The picked tile is a 1px accent border on the accent-soft tint. */
+.app-icons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-2);
+}
+
+.app-icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.app-icon input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.app-icon-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--x-space-1);
+  width: 72px;
+  padding: var(--x-space-2) var(--x-space-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--bg-1);
+}
+
+.app-icon-image {
+  display: block;
+  width: 40px;
+  height: 40px;
+}
+
+.app-icon-name {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-icon input:hover + .app-icon-tile {
+  background: var(--bg-2);
+}
+
+.app-icon input:checked + .app-icon-tile {
+  border-color: var(--x-color-accent);
+  background: var(--x-color-accent-soft);
+}
+
+.app-icon input:checked + .app-icon-tile .app-icon-name {
+  color: var(--text-1);
+}
+
+.app-icon input:focus-visible + .app-icon-tile {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.app-icon input:disabled {
+  cursor: default;
+}
+
 .tint-opacity {
   display: flex;
   flex-direction: column;

@@ -201,6 +201,20 @@ pub fn ui_settings_put(
     let ui = settings_store::write(&app, &[SettingsSection::Ui], |s| s.ui = settings.clamped())
         .map(|s| s.ui)?;
     crate::window_chrome::apply(&app, ui.titlebar);
+    crate::app_icon::apply(&app, &ui.app_icon);
+    Ok(ui)
+}
+
+/// Stores Settings → Appearance → App icon (an unknown id stores the
+/// default), puts it on the windows or the Dock, and returns the view
+/// settings as stored.
+#[tauri::command(async)]
+pub fn app_icon_set(app: AppHandle, id: String) -> Result<settings::UiSettings, CmdError> {
+    let ui = settings_store::write(&app, &[SettingsSection::Ui], |s| {
+        s.ui.app_icon = settings::known_app_icon(&id).to_string();
+    })
+    .map(|s| s.ui)?;
+    crate::app_icon::apply(&app, &ui.app_icon);
     Ok(ui)
 }
 

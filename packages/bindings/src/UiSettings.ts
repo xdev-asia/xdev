@@ -69,4 +69,9 @@ titlebar: TitlebarMode,
 /**
  * The app name shows in the custom title bar.
  */
-showTitlebarName: boolean, };
+showTitlebarName: boolean, 
+/**
+ * Settings → Appearance → App icon: one of `APP_ICONS`. An unknown id,
+ * or a value that is no string, reads as `APP_ICON_DEFAULT`.
+ */
+appIcon: string, };

@@ -6,6 +6,8 @@ import { useI18n } from "@/i18n";
 import { APPS } from "@/shell/apps";
 import { clampTintOpacity, SIDEBAR_TINTS, TINT_OPACITY } from "@/ui/sidebarTint";
 import { applyAppearance } from "@/ui/theme";
+import type { AppIconId } from "@/ui/appIcon";
+import { AppIconPicker } from "./AppIconPicker";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
@@ -14,7 +16,7 @@ export const SIDEBAR_LOOKS: SidebarLook[] = ["default", "tinted"];
 export const TITLEBAR_MODES: TitlebarMode[] = ["native", "custom"];
 export const STATUS_BAR_ITEMS = ["branch", "tokenUsage", "agents", "ports", "keepAwake", "version"] as const satisfies readonly (keyof StatusBarItems)[];
 
-const LOOK_IDS = ["appearance.theme", "appearance.font", "appearance.sidebar", "appearance.sidebarTint", "appearance.reduceEffects", "appearance.titlebar", "appearance.titlebarName"];
+const LOOK_IDS = ["appearance.theme", "appearance.font", "appearance.sidebar", "appearance.sidebarTint", "appearance.reduceEffects", "appearance.titlebar", "appearance.titlebarName", "appearance.appIcon"];
 const APP_IDS = APPS.map((id) => `appearance.app.${id}`);
 const EDITOR_IDS = ["appearance.editorTheme"];
 const STATUS_IDS = STATUS_BAR_ITEMS.map((k) => `appearance.statusBar.${k}`);
@@ -41,14 +43,13 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
     );
   }, [api]);
 
-  // Read again before the put: zoom or the restore mode may have changed since the page opened. The
-  // stored answer is what shows and what the window applies.
-  async function patch(change: Partial<UiSettings>): Promise<void> {
+  // The stored answer is what shows and what the window applies.
+  async function save(write: () => Promise<UiSettings>): Promise<void> {
     if (busy) return;
     setBusy(true);
     setError(undefined);
     try {
-      const stored = await api.uiSettingsPut({ ...(await api.uiSettingsGet()), ...change });
+      const stored = await write();
       setUi(stored);
       setFont(stored.uiFont);
       setOpacity(clampTintOpacity(stored.sidebarTintOpacity));
@@ -59,6 +60,11 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
       setBusy(false);
     }
   }
+  // Read again before the put: zoom or the restore mode may have changed since the page opened.
+  const patch = (change: Partial<UiSettings>) => save(async () => api.uiSettingsPut({ ...(await api.uiSettingsGet()), ...change }));
+  const pickIcon = (id: AppIconId) => {
+    if (ui && id !== ui.appIcon) void save(() => api.appIconSet(id));
+  };
   const saveFont = () => {
     if (ui && font.trim() !== ui.uiFont) void patch({ uiFont: font });
   };
@@ -249,6 +255,15 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
               )}
             </li>
           </ul>
+        </SettingRow>
+        <SettingRow id="appearance.appIcon" filter={filter}>
+          <div className="ws-fields">
+            <div className="ws-field" data-field="appIcon">
+              <span id="app-icon-label">{t("settings.appearance.appIcon")}</span>
+              {ui && <AppIconPicker value={ui.appIcon} disabled={busy} labelledBy="app-icon-label" onPick={pickIcon} />}
+              <small className="settings-hint">{t("settings.appearance.appIconHint")}</small>
+            </div>
+          </div>
         </SettingRow>
       </SettingGroup>
 
