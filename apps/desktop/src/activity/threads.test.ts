@@ -1,7 +1,8 @@
 import { expect, it } from "vitest";
+import { STATUS_DEFAULTS } from "@/status/statusSettings";
 import type { Tab } from "@/workspace/sessions";
 import type { ActivityOptions } from "./options";
-import { activityThreads, hasAgentThreads, type ThreadSource } from "./threads";
+import { STATUS_ORDER, activityThreads, hasAgentThreads, type ThreadSource } from "./threads";
 
 const names = { "/a": { name: "oak", branch: "feat/oak" }, "/b": { name: "elm", branch: null } };
 const src = (id: string, over: Partial<Tab>, lastOutput: number | null): ThreadSource => ({
@@ -36,11 +37,45 @@ it("ungrouped is one group; grouped keeps the output order by worktree", () => {
   const tabs = [src("a1", {}, 5), src("b1", { worktree: "/b" }, 4), src("a2", {}, 3)];
   const flat = activityThreads(tabs, names, "", off);
   expect(flat).toHaveLength(1);
-  expect(flat[0]).toMatchObject({ worktree: null, name: null });
+  expect(flat[0]).toMatchObject({ kind: "none", key: null, worktree: null, name: null });
   const grouped = activityThreads(tabs, names, "", { ...off, groupBy: "worktree" });
   expect(grouped.map((g) => [g.worktree, g.name, g.threads.map((t) => t.tab.id)])).toEqual([
     ["/a", "oak", ["a1", "a2"]],
     ["/b", "elm", ["b1"]],
+  ]);
+});
+
+it("the unread filter keeps unread tabs the settings admit", () => {
+  const tabs = [
+    src("u", { unread: true, unreadReason: "needs-you" }, 3),
+    src("d", { unread: true, unreadReason: "done" }, 2),
+    src("r", { unread: false }, 1),
+  ];
+  const unread: ActivityOptions = { ...off, filter: "unread" };
+  expect(ids(activityThreads(tabs, names, "", unread))).toEqual(["u", "d"]);
+  const quiet = { ...STATUS_DEFAULTS, enabled: true, onNeedsInput: true, onDone: false };
+  expect(ids(activityThreads(tabs, names, "", unread, quiet))).toEqual(["u"]);
+  expect(ids(activityThreads(tabs, names, "", off, quiet))).toEqual(["u", "d", "r"]);
+});
+
+it("groups by status in a fixed order and hides empty groups", () => {
+  const tabs = [src("w", {}, 9), src("d", { status: "done" }, 8), src("n", { status: "needs-you" }, 1), src("n2", { status: "needs-you" }, 7)];
+  const groups = activityThreads(tabs, names, "", { ...off, groupBy: "status" });
+  expect(groups.map((g) => [g.kind, g.key, g.threads.map((t) => t.tab.id)])).toEqual([
+    ["status", "needs-you", ["n2", "n"]],
+    ["status", "working", ["w"]],
+    ["status", "done", ["d"]],
+  ]);
+  expect(STATUS_ORDER[0]).toBe("needs-you");
+  expect(activityThreads(tabs, names, "nomatch", { ...off, groupBy: "status" })).toEqual([]);
+});
+
+it("groups by agent in the order of each agent's newest thread", () => {
+  const tabs = [src("c1", {}, 5), src("x1", { profileId: "codex" }, 9), src("c2", {}, 1)];
+  const groups = activityThreads(tabs, names, "", { ...off, groupBy: "agent" });
+  expect(groups.map((g) => [g.key, g.worktree, g.name, g.threads.map((t) => t.tab.id)])).toEqual([
+    ["codex", null, null, ["x1"]],
+    ["claude", null, null, ["c1", "c2"]],
   ]);
 });
 

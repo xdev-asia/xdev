@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import { Button, EmptyState, ListRow, SearchInput, Segmented } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
+import { profileName } from "@/agents/profileStore";
 import { AgentIcon } from "@/workspace/AgentIcon";
 import { ago } from "@/workspace/ago";
 import type { Sessions } from "@/workspace/sessions";
@@ -46,28 +47,37 @@ export function optionItems(options: ActivityOptions, onOptions: (o: ActivityOpt
   ];
 }
 
+/** The header text of a group: the status word, the worktree's name or the agent's name. */
+function groupLabel(group: ThreadGroup, t: T): string {
+  if (group.kind === "status") return t(`workspace.tabs.status.${group.key}`);
+  if (group.kind === "agent") return profileName(null, group.key ?? "", t);
+  return group.name ?? "";
+}
+
 function threadRows(groups: ThreadGroup[], now: number, t: T, onJump: (id: string) => void): JSX.Element[] {
   return groups.flatMap((group) => {
     const rows = group.threads.map((th) => {
       const state = t(`workspace.tabs.status.${th.tab.status}`);
       const title = th.tab.title ?? t("activity.untitled");
       const where = [th.worktreeName, th.branch].filter((x): x is string => !!x).join(" · ");
-      const when = th.lastOutput === null ? state : `${state} · ${ago(th.lastOutput, now, t)}`;
+      const age = th.lastOutput === null ? null : ago(th.lastOutput, now, t);
+      // A header already says the status or the worktree, so the row leaves that out.
+      const when = [group.kind === "status" ? null : state, age].filter((x): x is string => !!x).join(" · ");
       return (
         <ListRow
           key={th.tab.id}
           as="li"
           leading={<AgentIcon profile={th.tab.profileId} />}
           title={title}
-          meta={group.worktree === null ? `${where} · ${when}` : when}
+          meta={group.kind === "worktree" ? when : [where, when].filter(Boolean).join(" · ")}
           onClick={() => onJump(th.tab.id)}
         />
       );
     });
-    if (group.worktree === null) return rows;
+    if (group.kind === "none") return rows;
     return [
-      <li key={`g:${group.worktree}`} className="act-group" role="presentation">
-        {group.name}
+      <li key={`g:${group.key}`} className="act-group" role="presentation">
+        {groupLabel(group, t)}
       </li>,
       ...rows,
     ];
