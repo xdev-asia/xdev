@@ -36,7 +36,7 @@ export async function loadAutomationsSettings(api: Pick<Api, "automationsSetting
   return current;
 }
 
-/** Loads the settings and reloads them when `settings://changed` names navigation. Returns the stop. */
+/** Loads the settings and reloads them when `settings://changed` names automations. Returns the stop. */
 export function startAutomationsSettingsSync(api: Pick<Api, "automationsSettings" | "onSettingsChanged">): () => void {
   void loadAutomationsSettings(api);
   return api.onSettingsChanged(({ sections }) => {
