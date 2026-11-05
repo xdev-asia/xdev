@@ -2496,5 +2496,22 @@
   "shell.help.close": "Đóng",
   "shell.quitEndAll.title": "Thoát và kết thúc mọi terminal?",
   "shell.quitEndAll.body": "Mọi phiên terminal sẽ kết thúc, kể cả các agent đang chạy. Thoát thông thường giữ chúng chạy để xDev kết nối lại lần sau.",
-  "shell.quitEndAll.confirm": "Thoát và kết thúc"
+  "shell.quitEndAll.confirm": "Thoát và kết thúc",
+  "files.image.loading": "Đang tải bản xem trước…",
+  "files.image.label": "Xem trước ảnh",
+  "files.image.dims": "{w} × {h}",
+  "files.image.expand": "Phóng to",
+  "files.image.copy": "Sao chép dạng PNG",
+  "files.image.copied": "Đã sao chép dạng PNG",
+  "files.image.copyFailed": "Không sao chép được ảnh",
+  "files.image.close": "Đóng",
+  "files.image.tooLarge.body": "Ảnh lớn hơn 20 MB không mở ở đây.",
+  "files.zoom.group": "Thu phóng",
+  "files.zoom.out": "Thu nhỏ",
+  "files.zoom.in": "Phóng to",
+  "files.zoom.fit": "Vừa khung nhìn",
+  "files.zoom.fitScreen": "Vừa màn hình",
+  "files.zoom.actual": "Kích thước thật",
+  "files.openDefault": "Mở bằng ứng dụng mặc định",
+  "files.openDefault.failed": "Không mở được tệp bằng ứng dụng mặc định"
 }

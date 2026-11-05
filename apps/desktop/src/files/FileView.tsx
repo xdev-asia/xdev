@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import type { Api } from "@/api";
 import { useI18n } from "@/i18n";
 import { Button } from "@xdev-asia/ui";
+import { ImageView } from "./ImageView";
 import { LoadError } from "./LoadError";
 import { CodeEditor } from "./CodeEditor";
 import { useEditorSettings } from "./editorSettings";
@@ -32,7 +33,9 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
 
   const viewer = direct ? viewerOf(rel) : entry?.status === "ready" ? viewerOf(rel, entry.kind) : "text";
   let body: JSX.Element;
-  if (viewer === "image" || viewer === "media") {
+  if (viewer === "image") {
+    body = <ImageView api={api} worktree={worktree} rel={rel} />;
+  } else if (viewer === "media") {
     body = (
       <div className="file-note">
         <p className="ws-empty">{t("files.binary")}</p>
