@@ -33,10 +33,9 @@ use crate::profiles::Cli;
 use crate::version::CliVersion;
 
 mod question;
-pub use question::{
-    HookQuestion, LABEL_MAX, NOTE_MAX, OPTIONS_MAX, QUESTION_MAX, QuestionKind, QuestionOption,
-    question_of,
-};
+#[cfg(test)]
+use question::QUESTION_MAX;
+pub use question::{HookQuestion, QuestionKind, QuestionOption, question_of};
 
 /// The folder under `local_dir` that holds one `<pty_id>.jsonl` per pane.
 pub const HOOKS_DIR: &str = "hooks";
