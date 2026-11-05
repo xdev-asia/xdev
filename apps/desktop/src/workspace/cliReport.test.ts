@@ -62,4 +62,13 @@ describe("CLI tab report", () => {
     expect(tabReports(s)).toEqual([{ id: tab.id, worktree: A, title: null, profile: "shell", agent: false, status: "idle", lastOutputMs: 0, exited: false }]);
     expect(s.lastOutput("nope")).toBeNull();
   });
+
+  it("an agent tab carries its provider and account, which the failover sweep reads", () => {
+    const api = createMockApi({});
+    const s = (sessions = new Sessions(api));
+    const tab = s.open(A, "claude", "claude-2", "claude");
+    const [row] = tabReports(s).filter((r) => r.id === tab.id);
+    expect(row).toMatchObject({ id: tab.id, profile: "claude", cli: "claude", account: "claude-2", exited: false });
+    expect(row).not.toHaveProperty("exitCode");
+  });
 });

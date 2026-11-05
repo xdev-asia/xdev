@@ -302,6 +302,7 @@ import type { LayoutSnapshot } from "./workspace/layoutSnapshot";
 import { toBytes } from "./terminal/ptyClient";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 import type { AccountRouting, QuotaAlert } from "@xdev/bindings";
+import type { FailedOver, WorkerFailover } from "@xdev/bindings";
 
 export { createMockApi };
 /** The kinds of `HookKind` that are scripts; the others are lists. */
@@ -332,6 +333,7 @@ export type { CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview
 export type { ConfigKind, TermConfigDetected, TermConfigPreview } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
 export type { AccountRouting, QuotaAlert, RoutePolicy } from "@xdev/bindings";
+export type { FailedOver, FailReason, FailoverKind, WorkerFailover } from "@xdev/bindings";
 
 // The IPC types come from Rust; see packages/bindings/README.md.
 export type {
@@ -1575,6 +1577,10 @@ export interface Api {
   accountUseNext(provider: Provider, avoid: string | null): Promise<string | null>;
   // `accounts://quota-alert`: an account crossed one of its provider's thresholds, once per window.
   onQuotaAlert(cb: (alert: QuotaAlert) => void): Promise<() => void>;
+  // Where a worker came from when it took over a failed or stuck one; null for a first worker.
+  orchestrationWorkerFailover(tab: string): Promise<FailedOver | null>;
+  // `orchestration://failover`: a worker failed over, restarted, or was marked failed; once each.
+  onOrchestrationFailover(cb: (e: WorkerFailover) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2233,6 +2239,8 @@ const tauriApi: Api = {
   accountRoutingSet: (routing) => call("account_routing_set", { routing }),
   accountUseNext: (provider, avoid) => call("account_use_next", { provider, avoid }),
   onQuotaAlert: (cb) => listen<QuotaAlert>("accounts://quota-alert", (e) => cb(e.payload)),
+  orchestrationWorkerFailover: (tab) => call("orchestration_worker_failover", { tab }),
+  onOrchestrationFailover: (cb) => listen<WorkerFailover>("orchestration://failover", (e) => cb(e.payload)),
 };
 
 const DEMO_CRASH: CrashReport = {

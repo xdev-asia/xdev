@@ -1,3 +1,4 @@
+import type { FailedOver, WorkerFailover } from "@xdev/bindings";
 import type { Api, CliAsk, CliOpenFile, CliStatus, CliOpenTab, ReadTab, SkillStatus, TabReport, WorkerChanged, WorkerClose, WorkerLifetime, WorkerOpen, WorkerOpenOutcome } from "./api";
 
 type CliApi = Pick<
@@ -15,6 +16,8 @@ type CliApi = Pick<
   | "onOrchestrationCloseWorker"
   | "onOrchestrationReadTab"
   | "onOrchestrationWorkerChanged"
+  | "orchestrationWorkerFailover"
+  | "onOrchestrationFailover"
 >;
 
 export type MockCli = CliApi & {
@@ -36,6 +39,9 @@ export type MockCli = CliApi & {
   __orchReads(): { request: number; text: string }[];
   __orchSetLifetime(tab: string, v: WorkerLifetime | null): void;
   __orchInstalls(): boolean[];
+  // Failover: what the strip of a worker that took over reads, and the backend's one event per failover.
+  __orchSetFailover(tab: string, v: FailedOver | null): void;
+  __orchFailover(e: WorkerFailover): void;
   // The xdev-on-PATH state the page reads, and the calls it made (status excluded), oldest first.
   __cliSetStatus(s: Partial<CliStatus>): void;
   __cliInstallCalls(): string[];
@@ -61,6 +67,8 @@ export function createMockCli(): MockCli {
   const reads: { request: number; text: string }[] = [];
   const installs: boolean[] = [];
   const lifetimes = new Map<string, WorkerLifetime>();
+  const failovers = new Map<string, FailedOver>();
+  const failoverEvents = new Set<(e: WorkerFailover) => void>();
   let skill: SkillStatus = { ...SKILL_DEFAULT };
   let cli: CliStatus = { ...CLI_DEFAULT };
   const cliCalls: string[] = [];
@@ -164,6 +172,18 @@ export function createMockCli(): MockCli {
       else lifetimes.delete(tab);
     },
     __orchInstalls: () => [...installs],
+    async orchestrationWorkerFailover(tab) {
+      const v = failovers.get(tab);
+      return v ? { ...v } : null;
+    },
+    async onOrchestrationFailover(cb) {
+      return on(failoverEvents, cb);
+    },
+    __orchSetFailover(tab, v) {
+      if (v) failovers.set(tab, structuredClone(v));
+      else failovers.delete(tab);
+    },
+    __orchFailover: (e) => [...failoverEvents].forEach((cb) => cb(structuredClone(e))),
     __cliReports: () => structuredClone(reports),
     __cliAnswers: () => structuredClone(answers),
     __cliWorkspaceChanged: () => [...changed].forEach((cb) => cb()),

@@ -37,6 +37,12 @@ describe("openWorker", () => {
     expect(send).toHaveBeenCalledWith("/w/a", "tab-1", "do it", 60_000);
   });
 
+  it("a failover's worker starts on the account the backend chose", async () => {
+    const { h, open } = host();
+    expect(await openWorker(createMockApi({}), h, { ...OPEN, setup: "skip", account: "claude-3" })).toEqual({ kind: "ok" });
+    expect(open).toHaveBeenCalledWith("/w/a", "claude", "claude-3", undefined, { id: "tab-1", title: "worker-task_1", background: true });
+  });
+
   it("mounts the worktree before the tab is made", async () => {
     const order: string[] = [];
     const { h, open } = host({ ensureMounted: (w) => void order.push(`mount ${w}`) });
