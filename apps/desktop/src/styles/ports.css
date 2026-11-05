@@ -1,0 +1,64 @@
+/* Ports panel (.pt-*) */
+.pt-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+.pt-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pt-note {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.pt-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pt-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pt-port {
+  flex: none;
+  font-family: var(--x-font-mono);
+  font-weight: 600;
+}
+
+.pt-process {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pt-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pt-address,
+.pt-owner {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pt-actions {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+}
