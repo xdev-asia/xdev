@@ -30,4 +30,13 @@ sessionSearch: boolean,
  * Trust the folder in the agent's own store before an agent starts
  * (fresh launches only).
  */
-workspaceTrust: boolean, };
+workspaceTrust: boolean, 
+/**
+ * Directories put in front of the PATH of new terminals and agents. Valid
+ * entries only (see `agent_path::validate_entry`), each once.
+ */
+pathPrepend: Array<string>, 
+/**
+ * Directories put after the PATH of new terminals and agents.
+ */
+pathAppend: Array<string>, };

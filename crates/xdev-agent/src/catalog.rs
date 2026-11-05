@@ -508,9 +508,19 @@ mod tests {
             (Cli::Kiro, "kiro", "Kiro CLI", "kiro-cli"),
             (Cli::Kilo, "kilo", "Kilo Code CLI", "kilocode"),
             (Cli::Cline, "cline", "Cline CLI", "cline"),
-            (Cli::Antigravity, "antigravity", "Antigravity", "antigravity"),
+            (
+                Cli::Antigravity,
+                "antigravity",
+                "Antigravity",
+                "antigravity",
+            ),
             (Cli::Pi, "pi", "Pi", "pi"),
-            (Cli::CommandCode, "command-code", "Command Code", "commandcode"),
+            (
+                Cli::CommandCode,
+                "command-code",
+                "Command Code",
+                "commandcode",
+            ),
         ];
         for (cli, id, title, command) in new {
             assert_eq!(cli.as_str(), id);

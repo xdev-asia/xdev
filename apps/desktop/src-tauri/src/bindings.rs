@@ -160,6 +160,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     NavigationSettings::export_all(cfg)?;
     DiffSettings::export_all(cfg)?;
     AgentsSettings::export_all(cfg)?;
+    crate::agent_path::PathEntry::export_all(cfg)?;
     AwakeView::export_all(cfg)?;
     AppStatsView::export_all(cfg)?;
     UsageSettings::export_all(cfg)?;

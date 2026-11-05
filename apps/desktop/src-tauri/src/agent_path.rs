@@ -182,6 +182,153 @@ pub(crate) fn merge_path(fresh: &OsStr, current: &OsStr) -> OsString {
     std::env::join_paths(dirs).unwrap_or_else(|_| current.to_owned())
 }
 
+/// Where an entry of the effective PATH comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum PathSource {
+    /// The PATH the system gave; read-only here.
+    System,
+    /// An entry the owner put in front (Settings).
+    Prepend,
+    /// An entry the owner put at the end (Settings).
+    Append,
+}
+
+/// One directory of the effective PATH, in search order.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct PathEntry {
+    pub path: String,
+    pub source: PathSource,
+    /// Whether the directory exists; a missing one stays in the PATH.
+    pub exists: bool,
+}
+
+/// Why a PATH entry of the owner is refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryError {
+    Empty,
+    /// The entry holds the PATH separator, so it would split in two.
+    Separator,
+    /// The entry holds a control character.
+    Control,
+}
+
+/// The separator between PATH entries on this system.
+pub const SEPARATOR: char = if cfg!(windows) { ';' } else { ':' };
+
+/// `raw` trimmed, or why it cannot be a PATH entry, with `sep` as the separator.
+pub fn validate_entry_with(raw: &str, sep: char) -> Result<String, EntryError> {
+    let entry = raw.trim();
+    if entry.is_empty() {
+        Err(EntryError::Empty)
+    } else if entry.contains(sep) {
+        Err(EntryError::Separator)
+    } else if entry.chars().any(char::is_control) {
+        Err(EntryError::Control)
+    } else {
+        Ok(entry.to_owned())
+    }
+}
+
+/// `validate_entry_with` for this system's separator.
+pub fn validate_entry(raw: &str) -> Result<String, EntryError> {
+    validate_entry_with(raw, SEPARATOR)
+}
+
+/// The valid entries of `raw`, trimmed, each once, in order; the others are dropped.
+pub fn clean_entries(raw: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for entry in raw.iter().filter_map(|r| validate_entry(r).ok()) {
+        if !out.iter().any(|o| same_dir(o, &entry)) {
+            out.push(entry);
+        }
+    }
+    out
+}
+
+fn same_dir(a: &str, b: &str) -> bool {
+    if cfg!(windows) {
+        a.eq_ignore_ascii_case(b)
+    } else {
+        a == b
+    }
+}
+
+/// The effective PATH in order: the owner's `prepend` entries, the `system`
+/// ones, then the `append` ones. A directory appears once, at its first
+/// place; a system entry the owner also listed counts as the owner's. A
+/// missing directory is kept and flagged. Pure: `exists` is the only look at
+/// the disk.
+pub fn layout(
+    system: &OsStr,
+    prepend: &[String],
+    append: &[String],
+    exists: &dyn Fn(&str) -> bool,
+) -> Vec<PathEntry> {
+    let mut out: Vec<PathEntry> = Vec::new();
+    let mut add = |path: String, source: PathSource| {
+        if path.is_empty() || out.iter().any(|e| same_dir(&e.path, &path)) {
+            return;
+        }
+        let exists = exists(&path);
+        out.push(PathEntry {
+            path,
+            source,
+            exists,
+        });
+    };
+    for p in prepend {
+        add(p.clone(), PathSource::Prepend);
+    }
+    for dir in std::env::split_paths(system) {
+        add(dir.to_string_lossy().into_owned(), PathSource::System);
+    }
+    for p in append {
+        add(p.clone(), PathSource::Append);
+    }
+    out
+}
+
+/// The owner's entries over `system`, as a PATH value; `None` when the owner
+/// has none (the system PATH stays as it is) or the result cannot be joined.
+pub fn with_extras(system: &OsStr, prepend: &[String], append: &[String]) -> Option<OsString> {
+    if prepend.is_empty() && append.is_empty() {
+        return None;
+    }
+    let entries = layout(system, prepend, append, &|_| true);
+    std::env::join_paths(entries.iter().map(|e| &e.path)).ok()
+}
+
+/// The effective PATH of `system` with the owner's entries, flagging the
+/// directories that do not exist.
+pub fn effective(system: &OsStr, prepend: &[String], append: &[String]) -> Vec<PathEntry> {
+    layout(system, prepend, append, &|p| {
+        std::path::Path::new(p).is_dir()
+    })
+}
+
+/// Puts the owner's entries into a launch env's `PATH`, over the PATH the
+/// profile set or else `base`. Nothing changes without entries.
+pub fn apply_extras(
+    env: &mut Vec<(String, OsString)>,
+    base: &OsStr,
+    prepend: &[String],
+    append: &[String],
+) {
+    let own = env.iter().position(|(k, _)| k.eq_ignore_ascii_case("PATH"));
+    let system = own.map_or(base, |i| env[i].1.as_os_str());
+    let Some(path) = with_extras(system, prepend, append) else {
+        return;
+    };
+    match own {
+        Some(i) => env[i].1 = path,
+        None => env.push(("PATH".to_owned(), path)),
+    }
+}
+
 /// The PATH a new terminal would get, merged in front of the process PATH;
 /// `None` when it cannot be read (the old one stays).
 pub fn refresh() -> Option<OsString> {
@@ -246,6 +393,126 @@ mod tests {
         let join = |dirs: &[&str]| std::env::join_paths(dirs).unwrap();
         let merged = merge_path(&join(&["/n", "/a"]), &join(&["/a", "/b", ""]));
         assert_eq!(merged, join(&["/n", "/a", "/b"]));
+    }
+
+    fn join(dirs: &[&str]) -> OsString {
+        std::env::join_paths(dirs).unwrap()
+    }
+
+    fn paths(entries: &[PathEntry]) -> Vec<(&str, PathSource)> {
+        entries
+            .iter()
+            .map(|e| (e.path.as_str(), e.source))
+            .collect()
+    }
+
+    #[test]
+    fn layout_prepends_and_appends_around_the_system_path() {
+        let got = layout(
+            &join(&["/s1", "/s2"]),
+            &["/p".to_owned()],
+            &["/a".to_owned()],
+            &|_| true,
+        );
+        assert_eq!(
+            paths(&got),
+            [
+                ("/p", PathSource::Prepend),
+                ("/s1", PathSource::System),
+                ("/s2", PathSource::System),
+                ("/a", PathSource::Append)
+            ]
+        );
+    }
+
+    #[test]
+    fn layout_dedupes_and_keeps_the_first_place() {
+        let got = layout(
+            &join(&["/s1", "/s2", "/s1"]),
+            &["/s2".to_owned(), "/p".to_owned(), "/p".to_owned()],
+            &["/s1".to_owned(), "/a".to_owned()],
+            &|_| true,
+        );
+        assert_eq!(
+            paths(&got),
+            [
+                ("/s2", PathSource::Prepend),
+                ("/p", PathSource::Prepend),
+                ("/s1", PathSource::System),
+                ("/a", PathSource::Append)
+            ]
+        );
+    }
+
+    #[test]
+    fn layout_keeps_missing_dirs_and_flags_them() {
+        let got = layout(
+            &join(&["/here", "/gone"]),
+            &["/also-gone".to_owned()],
+            &[],
+            &|p| p == "/here",
+        );
+        let flags: Vec<_> = got.iter().map(|e| (e.path.as_str(), e.exists)).collect();
+        assert_eq!(
+            flags,
+            [("/also-gone", false), ("/here", true), ("/gone", false)]
+        );
+    }
+
+    #[test]
+    fn extras_join_into_one_path_and_none_leaves_it_alone() {
+        let system = join(&["/s"]);
+        assert_eq!(with_extras(&system, &[], &[]), None);
+        assert_eq!(
+            with_extras(&system, &["/p".to_owned()], &["/a".to_owned()]),
+            Some(join(&["/p", "/s", "/a"]))
+        );
+    }
+
+    #[test]
+    fn apply_extras_wraps_the_profile_path_or_the_base() {
+        let pre = ["/p".to_owned()];
+        let mut env = vec![("PATH".to_owned(), join(&["/own"]))];
+        apply_extras(&mut env, &join(&["/base"]), &pre, &[]);
+        assert_eq!(env, [("PATH".to_owned(), join(&["/p", "/own"]))]);
+
+        let mut env: Vec<(String, OsString)> = Vec::new();
+        apply_extras(&mut env, &join(&["/base"]), &pre, &[]);
+        assert_eq!(env, [("PATH".to_owned(), join(&["/p", "/base"]))]);
+
+        let mut env: Vec<(String, OsString)> = Vec::new();
+        apply_extras(&mut env, &join(&["/base"]), &[], &[]);
+        assert!(env.is_empty());
+    }
+
+    #[test]
+    fn entries_are_validated() {
+        assert_eq!(validate_entry_with("  /a/b ", ':').as_deref(), Ok("/a/b"));
+        assert_eq!(validate_entry_with("", ':'), Err(EntryError::Empty));
+        assert_eq!(validate_entry_with("   ", ';'), Err(EntryError::Empty));
+        assert_eq!(
+            validate_entry_with("/a:/b", ':'),
+            Err(EntryError::Separator)
+        );
+        assert_eq!(
+            validate_entry_with(r"C:\a;C:\b", ';'),
+            Err(EntryError::Separator)
+        );
+        // A drive colon is no separator on Windows.
+        assert_eq!(
+            validate_entry_with(r"C:\tools", ';').as_deref(),
+            Ok(r"C:\tools")
+        );
+        assert_eq!(validate_entry_with("/a\nb", ':'), Err(EntryError::Control));
+    }
+
+    #[test]
+    fn clean_entries_drops_bad_ones_and_repeats() {
+        let raw: Vec<String> = [" /a ", "", "/b", "/a", "x\0y"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(clean_entries(&raw), ["/a", "/b"]);
     }
 
     #[cfg(unix)]

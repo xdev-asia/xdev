@@ -59,6 +59,11 @@ reduceEffects: boolean,
  */
 hiddenApps: Array<string>, 
 /**
+ * The order of the activity bar apps, by id. Empty is the default order;
+ * a stored order holds every app once (see `clean_app_order`).
+ */
+appOrder: Array<string>, 
+/**
  * Which of xDev's own footer items show.
  */
 statusBar: StatusBarItems, 

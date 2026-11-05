@@ -1147,6 +1147,18 @@ pub fn pty_spawn(
     }
     add_extra_args(&mut launch, extra_args.as_deref().unwrap_or_default())?;
     add_network_env(&mut launch.env, &settings_store::read(&app).network);
+    {
+        // Settings → Agents → PATH: the owner's entries over the PATH this launch gets.
+        let agents = settings_store::read(&app).agents;
+        let base = xdev_agent::path_override()
+            .unwrap_or_else(|| std::env::var_os("PATH").unwrap_or_default());
+        crate::agent_path::apply_extras(
+            &mut launch.env,
+            &base,
+            &agents.path_prepend,
+            &agents.path_append,
+        );
+    }
     // The repo's own variables (Settings → Repos → Environment) win over inherited ones.
     if let Ok(reg) = xdev_workspace::Registry::load(data) {
         crate::network::add_project_env(&mut launch.env, &reg, &crate::repo_env::Keychain, &cwd);
