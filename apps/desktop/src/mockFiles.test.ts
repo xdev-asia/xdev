@@ -80,7 +80,7 @@ describe("mock files", () => {
     const api = createMockApi({});
     await api.fileReveal(WT, "./src/App.tsx");
     expect(api.__fileReveals()).toEqual([{ worktree: WT, rel: "src/App.tsx" }]);
-    expect((await api.editorSettingsPut({ autosave: true, autosaveMs: 5, fontSize: 99, wordWrap: true, tabSize: 2 })).autosaveMs).toBe(250);
+    expect((await api.editorSettingsPut({ autosave: true, autosaveMs: 5, fontSize: 99, fontFamily: "", wordWrap: true, tabSize: 2 })).autosaveMs).toBe(250);
   });
 });
 

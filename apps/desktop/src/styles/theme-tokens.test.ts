@@ -15,6 +15,7 @@ const tokensCss = fileURLToPath(new URL("../../../../packages/xdev-ui/src/styles
 const LOCAL = new Set([
   "--agent-size", // agents.css: the size of the agent mark in a row
   "--editor-font-size", // files/CodeEditor.tsx sets it inline from the editor font size; Editor.tsx falls back to 13px
+  "--editor-font-family", // files/CodeEditor.tsx sets it inline from `editorFontStack`; Editor.tsx falls back to the mono token
   "--tree-indent", // the file tree: indent per level
   "--tree-pad", // the file tree: left padding of a row
   "--ws-strip-h", // workspace.css: height of the tab strip

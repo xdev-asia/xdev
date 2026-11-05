@@ -16,7 +16,15 @@ autosaveMs: number,
 /**
  * 8..=32.
  */
-fontSize: number, wordWrap: boolean, 
+fontSize: number, 
+/**
+ * Empty follows the terminal font family.
+ */
+fontFamily: string, 
+/**
+ * On by default; a stored `false` stays false.
+ */
+wordWrap: boolean, 
 /**
  * Spaces for a new indent, 1..=8.
  */

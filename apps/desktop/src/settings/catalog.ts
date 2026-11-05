@@ -133,6 +133,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("editor.wordWrap", "files.settings.wordWrap", ["wrap", "xuống dòng", "xuong dong"]),
   e("editor.autosaveMs", "files.settings.autosaveMs", ["save", "delay", "milliseconds", "độ trễ", "do tre"]),
   e("editor.fontSize", "files.settings.fontSize", ["font", "cỡ chữ", "co chu", "phông", "phong"]),
+  e("editor.fontFamily", "files.settings.fontFamily.catalog", ["font", "family", "typeface", "monospace", "terminal", "phông", "phong", "phông chữ", "phong chu"], "files.settings.fontFamily.hint"),
   e("editor.tabSize", "files.settings.tabSize", ["tab", "indent", "thụt lề", "thut le"], "files.settings.tabSizeHint"),
   // Repositories (the same fields on every repo card)
   e("repos.color", "settings.repos.identity.color", ["colour", "color", "badge", "tag", "hex", "màu", "mau", "nhãn", "nhan"], "settings.repos.identity.color.hint"),
