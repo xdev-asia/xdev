@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type IssueDetail } from "@/api";
+import { Menu, Popover, Tag } from "@xdev-asia/ui";
+import { toApiError, type Api, type ApiError, type IssueDetail, type IssueEdit, type IssueLabel } from "@/api";
+import { buildIssueEdit, isEmptyEdit, toggled, type IssueChoice } from "@/issues/issueEdit";
 import { renderMarkdown } from "@/doc/markdown";
 import { useI18n } from "@/i18n";
 import { ago } from "@/workspace/ago";
@@ -25,6 +27,12 @@ export function IssueDetailView(props: {
   const { t } = useI18n();
   const [detail, setDetail] = useState<IssueDetail | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
+  const [menu, setMenu] = useState<"state" | "labels" | "assignees" | null>(null);
+  const [pick, setPick] = useState<string[]>([]);
+  const [labelOptions, setLabelOptions] = useState<IssueLabel[] | null>(null);
+  const [people, setPeople] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -47,6 +55,55 @@ export function IssueDetailView(props: {
     }
   }
 
+  async function refresh(): Promise<void> {
+    try {
+      setDetail(await api.issueView(repoId, number));
+    } catch (e) {
+      setError(toApiError(e));
+    }
+  }
+
+  async function apply(edit: IssueEdit): Promise<void> {
+    if (isEmptyEdit(edit)) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const report = await api.issueEdit(repoId, number, edit);
+      if (report.failed.length > 0) {
+        const parts = report.failed.map((p) => t(`issues.edit.part.${p}`)).join(", ");
+        setNotice(`${t("issues.edit.partial", { parts })}${report.error ? ` ${report.error}` : ""}`);
+      }
+    } catch (e) {
+      setError(toApiError(e));
+    }
+    await refresh();
+    setBusy(false);
+  }
+
+  function choose(state: NonNullable<IssueChoice["state"]>): void {
+    setMenu(null);
+    if (detail) void apply(buildIssueEdit(detail, { state }));
+  }
+
+  function openPicker(kind: "labels" | "assignees"): void {
+    if (!detail) return;
+    setPick(kind === "labels" ? detail.issue.labels : detail.issue.assignees);
+    setMenu(kind);
+    if (kind === "labels" && labelOptions === null) {
+      api.issueLabels(repoId).then(setLabelOptions).catch(() => setLabelOptions([]));
+    }
+    if (kind === "assignees" && people === null) {
+      api.issueAssignable(repoId).then(setPeople).catch(() => setPeople([]));
+    }
+  }
+
+  function closePicker(): void {
+    const kind = menu;
+    setMenu(null);
+    if (!detail || (kind !== "labels" && kind !== "assignees")) return;
+    void apply(buildIssueEdit(detail, kind === "labels" ? { labels: pick } : { assignees: pick }));
+  }
+
   const now = Date.now();
   const issue = detail?.issue ?? null;
   return (
@@ -58,6 +115,81 @@ export function IssueDetailView(props: {
         <button type="button" className="ws-checks-btn" onClick={() => void openWeb()}>
           {t("issues.openWeb")}
         </button>
+        {detail && issue && issue.state === "closed" && (
+          <button type="button" className="ws-checks-btn" disabled={busy} onClick={() => choose("reopen")}>
+            {t("issues.edit.reopen")}
+          </button>
+        )}
+        {detail && issue && issue.state === "open" && (
+          <Popover
+            open={menu === "state"}
+            onClose={() => setMenu(null)}
+            label={t("issues.edit.close")}
+            trigger={(aria) => (
+              <button type="button" className="ws-checks-btn" disabled={busy} {...aria} onClick={() => setMenu(menu === "state" ? null : "state")}>
+                {t("issues.edit.close")}
+              </button>
+            )}
+          >
+            <Menu
+              label={t("issues.edit.close")}
+              items={[
+                { label: t("issues.edit.closeCompleted"), onSelect: () => choose("completed") },
+                { label: t("issues.edit.closeNotPlanned"), onSelect: () => choose("not_planned") },
+              ]}
+            />
+          </Popover>
+        )}
+        {detail && issue && (
+          <Popover
+            open={menu === "labels"}
+            onClose={closePicker}
+            label={t("issues.edit.labels")}
+            trigger={(aria) => (
+              <button type="button" className="ws-checks-btn" disabled={busy} {...aria} onClick={() => (menu === "labels" ? closePicker() : openPicker("labels"))}>
+                {t("issues.edit.labels")}
+              </button>
+            )}
+          >
+            <Menu
+              label={t("issues.edit.labels")}
+              items={
+                labelOptions === null
+                  ? [{ label: t("issues.edit.loadingOptions"), disabled: true }]
+                  : [...new Set([...labelOptions.map((l) => l.name), ...issue.labels])].map((name) => ({
+                      label: name,
+                      checked: pick.includes(name),
+                      onSelect: () => setPick(toggled(pick, name)),
+                    }))
+              }
+            />
+          </Popover>
+        )}
+        {detail && issue && (
+          <Popover
+            open={menu === "assignees"}
+            onClose={closePicker}
+            label={t("issues.edit.assignees")}
+            trigger={(aria) => (
+              <button type="button" className="ws-checks-btn" disabled={busy} {...aria} onClick={() => (menu === "assignees" ? closePicker() : openPicker("assignees"))}>
+                {t("issues.edit.assignees")}
+              </button>
+            )}
+          >
+            <Menu
+              label={t("issues.edit.assignees")}
+              items={
+                people === null
+                  ? [{ label: t("issues.edit.loadingOptions"), disabled: true }]
+                  : [...new Set([...people, ...issue.assignees])].map((login) => ({
+                      label: login,
+                      checked: pick.includes(login),
+                      onSelect: () => setPick(toggled(pick, login)),
+                    }))
+              }
+            />
+          </Popover>
+        )}
         {onStart && detail && (
           <button type="button" className="ws-checks-btn" onClick={() => onStart(detail)}>
             {t("issues.start")}
@@ -70,6 +202,11 @@ export function IssueDetailView(props: {
           {error.code === "gh_failed" && error.detail ? ` ${error.detail}` : ""}
         </p>
       )}
+      {notice && (
+        <p className="error-text" role="status">
+          {notice}
+        </p>
+      )}
       {!error && !detail && <p className="ws-empty">{t("issues.loading")}</p>}
       {detail && issue && (
         <>
@@ -79,6 +216,10 @@ export function IssueDetailView(props: {
               {issue.title}
             </span>
             <span className="ws-checks-state">{t(`issues.state.${issue.state}`)}</span>
+          </div>
+          <div className="ws-issue-meta">
+            {issue.labels.length > 0 ? issue.labels.map((l) => <Tag key={l}>{l}</Tag>) : <span>{t("issues.edit.none")}</span>}
+            <span>{issue.assignees.length > 0 ? issue.assignees.join(", ") : t("issues.edit.none")}</span>
           </div>
           {detail.body.trim() ? <Markdown text={detail.body} /> : <p className="ws-empty">{t("issues.noBody")}</p>}
           <h3 className="ws-issue-comments">{t("issues.comments", { count: detail.comments.length })}</h3>

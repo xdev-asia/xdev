@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, type Api, type ApiError, type IssueDetail } from "@/api";
+import { Menu, Popover } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { IssueDetailView } from "./IssueDetailView";
 
@@ -131,4 +132,107 @@ it("explains a gh failure with its hint", async () => {
   view.commit();
   await flush();
   expect(view.html()).toContain(en("issues.reason.gh_auth"));
+});
+
+// ---- edit: state, labels, assignees ----
+const popover = (view: ReturnType<typeof mount>, label: string) => view.nodes().find((n) => n.type === Popover && n.props.label === label)!;
+const menuItems = (node: Node) => nodes(node).find((n) => n.type === Menu)!.props.items as { label: string; checked?: boolean; onSelect?: () => void }[];
+
+it("renders the state, labels and assignees controls once loaded", async () => {
+  const view = mount(createMockApi({}), 1);
+  view.commit();
+  expect(view.nodes().some((n) => n.type === Popover)).toBe(false);
+  await flush();
+  for (const key of ["issues.edit.close", "issues.edit.labels", "issues.edit.assignees"]) expect(popover(view, en(key))).toBeTruthy();
+  const html = view.html();
+  expect(html).toContain("bug");
+  expect(html).toContain("me");
+});
+
+it("closing as not planned sends the state edit and reloads", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(api.issueEdit);
+  const issueView = vi.fn(api.issueView);
+  const view = mount({ ...api, issueEdit, issueView } as Api, 1);
+  view.commit();
+  await flush();
+  const items = menuItems(popover(view, en("issues.edit.close")));
+  expect(items.map((i) => i.label)).toEqual([en("issues.edit.closeCompleted"), en("issues.edit.closeNotPlanned")]);
+  items[1].onSelect!();
+  await flush();
+  expect(issueEdit).toHaveBeenCalledOnce();
+  expect(issueEdit.mock.calls[0][2]).toMatchObject({ state: "closed", closeReason: "not_planned" });
+  expect(issueView).toHaveBeenCalledTimes(2);
+  expect(view.html()).toContain(en("issues.state.closed"));
+  expect(button(view, en("issues.edit.reopen"))).toBeTruthy();
+});
+
+it("a labels pick is saved as a diff when the picker closes", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(api.issueEdit);
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  popover(view, en("issues.edit.labels")).props.trigger({})!.props.onClick();
+  await flush();
+  const items = menuItems(popover(view, en("issues.edit.labels")));
+  expect(items.map((i) => [i.label, i.checked])).toEqual([["bug", true], ["docs", false], ["ui", true]]);
+  items.find((i) => i.label === "docs")!.onSelect!();
+  menuItems(popover(view, en("issues.edit.labels"))).find((i) => i.label === "bug")!.onSelect!();
+  popover(view, en("issues.edit.labels")).props.onClose();
+  await flush();
+  expect(issueEdit.mock.calls[0][2]).toMatchObject({ addLabels: ["docs"], removeLabels: ["bug"] });
+});
+
+it("closing a picker without a change sends nothing", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(api.issueEdit);
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  popover(view, en("issues.edit.assignees")).props.trigger({})!.props.onClick();
+  await flush();
+  popover(view, en("issues.edit.assignees")).props.onClose();
+  await flush();
+  expect(issueEdit).not.toHaveBeenCalled();
+});
+
+it("an assignee pick uses the assignable logins", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(api.issueEdit);
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  popover(view, en("issues.edit.assignees")).props.trigger({})!.props.onClick();
+  await flush();
+  const items = menuItems(popover(view, en("issues.edit.assignees")));
+  expect(items.map((i) => i.label)).toEqual(["octo", "mona", "me"]);
+  items[0].onSelect!();
+  popover(view, en("issues.edit.assignees")).props.onClose();
+  await flush();
+  expect(issueEdit.mock.calls[0][2]).toMatchObject({ addAssignees: ["octo"], removeAssignees: [] });
+});
+
+it("a partial report shows what was not saved", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(async () => ({ failed: ["state"], error: "boom" }));
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  menuItems(popover(view, en("issues.edit.close")))[0].onSelect!();
+  await flush();
+  const html = view.html();
+  expect(html).toContain(en("issues.edit.partial", { parts: en("issues.edit.part.state") }));
+  expect(html).toContain("boom");
+});
+
+it("an edit that rejects shows its error", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(() => Promise.reject({ code: "bad_draft", message: "", detail: null }));
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  menuItems(popover(view, en("issues.edit.close")))[0].onSelect!();
+  await flush();
+  expect(view.html()).toContain(en("error.bad_draft"));
 });
