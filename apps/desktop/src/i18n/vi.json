@@ -1864,6 +1864,8 @@
   "files.menu.rename": "Đổi tên…",
   "files.menu.delete": "Xoá",
   "files.menu.reveal": "Hiện trong trình quản lý tệp",
+  "files.menu.openOnHost": "Mở tệp trong trình duyệt",
+  "files.openOnHostFailed": "Không mở được tệp trong trình duyệt",
   "files.tree.filter": "Lọc các tệp đã tải",
   "files.tree.searchInFiles": "Tìm trong các tệp",
   "files.tree.refresh": "Làm mới",
