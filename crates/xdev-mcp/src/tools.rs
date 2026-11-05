@@ -4,6 +4,8 @@
 
 use serde_json::{Map, Value, json};
 
+use crate::app_tools::{self, Host};
+use crate::config::ActivityEntry;
 use crate::protocol::{INVALID_PARAMS, RpcError};
 use crate::{Doc, DocInfo, Docs, Hit, ToolError};
 
@@ -22,9 +24,9 @@ pub(crate) fn instructions(vault: &str) -> String {
     )
 }
 
-pub(crate) fn definitions() -> Value {
+pub(crate) fn definitions(host: &dyn Host) -> Value {
     let no_args = json!({"type": "object", "properties": {}, "additionalProperties": false});
-    json!([
+    let mut tools = json!([
         {
             "name": "context_pack",
             "title": "Retrieve context sections",
@@ -106,10 +108,14 @@ pub(crate) fn definitions() -> Value {
                 &["path", "status"]
             )
         }
-    ])
+    ]);
+    if let Value::Array(list) = &mut tools {
+        list.extend(app_tools::definitions(host));
+    }
+    tools
 }
 
-fn object_schema(properties: Value, required: &[&str]) -> Value {
+pub(crate) fn object_schema(properties: Value, required: &[&str]) -> Value {
     json!({"type": "object", "properties": properties, "required": required})
 }
 
@@ -154,7 +160,45 @@ fn doc_schema() -> Value {
     object_schema(Value::Object(props), &required)
 }
 
-pub(crate) fn call(docs: &mut dyn Docs, params: &Map<String, Value>) -> Result<Value, RpcError> {
+/// Runs a tool call and logs it. Unknown tool names are not logged.
+pub(crate) fn call(
+    docs: &mut dyn Docs,
+    host: &mut dyn Host,
+    params: &Map<String, Value>,
+) -> Result<Value, RpcError> {
+    let started = std::time::Instant::now();
+    let at_ms = host.now_ms();
+    let result = call_inner(docs, host, params);
+    let name = params
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if DOC_TOOLS.contains(&name) || app_tools::find(name).is_some() {
+        let ok = matches!(&result, Ok(v) if v["isError"] == false);
+        host.record(ActivityEntry {
+            at_ms,
+            tool: name.to_owned(),
+            ok,
+            duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        });
+    }
+    result
+}
+
+const DOC_TOOLS: [&str; 6] = [
+    "context_pack",
+    "search_docs",
+    "get_doc",
+    "list_docs",
+    "stale_docs",
+    "propose_update",
+];
+
+fn call_inner(
+    docs: &mut dyn Docs,
+    host: &mut dyn Host,
+    params: &Map<String, Value>,
+) -> Result<Value, RpcError> {
     let name = params
         .get("name")
         .and_then(Value::as_str)
@@ -165,6 +209,9 @@ pub(crate) fn call(docs: &mut dyn Docs, params: &Map<String, Value>) -> Result<V
         Some(Value::Object(args)) => args,
         Some(_) => return Err(bad("`arguments` must be an object")),
     };
+    if app_tools::find(name).is_some() {
+        return app_call(host, name, args);
+    }
     // Arguments are all checked before the vault is touched, so a bad call has no effect.
     let outcome = match name {
         "context_pack" => {
@@ -227,16 +274,45 @@ pub(crate) fn call(docs: &mut dyn Docs, params: &Map<String, Value>) -> Result<V
     })
 }
 
-fn bad(message: impl Into<String>) -> RpcError {
+fn app_call(host: &mut dyn Host, name: &str, args: &Map<String, Value>) -> Result<Value, RpcError> {
+    // A client may hold a list from before a switch changed.
+    let outcome = if host.enabled(name) {
+        app_tools::run(host, name, args)?
+    } else {
+        Err(app_tools::EndpointError {
+            code: "tool_disabled".into(),
+            message: String::new(),
+        })
+    };
+    Ok(match outcome {
+        Ok((text, structured)) => json!({
+            "content": [{"type": "text", "text": text}],
+            "structuredContent": structured,
+            "isError": false,
+        }),
+        Err(e) => json!({
+            "content": [{"type": "text", "text": app_tools::error_text(&e)}],
+            "isError": true,
+        }),
+    })
+}
+
+pub(crate) fn bad(message: impl Into<String>) -> RpcError {
     RpcError::new(INVALID_PARAMS, message)
 }
 
-fn required_str<'a>(args: &'a Map<String, Value>, key: &str) -> Result<&'a str, RpcError> {
+pub(crate) fn required_str<'a>(
+    args: &'a Map<String, Value>,
+    key: &str,
+) -> Result<&'a str, RpcError> {
     optional_str(args, key)?.ok_or_else(|| bad(format!("Missing argument `{key}`")))
 }
 
 /// `null` counts as absent: some clients send every optional field.
-fn optional_str<'a>(args: &'a Map<String, Value>, key: &str) -> Result<Option<&'a str>, RpcError> {
+pub(crate) fn optional_str<'a>(
+    args: &'a Map<String, Value>,
+    key: &str,
+) -> Result<Option<&'a str>, RpcError> {
     match args.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(s)) => Ok(Some(s)),
@@ -387,7 +463,7 @@ fn error_text(e: &ToolError) -> String {
 }
 
 /// Keeps one record per line in list output whatever the frontmatter holds.
-fn one_line(s: &str) -> String {
+pub(crate) fn one_line(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 

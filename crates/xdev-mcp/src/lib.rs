@@ -2,12 +2,18 @@
 //! text agents read. The vault itself sits behind [`Docs`], so this crate
 //! stays free of the core and of any async runtime.
 
+pub mod app_tools;
+pub mod config;
 mod protocol;
 mod tools;
 
 use serde::Serialize;
 
-pub use protocol::serve;
+pub use app_tools::{AppTool, EndpointError, Host, NoApp};
+pub use config::{
+    ACTIVITY_FILE, ACTIVITY_MAX, ActivityEntry, ActivityLog, SETTINGS_FILE, ToolSettings,
+};
+pub use protocol::{serve, serve_with};
 pub use xdev_store::ContextPack;
 
 /// Protocol versions this server speaks, newest first. `2026-07-28` is the

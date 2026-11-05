@@ -39,6 +39,7 @@ import { createMockAccountRouting, type MockAccountRouting } from "./mockAccount
 import { createMockCrash, type MockCrash } from "./mockCrash";
 import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
 import { createMockXdevId, type MockXdevId } from "./mockXdevId";
+import { createMockMcp } from "./mockMcp";
 import { createMockPorts } from "./mockPorts";
 import { createMockSsh, type MockSsh } from "./mockSsh";
 import { createMockComposer } from "./mockComposer";
@@ -612,6 +613,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...power,
     ...createMockAppStats(),
     ...createMockPorts(DEMO_ROOT),
+    ...createMockMcp(),
     ...createMockSsh(),
     ...createMockShell(settingsHub.emit, options.update ?? null),
     ...workspace,

@@ -217,6 +217,12 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("account.routing.priority", "settings.account.routing.priority", ["priority", "order", "account", "reorder", "ưu tiên", "uu tien", "thứ tự", "thu tu"]),
   e("account.routing.thresholds", "settings.account.routing.firstAlert", ["quota", "alert", "threshold", "limit", "percent", "5 hours", "weekly", "hạn mức", "han muc", "cảnh báo", "canh bao", "ngưỡng", "nguong"], "settings.account.routing.thresholdsHint"),
   e("account.routing.autoSwitch", "settings.account.routing.autoSwitchTitle", ["auto", "switch", "account", "quota", "limit", "new agent", "tự động", "tu dong", "chuyển", "chuyen", "tài khoản", "tai khoan"], "settings.account.routing.terms"),
+  // MCP
+  e("mcp.health", "settings.mcp.health.title", ["mcp", "server", "health", "version", "check", "running", "máy chủ", "may chu", "kiểm tra", "kiem tra", "phiên bản", "phien ban"]),
+  e("mcp.tools", "settings.mcp.tools.title", ["mcp", "tools", "tool", "switch", "enable", "disable", "send_to_tab", "read_tab_output", "create_worktree", "list_tabs", "công cụ", "cong cu", "bật", "bat", "tắt", "tat"], "settings.mcp.tools.hint"),
+  e("mcp.activity", "settings.mcp.activity.title", ["mcp", "activity", "log", "calls", "history", "hoạt động", "hoat dong", "nhật ký", "nhat ky", "lịch sử", "lich su"], "settings.mcp.activity.hint"),
+  e("mcp.addToRepo", "settings.mcp.add.title", ["mcp", ".mcp.json", "repo", "add", "config", "project", "thêm", "them", "cấu hình", "cau hinh", "dự án", "du an"]),
+  e("mcp.agents", "settings.mcp.agents.title", ["mcp", "claude", "codex", "gemini", "command", "user scope", "copy", "lệnh", "lenh", "sao chép", "sao chep"]),
 ];
 
 /** The longest query searched, in bytes after trim; longer input is cut. */

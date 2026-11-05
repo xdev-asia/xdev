@@ -11,6 +11,7 @@ import { EditorPage } from "./EditorPage";
 import { ExperimentalPage } from "./ExperimentalPage";
 import { GeneralPage } from "./GeneralPage";
 import { GitSettings } from "./GitSettings";
+import { McpPage } from "./mcp/McpPage";
 import { OpenInPage } from "./OpenInPage";
 import { OrchestrationPage } from "./orchestration/OrchestrationPage";
 import { NotificationsPage } from "./notifications/NotificationsPage";
@@ -83,6 +84,7 @@ export const SECTIONS: SettingsSection[] = [
   { id: "account", group: "integrations", labelKey: "account.title", Component: AccountPage },
   { id: "vaults", group: "integrations", labelKey: "settings.vaults.title", Component: VaultsSettings },
   { id: "ssh", group: "integrations", labelKey: "ssh.title", Component: SshPage },
+  { id: "mcp", group: "integrations", labelKey: "settings.mcp.title", Component: McpPage },
   { id: "cli", group: "advanced", labelKey: "settings.cli.title", Component: CliPage },
   { id: "advanced", group: "advanced", labelKey: "settings.advanced.title", Component: AdvancedPage },
   { id: "diagnostics", group: "advanced", labelKey: "settings.diagnostics.title", Component: DiagnosticsPage },

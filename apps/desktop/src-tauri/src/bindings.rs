@@ -27,6 +27,7 @@ use crate::file_watch::FsChanged;
 use crate::hooks::PtyHook;
 use crate::keybindings::{KeybindingsChanged, KeybindingsText};
 use crate::kit::{KitText, PromptEntry};
+use crate::mcp_tools::{McpActivityView, McpHealth, McpToolView};
 use crate::open_in::OpenTarget;
 use crate::orchestration::{
     ReadTab, WorkerChanged, WorkerClose, WorkerLifetime, WorkerOpen, WorkerOpenOutcome,
@@ -71,6 +72,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     StartupReport::export_all(cfg)?;
     DiagnosticsExport::export_all(cfg)?;
     CliStatus::export_all(cfg)?;
+    McpToolView::export_all(cfg)?;
+    McpActivityView::export_all(cfg)?;
+    McpHealth::export_all(cfg)?;
     Changed::export_all(cfg)?;
     VaultSetup::export_all(cfg)?;
     VcsState::export_all(cfg)?;

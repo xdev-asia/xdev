@@ -46,6 +46,7 @@ xdev-id.workspace = true
 xdev-input-source.workspace = true
 xdev-ipc.workspace = true
 xdev-kit.workspace = true
+xdev-mcp.workspace = true
 xdev-orch.workspace = true
 xdev-policy.workspace = true
 xdev-ports.workspace = true
