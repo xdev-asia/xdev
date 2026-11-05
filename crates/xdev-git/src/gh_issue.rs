@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::GitError;
 use crate::gh::{GhExec, ISSUE_BODY_MAX, IssueState, ok, repo_name};
+use crate::gh_review::{COMMENT_BODY_MAX, post_json};
 
 /// Most events one timeline read returns.
 pub const ISSUE_TIMELINE_MAX: usize = 200;
@@ -209,13 +210,20 @@ pub fn issue_edit(
 }
 
 /// Posts a comment; the body goes on stdin as JSON.
-pub fn issue_comment(
-    _gh: &dyn GhExec,
-    _cwd: &Path,
-    _number: u64,
-    _body: &str,
-) -> Result<(), GitError> {
-    Err(not_built())
+pub fn issue_comment(gh: &dyn GhExec, cwd: &Path, number: u64, body: &str) -> Result<(), GitError> {
+    if body.trim().is_empty() {
+        return Err(GitError::EmptyComment);
+    }
+    if body.chars().count() > COMMENT_BODY_MAX {
+        return Err(GitError::CommentTooLarge);
+    }
+    let repo = repo_name(gh, cwd)?;
+    post_json(
+        gh,
+        cwd,
+        &format!("repos/{repo}/issues/{number}/comments"),
+        &serde_json::json!({ "body": body }),
+    )
 }
 
 /// The repo's labels.
@@ -446,5 +454,70 @@ mod tests {
             ));
         }
         assert!(fake.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn issue_comment_posts_json_on_stdin() {
+        let fake = Fake::new(vec![
+            out(0, r#"{"nameWithOwner":"o/r"}"#, ""),
+            out(0, "{}", ""),
+        ]);
+        issue_comment(
+            &fake,
+            cwd(),
+            7,
+            "hello \"you\"
+bye é",
+        )
+        .unwrap();
+        let calls = fake.calls.borrow();
+        assert_eq!(
+            args(&calls[1]),
+            [
+                "api",
+                "--method",
+                "POST",
+                "repos/o/r/issues/7/comments",
+                "--input",
+                "-"
+            ]
+        );
+        let sent: serde_json::Value = serde_json::from_str(calls[1].1.as_ref().unwrap()).unwrap();
+        assert_eq!(
+            sent,
+            serde_json::json!({ "body": "hello \"you\"
+bye é" })
+        );
+    }
+
+    #[test]
+    fn issue_comment_rejects_empty() {
+        let fake = Fake::new(vec![]);
+        assert!(matches!(
+            issue_comment(
+                &fake,
+                cwd(),
+                7,
+                " 
+	"
+            ),
+            Err(GitError::EmptyComment)
+        ));
+        assert!(fake.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn issue_comment_rejects_over_limit() {
+        let fake = Fake::new(vec![
+            out(0, r#"{"nameWithOwner":"o/r"}"#, ""),
+            out(0, "{}", ""),
+        ]);
+        let huge = "x".repeat(COMMENT_BODY_MAX + 1);
+        assert!(matches!(
+            issue_comment(&fake, cwd(), 7, &huge),
+            Err(GitError::CommentTooLarge)
+        ));
+        assert!(fake.calls.borrow().is_empty());
+        issue_comment(&fake, cwd(), 7, &"x".repeat(COMMENT_BODY_MAX)).unwrap();
     }
 }
