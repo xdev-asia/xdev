@@ -1897,6 +1897,8 @@
   "files.conflict.body": "Tệp này đã thay đổi trên đĩa.",
   "files.conflict.reload": "Tải lại từ đĩa",
   "files.conflict.overwrite": "Ghi đè",
+  "files.external.reloaded": "Đã tải lại {name} từ đĩa",
+  "files.external.undo": "Hoàn tác",
   "files.binary": "Tệp nhị phân",
   "files.binary.body": "Tệp này không phải văn bản nên không mở ở đây.",
   "files.tooLarge": "Tệp quá lớn",

@@ -1897,6 +1897,8 @@
   "files.conflict.body": "This file changed on disk.",
   "files.conflict.reload": "Reload from disk",
   "files.conflict.overwrite": "Overwrite",
+  "files.external.reloaded": "Reloaded {name} from disk",
+  "files.external.undo": "Undo",
   "files.binary": "Binary file",
   "files.binary.body": "This file is not text, so it does not open here.",
   "files.tooLarge": "File too large",

@@ -732,7 +732,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     requestOpenFile({ worktree, rel, line });
   }
   useEffect(() => startAutosave(api, fileTabs, t), [api, t]);
-  const fsEvents = useWorktreeWatch(api, current?.path ?? null);
+  const fsEvents = useWorktreeWatch(api, current?.path ?? null, { api, store: fileTabs, t });
 
   function toggleBell(): void {
     const next = !bellOpen;

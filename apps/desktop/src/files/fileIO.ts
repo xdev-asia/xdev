@@ -1,6 +1,6 @@
 import { toApiError, type Api } from "@/api";
 import { pushToast } from "@/workspace/toastStore";
-import type { FileTabs } from "./fileTabs";
+import { fileName, isDirty, type FileTabs } from "./fileTabs";
 
 /** Reads the file into its open entry (the first read, or a reload that drops the edits). */
 export async function loadFile({ api, store }: FileIo, worktree: string, rel: string): Promise<void> {
@@ -9,6 +9,35 @@ export async function loadFile({ api, store }: FileIo, worktree: string, rel: st
   } catch (e) {
     store.failed(worktree, rel, toApiError(e).code);
   }
+}
+
+/**
+ * Reads the file again and drops the edits. A read that fails changes nothing and is a toast, so a
+ * file that is gone keeps the text in the editor. Resolves true when the buffer was replaced.
+ */
+export async function reloadFile({ api, store, t }: FileIo, worktree: string, rel: string): Promise<boolean> {
+  try {
+    store.loaded(worktree, rel, await api.fileRead(worktree, rel));
+    return true;
+  } catch (e) {
+    pushToast({ id: `file-reload:${worktree}:${rel}`, text: t(`error.${toApiError(e).code}`) });
+    return false;
+  }
+}
+
+/** `reloadFile`; when edits were dropped, a toast offers Undo, which puts them back. */
+export async function reloadWithUndo(io: FileIo, worktree: string, rel: string): Promise<boolean> {
+  const before = io.store.get(worktree, rel);
+  const snap = before && isDirty(before) ? { text: before.text, saved: before.saved, hash: before.hash, eol: before.eol } : null;
+  const done = await reloadFile(io, worktree, rel);
+  if (done && snap) {
+    pushToast({
+      id: `file-reload:${worktree}:${rel}`,
+      text: io.t("files.external.reloaded", { name: fileName(rel) }),
+      actions: [{ label: io.t("files.external.undo"), run: () => io.store.restore(worktree, rel, snap) }],
+    });
+  }
+  return done;
 }
 
 /** What the file helpers need: the backend, the store and the translator for error toasts. */
