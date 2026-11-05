@@ -120,5 +120,39 @@
   min-width: 0;
   overflow: auto;
 }
+.md-pane-body.md-split { flex-direction: row; }
+.md-pane-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+}
+.md-toc {
+  flex: 0 1 220px;
+  min-width: 0;
+  max-width: 40%;
+  overflow: auto;
+  padding: var(--x-space-3);
+  border-left: 1px solid var(--x-color-line);
+}
+.md-toc ul { margin: 0; padding: 0; list-style: none; }
+.md-toc li[data-level="2"] { padding-left: var(--x-space-3); }
+.md-toc li[data-level="3"] { padding-left: var(--x-space-6); }
+.md-toc-item {
+  width: 100%;
+  padding: var(--x-space-1) var(--x-space-2);
+  border: 0;
+  border-radius: var(--x-radius-sm);
+  background: transparent;
+  color: var(--x-color-ink);
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.md-toc-item:hover { background: var(--x-color-accent-soft); }
+.md-toc-empty { margin: 0; color: var(--x-color-muted); }
 .md-preview { padding: var(--x-space-4); }
 .md-preview .md-img { max-width: 100%; }
