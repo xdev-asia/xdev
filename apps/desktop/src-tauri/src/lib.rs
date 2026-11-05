@@ -521,6 +521,23 @@ mod tests {
     }
 
     #[test]
+    fn each_plugin_is_registered_once() {
+        // The builder chain is read as text: registering it needs a running app.
+        let src = include_str!("lib.rs");
+        let chain = &src[src.find("    builder\n        .plugin(").unwrap()..];
+        let chain = &chain[..chain.find(".manage(").unwrap()];
+        let mut plugins: Vec<&str> = chain
+            .split(".plugin(")
+            .skip(1)
+            .map(|p| p.split("::").next().unwrap())
+            .collect();
+        let all = plugins.len();
+        plugins.sort_unstable();
+        plugins.dedup();
+        assert_eq!(plugins.len(), all, "{chain}");
+    }
+
+    #[test]
     fn identifier_matches_core_app_id() {
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();

@@ -11,6 +11,8 @@ import { TokenTable } from "@/kit/UsageTab";
 import { UsagePage } from "./UsagePage";
 import { UsageRecentSessions } from "./UsageRecentSessions";
 import { UsageShare } from "./UsageShare";
+import { dayRange, localDay } from "@/kit/kitUi";
+import { RECENT_DAYS } from "@/kit/usageStats";
 
 vi.mock("react", async (original) => (await import("@/kit/testHooks")).patchReact(await original<typeof import("react")>()));
 vi.mock("@/i18n", async (original) => ({
@@ -22,6 +24,9 @@ const en = (key: string, vars?: Record<string, string | number>) => translate("e
 const field = (all: Node[], name: string) => all.find((n) => n.props["data-field"] === name)!;
 const act = (all: Node[], name: string) => all.find((n) => n.props["data-act"] === name);
 const tile = (all: Node[], key: string) => all.find((n) => n.props["data-tile"] === key)!;
+// The range reads, without the six-week read the heatmap and share card make after a short one.
+const reads = (report: { mock: { calls: [{ sinceDay: string | null }][] } }) =>
+  report.mock.calls.map(([q]) => q).filter((q) => q.sinceDay !== dayRange(RECENT_DAYS, new Date())[0]);
 
 async function open(scan = { claude: true, codex: false }) {
   resetUsageSettingsForTests();
@@ -40,9 +45,9 @@ it("starts on Overview, xDev worktrees only and 30 days, and shows the tiles and
   expect(field(all, "provider").props.value).toBe("overview");
   expect(field(all, "scope").props.value).toBe("xdev");
   expect(field(all, "range").props.value).toBe("30");
-  expect(report).toHaveBeenCalledTimes(1);
-  expect(report.mock.calls[0]![0]).toMatchObject({ agent: null, scope: "xdev", refresh: true });
-  expect(report.mock.calls[0]![0].sinceDay).not.toBeNull();
+  expect(reads(report)).toHaveLength(1);
+  expect(reads(report)[0]).toMatchObject({ agent: null, scope: "xdev", refresh: true });
+  expect(reads(report)[0]!.sinceDay).not.toBeNull();
   expect(textOf(tile(all, "sessions"))).toContain(en("usage.stats.tile.sessions"));
   expect(all.some((n) => n.type === UsageChart)).toBe(true);
   // Codex is off: a line and its Enable button, no Claude one.
@@ -69,7 +74,7 @@ it("Enable writes usage.scan, updates the store and reads again with a refresh",
   await m.settle();
   expect(put).toHaveBeenCalledWith({ ...USAGE_DEFAULTS, scan: { claude: true, codex: true } });
   expect(getUsageSettings().scan.codex).toBe(true);
-  expect(report.mock.calls.at(-1)![0]).toMatchObject({ refresh: true });
+  expect(reads(report).at(-1)).toMatchObject({ refresh: true });
   expect(act(m.all(), "enable-codex")).toBeUndefined();
 });
 
@@ -161,13 +166,13 @@ it("a scan switch turned on reads again with a refresh; the display does not", a
   m.all().find((n) => n.props["data-display"] === "remaining")!.props.onClick();
   await tick();
   await m.settle();
-  expect(report).toHaveBeenCalledTimes(1);
+  expect(reads(report)).toHaveLength(1);
   toggle(m.all(), "usage.scan.codex").props.onClick();
   await tick();
   await m.settle();
   await m.settle();
-  expect(report).toHaveBeenCalledTimes(2);
-  expect(report.mock.calls[1]![0]).toMatchObject({ refresh: true });
+  expect(reads(report)).toHaveLength(2);
+  expect(reads(report)[1]).toMatchObject({ refresh: true });
 });
 
 it("a search for remaining or con lai finds the display row", () => {
@@ -353,4 +358,39 @@ it("shows an empty state when there are no accounts", async () => {
   await m.settle();
   await m.settle();
   expect(m.all().some((n) => n.props["data-field"] === "credentials-empty")).toBe(true);
+});
+
+// The heatmap and the share card have their own six-week read, whatever the range.
+const ago = (n: number) => { const d = new Date(); return localDay(new Date(d.getFullYear(), d.getMonth(), d.getDate() - n)); };
+const recentSince = () => dayRange(RECENT_DAYS, new Date())[0];
+async function showRange(range: string, provider: string) {
+  const ctx = await open({ claude: true, codex: true });
+  // The range read has today only; the six-week read also has a day 20 days back.
+  vi.spyOn(ctx.api, "kitUsageReport").mockImplementation(async (q) =>
+    q.sinceDay === recentSince()
+      ? fixture({ summary: { ...fixture().summary, days: [[ago(20), tk(500)], [ago(0), tk(100)]] } })
+      : fixture(),
+  );
+  field(ctx.m.all(), "range").props.onChange({ target: { value: range } });
+  field(ctx.m.all(), "provider").props.onChange({ target: { value: provider } });
+  await ctx.m.settle();
+  await ctx.m.settle();
+  await ctx.m.settle();
+  return ctx;
+}
+
+it("with a 7-day range the heatmap still shows the last 42 days from its own read", async () => {
+  const { api, m } = await showRange("7", "overview");
+  const calls = vi.mocked(api.kitUsageReport).mock.calls.map(([q]) => q);
+  expect(calls).toContainEqual(expect.objectContaining({ sinceDay: recentSince(), untilDay: localDay(new Date()), agent: null, scope: "xdev", refresh: false }));
+  const cells = ofType(m.all(), Heatmap)[0]!.props.cells as { key: string; level: number }[];
+  expect(cells).toHaveLength(42);
+  expect(cells.find((c) => c.key === ago(20))!.level).toBe(4);
+});
+
+it("with a 7-day range the share card gets the days of the six-week read", async () => {
+  const { m } = await showRange("7", "claude");
+  const data = ofType(m.all(), UsageShare)[0]!.props.data as { days: [string, unknown][]; range: string };
+  expect(data.range).toBe("7");
+  expect(data.days.map(([d]) => d)).toContain(ago(20));
 });

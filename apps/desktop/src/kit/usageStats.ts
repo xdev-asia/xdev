@@ -6,9 +6,9 @@ export const RECENT_DAYS = 42;
 
 export type Level = 0 | 1 | 2 | 3 | 4;
 
-/** Share of the input-side tokens that came from the cache: `read / (input + read)`; `null` when there are none. */
+/** Share of the input-side tokens that came from the cache: `read / (input + read + write)`; `null` when there are none. */
 export function cacheReuse(t: Tokens): number | null {
-  const base = t.input + t.cache_read;
+  const base = t.input + t.cache_read + t.cache_write;
   return base === 0 ? null : t.cache_read / base;
 }
 

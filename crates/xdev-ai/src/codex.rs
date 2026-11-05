@@ -96,7 +96,7 @@ pub(crate) fn status(dir: &Path) -> AccountStatus {
     }
 }
 
-type Reading = Option<(Instant, Vec<QuotaWindow>)>;
+type Reading = Option<(Instant, Result<Vec<QuotaWindow>, ProbeError>)>;
 
 /// One slot per Codex home: its lock serialises the probes of that home
 /// (two probes could refresh the same token), and it holds the last result.
@@ -110,7 +110,8 @@ fn home_slot(dir: &Path) -> Arc<Mutex<Reading>> {
 }
 
 /// Live read for one Codex home: one probe at a time per home, a result
-/// reused for `LIVE_REUSE`.
+/// or a failure reused for `LIVE_REUSE`, so a poll does not respawn a probe
+/// that just failed.
 pub(crate) fn live_usage(dir: &Path) -> Result<Vec<QuotaWindow>, ProbeError> {
     live_usage_with(
         dir,
@@ -121,7 +122,7 @@ pub(crate) fn live_usage(dir: &Path) -> Result<Vec<QuotaWindow>, ProbeError> {
 }
 
 /// The testable core of `live_usage`: `make` builds the probe, only when
-/// no reading younger than `reuse` is kept.
+/// no result (reading or failure) younger than `reuse` is kept.
 pub(crate) fn live_usage_with(
     dir: &Path,
     make: &dyn Fn() -> Result<Command, ProbeError>,
@@ -130,14 +131,14 @@ pub(crate) fn live_usage_with(
 ) -> Result<Vec<QuotaWindow>, ProbeError> {
     let slot = home_slot(dir);
     let mut last = slot.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some((at, windows)) = &*last
+    if let Some((at, result)) = &*last
         && at.elapsed() < reuse
     {
-        return Ok(windows.clone());
+        return result.clone();
     }
-    let windows = read_rate_limits(make()?, t, unix(SystemTime::now()))?;
-    *last = Some((Instant::now(), windows.clone()));
-    Ok(windows)
+    let result = make().and_then(|cmd| read_rate_limits(cmd, t, unix(SystemTime::now())));
+    *last = Some((Instant::now(), result.clone()));
+    result
 }
 
 /// The user's own `codex` as an app-server on `dir`. It runs in an empty
@@ -382,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn a_failure_is_not_kept() {
+    fn a_failure_is_kept_for_the_reuse_window() {
         let tmp = tempfile::tempdir().unwrap();
         let spawns = AtomicUsize::new(0);
         let make = || {
@@ -390,9 +391,19 @@ mod tests {
             Ok(fake("exit3"))
         };
         for _ in 0..2 {
-            assert!(live_usage_with(tmp.path(), &make, quick(), Duration::from_secs(60)).is_err());
+            let err =
+                live_usage_with(tmp.path(), &make, quick(), Duration::from_secs(60)).unwrap_err();
+            assert!(matches!(err, ProbeError::Exited(Some(3))), "{err:?}");
         }
+        assert_eq!(spawns.load(Ordering::SeqCst), 1);
+        // With no reuse the next call spawns again.
+        assert!(live_usage_with(tmp.path(), &make, quick(), Duration::ZERO).is_err());
         assert_eq!(spawns.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn the_probe_gives_up_on_init_within_ten_seconds() {
+        assert!(ProbeTimeouts::default().init <= Duration::from_secs(10));
     }
 
     #[test]
