@@ -2565,5 +2565,14 @@
   "prc.react.HEART": "Yêu thích",
   "prc.react.HOORAY": "Chúc mừng",
   "prc.react.ROCKET": "Tên lửa",
-  "prc.react.EYES": "Đang xem"
+  "prc.react.EYES": "Đang xem",
+  "prc.queue": "Xếp hàng cho agent",
+  "prc.send.agent": "Gửi {count} cho agent",
+  "prc.send.agent.one": "Gửi {count} cho agent",
+  "prc.send.clear": "Xóa hàng đợi",
+  "prc.send.title": "Gửi bình luận tới",
+  "prc.send.ack": "Giải quyết và trả lời trên GitHub sau đó",
+  "prc.send.failed": "Không đưa được bình luận cho agent.",
+  "prc.send.summary": "Đã gửi cho agent. Đã giải quyết {resolved}, đã trả lời {replied}, bỏ qua {skipped}, lỗi {failed}.",
+  "settings.git.recipes.addressComments": "Xử lý bình luận PR"
 }

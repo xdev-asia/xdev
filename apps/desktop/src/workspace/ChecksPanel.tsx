@@ -4,6 +4,10 @@ import { toApiError, type Api, type ApiError, type Check } from "@/api";
 import { useI18n } from "@/i18n";
 import { PrComments } from "./PrCommentList";
 import type { PrCommentStore } from "./prCommentStore";
+import type { SendOutcome } from "./PrSendBar";
+import type { SendChoice } from "./agentPrompt";
+import type { CommentGroup } from "./prComments";
+import type { Sessions } from "./sessions";
 import { withOverride } from "./prComments";
 import type { PrStore } from "./prs";
 
@@ -18,6 +22,9 @@ export function ChecksPanel(props: {
   // The review comments under the checks. Left out, the section does not show.
   comments?: PrCommentStore;
   visible: boolean;
+  // Where queued comments can go: the sessions to pick an agent tab from, and the send itself.
+  sessions?: Sessions | null;
+  onSendComments?(pr: { number: number; title: string; url: string }, groups: CommentGroup[], choice: SendChoice, ack: boolean): Promise<SendOutcome>;
   // Hands a failed check to an agent (Fix checks recipe). The action shows on failed rows while
   // Settings → Git shows the agent actions; it waits for the returned promise.
   onFix?(check: Check): void | Promise<void>;
@@ -142,7 +149,7 @@ export function ChecksPanel(props: {
             </ul>
           )}
           {props.comments && (
-            <PrComments store={props.comments} worktree={worktree} number={pr.number} overrides={overrides} reloadKey={entry?.checks} onMarkBot={(login, mark) => void markBot(login, mark)} />
+            <PrComments store={props.comments} worktree={worktree} number={pr.number} overrides={overrides} reloadKey={entry?.checks} onMarkBot={(login, mark) => void markBot(login, mark)} agent={props.onSendComments ? { sessions: props.sessions, send: (groups, choice, ack) => props.onSendComments!(pr, groups, choice, ack) } : undefined} />
           )}
         </>
       ) : (

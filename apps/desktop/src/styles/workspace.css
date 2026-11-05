@@ -3424,3 +3424,23 @@ button.ws-tree-row:focus-visible {
 .ws-prc-md > :last-child { margin-bottom: 0; }
 .ws-prc-composer { display: flex; flex-direction: column; gap: var(--x-space-2); }
 .ws-prc-composer-actions { display: flex; justify-content: flex-end; gap: var(--x-space-2); }
+
+.ws-prc-send {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+  position: relative;
+}
+.ws-prc-send-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 5;
+}
+.ws-prc-summary {
+  color: var(--text-2);
+}
+.ws-prc-queue {
+  margin-inline-end: var(--x-space-2);
+}

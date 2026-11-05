@@ -2565,5 +2565,14 @@
   "prc.react.HEART": "Heart",
   "prc.react.HOORAY": "Hooray",
   "prc.react.ROCKET": "Rocket",
-  "prc.react.EYES": "Eyes"
+  "prc.react.EYES": "Eyes",
+  "prc.queue": "Queue for agent",
+  "prc.send.agent": "Send {count} to agent",
+  "prc.send.agent.one": "Send {count} to agent",
+  "prc.send.clear": "Clear queue",
+  "prc.send.title": "Send comments to",
+  "prc.send.ack": "Resolve and reply on GitHub afterwards",
+  "prc.send.failed": "Could not give the comments to the agent.",
+  "prc.send.summary": "Sent to the agent. Marked {resolved} resolved, replied to {replied}, skipped {skipped}, failed {failed}.",
+  "settings.git.recipes.addressComments": "Address PR comments"
 }

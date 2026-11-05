@@ -6,6 +6,9 @@ import { useI18n } from "@/i18n";
 import { openFile } from "@/files/openFile";
 import { PrCommentRow } from "./PrCommentRow";
 import { PrComposer } from "./PrComposer";
+import { PrSendBar, type SendOutcome } from "./PrSendBar";
+import type { SendChoice } from "./agentPrompt";
+import type { Sessions } from "./sessions";
 import type { PrCommentStore } from "./prCommentStore";
 import { audienceCounts, filterAudience, groupComments, timeline, type Audience, type CommentGroup } from "./prComments";
 
@@ -23,6 +26,11 @@ export function PrComments(props: {
   /** Read again when this changes. */
   reloadKey?: unknown;
   onMarkBot: (login: string, mark: boolean) => void;
+  /** Present when an agent can take comments: groups can be queued and sent. */
+  agent?: {
+    sessions: Sessions | null | undefined;
+    send: (groups: CommentGroup[], choice: SendChoice, ack: boolean) => Promise<SendOutcome>;
+  };
   /** Seeds, for the tests. */
   initialView?: CommentView;
   initialAudience?: Audience;
@@ -34,6 +42,7 @@ export function PrComments(props: {
   const [audience, setAudience] = useState<Audience>(props.initialAudience ?? "all");
   const [replying, setReplying] = useState<number | null>(null);
   const [postError, setPostError] = useState<string | null>(null);
+  const [queued, setQueued] = useState<ReadonlySet<number>>(new Set());
 
   useSyncExternalStore(useCallback((fn: () => void) => store.subscribe(fn), [store]), store.snapshot, store.snapshot);
   const entry = store.get(worktree);
@@ -61,6 +70,18 @@ export function PrComments(props: {
     }
   }
 
+  const everyGroup = useMemo(() => {
+    const g = groupComments(all);
+    return [...g.needsReview, ...g.conversation, ...g.resolved];
+  }, [all]);
+  const queuedGroups = everyGroup.filter((g) => queued.has(g.root.id));
+
+  function toggle(id: number): void {
+    const next = new Set(queued);
+    if (!next.delete(id)) next.add(id);
+    setQueued(next);
+  }
+
   function row(c: PrComment, root: boolean, group?: CommentGroup): JSX.Element {
     const canReply = c.kind === "thread" && (group ? group.root.id === c.id : true);
     return (
@@ -75,17 +96,28 @@ export function PrComments(props: {
         onMarkBot={props.onMarkBot}
         onOpen={(path, line) => openFile({ worktree, rel: path, line: line ?? undefined })}
         footer={
-          canReply ? (
-            replying === c.id ? (
-              <PrComposer label={t("prc.replyTo", { author: c.author })} submitLabel={t("prc.reply")} error={postError} onCancel={() => setReplying(null)} onSubmit={(body) => post(body, c)} />
-            ) : (
-              <Button type="button" variant="secondary" onClick={() => setReplying(c.id)}>
-                {t("prc.reply")}
-              </Button>
-            )
-          ) : null
+          <>
+            {props.agent && group && (
+              <label className="rv-check ws-prc-queue">
+                <input type="checkbox" data-queue={c.id} checked={queued.has(c.id)} onChange={() => toggle(c.id)} />
+                <span>{t("prc.queue")}</span>
+              </label>
+            )}
+            {replyArea(c, canReply)}
+          </>
         }
       />
+    );
+  }
+
+  function replyArea(c: PrComment, canReply: boolean): JSX.Element | null {
+    if (!canReply) return null;
+    return replying === c.id ? (
+      <PrComposer label={t("prc.replyTo", { author: c.author })} submitLabel={t("prc.reply")} error={postError} onCancel={() => setReplying(null)} onSubmit={(body) => post(body, c)} />
+    ) : (
+      <Button type="button" variant="secondary" onClick={() => setReplying(c.id)}>
+        {t("prc.reply")}
+      </Button>
     );
   }
 
@@ -155,6 +187,19 @@ export function PrComments(props: {
             </Disclosure>
           )}
         </>
+      )}
+      {props.agent && (
+        <PrSendBar
+          sessions={props.agent.sessions}
+          worktree={worktree}
+          count={queuedGroups.length}
+          onClear={() => setQueued(new Set())}
+          onSend={async (choice, ack) => {
+            const out = await props.agent!.send(queuedGroups, choice, ack);
+            if (out.ok) setQueued(new Set());
+            return out;
+          }}
+        />
       )}
       <PrComposer
         label={t(all.length === 0 ? "prc.compose.start" : "prc.compose.add")}

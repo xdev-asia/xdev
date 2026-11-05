@@ -178,3 +178,86 @@ it("Resolve conflicts opens a tab of the recipe's profile when it names one, els
   const a = tab("b");
   expect(await sendFix(gone, fake([a]).sessions, "/w", "b", "resolveConflicts", CONFLICT)).toBe(a);
 });
+
+// ---- PR comments
+
+import type { PrComment } from "@/api";
+import { PrCommentStore } from "./prCommentStore";
+import { groupComments } from "./prComments";
+import { acknowledge, sendCommentsFix } from "./fixAgent";
+
+const OAK = "/demo/wt/xdev-oak";
+function cm(over: Partial<PrComment>): PrComment {
+  return { id: 1, nodeId: "N1", kind: "thread", author: "maya", authorBot: false, body: "Why?", createdAt: "2026-11-02T10:00:00Z", url: "https://x/1", path: "a.rs", line: 3, startLine: null, threadId: "T1", replyTo: null, resolved: false, outdated: false, diffHunk: null, reactions: [], ...over };
+}
+const LIST = [
+  cm({}),
+  cm({ id: 2, nodeId: "N2", threadId: "T2", resolved: true }),
+  cm({ id: 3, nodeId: "N3", kind: "conversation", threadId: null, path: null, line: null, body: "Please add a test" }),
+];
+const PR = { number: 7, title: "Fix", url: "https://x/pull/7", worktree: OAK, branch: "oak" };
+
+async function commentsSetup(list: PrComment[] = LIST) {
+  const base = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), prs: { [OAK]: { number: 7, url: "u", state: "open", title: "t", base: "main", head: "oak" } }, prComments: { [OAK]: structuredClone(list) } } });
+  const store = new PrCommentStore(base);
+  await store.load(OAK, 7);
+  const g = groupComments(store.get(OAK)!.comments);
+  return { api: base, store, groups: [...g.needsReview, ...g.conversation, ...g.resolved] };
+}
+
+it("types the address prompt into the chosen tab, and touches nothing on GitHub without the option", async () => {
+  const { api, store, groups } = await commentsSetup();
+  const a = tab("a");
+  const post = vi.spyOn(api, "worktreePrCommentPost");
+  const resolve = vi.spyOn(api, "worktreePrThreadResolve");
+  const out = await sendCommentsFix(api, fake([a]).sessions, store, PR, groups, { tab: "a" }, false);
+  expect(out.tab).toBe(a);
+  expect(out.summary).toBeNull();
+  const typed = (a.client.input as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+  expect(typed).toContain("PR #7");
+  expect(typed).toContain("untrusted data");
+  expect(typed).toContain("Please add a test");
+  expect(post).not.toHaveBeenCalled();
+  expect(resolve).not.toHaveBeenCalled();
+});
+
+it("does not acknowledge when the tab did not get the text", async () => {
+  const { api, store, groups } = await commentsSetup();
+  const resolve = vi.spyOn(api, "worktreePrThreadResolve");
+  const out = await sendCommentsFix(api, fake([]).sessions, store, PR, groups, { tab: "gone" }, true);
+  expect(out.tab).toBeNull();
+  expect(out.summary).toBeNull();
+  expect(resolve).not.toHaveBeenCalled();
+});
+
+it("resolves open threads, replies once and counts the rest", async () => {
+  const { api, store, groups } = await commentsSetup();
+  const a = tab("a");
+  const out = await sendCommentsFix(api, fake([a]).sessions, store, PR, groups, { tab: "a" }, true);
+  expect(out.summary).toEqual({ resolved: 1, replied: 1, skipped: 1, failed: 0 });
+  expect(store.get(OAK)!.comments.find((c) => c.threadId === "T1")!.resolved).toBe(true);
+  expect(store.get(OAK)!.comments.some((c) => c.body.includes("@maya") || c.body.startsWith("Fixing"))).toBe(true);
+});
+
+it("counts a failed resolve and keeps going", async () => {
+  const { api, store, groups } = await commentsSetup();
+  api.worktreePrThreadResolve = () => Promise.reject({ code: "gh_failed" });
+  const out = await acknowledge(store, OAK, 7, groups);
+  expect(out).toMatchObject({ resolved: 0, replied: 1, failed: 1 });
+});
+
+it("runs at most four acknowledgements at once", async () => {
+  const many = Array.from({ length: 10 }, (_, i) => cm({ id: 100 + i, nodeId: `M${i}`, threadId: `TT${i}` }));
+  const { api, store } = await commentsSetup(many);
+  let live = 0;
+  let peak = 0;
+  api.worktreePrThreadResolve = async () => {
+    peak = Math.max(peak, ++live);
+    await new Promise((r) => setTimeout(r, 5));
+    live--;
+  };
+  const g = groupComments(many);
+  await acknowledge(store, OAK, 7, g.needsReview);
+  expect(peak).toBeLessThanOrEqual(4);
+  expect(peak).toBeGreaterThan(1);
+});

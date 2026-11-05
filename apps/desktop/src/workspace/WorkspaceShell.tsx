@@ -55,8 +55,10 @@ import { removeRepo } from "./removeRepo";
 import { VaultNav } from "./VaultNav";
 import type { AppId } from "@/shell/apps";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
-import { sendCheckFix, sendFix } from "./fixAgent";
-import { sendToAgentTab, sendToOpenedTab } from "./agentPrompt";
+import { sendCheckFix, sendCommentsFix, sendFix } from "./fixAgent";
+import type { CommentGroup } from "./prComments";
+import type { SendOutcome } from "./PrSendBar";
+import { sendToAgentTab, sendToOpenedTab, type SendChoice } from "./agentPrompt";
 import { issuePrompt, issueWorkItem, issueWorktreeName, uniqueWorktreeName } from "@/issues/issueStart";
 import { prWorkItem, prWorktreeName } from "./createSource";
 import { effectiveIssueCommand, issueTemplateVars, renderIssueCommand } from "@/issues/issueTemplate";
@@ -1514,6 +1516,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
   }
 
+  // Gives the queued PR comments to the chosen agent tab; with `ack` on, resolves and replies after.
+  async function sendComments(pr: { number: number; title: string; url: string }, groups: CommentGroup[], choice: SendChoice, ack: boolean): Promise<SendOutcome> {
+    if (!sessions || !current) return { ok: false, summary: null };
+    const path = current.path;
+    const { tab, summary } = await sendCommentsFix(api, sessions, prComments, { ...pr, worktree: path, branch: current.branch ?? "" }, groups, choice, ack);
+    if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
+    return { ok: tab !== null, summary };
+  }
+
   // The docs app has the only search for now; it shows after this render, so its box is looked up then.
   function openSearch(): void {
     show("docs");
@@ -1964,7 +1975,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             </div>
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "checks"}>
               {current ? (
-                <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} comments={prComments} visible={panelTab === "checks"} onFix={(check) => fixCheck(check)} />
+                <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={panelTab === "checks"} onFix={(check) => fixCheck(check)} />
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
               )}

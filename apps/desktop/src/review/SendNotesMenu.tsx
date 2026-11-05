@@ -1,20 +1,13 @@
 import { useState } from "react";
 import type { JSX } from "react";
-import type { PtyProfile, ReviewNote } from "@/api";
-import { profileName, useProfiles } from "@/agents/profileStore";
+import type { ReviewNote } from "@/api";
 import { useI18n } from "@/i18n";
 import { sendToChosenTab, type SendChoice } from "@/workspace/agentPrompt";
-import type { Sessions, Tab } from "@/workspace/sessions";
-import { runningAgent as isRunning } from "@/workspace/sendTarget";
+import { targetItems } from "@/workspace/AgentTargetMenu";
+import { useProfiles } from "@/agents/profileStore";
+import type { Sessions } from "@/workspace/sessions";
 import { notesPrompt, notesToSend } from "./notes";
 
-
-/** Tabs have no name of their own, so a tab reads as its profile name, numbered when several share one. */
-function tabLabel(tabs: Tab[], index: number, view: Parameters<typeof profileName>[0], t: Parameters<typeof profileName>[2]): string {
-  const name = profileName(view, tabs[index].profileId, t);
-  const same = tabs.filter((x) => x.profileId === tabs[index].profileId);
-  return same.length > 1 ? `${name} ${same.indexOf(tabs[index]) + 1}` : name;
-}
 
 /**
  * "Send N notes": a menu of the running agent tabs of the worktree and a new tab per agent that is
@@ -35,8 +28,6 @@ export function SendNotesMenu(props: {
   const [state, setState] = useState<"idle" | "sending" | "failed">("idle");
 
   const list = notesToSend(notes, includeSent);
-  const tabs = sessions ? sessions.tabs(worktree).filter(isRunning) : [];
-  const fresh: PtyProfile[] = view ? view.profiles.filter((p) => p.profile.enabled && p.installed).map((p) => p.profile.id) : ["claude"];
 
   async function send(choice: SendChoice): Promise<void> {
     if (!sessions || list.length === 0) return;
@@ -69,16 +60,7 @@ export function SendNotesMenu(props: {
             <input type="checkbox" checked={includeSent} onChange={() => setIncludeSent(!includeSent)} />
             <span>{t("review.send.includeSent")}</span>
           </label>
-          {tabs.map((tab, i) => (
-            <button key={tab.id} type="button" role="menuitem" data-tab={tab.id} onClick={() => void send({ tab: tab.id })}>
-              {tabLabel(tabs, i, view, t)}
-            </button>
-          ))}
-          {fresh.map((id) => (
-            <button key={id} type="button" role="menuitem" data-new={id} onClick={() => void send({ profile: id })}>
-              {t("review.send.newTab", { name: profileName(view, id, t) })}
-            </button>
-          ))}
+          {targetItems(sessions, worktree, view, t, (choice) => void send(choice))}
         </div>
       )}
       {state === "failed" && (
