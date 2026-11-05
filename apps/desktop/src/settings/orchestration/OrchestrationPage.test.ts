@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import { createMockApi, type Api, type SkillStatus } from "@/api";
 import { translate } from "@/i18n";
 import { mount, nodes, textOf, type Node } from "@/kit/testHooks";
+import { ORCHESTRATION_DEFAULTS } from "@/mockSettings";
 import { OrchestrationPage } from "./OrchestrationPage";
 import { HowToCards, HowToDialog } from "./HowToCards";
 import { SkillCard, UninstallControl } from "./SkillCard";
@@ -125,7 +126,7 @@ it("depth: loads the stored value, commits a clamped value, ignores junk", async
   field(all, "depth").props.onChange({ target: { value: "42" } });
   field(m.all(), "depth").props.onBlur();
   await new Promise((r) => setTimeout(r, 0));
-  expect(put).toHaveBeenCalledWith({ nestedWorkerMaxDepth: 9, workerAutoClose: true });
+  expect(put).toHaveBeenCalledWith({ ...ORCHESTRATION_DEFAULTS, nestedWorkerMaxDepth: 9, workerAutoClose: true });
   all = m.all();
   expect(field(all, "depth").props.value).toBe("9");
   field(all, "depth").props.onChange({ target: { value: "abc" } });
@@ -143,7 +144,7 @@ it("the auto-close switch flips and saves", async () => {
   expect(sw.props["aria-checked"]).toBe(true);
   sw.props.onClick();
   await new Promise((r) => setTimeout(r, 0));
-  expect(put).toHaveBeenCalledWith({ nestedWorkerMaxDepth: 1, workerAutoClose: false });
+  expect(put).toHaveBeenCalledWith({ ...ORCHESTRATION_DEFAULTS, nestedWorkerMaxDepth: 1, workerAutoClose: false });
   expect(act(m.all(), "auto-close")!.props["aria-checked"]).toBe(false);
 });
 
@@ -195,7 +196,7 @@ it("a change made while a save runs is applied after it, on top of what was stor
   releases[0]!();
   await new Promise((r) => setTimeout(r, 0));
   expect(put).toHaveBeenCalledTimes(2);
-  expect(put.mock.calls[1]![0]).toEqual({ nestedWorkerMaxDepth: 3, workerAutoClose: false });
+  expect(put.mock.calls[1]![0]).toEqual({ ...ORCHESTRATION_DEFAULTS, nestedWorkerMaxDepth: 3, workerAutoClose: false });
   releases[1]!();
   await new Promise((r) => setTimeout(r, 0));
   all = m.all();

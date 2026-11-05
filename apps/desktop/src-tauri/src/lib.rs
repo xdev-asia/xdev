@@ -740,6 +740,7 @@ pub fn run() {
             orchestration::orchestration_nudge,
             orchestration::orchestration_handoff,
             orchestration::orchestration_tab_stop,
+            orch_sweep::orchestration_worker_failover,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")

@@ -46,6 +46,18 @@ pub struct TabReport {
     /// Epoch ms of the last output; 0 when there was none.
     pub last_output_ms: i64,
     pub exited: bool,
+    /// The CLI the agent runs (`claude`, `codex`); none for a shell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub cli: Option<String>,
+    /// The account the agent runs on, once known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub account: Option<String>,
+    /// An exited tab's exit code; none when it ended without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub exit_code: Option<i32>,
 }
 
 impl TabReport {
@@ -1236,6 +1248,9 @@ pub(crate) mod tests {
             status: status.to_owned(),
             last_output_ms: 0,
             exited: false,
+            cli: None,
+            account: None,
+            exit_code: None,
         }
     }
 

@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
 import { translate } from "@/i18n";
 import { mount, nodes, type Node } from "@/kit/testHooks";
-import { WorkerStrip } from "./WorkerStrip";
+import { failoverLine, WorkerStrip } from "./WorkerStrip";
 
 vi.mock("react", async (original) => (await import("@/kit/testHooks")).patchReact(await original<typeof import("react")>()));
 vi.mock("@/i18n", async (original) => ({
@@ -50,7 +50,7 @@ it("Keep open hides the strip at once and a change event for another tab does no
 
 it("is hidden when auto-close is off", async () => {
   const api = createMockApi({});
-  await api.orchestrationSettingsPut({ nestedWorkerMaxDepth: 1, workerAutoClose: false });
+  await api.orchestrationSettingsPut({ ...(await api.orchestrationSettings()), workerAutoClose: false });
   api.__orchSetLifetime("t1", { kept: false, closesAtMs: null, finished: false });
   const m = mount(Strip, () => ({ api, tab: "t1", now: () => 0, running: true }));
   expect(banner(await m.settle())).toBeUndefined();
@@ -61,4 +61,42 @@ it("is hidden for a worker with no running agent that has not finished", async (
   api.__orchSetLifetime("t1", { kept: false, closesAtMs: null, finished: false });
   const m = mount(Strip, () => ({ api, tab: "t1", now: () => 0, running: false }));
   expect(banner(await m.settle())).toBeUndefined();
+});
+
+const failoverLineOf = (all: Node[]) => all.find((n) => n.props["data-failover"] !== undefined);
+
+it("a worker that took over says where it came from, by the agent's name, even with the auto-close strip hidden", async () => {
+  const api = createMockApi({});
+  await api.orchestrationSettingsPut({ ...(await api.orchestrationSettings()), workerAutoClose: false });
+  api.__orchSetFailover("t2", { fromAgent: "claude", reason: "out_of_quota", kind: "failover" });
+  const m = mount(Strip, () => ({ api, tab: "t2", now: () => 0, running: true }));
+  const all = await m.settle();
+  await new Promise((r) => setTimeout(r, 0));
+  const line = failoverLineOf(m.all())!;
+  expect(line.type).toBe("p");
+  expect(line.props.role).toBe("status");
+  expect(line.props.children).toBe(en("orchestration.worker.failedOver", { agent: "Claude Code", reason: en("orchestration.failover.reason.out_of_quota") }));
+  expect(line.props.children).toBe("Failed over from Claude Code (out of quota)");
+  expect(banner(all)).toBeUndefined();
+});
+
+it("the failover line appears when the worker changes, and a restart says so with its account", async () => {
+  const api = createMockApi({});
+  api.__orchSetLifetime("t3", { kept: false, closesAtMs: null, finished: false });
+  const m = mount(Strip, () => ({ api, tab: "t3", now: () => 0, running: true }));
+  expect(failoverLineOf(await m.settle())).toBeUndefined();
+  api.__orchSetFailover("t3", { fromAgent: "codex", reason: "stuck", kind: "restart", account: "codex-2" });
+  api.__orchWorkerChanged({ tab: "t3" });
+  for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 0));
+  const all = m.all();
+  expect(failoverLineOf(all)!.props.children).toBe(
+    `${en("orchestration.worker.restarted", { reason: en("orchestration.failover.reason.stuck") })} · ${en("orchestration.worker.failoverAccount", { account: "codex-2" })}`,
+  );
+  expect(banner(all)!.props.title).toBe(en("orchestration.worker.running"));
+});
+
+it("every failure reason has a text", () => {
+  for (const r of ["exited", "crashed", "out_of_quota", "rate_limited", "quota_full", "stuck"]) {
+    expect(failoverLine({ fromAgent: "x", reason: r as never, kind: "failover" }, "X", en)).not.toContain("orchestration.failover.reason");
+  }
 });

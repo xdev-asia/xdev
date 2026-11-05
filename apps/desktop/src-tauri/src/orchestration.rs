@@ -36,6 +36,10 @@ pub struct WorkerOpen {
     /// `inherit` runs the repo's setup first; `skip` does not.
     pub setup: String,
     pub ready_timeout_ms: u64,
+    /// The account the worker starts on; none lets its provider's routing pick.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub account: Option<String>,
 }
 
 /// The UI's answer to `open-worker`.
@@ -406,6 +410,7 @@ pub fn orchestration_settings_put(
     use tauri::Manager;
     app.state::<OrchHub>()
         .set_auto_close(stored.worker_auto_close);
+    crate::orch_sweep::remember(&stored);
     Ok(stored)
 }
 
@@ -1199,7 +1204,7 @@ fn terminal_target(ctx: &Ctx<'_>, t: &str) -> Result<crate::cli_verbs::TabReport
 }
 
 /// How long a worker's tab gets to show its agent when the CLI sends no timeout.
-const READY_DEFAULT_MS: u64 = 60_000;
+pub(crate) const READY_DEFAULT_MS: u64 = 60_000;
 
 /// `worker-start`: records a dispatch, opens (or reuses) a tab, hands it the
 /// preamble and answers with a receipt. The store is never held while the UI
@@ -1402,6 +1407,7 @@ fn worker_start(
                 prompt,
                 setup,
                 ready_timeout_ms: ready_ms,
+                account: None,
             };
             let payload = to_value(&open)?;
             let wait = Duration::from_millis(ready_ms) + ctx.orch.waits.open_slack;

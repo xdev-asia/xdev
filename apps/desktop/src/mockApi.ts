@@ -29,6 +29,7 @@ import { createMockKit, type MockKit } from "./mockKit";
 import { createMockLayout } from "./mockLayout";
 import { createMockAutomations, type MockAutomations } from "./mockAutomations";
 import { createMockCli, type MockCli } from "./mockCli";
+import type { FailReason, WorkerOpen } from "@xdev/bindings";
 import { createMockOpenIn, type MockOpenIn } from "./mockOpenIn";
 import { createMockTermLinks, type MockTermLinks } from "./mockTermLinks";
 import { createMockProfiles, type MockProfiles } from "./mockProfiles";
@@ -384,7 +385,12 @@ export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSs
   __editOutside(path: string, content: string | null): void;
   // Writes a file the way `propose_update` does over MCP; throws an ApiError like the real tool.
   __propose(path: string, content: string, note: string | null): void;
-} & Pick<MockAccountRouting, "__quotaAlert">;
+} & Pick<MockAccountRouting, "__quotaAlert"> & {
+  // Plays the backend's failover of the worker `from` opened: with failover on and a backup agent, the
+  // first one takes over in a new tab whose strip reads "Failed over from"; else the worker is marked
+  // failed. Resolves with the new tab's id, or null.
+  __orchFailWorker(from: WorkerOpen, reason?: FailReason): Promise<string | null>;
+};
 
 type MockOptions = {
   repo?: boolean;
@@ -653,6 +659,22 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...configEnv,
     ...createMockCli(),
     ...createMockMission(),
+    async __orchFailWorker(from, reason = "exited") {
+      const s = await settingsApi.orchestrationSettings();
+      const agent = s.failoverEnabled && s.failoverMax > 0 ? s.failoverBackupAgents[0] : undefined;
+      const failed = { task: from.dispatch, fromDispatch: from.dispatch, fromTab: from.tab, fromAgent: from.profile, reason };
+      if (!agent) {
+        api.__orchFailover(failed);
+        return null;
+      }
+      const next: WorkerOpen = { ...from, dispatch: `${from.dispatch}-f1`, tab: `${from.tab}-f1`, profile: agent, setup: "skip" };
+      delete next.account;
+      api.__orchSetFailover(next.tab, { fromAgent: from.profile, reason, kind: "failover" });
+      api.__orchOpenWorker(next);
+      api.__orchFailover({ ...failed, kind: "failover", dispatch: next.dispatch, tab: next.tab, agent });
+      api.__orchWorkerChanged({ tab: next.tab });
+      return next.tab;
+    },
     ...createMockAutomations({ demo: options.automationsDemo }),
     ...createMockQuickCommands(
       {

@@ -319,6 +319,7 @@ import type { LayoutSnapshot } from "./workspace/layoutSnapshot";
 import { toBytes } from "./terminal/ptyClient";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 import type { AccountRouting, QuotaAlert } from "@xdev/bindings";
+import type { FailedOver, WorkerFailover } from "@xdev/bindings";
 
 export { createMockApi };
 /** The kinds of `HookKind` that are scripts; the others are lists. */
@@ -378,6 +379,7 @@ export type {
   PromptQueueWhenInput,
 } from "@xdev/bindings";
 export type { AccountRouting, QuotaAlert, RoutePolicy } from "@xdev/bindings";
+export type { FailedOver, FailReason, FailoverKind, WorkerFailover } from "@xdev/bindings";
 
 // The IPC types come from Rust; see packages/bindings/README.md.
 export type {
@@ -1734,6 +1736,10 @@ export interface Api {
   orchestrationHandoff(from: string, to: string, text: string): Promise<OrchMessage>;
   // Stops the worker in `tab` along the worker-stop path; rejects with `not_worker` for a tab without one.
   orchestrationTabStop(tab: string): Promise<OrchWorker>;
+  // Where a worker came from when it took over a failed or stuck one; null for a first worker.
+  orchestrationWorkerFailover(tab: string): Promise<FailedOver | null>;
+  // `orchestration://failover`: a worker failed over, restarted, or was marked failed; once each.
+  onOrchestrationFailover(cb: (e: WorkerFailover) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2445,6 +2451,8 @@ const tauriApi: Api = {
   orchestrationNudge: (tab) => call("orchestration_nudge", { tab }),
   orchestrationHandoff: (from, to, text) => call("orchestration_handoff", { from, to, text }),
   orchestrationTabStop: (tab) => call("orchestration_tab_stop", { tab }),
+  orchestrationWorkerFailover: (tab) => call("orchestration_worker_failover", { tab }),
+  onOrchestrationFailover: (cb) => listen<WorkerFailover>("orchestration://failover", (e) => cb(e.payload)),
 };
 
 const DEMO_CRASH: CrashReport = {

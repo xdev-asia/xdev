@@ -63,6 +63,15 @@ string_enum!(StopReason {
     Exited
 });
 string_enum!(Outcome { Succeeded, Failed });
+string_enum!(
+    /// Why a worker counted as failed and was replaced.
+    FailReason { Exited, Crashed, OutOfQuota, RateLimited, QuotaFull, Stuck }
+);
+string_enum!(
+    /// How a dispatch replaced the one in `failover_of`: a restart runs the
+    /// same agent on the same account, a failover moves to a backup.
+    FailoverKind { Restart, Failover }
+);
 
 impl WorkerState {
     /// The transitions the reference allows.
@@ -148,6 +157,12 @@ pub struct Dispatch {
     pub retry_of: Option<String>,
     pub failure_count: u32,
     pub parent_dispatch: Option<String>,
+    /// The failed dispatch this one took over from.
+    pub failover_of: Option<String>,
+    pub failover_reason: Option<FailReason>,
+    pub failover_kind: Option<FailoverKind>,
+    /// The account the worker was started on, when xDev chose it.
+    pub account: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

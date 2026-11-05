@@ -9,4 +9,8 @@ export type WorkerOpen = { dispatch: string, tab: string, title: string, worktre
 /**
  * `inherit` runs the repo's setup first; `skip` does not.
  */
-setup: string, readyTimeoutMs: number, };
+setup: string, readyTimeoutMs: number, 
+/**
+ * The account the worker starts on; none lets its provider's routing pick.
+ */
+account?: string, };

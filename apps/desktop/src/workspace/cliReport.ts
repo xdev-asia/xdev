@@ -37,6 +37,10 @@ export function tabReports(sessions: Sessions): TabReport[] {
       status: cliStatus(tab),
       lastOutputMs: sessions.lastOutput(tab.id) ?? 0,
       exited: tab.exitCode !== undefined,
+      // For failover: the agent's provider, its account and how it ended (no code is a crash).
+      ...(tab.cli ? { cli: tab.cli } : {}),
+      ...(tab.account ? { account: tab.account } : {}),
+      ...(typeof tab.exitCode === "number" ? { exitCode: tab.exitCode } : {}),
     }));
 }
 

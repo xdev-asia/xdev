@@ -115,8 +115,28 @@ export const AGENTS_SETTINGS_DEFAULTS: AgentsSettings = {
 };
 
 /** `OrchestrationSettings::default()` in Rust, and the range the depth is clamped to. */
-export const ORCHESTRATION_DEFAULTS: OrchestrationSettings = { nestedWorkerMaxDepth: 1, workerAutoClose: true };
+export const ORCHESTRATION_DEFAULTS: OrchestrationSettings = {
+  nestedWorkerMaxDepth: 1,
+  workerAutoClose: true,
+  failoverEnabled: false,
+  failoverBackupAccount: true,
+  failoverBackupAgents: [],
+  failoverMax: 2,
+  autopilotRestart: false,
+  stuckMinutes: 10,
+};
 export const NESTED_DEPTH_LIMITS = { min: 1, max: 9 } as const;
+/** `FAILOVER_MAX`, `STUCK_MINUTES_MAX` and `BACKUP_AGENTS_MAX` in Rust. */
+export const FAILOVER_LIMITS = { max: 5, stuckMax: 120, agents: 8 } as const;
+
+const whole = (v: number, fallback: number): number => (Number.isFinite(v) ? Math.trunc(v) : fallback);
+
+/** The backup agents as Rust keeps them: trimmed, without blanks or repeats, at most 8. */
+export function backupAgents(list: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const a of list.map((x) => x.trim())) if (a && !out.includes(a) && out.length < FAILOVER_LIMITS.agents) out.push(a);
+  return out;
+}
 
 export type SettingsHub = { emit: SettingsEmit; onSettingsChanged: Api["onSettingsChanged"] };
 
@@ -235,6 +255,12 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
       orchestration = {
         nestedWorkerMaxDepth: Math.max(NESTED_DEPTH_LIMITS.min, Math.min(NESTED_DEPTH_LIMITS.max, depth)),
         workerAutoClose: next.workerAutoClose,
+        failoverEnabled: next.failoverEnabled,
+        failoverBackupAccount: next.failoverBackupAccount,
+        failoverBackupAgents: backupAgents(next.failoverBackupAgents),
+        failoverMax: Math.max(0, Math.min(FAILOVER_LIMITS.max, whole(next.failoverMax, ORCHESTRATION_DEFAULTS.failoverMax))),
+        autopilotRestart: next.autopilotRestart,
+        stuckMinutes: Math.max(1, Math.min(FAILOVER_LIMITS.stuckMax, whole(next.stuckMinutes, ORCHESTRATION_DEFAULTS.stuckMinutes))),
       };
       hub.emit(["orchestration"]);
       return { ...orchestration };

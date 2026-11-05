@@ -44,7 +44,7 @@ export async function openWorker(api: Api, host: OrchestrationHost, open: Worker
   } catch (e) {
     return fail("terminal_create", message(e));
   }
-  const make = (): Tab => host.sessions.open(open.worktree, open.profile, null, undefined, { id: open.tab, title: open.title, background: true });
+  const make = (): Tab => host.sessions.open(open.worktree, open.profile, open.account ?? null, undefined, { id: open.tab, title: open.title, background: true });
   let tab: Tab;
   try {
     if (open.setup === "skip") {

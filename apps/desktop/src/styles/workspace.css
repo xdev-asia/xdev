@@ -3877,6 +3877,17 @@ button.ws-tree-row[data-active="true"] {
   border-width: 0 0 1px;
 }
 
+/* "Failed over from …": a quiet line, tinted, with a 1px rule under it. */
+.ws-worker-failover {
+  margin: 0;
+  padding: 6px 12px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .ws-awake {
   display: flex;
   align-items: center;

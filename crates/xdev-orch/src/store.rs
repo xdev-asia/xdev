@@ -16,7 +16,7 @@ use crate::ids::new_id;
 use crate::model::{Dispatch, Gate, Message, Run, Task, Worker};
 
 /// The schema version this build writes.
-pub const SCHEMA_VERSION: i32 = 2;
+pub const SCHEMA_VERSION: i32 = 3;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE runs (
@@ -130,6 +130,16 @@ CREATE TABLE meta_text (
 CREATE INDEX messages_from ON messages (from_addr, seq);
 ";
 
+/// Version 3: which failed dispatch a dispatch took over from, why, and the
+/// account xDev chose for it.
+const SCHEMA_V3: &str = "
+ALTER TABLE dispatches ADD COLUMN failover_of TEXT;
+ALTER TABLE dispatches ADD COLUMN failover_reason TEXT;
+ALTER TABLE dispatches ADD COLUMN failover_kind TEXT;
+ALTER TABLE dispatches ADD COLUMN account TEXT;
+CREATE INDEX dispatches_failover_of ON dispatches(failover_of);
+";
+
 pub struct Store {
     pub(crate) conn: Connection,
     counter: Cell<u64>,
@@ -204,8 +214,7 @@ pub(crate) fn task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     })
 }
 
-pub(crate) const DISPATCH_COLS: &str =
-    "id, run_id, task_id, status, depth, retry_of, failure_count, parent_dispatch";
+pub(crate) const DISPATCH_COLS: &str = "id, run_id, task_id, status, depth, retry_of, failure_count, parent_dispatch, failover_of, failover_reason, failover_kind, account";
 pub(crate) fn dispatch_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Dispatch> {
     Ok(Dispatch {
         id: r.get(0)?,
@@ -216,6 +225,10 @@ pub(crate) fn dispatch_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Dispatch> 
         retry_of: r.get(5)?,
         failure_count: r.get(6)?,
         parent_dispatch: r.get(7)?,
+        failover_of: r.get(8)?,
+        failover_reason: parse_opt(r, 9)?,
+        failover_kind: parse_opt(r, 10)?,
+        account: r.get(11)?,
     })
 }
 
@@ -332,6 +345,12 @@ impl Store {
             let tx = self.conn.unchecked_transaction()?;
             tx.execute_batch(SCHEMA_V2)?;
             tx.pragma_update(None, "user_version", 2)?;
+            tx.commit()?;
+        }
+        if version < 3 {
+            let tx = self.conn.unchecked_transaction()?;
+            tx.execute_batch(SCHEMA_V3)?;
+            tx.pragma_update(None, "user_version", 3)?;
             tx.commit()?;
         }
         Ok(())
@@ -465,7 +484,7 @@ mod tests {
     }
 
     #[test]
-    fn a_version_1_database_is_moved_to_version_2_and_keeps_its_rows() {
+    fn a_version_1_database_is_moved_to_the_current_version_and_keeps_its_rows() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("v1.db");
         {
@@ -479,9 +498,42 @@ mod tests {
             .unwrap();
         }
         let s = Store::open(&path).unwrap();
-        assert_eq!(s.version().unwrap(), 2);
+        assert_eq!(s.version().unwrap(), SCHEMA_VERSION);
         assert_eq!(s.run_list().unwrap().len(), 1);
         assert!(s.link_list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_version_one_database_gains_the_failover_columns() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("v1.db");
+        {
+            let c = Connection::open(&path).unwrap();
+            c.execute_batch(SCHEMA_V1).unwrap();
+            c.pragma_update(None, "user_version", 1).unwrap();
+            c.execute(
+                "INSERT INTO runs (id, objective, created_ms) VALUES ('run_a', 'x', 1)",
+                [],
+            )
+            .unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert_eq!(s.version().unwrap(), SCHEMA_VERSION);
+        let n: i64 = s
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('dispatches') WHERE name IN ('failover_of', 'failover_reason', 'failover_kind', 'account')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 4);
+        // Rows from version 1 are kept.
+        let runs: i64 = s
+            .conn
+            .query_row("SELECT COUNT(*) FROM runs", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(runs, 1);
     }
 
     #[test]

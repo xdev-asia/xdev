@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { createMockApi } from "./api";
-import { AGENTS_SETTINGS_DEFAULTS, DIFF_DEFAULTS, NAVIGATION_DEFAULTS, SIDEBAR_PREFS_DEFAULTS } from "./mockSettings";
+import { AGENTS_SETTINGS_DEFAULTS, DIFF_DEFAULTS, NAVIGATION_DEFAULTS, ORCHESTRATION_DEFAULTS, SIDEBAR_PREFS_DEFAULTS } from "./mockSettings";
 
 it("starts navigation and diff from the defaults the backend stores", async () => {
   const api = createMockApi({});
@@ -88,13 +88,40 @@ it("starts the pull policy at fast-forward only and stores a change", async () =
 
 it("stores the orchestration settings with the depth clamped to one through nine", async () => {
   const api = createMockApi({});
-  expect(await api.orchestrationSettings()).toEqual({ nestedWorkerMaxDepth: 1, workerAutoClose: true });
+  expect(await api.orchestrationSettings()).toEqual(ORCHESTRATION_DEFAULTS);
+  expect(ORCHESTRATION_DEFAULTS).toMatchObject({ nestedWorkerMaxDepth: 1, workerAutoClose: true });
   const seen = vi.fn();
   api.onSettingsChanged((e) => seen(e.sections));
-  expect((await api.orchestrationSettingsPut({ nestedWorkerMaxDepth: 40, workerAutoClose: false })).nestedWorkerMaxDepth).toBe(9);
-  expect((await api.orchestrationSettingsPut({ nestedWorkerMaxDepth: 0, workerAutoClose: false })).nestedWorkerMaxDepth).toBe(1);
-  expect(await api.orchestrationSettings()).toEqual({ nestedWorkerMaxDepth: 1, workerAutoClose: false });
+  const off = { ...ORCHESTRATION_DEFAULTS, workerAutoClose: false };
+  expect((await api.orchestrationSettingsPut({ ...off, nestedWorkerMaxDepth: 40 })).nestedWorkerMaxDepth).toBe(9);
+  expect((await api.orchestrationSettingsPut({ ...off, nestedWorkerMaxDepth: 0 })).nestedWorkerMaxDepth).toBe(1);
+  expect(await api.orchestrationSettings()).toEqual({ ...off, nestedWorkerMaxDepth: 1 });
   expect(seen).toHaveBeenCalledWith(["orchestration"]);
+});
+
+it("starts with failover off and keeps its counts and backup agents in the backend's bounds", async () => {
+  const api = createMockApi({});
+  expect(await api.orchestrationSettings()).toMatchObject({
+    failoverEnabled: false,
+    failoverBackupAccount: true,
+    failoverBackupAgents: [],
+    failoverMax: 2,
+    autopilotRestart: false,
+    stuckMinutes: 10,
+  });
+  const stored = await api.orchestrationSettingsPut({
+    ...ORCHESTRATION_DEFAULTS,
+    failoverEnabled: true,
+    failoverMax: 9,
+    stuckMinutes: 0,
+    failoverBackupAgents: [" codex ", "", "codex", "gemini", "a", "b", "c", "d", "e", "f", "g"],
+  });
+  expect(stored.failoverEnabled).toBe(true);
+  expect(stored.failoverMax).toBe(5);
+  expect(stored.stuckMinutes).toBe(1);
+  expect(stored.failoverBackupAgents).toEqual(["codex", "gemini", "a", "b", "c", "d", "e", "f"]);
+  expect((await api.orchestrationSettingsPut({ ...stored, failoverMax: -3, stuckMinutes: 500 })).failoverMax).toBe(0);
+  expect((await api.orchestrationSettings()).stuckMinutes).toBe(120);
 });
 
 it("starts the agents settings with keep awake off and no generated tab titles", async () => {
