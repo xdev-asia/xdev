@@ -178,7 +178,9 @@
   text-overflow: ellipsis;
 }
 
+/* The library's search input pins a hint of the same class to its right edge; here it stays in the button's row. */
 .ws-search-hint {
+  position: static;
   flex-shrink: 0;
   padding: 1px 5px;
   line-height: 1.3;

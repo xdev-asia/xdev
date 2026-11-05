@@ -65,3 +65,7 @@ it("the settings section list scrolls on its own instead of running under the fo
   expect(settings).toMatch(/\.settings-nav\s*\{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto/);
   expect(media(settings, "max-width: 600px")).toMatch(/\.settings-nav\s*\{[^}]*max-height:\s*40%/);
 });
+
+it("the header search hint stays inside the search button", () => {
+  expect(workspace).toMatch(/\.ws-search-hint\s*\{[^}]*position:\s*static/);
+});
