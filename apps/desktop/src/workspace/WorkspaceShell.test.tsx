@@ -27,7 +27,6 @@ import { resetStatusSettings } from "@/status/statusSettings";
 import { BellMenu } from "./BellMenu";
 import { ActivityPanel } from "@/activity/ActivityPanel";
 import { Sessions } from "./sessions";
-import * as agentPrompt from "./agentPrompt";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { AccountSwitchDialog } from "./AccountSwitchDialog";
 import { WorkspaceShell } from "./WorkspaceShell";
@@ -622,21 +621,83 @@ it("a create with extras opens the picked agent, keeps it as the default and sav
   expect(details.mock.calls[0][1]).toEqual({ title: "🚀 birch", item: { kind: "issue", url: "https://x.test/i/7", title: null } });
 });
 
-it("new_worktree_skips_uninstalled_default", async () => {
+it("a create that picks an agent that is not installed opens no agent, sends no prompt and says why", async () => {
   const api = createMockApi({});
-  // Gemini is not installed in the mock.
-  await api.profilesDefaults("ask", "gemini", null);
+  const spawn = vi.spyOn(api, "ptySpawn");
   const view = await harness(api);
-  expect(await createBirch(view)).toEqual([]);
+  view.list().props.onCreate();
+  await tick();
+  view.draw();
+  // Gemini is not installed in the mock.
+  view.of(CreateWorktreeDialog)[0].props.onCreate("demo-xdev", "rocket-birch", null, {
+    title: null,
+    agent: "gemini",
+    setDefault: false,
+    parent: null,
+    item: null,
+    prompt: "fix it",
+  });
+  await tick();
+  await tick();
+  await tick();
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  expect(sessions.tabs("/demo/wt/xdev-rocket-birch")).toEqual([]);
+  expect(spawn).not.toHaveBeenCalled();
+  const name = (await api.profiles()).profiles.find((p) => p.profile.id === "gemini")!.profile.name;
+  const toast = getToasts().find((x) => x.text === en("workspace.agentUnusable", { name }))!;
+  expect(toast.actions[0].label).toBe(en("workspace.agentPicker.manage"));
+  for (const x of getToasts()) dismissToast(x.id);
 });
 
-it("new worktree skips a default agent that is turned off", async () => {
+it("a CLI open of an agent that is not installed opens nothing", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  attend(view);
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  const before = sessions.tabs(OAK).length;
+  const name = (await api.profiles()).profiles.find((p) => p.profile.id === "gemini")!.profile.name;
+  api.__cliOpenTab({ worktree: OAK, profile: "gemini", prompt: "fix it" });
+  await vi.waitFor(() => expect(getToasts().some((x) => x.text === en("workspace.agentUnusable", { name }))).toBe(true));
+  expect(sessions.tabs(OAK)).toHaveLength(before);
+  for (const x of getToasts()) dismissToast(x.id);
+});
+
+it("new worktree with a saved default that is not installed opens the default shell", async () => {
+  const api = createMockApi({});
+  // Gemini is not installed in the mock; no other agent takes its place.
+  await api.profilesDefaults("ask", "gemini", null);
+  const shell = (await api.profiles()).defaultShell;
+  const view = await harness(api);
+  expect(await createBirch(view)).toEqual([shell]);
+});
+
+it("new worktree with a saved default that is turned off opens the default shell", async () => {
   const api = createMockApi({});
   const codex = (await api.profiles()).profiles.find(p => p.profile.id === "codex")!.profile;
   await api.profilePut({ ...codex, enabled: false });
   await api.profilesDefaults("ask", "codex", null);
+  const shell = (await api.profiles()).defaultShell;
   const view = await harness(api);
-  expect(await createBirch(view)).toEqual([]);
+  expect(await createBirch(view)).toEqual([shell]);
+});
+
+it("new worktree with no installed agent opens the default shell and types nothing", async () => {
+  const api = createMockApi({});
+  api.__installed = [];
+  await api.agentsRefresh();
+  const write = vi.spyOn(api, "ptyWrite");
+  const shell = (await api.profiles()).defaultShell;
+  const view = await harness(api);
+  expect(await createBirch(view)).toEqual([shell]);
+  expect(write).not.toHaveBeenCalled();
+});
+
+it("new worktree with a blank default opens the default shell", async () => {
+  const api = createMockApi({});
+  await api.profilesDefaults("ask", "blank", null);
+  const shell = (await api.profiles()).defaultShell;
+  const view = await harness(api);
+  expect(await createBirch(view)).toEqual([shell]);
 });
 
 // Runs the effects after the first two (the store and the list are up already) against a stubbed
@@ -659,7 +720,7 @@ function attend(view: Awaited<ReturnType<typeof harness>>) {
   const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
   // An agent tab with hooks in a worktree that is not on screen.
   const tab = sessions.open(OAK, "claude");
-  sessions.noteStarted(tab.id, { id: tab.id, pid: 1, program: "agent", agent: true, profile: "claude", permissions: "ask", account: null, accountSource: null, hooks: true, hookEvents: ["prompt", "needs-input", "resume", "turn-failed", "turn-done"], cli: "claude" });
+  sessions.noteStarted(tab.id, { id: tab.id, pid: 1, program: "agent", agent: true, profile: "claude", permissions: "ask", account: null, accountSource: null, hooks: true, hookEvents: ["prompt", "needs-input", "resume", "turn-failed", "turn-done"], cli: "claude", promptAfter: null });
   return { fire, sessions, tab };
 }
 const OAK = "/demo/wt/xdev-oak";
@@ -775,7 +836,7 @@ it("the badge counts worktrees with something unread, not tabs", async () => {
   const view = await harness(api);
   const { sessions, tab } = attend(view);
   const second = sessions.open(OAK, "claude");
-  sessions.noteStarted(second.id, { id: second.id, pid: 2, program: "agent", agent: true, profile: "claude", permissions: "ask", account: null, accountSource: null, hooks: true, hookEvents: ["prompt", "needs-input", "resume", "turn-failed", "turn-done"], cli: "claude" });
+  sessions.noteStarted(second.id, { id: second.id, pid: 2, program: "agent", agent: true, profile: "claude", permissions: "ask", account: null, accountSource: null, hooks: true, hookEvents: ["prompt", "needs-input", "resume", "turn-failed", "turn-done"], cli: "claude", promptAfter: null });
   api.__hook(tab.id, "needs-input");
   api.__hook(second.id, "needs-input");
   await settle();
@@ -1438,8 +1499,8 @@ it("Start worktree on an issue makes a worktree named from it, links the issue a
 
 // What the agent is told when a worktree starts from issue 1 of the demo repo.
 async function startedPrompt(api: ReturnType<typeof createMockApi>): Promise<string | undefined> {
-  const send = vi.spyOn(agentPrompt, "sendToOpenedTab").mockResolvedValue(true as never);
-  send.mockClear();
+  const open = vi.spyOn(Sessions.prototype, "open");
+  open.mockClear();
   // A fresh shell each time: the hook store of this file outlives one `harness`.
   hooks.values = [];
   hooks.cursor = 0;
@@ -1450,7 +1511,8 @@ async function startedPrompt(api: ReturnType<typeof createMockApi>): Promise<str
   view.of(IssuesPanel)[0].props.onStart(detail);
   await settle();
   await settle();
-  return send.mock.calls.at(-1)?.[3];
+  // The prompt goes with the new tab: on the agent's command line, or typed once it started.
+  return open.mock.calls.at(-1)?.[4]?.prompt;
 }
 
 it("Start worktree on an issue sends the built-in prompt when no issue command is set", async () => {

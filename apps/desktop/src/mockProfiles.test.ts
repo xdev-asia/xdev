@@ -7,17 +7,35 @@ const custom = (id: string) => ({
 });
 
 describe("mock profiles", () => {
+  it("auto and blank are not profile ids", async () => {
+    const api = createMockApi({});
+    for (const id of ["auto", "blank"]) await expect(api.profilePut(custom(id))).rejects.toMatchObject({ code: "invalid_profile" });
+  });
+
+  it("custom args count only the first flag of a mode, like has_permission_args", async () => {
+    const api = createMockApi({});
+    const customArgs = async (id: string, args: string[]) => {
+      const p = (await api.profiles()).profiles.find((v) => v.profile.id === id)!.profile;
+      return (await api.profilePut({ ...p, args })).profiles.find((v) => v.profile.id === id)!.customArgs;
+    };
+    expect(await customArgs("codex", ["--sandbox", "read-only"])).toBe(true);
+    expect(await customArgs("codex", ["--ask-for-approval", "never"])).toBe(false);
+    expect(await customArgs("devin", ["--permission-mode=bypass"])).toBe(true);
+    expect(await customArgs("devin", ["--respect-workspace-trust", "false"])).toBe(false);
+    expect(await customArgs("goose", ["GOOSE_MODE=auto"])).toBe(false);
+  });
+
   it("mock_profile_put_round_trips", async () => {
     const api = createMockApi({});
     const first = await api.profiles();
-    expect(first.profiles.map((p) => p.profile.id)).toEqual(["claude", "codex", "gemini"]);
+    expect(first.profiles.map((p) => p.profile.id)).toHaveLength(13);
     expect(first.profiles.find((p) => p.profile.id === "gemini")!.installed).toBe(false);
     expect(first.shells.map((s) => s.id)).toEqual(["shell:powershell", "shell:cmd", "shell:wsl:Ubuntu"]);
     const put = await api.profilePut(custom("mine"));
     expect(put.profiles.at(-1)!.profile.id).toBe("mine");
-    expect((await api.profiles()).profiles).toHaveLength(4);
+    expect((await api.profiles()).profiles).toHaveLength(14);
     await expect(api.profileRemove("claude")).rejects.toMatchObject({ code: "builtin_profile" });
-    expect((await api.profileRemove("mine")).profiles).toHaveLength(3);
+    expect((await api.profileRemove("mine")).profiles).toHaveLength(13);
     const shells = await api.shellPut({ id: "mysh", name: "mysh", program: "sh", args: [] });
     expect(shells.shells.at(-1)).toMatchObject({ id: "shell:mysh", custom: true });
     expect((await api.shellRemove("mysh")).shells).toHaveLength(3);
@@ -114,5 +132,26 @@ describe("mock profiles", () => {
     await api.profilePut({ ...codex, enabled: false });
     await expect(spawn("codex")).rejects.toMatchObject({ code: "profile_off" });
     await expect(spawn("nope")).rejects.toMatchObject({ code: "unknown_profile" });
+  });
+
+  it("a_fresh_default_is_auto_and_resolves_to_the_first_installed_agent", async () => {
+    const view = await createMockApi({}).profiles();
+    expect(view.defaultAgent).toBe("auto");
+    expect(view.resolvedDefault).toBe("claude");
+  });
+
+  it("refresh_reads_the_installed_list_and_auto_follows_it", async () => {
+    const api = createMockApi({});
+    api.__installed = ["codex", "devin"];
+    const view = await api.agentsRefresh();
+    expect(view.profiles.filter((p) => p.installed && p.builtin).map((p) => p.profile.id)).toEqual(["codex", "devin"]);
+    expect(view.resolvedDefault).toBe("codex");
+    api.__installed = [];
+    expect((await api.agentsRefresh()).resolvedDefault).toBeNull();
+  });
+
+  it("a_blank_default_resolves_to_no_agent", async () => {
+    const api = createMockApi({});
+    expect((await api.profilesDefaults("ask", "blank", null)).resolvedDefault).toBeNull();
   });
 });

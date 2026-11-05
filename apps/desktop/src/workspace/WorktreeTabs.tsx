@@ -54,6 +54,7 @@ import { CommitView, type CommitAsk } from "./CommitView";
 import { cliOf, ownAccount, type Sessions, type Tab, type TabCli } from "./sessions";
 import type { SetupGate } from "./setupGate";
 import { TabStrip, type MenuGroup, type StripItem } from "./TabStrip";
+import { AgentPicker } from "./AgentPicker";
 import { cycleTab, mruOrder, nthTab } from "./tabNav";
 import { TabTitleDialog } from "./TabTitleDialog";
 import { titleStatus } from "./titles";
@@ -62,6 +63,8 @@ import { WorkerStrip } from "./WorkerStrip";
 
 // Offered while the profile view has not loaded: the built-in agents and the default shell.
 const FALLBACK_AGENTS: readonly PtyProfile[] = ["claude", "codex"];
+/** How many agents the `+` menu lists before the picker. */
+const MENU_AGENTS = 5;
 const FALLBACK_SHELL: PtyProfile = "shell";
 
 // Only an exit ends a tab; a turn that failed (status failed) still has its pty.
@@ -127,6 +130,8 @@ export function WorktreeTabs(props: {
   worktrees?: { path: string; label: string }[];
   /** Brings a tab of any worktree to the front; used after a hand off to another worktree. */
   onJump?(tabId: string): void;
+  /** Opens Settings → Agents (the agent picker's "Manage agents"). */
+  onManageAgents?(): void;
 }): JSX.Element {
   const { api, sessions, worktree, visible, reveal } = props;
   const { t } = useI18n();
@@ -135,6 +140,8 @@ export function WorktreeTabs(props: {
   const [walk] = useState(() => ({ current: null as { list: string[]; at: number; timer: ReturnType<typeof setTimeout> } | null }));
   // The pane whose `+` menu is open.
   const [menuPane, setMenuPane] = useState<string | null>(null);
+  // The pane whose agent picker is open.
+  const [pickerPane, setPickerPane] = useState<string | null>(null);
   // A close that waits for a yes: what it asks about, and what to do on confirm; null when nothing waits.
   const [closing, setClosing] = useState<{ reason: CloseReason; run: () => void } | null>(null);
   // The tab whose title dialog is open, and the terminal menu (tab, pointer, that terminal's handle).
@@ -235,7 +242,7 @@ export function WorktreeTabs(props: {
     if (props.commit && layout && paneOf(layout, COMMIT_TAB)) sessions.setLayout(worktree, selectTab(layout, COMMIT_TAB));
   }, [props.commit?.seq]);
 
-  const { view } = useProfiles();
+  const { view, update: updateProfiles } = useProfiles();
   // The CLI a profile runs, from the profile view; the built-in ids stand in until it loads.
   const cliFor = (id: PtyProfile): TabCli => {
     const found = view?.profiles.find((p) => p.profile.id === id);
@@ -247,9 +254,10 @@ export function WorktreeTabs(props: {
   const agents = view ? view.profiles.filter((p) => p.profile.enabled && p.installed).map((p) => p.profile.id) : FALLBACK_AGENTS;
   const shells = view ? view.shells.map((s) => s.id) : [FALLBACK_SHELL];
   const groups: MenuGroup[] = [
-    { label: t("workspace.tabs.agents"), ids: [...agents] },
+    // The menu keeps the first few; the picker reaches the rest.
+    { label: t("workspace.tabs.agents"), ids: agents.slice(0, MENU_AGENTS), picker: view !== null },
     { label: t("workspace.tabs.shells"), ids: shells },
-  ].filter((g) => g.ids.length > 0);
+  ].filter((g) => g.ids.length > 0 || g.picker === true);
   // The default shell: the profile view's, else its first; null when none is on.
   const defaultShell: PtyProfile | null = view
     ? shells.includes(view.defaultShell)
@@ -262,6 +270,7 @@ export function WorktreeTabs(props: {
   // A new tab in `pane`: `open` puts it in the focused pane, so that one is focused first.
   function launch(profile: PtyProfile, pane?: string): Tab {
     setMenuPane(null);
+    setPickerPane(null);
     setError(null);
     const at = sessions.layout(worktree);
     if (pane && at && at.focused !== pane) setLayout(focusPane(at, pane));
@@ -434,10 +443,23 @@ export function WorktreeTabs(props: {
 
   // Taken in the capture phase so the terminal under focus does not also get the key. This
   // worktree listens only while it is on screen. A handler that returns false lets the key on.
-  const defaultAgent = view?.defaultAgent ?? FALLBACK_AGENTS[0];
+  // What `auto` or the saved default resolves to; null starts the default shell.
+  const defaultAgent: PtyProfile | null = view ? view.resolvedDefault : FALLBACK_AGENTS[0];
+  function launchDefault(pane?: string): void {
+    setPickerPane(null);
+    const profile = defaultAgent ?? defaultShell;
+    if (profile !== null) launchGated(profile, pane);
+  }
+  // The first press opens the picker in the focused pane; a press while it is open starts the default.
+  function agentNew(): void {
+    if (pickerPane !== null) return launchDefault(pickerPane);
+    if (!view || !layout) return launchDefault();
+    setMenuPane(null);
+    setPickerPane(layout.focused);
+  }
   useKeymap(
     {
-      "agent.new": () => void launchGated(defaultAgent),
+      "agent.new": () => agentNew(),
       "tab.new": () => newShell(),
       "tab.reopenClosed": () => sessions.reopenClosed(worktree) !== null,
       "tab.close": () => requestClose(shown ? [shown] : []),
@@ -584,6 +606,26 @@ export function WorktreeTabs(props: {
           requestClose(rest, () => sessions.closeToRight(id));
         }}
         onLaunch={(profile) => launchGated(profile, leaf.id)}
+        onAgentPicker={() => {
+          setMenuPane(null);
+          setPickerPane(leaf.id);
+        }}
+        agentPicker={
+          pickerPane === leaf.id && view ? (
+            <AgentPicker
+              api={api}
+              view={view}
+              onPick={(id) => {
+                setPickerPane(null);
+                const profile = id ?? defaultShell;
+                if (profile !== null) launchGated(profile, leaf.id);
+              }}
+              onClose={() => setPickerPane(null)}
+              onManage={() => props.onManageAgents?.()}
+              onView={updateProfiles}
+            />
+          ) : null
+        }
         onSplit={(dir) => defaultShell !== null && splitWith(leaf.id, dir, defaultShell)}
         onMoveToSplit={(id, dir) => (id === REVIEW_TAB || isFileTab(id) || isPreviewTab(id) ? splitTab(leaf.id, id, dir) : sessions.moveToSplit(id, dir))}
         onPin={(id, pinned) => sessions.setPinned(id, pinned)}

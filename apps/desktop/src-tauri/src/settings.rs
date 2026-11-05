@@ -228,6 +228,9 @@ pub struct AgentsSettings {
     pub sleep_after_min: u32,
     /// Consent to index agent conversations on this computer.
     pub session_search: bool,
+    /// Trust the folder in the agent's own store before an agent starts
+    /// (fresh launches only).
+    pub workspace_trust: bool,
 }
 
 /// Settings → Agents → Keep computer awake.
@@ -258,6 +261,7 @@ impl Default for AgentsSettings {
             auto_sleep: false,
             sleep_after_min: SLEEP_AFTER_MIN_DEFAULT,
             session_search: false,
+            workspace_trust: true,
         }
     }
 }
@@ -2872,6 +2876,22 @@ then sum up"
     }
 
     #[test]
+    fn an_old_agents_section_reads_workspace_trust_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        for text in [
+            "{}",
+            r#"{ "agents": { "accountSwitch": "keep" } }"#,
+            r#"{ "agents": { "workspaceTrust": "yes" } }"#,
+        ] {
+            fs::write(&path, text).unwrap();
+            assert!(load(&path).agents.workspace_trust, "{text}");
+        }
+        fs::write(&path, r#"{ "agents": { "workspaceTrust": false } }"#).unwrap();
+        assert!(!load(&path).agents.workspace_trust);
+    }
+
+    #[test]
     fn agents_settings_default_to_ask_and_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(FILE_NAME);
@@ -2906,7 +2926,8 @@ then sum up"
                     "autoTabTitle": false,
                     "autoSleep": false,
                     "sleepAfterMin": 30,
-                    "sessionSearch": false
+                    "sessionSearch": false,
+                    "workspaceTrust": true
                 })
             );
             fs::write(

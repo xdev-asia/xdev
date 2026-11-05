@@ -1,5 +1,6 @@
 //! The CLI arguments a profile's model, effort and approval mode turn into.
 
+use crate::catalog::spec;
 use crate::profiles::{Cli, Permissions};
 
 const CLAUDE_EFFORTS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
@@ -10,7 +11,7 @@ pub fn efforts(cli: Cli) -> &'static [&'static str] {
     match cli {
         Cli::Claude => &CLAUDE_EFFORTS,
         Cli::Codex => &CODEX_EFFORTS,
-        Cli::Gemini => &[],
+        _ => &[],
     }
 }
 
@@ -31,23 +32,17 @@ pub fn flags(
         match cli {
             Cli::Claude => push(&["--effort", effort]),
             Cli::Codex => push(&["-c", &format!("model_reasoning_effort={effort}")]),
-            Cli::Gemini => {}
+            _ => {}
         }
     }
-    match (cli, permissions) {
-        (_, Permissions::Ask) => {}
-        (Cli::Claude, Permissions::AcceptEdits) => push(&["--permission-mode", "acceptEdits"]),
-        (Cli::Claude, Permissions::Skip) => push(&["--dangerously-skip-permissions"]),
-        (Cli::Codex, Permissions::AcceptEdits) => push(&[
-            "--sandbox",
-            "workspace-write",
-            "--ask-for-approval",
-            "on-request",
-        ]),
-        (Cli::Codex, Permissions::Skip) => push(&["--dangerously-bypass-approvals-and-sandbox"]),
-        (Cli::Gemini, Permissions::AcceptEdits) => push(&["--approval-mode", "auto_edit"]),
-        (Cli::Gemini, Permissions::Skip) => push(&["--approval-mode", "yolo"]),
-    }
+    let table = spec(cli);
+    let recipe = match permissions {
+        Permissions::Ask => &[][..],
+        Permissions::AcceptEdits => table.accept_edits,
+        Permissions::Auto => table.auto,
+        Permissions::Skip => table.skip,
+    };
+    push(recipe);
     out
 }
 
@@ -106,6 +101,47 @@ mod tests {
             flags(Cli::Gemini, None, None, Permissions::AcceptEdits),
             ["--approval-mode", "auto_edit"]
         );
+    }
+
+    #[test]
+    fn auto_for_claude_and_codex_only() {
+        assert_eq!(
+            flags(Cli::Claude, None, None, Permissions::Auto),
+            ["--permission-mode", "auto"]
+        );
+        assert_eq!(
+            flags(Cli::Codex, None, None, Permissions::Auto),
+            ["--approve-for-me"]
+        );
+        for cli in Cli::ALL {
+            if !matches!(cli, Cli::Claude | Cli::Codex) {
+                assert!(flags(cli, None, None, Permissions::Auto).is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn skip_follows_the_table() {
+        let skip = |cli| flags(cli, None, None, Permissions::Skip);
+        assert_eq!(skip(Cli::Cursor), ["--yolo"]);
+        assert_eq!(skip(Cli::Copilot), ["--yolo"]);
+        assert_eq!(skip(Cli::Amp), ["--dangerously-allow-all"]);
+        assert_eq!(skip(Cli::Droid), ["--auto", "high"]);
+        assert_eq!(skip(Cli::QwenCode), ["--approval-mode", "yolo"]);
+        assert_eq!(skip(Cli::Kimi), ["--yolo"]);
+        assert_eq!(
+            skip(Cli::Devin),
+            [
+                "--permission-mode",
+                "bypass",
+                "--respect-workspace-trust",
+                "false"
+            ]
+        );
+        assert_eq!(skip(Cli::Aider), ["--yes-always"]);
+        // No flag: opencode has no skip, goose uses env.
+        assert!(skip(Cli::Opencode).is_empty());
+        assert!(skip(Cli::Goose).is_empty());
     }
 
     #[test]

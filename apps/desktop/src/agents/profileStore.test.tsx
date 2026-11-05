@@ -16,12 +16,12 @@ describe("profile helpers", () => {
     const api = createMockApi({});
     const base = await api.profiles();
     const view = await api.profilePut({
-      id: "aider", name: "aider", cli: null, program: "aider", args: [], env: [], model: null,
+      id: "mine", name: "mine", cli: null, program: "mine", args: [], env: [], model: null,
       effort: null, permissions: null, account: null, startup: [], enabled: true,
     });
-    expect(base.profiles.some((p) => p.profile.id === "aider")).toBe(false);
-    expect(profileLetter(view, "aider")).toBe("A");
-    expect(profileName(view, "aider", t)).toBe("aider");
+    expect(base.profiles.some((p) => p.profile.id === "mine")).toBe(false);
+    expect(profileLetter(view, "mine")).toBe("M");
+    expect(profileName(view, "mine", t)).toBe("mine");
     expect(profileName(view, "gone", t)).toBe("T:terminal.profile.gone");
     expect(profileName(view, "shell:wsl:Ubuntu", t)).toBe("WSL Ubuntu");
   });

@@ -1,20 +1,45 @@
 //! Finding programs: whether an agent CLI or a shell is installed.
 
 use std::env;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::{self, PathBuf};
+use std::sync::{Mutex, PoisonError};
 
 use xdev_ai::{claude_command, codex_command};
 
+use crate::catalog::spec;
 use crate::profiles::Cli;
 
 /// What Windows tries as an extension when `PATHEXT` is unset.
 const DEFAULT_PATHEXT: &str = ".EXE;.CMD;.BAT;.COM";
 
+/// The `PATH` agents are found on and started with, when it is not the
+/// process one (set by `agents_refresh` from the login shell). The process
+/// env is never changed.
+static PATH_OVERRIDE: Mutex<Option<OsString>> = Mutex::new(None);
+
+/// Makes `path` the search path from now on; `None` goes back to the process
+/// `PATH`.
+pub fn set_path_override(path: Option<OsString>) {
+    *PATH_OVERRIDE.lock().unwrap_or_else(PoisonError::into_inner) = path;
+}
+
+/// The override set by `set_path_override`, if any.
+pub fn path_override() -> Option<OsString> {
+    PATH_OVERRIDE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+fn search_path() -> OsString {
+    path_override().unwrap_or_else(|| env::var_os("PATH").unwrap_or_default())
+}
+
 /// The file `program` names. A path (it has a separator) must be a file; a
 /// bare name is searched on `PATH`, with each `PATHEXT` extension on Windows.
 pub fn find_program(program: &str) -> Option<PathBuf> {
-    let path = env::var_os("PATH").unwrap_or_default();
+    let path = search_path();
     if cfg!(windows) {
         let pathext = env::var("PATHEXT").unwrap_or_default();
         let pathext = if pathext.trim().is_empty() {
@@ -31,12 +56,22 @@ pub fn find_program(program: &str) -> Option<PathBuf> {
 /// `find_program` over the given `PATH` list and `PATHEXT` extensions
 /// (`;`-separated, empty for none).
 pub(crate) fn find_in(program: &str, path: &OsStr, pathext: &str) -> Option<PathBuf> {
+    find_with(program, path, pathext, false)
+}
+
+/// `find_in`; `skip_bare` drops the extensionless candidate while `pathext`
+/// lists extensions. npm installs both `copilot` (a sh script Windows cannot
+/// run) and `copilot.cmd`, and the script must not win.
+fn find_with(program: &str, path: &OsStr, pathext: &str, skip_bare: bool) -> Option<PathBuf> {
     if program.is_empty() {
         return None;
     }
     let extensions = || pathext.split(';').map(str::trim).filter(|e| !e.is_empty());
     let candidates = |base: PathBuf| {
-        let mut all = vec![base.clone()];
+        let mut all = Vec::new();
+        if !(skip_bare && extensions().next().is_some()) {
+            all.push(base.clone());
+        }
         all.extend(extensions().map(|ext| {
             let mut name = base.clone().into_os_string();
             name.push(ext);
@@ -62,10 +97,43 @@ pub fn find_builtin(cli: Cli) -> Option<PathBuf> {
     match cli {
         Cli::Claude => claude_command()
             .ok()
-            .map(|c| PathBuf::from(c.get_program())),
-        Cli::Codex => codex_command().ok().map(|c| PathBuf::from(c.get_program())),
-        Cli::Gemini => find_program("gemini"),
+            .map(|c| PathBuf::from(c.get_program()))
+            .or_else(|| find_refreshed(cli)),
+        Cli::Codex => codex_command()
+            .ok()
+            .map(|c| PathBuf::from(c.get_program()))
+            .or_else(|| find_refreshed(cli)),
+        cli => find_builtin_in(cli, &search_path(), &system_pathext()),
     }
+}
+
+/// Claude and Codex are found by `xdev_ai` on the process `PATH`; after a
+/// refresh they are also looked for on the refreshed one.
+fn find_refreshed(cli: Cli) -> Option<PathBuf> {
+    let path = path_override()?;
+    find_builtin_in(cli, &path, &system_pathext())
+}
+
+/// The `PATHEXT` extensions of this system; empty off Windows.
+fn system_pathext() -> String {
+    if !cfg!(windows) {
+        return String::new();
+    }
+    let pathext = env::var("PATHEXT").unwrap_or_default();
+    if pathext.trim().is_empty() {
+        DEFAULT_PATHEXT.to_owned()
+    } else {
+        pathext
+    }
+}
+
+/// Where the catalogue agent `cli` is on `path`: the first of its program
+/// names (aliases) that is found, never a bare script when `pathext` is set.
+pub fn find_builtin_in(cli: Cli, path: &OsStr, pathext: &str) -> Option<PathBuf> {
+    spec(cli)
+        .commands
+        .iter()
+        .find_map(|name| find_with(name, path, pathext, true))
 }
 
 #[cfg(test)]
@@ -95,6 +163,80 @@ mod tests {
         );
         assert_eq!(find_in("missing", &path, ".EXE;.CMD"), None);
         assert_eq!(find_in("", &path, ".EXE"), None);
+    }
+
+    #[test]
+    fn kimi_alias_found() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("kimi-code"), "").unwrap();
+        let path = path_of(&[dir.path()]);
+        assert_eq!(
+            find_builtin_in(Cli::Kimi, &path, ""),
+            Some(dir.path().join("kimi-code"))
+        );
+        // The first name wins when both exist.
+        fs::write(dir.path().join("kimi"), "").unwrap();
+        assert_eq!(
+            find_builtin_in(Cli::Kimi, &path, ""),
+            Some(dir.path().join("kimi"))
+        );
+    }
+
+    #[test]
+    fn cursor_detected_as_cursor_agent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = path_of(&[dir.path()]);
+        fs::write(dir.path().join("cursor"), "").unwrap();
+        assert_eq!(find_builtin_in(Cli::Cursor, &path, ""), None);
+        fs::write(dir.path().join("cursor-agent"), "").unwrap();
+        assert_eq!(
+            find_builtin_in(Cli::Cursor, &path, ""),
+            Some(dir.path().join("cursor-agent"))
+        );
+    }
+
+    #[test]
+    fn extensionless_shim_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("copilot"), "").unwrap();
+        fs::write(dir.path().join("copilot.cmd"), "").unwrap();
+        let path = path_of(&[dir.path()]);
+        assert_eq!(
+            find_builtin_in(Cli::Copilot, &path, ".EXE;.cmd"),
+            Some(dir.path().join("copilot.cmd"))
+        );
+        // Only the script and PATHEXT set: not a program on Windows.
+        fs::remove_file(dir.path().join("copilot.cmd")).unwrap();
+        assert_eq!(find_builtin_in(Cli::Copilot, &path, ".EXE;.cmd"), None);
+        // Without PATHEXT (Unix) the bare file is the program.
+        assert_eq!(
+            find_builtin_in(Cli::Copilot, &path, ""),
+            Some(dir.path().join("copilot"))
+        );
+    }
+
+    #[test]
+    fn path_override_is_searched_and_cleared() {
+        // The only test that touches the global override.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("zz-agent-probe"), "").unwrap();
+        assert_eq!(find_program("zz-agent-probe"), None);
+        set_path_override(Some(path_of(&[dir.path()])));
+        assert_eq!(
+            find_program("zz-agent-probe"),
+            Some(dir.path().join("zz-agent-probe"))
+        );
+        set_path_override(None);
+        assert_eq!(find_program("zz-agent-probe"), None);
+    }
+
+    #[test]
+    fn missing_agent_is_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = path_of(&[dir.path()]);
+        for cli in Cli::ALL {
+            assert_eq!(find_builtin_in(cli, &path, ".EXE;.CMD"), None);
+        }
     }
 
     #[test]

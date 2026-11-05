@@ -1342,21 +1342,30 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     }
   }
 
-  // A new worktree starts with the agent picked for it, or the default one when none was asked for; it must be on and installed.
+  // A new worktree starts with the agent picked for it, else the resolved default agent; with no
+  // agent at all, the default shell, and nothing is typed into it. A picked agent that is off or not
+  // installed opens nothing, and a toast says why: another agent never takes its place or its prompt.
   async function openDefaultAgent(path: string, pick?: string | null, prompt?: string): Promise<void> {
     if (!sessions || pick === null) return;
     try {
       const view = await api.profiles();
-      const found = view.profiles.find((p) => p.profile.id === (pick ?? view.defaultAgent));
-      if (found?.profile.enabled && found.installed) {
-        const id = found.profile.id;
-        // With the repo set to wait, the agent starts when the setup tab has exited.
-        const launch = (): void => {
-          const tab = sessions.open(path, id);
-          if (prompt) void sendToOpenedTab(sessions, path, tab.id, prompt);
-        };
-        if (!gate.defer(path, launch)) launch();
+      const usable = (id: string) => view.profiles.some((p) => p.profile.id === id && p.profile.enabled && p.installed);
+      if (pick !== undefined && !usable(pick)) {
+        const name = view.profiles.find((p) => p.profile.id === pick)?.profile.name ?? pick;
+        pushToast({
+          text: t("workspace.agentUnusable", { name }),
+          actions: [{ label: t("workspace.agentPicker.manage"), run: () => openSettings("agents") }],
+        });
+        return;
       }
+      const agent = pick ?? view.resolvedDefault;
+      const shell = view.shells.some((s) => s.id === view.defaultShell) ? view.defaultShell : view.shells[0]?.id;
+      const id = agent ?? shell;
+      if (!id) return;
+      // The prompt goes with the agent tab: on its command line, or typed once it started.
+      const launch = (): void => void sessions.open(path, id, null, undefined, agent && prompt ? { prompt } : {});
+      // With the repo set to wait, the tab opens when the setup tab has exited.
+      if (!gate.defer(path, launch)) launch();
     } catch {
       // The worktree is made; it just opens empty.
     }
@@ -1907,6 +1916,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   quickSeq={path === current?.path ? quickSeq : undefined}
                   onManageQuickCommands={() => openSettings("qcmd")}
                   onLinkSettings={() => openSettings("terminal", undefined, "terminal.linkClick")}
+                  onManageAgents={() => openSettings("agents")}
                   worktrees={all.map((w) => ({ path: w.path, label: worktreeName(all, w.path) }))}
                   onJump={jumpTo}
                 />

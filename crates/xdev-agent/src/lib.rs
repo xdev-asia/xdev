@@ -2,6 +2,7 @@
 //! evidence kept and nothing merged until a person approves. A squad is a
 //! team of agents, one per seat, working one task together.
 
+mod catalog;
 mod codex_home;
 mod detect;
 mod flags;
@@ -18,6 +19,7 @@ mod shells;
 mod squad;
 mod squad_run;
 mod store;
+mod trust;
 mod version;
 
 use std::path::PathBuf;
@@ -26,11 +28,15 @@ use serde::{Deserialize, Serialize};
 use xdev_git::GitError;
 use xdev_policy::Verdict;
 
+pub use catalog::{
+    AUTO_ORDER, AgentSpec, PromptMode, TrustKind, has_permission_args, modes, permission_env,
+    pick_agent, prompt_args, spec,
+};
 pub use codex_home::{
     CODEX_HOME_DIR, CODEX_HOOKS_SINCE, CODEX_INTERRUPT_SINCE, codex_hooks_json, hook_command,
     prepare_codex_home, private_codex_home, trust_hash,
 };
-pub use detect::{find_builtin, find_program};
+pub use detect::{find_builtin, find_builtin_in, find_program, path_override, set_path_override};
 pub use flags::{efforts, flags};
 pub use flow::RunOptions;
 pub use hooks::{
@@ -40,8 +46,8 @@ pub use hooks::{
 };
 pub use launch::{AccountSource, Context, Launch, LaunchError, resolve};
 pub use profiles::{
-    Approvals, Cli, CustomShell, EnvVar, Permissions, Profile, ProfileError, Profiles, builtin,
-    valid_id,
+    Approvals, Cli, CustomShell, DefaultAgent, EnvVar, Permissions, Profile, ProfileError,
+    Profiles, builtin, valid_id,
 };
 pub use route::{RouteRule, Routing};
 pub use runner::{
@@ -57,6 +63,7 @@ pub use squad::{
 };
 pub use squad_run::{QuotaCheck, RunnerFor, SquadDeps};
 pub use store::TaskStore;
+pub use trust::{TrustError, TrustTarget, trust_folder};
 pub use version::{CliVersion, cli_version};
 
 /// Tools an agent gets when the caller names none: file work only.

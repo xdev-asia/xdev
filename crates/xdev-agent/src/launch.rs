@@ -1,12 +1,13 @@
 //! What a terminal runs: the user's shell or an agent CLI, by profile id.
 
 use std::env;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use xdev_ai::{AiError, Provider, Registry, codex_home};
 
+use crate::catalog::{PromptMode, has_permission_args, permission_env, prompt_args, spec};
 use crate::codex_home::{codex_hook_events, prepare_codex_home};
 use crate::flags::flags;
 use crate::hooks::{HookEvent, hook_args, hook_events};
@@ -50,6 +51,15 @@ pub struct Launch {
     /// The hook events the launch reports, each once; empty without hooks.
     /// A codex on its private home reports more than on `notify` alone.
     pub hook_events: Vec<HookEvent>,
+    /// A first prompt the terminal types once the agent has started: the
+    /// agent takes none on its command line, or the program is a Windows
+    /// shim that must not get it as an argument. Never part of the policy
+    /// fingerprint.
+    pub prompt_after: Option<String>,
+    /// The first prompt as arguments, for agents that take it on the command
+    /// line. `command` puts them last; they are not in `args`, so the policy
+    /// fingerprint ignores them.
+    pub prompt_argv: Vec<String>,
 }
 
 impl Launch {
@@ -131,17 +141,19 @@ impl Launch {
     /// lines, a shell that runs the lines and then the CLI. The wrapper
     /// quotes the CLI's program and args, so each stays one argument.
     pub fn command(&self) -> (PathBuf, Vec<String>) {
+        let mut args = self.args.clone();
+        args.extend(self.prompt_argv.iter().cloned());
         if self.startup.is_empty() {
-            return (self.program.clone(), self.args.clone());
+            return (self.program.clone(), args);
         }
         let program = self.program.to_string_lossy();
         if cfg!(windows) {
-            wrap_powershell(&self.startup, &program, &self.args)
+            wrap_powershell(&self.startup, &program, &args)
         } else {
             let shell = env::var_os("SHELL")
                 .filter(|s| !s.is_empty())
                 .map_or_else(|| PathBuf::from("/bin/sh"), PathBuf::from);
-            wrap_posix(&shell, &self.startup, &program, &self.args)
+            wrap_posix(&shell, &self.startup, &program, &args)
         }
     }
 }
@@ -188,6 +200,8 @@ pub struct Context<'a> {
     /// An account that replaces the profile's own (a restart keeps the
     /// tab's account).
     pub account: Option<&'a str>,
+    /// A first prompt for the agent; see `Launch::prompt_after`.
+    pub prompt: Option<&'a str>,
 }
 
 /// The launch of the agent profile or shell `id`: `shell` (the default
@@ -203,11 +217,16 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
     let program = (ctx.find)(profile).ok_or_else(|| match profile.cli {
         Some(Cli::Claude) => LaunchError::NotInstalled(AiError::NoClaude.code()),
         Some(Cli::Codex) => LaunchError::NotInstalled(AiError::NoCodex.code()),
-        Some(Cli::Gemini) => LaunchError::NotFound(Cli::Gemini.as_str().to_owned()),
+        Some(cli) => LaunchError::NotFound(cli.as_str().to_owned()),
         None => LaunchError::NotFound(profile.program.clone().unwrap_or_default()),
     })?;
 
-    let permissions = ctx.profiles.effective(profile);
+    // Permission flags of the person's own args replace xDev's, so xDev
+    // adds no mode and the gate has none to approve.
+    let permissions = match profile.cli {
+        Some(cli) if has_permission_args(cli, &profile.args) => Permissions::Ask,
+        _ => ctx.profiles.effective(profile),
+    };
     let mut args = match profile.cli {
         Some(cli) => flags(
             cli,
@@ -218,12 +237,32 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         None => Vec::new(),
     };
     args.extend(profile.args.iter().cloned());
+    let startup: Vec<String> = profile
+        .startup
+        .iter()
+        .map(|line| line.trim().to_owned())
+        .filter(|line| !line.is_empty())
+        .collect();
+    let (prompt_argv, prompt_after) = place_prompt(
+        profile.cli,
+        &program,
+        ctx.prompt,
+        cfg!(windows),
+        !startup.is_empty(),
+    );
 
     let mut env: Vec<(String, OsString)> = profile
         .env
         .iter()
         .map(|e| (e.name.clone(), OsString::from(&e.value)))
         .collect();
+    if let Some(cli) = profile.cli {
+        for (name, value) in permission_env(cli, permissions) {
+            if !env.iter().any(|(key, _)| key == name) {
+                env.push(((*name).to_owned(), OsString::from(value)));
+            }
+        }
+    }
     let provider = match profile.cli {
         Some(Cli::Claude) => Some(Provider::Claude),
         Some(Cli::Codex) => Some(Provider::Codex),
@@ -276,16 +315,53 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         permissions,
         account: account.map(str::to_owned),
         account_source,
-        startup: profile
-            .startup
-            .iter()
-            .map(|line| line.trim().to_owned())
-            .filter(|line| !line.is_empty())
-            .collect(),
+        startup,
         cli: profile.cli,
         hooks: false,
         hook_events: Vec::new(),
+        prompt_after,
+        prompt_argv,
     })
+}
+
+/// Splits `prompt` into the arguments that carry it (agents that take it on
+/// their command line) and the text to type once the agent has started
+/// (after-start agents, custom programs, a Windows `.cmd`/`.bat` shim, and a
+/// prompt an argument parser would read as a flag).
+///
+/// On Windows the prompt is never an argument when startup lines wrap the
+/// CLI (`wrapped`) or when it holds a `"`: PowerShell re-quotes arguments
+/// itself and can split one (see `native_arg`), so a prompt could add flags
+/// the policy gate never saw.
+fn place_prompt(
+    cli: Option<Cli>,
+    program: &Path,
+    prompt: Option<&str>,
+    windows: bool,
+    wrapped: bool,
+) -> (Vec<String>, Option<String>) {
+    let Some(prompt) = prompt.filter(|p| !p.trim().is_empty()) else {
+        return (Vec::new(), None);
+    };
+    let typed = || (Vec::new(), Some(prompt.to_owned()));
+    let Some(cli) = cli else {
+        return typed();
+    };
+    let line = prompt_args(cli, prompt);
+    let shim = windows
+        && program
+            .extension()
+            .and_then(OsStr::to_str)
+            .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
+    // After `--` a leading dash is text; as a bare argument or a flag's
+    // value a parser may read it as a flag.
+    let flag_like = matches!(spec(cli).prompt, PromptMode::Argv | PromptMode::Flag(_))
+        && prompt.starts_with('-');
+    let requoted = windows && (wrapped || prompt.contains('"'));
+    if line.is_empty() || shim || flag_like || requoted {
+        return typed();
+    }
+    (line, None)
 }
 
 /// A shell is never an agent: no policy gate, no account, no startup lines.
@@ -312,6 +388,8 @@ fn resolve_shell(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         cli: None,
         hooks: false,
         hook_events: Vec::new(),
+        prompt_after: None,
+        prompt_argv: Vec::new(),
     })
 }
 
@@ -346,7 +424,8 @@ fn wrap_powershell(lines: &[String], program: &str, args: &[String]) -> (PathBuf
 ///
 /// Known gap, seen on 5.1: PowerShell decides itself whether to wrap, and an
 /// argument whose whitespace follows an odd number of quotes (`"a b"`) is
-/// passed unwrapped, so the program sees two arguments.
+/// passed unwrapped, so the program sees two arguments. `place_prompt`
+/// keeps a prompt out of it.
 fn native_arg(text: &str) -> String {
     if text.is_empty() {
         return "\"\"".to_owned();
@@ -479,6 +558,7 @@ mod tests {
                 shells: &[],
                 find,
                 account,
+                prompt: None,
             },
         )
     }
@@ -501,6 +581,169 @@ mod tests {
         assert_eq!(l.profile, "claude");
         // Args opt out of the global switch, so no mode flag.
         assert_eq!(l.permissions, Permissions::Ask);
+    }
+
+    #[test]
+    fn own_permission_args_launch_as_ask() {
+        let mut c = builtin(Cli::Claude);
+        c.permissions = Some(Permissions::Skip);
+        c.args = vec!["--permission-mode".into(), "plan".into()];
+        let l = run(&with(c), "claude", None, &found).unwrap();
+        assert_eq!(l.args, ["--permission-mode", "plan"]);
+        // xDev adds no mode, so the gate has none to approve.
+        assert_eq!(l.permissions, Permissions::Ask);
+    }
+
+    fn run_prompt(profiles: &Profiles, id: &str, program: &str, prompt: &str) -> Launch {
+        let accounts = accounts();
+        let find = |_: &Profile| Some(PathBuf::from(program));
+        resolve(
+            id,
+            &Context {
+                profiles,
+                accounts: &accounts,
+                shells: &[],
+                find: &find,
+                account: None,
+                prompt: Some(prompt),
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn prompt_goes_in_argv_per_mode() {
+        let p = Profiles::default();
+        let l = run_prompt(&p, "claude", "/bin/claude", "fix it");
+        assert_eq!(l.prompt_argv, ["fix it"]);
+        assert_eq!(l.command().1, ["fix it"]);
+        assert!(l.args.is_empty());
+        assert_eq!(l.prompt_after, None);
+        let l = run_prompt(&p, "devin", "/bin/devin", "fix it");
+        assert_eq!(l.prompt_argv, ["--", "fix it"]);
+        let l = run_prompt(&p, "gemini", "/bin/gemini", "fix it");
+        assert_eq!(l.prompt_argv, ["--prompt-interactive", "fix it"]);
+        // After-start agents and custom programs get it typed.
+        let l = run_prompt(&p, "aider", "/bin/aider", "fix it");
+        assert!(l.args.is_empty());
+        assert_eq!(l.prompt_after.as_deref(), Some("fix it"));
+        let l = run_prompt(&with(custom("mine")), "mine", "/bin/x", "fix it");
+        assert_eq!(l.prompt_after.as_deref(), Some("fix it"));
+        // A prompt that looks like a flag is typed, not passed.
+        let l = run_prompt(&p, "claude", "/bin/claude", "--help me");
+        assert!(l.args.is_empty());
+        assert_eq!(l.prompt_after.as_deref(), Some("--help me"));
+        // Also as a flag's value; after `--` it is text.
+        for id in ["gemini", "copilot", "opencode"] {
+            let l = run_prompt(&p, id, &format!("/bin/{id}"), "--yolo");
+            assert!(l.prompt_argv.is_empty(), "{id}");
+            assert_eq!(l.prompt_after.as_deref(), Some("--yolo"), "{id}");
+        }
+        let l = run_prompt(&p, "devin", "/bin/devin", "--yolo");
+        assert_eq!(l.prompt_argv, ["--", "--yolo"]);
+        // A blank prompt is no prompt.
+        let l = run_prompt(&p, "claude", "/bin/claude", "  ");
+        assert!(l.prompt_argv.is_empty() && l.prompt_after.is_none());
+    }
+
+    #[test]
+    fn prompt_is_not_in_the_fingerprint_input() {
+        // The fingerprint reads `args`, `program` and the mode; the prompt is
+        // in `prompt_argv`, so a launch with it is the same approved agent.
+        let p = Profiles::default();
+        let with_prompt = run_prompt(&p, "claude", "/bin/found", "x");
+        let without = run(&p, "claude", None, &|_| Some(PathBuf::from("/bin/found"))).unwrap();
+        assert_eq!(with_prompt.args, without.args);
+        assert_eq!(with_prompt.program, without.program);
+        assert_eq!(with_prompt.permissions, without.permissions);
+    }
+
+    const INJECTED: &str = "x\" --dangerously-skip-permissions \"y";
+
+    #[test]
+    fn a_quoted_prompt_never_adds_a_flag_on_windows() {
+        let exe = Path::new("C:/n/claude.exe");
+        // Startup lines wrap the CLI in PowerShell: always typed.
+        for prompt in [INJECTED, "fix it"] {
+            let (argv, after) = place_prompt(Some(Cli::Claude), exe, Some(prompt), true, true);
+            assert!(argv.is_empty(), "{prompt}");
+            assert_eq!(after.as_deref(), Some(prompt));
+        }
+        // A direct spawn types a prompt that holds a quote.
+        let (argv, after) = place_prompt(Some(Cli::Claude), exe, Some(INJECTED), true, false);
+        assert!(argv.is_empty());
+        assert_eq!(after.as_deref(), Some(INJECTED));
+        let (argv, _) = place_prompt(Some(Cli::Claude), exe, Some("fix it"), true, false);
+        assert_eq!(argv, ["fix it"]);
+        // Elsewhere the prompt stays one argument, quotes and all.
+        let bin = Path::new("/bin/claude");
+        let (argv, _) = place_prompt(Some(Cli::Claude), bin, Some(INJECTED), false, true);
+        assert_eq!(argv, [INJECTED]);
+    }
+
+    #[test]
+    fn a_quoted_prompt_with_startup_is_never_its_own_flag() {
+        let mut c = builtin(Cli::Claude);
+        c.startup = vec!["cd src".into()];
+        let p = with(c);
+        let l = run_prompt(&p, "claude", "/bin/claude", INJECTED);
+        let (_, args) = l.command();
+        assert!(!args.iter().any(|a| a == "--dangerously-skip-permissions"));
+        if cfg!(windows) {
+            assert!(l.prompt_argv.is_empty());
+            assert_eq!(l.prompt_after.as_deref(), Some(INJECTED));
+            assert!(!decode_powershell(&args).contains("dangerously"));
+        } else {
+            assert_eq!(l.prompt_argv, [INJECTED]);
+        }
+        // Without startup lines the prompt is one whole argument, or typed.
+        let l = run_prompt(&Profiles::default(), "claude", "/bin/claude", INJECTED);
+        let (_, args) = l.command();
+        assert!(!args.iter().any(|a| a == "--dangerously-skip-permissions"));
+        assert!(l.prompt_argv.is_empty() || l.prompt_argv == [INJECTED]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn cmd_shim_gets_the_prompt_typed() {
+        let p = Profiles::default();
+        let l = run_prompt(&p, "claude", "C:/n/claude.cmd", "fix it");
+        assert!(l.prompt_argv.is_empty());
+        assert_eq!(l.prompt_after.as_deref(), Some("fix it"));
+        let l = run_prompt(&p, "claude", "C:/n/claude.exe", "fix it");
+        assert_eq!(l.prompt_argv, ["fix it"]);
+    }
+
+    #[test]
+    fn resolve_own_permission_args_replace_the_mode() {
+        let mut c = builtin(Cli::Claude);
+        c.permissions = Some(Permissions::Skip);
+        c.args = vec!["--permission-mode".into(), "plan".into()];
+        let l = run(&with(c), "claude", None, &found).unwrap();
+        assert_eq!(l.args, ["--permission-mode", "plan"]);
+    }
+
+    #[test]
+    fn resolve_goose_skip_sets_env_not_args() {
+        let p = Profiles {
+            approvals: Approvals::Skip,
+            ..Profiles::default()
+        };
+        let l = run(&p, "goose", None, &found).unwrap();
+        assert_eq!(l.permissions, Permissions::Skip);
+        assert!(l.args.is_empty());
+        assert!(l.env.iter().any(|(k, v)| k == "GOOSE_MODE" && v == "auto"));
+    }
+
+    #[test]
+    fn resolve_opencode_follows_skip_as_ask() {
+        let p = Profiles {
+            approvals: Approvals::Skip,
+            ..Profiles::default()
+        };
+        let l = run(&p, "opencode", None, &found).unwrap();
+        assert_eq!(l.permissions, Permissions::Ask);
+        assert!(l.args.is_empty());
     }
 
     #[test]
@@ -574,6 +817,7 @@ mod tests {
                 shells: &shells,
                 find: &|_| panic!("a shell is not detected as a profile"),
                 account: Some("work"),
+                prompt: None,
             },
         )
     }
@@ -647,20 +891,20 @@ mod tests {
 
     #[test]
     fn resolve_missing_custom_names_its_program() {
-        let err = run(&with(custom("aider")), "aider", None, &|_| None).unwrap_err();
+        let err = run(&with(custom("mine")), "mine", None, &|_| None).unwrap_err();
         assert_eq!(err.code(), "not_installed");
         assert_eq!(err.to_string(), "aider");
     }
 
     #[test]
     fn find_gets_the_profile() {
-        let mut c = custom("aider");
-        c.program = Some("/opt/aider".into());
-        let l = run(&with(c), "aider", None, &|p| {
+        let mut c = custom("mine");
+        c.program = Some("/opt/mine".into());
+        let l = run(&with(c), "mine", None, &|p| {
             p.program.as_deref().map(PathBuf::from)
         })
         .unwrap();
-        assert_eq!(l.program, PathBuf::from("/opt/aider"));
+        assert_eq!(l.program, PathBuf::from("/opt/mine"));
     }
 
     #[test]
@@ -699,11 +943,11 @@ mod tests {
         let p = Profiles::default();
         let err = run(&p, "gemini", Some("work"), &found).unwrap_err();
         assert_eq!(err.code(), "unknown_account");
-        let err = run(&with(custom("aider")), "aider", Some("work"), &found).unwrap_err();
+        let err = run(&with(custom("mine")), "mine", Some("work"), &found).unwrap_err();
         assert_eq!(err.code(), "unknown_account");
-        let mut c = custom("aider");
+        let mut c = custom("mine");
         c.account = Some("work".into());
-        let err = run(&with(c), "aider", None, &found).unwrap_err();
+        let err = run(&with(c), "mine", None, &found).unwrap_err();
         assert_eq!(err.code(), "unknown_account");
     }
 
@@ -728,6 +972,7 @@ mod tests {
                 shells: &[],
                 find: &found,
                 account,
+                prompt: None,
             },
         )
     }
@@ -776,7 +1021,7 @@ mod tests {
         // A custom program and Gemini have no account home; they start as
         // before rather than failing on an account they cannot take.
         for (profiles, id) in [
-            (with(custom("aider")), "aider"),
+            (with(custom("mine")), "mine"),
             (Profiles::default(), "gemini"),
         ] {
             let l = run_active(&profiles, id, None).unwrap();
@@ -838,7 +1083,7 @@ mod tests {
 
     #[test]
     fn custom_profile_env_and_args() {
-        let mut c = custom("aider");
+        let mut c = custom("mine");
         c.args = vec!["--yes".into()];
         c.env = vec![EnvVar {
             name: "A".into(),
@@ -848,7 +1093,7 @@ mod tests {
         c.startup = vec!["  cd src ".into(), "   ".into(), "nvm use".into()];
         let mut p = with(c);
         p.approvals = Approvals::Skip;
-        let l = run(&p, "aider", None, &found).unwrap();
+        let l = run(&p, "mine", None, &found).unwrap();
         // A custom profile has no flag mapping and always asks.
         assert_eq!(l.args, ["--yes"]);
         assert_eq!(l.env, [("A".to_owned(), "x=y".into())]);
@@ -873,6 +1118,8 @@ mod tests {
             cli: None,
             hooks: false,
             hook_events: Vec::new(),
+            prompt_after: None,
+            prompt_argv: Vec::new(),
         }
     }
 
@@ -885,7 +1132,7 @@ mod tests {
         assert_eq!((l.cli, l.hooks), (Some(Cli::Claude), false));
         let l = run(&p, "codex", None, &found).unwrap();
         assert_eq!(l.cli, Some(Cli::Codex));
-        let l = run(&with(custom("aider")), "aider", None, &found).unwrap();
+        let l = run(&with(custom("mine")), "mine", None, &found).unwrap();
         assert_eq!(l.cli, None);
     }
 
@@ -938,7 +1185,7 @@ mod tests {
         gemini.add_hooks(xdev, Path::new("/no/data"));
         assert_eq!((gemini.args, gemini.hooks), (before, false));
 
-        let mut aider = run(&with(custom("aider")), "aider", None, &found).unwrap();
+        let mut aider = run(&with(custom("mine")), "mine", None, &found).unwrap();
         aider.add_hooks(xdev, Path::new("/no/data"));
         assert!(!aider.hooks && aider.args.is_empty());
 

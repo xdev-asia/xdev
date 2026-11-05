@@ -171,11 +171,12 @@ export class Sessions {
    * `cli` comes from the profile view; left out, the built-in ids `claude` and `codex` name their own.
    * `opts` is for a tab somebody else asked for (an orchestration worker): `id` and `title` are given
    * (the title is a hand name, so the terminal's own title does not replace it), and `background`
-   * adds the tab behind the pane's active one. The selected worktree is the caller's to keep.
+   * adds the tab behind the pane's active one; `prompt` is the agent's first prompt, given on its
+   * first launch only. The selected worktree is the caller's to keep.
    */
-  open(worktree: string, profileId: PtyProfile, account: string | null = null, cli?: TabCli, opts: { id?: string; title?: string; background?: boolean } = {}): Tab {
+  open(worktree: string, profileId: PtyProfile, account: string | null = null, cli?: TabCli, opts: { id?: string; title?: string; background?: boolean; prompt?: string } = {}): Tab {
     if (opts.id && this.entries.has(opts.id)) throw new Error("tab id in use");
-    const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, null, opts.title ?? null, opts.id);
+    const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, null, opts.title ?? null, opts.id, null, opts.prompt);
     if (opts.title !== undefined) entry.tab = { ...entry.tab, renamed: true };
     this.entries.set(entry.tab.id, entry);
     this.cache.delete(worktree);
@@ -1003,7 +1004,7 @@ export class Sessions {
     this.emit();
   }
 
-  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null, id: string = crypto.randomUUID(), forkOf: string | null = null): Entry {
+  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null, id: string = crypto.randomUUID(), forkOf: string | null = null, prompt?: string): Entry {
     const tab: Tab = {
       id,
       worktree,
@@ -1027,7 +1028,7 @@ export class Sessions {
       openedAt: this.now(),
       pinned: false,
       color: "none",
-      client: new PtyClient(this.api, id, forkOf ?? resumeOf ?? undefined, forkOf !== null),
+      client: new PtyClient(this.api, id, forkOf ?? resumeOf ?? undefined, forkOf !== null, prompt),
     };
     // Caps stay off until the pty says whether it got hook flags.
     return { tab, state: start(), caps: NO_CAPS, programTitle: null, autoTitle: null };

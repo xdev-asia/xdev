@@ -1,4 +1,4 @@
-import type { Account, Permissions, Profile, ProfileView } from "@/api";
+import type { Account, Approvals, Permissions, Profile, ProfileView } from "@/api";
 
 type EnvVar = Profile["env"][number];
 
@@ -84,7 +84,10 @@ export function accountsFor(view: ProfileView | null, accounts: Account[]): Acco
   return accounts.filter((a) => a.provider === cli);
 }
 
-/** A free id made from a name: `[a-z0-9-]{1,32}`, not in `taken`. */
+/** Ids no profile takes: the default shell and the default agent values. */
+const RESERVED = ["shell", "auto", "blank"];
+
+/** A free id made from a name: `[a-z0-9-]{1,32}`, not in `taken` or reserved. */
 export function freeId(name: string, taken: string[], fallback: string): string {
   const base =
     name
@@ -92,9 +95,34 @@ export function freeId(name: string, taken: string[], fallback: string): string 
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
       .slice(0, 28) || fallback;
-  if (!taken.includes(base) && base !== "shell") return base;
+  if (!taken.includes(base) && !RESERVED.includes(base)) return base;
   for (let n = 2; ; n++) {
     const id = `${base}-${n}`;
     if (!taken.includes(id)) return id;
   }
+}
+
+/** Whether the draft's args hold a permission flag of its agent, so xDev adds none (`has_permission_args`). */
+export function draftCustomArgs(draft: Draft, view: ProfileView | null): boolean {
+  if (view?.profile.cli == null) return false;
+  const heads = view.modeFlags.map((m) => m.flags[0]).filter((f): f is string => f?.startsWith("-") ?? false);
+  return lines(draft.args).some((a) => heads.some((h) => a === h || a.startsWith(`${h}=`)));
+}
+
+/**
+ * The mode the draft runs as (`Profiles::effective`): its own mode, else the
+ * global switch where the draft still follows it and the agent offers it, else `ask`.
+ */
+export function draftMode(draft: Draft, view: ProfileView | null, approvals: Approvals): Permissions {
+  if (view?.profile.cli == null) return "ask";
+  if (draft.permissions !== "") return draft.permissions;
+  const follows = lines(draft.args).length === 0 && lines(draft.env).length === 0;
+  return follows && view.modes.includes(approvals) ? approvals : "ask";
+}
+
+/** The flags the draft's mode adds at launch; none when its args hold their own. */
+export function draftFlags(draft: Draft, view: ProfileView | null, approvals: Approvals): string[] {
+  if (draftCustomArgs(draft, view)) return [];
+  const mode = draftMode(draft, view, approvals);
+  return view?.modeFlags.find((m) => m.mode === mode)?.flags ?? [];
 }

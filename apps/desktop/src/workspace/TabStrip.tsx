@@ -29,6 +29,8 @@ export interface StripItem {
 export interface MenuGroup {
   label: string;
   ids: PtyProfile[];
+  /** The group ends with the "Agent…" item that opens the picker. */
+  picker?: boolean;
 }
 
 /** The prompt cache countdown of a tab, or a "cold" mark once it ran out. */
@@ -59,6 +61,10 @@ export function TabStrip(props: {
   onCloseOthers: (id: string) => void;
   onCloseToRight: (id: string) => void;
   onLaunch: (profile: PtyProfile) => void;
+  /** Opens the agent picker of this pane; absent, the menu has no "Agent…" item. */
+  onAgentPicker?: () => void;
+  /** The open agent picker of this pane, drawn under the `+` button. */
+  agentPicker?: ReactNode;
   /** Splits this pane, opening the default shell in the new one. */
   onSplit: (dir: PaneDir) => void;
   /** Moves a tab of this pane into a new pane beside it. */
@@ -303,6 +309,7 @@ export function TabStrip(props: {
                       {profileName(view, p, t)}
                     </button>
                   ))}
+                  {g.picker && props.onAgentPicker && menuItem("agent-picker", t("workspace.tabs.agentPicker"), props.onAgentPicker)}
                 </div>
               ))}
               <div className="ws-menu-group" role="group">
@@ -312,6 +319,7 @@ export function TabStrip(props: {
             </div>
           </>
         )}
+        {props.agentPicker}
         {context && picked && (
           <ContextMenu at={{ x: context.x, y: context.y }} items={contextItems(picked)} onClose={() => setContext(null)} />
         )}

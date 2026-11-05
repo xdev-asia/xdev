@@ -38,6 +38,8 @@ it("a narrow window drops the brand and crumbs, floats the sidebar and stacks Se
   const stacked = media(settings, "max-width: 600px");
   expect(stacked).toMatch(/\.settings\s*\{[^}]*flex-direction:\s*column/);
   expect(stacked).toMatch(/\.settings-nav\s*\{[^}]*width:\s*auto/);
+  // A row's actions (docs, switch, Edit) go under its name at 360px.
+  expect(stacked).toMatch(/\.settings-item\s*\{[^}]*flex-wrap:\s*wrap/);
 });
 
 it("the file viewers wrap their toolbars and fix no width past 360px", () => {

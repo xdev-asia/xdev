@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { pastePrompt, sendToAgentTab, sendToChosenTab, sendToOpenedTab } from "./agentPrompt";
+import { AGENT_START_MS, PROMPT_QUIET_MS, pastePrompt, sendToAgentTab, sendToChosenTab, sendToOpenedTab, whenQuiet } from "./agentPrompt";
 import type { Sessions, Tab } from "./sessions";
 import type { TabStatus } from "./status";
 
@@ -130,4 +130,40 @@ it("sendToOpenedTab gives up at the timeout", async () => {
   const result = sendToOpenedTab(f.sessions, "/w", "new", "hi", { timeoutMs: 5_000 });
   await vi.advanceTimersByTimeAsync(5_000);
   expect(await result).toBeNull();
+});
+
+it("whenQuiet resolves after the first output and a quiet spell; more output restarts the spell", async () => {
+  vi.useFakeTimers();
+  const watch = whenQuiet();
+  let got: boolean | null = null;
+  void watch.ready.then((ok) => (got = ok));
+  await vi.advanceTimersByTimeAsync(5_000);
+  expect(got).toBeNull();
+  watch.output();
+  await vi.advanceTimersByTimeAsync(PROMPT_QUIET_MS - 100);
+  watch.output();
+  await vi.advanceTimersByTimeAsync(PROMPT_QUIET_MS - 100);
+  expect(got).toBeNull();
+  await vi.advanceTimersByTimeAsync(200);
+  expect(got).toBe(true);
+});
+
+it("whenQuiet gives up at the start bound, and on cancel", async () => {
+  vi.useFakeTimers();
+  const silent = whenQuiet();
+  let got: boolean | null = null;
+  void silent.ready.then((ok) => (got = ok));
+  await vi.advanceTimersByTimeAsync(AGENT_START_MS + 2_000);
+  expect(got).toBe(false);
+  const chatty = whenQuiet(2_000, 1_500);
+  let chattyGot: boolean | null = null;
+  void chatty.ready.then((ok) => (chattyGot = ok));
+  for (let at = 0; at < 4; at++) {
+    chatty.output();
+    await vi.advanceTimersByTimeAsync(1_000);
+  }
+  expect(chattyGot).toBe(false);
+  const cancelled = whenQuiet();
+  cancelled.cancel();
+  await expect(cancelled.ready).resolves.toBe(false);
 });

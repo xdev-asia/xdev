@@ -361,7 +361,7 @@ pub fn hook_events(cli: Cli, version: Option<CliVersion>) -> Vec<HookEvent> {
     match cli {
         Cli::Claude => events_of(claude_offered(version).map(|h| h.writes)),
         Cli::Codex => vec![HookEvent::TurnDone],
-        Cli::Gemini => Vec::new(),
+        _ => Vec::new(),
     }
 }
 
@@ -399,7 +399,7 @@ pub fn hook_args(cli: Cli, xdev: &Path, version: Option<CliVersion>) -> Vec<Stri
                 format!(r#"notify=[{program},"agent-hook","turn-done"]"#),
             ]
         }
-        Cli::Gemini => Vec::new(),
+        _ => Vec::new(),
     }
 }
 

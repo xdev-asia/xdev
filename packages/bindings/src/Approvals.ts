@@ -3,4 +3,4 @@
 /**
  * The global switch the built-in profiles follow until they opt out.
  */
-export type Approvals = "ask" | "skip";
+export type Approvals = "ask" | "auto" | "skip";
