@@ -3,6 +3,11 @@ import type { JSX } from "react";
 import { toApiError, type Api, type FileHits, type SearchEvent } from "@/api";
 import { useI18n } from "@/i18n";
 import { fileName } from "@/files/fileTabs";
+import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
+import { copyText } from "@/ui/clipboard";
+import { pushToast } from "@/workspace/toastStore";
+import { absolutePath, pathWithLine, relativePath } from "./resultCopy";
+import { consumeSearchPrefill, subscribeSearchPrefill } from "./searchPrefill";
 import { applyEvent, hitColumn, IDLE, STARTED, toQuery, unitRanges, type SearchForm, type SearchResult } from "./searchState";
 import "./search.css";
 
@@ -47,6 +52,7 @@ export function SearchPanel(props: SearchPanelProps): JSX.Element {
   const [details, setDetails] = useState(false);
   const [result, setResult] = useState<SearchResult>(IDLE);
   const [folded, setFolded] = useState<Set<string>>(new Set());
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   // The id of the search whose events count; an older one that still talks is dropped.
   const current = useRef<string | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
@@ -63,6 +69,20 @@ export function SearchPanel(props: SearchPanelProps): JSX.Element {
       input.current?.select();
     }
   }, [focusSeq]);
+
+  // Another part of the app asked for a search: fill the fields, open the glob row if used, take the keyboard.
+  useEffect(() => {
+    const take = () => {
+      const req = consumeSearchPrefill();
+      if (!req) return;
+      setForm((f) => ({ ...f, text: req.query ?? f.text, include: req.include ?? f.include }));
+      if (req.include) setDetails(true);
+      input.current?.focus();
+      input.current?.select();
+    };
+    take();
+    return subscribeSearchPrefill(take);
+  }, []);
 
   useEffect(() => {
     stop();
@@ -110,6 +130,25 @@ export function SearchPanel(props: SearchPanelProps): JSX.Element {
     const hit = file.hits[i];
     onOpen(file.rel, { line: hit.line, column: hitColumn(hit.text, hit.ranges) });
   }
+
+  function copy(text: string): void {
+    void copyText(text).then((ok) => pushToast({ id: "search-copy", text: t(ok ? "search.files.copied" : "search.files.copyFailed"), ttlMs: 2000 }));
+  }
+
+  function openMenu(e: { preventDefault(): void; clientX: number; clientY: number }, items: MenuItem[]): void {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, items });
+  }
+
+  const fileMenu = (rel: string): MenuItem[] => [
+    { id: "path", labelKey: "search.files.copyPath", disabled: !worktree, run: () => worktree && copy(absolutePath(worktree, rel)) },
+    { id: "rel", labelKey: "search.files.copyRelPath", run: () => copy(relativePath(rel)) },
+  ];
+  const lineMenu = (rel: string, line: number): MenuItem[] => [
+    { id: "line", labelKey: "search.files.copyPathLine", run: () => copy(pathWithLine(rel, line)) },
+    { id: "sep", labelKey: "", kind: "separator" },
+    ...fileMenu(rel),
+  ];
 
   function clear(): void {
     stop();
@@ -174,14 +213,14 @@ export function SearchPanel(props: SearchPanelProps): JSX.Element {
           const name = fileName(file.rel);
           return (
             <div key={file.rel} className="sr-file">
-              <button type="button" className="sr-file-head" aria-expanded={!closed} title={file.rel} onClick={() => flip(file.rel)}>
+              <button type="button" className="sr-file-head" aria-expanded={!closed} title={file.rel} onClick={() => flip(file.rel)} onContextMenu={(e) => openMenu(e, fileMenu(file.rel))}>
                 <span className="sr-file-name">{name}</span>
                 <span className="sr-file-dir">{file.rel.slice(0, Math.max(0, file.rel.length - name.length - 1))}</span>
                 <span className="sr-count">{file.hits.length}</span>
               </button>
               {!closed &&
                 file.hits.map((hit, i) => (
-                  <button key={hit.line} type="button" className="sr-line" onClick={() => openHit(file, i)}>
+                  <button key={hit.line} type="button" className="sr-line" onClick={() => openHit(file, i)} onContextMenu={(e) => openMenu(e, lineMenu(file.rel, hit.line))}>
                     <span className="sr-line-no">{hit.line}</span>
                     <span className="sr-line-text">
                       <Line text={hit.text} ranges={hit.ranges} />
@@ -193,6 +232,7 @@ export function SearchPanel(props: SearchPanelProps): JSX.Element {
           );
         })}
       </div>
+      {menu && <ContextMenu at={menu} items={menu.items} label={t("search.files.copyMenu")} onClose={() => setMenu(null)} />}
     </div>
   );
 }
