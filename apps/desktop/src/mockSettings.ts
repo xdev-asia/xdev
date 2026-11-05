@@ -1,7 +1,7 @@
-import type { AgentsSettings, OrchestrationSettings, Api, UsageSettings, DiffSettings, EditorSettings, KeySettings, NavigationSettings, SettingsChanged, SettingsSection, CardProps, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
+import type { AgentsSettings, OrchestrationSettings, Api, AutomationsSettings, UsageSettings, DiffSettings, EditorSettings, KeySettings, NavigationSettings, SettingsChanged, SettingsSection, CardProps, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
 import { clampEditorSettings, EDITOR_DEFAULTS } from "./files/editorDefaults";
 import { KEY_SETTINGS_DEFAULTS } from "./keys/bindingsStore";
-import { DIFF_DEFAULTS, NAVIGATION_DEFAULTS } from "./settings/generalDefaults";
+import { AUTOMATIONS_DEFAULTS, DIFF_DEFAULTS, NAVIGATION_DEFAULTS } from "./settings/generalDefaults";
 import { CACHE_TTL_LONG_MS, CACHE_TTL_SHORT_MS, USAGE_DEFAULTS } from "./settings/usageDefaults";
 import { clampTerminalSettings, TERMINAL_DEFAULTS } from "./settings/terminalDefaults";
 
@@ -31,6 +31,8 @@ type SettingsApi = Pick<
   | "orchestrationSettingsPut"
   | "usageSettings"
   | "usageSettingsPut"
+  | "automationsSettings"
+  | "automationsSettingsPut"
 >;
 
 /** `CardProps::default()` in Rust: every card property shows. */
@@ -128,6 +130,7 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
   let agents: AgentsSettings = { ...AGENTS_SETTINGS_DEFAULTS };
   let orchestration: OrchestrationSettings = { ...ORCHESTRATION_DEFAULTS };
   let usage: UsageSettings = structuredClone(USAGE_DEFAULTS);
+  let automations: AutomationsSettings = { ...AUTOMATIONS_DEFAULTS };
   return {
     onSettingsChanged: hub.onSettingsChanged,
     async terminalSettings() {
@@ -212,6 +215,14 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
       };
       hub.emit(["orchestration"]);
       return { ...orchestration };
+    },
+    async automationsSettings() {
+      return { ...automations };
+    },
+    async automationsSettingsPut(next) {
+      automations = { ...AUTOMATIONS_DEFAULTS, ...next };
+      hub.emit(["automations"]);
+      return { ...automations };
     },
     async usageSettings() {
       return structuredClone(usage);

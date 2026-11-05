@@ -971,3 +971,30 @@ describe("mock provider keys", () => {
     expect(AI_KEY_PROVIDERS).toHaveLength(3);
   });
 });
+
+it("routes automation calls and events to their Tauri names", async () => {
+  vi.resetModules();
+  const listen = vi.fn().mockResolvedValue(() => {});
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined), Channel: class {} }));
+  vi.doMock("@tauri-apps/api/event", () => ({ listen }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    await api.automationsList(); await api.automationRuns("a"); await api.automationSetEnabled("a", false); await api.automationDelete("a");
+    await api.automationRunNow("a"); await api.automationDescribe("0 * * * *", "UTC"); await api.automationValidateSchedule("0 * * * *", "UTC");
+    await api.automationNextRuns("0 * * * *", "UTC", 5, 3); await api.automationUiReady(); await api.automationsSettings();
+    await api.automationRunFinish({ runId: "r", completed: true, output: null, truncated: false });
+    await api.automationDispatchResult({ status: "dispatched", runId: "r", tabId: "t" });
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["automations_list", undefined], ["automation_runs", { automationId: "a" }], ["automation_set_enabled", { id: "a", enabled: false }],
+      ["automation_delete", { id: "a" }], ["automation_run_now", { id: "a" }], ["automation_describe", { expr: "0 * * * *", timezone: "UTC" }],
+      ["automation_validate_schedule", { expr: "0 * * * *", timezone: "UTC" }], ["automation_next_runs", { expr: "0 * * * *", timezone: "UTC", dtstart: 5, count: 3 }],
+      ["automation_ui_ready", undefined], ["automations_settings_get", undefined],
+      ["automation_run_finish", { finish: { runId: "r", completed: true, output: null, truncated: false } }],
+      ["automation_dispatch_result", { result: { status: "dispatched", runId: "r", tabId: "t" } }],
+    ]);
+    await api.onAutomationDispatch(() => {}); await api.onAutomationsChanged(() => {});
+    expect(listen.mock.calls.map((c) => c[0])).toEqual(["automation://dispatch", "automations://changed"]);
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.doUnmock("@tauri-apps/api/event"); vi.resetModules(); }
+});

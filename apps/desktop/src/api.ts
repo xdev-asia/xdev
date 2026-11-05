@@ -163,6 +163,39 @@ import type {
   FsChanged,
 } from "@xdev/bindings";
 import type {
+  Automation,
+  AutomationDispatch,
+  AutomationInput,
+  AutomationRun,
+  AutomationsChanged,
+  AutomationsSettings,
+  AutomationsView,
+  Describe,
+  DispatchResult,
+  RunFinish,
+} from "@xdev/bindings";
+export type {
+  Automation,
+  AutomationDispatch,
+  AutomationInput,
+  AutomationRun,
+  AutomationsChanged,
+  AutomationsSettings,
+  AutomationsView,
+  Describe,
+  DispatchResult,
+  ExtraArgsError,
+  FailureCode,
+  OutputSnapshot,
+  Precheck,
+  PrecheckResult,
+  RunFinish,
+  RunStatus,
+  RunTrigger,
+  SetupDecision,
+  WorkspaceMode,
+} from "@xdev/bindings";
+import type {
   AgentSession,
   AiKeyStatus,
   DirEntry,
@@ -425,6 +458,8 @@ export type ErrorCode =
   | "account_expired"
   | "account_timeout"
   | "account_server"
+  | "invalid_schedule"
+  | "extra_args"
   | "not_found"
   | "outside_vault"
   | "no_vault"
@@ -794,7 +829,7 @@ export interface Api {
   // A terminal per tab. Output arrives on `onData` until the tab calls `ptyKill`; an agent profile
   // rejects with `needs_approval` / `denied` until `ptyApprove` records it in the policy.
   // `resume` is an agent session id (A-Z, a-z, 0-9, `_`, `-`): the CLI continues that session.
-  ptySpawn(id: string, cwd: string, profileId: PtyProfile, account: string | null, cols: number, rows: number, onData: (bytes: Uint8Array) => void, resume?: string, fork?: boolean, prompt?: string): Promise<PtyInfo>;
+  ptySpawn(id: string, cwd: string, profileId: PtyProfile, account: string | null, cols: number, rows: number, onData: (bytes: Uint8Array) => void, resume?: string, fork?: boolean, prompt?: string, extraArgs?: string[]): Promise<PtyInfo>;
   // Approves the launch `ptySpawn` was refused for; pass the same `resume` and `fork`, as they are part of the launch line.
   ptyApprove(profileId: PtyProfile, account: string | null, resume?: string, fork?: boolean): Promise<void>;
   // Agent profiles and the shells of the `+` menu; each write returns the whole view.
@@ -1208,6 +1243,9 @@ export interface Api {
   onPortsAdvertised(cb: (worktree: string) => void): Promise<() => void>;
   usageSettings(): Promise<UsageSettings>;
   usageSettingsPut(v: UsageSettings): Promise<UsageSettings>;
+  // Settings → Automations; the put returns what was stored.
+  automationsSettings(): Promise<AutomationsSettings>;
+  automationsSettingsPut(v: AutomationsSettings): Promise<AutomationsSettings>;
 
   // Layout
   // The tabs and splits saved for the next start (`<data_dir>/layout.json`); null when none is saved
@@ -1239,6 +1277,34 @@ export interface Api {
   onOrchestrationCloseWorker(cb: (e: WorkerClose) => void): Promise<() => void>;
   onOrchestrationReadTab(cb: (e: ReadTab) => void): Promise<() => void>;
   onOrchestrationWorkerChanged(cb: (e: WorkerChanged) => void): Promise<() => void>;
+
+  // Automations: scheduled agent runs. Writes reject with `not_found`, `bad_arg`, `invalid_schedule`
+  // or `extra_args` (`detail` has the `ExtraArgsError`).
+  automationsList(): Promise<AutomationsView>;
+  // The runs of one automation, newest first.
+  automationRuns(automationId: string): Promise<AutomationRun[]>;
+  automationCreate(input: AutomationInput): Promise<Automation>;
+  automationUpdate(id: string, input: AutomationInput): Promise<Automation>;
+  automationSetEnabled(id: string, enabled: boolean): Promise<Automation>;
+  // Deletes the automation and its runs; worktrees its runs made stay.
+  automationDelete(id: string): Promise<void>;
+  // A manual run, also for a paused automation.
+  automationRunNow(id: string): Promise<AutomationRun>;
+  automationDescribe(expr: string, timezone: string): Promise<Describe>;
+  // The error copy key of a schedule that cannot be saved, or null when it can.
+  automationValidateSchedule(expr: string, timezone: string): Promise<string | null>;
+  // The next `count` (at most 5) occurrences from `dtstart`, epoch ms, for the editor preview.
+  automationNextRuns(expr: string, timezone: string, dtstart: number, count: number): Promise<number[]>;
+  // The UI can open tabs: tells the backend a dispatch may be sent. One tick follows.
+  automationUiReady(): Promise<void>;
+  // How a dispatch ended in the UI; one result per run.
+  automationDispatchResult(result: DispatchResult): Promise<void>;
+  // The end of a run, read from the tab's status.
+  automationRunFinish(finish: RunFinish): Promise<void>;
+  // `automation://dispatch`: open a tab for one run and type its prompt.
+  onAutomationDispatch(cb: (e: AutomationDispatch) => void): Promise<() => void>;
+  // `automations://changed`: an automation or run changed; load the list again.
+  onAutomationsChanged(cb: (e: AutomationsChanged) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -1256,6 +1322,8 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "account_expired",
   "account_timeout",
   "account_server",
+  "invalid_schedule",
+  "extra_args",
   "not_found",
   "outside_vault",
   "no_vault",
@@ -1545,11 +1613,11 @@ const tauriApi: Api = {
   exportWrite: (expected) => call("export_write", { expected }),
   docFreshness: (path) => call("doc_freshness", { path }),
   staleDocs: () => call("stale_docs"),
-  ptySpawn(id, cwd, profileId, account, cols, rows, onData, resume, fork, prompt) {
+  ptySpawn(id, cwd, profileId, account, cols, rows, onData, resume, fork, prompt, extraArgs) {
     // Rust sends raw bytes, which arrive as an ArrayBuffer.
     const out = new Channel<ArrayBuffer | number[]>();
     out.onmessage = (msg) => onData(toBytes(msg));
-    return call("pty_spawn", { id, cwd, profileId, account, cols, rows, out, resume: resume ?? null, fork: fork ?? null, prompt: prompt ?? null });
+    return call("pty_spawn", { id, cwd, profileId, account, cols, rows, out, resume: resume ?? null, fork: fork ?? null, prompt: prompt ?? null, extraArgs: extraArgs ?? null });
   },
   ptyApprove: (profileId, account, resume, fork) => call("pty_approve", { profileId, account, resume: resume ?? null, fork: fork ?? null }),
   profiles: () => call("profiles_list"),
@@ -1766,6 +1834,8 @@ const tauriApi: Api = {
   portsStop: (worktrees, id, consent) => call("ports_stop", { worktrees, id, confirmed: consent.confirmed, outsideTerminal: consent.outsideTerminal }),
   portsOpen: (id) => call("ports_open", { id }),
   onPortsAdvertised: (cb) => listen<{ worktree: string }>("ports://advertised", (e) => cb(e.payload.worktree)),
+  automationsSettings: () => call("automations_settings_get"),
+  automationsSettingsPut: (settings) => call("automations_settings_put", { settings }),
   usageSettings: () => call("usage_settings_get"),
   usageSettingsPut: (settings) => call("usage_settings_put", { settings }),
   layoutLoad: () => call("layout_load"),
@@ -1774,6 +1844,21 @@ const tauriApi: Api = {
   cliApprove: (request, allow) => call("cli_approve", { request, allow }),
   onWorkspaceChanged: (cb) => listen("workspace://changed", () => cb()),
   onCliOpenTab: (cb) => listen<CliOpenTab>("cli://open-tab", (e) => cb(e.payload)),
+  automationsList: () => call("automations_list"),
+  automationRuns: (automationId) => call("automation_runs", { automationId }),
+  automationCreate: (input) => call("automation_create", { input }),
+  automationUpdate: (id, input) => call("automation_update", { id, input }),
+  automationSetEnabled: (id, enabled) => call("automation_set_enabled", { id, enabled }),
+  automationDelete: (id) => call("automation_delete", { id }),
+  automationRunNow: (id) => call("automation_run_now", { id }),
+  automationDescribe: (expr, timezone) => call("automation_describe", { expr, timezone }),
+  automationValidateSchedule: (expr, timezone) => call("automation_validate_schedule", { expr, timezone }),
+  automationNextRuns: (expr, timezone, dtstart, count) => call("automation_next_runs", { expr, timezone, dtstart, count }),
+  automationUiReady: () => call("automation_ui_ready"),
+  automationDispatchResult: (result) => call("automation_dispatch_result", { result }),
+  automationRunFinish: (finish) => call("automation_run_finish", { finish }),
+  onAutomationDispatch: (cb) => listen<AutomationDispatch>("automation://dispatch", (e) => cb(e.payload)),
+  onAutomationsChanged: (cb) => listen<AutomationsChanged>("automations://changed", (e) => cb(e.payload)),
   onCliAsk: (cb) => listen<CliAsk>("cli://ask", (e) => cb(e.payload)),
   orchestrationSkillStatus: () => call("orchestration_skill_status"),
   orchestrationSkillInstall: (force = false) => call("orchestration_skill_install", { force }),

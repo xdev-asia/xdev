@@ -1006,7 +1006,10 @@ pub fn pty_spawn(
     resume: Option<String>,
     fork: Option<bool>,
     prompt: Option<String>,
+    // An automation's extra agent arguments; applied in a later step (`add_extra_args`).
+    extra_args: Option<Vec<String>>,
 ) -> Result<PtyInfo, CmdError> {
+    let _ = &extra_args;
     let data = data_dir(&state)?;
     let launch = if profile_id == SETUP_PROFILE {
         setup_launch(data, &cwd)?

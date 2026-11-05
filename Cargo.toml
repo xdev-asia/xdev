@@ -23,6 +23,7 @@ default-members = [
     "crates/xdev-awake",
     "crates/xdev-input-source",
     "crates/xdev-workspace",
+    "crates/xdev-automations",
     "crates/xdev-cli",
 ]
 
@@ -36,6 +37,7 @@ publish = false
 [workspace.dependencies]
 xdev-agent = { path = "crates/xdev-agent" }
 xdev-ai = { path = "crates/xdev-ai" }
+xdev-automations = { path = "crates/xdev-automations" }
 xdev-core = { path = "crates/xdev-core" }
 xdev-export = { path = "crates/xdev-export" }
 xdev-git = { path = "crates/xdev-git" }
@@ -82,6 +84,9 @@ thiserror = "2.0.21"
 # The OS trash (Recycle Bin, Finder, freedesktop) for Delete in the file tree and a failed
 # clone; never a hard delete.
 trash = { version = "5.2.9", default-features = false, features = ["coinit_apartmentthreaded"] }
+# Time zones and calendar math for automation schedules; default features give the system
+# zone and, on Windows, the bundled tz database. Already in the build through serde_with.
+jiff = "0.2.38"
 # Merging the codex config.toml into a private CODEX_HOME.
 toml = "1.1.8"
 # TypeScript for the types that cross the desktop IPC boundary; behind each

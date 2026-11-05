@@ -4,6 +4,7 @@ mod agent_sessions;
 mod ai_keys;
 mod app_menu;
 mod atomic;
+mod automations;
 #[cfg(test)]
 mod bindings;
 mod cli_path;
@@ -141,6 +142,10 @@ pub fn run() {
             tray::sync(app.handle());
             app_menu::listen(app.handle());
             app_menu::install(app.handle());
+            if let Some(data) = xdev_core::data_dir() {
+                app.manage(automations::AutomationService::open(&data));
+                automations::start(app.handle());
+            }
             // Off the main thread: starting the service may take a moment.
             {
                 let app = app.handle().clone();
@@ -242,6 +247,8 @@ pub fn run() {
             commands::diff_settings_put,
             commands::agents_settings_get,
             commands::agents_settings_put,
+            commands::automations_settings_get,
+            commands::automations_settings_put,
             commands::usage_settings_get,
             commands::usage_settings_put,
             orchestration::orchestration_settings_get,
@@ -499,6 +506,19 @@ pub fn run() {
             xdev_id::xdev_id_manage,
             xdev_id::xdev_id_server,
             xdev_id::xdev_id_server_set,
+            automations::automations_list,
+            automations::automation_runs,
+            automations::automation_create,
+            automations::automation_update,
+            automations::automation_set_enabled,
+            automations::automation_delete,
+            automations::automation_run_now,
+            automations::automation_describe,
+            automations::automation_validate_schedule,
+            automations::automation_next_runs,
+            automations::automation_ui_ready,
+            automations::automation_dispatch_result,
+            automations::automation_run_finish,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")

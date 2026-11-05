@@ -284,6 +284,24 @@ pub fn agents_settings_put(
     crate::power::put_agents(&app, settings.clamped())
 }
 
+/// Settings → Automations as stored; the defaults when nothing is.
+#[tauri::command(async)]
+pub fn automations_settings_get(app: AppHandle) -> settings::AutomationsSettings {
+    settings_store::read(&app).automations
+}
+
+/// Stores Settings → Automations and returns what was stored.
+#[tauri::command(async)]
+pub fn automations_settings_put(
+    app: AppHandle,
+    settings: settings::AutomationsSettings,
+) -> Result<settings::AutomationsSettings, CmdError> {
+    settings_store::write(&app, &[SettingsSection::Automations], |s| {
+        s.automations = settings
+    })
+    .map(|s| s.automations)
+}
+
 /// Settings → Stats & Usage as stored; the defaults when nothing is.
 #[tauri::command(async)]
 pub fn usage_settings_get(app: AppHandle) -> settings::UsageSettings {

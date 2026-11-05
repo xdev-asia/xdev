@@ -6693,6 +6693,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "xdev-automations"
+version = "0.5.0"
+dependencies = [
+ "jiff",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "ts-rs",
+ "xdev-agent",
+ "xdev-ai",
+ "xdev-core",
+]
+
+[[package]]
 name = "xdev-cli"
 version = "0.7.0"
 dependencies = [
@@ -6756,6 +6771,7 @@ dependencies = [
  "xdev-agent",
  "xdev-ai",
  "xdev-awake",
+ "xdev-automations",
  "xdev-core",
  "xdev-git",
  "xdev-id",

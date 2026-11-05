@@ -41,6 +41,8 @@ export type MockPtyd = {
   __quitChoice(): boolean | null;
   // The `prompt` each `ptySpawn` got, by pty id; absent when it had none.
   __prompts(): Record<string, string>;
+  // The extra agent arguments `ptySpawn` was given for a pty; null for none.
+  __spawnExtraArgs(id: string): string[] | null;
 };
 
 const PROMPT = "$ ";
@@ -96,6 +98,7 @@ export function createMockPty(
     hookEvents: [],
     promptAfter: null,
   });
+  const spawnArgs = new Map<string, string[] | null>();
   const end = (id: string) => {
     held.delete(id);
     const pty = ptys.get(id);
@@ -106,7 +109,7 @@ export function createMockPty(
   };
 
   return {
-    async ptySpawn(id, cwd, profileId, account, _cols, _rows, onData, resume, fork, prompt) {
+    async ptySpawn(id, cwd, profileId, account, _cols, _rows, onData, resume, fork, prompt, extraArgs) {
       if (prompt !== undefined) prompts[id] = prompt;
       if (profileId === SETUP_PROFILE) {
         if (ptys.has(id)) return reject("pty_exists");
@@ -140,6 +143,8 @@ export function createMockPty(
       if (ptys.has(id)) return reject("pty_exists");
       const agent = !profileId.startsWith("shell");
       // Like Rust: only an agent resumes, and the id is a plain token.
+      if (extraArgs?.length && !agent) return reject("bad_arg", "extraArgs");
+      spawnArgs.set(id, extraArgs?.length ? [...extraArgs] : null);
       if (resume !== undefined && (!agent || !SESSION_ID.test(resume))) return reject("bad_arg", "resume");
       // A fork continues a copy of a session, so it needs the id too.
       if (fork && resume === undefined) return reject("bad_arg", "fork");
@@ -290,5 +295,6 @@ export function createMockPty(
     },
     __quitChoice: () => quitChoice,
     __prompts: () => ({ ...prompts }),
+    __spawnExtraArgs: (id) => spawnArgs.get(id) ?? null,
   };
 }

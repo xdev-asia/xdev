@@ -92,6 +92,9 @@ pub struct Settings {
     /// Settings → General, Window and Updates groups; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub shell: ShellSettings,
+    /// Settings → Automations; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub automations: AutomationsSettings,
 }
 
 /// Settings → xDev ID.
@@ -273,6 +276,26 @@ impl AgentsSettings {
             .sleep_after_min
             .clamp(*SLEEP_AFTER_MIN_RANGE.start(), *SLEEP_AFTER_MIN_RANGE.end());
         self
+    }
+}
+
+/// Settings → Automations.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct AutomationsSettings {
+    /// Shows the Automations entry in the sidebar.
+    pub show_button: bool,
+    /// Deletes an automation without asking (the dialog's "Don't ask again").
+    pub skip_delete_confirm: bool,
+}
+
+impl Default for AutomationsSettings {
+    fn default() -> Self {
+        AutomationsSettings {
+            show_button: true,
+            skip_delete_confirm: false,
+        }
     }
 }
 
@@ -1246,6 +1269,7 @@ pub enum SettingsSection {
     XdevId,
     Orchestration,
     Shell,
+    Automations,
 }
 
 /// What a `settings://changed` event carries.

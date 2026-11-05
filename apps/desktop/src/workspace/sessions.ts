@@ -52,6 +52,8 @@ export interface Tab {
   resumeOf: string | null;
   /** The agent session id this tab was forked from; null otherwise. Its first launch forks, a restart does not. */
   forkOf: string | null;
+  /** Extra agent arguments the tab started with (an automation's); null for none. Not restored. */
+  extraArgs: string[] | null;
   /** The agent's own session id, from its hooks (latest wins) or the resumed id; null until known. */
   agentSession: string | null;
   /** When the tab was opened or resumed, in ms. */
@@ -172,11 +174,11 @@ export class Sessions {
    * `opts` is for a tab somebody else asked for (an orchestration worker): `id` and `title` are given
    * (the title is a hand name, so the terminal's own title does not replace it), and `background`
    * adds the tab behind the pane's active one; `prompt` is the agent's first prompt, given on its
-   * first launch only. The selected worktree is the caller's to keep.
+   * first launch only. `extraArgs` is an automation's extra agent arguments. The selected worktree is the caller's to keep.
    */
-  open(worktree: string, profileId: PtyProfile, account: string | null = null, cli?: TabCli, opts: { id?: string; title?: string; background?: boolean; prompt?: string } = {}): Tab {
+  open(worktree: string, profileId: PtyProfile, account: string | null = null, cli?: TabCli, opts: { id?: string; title?: string; background?: boolean; prompt?: string; extraArgs?: string[] } = {}): Tab {
     if (opts.id && this.entries.has(opts.id)) throw new Error("tab id in use");
-    const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, null, opts.title ?? null, opts.id, null, opts.prompt);
+    const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, null, opts.title ?? null, opts.id, null, opts.prompt, opts.extraArgs);
     if (opts.title !== undefined) entry.tab = { ...entry.tab, renamed: true };
     this.entries.set(entry.tab.id, entry);
     this.cache.delete(worktree);
@@ -1004,7 +1006,7 @@ export class Sessions {
     this.emit();
   }
 
-  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null, id: string = crypto.randomUUID(), forkOf: string | null = null, prompt?: string): Entry {
+  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null, id: string = crypto.randomUUID(), forkOf: string | null = null, prompt?: string, extraArgs?: string[]): Entry {
     const tab: Tab = {
       id,
       worktree,
@@ -1024,11 +1026,12 @@ export class Sessions {
       autoTitled: false,
       resumeOf,
       forkOf,
+      extraArgs: extraArgs?.length ? [...extraArgs] : null,
       agentSession: resumeOf,
       openedAt: this.now(),
       pinned: false,
       color: "none",
-      client: new PtyClient(this.api, id, forkOf ?? resumeOf ?? undefined, forkOf !== null, prompt),
+      client: new PtyClient(this.api, id, forkOf ?? resumeOf ?? undefined, forkOf !== null, prompt, extraArgs?.length ? [...extraArgs] : undefined),
     };
     // Caps stay off until the pty says whether it got hook flags.
     return { tab, state: start(), caps: NO_CAPS, programTitle: null, autoTitle: null };

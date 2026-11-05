@@ -1,4 +1,4 @@
-import type { Api, PtyAttached, PtyInfo, PtyProfile } from "@/api";
+import type { Api, ApiError, PtyAttached, PtyInfo, PtyProfile } from "@/api";
 import { pastePrompt, whenQuiet } from "@/workspace/agentPrompt";
 
 /** Output is acknowledged in steps this big; Rust pauses a terminal at 4 MB unacknowledged. */
@@ -40,6 +40,8 @@ export class PtyClient {
   private holding = false;
   // Set by `attachOnStart`: the seq a later `start` attaches from instead of spawning.
   private attachFrom: number | null = null;
+  private spawnError: ApiError | null = null;
+  private readonly errorListeners = new Set<(e: ApiError) => void>();
 
   constructor(
     private readonly api: Api,
@@ -53,6 +55,8 @@ export class PtyClient {
      * line, or, for an agent that takes it after start, it is typed once the agent went quiet.
      */
     private prompt?: string,
+    /** Extra agent arguments from an automation; the backend checks them again. A restart drops them. */
+    private readonly extraArgs?: string[],
   ) {}
 
   /**
@@ -172,13 +176,16 @@ export class PtyClient {
         watch?.output();
         // Acked once the terminal has drawn it, so a slow view pauses the pty.
         write(bytes, () => this.rendered(bytes.length));
-      }, this.resume, this.fork, prompt);
+      }, this.resume, this.fork, prompt, this.extraArgs);
     } catch (e) {
       watch?.cancel();
       // Nothing started, so a retry (say, after approval) still sends it.
       this.prompt ??= prompt;
+      this.spawnError = typeof e === "object" && e !== null && "code" in e ? (e as ApiError) : ({ code: "io", detail: String(e) } as ApiError);
+      for (const cb of [...this.errorListeners]) cb(this.spawnError);
       throw e;
     }
+    this.spawnError = null;
     this.size = [cols, rows];
     this.live = true;
     for (const text of this.queued.splice(0)) void this.input(text).catch(() => {});
@@ -189,6 +196,17 @@ export class PtyClient {
       watch?.cancel();
     }
     return info;
+  }
+
+  /** Why the last spawn failed, or null; an approval that is asked for later does not clear it. */
+  get startError(): ApiError | null {
+    return this.spawnError;
+  }
+
+  /** Calls `cb` when a spawn fails (the person is asked about `needs_approval` elsewhere). Returns the stop. */
+  onStartError(cb: (e: ApiError) => void): () => void {
+    this.errorListeners.add(cb);
+    return () => void this.errorListeners.delete(cb);
   }
 
   /** True once a pty was spawned, so its kill reports an exit. */

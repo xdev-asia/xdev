@@ -6,10 +6,14 @@ use std::fs;
 use std::path::Path;
 
 use ts_rs::{Config, TS};
+use xdev_automations::{Automation, AutomationInput, AutomationRun, Describe, ExtraArgsError};
 
 use crate::accounts::{Account, Accounts, LoginStart, Models};
 use crate::agent_sessions::{SessionQuery, SessionRow, SessionSearchStatus};
 use crate::ai_keys::AiKeyStatus;
+use crate::automations::{
+    AutomationDispatch, AutomationsChanged, AutomationsView, DispatchResult, RunFinish,
+};
 use crate::cli_verbs::{CliAsk, CliOpenTab, TabReport};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
 use crate::file_watch::FsChanged;
@@ -28,7 +32,7 @@ use crate::quick_commands::{FileCommands, QuickCommand};
 use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
-    AgentsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings, KeySettings,
+    AgentsSettings, AutomationsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings, KeySettings,
     MacOptionAsAlt, NavigationSettings, OpenInSettings, OrchestrationSettings, RestoreMode,
     SettingsChanged, ShellSettings, SidebarLook, SidebarPrefs, StatusBarItems, StatusSettings,
     TerminalLinkClick, TerminalSettings, Theme, UiSettings, UpdateChannel, UsageSettings,
@@ -139,6 +143,17 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_orch::Message::export_all(cfg)?;
     xdev_orch::MessageType::export_all(cfg)?;
     xdev_orch::Priority::export_all(cfg)?;
+    AutomationsSettings::export_all(cfg)?;
+    Automation::export_all(cfg)?;
+    AutomationRun::export_all(cfg)?;
+    AutomationInput::export_all(cfg)?;
+    AutomationsView::export_all(cfg)?;
+    Describe::export_all(cfg)?;
+    ExtraArgsError::export_all(cfg)?;
+    AutomationDispatch::export_all(cfg)?;
+    DispatchResult::export_all(cfg)?;
+    RunFinish::export_all(cfg)?;
+    AutomationsChanged::export_all(cfg)?;
     KeybindingsText::export_all(cfg)?;
     KeybindingsChanged::export_all(cfg)?;
     PtyHook::export_all(cfg)?;

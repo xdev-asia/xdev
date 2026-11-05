@@ -11,7 +11,7 @@ function wt(over: Partial<WorktreeView> = {}): WorktreeView {
   return { path: PATH, name: "oak", branch: "oak", head: null, start: "s", primary: false, pinned: false, detached: false, ...NO_DETAILS, autoName: true, ...over };
 }
 function tab(over: Partial<Tab> = {}): Tab {
-  return { id: "t1", worktree: PATH, profileId: "claude", account: null, accountSource: null, permissions: "ask", agent: true, status: "idle", cli: "claude", unread: false, unreadAt: null, unreadReason: null, title: null, renamed: false, autoTitled: false, resumeOf: null, forkOf: null, agentSession: null, openedAt: 0, pinned: false, color: "none", client: {} as never, ...over };
+  return { id: "t1", worktree: PATH, profileId: "claude", account: null, accountSource: null, permissions: "ask", agent: true, status: "idle", cli: "claude", unread: false, unreadAt: null, unreadReason: null, title: null, renamed: false, autoTitled: false, resumeOf: null, forkOf: null, extraArgs: null, agentSession: null, openedAt: 0, pinned: false, color: "none", client: {} as never, ...over };
 }
 
 const git = (over: Partial<GitSettings> = {}): GitSettings => ({ ...DEFAULT_GIT_SETTINGS, ...over });
