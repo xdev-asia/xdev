@@ -42,6 +42,7 @@ import { ActivityPanel, type ActivityTab } from "@/activity/ActivityPanel";
 import { ActivityFeed } from "@/activity/feed";
 import { Icon } from "@xdev-asia/ui";
 import { ChecksPanel } from "./ChecksPanel";
+import { PortsItem } from "@/ports/PortsItem";
 import { PortsPanel } from "@/ports/PortsPanel";
 import { PortsStore } from "@/ports/portsStore";
 import { IssuesPanel } from "@/issues/IssuesPanel";
@@ -892,6 +893,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     },
     "panel.sourceControl": () => panelKey("changes"),
     "panel.issues": () => panelKey("issues"),
+    "panel.ports": () => panelKey("ports"),
     "zoom.in": () => void stepZoom(api, ZOOM_STEP),
     "zoom.out": () => void stepZoom(api, -ZOOM_STEP),
     "zoom.reset": () => void stepZoom(api, 0),
@@ -2041,6 +2043,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         onUseAccount={(provider, name) =>
           void api.accountActivate(provider, name).catch((e) => pushToast({ text: t("accounts.switch.failed", { code: toApiError(e).code }) }))
         }
+        ports={<PortsItem store={ports} active={current?.path ?? null} onOpen={() => panelKey("ports")} />}
         hidden={view === "docs"}
       />
 

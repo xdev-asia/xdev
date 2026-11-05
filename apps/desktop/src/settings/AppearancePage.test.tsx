@@ -164,6 +164,14 @@ it("a status bar switch flips one item and keeps the others", async () => {
   expect(p.sw("tokenUsage").props["aria-checked"]).toBe(false);
 });
 
+it("the status bar has a Ports switch", async () => {
+  paintEnv();
+  const p = await page();
+  p.sw("ports").props.onClick();
+  await tick();
+  expect((await p.api.uiSettingsGet()).statusBar.ports).toBe(false);
+});
+
 it("a search keeps only the rows that hit", async () => {
   const filter = { query: "font", ids: new Set(["appearance.font"]) };
   const p = await page(filter);
