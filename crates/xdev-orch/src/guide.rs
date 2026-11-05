@@ -43,14 +43,41 @@ pub struct Bundled {
     pub references: &'static [(&'static str, &'static str)],
 }
 
-pub const BUNDLED: [Bundled; 1] = [Bundled {
-    topic: "orchestration",
-    skill: "xdev-orchestration",
-    summary: "Run a team of agents: runs, tasks, workers, mail and decision gates.",
-    stub: SKILL_MD,
-    main: MAIN,
-    references: &REFERENCES,
-}];
+const CLI_MAIN: &str = include_str!("../guide/cli/cli.md");
+
+const CLI_REFERENCES: [(&str, &str); 3] = [
+    (
+        "worktrees",
+        include_str!("../guide/cli/references/worktrees.md"),
+    ),
+    (
+        "terminals",
+        include_str!("../guide/cli/references/terminals.md"),
+    ),
+    (
+        "exit-codes",
+        include_str!("../guide/cli/references/exit-codes.md"),
+    ),
+];
+
+pub const BUNDLED: [Bundled; 2] = [
+    Bundled {
+        topic: "orchestration",
+        skill: "xdev-orchestration",
+        summary: "Run a team of agents: runs, tasks, workers, mail and decision gates.",
+        stub: SKILL_MD,
+        main: MAIN,
+        references: &REFERENCES,
+    },
+    Bundled {
+        topic: "cli",
+        skill: "xdev-cli",
+        summary: "Drive the running app: status, worktrees, terminal tabs, skills.",
+        stub: include_str!("../guide/cli/SKILL.md"),
+        main: CLI_MAIN,
+        references: &CLI_REFERENCES,
+    },
+];
 
 /// By topic or skill folder name.
 pub fn find(name: &str) -> Option<&'static Bundled> {
@@ -95,33 +122,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_guide_is_finished_and_within_budget() {
-        let main = get("orchestration").unwrap();
-        assert!(main.len() <= 6 * 1024, "{} bytes", main.len());
-        for text in [SKILL_MD, main]
-            .into_iter()
-            .chain(REFERENCES.iter().map(|(_, t)| *t))
-        {
-            assert!(!text.contains("TODO"));
-            assert!(!text.trim().is_empty());
+    fn every_bundled_guide_is_finished_and_within_budget() {
+        for b in &BUNDLED {
+            assert!(
+                b.main.len() <= 6 * 1024,
+                "{}: {} bytes",
+                b.topic,
+                b.main.len()
+            );
+            assert!(b.stub.len() <= 1024, "{} stub", b.topic);
+            assert!(!b.summary.is_empty() && !b.summary.contains('\n'));
+            for text in [b.stub, b.main]
+                .into_iter()
+                .chain(b.references.iter().map(|(_, t)| *t))
+            {
+                assert!(!text.contains("TODO"));
+                assert!(!text.trim().is_empty());
+            }
         }
         assert_eq!(get("nope"), None);
     }
 
     #[test]
-    fn every_reference_the_guide_lists_exists() {
-        let main = get("orchestration").unwrap();
-        let listed: Vec<&str> = main
-            .lines()
-            .filter_map(|l| l.strip_prefix("- `"))
-            .filter_map(|l| l.split('`').next())
-            .filter(|n| REFERENCES.iter().any(|(r, _)| r == n))
-            .collect();
-        assert_eq!(listed, references("orchestration"));
-        for name in references("orchestration") {
-            assert!(reference("orchestration", name).is_some());
+    fn every_reference_each_guide_lists_exists() {
+        for b in &BUNDLED {
+            let listed: Vec<&str> = b
+                .main
+                .lines()
+                .filter_map(|l| l.strip_prefix("- `"))
+                .filter_map(|l| l.split('`').next())
+                .filter(|n| b.references.iter().any(|(r, _)| r == n))
+                .collect();
+            assert_eq!(listed, references(b.topic), "{}", b.topic);
+            for name in references(b.topic) {
+                assert!(reference(b.topic, name).is_some());
+            }
+            assert_eq!(reference(b.topic, "nope"), None);
         }
-        assert_eq!(reference("orchestration", "nope"), None);
     }
 
     #[test]
@@ -129,6 +166,14 @@ mod tests {
         assert!(SKILL_MD.contains("XDEV_CLI"));
         assert!(SKILL_MD.contains("skills get orchestration"));
         assert!(SKILL_MD.starts_with(&format!("---\nname: {}\n", crate::skills::SKILL_NAME)));
+    }
+
+    #[test]
+    fn the_cli_stub_names_the_cli_and_its_skill() {
+        let b = find("cli").unwrap();
+        assert!(b.stub.contains("XDEV_CLI"));
+        assert!(b.stub.contains("skills get cli"));
+        assert!(b.stub.starts_with("---\nname: xdev-cli\n"));
     }
 
     #[test]
