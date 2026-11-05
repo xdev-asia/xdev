@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::pricing::{PRICES_AS_OF, cost_nanos, rates_for};
+use crate::usage::SYNTHETIC;
 use crate::{Agent, SessionUsage, Tokens, UsageIndex, UsageQuery, UsageSummary, summarize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,22 +101,24 @@ pub fn report(index: &UsageIndex, q: &ReportQuery) -> UsageReport {
             total.add(&in_range);
         }
         if let Some((_, cost)) = costs.iter_mut().find(|(a, _)| *a == s.agent) {
-            let rates = s.model.as_deref().and_then(|m| rates_for(s.agent, m));
-            match rates {
-                Some(r) => {
-                    let nanos: u64 = days
-                        .values()
-                        .map(|t| cost_nanos(r, t))
-                        .fold(0, u64::saturating_add);
-                    cost.nanos = cost.nanos.saturating_add(nanos);
-                    cost.priced = true;
+            // Each model's tokens at that model's rate.
+            for (model, day, t) in s.model_days() {
+                if model == SYNTHETIC || day < since || day > q.until_day.as_str() || t.sum() == 0 {
+                    continue;
                 }
-                None => cost.unpriced = true,
+                match rates_for(s.agent, model) {
+                    Some(r) => {
+                        cost.nanos = cost.nanos.saturating_add(cost_nanos(r, t));
+                        cost.priced = true;
+                    }
+                    None => cost.unpriced = true,
+                }
             }
         }
         let mut ranged_session = (*s).clone();
         ranged_session.total = in_range;
         ranged_session.days = days;
+        ranged_session.models = s.models_in(since, &q.until_day);
         ranged.push(ranged_session);
     }
     // Stable: equal totals stay Claude before Codex.
@@ -253,6 +256,7 @@ mod tests {
             last: first,
             total,
             days,
+            models: BTreeMap::new(),
         }
     }
 
@@ -433,6 +437,65 @@ mod tests {
             i.sessions.insert(format!("h:{}", s.id), s);
         }
         i
+    }
+
+    #[test]
+    fn a_session_is_priced_per_model_not_by_its_last() {
+        let mut s = modelled(
+            "mix",
+            Agent::Claude,
+            Some("claude-opus-9"),
+            1,
+            "2026-11-02",
+            1_000_050,
+        );
+        let day = |d: &str, n: u64| BTreeMap::from([(d.to_owned(), tok(n))]);
+        let mut sonnet = day("2026-11-02", 1_000_000);
+        // Out of range: not priced.
+        sonnet.insert("2026-10-01".to_owned(), tok(1_000_000));
+        s.models = BTreeMap::from([
+            ("claude-sonnet-4-5".to_owned(), sonnet),
+            ("claude-opus-9".to_owned(), day("2026-11-02", 50)),
+        ]);
+        let mut idx = UsageIndex::default();
+        idx.sessions.insert("h:mix".to_owned(), s);
+        let r = report(&idx, &q(&both()));
+        assert_eq!(
+            r.cost,
+            Cost {
+                nanos: 3_000_000_000,
+                unpriced: true,
+                priced: true,
+            }
+        );
+    }
+
+    #[test]
+    fn a_synthetic_model_is_neither_priced_nor_unpriced() {
+        let mut s = modelled(
+            "syn",
+            Agent::Claude,
+            Some("claude-sonnet-4-5"),
+            1,
+            "2026-11-02",
+            1_000_000,
+        );
+        let day = |n: u64| BTreeMap::from([("2026-11-02".to_owned(), tok(n))]);
+        s.models = BTreeMap::from([
+            ("claude-sonnet-4-5".to_owned(), day(1_000_000)),
+            ("<synthetic>".to_owned(), day(7)),
+        ]);
+        let mut idx = UsageIndex::default();
+        idx.sessions.insert("h:syn".to_owned(), s);
+        let r = report(&idx, &q(&both()));
+        assert_eq!(
+            r.cost,
+            Cost {
+                nanos: 3_000_000_000,
+                unpriced: false,
+                priced: true,
+            }
+        );
     }
 
     #[test]
