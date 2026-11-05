@@ -9,6 +9,7 @@ import { TokenTable } from "@/kit/UsageTab";
 import { UsageChart } from "@/kit/UsageChart";
 import { rangeDays, type UsageRange } from "@/kit/usageRange";
 import { RECENT_DAYS, bestDay, cacheReuse, formatCost, recentDays } from "@/kit/usageStats";
+import { ApiKeysSection } from "./ApiKeysSection";
 import { UsageRecentSessions } from "./UsageRecentSessions";
 import { UsageShare } from "./UsageShare";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
@@ -404,6 +405,7 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
               </div>
             </SettingRow>
           </SettingGroup>
+          <ApiKeysSection api={api} filter={filter} />
           <SettingGroup ids={FOOTER_IDS} filter={filter}>
             <h4 className="settings-group">{t("settings.usage.footerGroup")}</h4>
             <SettingRow id="usage.display" filter={filter}>

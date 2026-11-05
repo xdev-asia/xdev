@@ -8,6 +8,7 @@ import { getUsageSettings, resetUsageSettingsForTests, setUsageSettings } from "
 import { runSearch } from "./searchModel";
 import { Badge, Heatmap } from "@xdev-asia/ui";
 import { TokenTable } from "@/kit/UsageTab";
+import { ApiKeysSection } from "./ApiKeysSection";
 import { UsagePage } from "./UsagePage";
 import { UsageRecentSessions } from "./UsageRecentSessions";
 import { UsageShare } from "./UsageShare";
@@ -393,4 +394,16 @@ it("with a 7-day range the share card gets the days of the six-week read", async
   const data = ofType(m.all(), UsageShare)[0]!.props.data as { days: [string, unknown][]; range: string };
   expect(data.range).toBe("7");
   expect(data.days.map(([d]) => d)).toContain(ago(20));
+});
+
+it("shows the API keys group after Credentials", async () => {
+  const { m } = await open();
+  const all = m.all();
+  const at = (pred: (n: Node) => boolean) => all.findIndex(pred);
+  const creds = at((n) => n.type === "h4" && textOf(n) === en("settings.usage.credentials.group"));
+  const keys = at((n) => n.type === ApiKeysSection);
+  const footer = at((n) => n.type === "h4" && textOf(n) === en("settings.usage.footerGroup"));
+  expect(creds).toBeGreaterThan(-1);
+  expect(keys).toBeGreaterThan(creds);
+  expect(footer).toBeGreaterThan(keys);
 });
