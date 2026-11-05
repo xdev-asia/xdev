@@ -1142,6 +1142,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn an_existing_worktree_runs_the_precheck_there_then_asks_the_ui() {
         let r = rig();
         r.ready();
@@ -1213,6 +1214,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_new_run_per_tick_gets_its_own_worktree_after_the_precheck_in_the_repo() {
         let r = rig();
         r.ready();
@@ -1288,6 +1290,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_failing_precheck_skips_the_run_and_keeps_its_result() {
         let r = rig();
         r.ready();
