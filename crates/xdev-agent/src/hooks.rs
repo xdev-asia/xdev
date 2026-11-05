@@ -32,6 +32,12 @@ use serde_json::json;
 use crate::profiles::Cli;
 use crate::version::CliVersion;
 
+mod question;
+pub use question::{
+    HookQuestion, LABEL_MAX, NOTE_MAX, OPTIONS_MAX, QUESTION_MAX, QuestionKind, QuestionOption,
+    question_of,
+};
+
 /// The folder under `local_dir` that holds one `<pty_id>.jsonl` per pane.
 pub const HOOKS_DIR: &str = "hooks";
 
@@ -121,6 +127,11 @@ pub struct HookDetail {
     /// A short preview of what the tool works on (a command's first line, or
     /// a path, pattern or url). Never the whole tool input.
     pub tool_input: Option<String>,
+    /// The question a `needs-input` stopped on, when the hook said it. Left
+    /// out when absent, so lines without it read and write as before.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub question: Option<HookQuestion>,
 }
 
 /// The longest string a [`HookDetail`] field keeps, in chars.
@@ -187,7 +198,7 @@ pub const LINE_MAX: usize = 4096;
 /// `append_hook` with the stdin fields kept. Each string is cut at
 /// [`DETAIL_MAX`] chars and an empty detail is left out; if the line would
 /// still pass [`LINE_MAX`] bytes, the tool input, then the message, then the
-/// whole detail go.
+/// question, then the whole detail go.
 /// `session` is kept only when [`valid_session_id`].
 ///
 /// A `needs-input` within [`REPEAT_MS`] of a `needs-input` that is the
@@ -238,6 +249,12 @@ pub fn append_hook_detail(
         line = serde_json::to_string(&hook)?;
     }
     if line.len() >= LINE_MAX {
+        if let Some(d) = hook.detail.as_mut() {
+            d.question = None;
+        }
+        line = serde_json::to_string(&hook)?;
+    }
+    if line.len() >= LINE_MAX {
         hook.detail = None;
         line = serde_json::to_string(&hook)?;
     }
@@ -280,6 +297,7 @@ impl HookDetail {
             is_interrupt: self.is_interrupt,
             error: clip(self.error),
             tool_input: clip(self.tool_input),
+            question: self.question,
         }
     }
 }
@@ -798,6 +816,7 @@ mod tests {
             is_interrupt: false,
             error: Some("  ".into()),
             tool_input: None,
+            question: None,
         };
         append_hook_detail(dir.path(), ID, HookEvent::TurnDone, 1, Some(detail), None).unwrap();
         append_hook_detail(
@@ -864,6 +883,7 @@ mod tests {
             is_interrupt: true,
             error: Some(wide.clone()),
             tool_input: Some(wide.clone()),
+            question: None,
         };
         append_hook_detail(dir.path(), ID, HookEvent::TurnFailed, 1, Some(detail), None).unwrap();
         let text = fs::read_to_string(hook_file(dir.path(), ID).unwrap()).unwrap();
@@ -907,5 +927,60 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(append_hook(dir.path(), "../x", HookEvent::Prompt, 1).is_err());
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    fn ask_detail() -> HookDetail {
+        let text = include_str!("../fixtures/hooks/claude-ask-user-question.json");
+        let input: serde_json::Map<String, serde_json::Value> = serde_json::from_str(text).unwrap();
+        HookDetail {
+            tool_name: Some("AskUserQuestion".into()),
+            question: question_of(&input),
+            ..HookDetail::default()
+        }
+    }
+
+    #[test]
+    fn a_question_round_trips_through_the_hook_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let detail = ask_detail();
+        append_hook_detail(
+            dir.path(),
+            ID,
+            HookEvent::NeedsInput,
+            1,
+            Some(detail.clone()),
+            None,
+        )
+        .unwrap();
+        let lines = read_lines(dir.path());
+        assert_eq!(lines[0].detail.as_ref(), Some(&detail));
+        let q = lines[0].detail.as_ref().unwrap().question.as_ref().unwrap();
+        assert_eq!(q.options.len(), 3);
+        let text = fs::read_to_string(hook_file(dir.path(), ID).unwrap()).unwrap();
+        assert!(text.contains(r#""question":{"kind":"choice""#), "{text}");
+    }
+
+    #[test]
+    fn a_detail_without_a_question_writes_no_question_key() {
+        let text = serde_json::to_string(&HookDetail::default()).unwrap();
+        assert!(!text.contains("question"), "{text}");
+    }
+
+    #[test]
+    fn an_oversized_question_goes_before_the_whole_detail() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut detail = ask_detail();
+        let wide = "\u{1}".repeat(QUESTION_MAX);
+        if let Some(q) = detail.question.as_mut() {
+            q.text = wide.clone();
+            for o in &mut q.options {
+                o.label = wide.clone();
+            }
+        }
+        append_hook_detail(dir.path(), ID, HookEvent::NeedsInput, 1, Some(detail), None).unwrap();
+        let line = &read_lines(dir.path())[0];
+        let d = line.detail.as_ref().unwrap();
+        assert_eq!(d.question, None);
+        assert_eq!(d.tool_name.as_deref(), Some("AskUserQuestion"));
     }
 }

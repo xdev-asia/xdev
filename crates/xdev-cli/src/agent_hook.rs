@@ -15,7 +15,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clap::ValueEnum;
 use serde_json::Value;
-use xdev_agent::{HOOKS_DIR, HookDetail, HookEvent, append_hook_detail, hooks_off, valid_pty_id};
+use xdev_agent::{
+    HOOKS_DIR, HookDetail, HookEvent, append_hook_detail, hooks_off, question_of, valid_pty_id,
+};
 
 /// The events a hook reports, as written on the command line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -170,7 +172,8 @@ fn text(map: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
 }
 
 /// The whitelisted hook stdin fields. `last_assistant_message` stands in for
-/// `message` on `turn-done` (claude and codex `Stop`).
+/// `message` on `turn-done` (claude and codex `Stop`). A `needs-input` keeps
+/// the question it stopped on (`question_of`).
 fn stdin_detail(event: Event, input: &serde_json::Map<String, Value>) -> HookDetail {
     let mut message = text(input, "message");
     if message.is_none() && event == Event::TurnDone {
@@ -188,6 +191,9 @@ fn stdin_detail(event: Event, input: &serde_json::Map<String, Value>) -> HookDet
             .get("tool_input")
             .and_then(Value::as_object)
             .and_then(tool_input_preview),
+        question: (event == Event::NeedsInput)
+            .then(|| question_of(input))
+            .flatten(),
     }
 }
 
@@ -302,5 +308,14 @@ rm x", "path": "p" }));
         let d = stdin_detail(Event::Resume, &m);
         assert_eq!(d.tool_input, None);
         assert!(!format!("{d:?}").contains("SECRET"));
+    }
+
+    #[test]
+    fn only_needs_input_keeps_the_question() {
+        let text = include_str!("../../xdev-agent/fixtures/hooks/claude-ask-user-question.json");
+        let m: serde_json::Map<String, Value> = serde_json::from_str(text).unwrap();
+        let q = stdin_detail(Event::NeedsInput, &m).question.unwrap();
+        assert_eq!(q.options.len(), 3);
+        assert_eq!(stdin_detail(Event::Resume, &m).question, None);
     }
 }
