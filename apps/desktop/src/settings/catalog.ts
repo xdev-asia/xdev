@@ -39,6 +39,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("general.restore", "layout.setting", ["restore", "layout", "session", "reopen", "khôi phục", "khoi phuc", "bố cục", "bo cuc"], "layout.setting.hint"),
   only(["win"], e("general.minimizeToTray", "settings.general.minimizeToTray", ["tray", "minimize", "close", "background", "notification area", "khay", "thu nhỏ", "thu nho", "đóng", "dong", "nền", "nen"], "settings.general.minimizeToTrayHint")),
   only(["mac"], e("general.menuBarIcon", "settings.general.menuBarIcon", ["menu bar", "tray", "icon", "status", "thanh menu", "biểu tượng", "bieu tuong"], "settings.general.menuBarIconHint")),
+  only(["mac"], e("general.notchStatus", "settings.general.notchStatus", ["notch", "status", "agent", "waiting", "always on top", "tai thỏ", "tai tho", "trạng thái", "trang thai", "tác tử", "tac tu"], "settings.general.notchStatusHint")),
   e("general.openIn", "settings.general.openIn", ["open in", "apps", "ide", "mở bằng", "mo bang", "ứng dụng", "ung dung"]),
   e("general.updates", "settings.general.updates", ["update", "version", "upgrade", "check", "restart", "cập nhật", "cap nhat", "phiên bản", "phien ban", "kiểm tra", "kiem tra"], "settings.general.updates.idle"),
   e("general.updateChannel", "settings.general.updates.channel", ["update", "channel", "release candidate", "rc", "stable", "beta", "kênh", "kenh", "ổn định", "on dinh", "thử nghiệm", "thu nghiem"], "settings.general.updates.channelHint"),

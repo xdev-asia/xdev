@@ -1,0 +1,89 @@
+/* The status strip at the notch. Tokens only; a dark strip that reads as part of the notch. */
+
+.notch-page,
+.notch-page body {
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.notch {
+  display: flex;
+  justify-content: center;
+  height: 100vh;
+}
+
+.notch-hit {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 24px;
+  padding: 0 var(--x-space-3);
+  border: 1px solid var(--line);
+  border-radius: 0 0 var(--radius-l) var(--radius-l);
+  background: var(--bg-0);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.notch:not([data-notch]) .notch-hit {
+  border-radius: var(--radius-l);
+  justify-content: center;
+  gap: var(--x-space-2);
+}
+
+.notch[data-notch] .notch-hit {
+  border-top: 0;
+}
+
+.notch-hit:focus-visible {
+  outline: 2px solid var(--x-color-focus);
+  outline-offset: -2px;
+}
+
+.notch-wing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x-space-2);
+  min-width: 0;
+}
+
+.notch[data-notch] .notch-wing {
+  flex: 1;
+}
+
+.notch[data-notch] .notch-right {
+  justify-content: flex-end;
+}
+
+.notch-gap {
+  flex: none;
+}
+
+.notch-text,
+.notch-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notch-detail {
+  color: var(--text-2);
+}
+
+.notch[data-kind="needs-you"] .notch-hit {
+  border-color: var(--warn);
+}
+
+.notch[data-kind="failed"] .notch-hit {
+  border-color: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notch * {
+    animation: none;
+    transition: none;
+  }
+}
