@@ -115,3 +115,18 @@ it("the hover card shows title, agent, status and folder", () => {
   expect(card.props.role).toBe("tooltip");
   expect(card.props.id).toBe("c1");
 });
+
+it("a tab with a note shows a named dot; one without shows none", async () => {
+  const { TabStrip } = await import("./TabStrip");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const tab = (id: string) => ({ id, worktree: "/w", profileId: "claude", account: null, status: "idle", agent: true, cli: "claude", unread: false, pinned: false, color: "none", title: null, permissions: "ask" }) as never;
+  const props = {
+    pane: "p1", items: [{ id: "a", tab: tab("a") }, { id: "b", tab: tab("b") }], active: "a", groups: [], menuOpen: false,
+    onSelect() {}, onClose() {}, onCloseOthers() {}, onCloseToRight() {}, onLaunch() {}, onSplit() {}, onMoveToSplit() {}, onPin() {}, onCopyTabId() {},
+    onChangeTitle() {}, onColor() {}, onRename() {}, onMenu() {},
+  };
+  const html = renderToStaticMarkup(<TabStrip {...props} noteTabs={new Set(["a"])} onNote={() => {}} />);
+  expect(html.match(/class="ws-tab-note"/g)).toHaveLength(1);
+  expect(html).toContain('aria-label="Has a note"');
+  expect(renderToStaticMarkup(<TabStrip {...props} />)).not.toContain("ws-tab-note");
+});

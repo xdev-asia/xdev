@@ -179,3 +179,31 @@ it("Equalize and Expand need more than one pane", () => {
   expect(showsPaneLayout(1)).toBe(false);
   expect(showsPaneLayout(2)).toBe(true);
 });
+
+it("Sticky note and the Header chips submenu sit before Clear; each chip row shows its state and toggles it", () => {
+  const calls: string[] = [];
+  const { ctx } = setup();
+  const items = terminalMenuItems({
+    ...ctx,
+    openNote: () => calls.push("note"),
+    chips: { prefs: { quota: true, context: false, timer: true }, toggle: (k) => calls.push(`toggle:${k}`) },
+  });
+  const ids = items.map((i) => (i.kind === "separator" ? "-" : i.id));
+  expect(ids.slice(ids.indexOf("copyPaneId") + 1, ids.indexOf("clear"))).toEqual(["-", "stickyNote", "headerChips", "-"]);
+  const note = items.find((i) => i.id === "stickyNote")!;
+  expect(note.labelKey).toBe("notes.menu.open");
+  note.run!();
+  const rows = items.find((i) => i.id === "headerChips")!.children!;
+  expect(rows.map((r) => [r.labelKey, r.checked])).toEqual([
+    ["paneChips.menu.quota", true],
+    ["paneChips.menu.context", false],
+    ["paneChips.menu.timer", true],
+  ]);
+  rows[1].run!();
+  expect(calls).toEqual(["note", "toggle:context"]);
+});
+
+it("without a note or chips context the menu has neither", () => {
+  const { items } = setup();
+  expect(items.some((i) => i.id === "stickyNote" || i.id === "headerChips")).toBe(false);
+});

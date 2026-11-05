@@ -29,6 +29,11 @@ import { handoffPrompt, sourceFirstPrompt } from "@/agentSessions/handoff";
 import { HandOffDialog, type HandOffChoice } from "@/agentSessions/HandOffDialog";
 import { sendToOpenedTab } from "./agentPrompt";
 import { pushToast } from "./toastStore";
+import { chipPrefs, setChip } from "@/terminal/chips/chipPrefs";
+import { NoteEditor, type NoteTarget } from "@/notes/NoteEditor";
+import { NotesLibrary } from "@/notes/NotesLibrary";
+import { hasText, pasteNote } from "@/notes/noteModel";
+import { useNotes } from "@/notes/notesStore";
 import { showsPaneLayout, terminalMenuItems } from "@/terminal/terminalMenu";
 import { registerTerminal } from "@/terminal/terminalRegistry";
 import { LaunchOptionsDialog, type LaunchChoice } from "@/agentLaunch/LaunchOptionsDialog";
@@ -162,6 +167,12 @@ export function WorktreeTabs(props: {
   const [titling, setTitling] = useState<string | null>(null);
   // The hand off dialog: the source tab and its terminal text, read when the menu item was picked.
   const [handingOff, setHandingOff] = useState<{ id: string; lines: string[] } | null>(null);
+  // The sticky note dialog (a tab id) and the notes library.
+  const [noting, setNoting] = useState<NoteTarget | null>(null);
+  const noteTarget = (tab: Tab): NoteTarget => ({ tab: tab.id, worktree, title: tab.title ?? profileName(view, tab.profileId, t) });
+  const [library, setLibrary] = useState(false);
+  const { state: noteState, store: noteStore } = useNotes(api);
+  const noteTabs = new Set([...noteState.byTab].filter(([, n]) => hasText(n)).map(([id]) => id));
   const [termMenu, setTermMenu] = useState<{ id: string; at: { x: number; y: number }; handle: TerminalHandle } | null>(null);
   // The action menu of a terminal link (a plain click on a path or a URL).
   const [linkMenu, setLinkMenu] = useState<{ at: { x: number; y: number }; items: MenuItem[]; title: string } | null>(null);
@@ -693,6 +704,26 @@ export function WorktreeTabs(props: {
   }
 
   // The right-click menu of a terminal: its handle acts on the xterm, the rest on the tab and its pane.
+  // Tabs of every worktree whose pty runs: only their notes can be sent.
+  const liveTabIds = (): Set<string> =>
+    new Set(sessions.worktrees().flatMap((w) => sessions.tabs(w)).filter((x) => !x.asleep && x.exitCode === undefined).map((x) => x.id));
+
+  // Types a note into a tab's terminal as one paste, without Enter; the toast says how it went.
+  async function sendNote(id: string, body: string): Promise<void> {
+    const target = [...sessions.worktrees()].flatMap((w) => sessions.tabs(w)).find((x) => x.id === id);
+    const name = target ? (target.title ?? profileName(view, target.profileId, t)) : id;
+    if (!target || target.asleep || target.exitCode !== undefined) {
+      pushToast({ text: t("notes.sendFailed") });
+      return;
+    }
+    try {
+      await api.ptyWrite(id, new TextEncoder().encode(pasteNote(body)));
+      pushToast({ text: t("notes.sent", { name }) });
+    } catch {
+      pushToast({ text: t("notes.sendFailed") });
+    }
+  }
+
   const termMenuItems = (tab: Tab, handle: TerminalHandle) => {
     const pane = layout ? paneOf(layout, tab.id) : null;
     const profile = profileName(view, tab.profileId, t);
@@ -726,6 +757,8 @@ export function WorktreeTabs(props: {
         if (id) void copyText(id).then((ok) => pushToast({ text: t(ok ? "termMenu.copied" : "termMenu.copyFailed") }));
       },
       copyTerminalId: () => void copyText(tab.id),
+      openNote: () => setNoting(noteTarget(tab)),
+      chips: { prefs: chipPrefs(), toggle: (kind) => setChip(kind, !chipPrefs()[kind]) },
       copyPaneId: () => pane && void copyText(pane),
       quickCommands: quickCommandsSubmenu(
         buildSections(quick, quickFile, "", { hasTerminal: tab.exitCode === undefined, profiles: view ? view.profiles.map((p) => p.profile.id) : null }),
@@ -833,6 +866,10 @@ export function WorktreeTabs(props: {
         onColor={(id, color) => sessions.setColor(id, color)}
         onRename={(id, name) => sessions.rename(id, name)}
         onShowHistory={props.onShowHistory}
+        api={api}
+        noteTabs={noteTabs}
+        onNote={(id) => byId.has(id) && setNoting(noteTarget(byId.get(id)!))}
+        onNotesLibrary={() => setLibrary(true)}
         trailing={
           <>
           {markdownFile(fileTabRel(leaf.active ?? "")) && (
@@ -1059,6 +1096,44 @@ export function WorktreeTabs(props: {
             setHandingOff(null);
           }}
           onCancel={() => setHandingOff(null)}
+        />
+      )}
+      {noting && (
+        <NoteEditor
+          key={noting.tab}
+          store={noteStore}
+          target={noting}
+          note={noteState.byTab.get(noting.tab) ?? null}
+          onClose={() => setNoting(null)}
+          onSend={
+            liveTabIds().has(noting.tab)
+              ? async (body) => {
+                  const id = noting.tab;
+                  setNoting(null);
+                  await sendNote(id, body);
+                }
+              : undefined
+          }
+          onLibrary={() => {
+            setNoting(null);
+            setLibrary(true);
+          }}
+        />
+      )}
+      {library && (
+        <NotesLibrary
+          notes={[...noteState.byTab.values()]}
+          liveTabs={liveTabIds()}
+          onEdit={(n) => {
+            setLibrary(false);
+            setNoting({ tab: n.tab, worktree: n.worktree, title: n.title });
+          }}
+          onSend={(n) => {
+            setLibrary(false);
+            void sendNote(n.tab, n.body);
+          }}
+          onDelete={(n) => void noteStore.remove(n.tab)}
+          onClose={() => setLibrary(false)}
         />
       )}
       {titling && byId.get(titling) && (

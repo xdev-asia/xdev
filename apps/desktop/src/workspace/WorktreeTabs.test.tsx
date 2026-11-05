@@ -506,7 +506,7 @@ it("a tab context menu offers the SCR-14 items at the pointer", () => {
   expect(menuOf(view)!.props.at).toEqual({ x: 10, y: 20 });
   const items = menuOf(view)!.props.items as MenuNode[];
   expect(items.map((i) => (i.kind === "separator" ? "-" : i.id))).toEqual([
-    "splitRight", "splitDown", "moveToSplit", "-", "pin", "copyTabId", "-", "changeTitle", "color", "-", "close", "closeOthers", "closeToRight", "closeAll",
+    "splitRight", "splitDown", "moveToSplit", "-", "pin", "copyTabId", "-", "changeTitle", "color", "-", "close", "closeOthers", "closeToRight", "closeAll", "-", "note", "notes-library",
   ]);
 });
 
