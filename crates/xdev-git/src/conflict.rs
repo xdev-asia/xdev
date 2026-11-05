@@ -48,6 +48,48 @@ pub struct ConflictState {
     pub entries: Vec<ConflictEntry>,
 }
 
+/// A submodule's mode in git's records.
+const GITLINK: &str = "160000";
+/// The mode git gives a side that has no file.
+const NO_FILE: &str = "000000";
+
+/// The `u` records of `git status --porcelain=v2 -z`, in git's order. A
+/// submodule conflict (any mode `160000`) is skipped. Records are split on
+/// NUL and the path is whatever follows the tenth field, so spaces and
+/// newlines in it are kept.
+pub(crate) fn parse_unmerged_v2(out: &[u8]) -> Vec<ConflictEntry> {
+    let mut entries = Vec::new();
+    let mut records = out.split(|b| *b == 0).filter(|r| !r.is_empty());
+    while let Some(record) = records.next() {
+        let record = String::from_utf8_lossy(record);
+        match record.as_bytes().first() {
+            // A rename or copy: its old path is the next field.
+            Some(b'2') => {
+                records.next();
+            }
+            Some(b'u') => entries.extend(unmerged_record(&record)),
+            _ => {}
+        }
+    }
+    entries
+}
+
+/// `u <XY> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>`.
+fn unmerged_record(record: &str) -> Option<ConflictEntry> {
+    let fields: Vec<&str> = record.splitn(11, ' ').collect();
+    let [_, xy, _, m1, m2, m3, mw, _, _, _, path] = fields.as_slice() else {
+        return None;
+    };
+    if [m1, m2, m3, mw].iter().any(|m| **m == GITLINK) || path.is_empty() {
+        return None;
+    }
+    Some(ConflictEntry {
+        path: (*path).to_owned(),
+        kind: ConflictKind::from_xy(xy)?,
+        present: *mw != NO_FILE,
+    })
+}
+
 /// What each side did to an unmerged path, from git's two status letters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -201,7 +243,20 @@ impl Repo {
 
     /// Every unmerged path with what each side did to it, sorted by path.
     pub fn conflict_entries(&self) -> Result<Vec<ConflictEntry>, GitError> {
-        Ok(Vec::new())
+        self.unmerged_entries(None)
+    }
+
+    /// The `u` records of the whole repo, or of one path; from the top
+    /// folder, so the paths match `unmerged`.
+    fn unmerged_entries(&self, path: Option<&str>) -> Result<Vec<ConflictEntry>, GitError> {
+        let mut args = vec!["status", "--porcelain=v2", "-z", "--untracked-files=no"];
+        if let Some(path) = path {
+            args.extend(["--", path]);
+        }
+        let out = run::run(&self.root(), &args, None)?;
+        let mut entries = parse_unmerged_v2(&out);
+        entries.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(entries)
     }
 
     /// Settles one conflicted file. `path` is read again first: a path that
@@ -286,4 +341,103 @@ impl Repo {
 
 fn short(id: &str) -> String {
     id.chars().take(7).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ID: &str = "78981922613b2afb6025042ff6bd878ac1994e85";
+    const ZERO: &str = "0000000000000000000000000000000000000000";
+
+    /// One `u` record of `git status --porcelain=v2 -z`.
+    fn record(xy: &str, modes: [&str; 4], path: &str) -> String {
+        let [m1, m2, m3, mw] = modes;
+        format!("u {xy} N... {m1} {m2} {m3} {mw} {ID} {ID} {ID} {path}\0")
+    }
+
+    const FILE: [&str; 4] = ["100644", "100644", "100644", "100644"];
+
+    #[test]
+    fn parse_unmerged_v2_maps_every_xy() {
+        let pairs = [
+            ("UU", ConflictKind::BothModified),
+            ("AA", ConflictKind::BothAdded),
+            ("DD", ConflictKind::BothDeleted),
+            ("AU", ConflictKind::AddedByUs),
+            ("UA", ConflictKind::AddedByThem),
+            ("DU", ConflictKind::DeletedByUs),
+            ("UD", ConflictKind::DeletedByThem),
+        ];
+        let mut out = String::new();
+        // Ordinary and renamed records around the `u` ones are skipped; a
+        // rename carries its old path as one more field.
+        out.push_str(&format!(
+            "1 .M N... 100644 100644 100644 {ID} {ID} plain.txt\0"
+        ));
+        out.push_str(&format!(
+            "2 R. N... 100644 100644 100644 {ID} {ID} R100 new name.txt\0old name.txt\0"
+        ));
+        for (i, (xy, _)) in pairs.iter().enumerate() {
+            out.push_str(&record(xy, FILE, &format!("dir/f {i}.txt")));
+        }
+        let entries = parse_unmerged_v2(out.as_bytes());
+        let kinds: Vec<_> = entries.iter().map(|e| e.kind).collect();
+        assert_eq!(kinds, pairs.map(|(_, k)| k));
+        assert_eq!(entries[0].path, "dir/f 0.txt");
+        assert!(entries.iter().all(|e| e.present));
+        assert_eq!(ConflictKind::from_xy("M."), None);
+    }
+
+    #[test]
+    fn parse_unmerged_v2_keeps_spaces_and_newlines_in_paths() {
+        let out = record("UU", FILE, "a b\nc.txt");
+        assert_eq!(parse_unmerged_v2(out.as_bytes())[0].path, "a b\nc.txt");
+    }
+
+    #[test]
+    fn parse_unmerged_v2_skips_submodules() {
+        let mut out = record("UU", ["160000", "160000", "160000", "160000"], "sub");
+        out.push_str(&record(
+            "UD",
+            ["100644", "160000", "000000", "160000"],
+            "mixed",
+        ));
+        out.push_str(&record("UU", FILE, "file.txt"));
+        let paths: Vec<_> = parse_unmerged_v2(out.as_bytes())
+            .into_iter()
+            .map(|e| e.path)
+            .collect();
+        assert_eq!(paths, ["file.txt"]);
+    }
+
+    #[test]
+    fn parse_unmerged_v2_marks_absent_worktree_file() {
+        let out = format!(
+            "u DD N... 100644 000000 000000 000000 {ID} {ZERO} {ZERO} gone.txt\0{}",
+            record("UD", FILE, "here.txt")
+        );
+        let entries = parse_unmerged_v2(out.as_bytes());
+        assert_eq!(
+            entries,
+            [
+                ConflictEntry {
+                    path: "gone.txt".into(),
+                    kind: ConflictKind::BothDeleted,
+                    present: false,
+                },
+                ConflictEntry {
+                    path: "here.txt".into(),
+                    kind: ConflictKind::DeletedByThem,
+                    present: true,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_unmerged_v2_ignores_a_short_record() {
+        assert!(parse_unmerged_v2(b"u UU N... 100644\0").is_empty());
+        assert!(parse_unmerged_v2(b"").is_empty());
+    }
 }

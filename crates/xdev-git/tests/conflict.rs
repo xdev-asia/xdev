@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Command;
 
 use tempfile::TempDir;
-use xdev_git::{ConflictOp, GitError, Repo};
+use xdev_git::{ConflictKind, ConflictOp, GitError, Repo};
 
 /// Runs setup commands; never used for the code under test.
 fn git(dir: &Path, args: &[&str]) -> String {
@@ -297,4 +297,55 @@ fn conflict_state_still_lists_files() {
     let json = serde_json::to_value(&state).unwrap();
     assert_eq!(json["files"], serde_json::json!(["f.txt"]));
     assert!(json["entries"].is_array());
+}
+
+#[test]
+fn conflict_entries_reports_both_modified_and_deleted_by_them() {
+    let (dir, repo) = fixture();
+    let root = dir.path();
+    // `topic` deletes `g.txt`, which `main` changes; both change `f.txt`.
+    git(root, &["checkout", "-q", "main~1"]);
+    write_commit(root, "g.txt", "g\n", "add g");
+    let base = git(root, &["rev-parse", "HEAD"]);
+    git(root, &["branch", "-f", "topic2", &base]);
+    git(root, &["checkout", "-q", "topic2"]);
+    write_commit(root, "f.txt", "topic2\n", "f on topic2");
+    git(root, &["rm", "-q", "g.txt"]);
+    git(root, &["commit", "-q", "-m", "drop g"]);
+    git(root, &["checkout", "-q", "-B", "mine", &base]);
+    write_commit(root, "f.txt", "mine\n", "f on mine");
+    write_commit(root, "g.txt", "g changed\n", "g on mine");
+    git_conflicts(root, &["merge", "topic2"]);
+
+    let entries = repo.conflict_entries().unwrap();
+    let got: Vec<_> = entries
+        .iter()
+        .map(|e| (e.path.as_str(), e.kind, e.present))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("f.txt", ConflictKind::BothModified, true),
+            ("g.txt", ConflictKind::DeletedByThem, true),
+        ]
+    );
+    let state = repo.conflict_state().unwrap().unwrap();
+    assert_eq!(state.entries, entries);
+    assert_eq!(state.files, ["f.txt", "g.txt"]);
+}
+
+#[test]
+fn conflict_entries_are_relative_to_the_top_folder() {
+    let (dir, _) = fixture();
+    let root = dir.path();
+    git_conflicts(root, &["merge", "topic"]);
+    fs::create_dir(root.join("sub")).unwrap();
+    let repo = Repo::discover(&root.join("sub")).unwrap();
+    let paths: Vec<_> = repo
+        .conflict_entries()
+        .unwrap()
+        .into_iter()
+        .map(|e| e.path)
+        .collect();
+    assert_eq!(paths, ["f.txt"]);
 }
