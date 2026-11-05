@@ -603,6 +603,9 @@ pub struct EditorSettings {
     pub autosave_ms: u32,
     /// 8..=32.
     pub font_size: u32,
+    /// Empty follows the terminal font family.
+    pub font_family: String,
+    /// On by default; a stored `false` stays false.
     pub word_wrap: bool,
     /// Spaces for a new indent, 1..=8.
     pub tab_size: u32,
@@ -614,7 +617,8 @@ impl Default for EditorSettings {
             autosave: false,
             autosave_ms: 1000,
             font_size: 13,
-            word_wrap: false,
+            font_family: String::new(),
+            word_wrap: true,
             tab_size: 4,
         }
     }
@@ -631,6 +635,7 @@ impl EditorSettings {
         self.autosave_ms = within(self.autosave_ms, &Self::AUTOSAVE_MS);
         self.font_size = within(self.font_size, &Self::FONT_SIZE);
         self.tab_size = within(self.tab_size, &Self::TAB_SIZE);
+        self.font_family = clean_ui_font(&self.font_family);
         self
     }
 }
@@ -2666,6 +2671,7 @@ then sum up"
             autosave: true,
             autosave_ms: 2500,
             font_size: 15,
+            font_family: String::new(),
             word_wrap: true,
             tab_size: 2,
         };
@@ -3210,10 +3216,35 @@ then sum up"
             autosave: true,
             autosave_ms: 250,
             font_size: 32,
+            font_family: "Fira Code".into(),
             word_wrap: true,
             tab_size: 8,
         };
         assert_eq!(fine.clone().clamped(), fine);
+    }
+
+    #[test]
+    fn editor_font_family_is_cleaned() {
+        let s = EditorSettings {
+            font_family: "  Fira\u{7} Code  ".into(),
+            ..EditorSettings::default()
+        }
+        .clamped();
+        assert_eq!(s.font_family, "Fira Code");
+        assert_eq!(EditorSettings::default().font_family, "");
+    }
+
+    #[test]
+    fn word_wrap_defaults_on() {
+        assert!(EditorSettings::default().word_wrap);
+        let s: EditorSettings = serde_json::from_str(r#"{ "tabSize": 2 }"#).unwrap();
+        assert!(s.word_wrap);
+    }
+
+    #[test]
+    fn a_stored_false_wrap_stays_false() {
+        let s: EditorSettings = serde_json::from_str(r#"{ "wordWrap": false }"#).unwrap();
+        assert!(!s.word_wrap);
     }
 
     /// `EDITOR_DEFAULTS` and `EDITOR_LIMITS` in the UI match Rust.

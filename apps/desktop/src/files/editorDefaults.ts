@@ -6,7 +6,8 @@ export const EDITOR_DEFAULTS: EditorSettings = {
   autosave: false,
   autosaveMs: 1000,
   fontSize: 13,
-  wordWrap: false,
+  fontFamily: "",
+  wordWrap: true,
   tabSize: 4,
 };
 
