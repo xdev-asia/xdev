@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { PROVIDERS, toApiError, type Account, type Accounts, type Api, type ApiError, type Provider, type Quota } from "@/api";
 import { useI18n } from "@/i18n";
 import { COMPACT, ProblemNote } from "./ChangesPanel";
+import { loginAction, statusBadge } from "./accountStatus";
 import { RoutingRules } from "./RoutingRules";
 
 type State = Quota["state"];
@@ -15,11 +16,7 @@ const RANK: Record<State, number> = { ok: 0, reserve: 1, unknown: 2, full: 3 };
 // Above this many accounts the table is the default layout.
 const TABLE_FROM = 9;
 
-/** The sign-in badge: a login whose quota read says it expired needs signing in again. */
-export function statusBadge(account: Account, quota: Quota | undefined): { key: string; state: string } {
-  if (account.status.state === "logged_in" && quota?.reason === "expired") return { key: "accounts.status.reauth", state: "reauth" };
-  return { key: `accounts.status.${account.status.state}`, state: account.status.state };
-}
+export { statusBadge };
 
 function minutesUntil(at: string | null | undefined): number | null {
   if (!at) return null;
@@ -208,8 +205,8 @@ export function AccountsView({ api }: { api: Api }) {
     </div>;
   }
   function loginButton(account: Account) {
-    const quota = quotaOf(account);
-    return (account.status.state !== "logged_in" || quota?.reason === "expired") && <Button type="button" style={COMPACT} disabled={busy} onClick={() => run(() => login(account.name))}>{t("accounts.login")}</Button>;
+    const action = loginAction(account, quotaOf(account));
+    return action && <Button type="button" style={COMPACT} disabled={busy} data-action="sign-in" onClick={() => run(() => login(account.name))}>{t(action.key)}</Button>;
   }
   const isActive = (account: Account) => accounts?.active.some(a => a.provider === account.provider && a.name === account.name) ?? false;
   // "Use this account" on the others, "Use CLI default" on the active one (it clears the choice for its provider).
@@ -277,11 +274,13 @@ export function AccountsView({ api }: { api: Api }) {
   }
   function row(account: Account) {
     const state = stateOf(account);
+    const quota = quotaOf(account);
+    const badge = statusBadge(account, quota);
     return [
       <div role="row" className="account-tr" key={account.name} data-state={state}>
         <div role="cell" className="account-cell-name">
           <span className="account-dot" data-state={state} aria-hidden="true" />
-          <span className="account-name-text"><strong>{account.name}</strong>{activeChip(account)}<span className="doc-path">{who(account) || t(`accounts.status.${account.status.state}`)}</span></span>
+          <span className="account-name-text"><strong>{account.name}</strong>{activeChip(account)}<span className="doc-path">{who(account) || t(`accounts.status.${account.status.state}`)}</span>{badge.state === "reauth" && <><span className="badge" data-state={badge.state}>{t(badge.key)}</span><span className="doc-path account-reason">{t("accounts.reason.expired")}</span></>}</span>
         </div>
         <div role="cell"><span className="badge account-provider" data-provider={account.provider}>{t(`accounts.provider.${account.provider}`)}</span></div>
         {cell(account, "five_hour")}

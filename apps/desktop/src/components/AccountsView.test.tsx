@@ -273,7 +273,7 @@ describe("sign-in-again badge", () => {
   const quota = (reason: string | null, state: "ok" | "unknown" = "unknown") => ({ name: "claude-2", state, reason, windows: [], asOf: null }) as never;
 
   it("reads sign in again for a signed-in account with an expired quota", () => {
-    expect(statusBadge(account("logged_in"), quota("expired"))).toEqual({ key: "accounts.status.reauth", state: "reauth" });
+    expect(statusBadge(account("logged_in"), quota("expired"))).toEqual({ key: "accounts.status.needsReauth", state: "reauth" });
     expect(statusBadge(account("logged_in"), quota(null, "ok"))).toEqual({ key: "accounts.status.logged_in", state: "logged_in" });
     expect(statusBadge(account("logged_in"), undefined)).toEqual({ key: "accounts.status.logged_in", state: "logged_in" });
     expect(statusBadge(account("logged_out"), quota("expired"))).toEqual({ key: "accounts.status.logged_out", state: "logged_out" });
@@ -285,8 +285,22 @@ describe("sign-in-again badge", () => {
     const view = harness(api); view.draw(); const cleanup = hooks.effects[0](); await tick();
     const html = view.html();
     expect(html).toContain('data-state="reauth"');
-    expect(html).toContain(translate("en", "accounts.status.reauth"));
+    expect(html).toContain(translate("en", "accounts.status.needsReauth"));
     expect(html).toContain(translate("en", "accounts.reason.expired"));
     if (typeof cleanup === "function") cleanup();
   });
+});
+
+it("Sign in again on a re-auth row runs the same login flow", async () => {
+  const api = createMockApi({});
+  const current = await api.accounts();
+  const first = current.accounts[0]!;
+  vi.spyOn(api, "accounts").mockResolvedValue({ ...current, accounts: [{ ...first, status: { ...first.status, state: "logged_in" } }] });
+  vi.spyOn(api, "quota").mockResolvedValue([{ name: first.name, state: "ok", reason: "expired", windows: [], asOf: null }] as never);
+  const login = vi.spyOn(api, "loginAccount").mockResolvedValue({ opened: true, command: "x" });
+  const view = harness(api); view.draw(); const cleanup = hooks.effects[0](); await tick();
+  expect(view.html()).toContain(translate("en", "accounts.status.needsReauth"));
+  await view.button(translate("en", "accounts.signInAgain")).props.onClick();
+  expect(login).toHaveBeenCalledWith(first.name);
+  if (typeof cleanup === "function") cleanup();
 });

@@ -19,6 +19,28 @@ export function usageMenuItems(usage: UsageSettings, put: (next: UsageSettings) 
   return items;
 }
 
+/** The settings with every footer meter off: the same switches Settings > Usage footer meters writes. */
+export function hiddenFooterSettings(usage: UsageSettings): UsageSettings {
+  return { ...usage, footer: { ...usage.footer, claude: false, codex: false } };
+}
+
+/** Turns every footer meter off, and once that is saved offers `announce` the way back: the earlier settings. */
+export function hideUsageSegment(usage: UsageSettings, put: (next: UsageSettings, saved?: () => void) => void, announce: (undo: () => void) => void): void {
+  put(hiddenFooterSettings(usage), () => announce(() => put(usage)));
+}
+
+/** The top of the right-click menu on the usage segment: hide it, or go to the accounts. */
+export function segmentMenuItems(hide: () => void, manage?: () => void): MenuItem[] {
+  const items: MenuItem[] = [{ id: "hide", labelKey: "usage.menu.hide", run: hide }];
+  if (manage) items.push({ id: "manage", labelKey: "usage.menu.manage", run: manage });
+  return items;
+}
+
+/** Shift+F10 and the context-menu key open the menu from the keyboard. */
+export function isMenuKey(e: { key: string; shiftKey: boolean }): boolean {
+  return e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey);
+}
+
 /** Whether the person hid the set-up link; false when nothing is saved or storage cannot be read. */
 export function loadEmptyCtaHidden(): boolean {
   try {

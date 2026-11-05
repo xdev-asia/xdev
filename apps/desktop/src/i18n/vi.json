@@ -3650,5 +3650,14 @@
   "tip.cliSkill.done": "Xong",
   "tip.cliSkill.label": "Mẹo: skill xDev",
   "keys.action.tab.closeAll": "Đóng tất cả tab",
-  "workspace.tabs.switcher": "Tab gần đây"
+  "workspace.tabs.switcher": "Tab gần đây",
+  "usage.menu.hide": "Ẩn khỏi thanh trạng thái",
+  "usage.menu.manage": "Quản lý tài khoản",
+  "usage.menu.label": "Đồng hồ mức dùng",
+  "usage.menu.hidden": "Đã ẩn mức dùng. Bật lại trong Cài đặt > Giao diện.",
+  "usage.menu.undo": "Hoàn tác",
+  "usage.popover.emptyHint": "Kết nối tài khoản Claude hoặc Codex để xem hạn mức tại đây.",
+  "usage.popover.connect": "Kết nối tài khoản",
+  "accounts.status.needsReauth": "Cần đăng nhập lại",
+  "accounts.signInAgain": "Đăng nhập lại"
 }
