@@ -66,6 +66,11 @@ fn day_matches(c: &ParsedCron, dt: &DateTime) -> bool {
     }
 }
 
+/// The first instant of local date `d` (later when midnight falls in a gap), epoch ms.
+fn day_start(d: Date, tz: &TimeZone) -> Option<i64> {
+    Some(d.to_zoned(tz.clone()).ok()?.timestamp().as_millisecond())
+}
+
 fn cron_next(c: &ParsedCron, tz: &TimeZone, from: i64, limit: i64) -> Option<i64> {
     let mut t = from.div_euclid(MINUTE_MS) * MINUTE_MS;
     if t < from {
@@ -75,7 +80,8 @@ fn cron_next(c: &ParsedCron, tz: &TimeZone, from: i64, limit: i64) -> Option<i64
         let dt = civil(t, tz)?;
         let (h, m) = (i64::from(dt.hour()), i64::from(dt.minute()));
         if !day_matches(c, &dt) {
-            t += (1440 - (h * 60 + m)) * MINUTE_MS;
+            // The next local midnight: a DST day is 23 or 25 hours, so not `1440 - minutes`.
+            t = day_start(dt.date().tomorrow().ok()?, tz)?;
         } else if c.hour >> h & 1 == 0 {
             t += (60 - m) * MINUTE_MS;
         } else if c.minute >> m & 1 == 0 {
@@ -93,7 +99,8 @@ fn cron_prev(c: &ParsedCron, tz: &TimeZone, from: i64, floor: i64) -> Option<i64
         let dt = civil(t, tz)?;
         let (h, m) = (i64::from(dt.hour()), i64::from(dt.minute()));
         if !day_matches(c, &dt) {
-            t -= (h * 60 + m + 1) * MINUTE_MS;
+            // The last minute of the previous local day.
+            t = day_start(dt.date(), tz)? - MINUTE_MS;
         } else if c.hour >> h & 1 == 0 {
             t -= (m + 1) * MINUTE_MS;
         } else if c.minute >> m & 1 == 0 {

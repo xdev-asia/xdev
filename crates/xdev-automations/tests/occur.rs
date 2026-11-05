@@ -193,3 +193,40 @@ fn an_unknown_zone_falls_back_to_the_system_zone() {
     assert_eq!((z.hour(), z.minute()), (9, 0));
     assert_eq!(got, next(r, "", "2026-11-05T00:00:00Z"));
 }
+
+#[test]
+fn a_cron_day_skip_lands_on_local_midnight_across_spring_forward() {
+    // Sunday 2026-03-08 has 23 hours in New York; Monday 00:30 must not be skipped.
+    let got = next(
+        "30 0 * * 1",
+        "America/New_York",
+        "2026-03-07T12:00:00-05:00",
+    );
+    assert_eq!(local(got, "America/New_York"), "2026-03-09T00:30:00");
+    // Walking back from Sunday lands on Saturday 23:30, not the week before.
+    let back = latest(
+        "30 23 * * 6",
+        "America/New_York",
+        "2026-03-08T10:00:00-04:00",
+    )
+    .unwrap();
+    assert_eq!(local(back, "America/New_York"), "2026-03-07T23:30:00");
+}
+
+#[test]
+fn a_cron_day_skip_lands_on_local_midnight_across_fall_back() {
+    // Sunday 2026-11-01 has 25 hours in New York.
+    let got = next(
+        "30 0 * * 1",
+        "America/New_York",
+        "2026-10-31T12:00:00-04:00",
+    );
+    assert_eq!(local(got, "America/New_York"), "2026-11-02T00:30:00");
+    let back = latest(
+        "30 23 * * 6",
+        "America/New_York",
+        "2026-11-01T10:00:00-05:00",
+    )
+    .unwrap();
+    assert_eq!(local(back, "America/New_York"), "2026-10-31T23:30:00");
+}
