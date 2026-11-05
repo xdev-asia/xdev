@@ -740,6 +740,8 @@ export interface Api {
   // Oldest first.
   squadEvents(id: string): Promise<SquadEvent[]>;
   pickFolder(): Promise<string | null>;
+  // A native dialog that takes one or more folders; empty when cancelled.
+  pickFolders(): Promise<string[]>;
   // A native file dialog limited to `extensions` (no dot); null when cancelled.
   pickFile(extensions: string[]): Promise<string | null>;
   // Imported terminal schemes (`xdev-terminal-theme` files under the data dir), by name.
@@ -1550,6 +1552,10 @@ const tauriApi: Api = {
   async pickFolder() {
     const picked = await open({ directory: true });
     return typeof picked === "string" ? picked : null;
+  },
+  async pickFolders() {
+    const picked = await open({ directory: true, multiple: true });
+    return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
   },
   async pickFile(extensions) {
     const picked = await open({ multiple: false, directory: false, filters: [{ name: "", extensions }] });
