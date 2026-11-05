@@ -307,6 +307,8 @@
   "accounts.noneBlocked": "No account with a known reset is blocked by its quota.",
   "error.no_codex": "Codex was not found. Install it and try again.",
   "error.unknown_provider": "That provider is not supported.",
+  "error.secret_store": "xDev cannot use the system keychain. On Linux, install and unlock a keyring such as GNOME Keyring or KWallet.",
+  "error.empty_key": "Paste a key first.",
   "error.bad_name": "Use 1–32 lowercase letters, digits or hyphens, starting with a letter or digit.",
   "error.exists": "That name is already taken.",
   "error.no_claude": "Claude Code was not found. Install it and try again.",

@@ -1,5 +1,6 @@
 mod accounts;
 mod agent_sessions;
+mod ai_keys;
 mod app_menu;
 mod atomic;
 #[cfg(test)]
@@ -292,6 +293,9 @@ pub fn run() {
             accounts::routing_get,
             accounts::routing_set,
             accounts::routing_models,
+            ai_keys::ai_keys_list,
+            ai_keys::ai_key_set,
+            ai_keys::ai_key_remove,
             tasks::tasks_context,
             tasks::tasks_list,
             tasks::task_get,

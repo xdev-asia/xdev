@@ -307,6 +307,8 @@
   "accounts.noneBlocked": "Không có tài khoản nào (đã biết giờ đặt lại) bị chặn vì hạn mức.",
   "error.no_codex": "Không tìm thấy Codex. Hãy cài đặt rồi thử lại.",
   "error.unknown_provider": "Nhà cung cấp này chưa được hỗ trợ.",
+  "error.secret_store": "xDev không dùng được kho khóa của hệ thống. Trên Linux, hãy cài và mở khóa một keyring như GNOME Keyring hoặc KWallet.",
+  "error.empty_key": "Hãy dán khóa trước.",
   "error.bad_name": "Dùng 1–32 chữ cái thường, chữ số hoặc dấu gạch ngang, bắt đầu bằng chữ cái hoặc chữ số.",
   "error.exists": "Tên này đã được dùng.",
   "error.no_claude": "Không tìm thấy Claude Code. Hãy cài đặt rồi thử lại.",

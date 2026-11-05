@@ -163,6 +163,7 @@ import type {
 } from "@xdev/bindings";
 import type {
   AgentSession,
+  AiKeyStatus,
   DirEntry,
   DirListing,
   DiffSettings,
@@ -219,6 +220,7 @@ export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, Usag
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FsChanged, FsEvent, FsEventKind } from "@xdev/bindings";
 export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase };
+export type { AiKeyStatus } from "@xdev/bindings";
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { CliAsk, CliOpenTab, TabReport };
 export type { OrchestrationSettings, SkillStatus, WorkerLifetime, WorkerOpen, WorkerOpenOutcome, WorkerClose, ReadTab, WorkerChanged };
@@ -407,6 +409,9 @@ export type PtyProfile = string;
 
 // Rust builds `CmdError.code` from each crate's `code()` as a plain string, so the codes the UI
 // knows how to translate are listed here by hand.
+export type AiKeyProvider = "anthropic" | "openai" | "gemini";
+export const AI_KEY_PROVIDERS: readonly AiKeyProvider[] = ["anthropic", "openai", "gemini"];
+
 export type ErrorCode =
   | "account_keychain"
   | "account_unavailable"
@@ -438,6 +443,8 @@ export type ErrorCode =
   | "no_claude"
   | "no_codex"
   | "unknown_provider"
+  | "secret_store"
+  | "empty_key"
   | "bad_registry"
   | "bad_reserve"
   | "session_missing"
@@ -652,6 +659,12 @@ export interface Api {
   setRouting(routing: Routing): Promise<void>;
   /** What each CLI offers; a missing CLI gives an empty list. */
   models(): Promise<Models>;
+  /** Which providers have an API key in the system keychain. A key is never returned. */
+  aiKeys(): Promise<AiKeyStatus[]>;
+  /** Trims and stores the key; `empty_key`, `too_large` or `secret_store` when it cannot. */
+  aiKeySet(provider: AiKeyProvider, key: string): Promise<void>;
+  /** True when a key was removed. */
+  aiKeyRemove(provider: AiKeyProvider): Promise<boolean>;
   tasksContext(): Promise<TasksContext>;
   // Newest first.
   tasks(): Promise<Task[]>;
@@ -1216,6 +1229,8 @@ function seen({ path, hash }: Seen): Seen {
 }
 
 export const ERROR_CODES: readonly ErrorCode[] = [
+  "secret_store",
+  "empty_key",
   "account_keychain",
   "account_unavailable",
   "account_link",
@@ -1421,6 +1436,9 @@ const tauriApi: Api = {
   routing: () => call("routing_get"),
   setRouting: (routing) => call("routing_set", { routing }),
   models: () => call("routing_models"),
+  aiKeys: () => call("ai_keys_list"),
+  aiKeySet: (provider, key) => call("ai_key_set", { provider, key }),
+  aiKeyRemove: (provider) => call("ai_key_remove", { provider }),
   tasksContext: () => call("tasks_context"),
   tasks: () => call("tasks_list"),
   task: (id) => call("task_get", { id }),
