@@ -1997,7 +1997,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   api={api}
                   worktree={current.path}
                   changes={markedChanges}
-                  events={fsWatch.events}
+                  queue={fsWatch.queue}
                   watchHealth={fsWatch.health}
                   onOpen={(file) => openFile(current.path, file)}
                 />

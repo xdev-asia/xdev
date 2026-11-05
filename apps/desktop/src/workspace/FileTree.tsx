@@ -6,7 +6,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { NameDialog } from "@/files/NameDialog";
 import { fileName, fileTabs } from "@/files/fileTabs";
 import { openFile } from "@/files/openFile";
-import { dirsToReload } from "@/files/treeRefresh";
+import { dirsToReload, drain, type WatchQueue } from "@/files/treeRefresh";
 import { copyAbsolute, copyRelative, createEntry, deleteEntry, parentOf, renameEntry, type TreeIo } from "@/files/treeActions";
 import { useI18n } from "@/i18n";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
@@ -91,12 +91,12 @@ export function FileTree(props: {
   onOpen: (file: string) => void;
   /** Opens the search in files; the link is off until something handles it. */
   onSearch?: () => void;
-  /** The latest batch of disk events; each new array is read once. Held while a name dialog is open. */
-  events?: FsEvent[] | null;
+  /** The disk events of the shown worktree; each batch is applied once. Held while a name dialog is open. */
+  queue?: WatchQueue | null;
   /** How watching the disk goes; `limit` shows why live updates stopped. */
   watchHealth?: WatchHealth;
 }): JSX.Element {
-  const { api, worktree, changes, onOpen, onSearch, events = null } = props;
+  const { api, worktree, changes, onOpen, onSearch, queue = null } = props;
   const { t } = useI18n();
   const [folders, setFolders] = useState<Record<string, Folder>>({});
   const [open, setOpen] = useState<string[]>([]);
@@ -137,12 +137,13 @@ export function FileTree(props: {
 
   // Disk events wait here while a name dialog is open, so its sibling check keeps a steady list.
   const pending = useRef<FsEvent[]>([]);
-  const seenEvents = useRef<FsEvent[] | null>(null);
+  const seen = useRef(0);
   const naming = ask !== null && ask.kind !== "delete";
   useEffect(() => {
-    if (events && events !== seenEvents.current) {
-      seenEvents.current = events;
-      pending.current.push(...events);
+    if (queue) {
+      const next = drain(queue, worktree, seen.current);
+      seen.current = next.seen;
+      pending.current.push(...next.events);
     }
     if (naming || pending.current.length === 0) return;
     const batch = pending.current;
@@ -153,7 +154,7 @@ export function FileTree(props: {
       asked.current.delete(dir);
       read(dir);
     }
-  }, [events, naming]);
+  }, [queue, naming]);
 
   function toggle(dir: string): void {
     const closing = open.includes(dir);

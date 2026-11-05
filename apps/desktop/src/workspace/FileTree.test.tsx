@@ -9,6 +9,7 @@ import { onOpenFile, type OpenFileRequest } from "@/files/openFile";
 import { ContextMenu } from "@/ui/ContextMenu";
 import { FileTree } from "./FileTree";
 import type { WatchHealth } from "./worktreeWatch";
+import { emptyQueue, enqueue, type WatchQueue } from "@/files/treeRefresh";
 
 const toasts = vi.hoisted(() => ({ pushed: [] as { id: string; text: string }[] }));
 vi.mock("./toastStore", () => ({ pushToast: (toast: { id: string; text: string }) => void toasts.pushed.push(toast) }));
@@ -87,8 +88,13 @@ function mount(render: (changes: WorktreeChange[]) => unknown, first: WorktreeCh
 
 function tree(api: Api, changes: WorktreeChange[] = CHANGES) {
   const onOpen = vi.fn();
-  const feed: { events: FsEvent[] | null; health?: WatchHealth } = { events: null };
-  const view = mount((list) => FileTree({ api, worktree: OAK, changes: list, onOpen, events: feed.events, watchHealth: feed.health }), changes);
+  const feed: { queue: WatchQueue; health?: WatchHealth; push(events: FsEvent[]): void } = {
+    queue: emptyQueue(OAK),
+    push(events) {
+      feed.queue = enqueue(feed.queue, events);
+    },
+  };
+  const view = mount((list) => FileTree({ api, worktree: OAK, changes: list, onOpen, queue: feed.queue, watchHealth: feed.health }), changes);
   const rows = () => view.all().filter((n) => n.props.role === "treeitem");
   const label = (r: Node) => nodes(r).find((n) => n.props.className === "ws-tree-name")?.props.children;
   const row = (name: string) => rows().find((r) => label(r) === name)!;
@@ -336,19 +342,42 @@ it("disk events read again only the loaded folders they touch", async () => {
   await tick();
   list.mockClear();
 
-  view.feed.events = [ev("create", "src/New.tsx"), ev("create", "docs/new.md"), ev("update", "package.json")];
+  view.feed.push([ev("create", "src/New.tsx"), ev("create", "docs/new.md"), ev("update", "package.json")]);
   view.again(CHANGES);
   await tick();
   expect(list.mock.calls.map(([, dir]) => dir)).toEqual(["src"]);
 
   list.mockClear();
-  view.feed.events = [ev("overflow", "", null)];
+  view.feed.push([ev("overflow", "", null)]);
   view.again(CHANGES);
   await tick();
   // The overflow bumps the refresh counter; the next draw reads the shown folders.
   view.again(CHANGES);
   await tick();
   expect(list.mock.calls.map(([, dir]) => dir).sort()).toEqual(["", "src"]);
+});
+
+it("every batch that arrived between two draws is applied", async () => {
+  const api = createMockApi({});
+  const list = vi.spyOn(api, "worktreeListDir");
+  const view = tree(api);
+  await tick();
+  view.row("src").props.onClick();
+  view.row("docs").props.onClick();
+  await tick();
+  list.mockClear();
+  // Two batches, one draw: the first must not be lost.
+  view.feed.push([ev("create", "src/New.tsx")]);
+  view.feed.push([ev("create", "docs/new.md")]);
+  view.again(CHANGES);
+  await tick();
+  expect(list.mock.calls.map(([, dir]) => dir).sort()).toEqual(["docs", "src"]);
+  // Drawn again with nothing new: nothing is read again.
+  list.mockClear();
+  view.feed.push([]);
+  view.again(CHANGES);
+  await tick();
+  expect(list).not.toHaveBeenCalled();
 });
 
 it("disk events wait while the name dialog is open", async () => {
@@ -365,7 +394,7 @@ it("disk events wait while the name dialog is open", async () => {
   expect(view.all().some((n) => n.type === NameDialog)).toBe(true);
   list.mockClear();
 
-  view.feed.events = [ev("create", "held.txt")];
+  view.feed.push([ev("create", "held.txt")]);
   view.again(CHANGES);
   await tick();
   expect(list).not.toHaveBeenCalled();

@@ -1,26 +1,27 @@
 import { useEffect, useRef, useState } from "react";
-import type { Api, FsEvent } from "@/api";
+import type { Api } from "@/api";
 import type { FileIo } from "@/files/fileIO";
+import { emptyQueue, enqueue, type WatchQueue } from "@/files/treeRefresh";
 import { WorktreeWatch, type WatchHealth } from "./worktreeWatch";
 
 export interface WatchView {
-  /** The latest batch (a new array each time), for the file tree. */
-  events: FsEvent[] | null;
+  /** Every batch not yet dropped (a new queue each time), for the file tree to drain. */
+  queue: WatchQueue;
   health: WatchHealth;
 }
 
 /** Subscribes to the disk events of `worktree` while it is the shown one (see `WorktreeWatch`). */
 export function useWorktreeWatch(api: Api, worktree: string | null, io: FileIo): WatchView {
-  const [events, setEvents] = useState<FsEvent[] | null>(null);
+  const [queue, setQueue] = useState<WatchQueue>(() => emptyQueue(worktree));
   const [health, setHealth] = useState<WatchHealth>("live");
   // The translator changes with the language; the subscription must not.
   const ioNow = useRef(io);
   ioNow.current = io;
   useEffect(() => {
-    setEvents(null);
+    setQueue(emptyQueue(worktree));
     setHealth("live");
     if (worktree === null) return;
-    const watch = new WorktreeWatch({ api, worktree, io: () => ioNow.current, onBatch: setEvents, onHealth: setHealth });
+    const watch = new WorktreeWatch({ api, worktree, io: () => ioNow.current, onBatch: (events) => setQueue((q) => enqueue(q, events)), onHealth: setHealth });
     watch.start();
     // Back in the window: whatever changed meanwhile (a watcher that is down misses it) is read.
     const focus = () => watch.recheck();
@@ -30,5 +31,5 @@ export function useWorktreeWatch(api: Api, worktree: string | null, io: FileIo):
       watch.stop();
     };
   }, [api, worktree]);
-  return { events, health };
+  return { queue, health };
 }
