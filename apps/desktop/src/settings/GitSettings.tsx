@@ -5,6 +5,7 @@ import { useI18n } from "@/i18n";
 import { previewPrefix } from "./branchPrefix";
 import { SettingRow, settingShown } from "./SettingRow";
 import { RecipesEditor } from "./recipes/RecipesEditor";
+import { BOT_OVERRIDE_MAX, overrideKey, withOverride } from "@/workspace/prComments";
 import type { SettingsSectionProps } from "./sections";
 
 const MODES: BranchPrefixMode[] = ["git-username", "custom", "none"];
@@ -25,6 +26,8 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
   const [custom, setCustom] = useState("");
   const [loadError, setLoadError] = useState<ApiError["code"]>();
   const [saveError, setSaveError] = useState<ApiError["code"]>();
+  const [botDraft, setBotDraft] = useState("");
+  const [botCapped, setBotCapped] = useState(false);
   // Saves run one after another, so a slow early one cannot land after a later one. `latest`
   // is what the next change builds on, ahead of the re-render.
   const [queue] = useState(() => ({ tail: Promise.resolve(), latest: null as Git | null }));
@@ -72,6 +75,16 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
         )}
       </div>
     );
+  }
+
+  function addBot(): void {
+    const login = overrideKey(botDraft);
+    if (login === "" || login.length > 255) return;
+    const list = git!.prBotAuthorOverrides;
+    if (!list.includes(login) && list.length >= BOT_OVERRIDE_MAX) return setBotCapped(true);
+    setBotCapped(false);
+    setBotDraft("");
+    change({ prBotAuthorOverrides: withOverride(list, login, true) });
   }
 
   const mode = git.branchPrefix;
@@ -248,6 +261,54 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
         </SettingRow>
       )}
       {git.sourceControlAi && <RecipesEditor api={api} recipes={git.recipes} onChange={(recipes) => change({ recipes })} />}
+      <SettingRow id="git.botAuthors" filter={filter}>
+        <h4 className="settings-group" id="settings-git-bots">
+          {t("settings.git.botAuthors.title")}
+        </h4>
+        <small className="settings-hint">{t("settings.git.botAuthors.hint")}</small>
+        <form
+          className="ws-fields settings-git-bots-add"
+          onSubmit={(e) => {
+            e.preventDefault();
+            addBot();
+          }}
+        >
+          <label className="ws-field">
+            <span>{t("settings.git.botAuthors.label")}</span>
+            <input type="text" name="botAuthor" className="ws-mono" value={botDraft} spellCheck={false} maxLength={255} onChange={(e) => setBotDraft(e.target.value)} />
+          </label>
+          <button type="submit" className="ws-checks-btn" disabled={overrideKey(botDraft) === ""}>
+            {t("settings.git.botAuthors.add")}
+          </button>
+        </form>
+        {botCapped && (
+          <p className="error-text" role="alert">
+            {t("settings.git.botAuthors.limit")}
+          </p>
+        )}
+        {git.prBotAuthorOverrides.length === 0 ? (
+          <p className="ws-empty">{t("settings.git.botAuthors.none")}</p>
+        ) : (
+          <ul className="settings-git-bots">
+            {git.prBotAuthorOverrides.map((login) => (
+              <li key={login} data-bot={login}>
+                <span className="ws-mono">{login}</span>
+                <button
+                  type="button"
+                  className="ws-checks-btn"
+                  aria-label={t("settings.git.botAuthors.remove", { login })}
+                  onClick={() => {
+                    setBotCapped(false);
+                    change({ prBotAuthorOverrides: withOverride(git.prBotAuthorOverrides, login, false) });
+                  }}
+                >
+                  {t("settings.git.botAuthors.removeShort")}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SettingRow>
       {saveError && (
         <p className="error-text" role="alert">
           {t(`error.${saveError}`)}

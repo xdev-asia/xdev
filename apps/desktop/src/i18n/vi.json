@@ -2615,5 +2615,13 @@
   "prReview.block.behind": "Nhánh này tụt sau nhánh gốc. Hãy cập nhật trước.",
   "prReview.block.blocked": "Quy tắc nhánh đang chặn việc merge.",
   "review.note.postToPr": "Đăng lên PR",
-  "review.note.posted": "Đã đăng lên PR"
+  "review.note.posted": "Đã đăng lên PR",
+  "settings.git.botAuthors.title": "Tác giả là bot",
+  "settings.git.botAuthors.hint": "Bình luận từ các tài khoản này được tính là của bot trong tab Checks, ngoài những tài khoản xDev đã nhận ra.",
+  "settings.git.botAuthors.label": "Tài khoản GitHub",
+  "settings.git.botAuthors.add": "Thêm tác giả",
+  "settings.git.botAuthors.none": "Chưa thêm tài khoản nào.",
+  "settings.git.botAuthors.remove": "Bỏ {login}",
+  "settings.git.botAuthors.removeShort": "Bỏ",
+  "settings.git.botAuthors.limit": "Đã đạt giới hạn tác giả bot tùy chỉnh"
 }

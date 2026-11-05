@@ -149,6 +149,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("git.autoRename", "settings.git.autoRename.title", ["rename", "branch", "name", "prompt", "đổi tên", "doi ten", "nhánh", "nhanh"], "settings.git.autoRename.hint"),
   e("git.ai", "settings.git.ai.show", ["ai", "commit", "message", "source control"], "settings.git.ai.showHint"),
   e("git.pr", "settings.git.pr.title", ["pull request", "draft", "pr"]),
+  e("git.botAuthors", "settings.git.botAuthors.title", ["bot", "author", "comments", "filter", "pr", "tác giả", "tac gia", "bình luận", "binh luan"], "settings.git.botAuthors.hint"),
   // Vaults
   e("vaults.repo", "settings.vaults.repo", ["docs", "notes", "repo", "tài liệu", "tai lieu"]),
   e("vaults.shared", "settings.vaults.shared", ["docs", "notes", "add", "forget", "folder", "tài liệu", "tai lieu", "chia sẻ", "chia se"]),

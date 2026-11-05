@@ -2615,5 +2615,13 @@
   "prReview.block.behind": "This branch is behind the base branch. Update it first.",
   "prReview.block.blocked": "Branch rules block this merge.",
   "review.note.postToPr": "Post on PR",
-  "review.note.posted": "Posted on PR"
+  "review.note.posted": "Posted on PR",
+  "settings.git.botAuthors.title": "Bot authors",
+  "settings.git.botAuthors.hint": "Comments from these logins count as bot comments in the Checks tab, on top of the ones xDev recognizes.",
+  "settings.git.botAuthors.label": "GitHub login",
+  "settings.git.botAuthors.add": "Add author",
+  "settings.git.botAuthors.none": "No logins added.",
+  "settings.git.botAuthors.remove": "Remove {login}",
+  "settings.git.botAuthors.removeShort": "Remove",
+  "settings.git.botAuthors.limit": "Bot author override limit reached"
 }
