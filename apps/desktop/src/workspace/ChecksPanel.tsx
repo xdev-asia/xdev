@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type ApiError, type Check } from "@/api";
 import { useI18n } from "@/i18n";
+import { PrComments } from "./PrCommentList";
+import type { PrCommentStore } from "./prCommentStore";
+import { withOverride } from "./prComments";
 import type { PrStore } from "./prs";
 
 const REFRESH_MS = 30_000;
@@ -12,6 +15,8 @@ export function ChecksPanel(props: {
   api: Api;
   worktree: string;
   prs: PrStore;
+  // The review comments under the checks. Left out, the section does not show.
+  comments?: PrCommentStore;
   visible: boolean;
   // Hands a failed check to an agent (Fix checks recipe). The action shows on failed rows while
   // Settings → Git shows the agent actions; it waits for the returned promise.
@@ -21,6 +26,8 @@ export function ChecksPanel(props: {
   const { t } = useI18n();
   const [openError, setOpenError] = useState<ApiError | null>(null);
   const [ai, setAi] = useState(false);
+  // Logins Settings → Git marks as bots, kept here so the chips and rows agree with it.
+  const [overrides, setOverrides] = useState<string[]>([]);
   // The row whose fix is being prepared.
   const [fixing, setFixing] = useState<string | null>(null);
 
@@ -43,7 +50,10 @@ export function ChecksPanel(props: {
   useEffect(() => {
     if (!visible) return;
     api.gitSettings().then(
-      (git) => setAi(git.sourceControlAi),
+      (git) => {
+        setAi(git.sourceControlAi);
+        setOverrides(git.prBotAuthorOverrides);
+      },
       () => setAi(false),
     );
   }, [api, visible]);
@@ -54,6 +64,18 @@ export function ChecksPanel(props: {
     const id = setInterval(() => void prs.load(worktree, { checks: true }), REFRESH_MS);
     return () => clearInterval(id);
   }, [prs, worktree, visible, pending]);
+
+  // Writes the mark to Settings → Git and shows what was stored, so a refused write cannot leave a
+  // chip that disagrees with the file.
+  async function markBot(login: string, mark: boolean): Promise<void> {
+    try {
+      const git = await api.gitSettings();
+      const stored = await api.setGitSettings({ ...git, prBotAuthorOverrides: withOverride(git.prBotAuthorOverrides, login, mark) });
+      setOverrides(stored.prBotAuthorOverrides);
+    } catch (e) {
+      setOpenError(toApiError(e));
+    }
+  }
 
   async function open(onChecks: boolean): Promise<void> {
     try {
@@ -118,6 +140,9 @@ export function ChecksPanel(props: {
                 </li>
               ))}
             </ul>
+          )}
+          {props.comments && (
+            <PrComments store={props.comments} worktree={worktree} number={pr.number} overrides={overrides} reloadKey={entry?.checks} onMarkBot={(login, mark) => void markBot(login, mark)} />
           )}
         </>
       ) : (

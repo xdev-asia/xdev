@@ -326,3 +326,17 @@ function conversationReply(list: readonly PrComment[]): string | null {
   });
   return `Fixing:\n${items.join("\n")}\n\nWill be in the next commit.`;
 }
+
+/** The overrides after marking or unmarking a login: lower case, no duplicates, sorted, at most 500. */
+export function withOverride(list: readonly string[], login: string, on: boolean): string[] {
+  const key = overrideKey(login);
+  const rest = list.filter((l) => l !== key);
+  if (!on) return rest;
+  if (!list.includes(key) && list.length >= BOT_OVERRIDE_MAX) return [...list];
+  return [...rest, key].sort();
+}
+
+/** Ctrl+Enter or Cmd+Enter sends. Enter that ends an IME composition never does. */
+export function isSendKey(e: { key: string; ctrlKey: boolean; metaKey: boolean; isComposing?: boolean }): boolean {
+  return e.key === "Enter" && (e.ctrlKey || e.metaKey) && e.isComposing !== true;
+}

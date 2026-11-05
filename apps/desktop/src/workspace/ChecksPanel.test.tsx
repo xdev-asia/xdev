@@ -6,6 +6,7 @@ import { DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE } from "@/mockWorkspace";
 import { translate } from "@/i18n";
 import { ChecksPanel } from "./ChecksPanel";
 import { PrStore } from "./prs";
+import { PrCommentStore } from "./prCommentStore";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
 vi.mock("react", async (original) => {
@@ -48,13 +49,13 @@ function seeded(prs: Record<string, PrView> = {}, checks: Record<string, Check[]
 }
 
 // Draws with its own hook values; the first draw's effects run once, as on mount.
-function mount(api: Api, prs: PrStore, visible: boolean, onFix?: (check: Check) => void | Promise<void>) {
+function mount(api: Api, prs: PrStore, visible: boolean, onFix?: (check: Check) => void | Promise<void>, comments?: PrCommentStore) {
   const values: unknown[] = [];
   const draw = () => {
     hooks.values = values;
     hooks.cursor = 0;
     hooks.active = true;
-    try { return ChecksPanel({ api, worktree: OAK, prs, visible, onFix }); } finally { hooks.active = false; }
+    try { return ChecksPanel({ api, worktree: OAK, prs, visible, onFix, comments }); } finally { hooks.active = false; }
   };
   const before = hooks.effects.length;
   draw();
@@ -182,4 +183,17 @@ it("hides Fix with agent without a handler or with the agent actions off", async
   const hidden = mount(off, offPrs, true, vi.fn());
   await tick();
   expect(fixButtons(hidden)).toHaveLength(0);
+});
+
+it("mounts the PR comments under the checks", async () => {
+  const api = createMockApi({}, { workspace: { ...DEMO_WORKSPACE, prs: { [OAK]: PR }, checks: { [OAK]: CHECKS }, prComments: { [OAK]: [] } } });
+  const prs = new PrStore(api);
+  await prs.load(OAK, { checks: true });
+  const comments = new PrCommentStore(api);
+  const view = mount(api, prs, true, undefined, comments);
+  await tick();
+  const html = view.html();
+  expect(html).toContain(en("prc.title", { count: 0 }));
+  expect(html.indexOf(`>lint<`)).toBeLessThan(html.indexOf(en("prc.title", { count: 0 })));
+  expect(mount(api, prs, true).html()).not.toContain(en("prc.title", { count: 0 }));
 });

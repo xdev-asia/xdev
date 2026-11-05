@@ -86,6 +86,7 @@ import { AgentSessionsStore } from "@/agentSessions/store";
 import { confirmResume } from "@/agentSessions/resumeFlow";
 import { SessionsSidebar } from "@/agentSessions/SessionsSidebar";
 import { Sessions, type Attention, type Tab } from "./sessions";
+import { PrCommentStore } from "./prCommentStore";
 import { PrStore } from "./prs";
 import { WorktreeStats } from "./stats";
 import type { TabStatus } from "./status";
@@ -255,6 +256,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [docsKey, setDocsKey] = useState(0);
   // Pull requests and checks of every worktree, shared by the ship bar and the panels.
   const [prs] = useState(() => new PrStore(api));
+  const [prComments] = useState(() => new PrCommentStore(api));
   // The jump palette, and the settings section it asked for; a new `seq` is a new request.
   const [jumpOpen, setJumpOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -1962,7 +1964,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             </div>
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "checks"}>
               {current ? (
-                <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} visible={panelTab === "checks"} onFix={(check) => fixCheck(check)} />
+                <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} comments={prComments} visible={panelTab === "checks"} onFix={(check) => fixCheck(check)} />
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
               )}

@@ -3408,3 +3408,19 @@ button.ws-tree-row:focus-visible {
   color: var(--text-2);
   font-size: 12px;
 }
+
+/* PR comments (Checks tab) */
+.ws-prc { display: flex; flex-direction: column; gap: var(--x-space-2); margin-top: var(--x-space-3); }
+.ws-prc-head { display: flex; align-items: center; justify-content: space-between; gap: var(--x-space-2); }
+.ws-prc-title { margin: 0; font-size: 12px; font-weight: 600; color: var(--text-1); }
+.ws-prc-chips { display: flex; flex-wrap: wrap; gap: var(--x-space-1); }
+.ws-prc-list, .ws-prc-replies { display: flex; flex-direction: column; gap: var(--x-space-2); margin: 0; padding: 0; list-style: none; }
+.ws-prc-replies { margin-top: var(--x-space-2); padding-left: var(--x-space-4); }
+.ws-prc-where { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
+.ws-prc-where:hover { text-decoration: underline; }
+.ws-prc-more { position: relative; display: inline-flex; }
+.ws-prc-more .x-menu { position: absolute; top: 100%; right: 0; z-index: 5; }
+.ws-prc-md > :first-child { margin-top: 0; }
+.ws-prc-md > :last-child { margin-bottom: 0; }
+.ws-prc-composer { display: flex; flex-direction: column; gap: var(--x-space-2); }
+.ws-prc-composer-actions { display: flex; justify-content: flex-end; gap: var(--x-space-2); }
