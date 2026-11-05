@@ -20,6 +20,7 @@ import type {
   AppStatsView,
   PortScan,
   HostSource,
+  LocalForward,
   SshHost,
   SshSyncReport,
   KeepAwake,
@@ -297,7 +298,7 @@ export type { Agent, AgentSession, Cost, SessionQuery, SessionRow, SessionSearch
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, AppStatsView, AwakeView, KeepAwake, SwitchRunning };
 export type { PortEvidence, PortKind, PortProtocol, PortScan, WorkspacePort } from "@xdev/bindings";
-export type { HostSource, SshHost, SshSyncReport };
+export type { HostSource, LocalForward, SshHost, SshSyncReport };
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FsChanged, FsEvent, FsEventKind } from "@xdev/bindings";
@@ -1421,7 +1422,8 @@ export interface Api {
   portsOpen(id: string): Promise<void>;
   onPortsAdvertised(cb: (worktree: string) => void): Promise<() => void>;
   // Saved SSH hosts. A save with an empty id adds one; the alias is trimmed and unique; a saved host is a
-  // manual one. Rejects with `bad_arg` (detail: alias, host_name, port, duplicate_alias) or `not_found`.
+  // manual one. Rejects with `bad_arg` (detail: alias, host_name, port, duplicate_alias, proxy_jump,
+  // local_forward, extra_option) or `not_found`.
   sshHostsList(): Promise<SshHost[]>;
   sshHostSave(host: SshHost): Promise<SshHost>;
   sshHostRemove(id: string): Promise<void>;

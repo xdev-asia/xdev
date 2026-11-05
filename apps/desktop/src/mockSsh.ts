@@ -8,6 +8,8 @@ export type MockSsh = SshApi & {
 };
 
 const bad = (detail: string) => ({ code: "bad_arg" as const, detail });
+const plain = (word: string) => !word.startsWith("-") && !/[\s\u0000-\u001f]/.test(word);
+const option = /^[A-Za-z][A-Za-z0-9]*=\S/;
 
 /** SSH hosts in memory, with the same checks and sync rules as the desktop commands. */
 export function createMockSsh(initial: SshHost[] = []): MockSsh {
@@ -20,9 +22,29 @@ export function createMockSsh(initial: SshHost[] = []): MockSsh {
       const alias = host.alias.trim();
       if (alias === "" || /\s/.test(alias) || alias.startsWith("-")) throw bad("alias");
       if (host.port === 0) throw bad("port");
+      const jump = host.proxyJump?.trim() || undefined;
+      if (jump !== undefined && !plain(jump)) throw bad("proxy_jump");
+      const forwards = (host.localForwards ?? []).map((f) => ({ ...f, remoteHost: f.remoteHost.trim() }));
+      if (forwards.some((f) => f.localPort === 0 || f.remotePort === 0 || f.remoteHost === "" || !plain(f.remoteHost))) throw bad("local_forward");
+      const extra = (host.extraOptions ?? []).map((o) => o.trim()).filter((o) => o !== "");
+      if (!extra.every((o) => option.test(o))) throw bad("extra_option");
       const id = host.id === "" ? `ssh-${next++}` : host.id;
       if (hosts.some((h) => h.alias === alias && h.id !== id)) throw bad("duplicate_alias");
-      const stored: SshHost = { ...host, id, alias, hostName: host.hostName.trim() || alias, source: "manual" };
+      const timeout = host.connectTimeoutSecs;
+      const stored: SshHost = {
+        ...host,
+        id,
+        alias,
+        hostName: host.hostName.trim() || alias,
+        source: "manual",
+        proxyJump: jump,
+        forwardAgent: host.forwardAgent ?? false,
+        localForwards: forwards,
+        connectTimeoutSecs: timeout === undefined || timeout === null ? undefined : Math.min(120, Math.max(1, timeout)),
+        extraOptions: extra,
+      };
+      if (stored.proxyJump === undefined) delete stored.proxyJump;
+      if (stored.connectTimeoutSecs === undefined) delete stored.connectTimeoutSecs;
       hosts = hosts.some((h) => h.id === id) ? hosts.map((h) => (h.id === id ? stored : h)) : [...hosts, stored];
       return { ...stored };
     },

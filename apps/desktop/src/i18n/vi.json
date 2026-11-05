@@ -3967,5 +3967,20 @@
   "agentLaunch.verdict.failedHint": "{agent} không báo phiên bản: {hint}",
   "agentLaunch.verdict.ok": "{agent} {version} đã được cài.",
   "workspace.tabs.launchOptions": "Chạy với tùy chọn",
-  "workspace.agentPicker.launchOptions": "Chạy với tùy chọn"
+  "workspace.agentPicker.launchOptions": "Chạy với tùy chọn",
+  "ssh.form.advanced": "Nâng cao",
+  "ssh.form.proxyJump": "Máy chủ trung gian",
+  "ssh.form.proxyJumpHint": "Truyền qua -J. Nhiều máy thì phân cách bằng dấu phẩy.",
+  "ssh.form.proxyJumpBad": "Dùng máy chủ không có dấu cách và không bắt đầu bằng dấu gạch ngang.",
+  "ssh.form.forwardAgent": "Chuyển tiếp SSH agent",
+  "ssh.form.forwardAgentHint": "Truyền qua -A. Chỉ dùng với máy chủ bạn tin cậy.",
+  "ssh.form.forwards": "Chuyển tiếp cổng cục bộ",
+  "ssh.form.forwardsHint": "Mỗi dòng một local:host:remote.",
+  "ssh.form.forwardsBad": "Viết mỗi dòng dạng cổng cục bộ:máy chủ:cổng từ xa, ví dụ 5432:db:5432.",
+  "ssh.form.connectTimeout": "Thời gian chờ kết nối",
+  "ssh.form.connectTimeoutHint": "Tính bằng giây. Để trống để dùng 10.",
+  "ssh.form.connectTimeoutBad": "Dùng số nguyên từ 1 đến 120.",
+  "ssh.form.extraOptions": "Tùy chọn thêm",
+  "ssh.form.extraOptionsHint": "Mỗi dòng một Key=Value, truyền qua -o.",
+  "ssh.form.extraOptionsBad": "Viết mỗi dòng dạng Key=Value."
 }

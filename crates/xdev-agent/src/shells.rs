@@ -81,6 +81,17 @@ fn list_shells_for(windows: bool, custom: &[CustomShell], distros: &[String]) ->
 /// The shell that runs the system `ssh` to `alias`; `None` for an alias
 /// `ssh` would take for an option or that has whitespace. Its id is
 /// `ssh:<alias>`, so a tab opens it with the profile id `shell:ssh:<alias>`.
+/// The `ssh` program the app runs: the one a terminal tab, a test and a
+/// kept connection use.
+pub fn system_ssh() -> PathBuf {
+    ssh_program(
+        cfg!(windows),
+        &|p| find_program(p),
+        env::var_os("SystemRoot").map(PathBuf::from),
+        &|p| p.is_file(),
+    )
+}
+
 pub fn ssh_shell(alias: &str) -> Option<ShellEntry> {
     ssh_shell_with(cfg!(windows), alias, &|p| find_program(p), &|p| p.is_file())
 }

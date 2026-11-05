@@ -256,4 +256,27 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn a_file_from_before_the_advanced_fields_loads() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(STORE_FILE),
+            r#"{"hosts":[{"id":"h1","alias":"web","hostName":"web.example.com","user":"deploy","port":2222,"identityFile":null,"source":"manual"}]}"#,
+        )
+        .unwrap();
+        let hosts = load(dir.path()).unwrap();
+        assert_eq!(hosts.len(), 1);
+        let h = &hosts[0];
+        assert_eq!(h.alias, "web");
+        assert_eq!(h.port, Some(2222));
+        assert_eq!(h.proxy_jump, None);
+        assert!(!h.forward_agent);
+        assert!(h.local_forwards.is_empty());
+        assert_eq!(h.connect_timeout_secs, None);
+        assert!(h.extra_options.is_empty());
+        // And it round-trips with them.
+        save(dir.path(), &hosts).unwrap();
+        assert_eq!(load(dir.path()).unwrap(), hosts);
+    }
 }

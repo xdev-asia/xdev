@@ -3967,5 +3967,20 @@
   "agentLaunch.verdict.failedHint": "{agent} did not report a version: {hint}",
   "agentLaunch.verdict.ok": "{agent} {version} is installed.",
   "workspace.tabs.launchOptions": "Launch with options",
-  "workspace.agentPicker.launchOptions": "Launch with options"
+  "workspace.agentPicker.launchOptions": "Launch with options",
+  "ssh.form.advanced": "Advanced",
+  "ssh.form.proxyJump": "Jump host",
+  "ssh.form.proxyJumpHint": "Passed as -J. Separate several with commas.",
+  "ssh.form.proxyJumpBad": "Use a host without spaces that does not start with a dash.",
+  "ssh.form.forwardAgent": "Forward the SSH agent",
+  "ssh.form.forwardAgentHint": "Passed as -A. Only for hosts you trust.",
+  "ssh.form.forwards": "Local forwards",
+  "ssh.form.forwardsHint": "One local:host:remote per line.",
+  "ssh.form.forwardsBad": "Write each line as local port:host:remote port, for example 5432:db:5432.",
+  "ssh.form.connectTimeout": "Connect timeout",
+  "ssh.form.connectTimeoutHint": "Seconds. Leave empty for 10.",
+  "ssh.form.connectTimeoutBad": "Use a whole number from 1 to 120.",
+  "ssh.form.extraOptions": "Extra options",
+  "ssh.form.extraOptionsHint": "One Key=Value per line, passed as -o.",
+  "ssh.form.extraOptionsBad": "Write each line as Key=Value."
 }

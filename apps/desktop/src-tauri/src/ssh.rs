@@ -176,6 +176,7 @@ mod tests {
             port: Some(22),
             identity_file: None,
             source: HostSource::Manual,
+            ..SshHost::default()
         }
     }
 

@@ -297,6 +297,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_ports::PortScan::export_all(cfg)?;
     xdev_ssh::SshHost::export_all(cfg)?;
     SshSyncReport::export_all(cfg)?;
+    xdev_ssh::SshTestOutcome::export_all(cfg)?;
+    xdev_ssh::SshConnState::export_all(cfg)?;
+    xdev_ssh::SshPromptKind::export_all(cfg)?;
     Ok(())
 }
 

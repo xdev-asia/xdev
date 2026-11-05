@@ -44,3 +44,16 @@
   flex-direction: column;
   gap: 10px;
 }
+
+/* The "Advanced" group of the host form: its head is part of the form, not a sticky list head. */
+.ssh-form-advanced .ws-group-bar {
+  position: static;
+  background: transparent;
+}
+
+.ssh-form-advanced .ws-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 6px;
+}

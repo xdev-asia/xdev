@@ -499,8 +499,16 @@ pub(crate) fn launch_with_prompt(
         &[]
     };
     let mut shells = list_shells(&profiles.shells, distros);
-    // A saved SSH host opens as `shell:ssh:<alias>`; the alias is checked by `ssh_shell`.
-    if let Some(entry) = id.strip_prefix("shell:ssh:").and_then(ssh_shell) {
+    // A saved SSH host opens as `shell:ssh:<alias>`; the alias is checked by
+    // `ssh_shell`, and a stored host gets its whole argv.
+    if let Some(mut entry) = id.strip_prefix("shell:ssh:").and_then(ssh_shell) {
+        if let Some(host) = xdev_ssh::load(data_dir)
+            .unwrap_or_default()
+            .into_iter()
+            .find(|h| h.alias == entry.name)
+        {
+            entry.args = xdev_ssh::ssh_argv(&host);
+        }
         shells.push(entry);
     }
     let find = |profile: &Profile| match profile.cli {
