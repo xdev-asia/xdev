@@ -6750,7 +6750,6 @@ dependencies = [
  "ts-rs",
  "url",
  "uuid",
- "windows-sys 0.61.2",
  "xdev-agent",
  "xdev-ai",
  "xdev-awake",
