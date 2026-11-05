@@ -17,6 +17,7 @@ use crate::automations::{
     AutomationDispatch, AutomationsChanged, AutomationsView, DispatchResult, RunFinish,
     ScheduleProblem,
 };
+use crate::cli_file::CliOpenFile;
 use crate::cli_install::CliStatus;
 use crate::cli_verbs::{CliAsk, CliOpenTab, TabReport};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
@@ -290,6 +291,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     TabReport::export_all(cfg)?;
     CliOpenTab::export_all(cfg)?;
     CliAsk::export_all(cfg)?;
+    CliOpenFile::export_all(cfg)?;
     PortsAdvertised::export_all(cfg)?;
     xdev_ports::PortScan::export_all(cfg)?;
     Ok(())

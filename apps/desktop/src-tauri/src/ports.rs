@@ -69,6 +69,11 @@ impl Ports {
         Some(name)
     }
 
+    /// One scan over `worktrees`, for a caller that holds the terminals' roots.
+    pub fn scan(&self, roots: &[PtyRoot], worktrees: &[PathBuf]) -> PortScan {
+        scan_in(&self.scanner, &self.urls, roots, worktrees, false)
+    }
+
     /// Drops what terminal `pty` printed.
     pub fn forget_pty(&self, pty: &str) {
         if let Ok(mut urls) = self.urls.lock() {

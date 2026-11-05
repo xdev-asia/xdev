@@ -10,8 +10,11 @@ mod atomic;
 mod automations;
 #[cfg(test)]
 mod bindings;
+mod cli_automations;
+mod cli_file;
 mod cli_install;
 mod cli_path;
+mod cli_ports;
 mod cli_terminal;
 mod cli_verbs;
 mod clipboard;
