@@ -305,6 +305,23 @@ describe("startAutomationDispatch", () => {
     }
   });
 
+  it("gives a new agent tab the full start deadline to get ready", async () => {
+    vi.useFakeTimers();
+    try {
+      const f = fakeHost();
+      const { api } = await setup(f.host);
+      api.__automationDispatch(dispatch());
+      await flush();
+      // Past the 30 s a prompt sent by hand waits, still inside the run's start deadline.
+      await vi.advanceTimersByTimeAsync(START_DEADLINE_MS - 5_000);
+      expect(api.__automationReports().results).toEqual([]);
+      await f.ready(f.tabs[0]);
+      expect(api.__automationReports().results).toEqual([{ status: "dispatched", runId: "run-1", tabId: "tab-1" }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not fail a run whose agent started working in time", async () => {
     vi.useFakeTimers();
     try {

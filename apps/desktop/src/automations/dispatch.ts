@@ -115,7 +115,7 @@ export function startAutomationDispatch(api: Api, host: DispatchHost): () => voi
       }
       const opened = sessions.open(e.worktree, e.profile, null, undefined, e.extraArgs.length > 0 ? e.extraArgs : undefined);
       const refused = refusal(opened);
-      const sent = sendToOpenedTab(sessions, e.worktree, opened.id, e.prompt);
+      const sent = sendToOpenedTab(sessions, e.worktree, opened.id, e.prompt, { timeoutMs: START_DEADLINE_MS });
       const first = await Promise.race([sent, refused.promise.then((err) => ({ err }))]);
       refused.stop();
       if (first && "err" in first) {
