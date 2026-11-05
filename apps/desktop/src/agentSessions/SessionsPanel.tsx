@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import type { Agent, SessionRow, SessionScope, SessionSort } from "@/api";
+import { renderSnippet } from "@/components/renderSnippet";
 import { useI18n } from "@/i18n";
 import { AgentIcon } from "@/workspace/AgentIcon";
 import { ago } from "@/workspace/ago";
@@ -103,6 +104,7 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
             <AgentIcon profile={s.agent} />
             <span className={s.title === null ? "as-title as-untitled" : "as-title"}>{title}</span>
           </span>
+          {row.hit && <span className="as-snippet">{renderSnippet(row.hit)}</span>}
           <span className="as-sub">
             {meta.map((m, i) => (
               <span key={i} className="as-meta" title={i === 0 ? (row.worktree ?? s.cwd ?? undefined) : undefined}>
@@ -151,7 +153,7 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
           type="search"
           className="as-search"
           value={text}
-          placeholder={t("agentSessions.search.placeholder")}
+          placeholder={t(state.contentSearch ? "sessionSearch.placeholder" : "agentSessions.search.placeholder")}
           aria-label={t("agentSessions.search.label")}
           onChange={(e) => {
             setText(e.target.value);

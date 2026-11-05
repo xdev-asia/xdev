@@ -1,14 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Agent, type ApiError, type UsageDisplay, type UsageReport, type UsageScope, type UsageSettings } from "@/api";
+import { Badge, Heatmap } from "@xdev-asia/ui";
+import { toApiError, type Account, type Agent, type Quota, type ApiError, type UsageDisplay, type UsageReport, type UsageScope, type UsageSettings } from "@/api";
 import { useI18n } from "@/i18n";
-import { displayPath, formatCount, totalOf, type Tokens } from "@/kit/kitUi";
+import { dayRange, displayPath, formatCount, localDay, totalOf, type Tokens } from "@/kit/kitUi";
+import type { ShareCardData } from "@/kit/shareCard";
 import { TokenTable } from "@/kit/UsageTab";
 import { UsageChart } from "@/kit/UsageChart";
 import { rangeDays, type UsageRange } from "@/kit/usageRange";
+import { RECENT_DAYS, bestDay, cacheReuse, formatCost, recentDays } from "@/kit/usageStats";
+import { UsageRecentSessions } from "./UsageRecentSessions";
+import { UsageShare } from "./UsageShare";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import { CACHE_TTL_LONG_MS, CACHE_TTL_SHORT_MS } from "./usageDefaults";
 import type { SettingsSectionProps } from "./sections";
+import { credentialRows } from "./usageCredentials";
 import { getUsageSettings, setUsageSettings, useUsageSettings } from "./usageSettings";
 
 export type Provider = "overview" | Agent;
@@ -22,6 +28,7 @@ const FOOTER_IDS = ["usage.display", ...AGENTS.map((a) => `usage.footer.${a}`)];
 const CACHE_IDS = ["usage.cacheTimer", "usage.cacheTtl"];
 export const CACHE_TTLS = [CACHE_TTL_SHORT_MS, CACHE_TTL_LONG_MS] as const;
 const SCAN_IDS = AGENTS.map((a) => `usage.scan.${a}`);
+const CRED_IDS = ["usage.credentials"];
 
 /** Settings → Stats & Usage: what the agents on this machine spent, from their local logs. */
 export function UsagePage(props: SettingsSectionProps): JSX.Element {
@@ -36,9 +43,15 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
   const [scope, setScope] = useState<UsageScope>("xdev");
   const [range, setRange] = useState<UsageRange>("30");
   const [report, setReport] = useState<UsageReport>();
+  // The last six weeks by day, for the heatmap and the share card, whatever the range.
+  const [recent, setRecent] = useState<[string, Tokens][]>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError["code"]>();
   const [reads, setReads] = useState(0);
+  // Credentials: read once on open and once per Check again; never polled.
+  const [accounts, setAccounts] = useState<Account[]>();
+  const [quota, setQuota] = useState<Quota[]>([]);
+  const [checking, setChecking] = useState(false);
   // The first read of the page reads the new log bytes; Refresh and Enable ask for it again.
   const refresh = useRef(true);
   const saving = useRef(false);
@@ -53,6 +66,31 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
     );
   }, [api]);
 
+  async function checkCredentials(): Promise<void> {
+    setChecking(true);
+    try {
+      const [a, q] = await Promise.all([api.accounts(), api.quota()]);
+      setAccounts(a.accounts);
+      setQuota(q);
+    } catch (e) {
+      setError(toApiError(e).code);
+    } finally {
+      setChecking(false);
+    }
+  }
+  useEffect(() => {
+    void checkCredentials();
+  }, [api]);
+  async function signIn(name: string): Promise<void> {
+    try {
+      await api.loginAccount(name);
+      // The sign-in is done; look once more, so the row does not stay on its old state.
+      await checkCredentials();
+    } catch (e) {
+      setError(toApiError(e).code);
+    }
+  }
+
   // Agents the chosen provider covers, and which of them may be read.
   const covered: Agent[] = provider === "overview" ? AGENTS : [provider];
   const off = settings === null ? [] : covered.filter((a) => !settings.scan[a]);
@@ -63,6 +101,7 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
   useEffect(() => {
     if (settings === null || !anyOn) {
       setReport(undefined);
+      setRecent(undefined);
       setBusy(false);
       return;
     }
@@ -70,13 +109,30 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
     setBusy(true);
     const wanted = refresh.current;
     refresh.current = false;
-    const { sinceDay, untilDay } = rangeDays(range, new Date());
-    api.kitUsageReport({ sinceDay, untilDay, agent: provider === "overview" ? null : provider, scope, refresh: wanted }).then(
+    const now = new Date();
+    const { sinceDay, untilDay } = rangeDays(range, now);
+    const agent = provider === "overview" ? null : provider;
+    api.kitUsageReport({ sinceDay, untilDay, agent, scope, refresh: wanted }).then(
       (next) => {
         if (stale) return;
         setReport(next);
         setError(undefined);
         setBusy(false);
+        // A range of six weeks or more already holds them; a shorter one reads them after it,
+        // so the index the range read refreshed is the one read.
+        if (range === "all" || Number(range) >= RECENT_DAYS) {
+          setRecent(next.summary.days);
+          return;
+        }
+        const [recentSince, recentUntil] = dayRange(RECENT_DAYS, now);
+        api.kitUsageReport({ sinceDay: recentSince, untilDay: recentUntil, agent, scope, refresh: false }).then(
+          (six) => {
+            if (!stale) setRecent(six.summary.days);
+          },
+          (e) => {
+            if (!stale) setError(toApiError(e).code);
+          },
+        );
       },
       (e) => {
         if (stale) return;
@@ -122,6 +178,29 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
   const since = report?.tracking_since ? new Date(report.tracking_since).toLocaleDateString() : t("usage.stats.noDate");
   const days = report?.summary.days ?? [];
   const empty = report !== undefined && (days.length === 0 || tokens === 0);
+  const cost = report?.cost;
+  const costText = cost === undefined ? "–" : formatCost(cost);
+  const costNote = cost !== undefined && cost.priced && cost.unpriced ? t("usage.stats.cost.excludes") : undefined;
+  const costs = report === undefined ? undefined : Object.fromEntries(report.cost_by_agent.map(([a, c]) => [label(a), formatCost(c)]));
+  const claudeTokens = report?.by_agent.find(([a]) => a === "claude")?.[1];
+  const reuse = provider === "claude" && claudeTokens !== undefined ? cacheReuse(claudeTokens) : null;
+  const recentList = recent ?? [];
+  const heat = provider === "overview" ? recentDays(recentList, RECENT_DAYS, new Date()) : [];
+  const best = provider === "overview" ? bestDay(days) : null;
+  // The card is for one agent: Overview mixes them and has none.
+  const shareData: ShareCardData | null =
+    report === undefined || provider === "overview"
+      ? null
+      : {
+          provider,
+          range,
+          untilDay: localDay(new Date()),
+          cost: report.cost,
+          tokens,
+          topModel: report.summary.by_model[0]?.[0] ?? null,
+          sessions: report.sessions,
+          days: recentList,
+        };
 
   return (
     <div className="settings-page usage-page">
@@ -142,12 +221,19 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
           [
             ["sessions", formatCount(report?.sessions ?? 0, locale)],
             ["tokens", formatCount(tokens, locale)],
+            ["cost", costText],
             ["since", since],
           ] as const
         ).map(([key, value]) => (
-          <div className="usage-tile" key={key} data-tile={key}>
+          <div
+            className="usage-tile"
+            key={key}
+            data-tile={key}
+            title={key === "cost" && report !== undefined ? t("usage.stats.cost.asOf", { date: report.prices_as_of }) : undefined}
+          >
             <span className="usage-tile-label">{t(`usage.stats.tile.${key}`)}</span>
             <strong className="usage-tile-value">{value}</strong>
+            {key === "cost" && costNote !== undefined && <small className="usage-tile-note" data-cost-note>{costNote}</small>}
           </div>
         ))}
       </div>
@@ -184,6 +270,7 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
           </select>
         </label>
         <div className="settings-actions settings-actions-start">
+          {shareData !== null && !empty && <UsageShare api={api} data={shareData} />}
           <button
             type="button"
             className="btn-secondary"
@@ -225,9 +312,30 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
           </div>
           <UsageChart days={days} />
           {provider === "overview" ? (
-            <TokenTable title={t("usage.stats.byProvider")} rows={report.by_agent.map<[string, Tokens]>(([a, tk]) => [label(a), tk])} />
+            <>
+              <TokenTable title={t("usage.stats.byProvider")} rows={report.by_agent.map<[string, Tokens]>(([a, tk]) => [label(a), tk])} costs={costs} />
+              <section className="kit-block usage-heatmap" aria-label={t("usage.stats.heatmap.title")} data-heatmap>
+                <h3 className="kit-h">{t("usage.stats.heatmap.title")}</h3>
+                <p className="settings-hint">{t("usage.stats.heatmap.description", { days: RECENT_DAYS })}</p>
+                <Heatmap
+                  label={t("usage.stats.heatmap.label", { days: RECENT_DAYS })}
+                  cells={heat.map((d) => ({ key: d.day, level: d.level, label: t("usage.stats.heatmap.cell", { day: d.day, tokens: formatCount(d.total, locale) }) }))}
+                  startWeekday={heat.length === 0 ? 0 : new Date(`${heat[0]!.day}T00:00:00`).getDay()}
+                  lessLabel={t("usage.stats.heatmap.less")}
+                  moreLabel={t("usage.stats.heatmap.more")}
+                />
+                {best !== null && <Badge status="neutral">{t("usage.stats.heatmap.best", { day: best })}</Badge>}
+              </section>
+            </>
           ) : (
             <>
+              {reuse !== null && (
+                <p className="usage-cache" data-cache-line>
+                  <strong>{t("usage.stats.cache.reuse", { percent: Math.round(reuse * 100) })}</strong>
+                  <span className="settings-hint">{t("usage.stats.cache.note")}</span>
+                </p>
+              )}
+              <UsageRecentSessions agent={provider} sessions={report.recent_sessions} />
               <TokenTable title={t("kit.usage.byModel")} rows={report.summary.by_model} />
               <TokenTable title={t("kit.usage.byFolder")} rows={report.summary.by_folder.map<[string, Tokens]>(([f, tk]) => [displayPath(f), tk])} />
             </>
@@ -264,6 +372,38 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
 
       {settings && (
         <>
+          <SettingGroup ids={CRED_IDS} filter={filter}>
+            <h4 className="settings-group">{t("settings.usage.credentials.group")}</h4>
+            <SettingRow id="usage.credentials" filter={filter}>
+              {accounts !== undefined && accounts.length === 0 ? (
+                <p className="kit-empty" data-field="credentials-empty">{t("settings.usage.credentials.empty")}</p>
+              ) : (
+                <ul className="settings-list">
+                  {credentialRows(accounts ?? [], quota).map((r) => (
+                    <li className="settings-item" key={r.name} data-credential={r.name}>
+                      <div className="settings-item-text">
+                        <strong>{t(`usage.stats.provider.${r.provider}`)} · {r.name}</strong>
+                        <span className="settings-path" data-field="credential-status">
+                          {t(`settings.usage.credentials.status.${r.status}`)}
+                          {r.note ? ` · ${t(`settings.usage.credentials.note.${r.note}`)}` : ""}
+                        </span>
+                      </div>
+                      {r.canSignIn && (
+                        <button type="button" className="btn-secondary" data-act={`signin-${r.name}`} onClick={() => void signIn(r.name)}>
+                          {t("settings.usage.credentials.signIn")}
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="settings-actions settings-actions-start">
+                <button type="button" className="btn-secondary" data-act="check-credentials" disabled={checking} onClick={() => void checkCredentials()}>
+                  {t("settings.usage.credentials.check")}
+                </button>
+              </div>
+            </SettingRow>
+          </SettingGroup>
           <SettingGroup ids={FOOTER_IDS} filter={filter}>
             <h4 className="settings-group">{t("settings.usage.footerGroup")}</h4>
             <SettingRow id="usage.display" filter={filter}>

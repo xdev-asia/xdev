@@ -38,6 +38,16 @@ pub(crate) fn run_long(workdir: &Path, args: &[&str]) -> Result<Output, GitError
     spawn(workdir, args, None, true, LONG_TIMEOUT)
 }
 
+/// Like `run_long`, with extra environment variables for git; `LC_ALL=C`
+/// makes the messages on stderr readable.
+pub(crate) fn run_long_env(
+    workdir: &Path,
+    args: &[&str],
+    envs: &[(&str, &str)],
+) -> Result<Output, GitError> {
+    spawn_env(workdir, args, None, true, LONG_TIMEOUT, envs)
+}
+
 /// Like `run`, but the whole result survives a failure, so the caller can
 /// show what a hook printed.
 pub(crate) fn run_output(

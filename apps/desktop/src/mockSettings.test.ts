@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { createMockApi } from "./api";
-import { DIFF_DEFAULTS, NAVIGATION_DEFAULTS, SIDEBAR_PREFS_DEFAULTS } from "./mockSettings";
+import { AGENTS_SETTINGS_DEFAULTS, DIFF_DEFAULTS, NAVIGATION_DEFAULTS, SIDEBAR_PREFS_DEFAULTS } from "./mockSettings";
 
 it("starts navigation and diff from the defaults the backend stores", async () => {
   const api = createMockApi({});
@@ -9,6 +9,8 @@ it("starts navigation and diff from the defaults the backend stores", async () =
     confirmClosePinned: true,
     confirmCloseRunning: true,
     askBeforeDeleteWorktree: true,
+    alwaysForceDeleteWorktrees: false,
+    alwaysDeleteKeptBranches: false,
   });
   expect(await api.diffSettings()).toEqual({
     defaultView: "inline",
@@ -71,7 +73,43 @@ it("the mock usage report follows the scan switches and keeps tracking-since acr
 it("carries the sidebar layout through a prefs put", async () => {
   const api = createMockApi({});
   expect(await api.sidebarPrefsGet()).toEqual(SIDEBAR_PREFS_DEFAULTS);
-  const next = { ...SIDEBAR_PREFS_DEFAULTS, groupBy: "pr" as const, sort: "recent" as const, compactCards: true, card: { ...SIDEBAR_PREFS_DEFAULTS.card, time: false } };
+  const next = { ...SIDEBAR_PREFS_DEFAULTS, groupBy: "pr" as const, sort: "smart" as const, projectOrder: "recent" as const, pinnedInGroups: true, compactCards: true, card: { ...SIDEBAR_PREFS_DEFAULTS.card, time: false } };
   expect(await api.sidebarPrefsPut(next)).toEqual(next);
   expect(await api.sidebarPrefsGet()).toEqual(next);
+});
+
+it("starts the pull policy at fast-forward only and stores a change", async () => {
+  const api = createMockApi({});
+  expect((await api.gitSettings()).pullPolicy).toBe("ff-only");
+  const stored = await api.setGitSettings({ ...(await api.gitSettings()), pullPolicy: "rebase" });
+  expect(stored.pullPolicy).toBe("rebase");
+  expect((await api.gitSettings()).pullPolicy).toBe("rebase");
+});
+
+it("stores the orchestration settings with the depth clamped to one through nine", async () => {
+  const api = createMockApi({});
+  expect(await api.orchestrationSettings()).toEqual({ nestedWorkerMaxDepth: 1, workerAutoClose: true });
+  const seen = vi.fn();
+  api.onSettingsChanged((e) => seen(e.sections));
+  expect((await api.orchestrationSettingsPut({ nestedWorkerMaxDepth: 40, workerAutoClose: false })).nestedWorkerMaxDepth).toBe(9);
+  expect((await api.orchestrationSettingsPut({ nestedWorkerMaxDepth: 0, workerAutoClose: false })).nestedWorkerMaxDepth).toBe(1);
+  expect(await api.orchestrationSettings()).toEqual({ nestedWorkerMaxDepth: 1, workerAutoClose: false });
+  expect(seen).toHaveBeenCalledWith(["orchestration"]);
+});
+
+it("starts the agents settings with keep awake off and no generated tab titles", async () => {
+  const api = createMockApi({});
+  expect(await api.agentsSettings()).toEqual(AGENTS_SETTINGS_DEFAULTS);
+  const next = { ...AGENTS_SETTINGS_DEFAULTS, accountSwitch: "keep" as const, keepAwake: "agent" as const, autoTabTitle: true };
+  expect(await api.agentsSettingsPut(next)).toEqual(next);
+  expect(await api.agentsSettings()).toEqual(next);
+});
+
+it("emits the shell section on a shell settings put through the mock api", async () => {
+  const api = createMockApi({});
+  const seen = vi.fn();
+  api.onSettingsChanged((e) => seen(e.sections));
+  const stored = await api.shellSettingsPut({ ...(await api.shellSettings()), minimizeToTray: true });
+  expect(stored.minimizeToTray).toBe(true);
+  expect(seen).toHaveBeenCalledWith(["shell"]);
 });

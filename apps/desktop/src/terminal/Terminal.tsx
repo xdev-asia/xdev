@@ -9,12 +9,13 @@ import { toApiError, type Api, type ApiError, type PtyInfo, type PtyProfile } fr
 import { openFile } from "@/files/openFile";
 import { useI18n } from "@/i18n";
 import { appOwnsKey } from "@/keys/keymap";
-import { IS_MAC } from "@/platform";
+import { IS_MAC, PLATFORM } from "@/platform";
 import { copyText } from "@/ui/clipboard";
 import type { MenuItem } from "@/ui/ContextMenu";
 import { pushToast } from "@/workspace/toastStore";
 import { PtyClient } from "./ptyClient";
 import { createTerminalHandle } from "./terminalActions";
+import { getCustomSchemes, subscribeCustomSchemes } from "./customSchemes";
 import { getTerminalSettings, subscribeTerminalSettings } from "./terminalSettings";
 import { decodeOsc52Write, xtermOptions } from "./terminalOptions";
 import { TerminalFind } from "./TerminalFind";
@@ -22,6 +23,12 @@ import { createBell } from "./terminalBell";
 import { attachRenderer } from "./terminalRenderer";
 import { followAppTheme } from "./terminalColors";
 import { createFileLinkProvider, createLinkResolver, createOscLinkHandler, urlLinkOptions, type TermLinksEnv } from "./termLinks";
+import { pasteClipboard, type PasteResult } from "./clipboardPaste";
+import { registerDropTarget } from "./fileDrop";
+import { trackInputModes } from "./inputModes";
+import { shellKindFor, type ShellKind } from "./pathPaste";
+import { effectiveOptionAsAlt, getDetectedLayout, subscribeDetectedLayout } from "./optionAsAlt";
+import { createOptionSideTracker, resolveTerminalKey } from "./terminalKeys";
 
 /** What a menu, the palette or a shortcut can do to one terminal. Acts on the xterm; nothing goes to the pty unless said. */
 export interface TerminalHandle {
@@ -93,10 +100,21 @@ export function Terminal(props: {
   // Callbacks change every render; the effect below runs once per pty.
   const handlers = useRef(props);
   handlers.current = props;
-  // The link menu's toasts read the live translator.
+  const clientRef = useRef<PtyClient | null>(null);
+  // The quoting kind of the running program, known once the pty has started.
+  const shellKind = useRef<ShellKind>("unknown");
+  // An agent CLI runs in the pane; until the pty reports it, a non-shell profile is taken as one.
+  const isAgent = useRef(props.profile !== "shell");
+  // Link and paste toasts read the live translator.
   const tRef = useRef(t);
   tRef.current = t;
-  const clientRef = useRef<PtyClient | null>(null);
+  // A paste that saved nothing says why; the others are silent.
+  const reportPaste = (result: PasteResult) => {
+    if (result === "too_large") pushToast({ text: tRef.current("terminal.input.imageTooLarge") });
+    else if (result === "failed") pushToast({ text: tRef.current("terminal.input.imageSaveFailed") });
+  };
+  const reportPasteRef = useRef(reportPaste);
+  reportPasteRef.current = reportPaste;
   // Opens the find bar, or focuses it when open. A one-line selection becomes the query.
   const openFind = () => {
     const selected = xterm.current?.getSelection() ?? "";
@@ -107,7 +125,14 @@ export function Terminal(props: {
   openFindRef.current = openFind;
   // One handle per view; it reads the live xterm on each call.
   const handle = useRef(
-    createTerminalHandle({ term: () => xterm.current, client: () => clientRef.current, find: () => openFindRef.current() }),
+    createTerminalHandle({
+      term: () => xterm.current,
+      client: () => clientRef.current,
+      find: () => openFindRef.current(),
+      saveImage: () => handlers.current.api.clipboardImageSave(),
+      shell: () => shellKind.current,
+      pasted: (result) => reportPasteRef.current(result),
+    }),
   );
   useImperativeHandle(props.handleRef, () => handle.current, []);
 
@@ -124,7 +149,7 @@ export function Terminal(props: {
     const css = getComputedStyle(el);
     const color = (name: string) => css.getPropertyValue(name).trim() || undefined;
     const mono = color("--x-font-mono");
-    const initial = xtermOptions(getTerminalSettings(), mono, color);
+    const initial = xtermOptions(getTerminalSettings(), mono, color, getCustomSchemes());
     // File paths, URLs and OSC 8 links; the hover tip is a state of the pane.
     const links: TermLinksEnv = {
       worktree: () => handlers.current.worktree,
@@ -178,12 +203,60 @@ export function Terminal(props: {
     term.open(el);
     // WebGL or DOM, as Settings says; after `open`, which the addon needs.
     const renderer = attachRenderer(term, getTerminalSettings().gpu);
+    // What the program asked for (kitty flags, modifyOtherKeys) and which Option keys are held.
+    const modes = trackInputModes(term);
+    const optionSides = createOptionSideTracker();
+    // The program is gone: its keyboard modes go with it.
+    let offExit: (() => void) | null = null;
+    let exitGone = false;
+    void props.api
+      .onPtyExit((exit) => {
+        if (exit.id === props.id) modes.reset();
+      })
+      .then((off) => {
+        if (exitGone) off();
+        else offExit = off;
+      })
+      .catch(() => {});
+    const effectiveOption = () => effectiveOptionAsAlt(getTerminalSettings().macOptionAsAlt, getDetectedLayout());
+    // With both Option keys as Alt, xterm itself encodes Option+key as ESC + key.
+    const applyOptionMeta = () => {
+      term.options.macOptionIsMeta = PLATFORM === "mac" && effectiveOption() === "both";
+    };
+    applyOptionMeta();
+    const offLayout = subscribeDetectedLayout(applyOptionMeta);
+    const clearOptionSides = () => optionSides.clear();
+    el.addEventListener("focusout", clearOptionSides);
     // A chord the app owns (per the key policy) never reaches the program: a terminal action runs
     // here, any other one has run in the window handler before xterm saw it.
     term.attachCustomKeyEventHandler((e) => {
+      if (e.key === "Alt") {
+        if (e.type === "keydown") optionSides.down(e);
+        else if (e.type === "keyup") optionSides.up(e);
+      }
       if (e.type !== "keydown") return true;
       const action = appOwnsKey(e);
-      if (action === null) return true;
+      if (action === null) {
+        const resolved = resolveTerminalKey(e, {
+          platform: PLATFORM,
+          optionAsAlt: effectiveOption(),
+          optionSide: optionSides.get(),
+          kittyFlags: modes.kittyFlags(),
+          modifyOtherKeys: modes.modifyOtherKeys(),
+          alternateScreen: term.buffer.active.type === "alternate",
+          agent: isAgent.current,
+        });
+        if (resolved === null) return true;
+        if (resolved.type === "scroll") {
+          if (resolved.to === "top") term.scrollToTop();
+          else term.scrollToBottom();
+        } else {
+          handlers.current.onInput?.(resolved.data);
+          void client.input(resolved.data).catch(() => {});
+        }
+        e.preventDefault();
+        return false;
+      }
       switch (action) {
         case "terminal.find":
           openFindRef.current();
@@ -200,12 +273,7 @@ export function Terminal(props: {
           break;
         }
         case "terminal.paste":
-          void navigator.clipboard
-            ?.readText()
-            .then((text) => {
-              if (text) term.paste(text);
-            })
-            .catch(() => {});
+          void handle.current.paste();
           break;
         default:
           return false;
@@ -237,12 +305,15 @@ export function Terminal(props: {
     const onContextMenu = (e: MouseEvent) => {
       if (getTerminalSettings().rightClickPaste && !e.shiftKey) {
         e.preventDefault();
-        void navigator.clipboard
-          ?.readText()
-          .then((text) => {
-            if (text) void client.input(text).catch(() => {});
-          })
-          .catch(() => {});
+        // As before, the text goes straight to the pty; an image becomes its saved path.
+        void pasteClipboard({
+          readText: async () => (await navigator.clipboard?.readText()) ?? "",
+          saveImage: () => handlers.current.api.clipboardImageSave(),
+          pasteText: (text) => client.input(text),
+          writeRaw: (data) => client.input(data),
+          shell: () => shellKind.current,
+          bracketedMode: () => term.modes.bracketedPasteMode,
+        }).then((result) => reportPasteRef.current(result), () => {});
         return;
       }
       const menu = handlers.current.onMenu;
@@ -260,8 +331,8 @@ export function Terminal(props: {
     };
     el.addEventListener("mouseenter", onMouseEnter);
     // A change in Settings applies to this pane at once, with no restart.
-    const offSettings = subscribeTerminalSettings(() => {
-      const next = xtermOptions(getTerminalSettings(), mono, color);
+    const applySettings = () => {
+      const next = xtermOptions(getTerminalSettings(), mono, color, getCustomSchemes());
       term.options.fontFamily = next.fontFamily;
       term.options.fontSize = next.fontSize;
       term.options.fontWeight = next.fontWeight;
@@ -275,15 +346,23 @@ export function Terminal(props: {
       term.options.scrollSensitivity = next.scrollSensitivity;
       term.options.fastScrollSensitivity = next.fastScrollSensitivity;
       term.options.minimumContrastRatio = next.minimumContrastRatio;
+      applyOptionMeta();
       renderer.set(getTerminalSettings().gpu);
       fitVisible();
       // A font that has not loaded yet measures wrong; measure again when it has.
       if (typeof document !== "undefined") void document.fonts?.ready.then(() => alive && fitVisible());
-    });
+    };
+    const offSettingsStore = subscribeTerminalSettings(applySettings);
+    // An import or a removal changes which scheme an id means.
+    const offSchemes = subscribeCustomSchemes(applySettings);
+    const offSettings = () => {
+      offSettingsStore();
+      offSchemes();
+    };
 
     // The app theme switching between light and dark: read the variables again for this pane.
     const offTheme = followAppTheme(el, (token) => {
-      const next = xtermOptions(getTerminalSettings(), mono, token);
+      const next = xtermOptions(getTerminalSettings(), mono, token, getCustomSchemes());
       term.options.theme = next.theme;
       paint(next.theme.background);
     });
@@ -312,6 +391,10 @@ export function Terminal(props: {
       }, props.account ?? null, { truncated: t("ptyd.truncated") }).then(
         (info) => {
           if (!alive) return;
+          isAgent.current = info.agent;
+          // Limit: quoting follows the program the pane started, not a shell run inside it (pwsh in a
+          // bash pane is quoted as bash). A WSL pane is quoted as posix; a Windows path is quoted but not converted to /mnt/c.
+          shellKind.current = shellKindFor(info.program, info.agent, PLATFORM === "win");
           handlers.current.onStarted(info);
           term.focus();
         },
@@ -320,11 +403,25 @@ export function Terminal(props: {
     });
     const observer = new ResizeObserver(fitVisible);
     observer.observe(el);
+    // Files dropped from the OS land here as paths; the shell's drop listener finds this pane by its host.
+    const offDrop = registerDropTarget(el, {
+      write: (data) => client.input(data),
+      ready: () => client.spawned,
+      focus: () => term.focus(),
+      shell: () => shellKind.current,
+      bracketed: () => term.modes.bracketedPasteMode,
+    });
 
     return () => {
       alive = false;
+      offDrop();
       offSettings();
       offTheme();
+      offLayout();
+      exitGone = true;
+      offExit?.();
+      modes.dispose();
+      el.removeEventListener("focusout", clearOptionSides);
       renderer.dispose();
       bell.dispose();
       el.removeEventListener("contextmenu", onContextMenu, true);

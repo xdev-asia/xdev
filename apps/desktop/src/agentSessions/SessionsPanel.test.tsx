@@ -42,7 +42,7 @@ function row(key: string, title: string | null, last: number, extra: Partial<Ses
 
 function props(rows: SessionRow[], over: Partial<SessionsPanelProps> = {}, state: Partial<AgentSessionsState> = {}): SessionsPanelProps {
   return {
-    state: { query: DEFAULT_QUERY, rows, loading: false, error: null, homes: ["local"], more: false, ...state },
+    state: { query: DEFAULT_QUERY, rows, loading: false, error: null, homes: ["local"], more: false, contentSearch: false, ...state },
     now: NOW,
     canScope: { worktree: true, repo: true },
     openTab: () => null,
@@ -69,6 +69,23 @@ describe("SessionsPanel", () => {
     expect(markup).toContain(translate("en", "agentSessions.day.yesterday"));
     expect(markup).toContain("Fix login");
     expect(markup).toContain(translate("en", "agentSessions.untitled"));
+  });
+
+  it("a row with a hit shows the snippet with the matched words marked, and no markup runs", () => {
+    const markup = html(props([row("a", "Fix login", NOW, { hit: "see the <mark>parser</mark> &lt;b&gt;" })]));
+    expect(markup).toContain('class="as-snippet"');
+    expect(markup).toContain("<mark>parser</mark>");
+    expect(markup).toContain("&lt;b&gt;");
+    expect(markup).not.toContain("<b>");
+  });
+
+  it("a row without a hit has no snippet line", () => {
+    expect(html(props([row("a", "Fix login", NOW)]))).not.toContain("as-snippet");
+  });
+
+  it("the placeholder says text is searched when the content search is on", () => {
+    expect(html(props([], {}, { contentSearch: true }))).toContain(`placeholder="${translate("en", "sessionSearch.placeholder")}"`);
+    expect(html(props([]))).toContain(`placeholder="${translate("en", "agentSessions.search.placeholder")}"`);
   });
 
   it("an open session offers Open instead of Resume", () => {

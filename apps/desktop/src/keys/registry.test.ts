@@ -26,7 +26,7 @@ const ALL: Record<ActionId, true> = {
   "zoom.in": true, "zoom.out": true, "zoom.reset": true,
   "tab.reopenClosed": true,
   "settings.open": true, "settings.shortcuts": true,
-  "docs.search": true, "docs.new": true, "docs.save": true, "file.save": true,
+  "docs.search": true, "docs.new": true, "docs.save": true, "file.save": true, "file.markdownPreview": true,
   "quickCommands.open": true, "quickOpen.open": true,
 };
 

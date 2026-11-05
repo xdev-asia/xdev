@@ -7,11 +7,16 @@ import { ContextMenu } from "@/ui/ContextMenu";
 import { pushToast } from "@/workspace/toastStore";
 import { PLATFORM } from "@/platform";
 import { Button } from "@xdev-asia/ui";
+import { ImageView } from "./ImageView";
+import { MarkdownPane } from "./MarkdownPane";
+import { MediaView } from "./MediaView";
+import { LoadError } from "./LoadError";
 import { CodeEditor } from "./CodeEditor";
 import { useEditorSettings } from "./editorSettings";
 import { loadFile, saveFile } from "./fileIO";
 import { gutterMenuItems, type GutterSelection } from "./gutterMenu";
 import { fileTabs, useFileEntry } from "./fileTabs";
+import { viewerOf } from "./viewer";
 
 /** One open file: reads it when it first shows, then edits it, or says why it cannot. */
 export function FileView(props: { api: Api; worktree: string; rel: string }): JSX.Element {
@@ -23,9 +28,11 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
   // The gutter's right-click menu: where it opened and for which line.
   const [gutter, setGutter] = useState<{ at: { x: number; y: number }; line: number; selection: GutterSelection | null } | null>(null);
   const io = { api, store: fileTabs, t };
+  // Images and media are read as bytes by their own view, so the text read is skipped for them.
+  const direct = viewerOf(rel) !== "text" && viewerOf(rel) !== "markdown";
   useEffect(() => {
-    if (status === "loading") void loadFile({ api, store: fileTabs, t }, worktree, rel);
-  }, [api, worktree, rel, status, t]);
+    if (!direct && status === "loading") void loadFile({ api, store: fileTabs, t }, worktree, rel);
+  }, [api, worktree, rel, status, t, direct]);
 
   const reveal = (
     <button type="button" className="btn-secondary" onClick={() => void api.fileReveal(worktree, rel).catch(() => undefined)}>
@@ -33,11 +40,30 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
     </button>
   );
 
+  const viewer = direct ? viewerOf(rel) : entry?.status === "ready" ? viewerOf(rel, entry.kind) : "text";
   let body: JSX.Element;
-  if (!entry || entry.status === "loading") {
+  if (viewer === "image") {
+    body = <ImageView api={api} worktree={worktree} rel={rel} />;
+  } else if (viewer === "media") {
+    body = <MediaView api={api} worktree={worktree} rel={rel} />;
+  } else if (!entry || entry.status === "loading") {
     body = <p className="ws-empty">{t("files.loading")}</p>;
   } else if (entry.status === "error") {
-    body = <p className="ws-empty">{entry.error === "too_large" ? t("files.tooLarge") : t(`error.${entry.error}`)}</p>;
+    const failed = entry.error ?? "io";
+    body =
+      failed === "too_large" ? (
+        <div className="file-note">
+          <p className="ws-empty">{t("files.tooLarge")}</p>
+          <p className="file-note-body">{t("files.tooLarge.body")}</p>
+          {reveal}
+        </div>
+      ) : (
+        <LoadError
+          code={failed}
+          onRetry={() => void loadFile(io, worktree, rel)}
+          onReveal={() => void api.fileReveal(worktree, rel).catch(() => undefined)}
+        />
+      );
   } else if (entry.kind === "binary") {
     body = (
       <div className="file-note">
@@ -55,7 +81,7 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
       </div>
     );
   } else {
-    body = (
+    const editor = (
       <>
         {entry.conflict !== null && (
           <div className="file-conflict" role="alert">
@@ -78,6 +104,7 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
         {entry.saving && <span className="file-saving" role="status">{t("files.saving")}</span>}
       </>
     );
+    body = viewer === "markdown" ? <MarkdownPane api={api} worktree={worktree} rel={rel} text={entry.text} source={editor} /> : editor;
   }
   return (
     <div className="file-view" data-rel={rel} data-kind={entry?.kind}>

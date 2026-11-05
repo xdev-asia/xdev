@@ -10,7 +10,7 @@ function ship(over: { ahead?: number; behind?: number; upstream?: boolean; commi
     branch: "oak",
     base: "main",
     remote: "origin",
-    upstream: upstream ? { remote: "origin", branch: "oak", id: "b", ahead, behind } : null,
+    upstream: upstream ? { remote: "origin", branch: "oak", id: "b", ahead, behind, rewritten: false } : null,
     headPushed: ahead === 0,
     atStart: false,
     range: { mergeBase: "m", added: 1, removed: 0, commits: Array(commits).fill(commit), truncated: false },
@@ -72,5 +72,23 @@ describe("checksSummary", () => {
     expect(checksSummary([check("pass"), check("pending")])).toBe("pending");
     expect(checksSummary([check("pending"), check("fail"), check("pass")])).toBe("fail");
     expect(checksSummary([check("cancel")])).toBe("fail");
+  });
+});
+
+describe("shipAction with a pull policy", () => {
+  const split = ship({ ahead: 1, behind: 1 });
+  it("keeps diverged for ff-only, the default", () => {
+    expect(shipAction({ checked: 0, ship: split, pr: null })).toBe("diverged");
+    expect(shipAction({ checked: 0, ship: split, pr: null, policy: "ff-only" })).toBe("diverged");
+  });
+  it("pulls a split history under merge, rebase and git-config", () => {
+    for (const policy of ["merge", "rebase", "git-config"] as const) {
+      expect(shipAction({ checked: 0, ship: split, pr: null, policy })).toBe("pull");
+    }
+  });
+  it("stays diverged when the remote only has older copies, whatever the policy", () => {
+    const s = ship({ ahead: 1, behind: 1 });
+    s.upstream = { ...s.upstream!, rewritten: true };
+    expect(shipAction({ checked: 0, ship: s, pr: null, policy: "merge" })).toBe("diverged");
   });
 });

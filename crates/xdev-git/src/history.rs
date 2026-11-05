@@ -27,7 +27,7 @@ impl Repo {
     }
 
     /// The full id of commit `id`, which must be plain hex.
-    fn commit_of(&self, id: &str) -> Result<String, GitError> {
+    pub(crate) fn commit_of(&self, id: &str) -> Result<String, GitError> {
         // Checked before git sees it, so an id can never be read as an
         // option or a rev expression.
         if !is_commit_id(id) {

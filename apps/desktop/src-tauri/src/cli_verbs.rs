@@ -21,7 +21,10 @@ use crate::commands::{AppState, CmdError, load_git_settings};
 use crate::endpoint::{
     APP_PROTOCOL, AppError, Caller, Handler, Request, Scope, WAIT_MAX_S, caller_worktree, scope_of,
 };
+use crate::orchestration::{self, OrchHub};
 use crate::pty::Ptys;
+use crate::settings::OrchestrationSettings;
+use crate::settings_store;
 use crate::workspace::{WorkspaceLock, clock, update};
 
 /// One terminal tab as the UI sees it; the UI owns the state machine.
@@ -218,7 +221,7 @@ impl TabBoard {
         }
     }
 
-    fn tabs(&self) -> (Vec<TabReport>, Option<String>) {
+    pub(crate) fn tabs(&self) -> (Vec<TabReport>, Option<String>) {
         let board = self.lock();
         (board.tabs.clone(), board.selected.clone())
     }
@@ -277,8 +280,14 @@ pub struct CliHub {
 
 /// The UI's tabs, replacing the last report; `selected` is the worktree in front.
 #[tauri::command]
-pub fn cli_tabs_report(hub: State<'_, CliHub>, tabs: Vec<TabReport>, selected: Option<String>) {
+pub fn cli_tabs_report(
+    hub: State<'_, CliHub>,
+    orch: State<'_, OrchHub>,
+    tabs: Vec<TabReport>,
+    selected: Option<String>,
+) {
     hub.board.replace(tabs, selected);
+    orch.kick_pump();
 }
 
 /// The person's answer to a `cli://ask`.
@@ -320,6 +329,14 @@ pub struct Ctx<'a> {
     pub now_ms: i64,
     pub seed: u64,
     pub ask_wait: Duration,
+    /// Orchestration: the store, the pending UI answers and the mail waiters.
+    #[allow(dead_code)] // read by the orchestration verbs as they land
+    pub orch: &'a OrchHub,
+    #[allow(dead_code)]
+    pub orch_settings: OrchestrationSettings,
+    /// Types into a live PTY; false when there is none to write to.
+    #[allow(dead_code)]
+    pub write_pty: &'a dyn Fn(&str, &[u8]) -> bool,
 }
 
 /// One worktree as the verbs know it.
@@ -804,6 +821,56 @@ pub fn worktree_create(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<
     }))
 }
 
+/// The worktree a worker goes to, and whether the pick made it. `current`
+/// is the caller's; a selector is looked up; `new_child` is made under the
+/// caller's worktree and `new_top_level` under the repo's primary one.
+pub(crate) fn pick_worktree(
+    ctx: &Ctx<'_>,
+    caller: &Caller,
+    pick: &xdev_orch::WorktreePick,
+    name: Option<&str>,
+) -> Result<(String, bool), AppError> {
+    use xdev_orch::WorktreePick;
+    let all = ctx.listed()?;
+    let me = ctx.caller_worktree(caller)?;
+    let make = |parent: &Path| {
+        let req = Request {
+            id: 0,
+            method: "worktree.create".to_owned(),
+            params: json!({
+                "name": name,
+                "parent": parent.to_string_lossy(),
+            }),
+            caller: None,
+        };
+        worktree_create(ctx, &req, caller)
+    };
+    match pick {
+        WorktreePick::Current => {
+            let l = target(&all, None, me.as_deref())?;
+            Ok((l.view.path.clone(), false))
+        }
+        WorktreePick::Selector(x) => {
+            let l = target(&all, Some(x), me.as_deref())?;
+            Ok((l.view.path.clone(), false))
+        }
+        WorktreePick::NewChild => {
+            let held = target(&all, None, me.as_deref())?;
+            let made = make(Path::new(&held.view.path))?;
+            Ok((made["path"].as_str().unwrap_or_default().to_owned(), true))
+        }
+        WorktreePick::NewTopLevel => {
+            let held = target(&all, None, me.as_deref())?;
+            let primary = all
+                .iter()
+                .find(|l| l.repo_id == held.repo_id && l.view.primary)
+                .ok_or_else(no_worktree)?;
+            let made = make(Path::new(&primary.view.path))?;
+            Ok((made["path"].as_str().unwrap_or_default().to_owned(), true))
+        }
+    }
+}
+
 fn default_timeout() -> u64 {
     600
 }
@@ -849,6 +916,7 @@ pub fn dispatch(
         "worktree.set" => worktree_set(ctx, req, caller),
         "worktree.create" => worktree_create(ctx, req, caller),
         "terminal.wait" => terminal_wait(ctx, req, gone),
+        m if m.starts_with("orchestration.") => orchestration::handle(ctx, req, caller, gone),
         other => Err(bad_request(format!("unknown method {other}"))),
     }
 }
@@ -872,6 +940,8 @@ impl Handler for AppVerbs {
         let hub = app.state::<CliHub>();
         let ptys = app.state::<Ptys>();
         let cwd_of = |id: &str| ptys.cwd_of(id);
+        let write_pty = |id: &str, bytes: &[u8]| ptys.with(id, |s| s.write(bytes.to_vec())).is_ok();
+        let orch = app.state::<OrchHub>();
         let emit = |event: &str, payload: Value| {
             let _ = app.emit(event, payload);
         };
@@ -889,6 +959,9 @@ impl Handler for AppVerbs {
             now_ms,
             seed,
             ask_wait: ASK_WAIT,
+            orch: &orch,
+            orch_settings: settings_store::read(app).orchestration,
+            write_pty: &write_pty,
         };
         dispatch(&ctx, req, caller, gone)
     }
@@ -927,8 +1000,16 @@ pub(crate) mod tests {
         pub board: TabBoard,
         pub events: Mutex<Vec<(String, Value)>>,
         pub approvals: Approvals,
+        pub orch: OrchHub,
         /// The fake person: answers every ask with this, or never.
         pub answer: Option<bool>,
+        /// The fake UI: answers every `open-worker` with this, or never.
+        pub open_answer: Option<orchestration::WorkerOpenOutcome>,
+        /// `nested_worker_max_depth` the calls run under.
+        pub max_depth: u32,
+        /// Whether a write to a PTY lands; what was written.
+        pub pty_alive: bool,
+        pub pty_writes: Mutex<Vec<(String, Vec<u8>)>>,
     }
 
     pub(crate) fn fixture() -> Fixture {
@@ -982,7 +1063,12 @@ pub(crate) mod tests {
             board: TabBoard::default(),
             events: Mutex::default(),
             approvals: Approvals::default(),
+            orch: OrchHub::default(),
             answer: None,
+            open_answer: None,
+            max_depth: 1,
+            pty_alive: true,
+            pty_writes: Mutex::default(),
         }
     }
 
@@ -1011,6 +1097,12 @@ pub(crate) mod tests {
                     self.approvals
                         .answer(payload["request"].as_u64().unwrap(), allow);
                 }
+                if event == "orchestration://open-worker"
+                    && let Some(outcome) = &self.open_answer
+                {
+                    let id = payload["dispatch"].as_str().unwrap().to_owned();
+                    self.orch.opens.answer(&id, outcome.clone());
+                }
                 self.events
                     .lock()
                     .unwrap()
@@ -1028,6 +1120,18 @@ pub(crate) mod tests {
                 now_ms: 777,
                 seed: 9,
                 ask_wait: Duration::from_millis(50),
+                orch: &self.orch,
+                orch_settings: OrchestrationSettings {
+                    nested_worker_max_depth: self.max_depth,
+                    ..OrchestrationSettings::default()
+                },
+                write_pty: &|id: &str, bytes: &[u8]| {
+                    self.pty_writes
+                        .lock()
+                        .unwrap()
+                        .push((id.to_owned(), bytes.to_vec()));
+                    self.pty_alive
+                },
             };
             let req = Request {
                 id: 1,

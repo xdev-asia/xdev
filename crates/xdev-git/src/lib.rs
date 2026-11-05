@@ -3,33 +3,43 @@
 
 mod clone;
 mod commit;
+mod commit_files;
 mod conflict;
 mod diff;
 mod gh;
 mod history;
+mod host_url;
 mod hosted;
+mod log;
 mod range;
 mod remote;
 mod review;
 mod run;
 mod since;
 mod status;
+mod update;
 mod worktree;
 
 use std::path::{Path, PathBuf};
 
 pub use clone::{CloneEvent, check_clone_url, clone_name, clone_repo, parse_progress};
+pub use commit_files::{CommitFile, CommitFileStatus, CommitFiles};
 pub use conflict::{ConflictOp, ConflictState};
 pub use gh::{
     Check, CheckBucket, GhAccount, GhEnv, GhExec, GhLogin, GhOutput, ISSUE_BODY_MAX,
-    ISSUE_LIMIT_MAX, Issue, IssueComment, IssueDetail, IssueQuery, IssueState, PrDraft, PrState,
-    PrView, SystemGh, TokenGh, gh_logins, issue_list, issue_open_web, issue_view, parse_issue_ref,
-    pr_checks, pr_create, pr_open_web, pr_view, repo_name, run_failed_log,
+    ISSUE_LIMIT_MAX, Issue, IssueComment, IssueDetail, IssueDraft, IssueQuery, IssueState, PrDraft,
+    PrFilter, PrQuery, PrState, PrSummary, PrView, ProjectSummary, SystemGh, TokenGh, gh_logins,
+    issue_create, issue_list, issue_open_web, issue_view, parse_issue_ref, parse_pr_ref, pr_checks,
+    pr_create, pr_get, pr_list, pr_open_number, pr_open_web, pr_view, project_list, project_open,
+    repo_name, run_failed_log,
 };
 pub use history::Commit;
+pub use host_url::{HostKind, HostRepo, commit_url, file_url, parse_host_remote};
 pub use hosted::hosted_file_url;
+pub use log::{CommitRef, LOG_LIMIT, LOG_LIMIT_MAX, LogCommit, LogRef, RefKind, RepoLog};
 pub use remote::{BaseRange, BaseRefresh, Upstream};
 pub use review::{Branch, StageState};
+pub use update::PullPolicy;
 pub use worktree::{NumStat, WorktreeEntry, global_user_name, valid_branch_name};
 
 /// The UI translates `code()`, never the message.
@@ -66,6 +76,12 @@ pub enum GitError {
     Gh(String),
     #[error("no such issue")]
     IssueNotFound,
+    #[error("the gh login lacks a scope: {0}")]
+    GhScope(String),
+    #[error("an issue needs a title of 1 to 256 chars")]
+    BadDraft,
+    #[error("no such pull request")]
+    PrNotFound,
     #[error("the issue belongs to another repo: {0}")]
     IssueOtherRepo(String),
     #[error("a commit hook failed: {output}")]
@@ -74,6 +90,25 @@ pub enum GitError {
     StillConflicted,
     #[error("no merge, rebase, cherry-pick or revert in progress")]
     NoConflict,
+    /// Git refused because local changes are in the way. The text is what
+    /// was being done: `rebase` or `fast-forward`.
+    #[error("{0}")]
+    Dirty(&'static str),
+    /// Git refused because untracked files are in the way.
+    #[error("{0}")]
+    Untracked(&'static str),
+    #[error("a merge, rebase, cherry-pick or revert is already in progress")]
+    Conflicted,
+    /// The update stopped with conflicts and is left in progress.
+    #[error("the update stopped with conflicts")]
+    StoppedOnConflicts,
+    #[error("the base is not a remote branch")]
+    BaseNotRemote,
+    /// Pull needs a policy: git would not say how to reconcile.
+    #[error("git needs a pull policy")]
+    PullPolicy,
+    #[error("the repo has no supported web remote")]
+    NoWebRemote,
     #[error("timeout")]
     Timeout,
     #[error("not a clone URL xDev accepts: {0}")]
@@ -107,12 +142,22 @@ impl GitError {
             GitError::NotGithub => "not_github",
             GitError::Gh(_) => "gh_failed",
             GitError::IssueNotFound => "issue_not_found",
+            GitError::GhScope(_) => "gh_scope",
+            GitError::BadDraft => "bad_draft",
+            GitError::PrNotFound => "pr_not_found",
             GitError::IssueOtherRepo(_) => "issue_other_repo",
             GitError::Hook { .. } => "hook_failed",
             GitError::BadUrl(_) => "bad_arg",
             GitError::Cancelled => "cancelled",
             GitError::StillConflicted => "still_conflicted",
             GitError::NoConflict => "no_conflict",
+            GitError::Dirty(_) => "update_dirty",
+            GitError::Untracked(_) => "update_untracked",
+            GitError::Conflicted => "update_conflicted",
+            GitError::StoppedOnConflicts => "update_conflicts",
+            GitError::BaseNotRemote => "base_not_remote",
+            GitError::PullPolicy => "pull_policy",
+            GitError::NoWebRemote => "no_web_remote",
             GitError::BadId(_) | GitError::Timeout | GitError::Failed { .. } => "git",
             GitError::Io(_) => "io",
         }

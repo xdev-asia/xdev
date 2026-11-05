@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type LivePort, type Issue, type IssueDetail, type CreateRequest, type PrSummary, type MenuAction } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
@@ -14,6 +14,7 @@ import { NavButtons } from "@/nav/NavButtons";
 import { useNavHistory } from "@/nav/useNavHistory";
 import { useKeymap, type ActionId } from "@/keys/keymap";
 import { setTerminalKeyHost, startDiagnosticToasts } from "@/keys/terminalKey";
+import { startOptionAsAltProbe } from "@/terminal/optionAsAlt";
 import { startAutosave } from "@/files/autosave";
 import { fileTabId, fileTabs } from "@/files/fileTabs";
 import { onOpenFile, openFile as requestOpenFile, type OpenFileRequest } from "@/files/openFile";
@@ -23,20 +24,27 @@ import { recentFiles } from "@/search/recentFiles";
 import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
+import { usePorts } from "./usePorts";
+import { endpoint, browserUrl } from "./PortsChip";
 import { startAutoRename } from "./autoRename";
-import { currentCloseWindow, openRestoredFile, restoreLayout, startLayoutSave, undoRestore, watchWindowClose } from "./layoutPersist";
+import { startAutoTabTitle } from "./autoTabTitle";
+import { startAutoSleep } from "./autoSleep";
+import { startKeepAwakeReport } from "@/status/keepAwake";
+import { currentCloseWindow, openRestoredFile, restoreLayout, sessionFallback, startLayoutSave, undoRestore } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
-import { useNavigationSettings } from "@/settings/navigationSettings";
+import { getNavigationSettings, setNavigationSettings, useNavigationSettings } from "@/settings/navigationSettings";
 import { SettingsView } from "@/settings/SettingsView";
 import { playStatusSound } from "@/status/sound";
 import { usePresence } from "@/status/presence";
 import { eventOn, getStatusSettings, loadStatusSettings, useStatusSettings } from "@/status/statusSettings";
 import { BellMenu, bellCount, type BellRow } from "./BellMenu";
+import { ActivityPanel, type ActivityTab } from "@/activity/ActivityPanel";
+import { ActivityFeed } from "@/activity/feed";
 import { ChecksPanel } from "./ChecksPanel";
 import { IssuesPanel } from "@/issues/IssuesPanel";
-import { CreateWorktreeDialog, type AgentChoice, type CreateExtra } from "./CreateWorktreeDialog";
+import { CreateWorktreeDialog, type AgentChoice, type CreateExtra, type CreateTab } from "./CreateWorktreeDialog";
 import { DetailsDialog } from "./DetailsDialog";
 import { RenameBranchDialog } from "./RenameBranchDialog";
 import { PendingCreates, type CreateArgs } from "./pendingCreates";
@@ -44,6 +52,9 @@ import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { AddProjectDialog, parentOf } from "./AddProjectDialog";
 import { RemoveRepoDialog } from "./RemoveRepoDialog";
+import { ParentPickerDialog } from "./ParentPickerDialog";
+import { parentCandidates } from "./lineage";
+import { keptOutcome, removeArgs } from "./deleteFlow";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { removeRepo } from "./removeRepo";
 import { VaultNav } from "./VaultNav";
@@ -52,6 +63,7 @@ import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { sendCheckFix, sendFix } from "./fixAgent";
 import { sendToAgentTab, sendToOpenedTab } from "./agentPrompt";
 import { issuePrompt, issueWorkItem, issueWorktreeName, uniqueWorktreeName } from "@/issues/issueStart";
+import { prWorkItem, prWorktreeName } from "./createSource";
 import { effectiveIssueCommand, issueTemplateVars, renderIssueCommand } from "@/issues/issueTemplate";
 import { sendTarget } from "./sendTarget";
 import { SetupCard, type SetupCardState } from "./SetupCard";
@@ -61,11 +73,18 @@ import { decideSetup, hasPending, pendingLists, type PendingLists } from "./setu
 import { SetupGate } from "./setupGate";
 import { startCliReport } from "./cliReport";
 import { startCliEvents } from "./cliEvents";
+import { openFailedToast, startOrchestrationEvents } from "./orchestrationEvents";
+import { terminalOf } from "@/terminal/terminalRegistry";
 import { TrustDialog } from "./TrustDialog";
 import { AccountSwitchDialog, type SwitchRow } from "./AccountSwitchDialog";
 import { restartTabs, watchAccountSwitch, type PendingSwitch } from "./accountSwitchFlow";
 import { QuitDialog } from "./QuitDialog";
-import { askQuit, type QuitAsk, type QuitChoice } from "./quitGuard";
+import { AboutDialog } from "./AboutDialog";
+import { checkForUpdates, HelpButton, type HelpPick, runHelpPick } from "./HelpMenu";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { runMenuAction } from "@/shell/menuActions";
+import { useShellLabels } from "@/shell/shellLabels";
+import { askQuit, guardClose, installCloseGuard, type QuitAsk, type QuitChoice } from "./quitGuard";
 import { getTerminalSettings } from "@/terminal/terminalSettings";
 import { createNotifier, type Notifier } from "./notifier";
 import { AgentSessionsStore } from "@/agentSessions/store";
@@ -85,7 +104,10 @@ import { BulkBar } from "./BulkBar";
 import { BulkRemoveDialog } from "./BulkRemoveDialog";
 import { ReviewBranchesDialog } from "./ReviewBranchesDialog";
 import { isDeleteKey, typingIn } from "./deleteKey";
-import { IS_MAC } from "@/platform";
+import type { CommitAsk } from "./CommitView";
+import { IS_MAC, PLATFORM } from "@/platform";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { startFileDrop, type DropEvent } from "@/terminal/fileDrop";
 import { WorktreeTabs, type Reveal } from "./WorktreeTabs";
 import { runWithToast } from "@/quickCommands/runUi";
 import { startQuickCommands } from "@/quickCommands/store";
@@ -120,13 +142,18 @@ type Review = { repoId: string | null; busy: boolean; error?: ApiError["code"] }
 type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"]; archiving?: boolean; failed?: { code: number | null; output: string };
   /** Removed without asking (Settings → General): the dialog stays hidden until something needs an answer. */
   quiet?: boolean;
+  /** Opened from "Delete with nested worktrees": the nested tick starts on. */
+  nested?: boolean;
 };
 
 /** The app frame: repos and worktrees on the left, the selected worktree in the middle. */
+/** How often the auto sleep check runs. */
+const AUTO_SLEEP_TICK_MS = 60_000;
+
 export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
-  const { askBeforeDeleteWorktree } = useNavigationSettings();
+  const { askBeforeDeleteWorktree, alwaysForceDeleteWorktrees, alwaysDeleteKeptBranches } = useNavigationSettings();
   const [repos, setRepos] = useState<RepoView[] | null>(null);
   const [items, setItems] = useState<SidebarItem[] | null>(null);
   const [prefs, setPrefs] = useState<SidebarPrefs>(SIDEBAR_PREFS_DEFAULTS);
@@ -164,22 +191,27 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [sessions, setSessions] = useState<Sessions | null>(null);
   // The agent session history, and which of the two sidebar views shows.
   const [history, setHistory] = useState<AgentSessionsStore | null>(null);
-  const [sideView, setSideView] = useState<"worktrees" | "sessions">("worktrees");
+  const [sideView, setSideView] = useState<"worktrees" | "sessions" | "activity">("worktrees");
+  const [feed] = useState(() => new ActivityFeed());
+  const [activityAsk, setActivityAsk] = useState<{ tab: ActivityTab; seq: number }>({ tab: "threads", seq: 0 });
   // A new `seq` asks the sessions panel for the search box, or to mark one session.
   const [sessionsAsk, setSessionsAsk] = useState<{ seq: number; focus: boolean; reveal: { key: string; seq: number } | null }>({ seq: 0, focus: false, reveal: null });
   const [creating, setCreating] = useState<Creating | null>(null);
+  // The tab the create dialog was last on, for the next opening of this shell.
+  const createTab = useRef<CreateTab>("name");
   // Creates run after the dialog has closed; what a finished one does is read from this render.
   const afterCreate = useRef<{ api: Api; created(wt: WorktreeView, args: CreateArgs): void; reload(): void; linked(shared: Linked[]): void }>({ api, created() {}, reload() {}, linked() {} });
   const [pending] = useState(
     () =>
       new PendingCreates({
-        create: (repoId, name, from) => afterCreate.current.api.worktreeCreate(repoId, name, from).then((made) => {
+        create: (repoId, name, from, request) => afterCreate.current.api.worktreeCreate(repoId, name, from, request).then((made) => {
           afterCreate.current.linked(made.shared);
           return made.worktree;
         }),
         // Cancel was the go-ahead; a fresh worktree is clean, so its branch goes too.
         remove: (path, force) => afterCreate.current.api.worktreeRemove(path, force, true).finally(() => afterCreate.current.reload()),
         onCreated: (wt, args) => afterCreate.current.created(wt, args),
+        discard: (repoId, branch) => afterCreate.current.api.prBranchDiscard(repoId, branch),
       }),
   );
   useSyncExternalStore(
@@ -191,12 +223,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [trusting, setTrusting] = useState<TrustAsk | null>(null);
   // "On quit: Ask": the question shown while the window waits to close.
   const [quitting, setQuitting] = useState<{ ask: QuitAsk; answer(choice: QuitChoice): void } | null>(null);
+  // The About dialog (its version, once known) and the "quit and end terminals" confirmation.
+  const [about, setAbout] = useState<string | null>(null);
+  const [confirmEndAll, setConfirmEndAll] = useState(false);
   const [gate] = useState(() => new SetupGate());
+  // Worktrees whose setup flow already ran (made here, or run for a worker); it runs once each.
+  const setupRan = useRef(new Set<string>());
   // Which remove is current; a Cancel during the archive run bumps it so the late result is dropped.
   const removeRun = useRef(0);
   const [removing, setRemoving] = useState<Removing | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [renaming, setRenaming] = useState<WorktreeView | null>(null);
+  const [parentFor, setParentFor] = useState<{ worktree: WorktreeView; candidates: WorktreeView[] } | null>(null);
   const [notice, setNotice] = useState<ApiError["code"]>();
   const [fixNote, setFixNote] = useState(false);
   // A request to bring a tab to the front of its worktree; a new `seq` is a new request.
@@ -205,6 +243,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [visited, setVisited] = useState<string[]>([]);
   // The file a diff tab should show, for the worktree that asked.
   const [reveal, setReveal] = useState<(Reveal & { worktree: string }) | null>(null);
+  // The commit the commit tab shows, and the worktree it belongs to.
+  const [commitAsk, setCommitAsk] = useState<(CommitAsk & { worktree: string }) | null>(null);
   // How many files the Changes panel last listed, for the worktree it listed them for.
   const [changeCount, setChangeCount] = useState<{ worktree: string; count: number } | null>(null);
   // The files the Changes panel last listed; the Files tree marks them.
@@ -217,7 +257,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [bellOpen, setBellOpen] = useState(false);
   const statusSettings = useStatusSettings();
   // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
-  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {} }));
+  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, ensureMounted: (_w: string) => {}, prepareSetup: async (_w: string) => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {} }));
 
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
@@ -266,7 +306,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     };
   }, [api]);
 
-  async function load(): Promise<void> {
+  async function load(): Promise<RepoView[] | null> {
     try {
       const tree = await api.workspaceSidebar();
       const list = flattenRepos(tree);
@@ -281,9 +321,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         // The registry is complete here, so a saved layout of a worktree it does not list is gone for good.
         for (const path of sessions?.carriedWorktrees() ?? []) if (!kept.has(path)) sessions?.dropCarried(path);
       }
+      return list;
     } catch (e) {
       setNotice(toApiError(e).code);
       setRepos((r) => r ?? []);
+      return null;
     }
   }
 
@@ -323,12 +365,17 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     });
   }, [api, sessions]);
 
+  // Agent tabs take a short title from their first prompt when Settings → Agents asks for it.
+  useEffect(() => {
+    if (!sessions) return;
+    return startAutoTabTitle({ api, sessions });
+  }, [api, sessions]);
+
   // Layout restore: once per run, after the registry is known and before the saver starts (a saver that
   // ran first would replace the stored layout with an empty one). Nothing runs without a worktree.
   const restoreStarted = useRef(false);
   const saver = useRef<ReturnType<typeof startLayoutSave> | null>(null);
   const flushOnClose = useRef(() => saver.current?.flush());
-  const stopCloseWatch = useRef<() => void>(() => {});
   useEffect(() => {
     if (!sessions || !repos || repos.length === 0 || restoreStarted.current) return;
     restoreStarted.current = true;
@@ -340,27 +387,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       if (!restoreStarted.current) return;
       saver.current = startLayoutSave(api, sessions);
       if (typeof window !== "undefined") window.addEventListener("beforeunload", flushOnClose.current);
-      void currentCloseWindow().then((win) => {
-        if (!saver.current) return;
-        stopCloseWatch.current();
-        stopCloseWatch.current = watchWindowClose(saver.current, win, () =>
-          askQuit(
-            api,
-            () => getTerminalSettings().onQuit,
-            () => sessions.worktrees().flatMap((w) => sessions.tabs(w)),
-            (ask) =>
-              new Promise<QuitChoice>((resolve) =>
-                setQuitting({
-                  ask,
-                  answer: (choice) => {
-                    setQuitting(null);
-                    resolve(choice);
-                  },
-                }),
-              ),
-          ),
-        );
-      });
       if (!got || got.report.opened.length === 0) return;
       const { resumed, fresh, opened } = got.report;
       pushToast({
@@ -369,14 +395,49 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       });
     });
   }, [sessions, repos]);
+  // The close guard, set up once at mount: it looks the saver and the tabs up when a close fires, so it
+  // also works on the welcome screen, with no repos, and while the layout restore still runs.
+  const sessionsNow = useRef<Sessions | null>(null);
+  sessionsNow.current = sessions;
+  useEffect(() => {
+    let stopped = false;
+    let stop = () => {};
+    void currentCloseWindow().then((win) => {
+      if (stopped) return;
+      stop = installCloseGuard(
+        win,
+        () => saver.current,
+        () =>
+          guardClose(api, { title: live.t("shell.tray.tooltip"), body: live.t("shell.tray.notice") }, () =>
+            askQuit(
+              api,
+              () => getTerminalSettings().onQuit,
+              () => sessionsNow.current?.worktrees().flatMap((w) => sessionsNow.current?.tabs(w) ?? []) ?? [],
+              (ask) =>
+                new Promise<QuitChoice>((resolve) =>
+                  setQuitting({
+                    ask,
+                    answer: (choice) => {
+                      setQuitting(null);
+                      resolve(choice);
+                    },
+                  }),
+                ),
+            ),
+          ),
+      );
+    });
+    return () => {
+      stopped = true;
+      stop();
+    };
+  }, [api]);
   useEffect(() => {
     const close = flushOnClose.current;
     return () => {
       restoreStarted.current = false;
       saver.current?.stop();
       saver.current = null;
-      stopCloseWatch.current();
-      stopCloseWatch.current = () => {};
       if (typeof window !== "undefined") window.removeEventListener("beforeunload", close);
     };
   }, [sessions]);
@@ -421,16 +482,47 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useSyncExternalStore(stats.subscribe, stats.snapshot, stats.snapshot);
   useSyncExternalStore(useCallback((fn: () => void) => prs.subscribe(fn), [prs]), () => prs.snapshot(), () => prs.snapshot());
 
+  const portsSource = sessions ? { ptyIds: (path: string) => sessions.tabs(path).map((tab) => tab.id) } : null;
+  const { ports: livePorts, rescan: rescanPorts } = usePorts(api, portsSource, paths, prefs.card.ports && !prefs.compactCards);
+  async function stopPort(wt: WorktreeView, port: LivePort): Promise<void> {
+    try {
+      await api.portStop(sessions?.tabs(wt.path).map((tab) => tab.id) ?? [], port.pid, true);
+      pushToast({ text: t("ports.stopped", { port: port.port }) });
+    } catch (e) {
+      pushToast({ text: t(`error.${toApiError(e).code}`) });
+    }
+    await rescanPorts();
+  }
   const dots: Record<string, TabStatus | null> = Object.fromEntries(paths.map((p) => [p, sessions?.dot(p) ?? null]));
   const activity: Record<string, number | null> = Object.fromEntries(paths.map((p) => [p, sessions?.lastActivity(p) ?? null]));
   const profiles: Record<string, PtyProfile[]> = Object.fromEntries(paths.map((p) => [p, sessions?.profilesOf(p) ?? []]));
   const running = sessions ? paths.reduce((n, p) => n + working(sessions, p), 0) : 0;
   const waiting = sessions ? paths.reduce((n, p) => n + waitingIn(sessions, p), 0) : 0;
   const unreadMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.unread(p) ?? false]));
+  const sleepableMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.sleepable(p) ?? false]));
+  const asleepMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.asleep(p) ?? false]));
 
   const all = repos?.flatMap((r) => r.worktrees) ?? [];
   // A stored path that no longer exists falls back to the first worktree.
   const current = all.find((w) => w.path === selected) ?? all[0] ?? null;
+
+  // Auto sleep: once a minute, tabs of finished agents that nobody looks at and that went quiet sleep.
+  // The inputs sit in a ref, so a worktree switch does not restart the timer; the settings are read on each tick.
+  const sleepLive = useRef({ paths, current: current?.path ?? null });
+  sleepLive.current = { paths, current: current?.path ?? null };
+  useEffect(() => {
+    if (!sessions) return;
+    return startAutoSleep({
+      tickMs: AUTO_SLEEP_TICK_MS,
+      settings: () => api.agentsSettings(),
+      tabs: () => sleepLive.current.paths.flatMap((p) => sessions.tabs(p)),
+      // The worktree on screen is never touched.
+      onScreen: () => new Set(sleepLive.current.current ? sessions.tabs(sleepLive.current.current).map((t) => t.id) : []),
+      lastOutput: (id) => sessions.lastOutput(id),
+      now: () => Date.now(),
+      sleep: (id) => sessions.hibernate(id, sessionFallback(api)),
+    });
+  }, [api, sessions]);
   const currentRepo = repos?.find((r) => r.worktrees.some((w) => w.path === current?.path)) ?? null;
   const branch = current ? (current.branch ?? t("workspace.detached")) : null;
   // Noted during render, so the first frame of a worktree already has its tabs.
@@ -488,6 +580,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => {
     sessions?.setHooks(statusSettings.hooks);
   }, [sessions, statusSettings.hooks]);
+
+  // The Activity feed records every status change of the agent tabs.
+  useEffect(() => {
+    if (!sessions) return;
+    return feed.follow(sessions);
+  }, [feed, sessions]);
+
+  // Whether an agent works, for the keep-awake mode "while agents work".
+  useEffect(() => {
+    if (!sessions) return;
+    return startKeepAwakeReport(api, sessions);
+  }, [api, sessions]);
 
   // A pane nobody looks at that wants the person: OS notification, sound, and the jump back on a click.
   useEffect(() => {
@@ -602,6 +706,20 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => onOpenFile((req) => live.openFileTab(req)), [live]);
   live.selected = current?.path ?? null;
   live.reload = () => void load();
+  // A worktree the backend made (a worker's `--worktree new-*`) has had no setup: run the same flow the UI runs
+  // after a create, so `inherit` holds the agent until it ends. Not for one set up already or with setup under way.
+  live.prepareSetup = async (path) => {
+    if (setupRan.current.has(path) || gate.setupTab(path) !== null) return;
+    setupRan.current.add(path);
+    const find = (list: RepoView[] | null) => list?.find((r) => r.worktrees.some((w) => w.path === path));
+    const repo = find(live.repos) ?? find(await load());
+    if (repo) await setupAfterCreate(path, repo.id);
+  };
+  // A worktree a worker opens in must be listed and shown (hidden) so its tabs mount and start a pty.
+  live.ensureMounted = (w) => {
+    setVisited((v) => (v.includes(w) ? v : [...v, w]));
+    if (!live.repos?.some((r) => r.worktrees.some((x) => x.path === w))) live.reload();
+  };
   // `xdev worktree create --agent/--prompt`: the profile opens unfocused and gets the prompt once setup lets agents start.
   live.cliOpen = (worktree, profile, prompt) => void openDefaultAgent(worktree, profile || undefined, prompt ?? undefined);
   // The app CLI: the tabs as `xdev terminal` sees them, and what its endpoint asks of the window.
@@ -610,12 +728,23 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     const reporter = startCliReport(api, sessions, () => live.selected);
     live.cliPoke = reporter.poke;
     const stopEvents = startCliEvents(api, { reload: () => live.reload(), openTab: (w, p, prompt) => live.cliOpen(w, p, prompt), t: (key, vars) => live.t(key, vars) });
+    // Worker tabs the backend asks for, closes and reads (orchestration).
+    const stopOrchestration = startOrchestrationEvents(api, {
+      sessions,
+      gate,
+      send: (worktree, id, text, timeoutMs) => sendToOpenedTab(sessions, worktree, id, text, { timeoutMs }),
+      terminal: terminalOf,
+      ensureMounted: (w) => live.ensureMounted(w),
+      prepareSetup: (w) => live.prepareSetup(w),
+      failed: (open, stage) => void openFailedToast(open, stage, (key, vars) => live.t(key, vars)),
+    });
     return () => {
       reporter.stop();
       stopEvents();
+      stopOrchestration();
       live.cliPoke = () => {};
     };
-  }, [api, sessions]);
+  }, [api, sessions, gate]);
   const selectedPath = current?.path ?? null;
   useEffect(() => live.cliPoke(), [selectedPath]);
   useEffect(() => onOpenFile((req) => recentFiles.touch(req.worktree, req.rel)), []);
@@ -640,6 +769,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   function openFile(worktree: string, file: string): void {
     setReveal((r) => ({ worktree, file, seq: (r?.seq ?? 0) + 1 }));
+  }
+
+  function openCommit(worktree: string, id: string, file: string | null): void {
+    setCommitAsk((c) => ({ worktree, id, file, seq: (c?.seq ?? 0) + 1 }));
   }
 
   function select(wt: WorktreeView): void {
@@ -683,6 +816,20 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       setTerminalKeyHost(null);
     };
   }, [live]);
+  // macOS: which keyboard layout is active decides what "Option as Alt: auto" does.
+  useEffect(() => (IS_MAC ? startOptionAsAltProbe(() => api.keyboardInputSource()) : undefined), []);
+  // Files dropped from the OS go to the terminal pane under the pointer, as paths quoted for the pane's shell.
+  useEffect(
+    () =>
+      startFileDrop({
+        listen: async (cb) => getCurrentWebview().onDragDropEvent((e) => cb(e.payload as DropEvent)),
+        scale: () => window.devicePixelRatio || 1,
+        hit: (x, y) => document.elementFromPoint(x, y),
+        onError: () => pushToast({ text: live.t("terminal.input.dropFailed") }),
+        onRejected: () => pushToast({ text: live.t("terminal.input.dropRejected") }),
+      }),
+    [live],
+  );
   // The stored zoom is applied once, as the shell mounts.
   useEffect(() => {
     void loadZoom(api);
@@ -699,6 +846,32 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setPanelTab(tab);
   }
   useEffect(() => startQuickCommands(api), [api]);
+  useShellLabels(api);
+  // Native menu and tray items; the latest handlers run through a ref so the listener binds once.
+  const menuRun = useRef<(action: MenuAction) => void>(() => {});
+  menuRun.current = (action) =>
+    runMenuAction(action, {
+      openSettings: () => openSettings(),
+      openShortcuts: () => openSettings("keys"),
+      openUpdates,
+      confirmQuitEndAll: () => setConfirmEndAll(true),
+      zoom: (delta) => void stepZoom(api, delta),
+      toggleLeftSidebar: () => setSidebarOpen((o) => !o),
+      toggleRightSidebar: () => setRightOpen((o) => !o),
+      openAbout: () => openAbout(),
+    });
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let gone = false;
+    void api.onMenuAction((action) => menuRun.current(action)).then((un) => {
+      if (gone) un();
+      else off = un;
+    });
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, [api]);
   useKeymap({
     "sessions.open": () => {
       show("workspace");
@@ -860,8 +1033,27 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const selectable = order.filter((p) => !(repos ?? []).some((r) => r.worktrees.some((w) => w.path === p && w.primary)));
 
   function keptNotice(kept: KeptBranch[]): void {
-    if (kept.length === 0) return;
-    pushToast({ text: t("review.notice", { count: kept.length }), actions: [{ label: t("review.notice.button"), run: () => setReview({ repoId: null, busy: false }) }] });
+    const out = keptOutcome(kept);
+    if (!out) return;
+    if (out.kind === "one") {
+      const { repoId, branch } = out.kept;
+      return void pushToast({
+        text: t("review.keptOne.title"),
+        actions: [{ label: t("review.keptOne.delete"), run: () => void api.branchDelete(repoId, branch, true).then(() => load(), (e) => setNotice(toApiError(e).code)) }],
+      });
+    }
+    pushToast({ text: t("review.notice", { count: out.count }), actions: [{ label: t("review.notice.button"), run: () => setReview({ repoId: null, busy: false }) }] });
+  }
+
+  // "Don't ask again" on the delete dialog: the choice is saved in Settings → General.
+  function skipDeleteConfirm(): void {
+    void api
+      .navigationSettingsPut({ ...getNavigationSettings(), askBeforeDeleteWorktree: false })
+      .then((stored) => {
+        setNavigationSettings(stored);
+        pushToast({ text: t("workspace.remove.skipToast"), actions: [{ label: t("workspace.remove.openSettings"), run: () => openSettings("general") }] });
+      })
+      .catch((e) => setNotice(toApiError(e).code));
   }
 
   async function openBulk(mode: "delete" | "archive"): Promise<void> {
@@ -882,7 +1074,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     const list = [...kids, ...chosen];
     const targets = opts.anyway ? list : list.filter((p) => b.dirty[p] !== true);
     const skipped = list.filter((p) => !targets.includes(p));
-    const op = (p: string) => (b.mode === "archive" ? api.worktreeArchive(p, opts.anyway, true) : api.worktreeRemove(p, opts.anyway, true));
+    const bulkArgs = removeArgs(opts.anyway, { alwaysForce: alwaysForceDeleteWorktrees, alwaysDeleteKept: alwaysDeleteKeptBranches });
+    const op = (p: string) => (b.mode === "archive" ? api.worktreeArchive(p, opts.anyway, true) : api.worktreeRemove(p, bulkArgs.force, true, bulkArgs.deleteUnmerged));
     const result = await runBulk(targets, op, async (p) => void (await sessions?.closeWorktree(p)));
     for (const path of skipped) result.failed.push({ path, error: { code: "worktree_dirty" } });
     for (const path of result.ok) sessions?.dropCarried(path);
@@ -914,9 +1107,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // deleting a worktree" off it runs at once with the dialog's defaults (keep the branch, no force,
   // nested worktrees kept); the dialog still shows when the worktree is dirty, the archive script
   // fails or needs trust, or the removal errors. Bulk delete keeps its own dialog.
-  function startRemove(wt: WorktreeView): void {
-    const next: Removing = { worktree: wt, dirty: false, busy: false };
-    if (askBeforeDeleteWorktree) return setRemoving(next);
+  function startRemove(wt: WorktreeView, opts: { nested?: boolean } = {}): void {
+    const next: Removing = { worktree: wt, dirty: false, busy: false, nested: opts.nested };
+    if (askBeforeDeleteWorktree || opts.nested) return setRemoving(next);
     const quiet: Removing = { ...next, quiet: true };
     setRemoving(quiet);
     void remove(false, false, quiet);
@@ -1012,9 +1205,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
 
   // The dialog closes at once; the create runs as a row in the list until it finishes or fails.
-  function create(repoId: string, name: string, from: string | null, extra?: CreateExtra): void {
-    setCreating(null);
-    pending.start({ repoId, name, from, ...(extra ? { extra } : {}) });
+  function create(repoId: string, name: string, from: string | null, extra?: CreateExtra, request?: CreateRequest, keepOpen = false, discardBranch?: string): void {
+    if (!keepOpen) setCreating(null);
+    pending.start({ repoId, name, from, ...(extra ? { extra } : {}), ...(request ? { request } : {}), ...(discardBranch ? { discardBranch } : {}) });
   }
 
   // The issue becomes the worktree: named from it, linked as its work item, sent to the default agent.
@@ -1041,10 +1234,25 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     }
   }
 
+  // The pull request becomes the worktree: its branch is put on a new worktree, linked as its work item, sent to the default agent.
+  async function startFromPr(repoId: string, pr: PrSummary): Promise<void> {
+    try {
+      const { branch, fetched } = await api.prBranch(repoId, pr.number);
+      const repo = repos?.find((r) => r.id === repoId);
+      const taken = new Set((repo?.worktrees ?? []).flatMap((w) => [w.name, w.branch ?? ""]));
+      const name = uniqueWorktreeName(prWorktreeName(pr), taken);
+      const view = await api.profiles().catch(() => null);
+      create(repoId, name, null, { title: pr.title, agent: view?.defaultAgent ?? null, setDefault: false, parent: null, item: prWorkItem(pr) }, { existing: branch, sparse: [] }, false, fetched ? branch : undefined);
+    } catch (e) {
+      setNotice(toApiError(e).code);
+    }
+  }
+
   async function created(wt: WorktreeView, args: CreateArgs): Promise<void> {
     const extra = args.extra;
     if (extra) await applyCreateExtra(wt.path, extra);
     await load();
+    setupRan.current.add(wt.path);
     await setupAfterCreate(wt.path, args.repoId);
     // Dialog: the agent it picked, or none. No dialog: the default agent.
     await openDefaultAgent(wt.path, extra ? extra.agent : undefined, extra?.prompt);
@@ -1064,6 +1272,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (extra.title !== null) patch.title = extra.title;
     if (extra.parent !== null) patch.parent = extra.parent;
     if (extra.item !== null) patch.item = extra.item;
+    if (extra.note) patch.comment = extra.note;
     try {
       if (Object.keys(patch).length > 0) await api.worktreeDetails(path, patch);
       if (extra.setDefault && extra.agent !== null) {
@@ -1072,6 +1281,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       }
     } catch (e) {
       setNotice(toApiError(e).code);
+    }
+  }
+
+  // The parent picker and the row menu's lineage and status items write straight through `worktreeDetails`.
+  async function setDetails(wt: WorktreeView, patch: DetailsPatch, failure: string): Promise<void> {
+    try {
+      await api.worktreeDetails(wt.path, patch);
+      await load();
+    } catch {
+      pushToast({ text: failure });
     }
   }
 
@@ -1252,10 +1471,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         for (const child of all.filter((c) => c.parent === worktree.path)) {
           await sessions?.closeWorktree(child.path);
           sessions?.dropCarried(child.path);
-          await api.worktreeRemove(child.path, false, true);
+          await api.worktreeRemove(child.path, alwaysForceDeleteWorktrees, true, alwaysDeleteKeptBranches);
         }
       }
-      const done = await api.worktreeRemove(worktree.path, dirty, true);
+      const args = removeArgs(dirty, { alwaysForce: alwaysForceDeleteWorktrees, alwaysDeleteKept: alwaysDeleteKeptBranches });
+      const done = await api.worktreeRemove(worktree.path, args.force, true, args.deleteUnmerged);
       keptNotice(done.kept ? [done.kept] : []);
       setRemoving(null);
       await load();
@@ -1269,6 +1489,19 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       const nowDirty = dirty || code === "worktree_dirty";
       setRemoving({ worktree, dirty: nowDirty, busy: false, error: code === "worktree_dirty" ? undefined : code });
     }
+  }
+
+  function openAbout(): void {
+    void api.appVersion().then(setAbout, () => setAbout(""));
+  }
+
+  /** Help, tray and native menu "Check for updates": shows the page, and starts the check (a check already running is joined). */
+  function openUpdates(): void {
+    checkForUpdates({ openSettings, api });
+  }
+
+  function pickHelp(pick: HelpPick): void {
+    runHelpPick(pick, { openSettings: (page) => openSettings(page), openUpdates, openAbout, api });
   }
 
   function openSettings(section?: string, arg?: string, target?: string): void {
@@ -1408,8 +1641,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               </span>
             )}
           </button>
-          {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onClose={() => setBellOpen(false)} />}
+          {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onViewActivity={() => { setBellOpen(false); setSidebarOpen(true); setSideView("activity"); setActivityAsk((a) => ({ tab: "feed", seq: a.seq + 1 })); }} onClose={() => setBellOpen(false)} />}
         </div>
+        <HelpButton onPick={pickHelp} />
         <button
           type="button"
           className="ws-icon-btn ws-header-btn"
@@ -1467,7 +1701,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             )}
           </nav>
           <div className="ws-side-tabs" role="group" aria-label={t("agentSessions.tabs.label")}>
-            {(["worktrees", "sessions"] as const).map((v) => (
+            {(["worktrees", "sessions", "activity"] as const).map((v) => (
               <button key={v} type="button" className="ws-side-tab" aria-pressed={sideView === v} onClick={() => setSideView(v)}>
                 {t(`agentSessions.tab.${v}`)}
               </button>
@@ -1490,6 +1724,17 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   select(wt);
                   show("workspace");
                 }}
+              />
+            </div>
+          )}
+          {sessions && (
+            <div className="ws-side-view" hidden={sideView !== "activity"}>
+              <ActivityPanel
+                sessions={sessions}
+                feed={feed}
+                names={Object.fromEntries(all.map((w) => [w.path, { name: worktreeName(all, w.path), branch: w.branch ?? null }]))}
+                ask={activityAsk}
+                onJump={jumpTo}
               />
             </div>
           )}
@@ -1529,6 +1774,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onRestore={(repoId, branch) => void sidebarCall(() => api.worktreeRestore(repoId, branch))}
             onArchive={(wt) => void archive(wt)}
             onEditDetails={(wt) => setEditing({ worktree: wt, busy: false })}
+            onSetParent={(wt) => setParentFor({ worktree: wt, candidates: parentCandidates(wt, repos?.find((r) => r.worktrees.some((w) => w.path === wt.path))?.worktrees ?? []) })}
+            onRemoveParent={(wt) => void setDetails(wt, { parent: null }, t("lineage.error"))}
+            onDeleteNested={(wt) => startRemove(wt, { nested: true })}
+            onMoveStatus={(wt, status) => {
+              if (status !== wt.status) void setDetails(wt, { status }, t("lineage.error"));
+            }}
             onRenameBranch={(wt) => setRenaming(wt)}
             onCopyLink={(url) => {
               void copy(url);
@@ -1537,6 +1788,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             selected={current?.path ?? null}
             dots={dots}
             stats={stats.all()}
+            ports={livePorts}
+            onOpenPort={(port) => window.open(browserUrl(port), "_blank", "noopener")}
+            onCopyPort={(port) => {
+              void copy(endpoint(port));
+              pushToast({ text: t("ports.copied", { address: endpoint(port) }) });
+            }}
+            onStopPort={stopPort}
             activity={activity}
             profiles={profiles}
             prs={prMap}
@@ -1557,6 +1815,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onAddRepo={addRepo}
             onAdopt={(wt) => void adopt(wt)}
             unread={unreadMap}
+            asleep={asleepMap}
+            sleepable={sleepableMap}
+            onSleep={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api), all.filter((c) => c.parent === wt.path).map((c) => c.path))}
+            onWake={(wt) => [wt.path, ...all.filter((c) => c.parent === wt.path).map((c) => c.path)].forEach((p) => sessions?.wakeWorktree(p))}
             onMarkUnread={(wt) => sessions?.markUnread(wt.path)}
             onMarkRead={(wt) => sessions?.markRead(wt.path)}
             openInApps={openInApps}
@@ -1583,6 +1845,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   onShown={(id) => setShownTab((s) => (s[path] === id ? s : { ...s, [path]: id }))}
                   onPanes={(ids) => setPanes((s) => (s[path]?.join(" ") === ids.join(" ") ? s : { ...s, [path]: ids }))}
                   reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq } : undefined}
+                  commit={commitAsk?.worktree === path ? { id: commitAsk.id, file: commitAsk.file, seq: commitAsk.seq } : undefined}
                   front={front?.worktree === path ? { id: front.id, seq: front.seq } : undefined}
                   focusSeq={termFocus?.worktree === path ? termFocus.seq : undefined}
                   onShowHistory={showInHistory}
@@ -1592,6 +1855,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   quickSeq={path === current?.path ? quickSeq : undefined}
                   onManageQuickCommands={() => openSettings("qcmd")}
                   onLinkSettings={() => openSettings("terminal", undefined, "terminal.linkClick")}
+                  worktrees={all.map((w) => ({ path: w.path, label: worktreeName(all, w.path) }))}
+                  onJump={jumpTo}
                 />
               ))}
             {current && cardFor(current.path) && (
@@ -1755,6 +2020,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   sessions={sessions}
                   prs={prs}
                   onOpenFile={(file) => openFile(current.path, file)}
+                  onOpenCommit={(id, file) => openCommit(current.path, id, file)}
                   onCount={(n) => setChangeCount({ worktree: current.path, count: n })}
                   onChanges={(list) => setChangeList({ worktree: current.path, list })}
                   onFixWithAgent={(output) => void fixWithAgent("fixCommitFailure", output)}
@@ -1828,7 +2094,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           agents={creating.agents}
           defaultAgent={creating.defaultAgent}
           namePreview={api.worktreeNamePreview}
-          onCreate={(repoId, name, from, extra) => create(repoId, name, from, extra)}
+          branches={api.worktreeBranches}
+          api={api}
+          initialTab={createTab.current}
+          onTabChange={(tab) => (createTab.current = tab)}
+          onStartPr={(repoId, pr) => {
+            setCreating(null);
+            void startFromPr(repoId, pr);
+          }}
+          onCreate={(repoId, name, from, extra, request, more) => create(repoId, name, from, extra, request, more)}
           resolveIssue={(repoId, text) => api.issueResolve(repoId, text)}
           onStartIssue={(repoId, issue) => {
             setCreating(null);
@@ -1935,6 +2209,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         />
       )}
       {quitting && <QuitDialog ask={quitting.ask} onChoose={quitting.answer} />}
+      {about !== null && <AboutDialog version={about} onLink={(link) => void api.helpOpen(link)} onClose={() => setAbout(null)} />}
+      <ConfirmDialog
+        open={confirmEndAll}
+        title={t("shell.quitEndAll.title")}
+        body={t("shell.quitEndAll.body")}
+        confirmLabel={t("shell.quitEndAll.confirm")}
+        onConfirm={() => {
+          setConfirmEndAll(false);
+          void api.shellQuit("end-all");
+        }}
+        onCancel={() => setConfirmEndAll(false)}
+      />
       <Toasts />
       {adding && (
         <AddProjectDialog
@@ -1968,12 +2254,26 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       )}
       {editing && (
         <DetailsDialog
+          api={api}
+          repoId={repos?.find((r) => r.worktrees.some((w) => w.path === editing.worktree.path))?.id ?? ""}
           worktree={editing.worktree}
           siblings={repos?.find((r) => r.worktrees.some((w) => w.path === editing.worktree.path))?.worktrees ?? []}
           busy={editing.busy}
           error={editing.error}
           onSave={(patch) => void saveDetails(patch)}
           onCancel={() => setEditing(null)}
+        />
+      )}
+      {parentFor && (
+        <ParentPickerDialog
+          worktree={parentFor.worktree}
+          candidates={parentFor.candidates}
+          onPick={(path) => {
+            const wt = parentFor.worktree;
+            setParentFor(null);
+            void setDetails(wt, { parent: path }, t("lineage.error"));
+          }}
+          onCancel={() => setParentFor(null)}
         />
       )}
       {renaming && (
@@ -2019,8 +2319,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           failed={removing.failed}
           error={removing.error}
           onConfirm={(nested) => void remove(removing.failed !== undefined, nested)}
+          onDontAsk={(skip) => skip && skipDeleteConfirm()}
           onArchive={() => void archiveRemoving()}
           children={all.filter((c) => c.parent === removing.worktree.path).length}
+          nestedDefault={removing.nested}
           onCancel={() => {
             removeRun.current++;
             setRemoving(null);

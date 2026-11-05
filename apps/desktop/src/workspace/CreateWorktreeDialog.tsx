@@ -1,20 +1,24 @@
-import { Button } from "@xdev-asia/ui";
+import { Button, Disclosure, RadioGroup, Segmented, Switch } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type ApiError, type Issue, type NamePreview, type RepoView, type WorkItem, type WorkItemKind } from "@/api";
+import { toApiError, type Api, type ApiError, type CreateRequest, type Issue, type NamePreview, type PrSummary, type ReviewBranch, type RepoView, type WorkItem, type WorkItemKind } from "@/api";
 import { isIssueRef } from "@/issues/issueStart";
 import { useI18n } from "@/i18n";
 import { expandShortcodes, hasEmoji, slugFromTitle } from "./emoji";
+import { localBranches, sparseDirs } from "./createSource";
+import { LinkedWorkSearch } from "./LinkedWorkSearch";
 import { schedulePreview } from "./namePreview";
 import { parseItem } from "./workItemInput";
 
 /** What the dialog adds to the name and base: the title, the agent, the parent and the work item. */
-export type CreateExtra = { title: string | null; agent: string | null; setDefault: boolean; parent: string | null; item: WorkItem | null; /** Typed into the agent that opens, once it has started. */ prompt?: string };
+export type CreateExtra = { title: string | null; agent: string | null; setDefault: boolean; parent: string | null; item: WorkItem | null; /** Becomes the comment of the worktree. */ note?: string | null; /** Typed into the agent that opens, once it has started. */ prompt?: string };
 
 /** How long the name field rests before an issue number with a hash, or an issue URL, is looked up. */
 export const ISSUE_RESOLVE_DEBOUNCE_MS = 300;
 
 type Found = { repoId: string; text: string; issue: Issue | null; error?: ApiError["code"] };
+
+export type CreateTab = "name" | "github" | "branch";
 
 export type AgentChoice = { id: string; name: string };
 
@@ -26,6 +30,7 @@ type Form = {
   parent: string;
   itemUrl: string;
   itemKind: WorkItemKind;
+  note?: string;
 };
 
 /** The name for `worktree_create` and the extras; null while the work item link is unusable. */
@@ -44,6 +49,7 @@ export function buildCreate(form: Form): { name: string; extra: CreateExtra } | 
       setDefault: form.setDefault && agent !== null && agent !== form.defaultAgent,
       parent: form.parent === "" ? null : form.parent,
       item,
+      ...(form.note && form.note.trim() !== "" ? { note: form.note.trim() } : {}),
     },
   };
 }
@@ -72,11 +78,21 @@ export function CreateWorktreeDialog(props: {
   name?: string;
   /** The name a create would get; without it no preview shows. */
   namePreview?(repoId: string, name: string): Promise<NamePreview>;
-  onCreate(repoId: string, name: string, from: string | null, extra: CreateExtra): void;
+  /** `more` is true when Create more is on: the shell leaves the dialog open and the dialog blanks its name. */
+  onCreate(repoId: string, name: string, from: string | null, extra: CreateExtra, request?: CreateRequest, more?: boolean): void;
   /** Reads the issue a an issue number with a hash, or an issue URL, in the name field points to. */
   resolveIssue?(repoId: string, text: string): Promise<Issue | null>;
   /** Create with an issue in the name field: the shell starts the worktree from it instead of `onCreate`. */
   onStartIssue?(repoId: string, issue: Issue): void;
+  /** Searches issues and pull requests for the GitHub tab; without it there is no such tab. */
+  api?: Api;
+  /** A pull request picked on the GitHub tab: the shell starts the worktree from it. */
+  onStartPr?(repoId: string, pr: PrSummary): void;
+  /** The tab to open on, and told when it changes, so the next opening comes back to it. */
+  initialTab?: CreateTab;
+  onTabChange?(tab: CreateTab): void;
+  /** The branches of a repo checkout, for the Branch tab. */
+  branches?(repoPath: string): Promise<ReviewBranch[]>;
   onCancel(): void;
 }): JSX.Element {
   const { t } = useI18n();
@@ -93,6 +109,13 @@ export function CreateWorktreeDialog(props: {
   const [parent, setParent] = useState("");
   const [itemUrl, setItemUrl] = useState("");
   const [itemKind, setItemKind] = useState<WorkItemKind>("pr");
+  const [note, setNote] = useState("");
+  const [sparseText, setSparseText] = useState("");
+  const [more, setMore] = useState(false);
+  const [tab, setTab] = useState<CreateTab>(props.initialTab ?? "name");
+  const [branchMode, setBranchMode] = useState<"new" | "existing">("new");
+  const [branchList, setBranchList] = useState<{ repoId: string; list: ReviewBranch[] } | null>(null);
+  const [existing, setExisting] = useState("");
   const [found, setFound] = useState<Found | null>(null);
   const [preview, setPreview] = useState<NamePreview | null>(null);
 
@@ -115,6 +138,27 @@ export function CreateWorktreeDialog(props: {
   const parents = (repo?.worktrees ?? []).filter((w) => !w.primary && w.parent === null);
   const parentPath = parents.some((w) => w.path === parent) ? parent : "";
   const badItem = parseItem(itemUrl, itemKind) === "bad";
+  const { branches } = props;
+  // The Branch tab always picks an existing branch; on the Name tab the choice is the radio.
+  const mode = tab === "branch" ? "existing" : branchMode;
+  const listing = tab !== "github" && mode === "existing";
+  useEffect(() => {
+    if (!listing || !branches || !repo) return;
+    let stale = false;
+    branches(repo.path).then(
+      (list) => !stale && setBranchList({ repoId: repo.id, list }),
+      () => !stale && setBranchList({ repoId: repo.id, list: [] }),
+    );
+    return () => {
+      stale = true;
+    };
+  }, [listing, branches, repo?.id]);
+  const loaded = branchList && branchList.repoId === repo?.id ? branchList.list : null;
+  const free = loaded && repo ? localBranches(loaded, repo.worktrees) : [];
+  const pickedBranch = listing && free.includes(existing) ? existing : "";
+  const needsBranch = listing && pickedBranch === "";
+  const sparse = sparseDirs(sparseText);
+  const badSparse = sparse === "bad";
   const ref = props.resolveIssue !== undefined && props.onStartIssue !== undefined && isIssueRef(name);
   const refText = name.trim();
   const refRepo = repo?.id ?? "";
@@ -139,6 +183,23 @@ export function CreateWorktreeDialog(props: {
     };
   }, [ref, refRepo, refText]);
 
+  function submit(): void {
+    if (ref) {
+      if (repo && issue) props.onStartIssue?.(repo.id, issue);
+      return;
+    }
+    if (tab === "github" || badItem || badSparse || needsBranch) return;
+    const built = repo && buildCreate({ text: name.trim() === "" && pickedBranch !== "" ? pickedBranch.replace(/[\/]+/g, "-") : name, agent, defaultAgent, setDefault, parent: parentPath, itemUrl, itemKind, note });
+    if (!repo || !built) return;
+    const dirs = Array.isArray(sparse) ? sparse : [];
+    const request: CreateRequest | undefined = pickedBranch !== "" || dirs.length > 0 ? { existing: pickedBranch || null, sparse: dirs } : undefined;
+    props.onCreate(repo.id, built.name, pickedBranch !== "" ? null : from.trim() || null, built.extra, request, more);
+    if (more) {
+      setName("");
+      setNote("");
+    }
+  }
+
   return (
     <dialog
       ref={dialog}
@@ -152,12 +213,13 @@ export function CreateWorktreeDialog(props: {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (ref) {
-            if (repo && issue) props.onStartIssue?.(repo.id, issue);
-            return;
+          submit();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            submit();
           }
-          const built = repo && buildCreate({ text: name, agent, defaultAgent, setDefault, parent: parentPath, itemUrl, itemKind });
-          if (repo && built) props.onCreate(repo.id, built.name, from.trim() || null, built.extra);
         }}
       >
         <h2 id="ws-create-title" className="dialog-title">
@@ -175,6 +237,61 @@ export function CreateWorktreeDialog(props: {
               ))}
             </select>
           </label>
+          <Segmented
+            label={t("workspace.create.tab.label")}
+            value={tab}
+            onChange={(v) => {
+              setTab(v as CreateTab);
+              props.onTabChange?.(v as CreateTab);
+            }}
+            options={[
+              { value: "name", label: t("workspace.create.tab.name") },
+              ...(props.api && props.onStartIssue && props.onStartPr ? [{ value: "github", label: t("workspace.create.tab.github") }] : []),
+              ...(branches ? [{ value: "branch", label: t("workspace.create.tab.branch") }] : []),
+            ]}
+          />
+          {tab === "github" && props.api && repo && (
+            <div className="ws-field">
+              <LinkedWorkSearch
+                api={props.api}
+                repoId={repo.id}
+                onPick={(_item, source) => {
+                  if (source?.kind === "issue") props.onStartIssue?.(repo.id, source.issue);
+                  else if (source?.kind === "pr") props.onStartPr?.(repo.id, source.pr);
+                }}
+              />
+              <small>{t("workspace.create.searchHint")}</small>
+            </div>
+          )}
+          {tab !== "github" && branches && (
+            <div className="ws-field">
+              {tab === "name" && (
+                <RadioGroup
+                  name="ws-create-branch-mode"
+                  label={t("workspace.create.branchMode.label")}
+                  value={branchMode}
+                  onChange={(v) => setBranchMode(v as "new" | "existing")}
+                  options={[
+                    { value: "new", label: t("workspace.create.branchMode.new") },
+                    { value: "existing", label: t("workspace.create.branchMode.existing") },
+                  ]}
+                />
+              )}
+              {mode === "existing" &&
+                (loaded !== null && free.length === 0 ? (
+                  <small role="status">{t("workspace.create.noBranches")}</small>
+                ) : (
+                  <select aria-label={t("workspace.create.branchMode.existing")} className="ws-mono" value={pickedBranch} onChange={(e) => setExisting(e.target.value)}>
+                    <option value="">{t("workspace.create.pickBranch")}</option>
+                    {free.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
+                  </select>
+                ))}
+            </div>
+          )}
           <label className="ws-field">
             <span>{t("workspace.create.name")}</span>
             <input
@@ -194,10 +311,12 @@ export function CreateWorktreeDialog(props: {
             )}
             <PreviewHint preview={preview} />
           </label>
-          <label className="ws-field">
-            <span>{t("workspace.create.from")}</span>
-            <input type="text" className="ws-mono" value={from} placeholder={repo?.baseRef ?? ""} spellCheck={false} onChange={(e) => setFrom(e.target.value)} />
-          </label>
+          {pickedBranch === "" && mode !== "existing" && (
+            <label className="ws-field">
+              <span>{t("workspace.create.from")}</span>
+              <input type="text" className="ws-mono" value={from} placeholder={repo?.baseRef ?? ""} spellCheck={false} onChange={(e) => setFrom(e.target.value)} />
+            </label>
+          )}
           <label className="ws-field">
             <span>{t("workspace.create.agent")}</span>
             <select value={agent} onChange={(e) => setAgent(e.target.value)}>
@@ -213,19 +332,6 @@ export function CreateWorktreeDialog(props: {
             <label className="ws-tick">
               <input type="checkbox" checked={setDefault} onChange={(e) => setSetDefault(e.target.checked)} />
               <span>{t("workspace.create.setDefault")}</span>
-            </label>
-          )}
-          {parents.length > 0 && (
-            <label className="ws-field">
-              <span>{t("workspace.create.parent")}</span>
-              <select value={parentPath} onChange={(e) => setParent(e.target.value)}>
-                <option value="">{t("workspace.create.noParent")}</option>
-                {parents.map((w) => (
-                  <option key={w.path} value={w.path}>
-                    {w.title ?? w.branch ?? w.name}
-                  </option>
-                ))}
-              </select>
             </label>
           )}
           <div className="ws-field">
@@ -246,17 +352,52 @@ export function CreateWorktreeDialog(props: {
               />
             </div>
           </div>
+          <Disclosure title={t("workspace.create.advanced")} defaultExpanded={false}>
+            <div className="ws-fields">
+            {parents.length > 0 && (
+              <label className="ws-field">
+                <span>{t("workspace.create.parent")}</span>
+                <select value={parentPath} onChange={(e) => setParent(e.target.value)}>
+                  <option value="">{t("workspace.create.noParent")}</option>
+                  {parents.map((w) => (
+                    <option key={w.path} value={w.path}>
+                      {w.title ?? w.branch ?? w.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+              <label className="ws-field">
+                <span>{t("workspace.create.note")}</span>
+                <textarea value={note} rows={2} placeholder={t("workspace.create.notePlaceholder")} onChange={(e) => setNote(e.target.value)} />
+              </label>
+              <label className="ws-field">
+                <span>{t("workspace.create.sparse")}</span>
+                <textarea
+                  className="ws-mono"
+                  value={sparseText}
+                  rows={3}
+                  spellCheck={false}
+                  aria-invalid={badSparse}
+                  aria-describedby="ws-create-sparse-hint"
+                  onChange={(e) => setSparseText(e.target.value)}
+                />
+                <small id="ws-create-sparse-hint">{Array.isArray(sparse) && sparse.length > 0 ? t("workspace.create.sparseHint") : t("workspace.create.sparseFull")}</small>
+              </label>
+            </div>
+          </Disclosure>
         </div>
-        {badItem && (
+        {(badItem || badSparse) && (
           <p className="error-text" role="alert">
-            {t("error.bad_item")}
+            {badItem ? t("error.bad_item") : t("error.bad_sparse")}
           </p>
         )}
         <div className="dialog-actions">
+          <Switch label={t("workspace.create.createMore")} checked={more} onChange={(e) => setMore(e.target.checked)} />
           <button type="button" className="btn-secondary" onClick={props.onCancel}>
             {t("dialog.cancel")}
           </button>
-          <Button type="submit" disabled={!repo || badItem || (ref && !issue)}>
+          <Button type="submit" disabled={!repo || tab === "github" || badItem || badSparse || needsBranch || (ref && !issue)}>
             {t("workspace.create.confirm")}
           </Button>
         </div>

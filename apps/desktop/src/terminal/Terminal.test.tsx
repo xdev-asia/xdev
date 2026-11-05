@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createMockApi } from "@/api";
+import { setMockClipboardImage } from "@/mockApi";
+import { getToasts, resetToastsForTests } from "@/workspace/toastStore";
 import { translate } from "@/i18n";
 import { resetBindingsForTests, setKeySettings } from "@/keys/bindingsStore";
 import { PtyClient } from "./ptyClient";
 import { Terminal } from "./Terminal";
 import { TERMINAL_SCHEMES } from "./terminalThemes";
+import { resetCustomSchemesForTests, setCustomSchemes } from "./customSchemes";
 import { resetTerminalSettingsForTests, setTerminalSettings, TERMINAL_DEFAULTS } from "./terminalSettings";
 
 // The first ref is the xterm host; the rest keep their initial value.
-const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[], searchOpts: undefined as unknown, providers: [] as unknown[], linkHandler: null as null | { activate(e: unknown, text: string, range: unknown): void; allowNonHttpProtocols?: boolean }, webLinks: null as null | { handler: (e: unknown, uri: string) => void; options: { hover?: unknown; leave?: unknown } | undefined } }));
+const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[], searchOpts: undefined as unknown, platform: "win" as string, csi: {} as Record<string, (p: unknown[]) => boolean>, bufType: "normal", bracketedMode: true, providers: [] as unknown[], linkHandler: null as null | { activate(e: unknown, text: string, range: unknown): void; allowNonHttpProtocols?: boolean }, webLinks: null as null | { handler: (e: unknown, uri: string) => void; options: { hover?: unknown; leave?: unknown } | undefined } }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: (initial: unknown) => [initial, () => {}],
@@ -33,6 +36,15 @@ vi.mock("react", async (original) => ({
   },
   useImperativeHandle: (ref: { current: unknown } | null | undefined, create: () => unknown) => {
     if (ref) ref.current = create();
+  },
+}));
+// The platform the pane resolves keys for; a test sets `hooks.platform`.
+vi.mock("@/platform", () => ({
+  get PLATFORM() {
+    return hooks.platform;
+  },
+  get IS_MAC() {
+    return hooks.platform === "mac";
   },
 }));
 vi.mock("@/i18n", async (original) => ({
@@ -64,7 +76,6 @@ vi.mock("@xterm/xterm", () => ({
       this.options = hooks.options = { ...opts };
       hooks.linkHandler = (opts.linkHandler as typeof hooks.linkHandler) ?? null;
     }
-    buffer = { active: { length: 0, getLine: () => undefined } };
     registerLinkProvider(provider: unknown) {
       hooks.providers.push(provider);
       return { dispose() {} };
@@ -73,7 +84,34 @@ vi.mock("@xterm/xterm", () => ({
       registerOscHandler(id: number, cb: (d: string) => boolean) {
         if (id === 52) hooks.osc = cb;
       },
+      registerCsiHandler(id: { prefix?: string; intermediates?: string; final: string }, cb: (p: unknown[]) => boolean) {
+        hooks.csi[`${id.prefix ?? ""}${id.intermediates ?? ""}${id.final}`] = cb;
+        return { dispose() {} };
+      },
+      registerEscHandler() {
+        return { dispose() {} };
+      },
     };
+    modes = {
+      get bracketedPasteMode() {
+        return hooks.bracketedMode;
+      },
+    };
+    buffer = {
+      active: {
+        length: 0,
+        getLine: () => undefined,
+        get type() {
+          return hooks.bufType;
+        },
+      },
+    };
+    scrollToTop() {
+      hooks.calls.push("scrollToTop");
+    }
+    scrollToBottom() {
+      hooks.calls.push("scrollToBottom");
+    }
     onSelectionChange(cb: () => void) {
       hooks.select = cb;
     }
@@ -153,6 +191,9 @@ beforeEach(() => {
   hooks.osc = null;
   hooks.options = {};
   hooks.keyHandler = null;
+  hooks.platform = "win";
+  hooks.csi = {};
+  hooks.bufType = "normal";
   hooks.calls = [];
   resetBindingsForTests();
   hooks.listeners = {};
@@ -355,6 +396,59 @@ it("a right click pastes when on and does nothing when off", async () => {
   await tick();
   expect(event.preventDefault).toHaveBeenCalledTimes(1);
   expect(readText).toHaveBeenCalledTimes(1);
+});
+
+it("a right click with an image on the clipboard writes its saved path as a bracketed paste", async () => {
+  const readText = vi.fn(async () => "");
+  vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn(), readText } });
+  setMockClipboardImage("/tmp/xdev-paste.png");
+  const api = createMockApi({});
+  const input = vi.spyOn(api, "ptyWrite");
+  const { effect } = mount({ api, id: "img-1" });
+  effect();
+  await tick();
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, rightClickPaste: true });
+  hooks.listeners.contextmenu({ preventDefault: vi.fn() });
+  await tick();
+  expect(input).toHaveBeenCalledWith("img-1", new TextEncoder().encode("[200~/tmp/xdev-paste.png[201~"));
+  setMockClipboardImage(null);
+});
+
+it("a right click image paste is a plain quoted word while bracketed paste mode is off", async () => {
+  vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn(), readText: vi.fn(async () => "") } });
+  setMockClipboardImage("/tmp/xdev-paste.png");
+  hooks.bracketedMode = false;
+  const api = createMockApi({});
+  const input = vi.spyOn(api, "ptyWrite");
+  const { effect } = mount({ api, id: "img-2" });
+  effect();
+  await tick();
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, rightClickPaste: true });
+  hooks.listeners.contextmenu({ preventDefault: vi.fn() });
+  await tick();
+  hooks.bracketedMode = true;
+  expect(input).toHaveBeenCalledWith("img-2", new TextEncoder().encode("/tmp/xdev-paste.png "));
+  setMockClipboardImage(null);
+});
+
+it("an image too large, or one that cannot be saved, says so in a toast", async () => {
+  resetToastsForTests();
+  const readText = vi.fn(async () => "");
+  vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn(), readText } });
+  const { effect } = mount({ api: createMockApi({}), id: "img-2" });
+  effect();
+  await tick();
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, rightClickPaste: true });
+  setMockClipboardImage({ code: "too_large" });
+  hooks.listeners.contextmenu({ preventDefault: vi.fn() });
+  await tick();
+  expect(getToasts().map((x) => x.text)).toEqual([translate("en", "terminal.input.imageTooLarge")]);
+  setMockClipboardImage(new Error("io"));
+  hooks.listeners.contextmenu({ preventDefault: vi.fn() });
+  await tick();
+  expect(getToasts().map((x) => x.text)).toContain(translate("en", "terminal.input.imageSaveFailed"));
+  setMockClipboardImage(null);
+  resetToastsForTests();
 });
 
 it("R1: Shift+right-click opens the menu when paste is on; a right click opens it when paste is off", async () => {
@@ -568,4 +662,105 @@ it("has no file links without a worktree", () => {
   let out: unknown = "pending";
   (hooks.providers[0] as { provideLinks(y: number, cb: (l: unknown) => void): void }).provideLinks(1, (l) => (out = l));
   expect(out).toBeUndefined();
+});
+
+// ---- Keys the terminal encodes itself (multi-line input, word moves, Option as Alt) ----
+
+const typed = (init: Record<string, unknown>) => key({ key: "", keyCode: 0, isComposing: false, ...init });
+const bytes = (text: string) => new TextEncoder().encode(text);
+
+async function startedWithInput(id = "k-1", agent = false) {
+  const api = createMockApi({});
+  const spawn = api.ptySpawn.bind(api);
+  api.ptySpawn = async (...a) => ({ ...(await spawn(...a)), agent });
+  const input = vi.spyOn(api, "ptyWrite");
+  const onInput = vi.fn();
+  const { effect } = mount({ api, id, onInput });
+  effect();
+  await tick();
+  return { handler: hooks.keyHandler!, input, onInput };
+}
+
+it("Shift+Enter in a plain shell is left to xterm", async () => {
+  const { handler, input } = await startedWithInput("k-0");
+  expect(handler(typed({ key: "Enter", code: "Enter", shiftKey: true }))).toBe(true);
+  await tick();
+  expect(input).not.toHaveBeenCalled();
+});
+
+it("Shift+Enter in an agent pane writes ESC CR to the pty and nothing reaches xterm", async () => {
+  const { handler, input, onInput } = await startedWithInput("k-1", true);
+  const e = typed({ key: "Enter", code: "Enter", shiftKey: true });
+  expect(handler(e)).toBe(false);
+  await tick();
+  expect(input).toHaveBeenCalledWith("k-1", bytes("\x1b\r"));
+  expect(onInput).toHaveBeenCalledWith("\x1b\r");
+  expect(e.preventDefault).toHaveBeenCalled();
+});
+
+it("after the program pushes kitty flags Shift+Enter writes ESC[13;2u", async () => {
+  const { handler, input } = await startedWithInput("k-2");
+  expect(hooks.csi[">u"]([1])).toBe(false);
+  expect(handler(typed({ key: "Enter", code: "Enter", shiftKey: true }))).toBe(false);
+  await tick();
+  expect(input).toHaveBeenCalledWith("k-2", bytes("\x1b[13;2u"));
+});
+
+it("an app chord keeps its priority and writes nothing to the pty", async () => {
+  const { handler, input } = await startedWithInput("k-3");
+  expect(handler(typed({ key: "f", code: "KeyF", ctrlKey: true }))).toBe(false);
+  await tick();
+  expect(input).not.toHaveBeenCalled();
+});
+
+it("Cmd+Up scrolls to the top on macOS and writes nothing", async () => {
+  hooks.platform = "mac";
+  const { handler, input } = await startedWithInput("k-4");
+  expect(handler(typed({ key: "ArrowUp", code: "ArrowUp", metaKey: true }))).toBe(false);
+  await tick();
+  expect(hooks.calls).toEqual(["scrollToTop"]);
+  expect(input).not.toHaveBeenCalled();
+});
+
+it("a key during IME composition goes to xterm untouched", async () => {
+  const { handler, input } = await startedWithInput("k-5");
+  expect(handler(typed({ key: "Enter", code: "Enter", shiftKey: true, isComposing: true }))).toBe(true);
+  await tick();
+  expect(input).not.toHaveBeenCalled();
+});
+
+it("the left Option key sends ESC + char once it is held, and a blur forgets it", async () => {
+  hooks.platform = "mac";
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, macOptionAsAlt: "left" });
+  const { handler, input } = await startedWithInput("k-6");
+  handler(typed({ type: "keydown", key: "Alt", code: "AltLeft", location: 1, altKey: true }));
+  expect(handler(typed({ key: "a", code: "KeyA", altKey: true }))).toBe(false);
+  await tick();
+  expect(input).toHaveBeenCalledWith("k-6", bytes("\x1ba"));
+  hooks.listeners.focusout({});
+  expect(handler(typed({ key: "a", code: "KeyA", altKey: true }))).toBe(true);
+});
+
+it("macOptionIsMeta follows the setting and the detected layout", async () => {
+  hooks.platform = "mac";
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, macOptionAsAlt: "both" });
+  await startedWithInput("k-7");
+  expect(hooks.options.macOptionIsMeta).toBe(true);
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, macOptionAsAlt: "off" });
+  expect(hooks.options.macOptionIsMeta).toBe(false);
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, macOptionAsAlt: "auto" });
+  expect(hooks.options.macOptionIsMeta).toBe(false);
+});
+
+it("a custom scheme picks its colours, and one added later re-themes the pane", () => {
+  const colors = { ...TERMINAL_SCHEMES[0]!.colors, background: "#123456" };
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, theme: "custom-mine" });
+  const { effect } = mount({ api: createMockApi({}), id: "cs-1" });
+  const cleanup = effect() as () => void;
+  // Not imported yet: the app look.
+  expect((hooks.options.theme as { background?: string }).background).not.toBe("#123456");
+  setCustomSchemes([{ id: "custom-mine", name: "Mine", mode: "dark", colors }]);
+  expect(hooks.options.theme).toEqual(colors);
+  cleanup();
+  resetCustomSchemesForTests();
 });

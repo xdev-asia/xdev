@@ -42,6 +42,8 @@ export type ActionId =
   | "docs.search" | "docs.new" | "docs.save"
   // Saves the file of the focused file tab; the handler declines when another tab is in front.
   | "file.save"
+  // Opens the Markdown preview of the focused file tab; the handler declines for any other file.
+  | "file.markdownPreview"
   // Bound to nothing by default; the quick-commands plan registers the handler.
   | "quickCommands.open"
   // Quick open: a file of the worktree on screen by name.
@@ -221,14 +223,15 @@ export const TERMINAL_KEEPS: readonly string[] = [
  * global ones, docs-scope ones never apply. Under "terminal first" a key a TUI also uses stays with
  * the program; a key in `TERMINAL_KEEPS` always does.
  */
-// Saving a file means nothing in a terminal, so Ctrl+S stays the terminal's own there.
-const EDITOR_ONLY: ActionId = "file.save";
+// Saving a file or previewing it means nothing in a terminal, so those keys stay the terminal's own there
+// (Ctrl+Shift+V is its paste).
+const EDITOR_ONLY: ReadonlySet<ActionId> = new Set<ActionId>(["file.save", "file.markdownPreview"]);
 
 function terminalActions(e: KeyboardEvent, p: Platform): ActionId[] {
   const chord = eventChord(e, p);
   if (chord === null || TERMINAL_KEEPS.includes(chord)) return [];
   const yields = getBindingsState().keySettings.terminalPolicy === "terminal-first";
-  const all = (tableFor(p).get(chord) ?? []).filter((a) => a !== EDITOR_ONLY && !(yields && DEF_OF.get(a)!.yieldsToTerminal));
+  const all = (tableFor(p).get(chord) ?? []).filter((a) => !EDITOR_ONLY.has(a) && !(yields && DEF_OF.get(a)!.yieldsToTerminal));
   return [...all.filter((a) => DEF_OF.get(a)!.scope === "terminal"), ...all.filter((a) => DEF_OF.get(a)!.scope === "global")];
 }
 

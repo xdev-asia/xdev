@@ -27,6 +27,7 @@ export const TERMINAL_DEFAULTS: TerminalSettings = {
   focusFollowsMouse: false,
   linkClick: "actions",
   urlMiddleClick: "open",
+  macOptionAsAlt: "auto",
 };
 
 // The double-click word separators when none are set (`DEFAULT_WORD_SEPARATORS` in Rust).

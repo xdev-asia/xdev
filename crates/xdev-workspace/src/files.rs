@@ -14,6 +14,68 @@ use crate::ops::{path_key, rel_under};
 /// Larger files open read-only as "too large"; nothing of them is read.
 pub const READ_MAX: u64 = 2 * 1024 * 1024;
 
+/// Larger images are not read for the viewer.
+pub const IMAGE_MAX: u64 = 20 * 1024 * 1024;
+
+/// Larger audio and video files are not read for the player.
+pub const MEDIA_MAX: u64 = 64 * 1024 * 1024;
+
+/// What a file shows as, by extension.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum MediaKind {
+    Image,
+    Audio,
+    Video,
+}
+
+impl MediaKind {
+    fn cap(self) -> u64 {
+        match self {
+            MediaKind::Image => IMAGE_MAX,
+            MediaKind::Audio | MediaKind::Video => MEDIA_MAX,
+        }
+    }
+}
+
+/// The media kind of `rel` by its extension (case-insensitive), if any.
+pub fn media_kind(rel: &str) -> Option<MediaKind> {
+    let name = rel.rsplit(['/', '\\']).next().unwrap_or(rel);
+    let ext = name.rsplit_once('.')?.1.to_ascii_lowercase();
+    match ext.as_str() {
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "ico" | "avif" | "svg" => {
+            Some(MediaKind::Image)
+        }
+        "mp3" | "wav" | "ogg" | "oga" | "m4a" | "flac" => Some(MediaKind::Audio),
+        "mp4" | "webm" | "ogv" | "mov" => Some(MediaKind::Video),
+        _ => None,
+    }
+}
+
+/// The whole file when `media_kind` is known and the size is within its cap.
+pub fn read_bytes(worktree: &str, rel: &str) -> Result<Vec<u8>, WorkspaceError> {
+    let disk = rel_under(worktree, rel)?;
+    let kind = media_kind(rel).ok_or_else(|| WorkspaceError::BadName(rel.to_owned()))?;
+    let meta = fs::metadata(&disk).map_err(|e| missing(e, rel))?;
+    if meta.is_dir() {
+        return Err(WorkspaceError::BadPath(rel.to_owned()));
+    }
+    let cap = kind.cap();
+    if meta.len() > cap {
+        return Err(WorkspaceError::TooLarge(rel.to_owned()));
+    }
+    let mut bytes = Vec::new();
+    fs::File::open(&disk)
+        .map_err(|e| missing(e, rel))?
+        .take(cap + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > cap {
+        return Err(WorkspaceError::TooLarge(rel.to_owned()));
+    }
+    Ok(bytes)
+}
+
 /// What the editor shows for a file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -1060,5 +1122,61 @@ mod tests {
         fs::write(tmp.path().join("xdev-trash-test.txt"), "x").unwrap();
         trash_entry(root(&tmp), "xdev-trash-test.txt").unwrap();
         assert!(names_in(tmp.path()).is_empty());
+    }
+
+    #[test]
+    fn media_kind_by_extension_ignores_case() {
+        for e in [
+            "png", "JPG", "jpeg", "gif", "webp", "bmp", "ico", "avif", "SVG",
+        ] {
+            assert_eq!(
+                media_kind(&format!("a/b.{e}")),
+                Some(MediaKind::Image),
+                "{e}"
+            );
+        }
+        for e in ["mp3", "wav", "ogg", "oga", "m4a", "FLAC"] {
+            assert_eq!(media_kind(&format!("x.{e}")), Some(MediaKind::Audio), "{e}");
+        }
+        for e in ["mp4", "webm", "ogv", "MOV"] {
+            assert_eq!(media_kind(&format!("x.{e}")), Some(MediaKind::Video), "{e}");
+        }
+        assert_eq!(media_kind("a.rs"), None);
+        assert_eq!(media_kind("png"), None);
+        assert_eq!(media_kind("dir.png/readme"), None);
+    }
+
+    #[test]
+    fn read_bytes_returns_the_file() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.png"), [0u8, 1, 2, 255]).unwrap();
+        assert_eq!(read_bytes(root(&tmp), "a.png").unwrap(), vec![0, 1, 2, 255]);
+    }
+
+    #[test]
+    fn read_bytes_over_the_cap_is_too_large() {
+        let tmp = TempDir::new().unwrap();
+        let f = fs::File::create(tmp.path().join("big.png")).unwrap();
+        f.set_len(IMAGE_MAX + 1).unwrap();
+        let err = read_bytes(root(&tmp), "big.png").unwrap_err();
+        assert_eq!(err.code(), "too_large");
+    }
+
+    #[test]
+    fn read_bytes_refuses_other_extensions_and_escapes() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.rs"), "x").unwrap();
+        assert_eq!(
+            read_bytes(root(&tmp), "a.rs").unwrap_err().code(),
+            "bad_name"
+        );
+        assert_eq!(
+            read_bytes(root(&tmp), "../a.png").unwrap_err().code(),
+            "bad_path"
+        );
+        assert_eq!(
+            read_bytes(root(&tmp), "none.png").unwrap_err().code(),
+            "not_found"
+        );
     }
 }

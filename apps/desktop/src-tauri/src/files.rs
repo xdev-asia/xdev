@@ -8,11 +8,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use tauri::State;
-use tauri::ipc::Channel;
+use tauri::ipc::{Channel, InvokeResponseBody, Response};
 use xdev_policy::Action;
 use xdev_workspace::{
     Eol, FileList, FileText, OsTrash, SearchEvent, SearchQuery, Trash, WriteOutcome, create_entry,
-    entry_path, list_files, read_file, rename_entry, search_text, trash_entry_with, write_file,
+    entry_path, list_files, read_bytes, read_file, rename_entry, search_text, trash_entry_with,
+    write_file,
 };
 
 use crate::accounts::data_dir;
@@ -75,6 +76,17 @@ pub fn file_read(
     rel: String,
 ) -> Result<FileText, CmdError> {
     read(data_dir(&state)?, &worktree, &rel)
+}
+
+/// The raw bytes of an image, audio or video file within its size cap.
+#[tauri::command(async)]
+pub fn file_bytes(
+    state: State<'_, AppState>,
+    worktree: PathBuf,
+    rel: String,
+) -> Result<Response, CmdError> {
+    let bytes = read_bytes(&root(data_dir(&state)?, &worktree)?, &rel)?;
+    Ok(Response::new(InvokeResponseBody::Raw(bytes)))
 }
 
 /// Saves `text` with `eol` when the file still has the `expected` hash

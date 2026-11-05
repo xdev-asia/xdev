@@ -19,8 +19,9 @@ type Leaf = Extract<PaneNode, { kind: "leaf" }>;
 type Split = Extract<PaneNode, { kind: "split" }>;
 
 const MIN_SIZE = 0.1;
-/** The review tab lives in a pane's strip but is never the seed of a new pane. */
+/** The review and commit tabs live in a pane's strip but are never the seed of a new pane. */
 const REVIEW_PREFIX = "review:";
+const COMMIT_PREFIX = "commit:";
 
 export function single(tabId: string): PaneLayout {
   const id = "p1";
@@ -126,13 +127,16 @@ export function neighbour(l: PaneLayout, from: string, step: 1 | -1): string {
 
 // ---- tabs ----------------------------------------------------------------------------------
 
-/** Adds the tab to the focused pane by default. A tab already in the layout is left alone. */
-export function addTab(l: PaneLayout, tabId: string, pane?: string): PaneLayout {
+/**
+ * Adds the tab to the focused pane by default and makes it the pane's active tab; `activate: false`
+ * adds it behind the active one. A tab already in the layout is left alone.
+ */
+export function addTab(l: PaneLayout, tabId: string, pane?: string, opts: { activate?: boolean } = {}): PaneLayout {
   if (paneOf(l, tabId)) return l;
   const target = pane ?? l.focused;
   if (!findLeaf(l, target)) return l;
   const root = mapNode(l.root, target, (n) =>
-    n.kind === "leaf" ? { ...n, tabs: [...n.tabs, tabId], active: tabId } : n,
+    n.kind === "leaf" ? { ...n, tabs: [...n.tabs, tabId], active: opts.activate === false ? n.active : tabId } : n,
   )!;
   return { ...l, root };
 }
@@ -166,7 +170,7 @@ export function selectTab(l: PaneLayout, tabId: string): PaneLayout {
 // ---- panes ---------------------------------------------------------------------------------
 
 export function splitPane(l: PaneLayout, pane: string, dir: PaneDir, tabId: string): PaneLayout {
-  if (!findLeaf(l, pane) || paneOf(l, tabId) || tabId.startsWith(REVIEW_PREFIX)) return l;
+  if (!findLeaf(l, pane) || paneOf(l, tabId) || tabId.startsWith(REVIEW_PREFIX) || tabId.startsWith(COMMIT_PREFIX)) return l;
   const newId = freshId(l, "p");
   const splitId = freshId(l, "s");
   const fresh: Leaf = { kind: "leaf", id: newId, tabs: [tabId], active: tabId };

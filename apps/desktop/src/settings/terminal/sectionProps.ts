@@ -1,8 +1,10 @@
-import type { TerminalSettings } from "@/api";
+import type { Api, TerminalSettings } from "@/api";
 import type { SettingsFilter } from "../sections";
 
 /** What Settings → Terminal gives each of its section files. */
 export type TerminalSectionProps = {
+  /** For the parts that reach the desktop on their own (importing a scheme). */
+  api?: Api;
   current: TerminalSettings;
   busy: boolean;
   /** Writes `{ ...current, ...change }`; the page shows what Rust stored. */

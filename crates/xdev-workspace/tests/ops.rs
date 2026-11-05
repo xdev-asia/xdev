@@ -223,7 +223,7 @@ fn create_from_another_branch_starts_at_that_commit() {
 fn remove_refuses_primary() {
     let (mut reg, _id, main) = registered();
     assert_eq!(
-        remove_worktree(&mut reg, main.path(), true, 0)
+        remove_worktree(&mut reg, main.path(), true, true, 0)
             .unwrap_err()
             .code(),
         "primary_worktree"
@@ -235,7 +235,7 @@ fn unknown_paths_are_refused() {
     let (mut reg, _id, main) = registered();
     let nowhere = main.path().join("nowhere");
     assert_eq!(
-        remove_worktree(&mut reg, &nowhere, true, 0)
+        remove_worktree(&mut reg, &nowhere, true, true, 0)
             .unwrap_err()
             .code(),
         "worktree_unknown"
@@ -252,12 +252,12 @@ fn remove_dirty_needs_force_and_deletes_branch() {
     let wt = create_worktree(&mut reg, &id, "dirty", None, 1, 0).unwrap();
     fs::write(Path::new(&wt.path).join("new.txt"), "x").unwrap();
     assert_eq!(
-        remove_worktree(&mut reg, Path::new(&wt.path), false, 0)
+        remove_worktree(&mut reg, Path::new(&wt.path), false, false, 0)
             .unwrap_err()
             .code(),
         "worktree_dirty"
     );
-    remove_worktree(&mut reg, Path::new(&wt.path), true, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&wt.path), true, true, 0).unwrap();
     assert!(!Path::new(&wt.path).exists());
     assert!(reg.worktrees.is_empty());
     assert!(
@@ -272,7 +272,7 @@ fn remove_dirty_needs_force_and_deletes_branch() {
 fn remove_clean_worktree_without_force() {
     let (mut reg, id, _main) = registered();
     let wt = create_worktree(&mut reg, &id, "clean", None, 1, 0).unwrap();
-    remove_worktree(&mut reg, Path::new(&wt.path), false, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&wt.path), false, false, 0).unwrap();
     assert!(!Path::new(&wt.path).exists());
 }
 
@@ -287,7 +287,7 @@ fn remove_keeps_the_branch_of_an_imported_worktree() {
     let mut reg = Registry::default();
     let view = add_repo(&mut reg, main.path(), 0).unwrap();
     let path = view.worktrees[1].path.clone();
-    remove_worktree(&mut reg, Path::new(&path), false, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&path), false, false, 0).unwrap();
     assert!(!Path::new(&path).exists());
     assert!(
         Repo::discover(main.path())
@@ -418,7 +418,7 @@ fn adopted_worktree_keeps_its_branch_on_remove() {
     let (mut reg, _id, main) = registered();
     let outside = outside_worktree(main.path(), "late");
     adopt_worktree(&mut reg, &outside, 1).unwrap();
-    remove_worktree(&mut reg, &outside, false, 0).unwrap();
+    remove_worktree(&mut reg, &outside, false, false, 0).unwrap();
     assert!(
         Repo::discover(main.path())
             .unwrap()
@@ -490,7 +490,7 @@ fn worktree_with_commit() -> (Registry, TestRepo, String, Repo) {
 #[test]
 fn remove_without_force_keeps_a_branch_with_unmerged_commits() {
     let (mut reg, _main, path, repo) = worktree_with_commit();
-    remove_worktree(&mut reg, Path::new(&path), false, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&path), false, false, 0).unwrap();
     assert!(!Path::new(&path).exists());
     assert!(reg.worktrees.is_empty());
     assert!(repo.branch_exists("work").unwrap());
@@ -499,15 +499,45 @@ fn remove_without_force_keeps_a_branch_with_unmerged_commits() {
 #[test]
 fn remove_with_force_deletes_a_branch_with_unmerged_commits() {
     let (mut reg, _main, path, repo) = worktree_with_commit();
-    remove_worktree(&mut reg, Path::new(&path), true, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&path), true, true, 0).unwrap();
     assert!(!repo.branch_exists("work").unwrap());
+}
+
+#[test]
+fn delete_unmerged_deletes_the_branch_without_force() {
+    let (mut reg, _main, path, repo) = worktree_with_commit();
+    remove_worktree(&mut reg, Path::new(&path), false, true, 0).unwrap();
+    assert!(!repo.branch_exists("work").unwrap());
+}
+
+#[test]
+fn force_on_a_dirty_tree_keeps_the_unmerged_branch() {
+    let (mut reg, _main, path, repo) = worktree_with_commit();
+    fs::write(Path::new(&path).join("extra.txt"), "x").unwrap();
+    let removed = remove_worktree(&mut reg, Path::new(&path), true, false, 0).unwrap();
+    assert!(!Path::new(&path).exists());
+    assert!(repo.branch_exists("work").unwrap());
+    assert_eq!(removed.deleted_branch, None);
+    assert_eq!(
+        removed.kept.unwrap().reason,
+        xdev_workspace::KeptReason::Deleted
+    );
+}
+
+#[test]
+fn a_branch_not_made_here_is_kept_even_with_delete_unmerged() {
+    let (mut reg, _main, path, repo) = worktree_with_commit();
+    reg.worktrees[0].made_here = false;
+    let removed = remove_worktree(&mut reg, Path::new(&path), true, true, 0).unwrap();
+    assert!(repo.branch_exists("work").unwrap());
+    assert!(removed.kept.is_some());
 }
 
 #[test]
 fn remove_without_force_deletes_a_merged_branch() {
     let (mut reg, main, path, repo) = worktree_with_commit();
     git(main.path(), &["merge", "-q", "--ff-only", "work"]);
-    remove_worktree(&mut reg, Path::new(&path), false, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&path), false, false, 0).unwrap();
     assert!(!repo.branch_exists("work").unwrap());
 }
 
@@ -553,7 +583,7 @@ fn records_survive_a_repo_added_through_a_link() {
     assert_eq!(repos[0].worktrees[1].name, "kept");
     assert!(repos[0].worktrees[1].pinned);
     // Removing it still deletes the branch the app made.
-    remove_worktree(&mut reg, Path::new(&wt.path), false, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&wt.path), false, false, 0).unwrap();
     assert!(
         !Repo::discover(&repo_path)
             .unwrap()
@@ -1134,7 +1164,7 @@ fn main_is_intact(main: &TestRepo) {
 fn remove_keeps_the_shared_folder_of_the_main_checkout() {
     let (mut reg, main, path) = with_shared();
     // The links are untracked in the worktree, yet they are not changes.
-    remove_worktree(&mut reg, &path, false, 0).unwrap();
+    remove_worktree(&mut reg, &path, false, false, 0).unwrap();
     assert!(!path.exists());
     main_is_intact(&main);
 }
@@ -1143,7 +1173,7 @@ fn remove_keeps_the_shared_folder_of_the_main_checkout() {
 #[test]
 fn forced_remove_keeps_the_shared_folder_too() {
     let (mut reg, main, path) = with_shared();
-    remove_worktree(&mut reg, &path, true, 0).unwrap();
+    remove_worktree(&mut reg, &path, true, true, 0).unwrap();
     assert!(!path.exists());
     main_is_intact(&main);
 }
@@ -1162,7 +1192,7 @@ fn archive_keeps_the_shared_folder_too() {
 fn a_real_change_still_blocks_remove_and_keeps_the_links() {
     let (mut reg, main, path) = with_shared();
     fs::write(path.join("mine.txt"), "x").unwrap();
-    let err = remove_worktree(&mut reg, &path, false, 0).unwrap_err();
+    let err = remove_worktree(&mut reg, &path, false, false, 0).unwrap_err();
     assert!(matches!(err, WorkspaceError::Dirty(_)));
     assert!(path.join("node_modules/x").is_file());
     main_is_intact(&main);
@@ -1630,4 +1660,124 @@ fn a_camel_case_repo_patch_reads_as_the_ui_sends_it() {
     // A snake_case key is not the wire form, so it changes nothing.
     let snake: RepoPatch = serde_json::from_str(r#"{"docs_dir":"notes"}"#).unwrap();
     assert!(snake.docs_dir.is_none());
+}
+
+fn opts_existing(branch: &str) -> CreateOptions {
+    CreateOptions {
+        existing: Some(branch.to_owned()),
+        suffix: true,
+        ..CreateOptions::default()
+    }
+}
+
+#[test]
+fn an_existing_branch_gets_a_worktree_that_does_not_own_it() {
+    let (mut reg, id, main) = registered();
+    git(main.path(), &["branch", "feat/old"]);
+    let view =
+        create_worktree_with(&mut reg, &id, "", None, 0, 1, &opts_existing("feat/old")).unwrap();
+    assert_eq!(view.branch.as_deref(), Some("feat/old"));
+    assert!(!reg.worktrees[0].made_here);
+    assert!(Path::new(&view.path).ends_with(format!("{}-old", reg.repos[0].short_name)));
+    remove_worktree(&mut reg, Path::new(&view.path), true, true, 0).unwrap();
+    assert!(
+        Repo::discover(main.path())
+            .unwrap()
+            .branch_exists("feat/old")
+            .unwrap()
+    );
+}
+
+#[test]
+fn an_existing_branch_in_use_or_missing_is_refused() {
+    let (mut reg, id, main) = registered();
+    let current = git(main.path(), &["branch", "--show-current"])
+        .trim()
+        .to_owned();
+    let err =
+        create_worktree_with(&mut reg, &id, "", None, 0, 1, &opts_existing(&current)).unwrap_err();
+    assert_eq!(err.code(), "branch_in_use");
+    git(main.path(), &["branch", "side"]);
+    create_worktree_with(&mut reg, &id, "", None, 0, 1, &opts_existing("side")).unwrap();
+    let err = create_worktree_with(&mut reg, &id, "again", None, 0, 1, &opts_existing("side"))
+        .unwrap_err();
+    assert_eq!(err.code(), "branch_in_use");
+    let err =
+        create_worktree_with(&mut reg, &id, "", None, 0, 1, &opts_existing("nope")).unwrap_err();
+    assert_eq!(err.code(), "bad_ref");
+    let err =
+        create_worktree_with(&mut reg, &id, "", None, 0, 1, &opts_existing("-x")).unwrap_err();
+    assert_eq!(err.code(), "bad_ref");
+}
+
+#[test]
+fn a_failed_add_keeps_an_existing_branch() {
+    let (mut reg, id, main) = registered();
+    git(main.path(), &["branch", "keep"]);
+    // Sparse on a branch that is fine, but the folder appears first: use a
+    // name whose folder is taken and no suffix.
+    let folder = reg.repos[0]
+        .worktree_root
+        .join(format!("{}-taken", reg.repos[0].short_name));
+    fs::create_dir_all(&folder).unwrap();
+    let opts = CreateOptions {
+        suffix: false,
+        ..opts_existing("keep")
+    };
+    let err = create_worktree_with(&mut reg, &id, "taken", None, 0, 1, &opts).unwrap_err();
+    assert_eq!(err.code(), "worktree_exists");
+    assert!(
+        Repo::discover(main.path())
+            .unwrap()
+            .branch_exists("keep")
+            .unwrap()
+    );
+}
+
+#[test]
+fn sparse_leaves_folders_out_of_the_worktree_only() {
+    let main = repo_dir();
+    fs::create_dir_all(main.path().join("src")).unwrap();
+    fs::create_dir_all(main.path().join("docs")).unwrap();
+    fs::write(main.path().join("src/a.txt"), "a").unwrap();
+    fs::write(main.path().join("docs/d.txt"), "d").unwrap();
+    commit_all(main.path(), "one");
+    let mut reg = Registry::default();
+    let id = add_repo(&mut reg, main.path(), 0).unwrap().id;
+    let opts = CreateOptions {
+        sparse: vec!["src".into()],
+        ..CreateOptions::default()
+    };
+    let view = create_worktree_with(&mut reg, &id, "slim", None, 0, 1, &opts).unwrap();
+    let wt = Path::new(&view.path);
+    assert!(wt.join("src/a.txt").exists());
+    assert!(!wt.join("docs").exists());
+    assert!(reg.worktrees[0].made_here);
+    assert!(main.path().join("docs/d.txt").exists());
+    let sparse = Command::new("git")
+        .current_dir(main.path())
+        .args(["sparse-checkout", "list"])
+        .output()
+        .unwrap();
+    assert!(!sparse.status.success(), "the main checkout must stay full");
+}
+
+#[test]
+fn a_bad_sparse_list_is_refused_before_anything_is_made() {
+    let (mut reg, id, main) = registered();
+    for bad in ["../x", "/abs", "-rf"] {
+        let opts = CreateOptions {
+            sparse: vec![bad.into()],
+            ..CreateOptions::default()
+        };
+        let err = create_worktree_with(&mut reg, &id, "n", None, 0, 1, &opts).unwrap_err();
+        assert_eq!(err.code(), "bad_sparse", "{bad}");
+    }
+    assert!(reg.worktrees.is_empty());
+    assert!(
+        !Repo::discover(main.path())
+            .unwrap()
+            .branch_exists("n")
+            .unwrap()
+    );
 }

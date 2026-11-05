@@ -22,8 +22,9 @@ use xdev_git::GitError;
 
 pub use create::{CreateProject, Created, PROJECT_NAME_MAX, ProjectKind, create_project};
 pub use files::{
-    Eol, FileKind, FileText, OsTrash, READ_MAX, Trash, WriteOutcome, create_entry, entry_path,
-    link_rel, read_file, rename_entry, trash_entry, trash_entry_with, write_file,
+    Eol, FileKind, FileText, IMAGE_MAX, MEDIA_MAX, MediaKind, OsTrash, READ_MAX, Trash,
+    WriteOutcome, create_entry, entry_path, link_rel, media_kind, read_bytes, read_file,
+    rename_entry, trash_entry, trash_entry_with, write_file,
 };
 pub use groups::{
     FolderEntry, RepoGroup, SidebarItem, folder_add, folder_forget, group_move, group_put,
@@ -86,6 +87,12 @@ pub enum WorkspaceError {
     BranchExists(String),
     #[error("not a commit: {0}")]
     BadRef(String),
+    /// The branch is already checked out in a worktree.
+    #[error("the branch is checked out in a worktree: {0}")]
+    BranchInUse(String),
+    /// A sparse checkout list git would misread.
+    #[error("not a usable sparse checkout list: {0}")]
+    BadSparse(String),
     #[error("not a usable name: {0}")]
     BadName(String),
     /// The custom branch prefix set in Settings, Git, cannot start a ref.
@@ -165,6 +172,8 @@ impl WorkspaceError {
             WorkspaceError::WorktreeExists(_) => "worktree_exists",
             WorkspaceError::BranchExists(_) => "branch_exists",
             WorkspaceError::BadRef(_) => "bad_ref",
+            WorkspaceError::BranchInUse(_) => "branch_in_use",
+            WorkspaceError::BadSparse(_) => "bad_sparse",
             WorkspaceError::BadName(_) => "bad_name",
             WorkspaceError::BadPrefix(_) => "bad_branch_prefix",
             WorkspaceError::ShortNameTaken(_) => "short_name_taken",

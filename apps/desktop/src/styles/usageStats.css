@@ -64,3 +64,26 @@
     animation: none;
   }
 }
+
+.usage-tile-note {
+  color: var(--x-color-muted);
+}
+
+.usage-scroll {
+  overflow-x: auto;
+}
+
+.usage-heatmap {
+  align-items: flex-start;
+}
+
+.usage-cache {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-1);
+  margin: 0 0 var(--x-space-3);
+}
+.usage-share { max-width: min(520px, calc(100vw - 2 * var(--x-space-4))); }
+.usage-share-card { margin-block: var(--x-space-3); }
+.usage-share-card svg { display: block; width: 100%; height: auto; }
+.usage-share .dialog-actions { flex-wrap: wrap; }

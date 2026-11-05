@@ -2,7 +2,7 @@ import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
 import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
-import type { Api, ApiError, Check, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, Check, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, PullPolicy, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 import { fromWork } from "@/workspace/branchName";
 import { REPO_COLORS, isHexColor } from "@/workspace/repoIdentity";
@@ -48,6 +48,13 @@ type WorkspaceApi = Pick<
   | "worktreeShip"
   | "worktreePush"
   | "worktreePull"
+  | "worktreeFastForward"
+  | "worktreeRebaseFromBase"
+  | "worktreeLog"
+  | "worktreeCommitFiles"
+  | "worktreeCommitFile"
+  | "worktreeOpenCommit"
+  | "worktreeOpenFileOnHost"
   | "worktreeSync"
   | "worktreeFetch"
   | "worktreeForcePush"
@@ -111,6 +118,13 @@ export type MockWorkspaceSeed = {
   conflicts?: Record<string, ConflictState>;
   // The first prompt of an agent session, by session id; a worktree path stands for its latest.
   prompts?: Record<string, string>;
+  // The commit graph by worktree path, and the files of a commit by `<worktree path>#<commit id>`.
+  log?: Record<string, RepoLog>;
+  commitFiles?: Record<string, CommitFiles>;
+  // Worktrees whose repo has no supported web remote: opening a commit or file rejects `no_web_remote`.
+  hostless?: string[];
+  // Worktrees whose remote holds older copies of their local commits, as after an amend.
+  rewritten?: Record<string, boolean>;
 };
 
 // `ARCHIVE_DAYS` in Rust: archived entries show under Archived this long.
@@ -292,6 +306,22 @@ function isAbsolute(path: string): boolean {
   return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
 }
 
+// As `names::sparse_dirs`: blanks skipped, duplicates counted once, at most 50 folders; none may be
+// absolute, start with `-`, hold a control char, have an empty, `.` or `..` part, or a `:` second char.
+function sparseOk(dirs: string[]): boolean {
+  const seen = new Set<string>();
+  for (const raw of dirs) {
+    let d = raw.trim().replace(/\\/g, "/");
+    while (d.startsWith("./")) d = d.slice(2);
+    d = d.replace(/\/+$/, "");
+    if (d === "") continue;
+    const bad = d.startsWith("-") || d.startsWith("/") || [...d][1] === ":" || /\p{Cc}/u.test(d) || d.split("/").some((p) => p === "" || p === "." || p === "..");
+    if (bad) return false;
+    seen.add(d);
+  }
+  return seen.size <= 50;
+}
+
 // Whether `path` is `base` or lies under it.
 function within(path: string, base: string): boolean {
   return path === base || path.startsWith(`${base}/`);
@@ -411,6 +441,8 @@ export function createMockWorkspace(
   const checks = new Map<string, Check[]>(Object.entries(structuredClone(seed.checks ?? {})));
   const hooks = new Map<string, string>(Object.entries(seed.hookFailure ?? {}));
   const remotes = new Map<string, Remote>();
+  // Worktrees whose local commits were rewritten after they were pushed, by an amend or a rebase.
+  const rewrote = new Set<string>();
   const stagedFiles = new Map<string, Set<string>>();
   const conflicts = new Map<string, ConflictState>(Object.entries(structuredClone(seed.conflicts ?? {})));
   const notes = new Map<string, ReviewNote[]>();
@@ -438,7 +470,7 @@ export function createMockWorkspace(
     const branch = wt.detached ? null : wt.branch;
     const upstream =
       r.tracked && branch !== null
-        ? { remote: "origin", branch, id: "b".repeat(40), ahead: r.ahead, behind: r.behind }
+        ? { remote: "origin", branch, id: "b".repeat(40), ahead: r.ahead, behind: r.behind, rewritten: (seed.rewritten?.[path] === true || rewrote.has(path)) && r.ahead > 0 && r.behind > 0 }
         : null;
     // Against the upstream only the unpushed commits count; they are the newest, first in the list.
     const vsUpstream = git.compareAgainstUpstream && upstream !== null;
@@ -468,12 +500,17 @@ export function createMockWorkspace(
     return shipView(path);
   }
 
-  function doPull(path: string): ShipView | Promise<never> {
+  // A pull under `ff-only` refuses a split history; the other policies join it and leave the
+  // local commits ahead.
+  function doPull(path: string, policy: PullPolicy = git.pullPolicy): ShipView | Promise<never> {
     const view = shipView(path);
     if (view instanceof Promise) return view;
     const r = remoteOf(path);
     if (!r.tracked) return reject("no_upstream");
-    if (r.behind > 0 && r.ahead > 0) return reject("pull_diverged");
+    if (r.behind > 0 && r.ahead > 0) {
+      if (policy === "ff-only") return reject("pull_diverged");
+      if (policy === "git-config") return reject("pull_policy");
+    }
     r.behind = 0;
     return shipView(path);
   }
@@ -767,9 +804,28 @@ export function createMockWorkspace(
     async gitUserName() {
       return userName;
     },
-    async worktreeCreate(repoId, name, from) {
+    async worktreeCreate(repoId, name, from, request) {
       const repo = repos.find((r) => r.id === repoId);
       if (!repo) return reject("repo_unknown", repoId);
+      const sparse = request?.sparse ?? [];
+      if (!sparseOk(sparse)) return reject("bad_sparse", sparse.join(", "));
+      const existing = request?.existing?.trim() ?? "";
+      if (existing !== "") {
+        // A local branch only: the base branches and the ones kept after an archive.
+        const local = [...REVIEW_BRANCHES.filter((b) => !b.remote).map((b) => b.name), ...kept.filter((k) => k.repoId === repo.id).map((k) => k.branch)];
+        if (!local.includes(existing)) return reject("bad_ref", existing);
+        if (repo.worktrees.some((x) => x.branch === existing)) return reject("branch_in_use", existing);
+        const typedName = name.trim();
+        const folder = slug(typedName === "" ? (existing.split("/").pop() ?? existing) : typedName);
+        if (folder === "") return reject("bad_name", typedName);
+        const parentDir = repo.path.replace(/[\/][^\/]*$/, "");
+        // `madeBy: "cli"` keeps the branch on remove, as `made_here: false` does in the desktop.
+        const wt = { ...worktree(`${parentDir}/wt/${repo.shortName}-${folder}`, folder, existing, false), madeBy: "cli" as const };
+        wt.autoName = false;
+        if (typedName !== "") wt.title = typedName;
+        repo.worktrees.push(wt);
+        return { worktree: structuredClone(wt), shared: [] };
+      }
       // As `create_worktree_with`: the prefix names the branch, the folder keeps only the leaf.
       const preview = previewPrefix(git, userName);
       if (preview.kind === "invalid") return reject("bad_branch_prefix", normalizePrefix(git.branchPrefixCustom));
@@ -843,7 +899,8 @@ export function createMockWorkspace(
       const wasDetached = findWorktree(path)?.wt.detached ?? true;
       const { repo, wt } = await leave(path, force, confirmed);
       if (wasDetached || wt.branch === null) return { deletedBranch: null, kept: null };
-      if (force || wt.madeBy === "app") return { deletedBranch: wt.branch, kept: null };
+      // As in Rust, only a branch made here goes; the mock counts it as merged, so `deleteUnmerged` changes nothing for it.
+      if (wt.madeBy === "app") return { deletedBranch: wt.branch, kept: null };
       return { deletedBranch: null, kept: keep(repo, wt, "deleted") };
     },
     async worktreeArchive(path, force, confirmed) {
@@ -1120,12 +1177,71 @@ export function createMockWorkspace(
     async worktreePull(path) {
       return doPull(path);
     },
+    async worktreeFastForward(path) {
+      const view = shipView(path);
+      if (view instanceof Promise) return view;
+      if (view.branch === null) return reject("detached");
+      if (view.upstream === null) return reject("no_upstream");
+      if (view.upstream.behind > 0 && view.upstream.ahead > 0) return reject("pull_diverged");
+      remoteOf(path).behind = 0;
+      return shipView(path);
+    },
+    async worktreeRebaseFromBase(path) {
+      const view = shipView(path);
+      if (view instanceof Promise) return view;
+      if (view.branch === null) return reject("detached");
+      const r = remoteOf(path);
+      // Replaying the commits gives them new ids; a pushed branch now differs from its remote.
+      if (r.tracked && r.commits.length > 0) {
+        r.commits = r.commits.map((c) => ({ ...c, id: commitId() }));
+        r.ahead = r.commits.length;
+        r.behind = r.commits.length;
+        rewrote.add(path);
+      }
+      return shipView(path);
+    },
+    async worktreeLog(path, limit, skip) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const seeded = seed.log?.[path];
+      if (!seeded) return { commits: [], head: null, branch: null, upstream: null, base: null, mergeBase: null, incoming: false, outgoing: false, hasMore: false };
+      const size = Math.min(Math.max(limit, 1), 200);
+      const page = seeded.commits.slice(skip, skip + size);
+      return structuredClone({ ...seeded, commits: page, hasMore: skip + size < seeded.commits.length });
+    },
+    async worktreeCommitFiles(path, id) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (!/^[0-9a-f]{4,64}$/i.test(id)) return reject("git", id);
+      const files = seed.commitFiles?.[`${path}#${id}`];
+      return files ? structuredClone(files) : reject("git", id);
+    },
+    async worktreeCommitFile(path, id, file) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (!/^[0-9a-f]{4,64}$/i.test(id)) return reject("git", id);
+      const entry = seed.commitFiles?.[`${path}#${id}`]?.files.find((f) => f.path === file);
+      if (!entry) return reject("bad_arg", file);
+      return demoDiff(file, entry.status === "added" ? "added" : entry.status === "deleted" ? "deleted" : "modified");
+    },
+    async worktreeOpenCommit(path, id) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (!/^[0-9a-f]{4,64}$/i.test(id)) return reject("git", id);
+      if (seed.hostless?.includes(path)) return reject("no_web_remote");
+    },
+    async worktreeOpenFileOnHost(path, file) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (file === "" || file.startsWith("/") || file.split("/").includes("..")) return reject("bad_arg", file);
+      if (seed.hostless?.includes(path)) return reject("no_web_remote");
+    },
     async worktreeSync(path) {
-      // Like Rust: pull when behind (a split history is refused), push when only ahead.
+      // Like Rust: a rewritten remote needs a force push; pull when behind, push what is left.
       const view = shipView(path);
       if (view instanceof Promise) return view;
       if (view.upstream === null) return reject("no_upstream");
-      if (view.upstream.behind > 0) return doPull(path);
+      if (view.upstream.rewritten) return reject("needs_force");
+      if (view.upstream.behind > 0) {
+        const pulled = doPull(path);
+        if (pulled instanceof Promise) return pulled;
+        return pulled.upstream !== null && pulled.upstream.ahead > 0 ? doPush(path) : pulled;
+      }
       if (view.upstream.ahead > 0) return doPush(path);
       return view;
     },
@@ -1143,6 +1259,7 @@ export function createMockWorkspace(
       const r = remoteOf(path);
       r.ahead = 0;
       r.behind = 0;
+      rewrote.delete(path);
       return shipView(path);
     },
     async worktreeAmend(path, files, message, confirmed) {
@@ -1163,6 +1280,7 @@ export function createMockWorkspace(
         // The rewritten commit is no longer the remote's: both sides now hold one the other lacks.
         r.ahead = 1;
         r.behind = 1;
+        rewrote.add(path);
       }
       return id;
     },

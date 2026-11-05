@@ -1,0 +1,31 @@
+{
+  "/demo/themes/graphite-dark.json": {
+    "format": "xdev-terminal-theme", "version": 1, "name": "Graphite Dark", "kind": "dark",
+    "foreground": "#d7dae0", "background": "#14161a", "cursor": "#5b8cff", "cursorAccent": "#14161a",
+    "selectionBackground": "#2a3a63",
+    "black": "#1b1e24", "red": "#e06c75", "green": "#98c379", "yellow": "#e5c07b",
+    "blue": "#61afef", "magenta": "#c678dd", "cyan": "#56b6c2", "white": "#abb2bf",
+    "brightBlack": "#5c6370", "brightRed": "#e06c75", "brightGreen": "#98c379",
+    "brightYellow": "#e5c07b", "brightBlue": "#61afef", "brightMagenta": "#c678dd",
+    "brightCyan": "#56b6c2", "brightWhite": "#ffffff"
+  },
+  "/demo/themes/paper-light.json": {
+    "format": "xdev-terminal-theme", "version": 1, "name": "Paper Light",
+    "foreground": "#2b2b2b", "background": "#fafaf7", "futureKey": 1,
+    "black": "#000", "red": "#c0392b", "green": "#2e7d32", "yellow": "#b58900",
+    "blue": "#1f5fbf", "magenta": "#8e44ad", "cyan": "#007c89", "white": "#bbb",
+    "brightBlack": "#555", "brightRed": "#e74c3c", "brightGreen": "#43a047", "brightYellow": "#d4a017",
+    "brightBlue": "#3b82f6", "brightMagenta": "#a855f7", "brightCyan": "#14b8c4", "brightWhite": "#fff"
+  },
+  "/demo/themes/murky.json": {
+    "format": "xdev-terminal-theme", "version": 1, "name": "Murky", "kind": "dark",
+    "foreground": "#15171b", "background": "#14161a",
+    "black": "#111", "red": "#e06c75", "green": "#98c379", "yellow": "#e5c07b",
+    "blue": "#61afef", "magenta": "#c678dd", "cyan": "#56b6c2", "white": "#abb2bf",
+    "brightBlack": "#5c6370", "brightRed": "#e06c75", "brightGreen": "#98c379", "brightYellow": "#e5c07b",
+    "brightBlue": "#61afef", "brightMagenta": "#c678dd", "brightCyan": "#56b6c2", "brightWhite": "#fff"
+  },
+  "/demo/themes/broken.json": {
+    "format": "xdev-terminal-theme", "version": 1, "name": "Broken", "foreground": "red", "background": "#000"
+  }
+}
