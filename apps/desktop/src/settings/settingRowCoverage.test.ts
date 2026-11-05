@@ -9,7 +9,7 @@ import { SETTING_ENTRIES } from "./catalog";
 const PAGES: Record<string, string[]> = {
   general: ["GeneralPage.tsx", "UpdatesSetting.tsx"],
   appearance: ["AppearancePage.tsx"],
-  account: ["account/AccountPage.tsx", "account/ServerRow.tsx"],
+  account: ["account/AccountPage.tsx", "account/ServerRow.tsx", "account/RoutingSection.tsx"],
   agents: ["agents/AgentsPage.tsx"],
   orchestration: ["orchestration/OrchestrationPage.tsx"],
   usage: ["UsagePage.tsx", "ApiKeysSection.tsx"],
