@@ -1734,7 +1734,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               </span>
             )}
           </button>
-          {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onViewActivity={() => { setBellOpen(false); setSidebarOpen(true); setSideView("activity"); setActivityAsk((a) => ({ tab: "feed", seq: a.seq + 1 })); }} onClose={() => setBellOpen(false)} />}
+          {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onToggleRead={(tab) => (tab.unread ? sessions?.markTabRead(tab.id) : sessions?.markTabUnread(tab.id))} onViewActivity={() => { setBellOpen(false); setSidebarOpen(true); setSideView("activity"); setActivityAsk((a) => ({ tab: "feed", seq: a.seq + 1 })); }} onClose={() => setBellOpen(false)} />}
         </div>
         <HelpButton onPick={pickHelp} />
         <button

@@ -3256,5 +3256,13 @@
   "automations.delete.cancel": "Hủy",
   "automations.delete.toast.skip": "Lần sau chúng tôi sẽ bỏ qua bước xác nhận này.",
   "automations.delete.toast.hint": "Bạn có thể thay đổi điều này trong Cài đặt.",
-  "automations.delete.toast.action": "Mở Cài đặt"
+  "automations.delete.toast.action": "Mở Cài đặt",
+  "attention.reason.needs-you": "Cần bạn",
+  "attention.reason.done": "Đã xong",
+  "attention.reason.failed": "Lỗi",
+  "attention.reason.bell": "Chuông",
+  "attention.markRead": "Đánh dấu đã đọc",
+  "attention.markUnread": "Đánh dấu chưa đọc",
+  "attention.markAllRead": "Đánh dấu tất cả đã đọc",
+  "status.bell.rowReason": "{worktree}, {name}, {state}, {reason}, {age}"
 }

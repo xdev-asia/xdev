@@ -3256,5 +3256,13 @@
   "automations.delete.cancel": "Cancel",
   "automations.delete.toast.skip": "We'll skip this confirmation next time.",
   "automations.delete.toast.hint": "You can change this in Settings.",
-  "automations.delete.toast.action": "Open Settings"
+  "automations.delete.toast.action": "Open Settings",
+  "attention.reason.needs-you": "Needs you",
+  "attention.reason.done": "Finished",
+  "attention.reason.failed": "Failed",
+  "attention.reason.bell": "Bell",
+  "attention.markRead": "Mark read",
+  "attention.markUnread": "Mark unread",
+  "attention.markAllRead": "Mark all read",
+  "status.bell.rowReason": "{worktree}, {name}, {state}, {reason}, {age}"
 }

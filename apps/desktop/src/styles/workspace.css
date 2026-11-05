@@ -262,7 +262,31 @@
   overflow-y: auto;
 }
 
+.ws-bell-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ws-bell-toggle {
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.ws-bell-toggle:hover,
+.ws-bell-toggle:focus-visible {
+  background: var(--bg-3);
+}
+
 .ws-bell-row {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -298,6 +322,7 @@
 }
 
 .ws-bell-state,
+.ws-bell-reason,
 .ws-bell-age {
   flex-shrink: 0;
   color: var(--text-3);
