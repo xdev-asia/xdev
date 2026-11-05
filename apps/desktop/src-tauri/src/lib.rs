@@ -10,6 +10,7 @@ mod clipboard;
 mod commands;
 mod endpoint;
 mod files;
+mod history;
 mod hooks;
 mod issues;
 mod keybindings;
@@ -396,6 +397,13 @@ pub fn run() {
             ship::worktree_ship,
             ship::worktree_push,
             ship::worktree_pull,
+            ship::worktree_fast_forward,
+            ship::worktree_rebase_from_base,
+            history::worktree_log,
+            history::worktree_commit_files,
+            history::worktree_commit_file,
+            history::worktree_open_commit,
+            history::worktree_open_file_on_host,
             ship::worktree_sync,
             ship::worktree_fetch,
             ship::worktree_force_push,

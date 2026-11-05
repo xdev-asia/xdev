@@ -14,7 +14,9 @@ platform: string,
  */
 scannedAt: number, ports: Array<WorkspacePort>, 
 /**
- * Why there is no fresh list: `scan_timeout`, `scan_failed` or `unsupported`.
+ * Why there is no fresh list: `scan_timeout`, `scan_failed`,
+ * `unsupported`, or `no_terminal` when no queried worktree runs a
+ * terminal and the OS was not read.
  */
 unavailable: string | null, detail: string | null, 
 /**

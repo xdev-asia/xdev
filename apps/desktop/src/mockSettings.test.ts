@@ -78,6 +78,14 @@ it("carries the sidebar layout through a prefs put", async () => {
   expect(await api.sidebarPrefsGet()).toEqual(next);
 });
 
+it("starts the pull policy at fast-forward only and stores a change", async () => {
+  const api = createMockApi({});
+  expect((await api.gitSettings()).pullPolicy).toBe("ff-only");
+  const stored = await api.setGitSettings({ ...(await api.gitSettings()), pullPolicy: "rebase" });
+  expect(stored.pullPolicy).toBe("rebase");
+  expect((await api.gitSettings()).pullPolicy).toBe("rebase");
+});
+
 it("stores the orchestration settings with the depth clamped to one through nine", async () => {
   const api = createMockApi({});
   expect(await api.orchestrationSettings()).toEqual({ nestedWorkerMaxDepth: 1, workerAutoClose: true });
