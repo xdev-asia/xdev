@@ -30,7 +30,8 @@ pub use skills::{
 pub use templates::{PromptTemplate, TEMPLATES_MAX, TemplateMode, Templates};
 pub use transcripts::{
     CONVERSATION_PAGE, CONVERSATION_PAGE_MAX, ConversationItem, ConversationKind, ConversationPage,
-    MarkerKind, TOOL_OUTPUT_MAX, ToolStatus, ToolStep, conversation, conversation_of_text,
+    MarkerKind, SubagentRun, TOOL_OUTPUT_MAX, ToolStatus, ToolStep, conversation,
+    conversation_of_text, conversation_of_texts,
 };
 pub use transcripts::{
     ContextUsage, TailTurn, TextRole, TranscriptEvent, TranscriptText, claude_window,

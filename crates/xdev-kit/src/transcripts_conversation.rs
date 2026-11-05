@@ -3,6 +3,12 @@
 //! left (a compaction, a resume, a model change). The same lines the
 //! transcript reader drops stay dropped: side chains, meta lines, wrapper
 //! text, thinking, images, reasoning and instructions.
+//!
+//! Sub-agent runs are read on the side (`subagents`): a claude `Task` (or
+//! `Agent`) tool call and the side-chain lines it ran, found by the
+//! `parentUuid` chain, by the prompt the chain starts with, or by `agentId`.
+//! A side chain no call is found for stays dropped. Codex logs mark no
+//! sub-agents, so a codex page has none.
 
 use std::collections::HashMap;
 use std::fs;
@@ -25,6 +31,18 @@ pub const CONVERSATION_PAGE: usize = 200;
 pub const CONVERSATION_PAGE_MAX: usize = 1_000;
 /// The most markers a page lists for the whole session.
 pub const MARKERS_MAX: usize = 50;
+/// The most sub-agent runs a page lists for the whole session (the last ones).
+pub const SUBAGENTS_MAX: usize = 100;
+/// The most steps one sub-agent run keeps (the first ones).
+pub const SUBAGENT_STEPS_MAX: usize = 200;
+/// The most characters of a sub-agent's result.
+pub const SUBAGENT_RESULT_MAX: usize = 4_000;
+/// The most characters of a sub-agent's prompt.
+pub const SUBAGENT_PROMPT_CHARS: usize = 300;
+/// The most side files (`<session>/subagents/*.jsonl`) one read opens.
+pub const SUBAGENT_FILES_MAX: usize = 200;
+/// The tool names that start a claude sub-agent.
+pub const SUBAGENT_TOOLS: &[&str] = &["Task", "Agent"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConversationKind {
@@ -103,6 +121,37 @@ pub struct ConversationItem {
     pub at: i64,
     pub tool: Option<ToolStep>,
     pub marker: Option<MarkerKind>,
+    /// For the tool step that started a sub-agent: the run's id (its call id).
+    pub subagent: Option<String>,
+}
+
+/// One sub-agent run: the call that started it, the steps it took on its
+/// side chain and what it gave back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubagentRun {
+    /// The call id of the tool step that started it.
+    pub id: String,
+    /// Index of that tool step in the whole conversation.
+    pub index: usize,
+    /// The call's `description`, else the prompt's first line.
+    pub description: String,
+    /// The call's `subagent_type`, when it names one.
+    pub agent_type: Option<String>,
+    /// The prompt on one line, at most `SUBAGENT_PROMPT_CHARS`.
+    pub prompt: String,
+    /// The call's status: pending until its result is logged.
+    pub status: ToolStatus,
+    /// The result text, secrets masked, at most `SUBAGENT_RESULT_MAX` chars.
+    pub result: String,
+    /// The result was cut.
+    pub cut: bool,
+    /// Its texts and tool steps, the first `SUBAGENT_STEPS_MAX`; `index`
+    /// counts within the run.
+    pub steps: Vec<ConversationItem>,
+    /// Steps it took in all.
+    pub steps_total: usize,
+    /// Unix ms of the call; 0 when it has no time.
+    pub at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -118,6 +167,8 @@ pub struct ConversationPage {
     pub model: Option<String>,
     /// The markers of the whole conversation, the last `MARKERS_MAX`.
     pub markers: Vec<ConversationItem>,
+    /// The sub-agent runs of the whole conversation, the last `SUBAGENTS_MAX`.
+    pub subagents: Vec<SubagentRun>,
 }
 
 /// One page of the conversation in `path`. `from` absent reads the last
@@ -136,7 +187,38 @@ pub fn conversation(
             read.line(&v);
         }
     })?;
+    if home.agent == Agent::Claude {
+        for side in side_files(path) {
+            read.side_file();
+            // A side file that cannot be read leaves its run with the result only.
+            let _ = for_each_line(&side, 0, |_, line| {
+                if let Some(v) = parse_line(line) {
+                    let at = read.at(&v);
+                    read.sidechain(&v, at);
+                }
+            });
+        }
+    }
     Ok(read.page(from, limit))
+}
+
+/// The side-chain files claude may keep beside a session log:
+/// `<dir>/<session>/subagents/*.jsonl`, by name, at most `SUBAGENT_FILES_MAX`.
+/// [Unverified] which claude versions write them; older ones keep the side
+/// chains in the session log itself.
+fn side_files(path: &Path) -> Vec<std::path::PathBuf> {
+    let dir = path.with_extension("").join("subagents");
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<_> = entries
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "jsonl") && p.is_file())
+        .collect();
+    files.sort();
+    files.truncate(SUBAGENT_FILES_MAX);
+    files
 }
 
 /// The conversation of `text` (log lines, oldest first), for tests and callers
@@ -151,6 +233,35 @@ pub fn conversation_of_text(
     for line in text.lines() {
         if let Some(v) = parse_line(line.as_bytes()) {
             read.line(&v);
+        }
+    }
+    read.page(from, limit)
+}
+
+/// `conversation_of_text` with side files: `sides` are the texts of
+/// `<session>/subagents/*.jsonl`, in name order.
+pub fn conversation_of_texts(
+    agent: Agent,
+    text: &str,
+    sides: &[&str],
+    from: Option<usize>,
+    limit: Option<usize>,
+) -> ConversationPage {
+    let mut read = Reader::new(agent);
+    for line in text.lines() {
+        if let Some(v) = parse_line(line.as_bytes()) {
+            read.line(&v);
+        }
+    }
+    if agent == Agent::Claude {
+        for side in sides {
+            read.side_file();
+            for line in side.lines() {
+                if let Some(v) = parse_line(line.as_bytes()) {
+                    let at = read.at(&v);
+                    read.sidechain(&v, at);
+                }
+            }
         }
     }
     read.page(from, limit)
@@ -177,6 +288,26 @@ struct Reader {
     session: Option<String>,
     metas: usize,
     last_at: i64,
+    runs: Vec<Run>,
+    /// Call id to the run it started.
+    run_of_call: HashMap<String, usize>,
+    /// Side-chain line uuid to its run.
+    side_uuids: HashMap<String, usize>,
+    /// Claude's `agentId` to its run.
+    agent_runs: HashMap<String, usize>,
+    /// Side-chain call id to `(run, step)`.
+    side_calls: HashMap<String, (usize, usize)>,
+    /// Reading a side file: `Some(run)` once its run is known.
+    file_run: Option<Option<usize>>,
+}
+
+/// A sub-agent run while the log is read.
+struct Run {
+    out: SubagentRun,
+    /// The full prompt, trimmed, to find the side chain it starts.
+    prompt: String,
+    /// A side chain was found for it.
+    linked: bool,
 }
 
 impl Reader {
@@ -189,6 +320,12 @@ impl Reader {
             session: None,
             metas: 0,
             last_at: 0,
+            runs: Vec::new(),
+            run_of_call: HashMap::new(),
+            side_uuids: HashMap::new(),
+            agent_runs: HashMap::new(),
+            side_calls: HashMap::new(),
+            file_run: None,
         }
     }
 
@@ -207,6 +344,7 @@ impl Reader {
             .cloned()
             .collect();
         let skip = markers.len().saturating_sub(MARKERS_MAX);
+        let runs_skip = self.runs.len().saturating_sub(SUBAGENTS_MAX);
         ConversationPage {
             items: self.items[start..end].to_vec(),
             from: start,
@@ -214,6 +352,12 @@ impl Reader {
             turns,
             model: self.model,
             markers: markers.into_iter().skip(skip).collect(),
+            subagents: self
+                .runs
+                .into_iter()
+                .skip(runs_skip)
+                .map(|r| r.out)
+                .collect(),
         }
     }
 
@@ -226,6 +370,7 @@ impl Reader {
             at,
             tool: None,
             marker: None,
+            subagent: None,
         });
         index
     }
@@ -253,6 +398,208 @@ impl Reader {
         if let Some(id) = id.filter(|s| !s.is_empty()) {
             self.calls.insert(id.to_string(), i);
         }
+    }
+
+    /// A sub-agent call: its run starts with the tool step at `index`.
+    fn run_start(&mut self, id: Option<&str>, index: usize, input: Option<&Value>, at: i64) {
+        let Some(id) = id.filter(|s| !s.is_empty()) else {
+            return;
+        };
+        let field = |key| input.and_then(|i| str_of(i, key)).unwrap_or("").trim();
+        let prompt = field("prompt").to_string();
+        let mut description = one_line(field("description"), TOOL_SUMMARY_CHARS);
+        if description.is_empty() {
+            description = one_line(prompt.lines().next().unwrap_or(""), TOOL_SUMMARY_CHARS);
+        }
+        let agent_type = Some(field("subagent_type"))
+            .filter(|s| !s.is_empty())
+            .map(|s| one_line(s, 60));
+        self.items[index].subagent = Some(id.to_string());
+        self.run_of_call.insert(id.to_string(), self.runs.len());
+        self.runs.push(Run {
+            out: SubagentRun {
+                id: id.to_string(),
+                index,
+                description: mask_secrets(&description),
+                agent_type,
+                prompt: one_line(&mask_secrets(&prompt), SUBAGENT_PROMPT_CHARS),
+                status: ToolStatus::Pending,
+                result: String::new(),
+                cut: false,
+                steps: Vec::new(),
+                steps_total: 0,
+                at,
+            },
+            prompt,
+            linked: false,
+        });
+    }
+
+    /// The result of a sub-agent call, and the `agentId` the line names.
+    fn run_result(&mut self, id: Option<&str>, error: bool, output: &str, agent: Option<&str>) {
+        let Some(&r) = id.and_then(|id| self.run_of_call.get(id)) else {
+            return;
+        };
+        let run = &mut self.runs[r].out;
+        run.status = if error {
+            ToolStatus::Error
+        } else {
+            ToolStatus::Ok
+        };
+        let text = mask_secrets(output.trim());
+        run.cut = text.chars().count() > SUBAGENT_RESULT_MAX;
+        run.result = text.chars().take(SUBAGENT_RESULT_MAX).collect();
+        if let Some(agent) = agent.filter(|a| !a.is_empty()) {
+            self.agent_runs.entry(agent.to_string()).or_insert(r);
+        }
+    }
+
+    /// The start of a side file: its lines are one run's.
+    fn side_file(&mut self) {
+        self.file_run = Some(None);
+    }
+
+    /// The run a side chain's first prompt belongs to: the first unlinked run
+    /// with that prompt, else (in a side file, or while the call still runs)
+    /// the first unlinked one.
+    fn link_prompt(&self, prompt: Option<&str>) -> Option<usize> {
+        let prompt = prompt.map(str::trim).filter(|p| !p.is_empty())?;
+        let open = |r: &&Run| !r.linked;
+        let found = self
+            .runs
+            .iter()
+            .position(|r| open(&r) && r.prompt == prompt);
+        found.or_else(|| {
+            let in_file = self.file_run.is_some();
+            self.runs
+                .iter()
+                .position(|r| open(&r) && (in_file || r.out.status == ToolStatus::Pending))
+        })
+    }
+
+    /// A side-chain line: kept as a step of the run it belongs to, dropped
+    /// when no run is found for it.
+    fn sidechain(&mut self, v: &Value, at: i64) {
+        let kind = str_of(v, "type").unwrap_or("");
+        if kind != "user" && kind != "assistant" {
+            return;
+        }
+        let message = v.get("message").filter(|m| m.is_object());
+        let content = message.and_then(|m| m.get("content"));
+        let agent = str_of(v, "agentId").filter(|a| !a.is_empty());
+        let mut run = str_of(v, "parentUuid")
+            .and_then(|p| self.side_uuids.get(p).copied())
+            .or_else(|| agent.and_then(|a| self.agent_runs.get(a).copied()))
+            .or_else(|| self.file_run.flatten());
+        if run.is_none() && kind == "user" {
+            let prompt = match content {
+                Some(Value::String(s)) => Some(s.as_str()),
+                Some(Value::Array(items)) => items
+                    .iter()
+                    .find(|i| str_of(i, "type") == Some("text"))
+                    .and_then(|i| str_of(i, "text")),
+                _ => None,
+            };
+            run = self.link_prompt(prompt);
+        }
+        let Some(r) = run else {
+            return;
+        };
+        self.runs[r].linked = true;
+        if let Some(slot) = self.file_run.as_mut() {
+            *slot = Some(r);
+        }
+        if let Some(uuid) = str_of(v, "uuid").filter(|u| !u.is_empty()) {
+            self.side_uuids.insert(uuid.to_string(), r);
+        }
+        if let Some(agent) = agent {
+            self.agent_runs.entry(agent.to_string()).or_insert(r);
+        }
+        if flag(v, "isMeta") {
+            return;
+        }
+        let Some(Value::Array(items)) = content else {
+            if kind == "assistant"
+                && let Some(Value::String(s)) = content
+            {
+                self.side_step(r, ConversationKind::Assistant, s, None, at);
+            }
+            return;
+        };
+        for item in items {
+            match (kind, str_of(item, "type")) {
+                ("assistant", Some("text")) => {
+                    let t = str_of(item, "text").unwrap_or("");
+                    self.side_step(r, ConversationKind::Assistant, t, None, at);
+                }
+                ("assistant", Some("tool_use" | "server_tool_use")) => {
+                    let step = ToolStep {
+                        name: one_line(str_of(item, "name").unwrap_or("tool"), 60),
+                        summary: summarize_input(item.get("input")),
+                        status: ToolStatus::Pending,
+                        output: String::new(),
+                        cut: false,
+                    };
+                    let at_step = self.side_step(r, ConversationKind::Tool, "", Some(step), at);
+                    if let (Some(s), Some(id)) = (at_step, str_of(item, "id")) {
+                        self.side_calls.insert(id.to_string(), (r, s));
+                    }
+                }
+                ("user", Some("tool_result")) => {
+                    let Some((r, s)) =
+                        str_of(item, "tool_use_id").and_then(|id| self.side_calls.remove(id))
+                    else {
+                        continue;
+                    };
+                    let output = result_text(item.get("content"));
+                    let error = flag(item, "is_error");
+                    if let Some(step) = self.runs[r].out.steps[s].tool.as_mut() {
+                        step.status = if error {
+                            ToolStatus::Error
+                        } else {
+                            ToolStatus::Ok
+                        };
+                        let (output, cut) = bound_output(&output);
+                        step.output = output;
+                        step.cut = cut;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Adds a step to run `r`; its place in `steps`, or `None` past the cap
+    /// (it still counts) or for an empty text.
+    fn side_step(
+        &mut self,
+        r: usize,
+        kind: ConversationKind,
+        text: &str,
+        tool: Option<ToolStep>,
+        at: i64,
+    ) -> Option<usize> {
+        let text = if tool.is_some() {
+            String::new()
+        } else {
+            keep_text(text)?
+        };
+        let run = &mut self.runs[r].out;
+        let index = run.steps_total;
+        run.steps_total += 1;
+        if run.steps.len() >= SUBAGENT_STEPS_MAX {
+            return None;
+        }
+        run.steps.push(ConversationItem {
+            index,
+            kind,
+            text,
+            at,
+            tool,
+            marker: None,
+            subagent: None,
+        });
+        Some(run.steps.len() - 1)
     }
 
     fn result(&mut self, id: Option<&str>, error: bool, output: &str) {
@@ -303,6 +650,7 @@ impl Reader {
 
     fn claude(&mut self, v: &Value, at: i64) {
         if flag(v, "isSidechain") {
+            self.sidechain(v, at);
             return;
         }
         let kind = str_of(v, "type").unwrap_or("");
@@ -349,7 +697,12 @@ impl Reader {
                             Some("tool_use" | "server_tool_use") => {
                                 let name = str_of(item, "name").unwrap_or("tool");
                                 let summary = summarize_input(item.get("input"));
-                                self.tool(str_of(item, "id"), name, summary, at);
+                                let id = str_of(item, "id");
+                                self.tool(id, name, summary, at);
+                                if SUBAGENT_TOOLS.contains(&name) {
+                                    let index = self.items.len() - 1;
+                                    self.run_start(id, index, item.get("input"), at);
+                                }
                             }
                             _ => {}
                         }
@@ -368,7 +721,10 @@ impl Reader {
                         Some("tool_result") => {
                             let output = result_text(item.get("content"));
                             let error = flag(item, "is_error");
-                            self.result(str_of(item, "tool_use_id"), error, &output);
+                            let id = str_of(item, "tool_use_id");
+                            let agent = v.get("toolUseResult").and_then(|r| str_of(r, "agentId"));
+                            self.run_result(id, error, &output, agent);
+                            self.result(id, error, &output);
                         }
                         Some("text") => {
                             if let Some(t) = str_of(item, "text") {
