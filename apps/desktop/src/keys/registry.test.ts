@@ -4,7 +4,7 @@ import vi from "@/i18n/vi.json";
 import type { Platform } from "@/platform";
 import { normalizeChord } from "./keybindingsFile";
 import { DEFAULT_BINDINGS, type ActionId } from "./keymap";
-import { defaultsFor, SHORTCUTS } from "./registry";
+import { defaultsFor, SHORTCUTS, shortcutDef } from "./registry";
 
 const PLATFORMS: Platform[] = ["win", "mac", "linux"];
 
@@ -24,7 +24,7 @@ const ALL: Record<ActionId, true> = {
   "panel.explorer": true, "panel.search": true, "panel.sourceControl": true, "panel.issues": true, "panel.ports": true,
   "terminal.clear": true, "terminal.copy": true, "terminal.paste": true, "terminal.selectAll": true, "terminal.find": true,
   "zoom.in": true, "zoom.out": true, "zoom.reset": true,
-  "tab.reopenClosed": true,
+  "tab.reopenClosed": true, "tab.nextSameKind": true, "tab.prevSameKind": true, "file.closeAll": true,
   "settings.open": true, "settings.shortcuts": true,
   "docs.search": true, "docs.new": true, "docs.save": true, "file.save": true, "file.markdownPreview": true,
   "quickCommands.open": true, "quickOpen.open": true,
@@ -99,6 +99,16 @@ it("the panes-tabs-keys defaults are unchanged on every platform", () => {
 it("DEFAULT_BINDINGS holds the old list, normalized, for the panes-tabs-keys actions", () => {
   for (const [id, chord] of OLD) {
     expect(DEFAULT_BINDINGS.filter((b) => b.action === id).map((b) => b.chord), id).toEqual([normalizeChord(chord, "win")]);
+  }
+});
+
+it("file-tab commands: Mod+Shift+T reopens, the rest have no default key", () => {
+  expect(defaultsFor(shortcutDef("tab.reopenClosed")!, "linux")).toEqual(["Mod+Shift+T"]);
+  for (const id of ["file.closeAll", "tab.nextSameKind", "tab.prevSameKind"] as const) {
+    const d = shortcutDef(id)!;
+    expect(defaultsFor(d, "linux")).toEqual([]);
+    expect(defaultsFor(d, "mac")).toEqual([]);
+    expect(d.scope).toBe("global");
   }
 });
 

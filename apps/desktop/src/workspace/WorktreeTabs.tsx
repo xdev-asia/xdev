@@ -37,6 +37,7 @@ import {
   equalize,
   focusPane,
   leaves,
+  pinFirst,
   neighbour,
   paneOf,
   removeTab,
@@ -57,6 +58,9 @@ import type { SetupGate } from "./setupGate";
 import { TabStrip, type MenuGroup, type StripItem, type TabDrag } from "./TabStrip";
 import { AgentPicker } from "./AgentPicker";
 import { cycleTab, mruOrder, nthTab } from "./tabNav";
+import { cycleSameKind, fileCloseTargets, type FileCloseKind, type FileTabInfo } from "./tabMenu";
+import { openFile } from "@/files/openFile";
+import { absolutePath, relativePath } from "@/search/resultCopy";
 import { TabTitleDialog } from "./TabTitleDialog";
 import { toTabStatus } from "@/terminal/programStatus";
 import { titleStatus } from "./titles";
@@ -304,16 +308,77 @@ export function WorktreeTabs(props: {
   }
 
   // The file tab whose Save / Don't Save / Cancel dialog is open.
-  const [unsaved, setUnsaved] = useState<string | null>(null);
+  // Several when a bulk close meets unsaved files: the dialog asks about the first, then the next.
+  const [unsaved, setUnsaved] = useState<string[]>([]);
   const io = { api, store: fileTabs, t };
+
+  // Saved files close now (and can be reopened); files with unsaved edits wait for the dialog.
+  function closeFiles(rels: string[]): void {
+    const dirty: string[] = [];
+    for (const rel of rels) {
+      const entry = fileTabs.get(worktree, rel);
+      if (entry && isDirty(entry)) dirty.push(rel);
+      else fileTabs.closeRemembering(worktree, rel);
+    }
+    if (dirty.length > 0) setUnsaved(dirty);
+  }
+
+  // The open file tabs among `ids`, with their dirty and pinned marks.
+  function fileInfos(ids: readonly string[]): FileTabInfo[] {
+    return ids.flatMap((id) => {
+      const rel = fileTabRel(id);
+      const entry = rel === null ? undefined : fileTabs.get(worktree, rel);
+      return rel !== null && entry ? [{ rel, dirty: isDirty(entry), pinned: !!entry.pinned }] : [];
+    });
+  }
+
+  function closeAllFiles(): boolean {
+    const targets = fileCloseTargets(fileInfos(files.map((f) => fileTabId(f.rel))), null, "all");
+    if (targets.length === 0) return false;
+    closeFiles(targets);
+    return true;
+  }
+
+  // Mod+Shift+T: the newest closed tab, a file or a terminal, whichever closed last.
+  function reopenClosed(): boolean {
+    const fileAt = fileTabs.lastClosedAt(worktree);
+    const termAt = sessions.lastClosedAt(worktree);
+    if (fileAt !== null && (termAt === null || fileAt >= termAt)) {
+      const closed = fileTabs.takeClosed(worktree);
+      if (closed) {
+        openFile({ worktree, rel: closed.rel });
+        if (closed.pinned) fileTabs.setPinned(worktree, closed.rel, true);
+        return true;
+      }
+    }
+    return sessions.reopenClosed(worktree) !== null;
+  }
+
+  function pinFile(rel: string, pinned: boolean): void {
+    fileTabs.setPinned(worktree, rel, pinned);
+    const now = sessions.layout(worktree);
+    const pane = now && paneOf(now, fileTabId(rel));
+    if (!now || !pane) return;
+    const isPinned = (id: string) => {
+      const r = fileTabRel(id);
+      return r !== null ? !!fileTabs.get(worktree, r)?.pinned : (byId.get(id)?.pinned ?? false);
+    };
+    setLayout(pinFirst(now, pane, isPinned));
+  }
+
+  // The next / previous tab of the front tab's kind: files with files, terminals with terminals.
+  function stepSameKind(step: 1 | -1): boolean {
+    const kindOf = (id: string) =>
+      isFileTab(id) ? "file" : isPreviewTab(id) ? "preview" : id === REVIEW_TAB || id === COMMIT_TAB ? id : "terminal";
+    const to = cycleSameKind(focusedLeaf?.tabs ?? [], shown, step, kindOf);
+    if (to === null) return false;
+    go(to);
+    return true;
+  }
 
   function closeTab(id: string): void {
     const rel = fileTabRel(id);
-    if (rel !== null) {
-      const entry = fileTabs.get(worktree, rel);
-      if (entry && isDirty(entry)) return void setUnsaved(rel);
-      return fileTabs.close(worktree, rel);
-    }
+    if (rel !== null) return closeFiles([rel]);
     if (isPreviewTab(id)) return void (layout && setLayout(removeTab(layout, id)));
     if (id === COMMIT_TAB) {
       setCommitAsk(null);
@@ -464,7 +529,10 @@ export function WorktreeTabs(props: {
     {
       "agent.new": () => agentNew(),
       "tab.new": () => newShell(),
-      "tab.reopenClosed": () => sessions.reopenClosed(worktree) !== null,
+      "tab.reopenClosed": () => reopenClosed(),
+      "tab.nextSameKind": () => stepSameKind(1),
+      "tab.prevSameKind": () => stepSameKind(-1),
+      "file.closeAll": () => closeAllFiles(),
       "tab.close": () => requestClose(shown ? [shown] : []),
       "tab.next": () => stepTab(1),
       "tab.prev": () => stepTab(-1),
@@ -585,7 +653,8 @@ export function WorktreeTabs(props: {
         const entry = files.find((f) => f.rel === rel);
         if (!entry) return [];
         const gone = entry.external === "deleted" || entry.external === "renamed" ? entry.external : undefined;
-        return [{ id, tab: null, file: { rel, dirty: isDirty(entry), ...(gone ? { gone } : {}) } }];
+        const file = { rel, dirty: isDirty(entry), ...(entry.pinned ? { pinned: true } : {}), ...(markdownFile(rel) ? { markdown: true } : {}), ...(gone ? { gone } : {}) };
+        return [{ id, tab: null, file }];
       }
       const tab = byId.get(id);
       return tab ? [{ id, tab }] : [];
@@ -635,7 +704,14 @@ export function WorktreeTabs(props: {
         onReorder={(id, before) => sessions.reorderTab(id, before)}
         onDragTab={setDrag}
         onDropZone={(id, pane, zone) => sessions.dropToSplit(worktree, id, pane, zone)}
-        onPin={(id, pinned) => sessions.setPinned(id, pinned)}
+        onPin={(id, pinned) => {
+          const rel = fileTabRel(id);
+          if (rel !== null) pinFile(rel, pinned);
+          else sessions.setPinned(id, pinned);
+        }}
+        onCloseFiles={(id, kind: FileCloseKind) => closeFiles(fileCloseTargets(fileInfos(leaf.tabs), fileTabRel(id), kind))}
+        onCopyFilePath={(rel, relative) => void copyText(relative ? relativePath(rel) : absolutePath(worktree, rel))}
+        onOpenPreview={(rel) => void openPreview(rel, { pane: leaf.id })}
         onCopyTabId={(id) => void copyText(id)}
         onChangeTitle={(id) => setTitling(id)}
         onColor={(id, color) => sessions.setColor(id, color)}
@@ -858,19 +934,25 @@ export function WorktreeTabs(props: {
           onCancel={() => setTitling(null)}
         />
       )}
-      {unsaved !== null && (
+      {unsaved.length > 0 && (
         <UnsavedDialog
-          name={fileName(unsaved)}
-          onCancel={() => setUnsaved(null)}
+          name={fileName(unsaved[0])}
+          onCancel={() => setUnsaved([])}
           onDiscard={() => {
-            fileTabs.close(worktree, unsaved);
-            setUnsaved(null);
+            const rel = unsaved[0];
+            fileTabs.closeRemembering(worktree, rel);
+            setUnsaved((q) => q.slice(1));
+            // The edits are gone; Reopen reads the file from disk again.
+            pushToast({
+              text: t("tabMenu.discarded", { name: fileName(rel) }),
+              actions: [{ label: t("tabMenu.reopen"), run: () => openFile({ worktree, rel }) }],
+            });
           }}
           onSave={() => {
-            const rel = unsaved;
-            setUnsaved(null);
+            const rel = unsaved[0];
+            setUnsaved((q) => q.slice(1));
             // Closes once the write went through; a conflict or a failure keeps the tab open.
-            void saveFile(io, worktree, rel).then((r) => r === "saved" && fileTabs.close(worktree, rel));
+            void saveFile(io, worktree, rel).then((r) => r === "saved" && fileTabs.closeRemembering(worktree, rel));
           }}
         />
       )}

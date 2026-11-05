@@ -57,6 +57,19 @@ export interface FileEntry {
   goto?: Goto;
   /** Bumped when the file changed on disk; image and media views are drawn anew on a new one. */
   version?: number;
+  /** Pinned: kept at the front of its strip, and left out of the bulk closes. */
+  pinned?: boolean;
+}
+
+/** How many closed file tabs of one worktree `reopenClosed` can give back. */
+export const CLOSED_FILES_KEPT = 20;
+
+/** A file tab the person closed. */
+export interface ClosedFile {
+  rel: string;
+  pinned: boolean;
+  /** When it closed (ms); lets the shell compare with a closed terminal. */
+  at: number;
 }
 
 export type ExternalState = "changed" | "deleted" | "renamed";
@@ -194,6 +207,50 @@ export class FileTabs {
     this.emit();
   }
 
+  /** Pins or unpins an open file tab. */
+  setPinned(worktree: string, rel: string, pinned: boolean): void {
+    const old = this.get(worktree, rel);
+    if (old && !!old.pinned !== pinned) this.put({ ...old, pinned });
+  }
+
+  // Closed file tabs per worktree, newest last.
+  private readonly closedFiles = new Map<string, ClosedFile[]>();
+
+  /** Closes the tab like `close` and remembers it for `reopenClosed` (a tab the person closed, not a deleted file). */
+  closeRemembering(worktree: string, rel: string): void {
+    const old = this.get(worktree, rel);
+    if (!old) return;
+    this.close(worktree, rel);
+    const stack = (this.closedFiles.get(worktree) ?? []).filter((c) => c.rel !== rel);
+    stack.push({ rel, pinned: !!old.pinned, at: Date.now() });
+    if (stack.length > CLOSED_FILES_KEPT) stack.shift();
+    this.closedFiles.set(worktree, stack);
+  }
+
+  /** When the newest closed file tab of `worktree` closed; null when there is none. */
+  lastClosedAt(worktree: string): number | null {
+    const stack = this.closedFiles.get(worktree);
+    return stack && stack.length > 0 ? stack[stack.length - 1].at : null;
+  }
+
+  /** The closed file tabs of `worktree`, newest last. */
+  closedList(worktree: string): readonly ClosedFile[] {
+    return this.closedFiles.get(worktree) ?? [];
+  }
+
+  /**
+   * Takes the newest closed file tab of `worktree` off the stack and returns it, skipping files that
+   * are open again. The caller opens it. Null when there is none.
+   */
+  takeClosed(worktree: string): ClosedFile | null {
+    const stack = this.closedFiles.get(worktree);
+    while (stack && stack.length > 0) {
+      const last = stack.pop()!;
+      if (!this.get(worktree, last.rel)) return last;
+    }
+    return null;
+  }
+
   /**
    * Follows a rename: the file `from` (or every open file under the folder `from`) is now under `to`.
    * Returns the pairs of old and new rel, so the layout can follow.
@@ -229,6 +286,7 @@ export class FileTabs {
   reset(): void {
     this.entries.clear();
     this.lists.clear();
+    this.closedFiles.clear();
     this.emit();
   }
 }

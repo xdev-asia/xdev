@@ -37,6 +37,10 @@ export type ActionId =
   | "terminal.clear" | "terminal.copy" | "terminal.paste" | "terminal.selectAll" | "terminal.find"
   | "zoom.in" | "zoom.out" | "zoom.reset"
   | "tab.reopenClosed"
+  // Bound to nothing by default: the next / previous tab of the same kind (file or terminal) as the front one.
+  | "tab.nextSameKind" | "tab.prevSameKind"
+  // Bound to nothing by default: closes every file tab (not terminals), asking about unsaved ones.
+  | "file.closeAll"
   | "settings.open" | "settings.shortcuts"
   | "sessions.open"
   | "docs.search" | "docs.new" | "docs.save"
