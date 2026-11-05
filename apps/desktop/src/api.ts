@@ -357,6 +357,8 @@ import type { Grant as LinkGrant, Message as OrchMessage, MissionSettings, Missi
 export type { LinkGrant, MissionSettings, MissionTab, MissionView, OrchMessage, OrchWorker, TabLink, TabWorker };
 import type { Conversation, ConversationEntry, ConversationTool } from "@xdev/bindings";
 export type { Conversation, ConversationEntry, ConversationTool };
+import type { ConversationSubagent, HookQuestion, QuestionKind as HookQuestionKind, QuestionOption } from "@xdev/bindings";
+export type { ConversationSubagent, HookQuestion, HookQuestionKind, QuestionOption };
 export type { Breadcrumb, CrashDetail, CrashReport, DiagnosticsExport, RenderCrash, StartupReport, StartupStep } from "@xdev/bindings";
 export type { RestoreMode } from "@xdev/bindings";
 export type { Theme, EditorTheme, SidebarLook, StatusBarItems, TitlebarMode } from "@xdev/bindings";

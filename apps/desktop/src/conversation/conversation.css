@@ -440,3 +440,256 @@
   outline: 2px solid var(--x-color-focus, var(--x-color-signal));
   outline-offset: 1px;
 }
+
+/* A sub-agent run: one folded group under the step that started it. */
+.cv-sub {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cv-sub-head {
+  flex-wrap: wrap;
+  max-width: 100%;
+  text-align: left;
+}
+
+.cv-sub-title {
+  min-width: 0;
+  color: var(--x-color-ink);
+  overflow-wrap: anywhere;
+}
+
+.cv-sub-meta {
+  color: var(--x-color-muted);
+}
+
+.cv-sub-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  margin-top: var(--x-space-2);
+  padding: var(--x-space-2) var(--x-space-3);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-md);
+}
+
+.cv-sub[data-status="error"] > .cv-sub-body {
+  background: var(--x-color-danger-soft);
+}
+
+.cv-sub-label {
+  margin: 0;
+  color: var(--x-color-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cv-sub-prompt {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.cv-sub-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cv-sub-step > .cv-steps {
+  margin: 0;
+}
+
+.cv-sub-text {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.cv-sub-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-1);
+  overflow-wrap: anywhere;
+}
+
+.cv-sub-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-2);
+}
+
+.cv-doc-sub {
+  margin: var(--x-space-2) 0;
+}
+
+/* The header's sub-agent count and the history list it opens. */
+.cv-runs-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x-space-1);
+  min-height: 28px;
+  padding: var(--x-space-1) var(--x-space-2);
+  color: var(--x-color-ink);
+  font: inherit;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-md);
+  cursor: pointer;
+}
+
+.cv-runs-toggle[aria-expanded="true"] {
+  background: var(--x-color-accent-soft);
+}
+
+.cv-runs {
+  flex-shrink: 0;
+  max-height: 40%;
+  padding: var(--x-space-2) var(--x-space-3);
+  overflow: auto;
+  border-bottom: 1px solid var(--x-color-line);
+}
+
+.cv-runs ol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cv-run {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-1) var(--x-space-2);
+  width: 100%;
+  min-height: 28px;
+  padding: var(--x-space-1) var(--x-space-2);
+  color: var(--x-color-ink);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--x-radius-md);
+  cursor: pointer;
+}
+
+.cv-run:hover {
+  border-color: var(--x-color-line);
+}
+
+.cv-run-title {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cv-run-meta {
+  color: var(--x-color-muted);
+}
+
+.cv-runs-toggle:focus-visible,
+.cv-run:focus-visible {
+  outline: 2px solid var(--x-color-focus, var(--x-color-signal));
+  outline-offset: 1px;
+}
+
+/* The question the agent waits on, below the list so it stays in view. */
+.cv-ask {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: var(--x-space-2);
+  max-height: 60%;
+  margin: var(--x-space-2) var(--x-space-3);
+  padding: var(--x-space-3);
+  overflow: auto;
+  background: var(--x-color-signal-soft);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-lg);
+}
+
+.cv-ask-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+}
+
+.cv-ask-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cv-ask-text {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.cv-ask-input {
+  display: block;
+  padding: var(--x-space-1) var(--x-space-2);
+  font-family: var(--x-font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  background: var(--x-color-code-bg);
+  border-radius: var(--x-radius-sm);
+}
+
+.cv-ask-note {
+  margin: 0;
+  color: var(--x-color-muted);
+  font-size: 12px;
+}
+
+.cv-ask-sends {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-1);
+  margin: 0;
+  font-size: 12px;
+}
+
+.cv-ask-keys {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-1);
+}
+
+.cv-ask-select {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-1);
+  font-size: 12px;
+}
+
+.cv-ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-2);
+}
+
+.cv-ask-error {
+  margin: 0;
+  color: var(--x-color-danger);
+  font-size: 12px;
+}
+
+/* The question mark on a tab. */
+.cv-tab-question {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}

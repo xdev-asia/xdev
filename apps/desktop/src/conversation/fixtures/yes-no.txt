@@ -1,0 +1,3 @@
+The tests pass and the README now shows the ISO format.
+
+Should I also commit these changes?

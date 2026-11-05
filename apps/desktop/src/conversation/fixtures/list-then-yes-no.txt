@@ -1,0 +1,7 @@
+I changed two files:
+
+1. src/a.ts
+2. src/b.ts
+
+I kept the old names.
+Should I rename them too?

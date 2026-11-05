@@ -1,9 +1,10 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import type { Api } from "@/api";
 import { terminalOf } from "@/terminal/terminalRegistry";
 import { canShowConversation, closeConversation, useConversationOpen } from "./conversationStore";
 import { ConversationView, type ConversationTab } from "./ConversationView";
+import { feedQuestions } from "./questionStore";
 import { SPLIT_MIN_PX } from "./model";
 
 /**
@@ -11,7 +12,7 @@ import { SPLIT_MIN_PX } from "./model";
  * 900px wide, over it (with a back button) when narrower. Closing gives the keyboard back to the terminal.
  */
 export function ConversationDock(props: {
-  api: Pick<Api, "agentConversation" | "fileLinksResolve" | "openUrl">;
+  api: Pick<Api, "agentConversation" | "fileLinksResolve" | "openUrl"> & Partial<Pick<Api, "ptyWrite" | "composerDraftPut" | "onPtyHook">>;
   tab: ConversationTab & { agent: boolean };
   agentName: string;
 }): JSX.Element | null {
@@ -20,6 +21,12 @@ export function ConversationDock(props: {
   const shown = seq > 0 && canShowConversation(tab);
   const ref = useRef<HTMLDivElement>(null);
   const [wide, setWide] = useState(true);
+
+  // Questions are read from the hooks whether or not the view is open: the tab's badge shows them.
+  const { api } = props;
+  useEffect(() => {
+    if (api.onPtyHook) feedQuestions(api as Pick<Api, "onPtyHook">);
+  }, [api]);
 
   // The pane's width picks the layout; it changes with splits and the window.
   useLayoutEffect(() => {
@@ -49,7 +56,7 @@ export function ConversationDock(props: {
   };
   return (
     <div ref={ref} className="cv-dock" data-mode={mode} data-testid="conversation-dock">
-      <ConversationView api={props.api} tab={tab} agentName={props.agentName} mode={mode} onBack={back} focusSeq={seq} />
+      <ConversationView api={props.api} tab={tab} agentName={props.agentName} mode={mode} onBack={back} onOpenTerminal={back} focusSeq={seq} />
     </div>
   );
 }

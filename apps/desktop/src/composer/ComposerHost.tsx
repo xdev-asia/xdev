@@ -6,6 +6,7 @@ import { profileName } from "@/agents/profileStore";
 import { useI18n } from "@/i18n";
 import { useKeymap } from "@/keys/keymap";
 import type { Sessions, Tab } from "@/workspace/sessions";
+import { onComposerRequest } from "@/conversation/followUp";
 import { Composer, type ComposerTab } from "./Composer";
 import { quotaFacts } from "./queue";
 import { useQueue } from "./useQueue";
@@ -75,6 +76,9 @@ export function ComposerHost(props: {
       setOpen((o) => (o ? null : { many: null, seq: 0 }));
     },
   });
+
+  // A follow-up put in a tab's draft (the conversation view) opens the composer afresh, so it reads the draft.
+  useEffect(() => onComposerRequest(() => setOpen({ many: null, seq: Date.now() })), []);
 
   const seq = props.request?.seq;
   useEffect(() => {
