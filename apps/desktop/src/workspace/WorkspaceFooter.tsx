@@ -99,6 +99,8 @@ export function WorkspaceFooter(props: {
   usageButtonRef?: Ref<HTMLButtonElement>;
   /** Which of xDev's own items show (Settings > Appearance); all by default. The update notice and the meters are not items. */
   items?: StatusBarItems;
+  /** The ports item (Ports in Settings → Appearance), shown before the keep-awake item. */
+  ports?: ReactNode;
   /** The keep-awake item, shown before the version. */
   keepAwake?: ReactNode;
   hidden?: boolean;
@@ -153,6 +155,7 @@ export function WorkspaceFooter(props: {
           </span>
         </>
       )}
+      {items.ports && props.ports}
       {props.keepAwake}
       {items.version && <span className="ws-mono">{`v${props.version}`}</span>}
       {props.update && <UpdateItem update={props.update} onRestart={props.onRestartUpdate} />}
@@ -172,6 +175,8 @@ export function LiveWorkspaceFooter(props: {
   onManageAccounts?: () => void;
   /** Makes an account the active one of its provider; the "Use" action shows only when this is given. */
   onUseAccount?: (provider: Provider, name: string) => void;
+  /** The ports item; shown when Settings → Appearance has it on. */
+  ports?: ReactNode;
   hidden?: boolean;
 }): JSX.Element {
   const { api, hidden, onManageAccounts, onUseAccount, ...rest } = props;
@@ -244,6 +249,7 @@ export function LiveWorkspaceFooter(props: {
       usageOpen={open}
       usagePopover={popover}
       usageButtonRef={button}
+      ports={rest.ports}
       keepAwake={<KeepAwakeItem api={api} />}
     />
   );

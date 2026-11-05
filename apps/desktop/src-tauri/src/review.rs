@@ -61,6 +61,8 @@ pub struct ReviewData {
     pub branch: Option<String>,
     /// The repo's base ref, offered first in the picker.
     pub base_ref: String,
+    /// The commit `HEAD` is on; `None` in a repo without commits.
+    pub head_oid: Option<String>,
     pub files: Vec<ReviewFile>,
 }
 
@@ -170,6 +172,7 @@ fn review(data: &Path, path: &Path, base: Option<&str>) -> Result<ReviewData, Cm
         base,
         branch: repo.current_branch()?,
         base_ref,
+        head_oid: repo.head_id()?,
         files,
     })
 }
@@ -497,6 +500,17 @@ mod tests {
         assert_eq!(paths(&r), ["b.txt", "c.txt"]);
         assert_eq!(r.base_ref, "main");
         assert!(r.branch.is_some());
+    }
+
+    #[test]
+    fn review_reports_the_head_commit() {
+        let fx = fixture();
+        let head = commit(
+            &fx.wt, "b.txt", "b
+", "b",
+        );
+        let r = review(&fx.data, &fx.wt, None).unwrap();
+        assert_eq!(r.head_oid.as_deref(), Some(head.as_str()));
     }
 
     #[test]

@@ -22,7 +22,7 @@ import { estimateTokens, type ExportDoc, planExport } from "./mockExport";
 import { createMockAgentSessions } from "./mockAgentSessions";
 import { createMockQuickCommands } from "./mockQuickCommands";
 import { createMockIssues } from "./mockIssues";
-import { createMockKit } from "./mockKit";
+import { createMockKit, type MockKit } from "./mockKit";
 import { createMockLayout } from "./mockLayout";
 import { createMockCli, type MockCli } from "./mockCli";
 import { createMockOpenIn, type MockOpenIn } from "./mockOpenIn";
@@ -32,6 +32,7 @@ import { createMockPower } from "./mockPower";
 import { createMockPty, type MockPtyd } from "./mockPty";
 import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
 import { createMockXdevId, type MockXdevId } from "./mockXdevId";
+import { createMockPorts } from "./mockPorts";
 import { createMockSettings, createSettingsHub } from "./mockSettings";
 import { createMockShell, type MockShell } from "./mockShell";
 import { createMockStatus, type MockStatus } from "./mockStatus";
@@ -49,6 +50,13 @@ const SNIPPET_BEFORE = 40;
 const SNIPPET_AFTER = 80;
 const MAX_FRESHNESS_COMMITS = 20;
 const DAY = 24 * 60 * 60;
+
+type MockClipboardImage = string | Error | { code: string } | null;
+let mockClipboardImage: MockClipboardImage = null;
+/** Sets what the mock clipboard holds for `clipboardImageSave`: a saved path, an error (or `{ code }`) to reject with, or null (no image). */
+export function setMockClipboardImage(value: MockClipboardImage): void {
+  mockClipboardImage = value;
+}
 
 export const DEMO_ROOT = "/demo/xdev-handbook";
 const COMMIT_ID = /^[0-9a-f]{4,64}$/;
@@ -352,7 +360,7 @@ function snippet(text: string, terms: string[]): string | null {
   return out.replace(/\s+/g, " ").trim();
 }
 
-export type MockApi = Api & MockPtyd & Omit<MockCli, keyof Api> & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & Pick<MockXdevId, "__xdevIdExpire" | "__xdevIdDeepLink" | "__xdevIdManages" | "__xdevIdReopens"> & Pick<MockOpenIn, "__openInCalls"> & Pick<MockFiles, "__editFile" | "__fileReveals"> & Pick<MockThemes, "__paths"> & Pick<MockShell, "__menu" | "__quitMode" | "__attention" | "__opened" | "__labels" | "__windowCalls" | "__closeIntent"> & {
+export type MockApi = Api & MockPtyd & Omit<MockCli, keyof Api> & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & Pick<MockXdevId, "__xdevIdExpire" | "__xdevIdDeepLink" | "__xdevIdManages" | "__xdevIdReopens"> & Pick<MockOpenIn, "__openInCalls"> & Pick<MockFiles, "__editFile" | "__fileReveals" | "__watchers" | "__overflow" | "__fileOpens" | "__failBytes"> & Pick<MockThemes, "__paths"> & Pick<MockKit, "__shareLog"> & Pick<MockShell, "__menu" | "__quitMode" | "__attention" | "__opened" | "__labels" | "__windowCalls" | "__closeIntent"> & {
   // Changes a file the way another program would (`null` deletes it); xDev did not write it.
   __editOutside(path: string, content: string | null): void;
   // Writes a file the way `propose_update` does over MCP; throws an ApiError like the real tool.
@@ -575,6 +583,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ),
     ...createMockStatus(settingsHub.emit),
     ...power,
+    ...createMockPorts(DEMO_ROOT),
     ...createMockShell(settingsHub.emit, options.update ?? null),
     ...workspace,
     ...createMockIssues(),
@@ -595,6 +604,11 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       },
       settingsHub.emit,
     ),
+    async clipboardImageSave() {
+      if (mockClipboardImage === null || typeof mockClipboardImage === "string") return mockClipboardImage;
+      throw mockClipboardImage;
+    },
+    async keyboardInputSource() { return "com.apple.keylayout.US"; },
     async accounts() { return structuredClone({ reservePercent: 30, accounts, active }); },
     async quota() { return structuredClone(quotas); },
     async updateStatus() { return null; },

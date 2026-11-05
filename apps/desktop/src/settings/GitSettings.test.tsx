@@ -110,6 +110,17 @@ it("hides the prefix field for none and stores the switch and the compare base",
   expect(await v.api.gitSettings()).toEqual({ ...DEFAULT_GIT_SETTINGS, branchPrefix: "none", branchPrefixCustom: "team", refreshLocalBaseOnCreate: true, compareAgainstUpstream: true });
 });
 
+it("defaults the pull policy to fast-forward only and stores a change", async () => {
+  const v = await view();
+  const policy = (p: string) => v.all().find((n) => n.type === "button" && n.props["data-pull-policy"] === p)!;
+  expect(policy("ff-only").props["aria-pressed"]).toBe(true);
+  expect(policy("rebase").props["aria-pressed"]).toBe(false);
+  policy("rebase").props.onClick();
+  await tick();
+  expect(policy("rebase").props["aria-pressed"]).toBe(true);
+  expect((await v.api.gitSettings()).pullPolicy).toBe("rebase");
+});
+
 it("shows the agent actions on by default with the pull request defaults off, and stores each", async () => {
   const v = await view();
   expect(v.html()).toContain(en("settings.git.ai.title"));
@@ -192,4 +203,30 @@ it("stores the source control group order", async () => {
   await tick();
   expect(order("staged-first").props["aria-pressed"]).toBe(true);
   expect(await v.api.gitSettings()).toEqual({ ...DEFAULT_GIT_SETTINGS, sourceControlGroupOrder: "staged-first" });
+});
+
+it("lists the bot authors, adds one normalized, and removes one", async () => {
+  const v = await view({ git: { prBotAuthorOverrides: ["zed", "amy"] } });
+  expect(v.all().filter((n) => n.type === "li" && n.props["data-bot"]).map((n) => n.props["data-bot"])).toEqual(["zed", "amy"]);
+  const box = () => v.all().find((n) => n.type === "input" && n.props.name === "botAuthor")!;
+  box().props.onChange({ target: { value: "  Beta " } });
+  v.all().find((n) => n.type === "form")!.props.onSubmit({ preventDefault() {} });
+  await tick();
+  expect((await v.api.gitSettings()).prBotAuthorOverrides).toEqual(["amy", "beta", "zed"]);
+  const remove = v.all().find((n) => n.type === "button" && n.props["aria-label"] === en("settings.git.botAuthors.remove", { login: "amy" }))!;
+  remove.props.onClick();
+  await tick();
+  expect((await v.api.gitSettings()).prBotAuthorOverrides).toEqual(["beta", "zed"]);
+});
+
+it("says so when the bot author list is full and adds nothing", async () => {
+  const full = Array.from({ length: 500 }, (_, i) => `bot${String(i).padStart(3, "0")}`);
+  const v = await view({ git: { prBotAuthorOverrides: full } });
+  const box = v.all().find((n) => n.type === "input" && n.props.name === "botAuthor")!;
+  box.props.onChange({ target: { value: "one-more" } });
+  v.all().find((n) => n.type === "form")!.props.onSubmit({ preventDefault() {} });
+  await tick();
+  expect(v.html()).toContain(en("settings.git.botAuthors.limit"));
+  expect(en("settings.git.botAuthors.limit")).toBe("Bot author override limit reached");
+  expect((await v.api.gitSettings()).prBotAuthorOverrides).toEqual(full);
 });

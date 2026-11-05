@@ -2,8 +2,8 @@ import type { CardProps, SidebarPrefs } from "@/api";
 
 export type CardPart = keyof CardProps;
 
-/** The nine properties a worktree card can show, in the order the options list them. */
-export const CARD_PARTS: readonly CardPart[] = ["branch", "time", "comment", "workStatus", "workItem", "agents", "diffStat", "pr", "projectChip"];
+/** The ten properties a worktree card can show, in the order the options list them. */
+export const CARD_PARTS: readonly CardPart[] = ["branch", "time", "comment", "workStatus", "workItem", "agents", "diffStat", "pr", "projectChip", "ports"];
 
 /** A compact card is one line: only these parts can sit on it. */
 const COMPACT_PARTS: readonly CardPart[] = ["time", "diffStat", "pr"];

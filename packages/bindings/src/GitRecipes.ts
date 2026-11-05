@@ -13,4 +13,8 @@ branchName: Recipe,
  * Asks an agent to resolve the conflicts of a merge, rebase, cherry-pick
  * or revert in progress.
  */
-resolveConflicts: Recipe, };
+resolveConflicts: Recipe, 
+/**
+ * Asks an agent to address the review comments queued from a pull request.
+ */
+addressComments: Recipe, };

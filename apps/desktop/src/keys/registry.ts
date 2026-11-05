@@ -94,12 +94,15 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("panel.search", "panels", ["Mod+Shift+F"]),
   def("panel.sourceControl", "panels", ["Mod+Shift+G"]),
   def("panel.issues", "panels", []),
+  // Shift+I is free on macOS (the menu keeps Alt+Cmd+I for devtools); elsewhere it is the browser devtools chord.
+  def("panel.ports", "panels", { mac: ["Mod+Shift+I"] }),
   // Docs: only in the docs view.
   def("docs.search", "docs", ["Mod+K"], DOCS),
   def("docs.new", "docs", ["Mod+N"], DOCS),
   def("docs.save", "docs", ["Mod+S"], DOCS),
   // Editor: a file tab in front; the tabs view declines the key otherwise.
   def("file.save", "editor", ["Mod+S"]),
+  def("file.markdownPreview", "editor", ["Mod+Shift+V"]),
   // App.
   def("palette.jump", "app", ["Mod+J"]),
   def("quickOpen.open", "app", ["Mod+P"]),

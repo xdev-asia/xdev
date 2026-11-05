@@ -19,7 +19,11 @@ export interface StripItem {
   id: string;
   tab: Tab | null;
   /** Set for a file tab: its path in the worktree and whether it has unsaved edits. */
-  file?: { rel: string; dirty: boolean };
+  file?: { rel: string; dirty: boolean; gone?: "deleted" | "renamed" };
+  /** Set for a Markdown preview tab: the path of the file it shows. */
+  preview?: { rel: string };
+  /** Set for the commit tab: the commit it shows. */
+  commit?: { id: string };
 }
 
 export interface MenuGroup {
@@ -87,7 +91,16 @@ export function TabStrip(props: {
   // What the strip shows: the terminal's own title once it set one, else the profile.
   const shownName = (tab: Tab) => tab.title ?? name(tab);
   const statusLabel = (status: TabStatus) => t(`workspace.tabs.status.${status}`);
-  const labelOf = (item: StripItem) => (item.tab ? name(item.tab) : item.file ? fileName(item.file.rel) : t("review.tab"));
+  const labelOf = (item: StripItem) =>
+    item.tab
+      ? name(item.tab)
+      : item.file
+        ? fileName(item.file.rel)
+        : item.preview
+          ? t("files.preview.tab", { name: fileName(item.preview.rel) })
+          : item.commit
+            ? t("commitView.tab", { id: item.commit.id.slice(0, 7) })
+            : t("review.tab");
 
   const menuItem = (key: string, label: string, run: () => void, extra?: { danger?: boolean; disabled?: boolean }) => (
     <button
@@ -113,6 +126,8 @@ export function TabStrip(props: {
 
   // The tab menu; the review tab is no terminal, so it has no pin, colour or title.
   const contextItems = (item: StripItem): MenuItem[] => {
+    // The commit tab stays in its pane: it has only Close.
+    if (item.commit) return [{ id: "close", labelKey: "tabMenu.close", run: () => props.onClose(item.id) }];
     if (!item.tab) {
       return [
         {
@@ -163,7 +178,7 @@ export function TabStrip(props: {
           return (
             <div
               key={item.id}
-              className="ws-tab"
+              className={item.file?.gone ? "ws-tab ws-tab-gone" : "ws-tab"}
               data-selected={selected}
               data-pinned={tab?.pinned || undefined}
               data-color={tab && tab.color !== "none" ? tab.color : undefined}
@@ -200,7 +215,7 @@ export function TabStrip(props: {
                       ? t("workspace.tabs.unreadLabel", { name: shownName(tab), status: statusLabel(tab.status).toLocaleLowerCase() })
                       : undefined
                   }
-                  title={tab?.title ?? item.file?.rel}
+                  title={tab?.title ?? item.file?.rel ?? item.preview?.rel ?? (item.commit ? t("commitView.tab", { id: item.commit.id.slice(0, 7) }) : undefined)}
                   onClick={() => props.onSelect(item.id)}
                   onDoubleClick={() => tab && setRenaming(item.id)}
                 >
@@ -227,10 +242,19 @@ export function TabStrip(props: {
                     </>
                   ) : (
                     <>
-                      <span className="ws-tab-icon ws-mono" aria-hidden="true">
-                        ±
-                      </span>
-                      <span>{t("review.tab")}</span>
+                      {item.file ? (
+                        <>
+                          <span className="ws-tab-name">{fileName(item.file.rel)}</span>
+                          {item.file.gone && <span className="ws-tab-gone-label">{t(`files.tab.${item.file.gone}`)}</span>}
+                        </>
+                      ) : (
+                        <>
+                          <span className="ws-tab-icon ws-mono" aria-hidden="true">
+                            ±
+                          </span>
+                          <span>{labelOf(item)}</span>
+                        </>
+                      )}
                     </>
                   )}
                 </button>

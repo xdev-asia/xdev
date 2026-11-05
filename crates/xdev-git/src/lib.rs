@@ -3,21 +3,27 @@
 
 mod clone;
 mod commit;
+mod commit_files;
 mod conflict;
 mod diff;
 mod gh;
+mod gh_review;
 mod history;
+mod host_url;
+mod log;
 mod range;
 mod remote;
 mod review;
 mod run;
 mod since;
 mod status;
+mod update;
 mod worktree;
 
 use std::path::{Path, PathBuf};
 
 pub use clone::{CloneEvent, check_clone_url, clone_name, clone_repo, parse_progress};
+pub use commit_files::{CommitFile, CommitFileStatus, CommitFiles};
 pub use conflict::{ConflictOp, ConflictState};
 pub use gh::{
     Check, CheckBucket, GhAccount, GhEnv, GhExec, GhLogin, GhOutput, ISSUE_BODY_MAX,
@@ -27,9 +33,18 @@ pub use gh::{
     pr_create, pr_get, pr_list, pr_open_number, pr_open_web, pr_view, project_list, project_open,
     repo_name, run_failed_log,
 };
+pub use gh_review::{
+    COMMENT_BODY_MAX, COMMENTS_PER_SOURCE, MergeBlock, MergeMethod, PrComment, PrCommentDraft,
+    PrCommentKind, PrComments, PrMergeInfo, PrReaction, Reaction, RerunReport, pr_checks_rerun,
+    pr_comment_post, pr_comments, pr_head_oid, pr_merge, pr_merge_info, pr_reaction,
+    pr_thread_resolve,
+};
 pub use history::Commit;
+pub use host_url::{HostKind, HostRepo, commit_url, file_url, parse_host_remote};
+pub use log::{CommitRef, LOG_LIMIT, LOG_LIMIT_MAX, LogCommit, LogRef, RefKind, RepoLog};
 pub use remote::{BaseRange, BaseRefresh, Upstream};
 pub use review::{Branch, StageState};
+pub use update::PullPolicy;
 pub use worktree::{NumStat, WorktreeEntry, global_user_name, valid_branch_name};
 
 /// The UI translates `code()`, never the message.
@@ -80,12 +95,46 @@ pub enum GitError {
     StillConflicted,
     #[error("no merge, rebase, cherry-pick or revert in progress")]
     NoConflict,
+    /// Git refused because local changes are in the way. The text is what
+    /// was being done: `rebase` or `fast-forward`.
+    #[error("{0}")]
+    Dirty(&'static str),
+    /// Git refused because untracked files are in the way.
+    #[error("{0}")]
+    Untracked(&'static str),
+    #[error("a merge, rebase, cherry-pick or revert is already in progress")]
+    Conflicted,
+    /// The update stopped with conflicts and is left in progress.
+    #[error("the update stopped with conflicts")]
+    StoppedOnConflicts,
+    #[error("the base is not a remote branch")]
+    BaseNotRemote,
+    /// Pull needs a policy: git would not say how to reconcile.
+    #[error("git needs a pull policy")]
+    PullPolicy,
+    #[error("the repo has no supported web remote")]
+    NoWebRemote,
     #[error("timeout")]
     Timeout,
     #[error("not a clone URL xDev accepts: {0}")]
     BadUrl(String),
     #[error("cancelled")]
     Cancelled,
+    #[error("the comment is too large")]
+    CommentTooLarge,
+    /// The commit an inline comment was made on is not the PR head.
+    #[error("the PR head is not the commit the lines were made on")]
+    PrHeadMismatch,
+    /// The PR head moved after the merge state was read.
+    #[error("the PR head changed since it was read")]
+    PrHeadMoved,
+    #[error("the comment is empty")]
+    EmptyComment,
+    #[error("no check to rerun")]
+    NothingToRerun,
+    /// The text is the block's kebab name, so it lands in `detail`.
+    #[error("{}", .0.as_str())]
+    MergeBlocked(MergeBlock),
     #[error("git {args} failed ({status:?}): {stderr}")]
     Failed {
         args: String,
@@ -120,8 +169,21 @@ impl GitError {
             GitError::Hook { .. } => "hook_failed",
             GitError::BadUrl(_) => "bad_arg",
             GitError::Cancelled => "cancelled",
+            GitError::CommentTooLarge => "comment_too_large",
+            GitError::PrHeadMismatch => "pr_head_mismatch",
+            GitError::PrHeadMoved => "pr_head_moved",
+            GitError::EmptyComment => "empty_comment",
+            GitError::NothingToRerun => "nothing_to_rerun",
+            GitError::MergeBlocked(_) => "merge_blocked",
             GitError::StillConflicted => "still_conflicted",
             GitError::NoConflict => "no_conflict",
+            GitError::Dirty(_) => "update_dirty",
+            GitError::Untracked(_) => "update_untracked",
+            GitError::Conflicted => "update_conflicted",
+            GitError::StoppedOnConflicts => "update_conflicts",
+            GitError::BaseNotRemote => "base_not_remote",
+            GitError::PullPolicy => "pull_policy",
+            GitError::NoWebRemote => "no_web_remote",
             GitError::BadId(_) | GitError::Timeout | GitError::Failed { .. } => "git",
             GitError::Io(_) => "io",
         }
@@ -198,5 +260,20 @@ impl Repo {
             root.pop();
         }
         root
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn review_errors_have_codes() {
+        assert_eq!(GitError::CommentTooLarge.code(), "comment_too_large");
+        assert_eq!(GitError::EmptyComment.code(), "empty_comment");
+        assert_eq!(GitError::NothingToRerun.code(), "nothing_to_rerun");
+        let blocked = GitError::MergeBlocked(MergeBlock::ChangesRequested);
+        assert_eq!(blocked.code(), "merge_blocked");
+        assert_eq!(blocked.to_string(), "changes-requested");
     }
 }

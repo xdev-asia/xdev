@@ -8,6 +8,7 @@ import {
   DEMO_COMMITS,
   DEMO_SEED,
   EXPORT_MARKER,
+  setMockClipboardImage,
   type SeedCommit,
 } from "./mockApi";
 
@@ -36,6 +37,21 @@ async function opened(files: Record<string, string> = seed) {
 }
 
 describe("mock api", () => {
+  it("has no clipboard image by default and reports the US input source", async () => {
+    const api = createMockApi(seed);
+    expect(await api.clipboardImageSave()).toBeNull();
+    expect(await api.keyboardInputSource()).toBe("com.apple.keylayout.US");
+  });
+
+  it("returns the clipboard image path, or rejects with the error, as set", async () => {
+    const api = createMockApi(seed);
+    setMockClipboardImage("/tmp/x.png");
+    expect(await api.clipboardImageSave()).toBe("/tmp/x.png");
+    setMockClipboardImage({ code: "too_large" });
+    await expect(api.clipboardImageSave()).rejects.toEqual({ code: "too_large" });
+    setMockClipboardImage(null);
+  });
+
   it("rejects calls before a vault is open", async () => {
     await expect(createMockApi(seed).listDocs()).rejects.toEqual({ code: "no_vault" });
   });
@@ -801,6 +817,32 @@ describe("mock agent kit", () => {
   });
 });
 
+it("routes the branch update and history calls through Tauri with the argument names Rust expects", async () => {
+  vi.resetModules();
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    await api.worktreeFastForward("/wt");
+    await api.worktreeRebaseFromBase("/wt");
+    await api.worktreeLog("/wt", 50, 0);
+    await api.worktreeCommitFiles("/wt", "abc1234");
+    await api.worktreeCommitFile("/wt", "abc1234", "src/a.ts");
+    await api.worktreeOpenCommit("/wt", "abc1234");
+    await api.worktreeOpenFileOnHost("/wt", "src/a.ts", null, null);
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["worktree_fast_forward", { path: "/wt" }],
+      ["worktree_rebase_from_base", { path: "/wt" }],
+      ["worktree_log", { path: "/wt", limit: 50, skip: 0 }],
+      ["worktree_commit_files", { path: "/wt", id: "abc1234" }],
+      ["worktree_commit_file", { path: "/wt", id: "abc1234", file: "src/a.ts" }],
+      ["worktree_open_commit", { path: "/wt", id: "abc1234" }],
+      ["worktree_open_file_on_host", { path: "/wt", file: "src/a.ts", line: null, endLine: null }],
+    ]);
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
+});
+
 it("sends the fork flag and the keep awake calls to Tauri, null when absent", async () => {
   vi.resetModules();
   vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined), Channel: class { onmessage: unknown } }));
@@ -815,6 +857,48 @@ it("sends the fork flag and the keep awake calls to Tauri, null when absent", as
       ["pty_approve", { profileId: "claude", account: null, resume: null, fork: null }],
       ["pty_approve", { profileId: "claude", account: null, resume: "s1", fork: true }],
       ["keep_awake_get", undefined], ["keep_awake_set", { mode: "agent" }], ["keep_awake_agents", { working: true }],
+    ]);
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
+});
+
+it("routes pull request review calls with the names Rust expects", async () => {
+  vi.resetModules();
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    const draft = { body: "b", replyTo: null, path: null, line: null, startLine: null, commit: null };
+    await api.worktreePrComments("/w", 7); await api.worktreePrCommentPost("/w", 7, draft);
+    await api.worktreePrHead("/w", 7); await api.worktreePrThreadResolve("/w", "T1", true); await api.worktreePrReaction("/w", "N1", "THUMBS_UP", false);
+    await api.worktreePrChecksRerun("/w", 7, true); await api.worktreePrMergeInfo("/w", 7); await api.worktreePrMerge("/w", 7, "squash", "abc");
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["worktree_pr_comments", { path: "/w", number: 7 }], ["worktree_pr_comment_post", { path: "/w", number: 7, draft }],
+      ["worktree_pr_head", { path: "/w", number: 7 }],
+      ["worktree_pr_thread_resolve", { path: "/w", threadId: "T1", resolved: true }],
+      ["worktree_pr_reaction", { path: "/w", subjectId: "N1", content: "THUMBS_UP", on: false }],
+      ["worktree_pr_checks_rerun", { path: "/w", number: 7, failedOnly: true }],
+      ["worktree_pr_merge_info", { path: "/w", number: 7 }], ["worktree_pr_merge", { path: "/w", number: 7, method: "squash", headOid: "abc" }],
+    ]);
+    vi.mocked(invoke).mockRejectedValueOnce({ code: "merge_blocked", detail: "draft" });
+    await expect(api.worktreePrMerge("/w", 7, "merge", "abc")).rejects.toEqual({ code: "merge_blocked", detail: "draft" });
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
+});
+
+it("sends the port calls to Tauri with the worktrees and the id", async () => {
+  vi.resetModules();
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined), Channel: class { onmessage: unknown } }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    await api.portsScan(["/w/a"], true);
+    await api.portsStop(["/w/a"], "localhost:5173:42", { confirmed: true, outsideTerminal: false });
+    await api.portsOpen("localhost:5173:42");
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["ports_scan", { worktrees: ["/w/a"], force: true }],
+      ["ports_stop", { worktrees: ["/w/a"], id: "localhost:5173:42", confirmed: true, outsideTerminal: false }],
+      ["ports_open", { id: "localhost:5173:42" }],
     ]);
   } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
 });

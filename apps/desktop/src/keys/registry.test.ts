@@ -21,12 +21,12 @@ const ALL: Record<ActionId, true> = {
   "worktree.select.9": true,
   "agent.new": true, "palette.jump": true, "search.open": true, "sessions.open": true,
   "sidebar.left.toggle": true, "sidebar.right.toggle": true,
-  "panel.explorer": true, "panel.search": true, "panel.sourceControl": true, "panel.issues": true,
+  "panel.explorer": true, "panel.search": true, "panel.sourceControl": true, "panel.issues": true, "panel.ports": true,
   "terminal.clear": true, "terminal.copy": true, "terminal.paste": true, "terminal.selectAll": true, "terminal.find": true,
   "zoom.in": true, "zoom.out": true, "zoom.reset": true,
   "tab.reopenClosed": true,
   "settings.open": true, "settings.shortcuts": true,
-  "docs.search": true, "docs.new": true, "docs.save": true, "file.save": true,
+  "docs.search": true, "docs.new": true, "docs.save": true, "file.save": true, "file.markdownPreview": true,
   "quickCommands.open": true, "quickOpen.open": true,
 };
 
@@ -111,6 +111,8 @@ it("the KB-3 keys and the macOS terminal copy and paste", () => {
   expect(on("terminal.copy", "mac")).toEqual(["Cmd+C"]);
   expect(on("terminal.paste", "linux")).toEqual(["Ctrl+Shift+V", "Shift+Insert"]);
   expect(on("terminal.paste", "mac")).toEqual(["Cmd+V"]);
+  expect(on("panel.ports", "mac")).toEqual(["Shift+Cmd+I"]);
+  expect(on("panel.ports", "win")).toEqual([]);
   expect(on("terminal.clear", "win")).toEqual(["Ctrl+K"]);
   expect(on("settings.open", "win")).toEqual(["Ctrl+,"]);
   expect(on("quickCommands.open", "win")).toEqual([]);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMockApi, SETUP_PROFILE } from "./api";
-import { createMockWorkspace, DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE } from "./mockWorkspace";
+import { createMockWorkspace, DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE, MOCK_HEAD } from "./mockWorkspace";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 const FIRST = "/demo/wt/xdev-oak";
@@ -89,6 +89,13 @@ describe("mock workspace", () => {
     expect(repo.worktrees.some((w) => w.path === FIRST)).toBe(false);
     await expect(api.worktreeRemove(FIRST, true, true)).rejects.toMatchObject({ code: "worktree_unknown" });
     await expect(api.worktreeRemove(repo.path, true, true)).rejects.toMatchObject({ code: "primary_worktree" });
+  });
+
+  it("keeps a branch not made here even when force and deleteUnmerged are set", async () => {
+    const api = createMockWorkspace();
+    const [repo] = await api.workspaceList();
+    const { worktree: wt } = await api.worktreeCreate(repo.id, "", null, { existing: "develop", sparse: [] });
+    expect(await api.worktreeRemove(wt.path, true, true, true)).toMatchObject({ deletedBranch: null, kept: { branch: "develop" } });
   });
 
   it("removes a clean worktree without force", async () => {
@@ -567,6 +574,152 @@ describe("mock repo hooks", () => {
       await api.worktreeConflictAbort(FIRST, true);
       expect(await api.worktreeConflicts(FIRST)).toBeNull();
       await expect(api.worktreeConflictAbort(FIRST, true)).rejects.toMatchObject({ code: "no_conflict" });
+    });
+  });
+
+  describe("pull request review", () => {
+    const PATH = "/demo/wt/xdev-elm";
+    const NUMBER = 41;
+
+    it("lists the seeded comments of the PR and none for another number", async () => {
+      const api = createMockWorkspace();
+      const { comments, truncated } = await api.worktreePrComments(PATH, NUMBER);
+      expect(truncated).toBe(false);
+      expect(comments.map((c) => c.kind)).toContain("review");
+      expect((await api.worktreePrComments(PATH, 99)).comments).toEqual([]);
+      await expect(api.worktreePrComments("/nope", NUMBER)).rejects.toMatchObject({ code: "worktree_unknown" });
+    });
+
+    it("posts a conversation comment, a thread reply and an inline comment", async () => {
+      const api = createMockWorkspace();
+      const draft = { body: "hi", replyTo: null, path: null, line: null, startLine: null, commit: null };
+      await api.worktreePrCommentPost(PATH, NUMBER, draft);
+      await api.worktreePrCommentPost(PATH, NUMBER, { ...draft, body: "re", replyTo: 1 });
+      await api.worktreePrCommentPost(PATH, NUMBER, { ...draft, body: "inline", path: "a.ts", line: 3, startLine: 1, commit: MOCK_HEAD });
+      const { comments } = await api.worktreePrComments(PATH, NUMBER);
+      const added = comments.slice(-3);
+      expect(added.map((c) => c.id)).toEqual([7, 8, 9]);
+      expect(added[0]).toMatchObject({ kind: "conversation", body: "hi" });
+      expect(added[1]).toMatchObject({ kind: "thread", replyTo: 1, threadId: "T1", path: "src/session.ts" });
+      expect(added[2]).toMatchObject({ kind: "thread", path: "a.ts", line: 3, startLine: 1, replyTo: null });
+    });
+
+    it("refuses an inline comment made on another commit than the PR head", async () => {
+      const api = createMockWorkspace();
+      const inline = { body: "x", replyTo: null, path: "a.ts", line: 3, startLine: 3, commit: "2".repeat(40) };
+      await expect(api.worktreePrCommentPost(PATH, NUMBER, inline)).rejects.toMatchObject({ code: "pr_head_mismatch" });
+      await expect(api.worktreePrCommentPost(PATH, NUMBER, { ...inline, commit: null })).rejects.toMatchObject({ code: "pr_head_mismatch" });
+      expect(await api.worktreePrHead(PATH, NUMBER)).toBe(MOCK_HEAD);
+      const moved = createMockWorkspace({ ...DEMO_WORKSPACE, prHeads: { [PATH]: "3".repeat(40) } });
+      expect(await moved.worktreePrHead(PATH, NUMBER)).toBe("3".repeat(40));
+    });
+
+    it("rejects a blank or oversized body", async () => {
+      const api = createMockWorkspace();
+      const draft = { body: " ", replyTo: null, path: null, line: null, startLine: null, commit: null };
+      await expect(api.worktreePrCommentPost(PATH, NUMBER, draft)).rejects.toMatchObject({ code: "empty_comment" });
+      await expect(api.worktreePrCommentPost(PATH, NUMBER, { ...draft, body: "x".repeat(65537) })).rejects.toMatchObject({ code: "comment_too_large" });
+      await expect(api.worktreePrCommentPost("/nope", NUMBER, draft)).rejects.toMatchObject({ code: "worktree_unknown" });
+    });
+
+    it("resolves every comment of a thread and reacts", async () => {
+      const api = createMockWorkspace();
+      await api.worktreePrThreadResolve(PATH, "T1", true);
+      let { comments } = await api.worktreePrComments(PATH, NUMBER);
+      expect(comments.filter((c) => c.threadId === "T1").every((c) => c.resolved)).toBe(true);
+      await api.worktreePrReaction(PATH, "DEMO_1", "THUMBS_UP", true);
+      await api.worktreePrReaction(PATH, "DEMO_1", "HEART", true);
+      ({ comments } = await api.worktreePrComments(PATH, NUMBER));
+      expect(comments[0].reactions).toEqual([{ content: "THUMBS_UP", count: 2, mine: true }, { content: "HEART", count: 1, mine: true }]);
+      await api.worktreePrReaction(PATH, "DEMO_1", "HEART", false);
+      ({ comments } = await api.worktreePrComments(PATH, NUMBER));
+      expect(comments[0].reactions.map((r) => r.content)).toEqual(["THUMBS_UP"]);
+    });
+
+    it("counts the runs a rerun asks for, or rejects", async () => {
+      const api = createMockWorkspace();
+      expect(await api.worktreePrChecksRerun(PATH, NUMBER, true)).toEqual({ started: 1, skipped: 0 });
+      expect(await api.worktreePrChecksRerun(PATH, NUMBER, false)).toEqual({ started: 1, skipped: 0 });
+      await expect(api.worktreePrChecksRerun(PATH, 99, true)).rejects.toMatchObject({ code: "nothing_to_rerun" });
+    });
+
+    it("merges, or rejects with the block as detail", async () => {
+      const api = createMockWorkspace();
+      expect((await api.worktreePrMergeInfo(PATH, NUMBER)).methods).toEqual(["squash", "merge", "rebase"]);
+      await expect(api.worktreePrMerge(PATH, NUMBER, "squash", "f".repeat(40))).rejects.toMatchObject({ code: "pr_head_moved" });
+      await api.worktreePrMerge(PATH, NUMBER, "squash", MOCK_HEAD);
+      expect((await api.worktreePr(PATH))?.state).toBe("merged");
+      const info = { block: "draft" as const, checksFailed: false, methods: ["merge" as const], defaultMethod: "merge" as const, headOid: MOCK_HEAD };
+      const blocked = createMockWorkspace({ ...DEMO_WORKSPACE, mergeInfo: { [PATH]: info } });
+      await expect(blocked.worktreePrMerge(PATH, NUMBER, "merge", MOCK_HEAD)).rejects.toEqual({ code: "merge_blocked", detail: "draft" });
+      expect(await blocked.worktreePrMergeInfo(PATH, NUMBER)).toEqual(info);
+    });
+  });
+
+  describe("history and updates", () => {
+    const ID = "a".repeat(40);
+    const commit = (id: string, subject: string) => ({ id, parents: [], author: "A", email: "a@example.com", time: 1, subject, body: "", refs: [] });
+    const log = {
+      commits: [commit(ID, "newest"), commit("b".repeat(40), "middle"), commit("c".repeat(40), "oldest")],
+      head: ID,
+      branch: "oak",
+      upstream: null,
+      base: null,
+      mergeBase: null,
+      incoming: false,
+      outgoing: false,
+      hasMore: false,
+    };
+    const files = { id: ID, parent: null, files: [{ path: "a.ts", oldPath: null, status: "modified" as const, added: 1, removed: 0 }] };
+    const seeded = () => createMockWorkspace({ repos: DEMO_WORKSPACE.repos, changes: {}, log: { [FIRST]: log }, commitFiles: { [`${FIRST}#${ID}`]: files }, hostless: ["/demo/xdev"] });
+
+    it("pages the log and returns the files of a seeded commit", async () => {
+      const api = seeded();
+      const page = await api.worktreeLog(FIRST, 2, 0);
+      expect(page.commits.map((c) => c.subject)).toEqual(["newest", "middle"]);
+      expect(page.hasMore).toBe(true);
+      expect((await api.worktreeLog(FIRST, 2, 2)).hasMore).toBe(false);
+      expect((await api.worktreeCommitFiles(FIRST, ID)).files[0].path).toBe("a.ts");
+      expect((await api.worktreeCommitFile(FIRST, ID, "a.ts")).skip).toBeNull();
+      expect((await createMockWorkspace().worktreeLog(FIRST, 50, 0)).commits).toEqual([]);
+    });
+
+    it("refuses an unknown worktree, a bad id or file, and a repo without a web remote", async () => {
+      const api = seeded();
+      await expect(api.worktreeLog("/nope", 50, 0)).rejects.toMatchObject({ code: "worktree_unknown" });
+      await expect(api.worktreeCommitFiles(FIRST, "--x")).rejects.toMatchObject({ code: "git" });
+      await expect(api.worktreeCommitFile(FIRST, ID, "zz.ts")).rejects.toMatchObject({ code: "bad_arg" });
+      await expect(api.worktreeOpenFileOnHost(FIRST, "../a", null, null)).rejects.toMatchObject({ code: "bad_arg" });
+      await expect(api.worktreeOpenCommit("/demo/xdev", ID)).rejects.toMatchObject({ code: "no_web_remote" });
+      await expect(api.worktreeOpenFileOnHost("/demo/xdev", "a.ts", null, null)).rejects.toMatchObject({ code: "no_web_remote" });
+      await expect(api.worktreeOpenCommit(FIRST, ID)).resolves.toBeUndefined();
+      await expect(api.worktreeOpenFileOnHost(FIRST, "a.ts", 1, 3)).resolves.toBeUndefined();
+    });
+
+    it("fast-forward moves the remote and refuses a split history", async () => {
+      const behind = createMockWorkspace({ repos: DEMO_WORKSPACE.repos, changes: {}, remotes: { [FIRST]: { ahead: 0, behind: 2 } } });
+      expect((await behind.worktreeFastForward(FIRST)).upstream).toMatchObject({ ahead: 0, behind: 0 });
+      const split = createMockWorkspace({ repos: DEMO_WORKSPACE.repos, changes: {}, remotes: { [FIRST]: { ahead: 1, behind: 1 } } });
+      await expect(split.worktreeFastForward(FIRST)).rejects.toMatchObject({ code: "pull_diverged" });
+      await expect(createMockWorkspace().worktreeFastForward(FIRST)).rejects.toMatchObject({ code: "no_upstream" });
+    });
+
+    it("a pull follows the policy, and sync then pushes", async () => {
+      const split = { ahead: 1, behind: 1 };
+      const withPolicy = (pullPolicy: "ff-only" | "merge" | "rebase" | "git-config") =>
+        createMockWorkspace({ repos: DEMO_WORKSPACE.repos, changes: {}, remotes: { [FIRST]: split }, git: { pullPolicy } });
+      await expect(withPolicy("ff-only").worktreePull(FIRST)).rejects.toMatchObject({ code: "pull_diverged" });
+      await expect(withPolicy("git-config").worktreePull(FIRST)).rejects.toMatchObject({ code: "pull_policy" });
+      expect((await withPolicy("merge").worktreePull(FIRST)).upstream).toMatchObject({ ahead: 1, behind: 0 });
+      expect((await withPolicy("rebase").worktreeSync(FIRST)).upstream).toMatchObject({ ahead: 0, behind: 0 });
+    });
+
+    it("a rewritten remote asks for a force push, and a rebase rewrites a pushed branch", async () => {
+      const api = createMockWorkspace({ repos: DEMO_WORKSPACE.repos, changes: {}, remotes: { [FIRST]: { ahead: 1, behind: 1 } }, rewritten: { [FIRST]: true } });
+      await expect(api.worktreeSync(FIRST)).rejects.toMatchObject({ code: "needs_force" });
+      const view = await api.worktreeForcePush(FIRST, "b".repeat(40), true);
+      expect(view.upstream).toMatchObject({ ahead: 0, behind: 0, rewritten: false });
+      await expect(createMockWorkspace().worktreeRebaseFromBase(FIRST)).resolves.toMatchObject({ branch: expect.any(String) });
     });
   });
 });

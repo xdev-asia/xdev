@@ -11,6 +11,7 @@ use crate::accounts::{Account, Accounts, LoginStart, Models};
 use crate::agent_sessions::{SessionQuery, SessionRow, SessionSearchStatus};
 use crate::cli_verbs::{CliAsk, CliOpenTab, TabReport};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
+use crate::file_watch::FsChanged;
 use crate::hooks::PtyHook;
 use crate::keybindings::{KeybindingsChanged, KeybindingsText};
 use crate::kit::{KitText, PromptEntry};
@@ -18,6 +19,7 @@ use crate::open_in::OpenTarget;
 use crate::orchestration::{
     ReadTab, WorkerChanged, WorkerClose, WorkerLifetime, WorkerOpen, WorkerOpenOutcome,
 };
+use crate::ports::PortsAdvertised;
 use crate::power::AwakeView;
 use crate::profiles::ProfilesView;
 use crate::pty::{PtyAttached, PtyExit, PtyInfo, PtydStatus};
@@ -26,9 +28,9 @@ use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
     AgentsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings, KeySettings,
-    NavigationSettings, OpenInSettings, OrchestrationSettings, RestoreMode, SettingsChanged,
-    ShellSettings, SidebarLook, SidebarPrefs, StatusBarItems, StatusSettings, TerminalSettings,
-    Theme, UiSettings, UpdateChannel, UsageSettings, XdevIdSettings,
+    MacOptionAsAlt, NavigationSettings, OpenInSettings, OrchestrationSettings, RestoreMode,
+    SettingsChanged, ShellSettings, SidebarLook, SidebarPrefs, StatusBarItems, StatusSettings,
+    TerminalSettings, Theme, UiSettings, UpdateChannel, UsageSettings, XdevIdSettings,
 };
 use crate::shell::{CloseIntent, CloseRequest, HelpLink, MenuEvent, QuitMode, ShellLabels};
 use crate::ship::ShipView;
@@ -67,6 +69,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_ai::Quota::export_all(cfg)?;
     TasksContext::export_all(cfg)?;
     FileDiff::export_all(cfg)?;
+    FsChanged::export_all(cfg)?;
     xdev_agent::Task::export_all(cfg)?;
     SquadItem::export_all(cfg)?;
     SquadView::export_all(cfg)?;
@@ -83,6 +86,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_pty::proto::SessionInfo::export_all(cfg)?;
     StatusSettings::export_all(cfg)?;
     TerminalSettings::export_all(cfg)?;
+    MacOptionAsAlt::export_all(cfg)?;
     SettingsChanged::export_all(cfg)?;
     ShellSettings::export_all(cfg)?;
     UpdateChannel::export_all(cfg)?;
@@ -159,12 +163,22 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     ReviewNote::export_all(cfg)?;
     xdev_workspace::DirListing::export_all(cfg)?;
     xdev_workspace::FileText::export_all(cfg)?;
+    xdev_workspace::MediaKind::export_all(cfg)?;
     xdev_workspace::WriteOutcome::export_all(cfg)?;
     xdev_workspace::FileList::export_all(cfg)?;
     xdev_workspace::SearchQuery::export_all(cfg)?;
     xdev_workspace::SearchEvent::export_all(cfg)?;
     ShipView::export_all(cfg)?;
     xdev_git::Upstream::export_all(cfg)?;
+    xdev_git::RepoLog::export_all(cfg)?;
+    xdev_git::LogCommit::export_all(cfg)?;
+    xdev_git::CommitRef::export_all(cfg)?;
+    xdev_git::RefKind::export_all(cfg)?;
+    xdev_git::LogRef::export_all(cfg)?;
+    xdev_git::CommitFiles::export_all(cfg)?;
+    xdev_git::CommitFile::export_all(cfg)?;
+    xdev_git::CommitFileStatus::export_all(cfg)?;
+    xdev_git::PullPolicy::export_all(cfg)?;
     xdev_git::BaseRange::export_all(cfg)?;
     xdev_git::PrView::export_all(cfg)?;
     xdev_git::PrState::export_all(cfg)?;
@@ -184,6 +198,16 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_git::PrQuery::export_all(cfg)?;
     xdev_git::IssueDraft::export_all(cfg)?;
     xdev_git::ProjectSummary::export_all(cfg)?;
+    xdev_git::PrComment::export_all(cfg)?;
+    xdev_git::PrComments::export_all(cfg)?;
+    xdev_git::PrCommentKind::export_all(cfg)?;
+    xdev_git::PrReaction::export_all(cfg)?;
+    xdev_git::Reaction::export_all(cfg)?;
+    xdev_git::PrCommentDraft::export_all(cfg)?;
+    xdev_git::MergeMethod::export_all(cfg)?;
+    xdev_git::MergeBlock::export_all(cfg)?;
+    xdev_git::PrMergeInfo::export_all(cfg)?;
+    xdev_git::RerunReport::export_all(cfg)?;
     CreateRequest::export_all(cfg)?;
     xdev_workspace::RepoIcon::export_all(cfg)?;
     KitText::export_all(cfg)?;
@@ -193,6 +217,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_kit::MemorySet::export_all(cfg)?;
     xdev_kit::UsageSummary::export_all(cfg)?;
     xdev_kit::UsageReport::export_all(cfg)?;
+    xdev_kit::Cost::export_all(cfg)?;
     crate::kit::UsageReportArgs::export_all(cfg)?;
     SessionQuery::export_all(cfg)?;
     SessionRow::export_all(cfg)?;
@@ -204,6 +229,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     TabReport::export_all(cfg)?;
     CliOpenTab::export_all(cfg)?;
     CliAsk::export_all(cfg)?;
+    PortsAdvertised::export_all(cfg)?;
+    xdev_ports::PortScan::export_all(cfg)?;
     Ok(())
 }
 

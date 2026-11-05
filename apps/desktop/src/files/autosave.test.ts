@@ -72,6 +72,20 @@ it("never saves a file that has a conflict", async () => {
   stop();
 });
 
+it("never saves a file that changed on disk until the person chooses", async () => {
+  setEditorSettings({ ...EDITOR_DEFAULTS, autosave: true, autosaveMs: 250 });
+  const { write, store, stop } = setup();
+  store.edit(W, "a.ts", "two");
+  store.markExternal(W, "a.ts", "changed");
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(write).not.toHaveBeenCalled();
+  // Keeping the edits lifts the hold.
+  store.keepMine(W, "a.ts", "disk");
+  await vi.advanceTimersByTimeAsync(250);
+  expect(write).toHaveBeenCalledTimes(1);
+  stop();
+});
+
 it("forgets the wait when the tab closes or the stop is called", async () => {
   setEditorSettings({ ...EDITOR_DEFAULTS, autosave: true, autosaveMs: 250 });
   const a = setup();

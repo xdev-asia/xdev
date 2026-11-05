@@ -18,14 +18,16 @@ default-members = [
     "crates/xdev-policy",
     "crates/xdev-agent",
     "crates/xdev-pty",
+    "crates/xdev-ports",
     "crates/xdev-ipc",
     "crates/xdev-awake",
+    "crates/xdev-input-source",
     "crates/xdev-workspace",
     "crates/xdev-cli",
 ]
 
 [workspace.package]
-version = "0.5.0" # x-release-please-version
+version = "0.7.0" # x-release-please-version
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/xdev-asia/xdev"
@@ -40,10 +42,12 @@ xdev-git = { path = "crates/xdev-git" }
 xdev-id = { path = "crates/xdev-id" }
 xdev-ipc = { path = "crates/xdev-ipc" }
 xdev-awake = { path = "crates/xdev-awake" }
+xdev-input-source = { path = "crates/xdev-input-source" }
 xdev-kit = { path = "crates/xdev-kit" }
 xdev-mcp = { path = "crates/xdev-mcp" }
 xdev-orch = { path = "crates/xdev-orch" }
 xdev-policy = { path = "crates/xdev-policy" }
+xdev-ports = { path = "crates/xdev-ports" }
 xdev-pty = { path = "crates/xdev-pty" }
 xdev-store = { path = "crates/xdev-store" }
 xdev-vault = { path = "crates/xdev-vault" }
@@ -72,6 +76,8 @@ serde_json = "1.0.154"
 # The trust hash codex expects for a hook (sha256 of its definition).
 sha2 = "0.10.9"
 tempfile = "3.27.0"
+# Process table (pid, parent, name, command, working folder) on every OS, no unsafe code here.
+sysinfo = { version = "0.40.1", default-features = false, features = ["system"] }
 thiserror = "2.0.21"
 # The OS trash (Recycle Bin, Finder, freedesktop) for Delete in the file tree and a failed
 # clone; never a hard delete.

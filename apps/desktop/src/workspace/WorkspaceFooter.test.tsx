@@ -165,7 +165,7 @@ it("the live footer shows remaining instead of used when the display setting say
 });
 
 it("hides each item when its switch is off, and keeps the rest", () => {
-  const all = { branch: true, tokenUsage: true, agents: true, version: true };
+  const all = { branch: true, tokenUsage: true, agents: true, version: true, ports: true };
   const full = render(null, { branch: "feat/x", running: 1, waiting: 1, onOpenUsage() {}, items: all });
   expect(full).toContain("⎇ feat/x");
   expect(full).toContain('data-action="token-usage"');
@@ -182,8 +182,18 @@ it("hides each item when its switch is off, and keeps the rest", () => {
   expect(off("version")).toContain("ws-running");
 });
 
+it("shows the ports item before the version, unless its switch is off", () => {
+  const all = { branch: true, tokenUsage: true, agents: true, version: true, ports: true };
+  const ports = <button data-action="show-ports" />;
+  const on = render(null, { ports, items: all });
+  expect(on).toContain('data-action="show-ports"');
+  expect(on.indexOf("show-ports")).toBeLessThan(on.indexOf("v0.3.0"));
+  expect(render(null, { ports, items: { ...all, ports: false } })).not.toContain("show-ports");
+  expect(render(null, { items: all })).not.toContain("show-ports");
+});
+
 it("shows the update notice even with every item off", () => {
-  const none = { branch: false, tokenUsage: false, agents: false, version: false };
+  const none = { branch: false, tokenUsage: false, agents: false, version: false, ports: false };
   const html = render(null, { items: none, update: { status: "ready", version: "9.9.9", notes: null } as never });
   expect(html).toContain("ws-update");
   expect(html).not.toContain("⎇");

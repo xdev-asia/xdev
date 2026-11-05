@@ -16,6 +16,7 @@ import type {
   ReadTab,
   WorkerChanged,
   AwakeView,
+  PortScan,
   KeepAwake,
   SwitchRunning,
   Approvals,
@@ -106,6 +107,7 @@ import type {
   SidebarPrefs,
   SidebarGroupBy,
   SidebarSort,
+  ProjectOrder,
   CardProps,
   Check,
   GhAccount,
@@ -114,6 +116,16 @@ import type {
   PrDraft,
   PrView,
   PrState,
+  PrComment,
+  PrComments,
+  PrCommentKind,
+  PrCommentDraft,
+  PrReaction,
+  Reaction,
+  MergeMethod,
+  MergeBlock,
+  PrMergeInfo,
+  RerunReport,
   Issue,
   IssueComment,
   IssueDetail,
@@ -127,6 +139,15 @@ import type {
   ProjectSummary,
   CreateRequest,
   ShipView,
+  RepoLog,
+  LogCommit,
+  CommitRef,
+  RefKind,
+  LogRef,
+  CommitFiles,
+  CommitFile,
+  CommitFileStatus,
+  PullPolicy,
   RepoHooks,
   HookKind,
   HookRun,
@@ -139,6 +160,7 @@ import type {
   TabReport,
   XdevIdState,
   XdevIdServer,
+  FsChanged,
 } from "@xdev/bindings";
 import type {
   AgentSession,
@@ -166,6 +188,7 @@ import type {
   SessionRow,
   SessionSearchStatus,
   Agent,
+  Cost,
   Skill,
   UsageDisplay,
   UsageReport,
@@ -183,14 +206,19 @@ import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT
 
 export { createMockApi };
 /** The kinds of `HookKind` that are scripts; the others are lists. */
+/** What the person agreed to before a port stop. */
+export type PortStopConsent = { confirmed: boolean; outsideTerminal: boolean };
+
 export type ScriptKind = Extract<HookKind, "setup" | "archive">;
 export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
-export type { Agent, AgentSession, SessionQuery, SessionRow, SessionSearchStatus };
+export type { Agent, AgentSession, Cost, SessionQuery, SessionRow, SessionSearchStatus };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, AwakeView, KeepAwake, SwitchRunning };
+export type { PortEvidence, PortKind, PortProtocol, PortScan, WorkspacePort } from "@xdev/bindings";
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
+export type { FsChanged, FsEvent, FsEventKind } from "@xdev/bindings";
 export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase };
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { CliAsk, CliOpenTab, TabReport };
@@ -289,6 +317,7 @@ export type {
   SidebarPrefs,
   SidebarGroupBy,
   SidebarSort,
+  ProjectOrder,
   CardProps,
   WorkItem,
   WorkItemKind,
@@ -297,6 +326,16 @@ export type {
   PrDraft,
   PrView,
   PrState,
+  PrComment,
+  PrComments,
+  PrCommentKind,
+  PrCommentDraft,
+  PrReaction,
+  Reaction,
+  MergeMethod,
+  MergeBlock,
+  PrMergeInfo,
+  RerunReport,
   Issue,
   IssueComment,
   IssueDetail,
@@ -310,6 +349,15 @@ export type {
   ProjectSummary,
   CreateRequest,
   ShipView,
+  RepoLog,
+  LogCommit,
+  CommitRef,
+  RefKind,
+  LogRef,
+  CommitFiles,
+  CommitFile,
+  CommitFileStatus,
+  PullPolicy,
   GitSettings,
   SourceControlGroupOrder,
   GitRecipes,
@@ -320,6 +368,7 @@ export type {
   CursorStyle,
   TerminalGpu,
   TerminalBell,
+  MacOptionAsAlt,
   SettingsSection,
   SettingsChanged,
   SetupPolicy,
@@ -373,6 +422,10 @@ export type ErrorCode =
   | "not_found"
   | "outside_vault"
   | "no_vault"
+  | "share_too_large"
+  | "share_bad_image"
+  | "share_clipboard"
+  | "share_open"
   | "io"
   | "not_utf8"
   | "too_large"
@@ -421,6 +474,19 @@ export type ErrorCode =
   | "pty_spawn"
   | "pty_resize"
   | "pty_gone"
+  | "scan_failed"
+  | "port_gone"
+  | "port_not_owned"
+  | "port_no_pid"
+  | "port_own_process"
+  | "port_scan_unavailable"
+  | "port_changed"
+  | "port_stop_unconfirmed"
+  | "port_not_started_by_app"
+  | "port_terminal_root"
+  | "port_still_listening"
+  | "stop_failed"
+  | "open_failed"
   | "ptyd_unreachable"
   | "ptyd_auth"
   | "ptyd_version"
@@ -431,6 +497,7 @@ export type ErrorCode =
   | "repo_exists"
   | "repo_unknown"
   | "worktree_unknown"
+  | "watch_limit"
   | "worktree_exists"
   | "branch_exists"
   | "bad_branch_prefix"
@@ -457,6 +524,14 @@ export type ErrorCode =
   | "no_upstream"
   | "push_rejected"
   | "pull_diverged"
+  | "update_dirty"
+  | "update_untracked"
+  | "update_conflicted"
+  | "update_conflicts"
+  | "base_not_remote"
+  | "pull_policy"
+  | "no_web_remote"
+  | "needs_force"
   | "force_base"
   | "nothing_to_amend"
   | "amend_pushed"
@@ -472,6 +547,12 @@ export type ErrorCode =
   | "pr_not_found"
   | "gh_scope"
   | "bad_draft"
+  | "comment_too_large"
+  | "pr_head_mismatch"
+  | "pr_head_moved"
+  | "empty_comment"
+  | "nothing_to_rerun"
+  | "merge_blocked"
   | "branch_in_use"
   | "bad_sparse"
   | "draft_failed"
@@ -630,6 +711,10 @@ export interface Api {
   // Settings -> Terminal; the put returns what was stored, with numbers clamped to their ranges.
   terminalSettings(): Promise<TerminalSettings>;
   terminalSettingsPut(s: TerminalSettings): Promise<TerminalSettings>;
+  /** Saves the clipboard image as a PNG in the temp folder; null when the clipboard holds no image. Rejects `too_large`. */
+  clipboardImageSave(): Promise<string | null>;
+  /** macOS keyboard input source id; null elsewhere. */
+  keyboardInputSource(): Promise<string | null>;
   /** Calls `listener` after any settings write, from this window or another. Returns the unsubscribe. */
   onSettingsChanged(listener: (e: SettingsChanged) => void): () => void;
   // Window view settings (zoom, 0.5..2); the put returns what was stored, clamped.
@@ -817,7 +902,8 @@ export interface Api {
   // Rejects with `needs_approval` until `confirmed`, then with `worktree_dirty` for uncommitted
   // work until `force`, and with `primary_worktree` for the main checkout. A branch made here and
   // merged (or any with `force`) is deleted; otherwise it is kept and listed for review.
-  worktreeRemove(path: string, force: boolean, confirmed: boolean): Promise<Removed>;
+  // `deleteUnmerged` (default `force`) is what lets an unmerged branch go; `force` only skips the dirty check.
+  worktreeRemove(path: string, force: boolean, confirmed: boolean, deleteUnmerged?: boolean): Promise<Removed>;
   // Removes the folder and keeps the branch, listed under Archived. The same gate and dirty check as
   // `worktreeRemove`; a detached worktree rejects with `detached` until `force`.
   worktreeArchive(path: string, force: boolean, confirmed: boolean): Promise<Removed>;
@@ -862,7 +948,23 @@ export interface Api {
   // with `no_upstream` or `pull_diverged`; a commit or amend with `hook_failed` (detail is the hook output).
   worktreeShip(path: string): Promise<ShipView>;
   worktreePush(path: string): Promise<ShipView>;
+  // Also rejects with `pull_policy` (git cannot reconcile; see Settings → Git) and `update_conflicts`
+  // (the pull stopped with conflicts and is left in progress). `worktreeSync` also rejects with `needs_force`.
   worktreePull(path: string): Promise<ShipView>;
+  // Fast-forwards to the upstream. Rejects with `no_upstream`, `detached`, `pull_diverged`, `update_dirty`
+  // and `update_untracked` (detail "fast-forward").
+  worktreeFastForward(path: string): Promise<ShipView>;
+  // Rebases onto the base. Rejects with `base_not_remote`, `update_dirty`, `update_untracked`
+  // (detail "rebase"), `update_conflicted` and `update_conflicts` (the rebase is left in progress).
+  worktreeRebaseFromBase(path: string): Promise<ShipView>;
+  // The commit graph of `HEAD`; `limit` is clamped to 1..200.
+  worktreeLog(path: string, limit: number, skip: number): Promise<RepoLog>;
+  // Rejects with `bad_arg` for a bad id and `git` when it does not resolve.
+  worktreeCommitFiles(path: string, id: string): Promise<CommitFiles>;
+  worktreeCommitFile(path: string, id: string, file: string): Promise<WorktreeFileDiff>;
+  // Reject with `no_web_remote` or `open_failed`. The URL is built in Rust.
+  worktreeOpenCommit(path: string, id: string): Promise<void>;
+  worktreeOpenFileOnHost(path: string, file: string, line: number | null, endLine: number | null): Promise<void>;
   worktreeSync(path: string): Promise<ShipView>;
   worktreeFetch(path: string): Promise<ShipView>;
   // `expected` is the remote commit the caller saw; without `confirmed` this rejects with `needs_approval`.
@@ -873,6 +975,21 @@ export interface Api {
   worktreePr(path: string): Promise<PrView | null>;
   worktreePrCreate(path: string, draft: PrDraft): Promise<PrView>;
   worktreePrChecks(path: string, number: number): Promise<Check[]>;
+  // Every review comment of the PR, oldest first, read with one GraphQL call.
+  worktreePrComments(path: string, number: number): Promise<PrComments>;
+  // A conversation comment, a reply (`replyTo`) or an inline comment (`path`, `line` and the `commit` the
+  // lines were made on). Rejects with `empty_comment`, `comment_too_large` or, when `commit` is not the PR
+  // head, `pr_head_mismatch`.
+  worktreePrCommentPost(path: string, number: number, draft: PrCommentDraft): Promise<void>;
+  // The head commit of the PR on GitHub.
+  worktreePrHead(path: string, number: number): Promise<string>;
+  worktreePrThreadResolve(path: string, threadId: string, resolved: boolean): Promise<void>;
+  worktreePrReaction(path: string, subjectId: string, content: Reaction, on: boolean): Promise<void>;
+  // Reruns the GitHub Actions runs behind the checks. Rejects with `nothing_to_rerun`.
+  worktreePrChecksRerun(path: string, number: number, failedOnly: boolean): Promise<RerunReport>;
+  worktreePrMergeInfo(path: string, number: number): Promise<PrMergeInfo>;
+  // Rejects with `merge_blocked`; `detail` is the `MergeBlock`.
+  worktreePrMerge(path: string, number: number, method: MergeMethod, headOid: string): Promise<void>;
   worktreePrOpen(path: string, checks: boolean): Promise<void>;
   // The logins `gh` holds, active one flagged; [] when none or `gh` is not signed in. Rejects with
   // `gh_missing`. A repo bound to a login that is gone rejects its `gh` calls with `gh_account_missing`.
@@ -958,6 +1075,9 @@ export interface Api {
   kitUsage(sinceDay: string, untilDay: string, refresh: boolean): Promise<UsageSummary>;
   // The Stats page: filtered by agent and scope, and by `usage.scan` (an agent whose scan is off is not read).
   kitUsageReport(args: Omit<UsageReportArgs, "utcOffsetMinutes">): Promise<UsageReport>;
+  // The share dialog: a PNG to the clipboard, and a post opened in the browser.
+  usageShareCopyImage(png: Uint8Array): Promise<void>;
+  usageSharePost(text: string): Promise<void>;
   // Whether each relative path exists under `root` (an agent home, repo or worktree).
   kitPathsExist(root: string, paths: string[]): Promise<boolean[]>;
   // Newest first, at most `limit` (and 1000).
@@ -1012,6 +1132,10 @@ export interface Api {
   fileTrash(worktree: string, rel: string): Promise<void>;
   // Opens the OS file manager with the item selected where the OS allows it.
   fileReveal(worktree: string, rel: string): Promise<void>;
+  // The raw bytes of an image, audio or video file within its size cap; rejects with `too_large`, `bad_name`, `not_found`.
+  fileBytes(worktree: string, rel: string): Promise<Uint8Array>;
+  // Opens an image, audio or video file in the OS default app; rejects with `bad_name` for any other file.
+  fileOpenDefault(worktree: string, rel: string): Promise<void>;
   // Search. Same `worktree` rule as Files. Both walk the worktree with `.gitignore` applied,
   // hidden files included, `.git` and links out of it skipped.
   // Every file, relative with forward slashes, sorted; `truncated` past 50 000 files.
@@ -1023,6 +1147,14 @@ export interface Api {
   filesSearch(worktree: string, query: SearchQuery, id: string, onEvent: (e: SearchEvent) => void): Promise<void>;
   // Stops the search named `id`; nothing when it is not running.
   filesSearchCancel(id: string): Promise<void>;
+  // Watches the worktree's files: `onEvent` gets one batch (worktree-relative `/` paths) after
+  // the first change and at most every 100 ms. Ignores `.git`, `node_modules`, `dist`, `build`,
+  // `.next`, `.cache`, `target`, `.venv` and `__pycache__` at any depth. `overflow` means
+  // "re-read everything" (too many events, or the watcher failed and stopped). Subscribers of
+  // one worktree share one watcher; the same `id` again replaces its subscription.
+  filesWatch(worktree: string, id: string, onEvent: (e: FsChanged) => void): Promise<void>;
+  // Ends the subscription `id`; nothing when it is not there.
+  filesUnwatch(id: string): Promise<void>;
   // Settings → Editor; the put returns what was stored, with numbers clamped to their ranges.
   editorSettings(): Promise<EditorSettings>;
   editorSettingsPut(v: EditorSettings): Promise<EditorSettings>;
@@ -1043,6 +1175,15 @@ export interface Api {
   // Reports whether any agent tab is working; the backend decides in `agent` mode.
   keepAwakeAgents(working: boolean): Promise<AwakeView>;
   onKeepAwakeChanged(cb: (v: AwakeView) => void): Promise<() => void>;
+  // Ports: one scan of the local listeners for these worktrees (`force` skips the back-off wait), stopping
+  // the process behind a port id, opening its URL in the OS browser, and a terminal printing a new URL.
+  portsScan(worktrees: string[], force: boolean): Promise<PortScan>;
+  // A stop needs `confirmed`; a port no xDev terminal started also needs `outsideTerminal`, the second
+  // confirmation, and so does a listener that is a terminal's own process. Rejects with
+  // `port_stop_unconfirmed` / `port_not_started_by_app` / `port_terminal_root` otherwise.
+  portsStop(worktrees: string[], id: string, consent: PortStopConsent): Promise<PortScan>;
+  portsOpen(id: string): Promise<void>;
+  onPortsAdvertised(cb: (worktree: string) => void): Promise<() => void>;
   usageSettings(): Promise<UsageSettings>;
   usageSettingsPut(v: UsageSettings): Promise<UsageSettings>;
 
@@ -1094,6 +1235,10 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "not_found",
   "outside_vault",
   "no_vault",
+  "share_too_large",
+  "share_bad_image",
+  "share_clipboard",
+  "share_open",
   "io",
   "not_utf8",
   "too_large",
@@ -1142,6 +1287,19 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "pty_spawn",
   "pty_resize",
   "pty_gone",
+  "scan_failed",
+  "port_gone",
+  "port_not_owned",
+  "port_no_pid",
+  "port_own_process",
+  "port_scan_unavailable",
+  "port_changed",
+  "port_stop_unconfirmed",
+  "port_not_started_by_app",
+  "port_terminal_root",
+  "port_still_listening",
+  "stop_failed",
+  "open_failed",
   "ptyd_unreachable",
   "ptyd_auth",
   "ptyd_version",
@@ -1152,6 +1310,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "repo_exists",
   "repo_unknown",
   "worktree_unknown",
+  "watch_limit",
   "worktree_exists",
   "branch_exists",
   "bad_branch_prefix",
@@ -1178,6 +1337,14 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "no_upstream",
   "push_rejected",
   "pull_diverged",
+  "update_dirty",
+  "update_untracked",
+  "update_conflicted",
+  "update_conflicts",
+  "base_not_remote",
+  "pull_policy",
+  "no_web_remote",
+  "needs_force",
   "force_base",
   "nothing_to_amend",
   "amend_pushed",
@@ -1193,6 +1360,12 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "pr_not_found",
   "gh_scope",
   "bad_draft",
+  "comment_too_large",
+  "pr_head_mismatch",
+  "pr_head_moved",
+  "empty_comment",
+  "nothing_to_rerun",
+  "merge_blocked",
   "branch_in_use",
   "bad_sparse",
   "draft_failed",
@@ -1297,6 +1470,8 @@ const tauriApi: Api = {
   setGitSettings: (git) => call("set_git_settings", { git }),
   terminalSettings: () => call("terminal_settings_get"),
   terminalSettingsPut: (settings) => call("terminal_settings_put", { settings }),
+  clipboardImageSave: () => call("clipboard_image_save"),
+  keyboardInputSource: () => call("keyboard_input_source"),
   onSettingsChanged: (listener) => {
     const unlisten = listen<SettingsChanged>("settings://changed", (e) => listener(e.payload));
     return () => void unlisten.then((stop) => stop());
@@ -1417,7 +1592,7 @@ const tauriApi: Api = {
   worktreeCreate: (repoId, name, from, request) => call("worktree_create", { repoId, name, from, request: request ?? null }),
   worktreeNamePreview: (repoId, name) => call("worktree_name_preview", { repoId, name }),
   worktreePin: (path, pinned) => call("worktree_pin", { path, pinned }),
-  worktreeRemove: (path, force, confirmed) => call("worktree_remove", { path, force, confirmed }),
+  worktreeRemove: (path, force, confirmed, deleteUnmerged) => call("worktree_remove", { path, force, confirmed, deleteUnmerged: deleteUnmerged ?? null }),
   worktreeArchive: (path, force, confirmed) => call("worktree_archive", { path, force, confirmed }),
   worktreeDetails: (path, patch) => call("worktree_details", { path, patch }),
   worktreeRestore: (repoId, branch) => call("worktree_restore", { repoId, branch }),
@@ -1439,6 +1614,13 @@ const tauriApi: Api = {
   worktreeShip: (path) => call("worktree_ship", { path }),
   worktreePush: (path) => call("worktree_push", { path }),
   worktreePull: (path) => call("worktree_pull", { path }),
+  worktreeFastForward: (path) => call("worktree_fast_forward", { path }),
+  worktreeRebaseFromBase: (path) => call("worktree_rebase_from_base", { path }),
+  worktreeLog: (path, limit, skip) => call("worktree_log", { path, limit, skip }),
+  worktreeCommitFiles: (path, id) => call("worktree_commit_files", { path, id }),
+  worktreeCommitFile: (path, id, file) => call("worktree_commit_file", { path, id, file }),
+  worktreeOpenCommit: (path, id) => call("worktree_open_commit", { path, id }),
+  worktreeOpenFileOnHost: (path, file, line, endLine) => call("worktree_open_file_on_host", { path, file, line, endLine }),
   worktreeSync: (path) => call("worktree_sync", { path }),
   worktreeFetch: (path) => call("worktree_fetch", { path }),
   worktreeForcePush: (path, expected, confirmed) => call("worktree_force_push", { path, expected, confirmed }),
@@ -1447,6 +1629,14 @@ const tauriApi: Api = {
   worktreePrCreate: (path, draft) => call("worktree_pr_create", { path, draft }),
   ghLogins: () => call("gh_logins"),
   worktreePrChecks: (path, number) => call("worktree_pr_checks", { path, number }),
+  worktreePrComments: (path, number) => call("worktree_pr_comments", { path, number }),
+  worktreePrCommentPost: (path, number, draft) => call("worktree_pr_comment_post", { path, number, draft }),
+  worktreePrHead: (path, number) => call("worktree_pr_head", { path, number }),
+  worktreePrThreadResolve: (path, threadId, resolved) => call("worktree_pr_thread_resolve", { path, threadId, resolved }),
+  worktreePrReaction: (path, subjectId, content, on) => call("worktree_pr_reaction", { path, subjectId, content, on }),
+  worktreePrChecksRerun: (path, number, failedOnly) => call("worktree_pr_checks_rerun", { path, number, failedOnly }),
+  worktreePrMergeInfo: (path, number) => call("worktree_pr_merge_info", { path, number }),
+  worktreePrMerge: (path, number, method, headOid) => call("worktree_pr_merge", { path, number, method, headOid }),
   worktreePrOpen: (path, checks) => call("worktree_pr_open", { path, checks }),
   issuesList: (repoId, query) => call("issues_list", { repoId, query }),
   issueView: (repoId, number) => call("issue_view", { repoId, number }),
@@ -1491,6 +1681,9 @@ const tauriApi: Api = {
   kitUsage: (sinceDay, untilDay, refresh) =>
     call("kit_usage", { sinceDay, untilDay, refresh, utcOffsetMinutes: -new Date().getTimezoneOffset() }),
   kitUsageReport: (args) => call("kit_usage_report", { args: { ...args, utcOffsetMinutes: -new Date().getTimezoneOffset() } }),
+  // A raw body, not `call`'s record: the PNG never travels as a JSON number array.
+  usageShareCopyImage: (png) => invoke<void>("usage_share_copy_image", png).catch((e: unknown) => Promise.reject(toApiError(e))),
+  usageSharePost: (text) => call("usage_share_post", { text }),
   kitPathsExist: (root, paths) => call("kit_paths_exist", { root, paths }),
   kitPromptHistory: (limit) => call("kit_prompt_history", { limit }),
   agentSessions: (query, refresh) => call("agent_sessions", { query, refresh }),
@@ -1510,6 +1703,8 @@ const tauriApi: Api = {
   fileRename: (worktree, from, to) => call("file_rename", { worktree, from, to }),
   fileTrash: (worktree, rel) => call("file_trash", { worktree, rel }),
   fileReveal: (worktree, rel) => call("file_reveal", { worktree, rel }),
+  fileBytes: async (worktree, rel) => new Uint8Array(await call<ArrayBuffer | number[]>("file_bytes", { worktree, rel })),
+  fileOpenDefault: (worktree, rel) => call("file_open_default", { worktree, rel }),
   filesList: (worktree) => call("files_list", { worktree }),
   filesSearch(worktree, query, id, onEvent) {
     const channel = new Channel<SearchEvent>();
@@ -1517,6 +1712,12 @@ const tauriApi: Api = {
     return call("files_search", { worktree, query, id, onEvent: channel });
   },
   filesSearchCancel: (id) => call("files_search_cancel", { id }),
+  filesWatch(worktree, id, onEvent) {
+    const channel = new Channel<FsChanged>();
+    channel.onmessage = onEvent;
+    return call("files_watch", { worktree, id, onEvent: channel });
+  },
+  filesUnwatch: (id) => call("files_unwatch", { id }),
   editorSettings: () => call("editor_settings_get"),
   editorSettingsPut: (settings) => call("editor_settings_put", { settings }),
   navigationSettings: () => call("navigation_settings_get"),
@@ -1531,6 +1732,10 @@ const tauriApi: Api = {
   keepAwakeSet: (mode) => call("keep_awake_set", { mode }),
   keepAwakeAgents: (working) => call("keep_awake_agents", { working }),
   onKeepAwakeChanged: (cb) => listen<AwakeView>("keep-awake://changed", (e) => cb(e.payload)),
+  portsScan: (worktrees, force) => call("ports_scan", { worktrees, force }),
+  portsStop: (worktrees, id, consent) => call("ports_stop", { worktrees, id, confirmed: consent.confirmed, outsideTerminal: consent.outsideTerminal }),
+  portsOpen: (id) => call("ports_open", { id }),
+  onPortsAdvertised: (cb) => listen<{ worktree: string }>("ports://advertised", (e) => cb(e.payload.worktree)),
   usageSettings: () => call("usage_settings_get"),
   usageSettingsPut: (settings) => call("usage_settings_put", { settings }),
   layoutLoad: () => call("layout_load"),

@@ -15,6 +15,8 @@ export const DEFAULT_GIT_SETTINGS: GitSettings = {
   prOpenAfterCreate: false,
   autoRenameBranch: true,
   sourceControlGroupOrder: "changes-first",
+  prBotAuthorOverrides: [],
+  pullPolicy: "ff-only",
   recipes: {
     commitMessage: { ...DEFAULT_RECIPE, args: [] },
     pullRequest: { ...DEFAULT_RECIPE, args: [] },
@@ -23,5 +25,6 @@ export const DEFAULT_GIT_SETTINGS: GitSettings = {
     fixChecks: { ...DEFAULT_RECIPE, args: [] },
     branchName: { ...DEFAULT_RECIPE, args: [] },
     resolveConflicts: { ...DEFAULT_RECIPE, args: [] },
+    addressComments: { ...DEFAULT_RECIPE, args: [] },
   },
 };

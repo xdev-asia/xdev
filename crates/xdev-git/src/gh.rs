@@ -217,7 +217,7 @@ impl From<RawCheck> for Check {
 }
 
 /// The one reading of a failed `gh` run.
-fn classify(out: &GhOutput) -> GitError {
+pub(crate) fn classify(out: &GhOutput) -> GitError {
     if out.stderr.contains("missing required scopes") {
         GitError::GhScope(out.stderr.trim().to_owned())
     } else if out.stderr.contains("gh auth login") {
@@ -229,11 +229,11 @@ fn classify(out: &GhOutput) -> GitError {
     }
 }
 
-fn parse_error(e: serde_json::Error) -> GitError {
+pub(crate) fn parse_error(e: serde_json::Error) -> GitError {
     GitError::Gh(format!("unexpected gh output: {e}"))
 }
 
-fn ok(out: GhOutput) -> Result<GhOutput, GitError> {
+pub(crate) fn ok(out: GhOutput) -> Result<GhOutput, GitError> {
     if out.status == Some(0) {
         Ok(out)
     } else {
@@ -304,7 +304,7 @@ pub fn pr_checks(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<Vec<Check>,
 }
 
 /// The run id in a check's link (`.../actions/runs/<id>/job/<job>`).
-fn run_id(link: &str) -> Option<&str> {
+pub(crate) fn run_id(link: &str) -> Option<&str> {
     let (_, rest) = link.split_once("/actions/runs/")?;
     let id = rest.split(['/', '?', '#']).next()?;
     (!id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())).then_some(id)

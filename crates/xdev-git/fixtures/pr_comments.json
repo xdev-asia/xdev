@@ -1,0 +1,20 @@
+{"data":{"repository":{"pullRequest":{
+"reviewThreads":{"nodes":[
+{"id":"T_open","isResolved":false,"line":12,"originalLine":10,"startLine":10,"originalStartLine":8,"path":"src/a.rs","diffSide":"RIGHT",
+ "comments":{"nodes":[
+  {"id":"C1","databaseId":101,"body":"Why?","createdAt":"2026-11-02T10:00:00Z","url":"https://x/c1","diffHunk":"@@ hunk A","author":{"login":"maya","__typename":"User"},"replyTo":null,"reactionGroups":[{"content":"THUMBS_UP","viewerHasReacted":true,"reactors":{"totalCount":2}},{"content":"HEART","viewerHasReacted":false,"reactors":{"totalCount":0}}]},
+  {"id":"C2","databaseId":102,"body":"Because.","createdAt":"2026-11-02T11:00:00Z","url":"https://x/c2","diffHunk":"@@ hunk A","author":{"login":"oak","__typename":"User"},"replyTo":{"databaseId":101},"reactionGroups":[]}]}},
+{"id":"T_done","isResolved":true,"line":3,"originalLine":3,"startLine":null,"originalStartLine":null,"path":"src/b.rs","diffSide":"RIGHT",
+ "comments":{"nodes":[{"id":"C3","databaseId":103,"body":"Typo","createdAt":"2026-11-01T09:00:00Z","url":"https://x/c3","diffHunk":"@@ hunk B","author":{"login":"maya","__typename":"User"},"replyTo":null,"reactionGroups":[]}]}},
+{"id":"T_old","isResolved":false,"line":null,"originalLine":7,"startLine":null,"originalStartLine":5,"path":"src/c.rs","diffSide":"RIGHT",
+ "comments":{"nodes":[{"id":"C4","databaseId":104,"body":"Outdated","createdAt":"2026-11-03T09:00:00Z","url":"https://x/c4","diffHunk":"@@ hunk C","author":null,"replyTo":null,"reactionGroups":[]}]}},
+{"id":"T_left","isResolved":false,"line":4,"originalLine":4,"startLine":null,"originalStartLine":null,"path":"src/d.rs","diffSide":"LEFT",
+ "comments":{"nodes":[{"id":"C5","databaseId":105,"body":"Left side","createdAt":"2026-11-03T10:00:00Z","url":"https://x/c5","diffHunk":"@@ hunk D","author":{"login":"coderabbitai","__typename":"Bot"},"replyTo":null,"reactionGroups":[]}]}}
+]},
+"comments":{"nodes":[
+ {"id":"I1","databaseId":201,"body":"Conversation","createdAt":"2026-11-02T08:00:00Z","url":"https://x/i1","author":{"login":"sam","__typename":"User"},"reactionGroups":[]}]},
+"reviews":{"nodes":[
+ {"id":"R1","databaseId":301,"body":"LGTM with notes","submittedAt":"2026-11-02T12:00:00Z","url":"https://x/r1","author":{"login":"maya","__typename":"User"},"reactionGroups":[]},
+ {"id":"R2","databaseId":302,"body":"","submittedAt":"2026-11-02T12:30:00Z","url":"https://x/r2","author":{"login":"maya","__typename":"User"},"reactionGroups":[]},
+ {"id":"R3","databaseId":303,"body":"<!-- bot marker -->\n<!-- more -->","submittedAt":"2026-11-02T12:40:00Z","url":"https://x/r3","author":{"login":"maya","__typename":"User"},"reactionGroups":[]}]}
+}}}}

@@ -102,6 +102,16 @@ describe("Sessions.snapshot", () => {
     expect(one.tabs["review:"]).toEqual({ kind: "review" });
   });
 
+  it("does not keep the commit tab", () => {
+    const s = make();
+    const a = s.open(A, "shell");
+    const l = s.layout(A)!;
+    s.setLayout(A, { ...l, root: JSON.parse(JSON.stringify(l.root).replace(`"tabs":["${a.id}"]`, `"tabs":["${a.id}","commit:"]`)) });
+    const one = s.snapshot().worktrees[A];
+    expect(Object.keys(one.tabs)).toEqual(["t1"]);
+    expect(JSON.stringify(one.layout)).not.toContain("commit:");
+  });
+
   it("leaves the setup script's tab out", () => {
     const s = make();
     s.open(A, "xdev:setup");

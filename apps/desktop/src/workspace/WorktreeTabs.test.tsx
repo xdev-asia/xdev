@@ -4,6 +4,7 @@ import { EmptyState } from "@xdev-asia/ui";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, toApiError, type Api, type Profile, type ProfilesView, type PtyExit } from "@/api";
 import { fileTabs } from "@/files/fileTabs";
+import { MarkdownPreview } from "@/files/MarkdownPreview";
 import { UnsavedDialog } from "@/files/UnsavedDialog";
 import { translate } from "@/i18n";
 import { resetNavigationSettingsForTests, setNavigationSettings } from "@/settings/navigationSettings";
@@ -13,12 +14,13 @@ import { Terminal, type TerminalHandle } from "@/terminal/Terminal";
 import { ContextMenu } from "@/ui/ContextMenu";
 import { AgentIcon } from "./AgentIcon";
 import { CloseTabsDialog } from "./CloseTabsDialog";
+import { CommitView } from "./CommitView";
 import { Sessions } from "./sessions";
-import { addTab, leaves, paneOf, removeTab, resize, selectTab, splitPane, toggleExpand, type PaneLayout, type PaneNode } from "./paneTree";
+import { addTab, leaves, paneOf, removeTab, resize, selectTab, single, splitPane, toggleExpand, type PaneLayout, type PaneNode } from "./paneTree";
 import { PaneView } from "./PaneView";
 import { TabStrip } from "./TabStrip";
 import { TabTitleDialog } from "./TabTitleDialog";
-import { WorktreeTabs } from "./WorktreeTabs";
+import { PREVIEW_DEBOUNCE_MS, WorktreeTabs } from "./WorktreeTabs";
 
 // Hooks are stubbed only while the tabs component itself is called; each harness keeps its own.
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -1399,7 +1401,24 @@ describe("file tabs", () => {
     expect(view.html()).not.toContain("ws-tab-dirty");
     fileTabs.edit(A, "src/a.ts", "two");
     expect(view.html()).toContain("ws-tab-dirty");
+    expect(view.html()).not.toContain("ws-tab-gone");
     expect(view.html()).toContain(en("files.dirty"));
+  });
+
+  it("marks the tab of a deleted or renamed file, and clears the mark when it is back", () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    readyFile(A, "src/a.ts");
+    const view = harness(api, live);
+    fileTabs.markExternal(A, "src/a.ts", "deleted");
+    expect(stripItems(view)[0]!.file).toMatchObject({ gone: "deleted" });
+    expect(view.html()).toContain(en("files.tab.deleted"));
+    fileTabs.markExternal(A, "src/a.ts", "renamed");
+    expect(stripItems(view)[0]!.file).toMatchObject({ gone: "renamed" });
+    fileTabs.markExternal(A, "src/a.ts", "changed");
+    expect(stripItems(view)[0]!.file).not.toHaveProperty("gone");
+    fileTabs.markExternal(A, "src/a.ts", null);
+    expect(view.html()).not.toContain("ws-tab-gone");
   });
 
   it("keeps a file to its own worktree", () => {
@@ -1480,6 +1499,124 @@ describe("file tabs", () => {
     expect(write).toHaveBeenCalledWith(A, "a.ts", "changed", "lf", "h1");
     expect(fileTabs.get(A, "a.ts")).toMatchObject({ saved: "changed", hash: "h2" });
   });
+});
+
+describe("markdown preview tabs", () => {
+  beforeEach(() => fileTabs.reset());
+  afterEach(() => fileTabs.reset());
+
+  // One render and its effects: the layout the render derived is what the store keeps.
+  const settle = (view: ReturnType<typeof harness>) => {
+    vi.stubGlobal("window", { addEventListener: () => {}, removeEventListener: () => {} });
+    hooks.effects = [];
+    view.draw();
+    hooks.effects.forEach((effect) => effect());
+    return view;
+  };
+  const tabsOf = (live: Sessions) => (leaves(live.layout(A)!) as Extract<PaneNode, { kind: "leaf" }>[]).map((n) => n.tabs);
+  const open = (live: Sessions, rel: string, text = "# one") => {
+    readyFile(A, rel, text);
+    return settle(harness(createMockApi({}), live));
+  };
+
+  it("the preview key opens preview:<rel> in the same pane and shows the unsaved text", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const view = open(live, "docs/a.md");
+    fileTabs.edit(A, "docs/a.md", "# two");
+    expect(handlers(view)["file.markdownPreview"]!()).toBe(true);
+    settle(view);
+    expect(tabsOf(live)).toEqual([["file:docs/a.md", "preview:docs/a.md"]]);
+    expect(view.find((n) => n.type === MarkdownPreview)!.props).toMatchObject({ rel: "docs/a.md", text: "# two" });
+    const items = view.find((n) => n.type === TabStrip)!.props.items as { id: string; preview?: { rel: string } }[];
+    expect(items.map((i) => i.id)).toEqual(["file:docs/a.md", "preview:docs/a.md"]);
+    expect(items[1].preview).toEqual({ rel: "docs/a.md" });
+  });
+
+  it("the side preview gets the live text debounced by 200 ms, and knows when its tab is hidden", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const view = open(live, "docs/a.md");
+    expect(handlers(view)["file.markdownPreview"]!()).toBe(true);
+    settle(view);
+    expect(PREVIEW_DEBOUNCE_MS).toBe(200);
+    expect(view.find((n) => n.type === MarkdownPreview)!.props).toMatchObject({ debounceMs: 200, hidden: expect.any(Boolean) });
+  });
+
+  it("the key declines for a file that is not Markdown and when no file is in front", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    expect(handlers(settle(harness(createMockApi({}), live)))["file.markdownPreview"]!()).toBe(false);
+    const view = open(live, "a.ts");
+    expect(handlers(view)["file.markdownPreview"]!()).toBe(false);
+    expect(tabsOf(live).flat()).toEqual(["file:a.ts"]);
+  });
+
+  it("Open preview to the side puts the preview in a new pane to the right", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const view = open(live, "a.md");
+    const eye = view.find((n) => n.props.label === en("files.preview.side"))!;
+    expect(eye.props.icon).toBe("eye");
+    eye.props.onClick();
+    expect(tabsOf(live)).toEqual([["file:a.md"], ["preview:a.md"]]);
+    expect(live.layout(A)!.root).toMatchObject({ kind: "split", dir: "right" });
+  });
+
+  it("offers no side preview for a file that is not Markdown", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const view = open(live, "a.ts");
+    expect(view.find((n) => n.props.label === en("files.preview.side"))).toBeUndefined();
+  });
+
+  it("closing the source closes the preview", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const view = open(live, "a.md");
+    handlers(view)["file.markdownPreview"]!();
+    settle(view);
+    view.find((n) => n.type === TabStrip)!.props.onClose("file:a.md");
+    expect(fileTabs.get(A, "a.md")).toBeNull();
+    settle(view);
+    expect(live.layout(A)).toBeNull();
+    expect(view.find((n) => n.type === MarkdownPreview)).toBeUndefined();
+  });
+
+  it("closing the preview keeps the source", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const view = open(live, "a.md");
+    handlers(view)["file.markdownPreview"]!();
+    settle(view);
+    view.find((n) => n.type === TabStrip)!.props.onClose("preview:a.md");
+    settle(view);
+    expect(tabsOf(live)).toEqual([["file:a.md"]]);
+    expect(fileTabs.get(A, "a.md")).not.toBeNull();
+  });
+
+  it("drops a persisted preview id with no open file", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    readyFile(A, "kept.md");
+    live.setLayout(A, addTab(addTab(single("file:kept.md"), "preview:gone.md"), "preview:kept.md"));
+    const view = settle(harness(createMockApi({}), live));
+    settle(view);
+    expect(tabsOf(live).flat()).toEqual(["file:kept.md", "preview:kept.md"]);
+  });
+});
+
+it("a commit ask opens the commit tab, and a new one points it at another commit", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live, A, true, { commit: { id: "aaaaaaa1111", file: "a.ts", seq: 1 } });
+  expect(selected(view)).toEqual(["commit:"]);
+  expect(view.find((n) => n.type === CommitView)!.props.commit).toMatchObject({ id: "aaaaaaa1111", file: "a.ts" });
+  expect(view.html()).toContain(en("commitView.tab", { id: "aaaaaaa" }));
+  // Only one commit tab: the same id, pointed at the last commit asked for.
+  const again = harness(api, live, A, true, { commit: { id: "bbbbbbb2222", file: null, seq: 2 } });
+  expect(again.all().filter((n) => n.props["data-tab"] === "commit:" && n.props.role === "tab")).toHaveLength(1);
+  expect(again.find((n) => n.type === CommitView)!.props.commit).toMatchObject({ id: "bbbbbbb2222", file: null });
+});
+
+it("ctrl_w_on_the_commit_tab_closes_it", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live, A, true, { commit: { id: "aaaaaaa1111", file: null, seq: 1 } });
+  press(view, CTRL_W);
+  expect(view.find((n) => n.props["data-tab"] === "commit:")).toBeUndefined();
 });
 
 it("a sleeping tab shows a Wake overlay in place of its terminal, and Wake starts it again", async () => {

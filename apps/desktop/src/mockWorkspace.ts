@@ -2,7 +2,7 @@ import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
 import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
-import type { Api, ApiError, Check, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, Check, MergeBlock, PrComment, PrMergeInfo, Reaction, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, PullPolicy, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 import { fromWork } from "@/workspace/branchName";
 import { REPO_COLORS, isHexColor } from "@/workspace/repoIdentity";
@@ -48,6 +48,13 @@ type WorkspaceApi = Pick<
   | "worktreeShip"
   | "worktreePush"
   | "worktreePull"
+  | "worktreeFastForward"
+  | "worktreeRebaseFromBase"
+  | "worktreeLog"
+  | "worktreeCommitFiles"
+  | "worktreeCommitFile"
+  | "worktreeOpenCommit"
+  | "worktreeOpenFileOnHost"
   | "worktreeSync"
   | "worktreeFetch"
   | "worktreeForcePush"
@@ -55,6 +62,14 @@ type WorkspaceApi = Pick<
   | "worktreePr"
   | "worktreePrCreate"
   | "worktreePrChecks"
+  | "worktreePrComments"
+  | "worktreePrCommentPost"
+  | "worktreePrHead"
+  | "worktreePrThreadResolve"
+  | "worktreePrReaction"
+  | "worktreePrChecksRerun"
+  | "worktreePrMergeInfo"
+  | "worktreePrMerge"
   | "worktreePrOpen"
   | "worktreeCheckLog"
   | "worktreeDraftCommit"
@@ -91,6 +106,11 @@ export type MockWorkspaceSeed = {
   // Pull requests and their checks by worktree path.
   prs?: Record<string, PrView>;
   checks?: Record<string, Check[]>;
+  // Review comments and merge state of each worktree's PR, by worktree path.
+  prComments?: Record<string, PrComment[]>;
+  mergeInfo?: Record<string, PrMergeInfo>;
+  // The PR head on GitHub by worktree path; the mock's own HEAD when absent.
+  prHeads?: Record<string, string>;
   // The next commit or amend in that worktree is rejected with `hook_failed`; the text is the hook output.
   hookFailure?: Record<string, string>;
   // Worktrees that already track a remote branch, with how far they have drifted.
@@ -111,6 +131,13 @@ export type MockWorkspaceSeed = {
   conflicts?: Record<string, ConflictState>;
   // The first prompt of an agent session, by session id; a worktree path stands for its latest.
   prompts?: Record<string, string>;
+  // The commit graph by worktree path, and the files of a commit by `<worktree path>#<commit id>`.
+  log?: Record<string, RepoLog>;
+  commitFiles?: Record<string, CommitFiles>;
+  // Worktrees whose repo has no supported web remote: opening a commit or file rejects `no_web_remote`.
+  hostless?: string[];
+  // Worktrees whose remote holds older copies of their local commits, as after an amend.
+  rewritten?: Record<string, boolean>;
 };
 
 // `ARCHIVE_DAYS` in Rust: archived entries show under Archived this long.
@@ -164,10 +191,24 @@ export type MockSetupRun = { text: string; code: number };
 // The fake remote of one worktree.
 type Remote = { tracked: boolean; ahead: number; behind: number; commits: Commit[] };
 
+// Like `COMMENT_BODY_MAX` in Rust.
+const COMMENT_BODY_MAX = 64 * 1024;
+
+/** The commit every mock worktree is on, and the PR head unless a seed says otherwise. */
+export const MOCK_HEAD = "1".repeat(40);
+const DEFAULT_MERGE_INFO: PrMergeInfo = { block: null, checksFailed: false, methods: ["squash", "merge", "rebase"], defaultMethod: "squash", headOid: MOCK_HEAD };
+
 const DEMO_START = "5555555555555555555555555555555555555555";
 
 function worktree(path: string, name: string, branch: string, primary: boolean): WorktreeView {
   return { path, name, branch, head: DEMO_START, start: primary ? null : DEMO_START, primary, pinned: false, detached: false, ...NO_DETAILS, defaultBranch: primary };
+}
+
+function demoComment(id: number, over: Partial<PrComment> & Pick<PrComment, "kind" | "author" | "body">): PrComment {
+  return {
+    id, nodeId: `DEMO_${id}`, authorBot: false, createdAt: `2026-11-0${Math.min(id, 5)}T09:00:00Z`, url: `https://example.test/pull/41#comment-${id}`,
+    path: null, line: null, startLine: null, threadId: null, replyTo: null, resolved: false, outdated: false, diffHunk: null, reactions: [], ...over,
+  };
 }
 
 export const DEMO_WORKSPACE: MockWorkspaceSeed = {
@@ -196,6 +237,25 @@ export const DEMO_WORKSPACE: MockWorkspaceSeed = {
       found: [],
     },
   ],
+  prs: {
+    "/demo/wt/xdev-elm": { number: 41, url: "https://example.test/pull/41", state: "open", title: "Show session status", base: "main", head: "elm" },
+  },
+  checks: {
+    "/demo/wt/xdev-elm": [
+      { name: "build", workflow: "ci", bucket: "pass", link: "https://example.test/o/r/actions/runs/101/job/1" },
+      { name: "test", workflow: "ci", bucket: "fail", link: "https://example.test/o/r/actions/runs/101/job/2" },
+    ],
+  },
+  prComments: {
+    "/demo/wt/xdev-elm": [
+      demoComment(1, { kind: "thread", author: "maya", body: "Should this fall back to the last known status?", path: "src/session.ts", line: 12, threadId: "T1", diffHunk: "@@ -10,3 +10,4 @@\n const a = 1;\n+const b = 2;", reactions: [{ content: "THUMBS_UP", count: 1, mine: false }] }),
+      demoComment(2, { kind: "thread", author: "oak-dev", body: "Yes, fixed in the next commit.", path: "src/session.ts", line: 12, threadId: "T1", replyTo: 1 }),
+      demoComment(3, { kind: "thread", author: "coderabbitai[bot]", authorBot: true, body: "Consider naming this constant.", path: "src/status.ts", line: 4, threadId: "T2", diffHunk: "@@ -1,2 +1,3 @@\n+export const X = 1;" }),
+      demoComment(4, { kind: "thread", author: "maya", body: "Typo in the label.", path: "src/lib/format.ts", line: 3, threadId: "T3", resolved: true, diffHunk: "@@ -1 +1 @@\n-lable\n+label" }),
+      demoComment(5, { kind: "review", author: "maya", body: "Looks good overall, two small notes." }),
+      demoComment(6, { kind: "conversation", author: "sam", body: "Can we ship this today?" }),
+    ],
+  },
   changes: {
     "/demo/wt/xdev-oak": [
       { path: "docs/old-notes.md", kind: "deleted" },
@@ -425,8 +485,12 @@ export function createMockWorkspace(
   let prNumber = 0;
   const prs = new Map<string, PrView>(Object.entries(structuredClone(seed.prs ?? {})));
   const checks = new Map<string, Check[]>(Object.entries(structuredClone(seed.checks ?? {})));
+  const prComments = new Map<string, PrComment[]>(Object.entries(structuredClone(seed.prComments ?? {})));
+  const mergeInfo = new Map<string, PrMergeInfo>(Object.entries(structuredClone(seed.mergeInfo ?? {})));
   const hooks = new Map<string, string>(Object.entries(seed.hookFailure ?? {}));
   const remotes = new Map<string, Remote>();
+  // Worktrees whose local commits were rewritten after they were pushed, by an amend or a rebase.
+  const rewrote = new Set<string>();
   const stagedFiles = new Map<string, Set<string>>();
   const conflicts = new Map<string, ConflictState>(Object.entries(structuredClone(seed.conflicts ?? {})));
   const notes = new Map<string, ReviewNote[]>();
@@ -454,7 +518,7 @@ export function createMockWorkspace(
     const branch = wt.detached ? null : wt.branch;
     const upstream =
       r.tracked && branch !== null
-        ? { remote: "origin", branch, id: "b".repeat(40), ahead: r.ahead, behind: r.behind }
+        ? { remote: "origin", branch, id: "b".repeat(40), ahead: r.ahead, behind: r.behind, rewritten: (seed.rewritten?.[path] === true || rewrote.has(path)) && r.ahead > 0 && r.behind > 0 }
         : null;
     // Against the upstream only the unpushed commits count; they are the newest, first in the list.
     const vsUpstream = git.compareAgainstUpstream && upstream !== null;
@@ -484,12 +548,17 @@ export function createMockWorkspace(
     return shipView(path);
   }
 
-  function doPull(path: string): ShipView | Promise<never> {
+  // A pull under `ff-only` refuses a split history; the other policies join it and leave the
+  // local commits ahead.
+  function doPull(path: string, policy: PullPolicy = git.pullPolicy): ShipView | Promise<never> {
     const view = shipView(path);
     if (view instanceof Promise) return view;
     const r = remoteOf(path);
     if (!r.tracked) return reject("no_upstream");
-    if (r.behind > 0 && r.ahead > 0) return reject("pull_diverged");
+    if (r.behind > 0 && r.ahead > 0) {
+      if (policy === "ff-only") return reject("pull_diverged");
+      if (policy === "git-config") return reject("pull_policy");
+    }
     r.behind = 0;
     return shipView(path);
   }
@@ -878,7 +947,8 @@ export function createMockWorkspace(
       const wasDetached = findWorktree(path)?.wt.detached ?? true;
       const { repo, wt } = await leave(path, force, confirmed);
       if (wasDetached || wt.branch === null) return { deletedBranch: null, kept: null };
-      if (force || wt.madeBy === "app") return { deletedBranch: wt.branch, kept: null };
+      // As in Rust, only a branch made here goes; the mock counts it as merged, so `deleteUnmerged` changes nothing for it.
+      if (wt.madeBy === "app") return { deletedBranch: wt.branch, kept: null };
       return { deletedBranch: null, kept: keep(repo, wt, "deleted") };
     },
     async worktreeArchive(path, force, confirmed) {
@@ -1041,7 +1111,7 @@ export function createMockWorkspace(
         const staged = stagedFiles.get(path)?.has(c.path) ?? false;
         return { path: c.path, kind: c.kind, staged, unstaged: !staged };
       });
-      return { base: ref, branch: found.wt.branch, baseRef: found.repo.baseRef, files };
+      return { base: ref, branch: found.wt.branch, baseRef: found.repo.baseRef, headOid: MOCK_HEAD, files };
     },
     async worktreeReviewFile(path, base, file) {
       const found = findWorktree(path);
@@ -1155,12 +1225,71 @@ export function createMockWorkspace(
     async worktreePull(path) {
       return doPull(path);
     },
+    async worktreeFastForward(path) {
+      const view = shipView(path);
+      if (view instanceof Promise) return view;
+      if (view.branch === null) return reject("detached");
+      if (view.upstream === null) return reject("no_upstream");
+      if (view.upstream.behind > 0 && view.upstream.ahead > 0) return reject("pull_diverged");
+      remoteOf(path).behind = 0;
+      return shipView(path);
+    },
+    async worktreeRebaseFromBase(path) {
+      const view = shipView(path);
+      if (view instanceof Promise) return view;
+      if (view.branch === null) return reject("detached");
+      const r = remoteOf(path);
+      // Replaying the commits gives them new ids; a pushed branch now differs from its remote.
+      if (r.tracked && r.commits.length > 0) {
+        r.commits = r.commits.map((c) => ({ ...c, id: commitId() }));
+        r.ahead = r.commits.length;
+        r.behind = r.commits.length;
+        rewrote.add(path);
+      }
+      return shipView(path);
+    },
+    async worktreeLog(path, limit, skip) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const seeded = seed.log?.[path];
+      if (!seeded) return { commits: [], head: null, branch: null, upstream: null, base: null, mergeBase: null, incoming: false, outgoing: false, hasMore: false };
+      const size = Math.min(Math.max(limit, 1), 200);
+      const page = seeded.commits.slice(skip, skip + size);
+      return structuredClone({ ...seeded, commits: page, hasMore: skip + size < seeded.commits.length });
+    },
+    async worktreeCommitFiles(path, id) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (!/^[0-9a-f]{4,64}$/i.test(id)) return reject("git", id);
+      const files = seed.commitFiles?.[`${path}#${id}`];
+      return files ? structuredClone(files) : reject("git", id);
+    },
+    async worktreeCommitFile(path, id, file) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (!/^[0-9a-f]{4,64}$/i.test(id)) return reject("git", id);
+      const entry = seed.commitFiles?.[`${path}#${id}`]?.files.find((f) => f.path === file);
+      if (!entry) return reject("bad_arg", file);
+      return demoDiff(file, entry.status === "added" ? "added" : entry.status === "deleted" ? "deleted" : "modified");
+    },
+    async worktreeOpenCommit(path, id) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (!/^[0-9a-f]{4,64}$/i.test(id)) return reject("git", id);
+      if (seed.hostless?.includes(path)) return reject("no_web_remote");
+    },
+    async worktreeOpenFileOnHost(path, file) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (file === "" || file.startsWith("/") || file.split("/").includes("..")) return reject("bad_arg", file);
+      if (seed.hostless?.includes(path)) return reject("no_web_remote");
+    },
     async worktreeSync(path) {
-      // Like Rust: pull when behind (a split history is refused), push when only ahead.
+      // Like Rust: a rewritten remote needs a force push; pull when behind, push what is left.
       const view = shipView(path);
       if (view instanceof Promise) return view;
       if (view.upstream === null) return reject("no_upstream");
-      if (view.upstream.behind > 0) return doPull(path);
+      if (view.upstream.rewritten) return reject("needs_force");
+      if (view.upstream.behind > 0) {
+        const pulled = doPull(path);
+        if (pulled instanceof Promise) return pulled;
+        return pulled.upstream !== null && pulled.upstream.ahead > 0 ? doPush(path) : pulled;
+      }
       if (view.upstream.ahead > 0) return doPush(path);
       return view;
     },
@@ -1178,6 +1307,7 @@ export function createMockWorkspace(
       const r = remoteOf(path);
       r.ahead = 0;
       r.behind = 0;
+      rewrote.delete(path);
       return shipView(path);
     },
     async worktreeAmend(path, files, message, confirmed) {
@@ -1198,6 +1328,7 @@ export function createMockWorkspace(
         // The rewritten commit is no longer the remote's: both sides now hold one the other lacks.
         r.ahead = 1;
         r.behind = 1;
+        rewrote.add(path);
       }
       return id;
     },
@@ -1226,6 +1357,82 @@ export function createMockWorkspace(
     async worktreePrChecks(path, number) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);
       return prs.get(path)?.number === number ? structuredClone(checks.get(path) ?? []) : [];
+    },
+    async worktreePrComments(path, number) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const list = prComments.get(path) ?? [];
+      return prs.get(path)?.number === number ? { comments: structuredClone(list), truncated: false } : { comments: [], truncated: false };
+    },
+    async worktreePrHead(path, number) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const pr = prs.get(path);
+      if (!pr || pr.number !== number) return reject("pr_not_found");
+      return seed.prHeads?.[path] ?? MOCK_HEAD;
+    },
+    async worktreePrCommentPost(path, _number, draft) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (draft.body.trim() === "") return reject("empty_comment");
+      if (draft.body.length > COMMENT_BODY_MAX) return reject("comment_too_large");
+      if (draft.path !== null && draft.commit !== (seed.prHeads?.[path] ?? MOCK_HEAD)) return reject("pr_head_mismatch");
+      const list = prComments.get(path) ?? [];
+      const id = list.reduce((m, c) => Math.max(m, c.id), 0) + 1;
+      const root = draft.replyTo === null ? undefined : list.find((c) => c.id === draft.replyTo && c.kind === "thread");
+      const base = { id, nodeId: `MOCK_${id}`, author: "you", authorBot: false, body: draft.body, createdAt: new Date().toISOString(), url: `https://example.test/pull/comment-${id}`, resolved: false, outdated: false, diffHunk: null, reactions: [] };
+      if (root) {
+        list.push({ ...base, kind: "thread", path: root.path, line: root.line, startLine: root.startLine, threadId: root.threadId, replyTo: root.id, resolved: root.resolved });
+      } else if (draft.path !== null) {
+        list.push({ ...base, kind: "thread", path: draft.path, line: draft.line, startLine: draft.startLine, threadId: `MOCK_THREAD_${id}`, replyTo: null });
+      } else {
+        list.push({ ...base, kind: "conversation", path: null, line: null, startLine: null, threadId: null, replyTo: null });
+      }
+      prComments.set(path, list);
+    },
+    async worktreePrThreadResolve(path, threadId, resolved) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      for (const c of prComments.get(path) ?? []) if (c.threadId === threadId) c.resolved = resolved;
+    },
+    async worktreePrReaction(path, subjectId, content: Reaction, on) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const comment = (prComments.get(path) ?? []).find((c) => c.nodeId === subjectId);
+      if (!comment) return reject("gh_failed");
+      const mine = comment.reactions.find((r) => r.content === content);
+      if (on) {
+        if (mine) {
+          if (!mine.mine) { mine.mine = true; mine.count += 1; }
+        } else comment.reactions.push({ content, count: 1, mine: true });
+      } else if (mine?.mine) {
+        mine.count -= 1;
+        mine.mine = false;
+        if (mine.count === 0) comment.reactions = comment.reactions.filter((r) => r !== mine);
+      }
+    },
+    async worktreePrChecksRerun(path, number, failedOnly) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const list = prs.get(path)?.number === number ? checks.get(path) ?? [] : [];
+      const runs = new Set<string>();
+      let skipped = 0;
+      for (const c of list) {
+        if (failedOnly && c.bucket !== "fail" && c.bucket !== "cancel") continue;
+        const run = /\/actions\/runs\/(\d+)/.exec(c.link ?? "")?.[1];
+        if (run) runs.add(run); else skipped += 1;
+      }
+      if (runs.size === 0) return reject("nothing_to_rerun");
+      return { started: runs.size, skipped };
+    },
+    async worktreePrMergeInfo(path, number) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const pr = prs.get(path);
+      if (!pr || pr.number !== number) return reject("pr_not_found");
+      return structuredClone(mergeInfo.get(path) ?? DEFAULT_MERGE_INFO);
+    },
+    async worktreePrMerge(path, number, _method, headOid) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const pr = prs.get(path);
+      if (!pr || pr.number !== number) return reject("pr_not_found");
+      const block: MergeBlock | null | undefined = mergeInfo.get(path)?.block;
+      if (block) return reject("merge_blocked", block);
+      if (headOid !== (seed.prHeads?.[path] ?? MOCK_HEAD)) return reject("pr_head_moved");
+      prs.set(path, { ...pr, state: "merged" });
     },
     async worktreePrOpen(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

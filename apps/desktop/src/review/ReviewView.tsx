@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { TreeView } from "@xdev-asia/ui";
+import { SearchInput, TreeView } from "@xdev-asia/ui";
 import { reviewRows } from "./reviewRows";
 import type { JSX } from "react";
 import { toApiError, type Api, type ReviewData, type ReviewFile, type ReviewNote } from "@/api";
@@ -12,6 +12,7 @@ import type { TabStatus } from "@/workspace/status";
 import { BasePicker } from "./BasePicker";
 import { FileDiff, type DiffHandle } from "./FileDiff";
 import { nextChange, type ChangeAt } from "./navigate";
+import { postBlock } from "./postable";
 import { sortNotes } from "./notes";
 import { noteLabel } from "./NoteCard";
 import { SendNotesMenu } from "./SendNotesMenu";
@@ -33,13 +34,22 @@ const LETTER: Record<ReviewFile["kind"], string> = { added: "A", modified: "M", 
  * It reads again when the window gets focus, after staging, and when an agent of the worktree
  * goes quiet.
  */
-export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessions | null; reveal?: { file: string; seq: number } }): JSX.Element {
+export function ReviewView(props: {
+  api: Api;
+  worktree: string;
+  sessions?: Sessions | null;
+  reveal?: { file: string; seq: number };
+  /** Posts a note to the PR as an inline comment. Left out, the view uses the worktree's own open PR. */
+  onPostToPr?: (note: ReviewNote) => Promise<void>;
+}): JSX.Element {
   const { api, worktree, sessions, reveal } = props;
   const { t } = useI18n();
   // Starts from the diff settings; what is changed here stays in this view until "Save as default".
   const [opts, setOpts] = useState<ViewOptions>(() => fromDiffSettings(DIFF_DEFAULTS, readLocalView(storage())));
   const [saved, setSaved] = useState<DiffSettings>(DIFF_DEFAULTS);
   const [data, setData] = useState<ReviewData | null>(null);
+  const [filter, setFilter] = useState("");
+  const [selected, setSelected] = useState<string | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -58,6 +68,46 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
   const cursor = useRef<ChangeAt | null>(null);
   const drag = useRef<{ x: number; width: number } | null>(null);
   const store = useReviewNotes(api, worktree);
+  const [openPr, setOpenPr] = useState<number | null>(null);
+  // The PR head on GitHub, read again after every review read (a push does not move the local HEAD).
+  const [prHead, setPrHead] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.worktreePr(worktree).then(
+      (pr) => live && setOpenPr(pr && (pr.state === "open" || pr.state === "draft") ? pr.number : null),
+      () => live && setOpenPr(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, worktree]);
+  useEffect(() => {
+    if (openPr === null) {
+      setPrHead(null);
+      return;
+    }
+    let live = true;
+    api.worktreePrHead(worktree, openPr).then(
+      (head) => live && setPrHead(head),
+      () => live && setPrHead(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, worktree, openPr, rev]);
+  const postToPr =
+    props.onPostToPr ??
+    (openPr === null
+      ? undefined
+      : (note: ReviewNote) =>
+          api.worktreePrCommentPost(worktree, openPr, {
+            body: note.body,
+            replyTo: null,
+            commit: data?.headOid ?? null,
+            path: note.file,
+            line: note.line,
+            startLine: note.startLine === note.line ? null : note.startLine,
+          }));
   const [listing, setListing] = useState(false);
   // Folder ids (`path/`) of the tree that are folded; local to this view.
   const [closed, setClosed] = useState<string[]>([]);
@@ -160,6 +210,10 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
   }, [api, worktree, sessions]);
 
   const files = data?.files ?? [];
+  const needle = filter.trim().toLowerCase();
+  const shown = needle ? files.filter((f) => f.path.toLowerCase().includes(needle)) : files;
+  // The clicked file stays marked only while it is still in the review.
+  const active = selected !== null && files.some((f) => f.path === selected) ? selected : undefined;
   const isOpen = (path: string) => expanded[path] ?? files.length <= OPEN_LIMIT;
 
   function setOption(patch: Partial<ViewOptions>): void {
@@ -182,6 +236,7 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
   }
 
   function show(path: string): void {
+    setSelected(path);
     setExpanded({ ...expanded, [path]: true });
     setTarget({ file: path, seq: target.seq + 1 });
   }
@@ -296,17 +351,29 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
       {files.length > 0 && data && (
         <div className="rv-main">
           <nav className="rv-list" style={{ width }} aria-label={t("review.list")}>
+            <SearchInput
+              size="sm"
+              className="rv-filter"
+              value={filter}
+              placeholder={t("review.filter")}
+              aria-label={t("review.filter")}
+              labels={{ clear: t("review.filter.clear") }}
+              onChange={(e) => setFilter(e.target.value)}
+              onClear={() => setFilter("")}
+            />
+            {shown.length === 0 && <p className="ws-empty">{t("review.filter.none")}</p>}
             {opts.tree ? (
               <TreeView
-                rows={reviewRows(files, new Set(closed))}
+                rows={reviewRows(shown, new Set(closed))}
+                selected={active}
                 labels={{ tree: t("review.tree"), changed: t("review.tree.changed"), marks: { added: t("review.kind.added"), modified: t("review.kind.modified"), deleted: t("review.kind.deleted") } }}
                 onToggle={(id) => setClosed(closed.includes(id) ? closed.filter((c) => c !== id) : [...closed, id])}
                 onOpen={show}
               />
             ) : (
               <>
-              {files.map((f) => (
-                <button key={f.path} type="button" className="rv-list-item" data-path={f.path} title={f.path} onClick={() => show(f.path)}>
+              {shown.map((f) => (
+                <button key={f.path} type="button" className="rv-list-item" data-path={f.path} aria-current={f.path === active ? "true" : undefined} title={f.path} onClick={() => show(f.path)}>
                   <span className="rv-letter ws-mono" data-kind={f.kind} aria-hidden="true">
                     {LETTER[f.kind]}
                   </span>
@@ -372,6 +439,8 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
                   add: (range, body) => void store.add(f.path, range.startLine, range.line, range.anchor, body),
                   edit: (id, body) => void store.edit(id, body),
                   remove: (id) => void store.remove(id),
+                  post: postToPr,
+                  postBlock: props.onPostToPr ? undefined : (note) => postBlock(note, data, prHead),
                 }}
                 onRead={(path, text) => void store.reanchorFile(path, text)}
                 onChunks={(path, count) => setCounts((c) => (c[path] === count ? c : { ...c, [path]: count }))}

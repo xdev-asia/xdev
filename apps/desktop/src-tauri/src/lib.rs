@@ -7,12 +7,16 @@ mod atomic;
 mod bindings;
 mod cli_path;
 mod cli_verbs;
+mod clipboard;
 mod commands;
 mod endpoint;
+mod file_watch;
 mod files;
+mod history;
 mod hooks;
 mod issues;
 mod keybindings;
+mod keyboard;
 mod kit;
 mod layout;
 mod links;
@@ -21,7 +25,9 @@ mod orch_pump;
 mod orch_skill;
 mod orch_sweep;
 mod orchestration;
+mod ports;
 mod power;
+mod pr_review;
 mod profiles;
 mod prs;
 mod pty;
@@ -42,6 +48,7 @@ mod tasks;
 mod terminal_themes;
 mod tray;
 mod updater;
+mod usage_share;
 mod workspace;
 mod xdev_id;
 
@@ -81,6 +88,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(updater::Pending::default())
         .manage(xdev_id::XdevIdHub::production())
         .manage(updater::Phase::default())
@@ -92,8 +100,10 @@ pub fn run() {
         .manage(review_notes::ReviewNotesLock::default())
         .manage(profiles::ProfilesLock::default())
         .manage(files::Searches::default())
+        .manage(file_watch::FileWatches::default())
         .manage(status::Shown::default())
         .manage(power::Awake::default())
+        .manage(ports::Ports::default())
         .manage(cli_verbs::CliHub::default())
         .manage(orchestration::OrchHub::default())
         .manage(keybindings::LastSent::default())
@@ -191,6 +201,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_version,
+            clipboard::clipboard_image_save,
+            keyboard::keyboard_input_source,
             updater::update_status,
             updater::update_notify,
             shell::shell_close_requested,
@@ -304,6 +316,9 @@ pub fn run() {
             power::keep_awake_get,
             power::keep_awake_set,
             power::keep_awake_agents,
+            ports::ports_scan,
+            ports::ports_stop,
+            ports::ports_open,
             pty::pty_spawn,
             pty::pty_approve,
             pty::pty_write,
@@ -382,12 +397,23 @@ pub fn run() {
             files::file_rename,
             files::file_trash,
             files::file_reveal,
+            files::file_bytes,
+            files::file_open_default,
             files::files_list,
             files::files_search,
             files::files_search_cancel,
+            file_watch::files_watch,
+            file_watch::files_unwatch,
             ship::worktree_ship,
             ship::worktree_push,
             ship::worktree_pull,
+            ship::worktree_fast_forward,
+            ship::worktree_rebase_from_base,
+            history::worktree_log,
+            history::worktree_commit_files,
+            history::worktree_commit_file,
+            history::worktree_open_commit,
+            history::worktree_open_file_on_host,
             ship::worktree_sync,
             ship::worktree_fetch,
             ship::worktree_force_push,
@@ -402,6 +428,14 @@ pub fn run() {
             ship::worktree_pr,
             ship::worktree_pr_create,
             ship::worktree_pr_checks,
+            pr_review::worktree_pr_comments,
+            pr_review::worktree_pr_comment_post,
+            pr_review::worktree_pr_head,
+            pr_review::worktree_pr_thread_resolve,
+            pr_review::worktree_pr_reaction,
+            pr_review::worktree_pr_checks_rerun,
+            pr_review::worktree_pr_merge_info,
+            pr_review::worktree_pr_merge,
             ship::worktree_pr_open,
             issues::issues_list,
             issues::issue_view,
@@ -430,6 +464,8 @@ pub fn run() {
             kit::kit_skill_restore,
             kit::kit_usage,
             kit::kit_usage_report,
+            usage_share::usage_share_copy_image,
+            usage_share::usage_share_post,
             kit::kit_paths_exist,
             kit::kit_prompt_history,
             agent_sessions::agent_sessions,
@@ -503,6 +539,24 @@ mod tests {
     }
 
     #[test]
+    fn each_plugin_is_registered_once() {
+        // The builder chain is read as text: registering it needs a running app.
+        // A Windows checkout may hold CRLF line endings, so they are folded to LF first.
+        let src = include_str!("lib.rs").replace("\r\n", "\n");
+        let chain = &src[src.find("    builder\n        .plugin(").unwrap()..];
+        let chain = &chain[..chain.find(".manage(").unwrap()];
+        let mut plugins: Vec<&str> = chain
+            .split(".plugin(")
+            .skip(1)
+            .map(|p| p.split("::").next().unwrap())
+            .collect();
+        let all = plugins.len();
+        plugins.sort_unstable();
+        plugins.dedup();
+        assert_eq!(plugins.len(), all, "{chain}");
+    }
+
+    #[test]
     fn identifier_matches_core_app_id() {
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
@@ -520,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn csp_allows_data_images_only() {
+    fn csp_allows_data_and_blob_images_only() {
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         let csp = conf["app"]["security"]["csp"].as_str().unwrap();
@@ -529,7 +583,7 @@ mod tests {
             .map(str::trim)
             .find(|d| d.starts_with("img-src"))
             .unwrap();
-        assert_eq!(img, "img-src 'self' data:");
+        assert_eq!(img, "img-src 'self' data: blob:");
         assert!(!img.contains("https:") && !img.contains('*'));
     }
 

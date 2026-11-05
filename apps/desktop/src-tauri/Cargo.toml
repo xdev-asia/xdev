@@ -13,11 +13,15 @@ name = "xdev_desktop"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+arboard = { version = "3", features = ["wayland-data-control"] }
 blake3.workspace = true
+dunce = "1.0.5"
 notify-debouncer-full.workspace = true
+png = "0.18"
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = ["devtools", "image-png"] }
+tauri-plugin-clipboard-manager = "=2.5.0"
 tauri-plugin-deep-link = "2.6.3"
 tauri-plugin-dialog = "2.8.4"
 tauri-plugin-notification = "2.6.0"
@@ -25,6 +29,7 @@ tauri-plugin-opener = "2.7.2"
 tauri-plugin-single-instance = { version = "2.5.5", features = ["deep-link"] }
 tauri-plugin-updater = "2.14.1"
 uuid = { version = "1.29", features = ["v4"] }
+url.workspace = true
 trash.workspace = true
 xdev-agent.workspace = true
 xdev-ai.workspace = true
@@ -32,10 +37,12 @@ xdev-awake.workspace = true
 xdev-core.workspace = true
 xdev-git.workspace = true
 xdev-id.workspace = true
+xdev-input-source.workspace = true
 xdev-ipc.workspace = true
 xdev-kit.workspace = true
 xdev-orch.workspace = true
 xdev-policy.workspace = true
+xdev-ports.workspace = true
 xdev-pty.workspace = true
 xdev-store.workspace = true
 xdev-workspace.workspace = true
@@ -44,7 +51,6 @@ xdev-workspace.workspace = true
 tauri = { version = "2", features = ["tray-icon"] }
 
 [dev-dependencies]
-dunce = "1.0.5"
 rusqlite.workspace = true
 tempfile.workspace = true
 ts-rs.workspace = true
@@ -56,8 +62,10 @@ xdev-git = { workspace = true, features = ["ts"] }
 xdev-id = { workspace = true, features = ["ts", "test-util"] }
 xdev-kit = { workspace = true, features = ["ts"] }
 xdev-orch = { workspace = true, features = ["ts"] }
+xdev-ports = { workspace = true, features = ["ts"] }
 xdev-pty = { workspace = true, features = ["ts"] }
 xdev-workspace = { workspace = true, features = ["ts"] }
 
-[lints]
-workspace = true
+[lints.rust]
+# The process table on Windows needs the ToolHelp calls; they are allowed one by one.
+unsafe_code = "deny"

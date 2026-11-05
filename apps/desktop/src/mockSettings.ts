@@ -44,6 +44,7 @@ export const CARD_PROPS_DEFAULTS: CardProps = {
   diffStat: true,
   pr: true,
   projectChip: true,
+  ports: true,
 };
 
 /** `SidebarPrefs::default()` in Rust: every row shows, in the agent sections, as detailed cards. */
@@ -56,6 +57,8 @@ export const SIDEBAR_PREFS_DEFAULTS: SidebarPrefs = {
   sort: "manual",
   compactCards: false,
   card: CARD_PROPS_DEFAULTS,
+  projectOrder: "manual",
+  pinnedInGroups: false,
 };
 
 export { KEY_SETTINGS_DEFAULTS };
@@ -68,7 +71,7 @@ export const UI_SETTINGS_DEFAULTS: UiSettings = {
   editorThemeLight: "app",
   editorThemeDark: "app",
   sidebar: "default",
-  statusBar: { branch: true, tokenUsage: true, agents: true, version: true },
+  statusBar: { branch: true, tokenUsage: true, agents: true, version: true, ports: true },
 };
 /** `UI_FONT_MAX` in Rust. */
 export const UI_FONT_MAX = 120;

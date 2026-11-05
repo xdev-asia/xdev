@@ -9,7 +9,7 @@ import type { SettingsSectionProps } from "./sections";
 
 export const EDITOR_THEMES: EditorTheme[] = ["app", "light", "dark"];
 export const SIDEBAR_LOOKS: SidebarLook[] = ["default", "tinted"];
-export const STATUS_BAR_ITEMS = ["branch", "tokenUsage", "agents", "version"] as const satisfies readonly (keyof StatusBarItems)[];
+export const STATUS_BAR_ITEMS = ["branch", "tokenUsage", "agents", "ports", "version"] as const satisfies readonly (keyof StatusBarItems)[];
 
 const LOOK_IDS = ["appearance.theme", "appearance.font", "appearance.sidebar"];
 const EDITOR_IDS = ["appearance.editorTheme"];

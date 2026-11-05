@@ -109,3 +109,70 @@ describe("FileTabs", () => {
     expect(s.under(A, "lib").map((e) => e.rel)).toEqual(["lib/a.ts", "lib/deep/b.ts"]);
   });
 });
+
+describe("FileTabs external state", () => {
+  const ready = () => {
+    const s = new FileTabs();
+    s.open(A, "a.ts");
+    s.loaded(A, "a.ts", text("one"));
+    return s;
+  };
+
+  it("starts clear and marks a file changed, deleted or renamed", () => {
+    const s = ready();
+    expect(s.get(A, "a.ts")!.external).toBeNull();
+    s.markExternal(A, "a.ts", "changed");
+    expect(s.get(A, "a.ts")!.external).toBe("changed");
+    s.markExternal(A, "a.ts", "deleted");
+    expect(s.get(A, "a.ts")!.external).toBe("deleted");
+    s.markExternal(A, "a.ts", "renamed");
+    expect(s.get(A, "a.ts")!.external).toBe("renamed");
+    s.markExternal(A, "a.ts", null);
+    expect(s.get(A, "a.ts")!.external).toBeNull();
+  });
+
+  it("changes nothing, and tells nobody, when the mark is the same or the file is not open", () => {
+    const s = ready();
+    const fn = vi.fn();
+    s.subscribe(fn);
+    s.markExternal(A, "a.ts", null);
+    s.markExternal(A, "nope.ts", "deleted");
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it("a load or a save clears the mark", () => {
+    const s = ready();
+    s.markExternal(A, "a.ts", "changed");
+    s.loaded(A, "a.ts", text("two", "h2"));
+    expect(s.get(A, "a.ts")!.external).toBeNull();
+    s.markExternal(A, "a.ts", "deleted");
+    s.saved(A, "a.ts", "two", "h3");
+    expect(s.get(A, "a.ts")!.external).toBeNull();
+  });
+
+  it("keepMine clears the mark and the conflict, keeps the edits, and adopts the disk hash", () => {
+    const s = ready();
+    s.edit(A, "a.ts", "mine");
+    s.markExternal(A, "a.ts", "changed");
+    s.conflict(A, "a.ts", "disk");
+    s.keepMine(A, "a.ts", "disk");
+    expect(s.get(A, "a.ts")).toMatchObject({ external: null, conflict: null, text: "mine", saved: "one", hash: "disk" });
+  });
+
+  it("restore puts a snapshot back", () => {
+    const s = ready();
+    s.edit(A, "a.ts", "mine");
+    const before = s.get(A, "a.ts")!;
+    s.loaded(A, "a.ts", text("disk", "h9"));
+    s.restore(A, "a.ts", { text: before.text, saved: before.saved, hash: before.hash, eol: before.eol });
+    expect(s.get(A, "a.ts")).toMatchObject({ text: "mine", saved: "one", hash: "h1", external: null });
+    expect(isDirty(s.get(A, "a.ts")!)).toBe(true);
+  });
+
+  it("a mark follows a rename", () => {
+    const s = ready();
+    s.markExternal(A, "a.ts", "renamed");
+    s.rename(A, "a.ts", "b.ts");
+    expect(s.get(A, "b.ts")!.external).toBe("renamed");
+  });
+});

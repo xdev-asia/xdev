@@ -1,21 +1,35 @@
-import type { Api, ApiError, Eol, FileHits, FileText, SearchQuery } from "./api";
+import type { Api, ApiError, Eol, FileHits, FileText, FsEvent, SearchQuery } from "./api";
 
 type FilesApi = Pick<
   Api,
-  "fileRead" | "fileWrite" | "fileCreate" | "fileRename" | "fileTrash" | "fileReveal" | "filesList" | "filesSearch" | "filesSearchCancel"
+  "fileRead" | "fileWrite" | "fileCreate" | "fileRename" | "fileTrash" | "fileReveal" | "fileBytes" | "fileOpenDefault" | "filesList" | "filesSearch" | "filesSearchCancel" | "filesWatch" | "filesUnwatch"
 >;
 
 export type MockFiles = FilesApi & {
   // Changes a file the way another program would (`null` deletes it); for conflict demos and tests.
   __editFile(worktree: string, rel: string, text: string | null): void;
+  // Tells every watcher of `worktree` that it overflowed; the UI re-reads everything.
+  __overflow(worktree: string): void;
+  // Every live `filesWatch` subscription.
+  __watchers(): { worktree: string; id: string }[];
   // Every `fileReveal`, oldest first.
   __fileReveals(): { worktree: string; rel: string }[];
+  // Every `fileOpenDefault`, as `worktree:rel`, oldest first.
+  __fileOpens: string[];
+  // Makes the next `fileBytes` of `rel` reject with `code` (once); for Retry tests.
+  __failBytes(rel: string, code: ApiError["code"]): void;
   // The files and the folders of `worktree` now, for its listing; null for an unknown worktree.
   tree(worktree: string): { files: string[]; dirs: Set<string> } | null;
 };
 
 /** `READ_MAX` in Rust: larger files are not read. */
 export const MOCK_READ_MAX = 2 * 1024 * 1024;
+/** `IMAGE_MAX` in Rust, scaled to the mock: larger images are not read. */
+export const MOCK_IMAGE_MAX = 20 * 1024 * 1024;
+const IMAGE = /\.(png|jpe?g|gif|webp|bmp|ico|avif|svg)$/i;
+const MEDIA = /\.(mp3|wav|ogg|oga|m4a|flac|mp4|webm|ogv|mov)$/i;
+// A 1x1 transparent PNG.
+const PIXEL = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
 const BINARY = /\.(png|jpe?g|gif|ico|webp|pdf|zip|woff2?)$/i;
 
 // A stand-in for Rust's blake3 hex: the same text gives the same hash.
@@ -67,6 +81,13 @@ export function createMockFiles(base: (worktree: string) => string[] | null): Mo
   const reveals: { worktree: string; rel: string }[] = [];
   // Search id → its current run; a cancel or a newer run makes an older one stop.
   const runs = new Map<string, number>();
+  // Watch id → its worktree and listener.
+  const watchers = new Map<string, { worktree: string; onEvent: Parameters<Api["filesWatch"]>[2] }>();
+
+  // Delivers one batch to every watcher of `worktree`, as the Rust watcher would.
+  function emit(worktree: string, events: FsEvent[]): void {
+    for (const w of [...watchers.values()]) if (w.worktree === worktree) w.onEvent({ worktree, events, failure: null });
+  }
 
   function overlay(worktree: string): Overlay {
     let o = overlays.get(worktree);
@@ -103,6 +124,9 @@ export function createMockFiles(base: (worktree: string) => string[] | null): Mo
     o.removed.delete(rel);
   }
 
+  const opens: string[] = [];
+  const failures = new Map<string, ApiError["code"]>();
+
   return {
     tree,
     async fileRead(worktree, rel) {
@@ -127,6 +151,7 @@ export function createMockFiles(base: (worktree: string) => string[] | null): Mo
       const lf = text.replace(/\r\n?/g, "\n");
       const bytes = eol === "crlf" ? lf.replace(/\n/g, "\r\n") : lf;
       put(at.o, at.p, bytes);
+      emit(worktree, [{ kind: disk === null ? "create" : "update", rel: at.p, dir: false }]);
       return { type: "saved", hash: mockHash(bytes) };
     },
     async fileCreate(worktree, rel, dir) {
@@ -139,6 +164,7 @@ export function createMockFiles(base: (worktree: string) => string[] | null): Mo
         at.o.dirs.add(at.p);
         at.o.removed.delete(at.p);
       } else put(at.o, at.p, "");
+      emit(worktree, [{ kind: "create", rel: at.p, dir }]);
     },
     async fileRename(worktree, from, to) {
       const src = open(worktree, from);
@@ -169,6 +195,10 @@ export function createMockFiles(base: (worktree: string) => string[] | null): Mo
           o.removed.delete(dst + d.slice(p.length));
         }
       }
+      emit(worktree, [
+        { kind: "delete", rel: p, dir: null },
+        { kind: "create", rel: dst, dir: isDir },
+      ]);
     },
     async fileTrash(worktree, rel) {
       const at = open(worktree, rel);
@@ -180,11 +210,31 @@ export function createMockFiles(base: (worktree: string) => string[] | null): Mo
       for (const d of t.dirs) if (within(d, p)) o.removed.add(d);
       for (const f of [...o.written.keys()]) if (within(f, p)) o.written.delete(f);
       for (const d of [...o.dirs]) if (within(d, p)) o.dirs.delete(d);
+      emit(worktree, [{ kind: "delete", rel: p, dir: null }]);
     },
     async fileReveal(worktree, rel) {
       const at = open(worktree, rel);
       if (at instanceof Promise) return at;
       reveals.push({ worktree, rel: at.p });
+    },
+    async fileBytes(worktree, rel) {
+      const at = open(worktree, rel);
+      if (at instanceof Promise) return at;
+      if (!IMAGE.test(at.p) && !MEDIA.test(at.p)) return reject("bad_name", rel);
+      const forced = failures.get(at.p);
+      if (forced !== undefined) {
+        failures.delete(at.p);
+        return reject(forced, rel);
+      }
+      if (!at.t.files.includes(at.p)) return reject("not_found", rel);
+      if (textOf(worktree, at.p).length > MOCK_IMAGE_MAX) return reject("too_large", rel);
+      return IMAGE.test(at.p) ? PIXEL.slice() : Uint8Array.of(1, 2, 3, 4);
+    },
+    async fileOpenDefault(worktree, rel) {
+      const at = open(worktree, rel);
+      if (at instanceof Promise) return at;
+      if (!IMAGE.test(at.p) && !MEDIA.test(at.p)) return reject("bad_name", rel);
+      opens.push(`${worktree}:${at.p}`);
     },
     async filesList(worktree) {
       const t = tree(worktree);
@@ -234,14 +284,32 @@ export function createMockFiles(base: (worktree: string) => string[] | null): Mo
     async filesSearchCancel(id) {
       if (runs.has(id)) runs.set(id, (runs.get(id) ?? 0) + 1);
     },
+    async filesWatch(worktree, id, onEvent) {
+      if (!tree(worktree)) return reject("worktree_unknown", worktree);
+      watchers.set(id, { worktree, onEvent });
+    },
+    async filesUnwatch(id) {
+      watchers.delete(id);
+    },
+    __watchers: () => [...watchers].map(([id, w]) => ({ worktree: w.worktree, id })),
+    __overflow: (worktree) => emit(worktree, [{ kind: "overflow", rel: "", dir: null }]),
     __editFile(worktree, rel, text) {
       const o = overlay(worktree);
+      const existed = tree(worktree)?.files.includes(rel) ?? false;
       if (text === null) {
         o.written.delete(rel);
         o.removed.add(rel);
-      } else put(o, rel, text);
+        emit(worktree, [{ kind: "delete", rel, dir: null }]);
+      } else {
+        put(o, rel, text);
+        emit(worktree, [{ kind: existed ? "update" : "create", rel, dir: false }]);
+      }
     },
     __fileReveals: () => structuredClone(reveals),
+    __fileOpens: opens,
+    __failBytes(rel, code) {
+      failures.set(rel, code);
+    },
   };
 }
 
