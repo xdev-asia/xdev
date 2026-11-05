@@ -26,6 +26,9 @@ export interface FeedEntry {
 export class ActivityFeed {
   private list: readonly FeedEntry[] = [];
   private next = 1;
+  // The entries of the latest clear, kept once so it can be undone; `undo` counts the clears.
+  private cleared: { token: number; entries: readonly FeedEntry[] } | null = null;
+  private undo = 0;
   private readonly listeners = new Set<() => void>();
 
   snapshot(): readonly FeedEntry[] {
@@ -45,10 +48,26 @@ export class ActivityFeed {
     this.emit();
   }
 
-  clear(): void {
-    if (this.list.length === 0) return;
+  /** Empties the feed and returns a token for `restore`; 0 when there was nothing to clear. */
+  clear(): number {
+    if (this.list.length === 0) return 0;
+    const token = ++this.undo;
+    this.cleared = { token, entries: this.list };
     this.list = [];
     this.emit();
+    return token;
+  }
+
+  /**
+   * Puts back what the clear that gave `token` removed, after any newer entries, still within FEED_CAP.
+   * False when a newer clear happened or the token was used.
+   */
+  restore(token: number): boolean {
+    if (!this.cleared || this.cleared.token !== token) return false;
+    this.list = [...this.list, ...this.cleared.entries].slice(0, FEED_CAP);
+    this.cleared = null;
+    this.emit();
+    return true;
   }
 
   /** Records what `sessions` reports; returns the stop. */
