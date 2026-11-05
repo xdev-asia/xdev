@@ -53,6 +53,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("appearance.statusBar.branch", "settings.appearance.statusBar.branch", ["status bar", "footer", "branch", "thanh trạng thái", "thanh trang thai", "nhánh", "nhanh"]),
   e("appearance.statusBar.tokenUsage", "settings.appearance.statusBar.tokenUsage", ["status bar", "footer", "token", "usage", "quota", "thanh trạng thái", "thanh trang thai", "mức dùng", "muc dung"]),
   e("appearance.statusBar.agents", "settings.appearance.statusBar.agents", ["status bar", "footer", "agent", "agents", "thanh trạng thái", "thanh trang thai"]),
+  e("appearance.statusBar.ports", "settings.appearance.statusBar.ports", ["status bar", "footer", "port", "ports", "localhost", "thanh trạng thái", "thanh trang thai", "cổng", "cong"]),
   e("appearance.statusBar.version", "settings.appearance.statusBar.version", ["status bar", "footer", "version", "thanh trạng thái", "thanh trang thai", "phiên bản", "phien ban"]),
   e("appearance.terminalLink", "settings.appearance.terminalLink", ["terminal", "colours", "colors", "scheme", "schemes", "import", "màu", "mau", "bảng màu", "bang mau"]),
   e("appearance.usageLink", "settings.appearance.usageLink", ["usage", "credentials", "quota", "sign in", "mức dùng", "muc dung", "đăng nhập", "dang nhap"]),
