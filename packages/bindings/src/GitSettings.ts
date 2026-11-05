@@ -50,6 +50,11 @@ autoRenameBranch: boolean,
  */
 sourceControlGroupOrder: SourceControlGroupOrder, 
 /**
+ * Logins (lowercase) treated as bots in a pull request's comments, on top
+ * of the ones GitHub marks as bots. A wrong type costs only this field.
+ */
+prBotAuthorOverrides: Array<string>, 
+/**
  * The prompts behind the agent actions. A part that does not parse
  * falls back to the defaults on its own.
  */

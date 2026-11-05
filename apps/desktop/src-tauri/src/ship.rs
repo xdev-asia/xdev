@@ -117,6 +117,12 @@ fn locate(data: &Path, path: &Path) -> Result<Known, CmdError> {
     }
 }
 
+/// The `gh` login the checkout's repo is bound to, for commands outside this
+/// module that run `gh` through `run_gh`.
+pub(crate) fn gh_account_for(data: &Path, path: &Path) -> Result<Option<GhAccount>, CmdError> {
+    Ok(locate(data, path)?.gh_account)
+}
+
 fn err(code: &'static str, detail: Option<String>) -> CmdError {
     CmdError { code, detail }
 }

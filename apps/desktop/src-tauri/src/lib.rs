@@ -23,6 +23,7 @@ mod orch_skill;
 mod orch_sweep;
 mod orchestration;
 mod power;
+mod pr_review;
 mod profiles;
 mod prs;
 mod pty;
@@ -403,6 +404,13 @@ pub fn run() {
             ship::worktree_pr,
             ship::worktree_pr_create,
             ship::worktree_pr_checks,
+            pr_review::worktree_pr_comments,
+            pr_review::worktree_pr_comment_post,
+            pr_review::worktree_pr_thread_resolve,
+            pr_review::worktree_pr_reaction,
+            pr_review::worktree_pr_checks_rerun,
+            pr_review::worktree_pr_merge_info,
+            pr_review::worktree_pr_merge,
             ship::worktree_pr_open,
             issues::issues_list,
             issues::issue_view,

@@ -1305,6 +1305,9 @@ pub struct GitRecipes {
     /// or revert in progress.
     #[serde(deserialize_with = "lenient")]
     pub resolve_conflicts: Recipe,
+    /// Asks an agent to address the review comments queued from a pull request.
+    #[serde(deserialize_with = "lenient")]
+    pub address_comments: Recipe,
 }
 
 impl Recipe {
@@ -1333,8 +1336,28 @@ impl GitRecipes {
             fix_checks: self.fix_checks.normalized(),
             branch_name: self.branch_name.normalized(),
             resolve_conflicts: self.resolve_conflicts.normalized(),
+            address_comments: self.address_comments.normalized(),
         }
     }
+}
+
+/// Most bot author overrides kept.
+pub const BOT_OVERRIDES_MAX: usize = 500;
+/// Longest login kept in the overrides.
+const BOT_LOGIN_MAX: usize = 255;
+
+/// Trimmed, lowercase, sorted and de-duplicated; blank and over-long entries
+/// dropped; cut to `BOT_OVERRIDES_MAX`.
+fn normalize_bot_overrides(logins: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = logins
+        .into_iter()
+        .map(|l| l.trim().to_lowercase())
+        .filter(|l| !l.is_empty() && l.chars().count() <= BOT_LOGIN_MAX)
+        .collect();
+    out.sort();
+    out.dedup();
+    out.truncate(BOT_OVERRIDES_MAX);
+    out
 }
 
 /// Which Source Control group is drawn first. Conflicts stay on top.
@@ -1388,6 +1411,10 @@ pub struct GitSettings {
     pub auto_rename_branch: bool,
     /// Which group Source Control draws first.
     pub source_control_group_order: SourceControlGroupOrder,
+    /// Logins (lowercase) treated as bots in a pull request's comments, on top
+    /// of the ones GitHub marks as bots. A wrong type costs only this field.
+    #[serde(deserialize_with = "lenient")]
+    pub pr_bot_author_overrides: Vec<String>,
     /// The prompts behind the agent actions. A part that does not parse
     /// falls back to the defaults on its own.
     #[serde(deserialize_with = "lenient")]
@@ -1409,6 +1436,7 @@ impl Default for GitSettings {
             pr_open_after_create: false,
             auto_rename_branch: true,
             source_control_group_order: SourceControlGroupOrder::default(),
+            pr_bot_author_overrides: Vec::new(),
             recipes: GitRecipes::default(),
         }
     }
@@ -1419,6 +1447,7 @@ impl GitSettings {
     pub fn normalized(mut self) -> GitSettings {
         self.branch_prefix_custom = xdev_workspace::normalize_prefix(&self.branch_prefix_custom);
         self.recipes = self.recipes.normalized();
+        self.pr_bot_author_overrides = normalize_bot_overrides(self.pr_bot_author_overrides);
         self
     }
 
@@ -1603,6 +1632,7 @@ mod tests {
                 pr_open_after_create: true,
                 auto_rename_branch: false,
                 source_control_group_order: SourceControlGroupOrder::StagedFirst,
+                pr_bot_author_overrides: vec!["renovate".into()],
                 recipes: GitRecipes::default(),
             },
             status: StatusSettings {
@@ -1736,6 +1766,51 @@ mod tests {
             ..GitSettings::default()
         };
         assert_eq!(bad.normalized().branch_prefix_custom, "a b");
+    }
+
+    #[test]
+    fn bot_overrides_are_lowercased_sorted_deduped_and_capped() {
+        let long = "x".repeat(256);
+        let fit = "y".repeat(255);
+        let git = GitSettings {
+            pr_bot_author_overrides: vec![
+                " Zed ".into(),
+                "alpha".into(),
+                "ALPHA".into(),
+                "  ".into(),
+                long,
+                fit.clone(),
+            ],
+            ..GitSettings::default()
+        }
+        .normalized();
+        assert_eq!(git.pr_bot_author_overrides, ["alpha", fit.as_str(), "zed"]);
+
+        let many: Vec<String> = (0..BOT_OVERRIDES_MAX + 20)
+            .map(|i| format!("b{i:04}"))
+            .collect();
+        let capped = GitSettings {
+            pr_bot_author_overrides: many,
+            ..GitSettings::default()
+        }
+        .normalized();
+        assert_eq!(capped.pr_bot_author_overrides.len(), BOT_OVERRIDES_MAX);
+    }
+
+    #[test]
+    fn an_old_git_section_loads_and_a_wrong_override_type_costs_only_that_field() {
+        let old: GitSettings = serde_json::from_str(r#"{ "branchPrefix": "none" }"#).unwrap();
+        assert!(old.pr_bot_author_overrides.is_empty());
+        assert_eq!(old.recipes.address_comments, Recipe::default());
+
+        let bad: GitSettings = serde_json::from_str(
+            r#"{ "branchPrefix": "none", "prBotAuthorOverrides": "oops",
+                 "recipes": { "addressComments": 3 } }"#,
+        )
+        .unwrap();
+        assert_eq!(bad.branch_prefix, BranchPrefixMode::None);
+        assert!(bad.pr_bot_author_overrides.is_empty());
+        assert_eq!(bad.recipes.address_comments, Recipe::default());
     }
 
     #[test]
