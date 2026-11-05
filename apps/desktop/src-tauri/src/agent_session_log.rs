@@ -6,7 +6,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
 use tauri::State;
-use xdev_kit::{Agent, Home, SessionIndex, TextRole, tail_turns};
+use xdev_kit::{Agent, Home, SessionIndex, TextRole, claude_window, context_usage, tail_turns};
 
 use crate::agent_sessions::{index_copy, refresh_all};
 use crate::commands::{AppState, CmdError};
@@ -173,6 +173,52 @@ fn tail_bounds(turns: Option<u32>, chars: Option<u32>) -> (usize, usize) {
         turns.unwrap_or(TAIL_TURNS as u32).clamp(1, TURNS_MAX) as usize,
         chars.unwrap_or(TURN_CHARS as u32).clamp(1, CHARS_MAX) as usize,
     )
+}
+
+/// How full the context of a session is: tokens used out of the model's window.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ContextUsage {
+    pub tokens: f64,
+    pub window: f64,
+    pub model: Option<String>,
+}
+
+/// The context usage of one agent session, from the end of its log; `None`
+/// when the session or its usage is unknown (shown as nothing, not as zero).
+/// `session` is the CLI's session id or the full `<home id>:<id>` key.
+#[tauri::command(async)]
+pub fn agent_context_usage(
+    state: State<'_, AppState>,
+    session: String,
+) -> Result<Option<ContextUsage>, CmdError> {
+    let ctx = Ctx::of(&state)?;
+    let index = index_copy(&ctx.data);
+    let Some(key) = index
+        .sessions
+        .values()
+        .find(|s| s.key == session || s.id == session)
+        .map(|s| s.key.clone())
+    else {
+        return Ok(None);
+    };
+    let (home, file) = session_log(&index, &ctx.homes(), &key)?;
+    Ok(usage_of(&home, &file))
+}
+
+fn usage_of(home: &Home, file: &Path) -> Option<ContextUsage> {
+    let found = context_usage(home, file)?;
+    let window = found.window.unwrap_or_else(|| match home.agent {
+        Agent::Claude => claude_window(found.model.as_deref(), found.tokens),
+        // A Codex log without a window: unknown, so the chip is hidden.
+        Agent::Codex => 0,
+    });
+    (window > 0).then_some(ContextUsage {
+        tokens: found.tokens as f64,
+        window: window as f64,
+        model: found.model,
+    })
 }
 
 /// The path of a session's log.

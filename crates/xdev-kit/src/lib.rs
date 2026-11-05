@@ -25,7 +25,8 @@ pub use skills::{
     scan_skills,
 };
 pub use transcripts::{
-    TailTurn, TextRole, TranscriptEvent, TranscriptText, scan_transcripts, tail_turns,
+    ContextUsage, TailTurn, TextRole, TranscriptEvent, TranscriptText, claude_window,
+    context_usage, scan_transcripts, tail_turns,
 };
 pub use usage::{
     RefreshStats, SessionUsage, Tokens, UsageIndex, UsageQuery, UsageSummary, summarize,

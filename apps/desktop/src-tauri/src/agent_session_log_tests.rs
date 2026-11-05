@@ -169,3 +169,16 @@ fn tail_bounds_fill_defaults_and_clamp() {
     assert_eq!(tail_bounds(Some(9_999), Some(99_999)), (200, 8_000));
     assert_eq!(tail_bounds(Some(20), Some(500)), (20, 500));
 }
+
+#[test]
+fn context_usage_of_a_log_has_a_window_or_is_unknown() {
+    let (_dir, home, _index, file) = fixture();
+    // The user-only log has no usage: unknown, not zero.
+    assert_eq!(usage_of(&home, &file), None);
+    let usage = "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-sonnet-5-5\",\"usage\":{\"input_tokens\":5,\"cache_read_input_tokens\":45000}}}\n";
+    fs::write(&file, format!("{LINE}{usage}")).unwrap();
+    let got = usage_of(&home, &file).unwrap();
+    assert_eq!((got.tokens, got.window), (45_005.0, 200_000.0));
+    assert_eq!(got.model.as_deref(), Some("claude-sonnet-5-5"));
+    assert_eq!(usage_of(&home, &file.with_extension("missing")), None);
+}
