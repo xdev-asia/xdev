@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { Badge, Heatmap } from "@xdev-asia/ui";
+import { Badge, Button, Heatmap } from "@xdev-asia/ui";
 import { toApiError, type Account, type AppStatsView, type Agent, type Quota, type ApiError, type UsageDisplay, type UsageReport, type UsageScope, type UsageSettings } from "@/api";
 import { useI18n } from "@/i18n";
+import { openForeignTerms } from "@/foreignTerms/foreignTermsEvents";
 import { formatBusy } from "@/stats/formatBusy";
 import { dayRange, displayPath, formatCount, localDay, totalOf, type Tokens } from "@/kit/kitUi";
 import type { ShareCardData } from "@/kit/shareCard";
@@ -284,6 +285,16 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
           )}
         </section>
       )}
+
+      <section className="kit-block" data-foreign-terms aria-label={t("foreignTerms.title")}>
+        <h3 className="kit-h">{t("foreignTerms.title")}</h3>
+        <p className="settings-hint">{t("foreignTerms.statsHint")}</p>
+        <div>
+          <Button variant="secondary" icon="terminal" onClick={openForeignTerms}>
+            {t("foreignTerms.show")}
+          </Button>
+        </div>
+      </section>
 
       <div className="ws-fields usage-controls">
         <label className="ws-field">

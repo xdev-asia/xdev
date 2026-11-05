@@ -42,6 +42,8 @@ import { startAutoSleep } from "./autoSleep";
 import { startKeepAwakeReport } from "@/status/keepAwake";
 import { flash } from "./flash";
 import { startBusyReport } from "@/stats/busyReport";
+import { startNotchReport } from "@/notch/notchReport";
+import { ForeignTermsHost } from "@/foreignTerms/ForeignTermsHost";
 import { currentCloseWindow, openRestoredFile, restoreLayout, sessionFallback, startLayoutSave, undoRestore } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
@@ -666,6 +668,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => {
     if (!sessions) return;
     return startBusyReport(api, sessions);
+  }, [api, sessions]);
+
+  // The agent tabs for the macOS status strip at the notch; the backend picks what it shows.
+  useEffect(() => {
+    if (!sessions) return;
+    return startNotchReport(api, sessions, (key, vars) => live.t(key, vars));
   }, [api, sessions]);
 
   // A pane nobody looks at that wants the person: OS notification, sound, and the jump back on a click.
@@ -2491,6 +2499,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       />
       <CrashHost api={api} />
       <MissionHost api={api} focusTab={jumpTo} frontTab={() => (current ? shownTab[current.path] ?? null : null)} />
+      <ForeignTermsHost
+        api={api}
+        onOpenFolder={(path) => void addPaths([path], true)}
+        onResume={(row) => {
+          if (!sessions || !row.worktree) return;
+          jumpTo(confirmResume(sessions, { row, worktree: row.worktree }).id);
+        }}
+      />
       <Toasts />
       {adding && (
         <AddProjectDialog
