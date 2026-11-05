@@ -555,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn csp_allows_data_images_only() {
+    fn csp_allows_data_and_blob_images_only() {
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         let csp = conf["app"]["security"]["csp"].as_str().unwrap();
@@ -564,7 +564,7 @@ mod tests {
             .map(str::trim)
             .find(|d| d.starts_with("img-src"))
             .unwrap();
-        assert_eq!(img, "img-src 'self' data:");
+        assert_eq!(img, "img-src 'self' data: blob:");
         assert!(!img.contains("https:") && !img.contains('*'));
     }
 
