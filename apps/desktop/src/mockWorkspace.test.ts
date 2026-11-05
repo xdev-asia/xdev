@@ -91,6 +91,13 @@ describe("mock workspace", () => {
     await expect(api.worktreeRemove(repo.path, true, true)).rejects.toMatchObject({ code: "primary_worktree" });
   });
 
+  it("keeps a branch not made here even when force and deleteUnmerged are set", async () => {
+    const api = createMockWorkspace();
+    const [repo] = await api.workspaceList();
+    const { worktree: wt } = await api.worktreeCreate(repo.id, "", null, { existing: "develop", sparse: [] });
+    expect(await api.worktreeRemove(wt.path, true, true, true)).toMatchObject({ deletedBranch: null, kept: { branch: "develop" } });
+  });
+
   it("removes a clean worktree without force", async () => {
     const api = createMockWorkspace();
     await api.worktreeRemove("/demo/wt/xdev-elm", false, true);
@@ -450,6 +457,31 @@ describe("mock repo hooks", () => {
     await api.worktreeCreate(repo.id, long, null);
     expect((await api.worktreeCreate(repo.id, long, null)).worktree.branch).toBe(`${"a".repeat(46)}-2`);
     expect((await api.worktreeCreate(repo.id, "🚀 launch", null)).worktree).toMatchObject({ branch: "launch", title: "🚀 launch" });
+  });
+
+  it("puts a worktree on an existing local branch and refuses a taken or unknown one", async () => {
+    const api = createMockWorkspace();
+    const [repo] = await api.workspaceList();
+    const { worktree: wt } = await api.worktreeCreate(repo.id, "", null, { existing: "develop", sparse: [] });
+    expect(wt).toMatchObject({ branch: "develop", name: "develop", autoName: false });
+    expect(await api.worktreeRemove(wt.path, false, true)).toMatchObject({ deletedBranch: null });
+    await expect(api.worktreeCreate(repo.id, "", null, { existing: "main", sparse: [] })).rejects.toMatchObject({ code: "branch_in_use" });
+    await expect(api.worktreeCreate(repo.id, "", null, { existing: "nope", sparse: [] })).rejects.toMatchObject({ code: "bad_ref" });
+  });
+
+  it("checks the sparse folders", async () => {
+    const api = createMockWorkspace();
+    const [repo] = await api.workspaceList();
+    for (const bad of ["../out", "/abs", "-x", "a\\..\\b", "a//b", "a/./b", "C:x", "a\u0007", "\\abs"]) {
+      await expect(api.worktreeCreate(repo.id, "s", null, { existing: null, sparse: [bad] })).rejects.toMatchObject({ code: "bad_sparse" });
+    }
+    await expect(api.worktreeCreate(repo.id, "s", null, { existing: null, sparse: Array.from({ length: 51 }, (_, i) => `d${i}`) })).rejects.toMatchObject({ code: "bad_sparse" });
+    expect((await api.worktreeCreate(repo.id, "s", null, { existing: null, sparse: ["src", "docs/api"] })).worktree.branch).toBe("s");
+    // Duplicates count once, so 51 entries of which one repeats are fine.
+    const dup = [...Array.from({ length: 50 }, (_, i) => `d${i}`), "d0", "./d1/"];
+    expect((await api.worktreeCreate(repo.id, "s3", null, { existing: null, sparse: dup })).worktree.branch).toBe("s3");
+    // Blank entries are skipped, as the desktop does.
+    expect((await api.worktreeCreate(repo.id, "s2", null, { existing: null, sparse: [" ", ""] })).worktree.branch).toBe("s2");
   });
 
   it("previews the name a create would get, without making anything", async () => {

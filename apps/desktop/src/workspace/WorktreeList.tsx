@@ -1,23 +1,27 @@
 import { useEffect, useState } from "react";
+import { Badge } from "@xdev-asia/ui";
 import type { JSX } from "react";
-import type { ApiError, Check, FolderEntry, KeptView, OpenInApp, OpenTarget, PrView, PtyProfile, RepoGroup, RepoView, SidebarItem, SidebarPrefs, WorktreeStat, WorktreeView } from "@/api";
+import type { ApiError, Check, FolderEntry, KeptView, LivePort, OpenInApp, OpenTarget, PrView, PtyProfile, RepoGroup, RepoView, SidebarItem, SidebarPrefs, WorkStatus, WorktreeStat, WorktreeView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { useI18n } from "@/i18n";
 import { profileLetter, profileName, useProfiles } from "@/agents/profileStore";
 import { ago } from "./ago";
 import { cardParts } from "./cardModel";
 import { groupBy, orderedWorktrees, type Section } from "./groups";
+import { orderItems } from "./projectOrder";
 import { recentSnapshot, sortEntries, type RecentSnapshot } from "./sidebarSort";
 import type { PendingCreate } from "./pendingCreates";
 import { checksSummary } from "./ship";
 import type { TabStatus } from "./status";
 import { StatusGlyph } from "./StatusGlyph";
+import { childrenOf, parentCandidates, parentOf } from "./lineage";
 import { folderMenuItems, groupMenuItems, projectMenuItems, worktreeMenuItems } from "./worktreeMenu";
 import { dropMove, flattenRepos, moveTarget, nestRows, pinnedEntries, visibleEntries, type Move, type NestRow, type WtEntry } from "./sidebarModel";
 import { RepoBadge } from "./RepoBadge";
 import { SidebarFilters } from "./SidebarFilters";
 import { SidebarOptions } from "./SidebarOptions";
 import { WorkItemChip } from "./WorkItemChip";
+import { PortsChip, PortsPopover } from "./PortsChip";
 import { ContextMenu } from "@/ui/ContextMenu";
 
 type T = ReturnType<typeof useI18n>["t"];
@@ -51,10 +55,24 @@ export interface WorktreeListProps {
   /** Opens the review of the branches a repo kept. */
   onReviewBranches?(repoId: string): void;
   onEditDetails?(worktree: WorktreeView): void;
+  /** Opens the parent picker; without it the menu has no lineage items. */
+  onSetParent?(worktree: WorktreeView): void;
+  /** Clears a worktree's parent. */
+  onRemoveParent?(worktree: WorktreeView): void;
+  /** Opens the delete dialog with the nested worktrees ticked. */
+  onDeleteNested?(worktree: WorktreeView): void;
+  /** Sets the work status (null clears it); without it the menu has no Move to status. */
+  onMoveStatus?(worktree: WorktreeView, status: WorkStatus | null): void;
   onRenameBranch?(worktree: WorktreeView): void;
   onArchive?(worktree: WorktreeView): void;
   /** A click on a work item chip: the shell copies the URL. */
   onCopyLink?(url: string): void;
+  /** The live ports of each worktree path; a path with none shows no chip. */
+  ports?: Record<string, LivePort[] | undefined>;
+  /** Browser, copy and stop for a port; the stop resolves once the process is gone. */
+  onOpenPort?(port: LivePort): void;
+  onCopyPort?(port: LivePort): void;
+  onStopPort?(worktree: WorktreeView, port: LivePort): Promise<void>;
   selected: string | null;
   /** The status dot of each worktree path; null shows none. */
   dots: Record<string, TabStatus | null>;
@@ -89,6 +107,14 @@ export interface WorktreeListProps {
   onMarkUnread?(worktree: WorktreeView): void;
   /** Marks an unread worktree read; the menu offers it in place of "Mark unread" while the row is unread. */
   onMarkRead?(worktree: WorktreeView): void;
+  /** Worktree paths whose tabs are all asleep; the row says so and its menu offers Wake. */
+  asleep?: Record<string, boolean>;
+  /** Worktree paths with no awake tab (false); the menu leaves Sleep out for them. A path not listed is sleepable. */
+  sleepable?: Record<string, boolean>;
+  /** Puts a worktree's tabs to sleep; without it the menu has no such item. */
+  onSleep?(worktree: WorktreeView): void;
+  /** Wakes a sleeping worktree's tabs. */
+  onWake?(worktree: WorktreeView): void;
   /** The Open In apps, in order; the Open in menu lists them above File Manager. */
   openInApps?: OpenInApp[];
   /** Opens a worktree or repo folder in an app or the file manager. */
@@ -133,6 +159,9 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const [pinnedShut, setPinnedShut] = useState(false);
   // The id being dragged in the project list.
   const [dragging, setDragging] = useState<string | null>(null);
+  // The worktree whose live ports popover is open, where it opens, and the pid whose Stop asks again.
+  const [portsOpen, setPortsOpen] = useState<{ worktree: WorktreeView; at: { x: number; y: number } } | null>(null);
+  const [stopAsk, setStopAsk] = useState<number | null>(null);
   const prefs = props.prefs ?? SIDEBAR_PREFS_DEFAULTS;
   const tree = props.items;
   // The repos whose "Found outside xDev" group is open; all start closed.
@@ -189,6 +218,8 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         {summary && <span className="ws-dot" data-check={summary} aria-hidden="true" />}
       </span>
     );
+    const livePorts = parts.has("ports") ? (props.ports?.[wt.path] ?? []) : [];
+    const portsNode = livePorts.length > 0 && props.onStopPort && <PortsChip count={livePorts.length} onOpen={(at) => setPortsOpen({ worktree: wt, at })} />;
     const showAgents = parts.has("agents") ? agents : [];
     const showStatus = parts.has("workStatus") ? wt.status : null;
     const showItem = parts.has("workItem") ? wt.item : null;
@@ -222,9 +253,11 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
               {wt.title ?? wt.name}
             </span>
             {wt.pinned && <PinMark t={t} />}
+            {props.asleep?.[wt.path] === true && <Badge>{t("sleep.badge")}</Badge>}
             {seen !== null && parts.has("time") && <span className="ws-wt-time">{ago(seen, props.now ?? Date.now(), t)}</span>}
             {compact && statNode}
             {compact && prNode}
+            {compact && portsNode}
           </span>
           {!compact && (parts.has("branch") || parts.has("projectChip") || wt.primary) && (
           <span className="ws-wt-sub">
@@ -254,7 +287,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
               {wt.comment.split("\n")[0]}
             </span>
           )}
-          {!compact && (showAgents.length > 0 || statNode || prNode || showStatus || showItem || showCli != null) && (
+          {!compact && (showAgents.length > 0 || statNode || prNode || portsNode || showStatus || showItem || showCli != null) && (
             <span className="ws-wt-meta">
               {showStatus && (
                 <span className="ws-chip ws-wt-status" data-work={showStatus}>
@@ -273,6 +306,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
                 </span>
               ))}
               <span className="ws-wt-spacer" />
+              {portsNode}
               {statNode}
               {prNode}
             </span>
@@ -305,11 +339,15 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   };
 
   const repoList = flattenRepos(tree ?? []);
-  const entries: Entry[] = repoList.flatMap((repo) => repo.worktrees.map((wt) => ({ path: wt.path, wt, repo })));
-  // The recent order is a snapshot: retaken when the sort, the set of worktrees or the window focus changes.
-  const snapshot = recentSnapshot(recent, { sort: prefs.sort, paths: entries.map((e) => e.path), activity: props.activity, focus });
+  const manualEntries: Entry[] = repoList.flatMap((repo) => repo.worktrees.map((wt) => ({ path: wt.path, wt, repo })));
+  // The recent order is a snapshot: retaken when the sort, the project order, the set of worktrees or the window focus changes.
+  const snapshot = recentSnapshot(recent, { sort: prefs.sort, projectOrder: prefs.projectOrder, paths: manualEntries.map((e) => e.path), activity: props.activity, focus });
   if (snapshot !== recent) setRecent(snapshot);
-  const sortRows = <T extends { path: string }>(list: readonly T[]): T[] => sortEntries(list, prefs.sort, snapshot.activity);
+  // Recent project order: repo headings and project sections follow the newest output; dragging is off.
+  const projectsByRecent = prefs.projectOrder === "recent";
+  const drawnTree = projectsByRecent ? orderItems(tree ?? [], snapshot.activity) : (tree ?? []);
+  const entries: Entry[] = projectsByRecent ? flattenRepos(drawnTree).flatMap((repo) => repo.worktrees.map((wt) => ({ path: wt.path, wt, repo }))) : manualEntries;
+  const sortRows = <T extends { path: string }>(list: readonly T[]): T[] => sortEntries(list, prefs.sort, snapshot.activity, (path) => props.dots[path]);
   // The repo is named on a row only when more than one repo is listed.
   const many = repoList.length > 1;
   const shown = visibleEntries(entries, prefs, props.selected);
@@ -319,14 +357,17 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const pinnedPaths = new Set(pinnedRows.map((r) => r.entry.path));
   // Sections come from the rows in sidebar order, so a sort never reorders the sections; it sorts inside each.
   const sections = groupBy(
-    shown.entries.filter((e) => !pinnedPaths.has(e.path)),
+    shown.entries.filter((e) => prefs.pinnedInGroups || !pinnedPaths.has(e.path)),
     prefs.groupBy,
     { dotOf: (path) => props.dots[path] ?? null, prOf: (path) => props.prs?.[path]?.pr?.state ?? null },
   ).map((s): Section<NestRow> => ({ ...s, items: nestRows(sortRows(s.items), new Set(folded)) }));
   const gone = repoList.filter((repo) => repo.missing);
+  // A pinned row drawn twice (Pinned in groups) is listed once, at its first place.
   const order = [
-    ...(pinnedShut ? [] : pinnedRows.map((r) => r.entry.path)),
-    ...orderedWorktrees(sections.map((s) => ({ key: s.key, items: s.items.map((r) => ({ path: r.entry.path })) })), collapsed),
+    ...new Set([
+      ...(pinnedShut ? [] : pinnedRows.map((r) => r.entry.path)),
+      ...orderedWorktrees(sections.map((s) => ({ key: s.key, items: s.items.map((r) => ({ path: r.entry.path })) })), collapsed),
+    ]),
   ];
   const { onOrder } = props;
   useEffect(() => onOrder?.(order), [order.join(",")]);
@@ -509,8 +550,9 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   };
   // Drag and Alt+Arrow on a heading reorder repos, folders and groups.
   const reorder = (id: string) => ({
-    draggable: props.onReorder !== undefined || props.onGroupMove !== undefined,
+    draggable: !projectsByRecent && (props.onReorder !== undefined || props.onGroupMove !== undefined),
     onDragStart: (e: { dataTransfer?: { setData?(type: string, value: string): void }; stopPropagation?(): void }) => {
+      if (projectsByRecent) return;
       e.stopPropagation?.();
       e.dataTransfer?.setData?.("text/plain", id);
       setDragging(id);
@@ -527,7 +569,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       if (from) apply(dropMove(tree ?? [], from, id));
     },
     onKeyDown: (e: { key: string; altKey: boolean; target: unknown; currentTarget: unknown; preventDefault(): void }) => {
-      if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown") || e.target !== e.currentTarget) return;
+      if (projectsByRecent || !e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown") || e.target !== e.currentTarget) return;
       e.preventDefault();
       apply(moveTarget(tree ?? [], id, e.key === "ArrowUp" ? -1 : 1));
     },
@@ -629,6 +671,20 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       moveToGroup: props.onGroupMove && ((group: string | null) => props.onGroupMove?.(id, group, group === null ? (tree ?? []).length : 0)),
       newGroup: props.onNewGroup,
     });
+    // The parent items; Open is offered only while the parent row is in the list.
+    const lineageMenu = (wt: WorktreeView, repo: RepoView) => {
+      const parent = parentOf(wt, repo.worktrees);
+      const parentShown = parent !== null && shownPaths.has(parent.path);
+      return {
+        parentPath: parent?.path ?? null,
+        canSetParent: parentCandidates(wt, repo.worktrees).length > 0,
+        onSetParent: props.onSetParent && (() => props.onSetParent?.(wt)),
+        onOpenParent: parentShown && parent ? () => props.onSelect(parent) : undefined,
+        onRemoveParent: props.onRemoveParent && (() => props.onRemoveParent?.(wt)),
+        children: childrenOf(wt, repo.worktrees).length,
+        onDeleteNested: props.onDeleteNested && (() => props.onDeleteNested?.(wt)),
+      };
+    };
     if (menu.kind === "worktree") {
       const wt = entries.find((e) => e.path === menu.key)?.wt;
       if (!wt) return null;
@@ -644,8 +700,14 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         onMarkRead: props.onMarkRead && (() => props.onMarkRead?.(wt)),
         onRemove: () => props.onRemove(wt),
         onEditDetails: props.onEditDetails && (() => props.onEditDetails?.(wt)),
+        ...lineageMenu(wt, entries.find((e) => e.path === menu.key)!.repo),
+        onMoveStatus: props.onMoveStatus && ((status: WorkStatus | null) => props.onMoveStatus?.(wt, status)),
         onRenameBranch: props.onRenameBranch && (() => props.onRenameBranch?.(wt)),
         onArchive: props.onArchive && (() => props.onArchive?.(wt)),
+        asleep: props.asleep?.[wt.path] === true,
+        sleepable: props.sleepable?.[wt.path] !== false,
+        onSleep: props.onSleep && (() => props.onSleep?.(wt)),
+        onWake: props.onWake && (() => props.onWake?.(wt)),
       });
     } else if (menu.kind === "folder") {
       const folder = folderOf(menu.key);
@@ -725,7 +787,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         )}
         {hasProjects && (
           <ul className="ws-repos" aria-label={t("project.heading")}>
-            {(tree ?? []).flatMap(projectItem)}
+            {drawnTree.flatMap(projectItem)}
           </ul>
         )}
         {withFound.map(foundGroup)}
@@ -751,6 +813,10 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         </p>
       )}
       {openMenuNode()}
+      {portsOpen && <PortsPopover ports={props.ports?.[portsOpen.worktree.path] ?? []} at={portsOpen.at} confirming={stopAsk} onOpenBrowser={(p) => props.onOpenPort?.(p)} onCopy={(p) => props.onCopyPort?.(p)} onAskStop={(p) => setStopAsk(p.pid)} onStop={(p) => {
+        setStopAsk(null);
+        void props.onStopPort?.(portsOpen.worktree, p);
+      }} onClose={() => { setPortsOpen(null); setStopAsk(null); }} />}
       <div className="ws-sidebar-foot">
         <button type="button" className="ws-add-repo" onClick={() => props.onAddRepo()}>
           <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

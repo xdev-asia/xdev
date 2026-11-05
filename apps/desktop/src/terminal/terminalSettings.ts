@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import type { Api, TerminalSettings } from "@/api";
 import { loadStatusSettings } from "@/status/statusSettings";
 import { TERMINAL_DEFAULTS } from "@/settings/terminalDefaults";
+import { loadCustomSchemes } from "./customSchemes";
 
 // The defaults and the clamp live in `settings/terminalDefaults.ts` (a Rust test reads that file).
 export { clampTerminalSettings, TERMINAL_DEFAULTS, TERMINAL_LIMITS } from "@/settings/terminalDefaults";
@@ -46,9 +47,12 @@ export function useTerminalSettings(): TerminalSettings {
  * Reloads a section's shared copy when `settings://changed` names it, so a write from this window or
  * another one shows everywhere. Call once at start; returns the unsubscribe.
  */
-export function startSettingsSync(api: Pick<Api, "onSettingsChanged" | "terminalSettings" | "statusSettings">): () => void {
+export function startSettingsSync(api: Pick<Api, "onSettingsChanged" | "terminalSettings" | "terminalThemes" | "statusSettings">): () => void {
   return api.onSettingsChanged(({ sections }) => {
-    if (sections.includes("terminal")) void loadTerminalSettings(api);
+    if (sections.includes("terminal")) {
+      void loadTerminalSettings(api);
+      void loadCustomSchemes(api);
+    }
     if (sections.includes("status")) void loadStatusSettings(api);
   });
 }

@@ -127,13 +127,16 @@ export function neighbour(l: PaneLayout, from: string, step: 1 | -1): string {
 
 // ---- tabs ----------------------------------------------------------------------------------
 
-/** Adds the tab to the focused pane by default. A tab already in the layout is left alone. */
-export function addTab(l: PaneLayout, tabId: string, pane?: string): PaneLayout {
+/**
+ * Adds the tab to the focused pane by default and makes it the pane's active tab; `activate: false`
+ * adds it behind the active one. A tab already in the layout is left alone.
+ */
+export function addTab(l: PaneLayout, tabId: string, pane?: string, opts: { activate?: boolean } = {}): PaneLayout {
   if (paneOf(l, tabId)) return l;
   const target = pane ?? l.focused;
   if (!findLeaf(l, target)) return l;
   const root = mapNode(l.root, target, (n) =>
-    n.kind === "leaf" ? { ...n, tabs: [...n.tabs, tabId], active: tabId } : n,
+    n.kind === "leaf" ? { ...n, tabs: [...n.tabs, tabId], active: opts.activate === false ? n.active : tabId } : n,
   )!;
   return { ...l, root };
 }

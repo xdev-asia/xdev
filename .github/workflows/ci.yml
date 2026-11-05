@@ -44,7 +44,7 @@ jobs:
 
       - name: Check submodule
         shell: bash
-        run: test -f packages/xdev-ui/package.json || { echo "run: git submodule update --init --recursive"; exit 1; }
+        run: 'test -f packages/xdev-ui/package.json || { echo "run: git submodule update --init --recursive"; exit 1; }'
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck

@@ -39,13 +39,17 @@ export type TabSnapshot =
       cli?: TabCli;
       title: string | null;
       renamed: boolean;
+      /** `title` was made from the first prompt; absent in older snapshots. */
+      autoTitled?: boolean;
       pinned: boolean;
       color: TabColor;
       agent: boolean;
       agentSession: string | null;
       /** When the tab was opened, in ms; the fallback looks for sessions that started after it. */
       openedAt: number;
-      /** The pty id in the terminal service, which a restore attaches to first. */
+      /** Put to sleep: no pty runs. It comes back asleep under every restore mode and starts on wake. */
+      asleep?: true;
+      /** The pty id in the terminal service, which a restore attaches to first. Absent while asleep. */
       ptyId?: string;
       /** How many output bytes the tab had drawn; the attach replays from there. */
       seq?: number;
@@ -62,6 +66,8 @@ export type SessionFallback = (worktree: string, cli: TabCli, since: number) => 
 export interface RestoreReport {
   /** Tabs whose pty was still running in the terminal service; left out when none was. */
   attached?: number;
+  /** Tabs that came back asleep; left out when none did. */
+  asleep?: number;
   /** Agent tabs that came back as their own conversation. */
   resumed: number;
   /** Tabs that came back as a new process: shells, and agents with no session to resume. */
@@ -140,13 +146,13 @@ export function toSnapshot(layout: PaneLayout, tabOf: (id: string) => Tab | null
       cli: tab.cli,
       title: tab.title,
       renamed: tab.renamed,
+      ...(tab.autoTitled ? { autoTitled: true } : {}),
       pinned: tab.pinned,
       color: tab.color,
       agent: tab.agent,
       agentSession: tab.agentSession,
       openedAt: tab.openedAt,
-      ptyId: tab.id,
-      seq: tab.client.seq,
+      ...(tab.asleep ? { asleep: true as const } : { ptyId: tab.id, seq: tab.client.seq }),
     };
   });
   return next ? { layout: next, tabs } : null;

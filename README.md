@@ -20,7 +20,7 @@ Your code, Markdown docs and git stay the source of truth. xDev keeps nothing in
 | Review and git | Diff against a chosen base, stage and unstage, line and range notes sent to an agent tab, commit, pull request defaults; AI recipes for commit, PR and branch text |
 | Docs and context | Markdown with live preview, wiki links and backlinks; `xdev check` flags stale docs; `xdev export` writes AGENTS.md, CLAUDE.md, GEMINI.md and a Cursor rule; `xdev mcp` serves docs and context packs over MCP |
 | Accounts and usage | Claude Code accounts and quota on this machine, token usage per session, API keys in the OS keychain, local Ollama models for embeddings |
-| Settings | General, agents, terminal, git, notifications, shortcuts (`keybindings.json`), Open In apps, quick commands; settings search |
+| Settings | General, agents, terminal, git, notifications, shortcuts (`keybindings.json`), Open In apps, quick commands; settings search, close to tray |
 
 Guides: [status and notifications](docs/guide/status-and-notifications.md). All guides: [docs/guide](docs/guide/README.md).
 
@@ -34,7 +34,7 @@ Download from [Releases](https://github.com/xdev-asia/xdev/releases) or [xdev.as
 | macOS | Apple silicon (`.dmg`); Intel Macs are not built |
 | Linux | x64, ARM64 (`.AppImage`, `.deb`) |
 
-The `xdev` CLI ships as a separate archive per target on the same page. Installers are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper will warn. Updates are signed: the app downloads them in the background and installs on the next start.
+The `xdev` CLI ships as a separate archive per target on the same page. Installers are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper will warn. Updates are signed: the app downloads them in the background and installs on the next start; Settings, General can also check on demand.
 
 ## Architecture
 

@@ -42,6 +42,14 @@ describe("paneTree", () => {
     expect((leaves(l)[0] as { active: string }).active).toBe("b");
   });
 
+  it("addTab with activate false adds the tab behind the active one", () => {
+    const l = addTab(single("a"), "b", undefined, { activate: false });
+    expect(ids(l)).toEqual(["a+b"]);
+    expect((leaves(l)[0] as { active: string }).active).toBe("a");
+    // The default and an explicit true still activate.
+    expect((leaves(addTab(single("a"), "b", undefined, { activate: true }))[0] as { active: string }).active).toBe("b");
+  });
+
   it("addTab with a pane id targets that pane; a known tab is a no-op", () => {
     const l = three();
     const first = leaves(l)[0].id;

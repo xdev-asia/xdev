@@ -127,6 +127,16 @@ describe("PtyClient", () => {
     expect(kill).toHaveBeenCalledWith("t7");
   });
 
+  it("passes fork: true with the resume id, and nothing for a plain start", async () => {
+    const api = createMockApi({});
+    await api.ptyApprove("claude", null, "src-1", true);
+    const spawn = vi.spyOn(api, "ptySpawn");
+    await new PtyClient(api, "f1", "src-1", true).start("/demo", "claude", 80, 24, () => {});
+    expect(spawn.mock.calls[0].slice(7)).toEqual(["src-1", true]);
+    await new PtyClient(api, "f2").start("/demo", "shell", 80, 24, () => {});
+    expect(spawn.mock.calls[1].slice(7)).toEqual([undefined, undefined]);
+  });
+
   it("a client disposed in the same tick never spawns", async () => {
     const api = createMockApi({});
     const spawn = vi.spyOn(api, "ptySpawn");

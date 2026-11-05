@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use xdev_ai::process::{kill_tree, own_group};
@@ -70,6 +70,17 @@ impl From<io::Error> for CmdError {
 pub struct WorktreeChange {
     pub path: String,
     pub kind: ChangeKind,
+}
+
+/// What the create dialog adds to a plain create: a local branch to reuse
+/// and the folders of a sparse checkout.
+#[derive(Debug, Default, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRequest {
+    pub existing: Option<String>,
+    #[serde(default)]
+    pub sparse: Vec<String>,
 }
 
 /// What `worktree_create` returns: the new worktree and what linking its
@@ -242,13 +253,18 @@ fn remove_with(
     path: &Path,
     force: bool,
     confirmed: bool,
+    delete_unmerged: Option<bool>,
 ) -> Result<Removed, CmdError> {
     let action = Action::Delete {
         path: path.to_owned(),
     };
     allowed(data, &action, confirmed)?;
     let now = clock().0;
-    update(data, lock, |reg| remove_worktree(reg, path, force, now))
+    // `None` keeps the old meaning: `force` also deletes an unmerged branch.
+    let delete_unmerged = delete_unmerged.unwrap_or(force);
+    update(data, lock, |reg| {
+        remove_worktree(reg, path, force, delete_unmerged, now)
+    })
 }
 
 /// Removes the folder and keeps the branch; the same delete gate as
@@ -923,6 +939,7 @@ pub fn worktree_create(
     repo_id: String,
     name: String,
     from: Option<String>,
+    request: Option<CreateRequest>,
 ) -> Result<WorktreeCreated, CmdError> {
     let git = load_git_settings(&app);
     create_with(
@@ -932,6 +949,7 @@ pub fn worktree_create(
         &repo_id,
         &name,
         from.as_deref(),
+        request.unwrap_or_default(),
     )
 }
 
@@ -942,8 +960,9 @@ fn create_with(
     repo_id: &str,
     name: &str,
     from: Option<&str>,
+    request: CreateRequest,
 ) -> Result<WorktreeCreated, CmdError> {
-    if git.refresh_local_base_on_create {
+    if git.refresh_local_base_on_create && request.existing.is_none() {
         // The fetch can take long, so the lock is held only to read the
         // registry. A refresh that fails leaves the base as it was, and the
         // worktree starts from that.
@@ -958,6 +977,8 @@ fn create_with(
         // Only a list the person trusted is linked.
         let opts = CreateOptions {
             shared: shared_to_link(reg, data, repo_id),
+            existing: request.existing.clone(),
+            sparse: request.sparse.clone(),
             ..git.create_options()
         };
         let (worktree, shared) =
@@ -1016,8 +1037,16 @@ pub fn worktree_remove(
     path: PathBuf,
     force: bool,
     confirmed: bool,
+    delete_unmerged: Option<bool>,
 ) -> Result<Removed, CmdError> {
-    remove_with(data_dir(&state)?, &lock, &path, force, confirmed)
+    remove_with(
+        data_dir(&state)?,
+        &lock,
+        &path,
+        force,
+        confirmed,
+        delete_unmerged,
+    )
 }
 
 #[tauri::command(async)]
@@ -1303,28 +1332,61 @@ mod tests {
             branch_prefix_custom: "a b".into(),
             ..GitSettings::default()
         };
-        let err = create_with(&fx.data, &lock, &git, &id, "x", None).unwrap_err();
+        let err = create_with(
+            &fx.data,
+            &lock,
+            &git,
+            &id,
+            "x",
+            None,
+            CreateRequest::default(),
+        )
+        .unwrap_err();
         assert_eq!(err.code, "bad_branch_prefix");
 
         git.branch_prefix_custom = "team".into();
-        let wt = create_with(&fx.data, &lock, &git, &id, "x", None)
-            .unwrap()
-            .worktree;
+        let wt = create_with(
+            &fx.data,
+            &lock,
+            &git,
+            &id,
+            "x",
+            None,
+            CreateRequest::default(),
+        )
+        .unwrap()
+        .worktree;
         assert_eq!(wt.branch.as_deref(), Some("team/x"));
 
         // `Test User` cannot start a branch name, so it is left out.
         git.branch_prefix = BranchPrefixMode::GitUsername;
-        let wt = create_with(&fx.data, &lock, &git, &id, "y", None)
-            .unwrap()
-            .worktree;
+        let wt = create_with(
+            &fx.data,
+            &lock,
+            &git,
+            &id,
+            "y",
+            None,
+            CreateRequest::default(),
+        )
+        .unwrap()
+        .worktree;
         assert_eq!(wt.branch.as_deref(), Some("y"));
 
         // No remote to fetch from: the create still goes ahead.
         git.branch_prefix = BranchPrefixMode::None;
         git.refresh_local_base_on_create = true;
-        let wt = create_with(&fx.data, &lock, &git, &id, "z", None)
-            .unwrap()
-            .worktree;
+        let wt = create_with(
+            &fx.data,
+            &lock,
+            &git,
+            &id,
+            "z",
+            None,
+            CreateRequest::default(),
+        )
+        .unwrap()
+        .worktree;
         assert_eq!(wt.branch.as_deref(), Some("z"));
     }
     #[cfg(unix)]
@@ -1341,7 +1403,16 @@ mod tests {
         )
         .unwrap();
         let git = GitSettings::default();
-        let made = create_with(&fx.data, &lock, &git, &id, "plain", None).unwrap();
+        let made = create_with(
+            &fx.data,
+            &lock,
+            &git,
+            &id,
+            "plain",
+            None,
+            CreateRequest::default(),
+        )
+        .unwrap();
         assert!(made.shared.is_empty());
         assert!(!Path::new(&made.worktree.path).join("node_modules").exists());
 
@@ -1351,7 +1422,16 @@ mod tests {
             .shared_hash
             .unwrap();
         trust_hook(&reg, &fx.data, &fx.main, HookKind::Shared, &hash, 1).unwrap();
-        let made = create_with(&fx.data, &lock, &git, &id, "linked", None).unwrap();
+        let made = create_with(
+            &fx.data,
+            &lock,
+            &git,
+            &id,
+            "linked",
+            None,
+            CreateRequest::default(),
+        )
+        .unwrap();
         let report: Vec<_> = made
             .shared
             .iter()
@@ -1369,11 +1449,11 @@ mod tests {
     fn worktree_remove_asks_then_runs_when_confirmed() {
         let fx = fixture();
         let lock = WorkspaceLock::default();
-        let asked = remove_with(&fx.data, &lock, &fx.first, false, false);
+        let asked = remove_with(&fx.data, &lock, &fx.first, false, false, None);
         assert_eq!(code(asked), "needs_approval");
         assert!(fx.first.exists());
 
-        remove_with(&fx.data, &lock, &fx.first, false, true).unwrap();
+        remove_with(&fx.data, &lock, &fx.first, false, true, None).unwrap();
         assert!(!fx.first.exists());
         let verdicts: Vec<_> = xdev_policy::read_audit(&fx.data)
             .unwrap()
@@ -1453,7 +1533,7 @@ mod tests {
         let fx = fixture();
         fs::write(fx.data.join("policy.json"), r#"{"delete":"deny"}"#).unwrap();
         let lock = WorkspaceLock::default();
-        let err = remove_with(&fx.data, &lock, &fx.first, false, true).unwrap_err();
+        let err = remove_with(&fx.data, &lock, &fx.first, false, true, None).unwrap_err();
         assert_eq!(err.code, "denied");
         assert_eq!(err.detail.as_deref(), Some("delete denied by policy"));
         assert!(fx.first.exists());
@@ -1657,13 +1737,61 @@ mod tests {
     }
 
     #[test]
+    fn create_with_a_request_reuses_a_branch_and_refuses_a_bad_sparse_list() {
+        let fx = fixture();
+        let lock = WorkspaceLock::default();
+        let git = GitSettings::default();
+        let id = Registry::load(&fx.data).unwrap().repos[0].id.clone();
+        let main = Registry::load(&fx.data).unwrap().repos[0].path.clone();
+        let run = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .current_dir(&main)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{args:?}");
+        };
+        run(&["branch", "spare"]);
+        let request = CreateRequest {
+            existing: Some("spare".into()),
+            sparse: vec![],
+        };
+        let made = create_with(&fx.data, &lock, &git, &id, "", None, request).unwrap();
+        assert_eq!(made.worktree.branch.as_deref(), Some("spare"));
+        let bad = CreateRequest {
+            existing: None,
+            sparse: vec!["../out".into()],
+        };
+        let err = create_with(&fx.data, &lock, &git, &id, "x", None, bad).unwrap_err();
+        assert_eq!(err.code, "bad_sparse");
+    }
+
+    #[test]
     fn create_with_suffixes_a_taken_name_and_title_keeps_the_typed_text() {
         let fx = fixture();
         let lock = WorkspaceLock::default();
         let git = GitSettings::default();
         let id = Registry::load(&fx.data).unwrap().repos[0].id.clone();
-        let first = create_with(&fx.data, &lock, &git, &id, "feat one", None).unwrap();
-        let second = create_with(&fx.data, &lock, &git, &id, "feat one", None).unwrap();
+        let first = create_with(
+            &fx.data,
+            &lock,
+            &git,
+            &id,
+            "feat one",
+            None,
+            CreateRequest::default(),
+        )
+        .unwrap();
+        let second = create_with(
+            &fx.data,
+            &lock,
+            &git,
+            &id,
+            "feat one",
+            None,
+            CreateRequest::default(),
+        )
+        .unwrap();
         assert_ne!(first.worktree.branch, second.worktree.branch);
         assert!(second.worktree.branch.as_deref().unwrap().ends_with("-2"));
         assert_eq!(second.worktree.title.as_deref(), Some("feat one"));

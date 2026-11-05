@@ -2,9 +2,12 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { RadioGroup, Switch } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { AgentsPage } from "./AgentsPage";
 import { ProfileEditor } from "./ProfileEditor";
+import { AGENTS_SETTINGS_DEFAULTS } from "@/mockSettings";
+import { getToasts, resetToastsForTests } from "@/workspace/toastStore";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
 const store = vi.hoisted(() => ({ update: vi.fn(), reload: vi.fn(), view: null }));
@@ -197,7 +200,7 @@ it("account_switch_select_shows_the_stored_policy_and_saves_a_change", async () 
   const put = vi.spyOn(p.api, "agentsSettingsPut");
   field().props.onChange({ target: { value: "keep" } });
   await tick();
-  expect(put).toHaveBeenCalledWith({ accountSwitch: "keep" });
+  expect(put).toHaveBeenCalledWith({ ...AGENTS_SETTINGS_DEFAULTS, accountSwitch: "keep" });
   expect(field().props.value).toBe("keep");
   expect((await p.api.agentsSettings()).accountSwitch).toBe("keep");
 });
@@ -228,7 +231,206 @@ it("account_switch_policy_follows_a_settings_change_from_elsewhere", async () =>
   const p = await page();
   // The page's own draw collected two effects now; the second one subscribes.
   expect(p.all().find((n) => n.props["data-field"] === "accountSwitch")!.props.value).toBe("ask");
-  await p.api.agentsSettingsPut({ accountSwitch: "restart" });
+  await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, accountSwitch: "restart" });
   await tick();
   expect(p.all().find((n) => n.props["data-field"] === "accountSwitch")!.props.value).toBe("restart");
+});
+
+it("keep_awake_radio_shows_the_stored_mode_and_saves_a_change_with_the_other_fields", async () => {
+  const p = await page();
+  const group = () => p.all().find((n) => n.type === RadioGroup && n.props.name === "keepAwake")!;
+  expect(group().props.value).toBe("off");
+  expect(group().props.options.map((o: { value: string }) => o.value)).toEqual(["off", "agent", "on"]);
+  const put = vi.spyOn(p.api, "agentsSettingsPut");
+  group().props.onChange("agent");
+  await tick();
+  expect(put).toHaveBeenCalledWith({ ...AGENTS_SETTINGS_DEFAULTS, keepAwake: "agent" });
+  expect(group().props.value).toBe("agent");
+  put.mockClear();
+  group().props.onChange("agent");
+  await tick();
+  expect(put).not.toHaveBeenCalled();
+});
+
+it("auto_tab_title_switch_follows_the_stored_flag_and_saves_a_toggle", async () => {
+  const p = await page();
+  const sw = () => p.all().find((n) => n.type === Switch && n.props["data-field"] === "autoTabTitle")!;
+  expect(sw().props.checked).toBe(false);
+  const put = vi.spyOn(p.api, "agentsSettingsPut");
+  sw().props.onChange({ target: { checked: true } });
+  await tick();
+  expect(put).toHaveBeenCalledWith({ ...AGENTS_SETTINGS_DEFAULTS, autoTabTitle: true });
+  expect(sw().props.checked).toBe(true);
+});
+
+it("keep_awake_and_tab_title_strings_exist_in_both_languages", async () => {
+  const en_ = (await import("@/i18n/en.json")).default as Record<string, string>;
+  const vi_ = (await import("@/i18n/vi.json")).default as Record<string, string>;
+  const keys = Object.keys(en_).filter((k) => k.startsWith("settings.agents.keepAwake") || k.startsWith("settings.agents.autoTabTitle"));
+  expect(keys.length).toBeGreaterThanOrEqual(8);
+  for (const k of keys) expect(vi_).toHaveProperty(k);
+});
+
+// Conversation search: off until the person says yes.
+const confirm = (p: Awaited<ReturnType<typeof page>>) => p.all().find((n) => n.type === ConfirmDialog && n.props.title === en("sessionSearch.clear.title"))!;
+const searchSwitch = (p: Awaited<ReturnType<typeof page>>) => p.all().find((n) => n.props["data-field"] === "sessionSearch")!;
+
+it("session_search_switch_is_off_by_default_and_turning_it_on_puts_the_consent", async () => {
+  const p = await page();
+  expect(searchSwitch(p).props.checked).toBe(false);
+  const put = vi.spyOn(p.api, "agentsSettingsPut");
+  searchSwitch(p).props.onChange({ target: { checked: true } });
+  await tick();
+  expect(put).toHaveBeenCalledWith({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+  expect(searchSwitch(p).props.checked).toBe(true);
+});
+
+it("session_search_status_line_shows_the_counts_once_on", async () => {
+  const p = await page();
+  const line = () => p.all().find((n) => n.props["data-field"] === "sessionSearchStatus");
+  expect(line()).toBeUndefined();
+  await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+  await tick();
+  const status = await p.api.sessionSearchStatus();
+  expect(status.updatedAt).not.toBeNull();
+  expect(line()!.props.children).toBe(en("sessionSearch.statusAt", { sessions: status.sessions, messages: status.messages, ago: en("ago.now") }));
+});
+
+it("session_search_status_line_leaves_out_the_time_before_the_first_update", async () => {
+  const p = await page();
+  await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+  vi.spyOn(p.api, "sessionSearchStatus").mockResolvedValue({ enabled: true, sessions: 0, messages: 0, updatedAt: null, indexing: false });
+  p.all().find((n) => n.props["data-field"] === "sessionSearch")!.props.onChange({ target: { checked: true } });
+  await tick();
+  expect(p.all().find((n) => n.props["data-field"] === "sessionSearchStatus")!.props.children).toBe(en("sessionSearch.status", { sessions: 0, messages: 0 }));
+});
+
+it("session_search_status_is_read_again_while_it_indexes", async () => {
+  vi.useFakeTimers();
+  try {
+    const p = await page();
+    await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+    const read = vi.spyOn(p.api, "sessionSearchStatus").mockResolvedValue({ enabled: true, sessions: 0, messages: 0, updatedAt: null, indexing: true });
+    p.all().find((n) => n.props["data-field"] === "sessionSearch")!.props.onChange({ target: { checked: true } });
+    await tick();
+    hooks.effects.length = 0;
+    p.all();
+    hooks.effects.splice(0).forEach((e) => e());
+    await tick();
+    const before = read.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(read.mock.calls.length).toBeGreaterThan(before);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("session_search_status_is_read_again_while_the_first_build_has_not_finished", async () => {
+  vi.useFakeTimers();
+  try {
+    const p = await page();
+    await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+    const read = vi.spyOn(p.api, "sessionSearchStatus").mockResolvedValue({ enabled: true, sessions: 0, messages: 0, updatedAt: null, indexing: false });
+    p.all().find((n) => n.props["data-field"] === "sessionSearch")!.props.onChange({ target: { checked: true } });
+    await tick();
+    hooks.effects.length = 0;
+    p.all();
+    hooks.effects.splice(0).forEach((e) => e());
+    await tick();
+    const before = read.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(read.mock.calls.length).toBeGreaterThan(before);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("turning_the_search_off_clears_the_index_instead_of_only_saving_the_flag", async () => {
+  const p = await page();
+  await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+  await tick();
+  const put = vi.spyOn(p.api, "agentsSettingsPut");
+  const clear = vi.spyOn(p.api, "sessionSearchClear");
+  searchSwitch(p).props.onChange({ target: { checked: false } });
+  await tick();
+  expect(clear).toHaveBeenCalledTimes(1);
+  expect(put).not.toHaveBeenCalled();
+  expect(searchSwitch(p).props.checked).toBe(false);
+});
+
+it("session_search_clear_asks_first_then_clears_toasts_and_reads_off", async () => {
+  resetToastsForTests();
+  const p = await page();
+  await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+  await tick();
+  const clear = vi.spyOn(p.api, "sessionSearchClear");
+  expect(confirm(p).props.open).toBe(false);
+  p.all().find((n) => n.props["data-field"] === "sessionSearchClear")!.props.onClick();
+  expect(confirm(p).props.open).toBe(true);
+  expect(clear).not.toHaveBeenCalled();
+  confirm(p).props.onConfirm();
+  await tick();
+  expect(clear).toHaveBeenCalledTimes(1);
+  expect(getToasts().map((x) => x.text)).toEqual([en("sessionSearch.cleared")]);
+  expect(searchSwitch(p).props.checked).toBe(false);
+  expect(confirm(p).props.open).toBe(false);
+});
+
+it("session_search_clear_failure_shows_the_error_toast", async () => {
+  resetToastsForTests();
+  const p = await page();
+  vi.spyOn(p.api, "sessionSearchClear").mockRejectedValue({ code: "io" });
+  confirm(p).props.onConfirm();
+  await tick();
+  expect(getToasts().map((x) => x.text)).toEqual([en("error.io")]);
+  expect(getToasts().map((x) => x.text)).toEqual([en("error.io")]);
+});
+
+it("session_search_clear_failure_reads_the_settings_and_status_again", async () => {
+  resetToastsForTests();
+  const p = await page();
+  await p.api.agentsSettingsPut({ ...AGENTS_SETTINGS_DEFAULTS, sessionSearch: true });
+  await tick();
+  vi.spyOn(p.api, "sessionSearchClear").mockRejectedValue({ code: "io" });
+  const settings = vi.spyOn(p.api, "agentsSettings");
+  const status = vi.spyOn(p.api, "sessionSearchStatus");
+  confirm(p).props.onConfirm();
+  await tick();
+  expect(settings).toHaveBeenCalledTimes(1);
+  expect(status).toHaveBeenCalledTimes(1);
+});
+
+it("session_search_strings_exist_in_both_languages", async () => {
+  const en_ = (await import("@/i18n/en.json")).default as Record<string, string>;
+  const vi_ = (await import("@/i18n/vi.json")).default as Record<string, string>;
+  const keys = Object.keys(en_).filter((k) => k.startsWith("sessionSearch.") || k.startsWith("settings.agents.sessionSearch"));
+  expect(keys.length).toBeGreaterThanOrEqual(8);
+  for (const k of keys) expect(vi_).toHaveProperty(k);
+});
+
+// Auto sleep: off until the person turns it on; the minutes are held to 1..1440.
+const field = (p: Awaited<ReturnType<typeof page>>, name: string) => p.all().find((n) => n.props["data-field"] === name)!;
+
+it("auto_sleep_switch_puts_the_flag_and_the_minutes_field_commits_a_clamped_value", async () => {
+  const p = await page();
+  expect(field(p, "autoSleep").props.checked).toBe(false);
+  expect(field(p, "sleepAfterMin").props.value).toBe("30");
+  const put = vi.spyOn(p.api, "agentsSettingsPut");
+  field(p, "autoSleep").props.onChange({ target: { checked: true } });
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...AGENTS_SETTINGS_DEFAULTS, autoSleep: true });
+  expect(field(p, "autoSleep").props.checked).toBe(true);
+
+  field(p, "sleepAfterMin").props.onChange({ target: { value: "5000" } });
+  field(p, "sleepAfterMin").props.onBlur();
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...AGENTS_SETTINGS_DEFAULTS, autoSleep: true, sleepAfterMin: 1440 });
+  expect(field(p, "sleepAfterMin").props.value).toBe("1440");
+
+  // Text that is not a number leaves the setting as it was.
+  field(p, "sleepAfterMin").props.onChange({ target: { value: "abc" } });
+  field(p, "sleepAfterMin").props.onBlur();
+  await tick();
+  expect(put).toHaveBeenCalledTimes(2);
+  expect(field(p, "sleepAfterMin").props.value).toBe("1440");
 });
