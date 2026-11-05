@@ -32,6 +32,7 @@ import { startAutoRename } from "./autoRename";
 import { startAutoTabTitle } from "./autoTabTitle";
 import { startAutoSleep } from "./autoSleep";
 import { startKeepAwakeReport } from "@/status/keepAwake";
+import { flash } from "./flash";
 import { currentCloseWindow, openRestoredFile, restoreLayout, sessionFallback, startLayoutSave, undoRestore } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
@@ -728,6 +729,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return;
       const pane = [...document.querySelectorAll<HTMLElement>(".ws-tab-pane")].find((el) => el.dataset.tab === tab.id);
       pane?.querySelector<HTMLElement>(".xterm-helper-textarea")?.focus();
+      flash(pane ?? null);
     }, 0);
   }
   live.repos = repos;
