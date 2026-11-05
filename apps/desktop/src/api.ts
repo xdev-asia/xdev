@@ -106,6 +106,7 @@ import type {
   SidebarPrefs,
   SidebarGroupBy,
   SidebarSort,
+  ProjectOrder,
   CardProps,
   Check,
   GhAccount,
@@ -166,6 +167,7 @@ import type {
   SessionRow,
   SessionSearchStatus,
   Agent,
+  Cost,
   Skill,
   UsageDisplay,
   UsageReport,
@@ -186,7 +188,7 @@ export { createMockApi };
 export type ScriptKind = Extract<HookKind, "setup" | "archive">;
 export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
-export type { Agent, AgentSession, SessionQuery, SessionRow, SessionSearchStatus };
+export type { Agent, AgentSession, Cost, SessionQuery, SessionRow, SessionSearchStatus };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, AwakeView, KeepAwake, SwitchRunning };
 export type { PortEvidence, PortKind, PortProtocol, PortScan, WorkspacePort } from "@xdev/bindings";
@@ -288,6 +290,7 @@ export type {
   SidebarPrefs,
   SidebarGroupBy,
   SidebarSort,
+  ProjectOrder,
   CardProps,
   WorkItem,
   WorkItemKind,
@@ -373,6 +376,11 @@ export type ErrorCode =
   | "not_found"
   | "outside_vault"
   | "no_vault"
+  | "share_too_large"
+  | "share_bad_image"
+  | "share_clipboard"
+  | "share_open"
+  | "port_unknown"
   | "io"
   | "not_utf8"
   | "too_large"
@@ -823,7 +831,8 @@ export interface Api {
   // Rejects with `needs_approval` until `confirmed`, then with `worktree_dirty` for uncommitted
   // work until `force`, and with `primary_worktree` for the main checkout. A branch made here and
   // merged (or any with `force`) is deleted; otherwise it is kept and listed for review.
-  worktreeRemove(path: string, force: boolean, confirmed: boolean): Promise<Removed>;
+  // `deleteUnmerged` (default `force`) is what lets an unmerged branch go; `force` only skips the dirty check.
+  worktreeRemove(path: string, force: boolean, confirmed: boolean, deleteUnmerged?: boolean): Promise<Removed>;
   // Removes the folder and keeps the branch, listed under Archived. The same gate and dirty check as
   // `worktreeRemove`; a detached worktree rejects with `detached` until `force`.
   worktreeArchive(path: string, force: boolean, confirmed: boolean): Promise<Removed>;
@@ -964,6 +973,9 @@ export interface Api {
   kitUsage(sinceDay: string, untilDay: string, refresh: boolean): Promise<UsageSummary>;
   // The Stats page: filtered by agent and scope, and by `usage.scan` (an agent whose scan is off is not read).
   kitUsageReport(args: Omit<UsageReportArgs, "utcOffsetMinutes">): Promise<UsageReport>;
+  // The share dialog: a PNG to the clipboard, and a post opened in the browser.
+  usageShareCopyImage(png: Uint8Array): Promise<void>;
+  usageSharePost(text: string): Promise<void>;
   // Whether each relative path exists under `root` (an agent home, repo or worktree).
   kitPathsExist(root: string, paths: string[]): Promise<boolean[]>;
   // Newest first, at most `limit` (and 1000).
@@ -1106,6 +1118,11 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "not_found",
   "outside_vault",
   "no_vault",
+  "share_too_large",
+  "share_bad_image",
+  "share_clipboard",
+  "share_open",
+  "port_unknown",
   "io",
   "not_utf8",
   "too_large",
@@ -1435,7 +1452,7 @@ const tauriApi: Api = {
   worktreeCreate: (repoId, name, from, request) => call("worktree_create", { repoId, name, from, request: request ?? null }),
   worktreeNamePreview: (repoId, name) => call("worktree_name_preview", { repoId, name }),
   worktreePin: (path, pinned) => call("worktree_pin", { path, pinned }),
-  worktreeRemove: (path, force, confirmed) => call("worktree_remove", { path, force, confirmed }),
+  worktreeRemove: (path, force, confirmed, deleteUnmerged) => call("worktree_remove", { path, force, confirmed, deleteUnmerged: deleteUnmerged ?? null }),
   worktreeArchive: (path, force, confirmed) => call("worktree_archive", { path, force, confirmed }),
   worktreeDetails: (path, patch) => call("worktree_details", { path, patch }),
   worktreeRestore: (repoId, branch) => call("worktree_restore", { repoId, branch }),
@@ -1509,6 +1526,9 @@ const tauriApi: Api = {
   kitUsage: (sinceDay, untilDay, refresh) =>
     call("kit_usage", { sinceDay, untilDay, refresh, utcOffsetMinutes: -new Date().getTimezoneOffset() }),
   kitUsageReport: (args) => call("kit_usage_report", { args: { ...args, utcOffsetMinutes: -new Date().getTimezoneOffset() } }),
+  // A raw body, not `call`'s record: the PNG never travels as a JSON number array.
+  usageShareCopyImage: (png) => invoke<void>("usage_share_copy_image", png).catch((e: unknown) => Promise.reject(toApiError(e))),
+  usageSharePost: (text) => call("usage_share_post", { text }),
   kitPathsExist: (root, paths) => call("kit_paths_exist", { root, paths }),
   kitPromptHistory: (limit) => call("kit_prompt_history", { limit }),
   agentSessions: (query, refresh) => call("agent_sessions", { query, refresh }),

@@ -24,6 +24,9 @@ import { recentFiles } from "@/search/recentFiles";
 import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
+import { livePortsByWorktree } from "./livePorts";
+import type { LivePort } from "./livePorts";
+import { endpoint } from "./PortsChip";
 import { startAutoRename } from "./autoRename";
 import { startAutoTabTitle } from "./autoTabTitle";
 import { startAutoSleep } from "./autoSleep";
@@ -32,7 +35,7 @@ import { currentCloseWindow, openRestoredFile, restoreLayout, sessionFallback, s
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
-import { useNavigationSettings } from "@/settings/navigationSettings";
+import { getNavigationSettings, setNavigationSettings, useNavigationSettings } from "@/settings/navigationSettings";
 import { SettingsView } from "@/settings/SettingsView";
 import { playStatusSound } from "@/status/sound";
 import { usePresence } from "@/status/presence";
@@ -54,6 +57,9 @@ import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { AddProjectDialog, parentOf } from "./AddProjectDialog";
 import { RemoveRepoDialog } from "./RemoveRepoDialog";
+import { ParentPickerDialog } from "./ParentPickerDialog";
+import { parentCandidates } from "./lineage";
+import { keptOutcome, removeArgs } from "./deleteFlow";
 import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { removeRepo } from "./removeRepo";
 import { VaultNav } from "./VaultNav";
@@ -140,6 +146,8 @@ type Review = { repoId: string | null; busy: boolean; error?: ApiError["code"] }
 type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"]; archiving?: boolean; failed?: { code: number | null; output: string };
   /** Removed without asking (Settings → General): the dialog stays hidden until something needs an answer. */
   quiet?: boolean;
+  /** Opened from "Delete with nested worktrees": the nested tick starts on. */
+  nested?: boolean;
 };
 
 /** The app frame: repos and worktrees on the left, the selected worktree in the middle. */
@@ -149,7 +157,7 @@ const AUTO_SLEEP_TICK_MS = 60_000;
 export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
-  const { askBeforeDeleteWorktree } = useNavigationSettings();
+  const { askBeforeDeleteWorktree, alwaysForceDeleteWorktrees, alwaysDeleteKeptBranches } = useNavigationSettings();
   const [repos, setRepos] = useState<RepoView[] | null>(null);
   const [items, setItems] = useState<SidebarItem[] | null>(null);
   const [prefs, setPrefs] = useState<SidebarPrefs>(SIDEBAR_PREFS_DEFAULTS);
@@ -230,6 +238,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [removing, setRemoving] = useState<Removing | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [renaming, setRenaming] = useState<WorktreeView | null>(null);
+  const [parentFor, setParentFor] = useState<{ worktree: WorktreeView; candidates: WorktreeView[] } | null>(null);
   const [notice, setNotice] = useState<ApiError["code"]>();
   const [fixNote, setFixNote] = useState(false);
   // A request to bring a tab to the front of its worktree; a new `seq` is a new request.
@@ -477,6 +486,22 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useSyncExternalStore(stats.subscribe, stats.snapshot, stats.snapshot);
   useSyncExternalStore(useCallback((fn: () => void) => prs.subscribe(fn), [prs]), () => prs.snapshot(), () => prs.snapshot());
 
+  // The cards' ports chip reads the same store as the Ports panel: one scanner, one poll.
+  useSyncExternalStore(useCallback((fn: () => void) => ports.subscribe(fn), [ports]), ports.snapshot, ports.snapshot);
+  const cardPorts = prefs.card.ports && !prefs.compactCards;
+  useEffect(() => {
+    ports.want("cards", cardPorts);
+    return () => ports.want("cards", false);
+  }, [ports, cardPorts]);
+  const livePorts = cardPorts ? livePortsByWorktree(ports.state().scan) : {};
+  async function stopPort(_wt: WorktreeView, port: LivePort): Promise<void> {
+    try {
+      await ports.stop(port.id);
+      pushToast({ text: t("ports.stopped", { port: port.port }) });
+    } catch (e) {
+      pushToast({ text: t(`error.${toApiError(e).code}`) });
+    }
+  }
   const dots: Record<string, TabStatus | null> = Object.fromEntries(paths.map((p) => [p, sessions?.dot(p) ?? null]));
   const activity: Record<string, number | null> = Object.fromEntries(paths.map((p) => [p, sessions?.lastActivity(p) ?? null]));
   const profiles: Record<string, PtyProfile[]> = Object.fromEntries(paths.map((p) => [p, sessions?.profilesOf(p) ?? []]));
@@ -1026,8 +1051,27 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const selectable = order.filter((p) => !(repos ?? []).some((r) => r.worktrees.some((w) => w.path === p && w.primary)));
 
   function keptNotice(kept: KeptBranch[]): void {
-    if (kept.length === 0) return;
-    pushToast({ text: t("review.notice", { count: kept.length }), actions: [{ label: t("review.notice.button"), run: () => setReview({ repoId: null, busy: false }) }] });
+    const out = keptOutcome(kept);
+    if (!out) return;
+    if (out.kind === "one") {
+      const { repoId, branch } = out.kept;
+      return void pushToast({
+        text: t("review.keptOne.title"),
+        actions: [{ label: t("review.keptOne.delete"), run: () => void api.branchDelete(repoId, branch, true).then(() => load(), (e) => setNotice(toApiError(e).code)) }],
+      });
+    }
+    pushToast({ text: t("review.notice", { count: out.count }), actions: [{ label: t("review.notice.button"), run: () => setReview({ repoId: null, busy: false }) }] });
+  }
+
+  // "Don't ask again" on the delete dialog: the choice is saved in Settings → General.
+  function skipDeleteConfirm(): void {
+    void api
+      .navigationSettingsPut({ ...getNavigationSettings(), askBeforeDeleteWorktree: false })
+      .then((stored) => {
+        setNavigationSettings(stored);
+        pushToast({ text: t("workspace.remove.skipToast"), actions: [{ label: t("workspace.remove.openSettings"), run: () => openSettings("general") }] });
+      })
+      .catch((e) => setNotice(toApiError(e).code));
   }
 
   async function openBulk(mode: "delete" | "archive"): Promise<void> {
@@ -1048,7 +1092,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     const list = [...kids, ...chosen];
     const targets = opts.anyway ? list : list.filter((p) => b.dirty[p] !== true);
     const skipped = list.filter((p) => !targets.includes(p));
-    const op = (p: string) => (b.mode === "archive" ? api.worktreeArchive(p, opts.anyway, true) : api.worktreeRemove(p, opts.anyway, true));
+    const bulkArgs = removeArgs(opts.anyway, { alwaysForce: alwaysForceDeleteWorktrees, alwaysDeleteKept: alwaysDeleteKeptBranches });
+    const op = (p: string) => (b.mode === "archive" ? api.worktreeArchive(p, opts.anyway, true) : api.worktreeRemove(p, bulkArgs.force, true, bulkArgs.deleteUnmerged));
     const result = await runBulk(targets, op, async (p) => void (await sessions?.closeWorktree(p)));
     for (const path of skipped) result.failed.push({ path, error: { code: "worktree_dirty" } });
     for (const path of result.ok) sessions?.dropCarried(path);
@@ -1080,9 +1125,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // deleting a worktree" off it runs at once with the dialog's defaults (keep the branch, no force,
   // nested worktrees kept); the dialog still shows when the worktree is dirty, the archive script
   // fails or needs trust, or the removal errors. Bulk delete keeps its own dialog.
-  function startRemove(wt: WorktreeView): void {
-    const next: Removing = { worktree: wt, dirty: false, busy: false };
-    if (askBeforeDeleteWorktree) return setRemoving(next);
+  function startRemove(wt: WorktreeView, opts: { nested?: boolean } = {}): void {
+    const next: Removing = { worktree: wt, dirty: false, busy: false, nested: opts.nested };
+    if (askBeforeDeleteWorktree || opts.nested) return setRemoving(next);
     const quiet: Removing = { ...next, quiet: true };
     setRemoving(quiet);
     void remove(false, false, quiet);
@@ -1254,6 +1299,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       }
     } catch (e) {
       setNotice(toApiError(e).code);
+    }
+  }
+
+  // The parent picker and the row menu's lineage and status items write straight through `worktreeDetails`.
+  async function setDetails(wt: WorktreeView, patch: DetailsPatch, failure: string): Promise<void> {
+    try {
+      await api.worktreeDetails(wt.path, patch);
+      await load();
+    } catch {
+      pushToast({ text: failure });
     }
   }
 
@@ -1434,10 +1489,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         for (const child of all.filter((c) => c.parent === worktree.path)) {
           await sessions?.closeWorktree(child.path);
           sessions?.dropCarried(child.path);
-          await api.worktreeRemove(child.path, false, true);
+          await api.worktreeRemove(child.path, alwaysForceDeleteWorktrees, true, alwaysDeleteKeptBranches);
         }
       }
-      const done = await api.worktreeRemove(worktree.path, dirty, true);
+      const args = removeArgs(dirty, { alwaysForce: alwaysForceDeleteWorktrees, alwaysDeleteKept: alwaysDeleteKeptBranches });
+      const done = await api.worktreeRemove(worktree.path, args.force, true, args.deleteUnmerged);
       keptNotice(done.kept ? [done.kept] : []);
       setRemoving(null);
       await load();
@@ -1736,6 +1792,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             onRestore={(repoId, branch) => void sidebarCall(() => api.worktreeRestore(repoId, branch))}
             onArchive={(wt) => void archive(wt)}
             onEditDetails={(wt) => setEditing({ worktree: wt, busy: false })}
+            onSetParent={(wt) => setParentFor({ worktree: wt, candidates: parentCandidates(wt, repos?.find((r) => r.worktrees.some((w) => w.path === wt.path))?.worktrees ?? []) })}
+            onRemoveParent={(wt) => void setDetails(wt, { parent: null }, t("lineage.error"))}
+            onDeleteNested={(wt) => startRemove(wt, { nested: true })}
+            onMoveStatus={(wt, status) => {
+              if (status !== wt.status) void setDetails(wt, { status }, t("lineage.error"));
+            }}
             onRenameBranch={(wt) => setRenaming(wt)}
             onCopyLink={(url) => {
               void copy(url);
@@ -1744,6 +1806,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             selected={current?.path ?? null}
             dots={dots}
             stats={stats.all()}
+            ports={livePorts}
+            onOpenPort={(port) => void api.portsOpen(port.id).catch((e: unknown) => pushToast({ text: t(`error.${toApiError(e).code}`) }))}
+            onCopyPort={(port) => {
+              void copy(endpoint(port));
+              pushToast({ text: t("ports.copied", { address: endpoint(port) }) });
+            }}
+            onStopPort={stopPort}
             activity={activity}
             profiles={profiles}
             prs={prMap}
@@ -2225,6 +2294,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           onCancel={() => setEditing(null)}
         />
       )}
+      {parentFor && (
+        <ParentPickerDialog
+          worktree={parentFor.worktree}
+          candidates={parentFor.candidates}
+          onPick={(path) => {
+            const wt = parentFor.worktree;
+            setParentFor(null);
+            void setDetails(wt, { parent: path }, t("lineage.error"));
+          }}
+          onCancel={() => setParentFor(null)}
+        />
+      )}
       {renaming && (
         <RenameBranchDialog
           api={api}
@@ -2268,8 +2349,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           failed={removing.failed}
           error={removing.error}
           onConfirm={(nested) => void remove(removing.failed !== undefined, nested)}
+          onDontAsk={(skip) => skip && skipDeleteConfirm()}
           onArchive={() => void archiveRemoving()}
           children={all.filter((c) => c.parent === removing.worktree.path).length}
+          nestedDefault={removing.nested}
           onCancel={() => {
             removeRun.current++;
             setRemoving(null);

@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::pricing::{PRICES_AS_OF, cost_nanos, rates_for};
 use crate::{Agent, SessionUsage, Tokens, UsageIndex, UsageQuery, UsageSummary, summarize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,6 +33,25 @@ pub struct UsageReport {
     /// Unix ms of the earliest session start (> 0) among the counted agents,
     /// whatever the range.
     pub tracking_since: Option<i64>,
+    /// Est. API-equivalent cost of the counted tokens.
+    pub cost: Cost,
+    /// Same order as `by_agent`.
+    pub cost_by_agent: Vec<(Agent, Cost)>,
+    /// At most 10, newest `last` first; `total` and `days` cover the range only.
+    pub recent_sessions: Vec<SessionUsage>,
+    /// Day the local price table was last checked, `YYYY-MM-DD`.
+    pub prices_as_of: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct Cost {
+    /// Sum over priced session-days, nano-USD.
+    pub nanos: u64,
+    /// Some tokens in range belong to a model with no rate.
+    pub unpriced: bool,
+    /// At least one priced token; false means the UI shows "n/a".
+    pub priced: bool,
 }
 
 /// Totals for the days `since_day..=until_day` (every day when `since_day` is
@@ -58,11 +78,18 @@ pub fn report(index: &UsageIndex, q: &ReportQuery) -> UsageReport {
             per_agent.push((agent, Tokens::default()));
         }
     }
+    let mut costs: Vec<(Agent, Cost)> = per_agent
+        .iter()
+        .map(|(a, _)| (*a, Cost::default()))
+        .collect();
+    let mut ranged: Vec<SessionUsage> = Vec::new();
     for (_, s) in &kept {
         let mut in_range = Tokens::default();
+        let mut days = std::collections::BTreeMap::new();
         for (day, t) in &s.days {
             if day.as_str() >= since && day.as_str() <= q.until_day.as_str() {
                 in_range.add(t);
+                days.insert(day.clone(), *t);
             }
         }
         if in_range.sum() == 0 {
@@ -72,9 +99,40 @@ pub fn report(index: &UsageIndex, q: &ReportQuery) -> UsageReport {
         if let Some((_, total)) = per_agent.iter_mut().find(|(a, _)| *a == s.agent) {
             total.add(&in_range);
         }
+        if let Some((_, cost)) = costs.iter_mut().find(|(a, _)| *a == s.agent) {
+            let rates = s.model.as_deref().and_then(|m| rates_for(s.agent, m));
+            match rates {
+                Some(r) => {
+                    let nanos: u64 = days
+                        .values()
+                        .map(|t| cost_nanos(r, t))
+                        .fold(0, u64::saturating_add);
+                    cost.nanos = cost.nanos.saturating_add(nanos);
+                    cost.priced = true;
+                }
+                None => cost.unpriced = true,
+            }
+        }
+        let mut ranged_session = (*s).clone();
+        ranged_session.total = in_range;
+        ranged_session.days = days;
+        ranged.push(ranged_session);
     }
     // Stable: equal totals stay Claude before Codex.
     per_agent.sort_by_key(|(_, t)| std::cmp::Reverse(t.sum()));
+    let cost_by_agent: Vec<(Agent, Cost)> = per_agent
+        .iter()
+        .filter_map(|(a, _)| costs.iter().find(|(c, _)| c == a).copied())
+        .collect();
+    let cost = cost_by_agent
+        .iter()
+        .fold(Cost::default(), |acc, (_, c)| Cost {
+            nanos: acc.nanos.saturating_add(c.nanos),
+            unpriced: acc.unpriced || c.unpriced,
+            priced: acc.priced || c.priced,
+        });
+    ranged.sort_by(|a, b| b.last.cmp(&a.last).then_with(|| a.id.cmp(&b.id)));
+    ranged.truncate(10);
 
     let filtered = UsageIndex {
         sessions: kept
@@ -95,6 +153,10 @@ pub fn report(index: &UsageIndex, q: &ReportQuery) -> UsageReport {
         by_agent: per_agent,
         sessions,
         tracking_since,
+        cost,
+        cost_by_agent,
+        recent_sessions: ranged,
+        prices_as_of: PRICES_AS_OF.to_owned(),
     }
 }
 
@@ -316,6 +378,147 @@ mod tests {
             r.by_agent,
             vec![(Agent::Codex, tok(31)), (Agent::Claude, tok(17))]
         );
+    }
+
+    fn modelled(
+        id: &str,
+        agent: Agent,
+        model: Option<&str>,
+        last: i64,
+        day: &str,
+        n: u64,
+    ) -> SessionUsage {
+        let mut s = session(id, agent, None, 1, &[(day, n)]);
+        s.model = model.map(str::to_owned);
+        s.last = last;
+        s
+    }
+
+    fn priced_index() -> UsageIndex {
+        let mut i = UsageIndex::default();
+        for s in [
+            modelled(
+                "p",
+                Agent::Claude,
+                Some("claude-sonnet-4-5"),
+                30,
+                "2026-11-02",
+                1_000_000,
+            ),
+            modelled(
+                "q",
+                Agent::Claude,
+                Some("claude-opus-9"),
+                20,
+                "2026-11-02",
+                50,
+            ),
+            modelled(
+                "r",
+                Agent::Codex,
+                Some("gpt-5"),
+                10,
+                "2026-11-02",
+                1_000_000,
+            ),
+            modelled(
+                "old",
+                Agent::Codex,
+                Some("gpt-5"),
+                99,
+                "2026-09-01",
+                1_000_000,
+            ),
+        ] {
+            i.sessions.insert(format!("h:{}", s.id), s);
+        }
+        i
+    }
+
+    #[test]
+    fn cost_sums_priced_tokens_and_flags_the_unpriced() {
+        let r = report(&priced_index(), &q(&both()));
+        // Input only: sonnet 3000 nano/token, gpt-5 1250 nano/token.
+        let claude = Cost {
+            nanos: 3_000_000_000,
+            unpriced: true,
+            priced: true,
+        };
+        let codex = Cost {
+            nanos: 1_250_000_000,
+            unpriced: false,
+            priced: true,
+        };
+        assert_eq!(r.cost_by_agent.len(), 2);
+        for (a, c) in &r.cost_by_agent {
+            assert_eq!(*c, if *a == Agent::Claude { claude } else { codex });
+        }
+        assert_eq!(
+            r.cost,
+            Cost {
+                nanos: 4_250_000_000,
+                unpriced: true,
+                priced: true
+            }
+        );
+    }
+
+    #[test]
+    fn only_unpriced_tokens_are_not_priced() {
+        let mut query = q(&[Agent::Claude]);
+        query.folders = None;
+        let mut idx = priced_index();
+        idx.sessions.remove("h:p");
+        let r = report(&idx, &query);
+        assert_eq!(
+            r.cost,
+            Cost {
+                nanos: 0,
+                unpriced: true,
+                priced: false
+            }
+        );
+        assert_eq!(report(&idx, &q(&[])).cost, Cost::default());
+    }
+
+    #[test]
+    fn recent_sessions_are_newest_first_and_cover_the_range_only() {
+        let r = report(&priced_index(), &q(&both()));
+        let ids: Vec<&str> = r.recent_sessions.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["p", "q", "r"]);
+        assert_eq!(r.recent_sessions[0].total.sum(), 1_000_000);
+        // The old session is out of range, so it is not listed.
+        assert!(!ids.contains(&"old"));
+        let mut query = q(&both());
+        query.since_day = None;
+        let r = report(&priced_index(), &query);
+        assert_eq!(r.recent_sessions[0].id, "old");
+    }
+
+    #[test]
+    fn at_most_ten_recent_sessions() {
+        let mut idx = UsageIndex::default();
+        for n in 0..14 {
+            let s = modelled(
+                &format!("s{n:02}"),
+                Agent::Claude,
+                Some("claude-sonnet-4-5"),
+                n,
+                "2026-11-02",
+                5,
+            );
+            idx.sessions.insert(format!("h:{}", s.id), s);
+        }
+        let r = report(&idx, &q(&both()));
+        assert_eq!(r.recent_sessions.len(), 10);
+        assert_eq!(r.recent_sessions[0].id, "s13");
+        assert_eq!(r.sessions, 14);
+    }
+
+    #[test]
+    fn the_report_names_the_price_table_date() {
+        let r = report(&UsageIndex::default(), &q(&both()));
+        assert_eq!(r.prices_as_of, crate::pricing::PRICES_AS_OF);
     }
 
     fn fixture(name: &str) -> std::path::PathBuf {

@@ -226,7 +226,7 @@ fn removing_parent_clears_children() {
     set_details(&mut reg, Path::new(&c.path), parent(&p.path)).unwrap();
     assert!(meta(&reg, &c.path).parent.is_some());
 
-    remove_worktree(&mut reg, Path::new(&p.path), false, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&p.path), false, false, 0).unwrap();
     assert_eq!(meta(&reg, &c.path).parent, None);
 }
 
