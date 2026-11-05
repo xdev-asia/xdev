@@ -1100,6 +1100,7 @@ pub fn pty_spawn(
 }
 
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 pub fn pty_approve(
     app: AppHandle,
     state: State<'_, AppState>,
