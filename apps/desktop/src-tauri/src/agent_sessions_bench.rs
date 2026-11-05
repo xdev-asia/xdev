@@ -112,7 +112,7 @@ fn claude_file(path: &Path, n: usize, rng: &mut Rng, start_ms: i64, cwd: &str) -
     let mut written = 0;
     let mut at = start_ms;
     let mut turn = 0;
-    let huge = n % HUGE_EVERY == 0;
+    let huge = n.is_multiple_of(HUGE_EVERY);
     while written < target || turn < 2 {
         at += 1000 + rng.below(30_000) as i64;
         let tool_len = if huge && turn == 1 {
@@ -123,7 +123,7 @@ fn claude_file(path: &Path, n: usize, rng: &mut Rng, start_ms: i64, cwd: &str) -
         let head = format!(
             r#""isSidechain":false,"userType":"external","cwd":{cwd},"sessionId":"{id}","version":"2.0.0","gitBranch":"main""#
         );
-        let prompt = if turn == 0 && n % 7 == 0 {
+        let prompt = if turn == 0 && n.is_multiple_of(7) {
             // A pasted screenshot with the prompt.
             format!(
                 r#"[{{"type":"image","source":{{"type":"base64","media_type":"image/png","data":"{}"}}}},{{"type":"text","text":"fix the layout {n}"}}]"#,
@@ -182,7 +182,7 @@ fn codex_file(path: &Path, n: usize, rng: &mut Rng, start_ms: i64, id: &str, cwd
     ];
     let mut written: usize = lines.iter().map(String::len).sum();
     let mut turn = 0;
-    let huge = n % HUGE_EVERY == 0;
+    let huge = n.is_multiple_of(HUGE_EVERY);
     while written < target || turn < 2 {
         at += 1000 + rng.below(30_000) as i64;
         let tool_len = if huge && turn == 1 {
@@ -362,6 +362,11 @@ fn bench_heavy_history() {
         limit: 100,
     };
     let cutoff = history_cutoff(now, HISTORY_DAYS);
+    // Every log read, the window aside: the cost of the reading alone.
+    let stats = measure("refresh, no window", || {
+        SessionIndex::default().refresh_since(&homes, None, &mut |_| {})
+    });
+    println!("  files {} bytes {}", stats.files_read, stats.bytes);
     let rows = measure("first refresh", || {
         sessions(&data, || homes.clone(), &q, Some(cutoff), None).unwrap()
     });
@@ -377,12 +382,12 @@ fn bench_heavy_history() {
         .collect();
     let path = search_path(&data);
     measure("first text index", || {
-        refresh_text_in(&path, &homes, &keep, TEXT_BATCH).unwrap();
+        refresh_text_in(&path, &homes, &keep, Some(cutoff), TEXT_BATCH).unwrap();
     });
     let (s, m, _) = read_counts(&path).unwrap();
     println!("  text index: {s} sessions, {m} messages");
     measure("second text index", || {
-        refresh_text_in(&path, &homes, &keep, TEXT_BATCH).unwrap();
+        refresh_text_in(&path, &homes, &keep, Some(cutoff), TEXT_BATCH).unwrap();
     });
 
     // A list asked for while a first build runs.
@@ -395,11 +400,11 @@ fn bench_heavy_history() {
             sessions(&data2, || homes, &q, Some(cutoff), None).unwrap();
         })
     };
-    std::thread::sleep(Duration::from_millis(500));
+    std::thread::sleep(Duration::from_millis(1_000));
     let t = Instant::now();
     let rows = sessions(&data2, || homes.clone(), &q, None, None).unwrap();
     println!(
-        "list during first build: answered in {:.2} s with {} rows",
+        "list 1 s into a first build: answered in {:.2} s with {} rows",
         t.elapsed().as_secs_f64(),
         rows.len()
     );
