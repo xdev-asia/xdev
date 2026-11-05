@@ -30,8 +30,8 @@ let counter = 0;
 /**
  * One subscription to the disk events of a worktree. Each batch goes to the open buffers
  * (`reconcile`) and then to `onBatch`. A watcher that fails, or cannot start for a reason that may
- * pass, is started again with a backoff; once it runs again everything is read again, since events
- * were missed meanwhile.
+ * pass, is started again with a backoff. Each time a subscription starts, the open files are read
+ * again, since events were missed meanwhile; after a restart the tree is too.
  */
 export class WorktreeWatch {
   private readonly id = `watch-${++counter}`;
@@ -57,7 +57,10 @@ export class WorktreeWatch {
         () => {
           if (!this.live) return;
           onHealth("live");
-          if (again) this.recheck();
+          // Nothing watched before this: the open files may have changed (another worktree was
+          // shown, or the watcher was down). The tree lists afresh on its own when it first shows.
+          reconcile(this.o.io(), worktree, [OVERFLOW], this.timers);
+          if (again) this.o.onBatch([OVERFLOW]);
         },
         (e) => {
           if (!this.live) return;

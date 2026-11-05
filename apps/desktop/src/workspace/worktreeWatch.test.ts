@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { createMockApi, type FsChanged, type FsEvent } from "@/api";
 import { FileTabs } from "@/files/fileTabs";
+import { needsChoice } from "@/files/ExternalChangeBanner";
 import { RELOAD_DEBOUNCE_MS, resetWatchState } from "@/files/fileWatch";
 import { fakeTimers, tick } from "@/files/testClock";
 import { RETRY_MAX_MS, WorktreeWatch, type WatchHealth } from "./worktreeWatch";
@@ -149,4 +150,38 @@ it("recheck reads the open files and the tree again (the window got focus)", asy
   expect(read).toHaveBeenCalledWith(W, "a.ts");
   expect(s.store.get(W, "a.ts")!.text).toBe("disk");
   w.stop();
+});
+
+it("open files changed while another worktree was shown are read when it shows again", async () => {
+  const s = setup();
+  const OTHER = "/demo/wt/xdev-elm";
+  const disk: Record<string, ReturnType<typeof text>> = { "clean.ts": text("one", "h1"), "dirty.ts": text("one", "h1") };
+  vi.spyOn(s.api, "fileRead").mockImplementation(async (_w, rel) => disk[rel]!);
+  for (const rel of ["clean.ts", "dirty.ts"]) {
+    s.store.open(W, rel);
+    s.store.loaded(W, rel, text("one", "h1"));
+  }
+  s.store.edit(W, "dirty.ts", "mine");
+  const first = s.make();
+  first.start();
+  await tick();
+  await s.clock.advance(RELOAD_DEBOUNCE_MS);
+  // Another worktree is shown: nobody watches this one.
+  first.stop();
+  const other = new WorktreeWatch({ api: s.api, worktree: OTHER, io: () => s.io, onBatch() {}, onHealth() {}, timers: s.clock.timers });
+  other.start();
+  await tick();
+  disk["clean.ts"] = text("two", "h2");
+  disk["dirty.ts"] = text("theirs", "h3");
+  other.stop();
+  // Back: the new subscription reads the open files.
+  const again = s.make();
+  again.start();
+  await tick();
+  await s.clock.advance(RELOAD_DEBOUNCE_MS);
+  expect(s.store.get(W, "clean.ts")).toMatchObject({ text: "two", external: null });
+  const dirty = s.store.get(W, "dirty.ts")!;
+  expect(dirty).toMatchObject({ text: "mine", external: "changed" });
+  expect(needsChoice(dirty)).toBe(true);
+  again.stop();
 });
