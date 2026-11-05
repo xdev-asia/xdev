@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { Button, Field, Menu, Popover, Tag, Textarea } from "@xdev-asia/ui";
-import { toApiError, type Api, type ApiError, type IssueDetail, type IssueEdit, type IssueLabel } from "@/api";
+import { toApiError, type Api, type ApiError, type IssueDetail, type IssueEdit, type IssueEvent, type IssueLabel } from "@/api";
+import { timelineLine } from "@/issues/issueTimeline";
 import { buildIssueEdit, isEmptyEdit, toggled, type IssueChoice } from "@/issues/issueEdit";
 import { renderMarkdown } from "@/doc/markdown";
 import { useI18n } from "@/i18n";
@@ -36,6 +37,9 @@ export function IssueDetailView(props: {
   const [editing, setEditing] = useState<"title" | "body" | null>(null);
   const [draft, setDraft] = useState("");
   const [comment, setComment] = useState("");
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [events, setEvents] = useState<IssueEvent[] | null>(null);
+  const [timelineError, setTimelineError] = useState<ApiError | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -86,6 +90,19 @@ export function IssueDetailView(props: {
   function choose(state: NonNullable<IssueChoice["state"]>): void {
     setMenu(null);
     if (detail) void apply(buildIssueEdit(detail, { state }));
+  }
+
+  function loadTimeline(): void {
+    setTimelineError(null);
+    api
+      .issueTimeline(repoId, number)
+      .then(setEvents)
+      .catch((e: unknown) => setTimelineError(toApiError(e)));
+  }
+
+  function toggleTimeline(): void {
+    setTimelineOpen(!timelineOpen);
+    if (!timelineOpen && events === null) loadTimeline();
   }
 
   function startEditing(kind: "title" | "body"): void {
@@ -291,6 +308,34 @@ export function IssueDetailView(props: {
               </li>
             ))}
           </ul>
+          <button type="button" className="ws-checks-btn" aria-expanded={timelineOpen} onClick={toggleTimeline}>
+            {t("issues.timeline")}
+          </button>
+          {timelineOpen && (
+            <div className="ws-issue-timeline">
+              {timelineError && (
+                <p className="error-text" role="alert">
+                  {REASONS.includes(timelineError.code) ? t(`issues.reason.${timelineError.code}`) : t(`error.${timelineError.code}`)}
+                  {timelineError.code === "gh_failed" && timelineError.detail ? ` ${timelineError.detail}` : ""}
+                </p>
+              )}
+              {!timelineError && events === null && <p className="ws-empty">{t("issues.loading")}</p>}
+              {events !== null && events.length === 0 && <p className="ws-empty">{t("issues.timeline.empty")}</p>}
+              {events !== null && events.length > 0 && (
+                <ul className="ws-issues-list">
+                  {events.map((ev, i) => {
+                    const line = timelineLine(ev, t("issues.ghost"));
+                    return (
+                      <li key={i} className="ws-issue-meta">
+                        <span>{t(line.key, line.vars)}</span>
+                        <span>{ago(Date.parse(ev.createdAt), now, t)}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
           <div className="ws-issue-edit">
             <Textarea
               label={t("issues.comment.placeholder")}

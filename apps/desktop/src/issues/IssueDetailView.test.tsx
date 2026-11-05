@@ -313,3 +313,44 @@ it("a failed comment keeps the text and shows the error", async () => {
   expect(view.html()).toContain(en("error.comment_too_large"));
   expect(view.nodes().find((n) => n.type === Textarea)!.props.value).toBe("x");
 });
+
+// ---- timeline ----
+it("loads the timeline only when it is opened", async () => {
+  const api = createMockApi({});
+  const issueTimeline = vi.fn(api.issueTimeline);
+  const view = mount({ ...api, issueTimeline } as Api, 1);
+  view.commit();
+  await flush();
+  expect(issueTimeline).not.toHaveBeenCalled();
+  expect(view.html()).not.toContain(en("issues.timeline.closed", { actor: "x", subject: "" }));
+  view.nodes().find((n) => n.type === "button" && n.props.children === en("issues.timeline"))!.props.onClick();
+  await flush();
+  expect(issueTimeline).toHaveBeenCalledWith("r1", 1);
+  const html = view.html();
+  expect(html).toContain(en("issues.timeline.labeled", { actor: "hubot", subject: "bug" }));
+  expect(html).toContain(en("issues.timeline.renamed", { actor: "octocat", subject: "Footer meter overflows" }));
+});
+
+it("a timeline error stays in its section", async () => {
+  const api = createMockApi({});
+  const issueTimeline = vi.fn(() => Promise.reject({ code: "gh_failed", detail: "boom" }));
+  const view = mount({ ...api, issueTimeline } as Api, 1);
+  view.commit();
+  await flush();
+  view.nodes().find((n) => n.type === "button" && n.props.children === en("issues.timeline"))!.props.onClick();
+  await flush();
+  const html = view.html();
+  expect(html).toContain("boom");
+  expect(html).toContain(en("issues.comments", { count: 1 }));
+  expect(html.match(/role="alert"/g)).toHaveLength(1);
+});
+
+it("says so when the timeline is empty", async () => {
+  const api = createMockApi({});
+  const view = mount({ ...api, issueTimeline: async () => [] } as Api, 1);
+  view.commit();
+  await flush();
+  view.nodes().find((n) => n.type === "button" && n.props.children === en("issues.timeline"))!.props.onClick();
+  await flush();
+  expect(view.html()).toContain(en("issues.timeline.empty"));
+});
