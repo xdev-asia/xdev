@@ -33,6 +33,7 @@ import "./styles/ssh.css";
 import "katex/dist/katex.min.css";
 import "./styles/preview-files.css";
 import "./styles/diagnostics.css";
+import "./styles/mcp.css";
 import "./styles/startup.css";
 import { startEditorSettingsSync } from "./files/editorSettings";
 import { startNavigationSettingsSync } from "./settings/navigationSettings";

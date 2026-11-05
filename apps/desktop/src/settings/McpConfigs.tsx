@@ -8,8 +8,8 @@ import { pushToast } from "@/workspace/toastStore";
 import { MCP_FILES, MCP_STARTER, readMcpConfigs, type McpRow } from "./mcpInspect";
 
 /** Settings → Repos → MCP configs: the servers each MCP file of a repo defines, and a way to start one. Env values are never shown. */
-export function McpConfigs(props: { api: Pick<Api, "fileRead" | "fileWrite">; repoPath: string }): JSX.Element {
-  const { api, repoPath } = props;
+export function McpConfigs(props: { api: Pick<Api, "fileRead" | "fileWrite">; repoPath: string; openSection?(id: string): void }): JSX.Element {
+  const { api, repoPath, openSection } = props;
   const { t } = useI18n();
   const [rows, setRows] = useState<McpRow[] | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -115,6 +115,11 @@ export function McpConfigs(props: { api: Pick<Api, "fileRead" | "fileWrite">; re
               )
             }
           />
+        )}
+        {openSection && (
+          <Button type="button" variant="secondary" data-act="mcp-open-xdev" onClick={() => openSection("mcp")}>
+            {t("settings.repos.mcp.xdev")}
+          </Button>
         )}
         {failed && (
           <p className="error-text" role="alert">

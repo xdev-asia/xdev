@@ -211,6 +211,12 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("advanced.noProxy", "settings.advanced.noProxy", ["proxy", "bypass", "no_proxy", "exclude", "hosts", "bỏ qua", "bo qua", "loại trừ", "loai tru"], "settings.advanced.noProxy.hint"),
   e("advanced.nodeMirror", "settings.advanced.nodeMirror", ["node", "npm", "registry", "mirror", "package", "gương", "guong", "kho gói", "kho goi"], "settings.advanced.nodeMirror.hint"),
   e("advanced.machineName", "settings.advanced.machineName", ["machine", "name", "host", "hostname", "computer", "device", "tên máy", "ten may", "máy tính", "may tinh"], "settings.advanced.machineName.hint"),
+  // MCP
+  e("mcp.health", "settings.mcp.health.title", ["mcp", "server", "health", "version", "check", "running", "máy chủ", "may chu", "kiểm tra", "kiem tra", "phiên bản", "phien ban"]),
+  e("mcp.tools", "settings.mcp.tools.title", ["mcp", "tools", "tool", "switch", "enable", "disable", "send_to_tab", "read_tab_output", "create_worktree", "list_tabs", "công cụ", "cong cu", "bật", "bat", "tắt", "tat"], "settings.mcp.tools.hint"),
+  e("mcp.activity", "settings.mcp.activity.title", ["mcp", "activity", "log", "calls", "history", "hoạt động", "hoat dong", "nhật ký", "nhat ky", "lịch sử", "lich su"], "settings.mcp.activity.hint"),
+  e("mcp.addToRepo", "settings.mcp.add.title", ["mcp", ".mcp.json", "repo", "add", "config", "project", "thêm", "them", "cấu hình", "cau hinh", "dự án", "du an"]),
+  e("mcp.agents", "settings.mcp.agents.title", ["mcp", "claude", "codex", "gemini", "command", "user scope", "copy", "lệnh", "lenh", "sao chép", "sao chep"]),
 ];
 
 /** The longest query searched, in bytes after trim; longer input is cut. */

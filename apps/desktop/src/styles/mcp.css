@@ -1,0 +1,70 @@
+.mcp-tool {
+  padding: 8px 12px;
+}
+
+.mcp-tool + .mcp-tool,
+.mcp-call + .mcp-call {
+  border-top: 1px solid var(--line);
+}
+
+.mcp-tool-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mcp-tool-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mcp-activity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mcp-activity {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.mcp-call {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 8px 12px;
+  min-height: 24px;
+}
+
+.mcp-call-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+}
+
+.mcp-add-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.mcp-preview,
+.mcp-commands {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mcp-commands {
+  min-width: 0;
+}

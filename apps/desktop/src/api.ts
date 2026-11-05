@@ -202,6 +202,9 @@ import type {
   CrashDetail,
   CrashReport,
   CliStatus,
+  McpActivityView,
+  McpHealth,
+  McpToolView,
   DiagnosticsExport,
   RenderCrash,
   StartupReport,
@@ -324,6 +327,7 @@ export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { CliAsk, CliOpenFile, CliOpenTab, TabReport };
 export type { OrchestrationSettings, SkillStatus, WorkerLifetime, WorkerOpen, WorkerOpenOutcome, WorkerClose, ReadTab, WorkerChanged };
 export type { CliStatus } from "@xdev/bindings";
+export type { McpActivityView, McpHealth, McpToolView };
 export type { Breadcrumb, CrashDetail, CrashReport, DiagnosticsExport, RenderCrash, StartupReport, StartupStep } from "@xdev/bindings";
 export type { RestoreMode } from "@xdev/bindings";
 export type { Theme, EditorTheme, SidebarLook, StatusBarItems, TitlebarMode } from "@xdev/bindings";
@@ -939,6 +943,14 @@ export interface Api {
   cliRepair(): Promise<CliStatus>;
   // Shows the bundled binary in the file manager.
   cliReveal(): Promise<void>;
+  // Settings → MCP. The switches of the app tools `xdev mcp` serves; a disabled tool is not listed.
+  // Setting rejects with `mcp_unknown_tool` or `mcp_io`.
+  mcpToolsGet(): Promise<McpToolView[]>;
+  mcpToolSet(tool: string, enabled: boolean): Promise<McpToolView[]>;
+  // The last 200 tool calls, newest first. Arguments are never kept.
+  mcpActivity(): Promise<McpActivityView[]>;
+  // Runs the bundled `xdev --version`.
+  mcpHealth(): Promise<McpHealth>;
   search(query: string, limit: number): Promise<SearchHit[]>;
   onVaultChanged(cb: (paths: string[]) => void): Promise<() => void>;
   vcsState(): Promise<VcsState>;
@@ -1880,6 +1892,10 @@ const tauriApi: Api = {
   cliRemove: () => call("cli_remove"),
   cliRepair: () => call("cli_repair"),
   cliReveal: () => call("cli_reveal"),
+  mcpToolsGet: () => call("mcp_tools_get"),
+  mcpToolSet: (tool, enabled) => call("mcp_tool_set", { tool, enabled }),
+  mcpActivity: () => call("mcp_activity"),
+  mcpHealth: () => call("mcp_health"),
   search: (query, limit) => call("search", { query, limit }),
   onVaultChanged: (cb) => listen<VaultChanged>("vault://changed", (e) => cb(e.payload.paths)),
   vcsState: () => call("vcs_state"),
