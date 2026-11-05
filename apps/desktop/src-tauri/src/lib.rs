@@ -85,7 +85,6 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_opener::init())
         .manage(updater::Pending::default())
         .manage(xdev_id::XdevIdHub::production())
         .manage(updater::Phase::default())
@@ -509,6 +508,23 @@ mod tests {
     #[test]
     fn app_version_matches_core() {
         assert_eq!(super::app_version(), xdev_core::version());
+    }
+
+    #[test]
+    fn each_plugin_is_registered_once() {
+        // The builder chain is read as text: registering it needs a running app.
+        let src = include_str!("lib.rs");
+        let chain = &src[src.find("    builder\n        .plugin(").unwrap()..];
+        let chain = &chain[..chain.find(".manage(").unwrap()];
+        let mut plugins: Vec<&str> = chain
+            .split(".plugin(")
+            .skip(1)
+            .map(|p| p.split("::").next().unwrap())
+            .collect();
+        let all = plugins.len();
+        plugins.sort_unstable();
+        plugins.dedup();
+        assert_eq!(plugins.len(), all, "{chain}");
     }
 
     #[test]
