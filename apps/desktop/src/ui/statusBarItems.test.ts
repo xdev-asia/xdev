@@ -4,7 +4,7 @@ import { ALL_ITEMS, getStatusBarItems, resetStatusBarItemsForTests, setStatusBar
 beforeEach(resetStatusBarItemsForTests);
 
 it("starts with every item on", () => {
-  expect(getStatusBarItems()).toEqual({ branch: true, tokenUsage: true, agents: true, version: true, ports: true });
+  expect(getStatusBarItems()).toEqual({ branch: true, tokenUsage: true, agents: true, version: true, ports: true, keepAwake: true });
 });
 
 it("notifies once per real change", () => {

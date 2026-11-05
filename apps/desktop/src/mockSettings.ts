@@ -73,7 +73,11 @@ export const UI_SETTINGS_DEFAULTS: UiSettings = {
   editorThemeLight: "app",
   editorThemeDark: "app",
   sidebar: "default",
-  statusBar: { branch: true, tokenUsage: true, agents: true, version: true, ports: true },
+  sidebarTint: "",
+  sidebarTintOpacity: 0.1,
+  reduceEffects: false,
+  hiddenApps: [],
+  statusBar: { branch: true, tokenUsage: true, agents: true, version: true, ports: true, keepAwake: true },
 };
 /** `UI_FONT_MAX` in Rust. */
 export const UI_FONT_MAX = 120;

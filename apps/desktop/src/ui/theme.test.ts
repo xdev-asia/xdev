@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { UiSettings } from "@/api";
 import { UI_SETTINGS_DEFAULTS } from "@/mockSettings";
 import { currentEditorTheme } from "./editorTheme";
+import { getHiddenApps, resetHiddenAppsForTests } from "./hiddenApps";
 import { getStatusBarItems } from "./statusBarItems";
 import { applyAppearance, applyCachedTheme, FONT_CACHE_KEY, getThemePreference, loadTheme, readCachedTheme, resetThemeForTests, setThemePreference, startThemeSync, THEME_CACHE_KEY } from "./theme";
 
@@ -32,7 +33,10 @@ function setup(opts: { dark?: boolean; store?: Record<string, string>; storageTh
   return { attrs, props, store, listeners, state, systemChanges: (dark: boolean) => { state.dark = dark; listeners.forEach((l) => l({ matches: dark })); } };
 }
 
-beforeEach(() => resetThemeForTests());
+beforeEach(() => {
+  resetThemeForTests();
+  resetHiddenAppsForTests();
+});
 
 it("applies a fixed preference whatever the system says, and caches it", () => {
   const t = setup({ dark: true });
@@ -152,6 +156,32 @@ it("applyAppearance feeds the editor theme with the painted theme and the pick",
 
 it("applyAppearance hands the status bar items to the footer", () => {
   setup();
-  applyAppearance({ ...UI_SETTINGS_DEFAULTS, statusBar: { branch: false, tokenUsage: true, agents: true, version: false, ports: true } });
-  expect(getStatusBarItems()).toEqual({ branch: false, tokenUsage: true, agents: true, version: false, ports: true });
+  applyAppearance({ ...UI_SETTINGS_DEFAULTS, statusBar: { branch: false, tokenUsage: true, agents: true, version: false, ports: true, keepAwake: true } });
+  expect(getStatusBarItems()).toEqual({ branch: false, tokenUsage: true, agents: true, version: false, ports: true, keepAwake: true });
+});
+
+it("the sidebar wash replaces --side-tint only while tinted with a tint picked", () => {
+  const t = setup();
+  applyAppearance({ ...UI_SETTINGS_DEFAULTS, sidebar: "tinted", sidebarTint: "violet", sidebarTintOpacity: 0.2 });
+  expect(t.props["--side-tint"]).toBe("color-mix(in srgb, var(--violet) 20%, var(--bg-1))");
+  applyAppearance({ ...UI_SETTINGS_DEFAULTS, sidebar: "default", sidebarTint: "violet", sidebarTintOpacity: 0.2 });
+  expect(t.props["--side-tint"]).toBeUndefined();
+  applyAppearance({ ...UI_SETTINGS_DEFAULTS, sidebar: "tinted", sidebarTint: "", sidebarTintOpacity: 0.2 });
+  expect(t.props["--side-tint"]).toBeUndefined();
+  applyAppearance({ ...UI_SETTINGS_DEFAULTS, sidebar: "tinted", sidebarTint: "not-a-token", sidebarTintOpacity: 0.2 });
+  expect(t.props["--side-tint"]).toBeUndefined();
+});
+
+it("reduce effects sets data-effects on the root", () => {
+  const t = setup();
+  applyAppearance({ ...UI_SETTINGS_DEFAULTS, reduceEffects: true });
+  expect(t.attrs["data-effects"]).toBe("reduced");
+  applyAppearance({ ...UI_SETTINGS_DEFAULTS, reduceEffects: false });
+  expect(t.attrs["data-effects"]).toBe("full");
+});
+
+it("applyAppearance hands the hidden apps to the activity bar", () => {
+  setup();
+  applyAppearance({ ...UI_SETTINGS_DEFAULTS, hiddenApps: ["kit"] });
+  expect(getHiddenApps()).toEqual(["kit"]);
 });

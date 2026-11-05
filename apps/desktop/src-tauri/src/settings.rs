@@ -829,6 +829,21 @@ pub struct UiSettings {
     pub editor_theme_dark: EditorTheme,
     /// Left sidebar background.
     pub sidebar: SidebarLook,
+    /// Accent or neutral token the tinted sidebar is washed with, one of
+    /// `SIDEBAR_TINTS`; empty keeps the `side-tint` token. An unknown name is
+    /// stored empty.
+    #[serde(deserialize_with = "lenient")]
+    pub sidebar_tint: String,
+    /// How strong that wash is, 0.04..=0.30.
+    #[serde(deserialize_with = "lenient_tint_opacity")]
+    pub sidebar_tint_opacity: f32,
+    /// Turns off transitions, animations and backdrop blur in the window.
+    #[serde(deserialize_with = "lenient_bool_false")]
+    pub reduce_effects: bool,
+    /// Activity bar apps that are hidden, by id. Unknown ids and repeats are
+    /// dropped when stored, and at least one app stays visible.
+    #[serde(deserialize_with = "lenient_items")]
+    pub hidden_apps: Vec<String>,
     /// Which of xDev's own footer items show.
     #[serde(deserialize_with = "lenient")]
     pub status_bar: StatusBarItems,
@@ -847,9 +862,29 @@ impl Default for UiSettings {
             editor_theme_light: EditorTheme::App,
             editor_theme_dark: EditorTheme::App,
             sidebar: SidebarLook::Default,
+            sidebar_tint: String::new(),
+            sidebar_tint_opacity: SIDEBAR_TINT_OPACITY_DEFAULT,
+            reduce_effects: false,
+            hidden_apps: Vec::new(),
             status_bar: StatusBarItems::default(),
         }
     }
+}
+
+/// Token names `UiSettings::sidebar_tint` may hold.
+pub const SIDEBAR_TINTS: [&str; 8] = [
+    "accent", "signal", "violet", "ok", "warn", "orange", "danger", "text-2",
+];
+
+pub const SIDEBAR_TINT_OPACITY_DEFAULT: f32 = 0.10;
+
+/// The activity bar apps, as in the window's `shell/apps.ts`.
+pub const APP_IDS: [&str; 8] = [
+    "docs", "changes", "tasks", "squads", "agents", "kit", "accounts", "terminal",
+];
+
+fn lenient_tint_opacity<'de, D: serde::Deserializer<'de>>(de: D) -> Result<f32, D::Error> {
+    lenient_or(de, SIDEBAR_TINT_OPACITY_DEFAULT)
 }
 
 /// Settings → Appearance → Editor theme. A value this build does not know
@@ -907,6 +942,7 @@ pub struct StatusBarItems {
     pub agents: bool,
     pub version: bool,
     pub ports: bool,
+    pub keep_awake: bool,
 }
 
 impl Default for StatusBarItems {
@@ -917,6 +953,7 @@ impl Default for StatusBarItems {
             agents: true,
             version: true,
             ports: true,
+            keep_awake: true,
         }
     }
 }
@@ -973,6 +1010,7 @@ impl<'de> serde::Deserialize<'de> for RestoreMode {
 
 impl UiSettings {
     pub const ZOOM: RangeInclusive<f32> = 0.5..=2.0;
+    pub const SIDEBAR_TINT_OPACITY: RangeInclusive<f32> = 0.04..=0.30;
 
     /// As stored: the zoom inside its range; 1.0 when it is no number.
     pub fn clamped(mut self) -> Self {
@@ -982,7 +1020,33 @@ impl UiSettings {
             1.0
         };
         self.ui_font = clean_ui_font(&self.ui_font);
+        if !SIDEBAR_TINTS.contains(&self.sidebar_tint.as_str()) {
+            self.sidebar_tint.clear();
+        }
+        self.sidebar_tint_opacity = if self.sidebar_tint_opacity.is_finite() {
+            self.sidebar_tint_opacity.clamp(
+                *Self::SIDEBAR_TINT_OPACITY.start(),
+                *Self::SIDEBAR_TINT_OPACITY.end(),
+            )
+        } else {
+            SIDEBAR_TINT_OPACITY_DEFAULT
+        };
+        self.hidden_apps = clean_hidden_apps(&self.hidden_apps);
         self
+    }
+}
+
+/// Known app ids only, each once, in `APP_IDS` order; all of them hidden reads as none hidden.
+fn clean_hidden_apps(raw: &[String]) -> Vec<String> {
+    let kept: Vec<String> = APP_IDS
+        .iter()
+        .filter(|id| raw.iter().any(|r| r == *id))
+        .map(|id| (*id).to_string())
+        .collect();
+    if kept.len() == APP_IDS.len() {
+        Vec::new()
+    } else {
+        kept
     }
 }
 
@@ -2684,6 +2748,68 @@ then sum up"
         assert!(json.contains("\"editorThemeLight\":\"dark\""));
         assert!(json.contains("\"tokenUsage\":true"));
         assert_eq!(serde_json::from_str::<UiSettings>(&json).unwrap(), ui);
+    }
+
+    #[test]
+    fn more_appearance_defaults_and_an_old_file() {
+        let ui = UiSettings::default();
+        assert_eq!(ui.sidebar_tint, "");
+        assert_eq!(ui.sidebar_tint_opacity, 0.10);
+        assert!(!ui.reduce_effects);
+        assert!(ui.hidden_apps.is_empty());
+        assert!(ui.status_bar.keep_awake);
+
+        let old: UiSettings =
+            serde_json::from_str(r#"{"zoom":1.5,"statusBar":{"branch":false}}"#).unwrap();
+        assert_eq!(old.zoom, 1.5);
+        assert_eq!(old.sidebar_tint, "");
+        assert_eq!(old.sidebar_tint_opacity, 0.10);
+        assert!(!old.reduce_effects);
+        assert!(old.hidden_apps.is_empty());
+        assert!(!old.status_bar.branch && old.status_bar.keep_awake);
+
+        let odd: UiSettings = serde_json::from_str(r#"{"zoom":1.5,"sidebarTint":4,"sidebarTintOpacity":"x","reduceEffects":"yes","hiddenApps":"docs"}"#).unwrap();
+        assert_eq!(odd.zoom, 1.5);
+        assert_eq!(odd.sidebar_tint, "");
+        assert_eq!(odd.sidebar_tint_opacity, 0.10);
+        assert!(!odd.reduce_effects);
+        assert!(odd.hidden_apps.is_empty());
+    }
+
+    #[test]
+    fn sidebar_tint_is_a_known_token_and_its_opacity_is_clamped() {
+        let tint = |name: &str, opacity: f32| {
+            let ui = UiSettings {
+                sidebar_tint: name.into(),
+                sidebar_tint_opacity: opacity,
+                ..UiSettings::default()
+            }
+            .clamped();
+            (ui.sidebar_tint, ui.sidebar_tint_opacity)
+        };
+        assert_eq!(tint("violet", 0.2), ("violet".to_string(), 0.2));
+        assert_eq!(tint("#ff0000", 0.2).0, "");
+        assert_eq!(tint("", 0.2).0, "");
+        assert_eq!(tint("ok", 0.0).1, 0.04);
+        assert_eq!(tint("ok", 0.9).1, 0.30);
+        assert_eq!(tint("ok", f32::NAN).1, 0.10);
+        assert_eq!(tint("ok", f32::INFINITY).1, 0.10);
+    }
+
+    #[test]
+    fn hidden_apps_keep_known_ids_once_and_never_hide_everything() {
+        let hidden = |ids: &[&str]| {
+            UiSettings {
+                hidden_apps: ids.iter().map(|s| s.to_string()).collect(),
+                ..UiSettings::default()
+            }
+            .clamped()
+            .hidden_apps
+        };
+        assert_eq!(hidden(&["kit", "nope", "docs", "kit"]), ["docs", "kit"]);
+        assert!(hidden(&["nope"]).is_empty());
+        assert_eq!(hidden(&APP_IDS[1..]).len(), 7);
+        assert!(hidden(&APP_IDS).is_empty());
     }
 
     #[test]

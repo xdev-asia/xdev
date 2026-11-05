@@ -1,6 +1,8 @@
 import { applyTheme, applyUiFont, resolveTheme, systemPrefersDark, watchSystemTheme, type FontRoot, type MatchMediaLike, type ThemePreference } from "@xdev-asia/ui";
 import type { Api, UiSettings } from "@/api";
 import { setEditorPrefs, setPaintedTheme } from "./editorTheme";
+import { setHiddenApps } from "./hiddenApps";
+import { sidebarTintValue } from "./sidebarTint";
 import { setStatusBarItems } from "./statusBarItems";
 
 // The app side of appearance: light / dark / system, the UI font and the sidebar look live in `UiSettings`; the helpers are xdev-ui's.
@@ -105,17 +107,28 @@ export function setThemePreference(pref: ThemePreference): void {
 }
 
 /**
- * Applies the appearance settings: the theme (and its system watch), the UI font and the sidebar
- * look (`data-sidebar` on the root), hands the editor pick to `useEditorTheme` and the footer items to `useStatusBarItems`. The font is cached so the next start paints it before the
+ * Applies the appearance settings: the theme (and its system watch), the UI font, the sidebar
+ * look (`data-sidebar` on the root, `--side-tint` for its wash), reduced effects (`data-effects`), the hidden apps, hands the editor pick to `useEditorTheme` and the footer items to `useStatusBarItems`. The font is cached so the next start paints it before the
  * first render.
  */
-export function applyAppearance(ui: Pick<UiSettings, "theme" | "uiFont" | "sidebar" | "editorThemeLight" | "editorThemeDark"> & Partial<Pick<UiSettings, "statusBar">>): void {
+export function applyAppearance(
+  ui: Pick<UiSettings, "theme" | "uiFont" | "sidebar" | "editorThemeLight" | "editorThemeDark"> & Partial<Pick<UiSettings, "statusBar" | "sidebarTint" | "sidebarTintOpacity" | "reduceEffects" | "hiddenApps">>,
+): void {
   setThemePreference(ui.theme);
   setEditorPrefs(ui);
   if (ui.statusBar) setStatusBarItems(ui.statusBar);
   paintFont(ui.uiFont);
   writeFontCache(ui.uiFont);
-  theEnv().root.setAttribute("data-sidebar", ui.sidebar === "tinted" ? "tinted" : "default");
+  const root = theEnv().root;
+  root.setAttribute("data-sidebar", ui.sidebar === "tinted" ? "tinted" : "default");
+  // The wash replaces the `--side-tint` token only while the sidebar is tinted and a tint is picked.
+  const tint = ui.sidebar === "tinted" ? sidebarTintValue(ui.sidebarTint ?? "", ui.sidebarTintOpacity ?? Number.NaN) : null;
+  if (root.style) {
+    if (tint) root.style.setProperty("--side-tint", tint);
+    else root.style.removeProperty("--side-tint");
+  }
+  root.setAttribute("data-effects", ui.reduceEffects ? "reduced" : "full");
+  setHiddenApps(ui.hiddenApps ?? []);
 }
 
 /**

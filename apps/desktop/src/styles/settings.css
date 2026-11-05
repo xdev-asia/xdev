@@ -341,7 +341,8 @@
 }
 
 /* Settings → Notifications: the volume slider, without the text-field box. */
-.notif-volume input[type="range"] {
+.notif-volume input[type="range"],
+.tint-opacity input[type="range"] {
   max-width: 320px;
   height: auto;
   padding: 0;
@@ -950,4 +951,52 @@
 
 .mcp-file > .settings-hint {
   padding: 6px 14px;
+}
+
+/* Settings > Appearance > Sidebar tint: a swatch radio group and its strength slider. */
+.tint-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-2);
+}
+
+.tint-swatch {
+  position: relative;
+  display: inline-flex;
+}
+
+.tint-swatch input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.tint-swatch-dot {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--side-tint);
+}
+
+.tint-swatch input:checked + .tint-swatch-dot {
+  outline: 2px solid var(--text-1);
+  outline-offset: 2px;
+}
+
+.tint-swatch input:focus-visible + .tint-swatch-dot {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.tint-swatch input:disabled {
+  cursor: default;
+}
+
+.tint-opacity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-1);
 }

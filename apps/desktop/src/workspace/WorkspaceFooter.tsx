@@ -197,7 +197,7 @@ export function WorkspaceFooter(props: {
         </>
       )}
       {items.ports && props.ports}
-      {props.keepAwake}
+      {items.keepAwake && props.keepAwake}
       {items.version && <span className="ws-mono">{`v${props.version}`}</span>}
       {props.update && <UpdateItem update={props.update} onRestart={props.onRestartUpdate} />}
     </footer>
