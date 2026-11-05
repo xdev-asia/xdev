@@ -2,13 +2,13 @@ import { useEffect } from "react";
 import type { JSX } from "react";
 import type { Api } from "@/api";
 import { useI18n } from "@/i18n";
-import { Button } from "@xdev-asia/ui";
 import { ImageView } from "./ImageView";
 import { MarkdownPane } from "./MarkdownPane";
 import { MediaView } from "./MediaView";
 import { LoadError } from "./LoadError";
 import { CodeEditor } from "./CodeEditor";
 import { useEditorSettings } from "./editorSettings";
+import { ExternalChange, needsChoice } from "./ExternalChangeBanner";
 import { loadFile, saveFile } from "./fileIO";
 import { fileTabs, useFileEntry } from "./fileTabs";
 import { viewerOf } from "./viewer";
@@ -35,10 +35,19 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
 
   const viewer = direct ? viewerOf(rel) : entry?.status === "ready" ? viewerOf(rel, entry.kind) : "text";
   let body: JSX.Element;
-  if (viewer === "image") {
-    body = <ImageView api={api} worktree={worktree} rel={rel} />;
+  if (direct && (entry?.external === "deleted" || entry?.external === "renamed")) {
+    // The watcher saw the file go: say so, and let Retry look again.
+    body = (
+      <LoadError
+        code="not_found"
+        onRetry={() => fileTabs.markExternal(worktree, rel, null)}
+        onReveal={() => void api.fileReveal(worktree, rel).catch(() => undefined)}
+      />
+    );
+  } else if (viewer === "image") {
+    body = <ImageView key={entry?.version ?? 0} api={api} worktree={worktree} rel={rel} />;
   } else if (viewer === "media") {
-    body = <MediaView api={api} worktree={worktree} rel={rel} />;
+    body = <MediaView key={entry?.version ?? 0} api={api} worktree={worktree} rel={rel} />;
   } else if (!entry || entry.status === "loading") {
     body = <p className="ws-empty">{t("files.loading")}</p>;
   } else if (entry.status === "error") {
@@ -76,15 +85,7 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
   } else {
     const editor = (
       <>
-        {entry.conflict !== null && (
-          <div className="file-conflict" role="alert">
-            <span>{t("files.conflict.body")}</span>
-            <button type="button" className="btn-secondary" onClick={() => void loadFile(io, worktree, rel)}>
-              {t("files.conflict.reload")}
-            </button>
-            <Button type="button" onClick={() => void saveFile(io, worktree, rel, true)}>{t("files.conflict.overwrite")}</Button>
-          </div>
-        )}
+        {needsChoice(entry) && <ExternalChange api={api} entry={entry} io={io} />}
         <CodeEditor
           rel={rel}
           value={entry.text}

@@ -9,6 +9,7 @@ mod cli_verbs;
 mod clipboard;
 mod commands;
 mod endpoint;
+mod file_watch;
 mod files;
 mod history;
 mod hooks;
@@ -98,6 +99,7 @@ pub fn run() {
         .manage(review_notes::ReviewNotesLock::default())
         .manage(profiles::ProfilesLock::default())
         .manage(files::Searches::default())
+        .manage(file_watch::FileWatches::default())
         .manage(status::Shown::default())
         .manage(power::Awake::default())
         .manage(ports::Ports::default())
@@ -397,6 +399,8 @@ pub fn run() {
             files::files_list,
             files::files_search,
             files::files_search_cancel,
+            file_watch::files_watch,
+            file_watch::files_unwatch,
             ship::worktree_ship,
             ship::worktree_push,
             ship::worktree_pull,

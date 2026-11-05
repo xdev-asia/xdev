@@ -11,6 +11,7 @@ use crate::accounts::{Account, Accounts, LoginStart, Models};
 use crate::agent_sessions::{SessionQuery, SessionRow, SessionSearchStatus};
 use crate::cli_verbs::{CliAsk, CliOpenTab, TabReport};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
+use crate::file_watch::FsChanged;
 use crate::hooks::PtyHook;
 use crate::keybindings::{KeybindingsChanged, KeybindingsText};
 use crate::kit::{KitText, PromptEntry};
@@ -68,6 +69,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_ai::Quota::export_all(cfg)?;
     TasksContext::export_all(cfg)?;
     FileDiff::export_all(cfg)?;
+    FsChanged::export_all(cfg)?;
     xdev_agent::Task::export_all(cfg)?;
     SquadItem::export_all(cfg)?;
     SquadView::export_all(cfg)?;

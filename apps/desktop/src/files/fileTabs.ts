@@ -48,8 +48,25 @@ export interface FileEntry {
   eol: Eol;
   /** Set when a save found the file changed on disk: the hash that is there now. */
   conflict: string | null;
+  /**
+   * What watching the disk found out about this file: `changed` (the text there differs from the
+   * editor's base), `deleted`, or `renamed` (gone, and a file of the same name appeared elsewhere).
+   */
+  external: ExternalState | null;
   saving: boolean;
   goto?: Goto;
+  /** Bumped when the file changed on disk; image and media views are drawn anew on a new one. */
+  version?: number;
+}
+
+export type ExternalState = "changed" | "deleted" | "renamed";
+
+/** The parts of an entry a reload replaces; kept so Undo can put them back. */
+export interface Snapshot {
+  text: string;
+  saved: string;
+  hash: string | null;
+  eol: Eol;
 }
 
 export const isDirty = (e: FileEntry): boolean => e.status === "ready" && e.kind === "text" && e.text !== e.saved;
@@ -101,7 +118,7 @@ export class FileTabs {
       if (goto !== old.goto) this.put({ ...old, goto });
       return false;
     }
-    this.put({ worktree, rel, status: "loading", kind: "text", text: "", saved: "", hash: null, eol: "lf", conflict: null, saving: false, goto });
+    this.put({ worktree, rel, status: "loading", kind: "text", text: "", saved: "", hash: null, eol: "lf", conflict: null, external: null, saving: false, goto });
     return true;
   }
 
@@ -110,7 +127,7 @@ export class FileTabs {
     const old = this.get(worktree, rel);
     if (!old) return;
     const text = file.text ?? "";
-    this.put({ ...old, status: "ready", error: undefined, kind: file.kind, text, saved: text, hash: file.hash, eol: file.eol, conflict: null, saving: false });
+    this.put({ ...old, status: "ready", error: undefined, kind: file.kind, text, saved: text, hash: file.hash, eol: file.eol, conflict: null, external: null, saving: false });
   }
 
   failed(worktree: string, rel: string, code: string): void {
@@ -132,13 +149,43 @@ export class FileTabs {
   /** `text` is on disk now with `hash`; edits made while it saved stay dirty. */
   saved(worktree: string, rel: string, text: string, hash: string): void {
     const old = this.get(worktree, rel);
-    if (old) this.put({ ...old, saved: text, hash, conflict: null, saving: false });
+    if (old) this.put({ ...old, saved: text, hash, conflict: null, external: null, saving: false });
   }
 
   /** A save found `diskHash` on disk instead of the loaded hash; nothing was written. */
   conflict(worktree: string, rel: string, diskHash: string): void {
     const old = this.get(worktree, rel);
     if (old) this.put({ ...old, conflict: diskHash, saving: false });
+  }
+
+  /** Sets or clears the mark; nothing changes (nobody is told) when it already is `state`. */
+  markExternal(worktree: string, rel: string, state: ExternalState | null): void {
+    const old = this.get(worktree, rel);
+    if (old && old.external !== state) this.put({ ...old, external: state });
+  }
+
+  /** The file changed on disk and its view reads it itself (an image, media): clears the mark, bumps `version`. */
+  revise(worktree: string, rel: string): void {
+    const old = this.get(worktree, rel);
+    if (old) this.put({ ...old, external: null, version: (old.version ?? 0) + 1 });
+  }
+
+  /**
+   * The person keeps their edits over what is on disk. The disk hash becomes the base, so the next
+   * save writes over it on purpose instead of meeting the same conflict. A file that is gone (`null`,
+   * or the conflict hash "") has no base: the next save creates it. Left out, the base stays.
+   */
+  keepMine(worktree: string, rel: string, diskHash?: string | null): void {
+    const old = this.get(worktree, rel);
+    if (!old) return;
+    const hash = diskHash === undefined ? old.hash : diskHash === "" ? null : diskHash;
+    this.put({ ...old, external: null, conflict: null, hash });
+  }
+
+  /** Puts a snapshot back (Undo of a reload) and clears the marks. */
+  restore(worktree: string, rel: string, snap: Snapshot): void {
+    const old = this.get(worktree, rel);
+    if (old) this.put({ ...old, ...snap, external: null, conflict: null, saving: false });
   }
 
   close(worktree: string, rel: string): void {

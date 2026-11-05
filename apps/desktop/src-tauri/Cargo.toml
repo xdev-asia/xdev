@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 arboard = { version = "3", features = ["wayland-data-control"] }
 blake3.workspace = true
+dunce = "1.0.5"
 notify-debouncer-full.workspace = true
 png = "0.18"
 serde.workspace = true
@@ -50,7 +51,6 @@ xdev-workspace.workspace = true
 tauri = { version = "2", features = ["tray-icon"] }
 
 [dev-dependencies]
-dunce = "1.0.5"
 rusqlite.workspace = true
 tempfile.workspace = true
 ts-rs.workspace = true

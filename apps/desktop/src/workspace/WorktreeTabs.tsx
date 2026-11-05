@@ -553,7 +553,9 @@ export function WorktreeTabs(props: {
       const rel = fileTabRel(id);
       if (rel !== null) {
         const entry = files.find((f) => f.rel === rel);
-        return entry ? [{ id, tab: null, file: { rel, dirty: isDirty(entry) } }] : [];
+        if (!entry) return [];
+        const gone = entry.external === "deleted" || entry.external === "renamed" ? entry.external : undefined;
+        return [{ id, tab: null, file: { rel, dirty: isDirty(entry), ...(gone ? { gone } : {}) } }];
       }
       const tab = byId.get(id);
       return tab ? [{ id, tab }] : [];

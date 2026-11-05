@@ -7,7 +7,10 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { conflictChange, conflictDecorations } from "./conflictDecorations";
 import { parseConflicts } from "./conflictMarkers";
+import { ExternalChange } from "./ExternalChangeBanner";
 import { FileView } from "./FileView";
+import { ImageView } from "./ImageView";
+import { MediaView } from "./MediaView";
 import { LoadError } from "./LoadError";
 import { fileTabs, isDirty } from "./fileTabs";
 
@@ -64,26 +67,21 @@ it("the editor's save writes with the loaded hash", async () => {
   expect(write).toHaveBeenCalledWith(W, "a.ts", "two", "lf", "h1");
 });
 
-it("a conflict shows the bar; Reload takes the disk text, Overwrite writes over it", async () => {
+it("a save conflict or a changed-on-disk mark shows the banner; a clean or deleted file does not", () => {
   const api = createMockApi({});
+  const shown = () => draw(api).some((n) => n.type === ExternalChange);
   ready();
+  expect(shown()).toBe(false);
   fileTabs.edit(W, "a.ts", "mine");
   fileTabs.conflict(W, "a.ts", "disk9");
-  const bar = () => draw(api).find((n) => n.props.className === "file-conflict")!;
-  expect(nodes(bar()).some((n) => n.props.children === en("files.conflict.body"))).toBe(true);
-  const write = vi.spyOn(api, "fileWrite").mockResolvedValue({ type: "saved", hash: "h3" });
-  const buttons = () => nodes(bar()).filter((n) => n.props.onClick);
-  buttons()[1].props.onClick();
-  await tick();
-  expect(write).toHaveBeenCalledWith(W, "a.ts", "mine", "lf", "disk9");
-  expect(fileTabs.get(W, "a.ts")!.conflict).toBeNull();
-
-  fileTabs.edit(W, "a.ts", "mine2");
-  fileTabs.conflict(W, "a.ts", "disk10");
-  vi.spyOn(api, "fileRead").mockResolvedValue({ text: "from disk", kind: "text", hash: "disk10", eol: "lf", size: 9 } as never);
-  buttons()[0].props.onClick();
-  await tick();
-  expect(fileTabs.get(W, "a.ts")).toMatchObject({ text: "from disk", saved: "from disk", conflict: null });
+  expect(shown()).toBe(true);
+  fileTabs.keepMine(W, "a.ts", "disk9");
+  expect(shown()).toBe(false);
+  fileTabs.markExternal(W, "a.ts", "changed");
+  expect(shown()).toBe(true);
+  // A deleted or renamed file is marked on its tab, not with a bar.
+  fileTabs.markExternal(W, "a.ts", "deleted");
+  expect(shown()).toBe(false);
 });
 
 it("a binary or too large file has no editor, only Reveal in File Manager", async () => {
@@ -160,6 +158,19 @@ it("does not read an image or media file as text", () => {
   }
 });
 
+it("an image or media file the watcher saw go shows not found, and Retry brings the view back", () => {
+  for (const rel of ["pic.png", "clip.mp4"]) {
+    const api = createMockApi({});
+    fileTabs.open(W, rel);
+    fileTabs.markExternal(W, rel, "deleted");
+    const error = draw(api, rel).find((n) => n.type === LoadError)!;
+    expect(error.props.code).toBe("not_found");
+    error.props.onRetry();
+    expect(fileTabs.get(W, rel)!.external).toBeNull();
+    expect(draw(api, rel).find((n) => n.type === LoadError)).toBeUndefined();
+  }
+});
+
 it("reads an svg as text first, then routes it by what the read found", () => {
   const api = createMockApi({});
   const read = vi.spyOn(api, "fileRead");
@@ -200,4 +211,14 @@ it("a read refused as too large keeps the too large note", () => {
   const all = draw(createMockApi({}));
   expect(all.find((n) => n.type === LoadError)).toBeUndefined();
   expect(all.some((n) => n.props.children === en("files.tooLarge"))).toBe(true);
+});
+
+it("an image or media view is drawn anew when its file changed on disk", () => {
+  for (const [rel, View] of [["pic.png", ImageView], ["clip.mp4", MediaView]] as const) {
+    fileTabs.open(W, rel);
+    const keyOf = () => draw(createMockApi({}), rel).find((n) => n.type === View)!.key;
+    const before = keyOf();
+    fileTabs.revise(W, rel);
+    expect(keyOf()).not.toBe(before);
+  }
 });

@@ -1,19 +1,21 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createMockApi, type Api, type DirListing, type WorktreeChange } from "@/api";
+import { createMockApi, type Api, type DirListing, type FsEvent, type WorktreeChange } from "@/api";
 import { translate } from "@/i18n";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { NameDialog } from "@/files/NameDialog";
 import { onOpenFile, type OpenFileRequest } from "@/files/openFile";
 import { ContextMenu } from "@/ui/ContextMenu";
 import { FileTree } from "./FileTree";
+import type { WatchHealth } from "./worktreeWatch";
+import { emptyQueue, enqueue, type WatchQueue } from "@/files/treeRefresh";
 
 const toasts = vi.hoisted(() => ({ pushed: [] as { id: string; text: string }[] }));
 vi.mock("./toastStore", () => ({ pushToast: (toast: { id: string; text: string }) => void toasts.pushed.push(toast) }));
 
 // Hooks are stubbed only while a component under test is called; each harness keeps its own.
-const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
+const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (((() => void | (() => void))) & { deps?: unknown[] })[] }));
 vi.mock("react", async (original) => {
   const react = await original<typeof import("react")>();
   const slot = (initial: unknown) => {
@@ -34,7 +36,7 @@ vi.mock("react", async (original) => {
       const { index, values } = slot(() => ({ current: initial }));
       return values[index];
     },
-    useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
+    useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(Object.assign(() => effect(), { deps })) : react.useEffect(effect, deps)),
     useCallback: (fn: any, deps: any) => (hooks.active ? fn : react.useCallback(fn, deps)),
   };
 });
@@ -67,11 +69,18 @@ function mount(render: (changes: WorktreeChange[]) => unknown, first: WorktreeCh
     try { return render(changes); } finally { hooks.active = false; }
   };
   let current = first;
+  // An effect runs again only when its deps changed, as in React.
+  const last: (unknown[] | undefined)[] = [];
   const run = (changes: WorktreeChange[]) => {
     const before = hooks.effects.length;
     current = changes;
     draw(changes);
-    hooks.effects.slice(before).forEach((effect) => effect());
+    hooks.effects.slice(before).forEach((effect, i) => {
+      const prev = last[i];
+      if (effect.deps && prev && effect.deps.length === prev.length && effect.deps.every((d, j) => Object.is(d, prev[j]))) return;
+      last[i] = effect.deps;
+      effect();
+    });
   };
   run(first);
   return { all: () => nodes(draw(current)), html: () => renderToStaticMarkup(draw(current) as ReactElement), again: run };
@@ -79,12 +88,18 @@ function mount(render: (changes: WorktreeChange[]) => unknown, first: WorktreeCh
 
 function tree(api: Api, changes: WorktreeChange[] = CHANGES) {
   const onOpen = vi.fn();
-  const view = mount((list) => FileTree({ api, worktree: OAK, changes: list, onOpen }), changes);
+  const feed: { queue: WatchQueue; health?: WatchHealth; push(events: FsEvent[]): void } = {
+    queue: emptyQueue(OAK),
+    push(events) {
+      feed.queue = enqueue(feed.queue, events);
+    },
+  };
+  const view = mount((list) => FileTree({ api, worktree: OAK, changes: list, onOpen, queue: feed.queue, watchHealth: feed.health }), changes);
   const rows = () => view.all().filter((n) => n.props.role === "treeitem");
   const label = (r: Node) => nodes(r).find((n) => n.props.className === "ws-tree-name")?.props.children;
   const row = (name: string) => rows().find((r) => label(r) === name)!;
   const mark = (name: string) => nodes(row(name)).find((n) => n.props.className === "ws-tree-mark")?.props;
-  return { ...view, onOpen, rows, row, label, mark };
+  return { ...view, onOpen, rows, row, label, mark, feed };
 }
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; });
@@ -314,4 +329,88 @@ it("says why a folder could not be read", async () => {
   await tick();
   const note = view.all().find((n) => n.props.className === "ws-tree-note")!;
   expect(note.props.children).toBe(en("workspace.files.error"));
+});
+
+const ev = (kind: FsEvent["kind"], rel: string, dir: boolean | null = false): FsEvent => ({ kind, rel, dir });
+
+it("disk events read again only the loaded folders they touch", async () => {
+  const api = createMockApi({});
+  const list = vi.spyOn(api, "worktreeListDir");
+  const view = tree(api);
+  await tick();
+  view.row("src").props.onClick();
+  await tick();
+  list.mockClear();
+
+  view.feed.push([ev("create", "src/New.tsx"), ev("create", "docs/new.md"), ev("update", "package.json")]);
+  view.again(CHANGES);
+  await tick();
+  expect(list.mock.calls.map(([, dir]) => dir)).toEqual(["src"]);
+
+  list.mockClear();
+  view.feed.push([ev("overflow", "", null)]);
+  view.again(CHANGES);
+  await tick();
+  // The overflow bumps the refresh counter; the next draw reads the shown folders.
+  view.again(CHANGES);
+  await tick();
+  expect(list.mock.calls.map(([, dir]) => dir).sort()).toEqual(["", "src"]);
+});
+
+it("every batch that arrived between two draws is applied", async () => {
+  const api = createMockApi({});
+  const list = vi.spyOn(api, "worktreeListDir");
+  const view = tree(api);
+  await tick();
+  view.row("src").props.onClick();
+  view.row("docs").props.onClick();
+  await tick();
+  list.mockClear();
+  // Two batches, one draw: the first must not be lost.
+  view.feed.push([ev("create", "src/New.tsx")]);
+  view.feed.push([ev("create", "docs/new.md")]);
+  view.again(CHANGES);
+  await tick();
+  expect(list.mock.calls.map(([, dir]) => dir).sort()).toEqual(["docs", "src"]);
+  // Drawn again with nothing new: nothing is read again.
+  list.mockClear();
+  view.feed.push([]);
+  view.again(CHANGES);
+  await tick();
+  expect(list).not.toHaveBeenCalled();
+});
+
+it("disk events wait while the name dialog is open", async () => {
+  const api = createMockApi({});
+  const list = vi.spyOn(api, "worktreeListDir");
+  const view = tree(api);
+  await tick();
+  const root = view.all().find((n) => n.props.role === "tree")!;
+  void root;
+  // Open the New file dialog through the tree's own menu.
+  const menu = () => view.all().find((n) => (n as Node).type === ContextMenu);
+  view.all().find((n) => n.props.role === "tree")!.props.onContextMenu({ preventDefault() {}, stopPropagation() {}, clientX: 1, clientY: 1 });
+  menu()!.props.items.find((i: { id: string }) => i.id === "newFile").run();
+  expect(view.all().some((n) => n.type === NameDialog)).toBe(true);
+  list.mockClear();
+
+  view.feed.push([ev("create", "held.txt")]);
+  view.again(CHANGES);
+  await tick();
+  expect(list).not.toHaveBeenCalled();
+
+  view.all().find((n) => n.type === NameDialog)!.props.onCancel();
+  view.again(CHANGES);
+  await tick();
+  expect(list.mock.calls.map(([, dir]) => dir)).toEqual([""]);
+});
+
+it("says when live updates stopped at the system watch limit", async () => {
+  const view = tree(createMockApi({}));
+  await tick();
+  expect(view.html()).not.toContain(en("files.watch.limit.title"));
+  view.feed.health = "limit";
+  const html = view.html();
+  expect(html).toContain(en("files.watch.limit.title"));
+  expect(html).toContain("fs.inotify.max_user_watches");
 });

@@ -1,15 +1,17 @@
-import { Icon } from "@xdev-asia/ui";
+import { Banner, Icon } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type DirListing, type WorktreeChange } from "@/api";
+import { toApiError, type Api, type DirListing, type FsEvent, type WorktreeChange } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { NameDialog } from "@/files/NameDialog";
 import { fileName, fileTabs } from "@/files/fileTabs";
 import { openFile } from "@/files/openFile";
+import { dirsToReload, drain, type WatchQueue } from "@/files/treeRefresh";
 import { copyAbsolute, copyRelative, createEntry, deleteEntry, parentOf, renameEntry, type TreeIo } from "@/files/treeActions";
 import { useI18n } from "@/i18n";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import { pushToast } from "./toastStore";
+import type { WatchHealth } from "./worktreeWatch";
 
 // Git's own letters, so they read the same in every language. A deleted file is not on disk, so
 // the tree never meets one.
@@ -89,8 +91,12 @@ export function FileTree(props: {
   onOpen: (file: string) => void;
   /** Opens the search in files; the link is off until something handles it. */
   onSearch?: () => void;
+  /** The disk events of the shown worktree; each batch is applied once. Held while a name dialog is open. */
+  queue?: WatchQueue | null;
+  /** How watching the disk goes; `limit` shows why live updates stopped. */
+  watchHealth?: WatchHealth;
 }): JSX.Element {
-  const { api, worktree, changes, onOpen, onSearch } = props;
+  const { api, worktree, changes, onOpen, onSearch, queue = null } = props;
   const { t } = useI18n();
   const [folders, setFolders] = useState<Record<string, Folder>>({});
   const [open, setOpen] = useState<string[]>([]);
@@ -128,6 +134,27 @@ export function FileTree(props: {
     setFolders((all) => Object.fromEntries(Object.entries(all).filter(([dir]) => shown.includes(dir))));
     for (const dir of shown) read(dir);
   }, [api, worktree, changes, refresh]);
+
+  // Disk events wait here while a name dialog is open, so its sibling check keeps a steady list.
+  const pending = useRef<FsEvent[]>([]);
+  const seen = useRef(0);
+  const naming = ask !== null && ask.kind !== "delete";
+  useEffect(() => {
+    if (queue) {
+      const next = drain(queue, worktree, seen.current);
+      seen.current = next.seen;
+      pending.current.push(...next.events);
+    }
+    if (naming || pending.current.length === 0) return;
+    const batch = pending.current;
+    pending.current = [];
+    const dirs = dirsToReload(batch, new Set(["", ...openNow.current]));
+    if (dirs === "all") return void setRefresh((n) => n + 1);
+    for (const dir of dirs) {
+      asked.current.delete(dir);
+      read(dir);
+    }
+  }, [queue, naming]);
 
   function toggle(dir: string): void {
     const closing = open.includes(dir);
@@ -215,6 +242,7 @@ export function FileTree(props: {
           {t("files.tree.searchInFiles")}
         </button>
       </div>
+      {props.watchHealth === "limit" && <Banner title={t("files.watch.limit.title")}>{t("files.watch.limit.body")}</Banner>}
     <div className="ws-tree ws-mono" role="tree" aria-label={t("workspace.files.tree")} onContextMenu={(e) => onMenu(e as unknown as MouseEvent, null)}>
       {rows.map((row) => {
         const indent = { paddingLeft: `calc(var(--tree-indent) * ${row.depth} + var(--tree-pad))` };
