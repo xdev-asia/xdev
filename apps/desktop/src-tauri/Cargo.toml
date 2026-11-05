@@ -64,6 +64,9 @@ objc2-user-notifications = "0.3.2"
 # The user Path in the registry and the environment change broadcast (cli_install).
 winreg = "0.56"
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+# Status toasts with a tag, so reading a pane can remove them from Action Center.
+# The version the notification plugin's toast crate already uses.
+windows = { version = "0.62.2", features = ["Data_Xml_Dom", "Foundation", "UI_Notifications"] }
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
