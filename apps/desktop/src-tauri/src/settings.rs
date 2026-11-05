@@ -2299,43 +2299,51 @@ mod tests {
         assert!(bad.worktree_dir_history.is_empty());
     }
 
+    /// `p` as an absolute path on this OS (`/x` is not absolute on Windows).
+    fn abs(p: &str) -> String {
+        if cfg!(windows) {
+            format!("C:{p}")
+        } else {
+            p.to_owned()
+        }
+    }
+
     #[test]
     fn worktree_dir_history_is_newest_first_deduped_and_capped() {
-        let h = push_dir_history(vec!["/a".into(), "/b".into()], " /b ");
-        assert_eq!(h, ["/b", "/a"]);
+        let h = push_dir_history(vec![abs("/a"), abs("/b")], &format!(" {} ", abs("/b")));
+        assert_eq!(h, [abs("/b"), abs("/a")]);
         assert_eq!(push_dir_history(h.clone(), "rel/dir"), h);
         assert_eq!(push_dir_history(h.clone(), "  "), h);
-        let full = (0..WORKTREE_DIR_HISTORY_MAX + 3)
-            .fold(Vec::new(), |h, n| push_dir_history(h, &format!("/d{n}")));
+        let full = (0..WORKTREE_DIR_HISTORY_MAX + 3).fold(Vec::new(), |h, n| {
+            push_dir_history(h, &abs(&format!("/d{n}")))
+        });
         assert_eq!(full.len(), WORKTREE_DIR_HISTORY_MAX);
-        assert_eq!(full[0], format!("/d{}", WORKTREE_DIR_HISTORY_MAX + 2));
+        assert_eq!(full[0], abs(&format!("/d{}", WORKTREE_DIR_HISTORY_MAX + 2)));
     }
 
     #[test]
     fn normalized_keeps_an_absolute_worktree_dir_and_records_it() {
         let git = GitSettings {
-            worktree_dir: " /trees ".into(),
-            worktree_dir_history: vec!["/old".into(), "rel".into(), "/trees".into()],
+            worktree_dir: format!(" {} ", abs("/trees")),
+            worktree_dir_history: vec![abs("/old"), "rel".into(), abs("/trees")],
             ..GitSettings::default()
         }
         .normalized();
-        assert_eq!(git.worktree_dir, "/trees");
-        assert_eq!(git.worktree_dir_history, ["/trees", "/old"]);
+        assert_eq!(git.worktree_dir, abs("/trees"));
+        assert_eq!(git.worktree_dir_history, [abs("/trees"), abs("/old")]);
         assert_eq!(
             git.create_options().worktree_dir,
-            Some(std::path::PathBuf::from("/trees"))
+            Some(std::path::PathBuf::from(abs("/trees")))
         );
         let relative = GitSettings {
             worktree_dir: "trees".into(),
-            worktree_dir_history: (0..9).map(|n| format!("/h{n}")).collect(),
+            worktree_dir_history: (0..9).map(|n| abs(&format!("/h{n}"))).collect(),
             ..GitSettings::default()
         }
         .normalized();
         assert_eq!(relative.worktree_dir, "");
-        assert_eq!(
-            relative.worktree_dir_history,
-            ["/h0", "/h1", "/h2", "/h3", "/h4"]
-        );
+        let first_five: Vec<String> = (0..5).map(|n| abs(&format!("/h{n}"))).collect();
+        assert_eq!(relative.worktree_dir_history, first_five);
         assert_eq!(relative.create_options().worktree_dir, None);
     }
 
