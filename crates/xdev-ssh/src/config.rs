@@ -173,10 +173,10 @@ pub fn parse_config(text: &str) -> ParsedConfig {
                     }
                     // Every LocalForward line adds one.
                     "localforward" => {
-                        if let Some(f) = local_forward(&value) {
-                            if !block.local_forwards.contains(&f) {
-                                block.local_forwards.push(f);
-                            }
+                        if let Some(f) = local_forward(&value)
+                            && !block.local_forwards.contains(&f)
+                        {
+                            block.local_forwards.push(f);
                         }
                     }
                     "connecttimeout" => {
