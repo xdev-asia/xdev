@@ -224,6 +224,7 @@ mod tests {
                 name: "node".into(),
                 cmd: "node".into(),
                 cwd: Some(PathBuf::from("/w/a")),
+                start: None,
             }])
         }
         fn terminate(&self, _pid: u32) -> Result<(), ScanError> {

@@ -434,6 +434,8 @@ export type ErrorCode =
   | "port_not_owned"
   | "port_no_pid"
   | "port_own_process"
+  | "port_scan_unavailable"
+  | "port_changed"
   | "stop_failed"
   | "open_failed"
   | "ptyd_unreachable"
@@ -1176,6 +1178,8 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "port_not_owned",
   "port_no_pid",
   "port_own_process",
+  "port_scan_unavailable",
+  "port_changed",
   "stop_failed",
   "open_failed",
   "ptyd_unreachable",
