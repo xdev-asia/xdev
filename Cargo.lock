@@ -6793,6 +6793,7 @@ dependencies = [
  "xdev-input-source",
  "xdev-ipc",
  "xdev-kit",
+ "xdev-mcp",
  "xdev-orch",
  "xdev-policy",
  "xdev-ports",

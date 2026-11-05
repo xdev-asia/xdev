@@ -37,6 +37,7 @@ mod kit;
 mod layout;
 mod links;
 mod links_open;
+mod mcp_tools;
 mod network;
 mod open_in;
 mod orch_pump;
@@ -383,6 +384,10 @@ pub fn run() {
             cli_install::cli_remove,
             cli_install::cli_repair,
             cli_install::cli_reveal,
+            mcp_tools::mcp_tools_get,
+            mcp_tools::mcp_tool_set,
+            mcp_tools::mcp_activity,
+            mcp_tools::mcp_health,
             commands::search,
             commands::vcs_state,
             commands::init_repo,
