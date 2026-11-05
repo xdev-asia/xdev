@@ -35,6 +35,7 @@ import { createMockThemes, type MockThemes } from "./mockThemes";
 import { createMockAppStats } from "./mockAppStats";
 import { createMockPower } from "./mockPower";
 import { createMockPty, type MockPtyd } from "./mockPty";
+import { createMockAccountRouting, type MockAccountRouting } from "./mockAccountRouting";
 import { createMockCrash, type MockCrash } from "./mockCrash";
 import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
 import { createMockXdevId, type MockXdevId } from "./mockXdevId";
@@ -377,7 +378,7 @@ export type MockApi = Api & Pick<MockSsh, "__sshConfig"> & MockPtyd & Omit<MockC
   __editOutside(path: string, content: string | null): void;
   // Writes a file the way `propose_update` does over MCP; throws an ApiError like the real tool.
   __propose(path: string, content: string, note: string | null): void;
-};
+} & Pick<MockAccountRouting, "__quotaAlert">;
 
 type MockOptions = {
   repo?: boolean;
@@ -582,6 +583,13 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
   const themes = createMockThemes(undefined, settingsHub.emit);
   const power = createMockPower(settingsApi);
   const workspace = createMockWorkspace(options.workspace, settingsHub.emit);
+  const accountRouting = createMockAccountRouting({
+    accounts: () => accounts,
+    quotas: () => quotas,
+    active: (provider) => active.find((a) => a.provider === provider)?.name ?? null,
+    activate: (provider, name) => api.accountActivate(provider, name),
+    changed: accountsChanged,
+  });
   const api: MockApi = {
     ...createMockTasks({
       defaultRepo: repo ? DEMO_ROOT : null,
@@ -598,6 +606,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       profiles,
       (cwd) => workspace.__setupRun(cwd),
       (provider) => active.find((a) => a.provider === provider)?.name ?? null,
+      { route: accountRouting.__route, started: accountRouting.__started },
     ),
     ...createMockStatus(settingsHub.emit),
     ...power,
@@ -909,6 +918,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       proposed.set(path, { content, note });
       notify([path]);
     },
+    ...accountRouting,
   };
   // The spread above copied the values; these two stay live views of the profile store.
   Object.defineProperties(api, {

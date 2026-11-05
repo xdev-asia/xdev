@@ -16,7 +16,9 @@ use crate::shells::{ShellEntry, default_shell_id};
 use crate::version::{CliVersion, cli_version};
 
 /// Where a launch's account came from: the tab's own pick, the profile's
-/// account or the provider's active account.
+/// account, the provider's active (default) account, or the provider's
+/// routing, which the caller applies by passing the routed account and
+/// marking it so.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
@@ -24,6 +26,7 @@ pub enum AccountSource {
     Tab,
     Profile,
     Active,
+    Routed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -211,6 +211,12 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("advanced.noProxy", "settings.advanced.noProxy", ["proxy", "bypass", "no_proxy", "exclude", "hosts", "bỏ qua", "bo qua", "loại trừ", "loai tru"], "settings.advanced.noProxy.hint"),
   e("advanced.nodeMirror", "settings.advanced.nodeMirror", ["node", "npm", "registry", "mirror", "package", "gương", "guong", "kho gói", "kho goi"], "settings.advanced.nodeMirror.hint"),
   e("advanced.machineName", "settings.advanced.machineName", ["machine", "name", "host", "hostname", "computer", "device", "tên máy", "ten may", "máy tính", "may tinh"], "settings.advanced.machineName.hint"),
+  // Account: agent account routing
+  e("account.routing.policy", "settings.account.routing.policy", ["account", "routing", "policy", "quota", "round robin", "priority", "most quota", "new tab", "tài khoản", "tai khoan", "định tuyến", "dinh tuyen", "hạn mức", "han muc", "luân phiên", "luan phien", "ưu tiên", "uu tien"], "settings.account.routing.lead"),
+  e("account.routing.pool", "settings.account.routing.pool", ["account", "pool", "routing", "subset", "tài khoản", "tai khoan", "nhóm", "nhom"]),
+  e("account.routing.priority", "settings.account.routing.priority", ["priority", "order", "account", "reorder", "ưu tiên", "uu tien", "thứ tự", "thu tu"]),
+  e("account.routing.thresholds", "settings.account.routing.firstAlert", ["quota", "alert", "threshold", "limit", "percent", "5 hours", "weekly", "hạn mức", "han muc", "cảnh báo", "canh bao", "ngưỡng", "nguong"], "settings.account.routing.thresholdsHint"),
+  e("account.routing.autoSwitch", "settings.account.routing.autoSwitchTitle", ["auto", "switch", "account", "quota", "limit", "new agent", "tự động", "tu dong", "chuyển", "chuyen", "tài khoản", "tai khoan"], "settings.account.routing.terms"),
 ];
 
 /** The longest query searched, in bytes after trim; longer input is cut. */

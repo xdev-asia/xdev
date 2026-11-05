@@ -8,11 +8,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::AiError;
 use crate::claude::AccountStatus;
+use crate::pool::{Policy, Route, Usage, pick_account};
+use crate::quota::{Quota, QuotaState, Reason, highest};
 
 const FILE: &str = "accounts.json";
 const VERSION: u32 = 1;
 const DEFAULT_RESERVE: u8 = 30;
 const MAX_RESERVE: u8 = 90;
+const DEFAULT_THRESHOLDS: [u8; 2] = [80, 95];
+const DEFAULT_SWITCH_AT: u8 = 95;
+const MAX_THRESHOLDS: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -79,13 +84,50 @@ pub struct ActiveAccount {
     pub name: String,
 }
 
+/// How one provider's new agents pick their account, and when its quota
+/// alerts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "AccountRouting"))]
+#[serde(rename_all = "camelCase")]
+pub struct Routing {
+    pub provider: Provider,
+    pub policy: Policy,
+    /// The accounts routing may pick; empty is every account of the provider.
+    pub pool: Vec<String>,
+    /// The `priority` policy's order.
+    pub priority: Vec<String>,
+    /// Percent used that raises a quota alert, ascending.
+    pub thresholds: Vec<u8>,
+    /// Start new agents on another account once one reaches `switch_at`.
+    pub auto_switch: bool,
+    pub switch_at: u8,
+}
+
+impl Routing {
+    /// Manual, every account, alerts at 80% and 95%, no auto-switch.
+    pub fn new(provider: Provider) -> Routing {
+        Routing {
+            provider,
+            policy: Policy::Manual,
+            pool: Vec::new(),
+            priority: Vec::new(),
+            thresholds: DEFAULT_THRESHOLDS.to_vec(),
+            auto_switch: false,
+            switch_at: DEFAULT_SWITCH_AT,
+        }
+    }
+}
+
 /// The accounts registered on this machine, kept in `<data dir>/accounts.json`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Registry {
     pub reserve_percent: u8,
     pub accounts: Vec<AccountEntry>,
-    /// The active account per provider; none means the CLI's own home.
+    /// The active account per provider; none means the CLI's own home. It
+    /// is the default for new tabs: a tab keeps the account it started on.
     pub active: Vec<ActiveAccount>,
+    /// Per provider; a provider with none uses `Routing::new`.
+    pub routing: Vec<Routing>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -96,6 +138,10 @@ struct OnDisk {
     // A file from before active accounts has none.
     #[serde(default)]
     active: Vec<ActiveAccount>,
+    // Read one by one, so a hand edit that breaks one provider's routing
+    // leaves only that provider on the defaults.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    routing: Vec<serde_json::Value>,
 }
 
 impl Default for Registry {
@@ -104,6 +150,7 @@ impl Default for Registry {
             reserve_percent: DEFAULT_RESERVE,
             accounts: Vec::new(),
             active: Vec::new(),
+            routing: Vec::new(),
         }
     }
 }
@@ -126,6 +173,7 @@ impl Registry {
             reserve_percent: disk.reserve_percent,
             accounts: Vec::with_capacity(disk.accounts.len()),
             active: Vec::new(),
+            routing: Vec::new(),
         };
         for entry in disk.accounts {
             reg.add(&entry.name, entry.provider, entry.dir)
@@ -139,6 +187,13 @@ impl Registry {
                 let _ = reg.activate(entry.provider, Some(&entry.name));
             }
         }
+        for value in disk.routing {
+            if let Ok(routing) = serde_json::from_value::<Routing>(value)
+                && !reg.routing.iter().any(|r| r.provider == routing.provider)
+            {
+                let _ = reg.set_routing(routing);
+            }
+        }
         Ok(reg)
     }
 
@@ -148,6 +203,12 @@ impl Registry {
             reserve_percent: self.reserve_percent,
             accounts: self.accounts.clone(),
             active: self.active.clone(),
+            routing: self
+                .routing
+                .iter()
+                .map(serde_json::to_value)
+                .collect::<Result<_, _>>()
+                .map_err(io::Error::other)?,
         };
         let mut text = serde_json::to_string_pretty(&disk).map_err(io::Error::other)?;
         text.push('\n');
@@ -184,6 +245,10 @@ impl Registry {
             .position(|a| a.name == name)
             .ok_or(AiError::NotFound)?;
         self.active.retain(|a| a.name != name);
+        for routing in &mut self.routing {
+            routing.pool.retain(|n| n != name);
+            routing.priority.retain(|n| n != name);
+        }
         Ok(self.accounts.remove(index))
     }
 
@@ -225,6 +290,105 @@ impl Registry {
         let active = self.active.iter().find(|a| a.provider == provider)?;
         self.get(&active.name)
             .filter(|entry| entry.provider == provider)
+    }
+
+    /// `provider`'s routing, or the defaults.
+    pub fn routing(&self, provider: Provider) -> Routing {
+        self.routing
+            .iter()
+            .find(|r| r.provider == provider)
+            .cloned()
+            .unwrap_or_else(|| Routing::new(provider))
+    }
+
+    /// Replaces the provider's routing. Thresholds are 1 to 100, at most
+    /// four, and are kept sorted; `switch_at` is 1 to 100; the pool and the
+    /// priority list name only the provider's accounts, once each. Anything
+    /// else is `BadRouting`.
+    pub fn set_routing(&mut self, mut routing: Routing) -> Result<(), AiError> {
+        let percent = |p: &u8| (1..=100).contains(p);
+        routing.thresholds.sort_unstable();
+        routing.thresholds.dedup();
+        let own = |names: &[String]| {
+            names.iter().enumerate().all(|(i, name)| {
+                !names[..i].contains(name)
+                    && self
+                        .get(name)
+                        .is_some_and(|entry| entry.provider == routing.provider)
+            })
+        };
+        if routing.thresholds.len() > MAX_THRESHOLDS
+            || !routing.thresholds.iter().all(percent)
+            || !percent(&routing.switch_at)
+            || !own(&routing.pool)
+            || !own(&routing.priority)
+        {
+            return Err(AiError::BadRouting);
+        }
+        self.routing.retain(|r| r.provider != routing.provider);
+        self.routing.push(routing);
+        Ok(())
+    }
+
+    /// The account a new agent of `provider` starts on, by the provider's
+    /// routing; `None` is the CLI's own home. `quotas` are the latest
+    /// readings: an account they show signed out is never picked, one they
+    /// leave out counts as unknown. `avoid` asks for an account other than
+    /// it (a quota alert's "use another account"): `Manual` then routes by
+    /// most quota left, and no other account gives `None`.
+    pub fn route(
+        &self,
+        provider: Provider,
+        quotas: &[Quota],
+        last_used: Option<&str>,
+        avoid: Option<&str>,
+    ) -> Option<String> {
+        let routing = self.routing(provider);
+        let signed_out = |name: &str| {
+            quotas.iter().any(|q| {
+                q.name == name
+                    && q.state == QuotaState::Unknown
+                    && matches!(
+                        q.reason,
+                        Some(Reason::LoggedOut | Reason::Expired | Reason::NoCredentials)
+                    )
+            })
+        };
+        let mut pool: Vec<String> = self
+            .accounts
+            .iter()
+            .filter(|a| a.provider == provider)
+            .map(|a| &a.name)
+            .filter(|name| routing.pool.is_empty() || routing.pool.contains(name))
+            .filter(|name| !signed_out(name) && Some(name.as_str()) != avoid)
+            .cloned()
+            .collect();
+        // The user's pool order, not the registry's.
+        if !routing.pool.is_empty() {
+            pool.sort_by_key(|name| routing.pool.iter().position(|n| n == name));
+        }
+        let usage: Vec<Usage> = quotas
+            .iter()
+            .map(|q| Usage {
+                id: q.name.clone(),
+                used: highest(&q.windows),
+            })
+            .collect();
+        let policy = match (avoid, routing.policy) {
+            (Some(_), Policy::Manual) => Policy::MostQuota,
+            (_, policy) => policy,
+        };
+        let route = Route {
+            policy,
+            default: self.active(provider).map(|a| a.name.as_str()),
+            priority: &routing.priority,
+            limit: routing.auto_switch.then(|| f64::from(routing.switch_at)),
+        };
+        let picked = pick_account(&route, &pool, &usage, last_used);
+        match avoid {
+            Some(avoid) if pool.is_empty() || picked.as_deref() == Some(avoid) => None,
+            _ => picked,
+        }
     }
 }
 

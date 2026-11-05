@@ -5,18 +5,23 @@ mod claude;
 mod codex;
 mod codex_rpc;
 pub mod ollama;
+mod pool;
 pub mod process;
 mod quota;
 pub mod secrets;
 pub mod shim;
 
 pub use accounts::{
-    AccountEntry, ActiveAccount, Provider, Registry, account_dir, carry_session, default_home,
-    login_command, status, valid_name,
+    AccountEntry, ActiveAccount, Provider, Registry, Routing, account_dir, carry_session,
+    default_home, login_command, status, valid_name,
 };
 pub use claude::{AccountStatus, StatusState, claude_command, claude_models};
 pub use codex::{codex_command, codex_context, codex_home, codex_models};
-pub use quota::{Quota, QuotaState, QuotaWindow, Reason, classify, pick, quota};
+pub use pool::{AccountId, Policy, Route, Usage, pick_account};
+pub use quota::{
+    ALERT_WINDOWS, AlertLog, Quota, QuotaAlert, QuotaState, QuotaWindow, Reason, classify, highest,
+    pick, quota,
+};
 
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -48,6 +53,8 @@ pub enum AiError {
     BadReserve,
     #[error("no log of this session in the account's home")]
     SessionMissing,
+    #[error("routing names an unknown account or a percent out of range")]
+    BadRouting,
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -68,6 +75,7 @@ impl AiError {
             AiError::BadRegistry => "bad_registry",
             AiError::BadReserve => "bad_reserve",
             AiError::SessionMissing => "session_missing",
+            AiError::BadRouting => "bad_routing",
             AiError::Io(_) => "io",
         }
     }

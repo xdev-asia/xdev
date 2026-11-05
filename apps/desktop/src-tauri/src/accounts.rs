@@ -3,11 +3,15 @@
 //! the UI thread.
 
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use xdev_agent::Routing;
-use xdev_ai::{AccountEntry, AccountStatus, ActiveAccount, AiError, Provider, Quota, Registry};
+use xdev_ai::{
+    AccountEntry, AccountStatus, ActiveAccount, AiError, AlertLog, Provider, Quota, QuotaAlert,
+    Registry,
+};
 
 use crate::commands::{AppState, CmdError};
 
@@ -43,6 +47,76 @@ pub struct Accounts {
 /// Emitted, without a payload, after an account is added, removed or made
 /// active.
 pub const CHANGED_EVENT: &str = "accounts://changed";
+
+/// Emitted with a `QuotaAlert` when an account's quota crosses one of its
+/// provider's thresholds, once per window and threshold.
+pub const QUOTA_ALERT_EVENT: &str = "accounts://quota-alert";
+
+/// What routing at spawn reads: the latest quota readings, and the account
+/// each provider's last routed agent started on. Kept in memory only.
+#[derive(Default)]
+struct Hub {
+    quotas: Vec<Quota>,
+    last_used: Vec<(Provider, String)>,
+    alerts: AlertLog,
+}
+
+static HUB: LazyLock<Mutex<Hub>> = LazyLock::new(Mutex::default);
+
+fn hub() -> MutexGuard<'static, Hub> {
+    HUB.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+impl Hub {
+    /// Keeps `quotas` for routing and returns the alerts they raise.
+    fn observe(&mut self, registry: &Registry, quotas: &[Quota]) -> Vec<QuotaAlert> {
+        let mut alerts = Vec::new();
+        for quota in quotas {
+            let Some(entry) = registry.get(&quota.name) else {
+                continue;
+            };
+            let thresholds = registry.routing(entry.provider).thresholds;
+            alerts.extend(self.alerts.check(entry.provider, quota, &thresholds));
+        }
+        // A removed account's windows start afresh if it comes back.
+        let gone: Vec<String> = self
+            .quotas
+            .iter()
+            .filter(|q| registry.get(&q.name).is_none())
+            .map(|q| q.name.clone())
+            .collect();
+        for name in gone {
+            self.alerts.forget(&name);
+        }
+        self.quotas = quotas.to_vec();
+        alerts
+    }
+
+    fn last_used(&self, provider: Provider) -> Option<&str> {
+        self.last_used
+            .iter()
+            .find(|(p, _)| *p == provider)
+            .map(|(_, name)| name.as_str())
+    }
+
+    fn started(&mut self, provider: Provider, name: &str) {
+        self.last_used.retain(|(p, _)| *p != provider);
+        self.last_used.push((provider, name.to_owned()));
+    }
+}
+
+/// The account a new agent of `provider` with no account of its own starts
+/// on, by the provider's routing and the latest quota readings.
+pub(crate) fn routed(registry: &Registry, provider: Provider) -> Option<String> {
+    let hub = hub();
+    registry.route(provider, &hub.quotas, hub.last_used(provider), None)
+}
+
+/// Records that a routed agent of `provider` started on `name`, for round
+/// robin.
+pub(crate) fn started(provider: Provider, name: &str) {
+    hub().started(provider, name);
+}
 
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -100,20 +174,94 @@ pub fn accounts_list(state: State<'_, AppState>) -> Result<Accounts, CmdError> {
 /// A Codex quota may wait seconds on its `app-server` probe while holding
 /// that home's lock, so the reads run on a blocking thread and not on the
 /// async runtime's workers.
+///
+/// Also keeps the readings for routing, and emits `QUOTA_ALERT_EVENT` for
+/// each threshold they cross.
 #[tauri::command]
-pub async fn accounts_quota(state: State<'_, AppState>) -> Result<Vec<Quota>, CmdError> {
+pub async fn accounts_quota(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Vec<Quota>, CmdError> {
     let registry = Registry::load(data_dir(&state)?)?;
-    tauri::async_runtime::spawn_blocking(move || {
+    let (quotas, alerts) = tauri::async_runtime::spawn_blocking(move || {
         let reserve = registry.reserve_percent;
-        each(&registry.accounts, |e| {
+        let quotas = each(&registry.accounts, |e| {
             xdev_ai::quota(e, &xdev_ai::status(e), reserve)
-        })
+        });
+        let alerts = hub().observe(&registry, &quotas);
+        (quotas, alerts)
     })
     .await
     .map_err(|e| CmdError {
         code: "io",
         detail: Some(e.to_string()),
-    })
+    })?;
+    for alert in alerts {
+        let _ = app.emit(QUOTA_ALERT_EVENT, alert);
+    }
+    Ok(quotas)
+}
+
+/// Each provider's account routing, Claude first.
+#[tauri::command(async)]
+pub fn accounts_routing(state: State<'_, AppState>) -> Result<Vec<xdev_ai::Routing>, CmdError> {
+    let registry = Registry::load(data_dir(&state)?)?;
+    Ok([Provider::Claude, Provider::Codex]
+        .into_iter()
+        .map(|p| registry.routing(p))
+        .collect())
+}
+
+/// Replaces one provider's account routing; only new agents follow it.
+#[tauri::command(async)]
+pub fn account_routing_set(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    routing: xdev_ai::Routing,
+) -> Result<(), CmdError> {
+    let data = data_dir(&state)?;
+    let mut registry = Registry::load(data)?;
+    registry.set_routing(routing)?;
+    registry.save(data)?;
+    let _ = app.emit(CHANGED_EVENT, ());
+    Ok(())
+}
+
+/// Makes the account routing picks, other than `avoid` (else the current
+/// default), the provider's default for new tabs, and returns it. `None`
+/// when there is no other account to use; nothing changes then.
+#[tauri::command(async)]
+pub fn account_use_next(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    provider: Provider,
+    avoid: Option<String>,
+) -> Result<Option<String>, CmdError> {
+    let data = data_dir(&state)?;
+    let mut registry = Registry::load(data)?;
+    let next = use_next(&mut registry, &hub(), provider, avoid.as_deref())?;
+    if next.is_some() {
+        registry.save(data)?;
+        let _ = app.emit(CHANGED_EVENT, ());
+    }
+    Ok(next)
+}
+
+fn use_next(
+    registry: &mut Registry,
+    hub: &Hub,
+    provider: Provider,
+    avoid: Option<&str>,
+) -> Result<Option<String>, CmdError> {
+    let current = registry.active(provider).map(|a| a.name.clone());
+    let Some(avoid) = avoid.map(str::to_owned).or(current) else {
+        return Ok(None);
+    };
+    let next = registry.route(provider, &hub.quotas, hub.last_used(provider), Some(&avoid));
+    if let Some(name) = &next {
+        registry.activate(provider, Some(name))?;
+    }
+    Ok(next)
 }
 
 #[tauri::command(async)]
@@ -456,5 +604,107 @@ mod tests {
         assert_eq!(CmdError::from(AiError::NoCodex).code, "no_codex");
         let unknown = Provider::parse("gemini").unwrap_err();
         assert_eq!(CmdError::from(unknown).code, "unknown_provider");
+    }
+
+    fn routed_registry(data: &Path) -> Registry {
+        let mut reg = Registry::default();
+        for name in ["work", "home", "spare"] {
+            reg.add(name, Provider::Claude, data.join(name)).unwrap();
+        }
+        reg.activate(Provider::Claude, Some("work")).unwrap();
+        reg
+    }
+
+    fn reading(name: &str, five: f64) -> Quota {
+        Quota {
+            name: name.into(),
+            state: xdev_ai::QuotaState::Ok,
+            reason: None,
+            windows: vec![xdev_ai::QuotaWindow {
+                key: "five_hour".into(),
+                utilization: Some(five),
+                resets_at: Some("2026-11-06T20:00:00Z".into()),
+            }],
+            as_of: None,
+        }
+    }
+
+    #[test]
+    fn observe_alerts_once_and_keeps_the_readings() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reg = routed_registry(tmp.path());
+        let mut hub = Hub::default();
+        let first = hub.observe(&reg, &[reading("work", 82.0), reading("home", 10.0)]);
+        assert_eq!(first.len(), 1);
+        assert_eq!(
+            (first[0].account.as_str(), first[0].threshold),
+            ("work", 80)
+        );
+        let again = hub.observe(&reg, &[reading("work", 84.0), reading("home", 10.0)]);
+        assert!(again.is_empty());
+        assert_eq!(hub.quotas.len(), 2);
+        // Thresholds are the provider's own.
+        reg.set_routing(xdev_ai::Routing {
+            thresholds: vec![50],
+            ..xdev_ai::Routing::new(Provider::Claude)
+        })
+        .unwrap();
+        let alerts = hub.observe(&reg, &[reading("home", 55.0)]);
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].threshold, 50);
+    }
+
+    #[test]
+    fn use_next_moves_the_default_off_the_alerting_account() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reg = routed_registry(tmp.path());
+        let mut hub = Hub::default();
+        let quotas = [
+            reading("work", 96.0),
+            reading("home", 40.0),
+            reading("spare", 20.0),
+        ];
+        hub.observe(&reg, &quotas);
+        let next = use_next(&mut reg, &hub, Provider::Claude, Some("work")).unwrap();
+        assert_eq!(next.as_deref(), Some("spare"));
+        assert_eq!(reg.active(Provider::Claude).unwrap().name, "spare");
+        // No account to avoid given: away from the current default.
+        let next = use_next(&mut reg, &hub, Provider::Claude, None).unwrap();
+        assert_eq!(next.as_deref(), Some("home"));
+        // Nothing else to use: no change.
+        let mut lone = Registry::default();
+        lone.add("only", Provider::Codex, tmp.path().join("o"))
+            .unwrap();
+        lone.activate(Provider::Codex, Some("only")).unwrap();
+        assert_eq!(
+            use_next(&mut lone, &hub, Provider::Codex, None).unwrap(),
+            None
+        );
+        assert_eq!(lone.active(Provider::Codex).unwrap().name, "only");
+    }
+
+    #[test]
+    fn round_robin_follows_the_last_started() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reg = routed_registry(tmp.path());
+        reg.set_routing(xdev_ai::Routing {
+            policy: xdev_ai::Policy::RoundRobin,
+            ..xdev_ai::Routing::new(Provider::Claude)
+        })
+        .unwrap();
+        let mut hub = Hub::default();
+        let pick = |hub: &Hub| {
+            reg.route(
+                Provider::Claude,
+                &hub.quotas,
+                hub.last_used(Provider::Claude),
+                None,
+            )
+        };
+        assert_eq!(pick(&hub).as_deref(), Some("work"));
+        hub.started(Provider::Claude, "work");
+        assert_eq!(pick(&hub).as_deref(), Some("home"));
+        hub.started(Provider::Claude, "home");
+        assert_eq!(pick(&hub).as_deref(), Some("spare"));
     }
 }

@@ -1,13 +1,13 @@
-import { PROVIDERS, toApiError, type AccountSource, type Api, type HookDetail, type LaunchOverrides, type PtyInfo, type PtyProfile, type RestoreMode } from "@/api";
+import { toApiError, type AccountSource, type Api, type HookDetail, type LaunchOverrides, type PtyInfo, type PtyProfile, type RestoreMode } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
-import { setPrime } from "@/terminal/restorePrime";
+import { setPrime, takePrime } from "@/terminal/restorePrime";
 import { translate } from "@/i18n";
-import { ownAccount } from "./ownAccount";
+import { ownAccount, runAccount } from "./ownAccount";
 
 // Where `ownAccount` lives to keep it free of the api import; callers may still take it from here.
-export { ownAccount };
+export { ownAccount, runAccount };
 import { addTab, leaves, paneOf, pinFirst, removeTab, replaceTab, setPaneTabs, single, splitPane, type PaneDir, type PaneLayout } from "./paneTree";
-import { LAYOUT_VERSION, fromSnapshot, toSnapshot, type LayoutSnapshot, restoredAccount, type RestoreOptions, type RestoreReport, type SessionFallback, type TabSnapshot, type WorktreeSnapshot } from "./layoutSnapshot";
+import { LAYOUT_VERSION, fromSnapshot, toSnapshot, type LayoutSnapshot, restoredAccount, type RestoreNote, type RestoreOptions, type RestoreReport, type SessionFallback, type TabSnapshot, type WorktreeSnapshot } from "./layoutSnapshot";
 import { DONE_QUIET_MS, INTERRUPT_MS, NO_CAPS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type Caps, type StatusEvent, type StatusState, type TabStatus } from "./status";
 
 /** The CLI behind a tab, for its hook caps and title rules; null for custom profiles and shells. */
@@ -173,8 +173,8 @@ export class Sessions {
   private hooksOn = true;
   // A restore runs once per app run.
   private restored = false;
-  /** The active account of each CLI while a restore runs; null when it could not be read. */
-  private restoreActive: ReadonlyMap<string, string | null> | null = null;
+  /** The names of the accounts there are while a restore runs; null when they could not be read. */
+  private restoreKnown: ReadonlySet<string> | null = null;
   /** Saved worktrees this run could not load (a missing repo): kept in every snapshot until `dropCarried`. */
   private carried = new Map<string, WorktreeSnapshot>();
   // Restored tabs whose terminal starts when they are first shown.
@@ -272,8 +272,8 @@ export class Sessions {
     // Under `none` only the sleeping tabs come back, and they start nothing.
     const state = mode === "none" ? undefined : (await this.api.ptydStatus().catch(() => null))?.state;
     const attach = state === "running" || state === "old-version";
-    const found = mode === "none" ? null : await this.api.accounts().catch(() => null);
-    this.restoreActive = found ? new Map(PROVIDERS.map((p): [string, string | null] => [p, found.active.find((a) => a.provider === p)?.name ?? null])) : null;
+    const found = await this.api.accounts().catch(() => null);
+    this.restoreKnown = found ? new Set(found.accounts.map((a) => a.name)) : null;
     for (const [worktree, one] of Object.entries(s.worktrees)) {
       if (options.known && !options.known(worktree)) {
         report.skipped.push({ worktree, reason: "unknownWorktree" });
@@ -387,7 +387,7 @@ export class Sessions {
   /** One sleeping terminal tab of a snapshot: no pty, no attach, and the session it wakes with. */
   private restoreAsleep(worktree: string, snap: Extract<TabSnapshot, { kind: "terminal" }>, report: RestoreReport): Tab {
     const cli = snap.cli === undefined ? cliOf(snap.profileId) : snap.cli;
-    const account = restoredAccount(snap, cli, null);
+    const { account } = restoredAccount(snap, this.restoreKnown);
     const id = snap.agent ? snap.agentSession : null;
     const tab = id ? this.resume(worktree, snap.profileId, account, id, snap.title, cli) : this.open(worktree, snap.profileId, account, cli);
     const color = TAB_COLORS.includes(snap.color) ? snap.color : "none";
@@ -397,9 +397,9 @@ export class Sessions {
   }
 
   /** One terminal tab of a snapshot, or null when `mode` or a missing session leaves it out. */
-  private async restoreTerminal(worktree: string, snap: Extract<TabSnapshot, { kind: "terminal" }>, mode: RestoreMode, fallback: SessionFallback, report: RestoreReport, note?: (key: "ptyd.restored" | "ptyd.fresh") => string): Promise<Tab | null> {
+  private async restoreTerminal(worktree: string, snap: Extract<TabSnapshot, { kind: "terminal" }>, mode: RestoreMode, fallback: SessionFallback, report: RestoreReport, note?: (key: RestoreNote) => string): Promise<Tab | null> {
     const cli = snap.cli === undefined ? cliOf(snap.profileId) : snap.cli;
-    const account = restoredAccount(snap, cli, this.restoreActive);
+    const { account, gone } = restoredAccount(snap, this.restoreKnown);
     let tab: Tab;
     if (snap.agent) {
       let id = snap.agentSession;
@@ -425,6 +425,13 @@ export class Sessions {
     if (snap.autoTitled === true && snap.title) entry.autoTitle = snap.title;
     this.update(entry, { title: snap.title, renamed: snap.renamed === true, autoTitled: auto, pinned: snap.pinned === true, color });
     await this.primeFromSnapshot(snap.ptyId, tab.id, note);
+    // The saved account is gone: the tab runs on the default one, and its first line says so.
+    if (gone) {
+      const say = note ?? ((key: RestoreNote) => translate("en", key));
+      const prime = takePrime(tab.id);
+      const line = say("accounts.restore.gone");
+      setPrime(tab.id, { bytes: prime?.bytes ?? null, note: prime ? `${prime.note}\r\n${line}` : line });
+    }
     return entry.tab;
   }
 
@@ -432,10 +439,10 @@ export class Sessions {
    * The old pty is gone, but the service may have saved its output: the new terminal shows it first,
    * under a dim note. The saved copy is deleted once it is handed over.
    */
-  private async primeFromSnapshot(oldId: string | undefined, newId: string, note?: (key: "ptyd.restored" | "ptyd.fresh") => string): Promise<void> {
+  private async primeFromSnapshot(oldId: string | undefined, newId: string, note?: (key: RestoreNote) => string): Promise<void> {
     if (typeof oldId !== "string" || !oldId) return;
     const bytes = await this.api.ptySnapshot(oldId).catch(() => null);
-    const say = note ?? ((key: "ptyd.restored" | "ptyd.fresh") => translate("en", key));
+    const say = note ?? ((key: RestoreNote) => translate("en", key));
     setPrime(newId, { bytes: bytes && bytes.length > 0 ? bytes : null, note: say(bytes && bytes.length > 0 ? "ptyd.restored" : "ptyd.fresh") });
     if (bytes) await this.api.ptySnapshotClear(oldId).catch(() => {});
   }
@@ -464,22 +471,19 @@ export class Sessions {
     if (!old) return null;
     // A forked tab continues its own session once the hooks gave its id; a second fork would copy again.
     const resume = old.tab.forkOf === null ? old.tab.resumeOf : old.tab.agentSession;
-    return this.replace(old, ownAccount(old.tab), resume, old.tab.agentSession);
+    return this.replace(old, runAccount(old.tab), resume, old.tab.agentSession);
   }
 
   /**
-   * `restart` after an account switch. Only a tab that picked its account itself is started with
-   * `account`; one that follows the active (or its profile's) account is started with none and looks
-   * the account up again, so it keeps following it through the next switch. The tab keeps its account
-   * source and resumes its agent session (the latest one its hooks reported); `fresh` starts a new
-   * conversation instead. `null` for an unknown id.
+   * `restart` on another account: the tab is started pinned to `account` (null: the default) and
+   * resumes its agent session (the latest one its hooks reported); `fresh` starts a new conversation
+   * instead. `null` for an unknown id.
    */
   restartAs(id: string, account: string | null, fresh = false): Tab | null {
     const old = this.entries.get(id);
     if (!old) return null;
     const session = fresh ? null : (old.tab.agentSession ?? old.tab.resumeOf);
-    const own = old.tab.accountSource === "tab" ? account : null;
-    return this.replace(old, own, session, session);
+    return this.replace(old, account, session, session);
   }
 
   /**
@@ -497,7 +501,7 @@ export class Sessions {
     // The tab may have closed or been replaced while the fallback ran.
     const live = this.entries.get(id);
     if (!live || live.tab.asleep || busy(live.tab)) return null;
-    const next = this.replace(live, ownAccount(live.tab), session, session);
+    const next = this.replace(live, runAccount(live.tab), session, session);
     this.update(this.entries.get(next.id)!, { asleep: true });
     return this.entries.get(next.id)!.tab;
   }
@@ -515,7 +519,7 @@ export class Sessions {
     if (!old) return null;
     if (!old.tab.asleep) return old.tab;
     const session = old.tab.agentSession ?? old.tab.resumeOf;
-    const next = this.replace(old, ownAccount(old.tab), session, session);
+    const next = this.replace(old, runAccount(old.tab), session, session);
     this.lazy.add(next.id);
     return next;
   }
@@ -544,7 +548,8 @@ export class Sessions {
     this.lazy.delete(id);
     const next = this.entry(old.tab.worktree, old.tab.profileId, account, old.tab.cli, resumeOf, old.tab.title);
     // The pin and colour belong to the slot, not to the pty; so does the agent's session id, which a restart must not lose.
-    next.tab = { ...next.tab, accountSource: old.tab.accountSource, pinned: old.tab.pinned, color: old.tab.color, agentSession, renamed: old.tab.renamed, autoTitled: old.tab.autoTitled && !old.tab.renamed };
+    // A named account starts pinned, so the new pty reports it as the tab's own.
+    next.tab = { ...next.tab, accountSource: account !== null ? null : old.tab.accountSource, pinned: old.tab.pinned, color: old.tab.color, agentSession, renamed: old.tab.renamed, autoTitled: old.tab.autoTitled && !old.tab.renamed };
     // The auto title is the slot's too: the new pty keeps it, and the title the user clears to returns to it.
     next.autoTitle = old.autoTitle;
     const kept = [...this.entries].map(([key, e]): [string, Entry] => (key === id ? [next.tab.id, next] : [key, e]));
@@ -565,7 +570,7 @@ export class Sessions {
     const entry = this.entries.get(id);
     if (!entry) return;
     const { worktree, profileId, cli } = entry.tab;
-    this.closed.push({ worktree, profileId, account: ownAccount(entry.tab), cli, at: Date.now() });
+    this.closed.push({ worktree, profileId, account: runAccount(entry.tab), cli, at: Date.now() });
     if (this.closed.length > CLOSED_KEPT) this.closed.shift();
     this.remove([entry]);
     await entry.tab.client.dispose();

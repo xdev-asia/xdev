@@ -700,6 +700,9 @@ pub fn run() {
             diag_bundle::diagnostics_export,
             diag_bundle::diagnostics_reveal_logs,
             diag_bundle::diagnostics_reveal_export,
+            accounts::accounts_routing,
+            accounts::account_routing_set,
+            accounts::account_use_next,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")

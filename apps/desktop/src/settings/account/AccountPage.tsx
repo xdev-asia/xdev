@@ -7,9 +7,11 @@ import { useI18n } from "@/i18n";
 import { SettingRow } from "../SettingRow";
 import type { SettingsSectionProps } from "../sections";
 import { ServerRow } from "./ServerRow";
+import { RoutingSection } from "./RoutingSection";
 
 /**
- * Settings → Account: the person's xDev ID. Display only: every local feature works signed out.
+ * Settings → Account: the person's xDev ID, and how agent tabs pick among the CLI accounts.
+ * The xDev ID is display only: every local feature works signed out.
  * The state comes from Rust; the token never reaches this page.
  */
 export function AccountPage(props: SettingsSectionProps): JSX.Element {
@@ -173,6 +175,7 @@ export function AccountPage(props: SettingsSectionProps): JSX.Element {
         </div>
       </SettingRow>
       <ServerRow api={api} filter={filter} signedIn={state.state === "signedIn"} />
+      <RoutingSection api={api} filter={filter} />
     </div>
   );
 }
