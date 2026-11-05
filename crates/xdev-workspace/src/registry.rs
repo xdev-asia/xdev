@@ -53,6 +53,10 @@ pub struct RepoEntry {
     /// Named folder lists a sparse worktree can start from.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sparse_presets: Vec<SparsePreset>,
+    /// Environment rows for this repo's terminals. A secret row's value is
+    /// in the keychain, not here.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub env: Vec<crate::EnvVar>,
 }
 
 /// A named list of folders a sparse worktree is limited to.
