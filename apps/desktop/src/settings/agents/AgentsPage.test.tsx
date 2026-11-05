@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { Banner, IconButton, RadioGroup, Switch, Tag } from "@xdev-asia/ui";
+import { Banner, IconButton, RadioGroup, StatusDot, Switch, Tag } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { AgentsPage } from "./AgentsPage";
 import { ProfileEditor } from "./ProfileEditor";
@@ -515,11 +515,18 @@ it("default_agent_lists_auto_and_blank_then_the_agents_and_warns_when_the_saved_
   expect(options.slice(0, 2)).toEqual(["auto", "blank"]);
   expect(options).toContain("devin");
   expect(select.props.value).toBe("devin");
-  expect(dataField(p, "defaultAgentMissing")!.props.title).toBe(en("settings.agents.default.missing"));
+  // A warning dot with its text, outside the label so it is not the select's name, and linked to it.
+  const all = p.all();
+  const note = all.find((n) => n.props["data-field"] === "defaultAgentMissing")!;
+  expect(nodes(note).find((n) => n.type === StatusDot)!.props).toMatchObject({ state: "waiting", label: en("settings.agents.default.missing") });
+  const label = all.find((n) => n.type === "label" && nodes(n.props.children).some((c) => c.props["data-field"] === "defaultAgent"))!;
+  expect(nodes(label.props.children)).not.toContain(note);
+  expect(select.props["aria-describedby"]).toBe(note.props.id);
   select.props.onChange({ target: { value: "blank" } });
   await tick();
   expect(dataField(p, "defaultAgent")!.props.value).toBe("blank");
   expect(dataField(p, "defaultAgentMissing")).toBeUndefined();
+  expect(dataField(p, "defaultAgent")!.props["aria-describedby"]).toBeUndefined();
 });
 
 it("a_fresh_default_is_auto", async () => {

@@ -16,7 +16,7 @@ import {
 } from "@/api";
 import { useProfiles } from "@/agents/profileStore";
 import { patchStatusSettings, setStatusSettings } from "@/status/statusSettings";
-import { Banner, Button, Disclosure, Field, IconButton, Switch, Tag } from "@xdev-asia/ui";
+import { Banner, Button, Disclosure, Field, IconButton, StatusDot, Switch, Tag } from "@xdev-asia/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
 import { pushToast } from "@/workspace/toastStore";
@@ -28,6 +28,8 @@ import { freeId } from "./agentForm";
 import { ProfileEditor } from "./ProfileEditor";
 import { ShellsSection } from "./ShellsSection";
 
+/** The note under the default agent select when the saved one is missing; one per page. */
+const MISSING_ID = "settings-default-agent-missing";
 const KEEP_AWAKE_CHOICES: readonly KeepAwake[] = ["off", "agent", "on"];
 const SWITCH_CHOICES: readonly SwitchRunning[] = ["ask", "restart", "keep"];
 
@@ -337,6 +339,7 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
             value={current.defaultAgent}
             disabled={busy}
             data-field="defaultAgent"
+            aria-describedby={defaultMissing ? MISSING_ID : undefined}
             onChange={(e) => void defaults(current.approvals, e.target.value, current.defaultShell)}
           >
             <option value="auto">{t("settings.agents.default.auto")}</option>
@@ -347,12 +350,12 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
               </option>
             ))}
           </select>
-          {defaultMissing && (
-            <small className="settings-hint" data-field="defaultAgentMissing" title={t("settings.agents.default.missing")}>
-              <span className="agent-dot" data-installed={false} aria-hidden="true" /> {t("settings.agents.default.missing")}
-            </small>
-          )}
         </label>
+        {defaultMissing && (
+          <small className="settings-hint" id={MISSING_ID} data-field="defaultAgentMissing">
+            <StatusDot state="waiting" label={t("settings.agents.default.missing")} />
+          </small>
+        )}
         </SettingRow>
         <SettingRow id="agents.defaultShell" filter={filter}>
         <label className="ws-field">
