@@ -1,11 +1,16 @@
 import { useState } from "react";
 import type { JSX } from "react";
-import { Dialog, Select } from "@xdev-asia/ui";
+import { Dialog, RadioGroup, Select } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
+
+/** What the next agent is given: a focused summary, or the conversation text itself. */
+export type HandOffContent = "summary" | "full";
 
 export interface HandOffChoice {
   profileId: string;
   worktree: string;
+  /** Set only when the dialog offers the choice. */
+  content?: HandOffContent;
 }
 
 export interface HandOffOption {
@@ -42,6 +47,19 @@ export function HandOffView(props: HandOffViewProps): JSX.Element {
         <label htmlFor="ws-handoff-worktree">{t("agentFork.handOff.worktree")}</label>
         <Select id="ws-handoff-worktree" options={props.worktrees} value={choice.worktree} onChange={(e) => props.onChoice({ ...choice, worktree: e.target.value })} />
       </span>
+      {choice.content !== undefined && (
+        <RadioGroup
+          name="ws-handoff-content"
+          label={t("agentSessions.handOff.content")}
+          orientation="vertical"
+          value={choice.content}
+          onChange={(value) => props.onChoice({ ...choice, content: value as HandOffContent })}
+          options={[
+            { value: "summary", label: t("agentSessions.handOff.summary"), hint: t("agentSessions.handOff.summary.hint") },
+            { value: "full", label: t("agentSessions.handOff.full"), hint: t("agentSessions.handOff.full.hint") },
+          ]}
+        />
+      )}
     </Dialog>
   );
 }
@@ -52,9 +70,14 @@ export function HandOffDialog(props: {
   worktrees: HandOffOption[];
   sourceProfile: string;
   sourceWorktree: string;
+  /** Offer "Focused summary" or "Full transcript"; the choice comes back as `content`. */
+  contentChoice?: boolean;
   onConfirm(choice: HandOffChoice): void;
   onCancel(): void;
 }): JSX.Element {
-  const [choice, setChoice] = useState(() => defaultHandOff(props.profiles, props.sourceProfile, props.sourceWorktree));
+  const [choice, setChoice] = useState<HandOffChoice>(() => {
+    const first = defaultHandOff(props.profiles, props.sourceProfile, props.sourceWorktree);
+    return props.contentChoice ? { ...first, content: "summary" } : first;
+  });
   return <HandOffView choice={choice} profiles={props.profiles} worktrees={props.worktrees} onChoice={setChoice} onConfirm={props.onConfirm} onCancel={props.onCancel} />;
 }

@@ -1,8 +1,8 @@
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { pastePrompt } from "@/workspace/agentPrompt";
 import { CONTEXT_LINES } from "@/terminal/terminalActions";
 import type { Api, SessionRow } from "@/api";
-import { FIRST_PROMPT_MAX, handoffPrompt, sourceFirstPrompt } from "./handoff";
+import { CUT_MARK, FIRST_PROMPT_MAX, handoffPrompt, sourceFirstPrompt, transcriptText, TRANSCRIPT_MAX } from "./handoff";
 
 const base = { fromProfile: "Codex", worktree: "/w/oak", branch: "feat/oak", firstPrompt: "Fix the parser", lines: ["one", "two"] };
 
@@ -55,4 +55,51 @@ it("sourceFirstPrompt falls back to null: no session, no row, a failure", async 
   expect(await sourceFirstPrompt(none.api, "/w", "s1")).toBeNull();
   expect(await sourceFirstPrompt(apiWith([{ session: { id: "other", title: "t" } }]).api, "/w", "s1")).toBeNull();
   expect(await sourceFirstPrompt(apiWith(new Error("io")).api, "/w", "s1")).toBeNull();
+});
+
+describe("transcriptText", () => {
+  const turn = (role: "user" | "assistant", text: string) => ({ role, text });
+
+  it("is empty with no turns or only blank ones", () => {
+    expect(transcriptText([])).toBe("");
+    expect(transcriptText([turn("user", "  \n ")])).toBe("");
+  });
+
+  it("keeps every turn, oldest first, when it fits", () => {
+    const text = transcriptText([turn("user", "fix it"), turn("assistant", "done")]);
+    expect(text).toBe("User: fix it\n\nAgent: done");
+    expect(text).not.toContain(CUT_MARK);
+  });
+
+  it("keeps the newest turns and marks the cut when over the cap", () => {
+    const turns = Array.from({ length: 30 }, (_, i) => turn(i % 2 === 0 ? "user" : "assistant", `turn-${i} ${"x".repeat(500)}`));
+    const text = transcriptText(turns);
+    expect(text.length).toBeLessThanOrEqual(TRANSCRIPT_MAX);
+    expect(text.startsWith(CUT_MARK)).toBe(true);
+    expect(text).toContain("turn-29 ");
+    expect(text).not.toContain("turn-0 ");
+    // Order is kept among the turns that stay.
+    const seen = [...text.matchAll(/turn-(\d+) /g)].map((m) => Number(m[1]));
+    expect(seen).toEqual([...seen].sort((a, b) => a - b));
+    expect(seen.at(-1)).toBe(29);
+  });
+
+  it("keeps the end of one turn that is longer than the cap", () => {
+    const text = transcriptText([turn("user", `${"a".repeat(9000)}END`)], 100);
+    expect(text.length).toBeLessThanOrEqual(100);
+    expect(text.startsWith(CUT_MARK)).toBe(true);
+    expect(text.endsWith("END")).toBe(true);
+  });
+
+  it("honours a smaller cap", () => {
+    expect(transcriptText([turn("user", "a".repeat(50)), turn("assistant", "b".repeat(50))], 80).length).toBeLessThanOrEqual(80);
+  });
+});
+
+it("a prompt with a transcript carries it instead of the terminal lines", () => {
+  const text = handoffPrompt({ ...base, transcript: "User: hi\n\nAgent: hello" });
+  expect(text).toContain("User: hi");
+  expect(text).toContain("Worktree: /w/oak (feat/oak)");
+  expect(text).not.toContain("one\ntwo");
+  expect(handoffPrompt({ ...base, transcript: "" })).toContain("one\ntwo");
 });

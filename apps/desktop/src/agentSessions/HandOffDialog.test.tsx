@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { Button, Select } from "@xdev-asia/ui";
+import { Button, RadioGroup, Select } from "@xdev-asia/ui";
 import { expect, it, vi } from "vitest";
 import { translate } from "@/i18n";
 import { defaultHandOff, HandOffView } from "./HandOffDialog";
@@ -44,4 +44,18 @@ it("the dialog offers exactly one primary button (its confirm)", () => {
   const dialog = HandOffView({ choice: { profileId: "codex", worktree: "/a" }, profiles, worktrees, onChoice() {}, onConfirm() {}, onCancel() {} }) as Node;
   expect(dialog.props.confirmLabel).toBe("Hand off");
   expect(nodes(dialog).filter((n) => n.type === Button && n.props.variant === "primary")).toHaveLength(0);
+});
+
+it("offers Focused summary or Full transcript only when the choice carries content", () => {
+  const onChoice = vi.fn();
+  const none = HandOffView({ choice: { profileId: "codex", worktree: "/a" }, profiles, worktrees, onChoice, onConfirm() {}, onCancel() {} }) as Node;
+  expect(nodes(none).filter((n) => n.type === RadioGroup)).toHaveLength(0);
+  const choice = { profileId: "codex", worktree: "/a", content: "summary" as const };
+  const dialog = HandOffView({ choice, profiles, worktrees, onChoice, onConfirm() {}, onCancel() {} }) as Node;
+  const radios = nodes(dialog).filter((n) => n.type === RadioGroup);
+  expect(radios).toHaveLength(1);
+  expect(radios[0]!.props.value).toBe("summary");
+  expect((radios[0]!.props.options as { label: string }[]).map((o) => o.label)).toEqual(["Focused summary", "Full transcript"]);
+  radios[0]!.props.onChange("full");
+  expect(onChoice).toHaveBeenCalledWith({ ...choice, content: "full" });
 });

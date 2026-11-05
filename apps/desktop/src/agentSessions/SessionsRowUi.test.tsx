@@ -214,3 +214,30 @@ describe("keyboard", () => {
     expect(click).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("details pane, log menu items and skipped banner", () => {
+  it("opens the details pane under the picked row only when a tail loader is given", () => {
+    seed = { 1: "a" };
+    const loadTail = vi.fn(async () => []);
+    expect(render(props([row("a", "Fix the login")], { loadTail }))).toContain(t("agentSessions.details.title"));
+    expect(loadTail).toHaveBeenCalledTimes(0);
+    expect(render(props([row("a", "Fix the login")]))).not.toContain(t("agentSessions.details.title"));
+    seed = {};
+    expect(render(props([row("a", "Fix the login")], { loadTail }))).not.toContain(t("agentSessions.details.title"));
+  });
+
+  it("gives the row menu the log items only for the handlers passed", () => {
+    const labelsOf = (p: SessionsPanelProps) =>
+      ((tree(p).find((n) => n.props.className === "as-menu-btn")?.props.items ?? []) as { label?: string }[]).map((i) => i.label);
+    const bare = labelsOf(props([row("a", "x")]));
+    expect(bare).not.toContain(t("agentSessions.menu.delete"));
+    const all = labelsOf(props([row("a", "x")], { onCopyLogPath: vi.fn(), onRevealLog: vi.fn(), onDelete: vi.fn() }));
+    for (const k of ["copyLogPath", "revealLog", "delete"]) expect(all).toContain(t(`agentSessions.menu.${k}`));
+  });
+
+  it("shows the skipped banner with the count, and none for zero or no data", () => {
+    expect(render(props([row("a", "x")], { skipped: { count: 2, paths: ["/a.jsonl"] } }))).toContain("2 logs were skipped");
+    expect(render(props([row("a", "x")], { skipped: { count: 0, paths: [] } }))).not.toContain("skipped");
+    expect(render(props([row("a", "x")]))).not.toContain("skipped");
+  });
+});

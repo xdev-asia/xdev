@@ -54,3 +54,34 @@ describe("rowMenuItems", () => {
     expect(labels(rowMenuItems(row("claude"), null, t, actions(), true))).not.toContain("agentSessions.menu.copyFirstPrompt");
   });
 });
+
+describe("rowMenuItems log actions", () => {
+  const base = () => ({ handOff: vi.fn(), copyCommand: vi.fn(), jump: vi.fn() });
+
+  it("shows copy log path, reveal and delete only when their handlers are given", () => {
+    expect(labels(rowMenuItems(row("claude"), null, t, base(), true))).not.toContain("agentSessions.menu.delete");
+    const a = { ...base(), copyLogPath: vi.fn(), revealLog: vi.fn(), deleteSession: vi.fn() };
+    const items = rowMenuItems(row("claude"), null, t, a, true);
+    expect(labels(items)).toEqual([
+      "agentSessions.menu.handOff",
+      "agentSessions.menu.copyCommand",
+      "agentSessions.menu.copyLogPath",
+      "agentSessions.menu.revealLog",
+      "separator",
+      "agentSessions.menu.delete",
+    ]);
+    const only = rowMenuItems(row("claude"), null, t, { ...base(), revealLog: vi.fn() }, true);
+    expect(labels(only)).toContain("agentSessions.menu.revealLog");
+    expect(labels(only)).not.toContain("agentSessions.menu.copyLogPath");
+  });
+
+  it("runs each handler and marks delete as dangerous", () => {
+    const a = { ...base(), copyLogPath: vi.fn(), revealLog: vi.fn(), deleteSession: vi.fn() };
+    const items = rowMenuItems(row("claude"), null, t, a, true);
+    for (const it of items) if (it.type !== "separator" && it.type !== "group") it.onSelect?.();
+    expect(a.copyLogPath).toHaveBeenCalledTimes(1);
+    expect(a.revealLog).toHaveBeenCalledTimes(1);
+    expect(a.deleteSession).toHaveBeenCalledTimes(1);
+    expect(items.find((i) => "label" in i && i.label === "agentSessions.menu.delete")).toMatchObject({ danger: true });
+  });
+});

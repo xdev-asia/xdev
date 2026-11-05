@@ -18,6 +18,10 @@ export interface RowMenuActions {
   copyCommand(command: string): void;
   jump(): void;
   copyFirstPrompt?(text: string): void;
+  /** Each of these three shows its item only when given. */
+  copyLogPath?(): void;
+  revealLog?(): void;
+  deleteSession?(): void;
 }
 
 /** The row's "More" menu: hand off, the resume command when the agent has one, the first prompt when there is one, and the open tab when there is one. */
@@ -35,5 +39,8 @@ export function rowMenuItems(
   items.push({ label: t("agentSessions.menu.handOff"), disabled: !canHandOff, onSelect: actions.handOff });
   if (command !== null) items.push({ label: t("agentSessions.menu.copyCommand"), onSelect: () => actions.copyCommand(command) });
   if (prompt !== "" && actions.copyFirstPrompt) items.push({ label: t("agentSessions.menu.copyFirstPrompt"), onSelect: () => actions.copyFirstPrompt?.(prompt) });
+  if (actions.copyLogPath) items.push({ label: t("agentSessions.menu.copyLogPath"), onSelect: actions.copyLogPath });
+  if (actions.revealLog) items.push({ label: t("agentSessions.menu.revealLog"), onSelect: actions.revealLog });
+  if (actions.deleteSession) items.push({ type: "separator" }, { label: t("agentSessions.menu.delete"), danger: true, onSelect: actions.deleteSession });
   return items;
 }
