@@ -67,9 +67,16 @@ function storeWith(api: Api, result: PortScan | Error): PortsStore {
   return store;
 }
 
+let now = 1_000_000;
+/** Time passes, so a confirm button that just appeared accepts a click. */
+const pass = (ms = 500) => { now += ms; };
+const click = { detail: 1 };
+
 beforeEach(() => {
   hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false;
   vi.stubGlobal("window", new EventTarget());
+  now = 1_000_000;
+  vi.spyOn(Date, "now").mockImplementation(() => now);
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
@@ -155,7 +162,8 @@ it("stops a port under an xDev terminal after a confirming click and tells the p
   const confirm = m.all().find((n) => n.props["data-action"] === "stop-confirm");
   expect(confirm?.props.children).toBe(en("ports.stopConfirm", { port: 5173 }));
   expect(m.all().filter((n) => n.props["data-action"] === "stop-confirm" || n.props.variant === "primary")).toHaveLength(1);
-  confirm?.props.onClick();
+  pass();
+  confirm?.props.onClick(click);
   await tick();
   expect(stop).toHaveBeenCalledWith("localhost:5173:1", { confirmed: true, outsideTerminal: false });
   expect(m.html()).toContain(en("ports.stopped", { port: 5173 }));
@@ -168,11 +176,13 @@ it("asks a second time before stopping a port no xDev terminal started", async (
   const stop = vi.spyOn(store, "stop").mockResolvedValue();
   const m = mount(api, store);
   m.all().find((n) => n.props.label === en("ports.stop"))?.props.onClick();
-  m.all().find((n) => n.props["data-action"] === "stop-confirm")?.props.onClick();
+  pass();
+  m.all().find((n) => n.props["data-action"] === "stop-confirm")?.props.onClick(click);
   await tick();
   expect(stop).not.toHaveBeenCalled();
   expect(m.html()).toContain(en("ports.stopOutsideNote", { port: 3000 }));
-  m.all().find((n) => n.props["data-action"] === "stop-outside")?.props.onClick();
+  pass();
+  m.all().find((n) => n.props["data-action"] === "stop-outside")?.props.onClick(click);
   await tick();
   expect(stop).toHaveBeenCalledWith("localhost:3000:1", { confirmed: true, outsideTerminal: true });
 });
@@ -184,14 +194,50 @@ it("asks a second time when the listener is the terminal's own process", async (
   const stop = vi.spyOn(store, "stop").mockRejectedValueOnce({ code: "port_terminal_root" }).mockResolvedValue();
   const m = mount(api, store);
   m.all().find((n) => n.props.label === en("ports.stop"))?.props.onClick();
-  m.all().find((n) => n.props["data-action"] === "stop-confirm")?.props.onClick();
+  pass();
+  m.all().find((n) => n.props["data-action"] === "stop-confirm")?.props.onClick(click);
   await tick();
   expect(stop).toHaveBeenCalledWith("localhost:4000:1", { confirmed: true, outsideTerminal: false });
   expect(m.all().some((n) => n.props.children === en("ports.stopTerminalNote", { port: 4000 }))).toBe(true);
   expect(m.html()).not.toContain('role="alert"');
-  m.all().find((n) => n.props["data-action"] === "stop-outside")?.props.onClick();
+  pass();
+  m.all().find((n) => n.props["data-action"] === "stop-outside")?.props.onClick(click);
   await tick();
   expect(stop).toHaveBeenLastCalledWith("localhost:4000:1", { confirmed: true, outsideTerminal: true });
+});
+
+it("ignores the extra clicks of a double or triple click and a click right after a confirm appears", async () => {
+  const api = createMockApi({});
+  const store = storeWith(api, scan([port({ port: 3000, pid: 9, worktree: OAK, evidence: "cwd" })]));
+  await store.refresh();
+  const stop = vi.spyOn(store, "stop").mockResolvedValue();
+  const m = mount(api, store);
+  const confirm = () => m.all().find((n) => n.props["data-action"] === "stop-confirm");
+  const outside = () => m.all().find((n) => n.props["data-action"] === "stop-outside");
+  // A triple click on Stop: the 2nd and 3rd land on the confirm that took its place.
+  m.all().find((n) => n.props.label === en("ports.stop"))?.props.onClick({ detail: 1 });
+  confirm()?.props.onClick({ detail: 2 });
+  confirm()?.props.onClick({ detail: 3 });
+  expect(outside()).toBeUndefined();
+  // A single click too soon after the confirm appeared.
+  pass(100);
+  confirm()?.props.onClick(click);
+  expect(outside()).toBeUndefined();
+  pass();
+  confirm()?.props.onClick(click);
+  expect(outside()).toBeDefined();
+  // The override confirm takes the same guard.
+  outside()?.props.onClick({ detail: 2 });
+  outside()?.props.onClick({ detail: 3 });
+  outside()?.props.onClick(click);
+  pass();
+  outside()?.props.onClick({ detail: 3 });
+  await tick();
+  expect(stop).not.toHaveBeenCalled();
+  outside()?.props.onClick(click);
+  await tick();
+  expect(stop).toHaveBeenCalledTimes(1);
+  expect(stop).toHaveBeenCalledWith("localhost:3000:1", { confirmed: true, outsideTerminal: true });
 });
 
 it("cancels an asked stop and the menu entry only asks", async () => {

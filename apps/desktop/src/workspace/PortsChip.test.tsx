@@ -62,12 +62,25 @@ it("Open, Copy and the first Stop click act on their own row", () => {
 });
 
 it("a Stop that asked first shows the confirmation, and only that click stops the process", () => {
-  const props = base({ confirming: 4242 });
+  const props = base({ confirming: { pid: 4242, since: Date.now() - 500 } });
   const tree = PortsPopover(props);
   expect(renderToStaticMarkup(tree)).toContain("Stop process on 5173?");
   expect(action(tree, "stop", 0)).toBeDefined();
-  action(tree, "stop-confirm", 0).props.onClick();
+  action(tree, "stop-confirm", 0).props.onClick({ detail: 1 });
   expect(props.onStop).toHaveBeenCalledWith(node);
+});
+
+it("the confirm ignores the extra clicks of a double or triple click and a click right after it appears", () => {
+  const fresh = base({ confirming: { pid: 4242, since: Date.now() } });
+  action(PortsPopover(fresh), "stop-confirm", 0).props.onClick({ detail: 1 });
+  expect(fresh.onStop).not.toHaveBeenCalled();
+  const armed = base({ confirming: { pid: 4242, since: Date.now() - 500 } });
+  const tree = PortsPopover(armed);
+  action(tree, "stop-confirm", 0).props.onClick({ detail: 2 });
+  action(tree, "stop-confirm", 0).props.onClick({ detail: 3 });
+  expect(armed.onStop).not.toHaveBeenCalled();
+  action(tree, "stop-confirm", 0).props.onClick({ detail: 1 });
+  expect(armed.onStop).toHaveBeenCalledTimes(1);
 });
 
 it("Escape and the backdrop close it", () => {

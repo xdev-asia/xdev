@@ -5,6 +5,7 @@ import { toApiError, type Api, type ApiError, type WorkspacePort } from "@/api";
 import { useI18n } from "@/i18n";
 import { copyText } from "@/ui/clipboard";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
+import { confirmCounts } from "./confirmClick";
 import { groupPorts, portAddress, portOwner } from "./portSections";
 import type { PortsStore } from "./portsStore";
 
@@ -23,7 +24,8 @@ export function PortsPanel(props: {
   const [actionError, setActionError] = useState<ApiError | null>(null);
   const [menu, setMenu] = useState<{ at: { x: number; y: number }; port: WorkspacePort } | null>(null);
   // Stop asks first, like the card chip; a port no xDev terminal started asks a second time.
-  const [asking, setAsking] = useState<{ id: string; outside: boolean } | null>(null);
+  // `at` is when the confirm appeared; clicks that land on it too soon are ignored.
+  const [asking, setAsking] = useState<{ id: string; outside: boolean; at: number } | null>(null);
 
   useSyncExternalStore(useCallback((fn: () => void) => store.subscribe(fn), [store]), () => store.snapshot(), () => store.snapshot());
   const { scan, error, loading } = store.state();
@@ -48,7 +50,7 @@ export function PortsPanel(props: {
   const askStop = (p: WorkspacePort) => {
     setActionError(null);
     setNote(null);
-    setAsking({ id: p.id, outside: false });
+    setAsking({ id: p.id, outside: false, at: Date.now() });
   };
   const stop = async (p: WorkspacePort, outsideTerminal: boolean) => {
     setActionError(null);
@@ -60,7 +62,7 @@ export function PortsPanel(props: {
     } catch (e) {
       // The listener is the terminal's own process: stopping it ends the terminal, so ask once more.
       if (!outsideTerminal && toApiError(e).code === "port_terminal_root") {
-        setAsking({ id: p.id, outside: true });
+        setAsking({ id: p.id, outside: true, at: Date.now() });
         setNote(t("ports.stopTerminalNote", { port: p.port }));
         return;
       }
@@ -68,12 +70,13 @@ export function PortsPanel(props: {
     }
   };
   /** The confirming click: stops a port under an xDev terminal, else asks once more. */
-  const confirmStop = (p: WorkspacePort) => {
-    if (asking?.outside || p.evidence === "terminal") {
-      void stop(p, asking?.outside ?? false);
+  const confirmStop = (p: WorkspacePort, e?: { detail?: number }) => {
+    if (!asking || !confirmCounts(e, asking.at)) return;
+    if (asking.outside || p.evidence === "terminal") {
+      void stop(p, asking.outside);
       return;
     }
-    setAsking({ id: p.id, outside: true });
+    setAsking({ id: p.id, outside: true, at: Date.now() });
     setNote(t("ports.stopOutsideNote", { port: p.port }));
   };
   const cancelStop = () => {
@@ -121,7 +124,7 @@ export function PortsPanel(props: {
             {canStop(p) && !ask && <IconButton icon="stop" label={t("ports.stop")} onClick={() => askStop(p)} />}
             {canStop(p) && ask && (
               <>
-                <button type="button" className="btn-secondary pt-stop" data-action={ask.outside ? "stop-outside" : "stop-confirm"} onClick={() => confirmStop(p)}>
+                <button type="button" className="btn-secondary pt-stop" data-action={ask.outside ? "stop-outside" : "stop-confirm"} onClick={(e) => confirmStop(p, e)}>
                   {ask.outside ? t("ports.stopOutside") : t("ports.stopConfirm", { port: p.port })}
                 </button>
                 <IconButton icon="close" label={t("dialog.cancel")} onClick={cancelStop} />

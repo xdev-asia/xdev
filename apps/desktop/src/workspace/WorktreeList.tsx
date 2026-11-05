@@ -162,7 +162,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const [dragging, setDragging] = useState<string | null>(null);
   // The worktree whose live ports popover is open, where it opens, and the pid whose Stop asks again.
   const [portsOpen, setPortsOpen] = useState<{ worktree: WorktreeView; at: { x: number; y: number } } | null>(null);
-  const [stopAsk, setStopAsk] = useState<number | null>(null);
+  const [stopAsk, setStopAsk] = useState<{ pid: number; since: number } | null>(null);
   const prefs = props.prefs ?? SIDEBAR_PREFS_DEFAULTS;
   const tree = props.items;
   // The repos whose "Found outside xDev" group is open; all start closed.
@@ -814,7 +814,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         </p>
       )}
       {openMenuNode()}
-      {portsOpen && <PortsPopover ports={props.ports?.[portsOpen.worktree.path] ?? []} at={portsOpen.at} confirming={stopAsk} onOpenBrowser={(p) => props.onOpenPort?.(p)} onCopy={(p) => props.onCopyPort?.(p)} onAskStop={(p) => setStopAsk(p.pid)} onStop={(p) => {
+      {portsOpen && <PortsPopover ports={props.ports?.[portsOpen.worktree.path] ?? []} at={portsOpen.at} confirming={stopAsk} onOpenBrowser={(p) => props.onOpenPort?.(p)} onCopy={(p) => props.onCopyPort?.(p)} onAskStop={(p) => setStopAsk({ pid: p.pid, since: Date.now() })} onStop={(p) => {
         setStopAsk(null);
         void props.onStopPort?.(portsOpen.worktree, p);
       }} onClose={() => { setPortsOpen(null); setStopAsk(null); }} />}
