@@ -2190,5 +2190,12 @@
   "settings.terminal.links.actions": "Show actions",
   "settings.terminal.links.open": "Open",
   "settings.terminal.links.none": "Do nothing",
-  "settings.terminal.links.hint": "Ctrl+click (⌘+click on macOS) always opens."
+  "settings.terminal.links.hint": "Ctrl+click (⌘+click on macOS) always opens.",
+  "editor.gutter.copyPath": "Copy path to line",
+  "editor.gutter.copyRelPath": "Copy relative path to line",
+  "editor.gutter.copyRemote": "Copy remote URL",
+  "editor.gutter.copied": "Copied",
+  "editor.gutter.copyFailed": "Copy failed",
+  "editor.gutter.noRemote": "No GitHub, GitLab or Bitbucket remote for this file",
+  "editor.gutter.label": "Line menu"
 }

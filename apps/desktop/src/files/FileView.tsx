@@ -1,11 +1,16 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import type { Api } from "@/api";
 import { useI18n } from "@/i18n";
+import { copyText } from "@/ui/clipboard";
+import { ContextMenu } from "@/ui/ContextMenu";
+import { pushToast } from "@/workspace/toastStore";
+import { PLATFORM } from "@/platform";
 import { Button } from "@xdev-asia/ui";
 import { CodeEditor } from "./CodeEditor";
 import { useEditorSettings } from "./editorSettings";
 import { loadFile, saveFile } from "./fileIO";
+import { gutterMenuItems, type GutterSelection } from "./gutterMenu";
 import { fileTabs, useFileEntry } from "./fileTabs";
 
 /** One open file: reads it when it first shows, then edits it, or says why it cannot. */
@@ -15,6 +20,8 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
   const entry = useFileEntry(worktree, rel);
   const settings = useEditorSettings();
   const status = entry?.status;
+  // The gutter's right-click menu: where it opened and for which line.
+  const [gutter, setGutter] = useState<{ at: { x: number; y: number }; line: number; selection: GutterSelection | null } | null>(null);
   const io = { api, store: fileTabs, t };
   useEffect(() => {
     if (status === "loading") void loadFile({ api, store: fileTabs, t }, worktree, rel);
@@ -66,6 +73,7 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
           goto={entry.goto}
           onChange={(text) => fileTabs.edit(worktree, rel, text)}
           onSave={() => void saveFile(io, worktree, rel)}
+          onGutterMenu={(at, line, selection) => setGutter({ at, line, selection })}
         />
         {entry.saving && <span className="file-saving" role="status">{t("files.saving")}</span>}
       </>
@@ -74,6 +82,14 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
   return (
     <div className="file-view" data-rel={rel} data-kind={entry?.kind}>
       {body}
+      {gutter && (
+        <ContextMenu
+          at={gutter.at}
+          label={t("editor.gutter.label")}
+          items={gutterMenuItems({ api, worktree, rel, line: gutter.line, selection: gutter.selection, copyText, toast: (text) => void pushToast({ text }), t, win: PLATFORM === "win" })}
+          onClose={() => setGutter(null)}
+        />
+      )}
     </div>
   );
 }

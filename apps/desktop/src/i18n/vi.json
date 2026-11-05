@@ -2190,5 +2190,12 @@
   "settings.terminal.links.actions": "Hiện thao tác",
   "settings.terminal.links.open": "Mở",
   "settings.terminal.links.none": "Không làm gì",
-  "settings.terminal.links.hint": "Ctrl+nhấp (⌘+nhấp trên macOS) luôn mở."
+  "settings.terminal.links.hint": "Ctrl+nhấp (⌘+nhấp trên macOS) luôn mở.",
+  "editor.gutter.copyPath": "Sao chép đường dẫn đến dòng",
+  "editor.gutter.copyRelPath": "Sao chép đường dẫn tương đối đến dòng",
+  "editor.gutter.copyRemote": "Sao chép URL trên remote",
+  "editor.gutter.copied": "Đã sao chép",
+  "editor.gutter.copyFailed": "Không sao chép được",
+  "editor.gutter.noRemote": "Tệp này không có remote GitHub, GitLab hoặc Bitbucket",
+  "editor.gutter.label": "Menu dòng"
 }
