@@ -419,6 +419,7 @@ pub fn run() {
             review::worktree_conflicts,
             review::worktree_conflict_continue,
             review::worktree_conflict_abort,
+            review::worktree_conflict_resolve,
             ship::worktree_suggest_branch,
             workspace::worktree_rename_branch,
             ship::worktree_amend,
