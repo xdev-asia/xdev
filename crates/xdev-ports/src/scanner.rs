@@ -56,8 +56,8 @@ pub enum StopError {
     /// The process on the port is not the one the list showed.
     #[error("the process on the port changed")]
     Changed,
-    /// The tree was told to end, but the port still had a listener after
-    /// the grace time and a hard kill.
+    /// The tree was told to end, but a pid of it still listened on the port
+    /// after the grace time and a hard kill.
     #[error("the port is still listening")]
     StillListening,
     #[error("{0}")]
@@ -314,8 +314,8 @@ impl<P: Probe> Scanner<P> {
     /// signal. Each of its pids gets TERM; when the port is still open after
     /// the grace time, KILL goes only to the pids that still have the start
     /// time the read saw, and not at all where TERM already was the hard
-    /// stop (Windows). Succeeds only once a read of the live table shows
-    /// nothing listening on the port, and returns the list after it.
+    /// stop (Windows). Succeeds only once a read of the live table shows no
+    /// pid of the tree listening on the port, and returns the list after it.
     pub fn stop(
         &self,
         id: &str,
@@ -375,7 +375,7 @@ impl<P: Probe> Scanner<P> {
                 }
             }
         }
-        if !self.closes(number) {
+        if !self.closes(number, &tree) {
             // Where TERM already was the hard stop, a second one could only
             // hit a pid the OS gave to someone else since.
             if !self.probe.terminate_is_final() {
@@ -388,20 +388,22 @@ impl<P: Probe> Scanner<P> {
                     }
                 }
             }
-            if !self.closes(number) {
+            if !self.closes(number, &tree) {
                 return Err(failed.map_or(StopError::StillListening, StopError::Failed));
             }
         }
         Ok(self.scan(roots, worktrees, urls, true))
     }
 
-    /// Whether nothing listens on `port` within the grace time. A failed read
-    /// proves nothing, so it waits on.
-    fn closes(&self, port: u16) -> bool {
+    /// Whether no pid of `tree` listens on `port` within the grace time.
+    /// Another process on the same port number, on another address, is not
+    /// the one stopped. A failed read proves nothing, so it waits on.
+    fn closes(&self, port: u16, tree: &[(u32, Identity)]) -> bool {
+        let ours = |l: &Listener| l.port == port && tree.iter().any(|(p, _)| l.pid == Some(*p));
         let end = Instant::now() + self.grace;
         loop {
             if let Ok(listeners) = self.probe.listeners(SCAN_TIMEOUT)
-                && !listeners.iter().any(|l| l.port == port)
+                && !listeners.iter().any(ours)
             {
                 return true;
             }
@@ -1037,6 +1039,26 @@ mod tests {
         s.stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[])
             .unwrap();
         assert_eq!(*f.hard.lock().unwrap(), vec![8]);
+    }
+
+    #[test]
+    fn another_process_on_the_same_port_number_does_not_hold_the_stop() {
+        let (s, f, urls, wts) = setup();
+        f.queue(Ok(vec![
+            listen(5173, 7),
+            Listener {
+                bind_host: "::1".into(),
+                port: 5173,
+                pid: Some(50),
+            },
+        ]));
+        *f.procs.lock().unwrap() = vec![proc(7, "/w/a"), proc(50, "/elsewhere")];
+        let after = s
+            .stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[])
+            .unwrap();
+        assert_eq!(*f.killed.lock().unwrap(), vec![7]);
+        assert!(f.hard.lock().unwrap().is_empty());
+        assert!(after.ports.iter().any(|p| p.pid == Some(50)));
     }
 
     #[test]
