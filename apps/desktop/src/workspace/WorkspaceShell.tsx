@@ -67,6 +67,7 @@ import { RenameBranchDialog } from "./RenameBranchDialog";
 import { PendingCreates, type CreateArgs } from "./pendingCreates";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
+import { Titlebar } from "./Titlebar";
 import { AddProjectDialog, parentOf } from "./AddProjectDialog";
 import { RemoveRepoDialog } from "./RemoveRepoDialog";
 import { ParentPickerDialog } from "./ParentPickerDialog";
@@ -1761,6 +1762,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   return (
     <ProfilesProvider api={api}>
     <div className="ws-shell">
+      <Titlebar />
       <header className="ws-header">
         <button
           type="button"

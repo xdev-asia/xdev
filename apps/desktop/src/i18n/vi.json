@@ -3875,5 +3875,16 @@
   "nested.none": "Không tìm thấy kho nào trong thư mục này.",
   "nested.registered": "Đã thêm",
   "nested.cancelled": "Quét dừng sớm. Đã tìm thấy {count} kho.",
-  "nested.addSelected": "Thêm mục đã chọn ({count})"
+  "nested.addSelected": "Thêm mục đã chọn ({count})",
+  "titlebar.appName": "xDev",
+  "titlebar.minimize": "Thu nhỏ",
+  "titlebar.maximize": "Phóng to",
+  "titlebar.restore": "Khôi phục kích thước",
+  "titlebar.close": "Đóng cửa sổ",
+  "settings.appearance.titlebar": "Thanh tiêu đề",
+  "settings.appearance.titlebar.native": "Hệ thống",
+  "settings.appearance.titlebar.custom": "Tùy chỉnh",
+  "settings.appearance.titlebarHint": "Hệ thống giữ khung cửa sổ của hệ điều hành; Tùy chỉnh dùng thanh tiêu đề riêng của xDev. Áp dụng ngay, không cần khởi động lại.",
+  "settings.appearance.titlebarName": "Hiện tên ứng dụng trên thanh tiêu đề",
+  "settings.appearance.titlebarNameHint": "Chỉ áp dụng cho thanh tiêu đề tùy chỉnh."
 }

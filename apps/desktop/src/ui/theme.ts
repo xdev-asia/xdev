@@ -1,6 +1,7 @@
 import { applyTheme, applyUiFont, resolveTheme, systemPrefersDark, watchSystemTheme, type FontRoot, type MatchMediaLike, type ThemePreference } from "@xdev-asia/ui";
 import type { Api, UiSettings } from "@/api";
 import { setEditorPrefs, setPaintedTheme } from "./editorTheme";
+import { setTitlebar } from "./titlebar";
 import { setHiddenApps } from "./hiddenApps";
 import { sidebarTintValue } from "./sidebarTint";
 import { setStatusBarItems } from "./statusBarItems";
@@ -112,7 +113,7 @@ export function setThemePreference(pref: ThemePreference): void {
  * first render.
  */
 export function applyAppearance(
-  ui: Pick<UiSettings, "theme" | "uiFont" | "sidebar" | "editorThemeLight" | "editorThemeDark"> & Partial<Pick<UiSettings, "statusBar" | "sidebarTint" | "sidebarTintOpacity" | "reduceEffects" | "hiddenApps">>,
+  ui: Pick<UiSettings, "theme" | "uiFont" | "sidebar" | "editorThemeLight" | "editorThemeDark"> & Partial<Pick<UiSettings, "statusBar" | "sidebarTint" | "sidebarTintOpacity" | "reduceEffects" | "hiddenApps" | "titlebar" | "showTitlebarName">>,
 ): void {
   setThemePreference(ui.theme);
   setEditorPrefs(ui);
@@ -129,6 +130,7 @@ export function applyAppearance(
   }
   root.setAttribute("data-effects", ui.reduceEffects ? "reduced" : "full");
   setHiddenApps(ui.hiddenApps ?? []);
+  setTitlebar(ui);
 }
 
 /**

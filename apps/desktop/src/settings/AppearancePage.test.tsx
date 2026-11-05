@@ -1,11 +1,12 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import { FontField, Segmented, Select, ThemeSwitch } from "@xdev-asia/ui";
+import { FontField, Segmented, Select, Switch, ThemeSwitch } from "@xdev-asia/ui";
 import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
 import { UI_SETTINGS_DEFAULTS } from "@/mockSettings";
 import { currentEditorTheme, resetEditorThemeForTests } from "@/ui/editorTheme";
 import { resetHiddenAppsForTests } from "@/ui/hiddenApps";
+import { getTitlebar, resetTitlebarForTests } from "@/ui/titlebar";
 import { getThemePreference, resetThemeForTests } from "@/ui/theme";
 import { AppearancePage } from "./AppearancePage";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
@@ -60,6 +61,7 @@ beforeEach(() => {
   resetThemeForTests();
   resetEditorThemeForTests();
   resetHiddenAppsForTests();
+  resetTitlebarForTests();
 });
 
 async function page(filter?: SettingsFilter, openSection?: (id: string) => void) {
@@ -291,4 +293,26 @@ it("the status bar has a keep-awake switch", async () => {
   p.sw("keepAwake").props.onClick();
   await tick();
   expect((await p.api.uiSettingsGet()).statusBar.keepAwake).toBe(false);
+});
+
+it("title bar choice writes beside the rest, and the name switch follows it", async () => {
+  paintEnv();
+  const p = await page();
+  expect(p.all().find((n) => n.type === Segmented && n.props.label === translate("en", "settings.appearance.titlebar"))!.props.value).toBe("native");
+  const name = () => nodes(p.all().find((n) => n.props["data-switch"] === "titlebarName")).find((n) => n.type === Switch)!;
+  expect(name().props.checked).toBe(true);
+  expect(name().props.disabled).toBe(true);
+  p.all().find((n) => n.type === Segmented && n.props.label === translate("en", "settings.appearance.titlebar"))!.props.onChange("custom");
+  await tick();
+  expect((await p.api.uiSettingsGet()).titlebar).toBe("custom");
+  expect(name().props.disabled).toBe(false);
+  name().props.onChange();
+  await tick();
+  expect(await p.api.uiSettingsGet()).toEqual({ ...UI_SETTINGS_DEFAULTS, titlebar: "custom", showTitlebarName: false });
+  expect(getTitlebar()).toEqual({ mode: "custom", showName: false });
+});
+
+it("has catalog entries for both title bar rows", () => {
+  const ids = SETTING_ENTRIES.map((x) => x.id);
+  expect(ids).toEqual(expect.arrayContaining(["appearance.titlebar", "appearance.titlebarName"]));
 });

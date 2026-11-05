@@ -3875,5 +3875,16 @@
   "nested.none": "No repositories found in this folder.",
   "nested.registered": "Already added",
   "nested.cancelled": "Scan stopped early. {count} found so far.",
-  "nested.addSelected": "Add selected ({count})"
+  "nested.addSelected": "Add selected ({count})",
+  "titlebar.appName": "xDev",
+  "titlebar.minimize": "Minimize",
+  "titlebar.maximize": "Maximize",
+  "titlebar.restore": "Restore",
+  "titlebar.close": "Close window",
+  "settings.appearance.titlebar": "Title bar",
+  "settings.appearance.titlebar.native": "Native",
+  "settings.appearance.titlebar.custom": "Custom",
+  "settings.appearance.titlebarHint": "Native keeps the system window frame; Custom draws xDev's own. Applied at once, no restart needed.",
+  "settings.appearance.titlebarName": "Show app name in title bar",
+  "settings.appearance.titlebarNameHint": "Only applies to the custom title bar."
 }
