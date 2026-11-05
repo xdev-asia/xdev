@@ -383,7 +383,6 @@ export type ErrorCode =
   | "share_bad_image"
   | "share_clipboard"
   | "share_open"
-  | "port_unknown"
   | "io"
   | "not_utf8"
   | "too_large"
@@ -1132,7 +1131,6 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "share_bad_image",
   "share_clipboard",
   "share_open",
-  "port_unknown",
   "io",
   "not_utf8",
   "too_large",

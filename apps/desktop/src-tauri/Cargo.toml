@@ -46,9 +46,6 @@ xdev-pty.workspace = true
 xdev-store.workspace = true
 xdev-workspace.workspace = true
 
-[target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp"] }
-
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 
