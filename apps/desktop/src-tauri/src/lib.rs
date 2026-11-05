@@ -9,6 +9,7 @@ mod atomic;
 mod automations;
 #[cfg(test)]
 mod bindings;
+mod cli_install;
 mod cli_path;
 mod cli_terminal;
 mod cli_verbs;
@@ -351,6 +352,11 @@ pub fn run() {
             commands::write_doc,
             commands::create_doc,
             commands::cli_path,
+            cli_install::cli_status,
+            cli_install::cli_install,
+            cli_install::cli_remove,
+            cli_install::cli_repair,
+            cli_install::cli_reveal,
             commands::search,
             commands::vcs_state,
             commands::init_repo,

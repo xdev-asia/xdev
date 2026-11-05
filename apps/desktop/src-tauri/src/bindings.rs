@@ -16,6 +16,7 @@ use crate::automations::{
     AutomationDispatch, AutomationsChanged, AutomationsView, DispatchResult, RunFinish,
     ScheduleProblem,
 };
+use crate::cli_install::CliStatus;
 use crate::cli_verbs::{CliAsk, CliOpenTab, TabReport};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
 use crate::crash::{CrashReport, RenderCrash};
@@ -64,6 +65,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     RenderCrash::export_all(cfg)?;
     StartupReport::export_all(cfg)?;
     DiagnosticsExport::export_all(cfg)?;
+    CliStatus::export_all(cfg)?;
     Changed::export_all(cfg)?;
     VaultSetup::export_all(cfg)?;
     VcsState::export_all(cfg)?;
