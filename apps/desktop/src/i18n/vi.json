@@ -2762,6 +2762,7 @@
   "settings.agents.autoTabTitle.label": "Đặt tên tab agent từ lời nhắc đầu tiên",
   "settings.agents.autoTabTitle.hint": "Tab bạn chưa đổi tên sẽ có tên ngắn lấy từ lời nhắc đầu tiên. Tên bạn tự đặt luôn được ưu tiên.",
   "sleep.menu": "Cho ngủ",
+  "sleep.menu.nested": "Ngủ cùng các worktree con",
   "sleep.wake": "Đánh thức",
   "sleep.badge": "Đang ngủ",
   "sleep.tab.title": "Terminal này đang ngủ",

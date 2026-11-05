@@ -1924,7 +1924,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             unread={unreadMap}
             asleep={asleepMap}
             sleepable={sleepableMap}
-            onSleep={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api), all.filter((c) => c.parent === wt.path).map((c) => c.path))}
+            onSleep={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api))}
+            onSleepNested={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api), all.filter((c) => c.parent === wt.path).map((c) => c.path))}
             onWake={(wt) => [wt.path, ...all.filter((c) => c.parent === wt.path).map((c) => c.path)].forEach((p) => sessions?.wakeWorktree(p))}
             onMarkUnread={(wt) => sessions?.markUnread(wt.path)}
             onMarkRead={(wt) => sessions?.markRead(wt.path)}
