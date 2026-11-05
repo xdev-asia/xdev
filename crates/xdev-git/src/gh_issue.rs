@@ -82,10 +82,6 @@ pub struct IssueEvent {
     pub created_at: String,
 }
 
-fn not_built() -> GitError {
-    GitError::Gh("not implemented".into())
-}
-
 const TITLE_MAX: usize = 256;
 
 /// A label or login that cannot be an argv item of its own: it would read as
@@ -260,13 +256,73 @@ pub fn issue_assignable(gh: &dyn GhExec, cwd: &Path) -> Result<Vec<String>, GitE
         .collect())
 }
 
-/// The issue's events, oldest first, known kinds only.
+/// One event of the timeline, or `None` for a kind that is not read.
+fn read_event(value: &serde_json::Value) -> Option<IssueEvent> {
+    let text = |v: Option<&serde_json::Value>| v.and_then(|v| v.as_str()).map(str::to_owned);
+    let actor = text(value.pointer("/actor/login"));
+    let (kind, subject) = match value.get("event")?.as_str()? {
+        "assigned" => (
+            IssueEventKind::Assigned,
+            text(value.pointer("/assignee/login")),
+        ),
+        "unassigned" => (
+            IssueEventKind::Unassigned,
+            text(value.pointer("/assignee/login")),
+        ),
+        "closed" => (IssueEventKind::Closed, None),
+        "reopened" => (IssueEventKind::Reopened, None),
+        "labeled" => (IssueEventKind::Labeled, text(value.pointer("/label/name"))),
+        "unlabeled" => (
+            IssueEventKind::Unlabeled,
+            text(value.pointer("/label/name")),
+        ),
+        "renamed" => (IssueEventKind::Renamed, text(value.pointer("/rename/to"))),
+        "cross-referenced" => {
+            let issue = value.pointer("/source/issue")?;
+            let number = issue.get("number")?.as_u64()?;
+            let title = issue.get("title").and_then(|t| t.as_str()).unwrap_or("");
+            (
+                IssueEventKind::CrossReferenced,
+                Some(format!("#{number} {title}").trim_end().to_owned()),
+            )
+        }
+        _ => return None,
+    };
+    Some(IssueEvent {
+        kind,
+        actor,
+        subject,
+        created_at: text(value.get("created_at"))?,
+    })
+}
+
+/// The issue's events, oldest first, known kinds only, at most
+/// `ISSUE_TIMELINE_MAX`. `--jq '.[]'` prints one event per line however many
+/// pages there are; a line that does not parse is dropped.
 pub fn issue_timeline(
-    _gh: &dyn GhExec,
-    _cwd: &Path,
-    _number: u64,
+    gh: &dyn GhExec,
+    cwd: &Path,
+    number: u64,
 ) -> Result<Vec<IssueEvent>, GitError> {
-    Err(not_built())
+    let repo = repo_name(gh, cwd)?;
+    let out = ok(gh.run(
+        cwd,
+        &[
+            "api",
+            &format!("repos/{repo}/issues/{number}/timeline"),
+            "--paginate",
+            "--jq",
+            ".[]",
+        ],
+        None,
+    )?)?;
+    Ok(out
+        .stdout
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter_map(|v| read_event(&v))
+        .take(ISSUE_TIMELINE_MAX)
+        .collect())
 }
 
 #[cfg(test)]
@@ -602,5 +658,107 @@ hubot
                 ".[].login"
             ]
         );
+    }
+
+    fn event_line(kind: &str, extra: &str, at: &str) -> String {
+        format!(r#"{{"event":"{kind}","actor":{{"login":"hubot"}},"created_at":"{at}"{extra}}}"#)
+    }
+
+    #[test]
+    fn issue_timeline_keeps_known_events_in_order() {
+        let lines = [
+            event_line("labeled", r#","label":{"name":"bug","color":"f00"}"#, "t1"),
+            event_line("assigned", r#","assignee":{"login":"octo"}"#, "t2"),
+            event_line("unassigned", r#","assignee":{"login":"mona"}"#, "t3"),
+            event_line("renamed", r#","rename":{"from":"a","to":"b"}"#, "t4"),
+            event_line("closed", "", "t5"),
+            event_line("reopened", "", "t6"),
+            event_line("unlabeled", r#","label":{"name":"bug"}"#, "t7"),
+            event_line(
+                "cross-referenced",
+                r#","source":{"type":"issue","issue":{"number":12,"title":"Other"}}"#,
+                "t8",
+            ),
+        ]
+        .join(
+            "
+",
+        );
+        let fake = Fake::new(vec![
+            out(0, r#"{"nameWithOwner":"o/r"}"#, ""),
+            out(0, &lines, ""),
+        ]);
+        let events = issue_timeline(&fake, cwd(), 7).unwrap();
+        let got: Vec<_> = events
+            .iter()
+            .map(|e| (e.kind, e.subject.as_deref(), e.created_at.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                (IssueEventKind::Labeled, Some("bug"), "t1"),
+                (IssueEventKind::Assigned, Some("octo"), "t2"),
+                (IssueEventKind::Unassigned, Some("mona"), "t3"),
+                (IssueEventKind::Renamed, Some("b"), "t4"),
+                (IssueEventKind::Closed, None, "t5"),
+                (IssueEventKind::Reopened, None, "t6"),
+                (IssueEventKind::Unlabeled, Some("bug"), "t7"),
+                (IssueEventKind::CrossReferenced, Some("#12 Other"), "t8"),
+            ]
+        );
+        assert_eq!(events[0].actor.as_deref(), Some("hubot"));
+        assert_eq!(
+            args(&fake.calls.borrow()[1]),
+            [
+                "api",
+                "repos/o/r/issues/7/timeline",
+                "--paginate",
+                "--jq",
+                ".[]"
+            ]
+        );
+    }
+
+    #[test]
+    fn issue_timeline_drops_unknown() {
+        let lines = [
+            event_line("committed", "", "t1"),
+            "not json".to_owned(),
+            event_line("subscribed", "", "t2"),
+            event_line("closed", "", "t3"),
+            r#"{"event":"closed","actor":{"login":"x"}}"#.to_owned(),
+        ]
+        .join(
+            "
+",
+        );
+        let fake = Fake::new(vec![
+            out(0, r#"{"nameWithOwner":"o/r"}"#, ""),
+            out(0, &lines, ""),
+        ]);
+        let events = issue_timeline(&fake, cwd(), 7).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, IssueEventKind::Closed);
+    }
+
+    #[test]
+    fn issue_timeline_caps_at_200() {
+        let lines: Vec<String> = (0..ISSUE_TIMELINE_MAX + 30)
+            .map(|i| event_line("closed", "", &format!("t{i}")))
+            .collect();
+        let fake = Fake::new(vec![
+            out(0, r#"{"nameWithOwner":"o/r"}"#, ""),
+            out(
+                0,
+                &lines.join(
+                    "
+",
+                ),
+                "",
+            ),
+        ]);
+        let events = issue_timeline(&fake, cwd(), 7).unwrap();
+        assert_eq!(events.len(), ISSUE_TIMELINE_MAX);
+        assert_eq!(events[0].created_at, "t0");
     }
 }
