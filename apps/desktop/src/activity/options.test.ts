@@ -16,9 +16,9 @@ it("nothing saved gives the defaults", () => {
 });
 
 it("saves and loads", () => {
-  saveActivityOptions({ showIdle: true, groupByWorktree: true });
+  saveActivityOptions({ showIdle: true, groupBy: "agent", filter: "unread", compact: true });
   expect(store.has(ACTIVITY_OPTIONS_KEY)).toBe(true);
-  expect(loadActivityOptions()).toEqual({ showIdle: true, groupByWorktree: true });
+  expect(loadActivityOptions()).toEqual({ showIdle: true, groupBy: "agent", filter: "unread", compact: true });
 });
 
 it("bad JSON, a wrong shape or wrong field types give the defaults", () => {
@@ -26,8 +26,18 @@ it("bad JSON, a wrong shape or wrong field types give the defaults", () => {
   expect(loadActivityOptions()).toEqual(DEFAULT_ACTIVITY_OPTIONS);
   store.set(ACTIVITY_OPTIONS_KEY, "42");
   expect(loadActivityOptions()).toEqual(DEFAULT_ACTIVITY_OPTIONS);
-  store.set(ACTIVITY_OPTIONS_KEY, JSON.stringify({ showIdle: "yes", groupByWorktree: true }));
-  expect(loadActivityOptions()).toEqual({ showIdle: false, groupByWorktree: true });
+  store.set(ACTIVITY_OPTIONS_KEY, JSON.stringify({ showIdle: "yes", groupBy: "sideways", filter: 3, compact: "no" }));
+  expect(loadActivityOptions()).toEqual(DEFAULT_ACTIVITY_OPTIONS);
+});
+
+it("the old groupByWorktree flag migrates to groupBy", () => {
+  store.set(ACTIVITY_OPTIONS_KEY, JSON.stringify({ showIdle: true, groupByWorktree: true }));
+  expect(loadActivityOptions()).toEqual({ ...DEFAULT_ACTIVITY_OPTIONS, showIdle: true, groupBy: "worktree" });
+  store.set(ACTIVITY_OPTIONS_KEY, JSON.stringify({ groupByWorktree: false }));
+  expect(loadActivityOptions().groupBy).toBe("none");
+  // A new value wins over the old flag.
+  store.set(ACTIVITY_OPTIONS_KEY, JSON.stringify({ groupBy: "status", groupByWorktree: true }));
+  expect(loadActivityOptions().groupBy).toBe("status");
 });
 
 it("storage that throws is not an error", () => {

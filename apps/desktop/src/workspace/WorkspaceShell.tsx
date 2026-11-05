@@ -42,7 +42,8 @@ import { getNavigationSettings, setNavigationSettings, useNavigationSettings } f
 import { SettingsView } from "@/settings/SettingsView";
 import { playStatusSound } from "@/status/sound";
 import { usePresence } from "@/status/presence";
-import { eventOn, getStatusSettings, loadStatusSettings, useStatusSettings } from "@/status/statusSettings";
+import { getStatusSettings, loadStatusSettings, useStatusSettings } from "@/status/statusSettings";
+import { admits } from "./attention";
 import { BellMenu, bellCount, type BellRow } from "./BellMenu";
 import { ActivityPanel, type ActivityTab } from "@/activity/ActivityPanel";
 import { ActivityFeed } from "@/activity/feed";
@@ -683,7 +684,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   // The bell lists the unread tabs and the taskbar badge counts the unread worktrees, both only for the
   // events that are switched on (and none with the master switch off).
-  const counted = (tab: Tab) => eventOn(statusSettings, tab.unreadReason ?? "needs-you");
+  const counted = (tab: Tab) => admits(tab.unreadReason, statusSettings);
   const unreadTabs = (sessions?.unreadTabs() ?? []).filter(counted);
   const unreadCount = statusSettings.enabled ? (sessions?.unreadWorktrees(counted).length ?? 0) : 0;
   useEffect(() => {
@@ -1737,7 +1738,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               </span>
             )}
           </button>
-          {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onViewActivity={() => { setBellOpen(false); setSidebarOpen(true); setSideView("activity"); setActivityAsk((a) => ({ tab: "feed", seq: a.seq + 1 })); }} onClose={() => setBellOpen(false)} />}
+          {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onToggleRead={(tab) => (tab.unread ? sessions?.markTabRead(tab.id) : sessions?.markTabUnread(tab.id))} onViewActivity={() => { setBellOpen(false); setSidebarOpen(true); setSideView("activity"); setActivityAsk((a) => ({ tab: "feed", seq: a.seq + 1 })); }} onClose={() => setBellOpen(false)} />}
         </div>
         <HelpButton onPick={pickHelp} />
         <button

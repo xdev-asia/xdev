@@ -17,7 +17,7 @@ function nodes(value: unknown): Node[] {
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 const NOW = 10_000_000;
 const row = (id: string, status: Tab["status"], unreadAt: number, worktree: string, name: string): BellRow => ({
-  tab: { id, status, unreadAt, unread: true } as Tab,
+  tab: { id, status, unreadAt, unread: true, unreadReason: status === "done" ? "done" : "needs-you" } as Tab,
   worktree,
   name,
 });
@@ -29,8 +29,8 @@ it("bell lists unread tabs, newest first, and jumps", () => {
   const tree = nodes(BellMenu({ rows, now: NOW, onJump: (tab) => void jumps.push(tab.id), onClose: () => void closed++ }));
   const items = tree.filter((n) => n.props.role === "menuitem");
   expect(items).toHaveLength(2);
-  expect(items[0].props["aria-label"]).toBe(en("status.bell.row", { worktree: "elm", name: "Codex", state: en("workspace.tabs.status.needs-you"), age: en("ago.now") }));
-  expect(items[1].props["aria-label"]).toBe("oak, Claude, Done, 5 min");
+  expect(items[0].props["aria-label"]).toBe(en("status.bell.rowReason", { worktree: "elm", name: "Codex", state: en("workspace.tabs.status.needs-you"), reason: "Needs you", age: en("ago.now") }));
+  expect(items[1].props["aria-label"]).toBe("oak, Claude, Done, Finished, 5 min");
   items[1].props.onClick();
   expect(jumps).toEqual(["a"]);
   // Each row carries its state glyph.
@@ -65,4 +65,17 @@ it("View activity calls onViewActivity, and is absent without the prop", () => {
   button.props.onClick();
   expect(n).toBe(1);
   expect(nodes(BellMenu({ rows: [], now: NOW, onJump() {}, onClose() {} })).some((x) => x.props.className === "ws-bell-activity")).toBe(false);
+});
+
+it("each row shows why it is unread and a toggle marks it read", () => {
+  const toggled: string[] = [];
+  const rows = [row("a", "done", NOW - 1000, "oak", "Claude")];
+  const tree = nodes(BellMenu({ rows, now: NOW, onJump() {}, onToggleRead: (tab) => void toggled.push(tab.id), onClose() {} }));
+  expect(tree.find((n) => n.props.className === "ws-bell-reason")!.props.children).toBe(en("attention.reason.done"));
+  const toggle = tree.find((n) => n.props.className === "ws-bell-toggle")!;
+  expect(toggle.props.children).toBe(en("attention.markRead"));
+  toggle.props.onClick();
+  expect(toggled).toEqual(["a"]);
+  const bare = nodes(BellMenu({ rows, now: NOW, onJump() {}, onClose() {} }));
+  expect(bare.some((n) => n.props.className === "ws-bell-toggle")).toBe(false);
 });

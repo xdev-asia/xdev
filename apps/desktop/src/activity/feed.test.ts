@@ -71,3 +71,44 @@ it("clear empties the feed", () => {
   feed.clear();
   expect(feed.snapshot()).toEqual([]);
 });
+
+it("restore puts a cleared feed back in order, once", () => {
+  const feed = new ActivityFeed();
+  feed.record(tab("a"), "idle", "working", 1);
+  feed.record(tab("b"), "idle", "working", 2);
+  const before = feed.snapshot();
+  const token = feed.clear();
+  expect(token).toBeGreaterThan(0);
+  expect(feed.snapshot()).toEqual([]);
+  // Something new arrives before the undo: it stays on top.
+  feed.record(tab("c"), "idle", "working", 3);
+  expect(feed.restore(token)).toBe(true);
+  expect(feed.snapshot().map((e) => e.tabId)).toEqual(["c", "b", "a"]);
+  expect(feed.snapshot().slice(1)).toEqual(before);
+  expect(feed.restore(token)).toBe(false);
+});
+
+it("restore fails after a newer clear, and an empty clear has no token", () => {
+  const feed = new ActivityFeed();
+  expect(feed.clear()).toBe(0);
+  expect(feed.restore(0)).toBe(false);
+  feed.record(tab("a"), "idle", "working", 1);
+  const first = feed.clear();
+  feed.record(tab("b"), "idle", "working", 2);
+  const second = feed.clear();
+  expect(feed.restore(first)).toBe(false);
+  expect(feed.restore(second)).toBe(true);
+  expect(feed.snapshot().map((e) => e.tabId)).toEqual(["b"]);
+});
+
+it("restore keeps the cap, dropping the oldest", () => {
+  const feed = new ActivityFeed();
+  for (let i = 0; i < FEED_CAP; i++) feed.record(tab("a"), "idle", "working", i);
+  const token = feed.clear();
+  for (let i = 0; i < 5; i++) feed.record(tab("n"), "idle", "working", 1000 + i);
+  expect(feed.restore(token)).toBe(true);
+  const list = feed.snapshot();
+  expect(list).toHaveLength(FEED_CAP);
+  expect(list[0]!.at).toBe(1004);
+  expect(list[list.length - 1]!.at).toBe(5);
+});
