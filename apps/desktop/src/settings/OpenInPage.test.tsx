@@ -149,3 +149,24 @@ it("Add is disabled at the limit", async () => {
   expect(w.act("add").props.disabled).toBe(true);
   expect(w.all().some((n) => n.props.children?.[0] === false)).toBe(false);
 });
+
+it("Presets lists the four editors; the one in the list shows Added instead of Add", async () => {
+  const v = await view();
+  const rows = v.all().filter((n) => n.props["data-preset"]);
+  expect(rows.map((n) => n.props["data-preset"])).toEqual(["code", "cursor", "zed", "windsurf"]);
+  const buttons = (row: (typeof rows)[number]) => nodes(row).filter((n) => n.props["data-act"] === "add-preset");
+  expect(buttons(rows[0])).toHaveLength(0);
+  expect(nodes(rows[0]).some((n) => n.props.children === en("openIn.preset.added"))).toBe(true);
+  expect(buttons(rows[1])).toHaveLength(1);
+});
+
+it("Add on a preset stores it through the same save path", async () => {
+  const v = await view();
+  const row = v.all().find((n) => n.props["data-preset"] === "cursor")!;
+  nodes(row).find((n) => n.props["data-act"] === "add-preset")!.props.onClick();
+  await tick();
+  expect(await v.stored()).toEqual([...DEFAULT_APPS, { id: "cursor", label: "Cursor", command: "cursor", args: [] }]);
+  expect(v.onChanged).toHaveBeenCalledTimes(1);
+  const after = v.all().find((n) => n.props["data-preset"] === "cursor")!;
+  expect(nodes(after).some((n) => n.props["data-act"] === "add-preset")).toBe(false);
+});
